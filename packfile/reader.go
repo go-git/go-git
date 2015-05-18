@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,34 +12,14 @@ import (
 const MaxObjectsLimit = 1000000
 
 type PackfileReader struct {
-	r io.Reader
+	buf  *bytes.Reader
+	size int
 
 	objects map[string]packfileObject
 	offsets map[int]string
 	deltas  []packfileDelta
 
-	// The give back logic is explained in the giveBack method.
-	startedGivingBack bool
-	givebackBuffer    []byte
-	givenBack         io.Reader
-	contentCallback   ContentCallback
-}
-
-// Sometimes, after reading an object from a packfile, there will be
-// a few bytes with garbage data before the next object comes by.
-// There is no way of reliably noticing this until when trying to read the
-// next object and failing because zlib parses an invalid header. We can't
-// notice before, because parsing the object's header (size, type, etc.)
-// doesn't fail.
-//
-// At that point, we want to give back to the reader the bytes we've read
-// since the last object, shift the input by one byte, and try again. That's
-// why we save the bytes we read on each object and, if it fails in the middle
-// of parsing it, those bytes will be read the next times you call Read() on
-// a objectReader derived from a PackfileReader.readObject, until they run out.
-func (pr *PackfileReader) giveBack() {
-	pr.givenBack = bytes.NewReader(pr.givebackBuffer)
-	pr.givebackBuffer = nil
+	contentCallback ContentCallback
 }
 
 type packfileObject struct {
@@ -53,19 +32,28 @@ type packfileDelta struct {
 	delta []byte
 }
 
-func NewPackfileReader(r io.Reader, contentCallback ContentCallback) (*PackfileReader, error) {
+func NewPackfileReader(r io.Reader, fn ContentCallback) (*PackfileReader, error) {
+	buf, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
 	return &PackfileReader{
-		r:               r,
-		objects:         map[string]packfileObject{},
-		offsets:         map[int]string{},
-		contentCallback: contentCallback,
+		buf:             bytes.NewReader(buf),
+		size:            len(buf),
+		objects:         make(map[string]packfileObject, 0),
+		offsets:         make(map[int]string, 0),
+		contentCallback: fn,
 	}, nil
 }
 
-func (p *PackfileReader) Read() (*Packfile, error) {
+func (pr *PackfileReader) Pos() int  { return pr.size - pr.buf.Len() }
+func (pr *PackfileReader) Size() int { return pr.size }
+
+func (pr *PackfileReader) Read() (*Packfile, error) {
 	packfile := NewPackfile()
 
-	if err := p.validateSignature(); err != nil {
+	if err := pr.validateHeader(); err != nil {
 		if err == io.EOF {
 			// This is an empty repo. It's OK.
 			return packfile, nil
@@ -73,13 +61,12 @@ func (p *PackfileReader) Read() (*Packfile, error) {
 		return nil, err
 	}
 
-	var err error
-	ver, err := p.readInt32()
+	ver, err := pr.readInt32()
 	if err != nil {
 		return nil, err
 	}
 
-	count, err := p.readInt32()
+	count, err := pr.readInt32()
 	if err != nil {
 		return nil, err
 	}
@@ -91,57 +78,50 @@ func (p *PackfileReader) Read() (*Packfile, error) {
 		return nil, NewError("too many objects (%d)", packfile.ObjectCount)
 	}
 
-	if err := p.readObjects(packfile); err != nil {
+	if err := pr.readObjects(packfile); err != nil {
 		return nil, err
 	}
 
 	return packfile, nil
 }
 
-func (p *PackfileReader) validateSignature() error {
-	var signature = make([]byte, 4)
-	if _, err := p.r.Read(signature); err != nil {
+func (pr *PackfileReader) validateHeader() error {
+	var header = make([]byte, 4)
+	if _, err := pr.buf.Read(header); err != nil {
 		return err
 	}
 
-	if !bytes.Equal(signature, []byte{'P', 'A', 'C', 'K'}) {
+	if !bytes.Equal(header, []byte{'P', 'A', 'C', 'K'}) {
 		return NewError("Pack file does not start with 'PACK'")
 	}
 
 	return nil
 }
 
-func (p *PackfileReader) readInt32() (uint32, error) {
+func (pr *PackfileReader) readInt32() (uint32, error) {
 	var value uint32
-	if err := binary.Read(p.r, binary.BigEndian, &value); err != nil {
-		fmt.Println(err)
-
+	if err := binary.Read(pr.buf, binary.BigEndian, &value); err != nil {
 		return 0, err
 	}
 
 	return value, nil
 }
 
-func (p *PackfileReader) readObjects(packfile *Packfile) error {
+func (pr *PackfileReader) readObjects(packfile *Packfile) error {
 	// This code has 50-80 µs of overhead per object not counting zlib inflation.
 	// Together with zlib inflation, it's 400-410 µs for small objects.
 	// That's 1 sec for ~2450 objects, ~4.20 MB, or ~250 ms per MB,
 	// of which 12-20 % is _not_ zlib inflation (ie. is our code).
 
-	p.startedGivingBack = true
 	var unknownForBytes [4]byte
-
-	offset := 12
 	for i := 0; i < packfile.ObjectCount; i++ {
-		r, err := p.readObject(packfile, offset)
+		var pos = pr.Pos()
+		obj, err := pr.readObject(packfile)
 		if err != nil && err != io.EOF {
 			return err
 		}
 
-		p.offsets[offset] = r.hash
-		offset += r.counter + 4
-
-		p.r.Read(unknownForBytes[:])
+		pr.offsets[pos] = obj.hash
 
 		if err == io.EOF {
 			break
@@ -151,30 +131,8 @@ func (p *PackfileReader) readObjects(packfile *Packfile) error {
 	return nil
 }
 
-const (
-	OBJ_COMMIT    = 1
-	OBJ_TREE      = 2
-	OBJ_BLOB      = 3
-	OBJ_TAG       = 4
-	OBJ_OFS_DELTA = 6
-	OBJ_REF_DELTA = 7
-)
-
-const SIZE_LIMIT uint64 = 1 << 32 //4GB
-
-type objectReader struct {
-	pr     *PackfileReader
-	pf     *Packfile
-	offset int
-	hash   string
-
-	typ     int8
-	size    uint64
-	counter int
-}
-
-func (p *PackfileReader) readObject(packfile *Packfile, offset int) (*objectReader, error) {
-	o, err := newObjectReader(p, packfile, offset)
+func (pr *PackfileReader) readObject(packfile *Packfile) (*objectReader, error) {
+	o, err := newObjectReader(pr, packfile)
 	if err != nil {
 		return nil, err
 	}
@@ -189,17 +147,38 @@ func (p *PackfileReader) readObject(packfile *Packfile, offset int) (*objectRead
 	default:
 		err = NewError("Invalid git object tag %q", o.typ)
 	}
-	if err == ErrZlibHeader {
-		p.giveBack()
-		io.CopyN(ioutil.Discard, p.r, 1)
-		return p.readObject(packfile, offset)
+
+	if err != nil {
+		return nil, err
 	}
 
 	return o, err
 }
 
-func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReader, error) {
-	o := &objectReader{pr: pr, pf: pf, offset: offset}
+const (
+	OBJ_COMMIT    = 1
+	OBJ_TREE      = 2
+	OBJ_BLOB      = 3
+	OBJ_TAG       = 4
+	OBJ_OFS_DELTA = 6
+	OBJ_REF_DELTA = 7
+)
+
+const SIZE_LIMIT uint64 = 1 << 32 // 4GB
+
+type objectReader struct {
+	pr    *PackfileReader
+	pf    *Packfile
+	hash  string
+	steps int
+
+	typ  int8
+	size uint64
+}
+
+func newObjectReader(pr *PackfileReader, pf *Packfile) (*objectReader, error) {
+	o := &objectReader{pr: pr, pf: pf}
+
 	var buf [1]byte
 	if _, err := o.Read(buf[:]); err != nil {
 		return nil, err
@@ -207,6 +186,7 @@ func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReade
 
 	o.typ = int8((buf[0] >> 4) & 7)
 	o.size = uint64(buf[0] & 15)
+	o.steps++ // byte we just read to get `o.typ` and `o.size`
 
 	var shift uint = 4
 	for buf[0]&0x80 == 0x80 {
@@ -215,6 +195,7 @@ func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReade
 		}
 
 		o.size += uint64(buf[0]&0x7f) << shift
+		o.steps++ // byte we just read to update `o.size`
 		shift += 7
 	}
 
@@ -223,7 +204,9 @@ func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReade
 
 func (o *objectReader) readREFDelta() error {
 	var ref [20]byte
-	o.Read(ref[:])
+	if _, err := o.Read(ref[:]); err != nil {
+		return err
+	}
 
 	buf, err := o.inflate()
 	if err != nil {
@@ -249,15 +232,32 @@ func (o *objectReader) readREFDelta() error {
 	return nil
 }
 
-func (o *objectReader) readOFSDelta() error {
-	// read negative offset
-	var b uint8
-	binary.Read(o, binary.BigEndian, &b)
-	var noffset int = int(b & 0x7f)
+func decodeOffset(src io.ByteReader, steps int) (int, error) {
+	b, err := src.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	var offset = int(b & 0x7f)
 	for (b & 0x80) != 0 {
-		noffset += 1
-		binary.Read(o, binary.BigEndian, &b)
-		noffset = (noffset << 7) + int(b&0x7f)
+		offset += 1 // WHY?
+		b, err = src.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		offset = (offset << 7) + int(b&0x7f)
+	}
+	// offset needs to be aware of the bytes we read for `o.typ` and `o.size`
+	offset += steps
+	return -offset, nil
+}
+
+func (o *objectReader) readOFSDelta() error {
+	var pos = o.pr.Pos()
+
+	// read negative offset
+	offset, err := decodeOffset(o.pr.buf, o.steps)
+	if err != nil {
+		return err
 	}
 
 	buf, err := o.inflate()
@@ -265,10 +265,10 @@ func (o *objectReader) readOFSDelta() error {
 		return err
 	}
 
-	refhash := o.pr.offsets[o.offset-noffset]
+	refhash := o.pr.offsets[pos+offset]
 	referenced, ok := o.pr.objects[refhash]
 	if !ok {
-		return NewError("can't find a pack entry at %d", o.offset-noffset)
+		return NewError("can't find a pack entry at %d", pos+offset)
 	} else {
 		patched := PatchDelta(referenced.bytes, buf)
 		if patched == nil {
@@ -328,87 +328,40 @@ func (o *objectReader) addObject(bytes []byte) error {
 	o.hash = hash
 
 	return nil
-
 }
 
 func (o *objectReader) inflate() ([]byte, error) {
-	//Quick fix "Invalid git object tag '\x00'" when the length of a object is 0
-	if o.size == 0 {
-		var buf [4]byte
-		if _, err := o.Read(buf[:]); err != nil {
-			return nil, err
-		}
-
-		return nil, nil
-	}
-
-	zr, err := zlib.NewReader(o)
+	zr, err := zlib.NewReader(o.pr.buf)
 	if err != nil {
-		if err.Error() == "zlib: invalid header" {
-			return nil, ErrZlibHeader
+		if err == zlib.ErrHeader {
+			return nil, zlib.ErrHeader
 		} else {
 			return nil, NewError("error opening packfile's object zlib: %v", err)
 		}
 	}
-
 	defer zr.Close()
 
 	if o.size > SIZE_LIMIT {
 		return nil, NewError("the object size exceeed the allowed limit: %d", o.size)
 	}
 
-	var arrbuf [4096]byte // Stack-allocated for <4 KB objects.
-	var buf []byte
-	if uint64(len(arrbuf)) >= o.size {
-		buf = arrbuf[:o.size]
-	} else {
-		buf = make([]byte, o.size)
+	var buf bytes.Buffer
+	io.Copy(&buf, zr) // also: io.CopyN(&buf, zr, int64(o.size))
+
+	var bufLen = buf.Len()
+	if bufLen != int(o.size) {
+		return nil, NewError("inflated size mismatch, expected %d, got %d", o.size, bufLen)
 	}
 
-	read := 0
-	for read < int(o.size) {
-		n, err := zr.Read(buf[read:])
-		if err != nil {
-			return nil, err
-		}
-
-		read += n
-	}
-
-	if read != int(o.size) {
-		return nil, NewError("inflated size mismatch, expected %d, got %d", o.size, read)
-	}
-
-	return buf, nil
+	return buf.Bytes(), nil
 }
 
 func (o *objectReader) Read(p []byte) (int, error) {
-	i := 0
-	if o.pr.givenBack != nil {
-		i1, err := o.pr.givenBack.Read(p)
-		if err == nil {
-			i += i1
-		} else {
-			o.pr.givenBack = nil
-		}
-	}
-
-	i2, err := o.pr.r.Read(p[i:])
-	i += i2
-	o.counter += i
-	if err == nil && o.pr.startedGivingBack {
-		o.pr.givebackBuffer = append(o.pr.givebackBuffer, p[:i]...)
-	}
-	return i, err
+	return o.pr.buf.Read(p)
 }
 
 func (o *objectReader) ReadByte() (byte, error) {
-	var c byte
-	if err := binary.Read(o, binary.BigEndian, &c); err != nil {
-		return 0, err
-	}
-
-	return c, nil
+	return o.pr.buf.ReadByte()
 }
 
 type ReaderError struct {
@@ -420,5 +373,3 @@ func NewError(format string, args ...interface{}) error {
 }
 
 func (e *ReaderError) Error() string { return e.Msg }
-
-var ErrZlibHeader = errors.New("zlib: invalid header")

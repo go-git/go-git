@@ -119,7 +119,6 @@ func (c *Client) GetPackFile(want string) (io.ReadCloser, error) {
 }
 
 func (c *Client) buildRequest(method, url string, content *strings.Reader) (*http.Request, error) {
-
 	var req *http.Request
 	var err error
 	if content == nil {
