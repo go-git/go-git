@@ -123,7 +123,13 @@ func (p *PackfileReader) readInt32() (uint32, error) {
 }
 
 func (p *PackfileReader) readObjects(packfile *Packfile) error {
+	// This code has 50-80 µs of overhead per object not counting zlib inflation.
+	// Together with zlib inflation, it's 400-410 µs for small objects.
+	// That's 1 sec for ~2450 objects, ~4.20 MB, or ~250 ms per MB,
+	// of which 12-20 % is _not_ zlib inflation (ie. is our code).
+
 	p.startedGivingBack = true
+	var unknownForBytes [4]byte
 
 	offset := 12
 	for i := 0; i < packfile.ObjectCount; i++ {
@@ -135,8 +141,7 @@ func (p *PackfileReader) readObjects(packfile *Packfile) error {
 		p.offsets[offset] = r.hash
 		offset += r.counter + 4
 
-		unknownForBytes := make([]byte, 4)
-		p.r.Read(unknownForBytes)
+		p.r.Read(unknownForBytes[:])
 
 		if err == io.EOF {
 			break
@@ -195,8 +200,8 @@ func (p *PackfileReader) readObject(packfile *Packfile, offset int) (*objectRead
 
 func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReader, error) {
 	o := &objectReader{pr: pr, pf: pf, offset: offset}
-	buf := make([]byte, 1)
-	if _, err := o.Read(buf); err != nil {
+	var buf [1]byte
+	if _, err := o.Read(buf[:]); err != nil {
 		return nil, err
 	}
 
@@ -205,7 +210,7 @@ func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReade
 
 	var shift uint = 4
 	for buf[0]&0x80 == 0x80 {
-		if _, err := o.Read(buf); err != nil {
+		if _, err := o.Read(buf[:]); err != nil {
 			return nil, err
 		}
 
@@ -217,8 +222,8 @@ func newObjectReader(pr *PackfileReader, pf *Packfile, offset int) (*objectReade
 }
 
 func (o *objectReader) readREFDelta() error {
-	ref := make([]byte, 20)
-	o.Read(ref)
+	var ref [20]byte
+	o.Read(ref[:])
 
 	buf, err := o.inflate()
 	if err != nil {
@@ -228,9 +233,9 @@ func (o *objectReader) readREFDelta() error {
 	refhash := fmt.Sprintf("%x", ref)
 	referenced, ok := o.pr.objects[refhash]
 	if !ok {
-		o.pr.deltas = append(o.pr.deltas, packfileDelta{hash: refhash, delta: buf})
+		o.pr.deltas = append(o.pr.deltas, packfileDelta{hash: refhash, delta: buf[:]})
 	} else {
-		patched := PatchDelta(referenced.bytes, buf)
+		patched := PatchDelta(referenced.bytes, buf[:])
 		if patched == nil {
 			return NewError("error while patching %x", ref)
 		}
@@ -329,8 +334,8 @@ func (o *objectReader) addObject(bytes []byte) error {
 func (o *objectReader) inflate() ([]byte, error) {
 	//Quick fix "Invalid git object tag '\x00'" when the length of a object is 0
 	if o.size == 0 {
-		buf := make([]byte, 4)
-		if _, err := o.Read(buf); err != nil {
+		var buf [4]byte
+		if _, err := o.Read(buf[:]); err != nil {
 			return nil, err
 		}
 
@@ -352,7 +357,14 @@ func (o *objectReader) inflate() ([]byte, error) {
 		return nil, NewError("the object size exceeed the allowed limit: %d", o.size)
 	}
 
-	buf := make([]byte, o.size)
+	var arrbuf [4096]byte // Stack-allocated for <4 KB objects.
+	var buf []byte
+	if uint64(len(arrbuf)) >= o.size {
+		buf = arrbuf[:o.size]
+	} else {
+		buf = make([]byte, o.size)
+	}
+
 	read := 0
 	for read < int(o.size) {
 		n, err := zr.Read(buf[read:])
