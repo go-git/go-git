@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	ErrOverflow = errors.New("unexepected string length")
+	ErrOverflow = errors.New("unexpected string length (overflow)")
 )
 
 type Encoder struct {

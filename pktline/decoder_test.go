@@ -25,7 +25,7 @@ func (s *DecoderSuite) TestReadLineBufferUnderflow(c *C) {
 	j := &Decoder{strings.NewReader("00e7a\n")}
 
 	line, err := j.ReadLine()
-	c.Assert(err, ErrorMatches, "unexepected string length")
+	c.Assert(err, Equals, ErrUnderflow)
 	c.Assert(line, Equals, "")
 }
 
@@ -33,7 +33,7 @@ func (s *DecoderSuite) TestReadLineBufferInvalidLen(c *C) {
 	j := &Decoder{strings.NewReader("0001foo\n")}
 
 	line, err := j.ReadLine()
-	c.Assert(err, ErrorMatches, "invalid length")
+	c.Assert(err, Equals, ErrInvalidLen)
 	c.Assert(line, Equals, "")
 }
 

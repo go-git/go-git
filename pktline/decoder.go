@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	ErrUnderflow     = errors.New("unexepected string length")
+	ErrUnderflow     = errors.New("unexpected string length (underflow)")
 	ErrInvalidHeader = errors.New("invalid header")
 	ErrInvalidLen    = errors.New("invalid length")
 )
