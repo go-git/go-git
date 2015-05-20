@@ -6,14 +6,42 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 )
 
 const MaxObjectsLimit = 1000000
 
+type TrackingByteReader struct {
+	r io.Reader
+	n int
+}
+
+func (t *TrackingByteReader) Pos() int { return t.n }
+
+func (t *TrackingByteReader) Read(p []byte) (n int, err error) {
+	n, err = t.r.Read(p)
+	if err != nil {
+		return 0, err
+	}
+	t.n += n
+	return n, err
+}
+
+func (t *TrackingByteReader) ReadByte() (c byte, err error) {
+	var p [1]byte
+	n, err := t.r.Read(p[:])
+	if err != nil {
+		return 0, err
+	}
+	if n > 1 {
+		return 0, fmt.Errorf("read %d bytes, should have read just 1", n)
+	}
+	t.n += n // n is 1
+	return p[0], nil
+}
+
 type PackfileReader struct {
-	buf  *bytes.Reader
-	size int
+	r   *TrackingByteReader
+	pos int
 
 	objects map[string]packfileObject
 	offsets map[int]string
@@ -33,22 +61,15 @@ type packfileDelta struct {
 }
 
 func NewPackfileReader(r io.Reader, fn ContentCallback) (*PackfileReader, error) {
-	buf, err := ioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
 	return &PackfileReader{
-		buf:             bytes.NewReader(buf),
-		size:            len(buf),
+		r:               &TrackingByteReader{r: r, n: 0},
 		objects:         make(map[string]packfileObject, 0),
 		offsets:         make(map[int]string, 0),
 		contentCallback: fn,
 	}, nil
 }
 
-func (pr *PackfileReader) Pos() int  { return pr.size - pr.buf.Len() }
-func (pr *PackfileReader) Size() int { return pr.size }
+func (pr *PackfileReader) Pos() int { return pr.r.Pos() }
 
 func (pr *PackfileReader) Read() (*Packfile, error) {
 	packfile := NewPackfile()
@@ -87,7 +108,7 @@ func (pr *PackfileReader) Read() (*Packfile, error) {
 
 func (pr *PackfileReader) validateHeader() error {
 	var header = make([]byte, 4)
-	if _, err := pr.buf.Read(header); err != nil {
+	if _, err := pr.r.Read(header); err != nil {
 		return err
 	}
 
@@ -100,7 +121,7 @@ func (pr *PackfileReader) validateHeader() error {
 
 func (pr *PackfileReader) readInt32() (uint32, error) {
 	var value uint32
-	if err := binary.Read(pr.buf, binary.BigEndian, &value); err != nil {
+	if err := binary.Read(pr.r, binary.BigEndian, &value); err != nil {
 		return 0, err
 	}
 
@@ -113,7 +134,6 @@ func (pr *PackfileReader) readObjects(packfile *Packfile) error {
 	// That's 1 sec for ~2450 objects, ~4.20 MB, or ~250 ms per MB,
 	// of which 12-20 % is _not_ zlib inflation (ie. is our code).
 
-	var unknownForBytes [4]byte
 	for i := 0; i < packfile.ObjectCount; i++ {
 		var pos = pr.Pos()
 		obj, err := pr.readObject(packfile)
@@ -255,7 +275,7 @@ func (o *objectReader) readOFSDelta() error {
 	var pos = o.pr.Pos()
 
 	// read negative offset
-	offset, err := decodeOffset(o.pr.buf, o.steps)
+	offset, err := decodeOffset(o.pr.r, o.steps)
 	if err != nil {
 		return err
 	}
@@ -331,7 +351,7 @@ func (o *objectReader) addObject(bytes []byte) error {
 }
 
 func (o *objectReader) inflate() ([]byte, error) {
-	zr, err := zlib.NewReader(o.pr.buf)
+	zr, err := zlib.NewReader(o.pr.r)
 	if err != nil {
 		if err == zlib.ErrHeader {
 			return nil, zlib.ErrHeader
@@ -357,11 +377,11 @@ func (o *objectReader) inflate() ([]byte, error) {
 }
 
 func (o *objectReader) Read(p []byte) (int, error) {
-	return o.pr.buf.Read(p)
+	return o.pr.r.Read(p)
 }
 
 func (o *objectReader) ReadByte() (byte, error) {
-	return o.pr.buf.ReadByte()
+	return o.pr.r.ReadByte()
 }
 
 type ReaderError struct {
