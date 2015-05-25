@@ -40,8 +40,7 @@ func (t *TrackingByteReader) ReadByte() (c byte, err error) {
 }
 
 type PackfileReader struct {
-	r   *TrackingByteReader
-	pos int
+	r *TrackingByteReader
 
 	objects map[string]packfileObject
 	offsets map[int]string
