@@ -2,11 +2,9 @@ package packfile
 
 import (
 	"bytes"
-	"compress/zlib"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"strconv"
 	"time"
 )
@@ -148,24 +146,13 @@ type TreeEntry struct {
 	Hash string
 }
 
-func NewTree(b []byte) (*Tree, error) {
-	o := &Tree{hash: calculateHash("tree", b)}
+func NewTree(body []byte) (*Tree, error) {
+	o := &Tree{hash: calculateHash("tree", body)}
 
-	if len(b) == 0 {
+	if len(body) == 0 {
 		return o, nil
 	}
 
-	zr, e := zlib.NewReader(bytes.NewBuffer(b))
-	if e == nil {
-		defer zr.Close()
-		var err error
-		b, err = ioutil.ReadAll(zr)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	body := b
 	for {
 		split := bytes.SplitN(body, []byte{0}, 2)
 		split1 := bytes.SplitN(split[0], []byte{' '}, 2)
