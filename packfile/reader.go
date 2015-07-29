@@ -2,10 +2,11 @@ package packfile
 
 import (
 	"bytes"
-	"compress/zlib"
 	"encoding/binary"
 	"fmt"
 	"io"
+
+	"github.com/klauspost/compress/zlib"
 )
 
 const MaxObjectsLimit = 1000000
