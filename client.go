@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/tyba/oss/sources/vcs/clients/git/pktline"
+	"github.com/tyba/srcd-crawler/clients/git/pktline"
 
 	"github.com/sourcegraph/go-vcsurl"
 )
