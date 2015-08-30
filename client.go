@@ -22,7 +22,7 @@ func NewClient(url string) *Client {
 	return &Client{url: vcs.Link(), client: &http.Client{}}
 }
 
-func (c *Client) GetLastCommit() (string, error) {
+func (c *Client) Refs() (*Refs, error) {
 	req, _ := c.buildRequest(
 		"GET",
 		fmt.Sprintf("%s/info/refs?service=git-upload-pack", c.url),
@@ -31,11 +31,11 @@ func (c *Client) GetLastCommit() (string, error) {
 
 	res, err := c.client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if res.StatusCode >= 400 {
-		return "", &NotFoundError{c.url}
+		return nil, &NotFoundError{c.url}
 	}
 
 	defer res.Body.Close()
@@ -43,29 +43,31 @@ func (c *Client) GetLastCommit() (string, error) {
 
 	content, err := d.ReadAll()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var head string
+	return c.buildRefsFromContent(content), nil
+}
+
+func (c *Client) buildRefsFromContent(content []string) *Refs {
+	refs := &Refs{branches: make(map[string]string, 0)}
 	for _, line := range content {
 		if line[0] == '#' {
 			continue
 		}
 
-		if head == "" {
-			head = c.getHEADFromLine(line)
+		if refs.defaultBranch == "" {
+			refs.defaultBranch = c.getDefaultBranchFromLine(line)
 		} else {
 			commit, branch := c.getCommitAndBranch(line)
-			if branch == head {
-				return commit, nil
-			}
+			refs.branches[branch] = commit
 		}
 	}
 
-	return "", nil
+	return refs
 }
 
-func (c *Client) getHEADFromLine(line string) string {
+func (c *Client) getDefaultBranchFromLine(line string) string {
 	args, _ := url.ParseQuery(strings.Replace(line, " ", "&", -1))
 
 	link, ok := args["symref"]
@@ -90,7 +92,7 @@ func (c *Client) getCommitAndBranch(line string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func (c *Client) GetPackFile(want string) (io.ReadCloser, error) {
+func (c *Client) PackFile(want string) (io.ReadCloser, error) {
 	e := pktline.NewEncoder()
 	e.AddLine(fmt.Sprintf("want %s", want))
 	e.AddFlush()
@@ -131,6 +133,11 @@ func (c *Client) buildRequest(method, url string, content *strings.Reader) (*htt
 		return nil, err
 	}
 
+	c.applyHeadersToRequest(req, content)
+	return req, nil
+}
+
+func (c *Client) applyHeadersToRequest(req *http.Request, content *strings.Reader) {
 	req.Header.Add("User-Agent", "git/1.0")
 	req.Header.Add("Host", "github.com")
 
@@ -141,8 +148,6 @@ func (c *Client) buildRequest(method, url string, content *strings.Reader) (*htt
 		req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
 		req.Header.Add("Content-Length", string(content.Len()))
 	}
-
-	return req, nil
 }
 
 type NotFoundError struct {
@@ -151,4 +156,21 @@ type NotFoundError struct {
 
 func (e NotFoundError) Error() string {
 	return e.url
+}
+
+type Refs struct {
+	defaultBranch string
+	branches      map[string]string
+}
+
+func (r *Refs) DefaultBranch() string {
+	return r.defaultBranch
+}
+
+func (r *Refs) DefaultBranchCommit() string {
+	return r.branches[r.defaultBranch]
+}
+
+func (r *Refs) Branches() map[string]string {
+	return r.branches
 }
