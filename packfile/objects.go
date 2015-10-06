@@ -2,11 +2,12 @@ package packfile
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/tyba/srcd-crawler/clients/git/commons"
 )
 
 type Object interface {
@@ -30,7 +31,7 @@ type Commit struct {
 }
 
 func NewCommit(b []byte) (*Commit, error) {
-	o := &Commit{hash: calculateHash("commit", b)}
+	o := &Commit{hash: commons.GitHash("commit", b)}
 
 	lines := bytes.Split(b, []byte{'\n'})
 	for i := range lines {
@@ -147,7 +148,7 @@ type TreeEntry struct {
 }
 
 func NewTree(body []byte) (*Tree, error) {
-	o := &Tree{hash: calculateHash("tree", body)}
+	o := &Tree{hash: commons.GitHash("tree", body)}
 
 	if len(body) == 0 {
 		return o, nil
@@ -185,7 +186,7 @@ type Blob struct {
 }
 
 func NewBlob(b []byte) (*Blob, error) {
-	return &Blob{Len: len(b), hash: calculateHash("blob", b)}, nil
+	return &Blob{Len: len(b), hash: commons.GitHash("blob", b)}, nil
 }
 
 func (o *Blob) Type() string {
@@ -194,16 +195,6 @@ func (o *Blob) Type() string {
 
 func (o *Blob) Hash() string {
 	return o.hash
-}
-
-func calculateHash(objType string, content []byte) string {
-	header := []byte(objType)
-	header = append(header, ' ')
-	header = strconv.AppendInt(header, int64(len(content)), 10)
-	header = append(header, 0)
-	header = append(header, content...)
-
-	return fmt.Sprintf("%x", sha1.Sum(header))
 }
 
 type ContentCallback func(hash string, content []byte)
