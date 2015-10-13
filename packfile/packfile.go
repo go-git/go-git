@@ -4,6 +4,7 @@ import "fmt"
 
 type Packfile struct {
 	Version     uint32
+	Size        int64
 	ObjectCount int
 	Checksum    []byte
 	Commits     map[string]*Commit
