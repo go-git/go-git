@@ -11,13 +11,11 @@ import (
 
 const MaxObjectsLimit = 1000000
 
-const MaxSizeLimit = 300 * 1 << 20
-
 var ErrMaxSize = fmt.Errorf("Max size exceeded for in-memory client")
 
 type TrackingByteReader struct {
-	r io.Reader
-	n int
+	r    io.Reader
+	n, l int
 }
 
 func (t *TrackingByteReader) Pos() int { return t.n }
@@ -28,7 +26,7 @@ func (t *TrackingByteReader) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	t.n += n
-	if t.n >= MaxSizeLimit {
+	if t.n >= t.l {
 		return n, ErrMaxSize
 	}
 	return n, err
@@ -67,9 +65,9 @@ type packfileDelta struct {
 	delta []byte
 }
 
-func NewPackfileReader(r io.Reader, fn ContentCallback) (*PackfileReader, error) {
+func NewPackfileReader(r io.Reader, l int, fn ContentCallback) (*PackfileReader, error) {
 	return &PackfileReader{
-		r:               &TrackingByteReader{r: r, n: 0},
+		r:               &TrackingByteReader{r: r, n: 0, l: l},
 		objects:         make(map[string]packfileObject, 0),
 		offsets:         make(map[int]string, 0),
 		contentCallback: fn,
