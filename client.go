@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/tyba/srcd-crawler/clients/common"
 	"github.com/tyba/srcd-crawler/clients/git/pktline"
 
 	"github.com/sourcegraph/go-vcsurl"
@@ -35,7 +36,7 @@ func (c *Client) Refs() (*Refs, error) {
 	}
 
 	if res.StatusCode >= 400 {
-		return nil, &NotFoundError{c.url}
+		return nil, &common.ErrNotFound{c.url}
 	}
 
 	defer res.Body.Close()
@@ -148,14 +149,6 @@ func (c *Client) applyHeadersToRequest(req *http.Request, content *strings.Reade
 		req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
 		req.Header.Add("Content-Length", string(content.Len()))
 	}
-}
-
-type NotFoundError struct {
-	url string
-}
-
-func (e NotFoundError) Error() string {
-	return e.url
 }
 
 type Refs struct {
