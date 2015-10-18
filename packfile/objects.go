@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tyba/srcd-crawler/clients/git/commons"
+	"github.com/src-d/crawler/clients/git/commons"
 )
 
 type Object interface {
