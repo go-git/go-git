@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v1/pktline"
+	"gopkg.in/src-d/go-git.v2/pktline"
 
 	"github.com/sourcegraph/go-vcsurl"
 )
@@ -19,6 +19,7 @@ type Client struct {
 
 func NewClient(url string) *Client {
 	vcs, _ := vcsurl.Parse(url)
+
 	return &Client{url: vcs.Link(), client: &http.Client{}}
 }
 

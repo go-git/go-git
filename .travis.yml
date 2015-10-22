@@ -9,7 +9,7 @@ go:
 install:
   - rm -rf $GOPATH/src/gopkg.in/src-d
   - mkdir -p $GOPATH/src/gopkg.in/src-d
-  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v1
+  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v2
   - go get -v -t ./...
 
 script:

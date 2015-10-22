@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v1/commons"
+	"gopkg.in/src-d/go-git.v2/commons"
 )
 
 type Object interface {
