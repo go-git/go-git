@@ -7,8 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/src-d/crawler/clients/common"
-	"github.com/src-d/crawler/clients/git/pktline"
+	"gopkg.in/src-d/go-git.v1/pktline"
 
 	"github.com/sourcegraph/go-vcsurl"
 )
@@ -36,7 +35,7 @@ func (c *Client) Refs() (*Refs, error) {
 	}
 
 	if res.StatusCode >= 400 {
-		return nil, &common.ErrNotFound{c.url}
+		return nil, &ErrNotFound{c.url}
 	}
 
 	defer res.Body.Close()
@@ -166,4 +165,16 @@ func (r *Refs) DefaultBranchCommit() string {
 
 func (r *Refs) Branches() map[string]string {
 	return r.branches
+}
+
+type ErrNotFound struct {
+	url string
+}
+
+func (e *ErrNotFound) Url() string {
+	return e.url
+}
+
+func (e *ErrNotFound) Error() string {
+	return fmt.Sprintf("Unable to find %q", e.url)
 }

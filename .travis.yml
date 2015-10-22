@@ -6,6 +6,11 @@ go:
   - 1.5
   - tip
 
-script:
+install:
+  - rm -rf $GOPATH/src/gopkg.in/src-d
+  - mkdir -p $GOPATH/src/gopkg.in/src-d
+  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v1
   - go get -v -t ./...
-  - go test
+
+script:
+  - go test -v ./...
