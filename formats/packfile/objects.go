@@ -57,9 +57,6 @@ type Commit struct {
 
 // ParseCommit transform a byte slice into a Commit struct
 func ParseCommit(b []byte) (*Commit, error) {
-	//	b64 := base64.StdEncoding.EncodeToString(b)
-	//fmt.Printf("%q\n", b64)
-
 	o := &Commit{hash: ComputeHash(CommitObject, b)}
 
 	lines := bytes.Split(b, []byte{'\n'})
@@ -106,25 +103,29 @@ func (o *Commit) Hash() Hash {
 	return o.hash
 }
 
+// Tree is basically like a directory - it references a bunch of other trees
+// and/or blobs (i.e. files and sub-directories)
 type Tree struct {
 	Entries []TreeEntry
 	hash    Hash
 }
 
+// TreeEntry represents a file
 type TreeEntry struct {
 	Name string
 	Hash Hash
 }
 
-func NewTree(body []byte) (*Tree, error) {
-	o := &Tree{hash: ComputeHash(TreeObject, body)}
+// ParseTree transform a byte slice into a Tree struct
+func ParseTree(b []byte) (*Tree, error) {
+	o := &Tree{hash: ComputeHash(TreeObject, b)}
 
-	if len(body) == 0 {
+	if len(b) == 0 {
 		return o, nil
 	}
 
 	for {
-		split := bytes.SplitN(body, []byte{0}, 2)
+		split := bytes.SplitN(b, []byte{0}, 2)
 		split1 := bytes.SplitN(split[0], []byte{' '}, 2)
 
 		entry := TreeEntry{}
@@ -133,7 +134,7 @@ func NewTree(body []byte) (*Tree, error) {
 
 		o.Entries = append(o.Entries, entry)
 
-		body = split[1][20:]
+		b = split[1][20:]
 		if len(split[1]) == 20 {
 			break
 		}
@@ -142,30 +143,36 @@ func NewTree(body []byte) (*Tree, error) {
 	return o, nil
 }
 
+// Type returns the object type
 func (o *Tree) Type() ObjectType {
 	return TreeObject
 }
 
+// Hash returns the computed hash of the tree
 func (o *Tree) Hash() Hash {
 	return o.hash
 }
 
+// Blob is used to store file data - it is generally a file.
 type Blob struct {
 	Len  int
 	hash Hash
 }
 
-func NewBlob(b []byte) (*Blob, error) {
+// ParseBlob transform a byte slice into a Blob struct
+func ParseBlob(b []byte) (*Blob, error) {
 	return &Blob{
 		Len:  len(b),
 		hash: ComputeHash(BlobObject, b),
 	}, nil
 }
 
+// Type returns the object type
 func (o *Blob) Type() ObjectType {
 	return BlobObject
 }
 
+// Hash returns the computed hash of the blob
 func (o *Blob) Hash() Hash {
 	return o.hash
 }

@@ -9,49 +9,34 @@ import (
 	"github.com/klauspost/compress/zlib"
 )
 
-const MaxObjectsLimit = 1000000
+const (
+	DefaultMaxObjectsLimit = 1 << 20
+	DefaultMaxObjectSize   = 1 << 32 // 4GB
 
-var ErrMaxSize = fmt.Errorf("Max size exceeded for in-memory client")
-
-type TrackingByteReader struct {
-	r    io.Reader
-	n, l int
-}
-
-func (t *TrackingByteReader) Pos() int { return t.n }
-
-func (t *TrackingByteReader) Read(p []byte) (n int, err error) {
-	n, err = t.r.Read(p)
-	if err != nil {
-		return 0, err
-	}
-	t.n += n
-	if t.n >= t.l {
-		return n, ErrMaxSize
-	}
-	return n, err
-}
-
-func (t *TrackingByteReader) ReadByte() (c byte, err error) {
-	var p [1]byte
-	n, err := t.r.Read(p[:])
-	if err != nil {
-		return 0, err
-	}
-	if n > 1 {
-		return 0, fmt.Errorf("read %d bytes, should have read just 1", n)
-	}
-	t.n += n // n is 1
-	return p[0], nil
-}
+	rawCommit   = 1
+	rawTree     = 2
+	rawBlob     = 3
+	rawTag      = 4
+	rawOFSDelta = 6
+	rawREFDelta = 7
+)
 
 type PackfileReader struct {
-	r *TrackingByteReader
+	// MaxObjectsLimit is the limit of objects to be load in the packfile, if
+	// a packfile excess this number an error is throw, the default value
+	// is defined by DefaultMaxObjectsLimit, usually the default limit is more
+	// than enough to work with any repository, working extremly big repositories
+	// where the number of object is bigger the memory can be exhausted.
+	MaxObjectsLimit int
 
-	objects map[Hash]packfileObject
-	offsets map[int]Hash
-	deltas  []packfileDelta
+	// MaxObjectSize is the maximum size in bytes, reading objects with a bigger
+	// size cause a error. The default value is defined by DefaultMaxObjectSize
+	MaxObjectSize int
 
+	r               *trackingReader
+	objects         map[Hash]packfileObject
+	offsets         map[int]Hash
+	deltas          []packfileDelta
 	contentCallback ContentCallback
 }
 
@@ -65,16 +50,16 @@ type packfileDelta struct {
 	delta []byte
 }
 
-func NewPackfileReader(r io.Reader, l int, fn ContentCallback) (*PackfileReader, error) {
+func NewPackfileReader(r io.Reader, fn ContentCallback) (*PackfileReader, error) {
 	return &PackfileReader{
-		r:               &TrackingByteReader{r: r, n: 0, l: l},
+		MaxObjectsLimit: DefaultMaxObjectsLimit,
+		MaxObjectSize:   DefaultMaxObjectSize,
+		r:               &trackingReader{r: r},
 		objects:         make(map[Hash]packfileObject, 0),
 		offsets:         make(map[int]Hash, 0),
 		contentCallback: fn,
 	}, nil
 }
-
-func (pr *PackfileReader) Pos() int { return pr.r.Pos() }
 
 func (pr *PackfileReader) Read() (*Packfile, error) {
 	packfile := NewPackfile()
@@ -100,8 +85,9 @@ func (pr *PackfileReader) Read() (*Packfile, error) {
 	packfile.Version = uint32(ver)
 	packfile.ObjectCount = int(count)
 
-	if packfile.ObjectCount > MaxObjectsLimit {
-		return nil, NewError("too many objects (%d)", packfile.ObjectCount)
+	if packfile.ObjectCount > pr.MaxObjectsLimit {
+		return nil, NewError("too many objects %d, limit is %d",
+			packfile.ObjectCount, pr.MaxObjectsLimit)
 	}
 
 	if err := pr.readObjects(packfile); err != nil {
@@ -159,17 +145,17 @@ func (pr *PackfileReader) readObjects(packfile *Packfile) error {
 }
 
 func (pr *PackfileReader) readObject(packfile *Packfile) (*objectReader, error) {
-	o, err := newObjectReader(pr, packfile)
+	o, err := newObjectReader(pr, packfile, pr.MaxObjectSize)
 	if err != nil {
 		return nil, err
 	}
 
 	switch o.typ {
-	case OBJ_REF_DELTA:
+	case rawREFDelta:
 		err = o.readREFDelta()
-	case OBJ_OFS_DELTA:
+	case rawOFSDelta:
 		err = o.readOFSDelta()
-	case OBJ_COMMIT, OBJ_TREE, OBJ_BLOB, OBJ_TAG:
+	case rawCommit, rawTree, rawBlob, rawTag:
 		err = o.readObject()
 	default:
 		err = NewError("Invalid git object tag %q", o.typ)
@@ -182,29 +168,21 @@ func (pr *PackfileReader) readObject(packfile *Packfile) (*objectReader, error) 
 	return o, err
 }
 
-const (
-	OBJ_COMMIT    = 1
-	OBJ_TREE      = 2
-	OBJ_BLOB      = 3
-	OBJ_TAG       = 4
-	OBJ_OFS_DELTA = 6
-	OBJ_REF_DELTA = 7
-)
-
-const SIZE_LIMIT uint64 = 1 << 32 // 4GB
+func (pr *PackfileReader) Pos() int { return pr.r.Pos() }
 
 type objectReader struct {
-	pr    *PackfileReader
-	pf    *Packfile
+	pr      *PackfileReader
+	pf      *Packfile
+	maxSize uint64
+
 	hash  Hash
 	steps int
-
-	typ  int8
-	size uint64
+	typ   int8
+	size  uint64
 }
 
-func newObjectReader(pr *PackfileReader, pf *Packfile) (*objectReader, error) {
-	o := &objectReader{pr: pr, pf: pf}
+func newObjectReader(pr *PackfileReader, pf *Packfile, maxSize int) (*objectReader, error) {
+	o := &objectReader{pr: pr, pf: pf, maxSize: uint64(maxSize)}
 
 	var buf [1]byte
 	if _, err := o.Read(buf[:]); err != nil {
@@ -248,6 +226,7 @@ func (o *objectReader) readREFDelta() error {
 		if patched == nil {
 			return NewError("error while patching %x", ref)
 		}
+
 		o.typ = referenced.typ
 		err = o.addObject(patched)
 		if err != nil {
@@ -265,13 +244,15 @@ func decodeOffset(src io.ByteReader, steps int) (int, error) {
 	}
 	var offset = int(b & 0x7f)
 	for (b & 0x80) != 0 {
-		offset += 1 // WHY?
+		offset++ // WHY?
 		b, err = src.ReadByte()
 		if err != nil {
 			return 0, err
 		}
+
 		offset = (offset << 7) + int(b&0x7f)
 	}
+
 	// offset needs to be aware of the bytes we read for `o.typ` and `o.size`
 	offset += steps
 	return -offset, nil
@@ -295,16 +276,17 @@ func (o *objectReader) readOFSDelta() error {
 	referenced, ok := o.pr.objects[ref]
 	if !ok {
 		return NewError("can't find a pack entry at %d", pos+offset)
-	} else {
-		patched := PatchDelta(referenced.bytes, buf)
-		if patched == nil {
-			return NewError("error while patching %q", ref)
-		}
-		o.typ = referenced.typ
-		err = o.addObject(patched)
-		if err != nil {
-			return err
-		}
+	}
+
+	patched := PatchDelta(referenced.bytes, buf)
+	if patched == nil {
+		return NewError("error while patching %q", ref)
+	}
+
+	o.typ = referenced.typ
+	err = o.addObject(patched)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -323,22 +305,22 @@ func (o *objectReader) addObject(bytes []byte) error {
 	var hash Hash
 
 	switch o.typ {
-	case OBJ_COMMIT:
+	case rawCommit:
 		c, err := ParseCommit(bytes)
 		if err != nil {
 			return err
 		}
 		o.pf.Commits[c.Hash()] = c
 		hash = c.Hash()
-	case OBJ_TREE:
-		c, err := NewTree(bytes)
+	case rawTree:
+		c, err := ParseTree(bytes)
 		if err != nil {
 			return err
 		}
 		o.pf.Trees[c.Hash()] = c
 		hash = c.Hash()
-	case OBJ_BLOB:
-		c, err := NewBlob(bytes)
+	case rawBlob:
+		c, err := ParseBlob(bytes)
 		if err != nil {
 			return err
 		}
@@ -361,14 +343,16 @@ func (o *objectReader) inflate() ([]byte, error) {
 	if err != nil {
 		if err == zlib.ErrHeader {
 			return nil, zlib.ErrHeader
-		} else {
-			return nil, NewError("error opening packfile's object zlib: %v", err)
 		}
+
+		return nil, NewError("error opening packfile's object zlib: %v", err)
 	}
+
 	defer zr.Close()
 
-	if o.size > SIZE_LIMIT {
-		return nil, NewError("the object size exceeed the allowed limit: %d", o.size)
+	if o.size > o.maxSize {
+		return nil, NewError("the object size %q exceeed the allowed limit: %q",
+			o.size, o.maxSize)
 	}
 
 	var buf bytes.Buffer

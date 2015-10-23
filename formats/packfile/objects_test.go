@@ -45,6 +45,34 @@ func (s *ObjectsSuite) TestCommitHash(c *C) {
 	c.Assert(commit.Hash().String(), Equals, "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
 }
 
+var TreeFixture = "MTAwNjQ0IC5naXRpZ25vcmUAMoWKrTw4PtH/Cg+b3yMdVKAMnogxMDA2NDQgQ0hBTkdFTE9HANP/U+BWSp+H2OhLbijlBg5RcAiqMTAwNjQ0IExJQ0VOU0UAwZK9aiTqGrAdeGhuQXyL3Hw9GX8xMDA2NDQgYmluYXJ5LmpwZwDVwPSrgRiXyt8DrsNYrmDSH5HFDTQwMDAwIGdvAKOXcadlH5f69ccuCCJNhX/DUTPbNDAwMDAganNvbgBah35qkGonQ61uRdmcF5NkKq+O2jQwMDAwIHBocABYavVn0Ltedx5JvdlDT14Pt20l+jQwMDAwIHZlbmRvcgDPSqOziXT7fYHzZ8CDD3141lq4aw=="
+
+func (s *ObjectsSuite) TestParseTree(c *C) {
+	data, _ := base64.StdEncoding.DecodeString(TreeFixture)
+	tree, err := ParseTree(data)
+	c.Assert(err, IsNil)
+
+	c.Assert(tree.Entries, HasLen, 8)
+	c.Assert(tree.Entries[0].Name, Equals, ".gitignore")
+	c.Assert(tree.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+}
+
+func (s *ObjectsSuite) TestTreeHash(c *C) {
+	data, _ := base64.StdEncoding.DecodeString(TreeFixture)
+	tree, err := ParseTree(data)
+
+	c.Assert(err, IsNil)
+	c.Assert(tree.Hash().String(), Equals, "a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+}
+
+func (s *ObjectsSuite) TestBlobHash(c *C) {
+	blob, err := ParseBlob([]byte{'F', 'O', 'O'})
+	c.Assert(err, IsNil)
+
+	c.Assert(blob.Len, Equals, 3)
+	c.Assert(blob.Hash().String(), Equals, "d96c7efbfec2814ae0301ad054dc8d9fc416c9b5")
+}
+
 func (s *ObjectsSuite) TestParseSignature(c *C) {
 	cases := map[string]Signature{
 		`Foo Bar <foo@bar.com> 1257894000 +0100`: {
