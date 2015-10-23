@@ -2,7 +2,6 @@ package pktline
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 )
@@ -13,23 +12,29 @@ var (
 	ErrInvalidLen    = errors.New("invalid length")
 )
 
+// Decoder implements a pkt-line format decoder
 type Decoder struct {
 	r io.Reader
 }
 
+// NewDecoder returns a new Decoder
 func NewDecoder(r io.Reader) *Decoder {
 	return &Decoder{r}
 }
 
+// ReadLine reads and return one pkt-line line from the reader
+func (d *Decoder) ReadLine() (string, error) {
+	return d.readLine()
+}
+
 func (d *Decoder) readLine() (string, error) {
-	raw := make([]byte, HEADER_LENGTH)
+	raw := make([]byte, HeaderLength)
 	if _, err := d.r.Read(raw); err != nil {
 		return "", err
 	}
+
 	header, err := strconv.ParseInt(string(raw), 16, 16)
 	if err != nil {
-		fmt.Println(err)
-
 		return "", ErrInvalidHeader
 	}
 
@@ -37,7 +42,7 @@ func (d *Decoder) readLine() (string, error) {
 		return "", nil
 	}
 
-	exp := int(header - HEADER_LENGTH)
+	exp := int(header - HeaderLength)
 	if exp < 0 {
 		return "", ErrInvalidLen
 	}
@@ -52,12 +57,10 @@ func (d *Decoder) readLine() (string, error) {
 	return string(line), nil
 }
 
-func (d *Decoder) ReadLine() (string, error) {
-	return d.readLine()
-}
-
+// ReadBlock reads and return multiple pkt-line lines, it stops at the end
+// of the reader or if a flush-pkt is reached
 func (d *Decoder) ReadBlock() ([]string, error) {
-	o := make([]string, 0)
+	var o []string
 
 	for {
 		line, err := d.readLine()
@@ -75,10 +78,9 @@ func (d *Decoder) ReadBlock() ([]string, error) {
 
 		o = append(o, line)
 	}
-
-	return o, nil
 }
 
+// ReadAll read and returns all the lines
 func (d *Decoder) ReadAll() ([]string, error) {
 	result, err := d.ReadBlock()
 	if err != nil {
@@ -101,6 +103,4 @@ func (d *Decoder) ReadAll() ([]string, error) {
 
 		result = append(result, lines...)
 	}
-
-	return result, nil
 }
