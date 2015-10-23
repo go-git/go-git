@@ -48,8 +48,8 @@ func (t *TrackingByteReader) ReadByte() (c byte, err error) {
 type PackfileReader struct {
 	r *TrackingByteReader
 
-	objects map[string]packfileObject
-	offsets map[int]string
+	objects map[Hash]packfileObject
+	offsets map[int]Hash
 	deltas  []packfileDelta
 
 	contentCallback ContentCallback
@@ -61,15 +61,15 @@ type packfileObject struct {
 }
 
 type packfileDelta struct {
-	hash  string
+	hash  Hash
 	delta []byte
 }
 
 func NewPackfileReader(r io.Reader, l int, fn ContentCallback) (*PackfileReader, error) {
 	return &PackfileReader{
 		r:               &TrackingByteReader{r: r, n: 0, l: l},
-		objects:         make(map[string]packfileObject, 0),
-		offsets:         make(map[int]string, 0),
+		objects:         make(map[Hash]packfileObject, 0),
+		offsets:         make(map[int]Hash, 0),
 		contentCallback: fn,
 	}, nil
 }
@@ -196,7 +196,7 @@ const SIZE_LIMIT uint64 = 1 << 32 // 4GB
 type objectReader struct {
 	pr    *PackfileReader
 	pf    *Packfile
-	hash  string
+	hash  Hash
 	steps int
 
 	typ  int8
@@ -230,7 +230,7 @@ func newObjectReader(pr *PackfileReader, pf *Packfile) (*objectReader, error) {
 }
 
 func (o *objectReader) readREFDelta() error {
-	var ref [20]byte
+	var ref Hash
 	if _, err := o.Read(ref[:]); err != nil {
 		return err
 	}
@@ -240,10 +240,9 @@ func (o *objectReader) readREFDelta() error {
 		return err
 	}
 
-	refhash := fmt.Sprintf("%x", ref)
-	referenced, ok := o.pr.objects[refhash]
+	referenced, ok := o.pr.objects[ref]
 	if !ok {
-		o.pr.deltas = append(o.pr.deltas, packfileDelta{hash: refhash, delta: buf[:]})
+		o.pr.deltas = append(o.pr.deltas, packfileDelta{hash: ref, delta: buf[:]})
 	} else {
 		patched := PatchDelta(referenced.bytes, buf[:])
 		if patched == nil {
@@ -292,14 +291,14 @@ func (o *objectReader) readOFSDelta() error {
 		return err
 	}
 
-	refhash := o.pr.offsets[pos+offset]
-	referenced, ok := o.pr.objects[refhash]
+	ref := o.pr.offsets[pos+offset]
+	referenced, ok := o.pr.objects[ref]
 	if !ok {
 		return NewError("can't find a pack entry at %d", pos+offset)
 	} else {
 		patched := PatchDelta(referenced.bytes, buf)
 		if patched == nil {
-			return NewError("error while patching %x", refhash)
+			return NewError("error while patching %q", ref)
 		}
 		o.typ = referenced.typ
 		err = o.addObject(patched)
@@ -321,11 +320,11 @@ func (o *objectReader) readObject() error {
 }
 
 func (o *objectReader) addObject(bytes []byte) error {
-	var hash string
+	var hash Hash
 
 	switch o.typ {
 	case OBJ_COMMIT:
-		c, err := NewCommit(bytes)
+		c, err := ParseCommit(bytes)
 		if err != nil {
 			return err
 		}

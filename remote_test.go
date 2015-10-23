@@ -1,8 +1,9 @@
 package git
 
 import (
+	"gopkg.in/src-d/go-git.v2/formats/packfile"
+
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v2/packfile"
 )
 
 type SuiteRemote struct{}
