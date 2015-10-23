@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"strings"
 
@@ -72,9 +73,14 @@ func (r Capabilities) SymbolicReference(sym string) string {
 	return ""
 }
 
+type RemoteHead struct {
+	Id   string
+	Name string
+}
+
 type GitUploadPackInfo struct {
 	Capabilities Capabilities
-	Branches     map[string]string
+	Refs         map[string]*RemoteHead
 }
 
 func NewGitUploadPackInfo(d *pktline.Decoder) (*GitUploadPackInfo, error) {
@@ -92,7 +98,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 		return err
 	}
 
-	r.Branches = map[string]string{}
+	r.Refs = map[string]*RemoteHead{}
 	for _, line := range lines {
 		if !r.isValidLine(line) {
 			continue
@@ -118,15 +124,41 @@ func (r *GitUploadPackInfo) isValidLine(line string) bool {
 }
 
 func (r *GitUploadPackInfo) readLine(line string) {
-	commit, branch := r.getCommitAndBranch(line)
-	r.Branches[branch] = commit
+	rh := r.getRemoteHead(line)
+	r.Refs[rh.Name] = rh
 }
 
-func (r *GitUploadPackInfo) getCommitAndBranch(line string) (string, string) {
+func (r *GitUploadPackInfo) getRemoteHead(line string) *RemoteHead {
 	parts := strings.Split(strings.Trim(line, " \n"), " ")
 	if len(parts) != 2 {
-		return "", ""
+		return nil
 	}
 
-	return parts[0], parts[1]
+	return &RemoteHead{parts[0], parts[1]}
+}
+
+type GitUploadPackRequest struct {
+	Want []string
+	Have []string
+}
+
+func (r *GitUploadPackRequest) String() string {
+	b, _ := ioutil.ReadAll(r.Reader())
+	return string(b)
+}
+
+func (r *GitUploadPackRequest) Reader() *strings.Reader {
+	e := pktline.NewEncoder()
+	for _, want := range r.Want {
+		e.AddLine(fmt.Sprintf("want %s", want))
+	}
+
+	for _, have := range r.Have {
+		e.AddLine(fmt.Sprintf("have %s", have))
+	}
+
+	e.AddFlush()
+	e.AddLine("done")
+
+	return e.GetReader()
 }

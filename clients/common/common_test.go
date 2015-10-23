@@ -1,9 +1,12 @@
 package common
 
 import (
+	"bytes"
+	"encoding/base64"
 	"testing"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v2/pktline"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -34,4 +37,26 @@ const CapabilitiesFixture = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_
 func (s *SuiteCommon) TestCapabilitiesSymbolicReference(c *C) {
 	cap := parseCapabilities(CapabilitiesFixture)
 	c.Assert(cap.SymbolicReference("HEAD"), Equals, "refs/heads/master")
+}
+
+const GitUploadPackInfoFixture = "MDAxZSMgc2VydmljZT1naXQtdXBsb2FkLXBhY2sKMDAwMDAxMGM2ZWNmMGVmMmMyZGZmYjc5NjAzM2U1YTAyMjE5YWY4NmVjNjU4NGU1IEhFQUQAbXVsdGlfYWNrIHRoaW4tcGFjayBzaWRlLWJhbmQgc2lkZS1iYW5kLTY0ayBvZnMtZGVsdGEgc2hhbGxvdyBuby1wcm9ncmVzcyBpbmNsdWRlLXRhZyBtdWx0aV9hY2tfZGV0YWlsZWQgbm8tZG9uZSBzeW1yZWY9SEVBRDpyZWZzL2hlYWRzL21hc3RlciBhZ2VudD1naXQvMjoyLjQuOH5kYnVzc2luay1maXgtZW50ZXJwcmlzZS10b2tlbnMtY29tcGlsYXRpb24tMTE2Ny1nYzcwMDZjZgowMDNmZThkM2ZmYWI1NTI4OTVjMTliOWZjZjdhYTI2NGQyNzdjZGUzMzg4MSByZWZzL2hlYWRzL2JyYW5jaAowMDNmNmVjZjBlZjJjMmRmZmI3OTYwMzNlNWEwMjIxOWFmODZlYzY1ODRlNSByZWZzL2hlYWRzL21hc3RlcgowMDNlYjhlNDcxZjU4YmNiY2E2M2IwN2JkYTIwZTQyODE5MDQwOWMyZGI0NyByZWZzL3B1bGwvMS9oZWFkCjAwMDA="
+
+func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
+	b, _ := base64.StdEncoding.DecodeString(GitUploadPackInfoFixture)
+	info, err := NewGitUploadPackInfo(pktline.NewDecoder(bytes.NewBuffer(b)))
+	c.Assert(err, IsNil)
+
+	ref := info.Capabilities.SymbolicReference("HEAD")
+	c.Assert(ref, Equals, "refs/heads/master")
+	c.Assert(info.Refs[ref].Id, Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	c.Assert(info.Refs[ref].Name, Equals, "refs/heads/master")
+}
+
+func (s *SuiteCommon) TestGitUploadPackRequest(c *C) {
+	r := &GitUploadPackRequest{
+		Want: []string{"foo", "qux"},
+		Have: []string{"bar"},
+	}
+
+	c.Assert(r.String(), Equals, "000dwant foo\n000dwant qux\n000dhave bar\n00000009done\n")
 }

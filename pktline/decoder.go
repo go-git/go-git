@@ -2,6 +2,7 @@ package pktline
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 )
@@ -25,9 +26,10 @@ func (d *Decoder) readLine() (string, error) {
 	if _, err := d.r.Read(raw); err != nil {
 		return "", err
 	}
-
 	header, err := strconv.ParseInt(string(raw), 16, 16)
 	if err != nil {
+		fmt.Println(err)
+
 		return "", ErrInvalidHeader
 	}
 

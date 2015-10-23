@@ -1,6 +1,8 @@
 package git
 
 import (
+	"io"
+
 	"gopkg.in/src-d/go-git.v2/clients"
 	"gopkg.in/src-d/go-git.v2/clients/common"
 )
@@ -47,4 +49,16 @@ func (r *Remote) Capabilities() common.Capabilities {
 // DefaultBranch retrieve the name of the remote's default branch
 func (r *Remote) DefaultBranch() string {
 	return r.upInfo.Capabilities.SymbolicReference("HEAD")
+}
+
+// Fetch returns a reader using the request
+func (r *Remote) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) {
+	return r.upSrv.Fetch(req)
+}
+
+// FetchDefaultBranch returns a reader for the default branch
+func (r *Remote) FetchDefaultBranch() (io.ReadCloser, error) {
+	return r.Fetch(&common.GitUploadPackRequest{
+		Want: []string{r.upInfo.Refs[r.DefaultBranch()].Id},
+	})
 }

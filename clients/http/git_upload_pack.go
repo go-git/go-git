@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -28,7 +29,8 @@ func (s *GitUploadPackService) Connect(url common.Endpoint) error {
 }
 
 func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
-	res, err := s.doRequest("GET", common.GitUploadPackServiceName, nil)
+	url := fmt.Sprintf("%s/info/refs?service=%s", s.endpoint, common.GitUploadPackServiceName)
+	res, err := s.doRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -39,13 +41,28 @@ func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	return common.NewGitUploadPackInfo(dec)
 }
 
-func (s *GitUploadPackService) doRequest(method, service string, content *strings.Reader) (*http.Response, error) {
+func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadCloser, error) {
+	url := fmt.Sprintf("%s/%s", s.endpoint, common.GitUploadPackServiceName)
+	res, err := s.doRequest("POST", url, r.Reader())
+	if err != nil {
+		return nil, err
+	}
+
+	h := make([]byte, 8)
+	if _, err := res.Body.Read(h); err != nil {
+		return nil, err
+	}
+
+	return res.Body, nil
+}
+
+func (s *GitUploadPackService) doRequest(method, url string, content *strings.Reader) (*http.Response, error) {
 	var body io.Reader
 	if content != nil {
 		body = content
 	}
 
-	req, err := http.NewRequest(method, s.endpoint.Service(service), body)
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
