@@ -22,7 +22,7 @@ script:
   - tail -n +2 tmp.out >> coverage.out
   - go test -v gopkg.in/src-d/go-git.v2/packfile -covermode=count -coverprofile=tmp.out
   - tail -n +2 tmp.out >> coverage.out
-  - go test -v gopkg.in/src-d/go-git.v2/pktline -covermode=count -coverprofile=tmp.out
+  - go test -v gopkg.in/src-d/go-git.v2/formats/pktline -covermode=count -coverprofile=tmp.out
   - tail -n +2 tmp.out >> coverage.out
 
 after_success:
