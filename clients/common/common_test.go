@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v2/pktline"
+	"gopkg.in/src-d/go-git.v2/formats/pktline"
 )
 
 func Test(t *testing.T) { TestingT(t) }

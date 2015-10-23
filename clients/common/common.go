@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"gopkg.in/sourcegraph/go-vcsurl.v1"
-	"gopkg.in/src-d/go-git.v2/pktline"
+	"gopkg.in/src-d/go-git.v2/formats/pktline"
 )
 
 const GitUploadPackServiceName = "git-upload-pack"
@@ -160,5 +160,5 @@ func (r *GitUploadPackRequest) Reader() *strings.Reader {
 	e.AddFlush()
 	e.AddLine("done")
 
-	return e.GetReader()
+	return e.Reader()
 }
