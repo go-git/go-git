@@ -1,8 +1,9 @@
 package git
 
 import (
+	"gopkg.in/src-d/go-git.v2/formats/packfile"
+
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v2/packfile"
 )
 
 type SuiteRemote struct{}
@@ -39,7 +40,7 @@ func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
 	reader, err := r.FetchDefaultBranch()
 	c.Assert(err, IsNil)
 
-	pr, err := packfile.NewPackfileReader(reader, 8<<20, nil)
+	pr, err := packfile.NewPackfileReader(reader, nil)
 	c.Assert(err, IsNil)
 
 	pf, err := pr.Read()

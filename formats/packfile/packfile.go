@@ -7,16 +7,16 @@ type Packfile struct {
 	Size        int64
 	ObjectCount int
 	Checksum    []byte
-	Commits     map[string]*Commit
-	Trees       map[string]*Tree
-	Blobs       map[string]*Blob
+	Commits     map[Hash]*Commit
+	Trees       map[Hash]*Tree
+	Blobs       map[Hash]*Blob
 }
 
 func NewPackfile() *Packfile {
 	return &Packfile{
-		Commits: make(map[string]*Commit, 0),
-		Trees:   make(map[string]*Tree, 0),
-		Blobs:   make(map[string]*Blob, 0),
+		Commits: make(map[Hash]*Commit, 0),
+		Trees:   make(map[Hash]*Tree, 0),
+		Blobs:   make(map[Hash]*Blob, 0),
 	}
 }
 
@@ -43,14 +43,13 @@ func (b SubtreeEntry) Path() string { return b.path }
 
 type TreeCh <-chan treeEntry
 
-func (p *Packfile) WalkCommit(commitHash string) (TreeCh, error) {
+func (p *Packfile) WalkCommit(commitHash Hash) (TreeCh, error) {
 	commit, ok := p.Commits[commitHash]
 	if !ok {
 		return nil, fmt.Errorf("Unable to find %q commit", commitHash)
 	}
 
-	treeHash := fmt.Sprintf("%x", string(commit.Tree))
-	return p.WalkTree(p.Trees[treeHash]), nil
+	return p.WalkTree(p.Trees[commit.Tree]), nil
 }
 
 func (p *Packfile) WalkTree(tree *Tree) TreeCh {

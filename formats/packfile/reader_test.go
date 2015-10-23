@@ -14,7 +14,7 @@ func TestReadPackfile(t *testing.T) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 	d := bytes.NewReader(data)
 
-	r, err := NewPackfileReader(d, 8<<20, nil)
+	r, err := NewPackfileReader(d, nil)
 	assert.Nil(t, err)
 
 	p, err := r.Read()
@@ -26,7 +26,7 @@ func TestReadPackfile(t *testing.T) {
 }
 
 func TestReadPackfileInvalid(t *testing.T) {
-	r, err := NewPackfileReader(bytes.NewReader([]byte("dasdsadasas")), 8<<20, nil)
+	r, err := NewPackfileReader(bytes.NewReader([]byte("dasdsadasas")), nil)
 	assert.Nil(t, err)
 
 	_, err = r.Read()
