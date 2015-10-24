@@ -19,6 +19,12 @@ func (s *ObjectsSuite) TestComputeHash(c *C) {
 	c.Assert(hash.String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
 }
 
+func (s *ObjectsSuite) TestNewHash(c *C) {
+	hash := ComputeHash("blob", []byte("Hello, World!\n"))
+
+	c.Assert(hash, Equals, NewHash(hash.String()))
+}
+
 var CommitFixture = "dHJlZSBjMmQzMGZhOGVmMjg4NjE4ZjY1ZjZlZWQ2ZTE2OGUwZDUxNDg4NmY0CnBhcmVudCBiMDI5NTE3ZjYzMDBjMmRhMGY0YjY1MWI4NjQyNTA2Y2Q2YWFmNDVkCnBhcmVudCBiOGU0NzFmNThiY2JjYTYzYjA3YmRhMjBlNDI4MTkwNDA5YzJkYjQ3CmF1dGhvciBNw6F4aW1vIEN1YWRyb3MgPG1jdWFkcm9zQGdtYWlsLmNvbT4gMTQyNzgwMjQzNCArMDIwMApjb21taXR0ZXIgTcOheGltbyBDdWFkcm9zIDxtY3VhZHJvc0BnbWFpbC5jb20+IDE0Mjc4MDI0MzQgKzAyMDAKCk1lcmdlIHB1bGwgcmVxdWVzdCAjMSBmcm9tIGRyaXBvbGxlcy9mZWF0dXJlCgpDcmVhdGluZyBjaGFuZ2Vsb2c="
 
 func (s *ObjectsSuite) TestParseCommit(c *C) {

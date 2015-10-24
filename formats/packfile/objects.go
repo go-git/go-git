@@ -37,6 +37,15 @@ func ComputeHash(t ObjectType, content []byte) Hash {
 	return Hash(sha1.Sum(h))
 }
 
+func NewHash(s string) Hash {
+	b, _ := hex.DecodeString(s)
+
+	var h Hash
+	copy(h[:], b)
+
+	return h
+}
+
 func (h Hash) String() string {
 	return hex.EncodeToString(h[:])
 }
