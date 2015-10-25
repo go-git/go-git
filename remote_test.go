@@ -43,7 +43,7 @@ func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
 	pr, err := packfile.NewPackfileReader(reader, nil)
 	c.Assert(err, IsNil)
 
-	pf, err := pr.Read()
+	ch, err := pr.Read()
 	c.Assert(err, IsNil)
-	c.Assert(pf.ObjectCount, Equals, 28)
+	c.Assert(ch, NotNil)
 }

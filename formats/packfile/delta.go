@@ -1,5 +1,7 @@
 package packfile
 
+import "io"
+
 const delta_size_min = 4
 
 func deltaHeaderSize(b []byte) (uint, []byte) {
@@ -90,4 +92,25 @@ func PatchDelta(src, delta []byte) []byte {
 		}
 	}
 	return dest
+}
+
+func decodeOffset(src io.ByteReader, steps int) (int, error) {
+	b, err := src.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	var offset = int(b & 0x7f)
+	for (b & 0x80) != 0 {
+		offset++ // WHY?
+		b, err = src.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+
+		offset = (offset << 7) + int(b&0x7f)
+	}
+
+	// offset needs to be aware of the bytes we read for `o.typ` and `o.size`
+	offset += steps
+	return -offset, nil
 }

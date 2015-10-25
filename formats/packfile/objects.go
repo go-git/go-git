@@ -36,6 +36,7 @@ func (t ObjectType) String() string {
 type RAWObject struct {
 	Hash  Hash
 	Type  ObjectType
+	Size  uint64
 	Bytes []byte
 }
 

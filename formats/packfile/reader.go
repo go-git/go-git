@@ -9,10 +9,16 @@ import (
 	"github.com/klauspost/compress/zlib"
 )
 
+type Format int
+
 const (
 	DefaultMaxObjectsLimit = 1 << 20
 	DefaultMaxObjectSize   = 1 << 32 // 4GB
 
+	VersionSupported        = 2
+	UnknownFormat    Format = 0
+	OFSDeltaFormat   Format = 1
+	REFDeltaFormat   Format = 2
 )
 
 type PackfileReader struct {
@@ -21,43 +27,34 @@ type PackfileReader struct {
 	// is defined by DefaultMaxObjectsLimit, usually the default limit is more
 	// than enough to work with any repository, working extremly big repositories
 	// where the number of object is bigger the memory can be exhausted.
-	MaxObjectsLimit int
+	MaxObjectsLimit uint32
 
 	// MaxObjectSize is the maximum size in bytes, reading objects with a bigger
 	// size cause a error. The default value is defined by DefaultMaxObjectSize
-	MaxObjectSize int
+	MaxObjectSize uint64
 
-	r               *trackingReader
-	objects         map[Hash]*RAWObject
-	offsets         map[int]Hash
-	deltas          []packfileDelta
-	contentCallback ContentCallback
-}
+	// Format specifies if we are using ref-delta's or ofs-delta's, choosing the
+	// correct format the memory usage is optimized
+	// https://github.com/git/git/blob/8d530c4d64ffcc853889f7b385f554d53db375ed/Documentation/technical/protocol-capabilities.txt#L154
+	Format Format
 
-type packfileObject struct {
-	bytes []byte
-	typ   ObjectType
-}
-
-type packfileDelta struct {
-	hash  Hash
-	delta []byte
+	r       *trackingReader
+	objects map[Hash]*RAWObject
+	offsets map[int]*RAWObject
 }
 
 func NewPackfileReader(r io.Reader, fn ContentCallback) (*PackfileReader, error) {
 	return &PackfileReader{
 		MaxObjectsLimit: DefaultMaxObjectsLimit,
 		MaxObjectSize:   DefaultMaxObjectSize,
-		r:               &trackingReader{r: r},
-		objects:         make(map[Hash]*RAWObject, 0),
-		offsets:         make(map[int]Hash, 0),
-		contentCallback: fn,
+
+		r:       &trackingReader{r: r},
+		objects: make(map[Hash]*RAWObject, 0),
+		offsets: make(map[int]*RAWObject, 0),
 	}, nil
 }
 
 func (pr *PackfileReader) Read() (chan *RAWObject, error) {
-	packfile := NewPackfile()
-
 	if err := pr.validateHeader(); err != nil {
 		if err == io.EOF {
 			// This is an empty repo. It's OK.
@@ -67,9 +64,13 @@ func (pr *PackfileReader) Read() (chan *RAWObject, error) {
 		return nil, err
 	}
 
-	ver, err := pr.readInt32()
+	version, err := pr.readInt32()
 	if err != nil {
 		return nil, err
+	}
+
+	if version > VersionSupported {
+		return nil, NewError("unsupported packfile version %d", version)
 	}
 
 	count, err := pr.readInt32()
@@ -77,19 +78,14 @@ func (pr *PackfileReader) Read() (chan *RAWObject, error) {
 		return nil, err
 	}
 
-	packfile.Version = uint32(ver)
-	packfile.ObjectCount = int(count)
-
-	if packfile.ObjectCount > pr.MaxObjectsLimit {
-		return nil, NewError("too many objects %d, limit is %d",
-			packfile.ObjectCount, pr.MaxObjectsLimit)
+	if count > pr.MaxObjectsLimit {
+		return nil, NewError("too many objects %d, limit is %d", count, pr.MaxObjectsLimit)
 	}
 
 	ch := make(chan *RAWObject, 1)
-
 	go pr.readObjects(ch, count)
 
-	packfile.Size = int64(pr.r.Pos())
+	// packfile.Size = int64(pr.r.Pos())
 
 	return ch, nil
 }
@@ -127,14 +123,20 @@ func (pr *PackfileReader) readObjects(ch chan *RAWObject, count uint32) error {
 
 	for i := 0; i < int(count); i++ {
 		var pos = pr.Pos()
-		obj, err := pr.readObject()
+		obj, err := pr.newRAWObject()
 		if err != nil && err != io.EOF {
 			fmt.Println(err)
 			return err
 		}
 
-		pr.offsets[pos] = obj.Hash
-		pr.objects[obj.Hash] = obj
+		if pr.Format == UnknownFormat || pr.Format == OFSDeltaFormat {
+			pr.offsets[pos] = obj
+		}
+
+		if pr.Format == UnknownFormat || pr.Format == REFDeltaFormat {
+			pr.objects[obj.Hash] = obj
+		}
+
 		ch <- obj
 
 		if err == io.EOF {
@@ -145,86 +147,61 @@ func (pr *PackfileReader) readObjects(ch chan *RAWObject, count uint32) error {
 	return nil
 }
 
-func (pr *PackfileReader) readObject() (*RAWObject, error) {
+func (pr *PackfileReader) Pos() int { return pr.r.Pos() }
 
-	o, err := newObjectReader(pr, pr.MaxObjectSize)
-	if err != nil {
+func (pr *PackfileReader) newRAWObject() (*RAWObject, error) {
+	raw := &RAWObject{}
+	steps := 0
+
+	var buf [1]byte
+	if _, err := pr.r.Read(buf[:]); err != nil {
 		return nil, err
 	}
 
-	raw := &RAWObject{Type: o.typ}
+	raw.Type = ObjectType((buf[0] >> 4) & 7)
+	raw.Size = uint64(buf[0] & 15)
+	steps++ // byte we just read to get `o.typ` and `o.size`
 
-	switch o.typ {
+	var shift uint = 4
+	for buf[0]&0x80 == 0x80 {
+		if _, err := pr.r.Read(buf[:]); err != nil {
+			return nil, err
+		}
+
+		raw.Size += uint64(buf[0]&0x7f) << shift
+		steps++ // byte we just read to update `o.size`
+		shift += 7
+	}
+
+	var err error
+	switch raw.Type {
 	case REFDeltaObject:
-		err = o.readREFDelta(raw)
+		err = pr.readREFDelta(raw)
 	case OFSDeltaObject:
-		err = o.readOFSDelta(raw)
+		err = pr.readOFSDelta(raw, steps)
 	case CommitObject, TreeObject, BlobObject, TagObject:
-		err = o.readObject(raw)
+		err = pr.readObject(raw)
 	default:
-		err = NewError("Invalid git object tag %q", o.typ)
-	}
-
-	if err != nil {
-		return nil, err
+		err = NewError("Invalid git object tag %q", raw.Type)
 	}
 
 	return raw, err
 }
 
-func (pr *PackfileReader) Pos() int { return pr.r.Pos() }
-
-type objectReader struct {
-	pr      *PackfileReader
-	pf      *Packfile
-	maxSize uint64
-
-	hash  Hash
-	steps int
-	typ   ObjectType
-	size  uint64
-}
-
-func newObjectReader(pr *PackfileReader, maxSize int) (*objectReader, error) {
-	o := &objectReader{pr: pr, maxSize: uint64(maxSize)}
-
-	var buf [1]byte
-	if _, err := o.Read(buf[:]); err != nil {
-		return nil, err
-	}
-
-	o.typ = ObjectType((buf[0] >> 4) & 7)
-	o.size = uint64(buf[0] & 15)
-	o.steps++ // byte we just read to get `o.typ` and `o.size`
-
-	var shift uint = 4
-	for buf[0]&0x80 == 0x80 {
-		if _, err := o.Read(buf[:]); err != nil {
-			return nil, err
-		}
-
-		o.size += uint64(buf[0]&0x7f) << shift
-		o.steps++ // byte we just read to update `o.size`
-		shift += 7
-	}
-
-	return o, nil
-}
-
-func (o *objectReader) readREFDelta(raw *RAWObject) error {
+func (pr *PackfileReader) readREFDelta(raw *RAWObject) error {
 	var ref Hash
-	if _, err := o.Read(ref[:]); err != nil {
+	if _, err := pr.r.Read(ref[:]); err != nil {
 		return err
 	}
 
-	buf, err := o.inflate()
+	buf, err := pr.inflate(raw.Size)
 	if err != nil {
 		return err
 	}
 
-	referenced, ok := o.pr.objects[ref]
+	referenced, ok := pr.objects[ref]
 	if !ok {
-		o.pr.deltas = append(o.pr.deltas, packfileDelta{hash: ref, delta: buf[:]})
+		fmt.Println("not found", ref)
 	} else {
 		patched := PatchDelta(referenced.Bytes, buf[:])
 		if patched == nil {
@@ -233,67 +210,47 @@ func (o *objectReader) readREFDelta(raw *RAWObject) error {
 
 		raw.Type = referenced.Type
 		raw.Bytes = patched
+		raw.Size = uint64(len(patched))
 		raw.Hash = ComputeHash(raw.Type, raw.Bytes)
 	}
 
 	return nil
 }
 
-func decodeOffset(src io.ByteReader, steps int) (int, error) {
-	b, err := src.ReadByte()
-	if err != nil {
-		return 0, err
-	}
-	var offset = int(b & 0x7f)
-	for (b & 0x80) != 0 {
-		offset++ // WHY?
-		b, err = src.ReadByte()
-		if err != nil {
-			return 0, err
-		}
-
-		offset = (offset << 7) + int(b&0x7f)
-	}
-
-	// offset needs to be aware of the bytes we read for `o.typ` and `o.size`
-	offset += steps
-	return -offset, nil
-}
-
-func (o *objectReader) readOFSDelta(raw *RAWObject) error {
-	var pos = o.pr.Pos()
+func (pr *PackfileReader) readOFSDelta(raw *RAWObject, steps int) error {
+	var pos = pr.Pos()
 
 	// read negative offset
-	offset, err := decodeOffset(o.pr.r, o.steps)
+	offset, err := decodeOffset(pr.r, steps)
 	if err != nil {
 		return err
 	}
 
-	buf, err := o.inflate()
+	buf, err := pr.inflate(raw.Size)
 	if err != nil {
 		return err
 	}
 
-	ref := o.pr.offsets[pos+offset]
-	referenced, ok := o.pr.objects[ref]
+	ref, ok := pr.offsets[pos+offset]
 	if !ok {
 		return NewError("can't find a pack entry at %d", pos+offset)
 	}
 
-	patched := PatchDelta(referenced.Bytes, buf)
+	patched := PatchDelta(ref.Bytes, buf)
 	if patched == nil {
 		return NewError("error while patching %q", ref)
 	}
 
-	raw.Type = referenced.Type
+	raw.Type = ref.Type
 	raw.Bytes = patched
+	raw.Size = uint64(len(patched))
 	raw.Hash = ComputeHash(raw.Type, raw.Bytes)
 
 	return nil
 }
 
-func (o *objectReader) readObject(raw *RAWObject) error {
-	buf, err := o.inflate()
+func (pr *PackfileReader) readObject(raw *RAWObject) error {
+	buf, err := pr.inflate(raw.Size)
 	if err != nil {
 		return err
 	}
@@ -304,8 +261,8 @@ func (o *objectReader) readObject(raw *RAWObject) error {
 	return nil
 }
 
-func (o *objectReader) inflate() ([]byte, error) {
-	zr, err := zlib.NewReader(o.pr.r)
+func (pr *PackfileReader) inflate(size uint64) ([]byte, error) {
+	zr, err := zlib.NewReader(pr.r)
 	if err != nil {
 		if err == zlib.ErrHeader {
 			return nil, zlib.ErrHeader
@@ -316,28 +273,20 @@ func (o *objectReader) inflate() ([]byte, error) {
 
 	defer zr.Close()
 
-	if o.size > o.maxSize {
+	if size > pr.MaxObjectSize {
 		return nil, NewError("the object size %q exceeed the allowed limit: %q",
-			o.size, o.maxSize)
+			size, pr.MaxObjectSize)
 	}
 
 	var buf bytes.Buffer
 	io.Copy(&buf, zr) // also: io.CopyN(&buf, zr, int64(o.size))
 
-	var bufLen = buf.Len()
-	if bufLen != int(o.size) {
-		return nil, NewError("inflated size mismatch, expected %d, got %d", o.size, bufLen)
+	if buf.Len() != int(size) {
+		return nil, NewError(
+			"inflated size mismatch, expected %d, got %d", size, buf.Len())
 	}
 
 	return buf.Bytes(), nil
-}
-
-func (o *objectReader) Read(p []byte) (int, error) {
-	return o.pr.r.Read(p)
-}
-
-func (o *objectReader) ReadByte() (byte, error) {
-	return o.pr.r.ReadByte()
 }
 
 type ReaderError struct {

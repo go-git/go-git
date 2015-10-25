@@ -3,7 +3,12 @@ package packfile
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"os"
+	"runtime"
+	"time"
+
+	"github.com/dustin/go-humanize"
 
 	. "gopkg.in/check.v1"
 )
@@ -40,20 +45,21 @@ func (s *ReaderSuite) TestReadPackfile(c *C) {
 }
 
 func (s *ReaderSuite) TestReadPackfileOFSDelta(c *C) {
-	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ofs-delta")
+	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ofs-delta", OFSDeltaFormat)
 
 }
 func (s *ReaderSuite) TestReadPackfileREFDelta(c *C) {
-	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ref-delta")
+	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ref-delta", REFDeltaFormat)
 }
 
-func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string) {
+func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 	d, err := os.Open(file)
 	c.Assert(err, IsNil)
 
 	r, err := NewPackfileReader(d, nil)
 	c.Assert(err, IsNil)
 
+	r.Format = f
 	ch, err := r.Read()
 	c.Assert(err, IsNil)
 
@@ -89,13 +95,99 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string) {
 	})
 }
 
-func AssertObjects(c *C, ch chan *RAWObject, expected []string) {
-	i := 0
-	for obtained := range ch {
-		c.Assert(obtained.Hash.String(), Equals, expected[i])
-		computed := ComputeHash(obtained.Type, obtained.Bytes)
-		c.Assert(computed.String(), Equals, expected[i])
+func AssertObjects(c *C, ch chan *RAWObject, expects []string) {
+	for _, expected := range expects {
+		obtained := <-ch
+		c.Assert(obtained.Hash.String(), Equals, expected)
 
-		i++
+		computed := ComputeHash(obtained.Type, obtained.Bytes)
+		c.Assert(computed.String(), Equals, expected)
+		c.Assert(obtained.Bytes, HasLen, int(obtained.Size))
 	}
+}
+
+func (s *ReaderSuite) BenchmarkFixtureRef(c *C) {
+	for i := 0; i < c.N; i++ {
+		readFromFile(c, "fixtures/git-fixture.ref-delta", REFDeltaFormat)
+	}
+}
+
+func (s *ReaderSuite) BenchmarkFixtureOfs(c *C) {
+	for i := 0; i < c.N; i++ {
+		readFromFile(c, "fixtures/git-fixture.ofs-delta", OFSDeltaFormat)
+	}
+}
+
+func (s *ReaderSuite) BenchmarkCandyJS(c *C) {
+	for i := 0; i < c.N; i++ {
+		readFromFile(c, "/tmp/go-candyjs", REFDeltaFormat)
+	}
+}
+
+func (s *ReaderSuite) BenchmarkSymfony(c *C) {
+	for i := 0; i < c.N; i++ {
+		readFromFile(c, "/tmp/symonfy", REFDeltaFormat)
+	}
+}
+
+func (s *ReaderSuite) BenchmarkGit(c *C) {
+	for i := 0; i < c.N; i++ {
+		readFromFile(c, "/tmp/git", REFDeltaFormat)
+	}
+}
+
+func (s *ReaderSuite) _TestMemoryOFS(c *C) {
+	var b, a runtime.MemStats
+
+	start := time.Now()
+	runtime.ReadMemStats(&b)
+	p := readFromFile(c, "/tmp/symfony.ofs-delta", OFSDeltaFormat)
+	runtime.ReadMemStats(&a)
+
+	fmt.Println("OFS--->")
+	fmt.Println("Alloc", a.Alloc-b.Alloc, humanize.Bytes(a.Alloc-b.Alloc))
+	fmt.Println("TotalAlloc", a.TotalAlloc-b.TotalAlloc, humanize.Bytes(a.TotalAlloc-b.TotalAlloc))
+	fmt.Println("HeapAlloc", a.HeapAlloc-b.HeapAlloc, humanize.Bytes(a.HeapAlloc-b.HeapAlloc))
+	fmt.Println("HeapSys", a.HeapSys, humanize.Bytes(a.HeapSys-b.HeapSys))
+
+	fmt.Println("objects", len(p))
+	fmt.Println("time", time.Since(start))
+}
+
+func (s *ReaderSuite) _TestMemoryREF(c *C) {
+	var b, a runtime.MemStats
+
+	start := time.Now()
+	runtime.ReadMemStats(&b)
+	p := readFromFile(c, "/tmp/symonfy", REFDeltaFormat)
+	runtime.ReadMemStats(&a)
+
+	fmt.Println("REF--->")
+	fmt.Println("Alloc", a.Alloc-b.Alloc, humanize.Bytes(a.Alloc-b.Alloc))
+	fmt.Println("TotalAlloc", a.TotalAlloc-b.TotalAlloc, humanize.Bytes(a.TotalAlloc-b.TotalAlloc))
+	fmt.Println("HeapAlloc", a.HeapAlloc-b.HeapAlloc, humanize.Bytes(a.HeapAlloc-b.HeapAlloc))
+	fmt.Println("HeapSys", a.HeapSys, humanize.Bytes(a.HeapSys-b.HeapSys))
+
+	fmt.Println("objects", len(p))
+	fmt.Println("time", time.Since(start))
+}
+
+func readFromFile(c *C, file string, f Format) []*RAWObject {
+	d, err := os.Open(file)
+	c.Assert(err, IsNil)
+
+	r, err := NewPackfileReader(d, nil)
+	c.Assert(err, IsNil)
+
+	r.Format = f
+	ch, err := r.Read()
+	c.Assert(err, IsNil)
+	c.Assert(ch, NotNil)
+
+	var objs []*RAWObject
+	for o := range ch {
+		objs = append(objs, o)
+	}
+
+	return objs
 }
