@@ -1,76 +1,19 @@
-package packfile
+package git
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
+
+	"gopkg.in/src-d/go-git.v2/common"
 )
-
-type ObjectType int8
-
-const (
-	CommitObject   ObjectType = 1
-	TreeObject     ObjectType = 2
-	BlobObject     ObjectType = 3
-	TagObject      ObjectType = 4
-	OFSDeltaObject ObjectType = 6
-	REFDeltaObject ObjectType = 7
-)
-
-func (t ObjectType) String() string {
-	switch t {
-	case CommitObject:
-		return "commit"
-	case TreeObject:
-		return "tree"
-	case BlobObject:
-		return "blob"
-	default:
-		return "-"
-	}
-}
-
-type RAWObject struct {
-	Hash  Hash
-	Type  ObjectType
-	Size  uint64
-	Bytes []byte
-}
 
 // Object generic object interface
 type Object interface {
-	Type() ObjectType
-	Hash() Hash
-}
-
-// Hash SHA1 hased content
-type Hash [20]byte
-
-// ComputeHash compute the hash for a given objType and content
-func ComputeHash(t ObjectType, content []byte) Hash {
-	h := []byte(t.String())
-	h = append(h, ' ')
-	h = strconv.AppendInt(h, int64(len(content)), 10)
-	h = append(h, 0)
-	h = append(h, content...)
-
-	return Hash(sha1.Sum(h))
-}
-
-func NewHash(s string) Hash {
-	b, _ := hex.DecodeString(s)
-
-	var h Hash
-	copy(h[:], b)
-
-	return h
-}
-
-func (h Hash) String() string {
-	return hex.EncodeToString(h[:])
+	Type() common.ObjectType
+	Hash() common.Hash
 }
 
 // Commit points to a single tree, marking it as what the project looked like
@@ -79,17 +22,17 @@ func (h Hash) String() string {
 // commit, a pointer to the previous commit(s), etc.
 // http://schacon.github.io/gitbook/1_the_git_object_model.html
 type Commit struct {
-	Tree      Hash
-	Parents   []Hash
+	Tree      common.Hash
+	Parents   []common.Hash
 	Author    Signature
 	Committer Signature
 	Message   string
-	hash      Hash
+	hash      common.Hash
 }
 
 // ParseCommit transform a byte slice into a Commit struct
 func ParseCommit(b []byte) (*Commit, error) {
-	o := &Commit{hash: ComputeHash(CommitObject, b)}
+	o := &Commit{hash: common.ComputeHash(common.CommitObject, b)}
 
 	lines := bytes.Split(b, []byte{'\n'})
 	for i := range lines {
@@ -101,7 +44,7 @@ func ParseCommit(b []byte) (*Commit, error) {
 			case "tree":
 				_, err = hex.Decode(o.Tree[:], split[1])
 			case "parent":
-				var h Hash
+				var h common.Hash
 				_, err = hex.Decode(h[:], split[1])
 				if err == nil {
 					o.Parents = append(o.Parents, h)
@@ -126,12 +69,12 @@ func ParseCommit(b []byte) (*Commit, error) {
 }
 
 // Type returns the object type
-func (o *Commit) Type() ObjectType {
-	return CommitObject
+func (o *Commit) Type() common.ObjectType {
+	return common.CommitObject
 }
 
 // Hash returns the computed hash of the commit
-func (o *Commit) Hash() Hash {
+func (o *Commit) Hash() common.Hash {
 	return o.hash
 }
 
@@ -139,18 +82,18 @@ func (o *Commit) Hash() Hash {
 // and/or blobs (i.e. files and sub-directories)
 type Tree struct {
 	Entries []TreeEntry
-	hash    Hash
+	hash    common.Hash
 }
 
 // TreeEntry represents a file
 type TreeEntry struct {
 	Name string
-	Hash Hash
+	Hash common.Hash
 }
 
 // ParseTree transform a byte slice into a Tree struct
 func ParseTree(b []byte) (*Tree, error) {
-	o := &Tree{hash: ComputeHash(TreeObject, b)}
+	o := &Tree{hash: common.ComputeHash(common.TreeObject, b)}
 
 	if len(b) == 0 {
 		return o, nil
@@ -176,40 +119,38 @@ func ParseTree(b []byte) (*Tree, error) {
 }
 
 // Type returns the object type
-func (o *Tree) Type() ObjectType {
-	return TreeObject
+func (o *Tree) Type() common.ObjectType {
+	return common.TreeObject
 }
 
 // Hash returns the computed hash of the tree
-func (o *Tree) Hash() Hash {
+func (o *Tree) Hash() common.Hash {
 	return o.hash
 }
 
 // Blob is used to store file data - it is generally a file.
 type Blob struct {
 	Len  int
-	hash Hash
+	hash common.Hash
 }
 
 // ParseBlob transform a byte slice into a Blob struct
 func ParseBlob(b []byte) (*Blob, error) {
 	return &Blob{
 		Len:  len(b),
-		hash: ComputeHash(BlobObject, b),
+		hash: common.ComputeHash(common.BlobObject, b),
 	}, nil
 }
 
 // Type returns the object type
-func (o *Blob) Type() ObjectType {
-	return BlobObject
+func (o *Blob) Type() common.ObjectType {
+	return common.BlobObject
 }
 
 // Hash returns the computed hash of the blob
-func (o *Blob) Hash() Hash {
+func (o *Blob) Hash() common.Hash {
 	return o.hash
 }
-
-type ContentCallback func(hash Hash, content []byte)
 
 // Signature represents an action signed by a person
 type Signature struct {

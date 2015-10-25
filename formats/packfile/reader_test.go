@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"testing"
 	"time"
 
-	"github.com/dustin/go-humanize"
+	"gopkg.in/src-d/go-git.v2/common"
 
+	"github.com/dustin/go-humanize"
 	. "gopkg.in/check.v1"
 )
+
+func Test(t *testing.T) { TestingT(t) }
 
 type ReaderSuite struct{}
 
@@ -23,13 +27,13 @@ func (s *ReaderSuite) TestReadPackfile(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 	d := bytes.NewReader(data)
 
-	r, err := NewPackfileReader(d, nil)
+	r := NewReader(d)
+
+	storage := common.NewRAWObjectStorage()
+	_, err := r.Read(storage)
 	c.Assert(err, IsNil)
 
-	ch, err := r.Read()
-	c.Assert(err, IsNil)
-
-	AssertObjects(c, ch, []string{
+	AssertObjects(c, storage, []string{
 		"778c85ff95b5514fea0ba4c7b6a029d32e2c3b96",
 		"db4002e880a08bf6cc7217512ad937f1ac8824a2",
 		"551fe11a9ef992763b7e0be4500cf7169f2f8575",
@@ -56,14 +60,14 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 	d, err := os.Open(file)
 	c.Assert(err, IsNil)
 
-	r, err := NewPackfileReader(d, nil)
-	c.Assert(err, IsNil)
-
+	r := NewReader(d)
 	r.Format = f
-	ch, err := r.Read()
+
+	storage := common.NewRAWObjectStorage()
+	_, err = r.Read(storage)
 	c.Assert(err, IsNil)
 
-	AssertObjects(c, ch, []string{
+	AssertObjects(c, storage, []string{
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 		"1669dce138d9b841a518c64b10914d88f5e488ea",
@@ -95,14 +99,12 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 	})
 }
 
-func AssertObjects(c *C, ch chan *RAWObject, expects []string) {
+func AssertObjects(c *C, s *common.RAWObjectStorage, expects []string) {
+	c.Assert(len(expects), Equals, len(s.Objects))
 	for _, expected := range expects {
-		obtained := <-ch
-		c.Assert(obtained.Hash.String(), Equals, expected)
-
-		computed := ComputeHash(obtained.Type, obtained.Bytes)
-		c.Assert(computed.String(), Equals, expected)
-		c.Assert(obtained.Bytes, HasLen, int(obtained.Size))
+		obtained, ok := s.Get(common.NewHash(expected))
+		c.Assert(ok, Equals, true)
+		c.Assert(obtained.Hash().String(), Equals, expected)
 	}
 }
 
@@ -150,7 +152,7 @@ func (s *ReaderSuite) _TestMemoryOFS(c *C) {
 	fmt.Println("HeapAlloc", a.HeapAlloc-b.HeapAlloc, humanize.Bytes(a.HeapAlloc-b.HeapAlloc))
 	fmt.Println("HeapSys", a.HeapSys, humanize.Bytes(a.HeapSys-b.HeapSys))
 
-	fmt.Println("objects", len(p))
+	fmt.Println("objects", len(p.Objects))
 	fmt.Println("time", time.Since(start))
 }
 
@@ -168,26 +170,20 @@ func (s *ReaderSuite) _TestMemoryREF(c *C) {
 	fmt.Println("HeapAlloc", a.HeapAlloc-b.HeapAlloc, humanize.Bytes(a.HeapAlloc-b.HeapAlloc))
 	fmt.Println("HeapSys", a.HeapSys, humanize.Bytes(a.HeapSys-b.HeapSys))
 
-	fmt.Println("objects", len(p))
+	fmt.Println("objects", len(p.Objects))
 	fmt.Println("time", time.Since(start))
 }
 
-func readFromFile(c *C, file string, f Format) []*RAWObject {
+func readFromFile(c *C, file string, f Format) *common.RAWObjectStorage {
 	d, err := os.Open(file)
 	c.Assert(err, IsNil)
 
-	r, err := NewPackfileReader(d, nil)
-	c.Assert(err, IsNil)
-
+	r := NewReader(d)
 	r.Format = f
-	ch, err := r.Read()
+
+	storage := common.NewRAWObjectStorage()
+	_, err = r.Read(storage)
 	c.Assert(err, IsNil)
-	c.Assert(ch, NotNil)
 
-	var objs []*RAWObject
-	for o := range ch {
-		objs = append(objs, o)
-	}
-
-	return objs
+	return storage
 }

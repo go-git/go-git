@@ -1,8 +1,5 @@
 package packfile
 
-// Code from:
-// https://github.com/gitchain/gitchain/tree/master/git @ 4c2fabdf9
-//
 // GIT pack format
 // ===============
 //

@@ -1,4 +1,4 @@
-package packfile
+package git
 
 import (
 	"encoding/base64"
@@ -10,20 +10,6 @@ import (
 type ObjectsSuite struct{}
 
 var _ = Suite(&ObjectsSuite{})
-
-func (s *ObjectsSuite) TestComputeHash(c *C) {
-	hash := ComputeHash(BlobObject, []byte(""))
-	c.Assert(hash.String(), Equals, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
-
-	hash = ComputeHash(BlobObject, []byte("Hello, World!\n"))
-	c.Assert(hash.String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
-}
-
-func (s *ObjectsSuite) TestNewHash(c *C) {
-	hash := ComputeHash(BlobObject, []byte("Hello, World!\n"))
-
-	c.Assert(hash, Equals, NewHash(hash.String()))
-}
 
 var CommitFixture = "dHJlZSBjMmQzMGZhOGVmMjg4NjE4ZjY1ZjZlZWQ2ZTE2OGUwZDUxNDg4NmY0CnBhcmVudCBiMDI5NTE3ZjYzMDBjMmRhMGY0YjY1MWI4NjQyNTA2Y2Q2YWFmNDVkCnBhcmVudCBiOGU0NzFmNThiY2JjYTYzYjA3YmRhMjBlNDI4MTkwNDA5YzJkYjQ3CmF1dGhvciBNw6F4aW1vIEN1YWRyb3MgPG1jdWFkcm9zQGdtYWlsLmNvbT4gMTQyNzgwMjQzNCArMDIwMApjb21taXR0ZXIgTcOheGltbyBDdWFkcm9zIDxtY3VhZHJvc0BnbWFpbC5jb20+IDE0Mjc4MDI0MzQgKzAyMDAKCk1lcmdlIHB1bGwgcmVxdWVzdCAjMSBmcm9tIGRyaXBvbGxlcy9mZWF0dXJlCgpDcmVhdGluZyBjaGFuZ2Vsb2c="
 

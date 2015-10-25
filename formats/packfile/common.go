@@ -6,11 +6,9 @@ import (
 )
 
 type trackingReader struct {
-	r io.Reader
-	n int
+	r        io.Reader
+	position int64
 }
-
-func (t *trackingReader) Pos() int { return t.n }
 
 func (t *trackingReader) Read(p []byte) (n int, err error) {
 	n, err = t.r.Read(p)
@@ -18,8 +16,7 @@ func (t *trackingReader) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 
-	t.n += n
-
+	t.position += int64(n)
 	return n, err
 }
 
@@ -34,6 +31,6 @@ func (t *trackingReader) ReadByte() (c byte, err error) {
 		return 0, fmt.Errorf("read %d bytes, should have read just 1", n)
 	}
 
-	t.n += n // n is 1
+	t.position++
 	return p[0], nil
 }
