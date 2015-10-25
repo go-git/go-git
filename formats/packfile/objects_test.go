@@ -12,15 +12,15 @@ type ObjectsSuite struct{}
 var _ = Suite(&ObjectsSuite{})
 
 func (s *ObjectsSuite) TestComputeHash(c *C) {
-	hash := ComputeHash("blob", []byte(""))
+	hash := ComputeHash(BlobObject, []byte(""))
 	c.Assert(hash.String(), Equals, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
 
-	hash = ComputeHash("blob", []byte("Hello, World!\n"))
+	hash = ComputeHash(BlobObject, []byte("Hello, World!\n"))
 	c.Assert(hash.String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
 }
 
 func (s *ObjectsSuite) TestNewHash(c *C) {
-	hash := ComputeHash("blob", []byte("Hello, World!\n"))
+	hash := ComputeHash(BlobObject, []byte("Hello, World!\n"))
 
 	c.Assert(hash, Equals, NewHash(hash.String()))
 }

@@ -13,12 +13,6 @@ const (
 	DefaultMaxObjectsLimit = 1 << 20
 	DefaultMaxObjectSize   = 1 << 32 // 4GB
 
-	rawCommit   = 1
-	rawTree     = 2
-	rawBlob     = 3
-	rawTag      = 4
-	rawOFSDelta = 6
-	rawREFDelta = 7
 )
 
 type PackfileReader struct {
@@ -34,7 +28,7 @@ type PackfileReader struct {
 	MaxObjectSize int
 
 	r               *trackingReader
-	objects         map[Hash]packfileObject
+	objects         map[Hash]*RAWObject
 	offsets         map[int]Hash
 	deltas          []packfileDelta
 	contentCallback ContentCallback
@@ -42,7 +36,7 @@ type PackfileReader struct {
 
 type packfileObject struct {
 	bytes []byte
-	typ   int8
+	typ   ObjectType
 }
 
 type packfileDelta struct {
@@ -55,20 +49,21 @@ func NewPackfileReader(r io.Reader, fn ContentCallback) (*PackfileReader, error)
 		MaxObjectsLimit: DefaultMaxObjectsLimit,
 		MaxObjectSize:   DefaultMaxObjectSize,
 		r:               &trackingReader{r: r},
-		objects:         make(map[Hash]packfileObject, 0),
+		objects:         make(map[Hash]*RAWObject, 0),
 		offsets:         make(map[int]Hash, 0),
 		contentCallback: fn,
 	}, nil
 }
 
-func (pr *PackfileReader) Read() (*Packfile, error) {
+func (pr *PackfileReader) Read() (chan *RAWObject, error) {
 	packfile := NewPackfile()
 
 	if err := pr.validateHeader(); err != nil {
 		if err == io.EOF {
 			// This is an empty repo. It's OK.
-			return packfile, nil
+			return nil, nil
 		}
+
 		return nil, err
 	}
 
@@ -90,13 +85,13 @@ func (pr *PackfileReader) Read() (*Packfile, error) {
 			packfile.ObjectCount, pr.MaxObjectsLimit)
 	}
 
-	if err := pr.readObjects(packfile); err != nil {
-		return nil, err
-	}
+	ch := make(chan *RAWObject, 1)
+
+	go pr.readObjects(ch, count)
 
 	packfile.Size = int64(pr.r.Pos())
 
-	return packfile, nil
+	return ch, nil
 }
 
 func (pr *PackfileReader) validateHeader() error {
@@ -121,20 +116,26 @@ func (pr *PackfileReader) readInt32() (uint32, error) {
 	return value, nil
 }
 
-func (pr *PackfileReader) readObjects(packfile *Packfile) error {
+func (pr *PackfileReader) readObjects(ch chan *RAWObject, count uint32) error {
 	// This code has 50-80 µs of overhead per object not counting zlib inflation.
 	// Together with zlib inflation, it's 400-410 µs for small objects.
 	// That's 1 sec for ~2450 objects, ~4.20 MB, or ~250 ms per MB,
 	// of which 12-20 % is _not_ zlib inflation (ie. is our code).
+	defer func() {
+		close(ch)
+	}()
 
-	for i := 0; i < packfile.ObjectCount; i++ {
+	for i := 0; i < int(count); i++ {
 		var pos = pr.Pos()
-		obj, err := pr.readObject(packfile)
+		obj, err := pr.readObject()
 		if err != nil && err != io.EOF {
+			fmt.Println(err)
 			return err
 		}
 
-		pr.offsets[pos] = obj.hash
+		pr.offsets[pos] = obj.Hash
+		pr.objects[obj.Hash] = obj
+		ch <- obj
 
 		if err == io.EOF {
 			break
@@ -144,19 +145,22 @@ func (pr *PackfileReader) readObjects(packfile *Packfile) error {
 	return nil
 }
 
-func (pr *PackfileReader) readObject(packfile *Packfile) (*objectReader, error) {
-	o, err := newObjectReader(pr, packfile, pr.MaxObjectSize)
+func (pr *PackfileReader) readObject() (*RAWObject, error) {
+
+	o, err := newObjectReader(pr, pr.MaxObjectSize)
 	if err != nil {
 		return nil, err
 	}
 
+	raw := &RAWObject{Type: o.typ}
+
 	switch o.typ {
-	case rawREFDelta:
-		err = o.readREFDelta()
-	case rawOFSDelta:
-		err = o.readOFSDelta()
-	case rawCommit, rawTree, rawBlob, rawTag:
-		err = o.readObject()
+	case REFDeltaObject:
+		err = o.readREFDelta(raw)
+	case OFSDeltaObject:
+		err = o.readOFSDelta(raw)
+	case CommitObject, TreeObject, BlobObject, TagObject:
+		err = o.readObject(raw)
 	default:
 		err = NewError("Invalid git object tag %q", o.typ)
 	}
@@ -165,7 +169,7 @@ func (pr *PackfileReader) readObject(packfile *Packfile) (*objectReader, error) 
 		return nil, err
 	}
 
-	return o, err
+	return raw, err
 }
 
 func (pr *PackfileReader) Pos() int { return pr.r.Pos() }
@@ -177,19 +181,19 @@ type objectReader struct {
 
 	hash  Hash
 	steps int
-	typ   int8
+	typ   ObjectType
 	size  uint64
 }
 
-func newObjectReader(pr *PackfileReader, pf *Packfile, maxSize int) (*objectReader, error) {
-	o := &objectReader{pr: pr, pf: pf, maxSize: uint64(maxSize)}
+func newObjectReader(pr *PackfileReader, maxSize int) (*objectReader, error) {
+	o := &objectReader{pr: pr, maxSize: uint64(maxSize)}
 
 	var buf [1]byte
 	if _, err := o.Read(buf[:]); err != nil {
 		return nil, err
 	}
 
-	o.typ = int8((buf[0] >> 4) & 7)
+	o.typ = ObjectType((buf[0] >> 4) & 7)
 	o.size = uint64(buf[0] & 15)
 	o.steps++ // byte we just read to get `o.typ` and `o.size`
 
@@ -207,7 +211,7 @@ func newObjectReader(pr *PackfileReader, pf *Packfile, maxSize int) (*objectRead
 	return o, nil
 }
 
-func (o *objectReader) readREFDelta() error {
+func (o *objectReader) readREFDelta(raw *RAWObject) error {
 	var ref Hash
 	if _, err := o.Read(ref[:]); err != nil {
 		return err
@@ -222,16 +226,14 @@ func (o *objectReader) readREFDelta() error {
 	if !ok {
 		o.pr.deltas = append(o.pr.deltas, packfileDelta{hash: ref, delta: buf[:]})
 	} else {
-		patched := PatchDelta(referenced.bytes, buf[:])
+		patched := PatchDelta(referenced.Bytes, buf[:])
 		if patched == nil {
 			return NewError("error while patching %x", ref)
 		}
 
-		o.typ = referenced.typ
-		err = o.addObject(patched)
-		if err != nil {
-			return err
-		}
+		raw.Type = referenced.Type
+		raw.Bytes = patched
+		raw.Hash = ComputeHash(raw.Type, raw.Bytes)
 	}
 
 	return nil
@@ -258,7 +260,7 @@ func decodeOffset(src io.ByteReader, steps int) (int, error) {
 	return -offset, nil
 }
 
-func (o *objectReader) readOFSDelta() error {
+func (o *objectReader) readOFSDelta(raw *RAWObject) error {
 	var pos = o.pr.Pos()
 
 	// read negative offset
@@ -278,62 +280,26 @@ func (o *objectReader) readOFSDelta() error {
 		return NewError("can't find a pack entry at %d", pos+offset)
 	}
 
-	patched := PatchDelta(referenced.bytes, buf)
+	patched := PatchDelta(referenced.Bytes, buf)
 	if patched == nil {
 		return NewError("error while patching %q", ref)
 	}
 
-	o.typ = referenced.typ
-	err = o.addObject(patched)
-	if err != nil {
-		return err
-	}
+	raw.Type = referenced.Type
+	raw.Bytes = patched
+	raw.Hash = ComputeHash(raw.Type, raw.Bytes)
 
 	return nil
 }
 
-func (o *objectReader) readObject() error {
+func (o *objectReader) readObject(raw *RAWObject) error {
 	buf, err := o.inflate()
 	if err != nil {
 		return err
 	}
 
-	return o.addObject(buf)
-}
-
-func (o *objectReader) addObject(bytes []byte) error {
-	var hash Hash
-
-	switch o.typ {
-	case rawCommit:
-		c, err := ParseCommit(bytes)
-		if err != nil {
-			return err
-		}
-		o.pf.Commits[c.Hash()] = c
-		hash = c.Hash()
-	case rawTree:
-		c, err := ParseTree(bytes)
-		if err != nil {
-			return err
-		}
-		o.pf.Trees[c.Hash()] = c
-		hash = c.Hash()
-	case rawBlob:
-		c, err := ParseBlob(bytes)
-		if err != nil {
-			return err
-		}
-		o.pf.Blobs[c.Hash()] = c
-		hash = c.Hash()
-
-		if o.pr.contentCallback != nil {
-			o.pr.contentCallback(hash, bytes)
-		}
-	}
-
-	o.pr.objects[hash] = packfileObject{bytes: bytes, typ: o.typ}
-	o.hash = hash
+	raw.Bytes = buf
+	raw.Hash = ComputeHash(raw.Type, raw.Bytes)
 
 	return nil
 }

@@ -9,13 +9,35 @@ import (
 	"time"
 )
 
-type ObjectType string
+type ObjectType int8
 
 const (
-	CommitObject ObjectType = "commit"
-	TreeObject   ObjectType = "tree"
-	BlobObject   ObjectType = "blob"
+	CommitObject   ObjectType = 1
+	TreeObject     ObjectType = 2
+	BlobObject     ObjectType = 3
+	TagObject      ObjectType = 4
+	OFSDeltaObject ObjectType = 6
+	REFDeltaObject ObjectType = 7
 )
+
+func (t ObjectType) String() string {
+	switch t {
+	case CommitObject:
+		return "commit"
+	case TreeObject:
+		return "tree"
+	case BlobObject:
+		return "blob"
+	default:
+		return "-"
+	}
+}
+
+type RAWObject struct {
+	Hash  Hash
+	Type  ObjectType
+	Bytes []byte
+}
 
 // Object generic object interface
 type Object interface {
@@ -28,7 +50,7 @@ type Hash [20]byte
 
 // ComputeHash compute the hash for a given objType and content
 func ComputeHash(t ObjectType, content []byte) Hash {
-	h := []byte(t)
+	h := []byte(t.String())
 	h = append(h, ' ')
 	h = strconv.AppendInt(h, int64(len(content)), 10)
 	h = append(h, 0)
