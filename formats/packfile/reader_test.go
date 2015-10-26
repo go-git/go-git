@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/src-d/go-git.v2/common"
+	"gopkg.in/src-d/go-git.v2/internal"
 
 	"github.com/dustin/go-humanize"
 	. "gopkg.in/check.v1"
@@ -29,7 +29,7 @@ func (s *ReaderSuite) TestReadPackfile(c *C) {
 
 	r := NewReader(d)
 
-	storage := common.NewRAWObjectStorage()
+	storage := internal.NewRAWObjectStorage()
 	_, err := r.Read(storage)
 	c.Assert(err, IsNil)
 
@@ -63,7 +63,7 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 	r := NewReader(d)
 	r.Format = f
 
-	storage := common.NewRAWObjectStorage()
+	storage := internal.NewRAWObjectStorage()
 	_, err = r.Read(storage)
 	c.Assert(err, IsNil)
 
@@ -99,10 +99,10 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 	})
 }
 
-func AssertObjects(c *C, s *common.RAWObjectStorage, expects []string) {
+func AssertObjects(c *C, s *internal.RAWObjectStorage, expects []string) {
 	c.Assert(len(expects), Equals, len(s.Objects))
 	for _, expected := range expects {
-		obtained, ok := s.Get(common.NewHash(expected))
+		obtained, ok := s.Get(internal.NewHash(expected))
 		c.Assert(ok, Equals, true)
 		c.Assert(obtained.Hash().String(), Equals, expected)
 	}
@@ -174,14 +174,14 @@ func (s *ReaderSuite) _TestMemoryREF(c *C) {
 	fmt.Println("time", time.Since(start))
 }
 
-func readFromFile(c *C, file string, f Format) *common.RAWObjectStorage {
+func readFromFile(c *C, file string, f Format) *internal.RAWObjectStorage {
 	d, err := os.Open(file)
 	c.Assert(err, IsNil)
 
 	r := NewReader(d)
 	r.Format = f
 
-	storage := common.NewRAWObjectStorage()
+	storage := internal.NewRAWObjectStorage()
 	_, err = r.Read(storage)
 	c.Assert(err, IsNil)
 

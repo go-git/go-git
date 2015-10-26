@@ -1,10 +1,12 @@
 package git
 
 import (
+	"fmt"
 	"io"
 
 	"gopkg.in/src-d/go-git.v2/clients"
 	"gopkg.in/src-d/go-git.v2/clients/common"
+	"gopkg.in/src-d/go-git.v2/internal"
 )
 
 type Remote struct {
@@ -58,7 +60,22 @@ func (r *Remote) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) 
 
 // FetchDefaultBranch returns a reader for the default branch
 func (r *Remote) FetchDefaultBranch() (io.ReadCloser, error) {
+	ref, err := r.Ref(r.DefaultBranch())
+	if err != nil {
+		return nil, err
+	}
+
 	return r.Fetch(&common.GitUploadPackRequest{
-		Want: []string{r.upInfo.Refs[r.DefaultBranch()].Id},
+		Want: []internal.Hash{ref},
 	})
+}
+
+// Ref returns the Hash pointing the given refName
+func (r *Remote) Ref(refName string) (internal.Hash, error) {
+	ref, ok := r.upInfo.Refs[refName]
+	if !ok {
+		return internal.NewHash(""), fmt.Errorf("unable to find ref %q", refName)
+	}
+
+	return ref.Id, nil
 }

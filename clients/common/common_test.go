@@ -7,6 +7,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v2/formats/pktline"
+	"gopkg.in/src-d/go-git.v2/internal"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -48,15 +49,25 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 
 	ref := info.Capabilities.SymbolicReference("HEAD")
 	c.Assert(ref, Equals, "refs/heads/master")
-	c.Assert(info.Refs[ref].Id, Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	c.Assert(info.Refs[ref].Id.String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	c.Assert(info.Refs[ref].Name, Equals, "refs/heads/master")
 }
 
 func (s *SuiteCommon) TestGitUploadPackRequest(c *C) {
 	r := &GitUploadPackRequest{
-		Want: []string{"foo", "qux"},
-		Have: []string{"bar"},
+		Want: []internal.Hash{
+			internal.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"),
+			internal.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"),
+		},
+		Have: []internal.Hash{
+			internal.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		},
 	}
 
-	c.Assert(r.String(), Equals, "000dwant foo\n000dwant qux\n000dhave bar\n00000009done\n")
+	c.Assert(r.String(), Equals,
+		"0032want d82f291cde9987322c8a0c81a325e1ba6159684c\n"+
+			"0032want 2b41ef280fdb67a9b250678686a0c3e03b0a9989\n"+
+			"0032have 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n0000"+
+			"0009done\n",
+	)
 }

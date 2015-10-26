@@ -6,8 +6,10 @@ import (
 	"net/url"
 	"strings"
 
-	"gopkg.in/sourcegraph/go-vcsurl.v1"
 	"gopkg.in/src-d/go-git.v2/formats/pktline"
+	"gopkg.in/src-d/go-git.v2/internal"
+
+	"gopkg.in/sourcegraph/go-vcsurl.v1"
 )
 
 const GitUploadPackServiceName = "git-upload-pack"
@@ -74,7 +76,7 @@ func (r Capabilities) SymbolicReference(sym string) string {
 }
 
 type RemoteHead struct {
-	Id   string
+	Id   internal.Hash
 	Name string
 }
 
@@ -134,12 +136,12 @@ func (r *GitUploadPackInfo) getRemoteHead(line string) *RemoteHead {
 		return nil
 	}
 
-	return &RemoteHead{parts[0], parts[1]}
+	return &RemoteHead{internal.NewHash(parts[0]), parts[1]}
 }
 
 type GitUploadPackRequest struct {
-	Want []string
-	Have []string
+	Want []internal.Hash
+	Have []internal.Hash
 }
 
 func (r *GitUploadPackRequest) String() string {

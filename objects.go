@@ -1,20 +1,16 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
-	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v2/common"
+	"gopkg.in/src-d/go-git.v2/internal"
 )
-
-// Object generic object interface
-type Object interface {
-	Type() common.ObjectType
-	Hash() common.Hash
-}
 
 // Commit points to a single tree, marking it as what the project looked like
 // at a certain point in time. It contains meta-information about that point
@@ -22,134 +18,131 @@ type Object interface {
 // commit, a pointer to the previous commit(s), etc.
 // http://schacon.github.io/gitbook/1_the_git_object_model.html
 type Commit struct {
-	Tree      common.Hash
-	Parents   []common.Hash
+	Hash      internal.Hash
+	Tree      internal.Hash
+	Parents   []internal.Hash
 	Author    Signature
 	Committer Signature
 	Message   string
-	hash      common.Hash
 }
 
-// ParseCommit transform a byte slice into a Commit struct
-func ParseCommit(b []byte) (*Commit, error) {
-	o := &Commit{hash: common.ComputeHash(common.CommitObject, b)}
+// Decode transform an internal.Object into a Blob struct
+func (c *Commit) Decode(o internal.Object) error {
+	c.Hash = o.Hash()
+	r := bufio.NewReader(o.Reader())
 
-	lines := bytes.Split(b, []byte{'\n'})
-	for i := range lines {
-		if len(lines[i]) > 0 {
-			var err error
-
-			split := bytes.SplitN(lines[i], []byte{' '}, 2)
-			switch string(split[0]) {
-			case "tree":
-				_, err = hex.Decode(o.Tree[:], split[1])
-			case "parent":
-				var h common.Hash
-				_, err = hex.Decode(h[:], split[1])
-				if err == nil {
-					o.Parents = append(o.Parents, h)
-				}
-			case "author":
-				o.Author = ParseSignature(split[1])
-			case "committer":
-				o.Committer = ParseSignature(split[1])
-			}
-
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			o.Message = string(bytes.Join(append(lines[i+1:]), []byte{'\n'}))
-			break
+	var message bool
+	for {
+		line, err := r.ReadSlice('\n')
+		if err != nil && err != io.EOF {
+			return err
 		}
 
+		line = bytes.TrimSpace(line)
+		if !message {
+			if len(line) == 0 {
+				message = true
+				continue
+			}
+
+			split := bytes.SplitN(line, []byte{' '}, 2)
+			switch string(split[0]) {
+			case "tree":
+				c.Tree = internal.NewHash(string(split[1]))
+			case "parent":
+				c.Parents = append(c.Parents, internal.NewHash(string(split[1])))
+			case "author":
+				c.Author = ParseSignature(split[1])
+			case "committer":
+				c.Committer = ParseSignature(split[1])
+			}
+		} else {
+			c.Message += string(line) + "\n"
+		}
+
+		if err == io.EOF {
+			return nil
+		}
 	}
-
-	return o, nil
-}
-
-// Type returns the object type
-func (o *Commit) Type() common.ObjectType {
-	return common.CommitObject
-}
-
-// Hash returns the computed hash of the commit
-func (o *Commit) Hash() common.Hash {
-	return o.hash
 }
 
 // Tree is basically like a directory - it references a bunch of other trees
 // and/or blobs (i.e. files and sub-directories)
 type Tree struct {
 	Entries []TreeEntry
-	hash    common.Hash
+	Hash    internal.Hash
 }
 
 // TreeEntry represents a file
 type TreeEntry struct {
 	Name string
-	Hash common.Hash
+	Mode os.FileMode
+	Hash internal.Hash
 }
 
-// ParseTree transform a byte slice into a Tree struct
-func ParseTree(b []byte) (*Tree, error) {
-	o := &Tree{hash: common.ComputeHash(common.TreeObject, b)}
-
-	if len(b) == 0 {
-		return o, nil
+// Decode transform an internal.Object into a Tree struct
+func (t *Tree) Decode(o internal.Object) error {
+	t.Hash = o.Hash()
+	if o.Size() == 0 {
+		return nil
 	}
 
+	r := bufio.NewReader(o.Reader())
 	for {
-		split := bytes.SplitN(b, []byte{0}, 2)
-		split1 := bytes.SplitN(split[0], []byte{' '}, 2)
+		mode, err := r.ReadString(' ')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
 
-		entry := TreeEntry{}
-		entry.Name = string(split1[1])
-		copy(entry.Hash[:], split[1][0:20])
-
-		o.Entries = append(o.Entries, entry)
-
-		b = split[1][20:]
-		if len(split[1]) == 20 {
-			break
+			return err
 		}
+
+		fm, err := strconv.ParseInt(mode[:len(mode)-1], 8, 32)
+		if err != nil && err != io.EOF {
+			return err
+		}
+
+		name, err := r.ReadString(0)
+		if err != nil && err != io.EOF {
+			return err
+		}
+
+		var hash internal.Hash
+		_, err = r.Read(hash[:])
+		if err != nil && err != io.EOF {
+			return err
+		}
+
+		t.Entries = append(t.Entries, TreeEntry{
+			Hash: hash,
+			Mode: os.FileMode(fm),
+			Name: name[:len(name)-1],
+		})
 	}
 
-	return o, nil
-}
-
-// Type returns the object type
-func (o *Tree) Type() common.ObjectType {
-	return common.TreeObject
-}
-
-// Hash returns the computed hash of the tree
-func (o *Tree) Hash() common.Hash {
-	return o.hash
+	return nil
 }
 
 // Blob is used to store file data - it is generally a file.
 type Blob struct {
-	Len  int
-	hash common.Hash
+	Hash internal.Hash
+	Size int64
+	obj  internal.Object
 }
 
-// ParseBlob transform a byte slice into a Blob struct
-func ParseBlob(b []byte) (*Blob, error) {
-	return &Blob{
-		Len:  len(b),
-		hash: common.ComputeHash(common.BlobObject, b),
-	}, nil
+// Decode transform an internal.Object into a Blob struct
+func (b *Blob) Decode(o internal.Object) error {
+	b.Hash = o.Hash()
+	b.Size = o.Size()
+	b.obj = o
+
+	return nil
 }
 
-// Type returns the object type
-func (o *Blob) Type() common.ObjectType {
-	return common.BlobObject
-}
-
-// Hash returns the computed hash of the blob
-func (o *Blob) Hash() common.Hash {
-	return o.hash
+// Reader returns a reader allow the access to the content of the blob
+func (b *Blob) Reader() io.Reader {
+	return b.obj.Reader()
 }
 
 // Signature represents an action signed by a person

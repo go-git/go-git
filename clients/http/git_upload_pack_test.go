@@ -5,6 +5,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v2/clients/common"
+	"gopkg.in/src-d/go-git.v2/internal"
 )
 
 type SuiteRemote struct{}
@@ -41,7 +42,9 @@ func (s *SuiteRemote) TestFetch(c *C) {
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 
 	reader, err := r.Fetch(&common.GitUploadPackRequest{
-		Want: []string{"6ecf0ef2c2dffb796033e5a02219af86ec6584e5"},
+		Want: []internal.Hash{
+			internal.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		},
 	})
 
 	c.Assert(err, IsNil)
