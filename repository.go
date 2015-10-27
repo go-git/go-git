@@ -1,11 +1,16 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 
 	"gopkg.in/src-d/go-git.v2/clients/common"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
 	"gopkg.in/src-d/go-git.v2/internal"
+)
+
+var (
+	ObjectNotFoundErr = errors.New("object not found")
 )
 
 const (
@@ -65,4 +70,39 @@ func (r *Repository) Pull(remoteName, branch string) error {
 	}
 
 	return nil
+}
+
+// Commit return the commit with the given hash
+func (r *Repository) Commit(h internal.Hash) (*Commit, error) {
+	obj, ok := r.Storage.Get(h)
+	if !ok {
+		return nil, ObjectNotFoundErr
+	}
+
+	commit := &Commit{r: r}
+	return commit, commit.Decode(obj)
+}
+
+// Commits decode the objects into commits
+func (r *Repository) Commits() *CommitIter {
+	i := NewCommitIter(r)
+	go func() {
+		defer i.Close()
+		for _, obj := range r.Storage.Commits {
+			i.Add(obj)
+		}
+	}()
+
+	return i
+}
+
+// Tree return the tree with the given hash
+func (r *Repository) Tree(h internal.Hash) (*Tree, error) {
+	obj, ok := r.Storage.Get(h)
+	if !ok {
+		return nil, ObjectNotFoundErr
+	}
+
+	tree := &Tree{r: r}
+	return tree, tree.Decode(obj)
 }

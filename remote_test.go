@@ -21,6 +21,8 @@ func (s *SuiteRemote) TestConnect(c *C) {
 
 func (s *SuiteRemote) TestDefaultBranch(c *C) {
 	r, err := NewRemote(RepositoryFixture)
+	r.upSrv = &MockGitUploadPackService{}
+
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.DefaultBranch(), Equals, "refs/heads/master")
@@ -28,6 +30,8 @@ func (s *SuiteRemote) TestDefaultBranch(c *C) {
 
 func (s *SuiteRemote) TestCapabilities(c *C) {
 	r, err := NewRemote(RepositoryFixture)
+	r.upSrv = &MockGitUploadPackService{}
+
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Capabilities().Get("agent"), HasLen, 1)
@@ -35,6 +39,8 @@ func (s *SuiteRemote) TestCapabilities(c *C) {
 
 func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
 	r, err := NewRemote(RepositoryFixture)
+	r.upSrv = &MockGitUploadPackService{}
+
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 

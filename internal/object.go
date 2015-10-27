@@ -71,18 +71,18 @@ func (o *RAWObject) Write(p []byte) (n int, err error) {
 }
 
 type RAWObjectStorage struct {
-	Objects map[Hash]*RAWObject
-	Commits map[Hash]*RAWObject
-	Trees   map[Hash]*RAWObject
-	Blobs   map[Hash]*RAWObject
+	Objects map[Hash]Object
+	Commits map[Hash]Object
+	Trees   map[Hash]Object
+	Blobs   map[Hash]Object
 }
 
 func NewRAWObjectStorage() *RAWObjectStorage {
 	return &RAWObjectStorage{
-		Objects: make(map[Hash]*RAWObject, 0),
-		Commits: make(map[Hash]*RAWObject, 0),
-		Trees:   make(map[Hash]*RAWObject, 0),
-		Blobs:   make(map[Hash]*RAWObject, 0),
+		Objects: make(map[Hash]Object, 0),
+		Commits: make(map[Hash]Object, 0),
+		Trees:   make(map[Hash]Object, 0),
+		Blobs:   make(map[Hash]Object, 0),
 	}
 }
 
@@ -92,7 +92,7 @@ func (o *RAWObjectStorage) New() Object {
 
 func (o *RAWObjectStorage) Set(obj Object) Hash {
 	h := obj.Hash()
-	o.Objects[h] = obj.(*RAWObject)
+	o.Objects[h] = obj
 
 	switch obj.Type() {
 	case CommitObject:

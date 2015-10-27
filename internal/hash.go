@@ -30,6 +30,11 @@ func NewHash(s string) Hash {
 	return h
 }
 
+func (h Hash) IsZero() bool {
+	var empty Hash
+	return h == empty
+}
+
 func (h Hash) String() string {
 	return hex.EncodeToString(h[:])
 }

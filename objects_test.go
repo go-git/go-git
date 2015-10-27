@@ -1,7 +1,6 @@
 package git
 
 import (
-	"encoding/base64"
 	"io/ioutil"
 	"time"
 
@@ -9,27 +8,38 @@ import (
 	"gopkg.in/src-d/go-git.v2/internal"
 )
 
-type ObjectsSuite struct{}
+type ObjectsSuite struct {
+	r *Repository
+}
 
 var _ = Suite(&ObjectsSuite{})
 
-var CommitFixture = "dHJlZSBjMmQzMGZhOGVmMjg4NjE4ZjY1ZjZlZWQ2ZTE2OGUwZDUxNDg4NmY0CnBhcmVudCBiMDI5NTE3ZjYzMDBjMmRhMGY0YjY1MWI4NjQyNTA2Y2Q2YWFmNDVkCnBhcmVudCBiOGU0NzFmNThiY2JjYTYzYjA3YmRhMjBlNDI4MTkwNDA5YzJkYjQ3CmF1dGhvciBNw6F4aW1vIEN1YWRyb3MgPG1jdWFkcm9zQGdtYWlsLmNvbT4gMTQyNzgwMjQzNCArMDIwMApjb21taXR0ZXIgTcOheGltbyBDdWFkcm9zIDxtY3VhZHJvc0BnbWFpbC5jb20+IDE0Mjc4MDI0MzQgKzAyMDAKCk1lcmdlIHB1bGwgcmVxdWVzdCAjMSBmcm9tIGRyaXBvbGxlcy9mZWF0dXJlCgpDcmVhdGluZyBjaGFuZ2Vsb2c="
+func (s *ObjectsSuite) SetUpTest(c *C) {
+	var err error
+	s.r, err = NewRepository(RepositoryFixture)
+	s.r.Remotes["origin"].upSrv = &MockGitUploadPackService{}
+
+	s.r.Pull("origin", "refs/heads/master")
+	c.Assert(err, IsNil)
+}
 
 func (s *ObjectsSuite) TestNewCommit(c *C) {
-	data, _ := base64.StdEncoding.DecodeString(CommitFixture)
-
-	o := &internal.RAWObject{}
-	o.SetType(internal.CommitObject)
-	o.Writer().Write(data)
-
-	commit := &Commit{}
-	c.Assert(commit.Decode(o), IsNil)
+	hash := internal.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	commit, err := s.r.Commit(hash)
+	c.Assert(err, IsNil)
 
 	c.Assert(commit.Hash.String(), Equals, "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
-	c.Assert(commit.Tree.String(), Equals, "c2d30fa8ef288618f65f6eed6e168e0d514886f4")
-	c.Assert(commit.Parents, HasLen, 2)
-	c.Assert(commit.Parents[0].String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
-	c.Assert(commit.Parents[1].String(), Equals, "b8e471f58bcbca63b07bda20e428190409c2db47")
+	c.Assert(commit.Tree().Hash.String(), Equals, "c2d30fa8ef288618f65f6eed6e168e0d514886f4")
+
+	parents := commit.Parents()
+	parentCommit, err := parents.Next()
+	c.Assert(err, IsNil)
+	c.Assert(parentCommit.Hash.String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
+
+	parentCommit, err = parents.Next()
+	c.Assert(err, IsNil)
+	c.Assert(parentCommit.Hash.String(), Equals, "b8e471f58bcbca63b07bda20e428190409c2db47")
+
 	c.Assert(commit.Author.Email, Equals, "mcuadros@gmail.com")
 	c.Assert(commit.Author.Name, Equals, "Máximo Cuadros")
 	c.Assert(commit.Author.When.Unix(), Equals, int64(1427802434))
@@ -37,23 +47,27 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 	c.Assert(commit.Message, Equals, "Merge pull request #1 from dripolles/feature\n\nCreating changelog\n")
 }
 
-var TreeFixture = "MTAwNjQ0IC5naXRpZ25vcmUAMoWKrTw4PtH/Cg+b3yMdVKAMnogxMDA2NDQgQ0hBTkdFTE9HANP/U+BWSp+H2OhLbijlBg5RcAiqMTAwNjQ0IExJQ0VOU0UAwZK9aiTqGrAdeGhuQXyL3Hw9GX8xMDA2NDQgYmluYXJ5LmpwZwDVwPSrgRiXyt8DrsNYrmDSH5HFDTQwMDAwIGdvAKOXcadlH5f69ccuCCJNhX/DUTPbNDAwMDAganNvbgBah35qkGonQ61uRdmcF5NkKq+O2jQwMDAwIHBocABYavVn0Ltedx5JvdlDT14Pt20l+jQwMDAwIHZlbmRvcgDPSqOziXT7fYHzZ8CDD3141lq4aw=="
-
 func (s *ObjectsSuite) TestParseTree(c *C) {
-	data, _ := base64.StdEncoding.DecodeString(TreeFixture)
-
-	o := &internal.RAWObject{}
-	o.SetType(internal.TreeObject)
-	o.SetSize(int64(len(data)))
-	o.Writer().Write(data)
-
-	tree := &Tree{}
-	c.Assert(tree.Decode(o), IsNil)
+	hash := internal.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := s.r.Tree(hash)
+	c.Assert(err, IsNil)
 
 	c.Assert(tree.Entries, HasLen, 8)
 	c.Assert(tree.Entries[0].Name, Equals, ".gitignore")
 	c.Assert(tree.Entries[0].Mode.String(), Equals, "-rw-r--r--")
 	c.Assert(tree.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+
+	count := 0
+	ch := tree.Files()
+	for f := range ch {
+		count++
+		if f.Name == "go/example.go" {
+			content, _ := ioutil.ReadAll(f)
+			c.Assert(content, HasLen, 2780)
+		}
+	}
+
+	c.Assert(count, Equals, 9)
 }
 
 func (s *ObjectsSuite) TestBlobHash(c *C) {
@@ -108,7 +122,9 @@ func (s *ObjectsSuite) TestParseSignature(c *C) {
 	}
 
 	for raw, exp := range cases {
-		got := ParseSignature([]byte(raw))
+		got := &Signature{}
+		got.Decode([]byte(raw))
+
 		c.Assert(got.Name, Equals, exp.Name)
 		c.Assert(got.Email, Equals, exp.Email)
 		c.Assert(got.When.Unix(), Equals, exp.When.Unix())
