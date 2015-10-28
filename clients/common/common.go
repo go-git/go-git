@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -12,6 +13,10 @@ import (
 	"gopkg.in/sourcegraph/go-vcsurl.v1"
 )
 
+var (
+	NotFoundErr = errors.New("repository not found")
+)
+
 const GitUploadPackServiceName = "git-upload-pack"
 
 type Endpoint string
@@ -19,7 +24,7 @@ type Endpoint string
 func NewEndpoint(url string) (Endpoint, error) {
 	vcs, err := vcsurl.Parse(url)
 	if err != nil {
-		return "", err
+		return "", NewPermanentError(err)
 	}
 
 	link := vcs.Link()
@@ -88,7 +93,7 @@ type GitUploadPackInfo struct {
 func NewGitUploadPackInfo(d *pktline.Decoder) (*GitUploadPackInfo, error) {
 	info := &GitUploadPackInfo{}
 	if err := info.read(d); err != nil {
-		return nil, err
+		return nil, NewUnexpectedError(err)
 	}
 
 	return info, nil
@@ -163,4 +168,36 @@ func (r *GitUploadPackRequest) Reader() *strings.Reader {
 	e.AddLine("done")
 
 	return e.Reader()
+}
+
+type PermanentError struct {
+	err error
+}
+
+func NewPermanentError(err error) *PermanentError {
+	if err == nil {
+		return nil
+	}
+
+	return &PermanentError{err: err}
+}
+
+func (e *PermanentError) Error() string {
+	return fmt.Sprintf("permanent client error: %s", e.err.Error())
+}
+
+type UnexpectedError struct {
+	err error
+}
+
+func NewUnexpectedError(err error) *UnexpectedError {
+	if err == nil {
+		return nil
+	}
+
+	return &UnexpectedError{err: err}
+}
+
+func (e *UnexpectedError) Error() string {
+	return fmt.Sprintf("unexpected client error: %s", e.err.Error())
 }

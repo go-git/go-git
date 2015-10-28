@@ -50,7 +50,7 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 
 	h := make([]byte, 8)
 	if _, err := res.Body.Read(h); err != nil {
-		return nil, err
+		return nil, common.NewUnexpectedError(err)
 	}
 
 	return res.Body, nil
@@ -64,14 +64,14 @@ func (s *GitUploadPackService) doRequest(method, url string, content *strings.Re
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return nil, err
+		return nil, common.NewPermanentError(err)
 	}
 
 	s.applyHeadersToRequest(req, content)
 
 	res, err := s.Client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, common.NewUnexpectedError(err)
 	}
 
 	if err := NewHTTPError(res); err != nil {
