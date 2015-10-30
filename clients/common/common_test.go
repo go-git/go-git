@@ -53,6 +53,12 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 	c.Assert(info.Refs[ref].Name, Equals, "refs/heads/master")
 }
 
+func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
+	b := bytes.NewBuffer(nil)
+	_, err := NewGitUploadPackInfo(pktline.NewDecoder(b))
+	c.Assert(err, ErrorMatches, "permanent.*empty.*")
+}
+
 func (s *SuiteCommon) TestGitUploadPackRequest(c *C) {
 	r := &GitUploadPackRequest{
 		Want: []internal.Hash{

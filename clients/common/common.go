@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	NotFoundErr = errors.New("repository not found")
+	NotFoundErr           = errors.New("repository not found")
+	EmptyGitUploadPackErr = errors.New("empty git-upload-pack given")
 )
 
 const GitUploadPackServiceName = "git-upload-pack"
@@ -93,6 +94,10 @@ type GitUploadPackInfo struct {
 func NewGitUploadPackInfo(d *pktline.Decoder) (*GitUploadPackInfo, error) {
 	info := &GitUploadPackInfo{}
 	if err := info.read(d); err != nil {
+		if err == EmptyGitUploadPackErr {
+			return nil, NewPermanentError(err)
+		}
+
 		return nil, NewUnexpectedError(err)
 	}
 
@@ -105,6 +110,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 		return err
 	}
 
+	isEmpty := true
 	r.Refs = map[string]*RemoteHead{}
 	for _, line := range lines {
 		if !r.isValidLine(line) {
@@ -117,6 +123,11 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 		}
 
 		r.readLine(line)
+		isEmpty = false
+	}
+
+	if isEmpty {
+		return EmptyGitUploadPackErr
 	}
 
 	return nil
