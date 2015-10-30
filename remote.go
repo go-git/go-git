@@ -77,5 +77,10 @@ func (r *Remote) Ref(refName string) (internal.Hash, error) {
 		return internal.NewHash(""), fmt.Errorf("unable to find ref %q", refName)
 	}
 
-	return ref.Id, nil
+	return ref, nil
+}
+
+// Refs returns the Hash pointing the given refName
+func (r *Remote) Refs() map[string]internal.Hash {
+	return r.upInfo.Refs
 }

@@ -28,9 +28,8 @@ func (s *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 
 	return &common.GitUploadPackInfo{
 		Capabilities: common.Capabilities(values),
-		Refs: map[string]*common.RemoteHead{
-			"refs/heads/master": &common.RemoteHead{Id: hash},
-		},
+		Head:         "refs/heads/master",
+		Refs:         map[string]internal.Hash{"refs/heads/master": hash},
 	}, nil
 }
 

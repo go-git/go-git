@@ -50,6 +50,40 @@ func parseCapabilities(line string) Capabilities {
 	return Capabilities(values)
 }
 
+func (c Capabilities) Decode(raw string) {
+	parts := strings.SplitN(raw, "HEAD", 2)
+	if len(parts) == 2 {
+		raw = parts[1]
+	}
+
+	params := strings.Split(raw, " ")
+	for _, p := range params {
+		s := strings.SplitN(p, "=", 2)
+
+		var value string
+		if len(s) == 2 {
+			value = s[1]
+		}
+
+		c[s[0]] = append(c[s[0]], value)
+	}
+}
+
+func (c Capabilities) String() string {
+	var o string
+	for key, values := range c {
+		if len(values) == 0 {
+			o += key + " "
+		}
+
+		for _, value := range values {
+			o += fmt.Sprintf("%s=%s ", key, value)
+		}
+	}
+
+	return o[:len(o)-1]
+}
+
 // Supports returns true if capability is preent
 func (r Capabilities) Supports(capability string) bool {
 	_, ok := r[capability]
@@ -81,14 +115,10 @@ func (r Capabilities) SymbolicReference(sym string) string {
 	return ""
 }
 
-type RemoteHead struct {
-	Id   internal.Hash
-	Name string
-}
-
 type GitUploadPackInfo struct {
 	Capabilities Capabilities
-	Refs         map[string]*RemoteHead
+	Head         string
+	Refs         map[string]internal.Hash
 }
 
 func NewGitUploadPackInfo(d *pktline.Decoder) (*GitUploadPackInfo, error) {
@@ -111,14 +141,15 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	}
 
 	isEmpty := true
-	r.Refs = map[string]*RemoteHead{}
+	r.Refs = map[string]internal.Hash{}
 	for _, line := range lines {
 		if !r.isValidLine(line) {
 			continue
 		}
 
 		if r.Capabilities == nil {
-			r.Capabilities = parseCapabilities(line)
+			r.Capabilities = Capabilities{}
+			r.Capabilities.Decode(line)
 			continue
 		}
 
@@ -142,17 +173,31 @@ func (r *GitUploadPackInfo) isValidLine(line string) bool {
 }
 
 func (r *GitUploadPackInfo) readLine(line string) {
-	rh := r.getRemoteHead(line)
-	r.Refs[rh.Name] = rh
-}
-
-func (r *GitUploadPackInfo) getRemoteHead(line string) *RemoteHead {
 	parts := strings.Split(strings.Trim(line, " \n"), " ")
 	if len(parts) != 2 {
-		return nil
+		return
 	}
 
-	return &RemoteHead{internal.NewHash(parts[0]), parts[1]}
+	r.Refs[parts[1]] = internal.NewHash(parts[0])
+}
+
+func (r *GitUploadPackInfo) String() string {
+	return string(r.Bytes())
+}
+
+func (r *GitUploadPackInfo) Bytes() []byte {
+	e := pktline.NewEncoder()
+	e.AddLine("# service=git-upload-pack")
+	e.AddFlush()
+	e.AddLine(fmt.Sprintf("%s HEAD%s", r.Refs[r.Head], r.Capabilities.String()))
+
+	for name, id := range r.Refs {
+		e.AddLine(fmt.Sprintf("%s %s", id, name))
+	}
+
+	e.AddFlush()
+	b, _ := ioutil.ReadAll(e.Reader())
+	return b
 }
 
 type GitUploadPackRequest struct {

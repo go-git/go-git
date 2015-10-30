@@ -49,14 +49,49 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 
 	ref := info.Capabilities.SymbolicReference("HEAD")
 	c.Assert(ref, Equals, "refs/heads/master")
-	c.Assert(info.Refs[ref].Id.String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	c.Assert(info.Refs[ref].Name, Equals, "refs/heads/master")
+	c.Assert(info.Refs[ref].String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
 	b := bytes.NewBuffer(nil)
 	_, err := NewGitUploadPackInfo(pktline.NewDecoder(b))
 	c.Assert(err, ErrorMatches, "permanent.*empty.*")
+}
+
+func (s *SuiteCommon) TestCapabilitiesDecode(c *C) {
+	cap := Capabilities{}
+	cap.Decode("symref=foo symref=qux thin-pack")
+
+	c.Assert(cap, HasLen, 2)
+	c.Assert(cap["symref"], DeepEquals, []string{"foo", "qux"})
+	c.Assert(cap["thin-pack"], DeepEquals, []string{""})
+}
+
+func (s *SuiteCommon) TestCapabilitiesString(c *C) {
+	cap := Capabilities{
+		"symref": []string{"foo", "qux"},
+	}
+
+	c.Assert(cap.String(), Equals, "symref=foo symref=qux")
+}
+
+func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
+	info := &GitUploadPackInfo{}
+	info.Capabilities = map[string][]string{
+		"symref": []string{"HEAD:refs/heads/master"},
+	}
+
+	info.Head = "refs/heads/master"
+	info.Refs = map[string]internal.Hash{
+		"refs/heads/master": internal.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	}
+
+	c.Assert(info.String(), Equals,
+		"001e# service=git-upload-pack\n"+
+			"0000004f6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADsymref=HEAD:refs/heads/master\n"+
+			"003f6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"+
+			"0000",
+	)
 }
 
 func (s *SuiteCommon) TestGitUploadPackRequest(c *C) {
