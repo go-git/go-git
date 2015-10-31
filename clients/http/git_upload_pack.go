@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v2/clients/common"
+	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/pktline"
 )
 
@@ -50,7 +51,7 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 
 	h := make([]byte, 8)
 	if _, err := res.Body.Read(h); err != nil {
-		return nil, common.NewUnexpectedError(err)
+		return nil, core.NewUnexpectedError(err)
 	}
 
 	return res.Body, nil
@@ -64,14 +65,14 @@ func (s *GitUploadPackService) doRequest(method, url string, content *strings.Re
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return nil, common.NewPermanentError(err)
+		return nil, core.NewPermanentError(err)
 	}
 
 	s.applyHeadersToRequest(req, content)
 
 	res, err := s.Client.Do(req)
 	if err != nil {
-		return nil, common.NewUnexpectedError(err)
+		return nil, core.NewUnexpectedError(err)
 	}
 
 	if err := NewHTTPError(res); err != nil {

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/src-d/go-git.v2/internal"
+	"gopkg.in/src-d/go-git.v2/core"
 )
+
+type Hash core.Hash
 
 // Commit points to a single tree, marking it as what the project looked like
 // at a certain point in time. It contains meta-information about that point
@@ -15,13 +17,13 @@ import (
 // commit, a pointer to the previous commit(s), etc.
 // http://schacon.github.io/gitbook/1_the_git_object_model.html
 type Commit struct {
-	Hash      internal.Hash
+	Hash      core.Hash
 	Author    Signature
 	Committer Signature
 	Message   string
 
-	tree    internal.Hash
-	parents []internal.Hash
+	tree    core.Hash
+	parents []core.Hash
 	r       *Repository
 }
 
@@ -43,8 +45,8 @@ func (c *Commit) Parents() *CommitIter {
 	return i
 }
 
-// Decode transform an internal.Object into a Blob struct
-func (c *Commit) Decode(o internal.Object) error {
+// Decode transform an core.Object into a Blob struct
+func (c *Commit) Decode(o core.Object) error {
 	c.Hash = o.Hash()
 	r := bufio.NewReader(o.Reader())
 
@@ -65,9 +67,9 @@ func (c *Commit) Decode(o internal.Object) error {
 			split := bytes.SplitN(line, []byte{' '}, 2)
 			switch string(split[0]) {
 			case "tree":
-				c.tree = internal.NewHash(string(split[1]))
+				c.tree = core.NewHash(string(split[1]))
 			case "parent":
-				c.parents = append(c.parents, internal.NewHash(string(split[1])))
+				c.parents = append(c.parents, core.NewHash(string(split[1])))
 			case "author":
 				c.Author.Decode(split[1])
 			case "committer":
@@ -86,7 +88,7 @@ func (c *Commit) Decode(o internal.Object) error {
 func (c *Commit) String() string {
 	return fmt.Sprintf(
 		"%s %s\nAuthor: %s\nDate:   %s\n",
-		internal.CommitObject, c.Hash, c.Author.String(), c.Author.When,
+		core.CommitObject, c.Hash, c.Author.String(), c.Author.When,
 	)
 }
 
@@ -109,16 +111,16 @@ func (i *CommitIter) Next() (*Commit, error) {
 }
 
 type iter struct {
-	ch chan internal.Object
+	ch chan core.Object
 	r  *Repository
 }
 
 func newIter(r *Repository) iter {
-	ch := make(chan internal.Object, 1)
+	ch := make(chan core.Object, 1)
 	return iter{ch, r}
 }
 
-func (i *iter) Add(o internal.Object) {
+func (i *iter) Add(o core.Object) {
 	i.ch <- o
 }
 

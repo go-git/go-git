@@ -1,4 +1,4 @@
-package internal
+package core
 
 import (
 	"crypto/sha1"

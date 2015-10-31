@@ -7,7 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"gopkg.in/src-d/go-git.v2/internal"
+	"gopkg.in/src-d/go-git.v2/core"
 
 	"github.com/klauspost/compress/zlib"
 )
@@ -50,8 +50,8 @@ type Reader struct {
 	Format Format
 
 	r       *trackingReader
-	s       internal.ObjectStorage
-	offsets map[int64]internal.Hash
+	s       core.ObjectStorage
+	offsets map[int64]core.Hash
 }
 
 // NewReader returns a new Reader that reads from a io.Reader
@@ -60,12 +60,12 @@ func NewReader(r io.Reader) *Reader {
 		MaxObjectsLimit: DefaultMaxObjectsLimit,
 
 		r:       &trackingReader{r: r},
-		offsets: make(map[int64]internal.Hash, 0),
+		offsets: make(map[int64]core.Hash, 0),
 	}
 }
 
 // Read reads the objects and stores it at the ObjectStorage
-func (r *Reader) Read(s internal.ObjectStorage) (int64, error) {
+func (r *Reader) Read(s core.ObjectStorage) (int64, error) {
 	r.s = s
 	if err := r.validateHeader(); err != nil {
 		if err == io.EOF {
@@ -144,7 +144,7 @@ func (r *Reader) readObjects(count uint32) error {
 	return nil
 }
 
-func (r *Reader) newRAWObject() (internal.Object, error) {
+func (r *Reader) newRAWObject() (core.Object, error) {
 	raw := r.s.New()
 	var steps int64
 
@@ -153,7 +153,7 @@ func (r *Reader) newRAWObject() (internal.Object, error) {
 		return nil, err
 	}
 
-	typ := internal.ObjectType((buf[0] >> 4) & 7)
+	typ := core.ObjectType((buf[0] >> 4) & 7)
 	size := int64(buf[0] & 15)
 	steps++ // byte we just read to get `o.typ` and `o.size`
 
@@ -173,11 +173,11 @@ func (r *Reader) newRAWObject() (internal.Object, error) {
 
 	var err error
 	switch raw.Type() {
-	case internal.REFDeltaObject:
+	case core.REFDeltaObject:
 		err = r.readREFDelta(raw)
-	case internal.OFSDeltaObject:
+	case core.OFSDeltaObject:
 		err = r.readOFSDelta(raw, steps)
-	case internal.CommitObject, internal.TreeObject, internal.BlobObject, internal.TagObject:
+	case core.CommitObject, core.TreeObject, core.BlobObject, core.TagObject:
 		err = r.readObject(raw)
 	default:
 		err = InvalidObjectErr.n("tag %q", raw.Type)
@@ -186,8 +186,8 @@ func (r *Reader) newRAWObject() (internal.Object, error) {
 	return raw, err
 }
 
-func (r *Reader) readREFDelta(raw internal.Object) error {
-	var ref internal.Hash
+func (r *Reader) readREFDelta(raw core.Object) error {
+	var ref core.Hash
 	if _, err := r.r.Read(ref[:]); err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (r *Reader) readREFDelta(raw internal.Object) error {
 	return nil
 }
 
-func (r *Reader) readOFSDelta(raw internal.Object, steps int64) error {
+func (r *Reader) readOFSDelta(raw core.Object, steps int64) error {
 	start := r.r.position
 	offset, err := decodeOffset(r.r, steps)
 	if err != nil {
@@ -246,7 +246,7 @@ func (r *Reader) readOFSDelta(raw internal.Object, steps int64) error {
 	return nil
 }
 
-func (r *Reader) readObject(raw internal.Object) error {
+func (r *Reader) readObject(raw core.Object) error {
 	return r.inflate(raw.Writer())
 }
 

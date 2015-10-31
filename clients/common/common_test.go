@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/pktline"
-	"gopkg.in/src-d/go-git.v2/internal"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -82,8 +82,8 @@ func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
 	}
 
 	info.Head = "refs/heads/master"
-	info.Refs = map[string]internal.Hash{
-		"refs/heads/master": internal.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	info.Refs = map[string]core.Hash{
+		"refs/heads/master": core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	}
 
 	c.Assert(info.String(), Equals,
@@ -96,12 +96,12 @@ func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
 
 func (s *SuiteCommon) TestGitUploadPackRequest(c *C) {
 	r := &GitUploadPackRequest{
-		Want: []internal.Hash{
-			internal.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"),
-			internal.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"),
+		Want: []core.Hash{
+			core.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"),
+			core.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"),
 		},
-		Have: []internal.Hash{
-			internal.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		Have: []core.Hash{
+			core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 		},
 	}
 

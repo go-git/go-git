@@ -5,7 +5,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v2/internal"
+	"gopkg.in/src-d/go-git.v2/core"
 )
 
 type ObjectsSuite struct {
@@ -24,7 +24,7 @@ func (s *ObjectsSuite) SetUpTest(c *C) {
 }
 
 func (s *ObjectsSuite) TestNewCommit(c *C) {
-	hash := internal.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	hash := core.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
 	commit, err := s.r.Commit(hash)
 	c.Assert(err, IsNil)
 
@@ -48,7 +48,7 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 }
 
 func (s *ObjectsSuite) TestParseTree(c *C) {
-	hash := internal.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	hash := core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 	tree, err := s.r.Tree(hash)
 	c.Assert(err, IsNil)
 
@@ -71,8 +71,8 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 }
 
 func (s *ObjectsSuite) TestBlobHash(c *C) {
-	o := &internal.RAWObject{}
-	o.SetType(internal.BlobObject)
+	o := &core.RAWObject{}
+	o.SetType(core.BlobObject)
 	o.SetSize(3)
 	o.Writer().Write([]byte{'F', 'O', 'O'})
 

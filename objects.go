@@ -6,19 +6,19 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v2/internal"
+	"gopkg.in/src-d/go-git.v2/core"
 )
 
 // Blob is used to store file data - it is generally a file.
 type Blob struct {
-	Hash internal.Hash
+	Hash core.Hash
 	Size int64
 
-	obj internal.Object
+	obj core.Object
 }
 
-// Decode transform an internal.Object into a Blob struct
-func (b *Blob) Decode(o internal.Object) error {
+// Decode transform an core.Object into a Blob struct
+func (b *Blob) Decode(o core.Object) error {
 	b.Hash = o.Hash()
 	b.Size = o.Size()
 	b.obj = o

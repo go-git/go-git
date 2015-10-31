@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"gopkg.in/src-d/go-git.v2/internal"
+	"gopkg.in/src-d/go-git.v2/core"
 )
 
 // Tree is basically like a directory - it references a bunch of other trees
 // and/or blobs (i.e. files and sub-directories)
 type Tree struct {
 	Entries []TreeEntry
-	Hash    internal.Hash
+	Hash    core.Hash
 
 	r *Repository
 }
@@ -23,7 +23,7 @@ type Tree struct {
 type TreeEntry struct {
 	Name string
 	Mode os.FileMode
-	Hash internal.Hash
+	Hash core.Hash
 }
 
 func (t *Tree) Files() chan *File {
@@ -40,7 +40,7 @@ func (t *Tree) Files() chan *File {
 func (t *Tree) walkEntries(base string, ch chan *File) {
 	for _, entry := range t.Entries {
 		obj, _ := t.r.Storage.Get(entry.Hash)
-		if obj.Type() == internal.TreeObject {
+		if obj.Type() == core.TreeObject {
 			tree := &Tree{r: t.r}
 			tree.Decode(obj)
 			tree.walkEntries(filepath.Join(base, entry.Name), ch)
@@ -54,8 +54,8 @@ func (t *Tree) walkEntries(base string, ch chan *File) {
 	}
 }
 
-// Decode transform an internal.Object into a Tree struct
-func (t *Tree) Decode(o internal.Object) error {
+// Decode transform an core.Object into a Tree struct
+func (t *Tree) Decode(o core.Object) error {
 	t.Hash = o.Hash()
 	if o.Size() == 0 {
 		return nil
@@ -82,7 +82,7 @@ func (t *Tree) Decode(o internal.Object) error {
 			return err
 		}
 
-		var hash internal.Hash
+		var hash core.Hash
 		_, err = r.Read(hash[:])
 		if err != nil && err != io.EOF {
 			return err

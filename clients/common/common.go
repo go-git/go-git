@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
+	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/pktline"
-	"gopkg.in/src-d/go-git.v2/internal"
 
 	"gopkg.in/sourcegraph/go-vcsurl.v1"
 )
@@ -25,7 +25,7 @@ type Endpoint string
 func NewEndpoint(url string) (Endpoint, error) {
 	vcs, err := vcsurl.Parse(url)
 	if err != nil {
-		return "", NewPermanentError(err)
+		return "", core.NewPermanentError(err)
 	}
 
 	link := vcs.Link()
@@ -118,17 +118,17 @@ func (r Capabilities) SymbolicReference(sym string) string {
 type GitUploadPackInfo struct {
 	Capabilities Capabilities
 	Head         string
-	Refs         map[string]internal.Hash
+	Refs         map[string]core.Hash
 }
 
 func NewGitUploadPackInfo(d *pktline.Decoder) (*GitUploadPackInfo, error) {
 	info := &GitUploadPackInfo{}
 	if err := info.read(d); err != nil {
 		if err == EmptyGitUploadPackErr {
-			return nil, NewPermanentError(err)
+			return nil, core.NewPermanentError(err)
 		}
 
-		return nil, NewUnexpectedError(err)
+		return nil, core.NewUnexpectedError(err)
 	}
 
 	return info, nil
@@ -141,7 +141,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	}
 
 	isEmpty := true
-	r.Refs = map[string]internal.Hash{}
+	r.Refs = map[string]core.Hash{}
 	for _, line := range lines {
 		if !r.isValidLine(line) {
 			continue
@@ -178,7 +178,7 @@ func (r *GitUploadPackInfo) readLine(line string) {
 		return
 	}
 
-	r.Refs[parts[1]] = internal.NewHash(parts[0])
+	r.Refs[parts[1]] = core.NewHash(parts[0])
 }
 
 func (r *GitUploadPackInfo) String() string {
@@ -201,8 +201,8 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 }
 
 type GitUploadPackRequest struct {
-	Want []internal.Hash
-	Have []internal.Hash
+	Want []core.Hash
+	Have []core.Hash
 }
 
 func (r *GitUploadPackRequest) String() string {
@@ -224,36 +224,4 @@ func (r *GitUploadPackRequest) Reader() *strings.Reader {
 	e.AddLine("done")
 
 	return e.Reader()
-}
-
-type PermanentError struct {
-	err error
-}
-
-func NewPermanentError(err error) *PermanentError {
-	if err == nil {
-		return nil
-	}
-
-	return &PermanentError{err: err}
-}
-
-func (e *PermanentError) Error() string {
-	return fmt.Sprintf("permanent client error: %s", e.err.Error())
-}
-
-type UnexpectedError struct {
-	err error
-}
-
-func NewUnexpectedError(err error) *UnexpectedError {
-	if err == nil {
-		return nil
-	}
-
-	return &UnexpectedError{err: err}
-}
-
-func (e *UnexpectedError) Error() string {
-	return fmt.Sprintf("unexpected client error: %s", e.err.Error())
 }

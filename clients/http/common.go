@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"gopkg.in/src-d/go-git.v2/clients/common"
+	"gopkg.in/src-d/go-git.v2/core"
 )
 
 type HTTPError struct {
@@ -18,10 +19,10 @@ func NewHTTPError(r *http.Response) error {
 
 	err := &HTTPError{r}
 	if r.StatusCode == 404 || r.StatusCode == 401 {
-		return common.NewPermanentError(common.NotFoundErr)
+		return core.NewPermanentError(common.NotFoundErr)
 	}
 
-	return common.NewUnexpectedError(err)
+	return core.NewUnexpectedError(err)
 }
 
 func (e *HTTPError) StatusCode() int {

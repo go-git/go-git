@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"gopkg.in/src-d/go-git.v2/clients/common"
+	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
-	"gopkg.in/src-d/go-git.v2/internal"
 )
 
 var (
@@ -19,7 +19,7 @@ const (
 
 type Repository struct {
 	Remotes map[string]*Remote
-	Storage *internal.RAWObjectStorage
+	Storage *core.RAWObjectStorage
 }
 
 // NewRepository creates a new repository setting remote as default remote
@@ -39,7 +39,7 @@ func NewRepository(url string) (*Repository, error) {
 func NewPlainRepository() *Repository {
 	return &Repository{
 		Remotes: map[string]*Remote{},
-		Storage: internal.NewRAWObjectStorage(),
+		Storage: core.NewRAWObjectStorage(),
 	}
 }
 
@@ -59,7 +59,7 @@ func (r *Repository) Pull(remoteName, branch string) error {
 	}
 
 	reader, err := remote.Fetch(&common.GitUploadPackRequest{
-		Want: []internal.Hash{ref},
+		Want: []core.Hash{ref},
 	})
 
 	pr := packfile.NewReader(reader)
@@ -73,7 +73,7 @@ func (r *Repository) Pull(remoteName, branch string) error {
 }
 
 // Commit return the commit with the given hash
-func (r *Repository) Commit(h internal.Hash) (*Commit, error) {
+func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 	obj, ok := r.Storage.Get(h)
 	if !ok {
 		return nil, ObjectNotFoundErr
@@ -97,7 +97,7 @@ func (r *Repository) Commits() *CommitIter {
 }
 
 // Tree return the tree with the given hash
-func (r *Repository) Tree(h internal.Hash) (*Tree, error) {
+func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 	obj, ok := r.Storage.Get(h)
 	if !ok {
 		return nil, ObjectNotFoundErr
