@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v2/core"
@@ -42,15 +41,26 @@ func (e Endpoint) Service(name string) string {
 
 // Capabilities contains all the server capabilities
 // https://github.com/git/git/blob/master/Documentation/technical/protocol-capabilities.txt
-type Capabilities map[string][]string
-
-func parseCapabilities(line string) Capabilities {
-	values, _ := url.ParseQuery(strings.Replace(line, " ", "&", -1))
-
-	return Capabilities(values)
+type Capabilities struct {
+	m map[string]*Capability
+	o []string
 }
 
-func (c Capabilities) Decode(raw string) {
+// Capability represents a server capability
+type Capability struct {
+	Name   string
+	Values []string
+}
+
+// NewCapabilities returns a new Capabilities struct
+func NewCapabilities() *Capabilities {
+	return &Capabilities{
+		m: make(map[string]*Capability, 0),
+	}
+}
+
+// Decode decodes a string
+func (c *Capabilities) Decode(raw string) {
 	parts := strings.SplitN(raw, "HEAD", 2)
 	if len(parts) == 2 {
 		raw = parts[1]
@@ -65,43 +75,42 @@ func (c Capabilities) Decode(raw string) {
 			value = s[1]
 		}
 
-		c[s[0]] = append(c[s[0]], value)
+		c.Add(s[0], value)
 	}
 }
 
-func (c Capabilities) String() string {
-	var o string
-	for key, values := range c {
-		if len(values) == 0 {
-			o += key + " "
-		}
-
-		for _, value := range values {
-			o += fmt.Sprintf("%s=%s ", key, value)
-		}
+// Add adds a capability, values are optional
+func (c *Capabilities) Add(capability string, values ...string) {
+	if !c.Supports(capability) {
+		c.m[capability] = &Capability{Name: capability}
+		c.o = append(c.o, capability)
 	}
 
-	return o[:len(o)-1]
+	if len(values) == 0 {
+		return
+	}
+
+	c.m[capability].Values = append(c.m[capability].Values, values...)
 }
 
-// Supports returns true if capability is preent
-func (r Capabilities) Supports(capability string) bool {
-	_, ok := r[capability]
+// Supports returns true if capability is present
+func (c *Capabilities) Supports(capability string) bool {
+	_, ok := c.m[capability]
 	return ok
 }
 
 // Get returns the values for a capability
-func (r Capabilities) Get(capability string) []string {
-	return r[capability]
+func (c *Capabilities) Get(capability string) *Capability {
+	return c.m[capability]
 }
 
 // SymbolicReference returns the reference for a given symbolic reference
-func (r Capabilities) SymbolicReference(sym string) string {
-	if !r.Supports("symref") {
+func (c *Capabilities) SymbolicReference(sym string) string {
+	if !c.Supports("symref") {
 		return ""
 	}
 
-	for _, symref := range r.Get("symref") {
+	for _, symref := range c.Get("symref").Values {
 		parts := strings.Split(symref, ":")
 		if len(parts) != 2 {
 			continue
@@ -115,23 +124,46 @@ func (r Capabilities) SymbolicReference(sym string) string {
 	return ""
 }
 
+func (c *Capabilities) String() string {
+	if len(c.o) == 0 {
+		return ""
+	}
+
+	var o string
+	for _, key := range c.o {
+		cap := c.m[key]
+		if len(cap.Values) == 0 {
+			o += key + " "
+		}
+
+		for _, value := range cap.Values {
+			o += fmt.Sprintf("%s=%s ", key, value)
+		}
+	}
+
+	return o[:len(o)-1]
+}
+
 type GitUploadPackInfo struct {
-	Capabilities Capabilities
+	Capabilities *Capabilities
 	Head         string
 	Refs         map[string]core.Hash
 }
 
-func NewGitUploadPackInfo(d *pktline.Decoder) (*GitUploadPackInfo, error) {
-	info := &GitUploadPackInfo{}
-	if err := info.read(d); err != nil {
+func NewGitUploadPackInfo() *GitUploadPackInfo {
+	return &GitUploadPackInfo{Capabilities: NewCapabilities()}
+}
+
+func (r *GitUploadPackInfo) Decode(d *pktline.Decoder) error {
+	if err := r.read(d); err != nil {
 		if err == EmptyGitUploadPackErr {
-			return nil, core.NewPermanentError(err)
+			return core.NewPermanentError(err)
 		}
 
-		return nil, core.NewUnexpectedError(err)
+		return core.NewUnexpectedError(err)
 	}
 
-	return info, nil
+	return nil
 }
 
 func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
@@ -147,8 +179,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 			continue
 		}
 
-		if r.Capabilities == nil {
-			r.Capabilities = Capabilities{}
+		if len(r.Capabilities.o) == 0 {
 			r.Capabilities.Decode(line)
 			continue
 		}
@@ -189,7 +220,7 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 	e := pktline.NewEncoder()
 	e.AddLine("# service=git-upload-pack")
 	e.AddFlush()
-	e.AddLine(fmt.Sprintf("%s HEAD%s", r.Refs[r.Head], r.Capabilities.String()))
+	e.AddLine(fmt.Sprintf("%s HEAD\x00%s", r.Refs[r.Head].String(), r.Capabilities.String()))
 
 	for name, id := range r.Refs {
 		e.AddLine(fmt.Sprintf("%s %s", id, name))

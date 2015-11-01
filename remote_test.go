@@ -34,7 +34,7 @@ func (s *SuiteRemote) TestCapabilities(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.Capabilities().Get("agent"), HasLen, 1)
+	c.Assert(r.Capabilities().Get("agent").Values, HasLen, 1)
 }
 
 func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {

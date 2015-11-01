@@ -2,9 +2,7 @@ package git
 
 import (
 	"io"
-	"net/url"
 	"os"
-	"strings"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -23,11 +21,11 @@ func (s *MockGitUploadPackService) Connect(url common.Endpoint) error {
 func (s *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	hash := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	line := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf"
-	values, _ := url.ParseQuery(strings.Replace(line, " ", "&", -1))
+	cap := common.NewCapabilities()
+	cap.Decode("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf")
 
 	return &common.GitUploadPackInfo{
-		Capabilities: common.Capabilities(values),
+		Capabilities: cap,
 		Head:         "refs/heads/master",
 		Refs:         map[string]core.Hash{"refs/heads/master": hash},
 	}, nil

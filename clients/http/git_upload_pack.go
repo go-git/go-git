@@ -38,8 +38,8 @@ func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 
 	defer res.Body.Close()
 
-	dec := pktline.NewDecoder(res.Body)
-	return common.NewGitUploadPackInfo(dec)
+	i := common.NewGitUploadPackInfo()
+	return i, i.Decode(pktline.NewDecoder(res.Body))
 }
 
 func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadCloser, error) {

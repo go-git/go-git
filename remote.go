@@ -44,7 +44,7 @@ func (r *Remote) Connect() error {
 }
 
 // Capabilities returns the remote capabilities
-func (r *Remote) Capabilities() common.Capabilities {
+func (r *Remote) Capabilities() *common.Capabilities {
 	return r.upInfo.Capabilities
 }
 
