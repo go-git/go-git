@@ -132,13 +132,24 @@ func (c *Capabilities) String() string {
 	var o string
 	for _, key := range c.o {
 		cap := c.m[key]
-		if len(cap.Values) == 0 {
-			o += key + " "
-		}
 
+		added := false
 		for _, value := range cap.Values {
+			if value == "" {
+				continue
+			}
+
+			added = true
 			o += fmt.Sprintf("%s=%s ", key, value)
 		}
+
+		if len(cap.Values) == 0 || !added {
+			o += key + " "
+		}
+	}
+
+	if len(o) == 0 {
+		return o
 	}
 
 	return o[:len(o)-1]
@@ -180,7 +191,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 		}
 
 		if len(r.Capabilities.o) == 0 {
-			r.Capabilities.Decode(line)
+			r.decodeHeaderLine(line)
 			continue
 		}
 
@@ -193,6 +204,13 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	}
 
 	return nil
+}
+
+func (r *GitUploadPackInfo) decodeHeaderLine(line string) {
+	parts := strings.SplitN(line, " HEAD", 2)
+
+	r.Head = parts[0]
+	r.Capabilities.Decode(line)
 }
 
 func (r *GitUploadPackInfo) isValidLine(line string) bool {

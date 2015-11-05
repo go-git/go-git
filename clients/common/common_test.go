@@ -53,6 +53,7 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 	ref := i.Capabilities.SymbolicReference("HEAD")
 	c.Assert(ref, Equals, "refs/heads/master")
 	c.Assert(i.Refs[ref].String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	c.Assert(i.Head, Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
