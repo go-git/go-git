@@ -11,13 +11,20 @@ import (
 
 type Remote struct {
 	Endpoint common.Endpoint
+	Auth     common.AuthMethod
 
-	upSrv  clients.GitUploadPackService
+	upSrv  common.GitUploadPackService
 	upInfo *common.GitUploadPackInfo
 }
 
 // NewRemote returns a new Remote, using as client http.DefaultClient
 func NewRemote(url string) (*Remote, error) {
+	return NewAuthenticatedRemote(url, nil)
+}
+
+// NewAuthenticatedRemote returns a new Remote using the given AuthMethod, using as
+// client http.DefaultClient
+func NewAuthenticatedRemote(url string, auth common.AuthMethod) (*Remote, error) {
 	end, err := common.NewEndpoint(url)
 	if err != nil {
 		return nil, err
@@ -25,16 +32,28 @@ func NewRemote(url string) (*Remote, error) {
 
 	return &Remote{
 		Endpoint: end,
+		Auth:     auth,
 		upSrv:    clients.NewGitUploadPackService(),
 	}, nil
 }
 
 // Connect with the endpoint
 func (r *Remote) Connect() error {
-	if err := r.upSrv.Connect(r.Endpoint); err != nil {
+	var err error
+	if r.Auth == nil {
+		err = r.upSrv.Connect(r.Endpoint)
+	} else {
+		err = r.upSrv.ConnectWithAuth(r.Endpoint, r.Auth)
+	}
+
+	if err != nil {
 		return err
 	}
 
+	return r.retrieveUpInfo()
+}
+
+func (r *Remote) retrieveUpInfo() error {
 	var err error
 	if r.upInfo, err = r.upSrv.Info(); err != nil {
 		return err

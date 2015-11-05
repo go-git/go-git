@@ -19,6 +19,23 @@ func (s *SuiteRemote) TestConnect(c *C) {
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 }
 
+func (s *SuiteRemote) TestConnectWithAuth(c *C) {
+	auth := &BasicAuth{}
+	r := NewGitUploadPackService()
+	c.Assert(r.ConnectWithAuth(RepositoryFixture, auth), IsNil)
+	c.Assert(r.auth, Equals, auth)
+}
+
+type mockAuth struct{}
+
+func (*mockAuth) Name() string   { return "" }
+func (*mockAuth) String() string { return "" }
+
+func (s *SuiteRemote) TestConnectWithAuthWrongType(c *C) {
+	r := NewGitUploadPackService()
+	c.Assert(r.ConnectWithAuth(RepositoryFixture, &mockAuth{}), Equals, InvalidAuthMethodErr)
+}
+
 func (s *SuiteRemote) TestDefaultBranch(c *C) {
 	r := NewGitUploadPackService()
 	c.Assert(r.Connect(RepositoryFixture), IsNil)

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"gopkg.in/src-d/go-git.v2/clients/http"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
 
@@ -12,6 +13,13 @@ type SuiteRemote struct{}
 var _ = Suite(&SuiteRemote{})
 
 const RepositoryFixture = "https://github.com/tyba/git-fixture"
+
+func (s *SuiteRemote) TestNewAuthenticatedRemote(c *C) {
+	auth := &http.BasicAuth{}
+	r, err := NewAuthenticatedRemote(RepositoryFixture, auth)
+	c.Assert(err, IsNil)
+	c.Assert(r.Auth, Equals, auth)
+}
 
 func (s *SuiteRemote) TestConnect(c *C) {
 	r, err := NewRemote(RepositoryFixture)

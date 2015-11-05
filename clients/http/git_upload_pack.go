@@ -15,6 +15,7 @@ type GitUploadPackService struct {
 	Client *http.Client
 
 	endpoint common.Endpoint
+	auth     HTTPAuthMethod
 }
 
 func NewGitUploadPackService() *GitUploadPackService {
@@ -25,6 +26,18 @@ func NewGitUploadPackService() *GitUploadPackService {
 
 func (s *GitUploadPackService) Connect(url common.Endpoint) error {
 	s.endpoint = url
+
+	return nil
+}
+
+func (s *GitUploadPackService) ConnectWithAuth(url common.Endpoint, auth common.AuthMethod) error {
+	httpAuth, ok := auth.(HTTPAuthMethod)
+	if !ok {
+		return InvalidAuthMethodErr
+	}
+
+	s.endpoint = url
+	s.auth = httpAuth
 
 	return nil
 }
@@ -69,8 +82,10 @@ func (s *GitUploadPackService) doRequest(method, url string, content *strings.Re
 	}
 
 	s.applyHeadersToRequest(req, content)
+	s.applyAuthToRequest(req)
 
 	res, err := s.Client.Do(req)
+
 	if err != nil {
 		return nil, core.NewUnexpectedError(err)
 	}
@@ -93,4 +108,12 @@ func (s *GitUploadPackService) applyHeadersToRequest(req *http.Request, content 
 		req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
 		req.Header.Add("Content-Length", string(content.Len()))
 	}
+}
+
+func (s *GitUploadPackService) applyAuthToRequest(req *http.Request) {
+	if s.auth == nil {
+		return
+	}
+
+	s.auth.setAuth(req)
 }

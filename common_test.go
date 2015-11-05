@@ -12,9 +12,16 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-type MockGitUploadPackService struct{}
+type MockGitUploadPackService struct {
+	Auth common.AuthMethod
+}
 
 func (s *MockGitUploadPackService) Connect(url common.Endpoint) error {
+	return nil
+}
+
+func (s *MockGitUploadPackService) ConnectWithAuth(url common.Endpoint, auth common.AuthMethod) error {
+	s.Auth = auth
 	return nil
 }
 

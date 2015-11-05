@@ -3,6 +3,7 @@ package common
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"strings"
 
@@ -18,6 +19,18 @@ var (
 )
 
 const GitUploadPackServiceName = "git-upload-pack"
+
+type GitUploadPackService interface {
+	Connect(url Endpoint) error
+	ConnectWithAuth(url Endpoint, auth AuthMethod) error
+	Info() (*GitUploadPackInfo, error)
+	Fetch(r *GitUploadPackRequest) (io.ReadCloser, error)
+}
+
+type AuthMethod interface {
+	Name() string
+	String() string
+}
 
 type Endpoint string
 

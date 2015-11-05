@@ -16,7 +16,7 @@ var _ = Suite(&ObjectsSuite{})
 
 func (s *ObjectsSuite) SetUpTest(c *C) {
 	var err error
-	s.r, err = NewRepository(RepositoryFixture)
+	s.r, err = NewRepository(RepositoryFixture, nil)
 	s.r.Remotes["origin"].upSrv = &MockGitUploadPackService{}
 
 	s.r.Pull("origin", "refs/heads/master")

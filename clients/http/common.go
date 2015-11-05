@@ -1,12 +1,45 @@
 package http
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
 	"gopkg.in/src-d/go-git.v2/clients/common"
 	"gopkg.in/src-d/go-git.v2/core"
 )
+
+var InvalidAuthMethodErr = errors.New("invalid http auth method: a http.HTTPAuthMethod should be provided.")
+
+type HTTPAuthMethod interface {
+	common.AuthMethod
+	setAuth(r *http.Request)
+}
+
+type BasicAuth struct {
+	username, password string
+}
+
+func NewBasicAuth(username, password string) *BasicAuth {
+	return &BasicAuth{username, password}
+}
+
+func (a *BasicAuth) setAuth(r *http.Request) {
+	r.SetBasicAuth(a.username, a.password)
+}
+
+func (a *BasicAuth) Name() string {
+	return "http-basic-auth"
+}
+
+func (a *BasicAuth) String() string {
+	masked := "*******"
+	if a.password == "" {
+		masked = "<empty>"
+	}
+
+	return fmt.Sprintf("%s - %s:%s", a.Name(), a.username, masked)
+}
 
 type HTTPError struct {
 	Response *http.Response

@@ -23,8 +23,16 @@ type Repository struct {
 }
 
 // NewRepository creates a new repository setting remote as default remote
-func NewRepository(url string) (*Repository, error) {
-	remote, err := NewRemote(url)
+func NewRepository(url string, auth common.AuthMethod) (*Repository, error) {
+	var remote *Remote
+	var err error
+
+	if auth == nil {
+		remote, err = NewRemote(url)
+	} else {
+		remote, err = NewAuthenticatedRemote(url, auth)
+	}
+
 	if err != nil {
 		return nil, err
 	}
