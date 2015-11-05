@@ -43,12 +43,17 @@ func (r *Remote) Connect() error {
 	return nil
 }
 
+// Info returns the git-upload-pack info
+func (r *Remote) Info() *common.GitUploadPackInfo {
+	return r.upInfo
+}
+
 // Capabilities returns the remote capabilities
 func (r *Remote) Capabilities() *common.Capabilities {
 	return r.upInfo.Capabilities
 }
 
-// DefaultBranch retrieve the name of the remote's default branch
+// DefaultBranch returns the name of the remote's default branch
 func (r *Remote) DefaultBranch() string {
 	return r.upInfo.Capabilities.SymbolicReference("HEAD")
 }
