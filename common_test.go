@@ -33,7 +33,7 @@ func (s *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 
 	return &common.GitUploadPackInfo{
 		Capabilities: cap,
-		Head:         "refs/heads/master",
+		Head:         hash,
 		Refs:         map[string]core.Hash{"refs/heads/master": hash},
 	}, nil
 }

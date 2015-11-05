@@ -85,7 +85,6 @@ func (s *GitUploadPackService) doRequest(method, url string, content *strings.Re
 	s.applyAuthToRequest(req)
 
 	res, err := s.Client.Do(req)
-
 	if err != nil {
 		return nil, core.NewUnexpectedError(err)
 	}

@@ -53,7 +53,7 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 	ref := i.Capabilities.SymbolicReference("HEAD")
 	c.Assert(ref, Equals, "refs/heads/master")
 	c.Assert(i.Refs[ref].String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	c.Assert(i.Head, Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	c.Assert(i.Head.String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
@@ -73,7 +73,16 @@ func (s *SuiteCommon) TestCapabilitiesDecode(c *C) {
 	c.Assert(cap.Get("thin-pack").Values, DeepEquals, []string{""})
 }
 
-func (s *SuiteCommon) TestCapabilitiesString(c *C) {
+func (s *SuiteCommon) TestCapabilitiesSet(c *C) {
+	cap := NewCapabilities()
+	cap.Add("symref", "foo", "qux")
+	cap.Set("symref", "bar")
+
+	c.Assert(cap.m, HasLen, 1)
+	c.Assert(cap.Get("symref").Values, DeepEquals, []string{"bar"})
+}
+
+func (s *SuiteCommon) TestCapabilitiesAdd(c *C) {
 	cap := NewCapabilities()
 	cap.Add("symref", "foo", "qux")
 	cap.Add("thin-pack")
@@ -85,9 +94,9 @@ func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
 	info := NewGitUploadPackInfo()
 	info.Capabilities.Add("symref", "HEAD:refs/heads/master")
 
-	info.Head = "refs/heads/master"
+	info.Head = core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	info.Refs = map[string]core.Hash{
-		"refs/heads/master": core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		"refs/heads/master": info.Head,
 	}
 
 	c.Assert(info.String(), Equals,

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"gopkg.in/src-d/go-git.v2/clients/common"
+
 	"gopkg.in/src-d/go-git.v2/core"
 )
 

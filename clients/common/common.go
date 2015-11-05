@@ -92,6 +92,17 @@ func (c *Capabilities) Decode(raw string) {
 	}
 }
 
+// Get returns the values for a capability
+func (c *Capabilities) Get(capability string) *Capability {
+	return c.m[capability]
+}
+
+// Set sets a capability removing the values
+func (c *Capabilities) Set(capability string, values ...string) {
+	delete(c.m, capability)
+	c.Add(capability, values...)
+}
+
 // Add adds a capability, values are optional
 func (c *Capabilities) Add(capability string, values ...string) {
 	if !c.Supports(capability) {
@@ -110,11 +121,6 @@ func (c *Capabilities) Add(capability string, values ...string) {
 func (c *Capabilities) Supports(capability string) bool {
 	_, ok := c.m[capability]
 	return ok
-}
-
-// Get returns the values for a capability
-func (c *Capabilities) Get(capability string) *Capability {
-	return c.m[capability]
 }
 
 // SymbolicReference returns the reference for a given symbolic reference
@@ -170,7 +176,7 @@ func (c *Capabilities) String() string {
 
 type GitUploadPackInfo struct {
 	Capabilities *Capabilities
-	Head         string
+	Head         core.Hash
 	Refs         map[string]core.Hash
 }
 
@@ -221,8 +227,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 
 func (r *GitUploadPackInfo) decodeHeaderLine(line string) {
 	parts := strings.SplitN(line, " HEAD", 2)
-
-	r.Head = parts[0]
+	r.Head = core.NewHash(parts[0])
 	r.Capabilities.Decode(line)
 }
 
@@ -251,7 +256,7 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 	e := pktline.NewEncoder()
 	e.AddLine("# service=git-upload-pack")
 	e.AddFlush()
-	e.AddLine(fmt.Sprintf("%s HEAD\x00%s", r.Refs[r.Head].String(), r.Capabilities.String()))
+	e.AddLine(fmt.Sprintf("%s HEAD\x00%s", r.Head, r.Capabilities.String()))
 
 	for name, id := range r.Refs {
 		e.AddLine(fmt.Sprintf("%s %s", id, name))
