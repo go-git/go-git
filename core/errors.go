@@ -3,7 +3,7 @@ package core
 import "fmt"
 
 type PermanentError struct {
-	err error
+	Err error
 }
 
 func NewPermanentError(err error) *PermanentError {
@@ -11,15 +11,15 @@ func NewPermanentError(err error) *PermanentError {
 		return nil
 	}
 
-	return &PermanentError{err: err}
+	return &PermanentError{Err: err}
 }
 
 func (e *PermanentError) Error() string {
-	return fmt.Sprintf("permanent client error: %s", e.err.Error())
+	return fmt.Sprintf("permanent client error: %s", e.Err.Error())
 }
 
 type UnexpectedError struct {
-	err error
+	Err error
 }
 
 func NewUnexpectedError(err error) *UnexpectedError {
@@ -27,9 +27,9 @@ func NewUnexpectedError(err error) *UnexpectedError {
 		return nil
 	}
 
-	return &UnexpectedError{err: err}
+	return &UnexpectedError{Err: err}
 }
 
 func (e *UnexpectedError) Error() string {
-	return fmt.Sprintf("unexpected client error: %s", e.err.Error())
+	return fmt.Sprintf("unexpected client error: %s", e.Err.Error())
 }
