@@ -108,15 +108,10 @@ func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
 }
 
 func (s *SuiteCommon) TestGitUploadPackRequest(c *C) {
-	r := &GitUploadPackRequest{
-		Want: []core.Hash{
-			core.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"),
-			core.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"),
-		},
-		Have: []core.Hash{
-			core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-		},
-	}
+	r := &GitUploadPackRequest{}
+	r.Want(core.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
+	r.Want(core.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
+	r.Have(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	c.Assert(r.String(), Equals,
 		"0032want d82f291cde9987322c8a0c81a325e1ba6159684c\n"+

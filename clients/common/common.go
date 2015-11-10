@@ -268,8 +268,16 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 }
 
 type GitUploadPackRequest struct {
-	Want []core.Hash
-	Have []core.Hash
+	Wants []core.Hash
+	Haves []core.Hash
+}
+
+func (r *GitUploadPackRequest) Want(h ...core.Hash) {
+	r.Wants = append(r.Wants, h...)
+}
+
+func (r *GitUploadPackRequest) Have(h ...core.Hash) {
+	r.Haves = append(r.Haves, h...)
 }
 
 func (r *GitUploadPackRequest) String() string {
@@ -279,11 +287,11 @@ func (r *GitUploadPackRequest) String() string {
 
 func (r *GitUploadPackRequest) Reader() *strings.Reader {
 	e := pktline.NewEncoder()
-	for _, want := range r.Want {
+	for _, want := range r.Wants {
 		e.AddLine(fmt.Sprintf("want %s", want))
 	}
 
-	for _, have := range r.Have {
+	for _, have := range r.Haves {
 		e.AddLine(fmt.Sprintf("have %s", have))
 	}
 

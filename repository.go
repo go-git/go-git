@@ -66,14 +66,16 @@ func (r *Repository) Pull(remoteName, branch string) error {
 		return err
 	}
 
-	reader, err := remote.Fetch(&common.GitUploadPackRequest{
-		Want: []core.Hash{ref},
-	})
+	req := &common.GitUploadPackRequest{}
+	req.Want(ref)
+
+	reader, err := remote.Fetch(req)
+	if err != nil {
+		return err
+	}
 
 	pr := packfile.NewReader(reader)
-	_, err = pr.Read(r.Storage)
-
-	if err != nil {
+	if _, err = pr.Read(r.Storage); err != nil {
 		return err
 	}
 

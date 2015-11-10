@@ -89,9 +89,10 @@ func (r *Remote) FetchDefaultBranch() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	return r.Fetch(&common.GitUploadPackRequest{
-		Want: []core.Hash{ref},
-	})
+	req := &common.GitUploadPackRequest{}
+	req.Want(ref)
+
+	return r.Fetch(req)
 }
 
 // Ref returns the Hash pointing the given refName

@@ -58,12 +58,10 @@ func (s *SuiteRemote) TestFetch(c *C) {
 	r := NewGitUploadPackService()
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 
-	reader, err := r.Fetch(&common.GitUploadPackRequest{
-		Want: []core.Hash{
-			core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-		},
-	})
+	req := &common.GitUploadPackRequest{}
+	req.Want(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
+	reader, err := r.Fetch(req)
 	c.Assert(err, IsNil)
 
 	b, err := ioutil.ReadAll(reader)
