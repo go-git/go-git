@@ -45,6 +45,11 @@ func (c *Commit) Parents() *CommitIter {
 	return i
 }
 
+// NumParents returns the number of parents in a commit.
+func (c *Commit) NumParents() int {
+	return len(c.parents)
+}
+
 // Decode transform an core.Object into a Blob struct
 func (c *Commit) Decode(o core.Object) error {
 	c.Hash = o.Hash()
