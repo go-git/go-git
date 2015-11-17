@@ -82,6 +82,13 @@ func (s *SuiteCommon) TestCapabilitiesSet(c *C) {
 	c.Assert(cap.Get("symref").Values, DeepEquals, []string{"bar"})
 }
 
+func (s *SuiteCommon) TestCapabilitiesSetEmpty(c *C) {
+	cap := NewCapabilities()
+	cap.Set("foo", "bar")
+
+	c.Assert(cap.Get("foo").Values, HasLen, 1)
+}
+
 func (s *SuiteCommon) TestCapabilitiesAdd(c *C) {
 	cap := NewCapabilities()
 	cap.Add("symref", "foo", "qux")

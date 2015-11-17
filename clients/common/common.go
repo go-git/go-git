@@ -99,7 +99,10 @@ func (c *Capabilities) Get(capability string) *Capability {
 
 // Set sets a capability removing the values
 func (c *Capabilities) Set(capability string, values ...string) {
-	delete(c.m, capability)
+	if _, ok := c.m[capability]; ok {
+		delete(c.m, capability)
+	}
+
 	c.Add(capability, values...)
 }
 
