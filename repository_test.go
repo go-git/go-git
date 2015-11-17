@@ -69,3 +69,14 @@ func (s *SuiteRepository) TestCommits(c *C) {
 
 	c.Assert(count, Equals, 8)
 }
+
+func (s *SuiteRepository) TestCommitIterClosePanic(c *C) {
+	r, err := NewRepository(RepositoryFixture, nil)
+	r.Remotes["origin"].upSrv = &MockGitUploadPackService{}
+
+	c.Assert(err, IsNil)
+	c.Assert(r.Pull("origin", "refs/heads/master"), IsNil)
+
+	commits := r.Commits()
+	commits.Close()
+}

@@ -113,17 +113,28 @@ func (i *CommitIter) Next() (*Commit, error) {
 type iter struct {
 	ch chan core.Object
 	r  *Repository
+
+	IsClosed bool
 }
 
 func newIter(r *Repository) iter {
 	ch := make(chan core.Object, 1)
-	return iter{ch, r}
+	return iter{ch: ch, r: r}
 }
 
 func (i *iter) Add(o core.Object) {
+	if i.IsClosed {
+		return
+	}
+
 	i.ch <- o
 }
 
 func (i *iter) Close() {
+	if i.IsClosed {
+		return
+	}
+
+	defer func() { i.IsClosed = true }()
 	close(i.ch)
 }
