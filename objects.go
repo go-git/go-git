@@ -76,7 +76,15 @@ func (s *Signature) Decode(b []byte) {
 			if c == ' ' || end {
 				t, err := strconv.ParseInt(string(b[from:i]), 10, 64)
 				if err == nil {
-					s.When = time.Unix(t, 0)
+					loc := time.UTC
+					ts := time.Unix(t, 0)
+					if len(b[i:]) >= 6 {
+						tl, err := time.Parse(" -0700", string(b[i:i+6]))
+						if err == nil {
+							loc = tl.Location()
+						}
+					}
+					s.When = ts.In(loc)
 				}
 				end = true
 			}
