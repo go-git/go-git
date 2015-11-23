@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"io/ioutil"
 	"time"
 
@@ -42,7 +43,7 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 
 	c.Assert(commit.Author.Email, Equals, "mcuadros@gmail.com")
 	c.Assert(commit.Author.Name, Equals, "Máximo Cuadros")
-	c.Assert(commit.Author.When.Unix(), Equals, int64(1427802434))
+	c.Assert(commit.Author.When.Format(time.RFC3339), Equals, "2015-03-31T13:47:14+02:00")
 	c.Assert(commit.Committer.Email, Equals, "mcuadros@gmail.com")
 	c.Assert(commit.Message, Equals, "Merge pull request #1 from dripolles/feature\n\nCreating changelog\n")
 }
@@ -92,17 +93,22 @@ func (s *ObjectsSuite) TestParseSignature(c *C) {
 		`Foo Bar <foo@bar.com> 1257894000 +0100`: {
 			Name:  "Foo Bar",
 			Email: "foo@bar.com",
-			When:  time.Unix(1257894000, 0),
+			When:  MustParseTime("2009-11-11 00:00:00 +0100"),
+		},
+		`Foo Bar <foo@bar.com> 1257894000 -0700`: {
+			Name:  "Foo Bar",
+			Email: "foo@bar.com",
+			When:  MustParseTime("2009-11-10 16:00:00 -0700"),
 		},
 		`Foo Bar <> 1257894000 +0100`: {
 			Name:  "Foo Bar",
 			Email: "",
-			When:  time.Unix(1257894000, 0),
+			When:  MustParseTime("2009-11-11 00:00:00 +0100"),
 		},
 		` <> 1257894000`: {
 			Name:  "",
 			Email: "",
-			When:  time.Unix(1257894000, 0),
+			When:  MustParseTime("2009-11-10 23:00:00 +0000"),
 		},
 		`Foo Bar <foo@bar.com>`: {
 			Name:  "Foo Bar",
@@ -122,11 +128,17 @@ func (s *ObjectsSuite) TestParseSignature(c *C) {
 	}
 
 	for raw, exp := range cases {
+		fmt.Println("> testing", raw)
 		got := &Signature{}
 		got.Decode([]byte(raw))
 
 		c.Assert(got.Name, Equals, exp.Name)
 		c.Assert(got.Email, Equals, exp.Email)
-		c.Assert(got.When.Unix(), Equals, exp.When.Unix())
+		c.Assert(got.When.Format(time.RFC3339), Equals, exp.When.Format(time.RFC3339))
 	}
+}
+
+func MustParseTime(value string) time.Time {
+	t, _ := time.Parse("2006-01-02 15:04:05 -0700", value)
+	return t
 }
