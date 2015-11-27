@@ -1,9 +1,10 @@
 package git
 
 import (
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v2/clients/http"
 	"gopkg.in/src-d/go-git.v2/core"
+
+	. "gopkg.in/check.v1"
 )
 
 type SuiteRepository struct{}
@@ -14,6 +15,7 @@ func (s *SuiteRepository) TestNewRepository(c *C) {
 	r, err := NewRepository(RepositoryFixture, nil)
 	c.Assert(err, IsNil)
 	c.Assert(r.Remotes["origin"].Auth, IsNil)
+	c.Assert(r.URL, Equals, RepositoryFixture)
 }
 
 func (s *SuiteRepository) TestNewRepositoryWithAuth(c *C) {

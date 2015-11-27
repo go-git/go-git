@@ -12,26 +12,25 @@
 // The current implementation tries to get something similar to what you
 // whould get using git-revlist. See the failing tests for some
 // insight about how the current implementation and git-revlist differs.
+//
+// Another way to get the revision history for a file is:
+// git log --follow -p -- file
 package revlist
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"sort"
-
-	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"gopkg.in/src-d/go-git.v2"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/diff"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// New errors defined by the package.
-var ErrFileNotFound = errors.New("file not found")
-
 // A Revs is a list of revisions for a file (basically a list of commits).
-// It implements sort.Interface.
+// It implements sort.Interface using the commit time.
 type Revs []*git.Commit
 
 func (l Revs) Len() int {
@@ -48,7 +47,7 @@ func (l Revs) Swap(i, j int) {
 }
 
 // for debugging
-func (l Revs) String() string {
+func (l Revs) GoString() string {
 	var buf bytes.Buffer
 	for _, c := range l {
 		buf.WriteString(c.Hash.String()[:8])
@@ -57,16 +56,16 @@ func (l Revs) String() string {
 	return buf.String()
 }
 
-// New returns a Revs pointer for the
-// file at "path", from commit "commit" backwards in time.
-// The commits are stored in arbitrary order.
+// NewRevs returns a Revs pointer for the
+// file at "path", from commit "commit".
+// The commits are sorted in commit order.
 // It stops searching a branch for a file upon reaching the commit
-// were it was created.
+// were the file was created.
 // Moves and copies are not currently supported.
-// Cherry-picks are not detected and therefore are added to the list
+// Cherry-picks are not detected unless there are no commits between
+// them and therefore can appear repeated in the list.
 // (see git path-id for hints on how to fix this).
-// This function implements is equivalent to running go-rev-Revs.
-func New(repo *git.Repository, commit *git.Commit, path string) (Revs, error) {
+func NewRevs(repo *git.Repository, commit *git.Commit, path string) (Revs, error) {
 	result := make(Revs, 0)
 	seen := make(map[core.Hash]struct{}, 0)
 	err := walkGraph(&result, &seen, repo, commit, path)
@@ -74,7 +73,7 @@ func New(repo *git.Repository, commit *git.Commit, path string) (Revs, error) {
 		return nil, err
 	}
 	sort.Sort(result)
-	result = removeComp(path, result, equivalent) // for merges of identical cherry-picks
+	result, err = removeComp(path, result, equivalent) // for merges of identical cherry-picks
 	if err != nil {
 		return nil, err
 	}
@@ -91,10 +90,12 @@ func walkGraph(result *Revs, seen *map[core.Hash]struct{}, repo *git.Repository,
 	(*seen)[current.Hash] = struct{}{}
 
 	// if the path is not in the current commit, stop searching.
-	if _, found := git.FindFile(path, current); !found {
+	if _, err := current.File(path); err != nil {
 		return nil
 	}
 
+	// optimization: don't traverse branches that does not
+	// contain the path.
 	parents := parentsContainingPath(path, current)
 
 	switch len(parents) {
@@ -103,7 +104,6 @@ func walkGraph(result *Revs, seen *map[core.Hash]struct{}, repo *git.Repository,
 	// stop searching. This includes the case when current is the
 	// initial commit.
 	case 0:
-		//fmt.Println(current.Hash.String(), ": case 0")
 		*result = append(*result, current)
 		return nil
 	case 1: // only one parent contains the path
@@ -113,7 +113,6 @@ func walkGraph(result *Revs, seen *map[core.Hash]struct{}, repo *git.Repository,
 			return err
 		}
 		if len(different) == 1 {
-			//fmt.Println(current.Hash.String(), ": case 1")
 			*result = append(*result, current)
 		}
 		// in any case, walk the parent
@@ -144,7 +143,7 @@ func parentsContainingPath(path string, c *git.Commit) []*git.Commit {
 			}
 			panic("unreachable")
 		}
-		if _, found := git.FindFile(path, parent); found {
+		if _, err := parent.File(path); err == nil {
 			result = append(result, parent)
 		}
 	}
@@ -156,7 +155,7 @@ func differentContents(path string, c *git.Commit, cs []*git.Commit) ([]*git.Com
 	result := make([]*git.Commit, 0, len(cs))
 	h, found := blobHash(path, c)
 	if !found {
-		return nil, ErrFileNotFound
+		return nil, git.ErrFileNotFound
 	}
 	for _, cx := range cs {
 		if hx, found := blobHash(path, cx); found && h != hx {
@@ -168,8 +167,8 @@ func differentContents(path string, c *git.Commit, cs []*git.Commit) ([]*git.Com
 
 // blobHash returns the hash of a path in a commit
 func blobHash(path string, commit *git.Commit) (hash core.Hash, found bool) {
-	file, found := git.FindFile(path, commit)
-	if !found {
+	file, err := commit.File(path)
+	if err != nil {
 		var empty core.Hash
 		return empty, found
 	}
@@ -179,48 +178,71 @@ func blobHash(path string, commit *git.Commit) (hash core.Hash, found bool) {
 // Returns a new slice of commits, with duplicates removed.  Expects a
 // sorted commit list.  Duplication is defined according to "comp".  It
 // will always keep the first commit of a series of duplicated commits.
-func removeComp(path string, cs []*git.Commit, comp func(string, *git.Commit, *git.Commit) bool) []*git.Commit {
+func removeComp(path string, cs []*git.Commit, comp func(string, *git.Commit, *git.Commit) (bool, error)) ([]*git.Commit, error) {
 	result := make([]*git.Commit, 0, len(cs))
 	if len(cs) == 0 {
-		return result
+		return result, nil
 	}
 	result = append(result, cs[0])
 	for i := 1; i < len(cs); i++ {
-		if !comp(path, cs[i], cs[i-1]) {
+		equals, err := comp(path, cs[i], cs[i-1])
+		if err != nil {
+			return nil, err
+		}
+		if !equals {
 			result = append(result, cs[i])
 		}
 	}
-	return result
+	return result, nil
 }
 
 // Equivalent commits are commits whos patch is the same.
-func equivalent(path string, a, b *git.Commit) bool {
+func equivalent(path string, a, b *git.Commit) (bool, error) {
 	numParentsA := a.NumParents()
 	numParentsB := b.NumParents()
 
 	// the first commit is not equivalent to anyone
 	// and "I think" merges can not be equivalent to anything
 	if numParentsA != 1 || numParentsB != 1 {
-		return false
+		return false, nil
 	}
 
-	iterA := a.Parents()
-	parentA, _ := iterA.Next()
-	iterB := b.Parents()
-	parentB, _ := iterB.Next()
-
-	dataA, _ := git.Data(path, a)
-	dataParentA, _ := git.Data(path, parentA)
-	dataB, _ := git.Data(path, b)
-	dataParentB, _ := git.Data(path, parentB)
-
-	diffsA := diff.Do(dataParentA, dataA)
-	diffsB := diff.Do(dataParentB, dataB)
-
-	if sameDiffs(diffsA, diffsB) {
-		return true
+	diffsA, err := patch(a, path)
+	if err != nil {
+		return false, err
 	}
-	return false
+	diffsB, err := patch(b, path)
+	if err != nil {
+		return false, err
+	}
+
+	return sameDiffs(diffsA, diffsB), nil
+}
+
+func patch(c *git.Commit, path string) ([]diffmatchpatch.Diff, error) {
+	// get contents of the file in the commit
+	file, err := c.File(path)
+	if err != nil {
+		return nil, err
+	}
+	content := file.Contents()
+
+	// get contents of the file in the first parent of the commit
+	var contentParent string
+	iter := c.Parents()
+	parent, err := iter.Next()
+	if err != nil {
+		return nil, err
+	}
+	file, err = parent.File(path)
+	if err != nil {
+		contentParent = ""
+	} else {
+		contentParent = file.Contents()
+	}
+
+	// compare the contents of parent and child
+	return diff.Do(content, contentParent), nil
 }
 
 func sameDiffs(a, b []diffmatchpatch.Diff) bool {

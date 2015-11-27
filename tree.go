@@ -115,9 +115,3 @@ func (i *TreeIter) Next() (*Tree, error) {
 	tree := &Tree{r: i.r}
 	return tree, tree.Decode(obj)
 }
-
-type File struct {
-	Name string
-	io.Reader
-	Hash core.Hash
-}

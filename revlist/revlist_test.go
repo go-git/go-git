@@ -51,41 +51,40 @@ func (s *SuiteCommon) SetUpSuite(c *C) {
 var revListTests = [...]struct {
 	// input data to revlist
 	repo   string
-	branch string // TODO: remove this, it is no longer needed for local packfiles
 	commit string
 	path   string
 	// expected output data form the revlist
 	revs []string
 }{
 	// Tyba git-fixture
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", []string{
 		"35e85108805c84807bc66a02d91535e1e24b38b9",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", []string{
 		"b8e471f58bcbca63b07bda20e428190409c2db47",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", []string{
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", []string{
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", []string{
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", []string{
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", []string{
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", []string{
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	}},
-	{"https://github.com/jamesob/desk.git", "master", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "LICENSE", []string{
+	{"https://github.com/jamesob/desk.git", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "LICENSE", []string{
 		"ffcda27c2de6768ee83f3f4a027fa4ab57d50f09",
 	}},
-	{"https://github.com/jamesob/desk.git", "master", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "README.md", []string{
+	{"https://github.com/jamesob/desk.git", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "README.md", []string{
 		"ffcda27c2de6768ee83f3f4a027fa4ab57d50f09",
 		"2e87a2dcc63a115f9a61bd969d1e85fb132a431b",
 		"215b0ac06225b0671bc3460d10da88c3406f796f",
@@ -111,25 +110,25 @@ var revListTests = [...]struct {
 		"d3f3c8faca048d11709969fbfc0cdf2901b87578",
 		"8777dde1abe18c805d021366643218d3f3356dd9",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/reconfigure_spinnaker.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/reconfigure_spinnaker.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/validate_configuration.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/validate_configuration.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 		"1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9",
 		"1e3d328a2cabda5d0aaddc5dec65271343e0dc37",
 		"b5d999e2986e190d81767cd3cfeda0260f9f6fb8",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/fetch.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/fetch.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/yaml_util.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "pylib/spinnaker/yaml_util.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 		"1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9",
 		"b5d999e2986e190d81767cd3cfeda0260f9f6fb8",
 		"023d4fb17b76e0fe0764971df8b8538b735a1d67",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "dev/build_release.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "dev/build_release.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 		"1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9",
 		"f42771ba298b93a7c4f5b16c5b30ab96c15305a8",
@@ -141,10 +140,10 @@ var revListTests = [...]struct {
 		"5422a86a10a8c5a1ef6728f5fc8894d9a4c54cb9",
 		"09a4ea729b25714b6368959eea5113c99938f7b6",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "pkg_scripts/postUninstall.sh", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "pkg_scripts/postUninstall.sh", []string{
 		"ce9f123d790717599aaeb76bc62510de437761be",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/first_google_boot.sh", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/first_google_boot.sh", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 		"de25f576b888569192e6442b0202d30ca7b2d8ec",
 		"a596972a661d9a7deca8abd18b52ce1a39516e89",
@@ -157,13 +156,13 @@ var revListTests = [...]struct {
 		"a57b08a9072f6a865f760551be2a4944f72f804a",
 		"0777fadf4ca6f458d7071de414f9bd5417911037",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/install_spinnaker.sh", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/install_spinnaker.sh", []string{
 		"0d9c9cef53af38cefcb6801bb492aaed3f2c9a42",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/install_fake_openjdk8.sh", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/install_fake_openjdk8.sh", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/install_spinnaker.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/install_spinnaker.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 		"37f94770d81232b1895fca447878f68d65aac652",
 		"46c9dcbb55ca3f4735e82ad006e8cae2fdd050d9",
@@ -174,10 +173,10 @@ var revListTests = [...]struct {
 		"739d8c6fe16edcb6ef9185dc74197de561b84315",
 		"d33c2d1e350b03fb989eefc612e8c9d5fa7cadc2",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/__init__.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "install/__init__.py", []string{
 		"a24001f6938d425d0e7504bdf5d27fc866a85c3d",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "experimental/docker-compose/docker-compose.yml", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "experimental/docker-compose/docker-compose.yml", []string{
 		"fda357835d889595dc39dfebc6181d863cce7d4f",
 		"57c59e7144354a76e1beba69ae2f85db6b1727af",
 		"7682dff881029c722d893a112a64fea6849a0428",
@@ -190,7 +189,7 @@ var revListTests = [...]struct {
 		"ddaae195b628150233b0a48f50a1674fd9d1a924",
 		"7119ad9cf7d4e4d8b059e5337374baae4adc7458",
 	}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "unittest/validate_configuration_test.py", []string{
+	{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "unittest/validate_configuration_test.py", []string{
 		"1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9",
 		"1e3d328a2cabda5d0aaddc5dec65271343e0dc37",
 	}},
@@ -198,19 +197,19 @@ var revListTests = [...]struct {
 	// FAILS
 	/*
 		// this contains an empty move
-		{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "google/dev/build_google_tarball.py", []string{
+		{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "google/dev/build_google_tarball.py", []string{
 			"88e60ac93f832efc2616b3c165e99a8f2ffc3e0c",
 			"9e49443da49b8c862cc140b660744f84eebcfa51",
 		}},
 	*/
 	/*
-		{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "unittest/yaml_util_test.py", []string{
+		{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "unittest/yaml_util_test.py", []string{
 			"edf909edb9319c5e615e4ce73da47bbdca388ebe",
 			"023d4fb17b76e0fe0764971df8b8538b735a1d67",
 		}},
 	*/
 	/*
-		{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "unittest/configurator_test.py", []string{
+		{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "unittest/configurator_test.py", []string{
 			"1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9",
 			"edf909edb9319c5e615e4ce73da47bbdca388ebe",
 			"d14f793a6cd7169ef708a4fc276ad876bd3edd4e",
@@ -219,7 +218,7 @@ var revListTests = [...]struct {
 	*/
 	/*
 		// this contains a cherry-pick at 094d0e7d5d691  (with 3f34438d)
-		{"https://github.com/jamesob/desk.git", "master", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "desk", []string{
+		{"https://github.com/jamesob/desk.git", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "desk", []string{
 			"ffcda27c2de6768ee83f3f4a027fa4ab57d50f09",
 			"a0c1e853158ccbaf95574220bbf3b54509034a9f",
 			"decfc524570c407d6bba0f217e534c8b47dbdbee",
@@ -250,7 +249,7 @@ var revListTests = [...]struct {
 		}},
 	*/
 	/*
-		{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "InstallSpinnaker.sh", []string{
+		{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "InstallSpinnaker.sh", []string{
 			"ce9f123d790717599aaeb76bc62510de437761be",
 			"23673af3ad70b50bba7fdafadc2323302f5ba520",
 			"b7015a5d36990d69a054482556127b9c7404a24a",
@@ -286,7 +285,7 @@ var revListTests = [...]struct {
 		}},
 	*/
 	/*
-		{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "config/default-spinnaker-local.yml", []string{
+		{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "config/default-spinnaker-local.yml", []string{
 			"ae904e8d60228c21c47368f6a10f1cc9ca3aeebf",
 			"99534ecc895fe17a1d562bb3049d4168a04d0865",
 			"caf6d62e8285d4681514dd8027356fb019bc97ff",
@@ -303,7 +302,7 @@ var revListTests = [...]struct {
 		}},
 	*/
 	/*
-		{"https://github.com/spinnaker/spinnaker.git", "master", "b32b2aecae2cfca4840dd480f8082da206a538da", "config/spinnaker.yml", []string{
+		{"https://github.com/spinnaker/spinnaker.git", "b32b2aecae2cfca4840dd480f8082da206a538da", "config/spinnaker.yml", []string{
 			"ae904e8d60228c21c47368f6a10f1cc9ca3aeebf",
 			"caf6d62e8285d4681514dd8027356fb019bc97ff",
 			"eaf7614cad81e8ab5c813dd4821129d0c04ea449",
@@ -327,25 +326,28 @@ func (s *SuiteCommon) TestRevList(c *C) {
 		commit, err := repo.Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil)
 
-		revs, err := New(repo, commit, t.path)
-		c.Assert(err, IsNil)
+		revs, err := NewRevs(repo, commit, t.path)
+		c.Assert(err, IsNil, Commentf("\nrepo=%s, commit=%s, path=%s\n",
+			t.repo, t.commit, t.path))
 
-		c.Assert(len(revs), Equals, len(t.revs), Commentf("\nrepo=%s, branch=%s, commit=%s, path=%s\n    EXPECTED (len %d)\n%s\n    OBTAINED (len %d)\n%s\n",
-			t.repo, t.branch, t.commit, t.path, len(t.revs), t.revs, len(revs), revs.String()))
+		c.Assert(len(revs), Equals, len(t.revs), Commentf("\nrepo=%s, commit=%s, path=%s\n    EXPECTED (len %d)\n%s\n    OBTAINED (len %d)\n%s\n",
+			t.repo, t.commit, t.path, len(t.revs), t.revs, len(revs), revs.GoString()))
 		for i := range revs {
 			if revs[i].Hash.String() != t.revs[i] {
 				commit, err := repo.Commit(core.NewHash(t.revs[i]))
 				c.Assert(err, IsNil)
-				if equivalent(t.path, revs[i], commit) {
+				equiv, err := equivalent(t.path, revs[i], commit)
+				c.Assert(err, IsNil)
+				if equiv {
 					fmt.Printf("cherry-pick detected: %s    %s\n", revs[i].Hash.String(), t.revs[i])
 				} else {
-					c.Fatalf("\nrepo=%s, branch=%s, commit=%s, path=%s, \n%s",
-						t.repo, t.branch, t.commit, t.path, compareSideBySide(t.revs, revs))
+					c.Fatalf("\nrepo=%s, commit=%s, path=%s, \n%s",
+						t.repo, t.commit, t.path, compareSideBySide(t.revs, revs))
 				}
 			}
 		}
-		fmt.Printf("OK repo=%s, branch=%s, commit=%s, path=%s\n",
-			t.repo, t.branch, t.commit, t.path)
+		fmt.Printf("OK repo=%s, commit=%s, path=%s\n",
+			t.repo, t.commit, t.path)
 	}
 }
 
@@ -380,7 +382,9 @@ var cherryPicks = [...][]string{
 func (s *SuiteCommon) TestEquivalent(c *C) {
 	for _, t := range cherryPicks {
 		cs := s.commits(c, t[0], t[2], t[3])
-		c.Assert(equivalent(t[1], cs[0], cs[1]), Equals, true, Commentf("repo=%s, file=%s, a=%s b=%s", t[0], t[1], t[2], t[3]))
+		equiv, err := equivalent(t[1], cs[0], cs[1])
+		c.Assert(err, IsNil)
+		c.Assert(equiv, Equals, true, Commentf("repo=%s, file=%s, a=%s b=%s", t[0], t[1], t[2], t[3]))
 	}
 }
 

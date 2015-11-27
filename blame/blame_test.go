@@ -2,14 +2,14 @@ package blame
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"testing"
 
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v2"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
+
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -32,59 +32,143 @@ var fixtureRepos = [...]struct {
 func (s *SuiteCommon) SetUpSuite(c *C) {
 	s.repos = make(map[string]*git.Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url] = git.NewPlainRepository()
+		repo := git.NewPlainRepository()
+		repo.URL = fixRepo.url
 
 		d, err := os.Open(fixRepo.packfile)
-		defer func() {
-			c.Assert(d.Close(), IsNil)
-		}()
 		c.Assert(err, IsNil)
 
 		r := packfile.NewReader(d)
-		r.Format = packfile.OFSDeltaFormat // TODO: how to know the format of a pack file ahead of time?
+		// TODO: how to know the format of a pack file ahead of time?
+		// Some info at:
+		// https://codewords.recurse.com/issues/three/unpacking-git-packfiles
+		r.Format = packfile.OFSDeltaFormat
 
-		_, err = r.Read(s.repos[fixRepo.url].Storage)
+		_, err = r.Read(repo.Storage)
 		c.Assert(err, IsNil)
+
+		c.Assert(d.Close(), IsNil)
+
+		s.repos[fixRepo.url] = repo
 	}
 }
 
-var blameTests = [...]struct {
-	// input data to revlist
+type blameTest struct {
 	repo   string
-	branch string // TODO: remove this, it is no longer needed for local packfiles
-	commit string
+	rev    string
 	path   string
-	// expected output data form the revlist
-	blames []string
-}{
+	blames []string // the commits blamed for each line
+}
+
+func (s *SuiteCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
+	repo, ok := s.repos[t.repo]
+	c.Assert(ok, Equals, true)
+
+	commit, err := repo.Commit(core.NewHash(t.rev))
+	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, repo, t.rev))
+
+	file, err := commit.File(t.path)
+	c.Assert(err, IsNil)
+	lines := file.Lines()
+	c.Assert(len(t.blames), Equals, len(lines), Commentf(
+		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
+
+	blamedLines := make([]*line, 0, len(t.blames))
+	for i := range t.blames {
+		commit, err := repo.Commit(core.NewHash(t.blames[i]))
+		c.Assert(err, IsNil)
+		l := &line{
+			author: commit.Author.Email,
+			text:   lines[i],
+		}
+		blamedLines = append(blamedLines, l)
+	}
+
+	return &Blame{
+		Repo:  t.repo,
+		Path:  t.path,
+		Rev:   t.rev,
+		Lines: blamedLines,
+	}
+}
+
+// run a blame on all the suite's tests
+func (s *SuiteCommon) TestBlame(c *C) {
+	for i, t := range blameTests {
+		expected := s.mockBlame(t, c)
+
+		repo, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+
+		commit, err := repo.Commit(core.NewHash(t.rev))
+		c.Assert(err, IsNil)
+
+		obtained, err := New(repo, t.path, commit)
+		c.Assert(err, IsNil, Commentf("subtest %d", i))
+
+		c.Assert(obtained, DeepEquals, expected, Commentf("subtest %d: %s",
+			i, sideBySide(obtained, expected)))
+	}
+}
+
+func sideBySide(output, expected *Blame) string {
+	var buf bytes.Buffer
+	buf.WriteString(output.Repo)
+	buf.WriteString("    ")
+	buf.WriteString(expected.Repo)
+	return buf.String()
+}
+
+// utility function to avoid writing so many repeated commits
+func repeat(s string, n int) []string {
+	if n < 0 {
+		panic("repeat: n < 0")
+	}
+	r := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		r = append(r, s)
+	}
+	return r
+}
+
+// utility function to concat slices
+func concat(vargs ...[]string) []string {
+	var result []string
+	for _, ss := range vargs {
+		result = append(result, ss...)
+	}
+	return result
+}
+
+var blameTests = [...]blameTest{
 	// use the blame2humantest.bash script to easily add more tests.
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", concat(
 		repeat("35e85108805c84807bc66a02d91535e1e24b38b9", 285),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", concat(
 		repeat("b8e471f58bcbca63b07bda20e428190409c2db47", 1),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", concat(
 		repeat("918c48b83bd081e863dbe1b80f8998f058cd8294", 142),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", concat(
 		repeat("af2d6a6954d532f8ffb47615169c8fdf9d383a1a", 6492),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", concat(
 		repeat("af2d6a6954d532f8ffb47615169c8fdf9d383a1a", 22),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", concat(
 		repeat("b029517f6300c2da0f4b651b8642506cd6aaf45d", 22),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", concat(
 		repeat("918c48b83bd081e863dbe1b80f8998f058cd8294", 259),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", concat(&[]string{},
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", concat(
 		repeat("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", 7),
 	)},
 	/*
 		// Failed
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "InstallSpinnaker.sh", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "InstallSpinnaker.sh", concat(
 			repeat("ce9f123d790717599aaeb76bc62510de437761be", 2),
 			repeat("a47d0aaeda421f06df248ad65bd58230766bf118", 1),
 			repeat("23673af3ad70b50bba7fdafadc2323302f5ba520", 1),
@@ -239,11 +323,11 @@ var blameTests = [...]struct {
 			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 3),
 		)},
 	*/
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/reconfigure_spinnaker.py", concat(&[]string{},
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/reconfigure_spinnaker.py", concat(
 		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 22),
 		repeat("c89dab0d42f1856d157357e9010f8cc6a12f5b1f", 7),
 	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/validate_configuration.py", concat(&[]string{},
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/validate_configuration.py", concat(
 		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 29),
 		repeat("1e3d328a2cabda5d0aaddc5dec65271343e0dc37", 19),
 		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 15),
@@ -274,12 +358,12 @@ var blameTests = [...]struct {
 		repeat("b5d999e2986e190d81767cd3cfeda0260f9f6fb8", 7),
 		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 4),
 	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/run.py", concat(&[]string{},
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/run.py", concat(
 		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 185),
 	)},
 	/*
 		// Fail by 3
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/configurator.py", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/configurator.py", concat(
 			repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 53),
 			repeat("c89dab0d42f1856d157357e9010f8cc6a12f5b1f", 1),
 			repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 4),
@@ -301,62 +385,8 @@ var blameTests = [...]struct {
 			repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 43),
 		)},
 	*/
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/fetch.py", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 140),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/yaml_util.py", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 68),
-		repeat("1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9", 8),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("023d4fb17b76e0fe0764971df8b8538b735a1d67", 3),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 7),
-		repeat("1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9", 12),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 5),
-		repeat("1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 33),
-		repeat("bb6325e4e629fc7348a6d0e6842280d5304160ff", 40),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("b5d999e2986e190d81767cd3cfeda0260f9f6fb8", 7),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 5),
-		repeat("b5d999e2986e190d81767cd3cfeda0260f9f6fb8", 4),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/spinnaker_runner.py", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 235),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 13),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 7),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 20),
-		repeat("707bcdce04eabdb0549868ad1a8efa2d76b9bdf1", 7),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 21),
-		repeat("2b28ea424acc8f2817d3298c143fae68bcad91a7", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 15),
-		repeat("d73f9cee49a5ad27a42a6e18af7c49a8f28ad8a8", 17),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 336),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/transform_old_config.py", concat(&[]string{},
-		repeat("a596972a661d9a7deca8abd18b52ce1a39516e89", 43),
-		repeat("4584fab37e93d66fd1896d07fa3427f8056711bc", 1),
-		repeat("a596972a661d9a7deca8abd18b52ce1a39516e89", 12),
-		repeat("bb6325e4e629fc7348a6d0e6842280d5304160ff", 1),
-		repeat("a596972a661d9a7deca8abd18b52ce1a39516e89", 16),
-		repeat("0777fadf4ca6f458d7071de414f9bd5417911037", 1),
-		repeat("a596972a661d9a7deca8abd18b52ce1a39516e89", 1),
-		repeat("0777fadf4ca6f458d7071de414f9bd5417911037", 1),
-		repeat("a596972a661d9a7deca8abd18b52ce1a39516e89", 8),
-		repeat("0777fadf4ca6f458d7071de414f9bd5417911037", 1),
-		repeat("a596972a661d9a7deca8abd18b52ce1a39516e89", 31),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/__init__.py", []string{}},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/yaml/LICENSE", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 19),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "settings.gradle", concat(&[]string{},
-		repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "gradle/wrapper/gradle-wrapper.jar", concat(&[]string{},
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/__init__.py", []string{}},
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "gradle/wrapper/gradle-wrapper.jar", concat(
 		repeat("11d6c1020b1765e236ca65b2709d37b5bfdba0f4", 1),
 		repeat("bc02440df2ff95a014a7b3cb11b98c3a2bded777", 7),
 		repeat("11d6c1020b1765e236ca65b2709d37b5bfdba0f4", 2),
@@ -406,15 +436,7 @@ var blameTests = [...]struct {
 		repeat("11d6c1020b1765e236ca65b2709d37b5bfdba0f4", 6),
 		repeat("bc02440df2ff95a014a7b3cb11b98c3a2bded777", 55),
 	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "gradle/wrapper/gradle-wrapper.properties", concat(&[]string{},
-		repeat("bc02440df2ff95a014a7b3cb11b98c3a2bded777", 1),
-		repeat("11d6c1020b1765e236ca65b2709d37b5bfdba0f4", 4),
-		repeat("bc02440df2ff95a014a7b3cb11b98c3a2bded777", 1),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "gradle/buildViaTravis.sh", concat(&[]string{},
-		repeat("7ecc2ad58e24a5b52504985467a10c6a3bb85b9b", 24),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/settings.js", concat(&[]string{},
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/settings.js", concat(
 		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 17),
 		repeat("99534ecc895fe17a1d562bb3049d4168a04d0865", 1),
 		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 43),
@@ -424,7 +446,7 @@ var blameTests = [...]struct {
 	)},
 	/*
 		// fail a few lines
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/default-spinnaker-local.yml", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/default-spinnaker-local.yml", concat(
 			repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 9),
 			repeat("5e09821cbd7d710405b61cab0a795c2982a71b9c", 2),
 			repeat("99534ecc895fe17a1d562bb3049d4168a04d0865", 1),
@@ -449,36 +471,9 @@ var blameTests = [...]struct {
 			repeat("5a2a845bc08974a36d599a4a4b7e25be833823b0", 2),
 		)},
 	*/
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/igor.yml", concat(&[]string{},
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 15),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/echo.yml", concat(&[]string{},
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 15),
-		repeat("5a2a845bc08974a36d599a4a4b7e25be833823b0", 1),
-		repeat("7c8d9a6081d9cb7a56c479bfe64d70540ea32795", 4),
-		repeat("5a2a845bc08974a36d599a4a4b7e25be833823b0", 24),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/orca.yml", concat(&[]string{},
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 40),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/rosco.yml", concat(&[]string{},
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 9),
-		repeat("24dc2d465c85cb242262ab6bc236bde3ffbb93e0", 3),
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 3),
-		repeat("caf6d62e8285d4681514dd8027356fb019bc97ff", 2),
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 3),
-		repeat("974b775a8978b120ff710cac93a21c7387b914c9", 2),
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 1),
-		repeat("974b775a8978b120ff710cac93a21c7387b914c9", 1),
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 2),
-		repeat("974b775a8978b120ff710cac93a21c7387b914c9", 2),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/rush.yml", concat(&[]string{},
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 18),
-	)},
 	/*
 		// fail one line
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/spinnaker.yml", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/spinnaker.yml", concat(
 			repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 32),
 			repeat("41e96c54a478e5d09dd07ed7feb2d8d08d8c7e3c", 2),
 			repeat("5a2a845bc08974a36d599a4a4b7e25be833823b0", 1),
@@ -500,142 +495,15 @@ var blameTests = [...]struct {
 			repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 15),
 		)},
 	*/
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "config/gate.yml", concat(&[]string{},
-		repeat("ae904e8d60228c21c47368f6a10f1cc9ca3aeebf", 29),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/run_dev.sh", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 23),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/build_google_image.sh", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 16),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 18),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/refresh_source.py", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 21),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 4),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 14),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 12),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 35),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 2),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 10),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 34),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 11),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 17),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 8),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 1),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 23),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 8),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 5),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 5),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 6),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 4),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 7),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 1),
-		repeat("ba10a5d5615f68eb9115cada1d639066a53ddc4d", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 7),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 1),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 9),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 4),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a80d310d9ca42c3422627f2ecca7ee1dbefa602a", 13),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 11),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 6),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 3),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 2),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 5),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("b192881117651465df2385ef89344dd5dd4810f3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 2),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 5),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 12),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 11),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 14),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 12),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 4),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 5),
-		repeat("13ad4df676a16caf2ff1ca216be615d5aee37db3", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 36),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 7),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 2),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 4),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 21),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 3),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 6),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 19),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 8),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 14),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("3d3819741bada73fb950f14309c97e1f63492ec6", 2),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 5),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("e3620408a7776039f7853a21748921ea2a281953", 1),
-	)},
 	/*
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/install_development.sh", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/install_development.sh", concat(
 			repeat("99534ecc895fe17a1d562bb3049d4168a04d0865", 1),
 			repeat("d1ff4e13e9e0b500821aa558373878f93487e34b", 71),
 		)},
 	*/
 	/*
 		// FAIL two lines interchanged
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/bootstrap_dev.sh", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/bootstrap_dev.sh", concat(
 			repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 95),
 			repeat("838aed816872c52ed435e4876a7b64dba0bed500", 1),
 			repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 10),
@@ -695,116 +563,10 @@ var blameTests = [...]struct {
 			repeat("838aed816872c52ed435e4876a7b64dba0bed500", 8),
 		)},
 	*/
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/build_release.sh", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 17),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/stop_dev.sh", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 23),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/build_google_image.packer", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 2),
-		repeat("8fe3f13ad04ee25fde0add4ed19d29acd49a5916", 1),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 1),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 2),
-		repeat("8fe3f13ad04ee25fde0add4ed19d29acd49a5916", 1),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 14),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 1),
-		repeat("0d9c9cef53af38cefcb6801bb492aaed3f2c9a42", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 8),
-		repeat("6eb5d9c5225224bfe59c401182a2939d6c27fc00", 1),
-		repeat("f66196ceed7d6aeca313b0632657ab762487ced3", 1),
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 3),
-	)},
-	{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/refresh_source.sh", concat(&[]string{},
-		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 17),
-	)},
 	/*
 		// FAIL move?
-		{"https://github.com/spinnaker/spinnaker.git", "master", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/create_google_dev_vm.sh", concat(&[]string{},
+		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "dev/create_google_dev_vm.sh", concat(
 			repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 20),
 		)},
 	*/
-}
-
-// run a blame on all the suite's tests
-func (s *SuiteCommon) TestBlame(c *C) {
-	for _, t := range blameTests {
-		fmt.Println("Blamming", t.repo, t.branch, t.commit, t.path)
-		repo, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
-
-		commit, err := repo.Commit(core.NewHash(t.commit))
-		c.Assert(err, IsNil)
-
-		blames, err := Blame(repo, commit, t.path)
-		c.Assert(err, IsNil)
-
-		c.Assert(len(blames), Equals, len(t.blames), Commentf("\nrepo=%s, branch=%s, commit=%s, path=%s",
-			t.repo, t.branch, t.commit, t.path))
-		c.Assert(blames, DeepEquals, s.commits(c, t.repo, t.blames...), Commentf("\nrepo=%s, branch=%s, commit=%s, path=%s, \n%s",
-			t.repo, t.branch, t.commit, t.path, compareSideBySide2(t.blames, blames)))
-	}
-}
-
-// TODO: duplicated from revlist/revlist_test.go
-// returns the commits from a slice of hashes
-func (s *SuiteCommon) commits(cc *C, repo string, hs ...string) []*git.Commit {
-	r, ok := s.repos[repo]
-	cc.Assert(ok, Equals, true)
-	result := make([]*git.Commit, 0, len(hs))
-	for _, h := range hs {
-		c, err := r.Commit(core.NewHash(h))
-		cc.Assert(err, IsNil)
-		result = append(result, c)
-	}
-	return result
-}
-
-// TODO: duplicated from revlist/revlist_test.go
-// same length is assumed
-func compareSideBySide2(a []string, b []*git.Commit) string {
-	var buf bytes.Buffer
-	buf.WriteString("\t              EXPECTED                                          OBTAINED        ")
-	var sep string
-	var obtained string
-	for i := range a {
-		obtained = b[i].Hash.String()
-		if a[i] != obtained {
-			sep = "------"
-		} else {
-			sep = "      "
-		}
-		buf.WriteString(fmt.Sprintf("\n%d", i+1))
-		buf.WriteString(sep)
-		buf.WriteString(a[i])
-		buf.WriteString(sep)
-		buf.WriteString(obtained)
-	}
-	return buf.String()
-}
-
-// utility function to avoid writing so many repeated commits
-func repeat(s string, n int) []string {
-	if n < 0 {
-		panic("repeat: n < 0")
-	}
-	r := make([]string, 0, n)
-	for i := 0; i < n; i++ {
-		r = append(r, s)
-	}
-	return r
-}
-
-// utility function to concat slices
-func concat(dst *[]string, vargs ...[]string) []string {
-	for _, ss := range vargs {
-		for _, s := range ss {
-			*dst = append(*dst, s)
-		}
-	}
-	return *dst
 }

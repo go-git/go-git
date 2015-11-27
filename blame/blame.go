@@ -10,8 +10,8 @@ package blame
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -62,52 +62,125 @@ import (
 //	  2. Improve how to traverse the history (example a backward
 //	  traversal will be much more efficient)
 //
-//    TODO: ways to improve the functrion in general
+//    TODO: ways to improve the function in general:
 //
 //    1. Add memoization betweenn revlist and assign.
 //
 //    2. It is using much more memmory than needed, see the TODOs below.
-func Blame(repo *git.Repository, commit *git.Commit, path string) ([]*git.Commit, error) {
+
+type Blame struct {
+	Repo  string
+	Path  string
+	Rev   string
+	Lines []*line
+}
+
+func New(repo *git.Repository, path string, commit *git.Commit) (*Blame, error) {
 	// init the internal blame struct
 	b := new(blame)
 	b.repo = repo
 	b.fRev = commit
 	b.path = path
 
-	// calculte the history of the file and store it in the
-	// internal blame struct.
-	var err error
-	b.revs, err = revlist.New(b.repo, b.fRev, b.path)
+	// get all the file revisions
+	if err := b.fillRevs(); err != nil {
+		return nil, err
+	}
+
+	// calculate the line tracking graph and fill in
+	// file contents in data.
+	if err := b.fillGraphAndData(); err != nil {
+		return nil, err
+	}
+
+	file, err := b.fRev.File(b.path)
 	if err != nil {
 		return nil, err
 	}
-	sort.Sort(b.revs) // for forward blame, we need the history sorted by commit date
+	finalLines := file.Lines()
 
-	// allocate space for the data in all the revisions of the file
-	b.data = make([]string, len(b.revs))
+	lines, err := newLines(finalLines, b.sliceGraph(len(b.graph)-1))
+	if err != nil {
+		return nil, err
+	}
 
-	// init the graph
-	b.graph = make([][]vertex, len(b.revs))
+	return &Blame{
+		Repo:  repo.URL,
+		Path:  path,
+		Rev:   commit.Hash.String(),
+		Lines: lines,
+	}, nil
+}
 
-	// for all every revision of the file, starting with the first
+type line struct {
+	author string
+	text   string
+}
+
+func newLine(author, text string) *line {
+	return &line{
+		author: author,
+		text:   text,
+	}
+}
+
+func newLines(contents []string, commits []*git.Commit) ([]*line, error) {
+	if len(contents) != len(commits) {
+		fmt.Println(len(contents))
+		fmt.Println(len(commits))
+		return nil, errors.New("contents and commits have different length")
+	}
+	result := make([]*line, 0, len(contents))
+	for i := range contents {
+		l := newLine(commits[i].Author.Email, contents[i])
+		result = append(result, l)
+	}
+	return result, nil
+}
+
+// this struct is internally used by the blame function to hold its
+// inputs, outputs and state.
+type blame struct {
+	repo  *git.Repository // the repo holding the history of the file to blame
+	path  string          // the path of the file to blame
+	fRev  *git.Commit     // the commit of the final revision of the file to blame
+	revs  revlist.Revs    // the chain of revisions affecting the the file to blame
+	data  []string        // the contents of the file across all its revisions
+	graph [][]*git.Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
+}
+
+// calculte the history of a file "path", from commit "from, sorted by commit date.
+func (b *blame) fillRevs() error {
+	var err error
+	b.revs, err = revlist.NewRevs(b.repo, b.fRev, b.path)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// build graph of a file from its revision history
+func (b *blame) fillGraphAndData() error {
+	b.graph = make([][]*git.Commit, len(b.revs))
+	b.data = make([]string, len(b.revs)) // file contents in all the revisions
+	// for every revision of the file, starting with the first
 	// one...
-	var found bool
 	for i, rev := range b.revs {
 		// get the contents of the file
-		b.data[i], found = git.Data(b.path, rev)
-		if !found {
-			continue
+		file, err := rev.File(b.path)
+		if err != nil {
+			return nil
 		}
-		// count its lines
+		b.data[i] = file.Contents()
 		nLines := git.CountLines(b.data[i])
 		// create a node for each line
-		b.graph[i] = make([]vertex, nLines)
+		b.graph[i] = make([]*git.Commit, nLines)
 		// assign a commit to each node
 		// if this is the first revision, then the node is assigned to
 		// this first commit.
 		if i == 0 {
 			for j := 0; j < nLines; j++ {
-				b.graph[i][j] = vertex(b.revs[i])
+				b.graph[i][j] = (*git.Commit)(b.revs[i])
 			}
 		} else {
 			// if this is not the first commit, then assign to the old
@@ -116,30 +189,20 @@ func Blame(repo *git.Repository, commit *git.Commit, path string) ([]*git.Commit
 			b.assignOrigin(i, i-1)
 		}
 	}
+	return nil
+}
 
-	// fill in the output results: copy the nodes of the last revision
-	// into the result.
-	fVs := b.graph[len(b.graph)-1]
+// sliceGraph returns a slice of commits (one per line) for a particular
+// revision of a file (0=first revision).
+func (b *blame) sliceGraph(i int) []*git.Commit {
+	fVs := b.graph[i]
 	result := make([]*git.Commit, 0, len(fVs))
 	for _, v := range fVs {
 		c := git.Commit(*v)
 		result = append(result, &c)
 	}
-	return result, nil
+	return result
 }
-
-// this struct is internally used by the blame function to hold its
-// intputs, outputs and state.
-type blame struct {
-	repo  *git.Repository // the repo holding the history of the file to blame
-	path  string          // the path of the file to blame
-	fRev  *git.Commit     // the commit of the final revision of the file to blame
-	revs  revlist.Revs    // the chain of revisions affecting the the file to blame
-	data  []string        // the contents on the file in all the revisions TODO: not all data is needed, only the current rev and the prev
-	graph [][]vertex      // the graph of the lines in the file across all the revisions TODO: not all vertexes are needed, only the current rev and the prev
-}
-
-type vertex *git.Commit // a vertex only needs to store the original commit it came from
 
 // Assigns origin to vertexes in current (c) rev from data in its previous (p)
 // revision
@@ -151,7 +214,6 @@ func (b *blame) assignOrigin(c, p int) {
 	for h := range hunks {
 		hLines := git.CountLines(hunks[h].Text)
 		for hl := 0; hl < hLines; hl++ {
-			// fmt.Printf("file=%q, rev=%d, r=%d, h=%d, hunk=%v, hunkLine=%d\n", file, rev, r, h, hunks[h], hl)
 			switch {
 			case hunks[h].Type == 0:
 				sl++
@@ -159,7 +221,7 @@ func (b *blame) assignOrigin(c, p int) {
 				b.graph[c][dl] = b.graph[p][sl]
 			case hunks[h].Type == 1:
 				dl++
-				b.graph[c][dl] = vertex(b.revs[c])
+				b.graph[c][dl] = (*git.Commit)(b.revs[c])
 			case hunks[h].Type == -1:
 				sl++
 			default:
@@ -169,14 +231,15 @@ func (b *blame) assignOrigin(c, p int) {
 	}
 }
 
-// This will print the results of a Blame as in git-blame.
+// PrettyPrint prints the results of a Blame using git-blame's style.
 func (b *blame) PrettyPrint() string {
 	var buf bytes.Buffer
 
-	contents, found := git.Data(b.path, b.fRev)
-	if !found {
+	file, err := b.fRev.File(b.path)
+	if err != nil {
 		panic("PrettyPrint: internal error in repo.Data")
 	}
+	contents := file.Contents()
 
 	lines := strings.Split(contents, "\n")
 	// max line number length

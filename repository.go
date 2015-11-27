@@ -20,6 +20,7 @@ const (
 type Repository struct {
 	Remotes map[string]*Remote
 	Storage *core.RAWObjectStorage
+	URL     string
 }
 
 // NewRepository creates a new repository setting remote as default remote
@@ -39,6 +40,7 @@ func NewRepository(url string, auth common.AuthMethod) (*Repository, error) {
 
 	r := NewPlainRepository()
 	r.Remotes[DefaultRemoteName] = remote
+	r.URL = url
 
 	return r, nil
 }
