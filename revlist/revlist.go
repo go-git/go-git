@@ -175,10 +175,12 @@ func blobHash(path string, commit *git.Commit) (hash core.Hash, found bool) {
 	return file.Hash, true
 }
 
+type contentsComparatorFn func(path string, a, b *git.Commit) (bool, error)
+
 // Returns a new slice of commits, with duplicates removed.  Expects a
 // sorted commit list.  Duplication is defined according to "comp".  It
 // will always keep the first commit of a series of duplicated commits.
-func removeComp(path string, cs []*git.Commit, comp func(string, *git.Commit, *git.Commit) (bool, error)) ([]*git.Commit, error) {
+func removeComp(path string, cs []*git.Commit, comp contentsComparatorFn) ([]*git.Commit, error) {
 	result := make([]*git.Commit, 0, len(cs))
 	if len(cs) == 0 {
 		return result, nil
@@ -196,7 +198,7 @@ func removeComp(path string, cs []*git.Commit, comp func(string, *git.Commit, *g
 	return result, nil
 }
 
-// Equivalent commits are commits whos patch is the same.
+// Equivalent commits are commits whose patch is the same.
 func equivalent(path string, a, b *git.Commit) (bool, error) {
 	numParentsA := a.NumParents()
 	numParentsB := b.NumParents()

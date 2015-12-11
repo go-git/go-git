@@ -50,10 +50,9 @@ import (
 //    assigned the new commit as its origin. Modified lines also get
 //    this new commit. Untouched lines retain the old commit.
 //
-//    All this work is done in the assignOrigin function.
-//
-//    This function holds all the internal relevant data in a blame
-//    struct, that is not exported.
+//    All this work is done in the assignOrigin function which holds all
+//    the internal relevant data in a "blame" struct, that is not
+//    exported.
 //
 //    TODO: ways to improve the efficiency of this function:
 //
@@ -64,9 +63,9 @@ import (
 //
 //    TODO: ways to improve the function in general:
 //
-//    1. Add memoization betweenn revlist and assign.
+//    1. Add memoization between revlist and assign.
 //
-//    2. It is using much more memmory than needed, see the TODOs below.
+//    2. It is using much more memory than needed, see the TODOs below.
 
 type Blame struct {
 	Repo  string
@@ -126,8 +125,6 @@ func newLine(author, text string) *line {
 
 func newLines(contents []string, commits []*git.Commit) ([]*line, error) {
 	if len(contents) != len(commits) {
-		fmt.Println(len(contents))
-		fmt.Println(len(commits))
 		return nil, errors.New("contents and commits have different length")
 	}
 	result := make([]*line, 0, len(contents))
@@ -149,7 +146,7 @@ type blame struct {
 	graph [][]*git.Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
 }
 
-// calculte the history of a file "path", from commit "from, sorted by commit date.
+// calculte the history of a file "path", starting from commit "from", sorted by commit date.
 func (b *blame) fillRevs() error {
 	var err error
 	b.revs, err = revlist.NewRevs(b.repo, b.fRev, b.path)
@@ -231,8 +228,8 @@ func (b *blame) assignOrigin(c, p int) {
 	}
 }
 
-// PrettyPrint prints the results of a Blame using git-blame's style.
-func (b *blame) PrettyPrint() string {
+// GoString prints the results of a Blame using git-blame's style.
+func (b *blame) GoString() string {
 	var buf bytes.Buffer
 
 	file, err := b.fRev.File(b.path)
