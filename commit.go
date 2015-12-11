@@ -3,11 +3,15 @@ package git
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
 	"gopkg.in/src-d/go-git.v2/core"
 )
+
+// New errors defined by this package.
+var ErrFileNotFound = errors.New("file not found")
 
 type Hash core.Hash
 
@@ -43,6 +47,23 @@ func (c *Commit) Parents() *CommitIter {
 	}()
 
 	return i
+}
+
+// NumParents returns the number of parents in a commit.
+func (c *Commit) NumParents() int {
+	return len(c.parents)
+}
+
+// File returns the file with the specified "path" in the commit and a
+// nil error if the file exists. If the file does not exists, it returns
+// a nil file and the ErrFileNotFound error.
+func (c *Commit) File(path string) (file *File, err error) {
+	for file := range c.Tree().Files() {
+		if file.Name == path {
+			return file, nil
+		}
+	}
+	return nil, ErrFileNotFound
 }
 
 // Decode transform an core.Object into a Blob struct

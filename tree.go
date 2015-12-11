@@ -50,7 +50,7 @@ func (t *Tree) walkEntries(base string, ch chan *File) {
 		blob := &Blob{}
 		blob.Decode(obj)
 
-		ch <- &File{Name: filepath.Join(base, entry.Name), Reader: blob.Reader()}
+		ch <- &File{Name: filepath.Join(base, entry.Name), Reader: blob.Reader(), Hash: entry.Hash}
 	}
 }
 
@@ -114,9 +114,4 @@ func (i *TreeIter) Next() (*Tree, error) {
 
 	tree := &Tree{r: i.r}
 	return tree, tree.Decode(obj)
-}
-
-type File struct {
-	Name string
-	io.Reader
 }
