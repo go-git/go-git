@@ -6,7 +6,7 @@
 //
 // This package also provides a pretty print function to output the
 // results of a blame in a similar format to the git-blame command.
-package blame
+package git
 
 import (
 	"bytes"
@@ -16,14 +16,18 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gopkg.in/src-d/go-git.v2"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/diff"
-	"gopkg.in/src-d/go-git.v2/revlist"
 )
 
-// Blame returns the last commit that modified each line of a file in
-// a repository.
+type Blame struct {
+	Path  string
+	Rev   core.Hash
+	Lines []*line
+}
+
+// Blame returns the last commit that modified each line of a file in a
+// repository.
 //
 // The file to blame is identified by the input arguments: repo, commit and path.
 // The output is a slice of commits, one for each line in the file.
@@ -66,19 +70,9 @@ import (
 //    1. Add memoization between revlist and assign.
 //
 //    2. It is using much more memory than needed, see the TODOs below.
-
-type Blame struct {
-	Repo  string
-	Path  string
-	Rev   string
-	Lines []*line
-}
-
-func New(repo *git.Repository, path string, commit *git.Commit) (*Blame, error) {
-	// init the internal blame struct
+func (c *Commit) Blame(path string) (*Blame, error) {
 	b := new(blame)
-	b.repo = repo
-	b.fRev = commit
+	b.fRev = c
 	b.path = path
 
 	// get all the file revisions
@@ -104,9 +98,8 @@ func New(repo *git.Repository, path string, commit *git.Commit) (*Blame, error) 
 	}
 
 	return &Blame{
-		Repo:  repo.URL,
 		Path:  path,
-		Rev:   commit.Hash.String(),
+		Rev:   c.Hash,
 		Lines: lines,
 	}, nil
 }
@@ -123,7 +116,7 @@ func newLine(author, text string) *line {
 	}
 }
 
-func newLines(contents []string, commits []*git.Commit) ([]*line, error) {
+func newLines(contents []string, commits []*Commit) ([]*line, error) {
 	if len(contents) != len(commits) {
 		return nil, errors.New("contents and commits have different length")
 	}
@@ -138,18 +131,18 @@ func newLines(contents []string, commits []*git.Commit) ([]*line, error) {
 // this struct is internally used by the blame function to hold its
 // inputs, outputs and state.
 type blame struct {
-	repo  *git.Repository // the repo holding the history of the file to blame
-	path  string          // the path of the file to blame
-	fRev  *git.Commit     // the commit of the final revision of the file to blame
-	revs  revlist.Revs    // the chain of revisions affecting the the file to blame
-	data  []string        // the contents of the file across all its revisions
-	graph [][]*git.Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
+	path  string      // the path of the file to blame
+	fRev  *Commit     // the commit of the final revision of the file to blame
+	revs  []*Commit   // the chain of revisions affecting the the file to blame
+	data  []string    // the contents of the file across all its revisions
+	graph [][]*Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
 }
 
 // calculte the history of a file "path", starting from commit "from", sorted by commit date.
 func (b *blame) fillRevs() error {
 	var err error
-	b.revs, err = revlist.NewRevs(b.repo, b.fRev, b.path)
+
+	b.revs, err = b.fRev.References(b.path)
 	if err != nil {
 		return err
 	}
@@ -158,7 +151,7 @@ func (b *blame) fillRevs() error {
 
 // build graph of a file from its revision history
 func (b *blame) fillGraphAndData() error {
-	b.graph = make([][]*git.Commit, len(b.revs))
+	b.graph = make([][]*Commit, len(b.revs))
 	b.data = make([]string, len(b.revs)) // file contents in all the revisions
 	// for every revision of the file, starting with the first
 	// one...
@@ -169,15 +162,15 @@ func (b *blame) fillGraphAndData() error {
 			return nil
 		}
 		b.data[i] = file.Contents()
-		nLines := git.CountLines(b.data[i])
+		nLines := countLines(b.data[i])
 		// create a node for each line
-		b.graph[i] = make([]*git.Commit, nLines)
+		b.graph[i] = make([]*Commit, nLines)
 		// assign a commit to each node
 		// if this is the first revision, then the node is assigned to
 		// this first commit.
 		if i == 0 {
 			for j := 0; j < nLines; j++ {
-				b.graph[i][j] = (*git.Commit)(b.revs[i])
+				b.graph[i][j] = (*Commit)(b.revs[i])
 			}
 		} else {
 			// if this is not the first commit, then assign to the old
@@ -191,11 +184,11 @@ func (b *blame) fillGraphAndData() error {
 
 // sliceGraph returns a slice of commits (one per line) for a particular
 // revision of a file (0=first revision).
-func (b *blame) sliceGraph(i int) []*git.Commit {
+func (b *blame) sliceGraph(i int) []*Commit {
 	fVs := b.graph[i]
-	result := make([]*git.Commit, 0, len(fVs))
+	result := make([]*Commit, 0, len(fVs))
 	for _, v := range fVs {
-		c := git.Commit(*v)
+		c := Commit(*v)
 		result = append(result, &c)
 	}
 	return result
@@ -209,7 +202,7 @@ func (b *blame) assignOrigin(c, p int) {
 	sl := -1 // source line
 	dl := -1 // destination line
 	for h := range hunks {
-		hLines := git.CountLines(hunks[h].Text)
+		hLines := countLines(hunks[h].Text)
 		for hl := 0; hl < hLines; hl++ {
 			switch {
 			case hunks[h].Type == 0:
@@ -218,7 +211,7 @@ func (b *blame) assignOrigin(c, p int) {
 				b.graph[c][dl] = b.graph[p][sl]
 			case hunks[h].Type == 1:
 				dl++
-				b.graph[c][dl] = (*git.Commit)(b.revs[c])
+				b.graph[c][dl] = (*Commit)(b.revs[c])
 			case hunks[h].Type == -1:
 				sl++
 			default:
@@ -255,7 +248,7 @@ func (b *blame) GoString() string {
 }
 
 // utility function to pretty print the author.
-func prettyPrintAuthor(c *git.Commit) string {
+func prettyPrintAuthor(c *Commit) string {
 	return fmt.Sprintf("%s %s", c.Author.Name, c.Author.When.Format("2006-01-02"))
 }
 

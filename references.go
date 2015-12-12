@@ -15,74 +15,42 @@
 //
 // Another way to get the revision history for a file is:
 // git log --follow -p -- file
-package revlist
+package git
 
 import (
-	"bytes"
 	"io"
-	"sort"
 
-	"gopkg.in/src-d/go-git.v2"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/diff"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// A Revs is a list of revisions for a file (basically a list of commits).
-// It implements sort.Interface using the commit time.
-type Revs []*git.Commit
-
-func (l Revs) Len() int {
-	return len(l)
-}
-
-// sorts from older to newer commit.
-func (l Revs) Less(i, j int) bool {
-	return l[i].Committer.When.Before(l[j].Committer.When)
-}
-
-func (l Revs) Swap(i, j int) {
-	l[i], l[j] = l[j], l[i]
-}
-
-// for debugging
-func (l Revs) GoString() string {
-	var buf bytes.Buffer
-	for _, c := range l {
-		buf.WriteString(c.Hash.String()[:8])
-		buf.WriteString("\n")
-	}
-	return buf.String()
-}
-
-// NewRevs returns a Revs pointer for the
-// file at "path", from commit "commit".
-// The commits are sorted in commit order.
-// It stops searching a branch for a file upon reaching the commit
-// were the file was created.
-// Moves and copies are not currently supported.
-// Cherry-picks are not detected unless there are no commits between
-// them and therefore can appear repeated in the list.
-// (see git path-id for hints on how to fix this).
-func NewRevs(repo *git.Repository, commit *git.Commit, path string) (Revs, error) {
-	result := make(Revs, 0)
+// References returns a References for the file at "path", the commits are
+// sorted in commit order. It stops searching a branch for a file upon reaching
+// the commit were the file was created.
+//
+// Caveats:
+// - Moves and copies are not currently supported.
+// - Cherry-picks are not detected unless there are no commits between them and
+//   therefore can appear repeated in the list.
+//   (see git path-id for hints on how to fix this).
+func (c *Commit) References(path string) ([]*Commit, error) {
+	result := make([]*Commit, 0)
 	seen := make(map[core.Hash]struct{}, 0)
-	err := walkGraph(&result, &seen, repo, commit, path)
-	if err != nil {
+	if err := walkGraph(&result, &seen, c.r, c, path); err != nil {
 		return nil, err
 	}
-	sort.Sort(result)
-	result, err = removeComp(path, result, equivalent) // for merges of identical cherry-picks
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+
+	SortCommits(result)
+
+	// for merges of identical cherry-picks
+	return removeComp(path, result, equivalent)
 }
 
 // Recursive traversal of the commit graph, generating a linear history
 // of the path.
-func walkGraph(result *Revs, seen *map[core.Hash]struct{}, repo *git.Repository, current *git.Commit, path string) error {
+func walkGraph(result *[]*Commit, seen *map[core.Hash]struct{}, repo *Repository, current *Commit, path string) error {
 	// check and update seen
 	if _, ok := (*seen)[current.Hash]; ok {
 		return nil
@@ -132,8 +100,8 @@ func walkGraph(result *Revs, seen *map[core.Hash]struct{}, repo *git.Repository,
 
 // TODO: benchmark this making git.Commit.parent public instead of using
 // an iterator
-func parentsContainingPath(path string, c *git.Commit) []*git.Commit {
-	var result []*git.Commit
+func parentsContainingPath(path string, c *Commit) []*Commit {
+	var result []*Commit
 	iter := c.Parents()
 	for {
 		parent, err := iter.Next()
@@ -151,11 +119,11 @@ func parentsContainingPath(path string, c *git.Commit) []*git.Commit {
 
 // Returns an slice of the commits in "cs" that has the file "path", but with different
 // contents than what can be found in "c".
-func differentContents(path string, c *git.Commit, cs []*git.Commit) ([]*git.Commit, error) {
-	result := make([]*git.Commit, 0, len(cs))
+func differentContents(path string, c *Commit, cs []*Commit) ([]*Commit, error) {
+	result := make([]*Commit, 0, len(cs))
 	h, found := blobHash(path, c)
 	if !found {
-		return nil, git.ErrFileNotFound
+		return nil, ErrFileNotFound
 	}
 	for _, cx := range cs {
 		if hx, found := blobHash(path, cx); found && h != hx {
@@ -166,7 +134,7 @@ func differentContents(path string, c *git.Commit, cs []*git.Commit) ([]*git.Com
 }
 
 // blobHash returns the hash of a path in a commit
-func blobHash(path string, commit *git.Commit) (hash core.Hash, found bool) {
+func blobHash(path string, commit *Commit) (hash core.Hash, found bool) {
 	file, err := commit.File(path)
 	if err != nil {
 		var empty core.Hash
@@ -175,13 +143,13 @@ func blobHash(path string, commit *git.Commit) (hash core.Hash, found bool) {
 	return file.Hash, true
 }
 
-type contentsComparatorFn func(path string, a, b *git.Commit) (bool, error)
+type contentsComparatorFn func(path string, a, b *Commit) (bool, error)
 
 // Returns a new slice of commits, with duplicates removed.  Expects a
 // sorted commit list.  Duplication is defined according to "comp".  It
 // will always keep the first commit of a series of duplicated commits.
-func removeComp(path string, cs []*git.Commit, comp contentsComparatorFn) ([]*git.Commit, error) {
-	result := make([]*git.Commit, 0, len(cs))
+func removeComp(path string, cs []*Commit, comp contentsComparatorFn) ([]*Commit, error) {
+	result := make([]*Commit, 0, len(cs))
 	if len(cs) == 0 {
 		return result, nil
 	}
@@ -199,7 +167,7 @@ func removeComp(path string, cs []*git.Commit, comp contentsComparatorFn) ([]*gi
 }
 
 // Equivalent commits are commits whose patch is the same.
-func equivalent(path string, a, b *git.Commit) (bool, error) {
+func equivalent(path string, a, b *Commit) (bool, error) {
 	numParentsA := a.NumParents()
 	numParentsB := b.NumParents()
 
@@ -221,7 +189,7 @@ func equivalent(path string, a, b *git.Commit) (bool, error) {
 	return sameDiffs(diffsA, diffsB), nil
 }
 
-func patch(c *git.Commit, path string) ([]diffmatchpatch.Diff, error) {
+func patch(c *Commit, path string) ([]diffmatchpatch.Diff, error) {
 	// get contents of the file in the commit
 	file, err := c.File(path)
 	if err != nil {
@@ -265,7 +233,7 @@ func sameDiff(a, b diffmatchpatch.Diff) bool {
 	}
 	switch a.Type {
 	case 0:
-		return git.CountLines(a.Text) == git.CountLines(b.Text)
+		return countLines(a.Text) == countLines(b.Text)
 	case 1, -1:
 		return a.Text == b.Text
 	default:

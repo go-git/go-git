@@ -1,40 +1,27 @@
-package revlist
+package git
 
 import (
 	"bytes"
 	"fmt"
 	"os"
-	"testing"
 
-	"gopkg.in/src-d/go-git.v2"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type SuiteCommon struct {
-	repos map[string]*git.Repository
+type ReferencesSuite struct {
+	repos map[string]*Repository
 }
 
-var _ = Suite(&SuiteCommon{})
-
-var fixtureRepos = [...]struct {
-	url      string
-	packfile string
-}{
-	{"https://github.com/tyba/git-fixture.git", "../formats/packfile/fixtures/git-fixture.ofs-delta"},
-	{"https://github.com/jamesob/desk.git", "../formats/packfile/fixtures/jamesob-desk.pack"},
-	{"https://github.com/spinnaker/spinnaker.git", "../formats/packfile/fixtures/spinnaker-spinnaker.pack"},
-}
+var _ = Suite(&ReferencesSuite{})
 
 // create the repositories of the fixtures
-func (s *SuiteCommon) SetUpSuite(c *C) {
-	s.repos = make(map[string]*git.Repository, 0)
+func (s *ReferencesSuite) SetUpSuite(c *C) {
+	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url] = git.NewPlainRepository()
+		s.repos[fixRepo.url] = NewPlainRepository()
 
 		d, err := os.Open(fixRepo.packfile)
 		defer d.Close()
@@ -48,7 +35,7 @@ func (s *SuiteCommon) SetUpSuite(c *C) {
 	}
 }
 
-var revListTests = [...]struct {
+var referencesTests = [...]struct {
 	// input data to revlist
 	repo   string
 	commit string
@@ -318,20 +305,18 @@ var revListTests = [...]struct {
 	*/
 }
 
-func (s *SuiteCommon) TestRevList(c *C) {
-	for _, t := range revListTests {
+func (s *ReferencesSuite) TestRevList(c *C) {
+	for _, t := range referencesTests {
 		repo, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 
 		commit, err := repo.Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil)
 
-		revs, err := NewRevs(repo, commit, t.path)
-		c.Assert(err, IsNil, Commentf("\nrepo=%s, commit=%s, path=%s\n",
-			t.repo, t.commit, t.path))
+		revs, err := commit.References(t.path)
+		c.Assert(err, IsNil)
+		c.Assert(len(revs), Equals, len(t.revs))
 
-		c.Assert(len(revs), Equals, len(t.revs), Commentf("\nrepo=%s, commit=%s, path=%s\n    EXPECTED (len %d)\n%s\n    OBTAINED (len %d)\n%s\n",
-			t.repo, t.commit, t.path, len(t.revs), t.revs, len(revs), revs.GoString()))
 		for i := range revs {
 			if revs[i].Hash.String() != t.revs[i] {
 				commit, err := repo.Commit(core.NewHash(t.revs[i]))
@@ -346,13 +331,11 @@ func (s *SuiteCommon) TestRevList(c *C) {
 				}
 			}
 		}
-		fmt.Printf("OK repo=%s, commit=%s, path=%s\n",
-			t.repo, t.commit, t.path)
 	}
 }
 
 // same length is assumed
-func compareSideBySide(a []string, b []*git.Commit) string {
+func compareSideBySide(a []string, b []*Commit) string {
 	var buf bytes.Buffer
 	buf.WriteString("\t              EXPECTED                                          OBTAINED        ")
 	var sep string
@@ -379,7 +362,7 @@ var cherryPicks = [...][]string{
 }
 
 // should detect cherry picks
-func (s *SuiteCommon) TestEquivalent(c *C) {
+func (s *ReferencesSuite) TestEquivalent(c *C) {
 	for _, t := range cherryPicks {
 		cs := s.commits(c, t[0], t[2], t[3])
 		equiv, err := equivalent(t[1], cs[0], cs[1])
@@ -389,10 +372,10 @@ func (s *SuiteCommon) TestEquivalent(c *C) {
 }
 
 // returns the commits from a slice of hashes
-func (s *SuiteCommon) commits(cc *C, repo string, hs ...string) []*git.Commit {
+func (s *ReferencesSuite) commits(cc *C, repo string, hs ...string) []*Commit {
 	r, ok := s.repos[repo]
 	cc.Assert(ok, Equals, true)
-	result := make([]*git.Commit, 0, len(hs))
+	result := make([]*Commit, 0, len(hs))
 	for _, h := range hs {
 		c, err := r.Commit(core.NewHash(h))
 		cc.Assert(err, IsNil)
