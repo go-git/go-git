@@ -44,6 +44,15 @@ func (s *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadC
 	return r, nil
 }
 
+var fixtureRepos = [...]struct {
+	url      string
+	packfile string
+}{
+	{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
+	{"https://github.com/jamesob/desk.git", "formats/packfile/fixtures/jamesob-desk.pack"},
+	{"https://github.com/spinnaker/spinnaker.git", "formats/packfile/fixtures/spinnaker-spinnaker.pack"},
+}
+
 type SuiteCommon struct{}
 
 var _ = Suite(&SuiteCommon{})
@@ -65,7 +74,7 @@ var countLinesTests = [...]struct {
 
 func (s *SuiteCommon) TestCountLines(c *C) {
 	for i, t := range countLinesTests {
-		o := CountLines(t.i)
+		o := countLines(t.i)
 		c.Assert(o, Equals, t.e, Commentf("subtest %d, input=%q", i, t.i))
 	}
 }

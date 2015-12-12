@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	"gopkg.in/src-d/go-git.v2/core"
 )
@@ -158,4 +159,26 @@ func (i *iter) Close() {
 
 	defer func() { i.IsClosed = true }()
 	close(i.ch)
+}
+
+type commitSorterer struct {
+	l []*Commit
+}
+
+func (s commitSorterer) Len() int {
+	return len(s.l)
+}
+
+func (s commitSorterer) Less(i, j int) bool {
+	return s.l[i].Committer.When.Before(s.l[j].Committer.When)
+}
+
+func (s commitSorterer) Swap(i, j int) {
+	s.l[i], s.l[j] = s.l[j], s.l[i]
+}
+
+// SortCommits sort a commit list by commit date, from older to newer.
+func SortCommits(l []*Commit) {
+	s := &commitSorterer{l}
+	sort.Sort(s)
 }

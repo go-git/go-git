@@ -1,7 +1,6 @@
 package git
 
 import (
-	"fmt"
 	"io/ioutil"
 	"time"
 
@@ -128,7 +127,6 @@ func (s *ObjectsSuite) TestParseSignature(c *C) {
 	}
 
 	for raw, exp := range cases {
-		fmt.Println("> testing", raw)
 		got := &Signature{}
 		got.Decode([]byte(raw))
 

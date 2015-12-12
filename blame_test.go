@@ -1,38 +1,25 @@
-package blame
+package git
 
 import (
-	"bytes"
 	"os"
-	"testing"
 
-	"gopkg.in/src-d/go-git.v2"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type SuiteCommon struct {
-	repos map[string]*git.Repository
+type BlameCommon struct {
+	repos map[string]*Repository
 }
 
-var _ = Suite(&SuiteCommon{})
-
-var fixtureRepos = [...]struct {
-	url      string
-	packfile string
-}{
-	{"https://github.com/tyba/git-fixture.git", "../formats/packfile/fixtures/git-fixture.ofs-delta"},
-	{"https://github.com/spinnaker/spinnaker.git", "../formats/packfile/fixtures/spinnaker-spinnaker.pack"},
-}
+var _ = Suite(&BlameCommon{})
 
 // create the repositories of the fixtures
-func (s *SuiteCommon) SetUpSuite(c *C) {
-	s.repos = make(map[string]*git.Repository, 0)
+func (s *BlameCommon) SetUpSuite(c *C) {
+	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		repo := git.NewPlainRepository()
+		repo := NewPlainRepository()
 		repo.URL = fixRepo.url
 
 		d, err := os.Open(fixRepo.packfile)
@@ -60,7 +47,7 @@ type blameTest struct {
 	blames []string // the commits blamed for each line
 }
 
-func (s *SuiteCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
+func (s *BlameCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
 	repo, ok := s.repos[t.repo]
 	c.Assert(ok, Equals, true)
 
@@ -85,16 +72,15 @@ func (s *SuiteCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
 	}
 
 	return &Blame{
-		Repo:  t.repo,
 		Path:  t.path,
-		Rev:   t.rev,
+		Rev:   core.NewHash(t.rev),
 		Lines: blamedLines,
 	}
 }
 
 // run a blame on all the suite's tests
-func (s *SuiteCommon) TestBlame(c *C) {
-	for i, t := range blameTests {
+func (s *BlameCommon) TestBlame(c *C) {
+	for _, t := range blameTests {
 		expected := s.mockBlame(t, c)
 
 		repo, ok := s.repos[t.repo]
@@ -103,20 +89,10 @@ func (s *SuiteCommon) TestBlame(c *C) {
 		commit, err := repo.Commit(core.NewHash(t.rev))
 		c.Assert(err, IsNil)
 
-		obtained, err := New(repo, t.path, commit)
-		c.Assert(err, IsNil, Commentf("subtest %d", i))
-
-		c.Assert(obtained, DeepEquals, expected, Commentf("subtest %d: %s",
-			i, sideBySide(obtained, expected)))
+		obtained, err := commit.Blame(t.path)
+		c.Assert(err, IsNil)
+		c.Assert(obtained, DeepEquals, expected)
 	}
-}
-
-func sideBySide(output, expected *Blame) string {
-	var buf bytes.Buffer
-	buf.WriteString(output.Repo)
-	buf.WriteString("    ")
-	buf.WriteString(expected.Repo)
-	return buf.String()
 }
 
 // utility function to avoid writing so many repeated commits
