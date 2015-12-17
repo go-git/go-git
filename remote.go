@@ -30,10 +30,14 @@ func NewAuthenticatedRemote(url string, auth common.AuthMethod) (*Remote, error)
 		return nil, err
 	}
 
+	upSrv, err := clients.NewGitUploadPackService(url)
+	if err != nil {
+		return nil, err
+	}
 	return &Remote{
 		Endpoint: end,
 		Auth:     auth,
-		upSrv:    clients.NewGitUploadPackService(),
+		upSrv:    upSrv,
 	}, nil
 }
 
