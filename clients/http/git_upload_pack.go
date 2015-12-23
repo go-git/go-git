@@ -18,7 +18,8 @@ type GitUploadPackService struct {
 	auth     HTTPAuthMethod
 }
 
-func NewGitUploadPackService() *GitUploadPackService {
+func NewGitUploadPackService(url string) *GitUploadPackService {
+	// url ignored
 	return &GitUploadPackService{
 		Client: http.DefaultClient,
 	}
