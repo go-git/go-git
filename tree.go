@@ -39,7 +39,11 @@ func (t *Tree) Files() chan *File {
 
 func (t *Tree) walkEntries(base string, ch chan *File) {
 	for _, entry := range t.Entries {
-		obj, _ := t.r.Storage.Get(entry.Hash)
+		obj, ok := t.r.Storage.Get(entry.Hash)
+		if !ok {
+			continue // ignore entries without hash (= submodule dirs)
+		}
+
 		if obj.Type() == core.TreeObject {
 			tree := &Tree{r: t.r}
 			tree.Decode(obj)

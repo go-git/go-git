@@ -22,6 +22,7 @@ func (s *SuiteFile) SetUpSuite(c *C) {
 		packfile string
 	}{
 		{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
+		{"https://github.com/cpcs499/Final_Pres_P", "formats/packfile/fixtures/Final_Pres_P.ofs-delta"},
 	}
 	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
@@ -129,5 +130,33 @@ func (s *SuiteFile) TestLines(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(file.Lines(), DeepEquals, t.lines, Commentf(
 			"subtest %d: commit=%s, path=%s", i, t.commit, t.path))
+	}
+}
+
+var ignoreEmptyDirEntriesTests = []struct {
+	repo   string // the repo name as in localRepos
+	commit string // the commit to search for the file
+}{
+	{
+		"https://github.com/cpcs499/Final_Pres_P",
+		"70bade703ce556c2c7391a8065c45c943e8b6bc3",
+		// the Final dir in this commit is empty
+	},
+}
+
+// It is difficult to assert that we are ignoring an (empty) dir as even
+// if we don't, no files will be found in it.
+//
+// At least this test has a high chance of panicking if
+// we don't ignore empty dirs.
+func (s *SuiteFile) TestIgnoreEmptyDirEntries(c *C) {
+	for i, t := range ignoreEmptyDirEntriesTests {
+		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
+		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
+
+		for file := range commit.Tree().Files() {
+			_ = file.Contents()
+			// this would probably panic if we are not ignoring empty dirs
+		}
 	}
 }
