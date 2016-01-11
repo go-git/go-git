@@ -53,7 +53,7 @@ func NewPlainRepository() *Repository {
 	}
 }
 
-func (r *Repository) Pull(remoteName, branch string) error {
+func (r *Repository) Pull(remoteName, branch string) (err error) {
 	remote, ok := r.Remotes[remoteName]
 	if !ok {
 		return fmt.Errorf("unable to find remote %q", remoteName)
@@ -75,6 +75,9 @@ func (r *Repository) Pull(remoteName, branch string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = reader.Close()
+	}()
 
 	pr := packfile.NewReader(reader)
 	if _, err = pr.Read(r.Storage); err != nil {

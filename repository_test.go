@@ -31,6 +31,11 @@ func (s *SuiteRepository) TestPull(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(r.Pull("origin", "refs/heads/master"), IsNil)
+
+	mock, ok := (r.Remotes["origin"].upSrv).(*MockGitUploadPackService)
+	c.Assert(ok, Equals, true)
+	err = mock.RC.Close()
+	c.Assert(err, Not(IsNil), Commentf("pull leaks an open fd from the fetch"))
 }
 
 func (s *SuiteRepository) TestCommit(c *C) {
