@@ -15,6 +15,7 @@ func Test(t *testing.T) { TestingT(t) }
 
 type MockGitUploadPackService struct {
 	Auth common.AuthMethod
+	RC   io.ReadCloser
 }
 
 func (s *MockGitUploadPackService) Connect(url common.Endpoint) error {
@@ -40,8 +41,9 @@ func (s *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 }
 
 func (s *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadCloser, error) {
-	r, _ := os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
-	return r, nil
+	var err error
+	s.RC, err = os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
+	return s.RC, err
 }
 
 var fixtureRepos = [...]struct {
