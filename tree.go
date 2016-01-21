@@ -31,8 +31,10 @@ type TreeEntry struct {
 // New errors defined by this package.
 var ErrFileNotFound = errors.New("file not found")
 
+// File returns the hash of the file identified by the `path` argument.
+// The path is interpreted as relative to the tree receiver.
 func (t *Tree) File(path string) (*File, error) {
-	hash, err := t.hashOf(path)
+	hash, err := t.findHash(path)
 	if err != nil {
 		return nil, ErrFileNotFound
 	}
@@ -52,7 +54,7 @@ func (t *Tree) File(path string) (*File, error) {
 	return &File{Name: path, Reader: blob.Reader(), Hash: *hash}, nil
 }
 
-func (t *Tree) hashOf(path string) (*core.Hash, error) {
+func (t *Tree) findHash(path string) (*core.Hash, error) {
 	pathParts := strings.Split(path, "/")
 
 	var tree *Tree
