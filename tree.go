@@ -15,7 +15,7 @@ import (
 // Tree is basically like a directory - it references a bunch of other trees
 // and/or blobs (i.e. files and sub-directories)
 type Tree struct {
-	Entries []TreeEntry
+	Entries map[string]TreeEntry
 	Hash    core.Hash
 
 	r *Repository
@@ -97,13 +97,12 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 var errEntryNotFound = errors.New("entry not found")
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	for _, entry := range t.Entries {
-		if entry.Name == baseName {
-			return &entry, nil
-		}
+	entry, ok := t.Entries[baseName]
+	if !ok {
+		return nil, errEntryNotFound
 	}
 
-	return nil, errEntryNotFound
+	return &entry, nil
 }
 
 func (t *Tree) Files() chan *File {
@@ -145,6 +144,8 @@ func (t *Tree) Decode(o core.Object) error {
 		return nil
 	}
 
+	t.Entries = make(map[string]TreeEntry)
+
 	r := bufio.NewReader(o.Reader())
 	for {
 		mode, err := r.ReadString(' ')
@@ -172,11 +173,12 @@ func (t *Tree) Decode(o core.Object) error {
 			return err
 		}
 
-		t.Entries = append(t.Entries, TreeEntry{
+		baseName := name[:len(name)-1]
+		t.Entries[baseName] = TreeEntry{
 			Hash: hash,
 			Mode: os.FileMode(fm),
-			Name: name[:len(name)-1],
-		})
+			Name: baseName,
+		}
 	}
 
 	return nil
