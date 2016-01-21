@@ -2,10 +2,12 @@ package git
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v2/core"
 )
@@ -24,6 +26,84 @@ type TreeEntry struct {
 	Name string
 	Mode os.FileMode
 	Hash core.Hash
+}
+
+// New errors defined by this package.
+var ErrFileNotFound = errors.New("file not found")
+
+func (t *Tree) File(path string) (*File, error) {
+	hash, err := t.hashOf(path)
+	if err != nil {
+		return nil, ErrFileNotFound
+	}
+
+	obj, ok := t.r.Storage.Get(*hash)
+	if !ok {
+		return nil, ErrFileNotFound // a git submodule
+	}
+
+	if obj.Type() != core.BlobObject {
+		return nil, ErrFileNotFound // a directory
+	}
+
+	blob := &Blob{}
+	blob.Decode(obj)
+
+	return &File{Name: path, Reader: blob.Reader(), Hash: *hash}, nil
+}
+
+func (t *Tree) hashOf(path string) (*core.Hash, error) {
+	pathParts := strings.Split(path, "/")
+
+	var tree *Tree
+	var err error
+	for tree = t; len(pathParts) > 1; pathParts = pathParts[1:] {
+		if tree, err = tree.dir(pathParts[0]); err != nil {
+			return nil, err
+		}
+	}
+
+	entry, err := tree.entry(pathParts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return &entry.Hash, nil
+}
+
+var errDirNotFound = errors.New("directory not found")
+
+func (t *Tree) dir(baseName string) (*Tree, error) {
+	entry, err := t.entry(baseName)
+	if err != nil {
+		return nil, errDirNotFound
+	}
+
+	obj, ok := t.r.Storage.Get(entry.Hash)
+	if !ok { // git submodule
+		return nil, errDirNotFound
+	}
+
+	if obj.Type() != core.TreeObject {
+		return nil, errDirNotFound // a file
+	}
+
+	tree := &Tree{r: t.r}
+	tree.Decode(obj)
+
+	return tree, nil
+}
+
+var errEntryNotFound = errors.New("entry not found")
+
+func (t *Tree) entry(baseName string) (*TreeEntry, error) {
+	for _, entry := range t.Entries {
+		if entry.Name == baseName {
+			return &entry, nil
+		}
+	}
+
+	return nil, errEntryNotFound
 }
 
 func (t *Tree) Files() chan *File {
