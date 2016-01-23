@@ -187,19 +187,20 @@ func (t *Tree) Decode(o core.Object) error {
 }
 
 type TreeIter struct {
-	iter
+	core.ObjectIter
+	r *Repository
 }
 
-func NewTreeIter(r *Repository) *TreeIter {
-	return &TreeIter{newIter(r)}
+func NewTreeIter(r *Repository, iter core.ObjectIter) *TreeIter {
+	return &TreeIter{iter, r}
 }
 
-func (i *TreeIter) Next() (*Tree, error) {
-	obj := <-i.ch
-	if obj == nil {
-		return nil, io.EOF
+func (iter *TreeIter) Next() (*Tree, error) {
+	obj, err := iter.ObjectIter.Next()
+	if err != nil {
+		return nil, err
 	}
 
-	tree := &Tree{r: i.r}
+	tree := &Tree{r: iter.r}
 	return tree, tree.Decode(obj)
 }

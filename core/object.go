@@ -21,6 +21,7 @@ type ObjectStorage interface {
 	New() Object
 	Set(Object) Hash
 	Get(Hash) (Object, bool)
+	Iter(ObjectType) ObjectIter
 }
 
 // ObjectType internal object type's
@@ -50,6 +51,82 @@ func (t ObjectType) String() string {
 
 func (t ObjectType) Bytes() []byte {
 	return []byte(t.String())
+}
+
+// ObjectIter is a generic closable interface for iterating over objects.
+type ObjectIter interface {
+	Next() (Object, error)
+	Close()
+}
+
+// ObjectLookupIter yields a series of objects by retrieving each one from
+// object storage.
+type ObjectLookupIter struct {
+	storage ObjectStorage
+	series  []Hash
+	pos     int
+}
+
+// NewObjectLookupIter returns an object iterator given an object storage and
+// a slice of object hashes.
+func NewObjectLookupIter(storage ObjectStorage, series []Hash) *ObjectLookupIter {
+	return &ObjectLookupIter{
+		storage: storage,
+		series:  series,
+	}
+}
+
+// Next returns the next object from the iterator. If the iterator has reached
+// the end it will return io.EOF as an error. If the object is retreieved
+// successfully error will be nil.
+func (iter *ObjectLookupIter) Next() (Object, error) {
+	if iter.pos >= len(iter.series) {
+		return nil, io.EOF
+	}
+	hash := iter.series[iter.pos]
+	obj, ok := iter.storage.Get(hash)
+	if !ok {
+		// FIXME: Consider making ObjectStorage.Get return an actual error that we
+		//        could pass back here.
+		return nil, io.EOF
+	}
+	iter.pos++
+	return obj, nil
+}
+
+// Close releases any resources used by the iterator.
+func (iter *ObjectLookupIter) Close() {
+	iter.pos = len(iter.series)
+}
+
+// ObjectSliceIter yields a series of objects from a slice of objects.
+type ObjectSliceIter struct {
+	series []Object
+	pos    int
+}
+
+// NewObjectSliceIter returns an object iterator for the given slice of objects.
+func NewObjectSliceIter(series []Object) *ObjectSliceIter {
+	return &ObjectSliceIter{
+		series: series,
+	}
+}
+
+// Next returns the next object from the iterator. If the iterator has reached
+// the end it will return io.EOF as an error. If the object is retreieved
+// successfully error will be nil.
+func (iter *ObjectSliceIter) Next() (Object, error) {
+	if iter.pos >= len(iter.series) {
+		return nil, io.EOF
+	}
+	obj := iter.series[iter.pos]
+	iter.pos++
+	return obj, nil
+}
+
+// Close releases any resources used by the iterator.
+func (iter *ObjectSliceIter) Close() {
+	iter.pos = len(iter.series)
 }
 
 type RAWObject struct {
@@ -110,4 +187,25 @@ func (o *RAWObjectStorage) Get(h Hash) (Object, bool) {
 	obj, ok := o.Objects[h]
 
 	return obj, ok
+}
+
+func (o *RAWObjectStorage) Iter(t ObjectType) ObjectIter {
+	var series []Object
+	switch t {
+	case CommitObject:
+		series = flattenObjectMap(o.Commits)
+	case TreeObject:
+		series = flattenObjectMap(o.Trees)
+	case BlobObject:
+		series = flattenObjectMap(o.Blobs)
+	}
+	return NewObjectSliceIter(series)
+}
+
+func flattenObjectMap(m map[Hash]Object) []Object {
+	objects := make([]Object, 0, len(m))
+	for _, obj := range m {
+		objects = append(objects, obj)
+	}
+	return objects
 }

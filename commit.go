@@ -34,16 +34,7 @@ func (c *Commit) Tree() *Tree {
 }
 
 func (c *Commit) Parents() *CommitIter {
-	i := NewCommitIter(c.r)
-	go func() {
-		defer i.Close()
-		for _, hash := range c.parents {
-			obj, _ := c.r.Storage.Get(hash)
-			i.Add(obj)
-		}
-	}()
-
-	return i
+	return NewCommitIter(c.r, core.NewObjectLookupIter(c.r.Storage, c.parents))
 }
 
 // NumParents returns the number of parents in a commit.
@@ -106,50 +97,22 @@ func (c *Commit) String() string {
 }
 
 type CommitIter struct {
-	iter
+	core.ObjectIter
+	r *Repository
 }
 
-func NewCommitIter(r *Repository) *CommitIter {
-	return &CommitIter{newIter(r)}
+func NewCommitIter(r *Repository, iter core.ObjectIter) *CommitIter {
+	return &CommitIter{iter, r}
 }
 
-func (i *CommitIter) Next() (*Commit, error) {
-	obj := <-i.ch
-	if obj == nil {
-		return nil, io.EOF
+func (iter *CommitIter) Next() (*Commit, error) {
+	obj, err := iter.ObjectIter.Next()
+	if err != nil {
+		return nil, err
 	}
 
-	commit := &Commit{r: i.r}
+	commit := &Commit{r: iter.r}
 	return commit, commit.Decode(obj)
-}
-
-type iter struct {
-	ch chan core.Object
-	r  *Repository
-
-	IsClosed bool
-}
-
-func newIter(r *Repository) iter {
-	ch := make(chan core.Object, 1)
-	return iter{ch: ch, r: r}
-}
-
-func (i *iter) Add(o core.Object) {
-	if i.IsClosed {
-		return
-	}
-
-	i.ch <- o
-}
-
-func (i *iter) Close() {
-	if i.IsClosed {
-		return
-	}
-
-	defer func() { i.IsClosed = true }()
-	close(i.ch)
 }
 
 type commitSorterer struct {

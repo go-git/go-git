@@ -19,7 +19,7 @@ const (
 
 type Repository struct {
 	Remotes map[string]*Remote
-	Storage *core.RAWObjectStorage
+	Storage core.ObjectStorage
 	URL     string
 }
 
@@ -100,15 +100,7 @@ func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 
 // Commits decode the objects into commits
 func (r *Repository) Commits() *CommitIter {
-	i := NewCommitIter(r)
-	go func() {
-		defer i.Close()
-		for _, obj := range r.Storage.Commits {
-			i.Add(obj)
-		}
-	}()
-
-	return i
+	return NewCommitIter(r, r.Storage.Iter(core.CommitObject))
 }
 
 // Tree return the tree with the given hash
