@@ -59,7 +59,7 @@ func NewReader(r io.Reader) *Reader {
 	return &Reader{
 		MaxObjectsLimit: DefaultMaxObjectsLimit,
 
-		r:       &trackingReader{r: r},
+		r:       NewTrackingReader(r),
 		offsets: make(map[int64]core.Hash, 0),
 	}
 }

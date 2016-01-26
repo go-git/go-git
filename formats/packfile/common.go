@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 )
@@ -8,6 +9,12 @@ import (
 type trackingReader struct {
 	r        io.Reader
 	position int64
+}
+
+func NewTrackingReader(r io.Reader) *trackingReader {
+	return &trackingReader{
+		r: bufio.NewReader(r),
+	}
 }
 
 func (t *trackingReader) Read(p []byte) (n int, err error) {
