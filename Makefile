@@ -1,3 +1,6 @@
+# Default shell
+SHELL := /bin/bash
+
 # General
 WORKDIR = $(PWD)
 
@@ -23,7 +26,7 @@ test-coverage:
 	echo "" > $(COVERAGE_REPORT); \
 	for dir in `find . -name "*.go" | grep -o '.*/' | sort | uniq`; do \
 		$(GOTEST) $$dir -coverprofile=$(COVERAGE_PROFILE) -covermode=$(COVERAGE_MODE); \
-		if (($$? != 0)); then \
+		if [ $$? != 0 ]; then \
 			exit 2; \
 		fi; \
 		if [ -f $(COVERAGE_PROFILE) ]; then \
