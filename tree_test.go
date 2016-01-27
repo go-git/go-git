@@ -2,6 +2,7 @@ package git
 
 import (
 	"os"
+	"sort"
 
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
@@ -26,6 +27,7 @@ func (s *SuiteTree) SetUpSuite(c *C) {
 		{"https://github.com/jamesob/desk.git", "formats/packfile/fixtures/jamesob-desk.pack"},
 		{"https://github.com/spinnaker/spinnaker.git", "formats/packfile/fixtures/spinnaker-spinnaker.pack"},
 		{"https://github.com/alcortesm/binary-relations.git", "formats/packfile/fixtures/alcortesm-binary-relations.pack"},
+		{"https://github.com/Tribler/dispersy.git", "formats/packfile/fixtures/tribler-dispersy.pack"},
 	}
 	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
@@ -130,5 +132,71 @@ func (s *SuiteTree) TestFile(c *C) {
 		if found {
 			c.Assert(file.Hash.String(), Equals, t.blobHash, Commentf("subtest %d, commit=%s, path=%s", i, t.commit, t.path))
 		}
+	}
+}
+
+func (s *SuiteTree) TestFiles(c *C) {
+	for i, t := range []struct {
+		repo   string   // the repo name as in localRepos
+		commit string   // the commit to search for the file
+		files  []string // the expected files in the commit
+	}{
+		{"https://github.com/alcortesm/binary-relations.git", "b373f85fa2594d7dcd9989f4a5858a81647fb8ea", []string{
+			"binary-relations.tex",
+			".gitignore",
+			"imgs-gen/simple-graph/fig.fig",
+			"imgs-gen/simple-graph/Makefile",
+			"Makefile",
+			"src/map-slice/map-slice.go",
+			"src/simple-arrays/simple-arrays.go",
+		}},
+		{"https://github.com/Tribler/dispersy.git", "f5a1fca709f760bf75a7adaa480bf0f0e1a547ee", []string{
+			"authentication.py",
+			"bloomfilter.py",
+			"bootstrap.py",
+			"cache.py",
+			"callback.py",
+			"candidate.py",
+			"community.py",
+			"conversion.py",
+			"crypto.py",
+			"database.py",
+			"debugcommunity.py",
+			"debug.py",
+			"decorator.py",
+			"destination.py",
+			"dispersydatabase.py",
+			"dispersy.py",
+			"distribution.py",
+			"dprint.py",
+			"encoding.py",
+			"endpoint.py",
+			"__init__.py",
+			"member.py",
+			"message.py",
+			"meta.py",
+			"payload.py",
+			"requestcache.py",
+			"resolution.py",
+			"script.py",
+			"singleton.py",
+			"timeline.py",
+			"tool/callbackscript.py",
+			"tool/__init__.py",
+			"tool/scenarioscript.py",
+		}},
+		{"https://github.com/Tribler/dispersy.git", "9d38ff85ca03adcf68dc14f5b68b8994f15229f4", []string(nil)},
+	} {
+		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
+		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
+
+		tree := commit.Tree()
+		var output []string
+		for file := range tree.Files() {
+			output = append(output, file.Name)
+		}
+		sort.Strings(output)
+		sort.Strings(t.files)
+		c.Assert(output, DeepEquals, t.files, Commentf("subtest %d, repo=%s, commit=%s", i, t.repo, t.commit))
 	}
 }
