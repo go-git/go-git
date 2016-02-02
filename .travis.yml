@@ -3,6 +3,7 @@ language: go
 go:
   - 1.4
   - 1.5
+  - tip
 
 install:
   - rm -rf $GOPATH/src/gopkg.in/src-d
@@ -11,18 +12,7 @@ install:
   - go get -v -t ./...
 
 script:
-  - go test -v ./...
-
-script:
-  - go test -v gopkg.in/src-d/go-git.v2 -covermode=count -coverprofile=coverage.out
-  - go test -v gopkg.in/src-d/go-git.v2/clients/common -covermode=count -coverprofile=tmp.out
-  - tail -n +2 tmp.out >> coverage.out
-  - go test -v gopkg.in/src-d/go-git.v2/clients/http -covermode=count -coverprofile=tmp.out
-  - tail -n +2 tmp.out >> coverage.out
-  - go test -v gopkg.in/src-d/go-git.v2/formats/packfile -covermode=count -coverprofile=tmp.out
-  - tail -n +2 tmp.out >> coverage.out
-  - go test -v gopkg.in/src-d/go-git.v2/formats/pktline -covermode=count -coverprofile=tmp.out
-  - tail -n +2 tmp.out >> coverage.out
+  - make test-coverage
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)

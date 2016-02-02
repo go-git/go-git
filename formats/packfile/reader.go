@@ -59,7 +59,7 @@ func NewReader(r io.Reader) *Reader {
 	return &Reader{
 		MaxObjectsLimit: DefaultMaxObjectsLimit,
 
-		r:       &trackingReader{r: r},
+		r:       NewTrackingReader(r),
 		offsets: make(map[int64]core.Hash, 0),
 	}
 }
@@ -98,7 +98,7 @@ func (r *Reader) Read(s core.ObjectStorage) (int64, error) {
 
 func (r *Reader) validateHeader() error {
 	var header = make([]byte, 4)
-	if _, err := r.r.Read(header); err != nil {
+	if _, err := io.ReadFull(r.r, header); err != nil {
 		return err
 	}
 
@@ -127,7 +127,6 @@ func (r *Reader) readObjects(count uint32) error {
 		start := r.r.position
 		obj, err := r.newRAWObject()
 		if err != nil && err != io.EOF {
-			fmt.Println(err)
 			return err
 		}
 
@@ -188,7 +187,7 @@ func (r *Reader) newRAWObject() (core.Object, error) {
 
 func (r *Reader) readREFDelta(raw core.Object) error {
 	var ref core.Hash
-	if _, err := r.r.Read(ref[:]); err != nil {
+	if _, err := io.ReadFull(r.r, ref[:]); err != nil {
 		return err
 	}
 
