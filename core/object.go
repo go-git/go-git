@@ -21,7 +21,7 @@ type ObjectStorage interface {
 	New() Object
 	Set(Object) Hash
 	Get(Hash) (Object, bool)
-	Iter(ObjectType) ObjectIter
+	IterType(ObjectType) ObjectIter
 }
 
 // ObjectType internal object type's
@@ -189,7 +189,7 @@ func (o *RAWObjectStorage) Get(h Hash) (Object, bool) {
 	return obj, ok
 }
 
-func (o *RAWObjectStorage) Iter(t ObjectType) ObjectIter {
+func (o *RAWObjectStorage) IterType(t ObjectType) ObjectIter {
 	var series []Object
 	switch t {
 	case CommitObject:
