@@ -15,13 +15,13 @@ var _ = Suite(&SuiteRemote{})
 const RepositoryFixture = "https://github.com/tyba/git-fixture"
 
 func (s *SuiteRemote) TestConnect(c *C) {
-	r := NewGitUploadPackService(RepositoryFixture)
+	r := NewGitUploadPackService()
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 }
 
 func (s *SuiteRemote) TestConnectWithAuth(c *C) {
 	auth := &BasicAuth{}
-	r := NewGitUploadPackService(RepositoryFixture)
+	r := NewGitUploadPackService()
 	c.Assert(r.ConnectWithAuth(RepositoryFixture, auth), IsNil)
 	c.Assert(r.auth, Equals, auth)
 }
@@ -32,12 +32,12 @@ func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
 func (s *SuiteRemote) TestConnectWithAuthWrongType(c *C) {
-	r := NewGitUploadPackService(RepositoryFixture)
+	r := NewGitUploadPackService()
 	c.Assert(r.ConnectWithAuth(RepositoryFixture, &mockAuth{}), Equals, InvalidAuthMethodErr)
 }
 
 func (s *SuiteRemote) TestDefaultBranch(c *C) {
-	r := NewGitUploadPackService(RepositoryFixture)
+	r := NewGitUploadPackService()
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 
 	info, err := r.Info()
@@ -46,7 +46,7 @@ func (s *SuiteRemote) TestDefaultBranch(c *C) {
 }
 
 func (s *SuiteRemote) TestCapabilities(c *C) {
-	r := NewGitUploadPackService(RepositoryFixture)
+	r := NewGitUploadPackService()
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 
 	info, err := r.Info()
@@ -55,7 +55,7 @@ func (s *SuiteRemote) TestCapabilities(c *C) {
 }
 
 func (s *SuiteRemote) TestFetch(c *C) {
-	r := NewGitUploadPackService(RepositoryFixture)
+	r := NewGitUploadPackService()
 	c.Assert(r.Connect(RepositoryFixture), IsNil)
 
 	req := &common.GitUploadPackRequest{}

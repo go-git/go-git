@@ -42,8 +42,7 @@ type GitUploadPackService struct {
 
 // NewGitUploadPackService initialises a GitUploadPackService.
 // TODO: remove this, as the struct is zero-value safe.
-func NewGitUploadPackService(url string) *GitUploadPackService {
-	// url ignored
+func NewGitUploadPackService() *GitUploadPackService {
 	return &GitUploadPackService{}
 }
 
