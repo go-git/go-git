@@ -20,14 +20,7 @@ import (
 	"gopkg.in/src-d/go-git.v2/clients/ssh"
 )
 
-// ServiceFromURLFunc defines a service returning function for a given
-// URL.
-type ServiceFromURLFunc func(url string) common.GitUploadPackService
-
 // DefaultProtocols are the protocols supported by default.
-// Wrapping is needed because you can not cast a function that
-// returns an implementation of an interface to a function that
-// returns the interface.
 var DefaultProtocols = map[string]common.GitUploadPackService{
 	"http":  http.NewGitUploadPackService(),
 	"https": http.NewGitUploadPackService(),
@@ -41,8 +34,17 @@ var KnownProtocols = make(map[string]common.GitUploadPackService, len(DefaultPro
 
 func init() {
 	for k, v := range DefaultProtocols {
-		KnownProtocols[k] = v
+		InstallProtocol(k, v)
 	}
+}
+
+// InstallProtocol adds or modifies an existing protocol.
+func InstallProtocol(scheme string, service common.GitUploadPackService) {
+	if service == nil {
+		panic("nil service")
+	}
+
+	KnownProtocols[scheme] = service
 }
 
 // NewGitUploadPackService returns the appropiate upload pack service
@@ -59,13 +61,4 @@ func NewGitUploadPackService(repoURL string) (common.GitUploadPackService, error
 	}
 
 	return service, nil
-}
-
-// InstallProtocol adds or modifies an existing protocol.
-func InstallProtocol(scheme string, service common.GitUploadPackService) {
-	if service == nil {
-		panic("nil service")
-	}
-
-	KnownProtocols[scheme] = service
 }
