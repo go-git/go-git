@@ -57,6 +57,12 @@ func (c *sshAgentConn) close() error {
 	return c.pipe.Close()
 }
 
+func (s *SuiteRemote) SetUpSuite(c *C) {
+	if os.Getenv("SSH_AUTH_SOCK") == "" {
+		c.Skip("SSH_AUTH_SOCK is not set")
+	}
+}
+
 func (s *SuiteRemote) TestConnectWithPublicKeysCallback(c *C) {
 	agent, err := newSSHAgentConn()
 	c.Assert(err, IsNil)

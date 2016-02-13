@@ -13,7 +13,7 @@ type SuiteCommon struct{}
 
 var _ = Suite(&SuiteCommon{})
 
-func (s *SuiteRemote) TestKeyboardInteractiveName(c *C) {
+func (s *SuiteCommon) TestKeyboardInteractiveName(c *C) {
 	a := &KeyboardInteractive{
 		User:      "test",
 		Challenge: nil,
@@ -21,7 +21,7 @@ func (s *SuiteRemote) TestKeyboardInteractiveName(c *C) {
 	c.Assert(a.Name(), Equals, KeyboardInteractiveName)
 }
 
-func (s *SuiteRemote) TestKeyboardInteractiveString(c *C) {
+func (s *SuiteCommon) TestKeyboardInteractiveString(c *C) {
 	a := &KeyboardInteractive{
 		User:      "test",
 		Challenge: nil,
@@ -29,7 +29,7 @@ func (s *SuiteRemote) TestKeyboardInteractiveString(c *C) {
 	c.Assert(a.String(), Equals, fmt.Sprintf("user: test, name: %s", KeyboardInteractiveName))
 }
 
-func (s *SuiteRemote) TestPasswordName(c *C) {
+func (s *SuiteCommon) TestPasswordName(c *C) {
 	a := &Password{
 		User: "test",
 		Pass: "",
@@ -37,7 +37,7 @@ func (s *SuiteRemote) TestPasswordName(c *C) {
 	c.Assert(a.Name(), Equals, PasswordName)
 }
 
-func (s *SuiteRemote) TestPasswordString(c *C) {
+func (s *SuiteCommon) TestPasswordString(c *C) {
 	a := &Password{
 		User: "test",
 		Pass: "",
@@ -45,7 +45,7 @@ func (s *SuiteRemote) TestPasswordString(c *C) {
 	c.Assert(a.String(), Equals, fmt.Sprintf("user: test, name: %s", PasswordName))
 }
 
-func (s *SuiteRemote) TestPasswordCallbackName(c *C) {
+func (s *SuiteCommon) TestPasswordCallbackName(c *C) {
 	a := &PasswordCallback{
 		User:     "test",
 		Callback: nil,
@@ -53,7 +53,7 @@ func (s *SuiteRemote) TestPasswordCallbackName(c *C) {
 	c.Assert(a.Name(), Equals, PasswordCallbackName)
 }
 
-func (s *SuiteRemote) TestPasswordCallbackString(c *C) {
+func (s *SuiteCommon) TestPasswordCallbackString(c *C) {
 	a := &PasswordCallback{
 		User:     "test",
 		Callback: nil,
@@ -61,7 +61,7 @@ func (s *SuiteRemote) TestPasswordCallbackString(c *C) {
 	c.Assert(a.String(), Equals, fmt.Sprintf("user: test, name: %s", PasswordCallbackName))
 }
 
-func (s *SuiteRemote) TestPublicKeysName(c *C) {
+func (s *SuiteCommon) TestPublicKeysName(c *C) {
 	a := &PublicKeys{
 		User:   "test",
 		Signer: nil,
@@ -69,7 +69,7 @@ func (s *SuiteRemote) TestPublicKeysName(c *C) {
 	c.Assert(a.Name(), Equals, PublicKeysName)
 }
 
-func (s *SuiteRemote) TestPublicKeysString(c *C) {
+func (s *SuiteCommon) TestPublicKeysString(c *C) {
 	a := &PublicKeys{
 		User:   "test",
 		Signer: nil,
@@ -77,7 +77,7 @@ func (s *SuiteRemote) TestPublicKeysString(c *C) {
 	c.Assert(a.String(), Equals, fmt.Sprintf("user: test, name: %s", PublicKeysName))
 }
 
-func (s *SuiteRemote) TestPublicKeysCallbackName(c *C) {
+func (s *SuiteCommon) TestPublicKeysCallbackName(c *C) {
 	a := &PublicKeysCallback{
 		User:     "test",
 		Callback: nil,
@@ -85,7 +85,7 @@ func (s *SuiteRemote) TestPublicKeysCallbackName(c *C) {
 	c.Assert(a.Name(), Equals, PublicKeysCallbackName)
 }
 
-func (s *SuiteRemote) TestPublicKeysCallbackString(c *C) {
+func (s *SuiteCommon) TestPublicKeysCallbackString(c *C) {
 	a := &PublicKeysCallback{
 		User:     "test",
 		Callback: nil,
