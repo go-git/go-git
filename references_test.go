@@ -358,7 +358,7 @@ func compareSideBySide(a []string, b []*Commit) string {
 
 var cherryPicks = [...][]string{
 	// repo, path, commit a, commit b
-	[]string{"https://github.com/jamesob/desk.git", "desk", "094d0e7d5d69141c98a606910ba64786c5565da0", "3f34438d54f4a1ca86db8c0f03ed8eb38f20e22c"},
+	{"https://github.com/jamesob/desk.git", "desk", "094d0e7d5d69141c98a606910ba64786c5565da0", "3f34438d54f4a1ca86db8c0f03ed8eb38f20e22c"},
 }
 
 // should detect cherry picks
