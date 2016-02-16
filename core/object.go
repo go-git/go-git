@@ -49,8 +49,14 @@ func (t ObjectType) String() string {
 		return "tree"
 	case BlobObject:
 		return "blob"
+	case TagObject:
+		return "tag"
+	case OFSDeltaObject:
+		return "ofs-delta"
+	case REFDeltaObject:
+		return "ref-delta"
 	default:
-		return "-"
+		return "unknown"
 	}
 }
 

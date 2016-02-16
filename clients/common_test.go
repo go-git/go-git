@@ -37,7 +37,7 @@ func (s *SuiteCommon) TestNewGitUploadPackService(c *C) {
 
 type dummyProtocolService struct{}
 
-func newDummyProtocolService(url string) common.GitUploadPackService {
+func newDummyProtocolService() common.GitUploadPackService {
 	return &dummyProtocolService{}
 }
 
@@ -59,23 +59,24 @@ func (s *dummyProtocolService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 
 func (s *SuiteCommon) TestInstallProtocol(c *C) {
 	var tests = [...]struct {
-		scheme    string
-		serviceFn ServiceFromURLFunc
-		panic     bool
+		scheme  string
+		service common.GitUploadPackService
+		panic   bool
 	}{
 		{"panic", nil, true},
-		{"newscheme", newDummyProtocolService, false},
-		{"http", newDummyProtocolService, false},
+		{"newscheme", newDummyProtocolService(), false},
+		{"http", newDummyProtocolService(), false},
 	}
 
 	for i, t := range tests {
 		if t.panic {
-			fmt.Println(t.serviceFn == nil)
-			c.Assert(func() { InstallProtocol(t.scheme, t.serviceFn) }, PanicMatches, `nil service`)
+			fmt.Println(t.service == nil)
+			c.Assert(func() { InstallProtocol(t.scheme, t.service) }, PanicMatches, `nil service`)
 			continue
 		}
-		InstallProtocol(t.scheme, t.serviceFn)
-		c.Assert(typeAsString(KnownProtocols[t.scheme]), Equals, typeAsString(t.serviceFn), Commentf("%d) wrong service", i))
+
+		InstallProtocol(t.scheme, t.service)
+		c.Assert(typeAsString(KnownProtocols[t.scheme]), Equals, typeAsString(t.service), Commentf("%d) wrong service", i))
 		// reset to default protocols after installing
 		if v, ok := DefaultProtocols[t.scheme]; ok {
 			InstallProtocol(t.scheme, v)

@@ -20,29 +20,31 @@ import (
 	"gopkg.in/src-d/go-git.v2/clients/ssh"
 )
 
-// ServiceFromURLFunc defines a service returning function for a given
-// URL.
-type ServiceFromURLFunc func(url string) common.GitUploadPackService
-
 // DefaultProtocols are the protocols supported by default.
-// Wrapping is needed because you can not cast a function that
-// returns an implementation of an interface to a function that
-// returns the interface.
-var DefaultProtocols = map[string]ServiceFromURLFunc{
-	"http":  func(s string) common.GitUploadPackService { return http.NewGitUploadPackService(s) },
-	"https": func(s string) common.GitUploadPackService { return http.NewGitUploadPackService(s) },
-	"ssh":   func(s string) common.GitUploadPackService { return ssh.NewGitUploadPackService(s) },
+var DefaultProtocols = map[string]common.GitUploadPackService{
+	"http":  http.NewGitUploadPackService(),
+	"https": http.NewGitUploadPackService(),
+	"ssh":   ssh.NewGitUploadPackService(),
 }
 
 // KnownProtocols holds the current set of known protocols. Initially
 // it gets its contents from `DefaultProtocols`. See `InstallProtocol`
 // below to add or modify this variable.
-var KnownProtocols = make(map[string]ServiceFromURLFunc, len(DefaultProtocols))
+var KnownProtocols = make(map[string]common.GitUploadPackService, len(DefaultProtocols))
 
 func init() {
 	for k, v := range DefaultProtocols {
-		KnownProtocols[k] = v
+		InstallProtocol(k, v)
 	}
+}
+
+// InstallProtocol adds or modifies an existing protocol.
+func InstallProtocol(scheme string, service common.GitUploadPackService) {
+	if service == nil {
+		panic("nil service")
+	}
+
+	KnownProtocols[scheme] = service
 }
 
 // NewGitUploadPackService returns the appropiate upload pack service
@@ -53,17 +55,10 @@ func NewGitUploadPackService(repoURL string) (common.GitUploadPackService, error
 	if err != nil {
 		return nil, fmt.Errorf("invalid url %q", repoURL)
 	}
-	srvFn, ok := KnownProtocols[u.Scheme]
+	service, ok := KnownProtocols[u.Scheme]
 	if !ok {
 		return nil, fmt.Errorf("unsupported scheme %q", u.Scheme)
 	}
-	return srvFn(repoURL), nil
-}
 
-// InstallProtocol adds or modifies an existing protocol.
-func InstallProtocol(scheme string, serviceFn ServiceFromURLFunc) {
-	if serviceFn == nil {
-		panic("nil service")
-	}
-	KnownProtocols[scheme] = serviceFn
+	return service, nil
 }
