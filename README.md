@@ -18,6 +18,11 @@ You can obtain all this information using the standard `git` command running ove
 
 *Yes!!!*, we have been using *go-git* at [source{d}](http://sourced.tech) since August 2015 to analyze all GitHub public repositories (i.e. 16M of repositories).
 
+### Coming Soon
+
+Blame support: right now we are using a forward version of a line-tracking
+algorithm and we are having some problems handling merges. The plan is to get
+merges right and change to a backward line-tracking algorithm soon.
 
 Installation
 ------------
