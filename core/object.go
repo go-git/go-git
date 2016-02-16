@@ -21,7 +21,7 @@ type ObjectStorage interface {
 	New() Object
 	Set(Object) Hash
 	Get(Hash) (Object, bool)
-	IterType(ObjectType) ObjectIter
+	Iter(ObjectType) ObjectIter
 }
 
 // ObjectType internal object type's
@@ -59,8 +59,13 @@ type ObjectIter interface {
 	Close()
 }
 
-// ObjectLookupIter yields a series of objects by retrieving each one from
-// object storage.
+// ObjectLookupIter implements ObjectIter. It iterates over a series of object
+// hashes and yields their associated objects by retrieving each one from
+// object storage. The retrievals are lazy and only occur when the iterator
+// moves forward with a call to Next().
+//
+// The ObjectLookupIter must be closed with a call to Close() when it is no
+// longer needed.
 type ObjectLookupIter struct {
 	storage ObjectStorage
 	series  []Hash
@@ -99,7 +104,11 @@ func (iter *ObjectLookupIter) Close() {
 	iter.pos = len(iter.series)
 }
 
-// ObjectSliceIter yields a series of objects from a slice of objects.
+// ObjectSliceIter implements ObjectIter. It iterates over a series of objects
+// stored in a slice and yields each one in turn when Next() is called.
+//
+// The ObjectSliceIter must be closed with a call to Close() when it is no
+// longer needed.
 type ObjectSliceIter struct {
 	series []Object
 	pos    int
@@ -189,7 +198,7 @@ func (o *RAWObjectStorage) Get(h Hash) (Object, bool) {
 	return obj, ok
 }
 
-func (o *RAWObjectStorage) IterType(t ObjectType) ObjectIter {
+func (o *RAWObjectStorage) Iter(t ObjectType) ObjectIter {
 	var series []Object
 	switch t {
 	case CommitObject:

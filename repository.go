@@ -100,7 +100,7 @@ func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 
 // Commits decode the objects into commits
 func (r *Repository) Commits() *CommitIter {
-	return NewCommitIter(r, r.Storage.IterType(core.CommitObject))
+	return NewCommitIter(r, r.Storage.Iter(core.CommitObject))
 }
 
 // Tree return the tree with the given hash
