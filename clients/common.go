@@ -47,7 +47,7 @@ func InstallProtocol(scheme string, service common.GitUploadPackService) {
 	KnownProtocols[scheme] = service
 }
 
-// NewGitUploadPackService returns the appropiate upload pack service
+// NewGitUploadPackService returns the appropriate upload pack service
 // among of the set of known protocols: HTTP, SSH. See `InstallProtocol`
 // to add or modify protocols.
 func NewGitUploadPackService(repoURL string) (common.GitUploadPackService, error) {
