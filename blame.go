@@ -2,7 +2,7 @@
 //
 // Blaming a file is finding what commit was the last to modify each of
 // the lines in the file, therefore the output of a blaming operation is
-// usualy a slice of commits, one commit per line in the file.
+// usually a slice of commits, one commit per line in the file.
 //
 // This package also provides a pretty print function to output the
 // results of a blame in a similar format to the git-blame command.
