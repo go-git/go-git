@@ -89,9 +89,12 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 
 // Commit return the commit with the given hash
 func (r *Repository) Commit(h core.Hash) (*Commit, error) {
-	obj, ok := r.Storage.Get(h)
-	if !ok {
-		return nil, ObjectNotFoundErr
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
 	}
 
 	commit := &Commit{r: r}
@@ -105,9 +108,12 @@ func (r *Repository) Commits() *CommitIter {
 
 // Tree return the tree with the given hash
 func (r *Repository) Tree(h core.Hash) (*Tree, error) {
-	obj, ok := r.Storage.Get(h)
-	if !ok {
-		return nil, ObjectNotFoundErr
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
 	}
 
 	tree := &Tree{r: r}

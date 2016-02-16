@@ -170,8 +170,8 @@ func (s *SuiteCommit) TestFile(c *C) {
 func makeObjectSlice(hashes []string, storage core.ObjectStorage) []core.Object {
 	series := make([]core.Object, 0, len(hashes))
 	for _, member := range hashes {
-		obj, ok := storage.Get(core.NewHash(member))
-		if ok {
+		obj, err := storage.Get(core.NewHash(member))
+		if err == nil {
 			series = append(series, obj)
 		}
 	}

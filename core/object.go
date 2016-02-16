@@ -23,9 +23,9 @@ type Object interface {
 
 // ObjectStorage generic storage of objects
 type ObjectStorage interface {
-	New() Object
-	Set(Object) Hash
-	Get(Hash) (Object, bool)
+	New() (Object, error)
+	Set(Object) (Hash, error)
+	Get(Hash) (Object, error)
 	Iter(ObjectType) ObjectIter
 }
 
@@ -101,14 +101,11 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 		return nil, io.EOF
 	}
 	hash := iter.series[iter.pos]
-	obj, ok := iter.storage.Get(hash)
-	if !ok {
-		// FIXME: Consider making ObjectStorage.Get return an actual error that we
-		//        could pass back here.
-		return nil, ObjectNotFoundErr
+	obj, err := iter.storage.Get(hash)
+	if err == nil {
+		iter.pos++
 	}
-	iter.pos++
-	return obj, nil
+	return obj, err
 }
 
 // Close releases any resources used by the iterator.
@@ -184,11 +181,11 @@ func NewRAWObjectStorage() *RAWObjectStorage {
 	}
 }
 
-func (o *RAWObjectStorage) New() Object {
-	return &RAWObject{}
+func (o *RAWObjectStorage) New() (Object, error) {
+	return &RAWObject{}, nil
 }
 
-func (o *RAWObjectStorage) Set(obj Object) Hash {
+func (o *RAWObjectStorage) Set(obj Object) (Hash, error) {
 	h := obj.Hash()
 	o.Objects[h] = obj
 
@@ -201,13 +198,16 @@ func (o *RAWObjectStorage) Set(obj Object) Hash {
 		o.Blobs[h] = o.Objects[h]
 	}
 
-	return h
+	return h, nil
 }
 
-func (o *RAWObjectStorage) Get(h Hash) (Object, bool) {
+func (o *RAWObjectStorage) Get(h Hash) (Object, error) {
 	obj, ok := o.Objects[h]
+	if !ok {
+		return nil, ObjectNotFoundErr
+	}
 
-	return obj, ok
+	return obj, nil
 }
 
 func (o *RAWObjectStorage) Iter(t ObjectType) ObjectIter {
