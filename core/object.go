@@ -2,7 +2,12 @@ package core
 
 import (
 	"bytes"
+	"errors"
 	"io"
+)
+
+var (
+	ObjectNotFoundErr = errors.New("object not found")
 )
 
 // Object is a generic representation of any git object
@@ -82,8 +87,9 @@ func NewObjectLookupIter(storage ObjectStorage, series []Hash) *ObjectLookupIter
 }
 
 // Next returns the next object from the iterator. If the iterator has reached
-// the end it will return io.EOF as an error. If the object is retreieved
-// successfully error will be nil.
+// the end it will return io.EOF as an error. If the object can't be found in
+// the object storage, it will return ObjectNotFoundErr as an error. If the
+// object is retreieved successfully error will be nil.
 func (iter *ObjectLookupIter) Next() (Object, error) {
 	if iter.pos >= len(iter.series) {
 		return nil, io.EOF
@@ -93,7 +99,7 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 	if !ok {
 		// FIXME: Consider making ObjectStorage.Get return an actual error that we
 		//        could pass back here.
-		return nil, io.EOF
+		return nil, ObjectNotFoundErr
 	}
 	iter.pos++
 	return obj, nil
