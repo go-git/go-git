@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 
@@ -138,14 +138,14 @@ func (t *Tree) walkEntries(base string, ch chan *File) {
 		if obj.Type() == core.TreeObject {
 			tree := &Tree{r: t.r}
 			tree.Decode(obj)
-			tree.walkEntries(filepath.Join(base, entry.Name), ch)
+			tree.walkEntries(path.Join(base, entry.Name), ch)
 			continue
 		}
 
 		blob := &Blob{}
 		blob.Decode(obj)
 
-		ch <- &File{Name: filepath.Join(base, entry.Name), Reader: blob.Reader(), Hash: entry.Hash}
+		ch <- &File{Name: path.Join(base, entry.Name), Reader: blob.Reader(), Hash: entry.Hash}
 	}
 }
 
