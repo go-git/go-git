@@ -6,6 +6,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v2/storages/memory"
 )
 
 type ObjectsSuite struct {
@@ -71,7 +72,7 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 }
 
 func (s *ObjectsSuite) TestBlobHash(c *C) {
-	o := &core.RAWObject{}
+	o := &memory.Object{}
 	o.SetType(core.BlobObject)
 	o.SetSize(3)
 	o.Writer().Write([]byte{'F', 'O', 'O'})

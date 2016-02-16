@@ -2,8 +2,8 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v2/clients/http"
-	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
+	"gopkg.in/src-d/go-git.v2/storages/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -57,7 +57,7 @@ func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
 
 	pr := packfile.NewReader(reader)
 
-	storage := core.NewRAWObjectStorage()
+	storage := memory.NewObjectStorage()
 	_, err = pr.Read(storage)
 	c.Assert(err, IsNil)
 	c.Assert(storage.Objects, HasLen, 28)

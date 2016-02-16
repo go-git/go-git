@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -17,8 +18,14 @@ type Blob struct {
 	obj core.Object
 }
 
+var ErrUnsupportedObject = errors.New("unsupported object type")
+
 // Decode transform an core.Object into a Blob struct
 func (b *Blob) Decode(o core.Object) error {
+	if o.Type() != core.BlobObject {
+		return ErrUnsupportedObject
+	}
+
 	b.Hash = o.Hash()
 	b.Size = o.Size()
 	b.obj = o

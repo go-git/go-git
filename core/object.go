@@ -2,7 +2,6 @@
 package core
 
 import (
-	"bytes"
 	"errors"
 	"io"
 )
@@ -13,11 +12,11 @@ var (
 
 // Object is a generic representation of any git object
 type Object interface {
+	Hash() Hash
 	Type() ObjectType
 	SetType(ObjectType)
 	Size() int64
 	SetSize(int64)
-	Hash() Hash
 	Reader() io.Reader
 	Writer() io.Writer
 }
@@ -146,88 +145,4 @@ func (iter *ObjectSliceIter) Next() (Object, error) {
 // Close releases any resources used by the iterator.
 func (iter *ObjectSliceIter) Close() {
 	iter.pos = len(iter.series)
-}
-
-type RAWObject struct {
-	b []byte
-	t ObjectType
-	s int64
-}
-
-func (o *RAWObject) Type() ObjectType     { return o.t }
-func (o *RAWObject) SetType(t ObjectType) { o.t = t }
-func (o *RAWObject) Size() int64          { return o.s }
-func (o *RAWObject) SetSize(s int64)      { o.s = s }
-func (o *RAWObject) Reader() io.Reader    { return bytes.NewBuffer(o.b) }
-func (o *RAWObject) Hash() Hash           { return ComputeHash(o.t, o.b) }
-func (o *RAWObject) Writer() io.Writer    { return o }
-func (o *RAWObject) Write(p []byte) (n int, err error) {
-	o.b = append(o.b, p...)
-	return len(p), nil
-}
-
-type RAWObjectStorage struct {
-	Objects map[Hash]Object
-	Commits map[Hash]Object
-	Trees   map[Hash]Object
-	Blobs   map[Hash]Object
-}
-
-func NewRAWObjectStorage() *RAWObjectStorage {
-	return &RAWObjectStorage{
-		Objects: make(map[Hash]Object, 0),
-		Commits: make(map[Hash]Object, 0),
-		Trees:   make(map[Hash]Object, 0),
-		Blobs:   make(map[Hash]Object, 0),
-	}
-}
-
-func (o *RAWObjectStorage) New() (Object, error) {
-	return &RAWObject{}, nil
-}
-
-func (o *RAWObjectStorage) Set(obj Object) (Hash, error) {
-	h := obj.Hash()
-	o.Objects[h] = obj
-
-	switch obj.Type() {
-	case CommitObject:
-		o.Commits[h] = o.Objects[h]
-	case TreeObject:
-		o.Trees[h] = o.Objects[h]
-	case BlobObject:
-		o.Blobs[h] = o.Objects[h]
-	}
-
-	return h, nil
-}
-
-func (o *RAWObjectStorage) Get(h Hash) (Object, error) {
-	obj, ok := o.Objects[h]
-	if !ok {
-		return nil, ObjectNotFoundErr
-	}
-
-	return obj, nil
-}
-
-func (o *RAWObjectStorage) Iter(t ObjectType) ObjectIter {
-	var series []Object
-	switch t {
-	case CommitObject:
-		series = flattenObjectMap(o.Commits)
-	case TreeObject:
-		series = flattenObjectMap(o.Trees)
-	case BlobObject:
-		series = flattenObjectMap(o.Blobs)
-	}
-	return NewObjectSliceIter(series)
-}
-
-func flattenObjectMap(m map[Hash]Object) []Object {
-	objects := make([]Object, 0, len(m))
-	for _, obj := range m {
-		objects = append(objects, obj)
-	}
-	return objects
 }
