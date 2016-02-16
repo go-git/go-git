@@ -1,3 +1,4 @@
+// Package http implements a HTTP client for go-git.
 package http
 
 import (

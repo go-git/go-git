@@ -27,41 +27,41 @@ type Blame struct {
 // Blaming a file is a two step process:
 //
 // 1. Create a linear history of the commits affecting a file. We use
-//    revlist.New for that.
+// revlist.New for that.
 //
 // 2. Then build a graph with a node for every line in every file in
-//    the history of the file.
+// the history of the file.
 //
-//    Each node (line) holds the commit where it was introduced or
-//    last modified. To achieve that we use the FORWARD algorithm
-//    described in Zimmermann, et al. "Mining Version Archives for
-//    Co-changed Lines", in proceedings of the Mining Software
-//    Repositories workshop, Shanghai, May 22-23, 2006.
+// Each node (line) holds the commit where it was introduced or
+// last modified. To achieve that we use the FORWARD algorithm
+// described in Zimmermann, et al. "Mining Version Archives for
+// Co-changed Lines", in proceedings of the Mining Software
+// Repositories workshop, Shanghai, May 22-23, 2006.
 //
-//    Each node is asigned a commit: Start by the nodes in the first
-//    commit. Assign that commit as the creator of all its lines.
+// Each node is asigned a commit: Start by the nodes in the first
+// commit. Assign that commit as the creator of all its lines.
 //
-//    Then jump to the nodes in the next commit, and calculate the diff
-//    between the two files. Newly created lines get
-//    assigned the new commit as its origin. Modified lines also get
-//    this new commit. Untouched lines retain the old commit.
+// Then jump to the nodes in the next commit, and calculate the diff
+// between the two files. Newly created lines get
+// assigned the new commit as its origin. Modified lines also get
+// this new commit. Untouched lines retain the old commit.
 //
-//    All this work is done in the assignOrigin function which holds all
-//    the internal relevant data in a "blame" struct, that is not
-//    exported.
+// All this work is done in the assignOrigin function which holds all
+// the internal relevant data in a "blame" struct, that is not
+// exported.
 //
-//    TODO: ways to improve the efficiency of this function:
+// TODO: ways to improve the efficiency of this function:
 //
-//    1. Improve revlist
+// 1. Improve revlist
 //
-//	  2. Improve how to traverse the history (example a backward
-//	  traversal will be much more efficient)
+// 2. Improve how to traverse the history (example a backward
+// traversal will be much more efficient)
 //
-//    TODO: ways to improve the function in general:
+// TODO: ways to improve the function in general:
 //
-//    1. Add memoization between revlist and assign.
+// 1. Add memoization between revlist and assign.
 //
-//    2. It is using much more memory than needed, see the TODOs below.
+// 2. It is using much more memory than needed, see the TODOs below.
 func (c *Commit) Blame(path string) (*Blame, error) {
 	b := new(blame)
 	b.fRev = c

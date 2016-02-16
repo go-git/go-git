@@ -1,3 +1,4 @@
+// Package core implement the core interfaces and structs used by go-git
 package core
 
 import (

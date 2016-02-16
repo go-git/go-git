@@ -1,3 +1,4 @@
+// Package common contains utils used by the clients
 package common
 
 import (

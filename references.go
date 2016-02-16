@@ -1,20 +1,3 @@
-// Package revlist allows to create the revision history of a file, this
-// is, the list of commits in the past that affect the file.
-//
-// The general idea is to traverse the git commit graph backward,
-// flattening the graph into a linear history, and skipping commits that
-// are irrelevant for the particular file.
-//
-// There is no single answer for this operation. The git command
-// "git-revlist" returns different histories depending on its arguments
-// and some internal heuristics.
-//
-// The current implementation tries to get something similar to what you
-// whould get using git-revlist. See the failing tests for some
-// insight about how the current implementation and git-revlist differs.
-//
-// Another way to get the revision history for a file is:
-// git log --follow -p -- file
 package git
 
 import (
