@@ -81,6 +81,12 @@ Date:   2015-12-11 17:57:10 +0100 +0100
 ...
 ```
 
+Acknowledgements
+----------------
+
+The earlies versions of the [packfile reader](https://godoc.org/gopkg.in/src-d/go-git.v2/formats/packfile) is based on [git-chain](https://github.com/gitchain/gitchain/blob/master/git/pack.go) project done by [@yrashk](https://github.com/yrashk)
+
+
 License
 -------
 
