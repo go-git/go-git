@@ -53,6 +53,9 @@ func NewPlainRepository() *Repository {
 	}
 }
 
+// Pull connect and fetch the given branch from the given remote, the branch
+// should be provided with the full path not only the abbreviation, eg.:
+// "refs/heads/master"
 func (r *Repository) Pull(remoteName, branch string) (err error) {
 	remote, ok := r.Remotes[remoteName]
 	if !ok {
