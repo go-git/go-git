@@ -144,7 +144,10 @@ func (r *Reader) readObjects(count uint32) error {
 }
 
 func (r *Reader) newRAWObject() (core.Object, error) {
-	raw := r.s.New()
+	raw, err := r.s.New()
+	if err != nil {
+		return nil, err
+	}
 	var steps int64
 
 	var buf [1]byte
@@ -170,7 +173,6 @@ func (r *Reader) newRAWObject() (core.Object, error) {
 	raw.SetType(typ)
 	raw.SetSize(size)
 
-	var err error
 	switch raw.Type() {
 	case core.REFDeltaObject:
 		err = r.readREFDelta(raw)
@@ -196,9 +198,12 @@ func (r *Reader) readREFDelta(raw core.Object) error {
 		return err
 	}
 
-	referenced, ok := r.s.Get(ref)
-	if !ok {
-		return ObjectNotFoundErr.n("%s", ref)
+	referenced, err := r.s.Get(ref)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return ObjectNotFoundErr.n("%s", ref)
+		}
+		return err
 	}
 
 	d, _ := ioutil.ReadAll(referenced.Reader())
@@ -231,7 +236,7 @@ func (r *Reader) readOFSDelta(raw core.Object, steps int64) error {
 		return PackEntryNotFoundErr.n("offset %d", start+offset)
 	}
 
-	referenced, _ := r.s.Get(ref)
+	referenced, _ := r.s.Get(ref) // FIXME: Handle error returned from Get()
 	d, _ := ioutil.ReadAll(referenced.Reader())
 	patched := patchDelta(d, buf.Bytes())
 	if patched == nil {

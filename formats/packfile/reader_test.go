@@ -102,8 +102,8 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 func AssertObjects(c *C, s *core.RAWObjectStorage, expects []string) {
 	c.Assert(len(expects), Equals, len(s.Objects))
 	for _, expected := range expects {
-		obtained, ok := s.Get(core.NewHash(expected))
-		c.Assert(ok, Equals, true)
+		obtained, err := s.Get(core.NewHash(expected))
+		c.Assert(err, IsNil)
 		c.Assert(obtained.Hash().String(), Equals, expected)
 	}
 }

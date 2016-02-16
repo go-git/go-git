@@ -39,9 +39,12 @@ func (t *Tree) File(path string) (*File, error) {
 		return nil, ErrFileNotFound
 	}
 
-	obj, ok := t.r.Storage.Get(*hash)
-	if !ok {
-		return nil, ErrFileNotFound // a git submodule
+	obj, err := t.r.Storage.Get(*hash)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ErrFileNotFound // a git submodule
+		}
+		return nil, err
 	}
 
 	if obj.Type() != core.BlobObject {
@@ -81,9 +84,12 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 		return nil, errDirNotFound
 	}
 
-	obj, ok := t.r.Storage.Get(entry.Hash)
-	if !ok { // git submodule
-		return nil, errDirNotFound
+	obj, err := t.r.Storage.Get(entry.Hash)
+	if err != nil {
+		if err == core.ObjectNotFoundErr { // git submodule
+			return nil, errDirNotFound
+		}
+		return nil, err
 	}
 
 	if obj.Type() != core.TreeObject {
@@ -120,9 +126,13 @@ func (t *Tree) Files() chan *File {
 
 func (t *Tree) walkEntries(base string, ch chan *File) {
 	for _, entry := range t.Entries {
-		obj, ok := t.r.Storage.Get(entry.Hash)
-		if !ok {
-			continue // ignore entries without hash (= submodule dirs)
+		obj, err := t.r.Storage.Get(entry.Hash)
+		if err != nil {
+			if err == core.ObjectNotFoundErr {
+				continue // ignore entries without hash (= submodule dirs)
+			}
+			//FIXME: Refactor this function to return an error. Ideally this would be
+			//       moved into a FileIter type.
 		}
 
 		if obj.Type() == core.TreeObject {
@@ -187,19 +197,20 @@ func (t *Tree) Decode(o core.Object) error {
 }
 
 type TreeIter struct {
-	iter
+	core.ObjectIter
+	r *Repository
 }
 
-func NewTreeIter(r *Repository) *TreeIter {
-	return &TreeIter{newIter(r)}
+func NewTreeIter(r *Repository, iter core.ObjectIter) *TreeIter {
+	return &TreeIter{iter, r}
 }
 
-func (i *TreeIter) Next() (*Tree, error) {
-	obj := <-i.ch
-	if obj == nil {
-		return nil, io.EOF
+func (iter *TreeIter) Next() (*Tree, error) {
+	obj, err := iter.ObjectIter.Next()
+	if err != nil {
+		return nil, err
 	}
 
-	tree := &Tree{r: i.r}
+	tree := &Tree{r: iter.r}
 	return tree, tree.Decode(obj)
 }
