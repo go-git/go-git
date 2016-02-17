@@ -125,7 +125,7 @@ func (r *Reader) readObjects(count uint32) error {
 	// of which 12-20 % is _not_ zlib inflation (ie. is our code).
 	for i := 0; i < int(count); i++ {
 		start := r.r.position
-		obj, err := r.newRAWObject()
+		obj, err := r.newObject()
 		if err != nil && err != io.EOF {
 			return err
 		}
@@ -143,7 +143,7 @@ func (r *Reader) readObjects(count uint32) error {
 	return nil
 }
 
-func (r *Reader) newRAWObject() (core.Object, error) {
+func (r *Reader) newObject() (core.Object, error) {
 	raw, err := r.s.New()
 	if err != nil {
 		return nil, err

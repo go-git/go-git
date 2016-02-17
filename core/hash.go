@@ -9,6 +9,9 @@ import (
 // Hash SHA1 hased content
 type Hash [20]byte
 
+// ZeroHash is Hash with value zero
+var ZeroHash Hash
+
 // ComputeHash compute the hash for a given ObjectType and content
 func ComputeHash(t ObjectType, content []byte) Hash {
 	h := t.Bytes()

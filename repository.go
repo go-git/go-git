@@ -7,6 +7,7 @@ import (
 	"gopkg.in/src-d/go-git.v2/clients/common"
 	"gopkg.in/src-d/go-git.v2/core"
 	"gopkg.in/src-d/go-git.v2/formats/packfile"
+	"gopkg.in/src-d/go-git.v2/storages/memory"
 )
 
 var (
@@ -49,7 +50,7 @@ func NewRepository(url string, auth common.AuthMethod) (*Repository, error) {
 func NewPlainRepository() *Repository {
 	return &Repository{
 		Remotes: map[string]*Remote{},
-		Storage: core.NewRAWObjectStorage(),
+		Storage: memory.NewObjectStorage(),
 	}
 }
 

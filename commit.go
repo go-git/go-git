@@ -51,6 +51,10 @@ func (c *Commit) File(path string) (file *File, err error) {
 
 // Decode transform an core.Object into a Blob struct
 func (c *Commit) Decode(o core.Object) error {
+	if o.Type() != core.CommitObject {
+		return ErrUnsupportedObject
+	}
+
 	c.Hash = o.Hash()
 	r := bufio.NewReader(o.Reader())
 

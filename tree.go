@@ -151,6 +151,10 @@ func (t *Tree) walkEntries(base string, ch chan *File) {
 
 // Decode transform an core.Object into a Tree struct
 func (t *Tree) Decode(o core.Object) error {
+	if o.Type() != core.TreeObject {
+		return ErrUnsupportedObject
+	}
+
 	t.Hash = o.Hash()
 	if o.Size() == 0 {
 		return nil
