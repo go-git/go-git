@@ -192,7 +192,9 @@ func (s *SuiteTree) TestFiles(c *C) {
 
 		tree := commit.Tree()
 		var output []string
-		for file := range tree.Files() {
+		iter := tree.Files()
+		defer iter.Close()
+		for file, err := iter.Next(); err == nil; file, err = iter.Next() {
 			output = append(output, file.Name)
 		}
 		sort.Strings(output)

@@ -6,7 +6,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/storages/memory"
+	"gopkg.in/src-d/go-git.v3/storage/memory"
 )
 
 type ObjectsSuite struct {
@@ -54,13 +54,17 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(tree.Entries, HasLen, 8)
-	c.Assert(tree.Entries[".gitignore"].Name, Equals, ".gitignore")
-	c.Assert(tree.Entries[".gitignore"].Mode.String(), Equals, "-rw-r--r--")
-	c.Assert(tree.Entries[".gitignore"].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+
+	tree.buildMap()
+	c.Assert(tree.m, HasLen, 8)
+	c.Assert(tree.m[".gitignore"].Name, Equals, ".gitignore")
+	c.Assert(tree.m[".gitignore"].Mode.String(), Equals, "-rw-r--r--")
+	c.Assert(tree.m[".gitignore"].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 
 	count := 0
-	ch := tree.Files()
-	for f := range ch {
+	iter := tree.Files()
+	defer iter.Close()
+	for f, err := iter.Next(); err == nil; f, err = iter.Next() {
 		count++
 		if f.Name == "go/example.go" {
 			content, _ := ioutil.ReadAll(f)

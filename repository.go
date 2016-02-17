@@ -7,7 +7,7 @@ import (
 	"gopkg.in/src-d/go-git.v3/clients/common"
 	"gopkg.in/src-d/go-git.v3/core"
 	"gopkg.in/src-d/go-git.v3/formats/packfile"
-	"gopkg.in/src-d/go-git.v3/storages/memory"
+	"gopkg.in/src-d/go-git.v3/storage/memory"
 )
 
 var (

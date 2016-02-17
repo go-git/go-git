@@ -1,6 +1,7 @@
 package git
 
 import (
+	"io"
 	"os"
 
 	"gopkg.in/src-d/go-git.v3/core"
@@ -38,6 +39,49 @@ func (s *SuiteFile) SetUpSuite(c *C) {
 		c.Assert(err, IsNil)
 
 		c.Assert(d.Close(), IsNil)
+	}
+}
+
+type fileIterExpectedEntry struct {
+	Name string
+	Hash string
+}
+
+var fileIterTests = []struct {
+	repo   string // the repo name as in localRepos
+	commit string // the commit to search for the file
+	files  []fileIterExpectedEntry
+}{
+	// https://api.github.com/repos/tyba/git-fixture/git/trees/6ecf0ef2c2dffb796033e5a02219af86ec6584e5
+	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", []fileIterExpectedEntry{
+		{".gitignore", "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88"},
+		{"CHANGELOG", "d3ff53e0564a9f87d8e84b6e28e5060e517008aa"},
+		{"LICENSE", "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f"},
+		{"binary.jpg", "d5c0f4ab811897cadf03aec358ae60d21f91c50d"},
+		{"go/example.go", "880cd14280f4b9b6ed3986d6671f907d7cc2a198"},
+		{"json/long.json", "49c6bb89b17060d7b4deacb7b338fcc6ea2352a9"},
+		{"json/short.json", "c8f1d8c61f9da76f4cb49fd86322b6e685dba956"},
+		{"php/crappy.php", "9a48f23120e880dfbe41f7c9b7b708e9ee62a492"},
+		{"vendor/foo.go", "9dea2395f5403188298c1dabe8bdafe562c491e3"},
+	}},
+}
+
+func (s *SuiteFile) TestIter(c *C) {
+	for i, t := range fileIterTests {
+		r := s.repos[t.repo]
+		commit, err := r.Commit(core.NewHash(t.commit))
+		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
+
+		iter := NewFileIter(r, commit.Tree())
+		for k := 0; k < len(t.files); k++ {
+			expected := t.files[k]
+			file, err := iter.Next()
+			c.Assert(err, IsNil, Commentf("subtest %d, iter %d, err=%v", i, k, err))
+			c.Assert(file.Name, Equals, expected.Name, Commentf("subtest %d, iter %d, name=%s, expected=%s", i, k, file.Name, expected.Hash))
+			c.Assert(file.Hash.String(), Equals, expected.Hash, Commentf("subtest %d, iter %d, hash=%v, expected=%s", i, k, file.Hash.String(), expected.Hash))
+		}
+		_, err = iter.Next()
+		c.Assert(err, Equals, io.EOF)
 	}
 }
 
@@ -154,7 +198,9 @@ func (s *SuiteFile) TestIgnoreEmptyDirEntries(c *C) {
 		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
-		for file := range commit.Tree().Files() {
+		iter := commit.Tree().Files()
+		defer iter.Close()
+		for file, err := iter.Next(); err == nil; file, err = iter.Next() {
 			_ = file.Contents()
 			// this would probably panic if we are not ignoring empty dirs
 		}

@@ -33,3 +33,34 @@ func (f *File) Lines() []string {
 	}
 	return splits
 }
+
+type FileIter struct {
+	w TreeWalker
+}
+
+func NewFileIter(r *Repository, t *Tree) *FileIter {
+	return &FileIter{w: *NewTreeWalker(r, t)}
+}
+
+func (iter *FileIter) Next() (*File, error) {
+	for {
+		name, entry, obj, err := iter.w.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		if obj.Type() != core.BlobObject {
+			// Skip non-blob objects
+			continue
+		}
+
+		blob := &Blob{}
+		blob.Decode(obj)
+
+		return &File{Name: name, Reader: blob.Reader(), Hash: entry.Hash}, nil
+	}
+}
+
+func (iter *FileIter) Close() {
+	iter.w.Close()
+}

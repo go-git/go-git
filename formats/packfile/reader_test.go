@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/storages/memory"
+	"gopkg.in/src-d/go-git.v3/storage/memory"
 
 	"github.com/dustin/go-humanize"
 	. "gopkg.in/check.v1"

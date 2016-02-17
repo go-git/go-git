@@ -5,20 +5,30 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v3/core"
 )
 
+const (
+	maxTreeDepth = 1024
+)
+
+// New errors defined by this package.
+var (
+	ErrMaxTreeDepth = errors.New("maximum tree depth exceeded")
+	ErrFileNotFound = errors.New("file not found")
+)
+
 // Tree is basically like a directory - it references a bunch of other trees
 // and/or blobs (i.e. files and sub-directories)
 type Tree struct {
-	Entries map[string]TreeEntry
+	Entries []TreeEntry
 	Hash    core.Hash
 
 	r *Repository
+	m map[string]*TreeEntry
 }
 
 // TreeEntry represents a file
@@ -27,9 +37,6 @@ type TreeEntry struct {
 	Mode os.FileMode
 	Hash core.Hash
 }
-
-// New errors defined by this package.
-var ErrFileNotFound = errors.New("file not found")
 
 // File returns the hash of the file identified by the `path` argument.
 // The path is interpreted as relative to the tree receiver.
@@ -105,48 +112,19 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 var errEntryNotFound = errors.New("entry not found")
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	entry, ok := t.Entries[baseName]
+	if t.m == nil {
+		t.buildMap()
+	}
+	entry, ok := t.m[baseName]
 	if !ok {
 		return nil, errEntryNotFound
 	}
 
-	return &entry, nil
+	return entry, nil
 }
 
-func (t *Tree) Files() chan *File {
-	ch := make(chan *File, 1)
-
-	go func() {
-		defer func() { close(ch) }()
-		t.walkEntries("", ch)
-	}()
-
-	return ch
-}
-
-func (t *Tree) walkEntries(base string, ch chan *File) {
-	for _, entry := range t.Entries {
-		obj, err := t.r.Storage.Get(entry.Hash)
-		if err != nil {
-			if err == core.ObjectNotFoundErr {
-				continue // ignore entries without hash (= submodule dirs)
-			}
-			//FIXME: Refactor this function to return an error. Ideally this would be
-			//       moved into a FileIter type.
-		}
-
-		if obj.Type() == core.TreeObject {
-			tree := &Tree{r: t.r}
-			tree.Decode(obj)
-			tree.walkEntries(path.Join(base, entry.Name), ch)
-			continue
-		}
-
-		blob := &Blob{}
-		blob.Decode(obj)
-
-		ch <- &File{Name: path.Join(base, entry.Name), Reader: blob.Reader(), Hash: entry.Hash}
-	}
+func (t *Tree) Files() *FileIter {
+	return NewFileIter(t.r, t)
 }
 
 // Decode transform an core.Object into a Tree struct
@@ -160,7 +138,8 @@ func (t *Tree) Decode(o core.Object) error {
 		return nil
 	}
 
-	t.Entries = make(map[string]TreeEntry)
+	t.Entries = nil
+	t.m = nil
 
 	r := bufio.NewReader(o.Reader())
 	for {
@@ -190,31 +169,69 @@ func (t *Tree) Decode(o core.Object) error {
 		}
 
 		baseName := name[:len(name)-1]
-		t.Entries[baseName] = TreeEntry{
+		t.Entries = append(t.Entries, TreeEntry{
 			Hash: hash,
 			Mode: os.FileMode(fm),
 			Name: baseName,
-		}
+		})
 	}
 
 	return nil
 }
 
-type TreeIter struct {
-	core.ObjectIter
-	r *Repository
+func (t *Tree) buildMap() {
+	t.m = make(map[string]*TreeEntry)
+	for i := 0; i < len(t.Entries); i++ {
+		t.m[t.Entries[i].Name] = &t.Entries[i]
+	}
 }
 
-func NewTreeIter(r *Repository, iter core.ObjectIter) *TreeIter {
-	return &TreeIter{iter, r}
+// TreeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
+type TreeEntryIter struct {
+	t   *Tree
+	pos int
+}
+
+func NewTreeEntryIter(t *Tree) *TreeEntryIter {
+	return &TreeEntryIter{t, 0}
+}
+
+func (iter *TreeEntryIter) Next() (TreeEntry, error) {
+	if iter.pos >= len(iter.t.Entries) {
+		return TreeEntry{}, io.EOF
+	}
+	iter.pos++
+	return iter.t.Entries[iter.pos-1], nil
+}
+
+// TreeEntryIter facilitates iterating through the descendent subtrees of a
+// Tree.
+type TreeIter struct {
+	w TreeWalker
+}
+
+func NewTreeIter(r *Repository, t *Tree) *TreeIter {
+	return &TreeIter{
+		w: *NewTreeWalker(r, t),
+	}
 }
 
 func (iter *TreeIter) Next() (*Tree, error) {
-	obj, err := iter.ObjectIter.Next()
-	if err != nil {
-		return nil, err
-	}
+	for {
+		_, _, obj, err := iter.w.Next()
+		if err != nil {
+			return nil, err
+		}
 
-	tree := &Tree{r: iter.r}
-	return tree, tree.Decode(obj)
+		if obj.Type() != core.TreeObject {
+			// Skip non-tree objects
+			continue
+		}
+
+		return iter.w.Tree(), nil
+	}
+}
+
+func (iter *TreeIter) Close() {
+	iter.w.Close()
 }
