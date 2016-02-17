@@ -3,8 +3,8 @@ package git
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v2/core"
-	"gopkg.in/src-d/go-git.v2/diff"
+	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/diff"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )

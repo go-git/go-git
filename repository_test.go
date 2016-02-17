@@ -1,8 +1,8 @@
 package git
 
 import (
-	"gopkg.in/src-d/go-git.v2/clients/http"
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/clients/http"
+	"gopkg.in/src-d/go-git.v3/core"
 
 	. "gopkg.in/check.v1"
 )

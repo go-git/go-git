@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/src-d/go-git.v2/clients"
-	"gopkg.in/src-d/go-git.v2/clients/common"
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/clients"
+	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 type Remote struct {

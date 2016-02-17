@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 // Tree is basically like a directory - it references a bunch of other trees

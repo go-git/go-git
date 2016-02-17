@@ -4,8 +4,8 @@ import (
 	"io/ioutil"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v2/clients/common"
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 type SuiteRemote struct{}

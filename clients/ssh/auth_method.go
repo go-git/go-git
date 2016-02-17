@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/src-d/go-git.v2/clients/common"
+	"gopkg.in/src-d/go-git.v3/clients/common"
 )
 
 // AuthMethod is the interface all auth methods for the ssh client

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 // Blob is used to store file data - it is generally a file.

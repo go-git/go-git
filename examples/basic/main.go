@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"gopkg.in/src-d/go-git.v2"
+	"gopkg.in/src-d/go-git.v3"
 )
 
 func main() {

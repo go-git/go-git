@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v2/clients/common"
-	"gopkg.in/src-d/go-git.v2/core"
-	"gopkg.in/src-d/go-git.v2/formats/pktline"
+	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/formats/pktline"
 )
 
 type GitUploadPackService struct {

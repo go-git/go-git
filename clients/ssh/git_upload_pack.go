@@ -12,8 +12,8 @@ import (
 	"io/ioutil"
 	"net/url"
 
-	"gopkg.in/src-d/go-git.v2/clients/common"
-	"gopkg.in/src-d/go-git.v2/formats/pktline"
+	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v3/formats/pktline"
 
 	"github.com/sourcegraph/go-vcsurl"
 	"golang.org/x/crypto/ssh"

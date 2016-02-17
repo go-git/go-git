@@ -7,7 +7,7 @@ import (
 	"io"
 	"sort"
 
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 type Hash core.Hash

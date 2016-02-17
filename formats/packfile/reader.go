@@ -7,7 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/core"
 
 	"github.com/klauspost/compress/zlib"
 )

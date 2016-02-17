@@ -5,8 +5,8 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v2/core"
-	"gopkg.in/src-d/go-git.v2/storages/memory"
+	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/storages/memory"
 )
 
 type ObjectsSuite struct {

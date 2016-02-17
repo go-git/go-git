@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"io"
 
-	"gopkg.in/src-d/go-git.v2/core"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 // Object on memory core.Object implementation

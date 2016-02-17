@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/src-d/go-git.v2/core"
-	"gopkg.in/src-d/go-git.v2/storages/memory"
+	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/storages/memory"
 
 	"github.com/dustin/go-humanize"
 	. "gopkg.in/check.v1"

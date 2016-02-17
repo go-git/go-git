@@ -4,8 +4,8 @@ import (
 	"io"
 	"os"
 
-	"gopkg.in/src-d/go-git.v2/core"
-	"gopkg.in/src-d/go-git.v2/formats/packfile"
+	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
