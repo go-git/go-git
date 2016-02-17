@@ -24,11 +24,11 @@ var (
 // Tree is basically like a directory - it references a bunch of other trees
 // and/or blobs (i.e. files and sub-directories)
 type Tree struct {
-	Entries      map[string]TreeEntry
-	OrderedNames []string
-	Hash         core.Hash
+	Entries []TreeEntry
+	Hash    core.Hash
 
 	r *Repository
+	m map[string]*TreeEntry
 }
 
 // TreeEntry represents a file
@@ -112,12 +112,15 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 var errEntryNotFound = errors.New("entry not found")
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	entry, ok := t.Entries[baseName]
+	if t.m == nil {
+		t.buildMap()
+	}
+	entry, ok := t.m[baseName]
 	if !ok {
 		return nil, errEntryNotFound
 	}
 
-	return &entry, nil
+	return entry, nil
 }
 
 func (t *Tree) Files() *FileIter {
@@ -135,7 +138,8 @@ func (t *Tree) Decode(o core.Object) error {
 		return nil
 	}
 
-	t.Entries = make(map[string]TreeEntry)
+	t.Entries = nil
+	t.m = nil
 
 	r := bufio.NewReader(o.Reader())
 	for {
@@ -165,15 +169,21 @@ func (t *Tree) Decode(o core.Object) error {
 		}
 
 		baseName := name[:len(name)-1]
-		t.Entries[baseName] = TreeEntry{
+		t.Entries = append(t.Entries, TreeEntry{
 			Hash: hash,
 			Mode: os.FileMode(fm),
 			Name: baseName,
-		}
-		t.OrderedNames = append(t.OrderedNames, baseName)
+		})
 	}
 
 	return nil
+}
+
+func (t *Tree) buildMap() {
+	t.m = make(map[string]*TreeEntry)
+	for i := 0; i < len(t.Entries); i++ {
+		t.m[t.Entries[i].Name] = &t.Entries[i]
+	}
 }
 
 // TreeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
@@ -187,20 +197,11 @@ func NewTreeEntryIter(t *Tree) *TreeEntryIter {
 }
 
 func (iter *TreeEntryIter) Next() (TreeEntry, error) {
-	if iter.pos >= len(iter.t.OrderedNames) {
+	if iter.pos >= len(iter.t.Entries) {
 		return TreeEntry{}, io.EOF
 	}
-
-	entry, ok := iter.t.Entries[iter.t.OrderedNames[iter.pos]]
-	if !ok {
-		// Probable race condition or internal bug
-		// FIXME: Report more severe error or panic
-		return TreeEntry{}, io.EOF
-	}
-
 	iter.pos++
-
-	return entry, nil
+	return iter.t.Entries[iter.pos-1], nil
 }
 
 // TreeEntryIter facilitates iterating through the descendent subtrees of a
