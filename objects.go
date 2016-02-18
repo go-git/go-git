@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -47,60 +48,46 @@ type Signature struct {
 
 // Decode decodes a byte slice into a signature
 func (s *Signature) Decode(b []byte) {
-	if len(b) == 0 {
+	open := bytes.IndexByte(b, '<')
+	close := bytes.IndexByte(b, '>')
+	if open == -1 || close == -1 {
 		return
 	}
 
-	from := 0
-	state := 'n' // n: name, e: email, t: timestamp, z: timezone
-	for i := 0; ; i++ {
-		var c byte
-		var end bool
-		if i < len(b) {
-			c = b[i]
-		} else {
-			end = true
-		}
+	s.Name = string(bytes.Trim(b[:open], " "))
+	s.Email = string(b[open+1 : close])
 
-		switch state {
-		case 'n':
-			if c == '<' || end {
-				if i == 0 {
-					break
-				}
-				s.Name = string(b[from : i-1])
-				state = 'e'
-				from = i + 1
-			}
-		case 'e':
-			if c == '>' || end {
-				s.Email = string(b[from:i])
-				i++
-				state = 't'
-				from = i + 1
-			}
-		case 't':
-			if c == ' ' || end {
-				t, err := strconv.ParseInt(string(b[from:i]), 10, 64)
-				if err == nil {
-					loc := time.UTC
-					ts := time.Unix(t, 0)
-					if len(b[i:]) >= 6 {
-						tl, err := time.Parse(" -0700", string(b[i:i+6]))
-						if err == nil {
-							loc = tl.Location()
-						}
-					}
-					s.When = ts.In(loc)
-				}
-				end = true
-			}
-		}
-
-		if end {
-			break
-		}
+	hasTime := close+2 < len(b)
+	if hasTime {
+		s.decodeTimeAndTimeZone(b[close+2:])
 	}
+}
+
+var timeZoneLength = 5
+
+func (s *Signature) decodeTimeAndTimeZone(b []byte) {
+	space := bytes.IndexByte(b, ' ')
+	if space == -1 {
+		space = len(b)
+	}
+
+	ts, err := strconv.ParseInt(string(b[:space]), 10, 64)
+	if err != nil {
+		return
+	}
+
+	s.When = time.Unix(ts, 0).In(time.UTC)
+	var tzStart = space + 1
+	if tzStart >= len(b) || tzStart+timeZoneLength > len(b) {
+		return
+	}
+
+	tl, err := time.Parse("-0700", string(b[tzStart:tzStart+timeZoneLength]))
+	if err != nil {
+		return
+	}
+
+	s.When = s.When.In(tl.Location())
 }
 
 func (s *Signature) String() string {
