@@ -14,6 +14,7 @@ type ObjectStorage struct {
 	Commits map[core.Hash]core.Object
 	Trees   map[core.Hash]core.Object
 	Blobs   map[core.Hash]core.Object
+	Tags    map[core.Hash]core.Object
 }
 
 // NewObjectStorage returns a new empty ObjectStorage
@@ -23,6 +24,7 @@ func NewObjectStorage() *ObjectStorage {
 		Commits: make(map[core.Hash]core.Object, 0),
 		Trees:   make(map[core.Hash]core.Object, 0),
 		Blobs:   make(map[core.Hash]core.Object, 0),
+		Tags:    make(map[core.Hash]core.Object, 0),
 	}
 }
 
@@ -43,6 +45,8 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 		o.Trees[h] = o.Objects[h]
 	case core.BlobObject:
 		o.Blobs[h] = o.Objects[h]
+	case core.TagObject:
+		o.Tags[h] = o.Objects[h]
 	default:
 		return h, ErrUnsupportedObjectType
 	}
@@ -70,6 +74,8 @@ func (o *ObjectStorage) Iter(t core.ObjectType) core.ObjectIter {
 		series = flattenObjectMap(o.Trees)
 	case core.BlobObject:
 		series = flattenObjectMap(o.Blobs)
+	case core.TagObject:
+		series = flattenObjectMap(o.Tags)
 	}
 	return core.NewObjectSliceIter(series)
 }
