@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v3/clients/common"
 	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
@@ -46,13 +47,39 @@ func (s *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadC
 	return s.RC, err
 }
 
-var fixtureRepos = [...]struct {
+type packedFixture struct {
 	url      string
 	packfile string
-}{
+}
+
+var fixtureRepos = []packedFixture{
 	{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
 	{"https://github.com/jamesob/desk.git", "formats/packfile/fixtures/jamesob-desk.pack"},
 	{"https://github.com/spinnaker/spinnaker.git", "formats/packfile/fixtures/spinnaker-spinnaker.pack"},
+}
+
+func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
+	repos := make(map[string]*Repository, 0)
+	for _, group := range fixtures {
+		for _, fixture := range group {
+			if _, existing := repos[fixture.url]; existing {
+				continue
+			}
+			repos[fixture.url] = NewPlainRepository()
+
+			d, err := os.Open(fixture.packfile)
+			c.Assert(err, IsNil)
+
+			r := packfile.NewReader(d)
+			r.Format = packfile.OFSDeltaFormat // TODO: how to know the format of a pack file ahead of time?
+
+			_, err = r.Read(repos[fixture.url].Storage)
+			c.Assert(err, IsNil)
+
+			c.Assert(d.Close(), IsNil)
+		}
+	}
+	return repos
 }
 
 type SuiteCommon struct{}
