@@ -29,7 +29,7 @@ type Commit struct {
 }
 
 func (c *Commit) Tree() *Tree {
-	tree, _ := c.r.Tree(c.tree)
+	tree, _ := c.r.Tree(c.tree) // FIXME: Return error as well?
 	return tree
 }
 

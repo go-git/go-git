@@ -78,20 +78,41 @@ func (t *Tag) Decode(o core.Object) error {
 }
 
 // Commit returns the commit pointed to by the tag. If the tag points to a
-// different type of object an error will be returned.
+// different type of object ErrUnsupportedObject will be returned.
 func (t *Tag) Commit() (*Commit, error) {
+	if t.Type != core.CommitObject {
+		return nil, ErrUnsupportedObject
+	}
 	return t.r.Commit(t.object)
 }
 
-// Tree returns the tree pointed to by the tag. If the tag points to a
-// different type of object an error will be returned.
+// Tree returns the tree pointed to by the tag. If the tag points to a commit
+// object the tree of that commit will be returned. If the tag does not point
+// to a commit or tree object ErrUnsupportedObject will be returned.
 func (t *Tag) Tree() (*Tree, error) {
 	// TODO: If the tag is of type commit, follow the commit to its tree?
-	return t.r.Tree(t.object)
+	switch t.Type {
+	case core.CommitObject:
+		commit, err := t.r.Commit(t.object)
+		if err != nil {
+			return nil, err
+		}
+		return commit.Tree(), nil
+	case core.TreeObject:
+		return t.r.Tree(t.object)
+	default:
+		return nil, ErrUnsupportedObject
+	}
 }
 
-// TODO: Add support for retrieving blobs? We don't have a type for that
-//       currently.
+// Blob returns the blob pointed to by the tag. If the tag points to a
+// different type of object ErrUnsupportedObject will be returned.
+func (t *Tag) Blob() (*Blob, error) {
+	if t.Type != core.BlobObject {
+		return nil, ErrUnsupportedObject
+	}
+	return t.r.Blob(t.object)
+}
 
 // Object returns the object pointed to by the tag.
 func (t *Tag) Object() (core.Object, error) {
@@ -132,4 +153,5 @@ func (iter *TagIter) Next() (*Tag, error) {
 
 // Close releases any resources used by the iterator.
 func (iter *TagIter) Close() {
+	iter.Close()
 }

@@ -41,6 +41,8 @@ var tagTests = []struct {
 		"95ee6e6c750ded1f4dc5499bad730ce3f58c6c3a": {"2c748387f5e9c35d001de3c9ba3072d0b3f10a72", core.CommitObject, "v0.4.0", "cfieber", "cfieber@netflix.com", "2015-11-15T18:18:51Z", "Release of 0.4.0\n\n- 2c748387f5e9c35d001de3c9ba3072d0b3f10a72: Create LICENSE.txt\n- 0c6968e24796a67fa602c94d7a82fd4fd375ec59: Create AUTHORS\n- 3ce7b902a51bac2f10994f7d1f251b616c975e54: Drop trailing slash.\n"},
 		"8b6002b614b454d45bafbd244b127839421f92ff": {"65e37611b1ff9cb589e3060507427a9a2645907e", core.CommitObject, "v0.3.0", "cfieber", "cfieber@netflix.com", "2015-11-15T18:07:03Z", "Release of 0.3.0\n\n- 65e37611b1ff9cb589e3060507427a9a2645907e: need java plugin for manifest generation\n- bc02440df2ff95a014a7b3cb11b98c3a2bded777: newer gradle plugin\n- 791bcd1592828d9d5d16e83f3a825fb08b0ba22d: Don't need to rename the service.\n"},
 	}},
+	// TODO: Add fixture with tagged trees
+	// TODO: Add fixture with tagged blobs
 }
 
 type SuiteTag struct {
@@ -67,6 +69,44 @@ func (s *SuiteTag) TestCommit(c *C) {
 			commit, err := tag.Commit()
 			c.Assert(err, IsNil)
 			c.Assert(commit.Hash.String(), Equals, expected.Object)
+			k++
+		}
+	}
+}
+
+func (s *SuiteTag) TestTree(c *C) {
+	for _, t := range tagTests {
+		r, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+		k := 0
+		for hash, expected := range t.tags {
+			if expected.Type != core.TreeObject {
+				continue
+			}
+			tag, err := r.Tag(core.NewHash(hash))
+			c.Assert(err, IsNil)
+			tree, err := tag.Tree()
+			c.Assert(err, IsNil)
+			c.Assert(tree.Hash.String(), Equals, expected.Object)
+			k++
+		}
+	}
+}
+
+func (s *SuiteTag) TestBlob(c *C) {
+	for _, t := range tagTests {
+		r, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+		k := 0
+		for hash, expected := range t.tags {
+			if expected.Type != core.BlobObject {
+				continue
+			}
+			tag, err := r.Tag(core.NewHash(hash))
+			c.Assert(err, IsNil)
+			blob, err := tag.Blob()
+			c.Assert(err, IsNil)
+			c.Assert(blob.Hash.String(), Equals, expected.Object)
 			k++
 		}
 	}

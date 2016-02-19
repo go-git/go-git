@@ -110,6 +110,34 @@ func (r *Repository) Commits() *CommitIter {
 	return NewCommitIter(r, r.Storage.Iter(core.CommitObject))
 }
 
+// Tree return the tree with the given hash
+func (r *Repository) Tree(h core.Hash) (*Tree, error) {
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
+	}
+
+	tree := &Tree{r: r}
+	return tree, tree.Decode(obj)
+}
+
+// Blob returns the blob with the given hash
+func (r *Repository) Blob(h core.Hash) (*Blob, error) {
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
+	}
+
+	blob := &Blob{}
+	return blob, blob.Decode(obj)
+}
+
 // Tag returns a tag with the given hash.
 func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 	obj, err := r.Storage.Get(h)
@@ -128,18 +156,4 @@ func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 // in the repository.
 func (r *Repository) Tags() *TagIter {
 	return NewTagIter(r, r.Storage.Iter(core.TagObject))
-}
-
-// Tree return the tree with the given hash
-func (r *Repository) Tree(h core.Hash) (*Tree, error) {
-	obj, err := r.Storage.Get(h)
-	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return nil, ObjectNotFoundErr
-		}
-		return nil, err
-	}
-
-	tree := &Tree{r: r}
-	return tree, tree.Decode(obj)
 }

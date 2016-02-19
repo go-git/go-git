@@ -71,7 +71,7 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 			c.Assert(err, IsNil)
 
 			r := packfile.NewReader(d)
-			r.Format = packfile.OFSDeltaFormat // TODO: how to know the format of a pack file ahead of time?
+			r.Format = packfile.OFSDeltaFormat // This is hardcoded because we don't have a good way to sniff the format
 
 			_, err = r.Read(repos[fixture.url].Storage)
 			c.Assert(err, IsNil)
