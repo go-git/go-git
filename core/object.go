@@ -64,6 +64,28 @@ func (t ObjectType) Bytes() []byte {
 	return []byte(t.String())
 }
 
+// ParseObjectType parses a string representation of ObjectType. It returns an
+// error on parse failure.
+func ParseObjectType(value string) (typ ObjectType, err error) {
+	switch value {
+	case "commit":
+		typ = CommitObject
+	case "tree":
+		typ = TreeObject
+	case "blob":
+		typ = BlobObject
+	case "tag":
+		typ = TagObject
+	case "ofs-delta":
+		typ = OFSDeltaObject
+	case "ref-delta":
+		typ = REFDeltaObject
+	default:
+		err = errors.New("unable to parse object type")
+	}
+	return
+}
+
 // ObjectIter is a generic closable interface for iterating over objects.
 type ObjectIter interface {
 	Next() (Object, error)
