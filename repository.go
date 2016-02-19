@@ -123,3 +123,37 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 	tree := &Tree{r: r}
 	return tree, tree.Decode(obj)
 }
+
+// Blob returns the blob with the given hash
+func (r *Repository) Blob(h core.Hash) (*Blob, error) {
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
+	}
+
+	blob := &Blob{}
+	return blob, blob.Decode(obj)
+}
+
+// Tag returns a tag with the given hash.
+func (r *Repository) Tag(h core.Hash) (*Tag, error) {
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
+	}
+
+	tag := &Tag{r: r}
+	return tag, tag.Decode(obj)
+}
+
+// Tags returns a TagIter that can step through all of the annotated tags
+// in the repository.
+func (r *Repository) Tags() *TagIter {
+	return NewTagIter(r, r.Storage.Iter(core.TagObject))
+}

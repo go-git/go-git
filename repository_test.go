@@ -1,15 +1,23 @@
 package git
 
 import (
+	"fmt"
+
 	"gopkg.in/src-d/go-git.v3/clients/http"
 	"gopkg.in/src-d/go-git.v3/core"
 
 	. "gopkg.in/check.v1"
 )
 
-type SuiteRepository struct{}
+type SuiteRepository struct {
+	repos map[string]*Repository
+}
 
 var _ = Suite(&SuiteRepository{})
+
+func (s *SuiteRepository) SetUpTest(c *C) {
+	s.repos = unpackFixtures(c, tagFixtures)
+}
 
 func (s *SuiteRepository) TestNewRepository(c *C) {
 	r, err := NewRepository(RepositoryFixture, nil)
@@ -75,6 +83,28 @@ func (s *SuiteRepository) TestCommits(c *C) {
 	}
 
 	c.Assert(count, Equals, 8)
+}
+
+func (s *SuiteRepository) TestTag(c *C) {
+	for i, t := range tagTests {
+		r, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+		k := 0
+		for hash, expected := range t.tags {
+			tag, err := r.Tag(core.NewHash(hash))
+			c.Assert(err, IsNil)
+			testTagExpected(c, tag, expected, fmt.Sprintf("subtest %d, tag %d: ", i, k))
+			k++
+		}
+	}
+}
+
+func (s *SuiteRepository) TestTags(c *C) {
+	for i, t := range tagTests {
+		r, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+		testTagIter(c, r.Tags(), t.tags, fmt.Sprintf("subtest %d, ", i))
+	}
 }
 
 func (s *SuiteRepository) TestCommitIterClosePanic(c *C) {
