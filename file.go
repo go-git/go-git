@@ -13,6 +13,7 @@ type File struct {
 	Name string
 	io.Reader
 	Hash core.Hash
+	Size int64
 }
 
 // Contents returns the contents of a file as a string.

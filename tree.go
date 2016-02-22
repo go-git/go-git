@@ -51,7 +51,12 @@ func (t *Tree) File(path string) (*File, error) {
 	blob := &Blob{}
 	blob.Decode(obj)
 
-	return &File{Name: path, Reader: blob.Reader(), Hash: *hash}, nil
+	return &File{
+		Name:   path,
+		Reader: blob.Reader(),
+		Hash:   *hash,
+		Size:   blob.Size,
+	}, nil
 }
 
 func (t *Tree) findHash(path string) (*core.Hash, error) {
@@ -135,7 +140,12 @@ func (t *Tree) walkEntries(base string, ch chan *File) {
 		blob := &Blob{}
 		blob.Decode(obj)
 
-		ch <- &File{Name: filepath.Join(base, entry.Name), Reader: blob.Reader(), Hash: entry.Hash}
+		ch <- &File{
+			Name:   filepath.Join(base, entry.Name),
+			Reader: blob.Reader(),
+			Hash:   entry.Hash,
+			Size:   blob.Size,
+		}
 	}
 }
 
