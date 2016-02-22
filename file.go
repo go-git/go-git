@@ -2,7 +2,6 @@ package git
 
 import (
 	"bytes"
-	"io"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v3/core"
@@ -11,14 +10,18 @@ import (
 // File represents git file objects.
 type File struct {
 	Name string
-	io.Reader
-	Hash core.Hash
+	Blob
+}
+
+func newFile(name string, b *Blob) *File {
+	return &File{Name: name, Blob: *b}
 }
 
 // Contents returns the contents of a file as a string.
 func (f *File) Contents() string {
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(f)
+	buf.ReadFrom(f.Reader())
+
 	return buf.String()
 }
 
@@ -31,6 +34,7 @@ func (f *File) Lines() []string {
 	if splits[len(splits)-1] == "" {
 		return splits[:len(splits)-1]
 	}
+
 	return splits
 }
 
@@ -44,7 +48,7 @@ func NewFileIter(r *Repository, t *Tree) *FileIter {
 
 func (iter *FileIter) Next() (*File, error) {
 	for {
-		name, entry, obj, err := iter.w.Next()
+		name, _, obj, err := iter.w.Next()
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +61,7 @@ func (iter *FileIter) Next() (*File, error) {
 		blob := &Blob{}
 		blob.Decode(obj)
 
-		return &File{Name: name, Reader: blob.Reader(), Hash: entry.Hash}, nil
+		return newFile(name, blob), nil
 	}
 }
 

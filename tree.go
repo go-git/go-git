@@ -61,7 +61,7 @@ func (t *Tree) File(path string) (*File, error) {
 	blob := &Blob{}
 	blob.Decode(obj)
 
-	return &File{Name: path, Reader: blob.Reader(), Hash: *hash}, nil
+	return newFile(path, blob), nil
 }
 
 func (t *Tree) findHash(path string) (*core.Hash, error) {

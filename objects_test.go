@@ -67,7 +67,7 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 	for f, err := iter.Next(); err == nil; f, err = iter.Next() {
 		count++
 		if f.Name == "go/example.go" {
-			content, _ := ioutil.ReadAll(f)
+			content, _ := ioutil.ReadAll(f.Reader())
 			c.Assert(content, HasLen, 2780)
 		}
 	}
