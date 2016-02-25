@@ -82,7 +82,10 @@ func (c *Commit) Blame(path string) (*Blame, error) {
 	if err != nil {
 		return nil, err
 	}
-	finalLines := file.Lines()
+	finalLines, err := file.Lines()
+	if err != nil {
+		return nil, err
+	}
 
 	lines, err := newLines(finalLines, b.sliceGraph(len(b.graph)-1))
 	if err != nil {
@@ -153,7 +156,10 @@ func (b *blame) fillGraphAndData() error {
 		if err != nil {
 			return nil
 		}
-		b.data[i] = file.Contents()
+		b.data[i], err = file.Contents()
+		if err != nil {
+			return err
+		}
 		nLines := countLines(b.data[i])
 		// create a node for each line
 		b.graph[i] = make([]*Commit, nLines)
@@ -221,7 +227,10 @@ func (b *blame) GoString() string {
 	if err != nil {
 		panic("PrettyPrint: internal error in repo.Data")
 	}
-	contents := file.Contents()
+	contents, err := file.Contents()
+	if err != nil {
+		panic("PrettyPrint: internal error in repo.Data")
+	}
 
 	lines := strings.Split(contents, "\n")
 	// max line number length

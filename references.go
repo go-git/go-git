@@ -178,7 +178,10 @@ func patch(c *Commit, path string) ([]diffmatchpatch.Diff, error) {
 	if err != nil {
 		return nil, err
 	}
-	content := file.Contents()
+	content, err := file.Contents()
+	if err != nil {
+		return nil, err
+	}
 
 	// get contents of the file in the first parent of the commit
 	var contentParent string
@@ -191,7 +194,10 @@ func patch(c *Commit, path string) ([]diffmatchpatch.Diff, error) {
 	if err != nil {
 		contentParent = ""
 	} else {
-		contentParent = file.Contents()
+		contentParent, err = file.Contents()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// compare the contents of parent and child

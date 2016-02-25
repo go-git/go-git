@@ -10,6 +10,21 @@ var (
 	ObjectNotFoundErr = errors.New("object not found")
 )
 
+// TODO: Consider adding a Hash function to the ObjectReader and ObjectWriter
+//       interfaces that returns the hash calculated for the reader or writer.
+
+// ObjectReader is a generic representation of an object reader.
+//
+// ObjectReader implements io.ReadCloser. Close should be called when finished
+// with it.
+type ObjectReader io.ReadCloser
+
+// ObjectWriter is a generic representation of an object writer.
+//
+// ObjectWriter implements io.WriterCloser. Close should be called when finished
+// with it.
+type ObjectWriter io.WriteCloser
+
 // Object is a generic representation of any git object
 type Object interface {
 	Hash() Hash
@@ -17,8 +32,8 @@ type Object interface {
 	SetType(ObjectType)
 	Size() int64
 	SetSize(int64)
-	Reader() io.Reader
-	Writer() io.Writer
+	Reader() (ObjectReader, error)
+	Writer() (ObjectWriter, error)
 }
 
 // ObjectStorage generic storage of objects

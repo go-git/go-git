@@ -67,7 +67,10 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 	for f, err := iter.Next(); err == nil; f, err = iter.Next() {
 		count++
 		if f.Name == "go/example.go" {
-			content, _ := ioutil.ReadAll(f.Reader())
+			reader, err := f.Reader()
+			c.Assert(err, IsNil)
+			defer func() { c.Assert(reader.Close(), IsNil) }()
+			content, _ := ioutil.ReadAll(reader)
 			c.Assert(content, HasLen, 2780)
 		}
 	}
@@ -79,7 +82,12 @@ func (s *ObjectsSuite) TestBlobHash(c *C) {
 	o := &memory.Object{}
 	o.SetType(core.BlobObject)
 	o.SetSize(3)
-	o.Writer().Write([]byte{'F', 'O', 'O'})
+
+	writer, err := o.Writer()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(writer.Close(), IsNil) }()
+
+	writer.Write([]byte{'F', 'O', 'O'})
 
 	blob := &Blob{}
 	c.Assert(blob.Decode(o), IsNil)
@@ -87,7 +95,11 @@ func (s *ObjectsSuite) TestBlobHash(c *C) {
 	c.Assert(blob.Size, Equals, int64(3))
 	c.Assert(blob.Hash.String(), Equals, "d96c7efbfec2814ae0301ad054dc8d9fc416c9b5")
 
-	data, err := ioutil.ReadAll(blob.Reader())
+	reader, err := blob.Reader()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(reader.Close(), IsNil) }()
+
+	data, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "FOO")
 }

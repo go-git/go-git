@@ -50,13 +50,20 @@ func (c *Commit) File(path string) (file *File, err error) {
 }
 
 // Decode transform an core.Object into a Blob struct
-func (c *Commit) Decode(o core.Object) error {
+func (c *Commit) Decode(o core.Object) (err error) {
 	if o.Type() != core.CommitObject {
 		return ErrUnsupportedObject
 	}
 
 	c.Hash = o.Hash()
-	r := bufio.NewReader(o.Reader())
+
+	reader, err := o.Reader()
+	if err != nil {
+		return err
+	}
+	defer close(reader, &err)
+
+	r := bufio.NewReader(reader)
 
 	var message bool
 	for {

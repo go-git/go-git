@@ -25,7 +25,12 @@ func (s *ObjectStorageSuite) TestSet(c *C) {
 
 	o.SetType(core.CommitObject)
 	o.SetSize(3)
-	o.Writer().Write([]byte("foo"))
+
+	writer, err := o.Writer()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(writer.Close(), IsNil) }()
+
+	writer.Write([]byte("foo"))
 
 	h, err := os.Set(o)
 	c.Assert(h.String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
@@ -39,7 +44,12 @@ func (s *ObjectStorageSuite) TestGet(c *C) {
 
 	o.SetType(core.CommitObject)
 	o.SetSize(3)
-	o.Writer().Write([]byte("foo"))
+
+	writer, err := o.Writer()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(writer.Close(), IsNil) }()
+
+	writer.Write([]byte("foo"))
 
 	h, err := os.Set(o)
 	c.Assert(err, IsNil)

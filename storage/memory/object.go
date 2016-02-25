@@ -2,7 +2,7 @@ package memory
 
 import (
 	"bytes"
-	"io"
+	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v3/core"
 )
@@ -39,17 +39,21 @@ func (o *Object) Size() int64 { return o.size }
 // SetSize set the object size, the given size should be written afterwards
 func (o *Object) SetSize(s int64) { o.size = s }
 
-// Reader returns a io.Reader used to read the object content
-func (o *Object) Reader() io.Reader {
-	return bytes.NewBuffer(o.content)
+// Reader returns a core.ObjectReader used to read the object's content.
+func (o *Object) Reader() (core.ObjectReader, error) {
+	return ioutil.NopCloser(bytes.NewBuffer(o.content)), nil
 }
 
-// Writer returns a io.Writed used to write the object content
-func (o *Object) Writer() io.Writer {
-	return o
+// Writer returns a core.ObjectWriter used to write the object's content.
+func (o *Object) Writer() (core.ObjectWriter, error) {
+	return o, nil
 }
 
 func (o *Object) Write(p []byte) (n int, err error) {
 	o.content = append(o.content, p...)
 	return len(p), nil
 }
+
+// Close releases any resources consumed by the object when it is acting as a
+// core.ObjectWriter.
+func (o *Object) Close() error { return nil }

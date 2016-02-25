@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"time"
 
@@ -35,7 +34,7 @@ func (b *Blob) Decode(o core.Object) error {
 }
 
 // Reader returns a reader allow the access to the content of the blob
-func (b *Blob) Reader() io.Reader {
+func (b *Blob) Reader() (core.ObjectReader, error) {
 	return b.obj.Reader()
 }
 
