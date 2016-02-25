@@ -29,14 +29,20 @@ type Tag struct {
 }
 
 // Decode transforms a core.Object into a Tag struct.
-func (t *Tag) Decode(o core.Object) error {
+func (t *Tag) Decode(o core.Object) (err error) {
 	if o.Type() != core.TagObject {
 		return ErrUnsupportedObject
 	}
 
 	t.Hash = o.Hash()
 
-	r := bufio.NewReader(o.Reader())
+	reader, err := o.Reader()
+	if err != nil {
+		return err
+	}
+	defer close(reader, &err)
+
+	r := bufio.NewReader(reader)
 	for {
 		line, err := r.ReadSlice('\n')
 		if err != nil && err != io.EOF {

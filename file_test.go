@@ -125,7 +125,9 @@ func (s *SuiteFile) TestContents(c *C) {
 
 		file, err := commit.File(t.path)
 		c.Assert(err, IsNil)
-		c.Assert(file.Contents(), Equals, t.contents, Commentf(
+		content, err := file.Contents()
+		c.Assert(err, IsNil)
+		c.Assert(content, Equals, t.contents, Commentf(
 			"subtest %d: commit=%s, path=%s", i, t.commit, t.path))
 	}
 }
@@ -172,7 +174,9 @@ func (s *SuiteFile) TestLines(c *C) {
 
 		file, err := commit.File(t.path)
 		c.Assert(err, IsNil)
-		c.Assert(file.Lines(), DeepEquals, t.lines, Commentf(
+		lines, err := file.Lines()
+		c.Assert(err, IsNil)
+		c.Assert(lines, DeepEquals, t.lines, Commentf(
 			"subtest %d: commit=%s, path=%s", i, t.commit, t.path))
 	}
 }
@@ -201,7 +205,7 @@ func (s *SuiteFile) TestIgnoreEmptyDirEntries(c *C) {
 		iter := commit.Tree().Files()
 		defer iter.Close()
 		for file, err := iter.Next(); err == nil; file, err = iter.Next() {
-			_ = file.Contents()
+			_, _ = file.Contents()
 			// this would probably panic if we are not ignoring empty dirs
 		}
 	}

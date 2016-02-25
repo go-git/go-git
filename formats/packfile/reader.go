@@ -187,7 +187,7 @@ func (r *Reader) newObject() (core.Object, error) {
 	return raw, err
 }
 
-func (r *Reader) readREFDelta(raw core.Object) error {
+func (r *Reader) readREFDelta(raw core.Object) (err error) {
 	var ref core.Hash
 	if _, err := io.ReadFull(r.r, ref[:]); err != nil {
 		return err
@@ -206,7 +206,17 @@ func (r *Reader) readREFDelta(raw core.Object) error {
 		return err
 	}
 
-	d, _ := ioutil.ReadAll(referenced.Reader())
+	reader, err := referenced.Reader()
+	if err != nil {
+		return err
+	}
+	defer close(reader, &err)
+
+	d, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+
 	patched := patchDelta(d, buf.Bytes())
 	if patched == nil {
 		return PatchingErr.n("hash %q", ref)
@@ -214,12 +224,19 @@ func (r *Reader) readREFDelta(raw core.Object) error {
 
 	raw.SetType(referenced.Type())
 	raw.SetSize(int64(len(patched)))
-	raw.Writer().Write(patched)
+
+	writer, err := raw.Writer()
+	if err != nil {
+		return err
+	}
+	defer close(writer, &err)
+
+	writer.Write(patched)
 
 	return nil
 }
 
-func (r *Reader) readOFSDelta(raw core.Object, steps int64) error {
+func (r *Reader) readOFSDelta(raw core.Object, steps int64) (err error) {
 	start := r.r.position
 	offset, err := decodeOffset(r.r, steps)
 	if err != nil {
@@ -227,7 +244,7 @@ func (r *Reader) readOFSDelta(raw core.Object, steps int64) error {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	if err := r.inflate(buf); err != nil {
+	if err = r.inflate(buf); err != nil {
 		return err
 	}
 
@@ -236,8 +253,22 @@ func (r *Reader) readOFSDelta(raw core.Object, steps int64) error {
 		return PackEntryNotFoundErr.n("offset %d", start+offset)
 	}
 
-	referenced, _ := r.s.Get(ref) // FIXME: Handle error returned from Get()
-	d, _ := ioutil.ReadAll(referenced.Reader())
+	referenced, err := r.s.Get(ref)
+	if err != nil {
+		return err
+	}
+
+	reader, err := referenced.Reader()
+	if err != nil {
+		return err
+	}
+	defer close(reader, &err)
+
+	d, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+
 	patched := patchDelta(d, buf.Bytes())
 	if patched == nil {
 		return PatchingErr.n("hash %q", ref)
@@ -245,13 +276,26 @@ func (r *Reader) readOFSDelta(raw core.Object, steps int64) error {
 
 	raw.SetType(referenced.Type())
 	raw.SetSize(int64(len(patched)))
-	raw.Writer().Write(patched)
+
+	writer, err := raw.Writer()
+	if err != nil {
+		return err
+	}
+	defer close(writer, &err)
+
+	writer.Write(patched)
 
 	return nil
 }
 
-func (r *Reader) readObject(raw core.Object) error {
-	return r.inflate(raw.Writer())
+func (r *Reader) readObject(raw core.Object) (err error) {
+	writer, err := raw.Writer()
+	if err != nil {
+		return err
+	}
+	defer close(writer, &err)
+
+	return r.inflate(writer)
 }
 
 func (r *Reader) inflate(w io.Writer) error {

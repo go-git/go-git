@@ -51,7 +51,11 @@ func (s *ObjectSuite) TestSize(c *C) {
 func (s *ObjectSuite) TestReader(c *C) {
 	o := &Object{content: []byte("foo")}
 
-	b, err := ioutil.ReadAll(o.Reader())
+	reader, err := o.Reader()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(reader.Close(), IsNil) }()
+
+	b, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(b, DeepEquals, []byte("foo"))
 }
@@ -59,7 +63,11 @@ func (s *ObjectSuite) TestReader(c *C) {
 func (s *ObjectSuite) TestWriter(c *C) {
 	o := &Object{}
 
-	n, err := o.Writer().Write([]byte("foo"))
+	writer, err := o.Writer()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(writer.Close(), IsNil) }()
+
+	n, err := writer.Write([]byte("foo"))
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 3)
 

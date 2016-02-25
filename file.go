@@ -18,24 +18,35 @@ func newFile(name string, b *Blob) *File {
 }
 
 // Contents returns the contents of a file as a string.
-func (f *File) Contents() string {
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(f.Reader())
+func (f *File) Contents() (content string, err error) {
+	reader, err := f.Reader()
+	if err != nil {
+		return "", err
+	}
+	defer close(reader, &err)
 
-	return buf.String()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(reader)
+
+	return buf.String(), nil
 }
 
 // Lines returns a slice of lines from the contents of a file, stripping
 // all end of line characters. If the last line is empty (does not end
 // in an end of line), it is also stripped.
-func (f *File) Lines() []string {
-	splits := strings.Split(f.Contents(), "\n")
-	// remove the last line if it is empty
-	if splits[len(splits)-1] == "" {
-		return splits[:len(splits)-1]
+func (f *File) Lines() ([]string, error) {
+	content, err := f.Contents()
+	if err != nil {
+		return nil, err
 	}
 
-	return splits
+	splits := strings.Split(content, "\n")
+	// remove the last line if it is empty
+	if splits[len(splits)-1] == "" {
+		return splits[:len(splits)-1], nil
+	}
+
+	return splits, nil
 }
 
 type FileIter struct {

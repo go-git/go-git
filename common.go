@@ -1,6 +1,9 @@
 package git
 
-import "strings"
+import (
+	"io"
+	"strings"
+)
 
 // countLines returns the number of lines in a string à la git, this is
 // The newline character is assumed to be '\n'.  The empty string
@@ -17,4 +20,24 @@ func countLines(s string) int {
 	}
 
 	return nEOL + 1
+}
+
+// close is used with defer to close the given io.Closer and check its
+// returned error value. If Close returns an error and the given *error
+// is not nil, *error is set to the error returned by Close.
+//
+// close is typically used with named return values like so:
+//
+//   func do(obj *Object) (err error) {
+//     w, err := obj.Writer()
+//     if err != nil {
+//       return nil
+//     }
+//     defer close(w, &err)
+//     // work with w
+//   }
+func close(c io.Closer, err *error) {
+	if cerr := c.Close(); cerr != nil && *err == nil {
+		*err = cerr
+	}
 }

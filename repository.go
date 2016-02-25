@@ -79,9 +79,7 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		err = reader.Close()
-	}()
+	defer close(reader, &err)
 
 	pr := packfile.NewReader(reader)
 	if _, err = pr.Read(r.Storage); err != nil {

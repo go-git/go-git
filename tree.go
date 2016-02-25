@@ -128,7 +128,7 @@ func (t *Tree) Files() *FileIter {
 }
 
 // Decode transform an core.Object into a Tree struct
-func (t *Tree) Decode(o core.Object) error {
+func (t *Tree) Decode(o core.Object) (err error) {
 	if o.Type() != core.TreeObject {
 		return ErrUnsupportedObject
 	}
@@ -141,7 +141,13 @@ func (t *Tree) Decode(o core.Object) error {
 	t.Entries = nil
 	t.m = nil
 
-	r := bufio.NewReader(o.Reader())
+	reader, err := o.Reader()
+	if err != nil {
+		return err
+	}
+	defer close(reader, &err)
+
+	r := bufio.NewReader(reader)
 	for {
 		mode, err := r.ReadString(' ')
 		if err != nil {

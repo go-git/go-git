@@ -56,7 +56,8 @@ func (s *BlameCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
 
 	file, err := commit.File(t.path)
 	c.Assert(err, IsNil)
-	lines := file.Lines()
+	lines, err := file.Lines()
+	c.Assert(err, IsNil)
 	c.Assert(len(t.blames), Equals, len(lines), Commentf(
 		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
 
