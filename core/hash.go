@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"hash"
 	"strconv"
 )
 
@@ -14,13 +15,9 @@ var ZeroHash Hash
 
 // ComputeHash compute the hash for a given ObjectType and content
 func ComputeHash(t ObjectType, content []byte) Hash {
-	h := t.Bytes()
-	h = append(h, ' ')
-	h = strconv.AppendInt(h, int64(len(content)), 10)
-	h = append(h, 0)
-	h = append(h, content...)
-
-	return Hash(sha1.Sum(h))
+	h := NewHasher(t, int64(len(content)))
+	h.Write(content)
+	return h.Sum()
 }
 
 // NewHash return a new Hash from a hexadecimal hash representation
@@ -40,4 +37,22 @@ func (h Hash) IsZero() bool {
 
 func (h Hash) String() string {
 	return hex.EncodeToString(h[:])
+}
+
+type Hasher struct {
+	hash.Hash
+}
+
+func NewHasher(t ObjectType, size int64) Hasher {
+	h := Hasher{sha1.New()}
+	h.Write(t.Bytes())
+	h.Write([]byte(" "))
+	h.Write([]byte(strconv.FormatInt(size, 10)))
+	h.Write([]byte{0})
+	return h
+}
+
+func (h Hasher) Sum() (hash Hash) {
+	copy(hash[:], h.Hash.Sum(nil))
+	return
 }

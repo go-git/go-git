@@ -33,3 +33,10 @@ func (s *HashSuite) TestIsZero(c *C) {
 	hash = NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")
 	c.Assert(hash.IsZero(), Equals, false)
 }
+
+func (s *HashSuite) TestNewHasher(c *C) {
+	content := "hasher test sample"
+	hasher := NewHasher(BlobObject, int64(len(content)))
+	hasher.Write([]byte(content))
+	c.Assert(hasher.Sum().String(), Equals, "dc42c3cc80028d0ec61f0a6b24cadd1c195c4dfc")
+}
