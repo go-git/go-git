@@ -79,6 +79,11 @@ func (t ObjectType) Bytes() []byte {
 	return []byte(t.String())
 }
 
+// Valid returns true if t is a valid ObjectType.
+func (t ObjectType) Valid() bool {
+	return t >= CommitObject && t <= REFDeltaObject
+}
+
 // ParseObjectType parses a string representation of ObjectType. It returns an
 // error on parse failure.
 func ParseObjectType(value string) (typ ObjectType, err error) {
