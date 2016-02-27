@@ -145,7 +145,7 @@ func (t *Tree) Decode(o core.Object) (err error) {
 	if err != nil {
 		return err
 	}
-	defer close(reader, &err)
+	defer checkClose(reader, &err)
 
 	r := bufio.NewReader(reader)
 	for {

@@ -8,6 +8,8 @@ import (
 
 var (
 	ObjectNotFoundErr = errors.New("object not found")
+	// ErrInvalidType is returned when an invalid object type is provided.
+	ErrInvalidType = errors.New("invalid object type")
 )
 
 // TODO: Consider adding a Hash function to the ObjectReader and ObjectWriter
@@ -79,6 +81,11 @@ func (t ObjectType) Bytes() []byte {
 	return []byte(t.String())
 }
 
+// Valid returns true if t is a valid ObjectType.
+func (t ObjectType) Valid() bool {
+	return t >= CommitObject && t <= REFDeltaObject
+}
+
 // ParseObjectType parses a string representation of ObjectType. It returns an
 // error on parse failure.
 func ParseObjectType(value string) (typ ObjectType, err error) {
@@ -96,7 +103,7 @@ func ParseObjectType(value string) (typ ObjectType, err error) {
 	case "ref-delta":
 		typ = REFDeltaObject
 	default:
-		err = errors.New("unable to parse object type")
+		err = ErrInvalidType
 	}
 	return
 }
