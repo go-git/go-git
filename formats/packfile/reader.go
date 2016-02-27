@@ -210,7 +210,7 @@ func (r *Reader) readREFDelta(raw core.Object) (err error) {
 	if err != nil {
 		return err
 	}
-	defer close(reader, &err)
+	defer checkClose(reader, &err)
 
 	d, err := ioutil.ReadAll(reader)
 	if err != nil {
@@ -229,7 +229,7 @@ func (r *Reader) readREFDelta(raw core.Object) (err error) {
 	if err != nil {
 		return err
 	}
-	defer close(writer, &err)
+	defer checkClose(writer, &err)
 
 	writer.Write(patched)
 
@@ -262,7 +262,7 @@ func (r *Reader) readOFSDelta(raw core.Object, steps int64) (err error) {
 	if err != nil {
 		return err
 	}
-	defer close(reader, &err)
+	defer checkClose(reader, &err)
 
 	d, err := ioutil.ReadAll(reader)
 	if err != nil {
@@ -281,7 +281,7 @@ func (r *Reader) readOFSDelta(raw core.Object, steps int64) (err error) {
 	if err != nil {
 		return err
 	}
-	defer close(writer, &err)
+	defer checkClose(writer, &err)
 
 	writer.Write(patched)
 
@@ -293,7 +293,7 @@ func (r *Reader) readObject(raw core.Object) (err error) {
 	if err != nil {
 		return err
 	}
-	defer close(writer, &err)
+	defer checkClose(writer, &err)
 
 	return r.inflate(writer)
 }

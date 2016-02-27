@@ -23,7 +23,7 @@ func (f *File) Contents() (content string, err error) {
 	if err != nil {
 		return "", err
 	}
-	defer close(reader, &err)
+	defer checkClose(reader, &err)
 
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(reader)
