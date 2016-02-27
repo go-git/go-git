@@ -39,9 +39,18 @@ type Writer struct {
 // size and type information. Any errors encountered in that process will be
 // returned in err.
 //
+// If an invalid t is provided, core.ErrInvalidType is returned. If a negative
+// size is provided, ErrNegativeSize is returned.
+//
 // The returned Writer implements io.WriteCloser. Close should be called when
 // finished with the Writer. Close will not close the underlying io.Writer.
 func NewWriter(w io.Writer, t core.ObjectType, size int64) (*Writer, error) {
+	if !t.Valid() {
+		return nil, core.ErrInvalidType
+	}
+	if size < 0 {
+		return nil, ErrNegativeSize
+	}
 	writer := &Writer{
 		header: header{t: t, size: size},
 	}
@@ -58,7 +67,7 @@ func (w *Writer) init(output io.Writer) (err error) {
 
 	err = w.header.Write(w.compressor)
 	if err != nil {
-		defer w.compressor.Close()
+		w.compressor.Close()
 		return
 	}
 

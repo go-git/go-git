@@ -38,9 +38,12 @@ func testWriter(c *C, dest io.Writer, hash core.Hash, typ core.ObjectType, conte
 	written, err := io.Copy(w, bytes.NewReader(content))
 	c.Assert(err, IsNil)
 	c.Assert(written, Equals, length)
+	c.Assert(w.Size(), Equals, int64(len(content)))
 	c.Assert(w.Hash(), Equals, hash) // Test Hash() before close
 	c.Assert(w.Close(), IsNil)
 	c.Assert(w.Hash(), Equals, hash) // Test Hash() after close
+	_, err = w.Write([]byte{1})
+	c.Assert(err, Equals, ErrClosed)
 }
 
 func (s *SuiteWriter) TestWriteOverflow(c *C) {
@@ -50,4 +53,17 @@ func (s *SuiteWriter) TestWriteOverflow(c *C) {
 	c.Assert(err, IsNil)
 	_, err = w.Write([]byte("56789"))
 	c.Assert(err, Equals, ErrOverflow)
+}
+
+func (s *SuiteWriter) TestNewWriterInvalidType(c *C) {
+	var t core.ObjectType
+	_, err := NewWriter(new(bytes.Buffer), t, 8)
+	c.Assert(err, Equals, core.ErrInvalidType)
+}
+
+func (s *SuiteWriter) TestNewWriterInvalidSize(c *C) {
+	_, err := NewWriter(new(bytes.Buffer), core.BlobObject, -1)
+	c.Assert(err, Equals, ErrNegativeSize)
+	_, err = NewWriter(new(bytes.Buffer), core.BlobObject, -1651860)
+	c.Assert(err, Equals, ErrNegativeSize)
 }

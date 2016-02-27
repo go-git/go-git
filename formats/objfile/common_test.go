@@ -1,6 +1,7 @@
 package objfile
 
 import (
+	"bytes"
 	"encoding/base64"
 	"testing"
 
@@ -67,3 +68,33 @@ var objfileFixtures = []objfileFixture{
 }
 
 func Test(t *testing.T) { TestingT(t) }
+
+type SuiteCommon struct{}
+
+var _ = Suite(&SuiteCommon{})
+
+func (s *SuiteCommon) TestHeaderReadEmpty(c *C) {
+	var h header
+	c.Assert(h.Read(new(bytes.Buffer)), Equals, ErrHeader)
+}
+
+func (s *SuiteCommon) TestHeaderReadGarbage(c *C) {
+	var h header
+	c.Assert(h.Read(bytes.NewBuffer([]byte{1, 2, 3, 4, 5})), Equals, ErrHeader)
+	c.Assert(h.Read(bytes.NewBuffer([]byte{1, 2, 3, 4, 5, '0'})), Equals, ErrHeader)
+}
+
+func (s *SuiteCommon) TestHeaderReadInvalidType(c *C) {
+	var h header
+	c.Assert(h.Read(bytes.NewBuffer([]byte{1, 2, ' ', 4, 5, 0})), Equals, core.ErrInvalidType)
+}
+
+func (s *SuiteCommon) TestHeaderReadInvalidSize(c *C) {
+	var h header
+	c.Assert(h.Read(bytes.NewBuffer([]byte{'b', 'l', 'o', 'b', ' ', 'a', 0})), Equals, ErrHeader)
+}
+
+func (s *SuiteCommon) TestHeaderReadNegativeSize(c *C) {
+	var h header
+	c.Assert(h.Read(bytes.NewBuffer([]byte{'b', 'l', 'o', 'b', ' ', '-', '1', 0})), Equals, ErrNegativeSize)
+}

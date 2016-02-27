@@ -35,9 +35,12 @@ func testReader(c *C, source io.Reader, hash core.Hash, typ core.ObjectType, con
 	rc, err := ioutil.ReadAll(r)
 	c.Assert(err, IsNil)
 	c.Assert(rc, DeepEquals, content, Commentf("%scontent=%s, expected=%s", base64.StdEncoding.EncodeToString(rc), base64.StdEncoding.EncodeToString(content)))
+	c.Assert(r.Size(), Equals, int64(len(content)))
 	c.Assert(r.Hash(), Equals, hash) // Test Hash() before close
 	c.Assert(r.Close(), IsNil)
 	c.Assert(r.Hash(), Equals, hash) // Test Hash() after close
+	_, err = r.Read(make([]byte, 0, 1))
+	c.Assert(err, Equals, ErrClosed)
 }
 
 func (s *SuiteReader) TestReadEmptyObjfile(c *C) {

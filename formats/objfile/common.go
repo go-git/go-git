@@ -13,6 +13,8 @@ var (
 	ErrClosed = errors.New("objfile: already closed")
 	// ErrHeader is returned when the objfile has an invalid header.
 	ErrHeader = errors.New("objfile: invalid header")
+	// ErrNegativeSize is returned when a negative object size is declared.
+	ErrNegativeSize = errors.New("objfile: negative object size")
 )
 
 type header struct {
@@ -38,7 +40,11 @@ func (h *header) Read(r io.Reader) error {
 
 	h.size, err = strconv.ParseInt(string(size), 10, 64)
 	if err != nil {
-		return err
+		return ErrHeader
+	}
+
+	if h.size < 0 {
+		return ErrNegativeSize
 	}
 
 	return nil
