@@ -43,13 +43,28 @@ func (c *Commit) NumParents() int {
 }
 
 // File returns the file with the specified "path" in the commit and a
-// nil error if the file exists. If the file does not exists, it returns
+// nil error if the file exists. If the file does not exist, it returns
 // a nil file and the ErrFileNotFound error.
 func (c *Commit) File(path string) (file *File, err error) {
 	return c.Tree().File(path)
 }
 
-// Decode transform an core.Object into a Blob struct
+// ID returns the object ID of the commit. The returned value will always match
+// the current value of Commit.Hash.
+//
+// ID is present to fufill the Object interface.
+func (c *Commit) ID() core.Hash {
+	return c.Hash
+}
+
+// Type returns the type of object. It always returns core.CommitObject.
+//
+// Type is present to fufill the Object interface.
+func (c *Commit) Type() core.ObjectType {
+	return core.CommitObject
+}
+
+// Decode transforms a core.Object into a Commit struct.
 func (c *Commit) Decode(o core.Object) (err error) {
 	if o.Type() != core.CommitObject {
 		return ErrUnsupportedObject
@@ -107,15 +122,22 @@ func (c *Commit) String() string {
 	)
 }
 
+// CommitIter provides an iterator for a set of commits.
 type CommitIter struct {
 	core.ObjectIter
 	r *Repository
 }
 
+// NewCommitIter returns a CommitIter for the given repository and underlying
+// object iterator.
+//
+// The returned CommitIter will automatically skip over non-commit objects.
 func NewCommitIter(r *Repository, iter core.ObjectIter) *CommitIter {
 	return &CommitIter{iter, r}
 }
 
+// Next moves the iterator to the next commit and returns a pointer to it. If it
+// has reached the end of the set it will return io.EOF.
 func (iter *CommitIter) Next() (*Commit, error) {
 	obj, err := iter.ObjectIter.Next()
 	if err != nil {

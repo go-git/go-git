@@ -2,10 +2,8 @@ package git
 
 import (
 	"io"
-	"os"
 
 	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
@@ -18,27 +16,10 @@ var _ = Suite(&SuiteCommit{})
 
 // create the repositories of the fixtures
 func (s *SuiteCommit) SetUpSuite(c *C) {
-	fixtureRepos := [...]struct {
-		url      string
-		packfile string
-	}{
+	commitFixtures := []packedFixture{
 		{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
 	}
-	s.repos = make(map[string]*Repository, 0)
-	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url] = NewPlainRepository()
-
-		d, err := os.Open(fixRepo.packfile)
-		c.Assert(err, IsNil)
-
-		r := packfile.NewReader(d)
-		r.Format = packfile.OFSDeltaFormat // TODO: how to know the format of a pack file ahead of time?
-
-		_, err = r.Read(s.repos[fixRepo.url].Storage)
-		c.Assert(err, IsNil)
-
-		c.Assert(d.Close(), IsNil)
-	}
+	s.repos = unpackFixtures(c, commitFixtures)
 }
 
 var commitIterTests = []struct {

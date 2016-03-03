@@ -29,6 +29,7 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 	commit, err := s.r.Commit(hash)
 	c.Assert(err, IsNil)
 
+	c.Assert(commit.Hash, Equals, commit.ID())
 	c.Assert(commit.Hash.String(), Equals, "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
 	c.Assert(commit.Tree().Hash.String(), Equals, "c2d30fa8ef288618f65f6eed6e168e0d514886f4")
 

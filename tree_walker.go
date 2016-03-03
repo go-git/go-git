@@ -3,8 +3,6 @@ package git
 import (
 	"io"
 	"path"
-
-	"gopkg.in/src-d/go-git.v3/core"
 )
 
 const (
@@ -40,7 +38,7 @@ func NewTreeWalker(r *Repository, t *Tree) *TreeWalker {
 // In the current implementation any objects which cannot be found in the
 // underlying repository will be skipped automatically. It is possible that this
 // may change in future versions.
-func (w *TreeWalker) Next() (name string, entry TreeEntry, obj core.Object, err error) {
+func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error) {
 	for {
 		current := len(w.stack) - 1
 		if current < 0 {
@@ -66,10 +64,11 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj core.Object, err 
 			return
 		}
 
-		obj, err = w.r.Storage.Get(entry.Hash)
-		if err == core.ObjectNotFoundErr {
+		obj, err = w.r.Object(entry.Hash)
+		if err == ObjectNotFoundErr {
 			// FIXME: Avoid doing this here in case the caller actually cares about
 			//        missing objects.
+			err = nil
 			continue // ignore entries without hash (= submodule dirs)
 		}
 
@@ -82,12 +81,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj core.Object, err 
 		break
 	}
 
-	if obj.Type() == core.TreeObject {
-		tree := &Tree{r: w.r}
-		err = tree.Decode(obj)
-		if err != nil {
-			return
-		}
+	if tree, ok := obj.(*Tree); ok {
 		w.stack = append(w.stack, *NewTreeEntryIter(tree))
 		w.base = path.Join(w.base, entry.Name)
 	}

@@ -127,6 +127,19 @@ func (t *Tree) Files() *FileIter {
 	return NewFileIter(t.r, t)
 }
 
+// ID returns the object ID of the tree. The returned value will always match
+// the current value of Tree.Hash.
+//
+// ID is present to fufill the Object interface.
+func (t *Tree) ID() core.Hash {
+	return t.Hash
+}
+
+// Type returns the type of object. It always returns core.TreeObject.
+func (t *Tree) Type() core.ObjectType {
+	return core.TreeObject
+}
+
 // Decode transform an core.Object into a Tree struct
 func (t *Tree) Decode(o core.Object) (err error) {
 	if o.Type() != core.TreeObject {
@@ -229,12 +242,9 @@ func (iter *TreeIter) Next() (*Tree, error) {
 			return nil, err
 		}
 
-		if obj.Type() != core.TreeObject {
-			// Skip non-tree objects
-			continue
+		if tree, ok := obj.(*Tree); ok {
+			return tree, nil
 		}
-
-		return iter.w.Tree(), nil
 	}
 }
 
