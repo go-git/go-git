@@ -75,6 +75,8 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 	req := &common.GitUploadPackRequest{}
 	req.Want(ref)
 
+	// TODO: Provide "haves" for what's already in the repository's storage
+
 	reader, err := remote.Fetch(req)
 	if err != nil {
 		return err
@@ -154,4 +156,32 @@ func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 // in the repository.
 func (r *Repository) Tags() *TagIter {
 	return NewTagIter(r, r.Storage.Iter(core.TagObject))
+}
+
+// Object returns an object with the given hash.
+func (r *Repository) Object(h core.Hash) (Object, error) {
+	obj, err := r.Storage.Get(h)
+	if err != nil {
+		if err == core.ObjectNotFoundErr {
+			return nil, ObjectNotFoundErr
+		}
+		return nil, err
+	}
+
+	switch obj.Type() {
+	case core.CommitObject:
+		commit := &Commit{r: r}
+		return commit, commit.Decode(obj)
+	case core.TreeObject:
+		tree := &Tree{r: r}
+		return tree, tree.Decode(obj)
+	case core.BlobObject:
+		blob := &Blob{}
+		return blob, blob.Decode(obj)
+	case core.TagObject:
+		tag := &Tag{r: r}
+		return tag, tag.Decode(obj)
+	default:
+		return nil, core.ErrInvalidType
+	}
 }

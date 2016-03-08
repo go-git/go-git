@@ -18,14 +18,36 @@ import (
 //
 // https://git-scm.com/book/en/v2/Git-Internals-Git-References#Tags
 type Tag struct {
-	Hash    core.Hash
-	Type    core.ObjectType
-	Name    string
-	Tagger  Signature
-	Message string
+	Hash       core.Hash
+	Name       string
+	Tagger     Signature
+	Message    string
+	TargetType core.ObjectType
+	Target     core.Hash
 
-	object core.Hash
-	r      *Repository
+	r *Repository
+}
+
+// Type returns the type of object. It always returns core.TreeObject.
+/*
+func (t *Tag) Type() core.ObjectType {
+	return core.TagObject
+}
+*/
+
+// ID returns the object ID of the tag, not the object that the tag references.
+// The returned value will always match the current value of Tag.Hash.
+//
+// ID is present to fufill the Object interface.
+func (t *Tag) ID() core.Hash {
+	return t.Hash
+}
+
+// Type returns the type of object. It always returns core.TagObject.
+//
+// Type is present to fufill the Object interface.
+func (t *Tag) Type() core.ObjectType {
+	return core.TagObject
 }
 
 // Decode transforms a core.Object into a Tag struct.
@@ -57,9 +79,9 @@ func (t *Tag) Decode(o core.Object) (err error) {
 		split := bytes.SplitN(line, []byte{' '}, 2)
 		switch string(split[0]) {
 		case "object":
-			t.object = core.NewHash(string(split[1]))
+			t.Target = core.NewHash(string(split[1]))
 		case "type":
-			t.Type, err = core.ParseObjectType(string(split[1]))
+			t.TargetType, err = core.ParseObjectType(string(split[1]))
 			if err != nil {
 				return err
 			}
@@ -86,10 +108,10 @@ func (t *Tag) Decode(o core.Object) (err error) {
 // Commit returns the commit pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
 func (t *Tag) Commit() (*Commit, error) {
-	if t.Type != core.CommitObject {
+	if t.TargetType != core.CommitObject {
 		return nil, ErrUnsupportedObject
 	}
-	return t.r.Commit(t.object)
+	return t.r.Commit(t.Target)
 }
 
 // Tree returns the tree pointed to by the tag. If the tag points to a commit
@@ -97,15 +119,15 @@ func (t *Tag) Commit() (*Commit, error) {
 // to a commit or tree object ErrUnsupportedObject will be returned.
 func (t *Tag) Tree() (*Tree, error) {
 	// TODO: If the tag is of type commit, follow the commit to its tree?
-	switch t.Type {
+	switch t.TargetType {
 	case core.CommitObject:
-		commit, err := t.r.Commit(t.object)
+		commit, err := t.r.Commit(t.Target)
 		if err != nil {
 			return nil, err
 		}
 		return commit.Tree(), nil
 	case core.TreeObject:
-		return t.r.Tree(t.object)
+		return t.r.Tree(t.Target)
 	default:
 		return nil, ErrUnsupportedObject
 	}
@@ -114,15 +136,15 @@ func (t *Tag) Tree() (*Tree, error) {
 // Blob returns the blob pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
 func (t *Tag) Blob() (*Blob, error) {
-	if t.Type != core.BlobObject {
+	if t.TargetType != core.BlobObject {
 		return nil, ErrUnsupportedObject
 	}
-	return t.r.Blob(t.object)
+	return t.r.Blob(t.Target)
 }
 
 // Object returns the object pointed to by the tag.
-func (t *Tag) Object() (core.Object, error) {
-	return t.r.Storage.Get(t.object)
+func (t *Tag) Object() (Object, error) {
+	return t.r.Object(t.Target)
 }
 
 // String returns the meta information contained in the tag as a formatted
@@ -130,7 +152,7 @@ func (t *Tag) Object() (core.Object, error) {
 func (t *Tag) String() string {
 	return fmt.Sprintf(
 		"%s %s\nObject: %s\nType: %s\nTag: %s\nTagger: %s\nDate:   %s\n",
-		core.TagObject, t.Hash, t.object, t.Type, t.Name, t.Tagger.String(), t.Tagger.When,
+		core.TagObject, t.Hash, t.Target, t.TargetType, t.Name, t.Tagger.String(), t.Tagger.When,
 	)
 }
 
@@ -140,7 +162,10 @@ type TagIter struct {
 	r *Repository
 }
 
-// NewTagIter returns a new TagIter for the given Repository and ObjectIter.
+// NewTagIter returns a TagIter for the given repository and underlying
+// object iterator.
+//
+// The returned TagIter will automatically skip over non-tag objects.
 func NewTagIter(r *Repository, iter core.ObjectIter) *TagIter {
 	return &TagIter{iter, r}
 }
@@ -155,9 +180,4 @@ func (iter *TagIter) Next() (*Tag, error) {
 
 	tag := &Tag{r: iter.r}
 	return tag, tag.Decode(obj)
-}
-
-// Close releases any resources used by the iterator.
-func (iter *TagIter) Close() {
-	iter.Close()
 }

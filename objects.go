@@ -10,6 +10,36 @@ import (
 	"gopkg.in/src-d/go-git.v3/core"
 )
 
+var ErrUnsupportedObject = errors.New("unsupported object type")
+
+// Object is a generic representation of any git object. It is implemented by
+// Commit, Tree, Blob and Tag, and includes the functions that are common to
+// them.
+//
+// Object is returned when an object could of any type. It is frequently used
+// with a type cast to acquire the specific type of object:
+//
+//   func process(obj Object) {
+//   	switch o := obj.(type) {
+//   	case *Commit:
+//   		// o is a Commit
+//   	case *Tree:
+//   		// o is a Tree
+//   	case *Blob:
+//   		// o is a Blob
+//   	case *Tag:
+//   		// o is a Tag
+//   	}
+//   }
+//
+// This interface is intentionally different from core.Object, which is a lower
+// level interface used by storage implementations to read and write objects.
+type Object interface {
+	ID() core.Hash
+	Type() core.ObjectType
+	Decode(core.Object) error
+}
+
 // Blob is used to store file data - it is generally a file.
 type Blob struct {
 	Hash core.Hash
@@ -18,9 +48,22 @@ type Blob struct {
 	obj core.Object
 }
 
-var ErrUnsupportedObject = errors.New("unsupported object type")
+// ID returns the object ID of the blob. The returned value will always match
+// the current value of Blob.Hash.
+//
+// ID is present to fufill the Object interface.
+func (b *Blob) ID() core.Hash {
+	return b.Hash
+}
 
-// Decode transform an core.Object into a Blob struct
+// Type returns the type of object. It always returns core.BlobObject.
+//
+// Type is present to fufill the Object interface.
+func (b *Blob) Type() core.ObjectType {
+	return core.BlobObject
+}
+
+// Decode transforms a core.Object into a Blob struct.
 func (b *Blob) Decode(o core.Object) error {
 	if o.Type() != core.BlobObject {
 		return ErrUnsupportedObject

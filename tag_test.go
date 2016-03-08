@@ -68,6 +68,7 @@ func (s *SuiteTag) TestCommit(c *C) {
 			c.Assert(err, IsNil)
 			commit, err := tag.Commit()
 			c.Assert(err, IsNil)
+			c.Assert(commit.Type(), Equals, core.CommitObject)
 			c.Assert(commit.Hash.String(), Equals, expected.Object)
 			k++
 		}
@@ -87,6 +88,7 @@ func (s *SuiteTag) TestTree(c *C) {
 			c.Assert(err, IsNil)
 			tree, err := tag.Tree()
 			c.Assert(err, IsNil)
+			c.Assert(tree.Type(), Equals, core.TreeObject)
 			c.Assert(tree.Hash.String(), Equals, expected.Object)
 			k++
 		}
@@ -98,27 +100,55 @@ func (s *SuiteTag) TestBlob(c *C) {
 		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 		k := 0
-		for hash, expected := range t.tags {
+		for hashString, expected := range t.tags {
 			if expected.Type != core.BlobObject {
 				continue
 			}
-			tag, err := r.Tag(core.NewHash(hash))
+			hash := core.NewHash(hashString)
+			tag, err := r.Tag(hash)
 			c.Assert(err, IsNil)
+			testTagExpected(c, tag, hash, expected, "")
 			blob, err := tag.Blob()
 			c.Assert(err, IsNil)
+			c.Assert(blob.Type(), Equals, core.BlobObject)
 			c.Assert(blob.Hash.String(), Equals, expected.Object)
 			k++
 		}
 	}
 }
 
-func testTagExpected(c *C, tag *Tag, expected expectedTag, comment string) {
+func (s *SuiteTag) TestObject(c *C) {
+	for _, t := range tagTests {
+		r, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+		k := 0
+		for hashString, expected := range t.tags {
+			if expected.Type != core.BlobObject {
+				continue
+			}
+			hash := core.NewHash(hashString)
+			tag, err := r.Tag(hash)
+			c.Assert(err, IsNil)
+			testTagExpected(c, tag, hash, expected, "")
+			obj, err := tag.Object()
+			c.Assert(err, IsNil)
+			c.Assert(obj.Type(), Equals, expected.Type)
+			c.Assert(obj.ID().String(), Equals, expected.Object)
+			k++
+		}
+	}
+}
+
+func testTagExpected(c *C, tag *Tag, hash core.Hash, expected expectedTag, comment string) {
 	when, err := time.Parse(time.RFC3339, expected.When)
 	c.Assert(err, IsNil)
 	c.Assert(tag, NotNil)
 	c.Assert(tag.Hash.IsZero(), Equals, false)
-	c.Assert(tag.Type, Equals, expected.Type, Commentf("%stype=%v, expected=%v", comment, tag.Type, expected.Type))
-	c.Assert(tag.object.String(), Equals, expected.Object, Commentf("%sobject=%v, expected=%s", comment, tag.object, expected.Object))
+	c.Assert(tag.Hash, Equals, tag.ID())
+	c.Assert(tag.Hash, Equals, hash)
+	c.Assert(tag.Type(), Equals, core.TagObject)
+	c.Assert(tag.TargetType, Equals, expected.Type, Commentf("%stype=%v, expected=%v", comment, tag.TargetType, expected.Type))
+	c.Assert(tag.Target.String(), Equals, expected.Object, Commentf("%sobject=%v, expected=%s", comment, tag.Target, expected.Object))
 	c.Assert(tag.Name, Equals, expected.Tag, Commentf("subtest %d, iter %d, tag=%s, expected=%s", comment, tag.Name, expected.Tag))
 	c.Assert(tag.Tagger.Name, Equals, expected.TaggerName, Commentf("subtest %d, iter %d, tagger.name=%s, expected=%s", comment, tag.Tagger.Name, expected.TaggerName))
 	c.Assert(tag.Tagger.Email, Equals, expected.TaggerEmail, Commentf("subtest %d, iter %d, tagger.email=%s, expected=%s", comment, tag.Tagger.Email, expected.TaggerEmail))
@@ -138,7 +168,7 @@ func testTagIter(c *C, iter *TagIter, tags map[string]expectedTag, comment strin
 		expected, ok := tags[tag.Hash.String()]
 		c.Assert(ok, Equals, true, Commentf("%sunexpected tag hash=%v", comment, tag.Hash))
 
-		testTagExpected(c, tag, expected, comment)
+		testTagExpected(c, tag, tag.Hash, expected, comment)
 	}
 	_, err := iter.Next()
 	c.Assert(err, Equals, io.EOF)

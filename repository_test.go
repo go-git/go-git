@@ -15,8 +15,8 @@ type SuiteRepository struct {
 
 var _ = Suite(&SuiteRepository{})
 
-func (s *SuiteRepository) SetUpTest(c *C) {
-	s.repos = unpackFixtures(c, tagFixtures)
+func (s *SuiteRepository) SetUpSuite(c *C) {
+	s.repos = unpackFixtures(c, tagFixtures, treeWalkerFixtures)
 }
 
 func (s *SuiteRepository) TestNewRepository(c *C) {
@@ -58,6 +58,9 @@ func (s *SuiteRepository) TestCommit(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(commit.Hash.IsZero(), Equals, false)
+	c.Assert(commit.Hash, Equals, commit.ID())
+	c.Assert(commit.Hash, Equals, hash)
+	c.Assert(commit.Type(), Equals, core.CommitObject)
 	c.Assert(commit.Tree().Hash.IsZero(), Equals, false)
 	c.Assert(commit.Author.Email, Equals, "daniel@lordran.local")
 }
@@ -79,6 +82,8 @@ func (s *SuiteRepository) TestCommits(c *C) {
 
 		count++
 		c.Assert(commit.Hash.IsZero(), Equals, false)
+		c.Assert(commit.Hash, Equals, commit.ID())
+		c.Assert(commit.Type(), Equals, core.CommitObject)
 		//c.Assert(commit.Tree.IsZero(), Equals, false)
 	}
 
@@ -90,10 +95,11 @@ func (s *SuiteRepository) TestTag(c *C) {
 		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 		k := 0
-		for hash, expected := range t.tags {
-			tag, err := r.Tag(core.NewHash(hash))
+		for hashString, expected := range t.tags {
+			hash := core.NewHash(hashString)
+			tag, err := r.Tag(hash)
 			c.Assert(err, IsNil)
-			testTagExpected(c, tag, expected, fmt.Sprintf("subtest %d, tag %d: ", i, k))
+			testTagExpected(c, tag, hash, expected, fmt.Sprintf("subtest %d, tag %d: ", i, k))
 			k++
 		}
 	}
@@ -104,6 +110,22 @@ func (s *SuiteRepository) TestTags(c *C) {
 		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 		testTagIter(c, r.Tags(), t.tags, fmt.Sprintf("subtest %d, ", i))
+	}
+}
+
+func (s *SuiteRepository) TestObject(c *C) {
+	for i, t := range treeWalkerTests {
+		r, ok := s.repos[t.repo]
+		c.Assert(ok, Equals, true)
+		for k := 0; k < len(t.objs); k++ {
+			comment := fmt.Sprintf("subtest %d, tag %d", i, k)
+			info := t.objs[k]
+			hash := core.NewHash(info.Hash)
+			obj, err := r.Object(hash)
+			c.Assert(err, IsNil, Commentf(comment))
+			c.Assert(obj.Type(), Equals, info.Kind, Commentf(comment))
+			c.Assert(obj.ID(), Equals, hash, Commentf(comment))
+		}
 	}
 }
 

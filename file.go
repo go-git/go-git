@@ -3,8 +3,6 @@ package git
 import (
 	"bytes"
 	"strings"
-
-	"gopkg.in/src-d/go-git.v3/core"
 )
 
 // File represents git file objects.
@@ -64,15 +62,9 @@ func (iter *FileIter) Next() (*File, error) {
 			return nil, err
 		}
 
-		if obj.Type() != core.BlobObject {
-			// Skip non-blob objects
-			continue
+		if blob, ok := obj.(*Blob); ok {
+			return newFile(name, blob), nil
 		}
-
-		blob := &Blob{}
-		blob.Decode(obj)
-
-		return newFile(name, blob), nil
 	}
 }
 

@@ -1,11 +1,9 @@
 package git
 
 import (
-	"os"
 	"sort"
 
 	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
@@ -18,10 +16,7 @@ var _ = Suite(&SuiteTree{})
 
 // create the repositories of the fixtures
 func (s *SuiteTree) SetUpSuite(c *C) {
-	fixtureRepos := [...]struct {
-		url      string
-		packfile string
-	}{
+	treeFixtures := []packedFixture{
 		{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
 		{"https://github.com/cpcs499/Final_Pres_P.git", "formats/packfile/fixtures/Final_Pres_P.ofs-delta"},
 		{"https://github.com/jamesob/desk.git", "formats/packfile/fixtures/jamesob-desk.pack"},
@@ -29,21 +24,7 @@ func (s *SuiteTree) SetUpSuite(c *C) {
 		{"https://github.com/alcortesm/binary-relations.git", "formats/packfile/fixtures/alcortesm-binary-relations.pack"},
 		{"https://github.com/Tribler/dispersy.git", "formats/packfile/fixtures/tribler-dispersy.pack"},
 	}
-	s.repos = make(map[string]*Repository, 0)
-	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url] = NewPlainRepository()
-
-		d, err := os.Open(fixRepo.packfile)
-		c.Assert(err, IsNil)
-
-		r := packfile.NewReader(d)
-		r.Format = packfile.OFSDeltaFormat // TODO: how to know the format of a pack file ahead of time?
-
-		_, err = r.Read(s.repos[fixRepo.url].Storage)
-		c.Assert(err, IsNil)
-
-		c.Assert(d.Close(), IsNil)
-	}
+	s.repos = unpackFixtures(c, treeFixtures)
 }
 
 func (s *SuiteTree) TestFile(c *C) {
@@ -217,6 +198,8 @@ func (s *SuiteTree) TestFile(c *C) {
 		}
 
 		c.Assert(file.Size, Equals, t.size, comment)
+		c.Assert(file.Hash.IsZero(), Equals, false, comment)
+		c.Assert(file.Hash, Equals, file.ID(), comment)
 		c.Assert(file.Hash.String(), Equals, t.blobHash, comment)
 	}
 }
