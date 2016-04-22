@@ -41,12 +41,12 @@ type TreeEntry struct {
 // File returns the hash of the file identified by the `path` argument.
 // The path is interpreted as relative to the tree receiver.
 func (t *Tree) File(path string) (*File, error) {
-	hash, err := t.findHash(path)
+	e, err := t.findEntry(path)
 	if err != nil {
 		return nil, ErrFileNotFound
 	}
 
-	obj, err := t.r.Storage.Get(*hash)
+	obj, err := t.r.Storage.Get(e.Hash)
 	if err != nil {
 		if err == core.ObjectNotFoundErr {
 			return nil, ErrFileNotFound // a git submodule
@@ -61,10 +61,10 @@ func (t *Tree) File(path string) (*File, error) {
 	blob := &Blob{}
 	blob.Decode(obj)
 
-	return newFile(path, blob), nil
+	return newFile(path, e.Mode, blob), nil
 }
 
-func (t *Tree) findHash(path string) (*core.Hash, error) {
+func (t *Tree) findEntry(path string) (*TreeEntry, error) {
 	pathParts := strings.Split(path, "/")
 
 	var tree *Tree
@@ -75,12 +75,7 @@ func (t *Tree) findHash(path string) (*core.Hash, error) {
 		}
 	}
 
-	entry, err := tree.entry(pathParts[0])
-	if err != nil {
-		return nil, err
-	}
-
-	return &entry.Hash, nil
+	return tree.entry(pathParts[0])
 }
 
 var errDirNotFound = errors.New("directory not found")

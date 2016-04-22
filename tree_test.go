@@ -264,6 +264,7 @@ func (s *SuiteTree) TestFiles(c *C) {
 		iter := tree.Files()
 		defer iter.Close()
 		for file, err := iter.Next(); err == nil; file, err = iter.Next() {
+			c.Assert(file.Mode.String(), Equals, "-rw-r--r--")
 			output = append(output, file.Name)
 		}
 		sort.Strings(output)

@@ -2,17 +2,19 @@ package git
 
 import (
 	"bytes"
+	"os"
 	"strings"
 )
 
 // File represents git file objects.
 type File struct {
 	Name string
+	Mode os.FileMode
 	Blob
 }
 
-func newFile(name string, b *Blob) *File {
-	return &File{Name: name, Blob: *b}
+func newFile(name string, m os.FileMode, b *Blob) *File {
+	return &File{Name: name, Mode: m, Blob: *b}
 }
 
 // Contents returns the contents of a file as a string.
@@ -57,13 +59,13 @@ func NewFileIter(r *Repository, t *Tree) *FileIter {
 
 func (iter *FileIter) Next() (*File, error) {
 	for {
-		name, _, obj, err := iter.w.Next()
+		name, entry, obj, err := iter.w.Next()
 		if err != nil {
 			return nil, err
 		}
 
 		if blob, ok := obj.(*Blob); ok {
-			return newFile(name, blob), nil
+			return newFile(name, entry.Mode, blob), nil
 		}
 	}
 }

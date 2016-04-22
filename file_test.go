@@ -58,6 +58,7 @@ func (s *SuiteFile) TestIter(c *C) {
 			expected := t.files[k]
 			file, err := iter.Next()
 			c.Assert(err, IsNil, Commentf("subtest %d, iter %d, err=%v", i, k, err))
+			c.Assert(file.Mode.String(), Equals, "-rw-r--r--")
 			c.Assert(file.Hash.IsZero(), Equals, false)
 			c.Assert(file.Hash, Equals, file.ID())
 			c.Assert(file.Name, Equals, expected.Name, Commentf("subtest %d, iter %d, name=%s, expected=%s", i, k, file.Name, expected.Hash))
