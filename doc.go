@@ -32,4 +32,4 @@
 //    	fmt.Println(commit)
 //    }
 //  }
-package git // import "gopkg.in/src-d/go-git.v3"
+package git
