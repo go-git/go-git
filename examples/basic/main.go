@@ -9,24 +9,21 @@ import (
 )
 
 func main() {
-	fmt.Printf("Retrieving %q ...\n", os.Args[2])
-	r, err := git.NewRepository(os.Args[2], nil)
+	fmt.Printf("Retrieving %q ...\n", os.Args[1])
+	r, err := git.NewRepository(os.Args[1], nil)
 	if err != nil {
 		panic(err)
 	}
 
-	if err := r.Pull("origin", "refs/heads/master"); err != nil {
+	if err := r.PullDefault(); err != nil {
 		panic(err)
 	}
 
-	dumpCommits(r)
-}
-
-func dumpCommits(r *git.Repository) {
 	iter := r.Commits()
 	defer iter.Close()
 
 	for {
+		//the commits are not shorted in any special order
 		commit, err := iter.Next()
 		if err != nil {
 			if err == io.EOF {

@@ -37,7 +37,7 @@ go get -u gopkg.in/src-d/go-git.v3/...
 Examples
 --------
 
-Basic example: retrieving the commits for a given repository:
+Retrieving the commits for a given repository:
 
 ```go
 r, err := git.NewRepository("https://github.com/src-d/go-git", nil)
@@ -45,7 +45,7 @@ if err != nil {
 	panic(err)
 }
 
-if err := r.Pull("origin", "refs/heads/master"); err != nil {
+if err := r.PullDefault(); err != nil {
 	panic(err)
 }
 
@@ -53,6 +53,7 @@ iter := r.Commits()
 defer iter.Close()
 
 for {
+	//the commits are not shorted in any special order
 	commit, err := iter.Next()
 	if err != nil {
 		if err == io.EOF {
@@ -85,6 +86,32 @@ Author: Alberto Cortés <alberto@sourced.tech>
 Date:   2015-12-11 17:57:10 +0100 +0100
 ...
 ```
+
+Retrieving the latest commit for a given repository:
+
+```go
+r, err := git.NewRepository("https://github.com/src-d/go-git", nil)
+if err != nil {
+	panic(err)
+}
+
+if err := r.PullDefault(); err != nil {
+	panic(err)
+}
+
+hash, err := r.Remotes[git.DefaultRemoteName].Head()
+if err != nil {
+	panic(err)
+}
+
+commit, err := r.Commit(hash)
+if err != nil {
+	panic(err)
+}
+
+fmt.Println(commit)
+```
+
 
 Acknowledgements
 ----------------
