@@ -81,6 +81,11 @@ func (r *Remote) DefaultBranch() string {
 	return r.upInfo.Capabilities.SymbolicReference("HEAD")
 }
 
+// Head returns the Hash of the HEAD
+func (r *Remote) Head() (core.Hash, error) {
+	return r.Ref(r.DefaultBranch())
+}
+
 // Fetch returns a reader using the request
 func (r *Remote) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) {
 	return r.upSrv.Fetch(req)

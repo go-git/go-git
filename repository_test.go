@@ -46,6 +46,20 @@ func (s *SuiteRepository) TestPull(c *C) {
 	c.Assert(err, Not(IsNil), Commentf("pull leaks an open fd from the fetch"))
 }
 
+func (s *SuiteRepository) TestPullDefault(c *C) {
+	r, err := NewRepository(RepositoryFixture, nil)
+	r.Remotes[DefaultRemoteName].Connect()
+	r.Remotes[DefaultRemoteName].upSrv = &MockGitUploadPackService{}
+
+	c.Assert(err, IsNil)
+	c.Assert(r.PullDefault(), IsNil)
+
+	mock, ok := (r.Remotes[DefaultRemoteName].upSrv).(*MockGitUploadPackService)
+	c.Assert(ok, Equals, true)
+	err = mock.RC.Close()
+	c.Assert(err, Not(IsNil), Commentf("pull leaks an open fd from the fetch"))
+}
+
 func (s *SuiteRepository) TestCommit(c *C) {
 	r, err := NewRepository(RepositoryFixture, nil)
 	r.Remotes["origin"].upSrv = &MockGitUploadPackService{}

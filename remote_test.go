@@ -2,6 +2,7 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v3/clients/http"
+	"gopkg.in/src-d/go-git.v3/core"
 	"gopkg.in/src-d/go-git.v3/formats/packfile"
 	"gopkg.in/src-d/go-git.v3/storage/memory"
 
@@ -61,4 +62,18 @@ func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
 	_, err = pr.Read(storage)
 	c.Assert(err, IsNil)
 	c.Assert(storage.Objects, HasLen, 28)
+}
+
+func (s *SuiteRemote) TestHead(c *C) {
+	r, err := NewRemote(RepositoryFixture)
+	r.upSrv = &MockGitUploadPackService{}
+
+	c.Assert(err, IsNil)
+
+	err = r.Connect()
+	c.Assert(err, IsNil)
+
+	hash, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(hash, Equals, core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 }
