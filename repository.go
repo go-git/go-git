@@ -67,6 +67,10 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 		return err
 	}
 
+	if branch == "" {
+		branch = remote.DefaultBranch()
+	}
+
 	ref, err := remote.Ref(branch)
 	if err != nil {
 		return err
@@ -93,12 +97,7 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 
 // PullDefault like Pull but retrieve the default branch from the default remote
 func (r *Repository) PullDefault() (err error) {
-	remote, ok := r.Remotes[DefaultRemoteName]
-	if !ok {
-		return fmt.Errorf("unable to find default remote %q", DefaultRemoteName)
-	}
-
-	return r.Pull(DefaultRemoteName, remote.DefaultBranch())
+	return r.Pull(DefaultRemoteName, "")
 }
 
 // Commit return the commit with the given hash
