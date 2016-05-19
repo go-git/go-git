@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	//ErrOverflow happends when the line length exceed the MaxLength
+	//ErrOverflow is triggered when the line length exceed the MaxLength
 	ErrOverflow = errors.New("unexpected string length (overflow)")
 )
 
