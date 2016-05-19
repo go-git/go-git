@@ -48,10 +48,12 @@ func (d *Decoder) readLine() (string, error) {
 	}
 
 	line := make([]byte, exp)
-	if read, err := d.r.Read(line); err != nil {
+	if read, err := io.ReadFull(d.r, line); err != nil {
+		if err == io.ErrUnexpectedEOF && read < exp {
+			return "", ErrUnderflow
+		}
+
 		return "", err
-	} else if read != exp {
-		return "", ErrUnderflow
 	}
 
 	return string(line), nil
