@@ -125,7 +125,7 @@ func (t *Tree) Files() *FileIter {
 // ID returns the object ID of the tree. The returned value will always match
 // the current value of Tree.Hash.
 //
-// ID is present to fufill the Object interface.
+// ID is present to fulfill the Object interface.
 func (t *Tree) ID() core.Hash {
 	return t.Hash
 }

@@ -38,7 +38,7 @@ type Blame struct {
 // Co-changed Lines", in proceedings of the Mining Software
 // Repositories workshop, Shanghai, May 22-23, 2006.
 //
-// Each node is asigned a commit: Start by the nodes in the first
+// Each node is assigned a commit: Start by the nodes in the first
 // commit. Assign that commit as the creator of all its lines.
 //
 // Then jump to the nodes in the next commit, and calculate the diff

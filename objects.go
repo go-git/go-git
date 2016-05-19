@@ -51,14 +51,14 @@ type Blob struct {
 // ID returns the object ID of the blob. The returned value will always match
 // the current value of Blob.Hash.
 //
-// ID is present to fufill the Object interface.
+// ID is present to fulfill the Object interface.
 func (b *Blob) ID() core.Hash {
 	return b.Hash
 }
 
 // Type returns the type of object. It always returns core.BlobObject.
 //
-// Type is present to fufill the Object interface.
+// Type is present to fulfill the Object interface.
 func (b *Blob) Type() core.ObjectType {
 	return core.BlobObject
 }

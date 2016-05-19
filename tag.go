@@ -38,14 +38,14 @@ func (t *Tag) Type() core.ObjectType {
 // ID returns the object ID of the tag, not the object that the tag references.
 // The returned value will always match the current value of Tag.Hash.
 //
-// ID is present to fufill the Object interface.
+// ID is present to fulfill the Object interface.
 func (t *Tag) ID() core.Hash {
 	return t.Hash
 }
 
 // Type returns the type of object. It always returns core.TagObject.
 //
-// Type is present to fufill the Object interface.
+// Type is present to fulfill the Object interface.
 func (t *Tag) Type() core.ObjectType {
 	return core.TagObject
 }

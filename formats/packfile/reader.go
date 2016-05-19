@@ -40,7 +40,7 @@ type Reader struct {
 	// MaxObjectsLimit is the limit of objects to be load in the packfile, if
 	// a packfile excess this number an error is throw, the default value
 	// is defined by DefaultMaxObjectsLimit, usually the default limit is more
-	// than enough to work with any repository, working extremly big repositories
+	// than enough to work with any repository, working extremely big repositories
 	// where the number of object is bigger the memory can be exhausted.
 	MaxObjectsLimit uint32
 

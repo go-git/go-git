@@ -172,9 +172,9 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (rc io.Read
 	if err != nil {
 		return nil, err
 	}
-	// TODO: inestigate this *ExitError type (command fails or
+	// TODO: investigate this *ExitError type (command fails or
 	// doesn't complete successfully), as it is happenning all
-	// the time, but everyting seems to work fine.
+	// the time, but everything seems to work fine.
 	err = session.Wait()
 	if err != nil {
 		if _, ok := err.(*ssh.ExitError); !ok {

@@ -52,14 +52,14 @@ func (c *Commit) File(path string) (file *File, err error) {
 // ID returns the object ID of the commit. The returned value will always match
 // the current value of Commit.Hash.
 //
-// ID is present to fufill the Object interface.
+// ID is present to fulfill the Object interface.
 func (c *Commit) ID() core.Hash {
 	return c.Hash
 }
 
 // Type returns the type of object. It always returns core.CommitObject.
 //
-// Type is present to fufill the Object interface.
+// Type is present to fulfill the Object interface.
 func (c *Commit) Type() core.ObjectType {
 	return core.CommitObject
 }
