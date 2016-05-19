@@ -51,6 +51,8 @@ package pktline
 // https://github.com/git/git/blob/master/Documentation/technical/protocol-common.txt
 
 const (
+	// HeaderLength length of the pktline header
 	HeaderLength = 4
-	MaxLength    = 65524
+	// MaxLength max line length
+	MaxLength = 65524
 )

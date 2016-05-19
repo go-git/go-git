@@ -9,6 +9,7 @@ import (
 	"gopkg.in/src-d/go-git.v3/core"
 )
 
+// Remote represents a connection to a remote repository
 type Remote struct {
 	Endpoint common.Endpoint
 	Auth     common.AuthMethod

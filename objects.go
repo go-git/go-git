@@ -10,6 +10,7 @@ import (
 	"gopkg.in/src-d/go-git.v3/core"
 )
 
+// ErrUnsupportedObject trigger when a non-supported object is being decoded.
 var ErrUnsupportedObject = errors.New("unsupported object type")
 
 // Object is a generic representation of any git object. It is implemented by

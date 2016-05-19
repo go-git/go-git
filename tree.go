@@ -48,7 +48,7 @@ func (t *Tree) File(path string) (*File, error) {
 
 	obj, err := t.r.Storage.Get(e.Hash)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
+		if err == core.ErrObjectNotFound {
 			return nil, ErrFileNotFound // a git submodule
 		}
 		return nil, err
@@ -88,7 +88,7 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 
 	obj, err := t.r.Storage.Get(entry.Hash)
 	if err != nil {
-		if err == core.ObjectNotFoundErr { // git submodule
+		if err == core.ErrObjectNotFound { // git submodule
 			return nil, errDirNotFound
 		}
 		return nil, err
@@ -118,6 +118,7 @@ func (t *Tree) entry(baseName string) (*TreeEntry, error) {
 	return entry, nil
 }
 
+// Files returns a FileIter allowing to iterate over the Tree
 func (t *Tree) Files() *FileIter {
 	return NewFileIter(t.r, t)
 }
@@ -200,17 +201,13 @@ func (t *Tree) buildMap() {
 	}
 }
 
-// TreeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
-type TreeEntryIter struct {
+// treeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
+type treeEntryIter struct {
 	t   *Tree
 	pos int
 }
 
-func NewTreeEntryIter(t *Tree) *TreeEntryIter {
-	return &TreeEntryIter{t, 0}
-}
-
-func (iter *TreeEntryIter) Next() (TreeEntry, error) {
+func (iter *treeEntryIter) Next() (TreeEntry, error) {
 	if iter.pos >= len(iter.t.Entries) {
 		return TreeEntry{}, io.EOF
 	}
@@ -224,12 +221,14 @@ type TreeIter struct {
 	w TreeWalker
 }
 
+// NewTreeIter returns a new TreeIter instance
 func NewTreeIter(r *Repository, t *Tree) *TreeIter {
 	return &TreeIter{
 		w: *NewTreeWalker(r, t),
 	}
 }
 
+// Next returns the next Tree from the tree.
 func (iter *TreeIter) Next() (*Tree, error) {
 	for {
 		_, _, obj, err := iter.w.Next()
@@ -243,6 +242,7 @@ func (iter *TreeIter) Next() (*Tree, error) {
 	}
 }
 
+// Close closes the TreeIter
 func (iter *TreeIter) Close() {
 	iter.w.Close()
 }

@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	ObjectNotFoundErr = errors.New("object not found")
+	ErrObjectNotFound = errors.New("object not found")
 	// ErrInvalidType is returned when an invalid object type is provided.
 	ErrInvalidType = errors.New("invalid object type")
 )
@@ -138,7 +138,7 @@ func NewObjectLookupIter(storage ObjectStorage, series []Hash) *ObjectLookupIter
 
 // Next returns the next object from the iterator. If the iterator has reached
 // the end it will return io.EOF as an error. If the object can't be found in
-// the object storage, it will return ObjectNotFoundErr as an error. If the
+// the object storage, it will return ErrObjectNotFound as an error. If the
 // object is retreieved successfully error will be nil.
 func (iter *ObjectLookupIter) Next() (Object, error) {
 	if iter.pos >= len(iter.series) {

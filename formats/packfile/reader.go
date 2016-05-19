@@ -22,7 +22,7 @@ var (
 	InvalidObjectErr          = newError("invalid git object")
 	PatchingErr               = newError("patching error")
 	PackEntryNotFoundErr      = newError("can't find a pack entry")
-	ObjectNotFoundErr         = newError("can't find a object")
+	ErrObjectNotFound         = newError("can't find a object")
 	ZLibErr                   = newError("zlib reading error")
 )
 
@@ -200,8 +200,8 @@ func (r *Reader) readREFDelta(raw core.Object) (err error) {
 
 	referenced, err := r.s.Get(ref)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return ObjectNotFoundErr.n("%s", ref)
+		if err == core.ErrObjectNotFound {
+			return ErrObjectNotFound.n("%s", ref)
 		}
 		return err
 	}

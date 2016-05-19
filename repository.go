@@ -11,13 +11,16 @@ import (
 )
 
 var (
-	ObjectNotFoundErr = errors.New("object not found")
+	// ErrObjectNotFound object not found
+	ErrObjectNotFound = errors.New("object not found")
 )
 
 const (
+	// DefaultRemoteName name of the default Remote, just like git command
 	DefaultRemoteName = "origin"
 )
 
+// Repository git repository struct
 type Repository struct {
 	Remotes map[string]*Remote
 	Storage core.ObjectStorage
@@ -104,8 +107,8 @@ func (r *Repository) PullDefault() (err error) {
 func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 	obj, err := r.Storage.Get(h)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return nil, ObjectNotFoundErr
+		if err == core.ErrObjectNotFound {
+			return nil, ErrObjectNotFound
 		}
 		return nil, err
 	}
@@ -123,8 +126,8 @@ func (r *Repository) Commits() *CommitIter {
 func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 	obj, err := r.Storage.Get(h)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return nil, ObjectNotFoundErr
+		if err == core.ErrObjectNotFound {
+			return nil, ErrObjectNotFound
 		}
 		return nil, err
 	}
@@ -137,8 +140,8 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 	obj, err := r.Storage.Get(h)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return nil, ObjectNotFoundErr
+		if err == core.ErrObjectNotFound {
+			return nil, ErrObjectNotFound
 		}
 		return nil, err
 	}
@@ -151,8 +154,8 @@ func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 	obj, err := r.Storage.Get(h)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return nil, ObjectNotFoundErr
+		if err == core.ErrObjectNotFound {
+			return nil, ErrObjectNotFound
 		}
 		return nil, err
 	}
@@ -171,8 +174,8 @@ func (r *Repository) Tags() *TagIter {
 func (r *Repository) Object(h core.Hash) (Object, error) {
 	obj, err := r.Storage.Get(h)
 	if err != nil {
-		if err == core.ObjectNotFoundErr {
-			return nil, ObjectNotFoundErr
+		if err == core.ErrObjectNotFound {
+			return nil, ErrObjectNotFound
 		}
 		return nil, err
 	}

@@ -58,7 +58,7 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 func (o *ObjectStorage) Get(h core.Hash) (core.Object, error) {
 	obj, ok := o.Objects[h]
 	if !ok {
-		return nil, core.ObjectNotFoundErr
+		return nil, core.ErrObjectNotFound
 	}
 
 	return obj, nil

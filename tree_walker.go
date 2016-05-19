@@ -11,7 +11,7 @@ const (
 
 // TreeWalker provides a means of walking through all of the entries in a Tree.
 type TreeWalker struct {
-	stack []TreeEntryIter
+	stack []treeEntryIter
 	base  string
 
 	r *Repository
@@ -23,11 +23,11 @@ type TreeWalker struct {
 // tree walker.
 func NewTreeWalker(r *Repository, t *Tree) *TreeWalker {
 	w := TreeWalker{
-		stack: make([]TreeEntryIter, 0, startingStackSize),
+		stack: make([]treeEntryIter, 0, startingStackSize),
 		base:  "",
 		r:     r,
 	}
-	w.stack = append(w.stack, *NewTreeEntryIter(t))
+	w.stack = append(w.stack, treeEntryIter{t, 0})
 	return &w
 }
 
@@ -65,7 +65,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 		}
 
 		obj, err = w.r.Object(entry.Hash)
-		if err == ObjectNotFoundErr {
+		if err == ErrObjectNotFound {
 			// FIXME: Avoid doing this here in case the caller actually cares about
 			//        missing objects.
 			err = nil
@@ -81,8 +81,8 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 		break
 	}
 
-	if tree, ok := obj.(*Tree); ok {
-		w.stack = append(w.stack, *NewTreeEntryIter(tree))
+	if t, ok := obj.(*Tree); ok {
+		w.stack = append(w.stack, treeEntryIter{t, 0})
 		w.base = path.Join(w.base, entry.Name)
 	}
 

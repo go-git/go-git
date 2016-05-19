@@ -7,9 +7,12 @@ import (
 )
 
 var (
-	ErrUnderflow     = errors.New("unexpected string length (underflow)")
+	// ErrUnderflow is triggered when a line is shorter than the described length
+	ErrUnderflow = errors.New("unexpected string length (underflow)")
+	// ErrInvalidHeader invalid pktline header
 	ErrInvalidHeader = errors.New("invalid header")
-	ErrInvalidLen    = errors.New("invalid length")
+	// ErrInvalidLen ivanlid line length found, < 0
+	ErrInvalidLen = errors.New("invalid length")
 )
 
 // Decoder implements a pkt-line format decoder

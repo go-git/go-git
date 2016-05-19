@@ -10,6 +10,7 @@ import (
 	"gopkg.in/src-d/go-git.v3/core"
 )
 
+// Hash hash of an object
 type Hash core.Hash
 
 // Commit points to a single tree, marking it as what the project looked like
@@ -28,11 +29,13 @@ type Commit struct {
 	r       *Repository
 }
 
+// Tree returns the Tree from the commit
 func (c *Commit) Tree() *Tree {
 	tree, _ := c.r.Tree(c.tree) // FIXME: Return error as well?
 	return tree
 }
 
+// Parents return a CommitIter to the parent Commits
 func (c *Commit) Parents() *CommitIter {
 	return NewCommitIter(c.r, core.NewObjectLookupIter(c.r.Storage, c.parents))
 }
