@@ -33,6 +33,7 @@ func (s *ObjectStorageSuite) TestSet(c *C) {
 	writer.Write([]byte("foo"))
 
 	h, err := os.Set(o)
+	c.Assert(err, IsNil)
 	c.Assert(h.String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
