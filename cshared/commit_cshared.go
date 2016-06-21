@@ -4,6 +4,8 @@ package main
 import (
 	"C"
 	"io"
+	"reflect"
+	"unsafe"
 
 	"gopkg.in/src-d/go-git.v3"
 	"gopkg.in/src-d/go-git.v3/core"
@@ -16,7 +18,7 @@ func c_Commit_get_Hash(c uint64) *C.char {
 		return nil
 	}
 	commit := obj.(*git.Commit)
-	return C.CString(string(commit.Hash[:]))
+	return CBytes(commit.Hash[:])
 }
 
 //export c_Commit_get_Author
@@ -140,6 +142,43 @@ func c_Commit_String(c uint64) *C.char {
 	}
 	commit := obj.(*git.Commit)
 	return C.CString(commit.String())
+}
+
+//export c_Commit_References
+func c_Commit_References(c uint64, path string) (*C.char, int, int, *C.char) {
+	obj, ok := GetObject(Handle(c))
+	if !ok {
+		return nil, 0, ErrorCodeNotFound, C.CString(MessageNotFound)
+	}
+	commit := obj.(*git.Commit)
+	refs, err := commit.References(CopyString(path))
+	if err != nil {
+		return nil, 0, ErrorCodeInternal, C.CString(err.Error())
+	}
+	handles := make([]uint64, len(refs))
+	for i, c := range(refs) {
+		handles[i] = uint64(RegisterObject(c))
+	}
+	size := 8 * len(handles)
+	dest := C.malloc(C.size_t(size))
+	header := (*reflect.SliceHeader)(unsafe.Pointer(&handles))
+	header.Len *= 8
+	copy((*[1<<30]byte)(dest)[:], *(*[]byte)(unsafe.Pointer(header)))
+	return (*C.char)(dest), size / 8, ErrorCodeSuccess, nil
+}
+
+//export c_Commit_Blame
+func c_Commit_Blame(c uint64, path string) (uint64, int, *C.char) {
+	obj, ok := GetObject(Handle(c))
+	if !ok {
+		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
+	}
+	commit := obj.(*git.Commit)
+	blame, err := commit.Blame(CopyString(path))
+	if err != nil {
+		return IH, ErrorCodeInternal, C.CString(err.Error())
+	}
+	return uint64(RegisterObject(blame)), ErrorCodeSuccess, nil
 }
 
 //export c_NewCommitIter

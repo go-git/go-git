@@ -72,8 +72,8 @@ and it is the responsibility of the other side to `free()` it or it will leak
 otherwise.
 
 Another tricky part is in `c_std_map_get_str_str` and similar places
-where you need to return `*C.char` from an unaddressed array accessed under
+where you need to return `*C.char` from an unaddressable array accessed under
 a pseudonym type through reflection. The only way I've found working
-is using `reflect.Copy` to byte slice (copy) and then conversion to
-`string` (copy), then `C.CString` (copy) and finally another (copy) on the
-receiving side because the latter must be `free()`-d. Extremely efficient.
+is using `reflect.Copy` to byte slice (copy), then `CBytes` (copy) and
+finally another (copy) on the receiving side because the latter must be
+`free()`-d.

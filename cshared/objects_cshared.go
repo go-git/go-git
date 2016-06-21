@@ -54,7 +54,7 @@ func c_Blob_get_Hash(b uint64) *C.char {
 		return nil
 	}
 	blob := obj.(*git.Blob)
-	return C.CString(string(blob.Hash[:]))
+	return CBytes(blob.Hash[:])
 }
 
 //export c_Blob_Size

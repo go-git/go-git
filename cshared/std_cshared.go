@@ -28,7 +28,7 @@ func c_std_map_get_str_str(m uint64, key string) *C.char {
 	    val.Type().Elem().Kind() == reflect.Uint8 {
 		arr := make([]byte, val.Len(), val.Len())
 		reflect.Copy(reflect.ValueOf(arr), val)
-		return C.CString(string(arr))
+		return CBytes(arr)
 	}
 	return C.CString(val.String())
 }
