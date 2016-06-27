@@ -130,7 +130,7 @@ func c_Remote_Head(r uint64) (*C.char, int, *C.char) {
 	if err != nil {
 		return nil, ErrorCodeInternal, C.CString(err.Error())
 	}
-	return C.CString(string(hash[:])), ErrorCodeSuccess, nil
+	return CBytes(hash[:]), ErrorCodeSuccess, nil
 }
 
 //export c_Remote_Fetch
@@ -177,7 +177,7 @@ func c_Remote_Ref(r uint64, refName string) (*C.char, int, *C.char) {
 	if err != nil {
 		return nil, ErrorCodeInternal, C.CString(err.Error())
 	}
-	return C.CString(string(hash[:])), ErrorCodeSuccess, nil
+	return CBytes(hash[:]), ErrorCodeSuccess, nil
 }
 
 //export c_Remote_Refs

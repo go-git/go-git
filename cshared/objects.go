@@ -140,6 +140,13 @@ func CopyString(str string) string {
 	return string(buf)
 }
 
+// https://github.com/golang/go/issues/14838
+func CBytes(bytes []byte) *C.char {
+	ptr := C.malloc(C.size_t(len(bytes)))
+	copy((*[1<<30]byte)(ptr)[:], bytes)
+	return (*C.char)(ptr)
+}
+
 func SafeIsNil(v reflect.Value) bool {
   defer func() { recover() }()
   return v.IsNil()
