@@ -14,7 +14,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := r.Pull(git.DefaultRemoteName, "refs/heads/master"); err != nil {
+	if err = r.Pull(git.DefaultRemoteName, "refs/heads/master"); err != nil {
 		panic(err)
 	}
 

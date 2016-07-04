@@ -15,11 +15,14 @@ func main() {
 		panic(err)
 	}
 
-	if err := r.PullDefault(); err != nil {
+	if err = r.PullDefault(); err != nil {
 		panic(err)
 	}
 
-	iter := r.Commits()
+	iter, err := r.Commits()
+	if err != nil {
+		panic(err)
+	}
 	defer iter.Close()
 
 	for {

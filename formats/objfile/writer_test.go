@@ -16,20 +16,20 @@ var _ = Suite(&SuiteWriter{})
 
 func (s *SuiteWriter) TestWriteObjfile(c *C) {
 	for k, fixture := range objfileFixtures {
-		comment := fmt.Sprintf("test %d: ", k)
+		com := fmt.Sprintf("test %d: ", k)
 		hash := core.NewHash(fixture.hash)
 		content, _ := base64.StdEncoding.DecodeString(fixture.content)
 		buffer := new(bytes.Buffer)
 
 		// Write the data out to the buffer
-		testWriter(c, buffer, hash, fixture.t, content, comment)
+		testWriter(c, buffer, hash, fixture.t, content, com)
 
 		// Read the data back in from the buffer to be sure it matches
-		testReader(c, buffer, hash, fixture.t, content, comment)
+		testReader(c, buffer, hash, fixture.t, content, com)
 	}
 }
 
-func testWriter(c *C, dest io.Writer, hash core.Hash, typ core.ObjectType, content []byte, comment string) {
+func testWriter(c *C, dest io.Writer, hash core.Hash, typ core.ObjectType, content []byte, com string) {
 	length := int64(len(content))
 	w, err := NewWriter(dest, typ, length)
 	c.Assert(err, IsNil)

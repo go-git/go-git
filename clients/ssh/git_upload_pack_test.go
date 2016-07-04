@@ -1,3 +1,5 @@
+// +build ssh
+
 package ssh
 
 import (

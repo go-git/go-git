@@ -28,11 +28,6 @@ func NewObjectStorage() *ObjectStorage {
 	}
 }
 
-// New returns a new empty memory.Object
-func (o *ObjectStorage) New() (core.Object, error) {
-	return &Object{}, nil
-}
-
 // Set stores an object, the object should be properly filled before set it.
 func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	h := obj.Hash()
@@ -65,7 +60,7 @@ func (o *ObjectStorage) Get(h core.Hash) (core.Object, error) {
 }
 
 // Iter returns a core.ObjectIter for the given core.ObjectTybe
-func (o *ObjectStorage) Iter(t core.ObjectType) core.ObjectIter {
+func (o *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	var series []core.Object
 	switch t {
 	case core.CommitObject:
@@ -77,7 +72,7 @@ func (o *ObjectStorage) Iter(t core.ObjectType) core.ObjectIter {
 	case core.TagObject:
 		series = flattenObjectMap(o.Tags)
 	}
-	return core.NewObjectSliceIter(series)
+	return core.NewObjectSliceIter(series), nil
 }
 
 func flattenObjectMap(m map[core.Hash]core.Object) []core.Object {

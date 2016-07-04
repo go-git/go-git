@@ -9,20 +9,10 @@ type ObjectStorageSuite struct{}
 
 var _ = Suite(&ObjectStorageSuite{})
 
-func (s *ObjectStorageSuite) TestNew(c *C) {
-	os := NewObjectStorage()
-
-	o, err := os.New()
-	c.Assert(err, IsNil)
-	c.Assert(o.Size(), Equals, int64(0))
-}
-
 func (s *ObjectStorageSuite) TestSet(c *C) {
 	os := NewObjectStorage()
 
-	o, err := os.New()
-	c.Assert(err, IsNil)
-
+	o := &Object{}
 	o.SetType(core.CommitObject)
 	o.SetSize(3)
 
@@ -40,9 +30,7 @@ func (s *ObjectStorageSuite) TestSet(c *C) {
 func (s *ObjectStorageSuite) TestGet(c *C) {
 	os := NewObjectStorage()
 
-	o, err := os.New()
-	c.Assert(err, IsNil)
-
+	o := &Object{}
 	o.SetType(core.CommitObject)
 	o.SetSize(3)
 

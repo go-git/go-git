@@ -3,23 +3,41 @@ package clients
 import (
 	"fmt"
 	"io"
+	"os"
 	"testing"
 
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v3/clients/common"
+
+	"github.com/alcortesm/tgz"
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
 
-type SuiteCommon struct{}
+type SuiteCommon struct {
+	dirFixturePath string
+}
 
 var _ = Suite(&SuiteCommon{})
 
+const fixtureTGZ = "../storage/seekable/internal/gitdir/fixtures/spinnaker-gc.tgz"
+
+func (s *SuiteCommon) SetUpSuite(c *C) {
+	var err error
+	s.dirFixturePath, err = tgz.Extract(fixtureTGZ)
+	c.Assert(err, IsNil)
+}
+
+func (s *SuiteCommon) TearDownSuite(c *C) {
+	err := os.RemoveAll(s.dirFixturePath)
+	c.Assert(err, IsNil)
+}
+
 func (s *SuiteCommon) TestNewGitUploadPackService(c *C) {
 	var tests = [...]struct {
-		input    string
-		err      bool
-		expected string
+		input string
+		err   bool
+		exp   string
 	}{
 		{"://example.com", true, "<nil>"},
 		{"badscheme://github.com/src-d/go-git", true, "<nil>"},
@@ -30,8 +48,10 @@ func (s *SuiteCommon) TestNewGitUploadPackService(c *C) {
 
 	for i, t := range tests {
 		output, err := NewGitUploadPackService(t.input)
-		c.Assert(err != nil, Equals, t.err, Commentf("%d) %q: wrong error value", i, t.input))
-		c.Assert(typeAsString(output), Equals, t.expected, Commentf("%d) %q: wrong type", i, t.input))
+		c.Assert(err != nil, Equals, t.err,
+			Commentf("%d) %q: wrong error value (was: %s)", i, t.input, err))
+		c.Assert(typeAsString(output), Equals, t.exp,
+			Commentf("%d) %q: wrong type", i, t.input))
 	}
 }
 
@@ -70,7 +90,6 @@ func (s *SuiteCommon) TestInstallProtocol(c *C) {
 
 	for i, t := range tests {
 		if t.panic {
-			fmt.Println(t.service == nil)
 			c.Assert(func() { InstallProtocol(t.scheme, t.service) }, PanicMatches, `nil service`)
 			continue
 		}

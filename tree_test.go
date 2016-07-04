@@ -191,16 +191,16 @@ func (s *SuiteTree) TestFile(c *C) {
 		file, err := tree.File(t.path)
 		found := err == nil
 
-		comment := Commentf("subtest %d, path=%s, commit=%s", i, t.path, t.commit)
-		c.Assert(found, Equals, t.found, comment)
+		com := Commentf("subtest %d, path=%s, commit=%s", i, t.path, t.commit)
+		c.Assert(found, Equals, t.found, com)
 		if !found {
 			continue
 		}
 
-		c.Assert(file.Size, Equals, t.size, comment)
-		c.Assert(file.Hash.IsZero(), Equals, false, comment)
-		c.Assert(file.Hash, Equals, file.ID(), comment)
-		c.Assert(file.Hash.String(), Equals, t.blobHash, comment)
+		c.Assert(file.Size, Equals, t.size, com)
+		c.Assert(file.Hash.IsZero(), Equals, false, com)
+		c.Assert(file.Hash, Equals, file.ID(), com)
+		c.Assert(file.Hash.String(), Equals, t.blobHash, com)
 	}
 }
 

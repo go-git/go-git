@@ -49,7 +49,10 @@ if err := r.PullDefault(); err != nil {
 	panic(err)
 }
 
-iter := r.Commits()
+iter, err := r.Commits()
+if err != nil {
+	panic(err)
+}
 defer iter.Close()
 
 for {
@@ -112,6 +115,61 @@ if err != nil {
 fmt.Println(commit)
 ```
 
+Creating a repository from an ordinary local git directory (that has been
+previously prepared by running `git gc` on it).
+
+```go
+// Download any git repository and prepare it as as follows:
+//
+//   $ git clone https://github.com/src-d/go-git /tmp/go-git
+//   $ pushd /tmp/go-git ; git gc ; popd
+//
+// Then, create a go-git repository from the local content
+// and print its commits as follows:
+
+package main
+
+import (
+	"fmt"
+	"io"
+
+	"gopkg.in/src-d/go-git.v3"
+	"gopkg.in/src-d/go-git.v3/utils/fs"
+)
+
+func main() {
+	fs := fs.NewOS() // a simple proxy for the local host filesystem
+	path := "/tmp/go-git/.git"
+
+	repo, err := git.NewRepositoryFromFS(fs, path)
+	if err != nil {
+		panic(err)
+	}
+
+	iter, err := repo.Commits()
+	if err != nil {
+		panic(err)
+	}
+	defer iter.Close()
+
+	for {
+		commit, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			panic(err)
+		}
+
+		fmt.Println(commit)
+	}
+}
+```
+
+Implementing your own filesystem will let you access repositories stored on
+remote services (e.g. amazon S3), see the
+[examples](https://github.com/src-d/go-git/tree/master/examples/fs_implementation/)
+directory for a simple filesystem implementation and usage.
 
 Wrapping
 --------

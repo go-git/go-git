@@ -1,6 +1,8 @@
 package git
 
 import (
+	"bytes"
+	"io/ioutil"
 	"os"
 
 	"gopkg.in/src-d/go-git.v3/core"
@@ -19,24 +21,23 @@ var _ = Suite(&BlameCommon{})
 func (s *BlameCommon) SetUpSuite(c *C) {
 	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		repo := NewPlainRepository()
-		repo.URL = fixRepo.url
+		r := NewPlainRepository()
 
-		d, err := os.Open(fixRepo.packfile)
+		f, err := os.Open(fixRepo.packfile)
 		c.Assert(err, IsNil)
 
-		r := packfile.NewReader(d)
-		// TODO: how to know the format of a pack file ahead of time?
-		// Some info at:
-		// https://codewords.recurse.com/issues/three/unpacking-git-packfiles
-		r.Format = packfile.OFSDeltaFormat
-
-		_, err = r.Read(repo.Storage)
+		data, err := ioutil.ReadAll(f)
 		c.Assert(err, IsNil)
 
-		c.Assert(d.Close(), IsNil)
+		stream := packfile.NewStream(bytes.NewReader(data))
 
-		s.repos[fixRepo.url] = repo
+		d := packfile.NewDecoder(stream)
+		err = d.Decode(r.Storage)
+		c.Assert(err, IsNil)
+
+		c.Assert(f.Close(), IsNil)
+
+		s.repos[fixRepo.url] = r
 	}
 }
 
@@ -48,22 +49,22 @@ type blameTest struct {
 }
 
 func (s *BlameCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
-	repo, ok := s.repos[t.repo]
+	r, ok := s.repos[t.repo]
 	c.Assert(ok, Equals, true)
 
-	commit, err := repo.Commit(core.NewHash(t.rev))
-	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, repo, t.rev))
+	commit, err := r.Commit(core.NewHash(t.rev))
+	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, r, t.rev))
 
-	file, err := commit.File(t.path)
+	f, err := commit.File(t.path)
 	c.Assert(err, IsNil)
-	lines, err := file.Lines()
+	lines, err := f.Lines()
 	c.Assert(err, IsNil)
 	c.Assert(len(t.blames), Equals, len(lines), Commentf(
 		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
 
 	blamedLines := make([]*line, 0, len(t.blames))
 	for i := range t.blames {
-		commit, err := repo.Commit(core.NewHash(t.blames[i]))
+		commit, err := r.Commit(core.NewHash(t.blames[i]))
 		c.Assert(err, IsNil)
 		l := &line{
 			author: commit.Author.Email,
@@ -82,17 +83,17 @@ func (s *BlameCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
 // run a blame on all the suite's tests
 func (s *BlameCommon) TestBlame(c *C) {
 	for _, t := range blameTests {
-		expected := s.mockBlame(t, c)
+		exp := s.mockBlame(t, c)
 
-		repo, ok := s.repos[t.repo]
+		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 
-		commit, err := repo.Commit(core.NewHash(t.rev))
+		commit, err := r.Commit(core.NewHash(t.rev))
 		c.Assert(err, IsNil)
 
-		obtained, err := commit.Blame(t.path)
+		obt, err := commit.Blame(t.path)
 		c.Assert(err, IsNil)
-		c.Assert(obtained, DeepEquals, expected)
+		c.Assert(obt, DeepEquals, exp)
 	}
 }
 
@@ -105,16 +106,18 @@ func repeat(s string, n int) []string {
 	for i := 0; i < n; i++ {
 		r = append(r, s)
 	}
+
 	return r
 }
 
 // utility function to concat slices
 func concat(vargs ...[]string) []string {
-	var result []string
+	var r []string
 	for _, ss := range vargs {
-		result = append(result, ss...)
+		r = append(r, ss...)
 	}
-	return result
+
+	return r
 }
 
 var blameTests = [...]blameTest{

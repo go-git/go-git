@@ -26,15 +26,15 @@ var packFileWithEmptyObjects = "UEFDSwAAAAIAAAALnw54nKXMQWoDMQxA0b1PoX2hSLIm44FS
 
 func (s *ReaderSuite) TestReadPackfile(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
-	d := bytes.NewReader(data)
+	f := bytes.NewReader(data)
+	r := NewStream(f)
+	d := NewDecoder(r)
 
-	r := NewReader(d)
-
-	storage := memory.NewObjectStorage()
-	_, err := r.Read(storage)
+	sto := memory.NewObjectStorage()
+	err := d.Decode(sto)
 	c.Assert(err, IsNil)
 
-	AssertObjects(c, storage, []string{
+	AssertObjects(c, sto, []string{
 		"778c85ff95b5514fea0ba4c7b6a029d32e2c3b96",
 		"db4002e880a08bf6cc7217512ad937f1ac8824a2",
 		"551fe11a9ef992763b7e0be4500cf7169f2f8575",
@@ -57,18 +57,17 @@ func (s *ReaderSuite) TestReadPackfileREFDelta(c *C) {
 	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ref-delta", REFDeltaFormat)
 }
 
-func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
-	d, err := os.Open(file)
+func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, format Format) {
+	f, err := os.Open(file)
+	c.Assert(err, IsNil)
+	r := NewSeekable(f)
+	d := NewDecoder(r)
+
+	sto := memory.NewObjectStorage()
+	err = d.Decode(sto)
 	c.Assert(err, IsNil)
 
-	r := NewReader(d)
-	r.Format = f
-
-	storage := memory.NewObjectStorage()
-	_, err = r.Read(storage)
-	c.Assert(err, IsNil)
-
-	AssertObjects(c, storage, []string{
+	AssertObjects(c, sto, []string{
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 		"1669dce138d9b841a518c64b10914d88f5e488ea",
@@ -102,10 +101,10 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, f Format) {
 
 func AssertObjects(c *C, s *memory.ObjectStorage, expects []string) {
 	c.Assert(len(expects), Equals, len(s.Objects))
-	for _, expected := range expects {
-		obtained, err := s.Get(core.NewHash(expected))
+	for _, exp := range expects {
+		obt, err := s.Get(core.NewHash(exp))
 		c.Assert(err, IsNil)
-		c.Assert(obtained.Hash().String(), Equals, expected)
+		c.Assert(obt.Hash().String(), Equals, exp)
 	}
 }
 
@@ -139,12 +138,12 @@ func (s *ReaderSuite) BenchmarkGit(c *C) {
 	}
 }
 
-func (s *ReaderSuite) _TestMemoryOFS(c *C) {
+func (s *ReaderSuite) _testMemory(c *C, format Format) {
 	var b, a runtime.MemStats
 
 	start := time.Now()
 	runtime.ReadMemStats(&b)
-	p := readFromFile(c, "/tmp/symfony.ofs-delta", OFSDeltaFormat)
+	p := readFromFile(c, "/tmp/symfony.ofs-delta", format)
 	runtime.ReadMemStats(&a)
 
 	fmt.Println("OFS--->")
@@ -157,34 +156,23 @@ func (s *ReaderSuite) _TestMemoryOFS(c *C) {
 	fmt.Println("time", time.Since(start))
 }
 
-func (s *ReaderSuite) _TestMemoryREF(c *C) {
-	var b, a runtime.MemStats
-
-	start := time.Now()
-	runtime.ReadMemStats(&b)
-	p := readFromFile(c, "/tmp/symonfy", REFDeltaFormat)
-	runtime.ReadMemStats(&a)
-
-	fmt.Println("REF--->")
-	fmt.Println("Alloc", a.Alloc-b.Alloc, humanize.Bytes(a.Alloc-b.Alloc))
-	fmt.Println("TotalAlloc", a.TotalAlloc-b.TotalAlloc, humanize.Bytes(a.TotalAlloc-b.TotalAlloc))
-	fmt.Println("HeapAlloc", a.HeapAlloc-b.HeapAlloc, humanize.Bytes(a.HeapAlloc-b.HeapAlloc))
-	fmt.Println("HeapSys", a.HeapSys, humanize.Bytes(a.HeapSys-b.HeapSys))
-
-	fmt.Println("objects", len(p.Objects))
-	fmt.Println("time", time.Since(start))
+func (s *ReaderSuite) _TestMemoryOFS(c *C) {
+	s._testMemory(c, OFSDeltaFormat)
 }
 
-func readFromFile(c *C, file string, f Format) *memory.ObjectStorage {
-	d, err := os.Open(file)
+func (s *ReaderSuite) _TestMemoryREF(c *C) {
+	s._testMemory(c, REFDeltaFormat)
+}
+
+func readFromFile(c *C, file string, format Format) *memory.ObjectStorage {
+	f, err := os.Open(file)
+	c.Assert(err, IsNil)
+	r := NewSeekable(f)
+	d := NewDecoder(r)
+
+	sto := memory.NewObjectStorage()
+	err = d.Decode(sto)
 	c.Assert(err, IsNil)
 
-	r := NewReader(d)
-	r.Format = f
-
-	storage := memory.NewObjectStorage()
-	_, err = r.Read(storage)
-	c.Assert(err, IsNil)
-
-	return storage
+	return sto
 }

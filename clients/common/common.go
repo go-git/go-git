@@ -236,11 +236,7 @@ func (r *GitUploadPackInfo) decodeHeaderLine(line string) {
 }
 
 func (r *GitUploadPackInfo) isValidLine(line string) bool {
-	if line[0] == '#' {
-		return false
-	}
-
-	return true
+	return line[0] != '#'
 }
 
 func (r *GitUploadPackInfo) readLine(line string) {

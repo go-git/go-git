@@ -55,14 +55,14 @@ func (s *SuiteFile) TestIter(c *C) {
 
 		iter := NewFileIter(r, commit.Tree())
 		for k := 0; k < len(t.files); k++ {
-			expected := t.files[k]
+			exp := t.files[k]
 			file, err := iter.Next()
 			c.Assert(err, IsNil, Commentf("subtest %d, iter %d, err=%v", i, k, err))
 			c.Assert(file.Mode.String(), Equals, "-rw-r--r--")
 			c.Assert(file.Hash.IsZero(), Equals, false)
 			c.Assert(file.Hash, Equals, file.ID())
-			c.Assert(file.Name, Equals, expected.Name, Commentf("subtest %d, iter %d, name=%s, expected=%s", i, k, file.Name, expected.Hash))
-			c.Assert(file.Hash.String(), Equals, expected.Hash, Commentf("subtest %d, iter %d, hash=%v, expected=%s", i, k, file.Hash.String(), expected.Hash))
+			c.Assert(file.Name, Equals, exp.Name, Commentf("subtest %d, iter %d, name=%s, expected=%s", i, k, file.Name, exp.Hash))
+			c.Assert(file.Hash.String(), Equals, exp.Hash, Commentf("subtest %d, iter %d, hash=%v, expected=%s", i, k, file.Hash.String(), exp.Hash))
 		}
 		_, err = iter.Next()
 		c.Assert(err, Equals, io.EOF)

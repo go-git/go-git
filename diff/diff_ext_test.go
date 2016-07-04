@@ -52,17 +52,17 @@ func (s *suiteCommon) TestAll(c *C) {
 
 var doTests = [...]struct {
 	src, dst string
-	expected []diffmatchpatch.Diff
+	exp      []diffmatchpatch.Diff
 }{
 	{
-		src:      "",
-		dst:      "",
-		expected: []diffmatchpatch.Diff{},
+		src: "",
+		dst: "",
+		exp: []diffmatchpatch.Diff{},
 	},
 	{
 		src: "a",
 		dst: "a",
-		expected: []diffmatchpatch.Diff{
+		exp: []diffmatchpatch.Diff{
 			{
 				Type: 0,
 				Text: "a",
@@ -72,7 +72,7 @@ var doTests = [...]struct {
 	{
 		src: "",
 		dst: "abc\ncba",
-		expected: []diffmatchpatch.Diff{
+		exp: []diffmatchpatch.Diff{
 			{
 				Type: 1,
 				Text: "abc\ncba",
@@ -82,7 +82,7 @@ var doTests = [...]struct {
 	{
 		src: "abc\ncba",
 		dst: "",
-		expected: []diffmatchpatch.Diff{
+		exp: []diffmatchpatch.Diff{
 			{
 				Type: -1,
 				Text: "abc\ncba",
@@ -92,7 +92,7 @@ var doTests = [...]struct {
 	{
 		src: "abc\nbcd\ncde",
 		dst: "000\nabc\n111\nBCD\n",
-		expected: []diffmatchpatch.Diff{
+		exp: []diffmatchpatch.Diff{
 			{Type: 1, Text: "000\n"},
 			{Type: 0, Text: "abc\n"},
 			{Type: -1, Text: "bcd\ncde"},
@@ -104,6 +104,6 @@ var doTests = [...]struct {
 func (s *suiteCommon) TestDo(c *C) {
 	for i, t := range doTests {
 		diffs := diff.Do(t.src, t.dst)
-		c.Assert(diffs, DeepEquals, t.expected, Commentf("subtest %d", i))
+		c.Assert(diffs, DeepEquals, t.exp, Commentf("subtest %d", i))
 	}
 }

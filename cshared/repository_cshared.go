@@ -5,8 +5,8 @@ import (
 	"C"
 
 	"gopkg.in/src-d/go-git.v3"
-	"gopkg.in/src-d/go-git.v3/core"
 	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v3/core"
 )
 
 //export c_Repository
@@ -90,25 +90,6 @@ func c_Repository_set_Storage(r uint64, val uint64) {
 	repo.Storage = *obj.(*core.ObjectStorage)
 }
 
-//export c_Repository_get_URL
-func c_Repository_get_URL(r uint64) *C.char {
-	obj, ok := GetObject(Handle(r))
-	if !ok {
-		return nil
-	}
-	return C.CString(obj.(*git.Repository).URL)
-}
-
-//export c_Repository_set_URL
-func c_Repository_set_URL(r uint64, val string) {
-	obj, ok := GetObject(Handle(r))
-	if !ok {
-		return
-	}
-	repo := obj.(*git.Repository)
-	repo.URL = CopyString(val)
-}
-
 //export c_Repository_Pull
 func c_Repository_Pull(r uint64, remoteName, branch string) (int, *C.char) {
 	obj, ok := GetObject(Handle(r))
@@ -150,20 +131,23 @@ func c_Repository_Commit(r uint64, h []byte) (uint64, int, *C.char) {
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
 	}
-  commit_handle := RegisterObject(commit)
+	commit_handle := RegisterObject(commit)
 	return uint64(commit_handle), ErrorCodeSuccess, nil
 }
 
 //export c_Repository_Commits
-func c_Repository_Commits(r uint64) uint64 {
+func c_Repository_Commits(r uint64) (uint64, int, *C.char) {
 	obj, ok := GetObject(Handle(r))
 	if !ok {
-		return IH
+		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	iter := repo.Commits()
+	iter, err := repo.Commits()
+	if err != nil {
+		return IH, ErrorCodeInternal, C.CString(err.Error())
+	}
 	iter_handle := RegisterObject(iter)
-	return uint64(iter_handle)
+	return uint64(iter_handle), ErrorCodeSuccess, nil
 }
 
 //export c_Repository_Tree
@@ -218,15 +202,18 @@ func c_Repository_Tag(r uint64, h []byte) (uint64, int, *C.char) {
 }
 
 //export c_Repository_Tags
-func c_Repository_Tags(r uint64) uint64 {
+func c_Repository_Tags(r uint64) (uint64, int, *C.char) {
 	obj, ok := GetObject(Handle(r))
 	if !ok {
-		return IH
+		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	iter := repo.Tags()
+	iter, err := repo.Tags()
+	if err != nil {
+		return IH, ErrorCodeInternal, C.CString(err.Error())
+	}
 	iter_handle := RegisterObject(iter)
-	return uint64(iter_handle)
+	return uint64(iter_handle), ErrorCodeSuccess, nil
 }
 
 //export c_Repository_Object

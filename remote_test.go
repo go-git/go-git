@@ -16,10 +16,10 @@ var _ = Suite(&SuiteRemote{})
 const RepositoryFixture = "https://github.com/tyba/git-fixture"
 
 func (s *SuiteRemote) TestNewAuthenticatedRemote(c *C) {
-	auth := &http.BasicAuth{}
-	r, err := NewAuthenticatedRemote(RepositoryFixture, auth)
+	a := &http.BasicAuth{}
+	r, err := NewAuthenticatedRemote(RepositoryFixture, a)
 	c.Assert(err, IsNil)
-	c.Assert(r.Auth, Equals, auth)
+	c.Assert(r.Auth, Equals, a)
 }
 
 func (s *SuiteRemote) TestConnect(c *C) {
@@ -56,12 +56,13 @@ func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
 	reader, err := r.FetchDefaultBranch()
 	c.Assert(err, IsNil)
 
-	pr := packfile.NewReader(reader)
+	packfileReader := packfile.NewStream(reader)
+	d := packfile.NewDecoder(packfileReader)
 
-	storage := memory.NewObjectStorage()
-	_, err = pr.Read(storage)
+	sto := memory.NewObjectStorage()
+	err = d.Decode(sto)
 	c.Assert(err, IsNil)
-	c.Assert(storage.Objects, HasLen, 28)
+	c.Assert(sto.Objects, HasLen, 28)
 }
 
 func (s *SuiteRemote) TestHead(c *C) {

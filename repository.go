@@ -8,6 +8,8 @@ import (
 	"gopkg.in/src-d/go-git.v3/core"
 	"gopkg.in/src-d/go-git.v3/formats/packfile"
 	"gopkg.in/src-d/go-git.v3/storage/memory"
+	"gopkg.in/src-d/go-git.v3/storage/seekable"
+	"gopkg.in/src-d/go-git.v3/utils/fs"
 )
 
 var (
@@ -24,29 +26,39 @@ const (
 type Repository struct {
 	Remotes map[string]*Remote
 	Storage core.ObjectStorage
-	URL     string
 }
 
 // NewRepository creates a new repository setting remote as default remote
 func NewRepository(url string, auth common.AuthMethod) (*Repository, error) {
-	var remote *Remote
-	var err error
+	repo := NewPlainRepository()
 
-	if auth == nil {
-		remote, err = NewRemote(url)
-	} else {
-		remote, err = NewAuthenticatedRemote(url, auth)
-	}
-
+	r, err := NewAuthenticatedRemote(url, auth)
+	repo.Remotes[DefaultRemoteName] = r
 	if err != nil {
 		return nil, err
 	}
 
-	r := NewPlainRepository()
-	r.Remotes[DefaultRemoteName] = remote
-	r.URL = url
+	return repo, nil
+}
 
-	return r, nil
+// NewRepositoryFromFS creates a new repository from an standard git
+// repository on disk.
+//
+// Repositories created like this don't hold a local copy of the
+// original repository objects, instead all queries are resolved by
+// looking at the original repository packfile. This is very cheap in
+// terms of memory and allows to process repositories bigger than your
+// memory.
+//
+// To be able to use git repositories this way, you must run "git gc" on
+// them beforehand.
+func NewRepositoryFromFS(fs fs.FS, path string) (*Repository, error) {
+	repo := NewPlainRepository()
+
+	var err error
+	repo.Storage, err = seekable.New(fs, path)
+
+	return repo, err
 }
 
 // NewPlainRepository creates a new repository without remotes
@@ -66,7 +78,7 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 		return fmt.Errorf("unable to find remote %q", remoteName)
 	}
 
-	if err := remote.Connect(); err != nil {
+	if err = remote.Connect(); err != nil {
 		return err
 	}
 
@@ -89,13 +101,12 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 		return err
 	}
 	defer checkClose(reader, &err)
+	stream := packfile.NewStream(reader)
 
-	pr := packfile.NewReader(reader)
-	if _, err = pr.Read(r.Storage); err != nil {
-		return err
-	}
+	d := packfile.NewDecoder(stream)
+	err = d.Decode(r.Storage)
 
-	return nil
+	return err
 }
 
 // PullDefault like Pull but retrieve the default branch from the default remote
@@ -118,8 +129,13 @@ func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 }
 
 // Commits decode the objects into commits
-func (r *Repository) Commits() *CommitIter {
-	return NewCommitIter(r, r.Storage.Iter(core.CommitObject))
+func (r *Repository) Commits() (*CommitIter, error) {
+	iter, err := r.Storage.Iter(core.CommitObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCommitIter(r, iter), nil
 }
 
 // Tree return the tree with the given hash
@@ -160,14 +176,19 @@ func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 		return nil, err
 	}
 
-	tag := &Tag{r: r}
-	return tag, tag.Decode(obj)
+	t := &Tag{r: r}
+	return t, t.Decode(obj)
 }
 
 // Tags returns a TagIter that can step through all of the annotated tags
 // in the repository.
-func (r *Repository) Tags() *TagIter {
-	return NewTagIter(r, r.Storage.Iter(core.TagObject))
+func (r *Repository) Tags() (*TagIter, error) {
+	iter, err := r.Storage.Iter(core.TagObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewTagIter(r, iter), nil
 }
 
 // Object returns an object with the given hash.

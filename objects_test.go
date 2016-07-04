@@ -4,9 +4,10 @@ import (
 	"io/ioutil"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v3/core"
 	"gopkg.in/src-d/go-git.v3/storage/memory"
+
+	. "gopkg.in/check.v1"
 )
 
 type ObjectsSuite struct {
@@ -18,9 +19,11 @@ var _ = Suite(&ObjectsSuite{})
 func (s *ObjectsSuite) SetUpTest(c *C) {
 	var err error
 	s.r, err = NewRepository(RepositoryFixture, nil)
+	c.Assert(err, IsNil)
+
 	s.r.Remotes["origin"].upSrv = &MockGitUploadPackService{}
 
-	s.r.Pull("origin", "refs/heads/master")
+	err = s.r.Pull("origin", "refs/heads/master")
 	c.Assert(err, IsNil)
 }
 

@@ -2,28 +2,60 @@ package git
 
 import (
 	"fmt"
+	"os"
 
 	"gopkg.in/src-d/go-git.v3/clients/http"
 	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v3/storage/seekable"
+	"gopkg.in/src-d/go-git.v3/utils/fs"
 
+	"github.com/alcortesm/tgz"
 	. "gopkg.in/check.v1"
 )
 
+var dirFixtures = [...]struct {
+	name string
+	tgz  string
+}{
+	{
+		name: "binrels",
+		tgz:  "storage/seekable/internal/gitdir/fixtures/alcortesm-binary-relations.tgz",
+	},
+}
+
 type SuiteRepository struct {
-	repos map[string]*Repository
+	repos           map[string]*Repository
+	dirFixturePaths map[string]string
 }
 
 var _ = Suite(&SuiteRepository{})
 
 func (s *SuiteRepository) SetUpSuite(c *C) {
 	s.repos = unpackFixtures(c, tagFixtures, treeWalkerFixtures)
+
+	s.dirFixturePaths = make(map[string]string, len(dirFixtures))
+	for _, fix := range dirFixtures {
+		com := Commentf("fixture name = %s\n", fix.name)
+
+		path, err := tgz.Extract(fix.tgz)
+		c.Assert(err, IsNil, com)
+
+		s.dirFixturePaths[fix.name] = path
+	}
+}
+
+func (s *SuiteRepository) TearDownSuite(c *C) {
+	for name, path := range s.dirFixturePaths {
+		err := os.RemoveAll(path)
+		c.Assert(err, IsNil, Commentf("cannot delete tmp dir for fixture %s: %s\n",
+			name, path))
+	}
 }
 
 func (s *SuiteRepository) TestNewRepository(c *C) {
 	r, err := NewRepository(RepositoryFixture, nil)
 	c.Assert(err, IsNil)
 	c.Assert(r.Remotes["origin"].Auth, IsNil)
-	c.Assert(r.URL, Equals, RepositoryFixture)
 }
 
 func (s *SuiteRepository) TestNewRepositoryWithAuth(c *C) {
@@ -31,6 +63,22 @@ func (s *SuiteRepository) TestNewRepositoryWithAuth(c *C) {
 	r, err := NewRepository(RepositoryFixture, auth)
 	c.Assert(err, IsNil)
 	c.Assert(r.Remotes["origin"].Auth, Equals, auth)
+}
+
+func (s *SuiteRepository) TestNewRepositoryFromFS(c *C) {
+	for name, path := range s.dirFixturePaths {
+		fs := fs.NewOS()
+		gitPath := fs.Join(path, ".git/")
+		com := Commentf("dir fixture %q → %q\n", name, gitPath)
+		repo, err := NewRepositoryFromFS(fs, gitPath)
+		c.Assert(err, IsNil, com)
+
+		err = repo.PullDefault()
+		c.Assert(err, ErrorMatches, `unable to find remote "origin"`)
+
+		c.Assert(repo.Storage, NotNil, com)
+		c.Assert(repo.Storage, FitsTypeOf, &seekable.ObjectStorage{}, com)
+	}
 }
 
 func (s *SuiteRepository) TestPull(c *C) {
@@ -87,7 +135,8 @@ func (s *SuiteRepository) TestCommits(c *C) {
 	c.Assert(r.Pull("origin", "refs/heads/master"), IsNil)
 
 	count := 0
-	commits := r.Commits()
+	commits, err := r.Commits()
+	c.Assert(err, IsNil)
 	for {
 		commit, err := commits.Next()
 		if err != nil {
@@ -109,11 +158,11 @@ func (s *SuiteRepository) TestTag(c *C) {
 		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 		k := 0
-		for hashString, expected := range t.tags {
+		for hashString, exp := range t.tags {
 			hash := core.NewHash(hashString)
 			tag, err := r.Tag(hash)
 			c.Assert(err, IsNil)
-			testTagExpected(c, tag, hash, expected, fmt.Sprintf("subtest %d, tag %d: ", i, k))
+			testTagExpected(c, tag, hash, exp, fmt.Sprintf("subtest %d, tag %d: ", i, k))
 			k++
 		}
 	}
@@ -123,7 +172,9 @@ func (s *SuiteRepository) TestTags(c *C) {
 	for i, t := range tagTests {
 		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
-		testTagIter(c, r.Tags(), t.tags, fmt.Sprintf("subtest %d, ", i))
+		tagsIter, err := r.Tags()
+		c.Assert(err, IsNil)
+		testTagIter(c, tagsIter, t.tags, fmt.Sprintf("subtest %d, ", i))
 	}
 }
 
@@ -132,13 +183,13 @@ func (s *SuiteRepository) TestObject(c *C) {
 		r, ok := s.repos[t.repo]
 		c.Assert(ok, Equals, true)
 		for k := 0; k < len(t.objs); k++ {
-			comment := fmt.Sprintf("subtest %d, tag %d", i, k)
+			com := fmt.Sprintf("subtest %d, tag %d", i, k)
 			info := t.objs[k]
 			hash := core.NewHash(info.Hash)
 			obj, err := r.Object(hash)
-			c.Assert(err, IsNil, Commentf(comment))
-			c.Assert(obj.Type(), Equals, info.Kind, Commentf(comment))
-			c.Assert(obj.ID(), Equals, hash, Commentf(comment))
+			c.Assert(err, IsNil, Commentf(com))
+			c.Assert(obj.Type(), Equals, info.Kind, Commentf(com))
+			c.Assert(obj.ID(), Equals, hash, Commentf(com))
 		}
 	}
 }
@@ -150,6 +201,7 @@ func (s *SuiteRepository) TestCommitIterClosePanic(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r.Pull("origin", "refs/heads/master"), IsNil)
 
-	commits := r.Commits()
+	commits, err := r.Commits()
+	c.Assert(err, IsNil)
 	commits.Close()
 }
