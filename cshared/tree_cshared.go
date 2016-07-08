@@ -39,6 +39,7 @@ func c_Tree_get_Hash(t uint64) *C.char {
 	return CBytes(tree.Hash[:])
 }
 
+//export c_Tree_File
 func c_Tree_File(t uint64, path string) (uint64, int, *C.char) {
 	obj, ok := GetObject(Handle(t))
 	if !ok {

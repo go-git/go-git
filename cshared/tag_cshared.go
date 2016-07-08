@@ -3,6 +3,7 @@ package main
 
 import (
 	"C"
+	"io"
 	
 	"gopkg.in/src-d/go-git.v3"
 	"gopkg.in/src-d/go-git.v3/core"
@@ -177,6 +178,9 @@ func c_TagIter_Next(i uint64) (uint64, int, *C.char) {
 	tagiter := obj.(*git.TagIter)
 	tag, err := tagiter.Next()
 	if err != nil {
+		if err == io.EOF {
+			return IH, ErrorCodeSuccess, nil
+		}
 		return IH, ErrorCodeInternal, C.CString(err.Error())
 	}
 	return uint64(RegisterObject(tag)), ErrorCodeSuccess, nil

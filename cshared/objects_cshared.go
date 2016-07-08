@@ -95,5 +95,15 @@ func c_Blob_Read(b uint64) (int, *C.char) {
 	if err != nil {
 		return ErrorCodeInternal, C.CString(err.Error())
 	}
-	return len(data), C.CString(string(data))
+	return len(data), CBytes(data)
+}
+
+//export c_Blob_Type
+func c_Blob_Type(c uint64) int8 {
+	obj, ok := GetObject(Handle(c))
+	if !ok {
+		return -1
+	}
+	blob := obj.(*git.Blob)
+	return int8(blob.Type())
 }
