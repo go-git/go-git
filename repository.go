@@ -219,9 +219,21 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 	}
 }
 
-// Head returns the hash of the HEAD of the repository.  If there is no
-// HEAD, it then returns the hash of the HEAD of the default remote.  If
-// there is no default remote, it returns an error.
-func (r *Repository) Head() (core.Hash, error) {
+// Head returns the hash of the HEAD of the repository or the head of a
+// remote, if one is passed.
+func (r *Repository) Head(remote string) (core.Hash, error) {
+	if remote == "" {
+		return r.localHead()
+	}
+
+	rem, ok := r.Remotes[remote]
+	if !ok {
+		return core.ZeroHash, fmt.Errorf("unable to find remote %q", remote)
+	}
+
+	return rem.Head()
+}
+
+func (r *Repository) localHead() (core.Hash, error) {
 	return core.ZeroHash, nil
 }

@@ -224,7 +224,7 @@ func (s *SuiteRepository) TestHeadFromFs(c *C) {
 		repo, err := NewRepositoryFromFS(fs, gitPath)
 		c.Assert(err, IsNil, com)
 
-		head, err := repo.Head()
+		head, err := repo.Head("")
 		c.Assert(err, IsNil)
 
 		c.Assert(head, Equals, fix.head)
@@ -236,13 +236,28 @@ func (s *SuiteRepository) TestHeadFromRemote(c *C) {
 	c.Assert(err, IsNil)
 
 	upSrv := &MockGitUploadPackService{}
-	r.Remotes["origin"].upSrv = upSrv
+	r.Remotes[DefaultRemoteName].upSrv = upSrv
+	err = r.Remotes[DefaultRemoteName].Connect()
+	c.Assert(err, IsNil)
+
 	info, err := upSrv.Info()
 	c.Assert(err, IsNil)
 	expected := info.Head
 
-	obtained, err := r.Head()
+	obtained, err := r.Head(DefaultRemoteName)
 	c.Assert(err, IsNil)
 
 	c.Assert(obtained, Equals, expected)
+}
+
+func (s *SuiteRepository) TestHeadFromRemoteError(c *C) {
+	r, err := NewRepository(RepositoryFixture, nil)
+	c.Assert(err, IsNil)
+
+	upSrv := &MockGitUploadPackService{}
+	r.Remotes[DefaultRemoteName].upSrv = upSrv
+
+	remote := "not found"
+	_, err = r.Head(remote)
+	c.Assert(err, ErrorMatches, fmt.Sprintf("unable to find remote %q", remote))
 }
