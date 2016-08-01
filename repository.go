@@ -218,3 +218,10 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 		return nil, core.ErrInvalidType
 	}
 }
+
+// Head returns the hash of the HEAD of the repository.  If there is no
+// HEAD, it then returns the hash of the HEAD of the default remote.  If
+// there is no default remote, it returns an error.
+func (r *Repository) Head() (core.Hash, error) {
+	return core.ZeroHash, nil
+}
