@@ -25,9 +25,6 @@ var (
 	// ErrPackfileNotFound is returned by Packfile when the packfile is not found
 	// on the repository.
 	ErrPackfileNotFound = errors.New("packfile not found")
-	// ErrHeadfileNotFound is returned by Headfile when the HEAD file is not found
-	// on the repository.
-	ErrHeadfileNotFound = errors.New("headfile not found")
 )
 
 // The GitDir type represents a local git repository on disk. This
