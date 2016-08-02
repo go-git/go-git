@@ -250,7 +250,7 @@ func (s *SuiteRepository) TestHeadFromRemote(c *C) {
 	c.Assert(obtained, Equals, expected)
 }
 
-func (s *SuiteRepository) TestHeadFromRemoteError(c *C) {
+func (s *SuiteRepository) TestHeadErrors(c *C) {
 	r, err := NewRepository(RepositoryFixture, nil)
 	c.Assert(err, IsNil)
 
