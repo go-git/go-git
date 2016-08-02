@@ -3,6 +3,7 @@ package seekable
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v3/core"
 	"gopkg.in/src-d/go-git.v3/formats/packfile"
@@ -149,4 +150,49 @@ func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	}
 
 	return core.NewObjectSliceIter(objects), nil
+}
+
+const (
+	headErrPrefix    = "cannot get HEAD reference:"
+	symrefCapability = "symref"
+	headRefPrefix    = "HEAD:"
+)
+
+// Head returns the hash of the HEAD reference
+func (s *ObjectStorage) Head() (core.Hash, error) {
+	cap, err := s.dir.Capabilities()
+	if err != nil {
+		return core.ZeroHash, fmt.Errorf("%s %s", headErrPrefix, err)
+	}
+
+	ok := cap.Supports(symrefCapability)
+	if !ok {
+		return core.ZeroHash,
+			fmt.Errorf("%s symref capability not supported", headErrPrefix)
+	}
+
+	symrefs := cap.Get(symrefCapability)
+	var headRef string
+	for _, ref := range symrefs.Values {
+		if strings.HasPrefix(ref, headRefPrefix) {
+			headRef = strings.TrimPrefix(ref, headRefPrefix)
+		}
+	}
+	if headRef == "" {
+		return core.ZeroHash, fmt.Errorf("%s HEAD reference not found",
+			headErrPrefix)
+	}
+
+	refs, err := s.dir.Refs()
+	if err != nil {
+		return core.ZeroHash, fmt.Errorf("%s %s", headErrPrefix, err)
+	}
+
+	head, ok := refs[headRef]
+	if !ok {
+		return core.ZeroHash, fmt.Errorf("%s reference %q not found",
+			headErrPrefix, headRef)
+	}
+
+	return head, nil
 }

@@ -260,4 +260,8 @@ func (s *SuiteRepository) TestHeadFromRemoteError(c *C) {
 	remote := "not found"
 	_, err = r.Head(remote)
 	c.Assert(err, ErrorMatches, fmt.Sprintf("unable to find remote %q", remote))
+
+	remote = ""
+	_, err = r.Head(remote)
+	c.Assert(err, ErrorMatches, "cannot retrieve local head: no local data found")
 }

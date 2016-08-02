@@ -226,6 +226,10 @@ func (r *Repository) Head(remote string) (core.Hash, error) {
 		return r.localHead()
 	}
 
+	return r.remoteHead(remote)
+}
+
+func (r *Repository) remoteHead(remote string) (core.Hash, error) {
 	rem, ok := r.Remotes[remote]
 	if !ok {
 		return core.ZeroHash, fmt.Errorf("unable to find remote %q", remote)
@@ -235,5 +239,11 @@ func (r *Repository) Head(remote string) (core.Hash, error) {
 }
 
 func (r *Repository) localHead() (core.Hash, error) {
-	return core.ZeroHash, nil
+	storage, ok := r.Storage.(*seekable.ObjectStorage)
+	if !ok {
+		return core.ZeroHash,
+			fmt.Errorf("cannot retrieve local head: no local data found")
+	}
+
+	return storage.Head()
 }

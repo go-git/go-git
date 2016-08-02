@@ -25,6 +25,9 @@ var (
 	// ErrPackfileNotFound is returned by Packfile when the packfile is not found
 	// on the repository.
 	ErrPackfileNotFound = errors.New("packfile not found")
+	// ErrHeadfileNotFound is returned by Headfile when the HEAD file is not found
+	// on the repository.
+	ErrHeadfileNotFound = errors.New("headfile not found")
 )
 
 // The GitDir type represents a local git repository on disk. This
@@ -126,7 +129,7 @@ func (d *GitDir) Packfile() (fs.FS, string, error) {
 	return nil, "", ErrPackfileNotFound
 }
 
-// Packfile returns the path of the idx file (really, it returns the
+// Idxfile returns the path of the idx file (really, it returns the
 // path of the first file in the "objects/pack/" directory with an
 // ".idx" extension.
 func (d *GitDir) Idxfile() (fs.FS, string, error) {
