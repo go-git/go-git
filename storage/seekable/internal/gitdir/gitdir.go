@@ -126,7 +126,7 @@ func (d *GitDir) Packfile() (fs.FS, string, error) {
 	return nil, "", ErrPackfileNotFound
 }
 
-// Packfile returns the path of the idx file (really, it returns the
+// Idxfile returns the path of the idx file (really, it returns the
 // path of the first file in the "objects/pack/" directory with an
 // ".idx" extension.
 func (d *GitDir) Idxfile() (fs.FS, string, error) {

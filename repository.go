@@ -218,3 +218,32 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 		return nil, core.ErrInvalidType
 	}
 }
+
+// Head returns the hash of the HEAD of the repository or the head of a
+// remote, if one is passed.
+func (r *Repository) Head(remote string) (core.Hash, error) {
+	if remote == "" {
+		return r.localHead()
+	}
+
+	return r.remoteHead(remote)
+}
+
+func (r *Repository) remoteHead(remote string) (core.Hash, error) {
+	rem, ok := r.Remotes[remote]
+	if !ok {
+		return core.ZeroHash, fmt.Errorf("unable to find remote %q", remote)
+	}
+
+	return rem.Head()
+}
+
+func (r *Repository) localHead() (core.Hash, error) {
+	storage, ok := r.Storage.(*seekable.ObjectStorage)
+	if !ok {
+		return core.ZeroHash,
+			fmt.Errorf("cannot retrieve local head: no local data found")
+	}
+
+	return storage.Head()
+}

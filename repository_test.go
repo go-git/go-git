@@ -13,19 +13,26 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-var dirFixtures = [...]struct {
+var dirFixturesInit = [...]struct {
 	name string
 	tgz  string
+	head string
 }{
 	{
 		name: "binrels",
 		tgz:  "storage/seekable/internal/gitdir/fixtures/alcortesm-binary-relations.tgz",
+		head: "c44b5176e99085c8fe36fa27b045590a7b9d34c9",
 	},
 }
 
+type dirFixture struct {
+	path string
+	head core.Hash
+}
+
 type SuiteRepository struct {
-	repos           map[string]*Repository
-	dirFixturePaths map[string]string
+	repos       map[string]*Repository
+	dirFixtures map[string]dirFixture
 }
 
 var _ = Suite(&SuiteRepository{})
@@ -33,22 +40,25 @@ var _ = Suite(&SuiteRepository{})
 func (s *SuiteRepository) SetUpSuite(c *C) {
 	s.repos = unpackFixtures(c, tagFixtures, treeWalkerFixtures)
 
-	s.dirFixturePaths = make(map[string]string, len(dirFixtures))
-	for _, fix := range dirFixtures {
+	s.dirFixtures = make(map[string]dirFixture, len(dirFixturesInit))
+	for _, fix := range dirFixturesInit {
 		com := Commentf("fixture name = %s\n", fix.name)
 
 		path, err := tgz.Extract(fix.tgz)
 		c.Assert(err, IsNil, com)
 
-		s.dirFixturePaths[fix.name] = path
+		s.dirFixtures[fix.name] = dirFixture{
+			path: path,
+			head: core.NewHash(fix.head),
+		}
 	}
 }
 
 func (s *SuiteRepository) TearDownSuite(c *C) {
-	for name, path := range s.dirFixturePaths {
-		err := os.RemoveAll(path)
+	for name, fix := range s.dirFixtures {
+		err := os.RemoveAll(fix.path)
 		c.Assert(err, IsNil, Commentf("cannot delete tmp dir for fixture %s: %s\n",
-			name, path))
+			name, fix.path))
 	}
 }
 
@@ -66,9 +76,9 @@ func (s *SuiteRepository) TestNewRepositoryWithAuth(c *C) {
 }
 
 func (s *SuiteRepository) TestNewRepositoryFromFS(c *C) {
-	for name, path := range s.dirFixturePaths {
+	for name, fix := range s.dirFixtures {
 		fs := fs.NewOS()
-		gitPath := fs.Join(path, ".git/")
+		gitPath := fs.Join(fix.path, ".git/")
 		com := Commentf("dir fixture %q → %q\n", name, gitPath)
 		repo, err := NewRepositoryFromFS(fs, gitPath)
 		c.Assert(err, IsNil, com)
@@ -204,4 +214,54 @@ func (s *SuiteRepository) TestCommitIterClosePanic(c *C) {
 	commits, err := r.Commits()
 	c.Assert(err, IsNil)
 	commits.Close()
+}
+
+func (s *SuiteRepository) TestHeadFromFs(c *C) {
+	for name, fix := range s.dirFixtures {
+		fs := fs.NewOS()
+		gitPath := fs.Join(fix.path, ".git/")
+		com := Commentf("dir fixture %q → %q\n", name, gitPath)
+		repo, err := NewRepositoryFromFS(fs, gitPath)
+		c.Assert(err, IsNil, com)
+
+		head, err := repo.Head("")
+		c.Assert(err, IsNil)
+
+		c.Assert(head, Equals, fix.head)
+	}
+}
+
+func (s *SuiteRepository) TestHeadFromRemote(c *C) {
+	r, err := NewRepository(RepositoryFixture, nil)
+	c.Assert(err, IsNil)
+
+	upSrv := &MockGitUploadPackService{}
+	r.Remotes[DefaultRemoteName].upSrv = upSrv
+	err = r.Remotes[DefaultRemoteName].Connect()
+	c.Assert(err, IsNil)
+
+	info, err := upSrv.Info()
+	c.Assert(err, IsNil)
+	expected := info.Head
+
+	obtained, err := r.Head(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	c.Assert(obtained, Equals, expected)
+}
+
+func (s *SuiteRepository) TestHeadErrors(c *C) {
+	r, err := NewRepository(RepositoryFixture, nil)
+	c.Assert(err, IsNil)
+
+	upSrv := &MockGitUploadPackService{}
+	r.Remotes[DefaultRemoteName].upSrv = upSrv
+
+	remote := "not found"
+	_, err = r.Head(remote)
+	c.Assert(err, ErrorMatches, fmt.Sprintf("unable to find remote %q", remote))
+
+	remote = ""
+	_, err = r.Head(remote)
+	c.Assert(err, ErrorMatches, "cannot retrieve local head: no local data found")
 }
