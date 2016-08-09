@@ -178,8 +178,7 @@ func (t *Tree) Decode(o core.Object) (err error) {
 		}
 
 		var hash core.Hash
-		_, err = r.Read(hash[:])
-		if err != nil && err != io.EOF {
+		if _, err = io.ReadFull(r, hash[:]); err != nil {
 			return err
 		}
 
