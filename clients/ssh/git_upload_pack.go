@@ -15,7 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v3/clients/common"
 	"gopkg.in/src-d/go-git.v3/formats/pktline"
 
-	"github.com/sourcegraph/go-vcsurl"
+	"gopkg.in/sourcegraph/go-vcsurl.v1"
 	"golang.org/x/crypto/ssh"
 )
 
