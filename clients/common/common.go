@@ -180,8 +180,7 @@ func (c *Capabilities) String() string {
 
 type GitUploadPackInfo struct {
 	Capabilities *Capabilities
-	Head         core.Hash
-	Refs         map[string]core.Hash
+	Refs         map[core.ReferenceName]*core.Reference
 }
 
 func NewGitUploadPackInfo() *GitUploadPackInfo {
@@ -207,7 +206,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	}
 
 	isEmpty := true
-	r.Refs = map[string]core.Hash{}
+	r.Refs = map[core.ReferenceName]*core.Reference{}
 	for _, line := range lines {
 		if !r.isValidLine(line) {
 			continue
@@ -230,9 +229,15 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 }
 
 func (r *GitUploadPackInfo) decodeHeaderLine(line string) {
-	parts := strings.SplitN(line, " HEAD", 2)
-	r.Head = core.NewHash(parts[0])
 	r.Capabilities.Decode(line)
+
+	name := r.Capabilities.SymbolicReference("HEAD")
+	if len(name) == 0 {
+		return
+	}
+
+	refName := core.ReferenceName(name)
+	r.Refs[core.HEAD] = core.NewSymbolicReference(core.HEAD, refName)
 }
 
 func (r *GitUploadPackInfo) isValidLine(line string) bool {
@@ -245,7 +250,22 @@ func (r *GitUploadPackInfo) readLine(line string) {
 		return
 	}
 
-	r.Refs[parts[1]] = core.NewHash(parts[0])
+	ref := core.NewReferenceFromStrings(parts[1], parts[0])
+	r.Refs[ref.Name()] = ref
+}
+
+func (r *GitUploadPackInfo) Head() *core.Reference {
+	h, ok := r.Refs[core.HEAD]
+	if !ok {
+		return nil
+	}
+
+	ref, ok := r.Refs[h.Target()]
+	if !ok {
+		return nil
+	}
+
+	return ref
 }
 
 func (r *GitUploadPackInfo) String() string {
@@ -256,10 +276,14 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 	e := pktline.NewEncoder()
 	e.AddLine("# service=git-upload-pack")
 	e.AddFlush()
-	e.AddLine(fmt.Sprintf("%s HEAD\x00%s", r.Head, r.Capabilities.String()))
+	e.AddLine(fmt.Sprintf("%s HEAD\x00%s", r.Head().Hash(), r.Capabilities.String()))
 
-	for name, id := range r.Refs {
-		e.AddLine(fmt.Sprintf("%s %s", id, name))
+	for _, ref := range r.Refs {
+		if ref.Type() != core.HashReference {
+			continue
+		}
+
+		e.AddLine(fmt.Sprintf("%s %s", ref.Hash(), ref.Name()))
 	}
 
 	e.AddFlush()

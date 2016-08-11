@@ -1,6 +1,7 @@
 package git
 
 import (
+	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/clients/http"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
@@ -34,7 +35,7 @@ func (s *SuiteRemote) TestDefaultBranch(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.DefaultBranch(), Equals, "refs/heads/master")
+	c.Assert(r.Head().Name(), Equals, core.ReferenceName("refs/heads/master"))
 }
 
 func (s *SuiteRemote) TestCapabilities(c *C) {
@@ -46,14 +47,17 @@ func (s *SuiteRemote) TestCapabilities(c *C) {
 	c.Assert(r.Capabilities().Get("agent").Values, HasLen, 1)
 }
 
-func (s *SuiteRemote) TestFetchDefaultBranch(c *C) {
+func (s *SuiteRemote) TestFetch(c *C) {
 	r, err := NewRemote(RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 
-	reader, err := r.FetchDefaultBranch()
+	req := &common.GitUploadPackRequest{}
+	req.Want(r.Head().Hash())
+
+	reader, err := r.Fetch(req)
 	c.Assert(err, IsNil)
 
 	packfileReader := packfile.NewStream(reader)
@@ -74,7 +78,6 @@ func (s *SuiteRemote) TestHead(c *C) {
 	err = r.Connect()
 	c.Assert(err, IsNil)
 
-	hash, err := r.Head()
 	c.Assert(err, IsNil)
-	c.Assert(hash, Equals, core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(r.Head().Hash(), Equals, core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 }

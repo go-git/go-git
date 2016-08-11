@@ -69,30 +69,50 @@ func NewPlainRepository() *Repository {
 	}
 }
 
-// Pull connect and fetch the given branch from the given remote, the branch
-// should be provided with the full path not only the abbreviation, eg.:
-// "refs/heads/master"
-func (r *Repository) Pull(remoteName, branch string) (err error) {
-	remote, ok := r.Remotes[remoteName]
-	if !ok {
-		return fmt.Errorf("unable to find remote %q", remoteName)
+func (r *Repository) Clone(url string, auth common.AuthMethod) error {
+	remote, err := r.createDefaultRemote(url, auth)
+	if err != nil {
+		return err
 	}
 
 	if err = remote.Connect(); err != nil {
 		return err
 	}
 
-	if branch == "" {
-		branch = remote.DefaultBranch()
+	return nil
+}
+
+func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*Remote, error) {
+	remote, err := NewAuthenticatedRemote(url, auth)
+	if err != nil {
+		return nil, err
 	}
 
-	ref, err := remote.Ref(branch)
-	if err != nil {
+	r.Remotes[DefaultRemoteName] = remote
+
+	return remote, nil
+}
+
+// Pull connect and fetch the given branch from the given remote, the branch
+// should be provided with the full path not only the abbreviation, eg.:
+// "refs/heads/master"
+func (r *Repository) Pull(remoteName, branch string) error {
+	remote, ok := r.Remotes[remoteName]
+	if !ok {
+		return fmt.Errorf("unable to find remote %q", remoteName)
+	}
+
+	if err := remote.Connect(); err != nil {
 		return err
 	}
 
+	head := remote.Head()
+	if head.Hash().IsZero() {
+		return errors.New("HEAD is missing")
+	}
+
 	req := &common.GitUploadPackRequest{}
-	req.Want(ref)
+	req.Want(head.Hash())
 
 	// TODO: Provide "haves" for what's already in the repository's storage
 
@@ -104,9 +124,7 @@ func (r *Repository) Pull(remoteName, branch string) (err error) {
 	stream := packfile.NewStream(reader)
 
 	d := packfile.NewDecoder(stream)
-	err = d.Decode(r.Storage)
-
-	return err
+	return d.Decode(r.Storage)
 }
 
 // PullDefault like Pull but retrieve the default branch from the default remote
@@ -222,23 +240,6 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 // Head returns the hash of the HEAD of the repository or the head of a
 // remote, if one is passed.
 func (r *Repository) Head(remote string) (core.Hash, error) {
-	if remote == "" {
-		return r.localHead()
-	}
-
-	return r.remoteHead(remote)
-}
-
-func (r *Repository) remoteHead(remote string) (core.Hash, error) {
-	rem, ok := r.Remotes[remote]
-	if !ok {
-		return core.ZeroHash, fmt.Errorf("unable to find remote %q", remote)
-	}
-
-	return rem.Head()
-}
-
-func (r *Repository) localHead() (core.Hash, error) {
 	storage, ok := r.Storage.(*filesystem.ObjectStorage)
 	if !ok {
 		return core.ZeroHash,

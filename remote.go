@@ -77,45 +77,27 @@ func (r *Remote) Capabilities() *common.Capabilities {
 	return r.upInfo.Capabilities
 }
 
-// DefaultBranch returns the name of the remote's default branch
-func (r *Remote) DefaultBranch() string {
-	return r.upInfo.Capabilities.SymbolicReference("HEAD")
-}
-
-// Head returns the Hash of the HEAD
-func (r *Remote) Head() (core.Hash, error) {
-	return r.Ref(r.DefaultBranch())
-}
-
 // Fetch returns a reader using the request
 func (r *Remote) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) {
 	return r.upSrv.Fetch(req)
 }
 
-// FetchDefaultBranch returns a reader for the default branch
-func (r *Remote) FetchDefaultBranch() (io.ReadCloser, error) {
-	ref, err := r.Ref(r.DefaultBranch())
-	if err != nil {
-		return nil, err
-	}
-
-	req := &common.GitUploadPackRequest{}
-	req.Want(ref)
-
-	return r.Fetch(req)
+// Head returns the Hash of the HEAD
+func (r *Remote) Head() *core.Reference {
+	return r.upInfo.Head()
 }
 
 // Ref returns the Hash pointing the given refName
-func (r *Remote) Ref(refName string) (core.Hash, error) {
-	ref, ok := r.upInfo.Refs[refName]
+func (r *Remote) Ref(name core.ReferenceName) (*core.Reference, error) {
+	ref, ok := r.upInfo.Refs[name]
 	if !ok {
-		return core.NewHash(""), fmt.Errorf("unable to find ref %q", refName)
+		return nil, fmt.Errorf("unable to find ref %q", name)
 	}
 
 	return ref, nil
 }
 
-// Refs returns the Hash pointing the given refName
-func (r *Remote) Refs() map[string]core.Hash {
+// Refs returns a map with all the References
+func (r *Remote) Refs() map[core.ReferenceName]*core.Reference {
 	return r.upInfo.Refs
 }

@@ -18,12 +18,8 @@ func main() {
 		panic(err)
 	}
 
-	hash, err := r.Remotes[git.DefaultRemoteName].Head()
-	if err != nil {
-		panic(err)
-	}
-
-	commit, err := r.Commit(hash)
+	head := r.Remotes[git.DefaultRemoteName].Head()
+	commit, err := r.Commit(head.Hash())
 	if err != nil {
 		panic(err)
 	}

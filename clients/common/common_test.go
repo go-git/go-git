@@ -50,10 +50,17 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 	err := i.Decode(pktline.NewDecoder(bytes.NewBuffer(b)))
 	c.Assert(err, IsNil)
 
-	ref := i.Capabilities.SymbolicReference("HEAD")
-	c.Assert(ref, Equals, "refs/heads/master")
-	c.Assert(i.Refs[ref].String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	c.Assert(i.Head.String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	name := i.Capabilities.SymbolicReference("HEAD")
+	c.Assert(name, Equals, "refs/heads/master")
+	c.Assert(i.Refs, HasLen, 4)
+
+	ref := i.Refs[core.ReferenceName(name)]
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	ref = i.Refs[core.HEAD]
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Target(), Equals, core.ReferenceName(name))
 }
 
 func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
@@ -101,11 +108,14 @@ func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
 	info := NewGitUploadPackInfo()
 	info.Capabilities.Add("symref", "HEAD:refs/heads/master")
 
-	info.Head = core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	info.Refs = map[string]core.Hash{
-		"refs/heads/master": info.Head,
+	ref := core.ReferenceName("refs/heads/master")
+	hash := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	info.Refs = map[core.ReferenceName]*core.Reference{
+		core.HEAD: core.NewSymbolicReference(core.HEAD, ref),
+		ref:       core.NewHashReference(ref, hash),
 	}
 
+	c.Assert(info.Head(), NotNil)
 	c.Assert(info.String(), Equals,
 		"001e# service=git-upload-pack\n"+
 			"000000506ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:refs/heads/master\n"+

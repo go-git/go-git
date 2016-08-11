@@ -51,6 +51,7 @@ type ObjectStorage interface {
 type ObjectType int8
 
 const (
+	InvalidObject  ObjectType = 0
 	CommitObject   ObjectType = 1
 	TreeObject     ObjectType = 2
 	BlobObject     ObjectType = 3
