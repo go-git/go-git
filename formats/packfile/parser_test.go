@@ -8,7 +8,6 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 const (
@@ -238,9 +237,10 @@ func (s *ParserSuite) TestReadNonDeltaObjectContent(c *C) {
 		_, _, err = p.ReadObjectTypeAndLength()
 		c.Assert(err, IsNil, com)
 
-		cont, err := p.ReadNonDeltaObjectContent()
+		obj := &core.MemoryObject{}
+		err = p.ReadNonDeltaObjectContent(obj)
 		c.Assert(err, IsNil, com)
-		c.Assert(cont, DeepEquals, test.expected, com)
+		c.Assert(obj.Content(), DeepEquals, test.expected, com)
 	}
 }
 
@@ -293,10 +293,11 @@ func (s *ParserSuite) TestReadOFSDeltaObjectContent(c *C) {
 		err = fix.seek(beforeJumpSize)
 		c.Assert(err, IsNil, com)
 
-		cont, typ, err := p.ReadOFSDeltaObjectContent(test.offset)
+		obj := &core.MemoryObject{}
+		err = p.ReadOFSDeltaObjectContent(obj, test.offset)
 		c.Assert(err, IsNil, com)
-		c.Assert(typ, Equals, test.expType, com)
-		c.Assert(cont, DeepEquals, test.expContent, com)
+		c.Assert(obj.Type(), Equals, test.expType, com)
+		c.Assert(obj.Content(), DeepEquals, test.expContent, com)
 	}
 }
 
@@ -356,17 +357,18 @@ func (s *ParserSuite) TestReadREFDeltaObjectContent(c *C) {
 		err = fix.seek(beforeHash)
 		c.Assert(err, IsNil, com)
 
-		cont, typ, err := p.ReadREFDeltaObjectContent()
+		obj := &core.MemoryObject{}
+		err = p.ReadREFDeltaObjectContent(obj)
 		c.Assert(err, IsNil, com)
-		c.Assert(typ, Equals, test.expType, com)
-		c.Assert(cont, DeepEquals, test.expContent, com)
+		c.Assert(obj.Type(), Equals, test.expType, com)
+		c.Assert(obj.Content(), DeepEquals, test.expContent, com)
 
 		p.ForgetAll()
 	}
 }
 
-func newObject(t core.ObjectType, c []byte) *memory.Object {
-	return memory.NewObject(t, int64(len(c)), c)
+func newObject(t core.ObjectType, c []byte) core.Object {
+	return core.NewMemoryObject(t, int64(len(c)), c)
 }
 
 func (s *ParserSuite) TestReadHeaderBadSignatureError(c *C) {

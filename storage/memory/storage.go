@@ -28,6 +28,11 @@ func NewObjectStorage() *ObjectStorage {
 	}
 }
 
+// NewObject creates a new MemoryObject
+func (o *ObjectStorage) NewObject() core.Object {
+	return &core.MemoryObject{}
+}
+
 // Set stores an object, the object should be properly filled before set it.
 func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	h := obj.Hash()

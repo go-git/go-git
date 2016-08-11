@@ -1,11 +1,31 @@
 package packfile
 
+import "gopkg.in/src-d/go-git.v4/core"
+
 // See https://github.com/git/git/blob/49fa3dc76179e04b0833542fa52d0f287a4955ac/delta.h
 // https://github.com/git/git/blob/c2c5f6b1e479f2c38e0e01345350620944e3527f/patch-delta.c,
 // and https://github.com/tarruda/node-git-core/blob/master/src/js/delta.js
 // for details about the delta format.
 
 const deltaSizeMin = 4
+
+// ApplyDelta writes to taget the result of applying the modification deltas in delta to base.
+func ApplyDelta(target, base core.Object, delta []byte) error {
+	src := base.Content()
+	w, err := target.Writer()
+	if err != nil {
+		return err
+	}
+
+	dst := PatchDelta(src, delta)
+	target.SetSize(int64(len(dst)))
+
+	if _, err := w.Write(dst); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // PatchDelta returns the result of applying the modification deltas in delta to src.
 func PatchDelta(src, delta []byte) []byte {

@@ -104,5 +104,6 @@ func (r *Seekable) RecallByOffset(o int64) (obj core.Object, err error) {
 		return nil, err
 	}
 
-	return NewParser(r).ReadObject()
+	obj = &core.MemoryObject{}
+	return obj, NewParser(r).FillObject(obj)
 }

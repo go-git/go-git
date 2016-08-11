@@ -35,21 +35,8 @@ var (
 	ErrZLib = NewError("zlib reading error")
 )
 
-const (
-	// DefaultMaxObjectsLimit is the maximum amount of objects the
-	// decoder will decode before returning ErrMaxObjectsLimitReached.
-	DefaultMaxObjectsLimit = 1 << 20
-)
-
 // Decoder reads and decodes packfiles from an input stream.
 type Decoder struct {
-	// MaxObjectsLimit is the limit of objects to be load in the packfile, if
-	// a packfile excess this number an error is throw, the default value
-	// is defined by DefaultMaxObjectsLimit, usually the default limit is more
-	// than enough to work with any repository, with higher values and huge
-	// repositories you can run out of memory.
-	MaxObjectsLimit uint32
-
 	p *Parser
 	s core.ObjectStorage
 }
@@ -57,8 +44,6 @@ type Decoder struct {
 // NewDecoder returns a new Decoder that reads from r.
 func NewDecoder(r ReadRecaller) *Decoder {
 	return &Decoder{
-		MaxObjectsLimit: DefaultMaxObjectsLimit,
-
 		p: NewParser(r),
 	}
 }
@@ -72,13 +57,7 @@ func (d *Decoder) Decode(s core.ObjectStorage) error {
 		return err
 	}
 
-	if count > d.MaxObjectsLimit {
-		return ErrMaxObjectsLimitReached.AddDetails("%d", count)
-	}
-
-	err = d.readObjects(count)
-
-	return err
+	return d.readObjects(count)
 }
 
 func (d *Decoder) readObjects(count uint32) error {
@@ -92,8 +71,8 @@ func (d *Decoder) readObjects(count uint32) error {
 			return err
 		}
 
-		obj, err := d.p.ReadObject()
-		if err != nil {
+		obj := d.s.NewObject()
+		if err := d.p.FillObject(obj); err != nil {
 			if err == io.EOF {
 				break
 			}

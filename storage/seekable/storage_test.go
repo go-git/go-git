@@ -321,6 +321,6 @@ func (s *FsSuite) TestSet(c *C) {
 	sto, err := seekable.New(fs, gitPath)
 	c.Assert(err, IsNil)
 
-	_, err = sto.Set(&memory.Object{})
+	_, err = sto.Set(&core.MemoryObject{})
 	c.Assert(err, ErrorMatches, "not implemented yet")
 }

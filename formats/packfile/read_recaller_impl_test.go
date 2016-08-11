@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -152,20 +151,20 @@ func (s *ReadRecallerImplSuite) TestRememberRecall(c *C) {
 		}{
 			{
 				off: 12,
-				obj: newObj(core.CommitObject, []byte("tree 44a1cdf21c791867c51caad8f1b77e6baee6f462\nparent 87fe6e7c6b1b89519fe3a03a8961c5aa14d4cc68\nparent 9244ee648182b91a63d8cc4cbe4b9ac2a27c0492\nauthor Matt Duftler <duftler@google.com> 1448290941 -0500\ncommitter Matt Duftler <duftler@google.com> 1448290941 -0500\n\nMerge pull request #615 from ewiseblatt/create_dev\n\nPreserve original credentials of spinnaker-local.yml when transforming it.")),
+				obj: newObject(core.CommitObject, []byte("tree 44a1cdf21c791867c51caad8f1b77e6baee6f462\nparent 87fe6e7c6b1b89519fe3a03a8961c5aa14d4cc68\nparent 9244ee648182b91a63d8cc4cbe4b9ac2a27c0492\nauthor Matt Duftler <duftler@google.com> 1448290941 -0500\ncommitter Matt Duftler <duftler@google.com> 1448290941 -0500\n\nMerge pull request #615 from ewiseblatt/create_dev\n\nPreserve original credentials of spinnaker-local.yml when transforming it.")),
 			}, {
 				off: 3037,
-				obj: newObj(core.TagObject, []byte("object e0005f50e22140def60260960b21667f1fdfff80\ntype commit\ntag v0.10.0\ntagger cfieber <cfieber@netflix.com> 1447687536 -0800\n\nRelease of 0.10.0\n\n- e0005f50e22140def60260960b21667f1fdfff80: Merge pull request #553 from ewiseblatt/rendezvous\n- e1a2b26b784179e6903a7ae967c037c721899eba: Wait for cassandra before starting spinnaker\n- c756e09461d071e98b8660818cf42d90c90f2854: Merge pull request #552 from duftler/google-c2d-tweaks\n- 0777fadf4ca6f458d7071de414f9bd5417911037: Fix incorrect config prop names:   s/SPINNAKER_GOOGLE_PROJECT_DEFAULT_REGION/SPINNAKER_GOOGLE_DEFAULT_REGION   s/SPINNAKER_GOOGLE_PROJECT_DEFAULT_ZONE/SPINNAKER_GOOGLE_DEFAULT_ZONE Hardcode profile name in generated ~/.aws/credentials to [default]. Restart all of spinnaker after updating cassandra and reconfiguring spinnaker, instead of just restarting clouddriver.\n- d8d031c1ac45801074418c43424a6f2c0dff642c: Merge pull request #551 from kenzanmedia/fixGroup\n- 626d23075f9e92aad19015f2964c95d45f41fa3a: Put in correct block for public image. Delineate cloud provider.\n")),
+				obj: newObject(core.TagObject, []byte("object e0005f50e22140def60260960b21667f1fdfff80\ntype commit\ntag v0.10.0\ntagger cfieber <cfieber@netflix.com> 1447687536 -0800\n\nRelease of 0.10.0\n\n- e0005f50e22140def60260960b21667f1fdfff80: Merge pull request #553 from ewiseblatt/rendezvous\n- e1a2b26b784179e6903a7ae967c037c721899eba: Wait for cassandra before starting spinnaker\n- c756e09461d071e98b8660818cf42d90c90f2854: Merge pull request #552 from duftler/google-c2d-tweaks\n- 0777fadf4ca6f458d7071de414f9bd5417911037: Fix incorrect config prop names:   s/SPINNAKER_GOOGLE_PROJECT_DEFAULT_REGION/SPINNAKER_GOOGLE_DEFAULT_REGION   s/SPINNAKER_GOOGLE_PROJECT_DEFAULT_ZONE/SPINNAKER_GOOGLE_DEFAULT_ZONE Hardcode profile name in generated ~/.aws/credentials to [default]. Restart all of spinnaker after updating cassandra and reconfiguring spinnaker, instead of just restarting clouddriver.\n- d8d031c1ac45801074418c43424a6f2c0dff642c: Merge pull request #551 from kenzanmedia/fixGroup\n- 626d23075f9e92aad19015f2964c95d45f41fa3a: Put in correct block for public image. Delineate cloud provider.\n")),
 			}, {
 				off: 157625,
-				obj: newObj(core.BlobObject, []byte(".gradle\nbuild/\n*.iml\n.idea\n*.pyc\n*~\n#*\nconfig/spinnaker-local.yml\n.DS_Store\npacker/ami_table.md\npacker/ami_table.json\npacker/example_output.txt")),
+				obj: newObject(core.BlobObject, []byte(".gradle\nbuild/\n*.iml\n.idea\n*.pyc\n*~\n#*\nconfig/spinnaker-local.yml\n.DS_Store\npacker/ami_table.md\npacker/ami_table.json\npacker/example_output.txt")),
 			}, {
 				off: 1234,
-				obj: newObj(core.BlobObject, []byte(".gradle\nbuild/\n*.iml\n.idea\n*.pyc\n*~\n#*\nconfig/spinnaker-local.yml\n.DS_Store\npacker/ami_table.md\npacker/ami_table.json\npacker/example_output.txt")),
+				obj: newObject(core.BlobObject, []byte(".gradle\nbuild/\n*.iml\n.idea\n*.pyc\n*~\n#*\nconfig/spinnaker-local.yml\n.DS_Store\npacker/ami_table.md\npacker/ami_table.json\npacker/example_output.txt")),
 				err: "duplicated object: with hash .*",
 			}, {
 				off:    3037,
-				obj:    newObj(core.BlobObject, []byte("")),
+				obj:    newObject(core.BlobObject, []byte("")),
 				err:    "duplicated object: with offset 3037",
 				ignore: "seekable",
 				// seekable can not check if the offset has already been added
@@ -186,17 +185,15 @@ func (s *ReadRecallerImplSuite) TestRememberRecall(c *C) {
 
 			result, err := sr.RecallByHash(test.obj.Hash())
 			c.Assert(err, IsNil, com)
+			c.Assert(result.Hash(), Equals, test.obj.Hash())
 			c.Assert(result, DeepEquals, test.obj, com)
 
 			result, err = sr.RecallByOffset(test.off)
 			c.Assert(err, IsNil, com)
+			c.Assert(result.Hash(), Equals, test.obj.Hash())
 			c.Assert(result, DeepEquals, test.obj, com)
 		}
 	}
-}
-
-func newObj(typ core.ObjectType, cont []byte) core.Object {
-	return memory.NewObject(typ, int64(len(cont)), cont)
 }
 
 func (s *ReadRecallerImplSuite) TestRecallByHashErrors(c *C) {
@@ -209,7 +206,7 @@ func (s *ReadRecallerImplSuite) TestRecallByHashErrors(c *C) {
 	} {
 		com := Commentf("implementation %s", impl.id)
 		sr := impl.newFn([]byte{})
-		obj := newObj(core.CommitObject, []byte{})
+		obj := newObject(core.CommitObject, []byte{})
 
 		_, err := sr.RecallByHash(obj.Hash())
 		c.Assert(err, ErrorMatches, ErrCannotRecall.Error()+".*", com)
@@ -249,9 +246,9 @@ func rememberSomeObjects(sr ReadRecaller) error {
 		off int64
 		obj core.Object
 	}{
-		{off: 0, obj: newObj(core.CommitObject, []byte{'a'})},  // 93114cce67ec23976d15199514399203f69cc676
-		{off: 10, obj: newObj(core.CommitObject, []byte{'b'})}, // 2bb767097e479f668f0ebdabe88df11337bd8f19
-		{off: 20, obj: newObj(core.CommitObject, []byte{'c'})}, // 2f8096005677370e6446541a50e074299d43d468
+		{off: 0, obj: newObject(core.CommitObject, []byte{'a'})},  // 93114cce67ec23976d15199514399203f69cc676
+		{off: 10, obj: newObject(core.CommitObject, []byte{'b'})}, // 2bb767097e479f668f0ebdabe88df11337bd8f19
+		{off: 20, obj: newObject(core.CommitObject, []byte{'c'})}, // 2f8096005677370e6446541a50e074299d43d468
 	} {
 		err := sr.Remember(init.off, init.obj)
 		if err != nil {

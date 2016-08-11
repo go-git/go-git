@@ -51,8 +51,8 @@ func NewFromPackfile(rs io.ReadSeeker) (Index, error) {
 			return nil, err
 		}
 
-		obj, err := p.ReadObject()
-		if err != nil {
+		obj := &core.MemoryObject{}
+		if err := p.FillObject(obj); err != nil {
 			return nil, err
 		}
 

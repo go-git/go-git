@@ -8,7 +8,6 @@ import (
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 var (
@@ -30,6 +29,7 @@ const (
 // Values from this type are not zero-value safe. See the NewParser function bellow.
 type Parser struct {
 	ReadRecaller
+	ObjectFactory func() core.Object
 }
 
 // NewParser returns a new Parser that reads from the packfile represented by r.
@@ -174,47 +174,43 @@ func moreBytesInLength(c byte) bool {
 
 // ReadObject reads and returns a git object from an object entry in the packfile.
 // Non-deltified and deltified objects are supported.
-func (p Parser) ReadObject() (core.Object, error) {
+func (p Parser) FillObject(obj core.Object) error {
 	start, err := p.Offset()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var typ core.ObjectType
-	typ, _, err = p.ReadObjectTypeAndLength()
+	t, l, err := p.ReadObjectTypeAndLength()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var cont []byte
-	switch typ {
+	obj.SetSize(l)
+
+	switch t {
 	case core.CommitObject, core.TreeObject, core.BlobObject, core.TagObject:
-		cont, err = p.ReadNonDeltaObjectContent()
+		obj.SetType(t)
+		err = p.ReadNonDeltaObjectContent(obj)
 	case core.REFDeltaObject:
-		cont, typ, err = p.ReadREFDeltaObjectContent()
+		err = p.ReadREFDeltaObjectContent(obj)
 	case core.OFSDeltaObject:
-		cont, typ, err = p.ReadOFSDeltaObjectContent(start)
+		err = p.ReadOFSDeltaObjectContent(obj, start)
 	default:
-		err = ErrInvalidObject.AddDetails("tag %q", typ)
-	}
-	if err != nil {
-		return nil, err
+		err = ErrInvalidObject.AddDetails("tag %q", t)
 	}
 
-	return memory.NewObject(typ, int64(len(cont)), cont), nil
+	return err
 }
 
 // ReadNonDeltaObjectContent reads and returns a non-deltified object
 // from it zlib stream in an object entry in the packfile.
-func (p Parser) ReadNonDeltaObjectContent() ([]byte, error) {
-	return p.readZip()
-}
+func (p Parser) ReadNonDeltaObjectContent(obj core.Object) error {
+	w, err := obj.Writer()
+	if err != nil {
+		return err
+	}
 
-func (p Parser) readZip() ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	err := p.inflate(buf)
-
-	return buf.Bytes(), err
+	return p.inflate(w)
 }
 
 func (p Parser) inflate(w io.Writer) (err error) {
@@ -239,23 +235,23 @@ func (p Parser) inflate(w io.Writer) (err error) {
 
 // ReadREFDeltaObjectContent reads and returns an object specified by a
 // REF-Delta entry in the packfile, form the hash onwards.
-func (p Parser) ReadREFDeltaObjectContent() ([]byte, core.ObjectType, error) {
+func (p Parser) ReadREFDeltaObjectContent(obj core.Object) error {
 	refHash, err := p.ReadHash()
 	if err != nil {
-		return nil, core.ObjectType(0), err
+		return err
 	}
 
-	refObj, err := p.RecallByHash(refHash)
+	base, err := p.RecallByHash(refHash)
 	if err != nil {
-		return nil, core.ObjectType(0), err
+		return err
 	}
 
-	content, err := p.ReadSolveDelta(refObj.Content())
-	if err != nil {
-		return nil, refObj.Type(), err
+	obj.SetType(base.Type())
+	if err := p.ReadAndApplyDelta(obj, base); err != nil {
+		return err
 	}
 
-	return content, refObj.Type(), nil
+	return nil
 }
 
 // ReadHash reads a hash.
@@ -268,41 +264,40 @@ func (p Parser) ReadHash() (core.Hash, error) {
 	return h, nil
 }
 
-// ReadSolveDelta reads and returns the base patched with the contents
+// ReadAndSolveDelta reads and returns the base patched with the contents
 // of a zlib compressed diff data in the delta portion of an object
 // entry in the packfile.
-func (p Parser) ReadSolveDelta(base []byte) ([]byte, error) {
-	diff, err := p.readZip()
-	if err != nil {
-		return nil, err
+func (p Parser) ReadAndApplyDelta(target, base core.Object) error {
+	buf := bytes.NewBuffer(nil)
+	if err := p.inflate(buf); err != nil {
+		return err
 	}
 
-	return PatchDelta(base, diff), nil
+	return ApplyDelta(target, base, buf.Bytes())
 }
 
 // ReadOFSDeltaObjectContent reads an returns an object specified by an
 // OFS-delta entry in the packfile from it negative offset onwards.  The
 // start parameter is the offset of this particular object entry (the
 // current offset minus the already processed type and length).
-func (p Parser) ReadOFSDeltaObjectContent(start int64) (
-	[]byte, core.ObjectType, error) {
+func (p Parser) ReadOFSDeltaObjectContent(obj core.Object, start int64) error {
 
 	jump, err := p.ReadNegativeOffset()
 	if err != nil {
-		return nil, core.ObjectType(0), err
+		return err
 	}
 
-	ref, err := p.RecallByOffset(start + jump)
+	base, err := p.RecallByOffset(start + jump)
 	if err != nil {
-		return nil, core.ObjectType(0), err
+		return err
 	}
 
-	content, err := p.ReadSolveDelta(ref.Content())
-	if err != nil {
-		return nil, ref.Type(), err
+	obj.SetType(base.Type())
+	if err := p.ReadAndApplyDelta(obj, base); err != nil {
+		return err
 	}
 
-	return content, ref.Type(), nil
+	return nil
 }
 
 // ReadNegativeOffset reads and returns an offset from a OFS DELTA

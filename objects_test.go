@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -83,7 +82,7 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 }
 
 func (s *ObjectsSuite) TestBlobHash(c *C) {
-	o := &memory.Object{}
+	o := &core.MemoryObject{}
 	o.SetType(core.BlobObject)
 	o.SetSize(3)
 

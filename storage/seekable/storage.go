@@ -90,6 +90,10 @@ func buildIndexFromIdxfile(fs fs.FS, path string) (index.Index, error) {
 	return index.NewFromIdx(f)
 }
 
+func (s *ObjectStorage) NewObject() core.Object {
+	return &core.MemoryObject{}
+}
+
 // Set adds a new object to the storage. As this functionality is not
 // yet supported, this method always returns a "not implemented yet"
 // error an zero hash.
@@ -131,7 +135,8 @@ func (s *ObjectStorage) Get(h core.Hash) (core.Object, error) {
 	r.HashToOffset = map[core.Hash]int64(s.index)
 	p := packfile.NewParser(r)
 
-	return p.ReadObject()
+	obj := s.NewObject()
+	return obj, p.FillObject(obj)
 }
 
 // Iter returns an iterator for all the objects in the packfile with the

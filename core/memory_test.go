@@ -1,22 +1,18 @@
-package memory
+package core
 
 import (
 	"io/ioutil"
-	"testing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/core"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type MemoryObjectSuite struct{}
 
-type ObjectSuite struct{}
+var _ = Suite(&MemoryObjectSuite{})
 
-var _ = Suite(&ObjectSuite{})
-
-func (s *ObjectSuite) TestHash(c *C) {
-	o := &Object{}
-	o.SetType(core.BlobObject)
+func (s *MemoryObjectSuite) TestHash(c *C) {
+	o := &MemoryObject{}
+	o.SetType(BlobObject)
 	o.SetSize(14)
 
 	_, err := o.Write([]byte("Hello, World!\n"))
@@ -24,32 +20,32 @@ func (s *ObjectSuite) TestHash(c *C) {
 
 	c.Assert(o.Hash().String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
 
-	o.SetType(core.CommitObject)
+	o.SetType(CommitObject)
 	c.Assert(o.Hash().String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
 }
 
-func (s *ObjectSuite) TestHashNotFilled(c *C) {
-	o := &Object{}
-	o.SetType(core.BlobObject)
+func (s *MemoryObjectSuite) TestHashNotFilled(c *C) {
+	o := &MemoryObject{}
+	o.SetType(BlobObject)
 	o.SetSize(14)
 
-	c.Assert(o.Hash(), Equals, core.ZeroHash)
+	c.Assert(o.Hash(), Equals, ZeroHash)
 }
 
-func (s *ObjectSuite) TestType(c *C) {
-	o := &Object{}
-	o.SetType(core.BlobObject)
-	c.Assert(o.Type(), Equals, core.BlobObject)
+func (s *MemoryObjectSuite) TestType(c *C) {
+	o := &MemoryObject{}
+	o.SetType(BlobObject)
+	c.Assert(o.Type(), Equals, BlobObject)
 }
 
-func (s *ObjectSuite) TestSize(c *C) {
-	o := &Object{}
+func (s *MemoryObjectSuite) TestSize(c *C) {
+	o := &MemoryObject{}
 	o.SetSize(42)
 	c.Assert(o.Size(), Equals, int64(42))
 }
 
-func (s *ObjectSuite) TestReader(c *C) {
-	o := &Object{cont: []byte("foo")}
+func (s *MemoryObjectSuite) TestReader(c *C) {
+	o := &MemoryObject{cont: []byte("foo")}
 
 	reader, err := o.Reader()
 	c.Assert(err, IsNil)
@@ -60,8 +56,8 @@ func (s *ObjectSuite) TestReader(c *C) {
 	c.Assert(b, DeepEquals, []byte("foo"))
 }
 
-func (s *ObjectSuite) TestWriter(c *C) {
-	o := &Object{}
+func (s *MemoryObjectSuite) TestWriter(c *C) {
+	o := &MemoryObject{}
 
 	writer, err := o.Writer()
 	c.Assert(err, IsNil)

@@ -1,9 +1,13 @@
 package memory
 
 import (
+	"testing"
+
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
 )
+
+func Test(t *testing.T) { TestingT(t) }
 
 type ObjectStorageSuite struct{}
 
@@ -12,7 +16,7 @@ var _ = Suite(&ObjectStorageSuite{})
 func (s *ObjectStorageSuite) TestSet(c *C) {
 	os := NewObjectStorage()
 
-	o := &Object{}
+	o := &core.MemoryObject{}
 	o.SetType(core.CommitObject)
 	o.SetSize(3)
 
@@ -30,7 +34,7 @@ func (s *ObjectStorageSuite) TestSet(c *C) {
 func (s *ObjectStorageSuite) TestGet(c *C) {
 	os := NewObjectStorage()
 
-	o := &Object{}
+	o := &core.MemoryObject{}
 	o.SetType(core.CommitObject)
 	o.SetSize(3)
 
