@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/src-d/go-git.v3/clients/http"
-	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/storage/seekable"
-	"gopkg.in/src-d/go-git.v3/utils/fs"
+	"gopkg.in/src-d/go-git.v4/clients/http"
+	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/storage/seekable"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 
 	"github.com/alcortesm/tgz"
 	. "gopkg.in/check.v1"

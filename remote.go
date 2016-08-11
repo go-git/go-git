@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/src-d/go-git.v3/clients"
-	"gopkg.in/src-d/go-git.v3/clients/common"
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/clients"
+	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // Remote represents a connection to a remote repository

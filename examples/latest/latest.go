@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/src-d/go-git.v3"
+	"gopkg.in/src-d/go-git.v4"
 )
 
 func main() {

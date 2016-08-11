@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/formats/idxfile"
-	"gopkg.in/src-d/go-git.v3/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/formats/idxfile"
+	"gopkg.in/src-d/go-git.v4/formats/packfile"
 )
 
 // Index is a database of objects and their offset in a packfile.

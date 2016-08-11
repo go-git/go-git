@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // ErrUnsupportedObject trigger when a non-supported object is being decoded.

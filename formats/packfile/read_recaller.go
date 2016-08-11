@@ -1,6 +1,6 @@
 package packfile
 
-import "gopkg.in/src-d/go-git.v3/core"
+import "gopkg.in/src-d/go-git.v4/core"
 
 var (
 	// ErrDuplicatedObject is returned by Remember if an object appears several

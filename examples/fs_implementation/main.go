@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v3"
-	gogitFS "gopkg.in/src-d/go-git.v3/utils/fs"
+	"gopkg.in/src-d/go-git.v4"
+	gogitFS "gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 func main() {

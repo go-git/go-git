@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/storage/memory"
+	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )

@@ -4,9 +4,9 @@ package main
 import (
 	"C"
 
-	"gopkg.in/src-d/go-git.v3"
-	"gopkg.in/src-d/go-git.v3/clients/common"
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 //export c_Repository

@@ -3,7 +3,7 @@ package packfile
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // Stream implements ReadRecaller for the io.Reader of a packfile.  This

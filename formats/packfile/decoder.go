@@ -3,7 +3,7 @@ package packfile
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // Format specifies if the packfile uses ref-deltas or ofs-deltas.

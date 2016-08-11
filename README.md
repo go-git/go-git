@@ -1,4 +1,4 @@
-# go-git [![GoDoc](https://godoc.org/gopkg.in/src-d/go-git.v3?status.svg)](https://godoc.org/gopkg.in/src-d/go-git.v3) [![Build Status](https://travis-ci.org/src-d/go-git.svg)](https://travis-ci.org/src-d/go-git) [![codecov.io](https://codecov.io/github/src-d/go-git/coverage.svg)](https://codecov.io/github/src-d/go-git) [![codebeat badge](https://codebeat.co/badges/b6cb2f73-9e54-483d-89f9-4b95a911f40c)](https://codebeat.co/projects/github-com-src-d-go-git)
+# go-git [![GoDoc](https://godoc.org/gopkg.in/src-d/go-git.v4?status.svg)](https://godoc.org/gopkg.in/src-d/go-git.v4) [![Build Status](https://travis-ci.org/src-d/go-git.svg)](https://travis-ci.org/src-d/go-git) [![codecov.io](https://codecov.io/github/src-d/go-git/coverage.svg)](https://codecov.io/github/src-d/go-git) [![codebeat badge](https://codebeat.co/badges/b6cb2f73-9e54-483d-89f9-4b95a911f40c)](https://codebeat.co/projects/github-com-src-d-go-git)
 
 A low level and highly extensible git client library for **reading** repositories from git servers.  It is written in Go from scratch, without any C dependencies.
 
@@ -30,7 +30,7 @@ Installation
 The recommended way to install *go-git* is:
 
 ```
-go get -u gopkg.in/src-d/go-git.v3/...
+go get -u gopkg.in/src-d/go-git.v4/...
 ```
 
 
@@ -133,8 +133,8 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/src-d/go-git.v3"
-	"gopkg.in/src-d/go-git.v3/utils/fs"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 func main() {
@@ -182,7 +182,7 @@ with `go build -o libgogit.so -buildmode=c-shared github.com/src-d/go-git/cshare
 Acknowledgements
 ----------------
 
-The earlier versions of the [packfile reader](https://godoc.org/gopkg.in/src-d/go-git.v3/formats/packfile) are based on [git-chain](https://github.com/gitchain/gitchain/blob/master/git/pack.go), project done by [@yrashk](https://github.com/yrashk)
+The earlier versions of the [packfile reader](https://godoc.org/gopkg.in/src-d/go-git.v4/formats/packfile) are based on [git-chain](https://github.com/gitchain/gitchain/blob/master/git/pack.go), project done by [@yrashk](https://github.com/yrashk)
 
 
 License

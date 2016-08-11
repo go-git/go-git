@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v4/clients/common"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 var InvalidAuthMethodErr = errors.New("invalid http auth method: a http.HTTPAuthMethod should be provided.")

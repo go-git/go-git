@@ -11,8 +11,8 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v3/clients/common"
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 type SuiteRemote struct{}

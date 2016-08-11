@@ -7,7 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // Tag represents an annotated tag object. It points to a single git object of

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 
 	"github.com/klauspost/compress/zlib"
 )

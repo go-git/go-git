@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 
 	. "gopkg.in/check.v1"
 )

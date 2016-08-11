@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"net/url"
 
-	"gopkg.in/src-d/go-git.v3/clients/common"
-	"gopkg.in/src-d/go-git.v3/clients/http"
-	"gopkg.in/src-d/go-git.v3/clients/ssh"
+	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/clients/http"
+	"gopkg.in/src-d/go-git.v4/clients/ssh"
 )
 
 // DefaultProtocols are the protocols supported by default.

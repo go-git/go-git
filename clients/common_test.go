@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v4/clients/common"
 
 	"github.com/alcortesm/tgz"
 	. "gopkg.in/check.v1"

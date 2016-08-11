@@ -11,7 +11,7 @@ matrix:
 install:
   - rm -rf $GOPATH/src/gopkg.in/src-d
   - mkdir -p $GOPATH/src/gopkg.in/src-d
-  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v3
+  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v4
   - go get -v -t ./...
 
 script:

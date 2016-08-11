@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"time"
 
-	"gopkg.in/src-d/go-git.v3"
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 //export c_Signature_Name

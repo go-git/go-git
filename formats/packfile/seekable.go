@@ -4,7 +4,7 @@ import (
 	"io"
 	"os"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // Seekable implements ReadRecaller for the io.ReadSeeker of a packfile.

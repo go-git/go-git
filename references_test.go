@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )

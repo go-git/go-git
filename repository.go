@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"gopkg.in/src-d/go-git.v3/clients/common"
-	"gopkg.in/src-d/go-git.v3/core"
-	"gopkg.in/src-d/go-git.v3/formats/packfile"
-	"gopkg.in/src-d/go-git.v3/storage/memory"
-	"gopkg.in/src-d/go-git.v3/storage/seekable"
-	"gopkg.in/src-d/go-git.v3/utils/fs"
+	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/storage/seekable"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 var (

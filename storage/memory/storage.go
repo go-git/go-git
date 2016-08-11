@@ -3,7 +3,7 @@ package memory
 import (
 	"fmt"
 
-	"gopkg.in/src-d/go-git.v3/core"
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
