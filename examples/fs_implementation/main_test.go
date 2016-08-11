@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 
 func setUp() {
 	var err error
-	repo, err = tgz.Extract("../../storage/seekable/internal/gitdir/fixtures/spinnaker-gc.tgz")
+	repo, err = tgz.Extract("../../storage/filesystem/internal/gitdir/fixtures/spinnaker-gc.tgz")
 	if err != nil {
 		panic(err)
 	}

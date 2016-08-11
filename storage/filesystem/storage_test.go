@@ -1,4 +1,4 @@
-package seekable_test
+package filesystem_test
 
 import (
 	"fmt"
@@ -9,9 +9,9 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/gitdir"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	"gopkg.in/src-d/go-git.v4/storage/seekable"
-	"gopkg.in/src-d/go-git.v4/storage/seekable/internal/gitdir"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 
 	"github.com/alcortesm/tgz"
@@ -67,7 +67,7 @@ func (s *FsSuite) TearDownSuite(c *C) {
 
 func (s *FsSuite) TestNewErrorNotFound(c *C) {
 	fs := fs.NewOS()
-	_, err := seekable.New(fs, "not_found/.git")
+	_, err := filesystem.New(fs, "not_found/.git")
 	c.Assert(err, Equals, gitdir.ErrNotFound)
 }
 
@@ -77,7 +77,7 @@ func (s *FsSuite) TestHashNotFound(c *C) {
 	fs := fs.NewOS()
 	gitPath := fs.Join(path, ".git/")
 
-	sto, err := seekable.New(fs, gitPath)
+	sto, err := filesystem.New(fs, gitPath)
 	c.Assert(err, IsNil)
 
 	_, err = sto.Get(core.ZeroHash)
@@ -100,10 +100,10 @@ func (s *FsSuite) TestGetCompareWithMemoryStorage(c *C) {
 		memSto, err := memStorageFromGitDir(fs, gitPath)
 		c.Assert(err, IsNil, com)
 
-		seekableSto, err := seekable.New(fs, gitPath)
+		filesystemSto, err := filesystem.New(fs, gitPath)
 		c.Assert(err, IsNil, com)
 
-		equal, reason, err := equalsStorages(memSto, seekableSto)
+		equal, reason, err := equalsStorages(memSto, filesystemSto)
 		c.Assert(err, IsNil, com)
 		c.Assert(equal, Equals, true,
 			Commentf("%s - %s\n", com.CheckCommentString(), reason))
@@ -227,7 +227,7 @@ func (s *FsSuite) TestIterCompareWithMemoryStorage(c *C) {
 		memSto, err := memStorageFromDirPath(fs, gitPath)
 		c.Assert(err, IsNil, com)
 
-		seekableSto, err := seekable.New(fs, gitPath)
+		filesystemSto, err := filesystem.New(fs, gitPath)
 		c.Assert(err, IsNil, com)
 
 		for _, typ := range [...]core.ObjectType{
@@ -240,11 +240,11 @@ func (s *FsSuite) TestIterCompareWithMemoryStorage(c *C) {
 			memObjs, err := iterToSortedSlice(memSto, typ)
 			c.Assert(err, IsNil, com)
 
-			seekableObjs, err := iterToSortedSlice(seekableSto, typ)
+			filesystemObjs, err := iterToSortedSlice(filesystemSto, typ)
 			c.Assert(err, IsNil, com)
 
 			for i, o := range memObjs {
-				c.Assert(seekableObjs[i].Hash(), Equals, o.Hash(), com)
+				c.Assert(filesystemObjs[i].Hash(), Equals, o.Hash(), com)
 			}
 		}
 	}
@@ -318,7 +318,7 @@ func (s *FsSuite) TestSet(c *C) {
 	fs := fs.NewOS()
 	gitPath := fs.Join(path, ".git/")
 
-	sto, err := seekable.New(fs, gitPath)
+	sto, err := filesystem.New(fs, gitPath)
 	c.Assert(err, IsNil)
 
 	_, err = sto.Set(&core.MemoryObject{})

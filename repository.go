@@ -7,8 +7,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	"gopkg.in/src-d/go-git.v4/storage/seekable"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
@@ -56,7 +56,7 @@ func NewRepositoryFromFS(fs fs.FS, path string) (*Repository, error) {
 	repo := NewPlainRepository()
 
 	var err error
-	repo.Storage, err = seekable.New(fs, path)
+	repo.Storage, err = filesystem.New(fs, path)
 
 	return repo, err
 }
@@ -239,7 +239,7 @@ func (r *Repository) remoteHead(remote string) (core.Hash, error) {
 }
 
 func (r *Repository) localHead() (core.Hash, error) {
-	storage, ok := r.Storage.(*seekable.ObjectStorage)
+	storage, ok := r.Storage.(*filesystem.ObjectStorage)
 	if !ok {
 		return core.ZeroHash,
 			fmt.Errorf("cannot retrieve local head: no local data found")

@@ -1,4 +1,4 @@
-package seekable
+package filesystem
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
-	"gopkg.in/src-d/go-git.v4/storage/seekable/internal/gitdir"
-	"gopkg.in/src-d/go-git.v4/storage/seekable/internal/index"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/gitdir"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/index"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
