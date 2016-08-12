@@ -13,10 +13,13 @@ const (
 	refRemotePrefix = refPrefix + "remotes/"
 	refNotePrefix   = refPrefix + "notes/"
 	symrefPrefix    = "ref: "
+
+	maxResolveRecursion = 1024
 )
 
 var (
-	ErrReferenceNotFound = errors.New("reference not found")
+	ErrMaxResolveRecursion = errors.New("max. recursion level reached")
+	ErrReferenceNotFound   = errors.New("reference not found")
 )
 
 // ReferenceType reference type's
@@ -149,4 +152,30 @@ func (iter *ReferenceSliceIter) Next() (*Reference, error) {
 // Close releases any resources used by the iterator.
 func (iter *ReferenceSliceIter) Close() {
 	iter.pos = len(iter.series)
+}
+
+func ResolveReference(s ReferenceStorage, n ReferenceName) (*Reference, error) {
+	r, err := s.Get(n)
+	if err != nil || r == nil {
+		return r, err
+	}
+	return resolveReference(s, r, 0)
+}
+
+func resolveReference(s ReferenceStorage, r *Reference, recursion int) (*Reference, error) {
+	if r.Type() != SymbolicReference {
+		return r, nil
+	}
+
+	if recursion > maxResolveRecursion {
+		return nil, ErrMaxResolveRecursion
+	}
+
+	t, err := s.Get(r.Target())
+	if err != nil {
+		return nil, err
+	}
+
+	recursion++
+	return resolveReference(s, t, recursion)
 }

@@ -15,6 +15,7 @@ type ObjectsSuite struct {
 
 var _ = Suite(&ObjectsSuite{})
 
+/*
 func (s *ObjectsSuite) SetUpTest(c *C) {
 	var err error
 	s.r, err = NewRepository(RepositoryFixture, nil)
@@ -25,6 +26,7 @@ func (s *ObjectsSuite) SetUpTest(c *C) {
 	err = s.r.Pull("origin", "refs/heads/master")
 	c.Assert(err, IsNil)
 }
+*/
 
 func (s *ObjectsSuite) TestNewCommit(c *C) {
 	hash := core.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")

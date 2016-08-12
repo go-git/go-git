@@ -19,7 +19,7 @@ import (
 //   therefore can appear repeated in the list.
 //   (see git path-id for hints on how to fix this).
 func (c *Commit) References(path string) ([]*Commit, error) {
-	result := make([]*Commit, 0)
+	var result []*Commit
 	seen := make(map[core.Hash]struct{}, 0)
 	if err := walkGraph(&result, &seen, c.r, c, path); err != nil {
 		return nil, err

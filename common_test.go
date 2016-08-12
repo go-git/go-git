@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"gopkg.in/src-d/go-git.v4/clients"
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
@@ -16,21 +17,33 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
+type BaseSuite struct{}
+
+func (s *BaseSuite) SetUpTest(c *C) {
+	clients.InstallProtocol("mock", &MockGitUploadPackService{})
+}
+
+const RepositoryFixture = "mock://formats/packfile/fixtures/git-fixture.ref-delta"
+
 type MockGitUploadPackService struct {
-	Auth common.AuthMethod
-	RC   io.ReadCloser
+	conected common.Endpoint
+	auth     common.AuthMethod
 }
 
-func (s *MockGitUploadPackService) Connect(url common.Endpoint) error {
+func (p *MockGitUploadPackService) Connect(url common.Endpoint) error {
+	p.conected = url
 	return nil
 }
 
-func (s *MockGitUploadPackService) ConnectWithAuth(url common.Endpoint, auth common.AuthMethod) error {
-	s.Auth = auth
+func (p *MockGitUploadPackService) ConnectWithAuth(
+	url common.Endpoint, auth common.AuthMethod,
+) error {
+	p.conected = url
+	p.auth = auth
 	return nil
 }
 
-func (s *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
+func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	h := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	c := common.NewCapabilities()
@@ -46,11 +59,8 @@ func (s *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	}, nil
 }
 
-func (s *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadCloser, error) {
-	var err error
-	s.RC, err = os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
-
-	return s.RC, err
+func (p *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadCloser, error) {
+	return os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
 }
 
 type packedFixture struct {
@@ -74,7 +84,7 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 
 			comment := Commentf("fixture packfile: %q", fixture.packfile)
 
-			repos[fixture.url] = NewPlainRepository()
+			repos[fixture.url], _ = NewMemoryRepository()
 
 			f, err := os.Open(fixture.packfile)
 			c.Assert(err, IsNil, comment)
@@ -86,7 +96,7 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 			r := packfile.NewStream(memStream)
 
 			d := packfile.NewDecoder(r)
-			err = d.Decode(repos[fixture.url].Storage)
+			err = d.Decode(repos[fixture.url].os)
 			c.Assert(err, IsNil, comment)
 
 			c.Assert(f.Close(), IsNil, comment)

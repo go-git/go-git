@@ -2,14 +2,10 @@ package git
 
 import (
 	"errors"
-	"fmt"
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 var (
@@ -22,55 +18,42 @@ const (
 	DefaultRemoteName = "origin"
 )
 
-// Repository git repository struct
+// Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
 	Remotes map[string]*Remote
-	Storage core.ObjectStorage
+	Storage core.Storage
+
+	os core.ObjectStorage
+	rs core.ReferenceStorage
 }
 
-// NewRepository creates a new repository setting remote as default remote
-func NewRepository(url string, auth common.AuthMethod) (*Repository, error) {
-	repo := NewPlainRepository()
+// NewMemoryRepository creates a new repository, backed by a memory.Storage
+func NewMemoryRepository() (*Repository, error) {
+	return NewRepository(memory.NewStorage())
+}
 
-	r, err := NewAuthenticatedRemote(url, auth)
-	repo.Remotes[DefaultRemoteName] = r
+// NewRepository creates a new repository with the given Storage
+func NewRepository(s core.Storage) (*Repository, error) {
+	os, err := s.ObjectStorage()
 	if err != nil {
 		return nil, err
 	}
 
-	return repo, nil
-}
-
-// NewRepositoryFromFS creates a new repository from an standard git
-// repository on disk.
-//
-// Repositories created like this don't hold a local copy of the
-// original repository objects, instead all queries are resolved by
-// looking at the original repository packfile. This is very cheap in
-// terms of memory and allows to process repositories bigger than your
-// memory.
-//
-// To be able to use git repositories this way, you must run "git gc" on
-// them beforehand.
-func NewRepositoryFromFS(fs fs.FS, path string) (*Repository, error) {
-	repo := NewPlainRepository()
-
-	var err error
-	repo.Storage, err = filesystem.New(fs, path)
-
-	return repo, err
-}
-
-// NewPlainRepository creates a new repository without remotes
-func NewPlainRepository() *Repository {
-	return &Repository{
-		Remotes: map[string]*Remote{},
-		Storage: memory.NewObjectStorage(),
+	rs, err := s.ReferenceStorage()
+	if err != nil {
+		return nil, err
 	}
+
+	return &Repository{
+		Storage: s,
+		os:      os,
+		rs:      rs,
+	}, nil
 }
 
-func (r *Repository) Clone(url string, auth common.AuthMethod) error {
-	remote, err := r.createDefaultRemote(url, auth)
+// Clone clones a remote repository
+func (r *Repository) Clone(o *CloneOptions) error {
+	remote, err := r.createDefaultRemote(o.URL, o.Auth)
 	if err != nil {
 		return err
 	}
@@ -79,7 +62,15 @@ func (r *Repository) Clone(url string, auth common.AuthMethod) error {
 		return err
 	}
 
-	return nil
+	h, err := remote.Fetch(r.os, &FetchOptions{
+		ReferenceName: core.HEAD,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return r.rs.Set(core.NewHashReference(core.HEAD, h))
 }
 
 func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*Remote, error) {
@@ -88,53 +79,16 @@ func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*R
 		return nil, err
 	}
 
-	r.Remotes[DefaultRemoteName] = remote
+	r.Remotes = map[string]*Remote{
+		DefaultRemoteName: remote,
+	}
 
 	return remote, nil
 }
 
-// Pull connect and fetch the given branch from the given remote, the branch
-// should be provided with the full path not only the abbreviation, eg.:
-// "refs/heads/master"
-func (r *Repository) Pull(remoteName, branch string) error {
-	remote, ok := r.Remotes[remoteName]
-	if !ok {
-		return fmt.Errorf("unable to find remote %q", remoteName)
-	}
-
-	if err := remote.Connect(); err != nil {
-		return err
-	}
-
-	head := remote.Head()
-	if head.Hash().IsZero() {
-		return errors.New("HEAD is missing")
-	}
-
-	req := &common.GitUploadPackRequest{}
-	req.Want(head.Hash())
-
-	// TODO: Provide "haves" for what's already in the repository's storage
-
-	reader, err := remote.Fetch(req)
-	if err != nil {
-		return err
-	}
-	defer checkClose(reader, &err)
-	stream := packfile.NewStream(reader)
-
-	d := packfile.NewDecoder(stream)
-	return d.Decode(r.Storage)
-}
-
-// PullDefault like Pull but retrieve the default branch from the default remote
-func (r *Repository) PullDefault() (err error) {
-	return r.Pull(DefaultRemoteName, "")
-}
-
 // Commit return the commit with the given hash
 func (r *Repository) Commit(h core.Hash) (*Commit, error) {
-	obj, err := r.Storage.Get(h)
+	obj, err := r.os.Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -148,7 +102,7 @@ func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 
 // Commits decode the objects into commits
 func (r *Repository) Commits() (*CommitIter, error) {
-	iter, err := r.Storage.Iter(core.CommitObject)
+	iter, err := r.os.Iter(core.CommitObject)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +112,7 @@ func (r *Repository) Commits() (*CommitIter, error) {
 
 // Tree return the tree with the given hash
 func (r *Repository) Tree(h core.Hash) (*Tree, error) {
-	obj, err := r.Storage.Get(h)
+	obj, err := r.os.Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -172,7 +126,7 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 
 // Blob returns the blob with the given hash
 func (r *Repository) Blob(h core.Hash) (*Blob, error) {
-	obj, err := r.Storage.Get(h)
+	obj, err := r.os.Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -186,7 +140,7 @@ func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 
 // Tag returns a tag with the given hash.
 func (r *Repository) Tag(h core.Hash) (*Tag, error) {
-	obj, err := r.Storage.Get(h)
+	obj, err := r.os.Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -201,7 +155,7 @@ func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 // Tags returns a TagIter that can step through all of the annotated tags
 // in the repository.
 func (r *Repository) Tags() (*TagIter, error) {
-	iter, err := r.Storage.Iter(core.TagObject)
+	iter, err := r.os.Iter(core.TagObject)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +165,7 @@ func (r *Repository) Tags() (*TagIter, error) {
 
 // Object returns an object with the given hash.
 func (r *Repository) Object(h core.Hash) (Object, error) {
-	obj, err := r.Storage.Get(h)
+	obj, err := r.os.Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -239,12 +193,10 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 
 // Head returns the hash of the HEAD of the repository or the head of a
 // remote, if one is passed.
-func (r *Repository) Head(remote string) (core.Hash, error) {
-	storage, ok := r.Storage.(*filesystem.ObjectStorage)
-	if !ok {
-		return core.ZeroHash,
-			fmt.Errorf("cannot retrieve local head: no local data found")
+func (r *Repository) Head(resolved bool) (*core.Reference, error) {
+	if resolved {
+		return core.ResolveReference(r.rs, core.HEAD)
 	}
 
-	return storage.Head()
+	return r.rs.Get(core.HEAD)
 }

@@ -1,12 +1,10 @@
 package git
 
 import (
-	"fmt"
-	"io"
-
 	"gopkg.in/src-d/go-git.v4/clients"
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/formats/packfile"
 )
 
 // Remote represents a connection to a remote repository
@@ -78,8 +76,26 @@ func (r *Remote) Capabilities() *common.Capabilities {
 }
 
 // Fetch returns a reader using the request
-func (r *Remote) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) {
-	return r.upSrv.Fetch(req)
+func (r *Remote) Fetch(s core.ObjectStorage, o *FetchOptions) (h core.Hash, err error) {
+	ref, err := r.Ref(o.ReferenceName, true)
+	if err != nil {
+		return core.ZeroHash, err
+	}
+
+	h = ref.Hash()
+	req := &common.GitUploadPackRequest{}
+	req.Want(h)
+
+	reader, err := r.upSrv.Fetch(req)
+	if err != nil {
+		return core.ZeroHash, err
+	}
+
+	defer checkClose(reader, &err)
+	stream := packfile.NewStream(reader)
+
+	d := packfile.NewDecoder(stream)
+	return h, d.Decode(s)
 }
 
 // Head returns the Reference of the HEAD
@@ -88,16 +104,16 @@ func (r *Remote) Head() *core.Reference {
 }
 
 // Ref returns the Hash pointing the given refName
-func (r *Remote) Ref(name core.ReferenceName) (*core.Reference, error) {
-	ref, ok := r.upInfo.Refs[name]
-	if !ok {
-		return nil, fmt.Errorf("unable to find ref %q", name)
+func (r *Remote) Ref(name core.ReferenceName, resolved bool) (*core.Reference, error) {
+	if resolved {
+		return core.ResolveReference(r.upInfo.Refs, name)
 	}
 
-	return ref, nil
+	return r.upInfo.Refs.Get(name)
 }
 
 // Refs returns a map with all the References
-func (r *Remote) Refs() map[core.ReferenceName]*core.Reference {
-	return r.upInfo.Refs
+func (r *Remote) Refs() core.ReferenceIter {
+	i, _ := r.upInfo.Refs.Iter()
+	return i
 }

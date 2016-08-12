@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/pktline"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	"gopkg.in/sourcegraph/go-vcsurl.v1"
 )
@@ -180,7 +181,7 @@ func (c *Capabilities) String() string {
 
 type GitUploadPackInfo struct {
 	Capabilities *Capabilities
-	Refs         map[core.ReferenceName]*core.Reference
+	Refs         memory.ReferenceStorage
 }
 
 func NewGitUploadPackInfo() *GitUploadPackInfo {
@@ -206,7 +207,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	}
 
 	isEmpty := true
-	r.Refs = map[core.ReferenceName]*core.Reference{}
+	r.Refs = make(memory.ReferenceStorage, 0)
 	for _, line := range lines {
 		if !r.isValidLine(line) {
 			continue
@@ -237,7 +238,7 @@ func (r *GitUploadPackInfo) decodeHeaderLine(line string) {
 	}
 
 	refName := core.ReferenceName(name)
-	r.Refs[core.HEAD] = core.NewSymbolicReference(core.HEAD, refName)
+	r.Refs.Set(core.NewSymbolicReference(core.HEAD, refName))
 }
 
 func (r *GitUploadPackInfo) isValidLine(line string) bool {
@@ -250,21 +251,11 @@ func (r *GitUploadPackInfo) readLine(line string) {
 		return
 	}
 
-	ref := core.NewReferenceFromStrings(parts[1], parts[0])
-	r.Refs[ref.Name()] = ref
+	r.Refs.Set(core.NewReferenceFromStrings(parts[1], parts[0]))
 }
 
 func (r *GitUploadPackInfo) Head() *core.Reference {
-	h, ok := r.Refs[core.HEAD]
-	if !ok {
-		return nil
-	}
-
-	ref, ok := r.Refs[h.Target()]
-	if !ok {
-		return nil
-	}
-
+	ref, _ := core.ResolveReference(r.Refs, core.HEAD)
 	return ref
 }
 

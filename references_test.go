@@ -21,14 +21,14 @@ var _ = Suite(&ReferencesSuite{})
 func (s *ReferencesSuite) SetUpSuite(c *C) {
 	s.repos = make(map[string]*Repository, 0)
 	for _, fix := range fixtureRepos {
-		s.repos[fix.url] = NewPlainRepository()
+		s.repos[fix.url], _ = NewMemoryRepository()
 
 		f, err := os.Open(fix.packfile)
 		defer f.Close()
 		c.Assert(err, IsNil)
 		r := packfile.NewSeekable(f)
 		d := packfile.NewDecoder(r)
-		err = d.Decode(s.repos[fix.url].Storage)
+		err = d.Decode(s.repos[fix.url].os)
 		c.Assert(err, IsNil)
 	}
 }

@@ -26,7 +26,6 @@ func NewGitUploadPackService() *GitUploadPackService {
 
 func (s *GitUploadPackService) Connect(url common.Endpoint) error {
 	s.endpoint = url
-
 	return nil
 }
 

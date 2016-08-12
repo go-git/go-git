@@ -42,7 +42,7 @@ var commitIterTests = []struct {
 func (s *SuiteCommit) TestIterSlice(c *C) {
 	for i, t := range commitIterTests {
 		r := s.repos[t.repo]
-		iter := NewCommitIter(r, core.NewObjectSliceIter(makeObjectSlice(t.commits, r.Storage)))
+		iter := NewCommitIter(r, core.NewObjectSliceIter(makeObjectSlice(t.commits, r.os)))
 		s.checkIter(c, r, i, iter, t.commits)
 	}
 }
@@ -50,7 +50,7 @@ func (s *SuiteCommit) TestIterSlice(c *C) {
 func (s *SuiteCommit) TestIterLookup(c *C) {
 	for i, t := range commitIterTests {
 		r := s.repos[t.repo]
-		iter := NewCommitIter(r, core.NewObjectLookupIter(r.Storage, makeHashSlice(t.commits)))
+		iter := NewCommitIter(r, core.NewObjectLookupIter(r.os, makeHashSlice(t.commits)))
 		s.checkIter(c, r, i, iter, t.commits)
 	}
 }
@@ -68,7 +68,7 @@ func (s *SuiteCommit) checkIter(c *C, r *Repository, subtest int, iter *CommitIt
 func (s *SuiteCommit) TestIterSliceClose(c *C) {
 	for i, t := range commitIterTests {
 		r := s.repos[t.repo]
-		iter := NewCommitIter(r, core.NewObjectSliceIter(makeObjectSlice(t.commits, r.Storage)))
+		iter := NewCommitIter(r, core.NewObjectSliceIter(makeObjectSlice(t.commits, r.os)))
 		s.checkIterClose(c, i, iter)
 	}
 }
@@ -76,7 +76,7 @@ func (s *SuiteCommit) TestIterSliceClose(c *C) {
 func (s *SuiteCommit) TestIterLookupClose(c *C) {
 	for i, t := range commitIterTests {
 		r := s.repos[t.repo]
-		iter := NewCommitIter(r, core.NewObjectLookupIter(r.Storage, makeHashSlice(t.commits)))
+		iter := NewCommitIter(r, core.NewObjectLookupIter(r.os, makeHashSlice(t.commits)))
 		s.checkIterClose(c, i, iter)
 	}
 }
