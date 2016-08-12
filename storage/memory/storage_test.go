@@ -16,22 +16,28 @@ var _ = Suite(&StorageSuite{})
 
 func (s *StorageSuite) TestStorageObjectStorage(c *C) {
 	storage := NewStorage()
-	o := storage.ObjectStorage()
-	e := storage.ObjectStorage()
+	o, err := storage.ObjectStorage()
+	c.Assert(err, IsNil)
+	e, err := storage.ObjectStorage()
+	c.Assert(err, IsNil)
 
 	c.Assert(o == e, Equals, true)
 }
 
 func (s *StorageSuite) TestStorageReferenceStorage(c *C) {
 	storage := NewStorage()
-	o := storage.ReferenceStorage()
-	e := storage.ReferenceStorage()
+	o, err := storage.ReferenceStorage()
+	c.Assert(err, IsNil)
+	e, err := storage.ReferenceStorage()
+	c.Assert(err, IsNil)
 
 	c.Assert(o == e, Equals, true)
 }
 
 func (s *StorageSuite) TestObjectStorageSetAndGet(c *C) {
-	os := NewObjectStorage()
+	storage := NewStorage()
+	os, err := storage.ObjectStorage()
+	c.Assert(err, IsNil)
 
 	commit := &core.MemoryObject{}
 	commit.SetType(core.CommitObject)
@@ -84,7 +90,10 @@ func (s *StorageSuite) TestObjectStorageIter(c *C) {
 	tag := &core.MemoryObject{}
 	tag.SetType(core.TagObject)
 
-	os := NewObjectStorage()
+	storage := NewStorage()
+	os, err := storage.ObjectStorage()
+	c.Assert(err, IsNil)
+
 	os.Set(commit)
 	os.Set(tree)
 	os.Set(blob)
@@ -124,9 +133,11 @@ func (s *StorageSuite) TestObjectStorageIter(c *C) {
 }
 
 func (s *StorageSuite) TestReferenceStorageSetAndGet(c *C) {
-	rs := NewReferenceStorage()
+	storage := NewStorage()
+	rs, err := storage.ReferenceStorage()
+	c.Assert(err, IsNil)
 
-	err := rs.Set(core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"))
+	err = rs.Set(core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"))
 	c.Assert(err, IsNil)
 
 	err = rs.Set(core.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"))
@@ -138,9 +149,11 @@ func (s *StorageSuite) TestReferenceStorageSetAndGet(c *C) {
 }
 
 func (s *StorageSuite) TestReferenceStorageIter(c *C) {
-	rs := NewReferenceStorage()
+	storage := NewStorage()
+	rs, err := storage.ReferenceStorage()
+	c.Assert(err, IsNil)
 
-	err := rs.Set(core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"))
+	err = rs.Set(core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"))
 	c.Assert(err, IsNil)
 
 	i, err := rs.Iter()
