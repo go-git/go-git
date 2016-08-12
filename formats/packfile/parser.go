@@ -172,7 +172,7 @@ func moreBytesInLength(c byte) bool {
 	return c&maskContinue > 0
 }
 
-// ReadObject reads and returns a git object from an object entry in the packfile.
+// FillObject fills the given object from an object entry in the packfile.
 // Non-deltified and deltified objects are supported.
 func (p Parser) FillObject(obj core.Object) error {
 	start, err := p.Offset()
@@ -190,11 +190,11 @@ func (p Parser) FillObject(obj core.Object) error {
 	switch t {
 	case core.CommitObject, core.TreeObject, core.BlobObject, core.TagObject:
 		obj.SetType(t)
-		err = p.ReadNonDeltaObjectContent(obj)
+		err = p.FillFromNonDeltaContent(obj)
 	case core.REFDeltaObject:
-		err = p.ReadREFDeltaObjectContent(obj)
+		err = p.FillREFDeltaObjectContent(obj)
 	case core.OFSDeltaObject:
-		err = p.ReadOFSDeltaObjectContent(obj, start)
+		err = p.FillOFSDeltaObjectContent(obj, start)
 	default:
 		err = ErrInvalidObject.AddDetails("tag %q", t)
 	}
@@ -202,9 +202,9 @@ func (p Parser) FillObject(obj core.Object) error {
 	return err
 }
 
-// ReadNonDeltaObjectContent reads and returns a non-deltified object
+// FillFromNonDeltaContent reads and fill a non-deltified object
 // from it zlib stream in an object entry in the packfile.
-func (p Parser) ReadNonDeltaObjectContent(obj core.Object) error {
+func (p Parser) FillFromNonDeltaContent(obj core.Object) error {
 	w, err := obj.Writer()
 	if err != nil {
 		return err
@@ -233,9 +233,9 @@ func (p Parser) inflate(w io.Writer) (err error) {
 	return err
 }
 
-// ReadREFDeltaObjectContent reads and returns an object specified by a
+// FillREFDeltaObjectContent reads and returns an object specified by a
 // REF-Delta entry in the packfile, form the hash onwards.
-func (p Parser) ReadREFDeltaObjectContent(obj core.Object) error {
+func (p Parser) FillREFDeltaObjectContent(obj core.Object) error {
 	refHash, err := p.ReadHash()
 	if err != nil {
 		return err
@@ -264,7 +264,7 @@ func (p Parser) ReadHash() (core.Hash, error) {
 	return h, nil
 }
 
-// ReadAndSolveDelta reads and returns the base patched with the contents
+// ReadAndApplyDelta reads and apply the base patched with the contents
 // of a zlib compressed diff data in the delta portion of an object
 // entry in the packfile.
 func (p Parser) ReadAndApplyDelta(target, base core.Object) error {
@@ -276,11 +276,11 @@ func (p Parser) ReadAndApplyDelta(target, base core.Object) error {
 	return ApplyDelta(target, base, buf.Bytes())
 }
 
-// ReadOFSDeltaObjectContent reads an returns an object specified by an
+// FillOFSDeltaObjectContent reads an fill an object specified by an
 // OFS-delta entry in the packfile from it negative offset onwards.  The
 // start parameter is the offset of this particular object entry (the
 // current offset minus the already processed type and length).
-func (p Parser) ReadOFSDeltaObjectContent(obj core.Object, start int64) error {
+func (p Parser) FillOFSDeltaObjectContent(obj core.Object, start int64) error {
 
 	jump, err := p.ReadNegativeOffset()
 	if err != nil {

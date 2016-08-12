@@ -39,14 +39,6 @@ type Object interface {
 	Writer() (ObjectWriter, error)
 }
 
-// ObjectStorage generic storage of objects
-type ObjectStorage interface {
-	NewObject() Object
-	Set(Object) (Hash, error)
-	Get(Hash) (Object, error)
-	Iter(ObjectType) (ObjectIter, error)
-}
-
 // ObjectType internal object type's
 type ObjectType int8
 
@@ -108,12 +100,6 @@ func ParseObjectType(value string) (typ ObjectType, err error) {
 		err = ErrInvalidType
 	}
 	return
-}
-
-// ObjectIter is a generic closable interface for iterating over objects.
-type ObjectIter interface {
-	Next() (Object, error)
-	Close()
 }
 
 // ObjectLookupIter implements ObjectIter. It iterates over a series of object

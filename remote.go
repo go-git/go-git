@@ -82,7 +82,7 @@ func (r *Remote) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) 
 	return r.upSrv.Fetch(req)
 }
 
-// Head returns the Hash of the HEAD
+// Head returns the Reference of the HEAD
 func (r *Remote) Head() *core.Reference {
 	return r.upInfo.Head()
 }

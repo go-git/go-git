@@ -238,13 +238,13 @@ func (s *ParserSuite) TestReadNonDeltaObjectContent(c *C) {
 		c.Assert(err, IsNil, com)
 
 		obj := &core.MemoryObject{}
-		err = p.ReadNonDeltaObjectContent(obj)
+		err = p.FillFromNonDeltaContent(obj)
 		c.Assert(err, IsNil, com)
 		c.Assert(obj.Content(), DeepEquals, test.expected, com)
 	}
 }
 
-func (s *ParserSuite) TestReadOFSDeltaObjectContent(c *C) {
+func (s *ParserSuite) TestFillOFSDeltaObjectContent(c *C) {
 	for i, test := range [...]struct {
 		fixID      string
 		offset     int64
@@ -294,14 +294,14 @@ func (s *ParserSuite) TestReadOFSDeltaObjectContent(c *C) {
 		c.Assert(err, IsNil, com)
 
 		obj := &core.MemoryObject{}
-		err = p.ReadOFSDeltaObjectContent(obj, test.offset)
+		err = p.FillOFSDeltaObjectContent(obj, test.offset)
 		c.Assert(err, IsNil, com)
 		c.Assert(obj.Type(), Equals, test.expType, com)
 		c.Assert(obj.Content(), DeepEquals, test.expContent, com)
 	}
 }
 
-func (s *ParserSuite) TestReadREFDeltaObjectContent(c *C) {
+func (s *ParserSuite) TestFillREFDeltaObjectContent(c *C) {
 	for i, test := range [...]struct {
 		fixID      string
 		offset     int64
@@ -358,7 +358,7 @@ func (s *ParserSuite) TestReadREFDeltaObjectContent(c *C) {
 		c.Assert(err, IsNil, com)
 
 		obj := &core.MemoryObject{}
-		err = p.ReadREFDeltaObjectContent(obj)
+		err = p.FillREFDeltaObjectContent(obj)
 		c.Assert(err, IsNil, com)
 		c.Assert(obj.Type(), Equals, test.expType, com)
 		c.Assert(obj.Content(), DeepEquals, test.expContent, com)
@@ -368,7 +368,12 @@ func (s *ParserSuite) TestReadREFDeltaObjectContent(c *C) {
 }
 
 func newObject(t core.ObjectType, c []byte) core.Object {
-	return core.NewMemoryObject(t, int64(len(c)), c)
+	o := &core.MemoryObject{}
+	o.SetType(t)
+	o.SetSize(int64(len(c)))
+	o.Write(c)
+
+	return o
 }
 
 func (s *ParserSuite) TestReadHeaderBadSignatureError(c *C) {

@@ -1,6 +1,10 @@
 package core
 
-import "strings"
+import (
+	"errors"
+	"io"
+	"strings"
+)
 
 const (
 	refPrefix       = "refs/"
@@ -9,6 +13,10 @@ const (
 	refRemotePrefix = refPrefix + "remotes/"
 	refNotePrefix   = refPrefix + "notes/"
 	symrefPrefix    = "ref: "
+)
+
+var (
+	ErrReferenceNotFound = errors.New("reference not found")
 )
 
 // ReferenceType reference type's
@@ -39,17 +47,14 @@ type Reference struct {
 // the resulting reference can be a SymbolicReference or a HashReference base
 // on the target provided
 func NewReferenceFromStrings(name, target string) *Reference {
-	r := &Reference{n: ReferenceName(name)}
+	n := ReferenceName(name)
 
 	if strings.HasPrefix(target, symrefPrefix) {
-		r.t = SymbolicReference
-		r.target = ReferenceName(target[len(symrefPrefix):])
-		return r
+		target := ReferenceName(target[len(symrefPrefix):])
+		return NewSymbolicReference(n, target)
 	}
 
-	r.t = HashReference
-	r.h = NewHash(target)
-	return r
+	return NewHashReference(n, NewHash(target))
 }
 
 // NewSymbolicReference creates a new SymbolicReference reference
@@ -110,15 +115,38 @@ func (r *Reference) IsTag() bool {
 	return strings.HasPrefix(string(r.n), refTagPrefix)
 }
 
-// ReferenceStorage generic storage of references
-type ReferenceStorage interface {
-	Set(Reference) error
-	Get(ReferenceName) (Reference, error)
-	Iter(ObjectType) (ReferenceIter, error)
+// ReferenceSliceIter implements ReferenceIter. It iterates over a series of
+// references stored in a slice and yields each one in turn when Next() is
+// called.
+//
+// The ReferenceSliceIter must be closed with a call to Close() when it is no
+// longer needed.
+type ReferenceSliceIter struct {
+	series []*Reference
+	pos    int
 }
 
-// ReferenceIter is a generic closable interface for iterating over references
-type ReferenceIter interface {
-	Next() (Reference, error)
-	Close()
+// NewReferenceSliceIter returns a reference iterator for the given slice of
+// objects.
+func NewReferenceSliceIter(series []*Reference) *ReferenceSliceIter {
+	return &ReferenceSliceIter{
+		series: series,
+	}
+}
+
+// Next returns the next reference from the iterator. If the iterator has
+// reached the end it will return io.EOF as an error.
+func (iter *ReferenceSliceIter) Next() (*Reference, error) {
+	if iter.pos >= len(iter.series) {
+		return nil, io.EOF
+	}
+
+	obj := iter.series[iter.pos]
+	iter.pos++
+	return obj, nil
+}
+
+// Close releases any resources used by the iterator.
+func (iter *ReferenceSliceIter) Close() {
+	iter.pos = len(iter.series)
 }
