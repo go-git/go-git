@@ -8,6 +8,31 @@ import (
 
 var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
 
+type Storage struct {
+	o *ObjectStorage
+	r *ReferenceStorage
+}
+
+func NewStorage() *Storage {
+	return &Storage{}
+}
+
+func (s *Storage) ObjectStorage() core.ObjectStorage {
+	if s.o == nil {
+		s.o = NewObjectStorage()
+	}
+
+	return s.o
+}
+
+func (s *Storage) ReferenceStorage() core.ReferenceStorage {
+	if s.r == nil {
+		s.r = NewReferenceStorage()
+	}
+
+	return s.r
+}
+
 // ObjectStorage is the implementation of core.ObjectStorage for memory.Object
 type ObjectStorage struct {
 	Objects map[core.Hash]core.Object
@@ -77,6 +102,7 @@ func (o *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	case core.TagObject:
 		series = flattenObjectMap(o.Tags)
 	}
+
 	return core.NewObjectSliceIter(series), nil
 }
 
@@ -86,4 +112,38 @@ func flattenObjectMap(m map[core.Hash]core.Object) []core.Object {
 		objects = append(objects, obj)
 	}
 	return objects
+}
+
+type ReferenceStorage map[core.ReferenceName]*core.Reference
+
+func NewReferenceStorage() *ReferenceStorage {
+	s := make(ReferenceStorage, 0)
+
+	return &s
+}
+
+func (r ReferenceStorage) Set(ref *core.Reference) error {
+	if ref != nil {
+		r[ref.Name()] = ref
+	}
+
+	return nil
+}
+
+func (r ReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {
+	ref, ok := r[n]
+	if !ok {
+		return nil, core.ErrReferenceNotFound
+	}
+
+	return ref, nil
+}
+
+func (r ReferenceStorage) Iter() (core.ReferenceIter, error) {
+	var refs []*core.Reference
+	for _, ref := range r {
+		refs = append(refs, ref)
+	}
+
+	return core.NewReferenceSliceIter(refs), nil
 }
