@@ -43,14 +43,16 @@ func (s *DiffTreeSuite) SetUpSuite(c *C) {
 
 	s.repos = make(map[string]*git.Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url] = git.NewPlainRepository()
+		s.repos[fixRepo.url], _ = git.NewMemoryRepository()
 
 		f, err := os.Open(fixRepo.packfile)
 		c.Assert(err, IsNil)
 
 		r := packfile.NewSeekable(f)
 		d := packfile.NewDecoder(r)
-		err = d.Decode(s.repos[fixRepo.url].Storage)
+
+		os, _ := s.repos[fixRepo.url].Storage.ObjectStorage()
+		err = d.Decode(os)
 		c.Assert(err, IsNil)
 
 		c.Assert(f.Close(), IsNil)

@@ -18,7 +18,7 @@ type FSImplSuite struct {
 var _ = Suite(&FSImplSuite{})
 
 func (s *FSImplSuite) SetUpSuite(c *C) {
-	dir, err := tgz.Extract("../../storage/filesystem/internal/gitdir/fixtures/spinnaker-gc.tgz")
+	dir, err := tgz.Extract("../../storage/filesystem/internal/dotgit/fixtures/spinnaker-gc.tgz")
 	c.Assert(err, IsNil)
 	s.dir = dir
 }

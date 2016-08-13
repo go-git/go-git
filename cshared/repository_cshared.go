@@ -1,13 +1,9 @@
 // +build ignore
 package main
 
-import (
-	"C"
+import "C"
 
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/clients/common"
-	"gopkg.in/src-d/go-git.v4/core"
-)
+/*
 
 //export c_Repository
 func c_Repository() uint64 {
@@ -232,3 +228,5 @@ func c_Repository_Object(r uint64, h []byte) (uint64, int, *C.char) {
 	robj_handle := RegisterObject(robj)
 	return uint64(robj_handle), ErrorCodeSuccess, nil
 }
+
+*/

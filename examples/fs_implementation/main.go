@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4"
-	gogitFS "gopkg.in/src-d/go-git.v4/utils/fs"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 func main() {
@@ -18,9 +18,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fs := newFS(os.Args[1])
+	fs := NewCustomFS(os.Args[1])
 
-	repo, err := git.NewRepositoryFromFS(fs, ".git")
+	repo, err := git.NewFilesystemRepository(fs, ".git")
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		os.Exit(1)
@@ -57,19 +57,19 @@ func usage() {
 //
 // Example: when constructed with 'newFS("tmp")', a path like 'foo--bar'
 // will represent the local path "/tmp/foo/bar".
-type fs struct {
+type CustomFS struct {
 	base string
 }
 
 const separator = "--"
 
-func newFS(path string) *fs {
-	return &fs{
+func NewCustomFS(path string) *CustomFS {
+	return &CustomFS{
 		base: path,
 	}
 }
 
-func (fs *fs) Stat(path string) (info os.FileInfo, err error) {
+func (fs *CustomFS) Stat(path string) (info os.FileInfo, err error) {
 	f, err := os.Open(fs.ToReal(path))
 	if err != nil {
 		return nil, err
@@ -85,19 +85,19 @@ func (fs *fs) Stat(path string) (info os.FileInfo, err error) {
 	return f.Stat()
 }
 
-func (fs *fs) ToReal(path string) string {
+func (fs *CustomFS) ToReal(path string) string {
 	parts := strings.Split(path, separator)
 	return filepath.Join(fs.base, filepath.Join(parts...))
 }
 
-func (fs *fs) Open(path string) (gogitFS.ReadSeekCloser, error) {
+func (fs *CustomFS) Open(path string) (fs.ReadSeekCloser, error) {
 	return os.Open(fs.ToReal(path))
 }
 
-func (fs *fs) ReadDir(path string) ([]os.FileInfo, error) {
+func (fs *CustomFS) ReadDir(path string) ([]os.FileInfo, error) {
 	return ioutil.ReadDir(fs.ToReal(path))
 }
 
-func (fs *fs) Join(elem ...string) string {
+func (fs *CustomFS) Join(elem ...string) string {
 	return strings.Join(elem, separator)
 }

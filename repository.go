@@ -5,7 +5,9 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 var (
@@ -30,6 +32,16 @@ type Repository struct {
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
 func NewMemoryRepository() (*Repository, error) {
 	return NewRepository(memory.NewStorage())
+}
+
+// NewFilesystemRepository creates a new repository, backed by a filesystem.Storage
+func NewFilesystemRepository(fs fs.FS, path string) (*Repository, error) {
+	s, err := filesystem.NewStorage(fs, path)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewRepository(s)
 }
 
 // NewRepository creates a new repository with the given Storage

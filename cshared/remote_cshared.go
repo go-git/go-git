@@ -1,12 +1,9 @@
 // +build ignore
 package main
 
-import (
-	"C"
+import "C"
 
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/clients/common"
-)
+/*
 
 //export c_Remote_get_Endpoint
 func c_Remote_get_Endpoint(r uint64) *C.char {
@@ -190,3 +187,5 @@ func c_Remote_Refs(r uint64) uint64 {
 	refs := remote.Refs()
 	return uint64(RegisterObject(refs))
 }
+
+*/

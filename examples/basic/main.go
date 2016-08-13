@@ -9,13 +9,14 @@ import (
 )
 
 func main() {
-	fmt.Printf("Retrieving %q ...\n", os.Args[1])
-	r, err := git.NewRepository(os.Args[1], nil)
+	url := os.Args[1]
+	fmt.Printf("Retrieving %q ...\n", url)
+	r, err := git.NewMemoryRepository()
 	if err != nil {
 		panic(err)
 	}
 
-	if err = r.PullDefault(); err != nil {
+	if err = r.Clone(&git.CloneOptions{URL: url}); err != nil {
 		panic(err)
 	}
 

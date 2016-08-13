@@ -8,17 +8,23 @@ import (
 )
 
 func main() {
-	fmt.Printf("Retrieving latest commit from: %q ...\n", os.Args[1])
-	r, err := git.NewRepository(os.Args[1], nil)
+	url := os.Args[1]
+
+	fmt.Printf("Retrieving latest commit from: %q ...\n", url)
+	r, err := git.NewMemoryRepository()
 	if err != nil {
 		panic(err)
 	}
 
-	if err = r.Pull(git.DefaultRemoteName, "refs/heads/master"); err != nil {
+	if err = r.Clone(&git.CloneOptions{URL: url}); err != nil {
 		panic(err)
 	}
 
-	head := r.Remotes[git.DefaultRemoteName].Head()
+	head, err := r.Head()
+	if err != nil {
+		panic(err)
+	}
+
 	commit, err := r.Commit(head.Hash())
 	if err != nil {
 		panic(err)
