@@ -10,6 +10,13 @@ const (
 	ExampleReferenceName ReferenceName = "refs/heads/v4"
 )
 
+func (s *ReferenceSuite) TestReferenceNameAsRemote(c *C) {
+	c.Assert(
+		ExampleReferenceName.AsRemote("foo").String(),
+		Equals, "refs/remotes/foo/v4",
+	)
+}
+
 func (s *ReferenceSuite) TestNewReferenceFromStrings(c *C) {
 	r := NewReferenceFromStrings("refs/heads/v4", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	c.Assert(r.Type(), Equals, HashReference)

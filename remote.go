@@ -24,17 +24,18 @@ func NewRemote(url string) (*Remote, error) {
 // NewAuthenticatedRemote returns a new Remote using the given AuthMethod, using as
 // client http.DefaultClient
 func NewAuthenticatedRemote(url string, auth common.AuthMethod) (*Remote, error) {
-	end, err := common.NewEndpoint(url)
+	endpoint, err := common.NewEndpoint(url)
 	if err != nil {
 		return nil, err
 	}
 
-	upSrv, err := clients.NewGitUploadPackService(url)
+	upSrv, err := clients.NewGitUploadPackService(endpoint)
 	if err != nil {
 		return nil, err
 	}
+
 	return &Remote{
-		Endpoint: end,
+		Endpoint: endpoint,
 		Auth:     auth,
 		upSrv:    upSrv,
 	}, nil
@@ -44,9 +45,9 @@ func NewAuthenticatedRemote(url string, auth common.AuthMethod) (*Remote, error)
 func (r *Remote) Connect() error {
 	var err error
 	if r.Auth == nil {
-		err = r.upSrv.Connect(r.Endpoint)
+		err = r.upSrv.Connect()
 	} else {
-		err = r.upSrv.ConnectWithAuth(r.Endpoint, r.Auth)
+		err = r.upSrv.ConnectWithAuth(r.Auth)
 	}
 
 	if err != nil {
@@ -76,26 +77,27 @@ func (r *Remote) Capabilities() *common.Capabilities {
 }
 
 // Fetch returns a reader using the request
-func (r *Remote) Fetch(s core.ObjectStorage, o *FetchOptions) (h core.Hash, err error) {
+func (r *Remote) Fetch(s core.ObjectStorage, o *FetchOptions) (err error) {
+	o.Default()
+
 	ref, err := r.Ref(o.ReferenceName, true)
 	if err != nil {
-		return core.ZeroHash, err
+		return err
 	}
 
-	h = ref.Hash()
 	req := &common.GitUploadPackRequest{}
-	req.Want(h)
+	req.Want(ref.Hash())
 
 	reader, err := r.upSrv.Fetch(req)
 	if err != nil {
-		return core.ZeroHash, err
+		return err
 	}
 
 	defer checkClose(reader, &err)
 	stream := packfile.NewStream(reader)
 
 	d := packfile.NewDecoder(stream)
-	return h, d.Decode(s)
+	return d.Decode(s)
 }
 
 // Head returns the Reference of the HEAD

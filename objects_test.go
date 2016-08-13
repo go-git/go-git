@@ -10,23 +10,22 @@ import (
 )
 
 type ObjectsSuite struct {
+	BaseSuite
 	r *Repository
 }
 
 var _ = Suite(&ObjectsSuite{})
 
-/*
 func (s *ObjectsSuite) SetUpTest(c *C) {
+	s.BaseSuite.SetUpTest(c)
+
 	var err error
-	s.r, err = NewRepository(RepositoryFixture, nil)
+	s.r, err = NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	s.r.Remotes["origin"].upSrv = &MockGitUploadPackService{}
-
-	err = s.r.Pull("origin", "refs/heads/master")
+	err = s.r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 }
-*/
 
 func (s *ObjectsSuite) TestNewCommit(c *C) {
 	hash := core.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")

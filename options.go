@@ -11,10 +11,24 @@ type CloneOptions struct {
 	URL string
 	// Auth credentials, if required, to uses with the remote repository
 	Auth common.AuthMethod
+	// Remote branch to fetch
+	ReferenceName core.ReferenceName
+}
+
+func (o *CloneOptions) Default() {
+	if o.ReferenceName == "" {
+		o.ReferenceName = core.HEAD
+	}
 }
 
 // FetchOptions describe how a fetch should be perform
 type FetchOptions struct {
 	// Remote branch to fetch
 	ReferenceName core.ReferenceName
+}
+
+func (o *FetchOptions) Default() {
+	if o.ReferenceName == "" {
+		o.ReferenceName = core.HEAD
+	}
 }

@@ -53,6 +53,8 @@ func NewRepository(s core.Storage) (*Repository, error) {
 
 // Clone clones a remote repository
 func (r *Repository) Clone(o *CloneOptions) error {
+	o.Default()
+
 	remote, err := r.createDefaultRemote(o.URL, o.Auth)
 	if err != nil {
 		return err
@@ -62,15 +64,17 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
-	h, err := remote.Fetch(r.os, &FetchOptions{
-		ReferenceName: core.HEAD,
-	})
-
+	err = remote.Fetch(r.os, &FetchOptions{ReferenceName: o.ReferenceName})
 	if err != nil {
 		return err
 	}
 
-	return r.rs.Set(core.NewHashReference(core.HEAD, h))
+	ref, err := remote.Ref(o.ReferenceName, true)
+	if err != nil {
+		return err
+	}
+
+	return r.createDefaultBranch(ref)
 }
 
 func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*Remote, error) {
@@ -84,6 +88,19 @@ func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*R
 	}
 
 	return remote, nil
+}
+
+func (r *Repository) createDefaultBranch(ref *core.Reference) error {
+	if !ref.IsBranch() {
+		// detached HEAD mode
+		return r.rs.Set(core.NewHashReference(core.HEAD, ref.Hash()))
+	}
+
+	if err := r.rs.Set(ref); err != nil {
+		return err
+	}
+
+	return r.rs.Set(core.NewSymbolicReference(core.HEAD, ref.Name()))
 }
 
 // Commit return the commit with the given hash
@@ -191,12 +208,22 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 	}
 }
 
-// Head returns the hash of the HEAD of the repository or the head of a
-// remote, if one is passed.
-func (r *Repository) Head(resolved bool) (*core.Reference, error) {
+// Head returns the reference where HEAD is pointing
+func (r *Repository) Head() (*core.Reference, error) {
+	return core.ResolveReference(r.rs, core.HEAD)
+}
+
+// Ref returns the Hash pointing the given refName
+func (r *Repository) Ref(name core.ReferenceName, resolved bool) (*core.Reference, error) {
 	if resolved {
-		return core.ResolveReference(r.rs, core.HEAD)
+		return core.ResolveReference(r.rs, name)
 	}
 
-	return r.rs.Get(core.HEAD)
+	return r.rs.Get(name)
+}
+
+// Refs returns a map with all the References
+func (r *Repository) Refs() core.ReferenceIter {
+	i, _ := r.rs.Iter()
+	return i
 }

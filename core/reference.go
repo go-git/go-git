@@ -34,6 +34,20 @@ const (
 // ReferenceName reference name's
 type ReferenceName string
 
+// AsRemote returns a new remote reference name using current one as base
+func (r ReferenceName) AsRemote(remote string) ReferenceName {
+	return ReferenceName(refRemotePrefix + remote + "/" + r.alias())
+}
+
+func (r ReferenceName) String() string {
+	return string(r)
+}
+
+func (r ReferenceName) alias() string {
+	parts := strings.Split(string(r), "/")
+	return parts[len(parts)-1]
+}
+
 const (
 	HEAD ReferenceName = "HEAD"
 )
