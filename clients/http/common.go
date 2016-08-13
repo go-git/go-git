@@ -2,15 +2,12 @@
 package http
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
 )
-
-var InvalidAuthMethodErr = errors.New("invalid http auth method: a http.HTTPAuthMethod should be provided.")
 
 type HTTPAuthMethod interface {
 	common.AuthMethod
@@ -53,7 +50,7 @@ func NewHTTPError(r *http.Response) error {
 
 	err := &HTTPError{r}
 	if r.StatusCode == 404 || r.StatusCode == 401 {
-		return core.NewPermanentError(common.NotFoundErr)
+		return core.NewPermanentError(common.ErrNotFound)
 	}
 
 	return core.NewUnexpectedError(err)

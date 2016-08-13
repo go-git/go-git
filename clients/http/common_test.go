@@ -13,6 +13,13 @@ type SuiteCommon struct{}
 
 var _ = Suite(&SuiteCommon{})
 
+func (s *SuiteCommon) TestNewBasicAuth(c *C) {
+	a := NewBasicAuth("foo", "qux")
+
+	c.Assert(a.Name(), Equals, "http-basic-auth")
+	c.Assert(a.String(), Equals, "http-basic-auth - foo:*******")
+}
+
 func (s *SuiteCommon) TestNewHTTPError200(c *C) {
 	res := &http.Response{StatusCode: 200}
 	res.StatusCode = 200

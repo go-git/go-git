@@ -15,8 +15,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/formats/pktline"
 
-	"gopkg.in/sourcegraph/go-vcsurl.v1"
 	"golang.org/x/crypto/ssh"
+	"gopkg.in/sourcegraph/go-vcsurl.v1"
 )
 
 // New errors introduced by this package.
@@ -35,6 +35,7 @@ var (
 // TODO: remove NewGitUploadPackService().
 type GitUploadPackService struct {
 	connected bool
+	endpoint  common.Endpoint
 	vcs       *vcsurl.RepoInfo
 	client    *ssh.Client
 	auth      AuthMethod
@@ -42,24 +43,24 @@ type GitUploadPackService struct {
 
 // NewGitUploadPackService initialises a GitUploadPackService.
 // TODO: remove this, as the struct is zero-value safe.
-func NewGitUploadPackService() *GitUploadPackService {
-	return &GitUploadPackService{}
+func NewGitUploadPackService(endpoint common.Endpoint) common.GitUploadPackService {
+	return &GitUploadPackService{endpoint: endpoint}
 }
 
 // Connect cannot be used with SSH clients and always return
 // ErrAuthRequired. Use ConnectWithAuth instead.
-func (s *GitUploadPackService) Connect(ep common.Endpoint) (err error) {
+func (s *GitUploadPackService) Connect() (err error) {
 	return ErrAuthRequired
 }
 
 // ConnectWithAuth connects to ep using SSH. Authentication is handled
 // by auth.
-func (s *GitUploadPackService) ConnectWithAuth(ep common.Endpoint, auth common.AuthMethod) (err error) {
+func (s *GitUploadPackService) ConnectWithAuth(auth common.AuthMethod) (err error) {
 	if s.connected {
 		return ErrAlreadyConnected
 	}
 
-	s.vcs, err = vcsurl.Parse(string(ep))
+	s.vcs, err = vcsurl.Parse(s.endpoint.String())
 	if err != nil {
 		return err
 	}

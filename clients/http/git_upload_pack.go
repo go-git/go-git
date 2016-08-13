@@ -12,37 +12,38 @@ import (
 )
 
 type GitUploadPackService struct {
-	Client *http.Client
-
+	client   *http.Client
 	endpoint common.Endpoint
 	auth     HTTPAuthMethod
 }
 
-func NewGitUploadPackService() *GitUploadPackService {
+func NewGitUploadPackService(endpoint common.Endpoint) common.GitUploadPackService {
 	return &GitUploadPackService{
-		Client: http.DefaultClient,
+		client:   http.DefaultClient,
+		endpoint: endpoint,
 	}
 }
 
-func (s *GitUploadPackService) Connect(url common.Endpoint) error {
-	s.endpoint = url
+func (s *GitUploadPackService) Connect() error {
 	return nil
 }
 
-func (s *GitUploadPackService) ConnectWithAuth(url common.Endpoint, auth common.AuthMethod) error {
+func (s *GitUploadPackService) ConnectWithAuth(auth common.AuthMethod) error {
 	httpAuth, ok := auth.(HTTPAuthMethod)
 	if !ok {
-		return InvalidAuthMethodErr
+		return common.ErrInvalidAuthMethod
 	}
 
-	s.endpoint = url
 	s.auth = httpAuth
-
 	return nil
 }
 
 func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
-	url := fmt.Sprintf("%s/info/refs?service=%s", s.endpoint, common.GitUploadPackServiceName)
+	url := fmt.Sprintf(
+		"%s/info/refs?service=%s",
+		s.endpoint.String(), common.GitUploadPackServiceName,
+	)
+
 	res, err := s.doRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -55,7 +56,11 @@ func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 }
 
 func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/%s", s.endpoint, common.GitUploadPackServiceName)
+	url := fmt.Sprintf(
+		"%s/%s",
+		s.endpoint.String(), common.GitUploadPackServiceName,
+	)
+
 	res, err := s.doRequest("POST", url, r.Reader())
 	if err != nil {
 		return nil, err
@@ -83,7 +88,7 @@ func (s *GitUploadPackService) doRequest(method, url string, content *strings.Re
 	s.applyHeadersToRequest(req, content)
 	s.applyAuthToRequest(req)
 
-	res, err := s.Client.Do(req)
+	res, err := s.client.Do(req)
 	if err != nil {
 		return nil, core.NewUnexpectedError(err)
 	}

@@ -6,27 +6,27 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/url"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/pktline"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-
-	"gopkg.in/sourcegraph/go-vcsurl.v1"
 )
 
 var (
-	NotFoundErr           = errors.New("repository not found")
-	EmptyGitUploadPackErr = errors.New("empty git-upload-pack given")
+	ErrNotFound           = errors.New("repository not found")
+	ErrEmptyGitUploadPack = errors.New("empty git-upload-pack given")
+	ErrInvalidAuthMethod  = errors.New("invalid auth method")
 )
 
 const GitUploadPackServiceName = "git-upload-pack"
 
 type GitUploadPackService interface {
-	Connect(url Endpoint) error
-	ConnectWithAuth(url Endpoint, auth AuthMethod) error
+	Connect() error
+	ConnectWithAuth(AuthMethod) error
 	Info() (*GitUploadPackInfo, error)
-	Fetch(r *GitUploadPackRequest) (io.ReadCloser, error)
+	Fetch(*GitUploadPackRequest) (io.ReadCloser, error)
 }
 
 type AuthMethod interface {
@@ -34,24 +34,26 @@ type AuthMethod interface {
 	String() string
 }
 
-type Endpoint string
+type Endpoint url.URL
 
-func NewEndpoint(url string) (Endpoint, error) {
-	vcs, err := vcsurl.Parse(url)
+func NewEndpoint(endpoint string) (Endpoint, error) {
+	u, err := url.Parse(endpoint)
 	if err != nil {
-		return "", core.NewPermanentError(err)
+		return Endpoint{}, core.NewPermanentError(err)
 	}
 
-	link := vcs.Link()
-	if !strings.HasSuffix(link, ".git") {
-		link += ".git"
+	if !u.IsAbs() {
+		return Endpoint{}, core.NewPermanentError(fmt.Errorf(
+			"invalid endpoint: %s", endpoint,
+		))
 	}
 
-	return Endpoint(link), nil
+	return Endpoint(*u), nil
 }
 
-func (e Endpoint) Service(name string) string {
-	return fmt.Sprintf("%s/info/refs?service=%s", e, name)
+func (e *Endpoint) String() string {
+	u := url.URL(*e)
+	return u.String()
 }
 
 // Capabilities contains all the server capabilities
@@ -190,7 +192,7 @@ func NewGitUploadPackInfo() *GitUploadPackInfo {
 
 func (r *GitUploadPackInfo) Decode(d *pktline.Decoder) error {
 	if err := r.read(d); err != nil {
-		if err == EmptyGitUploadPackErr {
+		if err == ErrEmptyGitUploadPack {
 			return core.NewPermanentError(err)
 		}
 
@@ -223,7 +225,7 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	}
 
 	if isEmpty {
-		return EmptyGitUploadPackErr
+		return ErrEmptyGitUploadPack
 	}
 
 	return nil
