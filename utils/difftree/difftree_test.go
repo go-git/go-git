@@ -8,6 +8,7 @@ import (
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -43,7 +44,8 @@ func (s *DiffTreeSuite) SetUpSuite(c *C) {
 
 	s.repos = make(map[string]*git.Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url], _ = git.NewMemoryRepository()
+		store := memory.NewStorage()
+		s.repos[fixRepo.url], _ = git.NewRepository(store)
 
 		f, err := os.Open(fixRepo.packfile)
 		c.Assert(err, IsNil)
@@ -51,8 +53,7 @@ func (s *DiffTreeSuite) SetUpSuite(c *C) {
 		r := packfile.NewSeekable(f)
 		d := packfile.NewDecoder(r)
 
-		os, _ := s.repos[fixRepo.url].Storage.ObjectStorage()
-		err = d.Decode(os)
+		err = d.Decode(store.ObjectStorage())
 		c.Assert(err, IsNil)
 
 		c.Assert(f.Close(), IsNil)

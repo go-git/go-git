@@ -22,25 +22,21 @@ func NewStorage(fs fs.FS, path string) (*Storage, error) {
 	return &Storage{dir: dir}, nil
 }
 
-func (s *Storage) ObjectStorage() (core.ObjectStorage, error) {
+func (s *Storage) ObjectStorage() core.ObjectStorage {
 	if s.o != nil {
-		return s.o, nil
+		return s.o
 	}
 
-	i, err := buildIndex(s.dir)
-	if err != nil {
-		return nil, err
-	}
-
-	s.o = &ObjectStorage{dir: s.dir, index: i}
-	return s.o, nil
+	//TODO: error being ignored
+	i, _ := buildIndex(s.dir)
+	return &ObjectStorage{dir: s.dir, index: i}
 }
 
-func (s *Storage) ReferenceStorage() (core.ReferenceStorage, error) {
+func (s *Storage) ReferenceStorage() core.ReferenceStorage {
 	if s.r != nil {
-		return s.r, nil
+		return s.r
 	}
 
 	s.r = &ReferenceStorage{dir: s.dir}
-	return s.r, nil
+	return s.r
 }

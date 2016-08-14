@@ -2,8 +2,8 @@ package core
 
 // Storage storage of objects and references
 type Storage interface {
-	ObjectStorage() (ObjectStorage, error)
-	ReferenceStorage() (ReferenceStorage, error)
+	ObjectStorage() ObjectStorage
+	ReferenceStorage() ReferenceStorage
 }
 
 // ObjectStorage generic storage of objects

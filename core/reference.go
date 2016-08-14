@@ -132,6 +132,21 @@ func (r *Reference) IsTag() bool {
 	return strings.HasPrefix(string(r.n), refTagPrefix)
 }
 
+// Strings dump a reference as a [2]string
+func (r *Reference) Strings() [2]string {
+	var o [2]string
+	o[0] = r.Name().String()
+
+	switch r.Type() {
+	case HashReference:
+		o[1] = r.Hash().String()
+	case SymbolicReference:
+		o[1] = symrefPrefix + r.Target().String()
+	}
+
+	return o
+}
+
 // ReferenceSliceIter implements ReferenceIter. It iterates over a series of
 // references stored in a slice and yields each one in turn when Next() is
 // called.

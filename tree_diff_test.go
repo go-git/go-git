@@ -46,7 +46,7 @@ func (s *DiffTreeSuite) SetUpSuite(c *C) {
 
 		r := packfile.NewSeekable(f)
 		d := packfile.NewDecoder(r)
-		err = d.Decode(s.repos[fixRepo.url].os)
+		err = d.Decode(s.repos[fixRepo.url].s.ObjectStorage())
 		c.Assert(err, IsNil)
 
 		c.Assert(f.Close(), IsNil)

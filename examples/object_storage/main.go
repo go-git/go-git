@@ -8,26 +8,25 @@ import (
 
 	"github.com/aerospike/aerospike-client-go"
 
-	"gopkg.in/src-d/go-git.v3"
+	"gopkg.in/src-d/go-git.v4"
 )
 
 func main() {
 	url := os.Args[2]
-	r, err := git.NewRepository(url, nil)
-	if err != nil {
-		panic(err)
-	}
-
 	client, err := aerospike.NewClient("127.0.0.1", 3000)
 	if err != nil {
 		panic(err)
 	}
 
-	r.Storage = NewAerospikeObjectStorage(url, client)
+	s := NewAerospikeStorage(url, client)
+	r, err := git.NewRepository(s)
+	if err != nil {
+		panic(err)
+	}
 
 	switch os.Args[1] {
-	case "pull":
-		pull(r)
+	case "clone":
+		clone(r, url)
 	case "list":
 		list(r)
 	default:
@@ -35,11 +34,11 @@ func main() {
 	}
 }
 
-func pull(r *git.Repository) {
-	fmt.Printf("Retrieving %q ...\n", os.Args[2])
+func clone(r *git.Repository, url string) {
+	fmt.Printf("Cloning %q ...\n", os.Args[2])
 	start := time.Now()
 
-	if err := r.PullDefault(); err != nil {
+	if err := r.Clone(&git.CloneOptions{URL: url}); err != nil {
 		panic(err)
 	}
 

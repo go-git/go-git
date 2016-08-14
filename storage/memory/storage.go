@@ -20,9 +20,9 @@ func NewStorage() *Storage {
 }
 
 // ObjectStorage returns the ObjectStorage if not exists creates a new one
-func (s *Storage) ObjectStorage() (core.ObjectStorage, error) {
+func (s *Storage) ObjectStorage() core.ObjectStorage {
 	if s.o != nil {
-		return s.o, nil
+		return s.o
 	}
 
 	s.o = &ObjectStorage{
@@ -33,19 +33,19 @@ func (s *Storage) ObjectStorage() (core.ObjectStorage, error) {
 		Tags:    make(map[core.Hash]core.Object, 0),
 	}
 
-	return s.o, nil
+	return s.o
 }
 
 // ReferenceStorage returns the ReferenceStorage if not exists creates a new one
-func (s *Storage) ReferenceStorage() (core.ReferenceStorage, error) {
+func (s *Storage) ReferenceStorage() core.ReferenceStorage {
 	if s.r != nil {
-		return s.r, nil
+		return s.r
 	}
 
 	r := make(ReferenceStorage, 0)
 	s.r = &r
 
-	return s.r, nil
+	return s.r
 }
 
 // ObjectStorage is the implementation of core.ObjectStorage for memory.Object

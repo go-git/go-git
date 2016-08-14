@@ -23,10 +23,8 @@ const (
 // Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
 	Remotes map[string]*Remote
-	Storage core.Storage
 
-	os core.ObjectStorage
-	rs core.ReferenceStorage
+	s core.Storage
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
@@ -46,21 +44,7 @@ func NewFilesystemRepository(fs fs.FS, path string) (*Repository, error) {
 
 // NewRepository creates a new repository with the given Storage
 func NewRepository(s core.Storage) (*Repository, error) {
-	os, err := s.ObjectStorage()
-	if err != nil {
-		return nil, err
-	}
-
-	rs, err := s.ReferenceStorage()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Repository{
-		Storage: s,
-		os:      os,
-		rs:      rs,
-	}, nil
+	return &Repository{s: s}, nil
 }
 
 // Clone clones a remote repository
@@ -76,7 +60,7 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
-	err = remote.Fetch(r.os, &FetchOptions{ReferenceName: o.ReferenceName})
+	err = remote.Fetch(r.s.ObjectStorage(), &FetchOptions{ReferenceName: o.ReferenceName})
 	if err != nil {
 		return err
 	}
@@ -105,19 +89,21 @@ func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*R
 func (r *Repository) createDefaultBranch(ref *core.Reference) error {
 	if !ref.IsBranch() {
 		// detached HEAD mode
-		return r.rs.Set(core.NewHashReference(core.HEAD, ref.Hash()))
+		head := core.NewHashReference(core.HEAD, ref.Hash())
+		return r.s.ReferenceStorage().Set(head)
 	}
 
-	if err := r.rs.Set(ref); err != nil {
+	if err := r.s.ReferenceStorage().Set(ref); err != nil {
 		return err
 	}
 
-	return r.rs.Set(core.NewSymbolicReference(core.HEAD, ref.Name()))
+	head := core.NewSymbolicReference(core.HEAD, ref.Name())
+	return r.s.ReferenceStorage().Set(head)
 }
 
 // Commit return the commit with the given hash
 func (r *Repository) Commit(h core.Hash) (*Commit, error) {
-	obj, err := r.os.Get(h)
+	obj, err := r.s.ObjectStorage().Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -131,7 +117,7 @@ func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 
 // Commits decode the objects into commits
 func (r *Repository) Commits() (*CommitIter, error) {
-	iter, err := r.os.Iter(core.CommitObject)
+	iter, err := r.s.ObjectStorage().Iter(core.CommitObject)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +127,7 @@ func (r *Repository) Commits() (*CommitIter, error) {
 
 // Tree return the tree with the given hash
 func (r *Repository) Tree(h core.Hash) (*Tree, error) {
-	obj, err := r.os.Get(h)
+	obj, err := r.s.ObjectStorage().Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -155,7 +141,7 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 
 // Blob returns the blob with the given hash
 func (r *Repository) Blob(h core.Hash) (*Blob, error) {
-	obj, err := r.os.Get(h)
+	obj, err := r.s.ObjectStorage().Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -169,7 +155,7 @@ func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 
 // Tag returns a tag with the given hash.
 func (r *Repository) Tag(h core.Hash) (*Tag, error) {
-	obj, err := r.os.Get(h)
+	obj, err := r.s.ObjectStorage().Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -184,7 +170,7 @@ func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 // Tags returns a TagIter that can step through all of the annotated tags
 // in the repository.
 func (r *Repository) Tags() (*TagIter, error) {
-	iter, err := r.os.Iter(core.TagObject)
+	iter, err := r.s.ObjectStorage().Iter(core.TagObject)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +180,7 @@ func (r *Repository) Tags() (*TagIter, error) {
 
 // Object returns an object with the given hash.
 func (r *Repository) Object(h core.Hash) (Object, error) {
-	obj, err := r.os.Get(h)
+	obj, err := r.s.ObjectStorage().Get(h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -222,20 +208,20 @@ func (r *Repository) Object(h core.Hash) (Object, error) {
 
 // Head returns the reference where HEAD is pointing
 func (r *Repository) Head() (*core.Reference, error) {
-	return core.ResolveReference(r.rs, core.HEAD)
+	return core.ResolveReference(r.s.ReferenceStorage(), core.HEAD)
 }
 
 // Ref returns the Hash pointing the given refName
 func (r *Repository) Ref(name core.ReferenceName, resolved bool) (*core.Reference, error) {
 	if resolved {
-		return core.ResolveReference(r.rs, name)
+		return core.ResolveReference(r.s.ReferenceStorage(), name)
 	}
 
-	return r.rs.Get(name)
+	return r.s.ReferenceStorage().Get(name)
 }
 
 // Refs returns a map with all the References
 func (r *Repository) Refs() core.ReferenceIter {
-	i, _ := r.rs.Iter()
+	i, _ := r.s.ReferenceStorage().Iter()
 	return i
 }

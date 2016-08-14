@@ -32,7 +32,7 @@ func (s *BlameCommon) SetUpSuite(c *C) {
 		stream := packfile.NewStream(bytes.NewReader(data))
 
 		d := packfile.NewDecoder(stream)
-		err = d.Decode(r.os)
+		err = d.Decode(r.s.ObjectStorage())
 		c.Assert(err, IsNil)
 
 		c.Assert(f.Close(), IsNil)

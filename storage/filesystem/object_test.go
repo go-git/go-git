@@ -76,10 +76,7 @@ func (s *FsSuite) newObjectStorage(c *C, fixtureName string) core.ObjectStorage 
 	store, err := NewStorage(fs, fs.Join(path, ".git/"))
 	c.Assert(err, IsNil)
 
-	obj, err := store.ObjectStorage()
-	c.Assert(err, IsNil)
-
-	return obj
+	return store.ObjectStorage()
 }
 
 func (s *FsSuite) TestGetCompareWithMemoryStorage(c *C) {
