@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"reflect"
 	"sort"
@@ -195,9 +196,12 @@ func equalsObjects(a, b core.Object) (bool, string, error) {
 			asz, bsz), nil
 	}
 
-	ac := a.Content()
+	r, _ := b.Reader()
+	ac, _ := ioutil.ReadAll(r)
 	if ac != nil {
-		bc := b.Content()
+		r, _ := b.Reader()
+		bc, _ := ioutil.ReadAll(r)
+
 		if !reflect.DeepEqual(ac, bc) {
 			return false, fmt.Sprintf("object contents differ"), nil
 		}

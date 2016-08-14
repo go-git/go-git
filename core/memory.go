@@ -38,9 +38,6 @@ func (o *MemoryObject) Size() int64 { return o.sz }
 // afterwards
 func (o *MemoryObject) SetSize(s int64) { o.sz = s }
 
-// Content returns the contents of the object
-func (o *MemoryObject) Content() []byte { return o.cont }
-
 // Reader returns a ObjectReader used to read the object's content.
 func (o *MemoryObject) Reader() (ObjectReader, error) {
 	return ioutil.NopCloser(bytes.NewBuffer(o.cont)), nil

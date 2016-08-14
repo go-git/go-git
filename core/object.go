@@ -34,7 +34,6 @@ type Object interface {
 	SetType(ObjectType)
 	Size() int64
 	SetSize(int64)
-	Content() []byte
 	Reader() (ObjectReader, error)
 	Writer() (ObjectWriter, error)
 }

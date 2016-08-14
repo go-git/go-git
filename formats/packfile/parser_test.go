@@ -240,7 +240,10 @@ func (s *ParserSuite) TestReadNonDeltaObjectContent(c *C) {
 		obj := &core.MemoryObject{}
 		err = p.FillFromNonDeltaContent(obj)
 		c.Assert(err, IsNil, com)
-		c.Assert(obj.Content(), DeepEquals, test.expected, com)
+
+		r, _ := obj.Reader()
+		bytes, _ := ioutil.ReadAll(r)
+		c.Assert(bytes, DeepEquals, test.expected, com)
 	}
 }
 
@@ -297,7 +300,10 @@ func (s *ParserSuite) TestFillOFSDeltaObjectContent(c *C) {
 		err = p.FillOFSDeltaObjectContent(obj, test.offset)
 		c.Assert(err, IsNil, com)
 		c.Assert(obj.Type(), Equals, test.expType, com)
-		c.Assert(obj.Content(), DeepEquals, test.expContent, com)
+
+		r, _ := obj.Reader()
+		bytes, _ := ioutil.ReadAll(r)
+		c.Assert(bytes, DeepEquals, test.expContent, com)
 	}
 }
 
@@ -361,7 +367,10 @@ func (s *ParserSuite) TestFillREFDeltaObjectContent(c *C) {
 		err = p.FillREFDeltaObjectContent(obj)
 		c.Assert(err, IsNil, com)
 		c.Assert(obj.Type(), Equals, test.expType, com)
-		c.Assert(obj.Content(), DeepEquals, test.expContent, com)
+
+		r, _ := obj.Reader()
+		bytes, _ := ioutil.ReadAll(r)
+		c.Assert(bytes, DeepEquals, test.expContent, com)
 
 		p.ForgetAll()
 	}
