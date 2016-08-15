@@ -27,8 +27,10 @@ func NewMemoryRepository() (*Repository, error) {
 }
 
 // NewFilesystemRepository creates a new repository, backed by a filesystem.Storage
-func NewFilesystemRepository(fs fs.FS, path string) (*Repository, error) {
-	s, err := filesystem.NewStorage(fs, path)
+// based on a fs.OS, if you want to use a custom one you need to use the function
+// NewRepository and build you filesystem.Storage
+func NewFilesystemRepository(path string) (*Repository, error) {
+	s, err := filesystem.NewStorage(fs.NewOS(), path)
 	if err != nil {
 		return nil, err
 	}
