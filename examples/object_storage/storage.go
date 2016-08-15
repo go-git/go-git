@@ -137,6 +137,27 @@ func (i *AerospikeObjectIter) Next() (core.Object, error) {
 	return o, nil
 }
 
+func (i *AerospikeObjectIter) ForEach(cb func(obj core.Object) error) error {
+	for {
+		obj, err := i.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return err
+		}
+
+		if err := cb(obj); err != nil {
+			if err == core.ErrStop {
+				return nil
+			}
+
+			return err
+		}
+	}
+}
+
 func (i *AerospikeObjectIter) Close() {}
 
 type AerospikeReferenceStorage struct {
