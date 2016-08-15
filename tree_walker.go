@@ -15,6 +15,7 @@ type TreeWalker struct {
 	base  string
 
 	r *Repository
+	t *Tree
 }
 
 // NewTreeWalker returns a new TreeWalker for the given repository and tree.
@@ -26,6 +27,7 @@ func NewTreeWalker(r *Repository, t *Tree) *TreeWalker {
 		stack: make([]treeEntryIter, 0, startingStackSize),
 		base:  "",
 		r:     r,
+		t:     t,
 	}
 	w.stack = append(w.stack, treeEntryIter{t, 0})
 	return &w

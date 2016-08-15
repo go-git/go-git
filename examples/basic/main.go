@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	"gopkg.in/src-d/go-git.v4"
@@ -16,7 +15,7 @@ func main() {
 		panic(err)
 	}
 
-	if err = r.Clone(&git.RepositoryCloneOptions{URL: url, Depth: 1, SingleBranch: false}); err != nil {
+	if err = r.Clone(&git.RepositoryCloneOptions{URL: url}); err != nil {
 		panic(err)
 	}
 
@@ -28,20 +27,12 @@ func main() {
 	defer iter.Close()
 
 	var count = 0
-	for {
-		//the commits are not shorted in any special order
-		commit, err := iter.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			panic(err)
-		}
-
+	iter.ForEach(func(commit *git.Commit) error {
 		count++
 		fmt.Println(commit)
-	}
+
+		return nil
+	})
 
 	fmt.Println("total commits:", count)
 }

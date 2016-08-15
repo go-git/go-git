@@ -2,8 +2,11 @@ package git
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"strings"
+
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 // File represents git file objects.
@@ -66,6 +69,33 @@ func (iter *FileIter) Next() (*File, error) {
 
 		if blob, ok := obj.(*Blob); ok {
 			return newFile(name, entry.Mode, blob), nil
+		}
+	}
+}
+
+// ForEach call the cb function for each file contained on this iter until
+// an error happends or the end of the iter is reached. If core.ErrStop is sent
+// the iteration is stop but no error is returned
+func (iter *FileIter) ForEach(cb func(*File) error) error {
+	i := &FileIter{w: *NewTreeWalker(iter.w.r, iter.w.t)}
+	defer i.Close()
+
+	for {
+		f, err := i.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return err
+		}
+
+		if err := cb(f); err != nil {
+			if err == core.ErrStop {
+				return nil
+			}
+
+			return err
 		}
 	}
 }

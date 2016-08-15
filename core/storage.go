@@ -1,5 +1,10 @@
 package core
 
+import "errors"
+
+//ErrStop is used to stop a ForEach function in an Iter
+var ErrStop = errors.New("stop iter")
+
 // Storage storage of objects and references
 type Storage interface {
 	ObjectStorage() ObjectStorage
@@ -17,6 +22,7 @@ type ObjectStorage interface {
 // ObjectIter is a generic closable interface for iterating over objects.
 type ObjectIter interface {
 	Next() (Object, error)
+	ForEach(func(Object) error) error
 	Close()
 }
 
@@ -30,5 +36,6 @@ type ReferenceStorage interface {
 // ReferenceIter is a generic closable interface for iterating over references
 type ReferenceIter interface {
 	Next() (*Reference, error)
+	ForEach(func(*Reference) error) error
 	Close()
 }

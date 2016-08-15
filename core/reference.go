@@ -178,6 +178,23 @@ func (iter *ReferenceSliceIter) Next() (*Reference, error) {
 	return obj, nil
 }
 
+// ForEach call the cb function for each reference contained on this iter until
+// an error happends or the end of the iter is reached. If ErrStop is sent
+// the iteration is stop but no error is returned
+func (iter *ReferenceSliceIter) ForEach(cb func(*Reference) error) error {
+	for _, r := range iter.series {
+		if err := cb(r); err != nil {
+			if err == ErrStop {
+				return nil
+			}
+
+			return nil
+		}
+	}
+
+	return nil
+}
+
 // Close releases any resources used by the iterator.
 func (iter *ReferenceSliceIter) Close() {
 	iter.pos = len(iter.series)

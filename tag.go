@@ -181,3 +181,17 @@ func (iter *TagIter) Next() (*Tag, error) {
 	tag := &Tag{r: iter.r}
 	return tag, tag.Decode(obj)
 }
+
+// ForEach call the cb function for each tag contained on this iter until
+// an error happends or the end of the iter is reached. If ErrStop is sent
+// the iteration is stop but no error is returned
+func (iter *TagIter) ForEach(cb func(*Tag) error) error {
+	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+		tag := &Tag{r: iter.r}
+		if err := tag.Decode(obj); err != nil {
+			return err
+		}
+
+		return cb(tag)
+	})
+}

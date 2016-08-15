@@ -241,6 +241,33 @@ func (iter *TreeIter) Next() (*Tree, error) {
 	}
 }
 
+// ForEach call the cb function for each tree contained on this iter until
+// an error happends or the end of the iter is reached. If core.ErrStop is sent
+// the iteration is stop but no error is returned
+func (iter *TreeIter) ForEach(cb func(*Tree) error) error {
+	i := &TreeIter{w: *NewTreeWalker(iter.w.r, iter.w.t)}
+	defer i.Close()
+
+	for {
+		t, err := i.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return err
+		}
+
+		if err := cb(t); err != nil {
+			if err == core.ErrStop {
+				return nil
+			}
+
+			return err
+		}
+	}
+}
+
 // Close closes the TreeIter
 func (iter *TreeIter) Close() {
 	iter.w.Close()

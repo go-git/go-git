@@ -2,7 +2,6 @@ package git
 
 import (
 	"errors"
-	"io"
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
@@ -128,24 +127,14 @@ func (r *Repository) getAllRemoteRefences(remote *Remote) ([]*core.Reference, er
 	i := remote.Refs()
 	defer i.Close()
 
-	for {
-		ref, err := i.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return nil, err
-		}
-
+	return refs, i.ForEach(func(ref *core.Reference) error {
 		if !ref.IsBranch() {
-			continue
+			return nil
 		}
 
 		refs = append(refs, ref)
-	}
-
-	return refs, nil
+		return nil
+	})
 }
 
 func (r *Repository) createLocalReferences(ref *core.Reference) error {
@@ -234,24 +223,14 @@ func (r *Repository) getLocalReferences() ([]*core.Reference, error) {
 	i := r.Refs()
 	defer i.Close()
 
-	for {
-		ref, err := i.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return nil, err
-		}
-
+	return refs, i.ForEach(func(ref *core.Reference) error {
 		if ref.Type() == core.SymbolicReference {
-			continue
+			return nil
 		}
 
 		refs = append(refs, ref)
-	}
-
-	return refs, nil
+		return nil
+	})
 }
 
 // Commit return the commit with the given hash

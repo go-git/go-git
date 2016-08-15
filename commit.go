@@ -154,6 +154,20 @@ func (iter *CommitIter) Next() (*Commit, error) {
 	return commit, commit.Decode(obj)
 }
 
+// ForEach call the cb function for each commit contained on this iter until
+// an error happends or the end of the iter is reached. If ErrStop is sent
+// the iteration is stop but no error is returned
+func (iter *CommitIter) ForEach(cb func(*Commit) error) error {
+	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+		commit := &Commit{r: iter.r}
+		if err := commit.Decode(obj); err != nil {
+			return err
+		}
+
+		return cb(commit)
+	})
+}
+
 type commitSorterer struct {
 	l []*Commit
 }
