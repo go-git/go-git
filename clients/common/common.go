@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/core"
@@ -36,7 +37,14 @@ type AuthMethod interface {
 
 type Endpoint url.URL
 
+var (
+	isSchemeRegExp   = regexp.MustCompile("^[^:]+://")
+	scpLikeUrlRegExp = regexp.MustCompile("^(?P<user>[^@]+@)?(?P<host>[^:]+):/?(?P<path>.+)$")
+)
+
 func NewEndpoint(endpoint string) (Endpoint, error) {
+	endpoint = transformSCPLikeIfNeeded(endpoint)
+
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return Endpoint{}, core.NewPermanentError(err)
@@ -49,6 +57,15 @@ func NewEndpoint(endpoint string) (Endpoint, error) {
 	}
 
 	return Endpoint(*u), nil
+}
+
+func transformSCPLikeIfNeeded(endpoint string) string {
+	if !isSchemeRegExp.MatchString(endpoint) && scpLikeUrlRegExp.MatchString(endpoint) {
+		m := scpLikeUrlRegExp.FindStringSubmatch(endpoint)
+		return fmt.Sprintf("ssh://%s%s/%s", m[1], m[2], m[3])
+	}
+
+	return endpoint
 }
 
 func (e *Endpoint) String() string {
