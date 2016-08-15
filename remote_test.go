@@ -15,39 +15,41 @@ type RemoteSuite struct {
 var _ = Suite(&RemoteSuite{})
 
 func (s *RemoteSuite) TestNewRemote(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	c.Assert(err, IsNil)
+	c.Assert(r.Name, Equals, "foo")
 	c.Assert(r.Endpoint.String(), Equals, RepositoryFixture)
 }
 
 func (s *RemoteSuite) TestNewRemoteInvalidEndpoint(c *C) {
-	r, err := NewRemote("qux")
+	r, err := NewRemote("foo", "qux")
 	c.Assert(err, NotNil)
 	c.Assert(r, IsNil)
 }
 
 func (s *RemoteSuite) TestNewRemoteInvalidSchemaEndpoint(c *C) {
-	r, err := NewRemote("qux://foo")
+	r, err := NewRemote("foo", "qux://foo")
 	c.Assert(err, NotNil)
 	c.Assert(r, IsNil)
 }
 
 func (s *RemoteSuite) TestNewAuthenticatedRemote(c *C) {
 	a := &http.BasicAuth{}
-	r, err := NewAuthenticatedRemote(RepositoryFixture, a)
+	r, err := NewAuthenticatedRemote("foo", RepositoryFixture, a)
 	c.Assert(err, IsNil)
+	c.Assert(r.Name, Equals, "foo")
 	c.Assert(r.Endpoint.String(), Equals, RepositoryFixture)
 	c.Assert(r.Auth, Equals, a)
 }
 
 func (s *RemoteSuite) TestConnect(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 }
 
 func (s *RemoteSuite) TestInfo(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	c.Assert(err, IsNil)
 	c.Assert(r.Info(), IsNil)
 	c.Assert(r.Connect(), IsNil)
@@ -56,7 +58,7 @@ func (s *RemoteSuite) TestInfo(c *C) {
 }
 
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(err, IsNil)
@@ -65,7 +67,7 @@ func (s *RemoteSuite) TestDefaultBranch(c *C) {
 }
 
 func (s *RemoteSuite) TestCapabilities(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(err, IsNil)
@@ -74,38 +76,27 @@ func (s *RemoteSuite) TestCapabilities(c *C) {
 }
 
 func (s *RemoteSuite) TestFetch(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 
 	sto := memory.NewObjectStorage()
-	err = r.Fetch(sto, &FetchOptions{
-		ReferenceName: core.HEAD,
+	err = r.Fetch(sto, &RemoteFetchOptions{
+		References: []*core.Reference{
+			core.NewReferenceFromStrings(
+				"refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+			),
+		},
 	})
 
 	c.Assert(err, IsNil)
 	c.Assert(sto.Objects, HasLen, 28)
 }
 
-func (s *RemoteSuite) TestFetchInvalidBranch(c *C) {
-	r, err := NewRemote(RepositoryFixture)
-	r.upSrv = &MockGitUploadPackService{}
-
-	c.Assert(err, IsNil)
-	c.Assert(r.Connect(), IsNil)
-
-	sto := memory.NewObjectStorage()
-	err = r.Fetch(sto, &FetchOptions{
-		ReferenceName: core.ReferenceName("qux"),
-	})
-
-	c.Assert(err, NotNil)
-}
-
 func (s *RemoteSuite) TestHead(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 	c.Assert(err, IsNil)
 
@@ -115,7 +106,7 @@ func (s *RemoteSuite) TestHead(c *C) {
 }
 
 func (s *RemoteSuite) TestRef(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 	c.Assert(err, IsNil)
 
@@ -132,7 +123,7 @@ func (s *RemoteSuite) TestRef(c *C) {
 }
 
 func (s *RemoteSuite) TestRefs(c *C) {
-	r, err := NewRemote(RepositoryFixture)
+	r, err := NewRemote("foo", RepositoryFixture)
 	r.upSrv = &MockGitUploadPackService{}
 	c.Assert(err, IsNil)
 

@@ -287,6 +287,7 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 type GitUploadPackRequest struct {
 	Wants []core.Hash
 	Haves []core.Hash
+	Depth int
 }
 
 func (r *GitUploadPackRequest) Want(h ...core.Hash) {
@@ -310,6 +311,10 @@ func (r *GitUploadPackRequest) Reader() *strings.Reader {
 
 	for _, have := range r.Haves {
 		e.AddLine(fmt.Sprintf("have %s", have))
+	}
+
+	if r.Depth != 0 {
+		e.AddLine(fmt.Sprintf("deepen %d", r.Depth))
 	}
 
 	e.AddFlush()

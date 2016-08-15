@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"io"
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
@@ -13,11 +14,6 @@ import (
 var (
 	// ErrObjectNotFound object not found
 	ErrObjectNotFound = errors.New("object not found")
-)
-
-const (
-	// DefaultRemoteName name of the default Remote, just like git command
-	DefaultRemoteName = "origin"
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
@@ -48,10 +44,10 @@ func NewRepository(s core.Storage) (*Repository, error) {
 }
 
 // Clone clones a remote repository
-func (r *Repository) Clone(o *CloneOptions) error {
+func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 	o.Default()
 
-	remote, err := r.createDefaultRemote(o.URL, o.Auth)
+	remote, err := r.createRemote(o.RemoteName, o.URL, o.Auth)
 	if err != nil {
 		return err
 	}
@@ -60,33 +56,98 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
-	err = remote.Fetch(r.s.ObjectStorage(), &FetchOptions{ReferenceName: o.ReferenceName})
+	var single core.ReferenceName
+	if o.SingleBranch {
+		single = o.ReferenceName
+	}
+
+	head, err := remote.Ref(o.ReferenceName, true)
 	if err != nil {
 		return err
 	}
 
-	ref, err := remote.Ref(o.ReferenceName, true)
+	refs, err := r.getRemoteRefences(remote, single)
 	if err != nil {
 		return err
 	}
 
-	return r.createDefaultBranch(ref)
+	err = remote.Fetch(r.s.ObjectStorage(), &RemoteFetchOptions{
+		References: refs,
+		Depth:      o.Depth,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if err := r.createLocalReferences(head); err != nil {
+		return err
+	}
+
+	return r.createRemoteReferences(remote, refs)
 }
 
-func (r *Repository) createDefaultRemote(url string, auth common.AuthMethod) (*Remote, error) {
-	remote, err := NewAuthenticatedRemote(url, auth)
+func (r *Repository) createRemote(name, url string, auth common.AuthMethod) (*Remote, error) {
+	remote, err := NewAuthenticatedRemote(name, url, auth)
 	if err != nil {
 		return nil, err
 	}
 
-	r.Remotes = map[string]*Remote{
-		DefaultRemoteName: remote,
-	}
-
+	r.Remotes = map[string]*Remote{name: remote}
 	return remote, nil
 }
 
-func (r *Repository) createDefaultBranch(ref *core.Reference) error {
+func (r *Repository) getRemoteRefences(
+	remote *Remote, single core.ReferenceName,
+) ([]*core.Reference, error) {
+	if single == "" {
+		return r.getAllRemoteRefences(remote)
+	}
+
+	ref, err := remote.Ref(single, true)
+	if err != nil {
+		return nil, err
+	}
+
+	refs := []*core.Reference{ref}
+	head, err := remote.Ref(core.HEAD, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if head.Target() == ref.Name() {
+		refs = append(refs, head)
+	}
+
+	return refs, nil
+}
+
+func (r *Repository) getAllRemoteRefences(remote *Remote) ([]*core.Reference, error) {
+	var refs []*core.Reference
+	i := remote.Refs()
+	defer i.Close()
+
+	for {
+		ref, err := i.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			return nil, err
+		}
+
+		if !ref.IsBranch() {
+			continue
+		}
+
+		refs = append(refs, ref)
+	}
+
+	return refs, nil
+}
+
+func (r *Repository) createLocalReferences(ref *core.Reference) error {
 	if !ref.IsBranch() {
 		// detached HEAD mode
 		head := core.NewHashReference(core.HEAD, ref.Hash())
@@ -99,6 +160,38 @@ func (r *Repository) createDefaultBranch(ref *core.Reference) error {
 
 	head := core.NewSymbolicReference(core.HEAD, ref.Name())
 	return r.s.ReferenceStorage().Set(head)
+}
+
+func (r *Repository) createRemoteReferences(remote *Remote, remoteRefs []*core.Reference) error {
+	for _, ref := range remoteRefs {
+		if err := r.createRemoteReference(remote, ref); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *Repository) createRemoteReference(remote *Remote, ref *core.Reference) error {
+	name := ref.Name().AsRemote(remote.Name)
+
+	var n *core.Reference
+	switch ref.Type() {
+	case core.HashReference:
+		n = core.NewHashReference(name, ref.Hash())
+	case core.SymbolicReference:
+		n = core.NewSymbolicReference(name, ref.Target().AsRemote(remote.Name))
+		target, err := remote.Ref(ref.Target(), false)
+		if err != nil {
+			return err
+		}
+
+		if err := r.createRemoteReference(remote, target); err != nil {
+			return err
+		}
+	}
+
+	return r.s.ReferenceStorage().Set(n)
 }
 
 // Commit return the commit with the given hash

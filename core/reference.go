@@ -114,7 +114,7 @@ func (r *Reference) Target() ReferenceName {
 
 // IsBranch check if a reference is a branch
 func (r *Reference) IsBranch() bool {
-	return strings.HasPrefix(string(r.n), refHeadPrefix)
+	return strings.HasPrefix(string(r.n), refHeadPrefix) || r.n == HEAD
 }
 
 // IsNote check if a reference is a note

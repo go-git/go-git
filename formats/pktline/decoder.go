@@ -32,7 +32,7 @@ func (d *Decoder) ReadLine() (string, error) {
 
 func (d *Decoder) readLine() (string, error) {
 	raw := make([]byte, HeaderLength)
-	if _, err := d.r.Read(raw); err != nil {
+	if _, err := io.ReadFull(d.r, raw); err != nil {
 		return "", err
 	}
 

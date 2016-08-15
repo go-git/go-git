@@ -9,6 +9,7 @@ import (
 
 // Remote represents a connection to a remote repository
 type Remote struct {
+	Name     string
 	Endpoint common.Endpoint
 	Auth     common.AuthMethod
 
@@ -17,13 +18,13 @@ type Remote struct {
 }
 
 // NewRemote returns a new Remote, using as client http.DefaultClient
-func NewRemote(url string) (*Remote, error) {
-	return NewAuthenticatedRemote(url, nil)
+func NewRemote(name, url string) (*Remote, error) {
+	return NewAuthenticatedRemote(name, url, nil)
 }
 
 // NewAuthenticatedRemote returns a new Remote using the given AuthMethod, using as
 // client http.DefaultClient
-func NewAuthenticatedRemote(url string, auth common.AuthMethod) (*Remote, error) {
+func NewAuthenticatedRemote(name, url string, auth common.AuthMethod) (*Remote, error) {
 	endpoint, err := common.NewEndpoint(url)
 	if err != nil {
 		return nil, err
@@ -36,6 +37,7 @@ func NewAuthenticatedRemote(url string, auth common.AuthMethod) (*Remote, error)
 
 	return &Remote{
 		Endpoint: endpoint,
+		Name:     name,
 		Auth:     auth,
 		upSrv:    upSrv,
 	}, nil
@@ -77,16 +79,17 @@ func (r *Remote) Capabilities() *common.Capabilities {
 }
 
 // Fetch returns a reader using the request
-func (r *Remote) Fetch(s core.ObjectStorage, o *FetchOptions) (err error) {
-	o.Default()
-
-	ref, err := r.Ref(o.ReferenceName, true)
-	if err != nil {
-		return err
-	}
-
+func (r *Remote) Fetch(s core.ObjectStorage, o *RemoteFetchOptions) (err error) {
 	req := &common.GitUploadPackRequest{}
-	req.Want(ref.Hash())
+	req.Depth = o.Depth
+
+	for _, ref := range o.References {
+		if ref.Type() != core.HashReference {
+			continue
+		}
+
+		req.Want(ref.Hash())
+	}
 
 	reader, err := r.upSrv.Fetch(req)
 	if err != nil {

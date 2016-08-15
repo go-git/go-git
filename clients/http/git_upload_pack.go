@@ -66,14 +66,28 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 		return nil, err
 	}
 
-	h := make([]byte, 8)
-	if _, err := res.Body.Read(h); err != nil {
-		return nil, core.NewUnexpectedError(err)
+	if err := s.discardResponseInfo(res.Body); err != nil {
+		return nil, err
 	}
 
 	return res.Body, nil
 }
 
+func (s *GitUploadPackService) discardResponseInfo(r io.Reader) error {
+	decoder := pktline.NewDecoder(r)
+	for {
+		line, err := decoder.ReadLine()
+		if err != nil {
+			break
+		}
+
+		if line == "NAK\n" {
+			break
+		}
+	}
+
+	return nil
+}
 func (s *GitUploadPackService) doRequest(method, url string, content *strings.Reader) (*http.Response, error) {
 	var body io.Reader
 	if content != nil {

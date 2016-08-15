@@ -23,7 +23,7 @@ func (s *ObjectsSuite) SetUpTest(c *C) {
 	s.r, err = NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	err = s.r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err = s.r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 }
 

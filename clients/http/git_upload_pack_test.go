@@ -73,3 +73,19 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(b, HasLen, 85374)
 }
+
+func (s *RemoteSuite) TestFetchMulti(c *C) {
+	r := NewGitUploadPackService(s.Endpoint)
+	c.Assert(r.Connect(), IsNil)
+
+	req := &common.GitUploadPackRequest{}
+	req.Want(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Want(core.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+
+	reader, err := r.Fetch(req)
+	c.Assert(err, IsNil)
+
+	b, err := ioutil.ReadAll(reader)
+	c.Assert(err, IsNil)
+	c.Assert(len(b), HasLen, 85585)
+}

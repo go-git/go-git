@@ -76,7 +76,7 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&CloneOptions{
+	err = r.Clone(&RepositoryCloneOptions{
 		URL: RepositoryFixture,
 	})
 
@@ -94,6 +94,105 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err = r.Ref("refs/remotes/origin/HEAD", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, core.SymbolicReference)
+	c.Assert(branch.Target().String(), Equals, "refs/remotes/origin/master")
+
+	branch, err = r.Ref("refs/remotes/origin/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, core.HashReference)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err = r.Ref("refs/remotes/origin/branch", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, core.HashReference)
+	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+}
+
+func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
+	r, err := NewMemoryRepository()
+	c.Assert(err, IsNil)
+
+	c.Assert(r.Remotes, HasLen, 0)
+
+	head, err := r.Head()
+	c.Assert(err, Equals, core.ErrReferenceNotFound)
+	c.Assert(head, IsNil)
+
+	err = r.Clone(&RepositoryCloneOptions{
+		URL:           RepositoryFixture,
+		ReferenceName: core.ReferenceName("refs/heads/branch"),
+		SingleBranch:  true,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(r.Remotes, HasLen, 1)
+	c.Assert(r.Remotes[DefaultRemoteName], NotNil)
+
+	head, err = r.Ref(core.HEAD, false)
+	c.Assert(err, IsNil)
+	c.Assert(head, NotNil)
+	c.Assert(head.Type(), Equals, core.SymbolicReference)
+	c.Assert(head.Target().String(), Equals, "refs/heads/branch")
+
+	branch, err := r.Ref(head.Target(), false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+
+	branch, err = r.Ref("refs/remotes/origin/branch", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, core.HashReference)
+	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+}
+
+func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
+	r, err := NewMemoryRepository()
+	c.Assert(err, IsNil)
+
+	c.Assert(r.Remotes, HasLen, 0)
+
+	head, err := r.Head()
+	c.Assert(err, Equals, core.ErrReferenceNotFound)
+	c.Assert(head, IsNil)
+
+	err = r.Clone(&RepositoryCloneOptions{
+		URL:          RepositoryFixture,
+		SingleBranch: true,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(r.Remotes, HasLen, 1)
+	c.Assert(r.Remotes[DefaultRemoteName], NotNil)
+
+	head, err = r.Ref(core.HEAD, false)
+	c.Assert(err, IsNil)
+	c.Assert(head, NotNil)
+	c.Assert(head.Type(), Equals, core.SymbolicReference)
+	c.Assert(head.Target().String(), Equals, "refs/heads/master")
+
+	branch, err := r.Ref(head.Target(), false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err = r.Ref("refs/remotes/origin/HEAD", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, core.SymbolicReference)
+	c.Assert(branch.Target().String(), Equals, "refs/remotes/origin/master")
+
+	branch, err = r.Ref("refs/remotes/origin/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, core.HashReference)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
@@ -101,7 +200,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(r.Remotes, HasLen, 0)
-	err = r.Clone(&CloneOptions{
+	err = r.Clone(&RepositoryCloneOptions{
 		URL:           RepositoryFixture,
 		ReferenceName: core.ReferenceName("refs/tags/v1.0.0"),
 	})
@@ -117,7 +216,7 @@ func (s *RepositorySuite) TestCommit(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	err = r.Clone(&CloneOptions{
+	err = r.Clone(&RepositoryCloneOptions{
 		URL: RepositoryFixture,
 	})
 
@@ -139,7 +238,7 @@ func (s *RepositorySuite) TestCommits(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	err = r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -205,7 +304,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	err = r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	commits, err := r.Commits()
@@ -217,7 +316,7 @@ func (s *RepositorySuite) TestRef(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	err = r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	ref, err := r.Ref(core.HEAD, false)
@@ -233,7 +332,7 @@ func (s *RepositorySuite) TestRefs(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	err = r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	c.Assert(err, IsNil)

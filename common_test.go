@@ -48,6 +48,7 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	c.Decode("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf")
 
 	ref := core.ReferenceName("refs/heads/master")
+	branch := core.ReferenceName("refs/heads/branch")
 	tag := core.ReferenceName("refs/tags/v1.0.0")
 	return &common.GitUploadPackInfo{
 		Capabilities: c,
@@ -55,6 +56,7 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 			core.HEAD: core.NewSymbolicReference(core.HEAD, ref),
 			ref:       core.NewHashReference(ref, h),
 			tag:       core.NewHashReference(tag, h),
+			branch:    core.NewHashReference(branch, core.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")),
 		},
 	}, nil
 }
