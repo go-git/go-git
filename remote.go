@@ -80,6 +80,10 @@ func (r *Remote) Capabilities() *common.Capabilities {
 
 // Fetch returns a reader using the request
 func (r *Remote) Fetch(s core.ObjectStorage, o *RemoteFetchOptions) (err error) {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
 	req := &common.GitUploadPackRequest{}
 	req.Depth = o.Depth
 

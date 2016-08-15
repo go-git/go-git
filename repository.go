@@ -12,15 +12,14 @@ import (
 )
 
 var (
-	// ErrObjectNotFound object not found
 	ErrObjectNotFound = errors.New("object not found")
+	ErrUnknownRemote  = errors.New("unknown remote")
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
 	Remotes map[string]*Remote
-
-	s core.Storage
+	s       core.Storage
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
@@ -45,7 +44,9 @@ func NewRepository(s core.Storage) (*Repository, error) {
 
 // Clone clones a remote repository
 func (r *Repository) Clone(o *RepositoryCloneOptions) error {
-	o.Default()
+	if err := o.Validate(); err != nil {
+		return err
+	}
 
 	remote, err := r.createRemote(o.RemoteName, o.URL, o.Auth)
 	if err != nil {
@@ -192,6 +193,65 @@ func (r *Repository) createRemoteReference(remote *Remote, ref *core.Reference) 
 	}
 
 	return r.s.ReferenceStorage().Set(n)
+}
+
+// Pull incorporates changes from a remote repository into the current branch
+func (r *Repository) Pull(o *RepositoryPullOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	remote, ok := r.Remotes[o.RemoteName]
+	if !ok {
+		return ErrUnknownRemote
+	}
+
+	head, err := remote.Ref(o.ReferenceName, true)
+	if err != nil {
+		return err
+	}
+
+	refs, err := r.getLocalReferences()
+	if err != nil {
+		return err
+	}
+
+	err = remote.Fetch(r.s.ObjectStorage(), &RemoteFetchOptions{
+		References:      []*core.Reference{head},
+		LocalReferences: refs,
+		Depth:           o.Depth,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return r.createLocalReferences(head)
+}
+
+func (r *Repository) getLocalReferences() ([]*core.Reference, error) {
+	var refs []*core.Reference
+	i := r.Refs()
+	defer i.Close()
+
+	for {
+		ref, err := i.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			return nil, err
+		}
+
+		if ref.Type() == core.SymbolicReference {
+			continue
+		}
+
+		refs = append(refs, ref)
+	}
+
+	return refs, nil
 }
 
 // Commit return the commit with the given hash
