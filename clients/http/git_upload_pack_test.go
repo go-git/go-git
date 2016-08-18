@@ -87,5 +87,5 @@ func (s *RemoteSuite) TestFetchMulti(c *C) {
 
 	b, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
-	c.Assert(len(b), HasLen, 85585)
+	c.Assert(b, HasLen, 85585)
 }
