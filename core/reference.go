@@ -237,7 +237,7 @@ const (
 // <src> is the pattern for references on the remote side and <dst> is where
 // those references will be written locally. The + tells Git to update the
 // reference even if it isn’t a fast-forward.
-// eg.: "+refs/*/*:refs/remotes/origin/*"
+// eg.: "+refs/heads/*:refs/remotes/origin/*"
 //
 // https://git-scm.com/book/es/v2/Git-Internals-The-Refspec
 type RefSpec string

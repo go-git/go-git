@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
@@ -20,7 +21,13 @@ func main() {
 
 	fs := NewCustomFS(os.Args[1])
 
-	repo, err := git.NewFilesystemRepository(fs, ".git")
+	s, err := filesystem.NewStorage(fs, ".git")
+	if err != nil {
+		fmt.Fprint(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	repo, err := git.NewRepository(s)
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		os.Exit(1)
