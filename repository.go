@@ -3,11 +3,9 @@ package git
 import (
 	"errors"
 
-	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 var (
@@ -19,7 +17,7 @@ var (
 // Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
 	Remotes map[string]*Remote
-	s       core.Storage
+	s       Storage
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
@@ -27,6 +25,7 @@ func NewMemoryRepository() (*Repository, error) {
 	return NewRepository(memory.NewStorage())
 }
 
+/*
 // NewFilesystemRepository creates a new repository, backed by a filesystem.Storage
 // based on a fs.OS, if you want to use a custom one you need to use the function
 // NewRepository and build you filesystem.Storage
@@ -38,9 +37,10 @@ func NewFilesystemRepository(path string) (*Repository, error) {
 
 	return NewRepository(s)
 }
+*/
 
 // NewRepository creates a new repository with the given Storage
-func NewRepository(s core.Storage) (*Repository, error) {
+func NewRepository(s Storage) (*Repository, error) {
 	return &Repository{s: s}, nil
 }
 
@@ -50,7 +50,11 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	remote, err := r.createRemote(o.RemoteName, o.URL, o.Auth)
+	remote, err := r.createRemote(&config.RemoteConfig{
+		Name: o.RemoteName,
+		URL:  o.URL,
+	})
+
 	if err != nil {
 		return err
 	}
@@ -66,7 +70,7 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	err = remote.Fetch(r.s, &RemoteFetchOptions{
+	err = remote.Fetch(&RemoteFetchOptions{
 		RefSpec: spec,
 		Depth:   o.Depth,
 	})
@@ -83,13 +87,10 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 	return r.createReferences(head)
 }
 
-func (r *Repository) createRemote(name, url string, auth common.AuthMethod) (*Remote, error) {
-	remote, err := NewAuthenticatedRemote(name, url, auth)
-	if err != nil {
-		return nil, err
-	}
+func (r *Repository) createRemote(c *config.RemoteConfig) (*Remote, error) {
+	remote := NewRemote(r.s, c)
 
-	r.Remotes = map[string]*Remote{name: remote}
+	r.Remotes = map[string]*Remote{c.Name: remote}
 	return remote, nil
 }
 
@@ -130,7 +131,7 @@ func (r *Repository) Pull(o *RepositoryPullOptions) error {
 
 	defer remote.Disconnect()
 
-	err = remote.Fetch(r.s, &RemoteFetchOptions{
+	err = remote.Fetch(&RemoteFetchOptions{
 		Depth: o.Depth,
 	})
 

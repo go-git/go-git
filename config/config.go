@@ -1,9 +1,15 @@
 package config
 
-type Config interface {
-	Remote(name string) *RemoteConfig
-	Remotes() []*RemoteConfig
-	SetRemote(*RemoteConfig)
+import "errors"
+
+var (
+	ErrRemoteConfigNotFound = errors.New("remote config not found")
+)
+
+type ConfigStorage interface {
+	Remote(name string) (*RemoteConfig, error)
+	Remotes() ([]*RemoteConfig, error)
+	SetRemote(*RemoteConfig) error
 }
 
 type RemoteConfig struct {

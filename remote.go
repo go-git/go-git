@@ -12,56 +12,40 @@ import (
 
 // Remote represents a connection to a remote repository
 type Remote struct {
-	config *config.RemoteConfig
+	Config *config.RemoteConfig
 
-	Name     string
-	Endpoint common.Endpoint
-	Auth     common.AuthMethod
-
+	s Storage
+	// cache fields, there during the connection is open
 	upSrv  common.GitUploadPackService
 	upInfo *common.GitUploadPackInfo
 }
 
 // NewRemote returns a new Remote, using as client http.DefaultClient
-func NewRemote(name, url string) (*Remote, error) {
-	return NewAuthenticatedRemote(name, url, nil)
-}
-
-// NewAuthenticatedRemote returns a new Remote using the given AuthMethod, using as
-// client http.DefaultClient
-func NewAuthenticatedRemote(name, url string, auth common.AuthMethod) (*Remote, error) {
-	endpoint, err := common.NewEndpoint(url)
-	if err != nil {
-		return nil, err
-	}
-
-	upSrv, err := clients.NewGitUploadPackService(endpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Remote{
-		Endpoint: endpoint,
-		Name:     name,
-		Auth:     auth,
-		upSrv:    upSrv,
-	}, nil
+func NewRemote(s Storage, c *config.RemoteConfig) *Remote {
+	return &Remote{Config: c, s: s}
 }
 
 // Connect with the endpoint
 func (r *Remote) Connect() error {
-	var err error
-	if r.Auth == nil {
-		err = r.upSrv.Connect()
-	} else {
-		err = r.upSrv.ConnectWithAuth(r.Auth)
-	}
-
-	if err != nil {
+	if err := r.connectUploadPackService(); err != nil {
 		return err
 	}
 
 	return r.retrieveUpInfo()
+}
+
+func (r *Remote) connectUploadPackService() error {
+	endpoint, err := common.NewEndpoint(r.Config.URL)
+	if err != nil {
+		return err
+	}
+
+	r.upSrv, err = clients.NewGitUploadPackService(endpoint)
+	if err != nil {
+		return err
+	}
+
+	return r.upSrv.Connect()
 }
 
 func (r *Remote) retrieveUpInfo() error {
@@ -84,7 +68,7 @@ func (r *Remote) Capabilities() *common.Capabilities {
 }
 
 // Fetch returns a reader using the request
-func (r *Remote) Fetch(s core.Storage, o *RemoteFetchOptions) (err error) {
+func (r *Remote) Fetch(o *RemoteFetchOptions) (err error) {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -94,7 +78,7 @@ func (r *Remote) Fetch(s core.Storage, o *RemoteFetchOptions) (err error) {
 		return err
 	}
 
-	req, err := r.buildRequest(s.ReferenceStorage(), o, refs)
+	req, err := r.buildRequest(r.s.ReferenceStorage(), o, refs)
 	if err != nil {
 		return err
 	}
@@ -105,11 +89,11 @@ func (r *Remote) Fetch(s core.Storage, o *RemoteFetchOptions) (err error) {
 	}
 
 	defer checkClose(reader, &err)
-	if err := r.updateObjectStorage(s.ObjectStorage(), reader); err != nil {
+	if err := r.updateObjectStorage(r.s.ObjectStorage(), reader); err != nil {
 		return err
 	}
 
-	return r.updateLocalReferenceStorage(s.ReferenceStorage(), o.RefSpec, refs)
+	return r.updateLocalReferenceStorage(r.s.ReferenceStorage(), o.RefSpec, refs)
 }
 
 func (r *Remote) getWantedReferences(spec config.RefSpec) ([]*core.Reference, error) {
@@ -204,7 +188,12 @@ func (r *Remote) Refs() core.ReferenceIter {
 	return i
 }
 
+// Disconnect from the remote and save the config
 func (r *Remote) Disconnect() error {
+	if err := r.s.ConfigStorage().SetRemote(r.Config); err != nil {
+		return err
+	}
+
 	r.upInfo = nil
 	return r.upSrv.Disconnect()
 }

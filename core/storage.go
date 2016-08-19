@@ -5,12 +5,6 @@ import "errors"
 //ErrStop is used to stop a ForEach function in an Iter
 var ErrStop = errors.New("stop iter")
 
-// Storage storage of objects and references
-type Storage interface {
-	ObjectStorage() ObjectStorage
-	ReferenceStorage() ReferenceStorage
-}
-
 // ObjectStorage generic storage of objects
 type ObjectStorage interface {
 	NewObject() Object
