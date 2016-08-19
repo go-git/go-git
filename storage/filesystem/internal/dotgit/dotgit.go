@@ -12,17 +12,18 @@ import (
 const (
 	suffix         = ".git"
 	packedRefsPath = "packed-refs"
+	configPath     = "config"
 )
 
 var (
 	// ErrNotFound is returned by New when the path is not found.
 	ErrNotFound = errors.New("path not found")
-	// ErrIdxNotFound is returned by Idxfile when the idx file is not found on the
-	// repository.
+	// ErrIdxNotFound is returned by Idxfile when the idx file is not found
 	ErrIdxNotFound = errors.New("idx file not found")
 	// ErrPackfileNotFound is returned by Packfile when the packfile is not found
-	// on the repository.
 	ErrPackfileNotFound = errors.New("packfile not found")
+	// ErrConfigNotFound is returned by Config when the config is not found
+	ErrConfigNotFound = errors.New("config file not found")
 )
 
 // The DotGit type represents a local git repository on disk. This
@@ -102,4 +103,18 @@ func (d *DotGit) Idxfile() (fs.FS, string, error) {
 	}
 
 	return nil, "", ErrIdxNotFound
+}
+
+// Config returns the path of the config file
+func (d *DotGit) Config() (fs.FS, string, error) {
+	configFile := d.fs.Join(d.path, configPath)
+	if _, err := d.fs.Stat(configFile); err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", ErrNotFound
+		}
+
+		return nil, "", err
+	}
+
+	return d.fs, configFile, nil
 }

@@ -143,6 +143,14 @@ func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
 	c.Assert(string(ref.Target()), Equals, "refs/heads/master")
 }
 
+func (s *SuiteDotGit) TestConfig(c *C) {
+	_, d := s.newFixtureDir(c, "spinnaker")
+	fs, path, err := d.Config()
+	c.Assert(err, IsNil)
+	c.Assert(fs, NotNil)
+	c.Assert(path, Not(Equals), "")
+}
+
 func findReference(refs []*core.Reference, name string) *core.Reference {
 	n := core.ReferenceName(name)
 	for _, ref := range refs {

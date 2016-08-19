@@ -3,6 +3,7 @@ package memory
 import (
 	"fmt"
 
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
@@ -10,6 +11,7 @@ var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
 
 // Storage in memory storage system
 type Storage struct {
+	c *ConfigStorage
 	o *ObjectStorage
 	r *ReferenceStorage
 }
@@ -19,7 +21,20 @@ func NewStorage() *Storage {
 	return &Storage{}
 }
 
-// ObjectStorage returns the ObjectStorage if not exists creates a new one
+// ConfigStorage return the ConfigStorage, if not exists create a new one
+func (s *Storage) ConfigStorage() config.ConfigStorage {
+	if s.c != nil {
+		return s.c
+	}
+
+	s.c = &ConfigStorage{
+		RemotesConfig: make(map[string]*config.RemoteConfig),
+	}
+
+	return s.c
+}
+
+// ObjectStorage returns the ObjectStorage, if not exists creates a new one
 func (s *Storage) ObjectStorage() core.ObjectStorage {
 	if s.o != nil {
 		return s.o
@@ -48,6 +63,32 @@ func (s *Storage) ReferenceStorage() core.ReferenceStorage {
 	return s.r
 }
 
+type ConfigStorage struct {
+	RemotesConfig map[string]*config.RemoteConfig
+}
+
+func (c *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
+	r, ok := c.RemotesConfig[name]
+	if ok {
+		return r, nil
+	}
+
+	return nil, config.ErrRemoteConfigNotFound
+}
+
+func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
+	var o []*config.RemoteConfig
+	for _, r := range c.RemotesConfig {
+		o = append(o, r)
+	}
+
+	return o, nil
+}
+func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
+	c.RemotesConfig[r.Name] = r
+	return nil
+}
+
 // ObjectStorage is the implementation of core.ObjectStorage for memory.Object
 type ObjectStorage struct {
 	Objects map[core.Hash]core.Object
@@ -55,17 +96,6 @@ type ObjectStorage struct {
 	Trees   map[core.Hash]core.Object
 	Blobs   map[core.Hash]core.Object
 	Tags    map[core.Hash]core.Object
-}
-
-// NewObjectStorage returns a new empty ObjectStorage
-func NewObjectStorage() *ObjectStorage {
-	return &ObjectStorage{
-		Objects: make(map[core.Hash]core.Object, 0),
-		Commits: make(map[core.Hash]core.Object, 0),
-		Trees:   make(map[core.Hash]core.Object, 0),
-		Blobs:   make(map[core.Hash]core.Object, 0),
-		Tags:    make(map[core.Hash]core.Object, 0),
-	}
 }
 
 // NewObject creates a new MemoryObject
