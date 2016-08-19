@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -21,27 +22,34 @@ type BaseSuite struct{}
 
 func (s *BaseSuite) SetUpTest(c *C) {
 	clients.InstallProtocol("mock", func(end common.Endpoint) common.GitUploadPackService {
-		return &MockGitUploadPackService{conected: end}
+		return &MockGitUploadPackService{endpoint: end}
 	})
 }
 
 const RepositoryFixture = "mock://formats/packfile/fixtures/git-fixture.ref-delta"
 
 type MockGitUploadPackService struct {
-	conected common.Endpoint
-	auth     common.AuthMethod
+	connected bool
+	endpoint  common.Endpoint
+	auth      common.AuthMethod
 }
 
 func (p *MockGitUploadPackService) Connect() error {
+	p.connected = true
 	return nil
 }
 
 func (p *MockGitUploadPackService) ConnectWithAuth(auth common.AuthMethod) error {
+	p.connected = true
 	p.auth = auth
 	return nil
 }
 
 func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
+	if !p.connected {
+		return nil, errors.New("not connected")
+	}
+
 	h := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	c := common.NewCapabilities()
@@ -62,7 +70,16 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 }
 
 func (p *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadCloser, error) {
+	if !p.connected {
+		return nil, errors.New("not connected")
+	}
+
 	return os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
+}
+
+func (p *MockGitUploadPackService) Disconnect() error {
+	p.connected = false
+	return nil
 }
 
 type packedFixture struct {

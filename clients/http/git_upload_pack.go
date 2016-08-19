@@ -134,3 +134,7 @@ func (s *GitUploadPackService) applyAuthToRequest(req *http.Request) {
 
 	s.auth.setAuth(req)
 }
+
+func (s *GitUploadPackService) Disconnect() (err error) {
+	return nil
+}

@@ -76,6 +76,10 @@ func (s *dummyProtocolService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 	return nil, nil
 }
 
+func (s *dummyProtocolService) Disconnect() error {
+	return nil
+}
+
 func typeAsString(v interface{}) string {
 	return fmt.Sprintf("%T", v)
 }

@@ -2,19 +2,23 @@ package git
 
 import (
 	"errors"
+	"fmt"
 
 	"gopkg.in/src-d/go-git.v3/clients/common"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
 const (
 	// DefaultRemoteName name of the default Remote, just like git command
-	DefaultRemoteName = "origin"
+	DefaultRemoteName          = "origin"
+	DefaultSingleBranchRefSpec = "+refs/heads/%s:refs/remotes/%s/%[1]s"
+	DefaultRefSpec             = "+refs/heads/*:refs/remotes/%s/*"
 )
 
 var (
-	ErrMissingURL        = errors.New("URL field is required")
-	ErrMissingReferences = errors.New("references cannot be empty")
+	ErrMissingURL     = errors.New("URL field is required")
+	ErrInvalidRefSpec = errors.New("invalid refspec")
 )
 
 // RepositoryCloneOptions describe how a clone should be perform
@@ -50,6 +54,22 @@ func (o *RepositoryCloneOptions) Validate() error {
 	return nil
 }
 
+func (o *RepositoryCloneOptions) refSpec(s core.ReferenceStorage) (config.RefSpec, error) {
+	var spec string
+	if o.SingleBranch {
+		head, err := core.ResolveReference(s, o.ReferenceName)
+		if err != nil {
+			return "", err
+		}
+
+		spec = fmt.Sprintf(DefaultSingleBranchRefSpec, head.Name().Short(), o.RemoteName)
+	} else {
+		spec = fmt.Sprintf(DefaultRefSpec, o.RemoteName)
+	}
+
+	return config.RefSpec(spec), nil
+}
+
 // RepositoryPullOptions describe how a pull should be perform
 type RepositoryPullOptions struct {
 	// Name of the remote to be pulled
@@ -77,18 +97,14 @@ func (o *RepositoryPullOptions) Validate() error {
 
 // RemoteFetchOptions describe how a fetch should be perform
 type RemoteFetchOptions struct {
-	// Remote branchs to fetch
-	References []*core.Reference
-	// Local references present on the local storage
-	LocalReferences []*core.Reference
-	// Limit fetching to the specified number of commits
-	Depth int
+	RefSpec config.RefSpec
+	Depth   int
 }
 
 // Validate validate the fields and set the default values
 func (o *RemoteFetchOptions) Validate() error {
-	if len(o.References) == 0 {
-		return ErrMissingReferences
+	if !o.RefSpec.IsValid() {
+		return ErrInvalidRefSpec
 	}
 
 	return nil

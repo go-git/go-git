@@ -95,12 +95,6 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Ref("refs/remotes/origin/HEAD", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch, NotNil)
-	c.Assert(branch.Type(), Equals, core.SymbolicReference)
-	c.Assert(branch.Target().String(), Equals, "refs/remotes/origin/master")
-
 	branch, err = r.Ref("refs/remotes/origin/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
@@ -181,12 +175,6 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	branch, err = r.Ref("refs/remotes/origin/HEAD", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch, NotNil)
-	c.Assert(branch.Type(), Equals, core.SymbolicReference)
-	c.Assert(branch.Target().String(), Equals, "refs/remotes/origin/master")
 
 	branch, err = r.Ref("refs/remotes/origin/master", false)
 	c.Assert(err, IsNil)

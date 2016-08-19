@@ -14,11 +14,8 @@ const (
 	ExampleReferenceName ReferenceName = "refs/heads/v4"
 )
 
-func (s *ReferenceSuite) TestReferenceNameAsRemote(c *C) {
-	c.Assert(
-		ExampleReferenceName.AsRemote("foo").String(),
-		Equals, "refs/remotes/foo/v4",
-	)
+func (s *ReferenceSuite) TestReferenceNameShort(c *C) {
+	c.Assert(ExampleReferenceName.Short(), Equals, "v4")
 }
 
 func (s *ReferenceSuite) TestNewReferenceFromStrings(c *C) {
@@ -120,59 +117,4 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachStop(c *C) {
 	})
 
 	c.Assert(count, Equals, 1)
-}
-
-func (s *ReferenceSuite) TestRefSpecIsValid(c *C) {
-	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsValid(), Equals, true)
-
-	spec = RefSpec("refs/heads/*:refs/remotes/origin/")
-	c.Assert(spec.IsValid(), Equals, false)
-
-	spec = RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.IsValid(), Equals, true)
-
-	spec = RefSpec("refs/heads/*")
-	c.Assert(spec.IsValid(), Equals, false)
-}
-
-func (s *ReferenceSuite) TestRefSpecIsForceUpdate(c *C) {
-	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsForceUpdate(), Equals, true)
-
-	spec = RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsForceUpdate(), Equals, false)
-}
-
-func (s *ReferenceSuite) TestRefSpecSrc(c *C) {
-	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Src(), Equals, "refs/heads/*")
-}
-
-func (s *ReferenceSuite) TestRefSpecMatch(c *C) {
-	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.Match(ReferenceName("refs/heads/foo")), Equals, false)
-	c.Assert(spec.Match(ReferenceName("refs/heads/master")), Equals, true)
-}
-
-func (s *ReferenceSuite) TestRefSpecMatchBlob(c *C) {
-	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Match(ReferenceName("refs/tag/foo")), Equals, false)
-	c.Assert(spec.Match(ReferenceName("refs/heads/foo")), Equals, true)
-}
-
-func (s *ReferenceSuite) TestRefSpecDst(c *C) {
-	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(
-		spec.Dst(ReferenceName("refs/heads/master")).String(), Equals,
-		"refs/remotes/origin/master",
-	)
-}
-
-func (s *ReferenceSuite) TestRefSpecDstBlob(c *C) {
-	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(
-		spec.Dst(ReferenceName("refs/heads/foo")).String(), Equals,
-		"refs/remotes/origin/foo",
-	)
 }

@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	ErrObjectNotFound = errors.New("object not found")
-	ErrUnknownRemote  = errors.New("unknown remote")
+	ErrObjectNotFound   = errors.New("object not found")
+	ErrUnknownRemote    = errors.New("unknown remote")
+	ErrInvalidReference = errors.New("invalid reference, should be a tag or a branch")
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
@@ -58,9 +59,20 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	var single core.ReferenceName
-	if o.SingleBranch {
-		single = o.ReferenceName
+	defer remote.Disconnect()
+
+	spec, err := o.refSpec(remote.Info().Refs)
+	if err != nil {
+		return err
+	}
+
+	err = remote.Fetch(r.s, &RemoteFetchOptions{
+		RefSpec: spec,
+		Depth:   o.Depth,
+	})
+
+	if err != nil {
+		return err
 	}
 
 	head, err := remote.Ref(o.ReferenceName, true)
@@ -68,25 +80,7 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	refs, err := r.getRemoteRefences(remote, single)
-	if err != nil {
-		return err
-	}
-
-	err = remote.Fetch(r.s.ObjectStorage(), &RemoteFetchOptions{
-		References: refs,
-		Depth:      o.Depth,
-	})
-
-	if err != nil {
-		return err
-	}
-
-	if err := r.createLocalReferences(head); err != nil {
-		return err
-	}
-
-	return r.createRemoteReferences(remote, refs)
+	return r.createReferences(head)
 }
 
 func (r *Repository) createRemote(name, url string, auth common.AuthMethod) (*Remote, error) {
@@ -99,47 +93,7 @@ func (r *Repository) createRemote(name, url string, auth common.AuthMethod) (*Re
 	return remote, nil
 }
 
-func (r *Repository) getRemoteRefences(
-	remote *Remote, single core.ReferenceName,
-) ([]*core.Reference, error) {
-	if single == "" {
-		return r.getAllRemoteRefences(remote)
-	}
-
-	ref, err := remote.Ref(single, true)
-	if err != nil {
-		return nil, err
-	}
-
-	refs := []*core.Reference{ref}
-	head, err := remote.Ref(core.HEAD, false)
-	if err != nil {
-		return nil, err
-	}
-
-	if head.Target() == ref.Name() {
-		refs = append(refs, head)
-	}
-
-	return refs, nil
-}
-
-func (r *Repository) getAllRemoteRefences(remote *Remote) ([]*core.Reference, error) {
-	var refs []*core.Reference
-	i := remote.Refs()
-	defer i.Close()
-
-	return refs, i.ForEach(func(ref *core.Reference) error {
-		if !ref.IsBranch() {
-			return nil
-		}
-
-		refs = append(refs, ref)
-		return nil
-	})
-}
-
-func (r *Repository) createLocalReferences(ref *core.Reference) error {
+func (r *Repository) createReferences(ref *core.Reference) error {
 	if !ref.IsBranch() {
 		// detached HEAD mode
 		head := core.NewHashReference(core.HEAD, ref.Hash())
@@ -152,38 +106,6 @@ func (r *Repository) createLocalReferences(ref *core.Reference) error {
 
 	head := core.NewSymbolicReference(core.HEAD, ref.Name())
 	return r.s.ReferenceStorage().Set(head)
-}
-
-func (r *Repository) createRemoteReferences(remote *Remote, remoteRefs []*core.Reference) error {
-	for _, ref := range remoteRefs {
-		if err := r.createRemoteReference(remote, ref); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *Repository) createRemoteReference(remote *Remote, ref *core.Reference) error {
-	name := ref.Name().AsRemote(remote.Name)
-
-	var n *core.Reference
-	switch ref.Type() {
-	case core.HashReference:
-		n = core.NewHashReference(name, ref.Hash())
-	case core.SymbolicReference:
-		n = core.NewSymbolicReference(name, ref.Target().AsRemote(remote.Name))
-		target, err := remote.Ref(ref.Target(), false)
-		if err != nil {
-			return err
-		}
-
-		if err := r.createRemoteReference(remote, target); err != nil {
-			return err
-		}
-	}
-
-	return r.s.ReferenceStorage().Set(n)
 }
 
 // Pull incorporates changes from a remote repository into the current branch
@@ -202,37 +124,21 @@ func (r *Repository) Pull(o *RepositoryPullOptions) error {
 		return err
 	}
 
-	refs, err := r.getLocalReferences()
-	if err != nil {
+	if err = remote.Connect(); err != nil {
 		return err
 	}
 
-	err = remote.Fetch(r.s.ObjectStorage(), &RemoteFetchOptions{
-		References:      []*core.Reference{head},
-		LocalReferences: refs,
-		Depth:           o.Depth,
+	defer remote.Disconnect()
+
+	err = remote.Fetch(r.s, &RemoteFetchOptions{
+		Depth: o.Depth,
 	})
 
 	if err != nil {
 		return err
 	}
 
-	return r.createLocalReferences(head)
-}
-
-func (r *Repository) getLocalReferences() ([]*core.Reference, error) {
-	var refs []*core.Reference
-	i := r.Refs()
-	defer i.Close()
-
-	return refs, i.ForEach(func(ref *core.Reference) error {
-		if ref.Type() == core.SymbolicReference {
-			return nil
-		}
-
-		refs = append(refs, ref)
-		return nil
-	})
+	return r.createReferences(head)
 }
 
 // Commit return the commit with the given hash

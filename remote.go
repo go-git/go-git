@@ -1,14 +1,19 @@
 package git
 
 import (
+	"io"
+
 	"gopkg.in/src-d/go-git.v4/clients"
 	"gopkg.in/src-d/go-git.v4/clients/common"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
 )
 
 // Remote represents a connection to a remote repository
 type Remote struct {
+	config *config.RemoteConfig
+
 	Name     string
 	Endpoint common.Endpoint
 	Auth     common.AuthMethod
@@ -79,20 +84,19 @@ func (r *Remote) Capabilities() *common.Capabilities {
 }
 
 // Fetch returns a reader using the request
-func (r *Remote) Fetch(s core.ObjectStorage, o *RemoteFetchOptions) (err error) {
+func (r *Remote) Fetch(s core.Storage, o *RemoteFetchOptions) (err error) {
 	if err := o.Validate(); err != nil {
 		return err
 	}
 
-	req := &common.GitUploadPackRequest{}
-	req.Depth = o.Depth
+	refs, err := r.getWantedReferences(o.RefSpec)
+	if err != nil {
+		return err
+	}
 
-	for _, ref := range o.References {
-		if ref.Type() != core.HashReference {
-			continue
-		}
-
-		req.Want(ref.Hash())
+	req, err := r.buildRequest(s.ReferenceStorage(), o, refs)
+	if err != nil {
+		return err
 	}
 
 	reader, err := r.upSrv.Fetch(req)
@@ -101,10 +105,83 @@ func (r *Remote) Fetch(s core.ObjectStorage, o *RemoteFetchOptions) (err error) 
 	}
 
 	defer checkClose(reader, &err)
+	if err := r.updateObjectStorage(s.ObjectStorage(), reader); err != nil {
+		return err
+	}
+
+	return r.updateLocalReferenceStorage(s.ReferenceStorage(), o.RefSpec, refs)
+}
+
+func (r *Remote) getWantedReferences(spec config.RefSpec) ([]*core.Reference, error) {
+	var refs []*core.Reference
+
+	return refs, r.Refs().ForEach(func(r *core.Reference) error {
+		if r.Type() != core.HashReference {
+			return nil
+		}
+
+		if spec.Match(r.Name()) {
+			refs = append(refs, r)
+		}
+
+		return nil
+	})
+}
+
+func (r *Remote) buildRequest(
+	s core.ReferenceStorage, o *RemoteFetchOptions, refs []*core.Reference,
+) (*common.GitUploadPackRequest, error) {
+	req := &common.GitUploadPackRequest{}
+	req.Depth = o.Depth
+
+	for _, ref := range refs {
+		req.Want(ref.Hash())
+	}
+
+	i, err := s.Iter()
+	if err != nil {
+		return nil, err
+	}
+
+	err = i.ForEach(func(ref *core.Reference) error {
+		if ref.Type() != core.HashReference {
+			return nil
+		}
+
+		req.Have(ref.Hash())
+		return nil
+	})
+
+	return req, err
+}
+
+func (r *Remote) updateObjectStorage(s core.ObjectStorage, reader io.Reader) error {
 	stream := packfile.NewStream(reader)
 
 	d := packfile.NewDecoder(stream)
 	return d.Decode(s)
+}
+
+func (r *Remote) updateLocalReferenceStorage(
+	local core.ReferenceStorage, spec config.RefSpec, refs []*core.Reference,
+) error {
+	for _, ref := range refs {
+		if !spec.Match(ref.Name()) {
+			continue
+		}
+
+		if ref.Type() != core.HashReference {
+			continue
+		}
+
+		name := spec.Dst(ref.Name())
+		n := core.NewHashReference(name, ref.Hash())
+		if err := local.Set(n); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Head returns the Reference of the HEAD
@@ -125,4 +202,9 @@ func (r *Remote) Ref(name core.ReferenceName, resolved bool) (*core.Reference, e
 func (r *Remote) Refs() core.ReferenceIter {
 	i, _ := r.upInfo.Refs.Iter()
 	return i
+}
+
+func (r *Remote) Disconnect() error {
+	r.upInfo = nil
+	return r.upSrv.Disconnect()
 }

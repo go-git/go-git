@@ -28,6 +28,7 @@ type GitUploadPackService interface {
 	ConnectWithAuth(AuthMethod) error
 	Info() (*GitUploadPackInfo, error)
 	Fetch(*GitUploadPackRequest) (io.ReadCloser, error)
+	Disconnect() error
 }
 
 type AuthMethod interface {

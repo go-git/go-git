@@ -82,17 +82,13 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r.Connect(), IsNil)
 
-	sto := memory.NewObjectStorage()
+	sto := memory.NewStorage()
 	err = r.Fetch(sto, &RemoteFetchOptions{
-		References: []*core.Reference{
-			core.NewReferenceFromStrings(
-				"refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
-			),
-		},
+		RefSpec: DefaultRefSpec,
 	})
 
 	c.Assert(err, IsNil)
-	c.Assert(sto.Objects, HasLen, 28)
+	c.Assert(sto.ObjectStorage().(*memory.ObjectStorage).Objects, HasLen, 28)
 }
 
 func (s *RemoteSuite) TestHead(c *C) {
