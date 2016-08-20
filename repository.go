@@ -5,19 +5,20 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 var (
 	ErrObjectNotFound   = errors.New("object not found")
-	ErrUnknownRemote    = errors.New("unknown remote")
 	ErrInvalidReference = errors.New("invalid reference, should be a tag or a branch")
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
-	Remotes map[string]*Remote
-	s       Storage
+	r map[string]*Remote
+	s Storage
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
@@ -25,7 +26,6 @@ func NewMemoryRepository() (*Repository, error) {
 	return NewRepository(memory.NewStorage())
 }
 
-/*
 // NewFilesystemRepository creates a new repository, backed by a filesystem.Storage
 // based on a fs.OS, if you want to use a custom one you need to use the function
 // NewRepository and build you filesystem.Storage
@@ -37,11 +37,53 @@ func NewFilesystemRepository(path string) (*Repository, error) {
 
 	return NewRepository(s)
 }
-*/
 
 // NewRepository creates a new repository with the given Storage
 func NewRepository(s Storage) (*Repository, error) {
-	return &Repository{s: s}, nil
+	return &Repository{
+		s: s,
+		r: make(map[string]*Remote, 0),
+	}, nil
+}
+
+// Remote return a remote if exists
+func (r *Repository) Remote(name string) (*Remote, error) {
+	c, err := r.s.ConfigStorage().Remote(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return newRemote(r.s, c), nil
+}
+
+// Remotes return all the remotes
+func (r *Repository) Remotes() ([]*Remote, error) {
+	config, err := r.s.ConfigStorage().Remotes()
+	if err != nil {
+		return nil, err
+	}
+
+	remotes := make([]*Remote, len(config))
+	for i, c := range config {
+		remotes[i] = newRemote(r.s, c)
+	}
+
+	return remotes, nil
+}
+
+// CreateRemote creates a new remote
+func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
+	remote := newRemote(r.s, c)
+	if err := r.s.ConfigStorage().SetRemote(c); err != nil {
+		return nil, err
+	}
+
+	return remote, nil
+}
+
+// DeleteRemote delete a remote from the repository and delete the config
+func (r *Repository) DeleteRemote(name string) error {
+	return r.s.ConfigStorage().DeleteRemote(name)
 }
 
 // Clone clones a remote repository
@@ -50,7 +92,7 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	remote, err := r.createRemote(&config.RemoteConfig{
+	remote, err := r.CreateRemote(&config.RemoteConfig{
 		Name: o.RemoteName,
 		URL:  o.URL,
 	})
@@ -87,13 +129,6 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 	return r.createReferences(head)
 }
 
-func (r *Repository) createRemote(c *config.RemoteConfig) (*Remote, error) {
-	remote := NewRemote(r.s, c)
-
-	r.Remotes = map[string]*Remote{c.Name: remote}
-	return remote, nil
-}
-
 func (r *Repository) createReferences(ref *core.Reference) error {
 	if !ref.IsBranch() {
 		// detached HEAD mode
@@ -115,9 +150,9 @@ func (r *Repository) Pull(o *RepositoryPullOptions) error {
 		return err
 	}
 
-	remote, ok := r.Remotes[o.RemoteName]
-	if !ok {
-		return ErrUnknownRemote
+	remote, err := r.Remote(o.RemoteName)
+	if err != nil {
+		return err
 	}
 
 	head, err := remote.Ref(o.ReferenceName, true)

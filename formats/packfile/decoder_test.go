@@ -30,8 +30,8 @@ func (s *ReaderSuite) TestReadPackfile(c *C) {
 	r := NewStream(f)
 	d := NewDecoder(r)
 
-	sto := memory.NewObjectStorage()
-	err := d.Decode(sto)
+	sto := memory.NewStorage()
+	err := d.Decode(sto.ObjectStorage())
 	c.Assert(err, IsNil)
 
 	AssertObjects(c, sto, []string{
@@ -63,8 +63,8 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, format Forma
 	r := NewSeekable(f)
 	d := NewDecoder(r)
 
-	sto := memory.NewObjectStorage()
-	err = d.Decode(sto)
+	sto := memory.NewStorage()
+	err = d.Decode(sto.ObjectStorage())
 	c.Assert(err, IsNil)
 
 	AssertObjects(c, sto, []string{
@@ -99,10 +99,12 @@ func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, format Forma
 	})
 }
 
-func AssertObjects(c *C, s *memory.ObjectStorage, expects []string) {
-	c.Assert(len(expects), Equals, len(s.Objects))
+func AssertObjects(c *C, s *memory.Storage, expects []string) {
+	o := s.ObjectStorage().(*memory.ObjectStorage)
+
+	c.Assert(len(expects), Equals, len(o.Objects))
 	for _, exp := range expects {
-		obt, err := s.Get(core.NewHash(exp))
+		obt, err := o.Get(core.NewHash(exp))
 		c.Assert(err, IsNil)
 		c.Assert(obt.Hash().String(), Equals, exp)
 	}
@@ -170,9 +172,9 @@ func readFromFile(c *C, file string, format Format) *memory.ObjectStorage {
 	r := NewSeekable(f)
 	d := NewDecoder(r)
 
-	sto := memory.NewObjectStorage()
-	err = d.Decode(sto)
+	sto := memory.NewStorage()
+	err = d.Decode(sto.ObjectStorage())
 	c.Assert(err, IsNil)
 
-	return sto
+	return sto.ObjectStorage().(*memory.ObjectStorage)
 }

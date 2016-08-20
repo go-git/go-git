@@ -12,17 +12,16 @@ import (
 
 // Remote represents a connection to a remote repository
 type Remote struct {
-	Config *config.RemoteConfig
-
+	c *config.RemoteConfig
 	s Storage
+
 	// cache fields, there during the connection is open
 	upSrv  common.GitUploadPackService
 	upInfo *common.GitUploadPackInfo
 }
 
-// NewRemote returns a new Remote, using as client http.DefaultClient
-func NewRemote(s Storage, c *config.RemoteConfig) *Remote {
-	return &Remote{Config: c, s: s}
+func newRemote(s Storage, c *config.RemoteConfig) *Remote {
+	return &Remote{s: s, c: c}
 }
 
 // Connect with the endpoint
@@ -35,7 +34,7 @@ func (r *Remote) Connect() error {
 }
 
 func (r *Remote) connectUploadPackService() error {
-	endpoint, err := common.NewEndpoint(r.Config.URL)
+	endpoint, err := common.NewEndpoint(r.c.URL)
 	if err != nil {
 		return err
 	}
@@ -190,10 +189,6 @@ func (r *Remote) Refs() core.ReferenceIter {
 
 // Disconnect from the remote and save the config
 func (r *Remote) Disconnect() error {
-	if err := r.s.ConfigStorage().SetRemote(r.Config); err != nil {
-		return err
-	}
-
 	r.upInfo = nil
 	return r.upSrv.Disconnect()
 }

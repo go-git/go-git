@@ -10,6 +10,7 @@ type ConfigStorage interface {
 	Remote(name string) (*RemoteConfig, error)
 	Remotes() ([]*RemoteConfig, error)
 	SetRemote(*RemoteConfig) error
+	DeleteRemote(name string) error
 }
 
 type RemoteConfig struct {

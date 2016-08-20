@@ -15,21 +15,21 @@ type RemoteSuite struct {
 var _ = Suite(&RemoteSuite{})
 
 func (s *RemoteSuite) TestConnect(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
 }
 
-func (s *RemoteSuite) TestNewRemoteInvalidEndpoint(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
+func (s *RemoteSuite) TestnewRemoteInvalidEndpoint(c *C) {
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
 
 	err := r.Connect()
 	c.Assert(err, NotNil)
 }
 
-func (s *RemoteSuite) TestNewRemoteInvalidSchemaEndpoint(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
+func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
 
 	err := r.Connect()
 	c.Assert(err, NotNil)
@@ -46,7 +46,7 @@ func (s *RemoteSuite) TestNewAuthenticatedRemote(c *C) {
 }*/
 
 func (s *RemoteSuite) TestInfo(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(r.Info(), IsNil)
@@ -56,7 +56,7 @@ func (s *RemoteSuite) TestInfo(c *C) {
 }
 
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(r.Connect(), IsNil)
@@ -64,7 +64,7 @@ func (s *RemoteSuite) TestDefaultBranch(c *C) {
 }
 
 func (s *RemoteSuite) TestCapabilities(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(r.Connect(), IsNil)
@@ -73,7 +73,7 @@ func (s *RemoteSuite) TestCapabilities(c *C) {
 
 func (s *RemoteSuite) TestFetch(c *C) {
 	sto := memory.NewStorage()
-	r := NewRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(r.Connect(), IsNil)
@@ -87,7 +87,7 @@ func (s *RemoteSuite) TestFetch(c *C) {
 }
 
 func (s *RemoteSuite) TestHead(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	err := r.Connect()
@@ -96,7 +96,7 @@ func (s *RemoteSuite) TestHead(c *C) {
 }
 
 func (s *RemoteSuite) TestRef(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	err := r.Connect()
@@ -112,7 +112,7 @@ func (s *RemoteSuite) TestRef(c *C) {
 }
 
 func (s *RemoteSuite) TestRefs(c *C) {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	err := r.Connect()

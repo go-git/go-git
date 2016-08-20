@@ -89,6 +89,11 @@ func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
 	return nil
 }
 
+func (c *ConfigStorage) DeleteRemote(name string) error {
+	delete(c.RemotesConfig, name)
+	return nil
+}
+
 // ObjectStorage is the implementation of core.ObjectStorage for memory.Object
 type ObjectStorage struct {
 	Objects map[core.Hash]core.Object

@@ -70,8 +70,6 @@ func (s *RepositorySuite) TestClone(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	c.Assert(r.Remotes, HasLen, 0)
-
 	head, err := r.Head()
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
@@ -81,8 +79,10 @@ func (s *RepositorySuite) TestClone(c *C) {
 	})
 
 	c.Assert(err, IsNil)
-	c.Assert(r.Remotes, HasLen, 1)
-	c.Assert(r.Remotes[DefaultRemoteName], NotNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
 
 	head, err = r.Ref(core.HEAD, false)
 	c.Assert(err, IsNil)
@@ -112,8 +112,6 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	c.Assert(r.Remotes, HasLen, 0)
-
 	head, err := r.Head()
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
@@ -125,8 +123,10 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	})
 
 	c.Assert(err, IsNil)
-	c.Assert(r.Remotes, HasLen, 1)
-	c.Assert(r.Remotes[DefaultRemoteName], NotNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
 
 	head, err = r.Ref(core.HEAD, false)
 	c.Assert(err, IsNil)
@@ -150,8 +150,6 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	c.Assert(r.Remotes, HasLen, 0)
-
 	head, err := r.Head()
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
@@ -162,8 +160,10 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	})
 
 	c.Assert(err, IsNil)
-	c.Assert(r.Remotes, HasLen, 1)
-	c.Assert(r.Remotes[DefaultRemoteName], NotNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
 
 	head, err = r.Ref(core.HEAD, false)
 	c.Assert(err, IsNil)
@@ -187,7 +187,6 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	r, err := NewMemoryRepository()
 	c.Assert(err, IsNil)
 
-	c.Assert(r.Remotes, HasLen, 0)
 	err = r.Clone(&RepositoryCloneOptions{
 		URL:           RepositoryFixture,
 		ReferenceName: core.ReferenceName("refs/tags/v1.0.0"),

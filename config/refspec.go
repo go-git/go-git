@@ -108,3 +108,7 @@ func (s RefSpec) Dst(n core.ReferenceName) core.ReferenceName {
 
 	return core.ReferenceName(dst[0:wd] + match + dst[wd+1:len(dst)])
 }
+
+func (s RefSpec) String() string {
+	return string(s)
+}
