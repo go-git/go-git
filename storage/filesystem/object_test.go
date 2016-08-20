@@ -104,7 +104,7 @@ func (s *FsSuite) TestGetCompareWithMemoryStorage(c *C) {
 	}
 }
 
-func memStorageFromGitDir(fs fs.FS, path string) (*memory.ObjectStorage, error) {
+func memStorageFromGitDir(fs fs.FS, path string) (core.ObjectStorage, error) {
 	dir, err := dotgit.New(fs, path)
 	if err != nil {
 		return nil, err
@@ -120,10 +120,11 @@ func memStorageFromGitDir(fs fs.FS, path string) (*memory.ObjectStorage, error) 
 		return nil, err
 	}
 
-	sto := memory.NewObjectStorage()
+	sto := memory.NewStorage()
 	r := packfile.NewStream(f)
 	d := packfile.NewDecoder(r)
-	err = d.Decode(sto)
+
+	err = d.Decode(sto.ObjectStorage())
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func memStorageFromGitDir(fs fs.FS, path string) (*memory.ObjectStorage, error) 
 		return nil, err
 	}
 
-	return sto, nil
+	return sto.ObjectStorage(), nil
 }
 
 func equalsStorages(a, b core.ObjectStorage) (bool, string, error) {
@@ -246,7 +247,7 @@ func (s *FsSuite) TestIterCompareWithMemoryStorage(c *C) {
 	}
 }
 
-func memStorageFromDirPath(fs fs.FS, path string) (*memory.ObjectStorage, error) {
+func memStorageFromDirPath(fs fs.FS, path string) (core.ObjectStorage, error) {
 	dir, err := dotgit.New(fs, path)
 	if err != nil {
 		return nil, err
@@ -257,7 +258,7 @@ func memStorageFromDirPath(fs fs.FS, path string) (*memory.ObjectStorage, error)
 		return nil, err
 	}
 
-	sto := memory.NewObjectStorage()
+	sto := memory.NewStorage()
 	f, err := fs.Open(packfilePath)
 	if err != nil {
 		return nil, err
@@ -265,7 +266,7 @@ func memStorageFromDirPath(fs fs.FS, path string) (*memory.ObjectStorage, error)
 
 	r := packfile.NewStream(f)
 	d := packfile.NewDecoder(r)
-	err = d.Decode(sto)
+	err = d.Decode(sto.ObjectStorage())
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +275,7 @@ func memStorageFromDirPath(fs fs.FS, path string) (*memory.ObjectStorage, error)
 		return nil, err
 	}
 
-	return sto, nil
+	return sto.ObjectStorage(), nil
 }
 
 func iterToSortedSlice(storage core.ObjectStorage, typ core.ObjectType) ([]core.Object,
