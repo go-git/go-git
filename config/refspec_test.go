@@ -67,3 +67,13 @@ func (s *RefSpecSuite) TestRefSpecDstBlob(c *C) {
 		"refs/remotes/origin/foo",
 	)
 }
+func (s *RefSpecSuite) TestMatchAny(c *C) {
+	specs := []RefSpec{
+		"refs/heads/bar:refs/remotes/origin/foo",
+		"refs/heads/foo:refs/remotes/origin/bar",
+	}
+
+	c.Assert(MatchAny(specs, core.ReferenceName("refs/heads/foo")), Equals, true)
+	c.Assert(MatchAny(specs, core.ReferenceName("refs/heads/bar")), Equals, true)
+	c.Assert(MatchAny(specs, core.ReferenceName("refs/heads/master")), Equals, false)
+}

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/clients"
@@ -22,6 +23,11 @@ type Remote struct {
 
 func newRemote(s Storage, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
+}
+
+// Config return the config
+func (r *Remote) Config() *config.RemoteConfig {
+	return r.c
 }
 
 // Connect with the endpoint
@@ -72,7 +78,11 @@ func (r *Remote) Fetch(o *RemoteFetchOptions) (err error) {
 		return err
 	}
 
-	refs, err := r.getWantedReferences(o.RefSpec)
+	if len(o.RefSpecs) == 0 {
+		o.RefSpecs = r.c.Fetch
+	}
+
+	refs, err := r.getWantedReferences(o.RefSpecs)
 	if err != nil {
 		return err
 	}
@@ -88,14 +98,14 @@ func (r *Remote) Fetch(o *RemoteFetchOptions) (err error) {
 	}
 
 	defer checkClose(reader, &err)
-	if err := r.updateObjectStorage(r.s.ObjectStorage(), reader); err != nil {
+	if err := r.updateObjectStorage(reader); err != nil {
 		return err
 	}
 
-	return r.updateLocalReferenceStorage(r.s.ReferenceStorage(), o.RefSpec, refs)
+	return r.updateLocalReferenceStorage(o.RefSpecs, refs)
 }
 
-func (r *Remote) getWantedReferences(spec config.RefSpec) ([]*core.Reference, error) {
+func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, error) {
 	var refs []*core.Reference
 
 	return refs, r.Refs().ForEach(func(r *core.Reference) error {
@@ -103,7 +113,7 @@ func (r *Remote) getWantedReferences(spec config.RefSpec) ([]*core.Reference, er
 			return nil
 		}
 
-		if spec.Match(r.Name()) {
+		if config.MatchAny(spec, r.Name()) {
 			refs = append(refs, r)
 		}
 
@@ -138,29 +148,29 @@ func (r *Remote) buildRequest(
 	return req, err
 }
 
-func (r *Remote) updateObjectStorage(s core.ObjectStorage, reader io.Reader) error {
+func (r *Remote) updateObjectStorage(reader io.Reader) error {
 	stream := packfile.NewStream(reader)
 
 	d := packfile.NewDecoder(stream)
-	return d.Decode(s)
+	return d.Decode(r.s.ObjectStorage())
 }
 
-func (r *Remote) updateLocalReferenceStorage(
-	local core.ReferenceStorage, spec config.RefSpec, refs []*core.Reference,
-) error {
+func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*core.Reference) error {
 	for _, ref := range refs {
-		if !spec.Match(ref.Name()) {
-			continue
-		}
+		for _, spec := range specs {
+			if !spec.Match(ref.Name()) {
+				continue
+			}
 
-		if ref.Type() != core.HashReference {
-			continue
-		}
+			if ref.Type() != core.HashReference {
+				continue
+			}
 
-		name := spec.Dst(ref.Name())
-		n := core.NewHashReference(name, ref.Hash())
-		if err := local.Set(n); err != nil {
-			return err
+			name := spec.Dst(ref.Name())
+			n := core.NewHashReference(name, ref.Hash())
+			if err := r.s.ReferenceStorage().Set(n); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -191,4 +201,11 @@ func (r *Remote) Refs() core.ReferenceIter {
 func (r *Remote) Disconnect() error {
 	r.upInfo = nil
 	return r.upSrv.Disconnect()
+}
+
+func (r *Remote) String() string {
+	fetch := r.c.URL
+	push := r.c.URL
+
+	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%s (push)", r.c.Name, fetch, push)
 }

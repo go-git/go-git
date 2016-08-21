@@ -3,6 +3,8 @@ package git
 import (
 	"io"
 	"path"
+
+	"gopkg.in/src-d/go-git.v4/core"
 )
 
 const (
@@ -89,6 +91,27 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 	}
 
 	return
+}
+
+func (w *TreeWalker) ForEach(cb func(fullpath string, e TreeEntry) error) error {
+	for {
+		path, e, _, err := w.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return err
+		}
+
+		if err := cb(path, e); err != nil {
+			if err == core.ErrStop {
+				return nil
+			}
+
+			return err
+		}
+	}
 }
 
 // Tree returns the tree that the tree walker most recently operated on.

@@ -18,7 +18,8 @@ func (s *ConfigSuite) TestConfigFileDecode(c *C) {
 
 	c.Assert(config.Remotes, HasLen, 2)
 	c.Assert(config.Remotes["origin"].URL, Equals, "git@github.com:src-d/go-git.git")
-	c.Assert(config.Remotes["origin"].Fetch.String(), Equals, "+refs/heads/*:refs/remotes/origin/*")
+	c.Assert(config.Remotes["origin"].Fetch, HasLen, 1)
+	c.Assert(config.Remotes["origin"].Fetch[0].String(), Equals, "+refs/heads/*:refs/remotes/origin/*")
 }
 
 var configFixture = []byte(`

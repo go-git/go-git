@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"fmt"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
@@ -22,8 +23,9 @@ type Repository struct {
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
-func NewMemoryRepository() (*Repository, error) {
-	return NewRepository(memory.NewStorage())
+func NewMemoryRepository() *Repository {
+	r, _ := NewRepository(memory.NewStorage())
+	return r
 }
 
 // NewFilesystemRepository creates a new repository, backed by a filesystem.Storage
@@ -73,6 +75,10 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 
 // CreateRemote creates a new remote
 func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+
 	remote := newRemote(r.s, c)
 	if err := r.s.ConfigStorage().SetRemote(c); err != nil {
 		return nil, err
@@ -92,11 +98,12 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	remote, err := r.CreateRemote(&config.RemoteConfig{
+	c := &config.RemoteConfig{
 		Name: o.RemoteName,
 		URL:  o.URL,
-	})
+	}
 
+	remote, err := r.CreateRemote(c)
 	if err != nil {
 		return err
 	}
@@ -107,17 +114,11 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 
 	defer remote.Disconnect()
 
-	spec, err := o.refSpec(remote.Info().Refs)
-	if err != nil {
+	if err := r.updateRemoteConfig(remote, o, c); err != nil {
 		return err
 	}
 
-	err = remote.Fetch(&RemoteFetchOptions{
-		RefSpec: spec,
-		Depth:   o.Depth,
-	})
-
-	if err != nil {
+	if err = remote.Fetch(&RemoteFetchOptions{Depth: o.Depth}); err != nil {
 		return err
 	}
 
@@ -127,6 +128,27 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 	}
 
 	return r.createReferences(head)
+}
+
+const refspecSingleBranch = "+refs/heads/%s:refs/remotes/%s/%[1]s"
+
+func (r *Repository) updateRemoteConfig(
+	remote *Remote, o *RepositoryCloneOptions, c *config.RemoteConfig,
+) error {
+	if o.SingleBranch {
+		head, err := core.ResolveReference(remote.Info().Refs, o.ReferenceName)
+		if err != nil {
+			return err
+		}
+
+		c.Fetch = []config.RefSpec{
+			config.RefSpec(fmt.Sprintf(refspecSingleBranch, head.Name().Short(), c.Name)),
+		}
+
+		return r.s.ConfigStorage().SetRemote(c)
+	}
+
+	return nil
 }
 
 func (r *Repository) createReferences(ref *core.Reference) error {
@@ -154,6 +176,12 @@ func (r *Repository) Pull(o *RepositoryPullOptions) error {
 	if err != nil {
 		return err
 	}
+
+	if err = remote.Connect(); err != nil {
+		return err
+	}
+
+	defer remote.Disconnect()
 
 	head, err := remote.Ref(o.ReferenceName, true)
 	if err != nil {

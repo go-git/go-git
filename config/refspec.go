@@ -112,3 +112,14 @@ func (s RefSpec) Dst(n core.ReferenceName) core.ReferenceName {
 func (s RefSpec) String() string {
 	return string(s)
 }
+
+// MatchAny returns true if any of the RefSpec match with the given ReferenceName
+func MatchAny(l []RefSpec, n core.ReferenceName) bool {
+	for _, r := range l {
+		if r.Match(n) {
+			return true
+		}
+	}
+
+	return false
+}

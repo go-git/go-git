@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -141,6 +142,11 @@ func (r *Reference) Strings() [2]string {
 	}
 
 	return o
+}
+
+func (r *Reference) String() string {
+	s := r.Strings()
+	return fmt.Sprintf("%s %s", s[1], s[0])
 }
 
 // ReferenceSliceIter implements ReferenceIter. It iterates over a series of

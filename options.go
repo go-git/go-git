@@ -2,7 +2,6 @@ package git
 
 import (
 	"errors"
-	"fmt"
 
 	"gopkg.in/src-d/go-git.v3/clients/common"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -11,9 +10,7 @@ import (
 
 const (
 	// DefaultRemoteName name of the default Remote, just like git command
-	DefaultRemoteName          = "origin"
-	DefaultSingleBranchRefSpec = "+refs/heads/%s:refs/remotes/%s/%[1]s"
-	DefaultRefSpec             = "+refs/heads/*:refs/remotes/%s/*"
+	DefaultRemoteName = "origin"
 )
 
 var (
@@ -54,22 +51,6 @@ func (o *RepositoryCloneOptions) Validate() error {
 	return nil
 }
 
-func (o *RepositoryCloneOptions) refSpec(s core.ReferenceStorage) (config.RefSpec, error) {
-	var spec string
-	if o.SingleBranch {
-		head, err := core.ResolveReference(s, o.ReferenceName)
-		if err != nil {
-			return "", err
-		}
-
-		spec = fmt.Sprintf(DefaultSingleBranchRefSpec, head.Name().Short(), o.RemoteName)
-	} else {
-		spec = fmt.Sprintf(DefaultRefSpec, o.RemoteName)
-	}
-
-	return config.RefSpec(spec), nil
-}
-
 // RepositoryPullOptions describe how a pull should be perform
 type RepositoryPullOptions struct {
 	// Name of the remote to be pulled
@@ -97,14 +78,16 @@ func (o *RepositoryPullOptions) Validate() error {
 
 // RemoteFetchOptions describe how a fetch should be perform
 type RemoteFetchOptions struct {
-	RefSpec config.RefSpec
-	Depth   int
+	RefSpecs []config.RefSpec
+	Depth    int
 }
 
 // Validate validate the fields and set the default values
 func (o *RemoteFetchOptions) Validate() error {
-	if !o.RefSpec.IsValid() {
-		return ErrInvalidRefSpec
+	for _, r := range o.RefSpecs {
+		if !r.IsValid() {
+			return ErrInvalidRefSpec
+		}
 	}
 
 	return nil
