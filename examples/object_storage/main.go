@@ -38,7 +38,7 @@ func clone(r *git.Repository, url string) {
 	fmt.Printf("Cloning %q ...\n", os.Args[2])
 	start := time.Now()
 
-	if err := r.Clone(&git.RepositoryCloneOptions{URL: url}); err != nil {
+	if err := r.Clone(&git.CloneOptions{URL: url}); err != nil {
 		panic(err)
 	}
 

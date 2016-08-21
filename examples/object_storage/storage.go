@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 
 	"github.com/aerospike/aerospike-client-go"
@@ -38,6 +39,10 @@ func (s *AerospikeStorage) ReferenceStorage() core.ReferenceStorage {
 	}
 
 	return s.rs
+}
+
+func (s *AerospikeStorage) ConfigStorage() config.ConfigStorage {
+	return &ConfigStorage{}
 }
 
 type AerospikeObjectStorage struct {
@@ -226,4 +231,35 @@ func (s *AerospikeReferenceStorage) Iter() (core.ReferenceIter, error) {
 	}
 
 	return core.NewReferenceSliceIter(refs), nil
+}
+
+type ConfigStorage struct {
+	RemotesConfig map[string]*config.RemoteConfig
+}
+
+func (c *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
+	r, ok := c.RemotesConfig[name]
+	if ok {
+		return r, nil
+	}
+
+	return nil, config.ErrRemoteConfigNotFound
+}
+
+func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
+	var o []*config.RemoteConfig
+	for _, r := range c.RemotesConfig {
+		o = append(o, r)
+	}
+
+	return o, nil
+}
+func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
+	c.RemotesConfig[r.Name] = r
+	return nil
+}
+
+func (c *ConfigStorage) DeleteRemote(name string) error {
+	delete(c.RemotesConfig, name)
+	return nil
 }

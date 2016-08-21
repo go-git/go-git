@@ -103,7 +103,7 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 
 			comment := Commentf("fixture packfile: %q", fixture.packfile)
 
-			repos[fixture.url], _ = NewMemoryRepository()
+			repos[fixture.url] = NewMemoryRepository()
 
 			f, err := os.Open(fixture.packfile)
 			c.Assert(err, IsNil, comment)

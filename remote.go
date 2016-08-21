@@ -73,7 +73,7 @@ func (r *Remote) Capabilities() *common.Capabilities {
 }
 
 // Fetch returns a reader using the request
-func (r *Remote) Fetch(o *RemoteFetchOptions) (err error) {
+func (r *Remote) Fetch(o *FetchOptions) (err error) {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, 
 }
 
 func (r *Remote) buildRequest(
-	s core.ReferenceStorage, o *RemoteFetchOptions, refs []*core.Reference,
+	s core.ReferenceStorage, o *FetchOptions, refs []*core.Reference,
 ) (*common.GitUploadPackRequest, error) {
 	req := &common.GitUploadPackRequest{}
 	req.Depth = o.Depth

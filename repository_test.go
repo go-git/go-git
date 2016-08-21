@@ -61,20 +61,18 @@ func (s *RepositorySuite) TearDownSuite(c *C) {
 }
 
 func (s *RepositorySuite) TestNewRepository(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
+	r := NewMemoryRepository()
 	c.Assert(r, NotNil)
 }
 
 func (s *RepositorySuite) TestClone(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
+	r := NewMemoryRepository()
 
 	head, err := r.Head()
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&RepositoryCloneOptions{
+	err = r.Clone(&CloneOptions{
 		URL: RepositoryFixture,
 	})
 
@@ -109,14 +107,13 @@ func (s *RepositorySuite) TestClone(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
+	r := NewMemoryRepository()
 
 	head, err := r.Head()
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&RepositoryCloneOptions{
+	err = r.Clone(&CloneOptions{
 		URL:           RepositoryFixture,
 		ReferenceName: core.ReferenceName("refs/heads/branch"),
 		SingleBranch:  true,
@@ -147,14 +144,13 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
+	r := NewMemoryRepository()
 
 	head, err := r.Head()
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&RepositoryCloneOptions{
+	err = r.Clone(&CloneOptions{
 		URL:          RepositoryFixture,
 		SingleBranch: true,
 	})
@@ -184,10 +180,8 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = r.Clone(&RepositoryCloneOptions{
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{
 		URL:           RepositoryFixture,
 		ReferenceName: core.ReferenceName("refs/tags/v1.0.0"),
 	})
@@ -200,10 +194,8 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 }
 
 func (s *RepositorySuite) TestCommit(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = r.Clone(&RepositoryCloneOptions{
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{
 		URL: RepositoryFixture,
 	})
 
@@ -222,10 +214,8 @@ func (s *RepositorySuite) TestCommit(c *C) {
 }
 
 func (s *RepositorySuite) TestCommits(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -288,10 +278,8 @@ func (s *RepositorySuite) TestObject(c *C) {
 }
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	commits, err := r.Commits()
@@ -300,10 +288,8 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 }
 
 func (s *RepositorySuite) TestRef(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	ref, err := r.Ref(core.HEAD, false)
@@ -316,10 +302,8 @@ func (s *RepositorySuite) TestRef(c *C) {
 }
 
 func (s *RepositorySuite) TestRefs(c *C) {
-	r, err := NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 
 	c.Assert(err, IsNil)

@@ -19,11 +19,8 @@ var _ = Suite(&ObjectsSuite{})
 func (s *ObjectsSuite) SetUpTest(c *C) {
 	s.BaseSuite.SetUpTest(c)
 
-	var err error
-	s.r, err = NewMemoryRepository()
-	c.Assert(err, IsNil)
-
-	err = s.r.Clone(&RepositoryCloneOptions{URL: RepositoryFixture})
+	s.r = NewMemoryRepository()
+	err := s.r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
 }
 

@@ -18,8 +18,8 @@ var (
 	ErrInvalidRefSpec = errors.New("invalid refspec")
 )
 
-// RepositoryCloneOptions describe how a clone should be perform
-type RepositoryCloneOptions struct {
+// CloneOptions describe how a clone should be perform
+type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from
 	URL string
 	// Auth credentials, if required, to uses with the remote repository
@@ -35,7 +35,7 @@ type RepositoryCloneOptions struct {
 }
 
 // Validate validate the fields and set the default values
-func (o *RepositoryCloneOptions) Validate() error {
+func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
 		return ErrMissingURL
 	}
@@ -51,8 +51,8 @@ func (o *RepositoryCloneOptions) Validate() error {
 	return nil
 }
 
-// RepositoryPullOptions describe how a pull should be perform
-type RepositoryPullOptions struct {
+// PullOptions describe how a pull should be perform
+type PullOptions struct {
 	// Name of the remote to be pulled
 	RemoteName string
 	// Remote branch to clone
@@ -64,7 +64,7 @@ type RepositoryPullOptions struct {
 }
 
 // Validate validate the fields and set the default values
-func (o *RepositoryPullOptions) Validate() error {
+func (o *PullOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
 	}
@@ -76,14 +76,14 @@ func (o *RepositoryPullOptions) Validate() error {
 	return nil
 }
 
-// RemoteFetchOptions describe how a fetch should be perform
-type RemoteFetchOptions struct {
+// FetchOptions describe how a fetch should be perform
+type FetchOptions struct {
 	RefSpecs []config.RefSpec
 	Depth    int
 }
 
 // Validate validate the fields and set the default values
-func (o *RemoteFetchOptions) Validate() error {
+func (o *FetchOptions) Validate() error {
 	for _, r := range o.RefSpecs {
 		if !r.IsValid() {
 			return ErrInvalidRefSpec

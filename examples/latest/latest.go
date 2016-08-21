@@ -11,12 +11,9 @@ func main() {
 	url := os.Args[1]
 
 	fmt.Printf("Retrieving latest commit from: %q ...\n", url)
-	r, err := git.NewMemoryRepository()
-	if err != nil {
-		panic(err)
-	}
+	r := git.NewMemoryRepository()
 
-	if err = r.Clone(&git.RepositoryCloneOptions{URL: url}); err != nil {
+	if err := r.Clone(&git.CloneOptions{URL: url}); err != nil {
 		panic(err)
 	}
 

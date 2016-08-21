@@ -93,7 +93,7 @@ func (r *Repository) DeleteRemote(name string) error {
 }
 
 // Clone clones a remote repository
-func (r *Repository) Clone(o *RepositoryCloneOptions) error {
+func (r *Repository) Clone(o *CloneOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 		return err
 	}
 
-	if err = remote.Fetch(&RemoteFetchOptions{Depth: o.Depth}); err != nil {
+	if err = remote.Fetch(&FetchOptions{Depth: o.Depth}); err != nil {
 		return err
 	}
 
@@ -133,7 +133,7 @@ func (r *Repository) Clone(o *RepositoryCloneOptions) error {
 const refspecSingleBranch = "+refs/heads/%s:refs/remotes/%s/%[1]s"
 
 func (r *Repository) updateRemoteConfig(
-	remote *Remote, o *RepositoryCloneOptions, c *config.RemoteConfig,
+	remote *Remote, o *CloneOptions, c *config.RemoteConfig,
 ) error {
 	if o.SingleBranch {
 		head, err := core.ResolveReference(remote.Info().Refs, o.ReferenceName)
@@ -167,7 +167,7 @@ func (r *Repository) createReferences(ref *core.Reference) error {
 }
 
 // Pull incorporates changes from a remote repository into the current branch
-func (r *Repository) Pull(o *RepositoryPullOptions) error {
+func (r *Repository) Pull(o *PullOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (r *Repository) Pull(o *RepositoryPullOptions) error {
 
 	defer remote.Disconnect()
 
-	err = remote.Fetch(&RemoteFetchOptions{
+	err = remote.Fetch(&FetchOptions{
 		Depth: o.Depth,
 	})
 

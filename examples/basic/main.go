@@ -16,7 +16,7 @@ func main() {
 	// > git clone https://github.com/git-fixtures/basic.git
 	color.Blue("git clone https://github.com/git-fixtures/basic.git")
 
-	r.Clone(&git.RepositoryCloneOptions{
+	r.Clone(&git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 

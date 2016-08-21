@@ -21,7 +21,7 @@ var _ = Suite(&BlameCommon{})
 func (s *BlameCommon) SetUpSuite(c *C) {
 	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		r, _ := NewMemoryRepository()
+		r := NewMemoryRepository()
 
 		f, err := os.Open(fixRepo.packfile)
 		c.Assert(err, IsNil)

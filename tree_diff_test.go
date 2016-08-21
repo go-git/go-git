@@ -39,7 +39,7 @@ func (s *DiffTreeSuite) SetUpSuite(c *C) {
 
 	s.repos = make(map[string]*Repository, 0)
 	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url], _ = NewMemoryRepository()
+		s.repos[fixRepo.url] = NewMemoryRepository()
 
 		f, err := os.Open(fixRepo.packfile)
 		c.Assert(err, IsNil)

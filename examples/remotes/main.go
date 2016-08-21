@@ -37,7 +37,7 @@ func main() {
 	// > git pull example
 	color.Blue("git pull example")
 
-	r.Pull(&git.RepositoryPullOptions{
+	r.Pull(&git.PullOptions{
 		RemoteName: "example",
 	})
 

@@ -21,7 +21,7 @@ var _ = Suite(&ReferencesSuite{})
 func (s *ReferencesSuite) SetUpSuite(c *C) {
 	s.repos = make(map[string]*Repository, 0)
 	for _, fix := range fixtureRepos {
-		s.repos[fix.url], _ = NewMemoryRepository()
+		s.repos[fix.url] = NewMemoryRepository()
 
 		f, err := os.Open(fix.packfile)
 		defer f.Close()

@@ -78,7 +78,7 @@ func (s *RemoteSuite) TestFetch(c *C) {
 
 	c.Assert(r.Connect(), IsNil)
 
-	err := r.Fetch(&RemoteFetchOptions{
+	err := r.Fetch(&FetchOptions{
 		RefSpecs: []config.RefSpec{config.DefaultRefSpec},
 	})
 
