@@ -2,37 +2,49 @@ package main
 
 import (
 	"fmt"
-	"os"
+
+	"github.com/fatih/color"
 
 	"gopkg.in/src-d/go-git.v4"
 )
 
 func main() {
-	url := os.Args[1]
-	fmt.Printf("Retrieving %q ...\n", url)
-	r, err := git.NewMemoryRepository()
-	if err != nil {
-		panic(err)
-	}
+	r := git.NewMemoryRepository()
 
-	if err = r.Clone(&git.RepositoryCloneOptions{URL: url}); err != nil {
-		panic(err)
-	}
+	// Clone the given repository, creating the remote, the local branches
+	// and fetching the objects, exactly as:
+	// > git clone https://github.com/git-fixtures/basic.git
+	color.Blue("git clone https://github.com/git-fixtures/basic.git")
 
-	iter, err := r.Commits()
-	if err != nil {
-		panic(err)
-	}
-
-	defer iter.Close()
-
-	var count = 0
-	iter.ForEach(func(commit *git.Commit) error {
-		count++
-		fmt.Println(commit)
-
-		return nil
+	r.Clone(&git.RepositoryCloneOptions{
+		URL: "https://github.com/git-fixtures/basic.git",
 	})
 
-	fmt.Println("total commits:", count)
+	// Getting the latest commit on the current branch
+	// > git log -1
+	color.Blue("git log -1")
+
+	// ... retrieving the branch being pointed by HEAD
+	ref, _ := r.Head()
+	// ... retrieving the commit object
+	commit, _ := r.Commit(ref.Hash())
+	fmt.Println(commit)
+
+	// List the tree from HEAD
+	// > git ls-tree -r HEAD
+	color.Blue("git ls-tree -r HEAD")
+
+	// ... retrieve the tree from the commit
+	tree := commit.Tree()
+	// ... create a tree walker, allows to you intereste all nested trees
+	walker := git.NewTreeWalker(r, tree)
+	walker.ForEach(func(fullpath string, e git.TreeEntry) error {
+		// we ignore the tree
+		if e.Mode.Perm() == 0 {
+			return nil
+		}
+
+		fmt.Printf("100644 blob %s    %s\n", e.Hash, fullpath)
+		return nil
+	})
 }
