@@ -9,6 +9,7 @@ import (
 )
 
 type SuiteFile struct {
+	BaseSuite
 	repos map[string]*Repository
 }
 
@@ -53,7 +54,10 @@ func (s *SuiteFile) TestIter(c *C) {
 		commit, err := r.Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
-		iter := NewFileIter(r, commit.Tree())
+		tree, err := commit.Tree()
+		c.Assert(err, IsNil)
+
+		iter := NewFileIter(r, tree)
 		for k := 0; k < len(t.files); k++ {
 			exp := t.files[k]
 			file, err := iter.Next()
@@ -186,11 +190,49 @@ func (s *SuiteFile) TestIgnoreEmptyDirEntries(c *C) {
 		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
-		iter := commit.Tree().Files()
+		tree, err := commit.Tree()
+		c.Assert(err, IsNil)
+
+		iter := tree.Files()
 		defer iter.Close()
 		for file, err := iter.Next(); err == nil; file, err = iter.Next() {
 			_, _ = file.Contents()
 			// this would probably panic if we are not ignoring empty dirs
 		}
 	}
+}
+
+func (s *SuiteFile) TestFileIter(c *C) {
+	hash := core.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+
+	commit, err := s.Repository.Commit(hash)
+	c.Assert(err, IsNil)
+
+	tree, err := commit.Tree()
+
+	expected := []string{
+		".gitignore",
+		"CHANGELOG",
+		"LICENSE",
+		"binary.jpg",
+	}
+
+	var count int
+	i := tree.Files()
+	i.ForEach(func(f *File) error {
+		c.Assert(f.Name, Equals, expected[count])
+		count++
+		return nil
+	})
+
+	c.Assert(count, Equals, 4)
+
+	count = 0
+	i = tree.Files()
+	i.ForEach(func(f *File) error {
+		count++
+		return core.ErrStop
+	})
+
+	c.Assert(count, Equals, 1)
 }

@@ -394,5 +394,5 @@ func tree(repo *Repository, commitHashStr string) (*Tree, error) {
 		return nil, err
 	}
 
-	return commit.Tree(), nil
+	return commit.Tree()
 }

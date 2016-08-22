@@ -141,8 +141,10 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 
 // ForEach call the cb function for each object contained on this iter until
 // an error happends or the end of the iter is reached. If ErrStop is sent
-// the iteration is stop but no error is returned
+// the iteration is stop but no error is returned. The iterator is closed.
 func (iter *ObjectLookupIter) ForEach(cb func(Object) error) error {
+	defer iter.Close()
+
 	for _, hash := range iter.series {
 		obj, err := iter.storage.Get(hash)
 		if err != nil {
@@ -197,8 +199,9 @@ func (iter *ObjectSliceIter) Next() (Object, error) {
 
 // ForEach call the cb function for each object contained on this iter until
 // an error happends or the end of the iter is reached. If ErrStop is sent
-// the iteration is stop but no error is returned
+// the iteration is stop but no error is returned. The iterator is closed.
 func (iter *ObjectSliceIter) ForEach(cb func(Object) error) error {
+	defer iter.Close()
 	for _, o := range iter.series {
 		if err := cb(o); err != nil {
 			if err == ErrStop {

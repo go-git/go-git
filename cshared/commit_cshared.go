@@ -62,7 +62,11 @@ func c_Commit_Tree(c uint64) uint64 {
 		return IH
 	}
 	commit := obj.(*git.Commit)
-	tree := commit.Tree()
+	tree, err := commit.Tree()
+	if err != nil {
+		return IH
+	}
+
 	tree_handle := RegisterObject(tree)
 	return uint64(tree_handle)
 }
@@ -156,14 +160,14 @@ func c_Commit_References(c uint64, path string) (*C.char, int, int, *C.char) {
 		return nil, 0, ErrorCodeInternal, C.CString(err.Error())
 	}
 	handles := make([]uint64, len(refs))
-	for i, c := range(refs) {
+	for i, c := range refs {
 		handles[i] = uint64(RegisterObject(c))
 	}
 	size := 8 * len(handles)
 	dest := C.malloc(C.size_t(size))
 	header := (*reflect.SliceHeader)(unsafe.Pointer(&handles))
 	header.Len *= 8
-	copy((*[1<<30]byte)(dest)[:], *(*[]byte)(unsafe.Pointer(header)))
+	copy((*[1 << 30]byte)(dest)[:], *(*[]byte)(unsafe.Pointer(header)))
 	return (*C.char)(dest), size / 8, ErrorCodeSuccess, nil
 }
 

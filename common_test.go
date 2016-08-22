@@ -18,12 +18,18 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-type BaseSuite struct{}
+type BaseSuite struct {
+	Repository *Repository
+}
 
 func (s *BaseSuite) SetUpTest(c *C) {
 	clients.InstallProtocol("mock", func(end common.Endpoint) common.GitUploadPackService {
 		return &MockGitUploadPackService{endpoint: end}
 	})
+
+	s.Repository = NewMemoryRepository()
+	err := s.Repository.Clone(&CloneOptions{URL: RepositoryFixture})
+	c.Assert(err, IsNil)
 }
 
 const RepositoryFixture = "mock://formats/packfile/fixtures/git-fixture.ref-delta"

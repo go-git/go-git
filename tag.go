@@ -125,7 +125,7 @@ func (t *Tag) Tree() (*Tree, error) {
 		if err != nil {
 			return nil, err
 		}
-		return commit.Tree(), nil
+		return commit.Tree()
 	case core.TreeObject:
 		return t.r.Tree(t.Target)
 	default:
@@ -184,7 +184,7 @@ func (iter *TagIter) Next() (*Tag, error) {
 
 // ForEach call the cb function for each tag contained on this iter until
 // an error happends or the end of the iter is reached. If ErrStop is sent
-// the iteration is stop but no error is returned
+// the iteration is stop but no error is returned. The iterator is closed.
 func (iter *TagIter) ForEach(cb func(*Tag) error) error {
 	return iter.ObjectIter.ForEach(func(obj core.Object) error {
 		tag := &Tag{r: iter.r}

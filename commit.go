@@ -30,9 +30,8 @@ type Commit struct {
 }
 
 // Tree returns the Tree from the commit
-func (c *Commit) Tree() *Tree {
-	tree, _ := c.r.Tree(c.tree) // FIXME: Return error as well?
-	return tree
+func (c *Commit) Tree() (*Tree, error) {
+	return c.r.Tree(c.tree)
 }
 
 // Parents return a CommitIter to the parent Commits
@@ -51,8 +50,13 @@ func (c *Commit) NumParents() int {
 // File returns the file with the specified "path" in the commit and a
 // nil error if the file exists. If the file does not exist, it returns
 // a nil file and the ErrFileNotFound error.
-func (c *Commit) File(path string) (file *File, err error) {
-	return c.Tree().File(path)
+func (c *Commit) File(path string) (*File, error) {
+	tree, err := c.Tree()
+	if err != nil {
+		return nil, err
+	}
+
+	return tree.File(path)
 }
 
 // ID returns the object ID of the commit. The returned value will always match
@@ -156,7 +160,7 @@ func (iter *CommitIter) Next() (*Commit, error) {
 
 // ForEach call the cb function for each commit contained on this iter until
 // an error happends or the end of the iter is reached. If ErrStop is sent
-// the iteration is stop but no error is returned
+// the iteration is stop but no error is returned. The iterator is closed.
 func (iter *CommitIter) ForEach(cb func(*Commit) error) error {
 	return iter.ObjectIter.ForEach(func(obj core.Object) error {
 		commit := &Commit{r: iter.r}

@@ -209,7 +209,11 @@ func (s *RepositorySuite) TestCommit(c *C) {
 	c.Assert(commit.Hash, Equals, commit.ID())
 	c.Assert(commit.Hash, Equals, hash)
 	c.Assert(commit.Type(), Equals, core.CommitObject)
-	c.Assert(commit.Tree().Hash.IsZero(), Equals, false)
+
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+	c.Assert(tree.Hash.IsZero(), Equals, false)
+
 	c.Assert(commit.Author.Email, Equals, "daniel@lordran.local")
 }
 

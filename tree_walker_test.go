@@ -99,7 +99,10 @@ func (s *SuiteTreeWalker) TestNext(c *C) {
 		commit, err := r.Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
-		walker := NewTreeWalker(r, commit.Tree())
+		tree, err := commit.Tree()
+		c.Assert(err, IsNil)
+
+		walker := NewTreeWalker(r, tree)
 		for k := 0; k < len(t.objs); k++ {
 			info := t.objs[k]
 			mode, err := strconv.ParseInt(info.Mode, 8, 32)

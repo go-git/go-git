@@ -35,16 +35,15 @@ func main() {
 	color.Blue("git ls-tree -r HEAD")
 
 	// ... retrieve the tree from the commit
-	tree := commit.Tree()
-	// ... create a tree walker, allows to you intereste all nested trees
-	walker := git.NewTreeWalker(r, tree)
-	walker.ForEach(func(fullpath string, e git.TreeEntry) error {
+	tree, _ := commit.Tree()
+	// ... get the files iterator and print the file
+	tree.Files().ForEach(func(f *git.File) error {
 		// we ignore the tree
-		if e.Mode.Perm() == 0 {
+		if f.Mode.Perm() == 0 {
 			return nil
 		}
 
-		fmt.Printf("100644 blob %s    %s\n", e.Hash, fullpath)
+		fmt.Printf("100644 blob %s    %s\n", f.Hash, f.Name)
 		return nil
 	})
 }

@@ -188,7 +188,9 @@ func (s *SuiteTree) TestFile(c *C) {
 		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
-		tree := commit.Tree()
+		tree, err := commit.Tree()
+		c.Assert(err, IsNil)
+
 		file, err := tree.File(t.path)
 		found := err == nil
 
@@ -260,7 +262,9 @@ func (s *SuiteTree) TestFiles(c *C) {
 		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
-		tree := commit.Tree()
+		tree, err := commit.Tree()
+		c.Assert(err, IsNil)
+
 		var output []string
 		iter := tree.Files()
 		defer iter.Close()
