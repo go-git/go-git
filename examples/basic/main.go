@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fatih/color"
 
@@ -46,4 +47,16 @@ func main() {
 		fmt.Printf("100644 blob %s    %s\n", f.Hash, f.Name)
 		return nil
 	})
+
+	// List the history of the repository
+	// > git log --oneline
+	color.Blue("git log --oneline")
+
+	commits, _ := commit.History()
+	for _, c := range commits {
+		hash := c.Hash.String()
+		line := strings.Split(c.Message, "\n")
+		fmt.Println(hash[:7], line[0])
+	}
+
 }

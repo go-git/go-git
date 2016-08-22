@@ -72,6 +72,14 @@ func (s *SuiteCommit) TestNumParents(c *C) {
 	c.Assert(s.Commit.NumParents(), Equals, 2)
 }
 
+func (s *SuiteCommit) TestHistory(c *C) {
+	commits, err := s.Commit.History()
+	c.Assert(err, IsNil)
+	c.Assert(commits, HasLen, 5)
+	c.Assert(commits[0].Hash.String(), Equals, s.Commit.Hash.String())
+	c.Assert(commits[len(commits)-1].Hash.String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
+}
+
 func (s *SuiteCommit) TestString(c *C) {
 	c.Assert(s.Commit.String(), Equals, ""+
 		"commit 1669dce138d9b841a518c64b10914d88f5e488ea\n"+

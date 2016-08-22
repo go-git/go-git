@@ -125,6 +125,18 @@ func (c *Commit) Decode(o core.Object) (err error) {
 	}
 }
 
+// History return a slice with the previous commits in the history of this commit
+func (c *Commit) History() ([]*Commit, error) {
+	var commits []*Commit
+	err := WalkCommitHistory(c, func(commit *Commit) error {
+		commits = append(commits, commit)
+		return nil
+	})
+
+	ReverseSortCommits(commits)
+	return commits, err
+}
+
 func (c *Commit) String() string {
 	return fmt.Sprintf(
 		"%s %s\nAuthor: %s\nDate:   %s\n",
@@ -192,4 +204,10 @@ func (s commitSorterer) Swap(i, j int) {
 func SortCommits(l []*Commit) {
 	s := &commitSorterer{l}
 	sort.Sort(s)
+}
+
+// ReverseSortCommits sort a commit list by commit date, from newer to older.
+func ReverseSortCommits(l []*Commit) {
+	s := &commitSorterer{l}
+	sort.Sort(sort.Reverse(s))
 }
