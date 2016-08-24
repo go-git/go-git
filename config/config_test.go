@@ -11,11 +11,6 @@ func (s *ConfigSuite) TestRemoteConfigValidateMissingURL(c *C) {
 	c.Assert(config.Validate(), Equals, ErrRemoteConfigEmptyURL)
 }
 
-func (s *ConfigSuite) TestRemoteConfigValidateInvalidURL(c *C) {
-	config := &RemoteConfig{Name: "foo", URL: "foo"}
-	c.Assert(config.Validate(), NotNil)
-}
-
 func (s *ConfigSuite) TestRemoteConfigValidateMissingName(c *C) {
 	config := &RemoteConfig{}
 	c.Assert(config.Validate(), Equals, ErrRemoteConfigEmptyName)

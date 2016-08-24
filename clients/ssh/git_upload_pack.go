@@ -42,15 +42,19 @@ type GitUploadPackService struct {
 }
 
 // NewGitUploadPackService initialises a GitUploadPackService.
-// TODO: remove this, as the struct is zero-value safe.
 func NewGitUploadPackService(endpoint common.Endpoint) common.GitUploadPackService {
 	return &GitUploadPackService{endpoint: endpoint}
 }
 
 // Connect cannot be used with SSH clients and always return
 // ErrAuthRequired. Use ConnectWithAuth instead.
-func (s *GitUploadPackService) Connect() (err error) {
-	return ErrAuthRequired
+func (s *GitUploadPackService) Connect() error {
+	auth, err := NewSSHAgentAuth()
+	if err != nil {
+		return err
+	}
+
+	return s.ConnectWithAuth(auth)
 }
 
 // ConnectWithAuth connects to ep using SSH. Authentication is handled

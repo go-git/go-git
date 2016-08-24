@@ -2,8 +2,11 @@ package ssh
 
 import (
 	"fmt"
+	"net"
+	"os"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"gopkg.in/src-d/go-git.v4/clients/common"
 )
 
@@ -133,4 +136,18 @@ func (a *PublicKeysCallback) clientConfig() *ssh.ClientConfig {
 		User: a.User,
 		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(a.Callback)},
 	}
+}
+
+// Opens a pipe with the ssh agent and uses the pipe
+// as the implementer of the public key callback function.
+func NewSSHAgentAuth() (*PublicKeysCallback, error) {
+	pipe, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &PublicKeysCallback{
+		User:     "git",
+		Callback: agent.NewClient(pipe).Signers,
+	}, nil
 }

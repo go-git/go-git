@@ -3,8 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-
-	"gopkg.in/src-d/go-git.v3/clients/common"
 )
 
 const (
@@ -38,10 +36,6 @@ func (c *RemoteConfig) Validate() error {
 
 	if c.URL == "" {
 		return ErrRemoteConfigEmptyURL
-	}
-
-	if _, err := common.NewEndpoint(c.URL); err != nil {
-		return err
 	}
 
 	if len(c.Fetch) == 0 {
