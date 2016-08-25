@@ -167,7 +167,7 @@ func (t *Tree) Decode(o core.Object) (err error) {
 			return err
 		}
 
-		fm, err := strconv.ParseInt(mode[:len(mode)-1], 8, 32)
+		fm, err := t.decodeFileMode(mode[:len(mode)-1])
 		if err != nil && err != io.EOF {
 			return err
 		}
@@ -185,12 +185,29 @@ func (t *Tree) Decode(o core.Object) (err error) {
 		baseName := name[:len(name)-1]
 		t.Entries = append(t.Entries, TreeEntry{
 			Hash: hash,
-			Mode: os.FileMode(fm),
+			Mode: fm,
 			Name: baseName,
 		})
 	}
 
 	return nil
+}
+
+func (t *Tree) decodeFileMode(mode string) (os.FileMode, error) {
+	fm, err := strconv.ParseInt(mode, 8, 32)
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+
+	m := os.FileMode(fm)
+	switch fm {
+	case 0040000: //tree
+		m = m | os.ModeDir
+	case 0120000: //symlink
+		m = m | os.ModeSymlink
+	}
+
+	return m, nil
 }
 
 func (t *Tree) buildMap() {

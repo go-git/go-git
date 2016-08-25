@@ -39,11 +39,6 @@ func main() {
 	tree, _ := commit.Tree()
 	// ... get the files iterator and print the file
 	tree.Files().ForEach(func(f *git.File) error {
-		// we ignore the tree
-		if f.Mode.Perm() == 0 {
-			return nil
-		}
-
 		fmt.Printf("100644 blob %s    %s\n", f.Hash, f.Name)
 		return nil
 	})

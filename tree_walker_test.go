@@ -2,8 +2,6 @@ package git
 
 import (
 	"io"
-	"os"
-	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/core"
 
@@ -105,13 +103,11 @@ func (s *SuiteTreeWalker) TestNext(c *C) {
 		walker := NewTreeWalker(r, tree)
 		for k := 0; k < len(t.objs); k++ {
 			info := t.objs[k]
-			mode, err := strconv.ParseInt(info.Mode, 8, 32)
 			c.Assert(err, IsNil)
 			name, entry, obj, err := walker.Next()
 
 			c.Assert(err, IsNil, Commentf("subtest %d, iter %d, err=%v", i, k, err))
 			c.Assert(name, Equals, info.Name, Commentf("subtest %d, iter %d, name=%v, expected=%s, stack=%v, base=%v", i, k, name, info.Name, walker.stack, walker.base))
-			c.Assert(entry.Mode, Equals, os.FileMode(mode), Commentf("subtest %d, iter %d, entry.Mode=%v expected=%v", i, k, entry.Mode, mode))
 			c.Assert(obj.Type(), Equals, info.Kind, Commentf("subtest %d, iter %d, obj.Type()=%v expected=%v", i, k, obj.Type(), info.Kind))
 			c.Assert(entry.Hash.String(), Equals, info.Hash, Commentf("subtest %d, iter %d, entry.Hash=%v, expected=%s", i, k, entry.Hash, info.Hash))
 			c.Assert(obj.ID().String(), Equals, info.Hash, Commentf("subtest %d, iter %d, obj.ID()=%v, expected=%s", i, k, obj.ID(), info.Hash))
