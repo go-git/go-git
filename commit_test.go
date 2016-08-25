@@ -15,8 +15,8 @@ type SuiteCommit struct {
 
 var _ = Suite(&SuiteCommit{})
 
-func (s *SuiteCommit) SetUpTest(c *C) {
-	s.BaseSuite.SetUpTest(c)
+func (s *SuiteCommit) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
 
 	hash := core.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
 

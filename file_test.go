@@ -17,6 +17,8 @@ var _ = Suite(&SuiteFile{})
 
 // create the repositories of the fixtures
 func (s *SuiteFile) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
+
 	fileFixtures := []packedFixture{
 		{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
 		{"https://github.com/cpcs499/Final_Pres_P", "formats/packfile/fixtures/Final_Pres_P.ofs-delta"},

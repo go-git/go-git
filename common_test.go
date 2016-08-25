@@ -22,7 +22,7 @@ type BaseSuite struct {
 	Repository *Repository
 }
 
-func (s *BaseSuite) SetUpTest(c *C) {
+func (s *BaseSuite) SetUpSuite(c *C) {
 	clients.InstallProtocol("mock", func(end common.Endpoint) common.GitUploadPackService {
 		return &MockGitUploadPackService{endpoint: end}
 	})
@@ -75,12 +75,16 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	}, nil
 }
 
-func (p *MockGitUploadPackService) Fetch(*common.GitUploadPackRequest) (io.ReadCloser, error) {
+func (p *MockGitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadCloser, error) {
 	if !p.connected {
 		return nil, errors.New("not connected")
 	}
 
-	return os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
+	if len(r.Wants) == 1 {
+		return os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
+	}
+
+	return os.Open("fixtures/pack-63bbc2e1bde392e2205b30fa3584ddb14ef8bd41.pack")
 }
 
 func (p *MockGitUploadPackService) Disconnect() error {

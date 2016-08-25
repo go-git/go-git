@@ -16,8 +16,8 @@ type ObjectsSuite struct {
 
 var _ = Suite(&ObjectsSuite{})
 
-func (s *ObjectsSuite) SetUpTest(c *C) {
-	s.BaseSuite.SetUpTest(c)
+func (s *ObjectsSuite) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
 
 	s.r = NewMemoryRepository()
 	err := s.r.Clone(&CloneOptions{URL: RepositoryFixture})

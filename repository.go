@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	ErrObjectNotFound   = errors.New("object not found")
-	ErrInvalidReference = errors.New("invalid reference, should be a tag or a branch")
+	ErrObjectNotFound     = errors.New("object not found")
+	ErrInvalidReference   = errors.New("invalid reference, should be a tag or a branch")
+	ErrRepositoryNonEmpty = errors.New("repository non empty")
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
@@ -94,6 +95,15 @@ func (r *Repository) DeleteRemote(name string) error {
 
 // Clone clones a remote repository
 func (r *Repository) Clone(o *CloneOptions) error {
+	empty, err := r.IsEmpty()
+	if err != nil {
+		return err
+	}
+
+	if !empty {
+		return ErrRepositoryNonEmpty
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -164,6 +174,15 @@ func (r *Repository) createReferences(ref *core.Reference) error {
 
 	head := core.NewSymbolicReference(core.HEAD, ref.Name())
 	return r.s.ReferenceStorage().Set(head)
+}
+
+// IsEmpty returns true if the repository is empty
+func (r *Repository) IsEmpty() (bool, error) {
+	var count int
+	return count == 0, r.Refs().ForEach(func(r *core.Reference) error {
+		count++
+		return nil
+	})
 }
 
 // Pull incorporates changes from a remote repository into the current branch

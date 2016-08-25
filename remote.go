@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -10,6 +11,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
 )
+
+var NoErrAlreadyUpToDate = errors.New("already up-to-date")
 
 // Remote represents a connection to a remote repository
 type Remote struct {
@@ -87,6 +90,10 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 		return err
 	}
 
+	if len(refs) == 0 {
+		return NoErrAlreadyUpToDate
+	}
+
 	req, err := r.buildRequest(r.s.ReferenceStorage(), o, refs)
 	if err != nil {
 		return err
@@ -107,17 +114,22 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 
 func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, error) {
 	var refs []*core.Reference
-
-	return refs, r.Refs().ForEach(func(r *core.Reference) error {
-		if r.Type() != core.HashReference {
+	return refs, r.Refs().ForEach(func(ref *core.Reference) error {
+		if ref.Type() != core.HashReference {
 			return nil
 		}
 
-		if config.MatchAny(spec, r.Name()) {
-			refs = append(refs, r)
+		if !config.MatchAny(spec, ref.Name()) {
+			return nil
 		}
 
-		return nil
+		_, err := r.s.ObjectStorage().Get(ref.Hash())
+		if err == core.ErrObjectNotFound {
+			refs = append(refs, ref)
+			return nil
+		}
+
+		return err
 	})
 }
 

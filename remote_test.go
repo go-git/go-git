@@ -83,7 +83,24 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	})
 
 	c.Assert(err, IsNil)
-	c.Assert(sto.ObjectStorage().(*memory.ObjectStorage).Objects, HasLen, 28)
+	c.Assert(sto.ObjectStorage().(*memory.ObjectStorage).Objects, HasLen, 31)
+}
+
+func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
+	sto := memory.NewStorage()
+	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r.upSrv = &MockGitUploadPackService{}
+
+	c.Assert(r.Connect(), IsNil)
+
+	o := &FetchOptions{
+		RefSpecs: []config.RefSpec{config.DefaultRefSpec},
+	}
+
+	err := r.Fetch(o)
+	c.Assert(err, IsNil)
+	err = r.Fetch(o)
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
 func (s *RemoteSuite) TestHead(c *C) {

@@ -106,6 +106,21 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
 
+func (s *RepositorySuite) TestCloneNonEmpty(c *C) {
+	r := NewMemoryRepository()
+
+	head, err := r.Head()
+	c.Assert(err, Equals, core.ErrReferenceNotFound)
+	c.Assert(head, IsNil)
+
+	o := &CloneOptions{URL: RepositoryFixture}
+	err = r.Clone(o)
+	c.Assert(err, IsNil)
+
+	err = r.Clone(o)
+	c.Assert(err, Equals, ErrRepositoryNonEmpty)
+}
+
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	r := NewMemoryRepository()
 
@@ -193,6 +208,21 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestIsEmpty(c *C) {
+	r := NewMemoryRepository()
+
+	empty, err := r.IsEmpty()
+	c.Assert(err, IsNil)
+	c.Assert(empty, Equals, true)
+
+	err = r.Clone(&CloneOptions{URL: RepositoryFixture})
+	c.Assert(err, IsNil)
+
+	empty, err = r.IsEmpty()
+	c.Assert(err, IsNil)
+	c.Assert(empty, Equals, false)
+}
+
 func (s *RepositorySuite) TestCommit(c *C) {
 	r := NewMemoryRepository()
 	err := r.Clone(&CloneOptions{
@@ -237,7 +267,7 @@ func (s *RepositorySuite) TestCommits(c *C) {
 		c.Assert(commit.Type(), Equals, core.CommitObject)
 	}
 
-	c.Assert(count, Equals, 8)
+	c.Assert(count, Equals, 9)
 }
 
 func (s *RepositorySuite) TestTag(c *C) {
