@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
@@ -66,11 +67,20 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 		return nil, err
 	}
 
-	if err := s.discardResponseInfo(res.Body); err != nil {
+	reader := newBufferedReadCloser(res.Body)
+	if _, err := reader.Peek(1); err != nil {
+		if err == io.ErrUnexpectedEOF {
+			return nil, common.ErrEmptyGitUploadPack
+		}
+
 		return nil, err
 	}
 
-	return res.Body, nil
+	if err := s.discardResponseInfo(reader); err != nil {
+		return nil, err
+	}
+
+	return reader, nil
 }
 
 func (s *GitUploadPackService) discardResponseInfo(r io.Reader) error {
@@ -137,4 +147,17 @@ func (s *GitUploadPackService) applyAuthToRequest(req *http.Request) {
 
 func (s *GitUploadPackService) Disconnect() (err error) {
 	return nil
+}
+
+type bufferedReadCloser struct {
+	*bufio.Reader
+	closer io.Closer
+}
+
+func newBufferedReadCloser(r io.ReadCloser) *bufferedReadCloser {
+	return &bufferedReadCloser{bufio.NewReader(r), r}
+}
+
+func (r *bufferedReadCloser) Close() error {
+	return r.closer.Close()
 }

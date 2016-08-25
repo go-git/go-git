@@ -48,11 +48,14 @@ func NewHTTPError(r *http.Response) error {
 		return nil
 	}
 
-	err := &HTTPError{r}
-	if r.StatusCode == 404 || r.StatusCode == 401 {
-		return core.NewPermanentError(common.ErrNotFound)
+	switch r.StatusCode {
+	case 401:
+		return common.ErrAuthorizationRequired
+	case 404:
+		return common.ErrRepositoryNotFound
 	}
 
+	err := &HTTPError{r}
 	return core.NewUnexpectedError(err)
 }
 

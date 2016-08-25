@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	ErrNotFound           = errors.New("repository not found")
-	ErrEmptyGitUploadPack = errors.New("empty git-upload-pack given")
-	ErrInvalidAuthMethod  = errors.New("invalid auth method")
+	ErrRepositoryNotFound    = errors.New("repository not found")
+	ErrAuthorizationRequired = errors.New("authorization required")
+	ErrEmptyGitUploadPack    = errors.New("empty git-upload-pack given")
+	ErrInvalidAuthMethod     = errors.New("invalid auth method")
 )
 
 const GitUploadPackServiceName = "git-upload-pack"

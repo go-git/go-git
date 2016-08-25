@@ -41,6 +41,26 @@ func (s *RemoteSuite) TestConnectWithAuthWrongType(c *C) {
 	c.Assert(r.ConnectWithAuth(&mockAuth{}), Equals, common.ErrInvalidAuthMethod)
 }
 
+func (s *RemoteSuite) TestInfoEmpty(c *C) {
+	endpoint, _ := common.NewEndpoint("https://github.com/git-fixture/empty")
+	r := NewGitUploadPackService(endpoint)
+	c.Assert(r.Connect(), IsNil)
+
+	info, err := r.Info()
+	c.Assert(err, Equals, common.ErrAuthorizationRequired)
+	c.Assert(info, IsNil)
+}
+
+func (s *RemoteSuite) TestInfoNotExists(c *C) {
+	endpoint, _ := common.NewEndpoint("https://github.com/git-fixture/not-exists")
+	r := NewGitUploadPackService(endpoint)
+	c.Assert(r.Connect(), IsNil)
+
+	info, err := r.Info()
+	c.Assert(err, Equals, common.ErrAuthorizationRequired)
+	c.Assert(info, IsNil)
+}
+
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
 	r := NewGitUploadPackService(s.Endpoint)
 	c.Assert(r.Connect(), IsNil)
@@ -72,6 +92,19 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	b, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(b, HasLen, 85374)
+}
+
+func (s *RemoteSuite) TestFetchNoChanges(c *C) {
+	r := NewGitUploadPackService(s.Endpoint)
+	c.Assert(r.Connect(), IsNil)
+
+	req := &common.GitUploadPackRequest{}
+	req.Want(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Have(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	reader, err := r.Fetch(req)
+	c.Assert(err, Equals, common.ErrEmptyGitUploadPack)
+	c.Assert(reader, IsNil)
 }
 
 func (s *RemoteSuite) TestFetchMulti(c *C) {

@@ -28,11 +28,11 @@ func (s *SuiteCommon) TestNewHTTPError200(c *C) {
 }
 
 func (s *SuiteCommon) TestNewHTTPError401(c *C) {
-	s.testNewHTTPError(c, 401, "permanent client error.*not found.*")
+	s.testNewHTTPError(c, 401, "authorization required")
 }
 
 func (s *SuiteCommon) TestNewHTTPError404(c *C) {
-	s.testNewHTTPError(c, 404, "permanent client error.*not found.*")
+	s.testNewHTTPError(c, 404, "repository not found")
 }
 
 func (s *SuiteCommon) TestNewHTTPError40x(c *C) {

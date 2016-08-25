@@ -152,6 +152,7 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (rc io.Read
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
 		// the session can be closed by the other endpoint,
 		// therefore we must ignore a close error.
@@ -168,20 +169,19 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (rc io.Read
 		return nil, err
 	}
 
+	if err := session.Start("git-upload-pack " + s.vcs.FullName + ".git"); err != nil {
+		return nil, err
+	}
+
 	go func() {
 		fmt.Fprintln(si, r.String())
 		err = si.Close()
 	}()
 
-	err = session.Start("git-upload-pack " + s.vcs.FullName + ".git")
-	if err != nil {
-		return nil, err
-	}
 	// TODO: investigate this *ExitError type (command fails or
 	// doesn't complete successfully), as it is happenning all
 	// the time, but everything seems to work fine.
-	err = session.Wait()
-	if err != nil {
+	if err := session.Wait(); err != nil {
 		if _, ok := err.(*ssh.ExitError); !ok {
 			return nil, err
 		}
@@ -205,6 +205,7 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (rc io.Read
 	if err != nil {
 		return nil, err
 	}
+
 	buf := bytes.NewBuffer(data)
 	return ioutil.NopCloser(buf), nil
 }
