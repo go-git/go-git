@@ -86,8 +86,8 @@ func (o *AerospikeObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	return obj.Hash(), err
 }
 
-func (o *AerospikeObjectStorage) Get(h core.Hash) (core.Object, error) {
-	key, err := keyFromObject(h)
+func (o *AerospikeObjectStorage) Get(h core.Hash, t core.ObjectType) (core.Object, error) {
+	key, err := keyFromObject(h, t)
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +113,8 @@ func (o *AerospikeObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error
 	return &AerospikeObjectIter{t, rs.Records}, nil
 }
 
-func keyFromObject(h core.Hash) (*aerospike.Key, error) {
-	return aerospike.NewKey("test", "objects", h.String())
+func keyFromObject(h core.Hash, t core.ObjectType) (*aerospike.Key, error) {
+	return aerospike.NewKey("test", t.String(), h.String())
 }
 
 type AerospikeObjectIter struct {

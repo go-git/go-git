@@ -303,7 +303,7 @@ func (s *RepositorySuite) TestObject(c *C) {
 			com := fmt.Sprintf("subtest %d, tag %d", i, k)
 			info := t.objs[k]
 			hash := core.NewHash(info.Hash)
-			obj, err := r.Object(hash)
+			obj, err := r.Object(hash, core.AnyObject)
 			c.Assert(err, IsNil, Commentf(com))
 			c.Assert(obj.Type(), Equals, info.Kind, Commentf(com))
 			c.Assert(obj.ID(), Equals, hash, Commentf(com))

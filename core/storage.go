@@ -9,7 +9,16 @@ var ErrStop = errors.New("stop iter")
 type ObjectStorage interface {
 	NewObject() Object
 	Set(Object) (Hash, error)
-	Get(Hash) (Object, error)
+	// Get an object by hash with the given ObjectType.
+	//
+	// Implementors should return (nil, core.ErrObjectNotFound) if an object
+	// doesn't exist with both the given hash and object type.
+	//
+	// Valid ObjectType values are CommitObject, BlobObject, TagObject, TreeObject
+	// and AnyObject.
+	//
+	// If AnyObject is given, the object must be looked up regardless of its type.
+	Get(Hash, ObjectType) (Object, error)
 	Iter(ObjectType) (ObjectIter, error)
 }
 

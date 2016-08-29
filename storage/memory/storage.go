@@ -130,12 +130,11 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 }
 
 // Get returns a object with the given hash
-func (o *ObjectStorage) Get(h core.Hash) (core.Object, error) {
+func (o *ObjectStorage) Get(h core.Hash, t core.ObjectType) (core.Object, error) {
 	obj, ok := o.Objects[h]
-	if !ok {
+	if !ok || (core.AnyObject != t && obj.Type() != t) {
 		return nil, core.ErrObjectNotFound
 	}
-
 	return obj, nil
 }
 
@@ -143,6 +142,8 @@ func (o *ObjectStorage) Get(h core.Hash) (core.Object, error) {
 func (o *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	var series []core.Object
 	switch t {
+	case core.AnyObject:
+		series = flattenObjectMap(o.Objects)
 	case core.CommitObject:
 		series = flattenObjectMap(o.Commits)
 	case core.TreeObject:

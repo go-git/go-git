@@ -9,6 +9,9 @@ const (
 	startingStackSize = 8
 )
 
+const submoduleMode = 0160000
+const directoryMode = 0040000
+
 // TreeWalker provides a means of walking through all of the entries in a Tree.
 type TreeWalker struct {
 	stack []treeEntryIter
@@ -66,12 +69,14 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 			return
 		}
 
-		obj, err = w.r.Object(entry.Hash)
-		if err == ErrObjectNotFound {
-			// FIXME: Avoid doing this here in case the caller actually cares about
-			//        missing objects.
+		if entry.Mode == submoduleMode {
 			err = nil
-			continue // ignore entries without hash (= submodule dirs)
+			continue
+		}
+		if entry.Mode.IsDir() {
+			obj, err = w.r.Tree(entry.Hash)
+		} else {
+			obj, err = w.r.Blob(entry.Hash)
 		}
 
 		name = path.Join(w.base, entry.Name)

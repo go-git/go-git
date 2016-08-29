@@ -38,17 +38,22 @@ type Object interface {
 	Writer() (ObjectWriter, error)
 }
 
-// ObjectType internal object type's
+// ObjectType internal object type
+// Integer values from 0 to 7 map to those exposed by git.
+// AnyObject is used to represent any from 0 to 7.
 type ObjectType int8
 
 const (
-	InvalidObject  ObjectType = 0
-	CommitObject   ObjectType = 1
-	TreeObject     ObjectType = 2
-	BlobObject     ObjectType = 3
-	TagObject      ObjectType = 4
+	InvalidObject ObjectType = 0
+	CommitObject  ObjectType = 1
+	TreeObject    ObjectType = 2
+	BlobObject    ObjectType = 3
+	TagObject     ObjectType = 4
+	// 5 reserved for future expansion
 	OFSDeltaObject ObjectType = 6
 	REFDeltaObject ObjectType = 7
+
+	AnyObject ObjectType = -127
 )
 
 func (t ObjectType) String() string {
@@ -132,7 +137,7 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 		return nil, io.EOF
 	}
 	hash := iter.series[iter.pos]
-	obj, err := iter.storage.Get(hash)
+	obj, err := iter.storage.Get(hash, AnyObject)
 	if err == nil {
 		iter.pos++
 	}
@@ -146,7 +151,7 @@ func (iter *ObjectLookupIter) ForEach(cb func(Object) error) error {
 	defer iter.Close()
 
 	for _, hash := range iter.series {
-		obj, err := iter.storage.Get(hash)
+		obj, err := iter.storage.Get(hash, AnyObject)
 		if err != nil {
 			return err
 		}

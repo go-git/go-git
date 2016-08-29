@@ -104,7 +104,7 @@ func AssertObjects(c *C, s *memory.Storage, expects []string) {
 
 	c.Assert(len(expects), Equals, len(o.Objects))
 	for _, exp := range expects {
-		obt, err := o.Get(core.NewHash(exp))
+		obt, err := o.Get(core.NewHash(exp), core.AnyObject)
 		c.Assert(err, IsNil)
 		c.Assert(obt.Hash().String(), Equals, exp)
 	}

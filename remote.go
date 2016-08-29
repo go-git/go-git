@@ -123,7 +123,7 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, 
 			return nil
 		}
 
-		_, err := r.s.ObjectStorage().Get(ref.Hash())
+		_, err := r.s.ObjectStorage().Get(ref.Hash(), core.CommitObject)
 		if err == core.ErrObjectNotFound {
 			refs = append(refs, ref)
 			return nil

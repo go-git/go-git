@@ -47,7 +47,7 @@ func (t *Tree) File(path string) (*File, error) {
 		return nil, ErrFileNotFound
 	}
 
-	obj, err := t.r.s.ObjectStorage().Get(e.Hash)
+	obj, err := t.r.s.ObjectStorage().Get(e.Hash, core.BlobObject)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrFileNotFound // a git submodule
@@ -87,7 +87,7 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 		return nil, errDirNotFound
 	}
 
-	obj, err := t.r.s.ObjectStorage().Get(entry.Hash)
+	obj, err := t.r.s.ObjectStorage().Get(entry.Hash, core.TreeObject)
 	if err != nil {
 		if err == core.ErrObjectNotFound { // git submodule
 			return nil, errDirNotFound

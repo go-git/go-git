@@ -38,7 +38,7 @@ func (s *ObjectStorage) Set(core.Object) (core.Hash, error) {
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile.
-func (s *ObjectStorage) Get(h core.Hash) (core.Object, error) {
+func (s *ObjectStorage) Get(h core.Hash, t core.ObjectType) (core.Object, error) {
 	offset, err := s.index.Get(h)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,14 @@ func (s *ObjectStorage) Get(h core.Hash) (core.Object, error) {
 	p := packfile.NewParser(r)
 
 	obj := s.NewObject()
-	return obj, p.FillObject(obj)
+	err = p.FillObject(obj)
+	if err != nil {
+		return nil, err
+	}
+	if core.AnyObject != t && obj.Type() != t {
+		return nil, core.ErrObjectNotFound
+	}
+	return obj, nil
 }
 
 // Iter returns an iterator for all the objects in the packfile with the
@@ -80,11 +87,11 @@ func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	var objects []core.Object
 
 	for hash := range s.index {
-		object, err := s.Get(hash)
+		object, err := s.Get(hash, core.AnyObject)
 		if err != nil {
 			return nil, err
 		}
-		if object.Type() == t {
+		if t == core.AnyObject || object.Type() == t {
 			objects = append(objects, object)
 		}
 	}

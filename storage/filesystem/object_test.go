@@ -64,9 +64,11 @@ func (s *FsSuite) TearDownSuite(c *C) {
 
 func (s *FsSuite) TestHashNotFound(c *C) {
 	sto := s.newObjectStorage(c, "binary-relations")
-
-	_, err := sto.Get(core.ZeroHash)
-	c.Assert(err, Equals, core.ErrObjectNotFound)
+	types := []core.ObjectType{core.AnyObject, core.TagObject, core.CommitObject, core.BlobObject, core.TreeObject}
+	for t := range types {
+		_, err := sto.Get(core.ZeroHash, core.ObjectType(t))
+		c.Assert(err, Equals, core.ErrObjectNotFound)
+	}
 }
 
 func (s *FsSuite) newObjectStorage(c *C, fixtureName string) core.ObjectStorage {
@@ -156,7 +158,7 @@ func equalsStorages(a, b core.ObjectStorage) (bool, string, error) {
 				break
 			}
 
-			bo, err := b.Get(ao.Hash())
+			bo, err := b.Get(ao.Hash(), core.AnyObject)
 			if err != nil {
 				return false, "", fmt.Errorf("getting object with hash %s: %s",
 					ao.Hash(), err)
