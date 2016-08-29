@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"time"
 
@@ -39,6 +40,7 @@ type Object interface {
 	ID() core.Hash
 	Type() core.ObjectType
 	Decode(core.Object) error
+	Encode(core.Object) error
 }
 
 // Blob is used to store file data - it is generally a file.
@@ -77,6 +79,23 @@ func (b *Blob) Decode(o core.Object) error {
 	return nil
 }
 
+// Encode transforms a Blob into a core.Object.
+func (b *Blob) Encode(o core.Object) error {
+	w, err := o.Writer()
+	if err != nil {
+		return err
+	}
+	defer checkClose(w, &err)
+	r, err := b.Reader()
+	if err != nil {
+		return err
+	}
+	defer checkClose(r, &err)
+	_, err = io.Copy(w, r)
+	o.SetType(core.BlobObject)
+	return err
+}
+
 // Reader returns a reader allow the access to the content of the blob
 func (b *Blob) Reader() (core.ObjectReader, error) {
 	return b.obj.Reader()
@@ -106,6 +125,17 @@ func (s *Signature) Decode(b []byte) {
 	}
 }
 
+// Encode encodes a Signature into a writer.
+func (s *Signature) Encode(w io.Writer) error {
+	if _, err := fmt.Fprintf(w, "%s <%s> ", s.Name, s.Email); err != nil {
+		return err
+	}
+	if err := s.encodeTimeAndTimeZone(w); err != nil {
+		return err
+	}
+	return nil
+}
+
 var timeZoneLength = 5
 
 func (s *Signature) decodeTimeAndTimeZone(b []byte) {
@@ -131,6 +161,11 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 	}
 
 	s.When = s.When.In(tl.Location())
+}
+
+func (s *Signature) encodeTimeAndTimeZone(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%d %s", s.When.Unix(), s.When.Format("-0700"))
+	return err
 }
 
 func (s *Signature) String() string {

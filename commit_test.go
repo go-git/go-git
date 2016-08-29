@@ -2,6 +2,7 @@ package git
 
 import (
 	"io"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
 
@@ -60,6 +61,42 @@ func (s *SuiteCommit) TestParents(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(output, DeepEquals, expected)
+}
+
+func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
+	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
+	c.Assert(err, IsNil)
+	commits := []*Commit{
+		&Commit{
+			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
+			Message:   "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
+			tree:      core.NewHash("f000000000000000000000000000000000000001"),
+			parents:   []core.Hash{core.NewHash("f000000000000000000000000000000000000002")},
+		},
+		&Commit{
+			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
+			Message:   "Message\n\nFoo\nBar\nWith no trailing blank lines",
+			tree:      core.NewHash("0000000000000000000000000000000000000003"),
+			parents: []core.Hash{
+				core.NewHash("f000000000000000000000000000000000000004"),
+				core.NewHash("f000000000000000000000000000000000000005"),
+				core.NewHash("f000000000000000000000000000000000000006"),
+				core.NewHash("f000000000000000000000000000000000000007"),
+			},
+		},
+	}
+	for _, commit := range commits {
+		obj := &core.MemoryObject{}
+		err = commit.Encode(obj)
+		c.Assert(err, IsNil)
+		newCommit := &Commit{}
+		err = newCommit.Decode(obj)
+		c.Assert(err, IsNil)
+		commit.Hash = obj.Hash()
+		c.Assert(newCommit, DeepEquals, commit)
+	}
 }
 
 func (s *SuiteCommit) TestFile(c *C) {

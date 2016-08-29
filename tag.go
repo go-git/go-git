@@ -105,6 +105,31 @@ func (t *Tag) Decode(o core.Object) (err error) {
 	return nil
 }
 
+// Encode transforms a Tag into a core.Object.
+func (t *Tag) Encode(o core.Object) error {
+	o.SetType(core.TagObject)
+	w, err := o.Writer()
+	if err != nil {
+		return err
+	}
+	defer checkClose(w, &err)
+	if _, err = fmt.Fprintf(w,
+		"object %s\ntype %s\ntag %s\ntagger ",
+		t.Target.String(), t.TargetType.Bytes(), t.Name); err != nil {
+		return err
+	}
+	if err = t.Tagger.Encode(w); err != nil {
+		return err
+	}
+	if _, err = fmt.Fprint(w, "\n\n"); err != nil {
+		return err
+	}
+	if _, err = fmt.Fprint(w, t.Message); err != nil {
+		return err
+	}
+	return err
+}
+
 // Commit returns the commit pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
 func (t *Tag) Commit() (*Commit, error) {

@@ -3,6 +3,7 @@ package git
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -208,6 +209,28 @@ func (t *Tree) decodeFileMode(mode string) (os.FileMode, error) {
 	}
 
 	return m, nil
+}
+
+// Encode transforms a Tree into a core.Object.
+func (t *Tree) Encode(o core.Object) error {
+	o.SetType(core.TreeObject)
+	w, err := o.Writer()
+	if err != nil {
+		return err
+	}
+	defer checkClose(w, &err)
+	for _, entry := range t.Entries {
+		if _, err = fmt.Fprintf(w, "%o %s", entry.Mode, entry.Name); err != nil {
+			return err
+		}
+		if _, err = w.Write([]byte{0x00}); err != nil {
+			return err
+		}
+		if _, err = w.Write([]byte(entry.Hash[:])); err != nil {
+			return err
+		}
+	}
+	return err
 }
 
 func (t *Tree) buildMap() {

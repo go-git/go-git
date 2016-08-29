@@ -97,8 +97,8 @@ func (c *Commit) Decode(o core.Object) (err error) {
 			return err
 		}
 
-		line = bytes.TrimSpace(line)
 		if !message {
+			line = bytes.TrimSpace(line)
 			if len(line) == 0 {
 				message = true
 				continue
@@ -116,7 +116,7 @@ func (c *Commit) Decode(o core.Object) (err error) {
 				c.Committer.Decode(split[1])
 			}
 		} else {
-			c.Message += string(line) + "\n"
+			c.Message += string(line)
 		}
 
 		if err == io.EOF {
@@ -135,6 +135,40 @@ func (c *Commit) History() ([]*Commit, error) {
 
 	ReverseSortCommits(commits)
 	return commits, err
+}
+
+// Encode transforms a Commit into a core.Object.
+func (b *Commit) Encode(o core.Object) error {
+	o.SetType(core.CommitObject)
+	w, err := o.Writer()
+	if err != nil {
+		return err
+	}
+	defer checkClose(w, &err)
+	if _, err = fmt.Fprintf(w, "tree %s\n", b.tree.String()); err != nil {
+		return err
+	}
+	for _, parent := range b.parents {
+		if _, err = fmt.Fprintf(w, "parent %s\n", parent.String()); err != nil {
+			return err
+		}
+	}
+	if _, err = fmt.Fprint(w, "author "); err != nil {
+		return err
+	}
+	if err = b.Author.Encode(w); err != nil {
+		return err
+	}
+	if _, err = fmt.Fprint(w, "\ncommitter "); err != nil {
+		return err
+	}
+	if err = b.Committer.Encode(w); err != nil {
+		return err
+	}
+	if _, err = fmt.Fprintf(w, "\n\n%s", b.Message); err != nil {
+		return err
+	}
+	return err
 }
 
 func (c *Commit) String() string {

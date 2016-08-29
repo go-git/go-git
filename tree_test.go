@@ -2,6 +2,7 @@ package git
 
 import (
 	"io"
+	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
 
@@ -1252,6 +1253,28 @@ func (s *SuiteTree) TestTreeDecodeReadBug(c *C) {
 	err := obtained.Decode(obj)
 	c.Assert(err, IsNil)
 	c.Assert(EntriesEquals(obtained.Entries, expected.Entries), Equals, true)
+}
+
+func (s *SuiteTree) TestTreeDecodeEncodeIdempotent(c *C) {
+	trees := []*Tree{
+		&Tree{
+			Entries: []TreeEntry{
+				TreeEntry{"foo", os.FileMode(0), core.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				TreeEntry{"bar", os.FileMode(0), core.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				TreeEntry{"baz", os.FileMode(0), core.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			},
+		},
+	}
+	for _, tree := range trees {
+		obj := &core.MemoryObject{}
+		err := tree.Encode(obj)
+		c.Assert(err, IsNil)
+		newTree := &Tree{}
+		err = newTree.Decode(obj)
+		c.Assert(err, IsNil)
+		tree.Hash = obj.Hash()
+		c.Assert(newTree, DeepEquals, tree)
+	}
 }
 
 func EntriesEquals(a, b []TreeEntry) bool {

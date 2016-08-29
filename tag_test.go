@@ -139,6 +139,36 @@ func (s *SuiteTag) TestObject(c *C) {
 	}
 }
 
+func (s *SuiteTag) TestTagEncodeDecodeIdempotent(c *C) {
+	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
+	c.Assert(err, IsNil)
+	tags := []*Tag{
+		&Tag{
+			Name:       "foo",
+			Tagger:     Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Message:    "Message\n\nFoo\nBar\nBaz\n\n",
+			TargetType: core.BlobObject,
+			Target:     core.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		},
+		&Tag{
+			Name:       "foo",
+			Tagger:     Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			TargetType: core.BlobObject,
+			Target:     core.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		},
+	}
+	for _, tag := range tags {
+		obj := &core.MemoryObject{}
+		err = tag.Encode(obj)
+		c.Assert(err, IsNil)
+		newTag := &Tag{}
+		err = newTag.Decode(obj)
+		c.Assert(err, IsNil)
+		tag.Hash = obj.Hash()
+		c.Assert(newTag, DeepEquals, tag)
+	}
+}
+
 func testTagExpected(c *C, tag *Tag, hash core.Hash, exp expectedTag, com string) {
 	when, err := time.Parse(time.RFC3339, exp.When)
 	c.Assert(err, IsNil)

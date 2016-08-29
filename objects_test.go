@@ -9,9 +9,14 @@ import (
 	. "gopkg.in/check.v1"
 )
 
+var fixtures = []packedFixture{
+	{"https://github.com/spinnaker/spinnaker.git", "formats/packfile/fixtures/spinnaker-spinnaker.pack"},
+}
+
 type ObjectsSuite struct {
 	BaseSuite
-	r *Repository
+	r     *Repository
+	repos map[string]*Repository
 }
 
 var _ = Suite(&ObjectsSuite{})
@@ -22,6 +27,8 @@ func (s *ObjectsSuite) SetUpSuite(c *C) {
 	s.r = NewMemoryRepository()
 	err := s.r.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
+
+	s.repos = unpackFixtures(c, tagFixtures)
 }
 
 func (s *ObjectsSuite) TestNewCommit(c *C) {
@@ -49,7 +56,7 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 	c.Assert(commit.Author.Name, Equals, "Máximo Cuadros")
 	c.Assert(commit.Author.When.Format(time.RFC3339), Equals, "2015-03-31T13:47:14+02:00")
 	c.Assert(commit.Committer.Email, Equals, "mcuadros@gmail.com")
-	c.Assert(commit.Message, Equals, "Merge pull request #1 from dripolles/feature\n\nCreating changelog\n")
+	c.Assert(commit.Message, Equals, "Merge pull request #1 from dripolles/feature\n\nCreating changelog")
 }
 
 func (s *ObjectsSuite) TestParseTree(c *C) {
@@ -106,6 +113,27 @@ func (s *ObjectsSuite) TestBlobHash(c *C) {
 	data, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "FOO")
+}
+
+func (s *ObjectsSuite) TestBlobDecodeEncodeIdempotent(c *C) {
+	var objects []*core.MemoryObject
+	for _, str := range []string{"foo", "foo\n"} {
+		obj := &core.MemoryObject{}
+		obj.Write([]byte(str))
+		obj.SetType(core.BlobObject)
+		obj.Hash()
+		objects = append(objects, obj)
+	}
+	for _, object := range objects {
+		blob := &Blob{}
+		err := blob.Decode(object)
+		c.Assert(err, IsNil)
+		newObject := &core.MemoryObject{}
+		err = blob.Encode(newObject)
+		c.Assert(err, IsNil)
+		newObject.Hash() // Ensure Hash is pre-computed before deep comparison
+		c.Assert(newObject, DeepEquals, object)
+	}
 }
 
 func (s *ObjectsSuite) TestParseSignature(c *C) {
