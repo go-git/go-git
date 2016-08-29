@@ -86,7 +86,7 @@ func (o *AerospikeObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	return obj.Hash(), err
 }
 
-func (o *AerospikeObjectStorage) Get(h core.Hash, t core.ObjectType) (core.Object, error) {
+func (o *AerospikeObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
 	key, err := keyFromObject(h, t)
 	if err != nil {
 		return nil, err

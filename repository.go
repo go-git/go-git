@@ -226,7 +226,7 @@ func (r *Repository) Pull(o *PullOptions) error {
 
 // Commit return the commit with the given hash
 func (r *Repository) Commit(h core.Hash) (*Commit, error) {
-	obj, err := r.s.ObjectStorage().Get(h, core.CommitObject)
+	obj, err := r.s.ObjectStorage().Get(core.CommitObject, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -250,7 +250,7 @@ func (r *Repository) Commits() (*CommitIter, error) {
 
 // Tree return the tree with the given hash
 func (r *Repository) Tree(h core.Hash) (*Tree, error) {
-	obj, err := r.s.ObjectStorage().Get(h, core.TreeObject)
+	obj, err := r.s.ObjectStorage().Get(core.TreeObject, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -264,7 +264,7 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 
 // Blob returns the blob with the given hash
 func (r *Repository) Blob(h core.Hash) (*Blob, error) {
-	obj, err := r.s.ObjectStorage().Get(h, core.BlobObject)
+	obj, err := r.s.ObjectStorage().Get(core.BlobObject, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -278,7 +278,7 @@ func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 
 // Tag returns a tag with the given hash.
 func (r *Repository) Tag(h core.Hash) (*Tag, error) {
-	obj, err := r.s.ObjectStorage().Get(h, core.TagObject)
+	obj, err := r.s.ObjectStorage().Get(core.TagObject, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -303,7 +303,7 @@ func (r *Repository) Tags() (*TagIter, error) {
 
 // Object returns an object with the given hash.
 func (r *Repository) Object(h core.Hash, t core.ObjectType) (Object, error) {
-	obj, err := r.s.ObjectStorage().Get(h, t)
+	obj, err := r.s.ObjectStorage().Get(t, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound

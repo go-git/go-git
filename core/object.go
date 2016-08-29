@@ -137,10 +137,11 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 		return nil, io.EOF
 	}
 	hash := iter.series[iter.pos]
-	obj, err := iter.storage.Get(hash, AnyObject)
+	obj, err := iter.storage.Get(AnyObject, hash)
 	if err == nil {
 		iter.pos++
 	}
+
 	return obj, err
 }
 
@@ -151,7 +152,7 @@ func (iter *ObjectLookupIter) ForEach(cb func(Object) error) error {
 	defer iter.Close()
 
 	for _, hash := range iter.series {
-		obj, err := iter.storage.Get(hash, AnyObject)
+		obj, err := iter.storage.Get(AnyObject, hash)
 		if err != nil {
 			return err
 		}

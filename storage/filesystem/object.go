@@ -38,7 +38,7 @@ func (s *ObjectStorage) Set(core.Object) (core.Hash, error) {
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile.
-func (s *ObjectStorage) Get(h core.Hash, t core.ObjectType) (core.Object, error) {
+func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
 	offset, err := s.index.Get(h)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	var objects []core.Object
 
 	for hash := range s.index {
-		object, err := s.Get(hash, core.AnyObject)
+		object, err := s.Get(core.AnyObject, hash)
 		if err != nil {
 			return nil, err
 		}

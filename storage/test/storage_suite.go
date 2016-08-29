@@ -1,9 +1,10 @@
 package test
 
 import (
+	"io"
+
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
-	"io"
 )
 
 type TestObject struct {
@@ -38,11 +39,11 @@ func RunObjectStorageSuite(c *C, os core.ObjectStorage) {
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, to.Hash, comment)
 
-		o, err := os.Get(h, to.Type)
+		o, err := os.Get(to.Type, h)
 		c.Assert(err, IsNil)
 		c.Assert(o, Equals, to.Object)
 
-		o, err = os.Get(h, core.AnyObject)
+		o, err = os.Get(core.AnyObject, h)
 		c.Assert(err, IsNil)
 		c.Assert(o, Equals, to.Object)
 
@@ -50,7 +51,7 @@ func RunObjectStorageSuite(c *C, os core.ObjectStorage) {
 			if validType == to.Type {
 				continue
 			}
-			o, err = os.Get(h, validType)
+			o, err = os.Get(validType, h)
 			c.Assert(o, IsNil)
 			c.Assert(err, Equals, core.ErrObjectNotFound)
 		}

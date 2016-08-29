@@ -18,7 +18,7 @@ type ObjectStorage interface {
 	// and AnyObject.
 	//
 	// If AnyObject is given, the object must be looked up regardless of its type.
-	Get(Hash, ObjectType) (Object, error)
+	Get(ObjectType, Hash) (Object, error)
 	Iter(ObjectType) (ObjectIter, error)
 }
 

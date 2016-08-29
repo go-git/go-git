@@ -66,7 +66,7 @@ func (s *FsSuite) TestHashNotFound(c *C) {
 	sto := s.newObjectStorage(c, "binary-relations")
 	types := []core.ObjectType{core.AnyObject, core.TagObject, core.CommitObject, core.BlobObject, core.TreeObject}
 	for t := range types {
-		_, err := sto.Get(core.ZeroHash, core.ObjectType(t))
+		_, err := sto.Get(core.ObjectType(t), core.ZeroHash)
 		c.Assert(err, Equals, core.ErrObjectNotFound)
 	}
 }
@@ -158,7 +158,7 @@ func equalsStorages(a, b core.ObjectStorage) (bool, string, error) {
 				break
 			}
 
-			bo, err := b.Get(ao.Hash(), core.AnyObject)
+			bo, err := b.Get(core.AnyObject, ao.Hash())
 			if err != nil {
 				return false, "", fmt.Errorf("getting object with hash %s: %s",
 					ao.Hash(), err)

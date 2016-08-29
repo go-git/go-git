@@ -130,7 +130,7 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 }
 
 // Get returns a object with the given hash
-func (o *ObjectStorage) Get(h core.Hash, t core.ObjectType) (core.Object, error) {
+func (o *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
 	obj, ok := o.Objects[h]
 	if !ok || (core.AnyObject != t && obj.Type() != t) {
 		return nil, core.ErrObjectNotFound
