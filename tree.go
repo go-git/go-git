@@ -218,18 +218,30 @@ func (t *Tree) Encode(o core.Object) error {
 	if err != nil {
 		return err
 	}
+
+	var size int
 	defer checkClose(w, &err)
 	for _, entry := range t.Entries {
-		if _, err = fmt.Fprintf(w, "%o %s", entry.Mode, entry.Name); err != nil {
+		n, err := fmt.Fprintf(w, "%o %s", entry.Mode, entry.Name)
+		if err != nil {
 			return err
 		}
-		if _, err = w.Write([]byte{0x00}); err != nil {
+
+		size += n
+		n, err = w.Write([]byte{0x00})
+		if err != nil {
 			return err
 		}
-		if _, err = w.Write([]byte(entry.Hash[:])); err != nil {
+
+		size += n
+		n, err = w.Write([]byte(entry.Hash[:]))
+		if err != nil {
 			return err
 		}
+		size += n
 	}
+
+	o.SetSize(int64(size))
 	return err
 }
 
