@@ -18,7 +18,11 @@ func main() {
 		panic(err)
 	}
 
-	s := NewAerospikeStorage(url, client)
+	s, err := NewAerospikeStorage(client, "test", url)
+	if err != nil {
+		panic(err)
+	}
+
 	r, err := git.NewRepository(s)
 	if err != nil {
 		panic(err)
