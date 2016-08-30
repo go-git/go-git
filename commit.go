@@ -38,6 +38,7 @@ func (c *Commit) Tree() (*Tree, error) {
 func (c *Commit) Parents() *CommitIter {
 	return NewCommitIter(c.r, core.NewObjectLookupIter(
 		c.r.s.ObjectStorage(),
+		core.CommitObject,
 		c.parents,
 	))
 }

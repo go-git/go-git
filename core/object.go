@@ -70,6 +70,8 @@ func (t ObjectType) String() string {
 		return "ofs-delta"
 	case REFDeltaObject:
 		return "ref-delta"
+	case AnyObject:
+		return "any"
 	default:
 		return "unknown"
 	}
@@ -116,15 +118,17 @@ func ParseObjectType(value string) (typ ObjectType, err error) {
 type ObjectLookupIter struct {
 	storage ObjectStorage
 	series  []Hash
+	t       ObjectType
 	pos     int
 }
 
 // NewObjectLookupIter returns an object iterator given an object storage and
 // a slice of object hashes.
-func NewObjectLookupIter(storage ObjectStorage, series []Hash) *ObjectLookupIter {
+func NewObjectLookupIter(storage ObjectStorage, t ObjectType, series []Hash) *ObjectLookupIter {
 	return &ObjectLookupIter{
 		storage: storage,
 		series:  series,
+		t:       t,
 	}
 }
 
@@ -137,7 +141,7 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 		return nil, io.EOF
 	}
 	hash := iter.series[iter.pos]
-	obj, err := iter.storage.Get(AnyObject, hash)
+	obj, err := iter.storage.Get(iter.t, hash)
 	if err == nil {
 		iter.pos++
 	}
