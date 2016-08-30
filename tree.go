@@ -269,12 +269,14 @@ func (iter *treeEntryIter) Next() (TreeEntry, error) {
 // TreeEntryIter facilitates iterating through the descendent subtrees of a
 // Tree.
 type TreeIter struct {
+	r *Repository
 	w TreeWalker
 }
 
 // NewTreeIter returns a new TreeIter instance
 func NewTreeIter(r *Repository, t *Tree) *TreeIter {
 	return &TreeIter{
+		r: r,
 		w: *NewTreeWalker(r, t),
 	}
 }
@@ -282,14 +284,16 @@ func NewTreeIter(r *Repository, t *Tree) *TreeIter {
 // Next returns the next Tree from the tree.
 func (iter *TreeIter) Next() (*Tree, error) {
 	for {
-		_, _, obj, err := iter.w.Next()
+		_, entry, err := iter.w.Next()
 		if err != nil {
 			return nil, err
 		}
 
-		if tree, ok := obj.(*Tree); ok {
-			return tree, nil
+		if !entry.Mode.IsDir() {
+			continue
 		}
+
+		return iter.r.Tree(entry.Hash)
 	}
 }
 

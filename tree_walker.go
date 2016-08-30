@@ -43,7 +43,8 @@ func NewTreeWalker(r *Repository, t *Tree) *TreeWalker {
 // In the current implementation any objects which cannot be found in the
 // underlying repository will be skipped automatically. It is possible that this
 // may change in future versions.
-func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error) {
+func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
+	var obj Object
 	for {
 		current := len(w.stack) - 1
 		if current < 0 {
@@ -51,6 +52,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 			err = io.EOF
 			return
 		}
+
 		if current > maxTreeDepth {
 			// We're probably following bad data or some self-referencing tree
 			err = ErrMaxTreeDepth
@@ -65,6 +67,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 			w.base = path.Clean(w.base) // Remove trailing slash
 			continue
 		}
+
 		if err != nil {
 			return
 		}
@@ -73,10 +76,9 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, obj Object, err error
 			err = nil
 			continue
 		}
+
 		if entry.Mode.IsDir() {
 			obj, err = w.r.Tree(entry.Hash)
-		} else {
-			obj, err = w.r.Blob(entry.Hash)
 		}
 
 		name = path.Join(w.base, entry.Name)

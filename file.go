@@ -53,23 +53,31 @@ func (f *File) Lines() ([]string, error) {
 }
 
 type FileIter struct {
+	r *Repository
 	w TreeWalker
 }
 
 func NewFileIter(r *Repository, t *Tree) *FileIter {
-	return &FileIter{w: *NewTreeWalker(r, t)}
+	return &FileIter{r: r, w: *NewTreeWalker(r, t)}
 }
 
 func (iter *FileIter) Next() (*File, error) {
 	for {
-		name, entry, obj, err := iter.w.Next()
+		name, entry, err := iter.w.Next()
 		if err != nil {
 			return nil, err
 		}
 
-		if blob, ok := obj.(*Blob); ok {
-			return newFile(name, entry.Mode, blob), nil
+		if entry.Mode.IsDir() {
+			continue
 		}
+
+		blob, err := iter.r.Blob(entry.Hash)
+		if err != nil {
+			return nil, err
+		}
+
+		return newFile(name, entry.Mode, blob), nil
 	}
 }
 
