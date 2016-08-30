@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/formats/objfile"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/index"
@@ -37,8 +38,62 @@ func (s *ObjectStorage) Set(core.Object) (core.Hash, error) {
 }
 
 // Get returns the object with the given hash, by searching for it in
-// the packfile.
+// the packfile and the git object directories.
 func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+	obj, err := s.getFromUnpacked(t, h)
+	if err == dotgit.ErrObjfileNotFound {
+		if s.index == nil {
+			return nil, core.ErrObjectNotFound
+		}
+		return s.getFromPackfile(t, h)
+	}
+
+	return obj, err
+}
+
+func (s *ObjectStorage) getFromUnpacked(t core.ObjectType, h core.Hash) (obj core.Object, err error) {
+	fs, path, err := s.dir.Objectfile(h)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		errClose := f.Close()
+		if err == nil {
+			err = errClose
+		}
+	}()
+
+	obj = s.NewObject()
+	objReader, err := objfile.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		errClose := objReader.Close()
+		if err == nil {
+			err = errClose
+		}
+	}()
+
+	err = objReader.FillObject(obj)
+	if err != nil {
+		return nil, err
+	}
+	if core.AnyObject != t && obj.Type() != t {
+		return nil, core.ErrObjectNotFound
+	}
+	return obj, nil
+}
+
+// Get returns the object with the given hash, by searching for it in
+// the packfile.
+func (s *ObjectStorage) getFromPackfile(t core.ObjectType, h core.Hash) (obj core.Object, err error) {
 	offset, err := s.index.Get(h)
 	if err != nil {
 		return nil, err
@@ -70,7 +125,7 @@ func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error)
 	r.HashToOffset = map[core.Hash]int64(s.index)
 	p := packfile.NewParser(r)
 
-	obj := s.NewObject()
+	obj = s.NewObject()
 	err = p.FillObject(obj)
 	if err != nil {
 		return nil, err
@@ -86,8 +141,23 @@ func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error)
 func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	var objects []core.Object
 
+	_, hashes, err := s.dir.Objectfiles()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, hash := range hashes {
+		object, err := s.getFromUnpacked(core.AnyObject, hash)
+		if err != nil {
+			return nil, err
+		}
+		if object.Type() == t {
+			objects = append(objects, object)
+		}
+	}
+
 	for hash := range s.index {
-		object, err := s.Get(core.AnyObject, hash)
+		object, err := s.getFromPackfile(core.AnyObject, hash)
 		if err != nil {
 			return nil, err
 		}

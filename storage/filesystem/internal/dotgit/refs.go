@@ -32,10 +32,9 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*core.Reference) (err error) {
 	path := d.fs.Join(d.path, packedRefsPath)
 	f, err := d.fs.Open(path)
 	if err != nil {
-		if err == os.ErrNotExist {
+		if os.IsNotExist(err) {
 			return nil
 		}
-
 		return err
 	}
 
@@ -44,7 +43,6 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*core.Reference) (err error) {
 			err = errClose
 		}
 	}()
-
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		ref, err := d.processLine(s.Text())

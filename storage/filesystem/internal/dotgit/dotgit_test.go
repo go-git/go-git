@@ -22,6 +22,7 @@ var initFixtures = [...]struct {
 	capabilities [][2]string
 	packfile     string
 	idxfile      string
+	objectfiles  []fixtureObject
 }{
 	{
 		name: "spinnaker",
@@ -37,7 +38,47 @@ var initFixtures = [...]struct {
 	}, {
 		name: "empty",
 		tgz:  "fixtures/empty-gitdir.tgz",
+	}, {
+		name: "unpacked",
+		tgz:  "fixtures/unpacked-objects-no-packfile-no-idx.tgz",
+		objectfiles: []fixtureObject{
+			fixtureObject{
+				path: "objects/1e/0304e3cb54d0ad612ad70f1f15a285a65a4b8e",
+				hash: "1e0304e3cb54d0ad612ad70f1f15a285a65a4b8e",
+			},
+			fixtureObject{
+				path: "objects/5e/fb9bc29c482e023e40e0a2b3b7e49cec842034",
+				hash: "5efb9bc29c482e023e40e0a2b3b7e49cec842034",
+			},
+			fixtureObject{
+				path: "objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+				hash: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+			},
+		},
 	},
+	{
+		name: "unpacked-dummy",
+		tgz:  "fixtures/unpacked-objects-exist-one-dummy-object-no-packfile-no-idx.tgz",
+		objectfiles: []fixtureObject{
+			fixtureObject{
+				path: "objects/1e/0304e3cb54d0ad612ad70f1f15a285a65a4b8e",
+				hash: "1e0304e3cb54d0ad612ad70f1f15a285a65a4b8e",
+			},
+			fixtureObject{
+				path: "objects/5e/fb9bc29c482e023e40e0a2b3b7e49cec842034",
+				hash: "5efb9bc29c482e023e40e0a2b3b7e49cec842034",
+			},
+			fixtureObject{
+				path: "objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+				hash: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+			},
+		},
+	},
+}
+
+type fixtureObject struct {
+	path string
+	hash string
 }
 
 type fixture struct {
@@ -47,6 +88,7 @@ type fixture struct {
 	capabilities *common.Capabilities // expected capabilities
 	packfile     string               // path of the packfile
 	idxfile      string               // path of the idxfile
+	objectfiles  []fixtureObject      // path and hash of the object files
 }
 
 type SuiteDotGit struct {
@@ -77,6 +119,7 @@ func (s *SuiteDotGit) SetUpSuite(c *C) {
 
 		f.packfile = init.packfile
 		f.idxfile = init.idxfile
+		f.objectfiles = init.objectfiles
 
 		s.fixtures[init.name] = f
 	}
@@ -193,11 +236,11 @@ func (s *SuiteDotGit) TestPackfile(c *C) {
 		}, {
 			fixture: "empty",
 			fn:      packfile,
-			err:     ".* no such file or directory",
+			err:     "packfile not found",
 		}, {
 			fixture: "empty",
 			fn:      idxfile,
-			err:     ".* no such file or directory",
+			err:     "idx file not found",
 		}, {
 			fixture: "no-packfile-no-idx",
 			fn:      packfile,
@@ -224,9 +267,87 @@ func (s *SuiteDotGit) TestPackfile(c *C) {
 	}
 }
 
+func (s *SuiteDotGit) TestObjectfiles(c *C) {
+	for _, test := range [...]struct {
+		fixture string
+		err     error
+	}{
+		{
+			fixture: "unpacked",
+		},
+		{
+			fixture: "unpacked-dummy",
+		}, {
+			fixture: "empty",
+			err:     ErrObjfileNotFound,
+		}, {
+			fixture: "no-packfile-no-idx",
+		},
+	} {
+		com := Commentf("fixture = %s", test.fixture)
+
+		fix, dir := s.newFixtureDir(c, test.fixture)
+
+		_, hashes, err := dir.Objectfiles()
+
+		if test.err != nil {
+			c.Assert(err, Equals, test.err, com)
+		} else {
+			c.Assert(err, IsNil, com)
+			c.Assert(len(hashes), Equals, len(fix.objectfiles), com)
+
+			for _, hash := range hashes {
+				c.Assert(containsObject(fix.objectfiles, hash), Equals, true, com)
+			}
+		}
+	}
+}
+
+func (s *SuiteDotGit) TestObjectfile(c *C) {
+	for _, test := range [...]struct {
+		fixture string
+		err     error
+	}{
+		{
+			fixture: "unpacked",
+		}, {
+			fixture: "empty",
+			err:     ErrObjfileNotFound,
+		}, {
+			fixture: "no-packfile-no-idx",
+			err:     ErrObjfileNotFound,
+		},
+	} {
+		com := Commentf("fixture = %s", test.fixture)
+
+		fix, dir := s.newFixtureDir(c, test.fixture)
+
+		for _, fixObj := range fix.objectfiles {
+			_, path, err := dir.Objectfile(core.NewHash(fixObj.hash))
+
+			if test.err != nil {
+				c.Assert(err, Equals, test.err, com)
+			} else {
+				c.Assert(err, IsNil, com)
+				c.Assert(strings.HasSuffix(path, fixObj.path),
+					Equals, true, com)
+			}
+		}
+	}
+}
+
 type getPathFn func(*DotGit) (fs.FS, string, error)
 
 func noExt(path string) string {
 	ext := filepath.Ext(path)
 	return path[0 : len(path)-len(ext)]
+}
+
+func containsObject(objs []fixtureObject, hash core.Hash) bool {
+	for _, o := range objs {
+		if strings.ToLower(o.hash) == strings.ToLower(hash.String()) {
+			return true
+		}
+	}
+	return false
 }

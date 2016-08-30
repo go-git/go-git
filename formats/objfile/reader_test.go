@@ -69,3 +69,35 @@ func (s *SuiteReader) TestReadCorruptZLib(c *C) {
 	_, err := NewReader(source)
 	c.Assert(err, NotNil)
 }
+
+func (s *SuiteReader) TestFillObject(c *C) {
+	for k, fixture := range objfileFixtures {
+		com := fmt.Sprintf("test %d: ", k)
+		hash := core.NewHash(fixture.hash)
+		content, _ := base64.StdEncoding.DecodeString(fixture.content)
+		data, _ := base64.StdEncoding.DecodeString(fixture.data)
+
+		testFillObject(c, bytes.NewReader(data), hash, fixture.t, content, com)
+	}
+}
+
+func testFillObject(c *C, source io.Reader, hash core.Hash, typ core.ObjectType, content []byte, com string) {
+	var o core.Object = &core.MemoryObject{}
+	r, err := NewReader(source)
+	c.Assert(err, IsNil)
+	err = r.FillObject(o)
+	c.Assert(err, IsNil)
+	c.Assert(o.Type(), Equals, typ)
+	c.Assert(o.Size(), Equals, int64(len(content)))
+	c.Assert(o.Hash(), Equals, hash)
+	or, err := o.Reader()
+	c.Assert(err, IsNil)
+	rc, err := ioutil.ReadAll(or)
+	c.Assert(err, IsNil)
+	c.Assert(rc, DeepEquals, content, Commentf("%scontent=%s, expected=%s", base64.StdEncoding.EncodeToString(rc), base64.StdEncoding.EncodeToString(content)))
+	c.Assert(or.Close(), IsNil)
+	_, err = or.Read(make([]byte, 0, 1))
+	c.Assert(err, Equals, nil)
+	ow, err := o.Writer()
+	c.Assert(ow, Equals, o)
+}
