@@ -62,7 +62,7 @@ func (t *Tree) File(path string) (*File, error) {
 	blob := &Blob{}
 	blob.Decode(obj)
 
-	return newFile(path, e.Mode, blob), nil
+	return NewFile(path, e.Mode, blob), nil
 }
 
 func (t *Tree) findEntry(path string) (*TreeEntry, error) {

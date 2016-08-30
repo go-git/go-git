@@ -16,7 +16,8 @@ type File struct {
 	Blob
 }
 
-func newFile(name string, m os.FileMode, b *Blob) *File {
+// NewFile returns a File based on the given blob object
+func NewFile(name string, m os.FileMode, b *Blob) *File {
 	return &File{Name: name, Mode: m, Blob: *b}
 }
 
@@ -77,7 +78,7 @@ func (iter *FileIter) Next() (*File, error) {
 			return nil, err
 		}
 
-		return newFile(name, entry.Mode, blob), nil
+		return NewFile(name, entry.Mode, blob), nil
 	}
 }
 

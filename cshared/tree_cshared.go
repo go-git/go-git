@@ -106,20 +106,18 @@ func c_NewTreeWalker(r uint64, t uint64) uint64 {
 }
 
 //export c_TreeWalker_Next
-func c_TreeWalker_Next(tw uint64) (*C.char, *C.char, uint32, *C.char,
-                                   uint64, int, *C.char) {
+func c_TreeWalker_Next(tw uint64) (*C.char, *C.char, uint32, *C.char, int, *C.char) {
 	obj, ok := GetObject(Handle(tw))
 	if !ok {
-		return nil, nil, 0, nil, IH, ErrorCodeNotFound, C.CString(MessageNotFound)
+		return nil, nil, 0, nil, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	walker := obj.(*git.TreeWalker)
-	name, entry, object, err := walker.Next()
+	name, entry, err := walker.Next()
 	if err != nil {
-		return nil, nil, 0, nil, IH, ErrorCodeInternal, C.CString(err.Error())
+		return nil, nil, 0, nil, ErrorCodeInternal, C.CString(err.Error())
 	}
 	return C.CString(name), C.CString(entry.Name), uint32(entry.Mode),
-	       CBytes(entry.Hash[:]), uint64(RegisterObject(&object)),
-	       ErrorCodeSuccess, nil
+		CBytes(entry.Hash[:]), ErrorCodeSuccess, nil
 }
 
 //export c_TreeWalker_Tree

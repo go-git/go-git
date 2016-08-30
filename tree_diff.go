@@ -33,12 +33,54 @@ const (
 
 type Change struct {
 	Action
-	Name  string
-	Files [2]*File
+	From ChangeEntry
+	To   ChangeEntry
+}
+
+type ChangeEntry struct {
+	Name      string
+	Tree      *Tree
+	TreeEntry TreeEntry
+}
+
+func (c *Change) Files() (from *File, to *File, err error) {
+	if c.Action == Insert || c.Action == Modify {
+		to, err = newFileFromTreeEntry(c.To.Tree, &c.To.TreeEntry)
+		if err != nil {
+			return
+		}
+
+	}
+
+	if c.Action == Delete || c.Action == Modify {
+		from, err = newFileFromTreeEntry(c.From.Tree, &c.From.TreeEntry)
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+func newFileFromTreeEntry(t *Tree, e *TreeEntry) (*File, error) {
+	blob, err := t.r.Blob(e.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewFile(e.Name, e.Mode, blob), nil
 }
 
 func (c *Change) String() string {
-	return fmt.Sprintf("<Action: %s, Path: %s>", c.Action, c.Name)
+	return fmt.Sprintf("<Action: %s, Path: %s>", c.Action, c.name())
+}
+
+func (c *Change) name() string {
+	if c.From.Name != "" {
+		return c.From.Name
+	}
+
+	return c.To.Name
 }
 
 type Changes []*Change
@@ -68,7 +110,7 @@ func (c Changes) Swap(i, j int) {
 }
 
 func (c Changes) Less(i, j int) bool {
-	return strings.Compare(c[i].Name, c[j].Name) < 0
+	return strings.Compare(c[i].name(), c[j].name()) < 0
 }
 
 func (c Changes) String() string {
@@ -98,29 +140,34 @@ func newWithEmpty(a, b *Tree) (Changes, error) {
 		tree = a
 	}
 
-	iter := tree.Files()
-	defer iter.Close()
+	w := NewTreeWalker(tree.r, tree)
+	defer w.Close()
 
 	for {
-		file, err := iter.Next()
+		path, entry, err := w.Next()
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return nil, fmt.Errorf("cannot get next file: %s", err)
 		}
 
-		var files [2]*File
-		if action == Insert {
-			files[1] = file
-		} else {
-			files[0] = file
+		if entry.Mode.IsDir() {
+			continue
 		}
 
-		changes = append(changes, &Change{
-			Action: action,
-			Name:   file.Name,
-			Files:  files,
-		})
+		c := &Change{Action: action}
+
+		if action == Insert {
+			c.To.Name = path
+			c.To.TreeEntry = entry
+			c.To.Tree = tree
+		} else {
+			c.From.Name = path
+			c.From.TreeEntry = entry
+			c.From.Tree = tree
+		}
+
+		changes = append(changes, c)
 	}
 
 	return changes, nil
@@ -146,19 +193,16 @@ func newDiffTree(a, b *Tree) ([]*Change, error) {
 	sort.Sort(bChanges)
 
 	for len(aChanges) > 0 && len(bChanges) > 0 {
-		switch comp := strings.Compare(aChanges[0].Name, bChanges[0].Name); {
+		switch comp := strings.Compare(aChanges[0].name(), bChanges[0].name()); {
 		case comp == 0: // append as "Modify" or ignore if not changed
-			modified, err := hasChange(a, b, aChanges[0].Name)
+			modified, err := hasChange(a, b, aChanges[0].name())
 			if err != nil {
 				return nil, err
 			}
 
 			if modified {
-				result = append(result, &Change{
-					Action: Modify,
-					Name:   aChanges[0].Name,
-					Files:  [2]*File{aChanges[0].Files[0], bChanges[0].Files[1]},
-				})
+				c := mergeInsertAndDeleteIntoModify(aChanges[0], bChanges[0])
+				result = append(result, c)
 			}
 
 			aChanges = aChanges[1:]
@@ -178,6 +222,18 @@ func newDiffTree(a, b *Tree) ([]*Change, error) {
 	result = append(result, bChanges...)
 
 	return result, nil
+}
+
+func mergeInsertAndDeleteIntoModify(a, b *Change) *Change {
+	c := &Change{Action: Modify}
+	c.From.Name = a.From.Name
+	c.From.Tree = a.From.Tree
+	c.From.TreeEntry = a.From.TreeEntry
+	c.To.Name = b.To.Name
+	c.To.Tree = b.To.Tree
+	c.To.TreeEntry = b.To.TreeEntry
+
+	return c
 }
 
 func hasChange(a, b *Tree, path string) (bool, error) {

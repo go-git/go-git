@@ -11,12 +11,16 @@ import (
 )
 
 type DiffTreeSuite struct {
+	BaseSuite
+
 	repos map[string]*Repository
 }
 
 var _ = Suite(&DiffTreeSuite{})
 
 func (s *DiffTreeSuite) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
+
 	fixtureRepos := [...]struct {
 		url      string
 		packfile string
@@ -74,12 +78,58 @@ func (s *DiffTreeSuite) TestActionString(c *C) {
 		PanicMatches, "unsupported action: 37")
 }
 
+func (s *DiffTreeSuite) TestChangeFilesInsert(c *C) {
+	tree, err := s.Repository.Tree(core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+	c.Assert(err, IsNil)
+
+	change := &Change{Action: Insert}
+	change.To.Name = "json/long.json"
+	change.To.Tree = tree
+	change.To.TreeEntry.Hash = core.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
+
+	from, to, err := change.Files()
+	c.Assert(err, IsNil)
+	c.Assert(from, IsNil)
+	c.Assert(to.ID(), Equals, change.To.TreeEntry.Hash)
+}
+
+func (s *DiffTreeSuite) TestChangeFilesDelete(c *C) {
+	tree, err := s.Repository.Tree(core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+	c.Assert(err, IsNil)
+
+	change := &Change{Action: Delete}
+	change.From.Name = "json/long.json"
+	change.From.Tree = tree
+	change.From.TreeEntry.Hash = core.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
+
+	from, to, err := change.Files()
+	c.Assert(err, IsNil)
+	c.Assert(to, IsNil)
+	c.Assert(from.ID(), Equals, change.From.TreeEntry.Hash)
+}
+
+func (s *DiffTreeSuite) TestChangeFilesModify(c *C) {
+	tree, err := s.Repository.Tree(core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+	c.Assert(err, IsNil)
+
+	change := &Change{Action: Modify}
+	change.To.Name = "json/long.json"
+	change.To.Tree = tree
+	change.To.TreeEntry.Hash = core.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
+	change.From.Name = "json/long.json"
+	change.From.Tree = tree
+	change.From.TreeEntry.Hash = core.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
+
+	from, to, err := change.Files()
+	c.Assert(err, IsNil)
+	c.Assert(to.ID(), Equals, change.To.TreeEntry.Hash)
+	c.Assert(from.ID(), Equals, change.From.TreeEntry.Hash)
+}
+
 func (s *DiffTreeSuite) TestChangeString(c *C) {
 	expected := "<Action: Insert, Path: foo>"
-	change := &Change{
-		Action: Insert,
-		Name:   "foo",
-	}
+	change := &Change{Action: Insert}
+	change.From.Name = "foo"
 
 	obtained := change.String()
 	c.Assert(obtained, Equals, expected)
@@ -93,42 +143,51 @@ func (s *DiffTreeSuite) TestChangesString(c *C) {
 
 	expected = "[<Action: Modify, Path: bla>]"
 	changes = make([]*Change, 1)
-	changes[0] = &Change{Action: Modify, Name: "bla"}
+	changes[0] = &Change{Action: Modify}
+	changes[0].From.Name = "bla"
+
 	obtained = changes.String()
 	c.Assert(obtained, Equals, expected)
 
 	expected = "[<Action: Modify, Path: bla>, <Action: Insert, Path: foo/bar>]"
 	changes = make([]*Change, 2)
-	changes[0] = &Change{Action: Modify, Name: "bla"}
-	changes[1] = &Change{Action: Insert, Name: "foo/bar"}
+	changes[0] = &Change{Action: Modify}
+	changes[0].From.Name = "bla"
+	changes[1] = &Change{Action: Insert}
+	changes[1].From.Name = "foo/bar"
 	obtained = changes.String()
 	c.Assert(obtained, Equals, expected)
 }
 
+type expectChange struct {
+	Action Action
+	Name   string
+}
+
 func (s *DiffTreeSuite) TestDiffTree(c *C) {
 	for i, t := range []struct {
-		repo     string  // the repo name as in localRepos
-		commit1  string  // the commit of the first tree
-		commit2  string  // the commit of the second tree
-		expected Changes // the expected list of changes
+		repo     string         // the repo name as in localRepos
+		commit1  string         // the commit of the first tree
+		commit2  string         // the commit of the second tree
+		expected []expectChange // the expected list of []changeExpect
 	}{
 		{
 			"git://github.com/dezfowler/LiteMock.git",
 			"",
 			"",
-			Changes{},
+			[]expectChange{},
 		},
 		{
 			"git://github.com/dezfowler/LiteMock.git",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
-			Changes{},
+			[]expectChange{},
 		},
 		{
 			"git://github.com/dezfowler/LiteMock.git",
 			"",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
-			Changes{
+			[]expectChange{
 				{Action: Insert, Name: "README"},
 			},
 		},
@@ -136,7 +195,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/dezfowler/LiteMock.git",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
 			"",
-			Changes{
+			[]expectChange{
 				{Action: Delete, Name: "README"},
 			},
 		},
@@ -144,7 +203,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/githubtraining/example-branches.git",
 			"",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
-			Changes{
+			[]expectChange{
 				{Action: Insert, Name: "README.md"},
 			},
 		},
@@ -152,7 +211,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/githubtraining/example-branches.git",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
 			"",
-			Changes{
+			[]expectChange{
 				{Action: Delete, Name: "README.md"},
 			},
 		},
@@ -160,13 +219,13 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/githubtraining/example-branches.git",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
-			Changes{},
+			[]expectChange{},
 		},
 		{
 			"git://github.com/github/gem-builder.git",
 			"",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
-			Changes{
+			[]expectChange{
 				{Action: Insert, Name: "README"},
 				{Action: Insert, Name: "gem_builder.rb"},
 				{Action: Insert, Name: "gem_eval.rb"},
@@ -176,7 +235,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			"",
-			Changes{
+			[]expectChange{
 				{Action: Delete, Name: "README"},
 				{Action: Delete, Name: "gem_builder.rb"},
 				{Action: Delete, Name: "gem_eval.rb"},
@@ -186,17 +245,17 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
-			Changes{},
+			[]expectChange{},
 		},
 		{
 			"git://github.com/toqueteos/ts3.git",
 			"",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
-			Changes{
+			[]expectChange{
+				{Action: Insert, Name: "README.markdown"},
 				{Action: Insert, Name: "examples/bot.go"},
 				{Action: Insert, Name: "examples/raw_shell.go"},
 				{Action: Insert, Name: "helpers.go"},
-				{Action: Insert, Name: "README.markdown"},
 				{Action: Insert, Name: "ts3.go"},
 			},
 		},
@@ -204,11 +263,11 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/toqueteos/ts3.git",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
 			"",
-			Changes{
+			[]expectChange{
+				{Action: Delete, Name: "README.markdown"},
 				{Action: Delete, Name: "examples/bot.go"},
 				{Action: Delete, Name: "examples/raw_shell.go"},
 				{Action: Delete, Name: "helpers.go"},
-				{Action: Delete, Name: "README.markdown"},
 				{Action: Delete, Name: "ts3.go"},
 			},
 		},
@@ -216,13 +275,13 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/toqueteos/ts3.git",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
-			Changes{},
+			[]expectChange{},
 		},
 		{
 			"git://github.com/github/gem-builder.git",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			"6c41e05a17e19805879689414026eb4e279f7de0",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 			},
 		},
@@ -230,7 +289,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"6c41e05a17e19805879689414026eb4e279f7de0",
 			"89be3aac2f178719c12953cc9eaa23441f8d9371",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 				{Action: Insert, Name: "gem_eval_test.rb"},
 				{Action: Insert, Name: "security.rb"},
@@ -241,7 +300,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"89be3aac2f178719c12953cc9eaa23441f8d9371",
 			"597240b7da22d03ad555328f15abc480b820acc0",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 			},
 		},
@@ -249,7 +308,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"597240b7da22d03ad555328f15abc480b820acc0",
 			"0260380e375d2dd0e1a8fcab15f91ce56dbe778e",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 				{Action: Modify, Name: "gem_eval_test.rb"},
 				{Action: Insert, Name: "lazy_dir.rb"},
@@ -262,7 +321,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"0260380e375d2dd0e1a8fcab15f91ce56dbe778e",
 			"597240b7da22d03ad555328f15abc480b820acc0",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 				{Action: Modify, Name: "gem_eval_test.rb"},
 				{Action: Delete, Name: "lazy_dir.rb"},
@@ -275,7 +334,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"0260380e375d2dd0e1a8fcab15f91ce56dbe778e",
 			"ca9fd470bacb6262eb4ca23ee48bb2f43711c1ff",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 				{Action: Modify, Name: "security.rb"},
 				{Action: Modify, Name: "security_test.rb"},
@@ -285,7 +344,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/github/gem-builder.git",
 			"fe3c86745f887c23a0d38c85cfd87ca957312f86",
 			"b7e3f636febf7a0cd3ab473b6d30081786d2c5b6",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "gem_eval.rb"},
 				{Action: Modify, Name: "gem_eval_test.rb"},
 				{Action: Insert, Name: "git_mock"},
@@ -298,7 +357,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/rumpkernel/rumprun-xen.git",
 			"1831e47b0c6db750714cd0e4be97b5af17fb1eb0",
 			"51d8515578ea0c88cc8fc1a057903675cf1fc16c",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "Makefile"},
 				{Action: Modify, Name: "netbsd_init.c"},
 				{Action: Modify, Name: "rumphyper_stubs.c"},
@@ -309,7 +368,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			"git://github.com/rumpkernel/rumprun-xen.git",
 			"1831e47b0c6db750714cd0e4be97b5af17fb1eb0",
 			"e13e678f7ee9badd01b120889e0ec5fdc8ae3802",
-			Changes{
+			[]expectChange{
 				{Action: Modify, Name: "app-tools/rumprun"},
 			},
 		},
@@ -346,19 +405,19 @@ func assertChanges(a Changes, c *C) {
 	for _, changes := range a {
 		switch changes.Action {
 		case Insert:
-			c.Assert(changes.Files[0], IsNil)
-			c.Assert(changes.Files[1], NotNil)
+			c.Assert(changes.From.Tree, IsNil)
+			c.Assert(changes.To.Tree, NotNil)
 		case Delete:
-			c.Assert(changes.Files[0], NotNil)
-			c.Assert(changes.Files[1], IsNil)
+			c.Assert(changes.From.Tree, NotNil)
+			c.Assert(changes.To.Tree, IsNil)
 		case Modify:
-			c.Assert(changes.Files[0], NotNil)
-			c.Assert(changes.Files[1], NotNil)
+			c.Assert(changes.From.Tree, NotNil)
+			c.Assert(changes.To.Tree, NotNil)
 		}
 	}
 }
 
-func equalChanges(a, b Changes) bool {
+func equalChanges(a Changes, b []expectChange) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -372,11 +431,10 @@ func equalChanges(a, b Changes) bool {
 	}
 
 	sort.Sort(a)
-	sort.Sort(b)
 
 	for i, va := range a {
 		vb := b[i]
-		if va.Action != vb.Action || va.Name != vb.Name {
+		if va.Action != vb.Action || va.name() != vb.Name {
 			return false
 		}
 	}
