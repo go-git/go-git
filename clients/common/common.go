@@ -97,11 +97,6 @@ func NewCapabilities() *Capabilities {
 
 // Decode decodes a string
 func (c *Capabilities) Decode(raw string) {
-	parts := strings.SplitN(raw, "HEAD", 2)
-	if len(parts) == 2 {
-		raw = parts[1]
-	}
-
 	params := strings.Split(raw, " ")
 	for _, p := range params {
 		s := strings.SplitN(p, "=", 2)
@@ -234,12 +229,10 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 			continue
 		}
 
-		if len(r.Capabilities.o) == 0 {
-			r.decodeHeaderLine(line)
-			continue
+		if err := r.readLine(line); err != nil {
+			return err
 		}
 
-		r.readLine(line)
 		isEmpty = false
 	}
 
@@ -250,29 +243,31 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 	return nil
 }
 
-func (r *GitUploadPackInfo) decodeHeaderLine(line string) {
-	r.Capabilities.Decode(line)
-
-	name := r.Capabilities.SymbolicReference("HEAD")
-	if len(name) == 0 {
-		return
-	}
-
-	refName := core.ReferenceName(name)
-	r.Refs.Set(core.NewSymbolicReference(core.HEAD, refName))
-}
-
 func (r *GitUploadPackInfo) isValidLine(line string) bool {
 	return line[0] != '#'
 }
 
-func (r *GitUploadPackInfo) readLine(line string) {
-	parts := strings.Split(strings.Trim(line, " \n"), " ")
-	if len(parts) != 2 {
-		return
+func (r *GitUploadPackInfo) readLine(line string) error {
+	hashEnd := strings.Index(line, " ")
+	hash := line[:hashEnd]
+
+	zeroID := strings.Index(line, string([]byte{0}))
+	if zeroID == -1 {
+		name := line[hashEnd+1 : len(line)-1]
+		ref := core.NewReferenceFromStrings(name, hash)
+		return r.Refs.Set(ref)
 	}
 
-	r.Refs.Set(core.NewReferenceFromStrings(parts[1], parts[0]))
+	name := line[hashEnd+1 : zeroID]
+	r.Capabilities.Decode(line[zeroID+1 : len(line)-1])
+	if !r.Capabilities.Supports("symref") {
+		ref := core.NewReferenceFromStrings(name, hash)
+		return r.Refs.Set(ref)
+	}
+
+	target := r.Capabilities.SymbolicReference(name)
+	ref := core.NewSymbolicReference(core.ReferenceName(name), core.ReferenceName(target))
+	return r.Refs.Set(ref)
 }
 
 func (r *GitUploadPackInfo) Head() *core.Reference {
