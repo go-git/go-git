@@ -64,6 +64,24 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 	c.Assert(ref.Target(), Equals, core.ReferenceName(name))
 }
 
+const GitUploadPackInfoNoHEADFixture = "MDAxZSMgc2VydmljZT1naXQtdXBsb2FkLXBhY2sKMDAwMDAwYmNkN2UxZmVlMjYxMjM0YmIzYTQzYzA5NmY1NTg3NDhhNTY5ZDc5ZWZmIHJlZnMvaGVhZHMvdjQAbXVsdGlfYWNrIHRoaW4tcGFjayBzaWRlLWJhbmQgc2lkZS1iYW5kLTY0ayBvZnMtZGVsdGEgc2hhbGxvdyBuby1wcm9ncmVzcyBpbmNsdWRlLXRhZyBtdWx0aV9hY2tfZGV0YWlsZWQgbm8tZG9uZSBhZ2VudD1naXQvMS45LjEKMDAwMA=="
+
+func (s *SuiteCommon) TestGitUploadPackInfoNoHEAD(c *C) {
+	b, _ := base64.StdEncoding.DecodeString(GitUploadPackInfoNoHEADFixture)
+
+	i := NewGitUploadPackInfo()
+	err := i.Decode(pktline.NewDecoder(bytes.NewBuffer(b)))
+	c.Assert(err, IsNil)
+
+	name := i.Capabilities.SymbolicReference("HEAD")
+	c.Assert(name, Equals, "")
+	c.Assert(i.Refs, HasLen, 1)
+
+	ref := i.Refs["refs/heads/v4"]
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "d7e1fee261234bb3a43c096f558748a569d79eff")
+}
+
 func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
 	b := bytes.NewBuffer(nil)
 
