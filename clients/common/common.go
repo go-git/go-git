@@ -1,4 +1,4 @@
-// Package common contains utils used by the clients
+// Package common contains interfaces and non-specific protocol entities
 package common
 
 import (

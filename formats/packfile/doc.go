@@ -1,6 +1,7 @@
-// Package packfile documentation:
-/*
+// Package packfile implements a encoder/decoder of packfile format
+package packfile
 
+/*
 GIT pack format
 ===============
 
@@ -165,4 +166,3 @@ Pack file entry: <+
 From:
 https://www.kernel.org/pub/software/scm/git/docs/v1.7.5/technical/pack-protocol.txt
 */
-package packfile

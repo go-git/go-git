@@ -1,3 +1,4 @@
+// Package filesystem is a storage backend base on filesystems
 package filesystem
 
 import (

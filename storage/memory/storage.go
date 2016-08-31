@@ -1,3 +1,4 @@
+// Package memory is a storage backend base on memory
 package memory
 
 import (

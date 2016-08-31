@@ -1,3 +1,6 @@
+// Package idxfile implements a encoder/decoder of idx files
+package idxfile
+
 /*
 == Original (version 1) pack-*.idx files have the following format:
 
@@ -127,4 +130,3 @@ Pack file entry: <+
 From:
 https://www.kernel.org/pub/software/scm/git/docs/v1.7.5/technical/pack-protocol.txt
 */
-package idxfile

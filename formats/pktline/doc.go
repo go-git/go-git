@@ -1,3 +1,4 @@
+// Package pktline implements a encoder/decoder of pkt-line format
 package pktline
 
 // pkt-line Format

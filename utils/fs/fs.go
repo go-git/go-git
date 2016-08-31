@@ -1,3 +1,4 @@
+// Package fs interace and implementations used by storage/filesystem
 package fs
 
 import (

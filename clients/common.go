@@ -1,10 +1,12 @@
-// Go-git needs the packfile and the refs of the repo. The
+// Package clients includes the implementation for diferent transport protocols
+//
+// go-git needs the packfile and the refs of the repo. The
 // `NewGitUploadPackService` function returns an object that allows to
 // download them.
 //
-// Go-git supports HTTP and SSH (see `KnownProtocols`) for downloading
-// the packfile and the refs, but you can also install your own
-// protocols (see `InstallProtocol` below).
+// go-git supports HTTP and SSH (see `Protocols`) for downloading the packfile
+// and the refs, but you can also install your own protocols (see
+// `InstallProtocol` below).
 //
 // Each protocol has its own implementation of
 // `NewGitUploadPackService`, but you should generally not use them

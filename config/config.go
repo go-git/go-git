@@ -1,3 +1,4 @@
+// Package config storage is the implementation of git config for go-git
 package config
 
 import (
