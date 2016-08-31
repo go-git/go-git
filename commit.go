@@ -60,6 +60,16 @@ func (c *Commit) File(path string) (*File, error) {
 	return tree.File(path)
 }
 
+// Files returns a FileIter allowing to iterate over the Tree
+func (c *Commit) Files() (*FileIter, error) {
+	tree, err := c.Tree()
+	if err != nil {
+		return nil, err
+	}
+
+	return tree.Files(), nil
+}
+
 // ID returns the object ID of the commit. The returned value will always match
 // the current value of Commit.Hash.
 //
