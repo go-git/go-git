@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 
@@ -108,7 +107,11 @@ func (s *AerospikeObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Objec
 		return nil, err
 	}
 
-	return nil, core.ErrObjectNotFound
+	if rec == nil {
+		return nil, core.ErrObjectNotFound
+	}
+
+	return objectFromRecord(rec, t)
 }
 
 func (s *AerospikeObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
@@ -125,7 +128,6 @@ func (s *AerospikeObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error
 
 func (s *AerospikeObjectStorage) keyFromObject(h core.Hash, t core.ObjectType,
 ) (*aerospike.Key, error) {
-	fmt.Println(t.String())
 	return aerospike.NewKey(s.ns, t.String(), h.String())
 }
 
