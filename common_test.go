@@ -45,8 +45,7 @@ func (p *MockGitUploadPackService) Connect() error {
 	return nil
 }
 
-func (p *MockGitUploadPackService) ConnectWithAuth(auth common.AuthMethod) error {
-	p.connected = true
+func (p *MockGitUploadPackService) SetAuth(auth common.AuthMethod) error {
 	p.auth = auth
 	return nil
 }

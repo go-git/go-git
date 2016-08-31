@@ -32,9 +32,9 @@ type mockAuth struct{}
 func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
-func (s *RemoteSuite) TestConnectWithAuthWrongType(c *C) {
+func (s *RemoteSuite) TestSetAuthWrongType(c *C) {
 	r := NewGitUploadPackService(s.Endpoint)
-	c.Assert(r.ConnectWithAuth(&mockAuth{}), Equals, ErrInvalidAuthMethod)
+	c.Assert(r.SetAuth(&mockAuth{}), Equals, ErrInvalidAuthMethod)
 }
 
 func (s *RemoteSuite) TestAlreadyConnected(c *C) {

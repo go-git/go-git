@@ -138,16 +138,22 @@ func (a *PublicKeysCallback) clientConfig() *ssh.ClientConfig {
 	}
 }
 
+const DefaultSSHUsername = "git"
+
 // Opens a pipe with the ssh agent and uses the pipe
 // as the implementer of the public key callback function.
-func NewSSHAgentAuth() (*PublicKeysCallback, error) {
+func NewSSHAgentAuth(user string) (*PublicKeysCallback, error) {
+	if user == "" {
+		user = DefaultSSHUsername
+	}
+
 	pipe, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
 	if err != nil {
 		return nil, err
 	}
 
 	return &PublicKeysCallback{
-		User:     "git",
+		User:     user,
 		Callback: agent.NewClient(pipe).Signers,
 	}, nil
 }

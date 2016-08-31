@@ -26,7 +26,7 @@ const GitUploadPackServiceName = "git-upload-pack"
 
 type GitUploadPackService interface {
 	Connect() error
-	ConnectWithAuth(AuthMethod) error
+	SetAuth(AuthMethod) error
 	Info() (*GitUploadPackInfo, error)
 	Fetch(*GitUploadPackRequest) (io.ReadCloser, error)
 	Disconnect() error

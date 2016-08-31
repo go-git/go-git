@@ -12,24 +12,47 @@ import (
 	"gopkg.in/src-d/go-git.v4/formats/pktline"
 )
 
+// GitUploadPackService git-upoad-pack service over HTTP
 type GitUploadPackService struct {
 	client   *http.Client
 	endpoint common.Endpoint
 	auth     HTTPAuthMethod
 }
 
+// NewGitUploadPackService connects to a git-upload-pack service over HTTP, the
+// auth is extracted from the URL, or can be provided using the SetAuth method
 func NewGitUploadPackService(endpoint common.Endpoint) common.GitUploadPackService {
-	return &GitUploadPackService{
+	s := &GitUploadPackService{
 		client:   http.DefaultClient,
 		endpoint: endpoint,
 	}
+
+	s.setBasicAuthFromEndpoint()
+	return s
 }
 
+// Connect has not any effect, is here just for meet the interface
 func (s *GitUploadPackService) Connect() error {
 	return nil
 }
 
-func (s *GitUploadPackService) ConnectWithAuth(auth common.AuthMethod) error {
+func (s *GitUploadPackService) setBasicAuthFromEndpoint() {
+	info := s.endpoint.User
+	if info == nil {
+		return
+	}
+
+	p, ok := info.Password()
+	if !ok {
+		return
+	}
+
+	u := info.Username()
+	s.auth = NewBasicAuth(u, p)
+}
+
+// SetAuth sets the AuthMethod
+func (s *GitUploadPackService) SetAuth(auth common.AuthMethod) error {
 	httpAuth, ok := auth.(HTTPAuthMethod)
 	if !ok {
 		return common.ErrInvalidAuthMethod
@@ -39,6 +62,7 @@ func (s *GitUploadPackService) ConnectWithAuth(auth common.AuthMethod) error {
 	return nil
 }
 
+// Info returns the references info and capabilities from the service
 func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	url := fmt.Sprintf(
 		"%s/info/refs?service=%s",
@@ -56,6 +80,7 @@ func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	return i, i.Decode(pktline.NewDecoder(res.Body))
 }
 
+// Fetch request and returns a reader to a packfile
 func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadCloser, error) {
 	url := fmt.Sprintf(
 		"%s/%s",
@@ -98,6 +123,7 @@ func (s *GitUploadPackService) discardResponseInfo(r io.Reader) error {
 
 	return nil
 }
+
 func (s *GitUploadPackService) doRequest(method, url string, content *strings.Reader) (*http.Response, error) {
 	var body io.Reader
 	if content != nil {
@@ -145,6 +171,7 @@ func (s *GitUploadPackService) applyAuthToRequest(req *http.Request) {
 	s.auth.setAuth(req)
 }
 
+// Disconnect do nothing
 func (s *GitUploadPackService) Disconnect() (err error) {
 	return nil
 }

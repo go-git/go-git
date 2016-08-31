@@ -64,7 +64,7 @@ func (s *dummyProtocolService) Connect() error {
 	return nil
 }
 
-func (s *dummyProtocolService) ConnectWithAuth(auth common.AuthMethod) error {
+func (s *dummyProtocolService) SetAuth(auth common.AuthMethod) error {
 	return nil
 }
 

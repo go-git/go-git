@@ -16,8 +16,18 @@ var _ = Suite(&RemoteSuite{})
 
 func (s *RemoteSuite) SetUpSuite(c *C) {
 	var err error
-	s.Endpoint, err = common.NewEndpoint("https://github.com/tyba/git-fixture")
+	s.Endpoint, err = common.NewEndpoint("https://github.com/git-fixtures/basic")
 	c.Assert(err, IsNil)
+}
+
+func (s *RemoteSuite) TestNewGitUploadPackServiceAuth(c *C) {
+	e, err := common.NewEndpoint("https://foo:bar@github.com/git-fixtures/basic")
+	c.Assert(err, IsNil)
+
+	r := NewGitUploadPackService(e)
+	auth := r.(*GitUploadPackService).auth
+
+	c.Assert(auth.String(), Equals, "http-basic-auth - foo:*******")
 }
 
 func (s *RemoteSuite) TestConnect(c *C) {
@@ -25,10 +35,11 @@ func (s *RemoteSuite) TestConnect(c *C) {
 	c.Assert(r.Connect(), IsNil)
 }
 
-func (s *RemoteSuite) TestConnectWithAuth(c *C) {
+func (s *RemoteSuite) TestSetAuth(c *C) {
 	auth := &BasicAuth{}
 	r := NewGitUploadPackService(s.Endpoint)
-	c.Assert(r.ConnectWithAuth(auth), IsNil)
+	r.SetAuth(auth)
+	c.Assert(auth, Equals, r.(*GitUploadPackService).auth)
 }
 
 type mockAuth struct{}
@@ -36,9 +47,9 @@ type mockAuth struct{}
 func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
-func (s *RemoteSuite) TestConnectWithAuthWrongType(c *C) {
+func (s *RemoteSuite) TestSetAuthWrongType(c *C) {
 	r := NewGitUploadPackService(s.Endpoint)
-	c.Assert(r.ConnectWithAuth(&mockAuth{}), Equals, common.ErrInvalidAuthMethod)
+	c.Assert(r.SetAuth(&mockAuth{}), Equals, common.ErrInvalidAuthMethod)
 }
 
 func (s *RemoteSuite) TestInfoEmpty(c *C) {
