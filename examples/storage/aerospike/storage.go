@@ -1,14 +1,15 @@
-package main
+package aerospike
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 
-	"github.com/aerospike/aerospike-client-go"
+	driver "github.com/aerospike/aerospike-client-go"
 )
 
 const (
@@ -17,60 +18,60 @@ const (
 	remotesSet    = "remote"
 )
 
-type AerospikeStorage struct {
-	client *aerospike.Client
+type Storage struct {
+	client *driver.Client
 	ns     string
 	url    string
 
-	os *AerospikeObjectStorage
-	rs *AerospikeReferenceStorage
-	cs *AerospikeConfigStorage
+	os *ObjectStorage
+	rs *ReferenceStorage
+	cs *ConfigStorage
 }
 
-func NewAerospikeStorage(client *aerospike.Client, ns, url string) (*AerospikeStorage, error) {
+func NewStorage(client *driver.Client, ns, url string) (*Storage, error) {
 	if err := createIndexes(client, ns); err != nil {
 		return nil, err
 	}
 
-	return &AerospikeStorage{client: client, ns: ns, url: url}, nil
+	return &Storage{client: client, ns: ns, url: url}, nil
 }
 
-func (s *AerospikeStorage) ObjectStorage() core.ObjectStorage {
+func (s *Storage) ObjectStorage() core.ObjectStorage {
 	if s.os == nil {
-		s.os = &AerospikeObjectStorage{s.client, s.ns, s.url}
+		s.os = &ObjectStorage{s.client, s.ns, s.url}
 	}
 
 	return s.os
 }
 
-func (s *AerospikeStorage) ReferenceStorage() core.ReferenceStorage {
+func (s *Storage) ReferenceStorage() core.ReferenceStorage {
 	if s.rs == nil {
-		s.rs = &AerospikeReferenceStorage{s.client, s.ns, s.url}
+		s.rs = &ReferenceStorage{s.client, s.ns, s.url}
 	}
 
 	return s.rs
 }
 
-func (s *AerospikeStorage) ConfigStorage() config.ConfigStorage {
+func (s *Storage) ConfigStorage() config.ConfigStorage {
 	if s.cs == nil {
-		s.cs = &AerospikeConfigStorage{s.client, s.ns, s.url}
+		s.cs = &ConfigStorage{s.client, s.ns, s.url}
 	}
 
 	return s.cs
 }
 
-type AerospikeObjectStorage struct {
-	client *aerospike.Client
+type ObjectStorage struct {
+	client *driver.Client
 	ns     string
 	url    string
 }
 
-func (s *AerospikeObjectStorage) NewObject() core.Object {
+func (s *ObjectStorage) NewObject() core.Object {
 	return &core.MemoryObject{}
 }
 
-func (s *AerospikeObjectStorage) Set(obj core.Object) (core.Hash, error) {
-	key, err := aerospike.NewKey(s.ns, obj.Type().String(), obj.Hash().String())
+func (s *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
+	key, err := s.buildKey(obj.Hash(), obj.Type())
 	if err != nil {
 		return obj.Hash(), err
 	}
@@ -85,7 +86,7 @@ func (s *AerospikeObjectStorage) Set(obj core.Object) (core.Hash, error) {
 		return obj.Hash(), err
 	}
 
-	bins := aerospike.BinMap{
+	bins := driver.BinMap{
 		urlField: s.url,
 		"hash":   obj.Hash().String(),
 		"type":   obj.Type().String(),
@@ -96,8 +97,8 @@ func (s *AerospikeObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	return obj.Hash(), err
 }
 
-func (s *AerospikeObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
-	key, err := s.keyFromObject(h, t)
+func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+	key, err := s.buildKey(h, t)
 	if err != nil {
 		return nil, err
 	}
@@ -114,29 +115,28 @@ func (s *AerospikeObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Objec
 	return objectFromRecord(rec, t)
 }
 
-func (s *AerospikeObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
-	stmnt := aerospike.NewStatement(s.ns, t.String())
-	err := stmnt.Addfilter(aerospike.NewEqualFilter(urlField, s.url))
+func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
+	stmnt := driver.NewStatement(s.ns, t.String())
+	err := stmnt.Addfilter(driver.NewEqualFilter(urlField, s.url))
 
 	rs, err := s.client.Query(nil, stmnt)
 	if err != nil {
 		return nil, err
 	}
 
-	return &AerospikeObjectIter{t, rs.Records}, nil
+	return &ObjectIter{t, rs.Records}, nil
 }
 
-func (s *AerospikeObjectStorage) keyFromObject(h core.Hash, t core.ObjectType,
-) (*aerospike.Key, error) {
-	return aerospike.NewKey(s.ns, t.String(), h.String())
+func (s *ObjectStorage) buildKey(h core.Hash, t core.ObjectType) (*driver.Key, error) {
+	return driver.NewKey(s.ns, t.String(), fmt.Sprintf("%s|%s", s.url, h.String()))
 }
 
-type AerospikeObjectIter struct {
+type ObjectIter struct {
 	t  core.ObjectType
-	ch chan *aerospike.Record
+	ch chan *driver.Record
 }
 
-func (i *AerospikeObjectIter) Next() (core.Object, error) {
+func (i *ObjectIter) Next() (core.Object, error) {
 	r := <-i.ch
 	if r == nil {
 		return nil, io.EOF
@@ -145,7 +145,7 @@ func (i *AerospikeObjectIter) Next() (core.Object, error) {
 	return objectFromRecord(r, i.t)
 }
 
-func (i *AerospikeObjectIter) ForEach(cb func(obj core.Object) error) error {
+func (i *ObjectIter) ForEach(cb func(obj core.Object) error) error {
 	for {
 		obj, err := i.Next()
 		if err != nil {
@@ -166,9 +166,9 @@ func (i *AerospikeObjectIter) ForEach(cb func(obj core.Object) error) error {
 	}
 }
 
-func (i *AerospikeObjectIter) Close() {}
+func (i *ObjectIter) Close() {}
 
-func objectFromRecord(r *aerospike.Record, t core.ObjectType) (core.Object, error) {
+func objectFromRecord(r *driver.Record, t core.ObjectType) (core.Object, error) {
 	content := r.Bins["blob"].([]byte)
 
 	o := &core.MemoryObject{}
@@ -183,21 +183,21 @@ func objectFromRecord(r *aerospike.Record, t core.ObjectType) (core.Object, erro
 	return o, nil
 }
 
-type AerospikeReferenceStorage struct {
-	client *aerospike.Client
+type ReferenceStorage struct {
+	client *driver.Client
 	ns     string
 	url    string
 }
 
 // Set stores a reference.
-func (s *AerospikeReferenceStorage) Set(ref *core.Reference) error {
-	key, err := aerospike.NewKey(s.ns, referencesSet, ref.Name().String())
+func (s *ReferenceStorage) Set(ref *core.Reference) error {
+	key, err := s.buildKey(ref.Name())
 	if err != nil {
 		return err
 	}
 
 	raw := ref.Strings()
-	bins := aerospike.BinMap{
+	bins := driver.BinMap{
 		urlField: s.url,
 		"name":   raw[0],
 		"target": raw[1],
@@ -207,8 +207,8 @@ func (s *AerospikeReferenceStorage) Set(ref *core.Reference) error {
 }
 
 // Get returns a stored reference with the given name
-func (s *AerospikeReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {
-	key, err := aerospike.NewKey(s.ns, referencesSet, n.String())
+func (s *ReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {
+	key, err := s.buildKey(n)
 	if err != nil {
 		return nil, err
 	}
@@ -224,10 +224,14 @@ func (s *AerospikeReferenceStorage) Get(n core.ReferenceName) (*core.Reference, 
 	), nil
 }
 
+func (s *ReferenceStorage) buildKey(n core.ReferenceName) (*driver.Key, error) {
+	return driver.NewKey(s.ns, referencesSet, fmt.Sprintf("%s|%s", s.url, n))
+}
+
 // Iter returns a core.ReferenceIter
-func (s *AerospikeReferenceStorage) Iter() (core.ReferenceIter, error) {
-	stmnt := aerospike.NewStatement(s.ns, referencesSet)
-	err := stmnt.Addfilter(aerospike.NewEqualFilter(urlField, s.url))
+func (s *ReferenceStorage) Iter() (core.ReferenceIter, error) {
+	stmnt := driver.NewStatement(s.ns, referencesSet)
+	err := stmnt.Addfilter(driver.NewEqualFilter(urlField, s.url))
 	if err != nil {
 		return nil, err
 	}
@@ -248,14 +252,14 @@ func (s *AerospikeReferenceStorage) Iter() (core.ReferenceIter, error) {
 	return core.NewReferenceSliceIter(refs), nil
 }
 
-type AerospikeConfigStorage struct {
-	client *aerospike.Client
+type ConfigStorage struct {
+	client *driver.Client
 	ns     string
 	url    string
 }
 
-func (s *AerospikeConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
-	key, err := aerospike.NewKey(s.ns, remotesSet, name)
+func (s *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
+	key, err := s.buildRemoteKey(name)
 	if err != nil {
 		return nil, err
 	}
@@ -268,16 +272,16 @@ func (s *AerospikeConfigStorage) Remote(name string) (*config.RemoteConfig, erro
 	return remoteFromRecord(rec)
 }
 
-func remoteFromRecord(r *aerospike.Record) (*config.RemoteConfig, error) {
+func remoteFromRecord(r *driver.Record) (*config.RemoteConfig, error) {
 	content := r.Bins["blob"].([]byte)
 
 	c := &config.RemoteConfig{}
 	return c, json.Unmarshal(content, c)
 }
 
-func (s *AerospikeConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
-	stmnt := aerospike.NewStatement(s.ns, remotesSet)
-	err := stmnt.Addfilter(aerospike.NewEqualFilter(urlField, s.url))
+func (s *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
+	stmnt := driver.NewStatement(s.ns, remotesSet)
+	err := stmnt.Addfilter(driver.NewEqualFilter(urlField, s.url))
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +305,8 @@ func (s *AerospikeConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
 	return remotes, nil
 }
 
-func (s *AerospikeConfigStorage) SetRemote(r *config.RemoteConfig) error {
-	key, err := aerospike.NewKey(s.ns, remotesSet, r.Name)
+func (s *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
+	key, err := s.buildRemoteKey(r.Name)
 	if err != nil {
 		return err
 	}
@@ -312,7 +316,7 @@ func (s *AerospikeConfigStorage) SetRemote(r *config.RemoteConfig) error {
 		return err
 	}
 
-	bins := aerospike.BinMap{
+	bins := driver.BinMap{
 		urlField: s.url,
 		"name":   r.Name,
 		"blob":   json,
@@ -321,8 +325,8 @@ func (s *AerospikeConfigStorage) SetRemote(r *config.RemoteConfig) error {
 	return s.client.Put(nil, key, bins)
 }
 
-func (s *AerospikeConfigStorage) DeleteRemote(name string) error {
-	key, err := aerospike.NewKey(s.ns, remotesSet, name)
+func (s *ConfigStorage) DeleteRemote(name string) error {
+	key, err := s.buildRemoteKey(name)
 	if err != nil {
 		return err
 	}
@@ -331,7 +335,11 @@ func (s *AerospikeConfigStorage) DeleteRemote(name string) error {
 	return err
 }
 
-func createIndexes(c *aerospike.Client, ns string) error {
+func (s *ConfigStorage) buildRemoteKey(name string) (*driver.Key, error) {
+	return driver.NewKey(s.ns, remotesSet, fmt.Sprintf("%s|%s", s.url, name))
+}
+
+func createIndexes(c *driver.Client, ns string) error {
 	for _, set := range [...]string{
 		referencesSet,
 		remotesSet,
@@ -348,8 +356,8 @@ func createIndexes(c *aerospike.Client, ns string) error {
 	return nil
 }
 
-func createIndex(c *aerospike.Client, ns, set string) error {
-	task, err := c.CreateIndex(nil, ns, set, set, urlField, aerospike.STRING)
+func createIndex(c *driver.Client, ns, set string) error {
+	task, err := c.CreateIndex(nil, ns, set, set, urlField, driver.STRING)
 	if err != nil {
 		if err.Error() == "Index already exists" {
 			return nil

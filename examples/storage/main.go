@@ -5,10 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aerospike/aerospike-client-go"
-	"github.com/fatih/color"
-
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/examples/storage/aerospike"
+
+	driver "github.com/aerospike/aerospike-client-go"
+	"github.com/fatih/color"
 )
 
 func main() {
@@ -17,12 +18,12 @@ func main() {
 	url := os.Args[2]
 
 	// Aerospike client to be used by the custom storage
-	client, err := aerospike.NewClient("127.0.0.1", 3000)
+	client, err := driver.NewClient("127.0.0.1", 3000)
 	checkIfError(err)
 
 	// New instance of the custom aerospike storage, all the objects,
 	// references and configuration is saved to aerospike
-	s, err := NewAerospikeStorage(client, "test", url)
+	s, err := aerospike.NewStorage(client, "test", url)
 	checkIfError(err)
 
 	// A new repository instance using as storage the custom implementation
