@@ -11,13 +11,14 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-type StorageSuite struct { }
+type StorageSuite struct {
+	BaseStorageSuite
+}
 
 var _ = Suite(&StorageSuite{})
 
-func (s *StorageSuite) TestObjectStorage(c *C) {
-	storage := NewStorage()
-	RunObjectStorageSuite(c, storage.ObjectStorage())
+func (s *StorageSuite) SetUpSuite(c *C) {
+	s.BaseStorageSuite = NewBaseStorageSuite(NewStorage().ObjectStorage())
 }
 
 func (s *StorageSuite) TestStorageObjectStorage(c *C) {

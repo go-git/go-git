@@ -13,7 +13,14 @@ type TestObject struct {
 	Type   core.ObjectType
 }
 
-func RunObjectStorageSuite(c *C, os core.ObjectStorage) {
+type BaseStorageSuite struct {
+	ObjectStorage core.ObjectStorage
+
+	validTypes  []core.ObjectType
+	testObjects map[core.ObjectType]TestObject
+}
+
+func NewBaseStorageSuite(s core.ObjectStorage) BaseStorageSuite {
 	commit := &core.MemoryObject{}
 	commit.SetType(core.CommitObject)
 	tree := &core.MemoryObject{}
@@ -23,55 +30,70 @@ func RunObjectStorageSuite(c *C, os core.ObjectStorage) {
 	tag := &core.MemoryObject{}
 	tag.SetType(core.TagObject)
 
-	testObjects := map[core.ObjectType]TestObject{
-		core.CommitObject: TestObject{commit, "dcf5b16e76cce7425d0beaef62d79a7d10fce1f5", core.CommitObject},
-		core.TreeObject:   TestObject{tree, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", core.TreeObject},
-		core.BlobObject:   TestObject{blob, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", core.BlobObject},
-		core.TagObject:    TestObject{tag, "d994c6bb648123a17e8f70a966857c546b2a6f94", core.TagObject},
-	}
+	return BaseStorageSuite{
+		ObjectStorage: s,
+		validTypes: []core.ObjectType{
+			core.CommitObject,
+			core.BlobObject,
+			core.TagObject,
+			core.TreeObject,
+		},
+		testObjects: map[core.ObjectType]TestObject{
+			core.CommitObject: {commit, "dcf5b16e76cce7425d0beaef62d79a7d10fce1f5", core.CommitObject},
+			core.TreeObject:   {tree, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", core.TreeObject},
+			core.BlobObject:   {blob, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", core.BlobObject},
+			core.TagObject:    {tag, "d994c6bb648123a17e8f70a966857c546b2a6f94", core.TagObject},
+		}}
+}
 
-	validTypes := []core.ObjectType{core.CommitObject, core.BlobObject, core.TagObject, core.TreeObject}
-
-	for _, to := range testObjects {
+func (s *BaseStorageSuite) TestObjectStorageSetAndGet(c *C) {
+	for _, to := range s.testObjects {
 		comment := Commentf("failed for type %s", to.Type.String())
 
-		h, err := os.Set(to.Object)
+		h, err := s.ObjectStorage.Set(to.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, to.Hash, comment)
 
-		o, err := os.Get(to.Type, h)
+		o, err := s.ObjectStorage.Get(to.Type, h)
 		c.Assert(err, IsNil)
 		c.Assert(o, Equals, to.Object)
 
-		o, err = os.Get(core.AnyObject, h)
+		o, err = s.ObjectStorage.Get(core.AnyObject, h)
 		c.Assert(err, IsNil)
 		c.Assert(o, Equals, to.Object)
 
-		for _, validType := range validTypes {
-			if validType == to.Type {
+		for _, t := range s.validTypes {
+			if t == to.Type {
 				continue
 			}
-			o, err = os.Get(validType, h)
+
+			o, err = s.ObjectStorage.Get(t, h)
 			c.Assert(o, IsNil)
 			c.Assert(err, Equals, core.ErrObjectNotFound)
 		}
 	}
+}
 
-	for _, validType := range validTypes {
-		comment := Commentf("failed for type %s)", validType.String())
-		i, err := os.Iter(validType)
+func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
+	for _, o := range s.testObjects {
+		s.ObjectStorage.Set(o.Object)
+	}
+
+	for _, t := range s.validTypes {
+		comment := Commentf("failed for type %s)", t.String())
+		i, err := s.ObjectStorage.Iter(t)
 		c.Assert(err, IsNil, comment)
 
 		o, err := i.Next()
 		c.Assert(err, IsNil)
-		c.Assert(o, Equals, testObjects[validType].Object, comment)
+		c.Assert(o, Equals, s.testObjects[t].Object, comment)
 
 		o, err = i.Next()
 		c.Assert(o, IsNil)
 		c.Assert(err, Equals, io.EOF, comment)
 	}
 
-	i, err := os.Iter(core.AnyObject)
+	i, err := s.ObjectStorage.Iter(core.AnyObject)
 	c.Assert(err, IsNil)
 
 	foundObjects := []core.Object{}
@@ -79,8 +101,9 @@ func RunObjectStorageSuite(c *C, os core.ObjectStorage) {
 		foundObjects = append(foundObjects, o)
 		return nil
 	})
-	c.Assert(foundObjects, HasLen, len(testObjects))
-	for _, to := range testObjects {
+
+	c.Assert(foundObjects, HasLen, len(s.testObjects))
+	for _, to := range s.testObjects {
 		found := false
 		for _, o := range foundObjects {
 			if to.Object == o {
