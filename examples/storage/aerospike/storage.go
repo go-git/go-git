@@ -131,6 +131,26 @@ func (s *ObjectStorage) buildKey(h core.Hash, t core.ObjectType) (*driver.Key, e
 	return driver.NewKey(s.ns, t.String(), fmt.Sprintf("%s|%s", s.url, h.String()))
 }
 
+func (s *ObjectStorage) Begin() core.TxObjectStorage {
+	return &TxObjectStorage{Storage: s}
+}
+
+type TxObjectStorage struct {
+	Storage *ObjectStorage
+}
+
+func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
+	return tx.Storage.Set(obj)
+}
+
+func (tx *TxObjectStorage) Commit() error {
+	return nil
+}
+
+func (tx *TxObjectStorage) Rollback() error {
+	return nil
+}
+
 type ObjectIter struct {
 	t  core.ObjectType
 	ch chan *driver.Record

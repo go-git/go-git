@@ -217,3 +217,20 @@ func buildIndexFromIdxfile(fs fs.FS, path string) (index.Index, error) {
 
 	return index.NewFromIdx(f)
 }
+func (o *ObjectStorage) Begin() core.TxObjectStorage {
+	return &TxObjectStorage{}
+}
+
+type TxObjectStorage struct{}
+
+func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
+	return core.ZeroHash, fmt.Errorf("not implemented yet")
+}
+
+func (tx *TxObjectStorage) Commit() error {
+	return fmt.Errorf("not implemented yet")
+}
+
+func (tx *TxObjectStorage) Rollback() error {
+	return fmt.Errorf("not implemented yet")
+}

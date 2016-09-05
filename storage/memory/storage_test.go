@@ -6,19 +6,19 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
-	. "gopkg.in/src-d/go-git.v4/storage/test"
+	"gopkg.in/src-d/go-git.v4/storage/test"
 )
 
 func Test(t *testing.T) { TestingT(t) }
 
 type StorageSuite struct {
-	BaseStorageSuite
+	test.BaseStorageSuite
 }
 
 var _ = Suite(&StorageSuite{})
 
-func (s *StorageSuite) SetUpSuite(c *C) {
-	s.BaseStorageSuite = NewBaseStorageSuite(NewStorage().ObjectStorage())
+func (s *StorageSuite) SetUpTest(c *C) {
+	s.BaseStorageSuite = test.NewBaseStorageSuite(NewStorage().ObjectStorage())
 }
 
 func (s *StorageSuite) TestStorageObjectStorage(c *C) {

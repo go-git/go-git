@@ -7,19 +7,28 @@ var ErrStop = errors.New("stop iter")
 
 // ObjectStorage generic storage of objects
 type ObjectStorage interface {
+	// NewObject returns a new Object, the real type of the object can be a
+	// custom implementation or the defaul one, MemoryObject
 	NewObject() Object
+	// Set save an object into the storage, the object shuld be create with
+	// the NewObject, method, and file if the type is not supported.
 	Set(Object) (Hash, error)
-	// Get an object by hash with the given ObjectType.
-	//
-	// Implementors should return (nil, core.ErrObjectNotFound) if an object
-	// doesn't exist with both the given hash and object type.
+	// Get an object by hash with the given ObjectType. Implementors should
+	// return (nil, ErrObjectNotFound) if an object doesn't exist with both the
+	// given hash and object type.
 	//
 	// Valid ObjectType values are CommitObject, BlobObject, TagObject, TreeObject
 	// and AnyObject.
 	//
 	// If AnyObject is given, the object must be looked up regardless of its type.
 	Get(ObjectType, Hash) (Object, error)
+	// Iter returns a custom ObjectIter over all the object on the storage.
+	//
+	// Valid ObjectType values are CommitObject, BlobObject, TagObject, TreeObject
+	// and AnyObject.
 	Iter(ObjectType) (ObjectIter, error)
+	// Begin starts a transaction.
+	Begin() TxObjectStorage
 }
 
 // ObjectIter is a generic closable interface for iterating over objects.
@@ -27,6 +36,14 @@ type ObjectIter interface {
 	Next() (Object, error)
 	ForEach(func(Object) error) error
 	Close()
+}
+
+// TxObjectStorage is an in-progress storage transaction.
+// A transaction must end with a call to Commit or Rollback.
+type TxObjectStorage interface {
+	Set(Object) (Hash, error)
+	Commit() error
+	Rollback() error
 }
 
 // ReferenceStorage generic storage of references

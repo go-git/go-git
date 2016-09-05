@@ -166,6 +166,41 @@ func flattenObjectMap(m map[core.Hash]core.Object) []core.Object {
 	return objects
 }
 
+func (o *ObjectStorage) Begin() core.TxObjectStorage {
+	return &TxObjectStorage{
+		Storage: o,
+		Objects: make(map[core.Hash]core.Object, 0),
+	}
+}
+
+type TxObjectStorage struct {
+	Storage *ObjectStorage
+	Objects map[core.Hash]core.Object
+}
+
+func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
+	h := obj.Hash()
+	tx.Objects[h] = obj
+
+	return h, nil
+}
+
+func (tx *TxObjectStorage) Commit() error {
+	for h, obj := range tx.Objects {
+		delete(tx.Objects, h)
+		if _, err := tx.Storage.Set(obj); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (tx *TxObjectStorage) Rollback() error {
+	tx.Objects = make(map[core.Hash]core.Object, 0)
+	return nil
+}
+
 type ReferenceStorage map[core.ReferenceName]*core.Reference
 
 // Set stores a reference.

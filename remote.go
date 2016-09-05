@@ -163,8 +163,8 @@ func (r *Remote) buildRequest(
 func (r *Remote) updateObjectStorage(reader io.Reader) error {
 	stream := packfile.NewStream(reader)
 
-	d := packfile.NewDecoder(stream)
-	return d.Decode(r.s.ObjectStorage())
+	d := packfile.NewDecoder(stream, r.s.ObjectStorage())
+	return d.Decode()
 }
 
 func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*core.Reference) error {

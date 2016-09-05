@@ -114,3 +114,48 @@ func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
 		c.Assert(found, Equals, true, Commentf("Object of type %s not found", to.Type.String()))
 	}
 }
+
+func (s *BaseStorageSuite) TestTxObjectStorageSetAndCommit(c *C) {
+	tx := s.ObjectStorage.Begin()
+	for _, o := range s.testObjects {
+		h, err := tx.Set(o.Object)
+		c.Assert(err, IsNil)
+		c.Assert(h.String(), Equals, o.Hash)
+	}
+
+	iter, err := s.ObjectStorage.Iter(core.AnyObject)
+	c.Assert(err, IsNil)
+	_, err = iter.Next()
+	c.Assert(err, Equals, io.EOF)
+
+	err = tx.Commit()
+	c.Assert(err, IsNil)
+
+	iter, err = s.ObjectStorage.Iter(core.AnyObject)
+	c.Assert(err, IsNil)
+
+	var count int
+	iter.ForEach(func(o core.Object) error {
+		count++
+		return nil
+	})
+
+	c.Assert(count, Equals, 4)
+}
+
+func (s *BaseStorageSuite) TestTxObjectStorageSetAndRollback(c *C) {
+	tx := s.ObjectStorage.Begin()
+	for _, o := range s.testObjects {
+		h, err := tx.Set(o.Object)
+		c.Assert(err, IsNil)
+		c.Assert(h.String(), Equals, o.Hash)
+	}
+
+	err := tx.Rollback()
+	c.Assert(err, IsNil)
+
+	iter, err := s.ObjectStorage.Iter(core.AnyObject)
+	c.Assert(err, IsNil)
+	_, err = iter.Next()
+	c.Assert(err, Equals, io.EOF)
+}

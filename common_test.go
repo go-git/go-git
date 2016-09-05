@@ -123,8 +123,8 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 			memStream := bytes.NewReader(data)
 			r := packfile.NewStream(memStream)
 
-			d := packfile.NewDecoder(r)
-			err = d.Decode(repos[fixture.url].s.ObjectStorage())
+			d := packfile.NewDecoder(r, repos[fixture.url].s.ObjectStorage())
+			err = d.Decode()
 			c.Assert(err, IsNil, comment)
 
 			c.Assert(f.Close(), IsNil, comment)

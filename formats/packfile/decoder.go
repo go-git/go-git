@@ -42,25 +42,33 @@ type Decoder struct {
 }
 
 // NewDecoder returns a new Decoder that reads from r.
-func NewDecoder(r ReadRecaller) *Decoder {
+func NewDecoder(r ReadRecaller, s core.ObjectStorage) *Decoder {
 	return &Decoder{
 		p: NewParser(r),
+		s: s,
 	}
 }
 
 // Decode reads a packfile and stores it in the value pointed to by s.
-func (d *Decoder) Decode(s core.ObjectStorage) error {
-	d.s = s
-
+func (d *Decoder) Decode() error {
 	count, err := d.p.ReadHeader()
 	if err != nil {
 		return err
 	}
 
-	return d.readObjects(count)
+	tx := d.s.Begin()
+	if err := d.readObjects(tx, count); err != nil {
+		if err := tx.Rollback(); err != nil {
+			return nil
+		}
+
+		return err
+	}
+
+	return tx.Commit()
 }
 
-func (d *Decoder) readObjects(count uint32) error {
+func (d *Decoder) readObjects(tx core.TxObjectStorage, count uint32) error {
 	// This code has 50-80 µs of overhead per object not counting zlib inflation.
 	// Together with zlib inflation, it's 400-410 µs for small objects.
 	// That's 1 sec for ~2450 objects, ~4.20 MB, or ~250 ms per MB,
@@ -85,7 +93,7 @@ func (d *Decoder) readObjects(count uint32) error {
 			return err
 		}
 
-		_, err = d.s.Set(obj)
+		_, err = tx.Set(obj)
 		if err == io.EOF {
 			break
 		}
