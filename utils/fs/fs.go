@@ -2,21 +2,49 @@
 package fs
 
 import (
+	"errors"
 	"io"
 	"os"
 )
 
-// FS interface represent an abstracted filesystem, so you can
-// use NewRepositoryFromFS from any medium.
-type FS interface {
-	Stat(path string) (os.FileInfo, error)
-	Open(path string) (ReadSeekCloser, error)
-	ReadDir(path string) ([]os.FileInfo, error)
+var (
+	ErrClosed       = errors.New("File: Writing on closed file.")
+	ErrReadOnly     = errors.New("this is a read-only filesystem")
+	ErrNotSupported = errors.New("feature not supported")
+)
+
+type Filesystem interface {
+	Create(filename string) (File, error)
+	Open(filename string) (File, error)
+	Rename(from, to string) error
+	Stat(filename string) (FileInfo, error)
+	ReadDir(path string) ([]FileInfo, error)
 	Join(elem ...string) string
+	Dir(path string) Filesystem
+	Base() string
 }
 
-// ReadSeekCloser is a Reader, Seeker and Closer.
-type ReadSeekCloser interface {
-	io.ReadCloser
+type File interface {
+	Filename() string
+	io.Writer
+	io.Reader
 	io.Seeker
+	io.Closer
+}
+
+type FileInfo os.FileInfo
+
+type BaseFile struct {
+	filename string
+	closed   bool
+}
+
+//Filename returns the filename from the File
+func (f *BaseFile) Filename() string {
+	return f.filename
+}
+
+//IsClosed returns if te file is closed
+func (f *BaseFile) IsClosed() bool {
+	return f.closed
 }
