@@ -35,18 +35,26 @@ func NewFromIdx(r io.Reader) (Index, error) {
 
 // NewFrompackfile returns a new index from a packfile reader.
 func NewFromPackfile(rs io.ReadSeeker) (Index, error) {
+	s := packfile.NewSeekable(rs)
+	return newFromPackfile(rs, s)
+}
+
+func NewFromPackfileInMemory(rs io.Reader) (Index, error) {
+	s := packfile.NewStream(rs)
+	return newFromPackfile(rs, s)
+}
+
+func newFromPackfile(r io.Reader, s packfile.ReadRecaller) (Index, error) {
 	index := make(Index)
 
-	r := packfile.NewSeekable(rs)
-	p := packfile.NewParser(r)
-
+	p := packfile.NewParser(s)
 	count, err := p.ReadHeader()
 	if err != nil {
 		return nil, err
 	}
 
 	for i := 0; i < int(count); i++ {
-		offset, err := r.Offset()
+		offset, err := s.Offset()
 		if err != nil {
 			return nil, err
 		}
@@ -56,16 +64,18 @@ func NewFromPackfile(rs io.ReadSeeker) (Index, error) {
 			return nil, err
 		}
 
-		err = r.Remember(offset, obj)
+		err = s.Remember(offset, obj)
 		if err != nil {
 			return nil, err
 		}
 
-		err = index.Set(obj.Hash(), offset)
-		if err != nil {
+		if err = index.Set(obj.Hash(), offset); err != nil {
 			return nil, err
 		}
 	}
+
+	//The trailer records 20-byte SHA-1 checksum of all of the above.
+	p.ReadHash()
 
 	return index, nil
 }

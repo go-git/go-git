@@ -1,7 +1,9 @@
 package filesystem
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
@@ -28,6 +30,58 @@ type ObjectStorage struct {
 
 func (s *ObjectStorage) NewObject() core.Object {
 	return &core.MemoryObject{}
+}
+
+// Writer method not supported on Memory storage
+func (o *ObjectStorage) Writer() (io.WriteCloser, error) {
+	file := bytes.NewBuffer(nil)
+	return newPackWrite(o, file), nil
+}
+
+type packWriter struct {
+	writer     io.Writer
+	pipeReader io.ReadCloser
+	pipeWriter io.WriteCloser
+	file       io.Writer
+	result     chan error
+}
+
+func newPackWrite(o *ObjectStorage, file io.Writer) io.WriteCloser {
+	r, w := io.Pipe()
+
+	ch := make(chan error)
+	go func(r io.ReadCloser) {
+		defer r.Close()
+		index, err := index.NewFromPackfileInMemory(r)
+		o.index = index
+
+		ch <- err
+	}(r)
+
+	return &packWriter{
+		writer:     io.MultiWriter(w, file),
+		pipeReader: r,
+		pipeWriter: w,
+		file:       file,
+		result:     ch,
+	}
+
+}
+
+func (w *packWriter) Write(p []byte) (int, error) {
+	return w.writer.Write(p)
+}
+
+func (w *packWriter) Close() error {
+	defer func() {
+		close(w.result)
+	}()
+
+	if err := w.pipeWriter.Close(); err != nil {
+		return err
+	}
+
+	return <-w.result
 }
 
 // Set adds a new object to the storage. As this functionality is not

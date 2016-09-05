@@ -70,6 +70,11 @@ func (s *ObjectStorage) NewObject() core.Object {
 	return &core.MemoryObject{}
 }
 
+// Writer method not supported, this method is optional to implemented.
+func (s *ObjectStorage) Writer() (io.WriteCloser, error) {
+	return nil, core.ErrNotImplemented
+}
+
 func (s *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	key, err := s.buildKey(obj.Hash(), obj.Type())
 	if err != nil {

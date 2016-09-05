@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -60,6 +61,22 @@ func (s *FsSuite) TearDownSuite(c *C) {
 		err := os.RemoveAll(v)
 		c.Assert(err, IsNil, Commentf("error removing fixture %q\n", v))
 	}
+}
+
+func (s *FsSuite) TestWriter(c *C) {
+	r, err := os.Open("../../formats/packfile/fixtures/git-fixture.ofs-delta")
+	c.Assert(err, IsNil)
+
+	o := &ObjectStorage{}
+	w, err := o.Writer()
+	c.Assert(err, IsNil)
+
+	n, err := io.Copy(w, r)
+	c.Assert(err, IsNil)
+	c.Check(n, Equals, int64(85300))
+
+	c.Assert(o.index, HasLen, 28)
+	c.Assert(w.Close(), IsNil)
 }
 
 func (s *FsSuite) TestHashNotFound(c *C) {

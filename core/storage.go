@@ -1,15 +1,28 @@
 package core
 
-import "errors"
+import (
+	"errors"
+	"io"
+)
 
-//ErrStop is used to stop a ForEach function in an Iter
-var ErrStop = errors.New("stop iter")
+var (
+	//ErrStop is used to stop a ForEach function in an Iter
+	ErrStop           = errors.New("stop iter")
+	ErrNotImplemented = errors.New("method not-implemented")
+)
 
 // ObjectStorage generic storage of objects
 type ObjectStorage interface {
 	// NewObject returns a new Object, the real type of the object can be a
 	// custom implementation or the defaul one, MemoryObject
 	NewObject() Object
+	// Writer retuns a writer for writing a packfile to the Storage, this method
+	// is optional, if not implemented the ObjectStorage should return a
+	// ErrNotImplemented error.
+	//
+	// If the implementation not implements Writer the objects should be written
+	// using the Set method.
+	Writer() (io.WriteCloser, error)
 	// Set save an object into the storage, the object shuld be create with
 	// the NewObject, method, and file if the type is not supported.
 	Set(Object) (Hash, error)
@@ -17,15 +30,14 @@ type ObjectStorage interface {
 	// return (nil, ErrObjectNotFound) if an object doesn't exist with both the
 	// given hash and object type.
 	//
-	// Valid ObjectType values are CommitObject, BlobObject, TagObject, TreeObject
-	// and AnyObject.
+	// Valid ObjectType values are CommitObject, BlobObject, TagObject,
+	// TreeObject and AnyObject.
 	//
 	// If AnyObject is given, the object must be looked up regardless of its type.
 	Get(ObjectType, Hash) (Object, error)
 	// Iter returns a custom ObjectIter over all the object on the storage.
 	//
-	// Valid ObjectType values are CommitObject, BlobObject, TagObject, TreeObject
-	// and AnyObject.
+	// Valid ObjectType values are CommitObject, BlobObject, TagObject,
 	Iter(ObjectType) (ObjectIter, error)
 	// Begin starts a transaction.
 	Begin() TxObjectStorage
