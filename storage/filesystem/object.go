@@ -38,52 +38,6 @@ func (o *ObjectStorage) Writer() (io.WriteCloser, error) {
 	return newPackWrite(o, file), nil
 }
 
-type packWriter struct {
-	writer     io.Writer
-	pipeReader io.ReadCloser
-	pipeWriter io.WriteCloser
-	file       io.Writer
-	result     chan error
-}
-
-func newPackWrite(o *ObjectStorage, file io.Writer) io.WriteCloser {
-	r, w := io.Pipe()
-
-	ch := make(chan error)
-	go func(r io.ReadCloser) {
-		defer r.Close()
-		index, err := index.NewFromPackfileInMemory(r)
-		o.index = index
-
-		ch <- err
-	}(r)
-
-	return &packWriter{
-		writer:     io.MultiWriter(w, file),
-		pipeReader: r,
-		pipeWriter: w,
-		file:       file,
-		result:     ch,
-	}
-
-}
-
-func (w *packWriter) Write(p []byte) (int, error) {
-	return w.writer.Write(p)
-}
-
-func (w *packWriter) Close() error {
-	defer func() {
-		close(w.result)
-	}()
-
-	if err := w.pipeWriter.Close(); err != nil {
-		return err
-	}
-
-	return <-w.result
-}
-
 // Set adds a new object to the storage. As this functionality is not
 // yet supported, this method always returns a "not implemented yet"
 // error an zero hash.
@@ -106,12 +60,7 @@ func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error)
 }
 
 func (s *ObjectStorage) getFromUnpacked(t core.ObjectType, h core.Hash) (obj core.Object, err error) {
-	fs, path, err := s.dir.Objectfile(h)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := fs.Open(path)
+	f, err := s.dir.Object(h)
 	if err != nil {
 		return nil, err
 	}
@@ -153,16 +102,16 @@ func (s *ObjectStorage) getFromPackfile(t core.ObjectType, h core.Hash) (obj cor
 		return nil, err
 	}
 
-	fs, path, err := s.dir.Packfile()
+	packs, err := s.dir.ObjectsPacks()
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := fs.Open(path)
-	if err != nil {
-		return nil, err
+	if len(packs) == 0 {
+		return nil, nil
 	}
 
+	f, _, err := s.dir.ObjectPack(packs[0].Name())
 	defer func() {
 		errClose := f.Close()
 		if err == nil {
@@ -195,7 +144,7 @@ func (s *ObjectStorage) getFromPackfile(t core.ObjectType, h core.Hash) (obj cor
 func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	var objects []core.Object
 
-	_, hashes, err := s.dir.Objectfiles()
+	hashes, err := s.dir.Objects()
 	if err != nil {
 		return nil, err
 	}
@@ -223,8 +172,17 @@ func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
 	return core.NewObjectSliceIter(objects), nil
 }
 
-func buildIndex(dir *dotgit.DotGit) (index.Index, error) {
-	fs, idxfile, err := dir.Idxfile()
+func buildIndex(fs fs.Filesystem, dir *dotgit.DotGit) (index.Index, error) {
+	packs, err := dir.ObjectsPacks()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(packs) == 0 {
+		return nil, nil
+	}
+
+	_, _, err = dir.ObjectPack(packs[0].Name())
 	if err != nil {
 		if err == dotgit.ErrIdxNotFound {
 			return buildIndexFromPackfile(dir)
@@ -232,16 +190,20 @@ func buildIndex(dir *dotgit.DotGit) (index.Index, error) {
 		return nil, err
 	}
 
-	return buildIndexFromIdxfile(fs, idxfile)
+	return buildIndexFromIdxfile(fs, "")
 }
 
 func buildIndexFromPackfile(dir *dotgit.DotGit) (index.Index, error) {
-	fs, packfile, err := dir.Packfile()
+	packs, err := dir.ObjectsPacks()
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := fs.Open(packfile)
+	if len(packs) == 0 {
+		return nil, nil
+	}
+
+	f, _, err := dir.ObjectPack(packs[0].Name())
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +218,7 @@ func buildIndexFromPackfile(dir *dotgit.DotGit) (index.Index, error) {
 	return index.NewFromPackfile(f)
 }
 
-func buildIndexFromIdxfile(fs fs.FS, path string) (index.Index, error) {
+func buildIndexFromIdxfile(fs fs.Filesystem, path string) (index.Index, error) {
 	f, err := fs.Open(path)
 	if err != nil {
 		return nil, err
@@ -271,6 +233,7 @@ func buildIndexFromIdxfile(fs fs.FS, path string) (index.Index, error) {
 
 	return index.NewFromIdx(f)
 }
+
 func (o *ObjectStorage) Begin() core.TxObjectStorage {
 	return &TxObjectStorage{}
 }

@@ -34,50 +34,49 @@ func NewFromIdx(r io.Reader) (Index, error) {
 }
 
 // NewFrompackfile returns a new index from a packfile reader.
-func NewFromPackfile(rs io.ReadSeeker) (Index, error) {
+func NewFromPackfile(rs io.ReadSeeker) (Index, core.Hash, error) {
 	s := packfile.NewSeekable(rs)
 	return newFromPackfile(rs, s)
 }
 
-func NewFromPackfileInMemory(rs io.Reader) (Index, error) {
+func NewFromPackfileInMemory(rs io.Reader) (Index, core.Hash, error) {
 	s := packfile.NewStream(rs)
 	return newFromPackfile(rs, s)
 }
 
-func newFromPackfile(r io.Reader, s packfile.ReadRecaller) (Index, error) {
+func newFromPackfile(r io.Reader, s packfile.ReadRecaller) (Index, core.Hash, error) {
 	index := make(Index)
 
 	p := packfile.NewParser(s)
 	count, err := p.ReadHeader()
 	if err != nil {
-		return nil, err
+		return nil, core.ZeroHash, err
 	}
 
 	for i := 0; i < int(count); i++ {
 		offset, err := s.Offset()
 		if err != nil {
-			return nil, err
+			return nil, core.ZeroHash, err
 		}
 
 		obj := &core.MemoryObject{}
 		if err := p.FillObject(obj); err != nil {
-			return nil, err
+			return nil, core.ZeroHash, err
 		}
 
 		err = s.Remember(offset, obj)
 		if err != nil {
-			return nil, err
+			return nil, core.ZeroHash, err
 		}
 
 		if err = index.Set(obj.Hash(), offset); err != nil {
-			return nil, err
+			return nil, core.ZeroHash, err
 		}
 	}
 
 	//The trailer records 20-byte SHA-1 checksum of all of the above.
-	p.ReadHash()
-
-	return index, nil
+	hash, err := p.ReadHash()
+	return index, hash, err
 }
 
 // Get returns the offset that an object has the packfile.

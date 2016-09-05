@@ -10,19 +10,15 @@ import (
 
 type Storage struct {
 	dir *dotgit.DotGit
+	fs  fs.Filesystem
 
 	o *ObjectStorage
 	r *ReferenceStorage
 	c *ConfigStorage
 }
 
-func NewStorage(fs fs.FS, path string) (*Storage, error) {
-	dir, err := dotgit.New(fs, path)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Storage{dir: dir}, nil
+func NewStorage(fs fs.Filesystem) (*Storage, error) {
+	return &Storage{dir: dotgit.New(fs), fs: fs}, nil
 }
 
 func (s *Storage) ObjectStorage() core.ObjectStorage {
@@ -31,7 +27,7 @@ func (s *Storage) ObjectStorage() core.ObjectStorage {
 	}
 
 	//TODO: error being ignored
-	i, _ := buildIndex(s.dir)
+	i, _ := buildIndex(s.fs, s.dir)
 	return &ObjectStorage{dir: s.dir, index: i}
 }
 

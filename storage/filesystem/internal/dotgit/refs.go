@@ -29,8 +29,7 @@ const (
 )
 
 func (d *DotGit) addRefsFromPackedRefs(refs *[]*core.Reference) (err error) {
-	path := d.fs.Join(d.path, packedRefsPath)
-	f, err := d.fs.Open(path)
+	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -80,7 +79,7 @@ func (d *DotGit) addRefsFromRefDir(refs *[]*core.Reference) error {
 }
 
 func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) error {
-	files, err := d.fs.ReadDir(d.fs.Join(d.path, relPath))
+	files, err := d.fs.ReadDir(relPath)
 	if err != nil {
 		return err
 	}
@@ -95,7 +94,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) err
 			continue
 		}
 
-		ref, err := d.readReferenceFile(d.path, newRelPath)
+		ref, err := d.readReferenceFile(".", newRelPath)
 		if err != nil {
 			return err
 		}
@@ -109,7 +108,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) err
 }
 
 func (d *DotGit) addRefFromHEAD(refs *[]*core.Reference) error {
-	ref, err := d.readReferenceFile(d.path, "HEAD")
+	ref, err := d.readReferenceFile(".", "HEAD")
 	if err != nil {
 		return err
 	}

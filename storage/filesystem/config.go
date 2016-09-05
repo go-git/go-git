@@ -52,18 +52,15 @@ func (c *ConfigStorage) DeleteRemote(name string) error {
 }
 
 func (c *ConfigStorage) read() (*ConfigFile, error) {
-	fs, path, err := c.dir.Config()
+	f, err := c.dir.Config()
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := fs.Open(path)
-	if err != nil {
-		return nil, err
-	}
+	defer f.Close()
 
-	f := &ConfigFile{}
-	return f, f.Decode(r)
+	config := &ConfigFile{}
+	return config, config.Decode(f)
 }
 
 type ConfigFile struct {

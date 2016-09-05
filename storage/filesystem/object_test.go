@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 
@@ -90,9 +91,9 @@ func (s *FsSuite) TestHashNotFound(c *C) {
 
 func (s *FsSuite) newObjectStorage(c *C, fixtureName string) core.ObjectStorage {
 	path := fixture(fixtureName, c)
-	fs := fs.NewOS()
+	fs := fs.NewOSClient(filepath.Join(path, ".git/"))
 
-	store, err := NewStorage(fs, fs.Join(path, ".git/"))
+	store, err := NewStorage(fs)
 	c.Assert(err, IsNil)
 
 	return store.ObjectStorage()
@@ -108,8 +109,8 @@ func (s *FsSuite) TestGetCompareWithMemoryStorage(c *C) {
 		com := Commentf("at subtest %d, (fixture id = %q, extracted to %q)",
 			i, fixId, path)
 
-		fs := fs.NewOS()
-		gitPath := fs.Join(path, ".git/")
+		gitPath := filepath.Join(path, ".git/")
+		fs := fs.NewOSClient(gitPath)
 
 		memSto, err := memStorageFromGitDir(fs, gitPath)
 		c.Assert(err, IsNil, com)
@@ -123,18 +124,19 @@ func (s *FsSuite) TestGetCompareWithMemoryStorage(c *C) {
 	}
 }
 
-func memStorageFromGitDir(fs fs.FS, path string) (core.ObjectStorage, error) {
-	dir, err := dotgit.New(fs, path)
+func memStorageFromGitDir(fs fs.Filesystem, path string) (core.ObjectStorage, error) {
+	dir := dotgit.New(fs)
+	packs, err := dir.ObjectsPacks()
 	if err != nil {
 		return nil, err
 	}
 
-	fs, packfilePath, err := dir.Packfile()
-	if err != nil {
-		return nil, err
+	if len(packs) == 0 {
+		return nil, nil
 	}
 
-	f, err := fs.Open(packfilePath)
+	fmt.Println(packs[0].Name())
+	f, _, err := dir.ObjectPack(packs[0].Name())
 	if err != nil {
 		return nil, err
 	}
@@ -238,8 +240,8 @@ func (s *FsSuite) TestIterCompareWithMemoryStorage(c *C) {
 		com := Commentf("at subtest %d, (fixture id = %q, extracted to %q)",
 			i, fixId, path)
 
-		fs := fs.NewOS()
-		gitPath := fs.Join(path, ".git/")
+		gitPath := filepath.Join(path, ".git/")
+		fs := fs.NewOSClient(gitPath)
 
 		memSto, err := memStorageFromDirPath(fs, gitPath)
 		c.Assert(err, IsNil, com)
@@ -266,22 +268,24 @@ func (s *FsSuite) TestIterCompareWithMemoryStorage(c *C) {
 	}
 }
 
-func memStorageFromDirPath(fs fs.FS, path string) (core.ObjectStorage, error) {
-	dir, err := dotgit.New(fs, path)
+func memStorageFromDirPath(fs fs.Filesystem, path string) (core.ObjectStorage, error) {
+	dir := dotgit.New(fs)
+	packs, err := dir.ObjectsPacks()
 	if err != nil {
+		fmt.Println("errr", err)
 		return nil, err
 	}
 
-	fs, packfilePath, err := dir.Packfile()
+	if len(packs) == 0 {
+		return nil, nil
+	}
+
+	f, _, err := dir.ObjectPack(packs[0].Name())
 	if err != nil {
 		return nil, err
 	}
 
 	sto := memory.NewStorage()
-	f, err := fs.Open(packfilePath)
-	if err != nil {
-		return nil, err
-	}
 
 	r := packfile.NewStream(f)
 	d := packfile.NewDecoder(r, sto.ObjectStorage())
