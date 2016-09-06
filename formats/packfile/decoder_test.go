@@ -3,16 +3,12 @@ package packfile
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"os"
-	"runtime"
 	"testing"
-	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
-	"github.com/dustin/go-humanize"
 	. "gopkg.in/check.v1"
 )
 
@@ -27,9 +23,8 @@ var packFileWithEmptyObjects = "UEFDSwAAAAIAAAALnw54nKXMQWoDMQxA0b1PoX2hSLIm44FS
 func (s *ReaderSuite) TestReadPackfile(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 	f := bytes.NewReader(data)
-	r := NewStream(f)
 	sto := memory.NewStorage()
-	d := NewDecoder(r, sto.ObjectStorage())
+	d := NewDecoder(sto.ObjectStorage(), NewParser(f), nil)
 
 	err := d.Decode()
 	c.Assert(err, IsNil)
@@ -60,9 +55,8 @@ func (s *ReaderSuite) TestReadPackfileREFDelta(c *C) {
 func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, format Format) {
 	f, err := os.Open(file)
 	c.Assert(err, IsNil)
-	r := NewSeekable(f)
 	sto := memory.NewStorage()
-	d := NewDecoder(r, sto.ObjectStorage())
+	d := NewDecoder(sto.ObjectStorage(), NewParser(f), f)
 
 	err = d.Decode()
 	c.Assert(err, IsNil)
@@ -108,73 +102,4 @@ func AssertObjects(c *C, s *memory.Storage, expects []string) {
 		c.Assert(err, IsNil)
 		c.Assert(obt.Hash().String(), Equals, exp)
 	}
-}
-
-func (s *ReaderSuite) BenchmarkFixtureRef(c *C) {
-	for i := 0; i < c.N; i++ {
-		readFromFile(c, "fixtures/git-fixture.ref-delta", REFDeltaFormat)
-	}
-}
-
-func (s *ReaderSuite) BenchmarkFixtureOfs(c *C) {
-	for i := 0; i < c.N; i++ {
-		readFromFile(c, "fixtures/git-fixture.ofs-delta", OFSDeltaFormat)
-	}
-}
-
-func (s *ReaderSuite) BenchmarkCandyJS(c *C) {
-	for i := 0; i < c.N; i++ {
-		readFromFile(c, "/tmp/go-candyjs", REFDeltaFormat)
-	}
-}
-
-func (s *ReaderSuite) BenchmarkSymfony(c *C) {
-	for i := 0; i < c.N; i++ {
-		readFromFile(c, "/tmp/symonfy", REFDeltaFormat)
-	}
-}
-
-func (s *ReaderSuite) BenchmarkGit(c *C) {
-	for i := 0; i < c.N; i++ {
-		readFromFile(c, "/tmp/git", REFDeltaFormat)
-	}
-}
-
-func (s *ReaderSuite) _testMemory(c *C, format Format) {
-	var b, a runtime.MemStats
-
-	start := time.Now()
-	runtime.ReadMemStats(&b)
-	p := readFromFile(c, "/tmp/symfony.ofs-delta", format)
-	runtime.ReadMemStats(&a)
-
-	fmt.Println("OFS--->")
-	fmt.Println("Alloc", a.Alloc-b.Alloc, humanize.Bytes(a.Alloc-b.Alloc))
-	fmt.Println("TotalAlloc", a.TotalAlloc-b.TotalAlloc, humanize.Bytes(a.TotalAlloc-b.TotalAlloc))
-	fmt.Println("HeapAlloc", a.HeapAlloc-b.HeapAlloc, humanize.Bytes(a.HeapAlloc-b.HeapAlloc))
-	fmt.Println("HeapSys", a.HeapSys, humanize.Bytes(a.HeapSys-b.HeapSys))
-
-	fmt.Println("objects", len(p.Objects))
-	fmt.Println("time", time.Since(start))
-}
-
-func (s *ReaderSuite) _TestMemoryOFS(c *C) {
-	s._testMemory(c, OFSDeltaFormat)
-}
-
-func (s *ReaderSuite) _TestMemoryREF(c *C) {
-	s._testMemory(c, REFDeltaFormat)
-}
-
-func readFromFile(c *C, file string, format Format) *memory.ObjectStorage {
-	f, err := os.Open(file)
-	c.Assert(err, IsNil)
-	r := NewSeekable(f)
-	sto := memory.NewStorage()
-	d := NewDecoder(r, sto.ObjectStorage())
-
-	err = d.Decode()
-	c.Assert(err, IsNil)
-
-	return sto.ObjectStorage().(*memory.ObjectStorage)
 }

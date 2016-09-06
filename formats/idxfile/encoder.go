@@ -81,6 +81,7 @@ func (e *Encoder) encodeEntryField(idx *Idxfile, isHash bool) (int, error) {
 		} else {
 			data = ent.CRC32[:]
 		}
+
 		i, err := e.Write(data)
 		sz += i
 

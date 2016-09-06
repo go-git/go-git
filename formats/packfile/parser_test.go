@@ -2,14 +2,74 @@ package packfile
 
 import (
 	"bytes"
-	"io"
-	"io/ioutil"
-	"os"
+	"encoding/base64"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
+type ScannerSuite struct{}
+
+var _ = Suite(&ScannerSuite{})
+
+func (s *ScannerSuite) TestHeader(c *C) {
+	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
+
+	p := NewParser(bytes.NewReader(data))
+	version, objects, err := p.Header()
+	c.Assert(err, IsNil)
+	c.Assert(version, Equals, VersionSupported)
+	c.Assert(objects, Equals, uint32(11))
+}
+
+func (s *ScannerSuite) TestNextObjectHeader(c *C) {
+	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
+
+	p := NewParser(bytes.NewReader(data))
+	_, objects, err := p.Header()
+	c.Assert(err, IsNil)
+
+	for i := 0; i < int(objects); i++ {
+		h, err := p.NextObjectHeader()
+		c.Assert(err, IsNil)
+		c.Assert(*h, DeepEquals, expectedHeaders[i])
+
+		buf := bytes.NewBuffer(nil)
+		n, err := p.NextObject(buf)
+		c.Assert(err, IsNil)
+		c.Assert(n, Equals, h.Length)
+	}
+}
+
+func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {
+	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
+
+	p := NewParser(bytes.NewReader(data))
+	_, objects, err := p.Header()
+	c.Assert(err, IsNil)
+
+	for i := 0; i < int(objects); i++ {
+		h, err := p.NextObjectHeader()
+		c.Assert(err, IsNil)
+		c.Assert(*h, DeepEquals, expectedHeaders[i])
+	}
+}
+
+var expectedHeaders = []ObjectHeader{
+	{Type: core.CommitObject, Offset: 12, Length: 239},
+	{Type: core.CommitObject, Offset: 177, Length: 244},
+	{Type: core.CommitObject, Offset: 345, Length: 239},
+	{Type: core.CommitObject, Offset: 507, Length: 191},
+	{Type: core.TreeObject, Offset: 639, Length: 91},
+	{Type: core.BlobObject, Offset: 714, Length: 0},
+	{Type: core.BlobObject, Offset: 723, Length: 14},
+	{Type: core.OFSDeltaObject, Offset: 740, Length: 4, OffsetReference: 639},
+	{Type: core.TreeObject, Offset: 754, Length: 58},
+	{Type: core.BlobObject, Offset: 820, Length: 7},
+	{Type: core.TreeObject, Offset: 833, Length: 29},
+}
+
+/*
 const (
 	sigOffset   = 0
 	verOffset   = 4
@@ -426,3 +486,4 @@ func (s *ParserSuite) TestReadHeader(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(count, Equals, uint32(0x50))
 }
+*/

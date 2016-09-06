@@ -13,69 +13,39 @@ import (
 // Objects are identified by their hash.
 type Index map[core.Hash]int64
 
-// NewFromIdx returns a new index from an idx file reader.
-func NewFromIdx(r io.Reader) (Index, error) {
+// Decode decodes a idxfile into the Index
+func (i *Index) Decode(r io.Reader) error {
 	d := idxfile.NewDecoder(r)
 	idx := &idxfile.Idxfile{}
-	err := d.Decode(idx)
-	if err != nil {
-		return nil, err
+	if err := d.Decode(idx); err != nil {
+		return err
 	}
 
-	ind := make(Index)
 	for _, e := range idx.Entries {
-		if _, ok := ind[e.Hash]; ok {
-			return nil, fmt.Errorf("duplicated hash: %s", e.Hash)
-		}
-		ind[e.Hash] = int64(e.Offset)
+		(*i)[e.Hash] = int64(e.Offset)
 	}
 
-	return ind, nil
+	return nil
 }
 
 // NewFrompackfile returns a new index from a packfile reader.
-func NewFromPackfile(rs io.ReadSeeker) (Index, core.Hash, error) {
-	s := packfile.NewSeekable(rs)
-	return newFromPackfile(rs, s)
-}
-
-func NewFromPackfileInMemory(rs io.Reader) (Index, core.Hash, error) {
-	s := packfile.NewStream(rs)
-	return newFromPackfile(rs, s)
-}
-
-func newFromPackfile(r io.Reader, s packfile.ReadRecaller) (Index, core.Hash, error) {
+func NewFromPackfile(r io.Reader) (Index, core.Hash, error) {
 	index := make(Index)
 
-	p := packfile.NewParser(s)
-	count, err := p.ReadHeader()
+	p := packfile.NewParser(r)
+	_, count, err := p.Header()
 	if err != nil {
 		return nil, core.ZeroHash, err
 	}
 
 	for i := 0; i < int(count); i++ {
-		offset, err := s.Offset()
-		if err != nil {
-			return nil, core.ZeroHash, err
-		}
-
-		obj := &core.MemoryObject{}
-		if err := p.FillObject(obj); err != nil {
-			return nil, core.ZeroHash, err
-		}
-
-		err = s.Remember(offset, obj)
-		if err != nil {
-			return nil, core.ZeroHash, err
-		}
-
-		if err = index.Set(obj.Hash(), offset); err != nil {
+		h, err := p.NextObjectHeader()
+		if err = index.Set(core.ZeroHash, h.Offset); err != nil {
 			return nil, core.ZeroHash, err
 		}
 	}
 
-	//The trailer records 20-byte SHA-1 checksum of all of the above.
-	hash, err := p.ReadHash()
+	hash, err := p.Checksum()
 	return index, hash, err
 }
 

@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -34,8 +33,7 @@ func (s *ObjectStorage) NewObject() core.Object {
 
 // Writer method not supported on Memory storage
 func (o *ObjectStorage) Writer() (io.WriteCloser, error) {
-	file := bytes.NewBuffer(nil)
-	return newPackWrite(o, file), nil
+	return o.dir.NewObjectPack()
 }
 
 // Set adds a new object to the storage. As this functionality is not

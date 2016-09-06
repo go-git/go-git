@@ -230,7 +230,7 @@ func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
 
 func (w *PackWriter) buildIndex() {
 	defer w.pipeReader.Close()
-	index, hash, err := index.NewFromPackfileInMemory(w.pipeReader)
+	index, hash, err := index.NewFromPackfile(w.pipeReader)
 	w.index = index
 	w.hash = hash
 
