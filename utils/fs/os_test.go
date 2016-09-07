@@ -16,16 +16,16 @@ var _ = Suite(&WritersSuite{})
 
 func (s *WritersSuite) TestOSClient_Create(c *C) {
 	path := getTempDir()
-	client := NewOSClient(path)
+	client := NewOS(path)
 
 	f, err := client.Create("foo")
 	c.Assert(err, IsNil)
-	c.Assert(f.(*OSFile).file.Name(), Equals, f.GetFilename())
+	c.Assert(f.(*OSFile).file.Name(), Equals, f.Filename())
 }
 
 func (s *WritersSuite) TestOSClient_Write(c *C) {
 	path := getTempDir()
-	client := NewOSClient(path)
+	client := NewOS(path)
 
 	f, err := client.Create("foo")
 	c.Assert(err, IsNil)
@@ -39,14 +39,14 @@ func (s *WritersSuite) TestOSClient_Write(c *C) {
 
 func (s *WritersSuite) TestOSClient_Close(c *C) {
 	path := getTempDir()
-	client := NewOSClient(path)
+	client := NewOS(path)
 
 	f, err := client.Create("foo")
 	c.Assert(err, IsNil)
 	f.Write([]byte("foo"))
 	c.Assert(f.Close(), IsNil)
 
-	wrote, _ := ioutil.ReadFile(f.GetFilename())
+	wrote, _ := ioutil.ReadFile(f.Filename())
 	c.Assert(wrote, DeepEquals, []byte("foo"))
 }
 

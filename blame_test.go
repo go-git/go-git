@@ -1,8 +1,6 @@
 package git
 
 import (
-	"bytes"
-	"io/ioutil"
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
@@ -26,15 +24,11 @@ func (s *BlameCommon) SetUpSuite(c *C) {
 		f, err := os.Open(fixRepo.packfile)
 		c.Assert(err, IsNil)
 
-		data, err := ioutil.ReadAll(f)
-		c.Assert(err, IsNil)
-
-		stream := packfile.NewStream(bytes.NewReader(data))
+		stream := packfile.NewScanner(f)
 
 		d := packfile.NewDecoder(stream, r.s.ObjectStorage())
-		err = d.Decode()
+		_, err = d.Decode()
 		c.Assert(err, IsNil)
-
 		c.Assert(f.Close(), IsNil)
 
 		s.repos[fixRepo.url] = r

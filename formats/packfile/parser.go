@@ -19,6 +19,8 @@ var (
 	// ErrUnsupportedVersion is returned by ReadHeader when the packfile version is
 	// different than VersionSupported.
 	ErrUnsupportedVersion = NewError("unsupported packfile version")
+	// ErrSeekNotSupported returned if seek is not support
+	ErrSeekNotSupported = NewError("not seek support")
 )
 
 const (
@@ -26,6 +28,8 @@ const (
 	VersionSupported uint32 = 2
 )
 
+// ObjectHeader contains the information related to the object, this information
+// is collected from the previous bytes to the content of the object.
 type ObjectHeader struct {
 	Type            core.ObjectType
 	Offset          int64
@@ -36,8 +40,8 @@ type ObjectHeader struct {
 
 // A Parser is a collection of functions to read and process data form a packfile.
 // Values from this type are not zero-value safe. See the NewParser function bellow.
-type Parser struct {
-	r *trackableReader
+type Scanner struct {
+	r *byteReadSeeker
 
 	// pendingObject is used to detect if an object has been read, or still
 	// is waiting to be read
@@ -45,15 +49,21 @@ type Parser struct {
 }
 
 // NewParser returns a new Parser that reads from the packfile represented by r.
-func NewParser(r io.Reader) *Parser {
-	return &Parser{r: &trackableReader{Reader: r}}
+func NewScannerFromReader(r io.Reader) *Scanner {
+	s := &trackableReader{Reader: r}
+	return NewScanner(s)
+}
+
+func NewScanner(r io.ReadSeeker) *Scanner {
+	s := &byteReadSeeker{r}
+	return &Scanner{r: s}
 }
 
 // Header reads the whole packfile header (signature, version and object count).
 // It returns the version and the object count and performs checks on the
 // validity of the signature and the version fields.
-func (p *Parser) Header() (version, objects uint32, err error) {
-	sig, err := p.readSignature()
+func (s *Scanner) Header() (version, objects uint32, err error) {
+	sig, err := s.readSignature()
 	if err != nil {
 		if err == io.EOF {
 			err = ErrEmptyPackfile
@@ -62,29 +72,29 @@ func (p *Parser) Header() (version, objects uint32, err error) {
 		return
 	}
 
-	if !p.isValidSignature(sig) {
+	if !s.isValidSignature(sig) {
 		err = ErrBadSignature
 		return
 	}
 
-	version, err = p.readVersion()
+	version, err = s.readVersion()
 	if err != nil {
 		return
 	}
 
-	if !p.isSupportedVersion(version) {
+	if !s.isSupportedVersion(version) {
 		err = ErrUnsupportedVersion.AddDetails("%d", version)
 		return
 	}
 
-	objects, err = p.readCount()
+	objects, err = s.readCount()
 	return
 }
 
 // readSignature reads an returns the signature field in the packfile.
-func (p *Parser) readSignature() ([]byte, error) {
+func (s *Scanner) readSignature() ([]byte, error) {
 	var sig = make([]byte, 4)
-	if _, err := io.ReadFull(p.r, sig); err != nil {
+	if _, err := io.ReadFull(s.r, sig); err != nil {
 		return []byte{}, err
 	}
 
@@ -92,58 +102,59 @@ func (p *Parser) readSignature() ([]byte, error) {
 }
 
 // isValidSignature returns if sig is a valid packfile signature.
-func (p *Parser) isValidSignature(sig []byte) bool {
+func (s *Scanner) isValidSignature(sig []byte) bool {
 	return bytes.Equal(sig, []byte{'P', 'A', 'C', 'K'})
 }
 
 // readVersion reads and returns the version field of a packfile.
-func (p *Parser) readVersion() (uint32, error) {
-	return p.readInt32()
+func (s *Scanner) readVersion() (uint32, error) {
+	return s.readInt32()
 }
 
 // isSupportedVersion returns whether version v is supported by the parser.
 // The current supported version is VersionSupported, defined above.
-func (p *Parser) isSupportedVersion(v uint32) bool {
+func (s *Scanner) isSupportedVersion(v uint32) bool {
 	return v == VersionSupported
 }
 
 // readCount reads and returns the count of objects field of a packfile.
-func (p *Parser) readCount() (uint32, error) {
-	return p.readInt32()
+func (s *Scanner) readCount() (uint32, error) {
+	return s.readInt32()
 }
 
 // ReadInt32 reads 4 bytes and returns them as a Big Endian int32.
-func (p *Parser) readInt32() (uint32, error) {
+func (s *Scanner) readInt32() (uint32, error) {
 	var v uint32
-	if err := binary.Read(p.r, binary.BigEndian, &v); err != nil {
+	if err := binary.Read(s.r, binary.BigEndian, &v); err != nil {
 		return 0, err
 	}
 
 	return v, nil
 }
 
-func (p *Parser) NextObjectHeader() (*ObjectHeader, error) {
-	if err := p.discardObjectIfNeeded(); err != nil {
+// NextObjectHeader returns the ObjectHeader for the next object in the reader
+func (s *Scanner) NextObjectHeader() (*ObjectHeader, error) {
+	if err := s.discardObjectIfNeeded(); err != nil {
 		return nil, err
 	}
 
 	h := &ObjectHeader{}
-	p.pendingObject = h
+	s.pendingObject = h
 
 	var err error
-	h.Offset, err = p.r.Offset()
+	h.Offset, err = s.r.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, err
 	}
 
-	h.Type, h.Length, err = p.readObjectTypeAndLength()
+	h.Type, h.Length, err = s.readObjectTypeAndLength()
 	if err != nil {
 		return nil, err
 	}
 
 	switch h.Type {
 	case core.OFSDeltaObject:
-		no, err := p.readNegativeOffset()
+		no, err := s.readNegativeOffset()
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +162,7 @@ func (p *Parser) NextObjectHeader() (*ObjectHeader, error) {
 		h.OffsetReference = h.Offset + no
 	case core.REFDeltaObject:
 		var err error
-		h.Reference, err = p.readHash()
+		h.Reference, err = s.readHash()
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +171,7 @@ func (p *Parser) NextObjectHeader() (*ObjectHeader, error) {
 	return h, nil
 }
 
-func (s *Parser) discardObjectIfNeeded() error {
+func (s *Scanner) discardObjectIfNeeded() error {
 	if s.pendingObject == nil {
 		return nil
 	}
@@ -183,21 +194,21 @@ func (s *Parser) discardObjectIfNeeded() error {
 
 // ReadObjectTypeAndLength reads and returns the object type and the
 // length field from an object entry in a packfile.
-func (p Parser) readObjectTypeAndLength() (core.ObjectType, int64, error) {
-	t, c, err := p.readType()
+func (s *Scanner) readObjectTypeAndLength() (core.ObjectType, int64, error) {
+	t, c, err := s.readType()
 	if err != nil {
 		return t, 0, err
 	}
 
-	l, err := p.readLength(c)
+	l, err := s.readLength(c)
 
 	return t, l, err
 }
 
-func (p Parser) readType() (core.ObjectType, byte, error) {
+func (s *Scanner) readType() (core.ObjectType, byte, error) {
 	var c byte
 	var err error
-	if c, err = p.r.ReadByte(); err != nil {
+	if c, err = s.r.ReadByte(); err != nil {
 		return core.ObjectType(0), 0, err
 	}
 
@@ -208,14 +219,14 @@ func (p Parser) readType() (core.ObjectType, byte, error) {
 
 // the length is codified in the last 4 bits of the first byte and in
 // the last 7 bits of subsequent bytes.  Last byte has a 0 MSB.
-func (p *Parser) readLength(first byte) (int64, error) {
+func (s *Scanner) readLength(first byte) (int64, error) {
 	length := int64(first & maskFirstLength)
 
 	c := first
 	shift := firstLengthBits
 	var err error
 	for moreBytesInLength(c) {
-		if c, err = p.r.ReadByte(); err != nil {
+		if c, err = s.r.ReadByte(); err != nil {
 			return 0, err
 		}
 
@@ -226,15 +237,15 @@ func (p *Parser) readLength(first byte) (int64, error) {
 	return length, nil
 }
 
-func (p *Parser) NextObject(w io.Writer) (written int64, err error) {
-	p.pendingObject = nil
-	return p.copyObject(w)
+func (s *Scanner) NextObject(w io.Writer) (written int64, err error) {
+	s.pendingObject = nil
+	return s.copyObject(w)
 }
 
 // ReadRegularObject reads and write a non-deltified object
 // from it zlib stream in an object entry in the packfile.
-func (p *Parser) copyObject(w io.Writer) (int64, error) {
-	zr, err := zlib.NewReader(p.r)
+func (s *Scanner) copyObject(w io.Writer) (int64, error) {
+	zr, err := zlib.NewReader(s.r)
 	if err != nil {
 		if err != zlib.ErrHeader {
 			return -1, fmt.Errorf("zlib reading error: %s", err)
@@ -251,14 +262,35 @@ func (p *Parser) copyObject(w io.Writer) (int64, error) {
 	return io.Copy(w, zr)
 }
 
-func (p *Parser) Checksum() (core.Hash, error) {
-	return p.readHash()
+func (s *Scanner) IsSeekable() bool {
+	_, ok := s.r.ReadSeeker.(*trackableReader)
+	return !ok
+}
+
+// Seek sets a new offset from start, returns the old position before the change
+func (s *Scanner) Seek(offset int64) (previous int64, err error) {
+	previous, err = s.r.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return -1, err
+	}
+
+	_, err = s.r.Seek(offset, io.SeekStart)
+	return previous, err
+}
+
+func (s *Scanner) Checksum() (core.Hash, error) {
+	err := s.discardObjectIfNeeded()
+	if err != nil {
+		return core.ZeroHash, err
+	}
+
+	return s.readHash()
 }
 
 // ReadHash reads a hash.
-func (p *Parser) readHash() (core.Hash, error) {
+func (s *Scanner) readHash() (core.Hash, error) {
 	var h core.Hash
-	if _, err := io.ReadFull(p.r, h[:]); err != nil {
+	if _, err := io.ReadFull(s.r, h[:]); err != nil {
 		return core.ZeroHash, err
 	}
 
@@ -292,24 +324,29 @@ func (p *Parser) readHash() (core.Hash, error) {
 //     while (ofs >>= 7)
 //         dheader[--pos] = 128 | (--ofs & 127);
 //
-func (p *Parser) readNegativeOffset() (int64, error) {
+func (s *Scanner) readNegativeOffset() (int64, error) {
 	var c byte
 	var err error
 
-	if c, err = p.r.ReadByte(); err != nil {
+	if c, err = s.r.ReadByte(); err != nil {
 		return 0, err
 	}
 
 	var offset = int64(c & maskLength)
 	for moreBytesInLength(c) {
 		offset++
-		if c, err = p.r.ReadByte(); err != nil {
+		if c, err = s.r.ReadByte(); err != nil {
 			return 0, err
 		}
 		offset = (offset << lengthBits) + int64(c&maskLength)
 	}
 
 	return -offset, nil
+}
+
+func (s *Scanner) Close() error {
+	_, err := io.Copy(ioutil.Discard, s.r)
+	return err
 }
 
 func moreBytesInLength(c byte) bool {
@@ -342,16 +379,23 @@ func (r *trackableReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-// ReadByte reads a byte.
-func (r *trackableReader) ReadByte() (byte, error) {
-	var p [1]byte
-	_, err := r.Reader.Read(p[:])
-	r.count++
+// Seek only supports io.SeekCurrent, any other operation fails
+func (r *trackableReader) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekCurrent {
+		return -1, ErrSeekNotSupported
+	}
 
-	return p[0], err
+	return r.count, nil
 }
 
-// Offset returns the number of bytes read.
-func (r *trackableReader) Offset() (int64, error) {
-	return r.count, nil
+type byteReadSeeker struct {
+	io.ReadSeeker
+}
+
+// ReadByte reads a byte.
+func (r *byteReadSeeker) ReadByte() (byte, error) {
+	var p [1]byte
+	_, err := r.ReadSeeker.Read(p[:])
+
+	return p[0], err
 }

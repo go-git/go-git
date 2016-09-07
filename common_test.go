@@ -1,10 +1,8 @@
 package git
 
 import (
-	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -23,10 +21,17 @@ type BaseSuite struct {
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
+	s.installMockProtocol(c)
+	s.buildRepository(c)
+}
+
+func (s *BaseSuite) installMockProtocol(c *C) {
 	clients.InstallProtocol("mock", func(end common.Endpoint) common.GitUploadPackService {
 		return &MockGitUploadPackService{endpoint: end}
 	})
+}
 
+func (s *BaseSuite) buildRepository(c *C) {
 	s.Repository = NewMemoryRepository()
 	err := s.Repository.Clone(&CloneOptions{URL: RepositoryFixture})
 	c.Assert(err, IsNil)
@@ -117,14 +122,9 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 			f, err := os.Open(fixture.packfile)
 			c.Assert(err, IsNil, comment)
 
-			// increase memory consumption to speed up tests
-			data, err := ioutil.ReadAll(f)
-			c.Assert(err, IsNil)
-			memStream := bytes.NewReader(data)
-			r := packfile.NewStream(memStream)
-
+			r := packfile.NewScanner(f)
 			d := packfile.NewDecoder(r, repos[fixture.url].s.ObjectStorage())
-			err = d.Decode()
+			_, err = d.Decode()
 			c.Assert(err, IsNil, comment)
 
 			c.Assert(f.Close(), IsNil, comment)

@@ -54,7 +54,7 @@ func (s *SuiteDotGit) SetUpSuite(c *C) {
 		path, err := tgz.Extract(init.tgz)
 		c.Assert(err, IsNil, com)
 
-		s.fixtures[init.name] = fs.NewOSClient(filepath.Join(path, ".git"))
+		s.fixtures[init.name] = fs.NewOS(filepath.Join(path, ".git"))
 	}
 }
 
@@ -233,7 +233,7 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 		log.Fatal(err)
 	}
 
-	dot := New(fs.NewOSClient(dir))
+	dot := New(fs.NewOS(dir))
 
 	r, err := os.Open("../../../../formats/packfile/fixtures/git-fixture.ofs-delta")
 	c.Assert(err, IsNil)

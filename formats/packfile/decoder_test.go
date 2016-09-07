@@ -24,9 +24,9 @@ func (s *ReaderSuite) TestReadPackfile(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 	f := bytes.NewReader(data)
 	sto := memory.NewStorage()
-	d := NewDecoder(sto.ObjectStorage(), NewParser(f), nil)
+	d := NewDecoder(NewScanner(f), sto.ObjectStorage())
 
-	err := d.Decode()
+	_, err := d.Decode()
 	c.Assert(err, IsNil)
 
 	AssertObjects(c, sto, []string{
@@ -44,21 +44,39 @@ func (s *ReaderSuite) TestReadPackfile(c *C) {
 	})
 }
 
-func (s *ReaderSuite) TestReadPackfileOFSDelta(c *C) {
-	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ofs-delta", OFSDeltaFormat)
-
-}
-func (s *ReaderSuite) TestReadPackfileREFDelta(c *C) {
-	s.testReadPackfileGitFixture(c, "fixtures/git-fixture.ref-delta", REFDeltaFormat)
+func (s *ReaderSuite) TestDecodeOFSDelta(c *C) {
+	s.testDecode(c, "fixtures/git-fixture.ofs-delta", true)
 }
 
-func (s *ReaderSuite) testReadPackfileGitFixture(c *C, file string, format Format) {
+func (s *ReaderSuite) TestDecodeOFSDeltaNoSeekable(c *C) {
+	s.testDecode(c, "fixtures/git-fixture.ofs-delta", false)
+}
+
+func (s *ReaderSuite) TestDecodeREFDelta(c *C) {
+	s.testDecode(c, "fixtures/git-fixture.ref-delta", true)
+}
+
+func (s *ReaderSuite) TestDecodeREFDeltaNoSeekable(c *C) {
+	s.testDecode(c, "fixtures/git-fixture.ref-delta", false)
+}
+
+func (s *ReaderSuite) testDecode(c *C, file string, seekable bool) {
 	f, err := os.Open(file)
 	c.Assert(err, IsNil)
-	sto := memory.NewStorage()
-	d := NewDecoder(sto.ObjectStorage(), NewParser(f), f)
 
-	err = d.Decode()
+	scanner := NewScanner(f)
+	if !seekable {
+		scanner = NewScannerFromReader(f)
+	}
+
+	s.doTestDecodeWithScanner(c, scanner)
+}
+
+func (s *ReaderSuite) doTestDecodeWithScanner(c *C, scanner *Scanner) {
+	sto := memory.NewStorage()
+	d := NewDecoder(scanner, sto.ObjectStorage())
+
+	_, err := d.Decode()
 	c.Assert(err, IsNil)
 
 	AssertObjects(c, sto, []string{

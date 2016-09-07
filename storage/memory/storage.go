@@ -130,6 +130,7 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	case core.TagObject:
 		o.Tags[h] = o.Objects[h]
 	default:
+		fmt.Println(obj.Type())
 		return h, ErrUnsupportedObjectType
 	}
 

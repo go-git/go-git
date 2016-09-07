@@ -1,6 +1,7 @@
 package index
 
 import (
+	"io/ioutil"
 	"os"
 	"testing"
 
@@ -15,6 +16,22 @@ func Test(t *testing.T) { TestingT(t) }
 type SuiteIndex struct{}
 
 var _ = Suite(&SuiteIndex{})
+
+func (s *SuiteIndex) TestNewFromPackfile(c *C) {
+	path := "../../../../formats/packfile/fixtures/spinnaker-spinnaker.pack"
+
+	pack, err := os.Open(path)
+	c.Assert(err, IsNil)
+
+	_, checksum, err := NewFromPackfile(pack)
+	c.Assert(err, IsNil)
+
+	leftover, err := ioutil.ReadAll(pack)
+	c.Assert(err, IsNil)
+	c.Assert(leftover, HasLen, 0)
+
+	c.Assert(checksum.String(), Equals, "da4c488bbbdc4e599c7c97d01753bb3144fccd9c")
+}
 
 func (s *SuiteIndex) TestNewFromIdx(c *C) {
 	for i, test := range [...]struct {
@@ -33,7 +50,9 @@ func (s *SuiteIndex) TestNewFromIdx(c *C) {
 		idx, err := os.Open(test.idxPath)
 		c.Assert(err, IsNil, com)
 
-		index, err := NewFromIdx(idx)
+		index := New()
+		err = index.Decode(idx)
+
 		if test.errRegexp != "" {
 			c.Assert(err, ErrorMatches, test.errRegexp, com)
 		} else {
@@ -78,7 +97,9 @@ func (s *SuiteIndex) TestGet(c *C) {
 		idx, err := os.Open(test.idx)
 		c.Assert(err, IsNil, com)
 
-		index, err := NewFromIdx(idx)
+		index := New()
+		err = index.Decode(idx)
+
 		c.Assert(err, IsNil, com)
 
 		obt, err := index.Get(test.hash)
@@ -106,7 +127,9 @@ func (s *SuiteIndex) BenchmarkFromIdx(c *C) {
 
 	for i := 0; i < c.N; i++ {
 		c.StartTimer()
-		index, _ := NewFromIdx(idx)
+		index := New()
+		index.Decode(idx)
+
 		c.StopTimer()
 		indexes = append(indexes, index)
 	}

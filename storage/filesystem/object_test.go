@@ -91,7 +91,7 @@ func (s *FsSuite) TestHashNotFound(c *C) {
 
 func (s *FsSuite) newObjectStorage(c *C, fixtureName string) core.ObjectStorage {
 	path := fixture(fixtureName, c)
-	fs := fs.NewOSClient(filepath.Join(path, ".git/"))
+	fs := fs.NewOS(filepath.Join(path, ".git/"))
 
 	store, err := NewStorage(fs)
 	c.Assert(err, IsNil)
@@ -110,7 +110,7 @@ func (s *FsSuite) TestGetCompareWithMemoryStorage(c *C) {
 			i, fixId, path)
 
 		gitPath := filepath.Join(path, ".git/")
-		fs := fs.NewOSClient(gitPath)
+		fs := fs.NewOS(gitPath)
 
 		memSto, err := memStorageFromGitDir(fs, gitPath)
 		c.Assert(err, IsNil, com)
@@ -142,10 +142,10 @@ func memStorageFromGitDir(fs fs.Filesystem, path string) (core.ObjectStorage, er
 	}
 
 	sto := memory.NewStorage()
-	r := packfile.NewStream(f)
+	r := packfile.NewScanner(f)
 	d := packfile.NewDecoder(r, sto.ObjectStorage())
 
-	err = d.Decode()
+	_, err = d.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func (s *FsSuite) TestIterCompareWithMemoryStorage(c *C) {
 			i, fixId, path)
 
 		gitPath := filepath.Join(path, ".git/")
-		fs := fs.NewOSClient(gitPath)
+		fs := fs.NewOS(gitPath)
 
 		memSto, err := memStorageFromDirPath(fs, gitPath)
 		c.Assert(err, IsNil, com)
@@ -287,9 +287,9 @@ func memStorageFromDirPath(fs fs.Filesystem, path string) (core.ObjectStorage, e
 
 	sto := memory.NewStorage()
 
-	r := packfile.NewStream(f)
+	r := packfile.NewScanner(f)
 	d := packfile.NewDecoder(r, sto.ObjectStorage())
-	err = d.Decode()
+	_, err = d.Decode()
 	if err != nil {
 		return nil, err
 	}

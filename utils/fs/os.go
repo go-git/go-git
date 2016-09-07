@@ -7,26 +7,21 @@ import (
 	"path/filepath"
 )
 
-// NewOS returns a new OS.
-func NewOS() Filesystem {
-	return &OSClient{}
-}
-
 // OSClient a filesystem based on OSClient
-type OSClient struct {
+type OS struct {
 	RootDir string
 }
 
 // NewOSClient returns a new OSClient
-func NewOSClient(rootDir string) *OSClient {
-	return &OSClient{
+func NewOS(rootDir string) *OS {
+	return &OS{
 		RootDir: rootDir,
 	}
 }
 
 // Create creates a new GlusterFSFile
-func (c *OSClient) Create(filename string) (File, error) {
-	fullpath := path.Join(c.RootDir, filename)
+func (fs *OS) Create(filename string) (File, error) {
+	fullpath := path.Join(fs.RootDir, filename)
 
 	dir := filepath.Dir(fullpath)
 	if dir != "." {
@@ -48,8 +43,8 @@ func (c *OSClient) Create(filename string) (File, error) {
 
 // ReadDir returns the filesystem info for all the archives under the specified
 // path.
-func (c *OSClient) ReadDir(path string) ([]FileInfo, error) {
-	fullpath := c.Join(c.RootDir, path)
+func (fs *OS) ReadDir(path string) ([]FileInfo, error) {
+	fullpath := fs.Join(fs.RootDir, path)
 
 	l, err := ioutil.ReadDir(fullpath)
 	if err != nil {
@@ -64,20 +59,20 @@ func (c *OSClient) ReadDir(path string) ([]FileInfo, error) {
 	return s, nil
 }
 
-func (c *OSClient) Rename(from, to string) error {
+func (fs *OS) Rename(from, to string) error {
 	if !filepath.IsAbs(from) {
-		from = c.Join(c.RootDir, from)
+		from = fs.Join(fs.RootDir, from)
 	}
 
 	if !filepath.IsAbs(to) {
-		to = c.Join(c.RootDir, to)
+		to = fs.Join(fs.RootDir, to)
 	}
 
 	return os.Rename(from, to)
 }
 
-func (c *OSClient) Open(filename string) (File, error) {
-	fullpath := c.Join(c.RootDir, filename)
+func (fs *OS) Open(filename string) (File, error) {
+	fullpath := fs.Join(fs.RootDir, filename)
 
 	f, err := os.Open(fullpath)
 	if err != nil {
@@ -90,22 +85,22 @@ func (c *OSClient) Open(filename string) (File, error) {
 	}, nil
 }
 
-func (c *OSClient) Stat(filename string) (FileInfo, error) {
-	fullpath := c.Join(c.RootDir, filename)
+func (fs *OS) Stat(filename string) (FileInfo, error) {
+	fullpath := fs.Join(fs.RootDir, filename)
 	return os.Stat(fullpath)
 }
 
 // Join joins the specified elements using the filesystem separator.
-func (c *OSClient) Join(elem ...string) string {
+func (fs *OS) Join(elem ...string) string {
 	return filepath.Join(elem...)
 }
 
-func (c *OSClient) Dir(path string) Filesystem {
-	return NewOSClient(c.Join(c.RootDir, path))
+func (fs *OS) Dir(path string) Filesystem {
+	return NewOS(fs.Join(fs.RootDir, path))
 }
 
-func (c *OSClient) Base() string {
-	return c.RootDir
+func (fs *OS) Base() string {
+	return fs.RootDir
 }
 
 type OSFile struct {

@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"fmt"
 	"io"
@@ -108,3 +109,4 @@ func (fs *CustomFS) ReadDir(path string) ([]os.FileInfo, error) {
 func (fs *CustomFS) Join(elem ...string) string {
 	return strings.Join(elem, separator)
 }
+*/

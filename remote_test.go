@@ -14,6 +14,10 @@ type RemoteSuite struct {
 
 var _ = Suite(&RemoteSuite{})
 
+func (s *RemoteSuite) SetUpSuite(c *C) {
+	s.installMockProtocol(c)
+}
+
 func (s *RemoteSuite) TestConnect(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 
@@ -34,16 +38,6 @@ func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
 	err := r.Connect()
 	c.Assert(err, NotNil)
 }
-
-/*
-func (s *RemoteSuite) TestNewAuthenticatedRemote(c *C) {
-	a := &http.BasicAuth{}
-	r, err := NewAuthenticatedRemote("foo", RepositoryFixture, a)
-	c.Assert(err, IsNil)
-	c.Assert(r.Name, Equals, "foo")
-	c.Assert(r.Endpoint.String(), Equals, RepositoryFixture)
-	c.Assert(r.Auth, Equals, a)
-}*/
 
 func (s *RemoteSuite) TestInfo(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})

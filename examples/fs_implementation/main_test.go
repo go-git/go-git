@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"io/ioutil"
 	"os"
@@ -193,3 +194,4 @@ func TestReadDir(t *testing.T) {
 		}
 	}
 }
+*/

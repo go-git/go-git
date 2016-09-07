@@ -3,6 +3,7 @@ package packfile
 import (
 	"bytes"
 	"encoding/base64"
+	"io/ioutil"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
@@ -15,7 +16,7 @@ var _ = Suite(&ScannerSuite{})
 func (s *ScannerSuite) TestHeader(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 
-	p := NewParser(bytes.NewReader(data))
+	p := NewScanner(bytes.NewReader(data))
 	version, objects, err := p.Header()
 	c.Assert(err, IsNil)
 	c.Assert(version, Equals, VersionSupported)
@@ -25,7 +26,8 @@ func (s *ScannerSuite) TestHeader(c *C) {
 func (s *ScannerSuite) TestNextObjectHeader(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 
-	p := NewParser(bytes.NewReader(data))
+	r := bytes.NewReader(data)
+	p := NewScanner(r)
 	_, objects, err := p.Header()
 	c.Assert(err, IsNil)
 
@@ -39,12 +41,17 @@ func (s *ScannerSuite) TestNextObjectHeader(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(n, Equals, h.Length)
 	}
+
+	n, err := ioutil.ReadAll(r)
+	c.Assert(err, IsNil)
+	c.Assert(n, HasLen, 20)
 }
 
 func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {
 	data, _ := base64.StdEncoding.DecodeString(packFileWithEmptyObjects)
 
-	p := NewParser(bytes.NewReader(data))
+	r := bytes.NewReader(data)
+	p := NewScanner(r)
 	_, objects, err := p.Header()
 	c.Assert(err, IsNil)
 
@@ -53,6 +60,13 @@ func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(*h, DeepEquals, expectedHeaders[i])
 	}
+
+	err = p.discardObjectIfNeeded()
+	c.Assert(err, IsNil)
+
+	n, err := ioutil.ReadAll(r)
+	c.Assert(err, IsNil)
+	c.Assert(n, HasLen, 20)
 }
 
 var expectedHeaders = []ObjectHeader{

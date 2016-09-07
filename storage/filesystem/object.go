@@ -3,7 +3,6 @@ package filesystem
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/objfile"
@@ -94,7 +93,7 @@ func (s *ObjectStorage) getFromUnpacked(t core.ObjectType, h core.Hash) (obj cor
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile.
-func (s *ObjectStorage) getFromPackfile(t core.ObjectType, h core.Hash) (obj core.Object, err error) {
+func (s *ObjectStorage) getFromPackfile(t core.ObjectType, h core.Hash) (core.Object, error) {
 	offset, err := s.index.Get(h)
 	if err != nil {
 		return nil, err
@@ -117,23 +116,18 @@ func (s *ObjectStorage) getFromPackfile(t core.ObjectType, h core.Hash) (obj cor
 		}
 	}()
 
-	_, err = f.Seek(offset, os.SEEK_SET)
+	p := packfile.NewScanner(f)
+	d := packfile.NewDecoder(p, nil)
+
+	obj, err := d.ReadObjectAt(offset)
 	if err != nil {
 		return nil, err
 	}
 
-	r := packfile.NewSeekable(f)
-	r.HashToOffset = map[core.Hash]int64(s.index)
-	p := packfile.NewParser(r)
-
-	obj = s.NewObject()
-	err = p.FillObject(obj)
-	if err != nil {
-		return nil, err
-	}
 	if core.AnyObject != t && obj.Type() != t {
 		return nil, core.ErrObjectNotFound
 	}
+
 	return obj, nil
 }
 
@@ -213,7 +207,8 @@ func buildIndexFromPackfile(dir *dotgit.DotGit) (index.Index, error) {
 		}
 	}()
 
-	return index.NewFromPackfile(f)
+	index, _, err := index.NewFromPackfile(f)
+	return index, err
 }
 
 func buildIndexFromIdxfile(fs fs.Filesystem, path string) (index.Index, error) {
@@ -229,7 +224,8 @@ func buildIndexFromIdxfile(fs fs.Filesystem, path string) (index.Index, error) {
 		}
 	}()
 
-	return index.NewFromIdx(f)
+	i := index.New()
+	return i, i.Decode(f)
 }
 
 func (o *ObjectStorage) Begin() core.TxObjectStorage {
