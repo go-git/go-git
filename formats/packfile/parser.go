@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
@@ -41,7 +42,7 @@ type ObjectHeader struct {
 // A Parser is a collection of functions to read and process data form a packfile.
 // Values from this type are not zero-value safe. See the NewParser function bellow.
 type Scanner struct {
-	r *byteReadSeeker
+	r *bufferedSeeker
 
 	// pendingObject is used to detect if an object has been read, or still
 	// is waiting to be read
@@ -55,7 +56,7 @@ func NewScannerFromReader(r io.Reader) *Scanner {
 }
 
 func NewScanner(r io.ReadSeeker) *Scanner {
-	s := &byteReadSeeker{r}
+	s := newByteReadSeeker(r)
 	return &Scanner{r: s}
 }
 
@@ -263,7 +264,7 @@ func (s *Scanner) copyObject(w io.Writer) (int64, error) {
 }
 
 func (s *Scanner) IsSeekable() bool {
-	_, ok := s.r.ReadSeeker.(*trackableReader)
+	_, ok := s.r.r.(*trackableReader)
 	return !ok
 }
 
@@ -388,14 +389,28 @@ func (r *trackableReader) Seek(offset int64, whence int) (int64, error) {
 	return r.count, nil
 }
 
-type byteReadSeeker struct {
-	io.ReadSeeker
+func newByteReadSeeker(r io.ReadSeeker) *bufferedSeeker {
+	return &bufferedSeeker{
+		r:      r,
+		Reader: *bufio.NewReader(r),
+	}
 }
 
-// ReadByte reads a byte.
-func (r *byteReadSeeker) ReadByte() (byte, error) {
-	var p [1]byte
-	_, err := r.ReadSeeker.Read(p[:])
+type bufferedSeeker struct {
+	r io.ReadSeeker
+	bufio.Reader
+}
 
-	return p[0], err
+func (r *bufferedSeeker) Seek(offset int64, whence int) (int64, error) {
+	if whence == io.SeekCurrent {
+		current, err := r.r.Seek(offset, whence)
+		if err != nil {
+			return current, err
+		}
+
+		return current - int64(r.Buffered()), nil
+	}
+
+	defer r.Reset(r.r)
+	return r.r.Seek(offset, whence)
 }
