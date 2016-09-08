@@ -25,8 +25,16 @@ type Idxfile struct {
 // offset and CRC32 checksum.
 type Entry struct {
 	Hash   core.Hash
-	CRC32  [4]byte
+	CRC32  uint32
 	Offset uint64
+}
+
+func (idx *Idxfile) Add(h core.Hash, offset uint64, crc32 uint32) {
+	idx.Entries = append(idx.Entries, Entry{
+		Hash:   h,
+		Offset: offset,
+		CRC32:  crc32,
+	})
 }
 
 func (idx *Idxfile) isValid() bool {

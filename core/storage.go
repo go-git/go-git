@@ -54,6 +54,7 @@ type ObjectIter interface {
 // A transaction must end with a call to Commit or Rollback.
 type TxObjectStorage interface {
 	Set(Object) (Hash, error)
+	Get(ObjectType, Hash) (Object, error)
 	Commit() error
 	Rollback() error
 }

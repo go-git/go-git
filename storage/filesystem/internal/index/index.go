@@ -1,11 +1,13 @@
 package index
 
 import (
+	"fmt"
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/idxfile"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 // Index is a database of objects and their offset in a packfile.
@@ -25,6 +27,7 @@ func (i *Index) Decode(r io.Reader) error {
 	}
 
 	for _, e := range idx.Entries {
+		fmt.Println(e.CRC32)
 		(*i)[e.Hash] = int64(e.Offset)
 	}
 
@@ -33,16 +36,17 @@ func (i *Index) Decode(r io.Reader) error {
 
 // NewFrompackfile returns a new index from a packfile reader.
 func NewFromPackfile(r io.Reader) (Index, core.Hash, error) {
-	p := packfile.NewScannerFromReader(r)
-	d := packfile.NewDecoder(p, nil)
+	o := memory.NewStorage().ObjectStorage()
+	s := packfile.NewScannerFromReader(r)
+	d := packfile.NewDecoder(s, o)
 
 	checksum, err := d.Decode()
 	if err != nil {
 		return nil, core.ZeroHash, err
 	}
 
-	index := Index(d.Index())
-	return index, checksum, p.Close()
+	index := Index(d.Offsets())
+	return index, checksum, d.Close()
 }
 
 // Get returns the offset that an object has the packfile.

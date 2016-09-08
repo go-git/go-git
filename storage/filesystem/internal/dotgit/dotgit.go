@@ -194,34 +194,34 @@ func isHexAlpha(b byte) bool {
 }
 
 type PackWriter struct {
-	fs         fs.Filesystem
-	file       fs.File
-	writer     io.Writer
-	pipeReader io.ReadCloser
-	pipeWriter io.WriteCloser
-	hash       core.Hash
-	index      index.Index
-	result     chan error
+	fs     fs.Filesystem
+	sr     io.ReadCloser
+	sw     io.WriteCloser
+	fw     fs.File
+	mw     io.Writer
+	hash   core.Hash
+	index  index.Index
+	result chan error
 }
 
 func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
-	r, w := io.Pipe()
-
 	temp := sha1.Sum([]byte(time.Now().String()))
 	filename := fmt.Sprintf(".%x", temp)
 
-	file, err := fs.Create(fs.Join(objectsPath, packPath, filename))
+	fw, err := fs.Create(fs.Join(objectsPath, packPath, filename))
 	if err != nil {
 		return nil, err
 	}
 
+	sr, sw := io.Pipe()
+
 	writer := &PackWriter{
-		fs:         fs,
-		file:       file,
-		writer:     io.MultiWriter(w, file),
-		pipeReader: r,
-		pipeWriter: w,
-		result:     make(chan error),
+		fs:     fs,
+		fw:     fw,
+		sr:     sr,
+		sw:     sw,
+		mw:     io.MultiWriter(sw, fw),
+		result: make(chan error),
 	}
 
 	go writer.buildIndex()
@@ -229,16 +229,19 @@ func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
 }
 
 func (w *PackWriter) buildIndex() {
-	defer w.pipeReader.Close()
-	index, hash, err := index.NewFromPackfile(w.pipeReader)
+	defer w.sr.Close()
+	index, hash, err := index.NewFromPackfile(w.sr)
+
 	w.index = index
 	w.hash = hash
+
+	fmt.Println(hash, w.index)
 
 	w.result <- err
 }
 
 func (w *PackWriter) Write(p []byte) (int, error) {
-	return w.writer.Write(p)
+	return w.mw.Write(p)
 }
 
 func (w *PackWriter) Close() error {
@@ -246,11 +249,11 @@ func (w *PackWriter) Close() error {
 		close(w.result)
 	}()
 
-	if err := w.file.Close(); err != nil {
+	if err := w.fw.Close(); err != nil {
 		return err
 	}
 
-	if err := w.pipeWriter.Close(); err != nil {
+	if err := w.sw.Close(); err != nil {
 		return err
 	}
 
@@ -266,5 +269,5 @@ func (w *PackWriter) save() error {
 
 	//idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
 
-	return w.fs.Rename(w.file.Filename(), fmt.Sprintf("%s.pack", base))
+	return w.fs.Rename(w.fw.Filename(), fmt.Sprintf("%s.pack", base))
 }

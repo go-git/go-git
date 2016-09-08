@@ -6,6 +6,8 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 
@@ -42,7 +44,8 @@ type ObjectHeader struct {
 // A Parser is a collection of functions to read and process data form a packfile.
 // Values from this type are not zero-value safe. See the NewParser function bellow.
 type Scanner struct {
-	r *bufferedSeeker
+	r   reader
+	crc hash.Hash32
 
 	// pendingObject is used to detect if an object has been read, or still
 	// is waiting to be read
@@ -56,8 +59,11 @@ func NewScannerFromReader(r io.Reader) *Scanner {
 }
 
 func NewScanner(r io.ReadSeeker) *Scanner {
-	s := newByteReadSeeker(r)
-	return &Scanner{r: s}
+	crc := crc32.NewIEEE()
+	seeker := newByteReadSeeker(r)
+	tee := &teeReader{seeker, crc}
+
+	return &Scanner{r: tee, crc: crc}
 }
 
 // Header reads the whole packfile header (signature, version and object count).
@@ -139,6 +145,8 @@ func (s *Scanner) NextObjectHeader() (*ObjectHeader, error) {
 		return nil, err
 	}
 
+	s.crc.Reset()
+
 	h := &ObjectHeader{}
 	s.pendingObject = h
 
@@ -178,7 +186,7 @@ func (s *Scanner) discardObjectIfNeeded() error {
 	}
 
 	h := s.pendingObject
-	n, err := s.NextObject(ioutil.Discard)
+	n, _, err := s.NextObject(ioutil.Discard)
 	if err != nil {
 		return err
 	}
@@ -209,7 +217,7 @@ func (s *Scanner) readObjectTypeAndLength() (core.ObjectType, int64, error) {
 func (s *Scanner) readType() (core.ObjectType, byte, error) {
 	var c byte
 	var err error
-	if c, err = s.r.ReadByte(); err != nil {
+	if c, err = s.readByte(); err != nil {
 		return core.ObjectType(0), 0, err
 	}
 
@@ -227,7 +235,7 @@ func (s *Scanner) readLength(first byte) (int64, error) {
 	shift := firstLengthBits
 	var err error
 	for moreBytesInLength(c) {
-		if c, err = s.r.ReadByte(); err != nil {
+		if c, err = s.readByte(); err != nil {
 			return 0, err
 		}
 
@@ -238,9 +246,13 @@ func (s *Scanner) readLength(first byte) (int64, error) {
 	return length, nil
 }
 
-func (s *Scanner) NextObject(w io.Writer) (written int64, err error) {
+func (s *Scanner) NextObject(w io.Writer) (written int64, crc32 uint32, err error) {
+	defer s.crc.Reset()
+
 	s.pendingObject = nil
-	return s.copyObject(w)
+	written, err = s.copyObject(w)
+	crc32 = s.crc.Sum32()
+	return
 }
 
 // ReadRegularObject reads and write a non-deltified object
@@ -248,9 +260,7 @@ func (s *Scanner) NextObject(w io.Writer) (written int64, err error) {
 func (s *Scanner) copyObject(w io.Writer) (int64, error) {
 	zr, err := zlib.NewReader(s.r)
 	if err != nil {
-		if err != zlib.ErrHeader {
-			return -1, fmt.Errorf("zlib reading error: %s", err)
-		}
+		return -1, fmt.Errorf("zlib reading error: %s", err)
 	}
 
 	defer func() {
@@ -261,11 +271,6 @@ func (s *Scanner) copyObject(w io.Writer) (int64, error) {
 	}()
 
 	return io.Copy(w, zr)
-}
-
-func (s *Scanner) IsSeekable() bool {
-	_, ok := s.r.r.(*trackableReader)
-	return !ok
 }
 
 // Seek sets a new offset from start, returns the old position before the change
@@ -329,20 +334,29 @@ func (s *Scanner) readNegativeOffset() (int64, error) {
 	var c byte
 	var err error
 
-	if c, err = s.r.ReadByte(); err != nil {
+	if c, err = s.readByte(); err != nil {
 		return 0, err
 	}
 
 	var offset = int64(c & maskLength)
 	for moreBytesInLength(c) {
 		offset++
-		if c, err = s.r.ReadByte(); err != nil {
+		if c, err = s.readByte(); err != nil {
 			return 0, err
 		}
 		offset = (offset << lengthBits) + int64(c&maskLength)
 	}
 
 	return -offset, nil
+}
+
+func (s *Scanner) readByte() (byte, error) {
+	b, err := s.r.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+
+	return b, err
 }
 
 func (s *Scanner) Close() error {
@@ -368,8 +382,8 @@ func parseType(b byte) core.ObjectType {
 }
 
 type trackableReader struct {
-	io.Reader
 	count int64
+	io.Reader
 }
 
 // Read reads up to len(p) bytes into p.
@@ -411,6 +425,39 @@ func (r *bufferedSeeker) Seek(offset int64, whence int) (int64, error) {
 		return current - int64(r.Buffered()), nil
 	}
 
-	defer r.Reset(r.r)
+	defer r.Reader.Reset(r.r)
 	return r.r.Seek(offset, whence)
+}
+
+type reader interface {
+	io.Reader
+	io.ByteReader
+	io.Seeker
+}
+
+type teeReader struct {
+	reader
+	w hash.Hash32
+}
+
+func (r *teeReader) Read(p []byte) (n int, err error) {
+	n, err = r.reader.Read(p)
+	if n > 0 {
+		if n, err := r.w.Write(p[:n]); err != nil {
+			return n, err
+		}
+	}
+	return
+}
+
+func (r *teeReader) ReadByte() (b byte, err error) {
+	b, err = r.reader.ReadByte()
+	if err == nil {
+		_, err := r.w.Write([]byte{b})
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return
 }

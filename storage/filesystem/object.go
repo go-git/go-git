@@ -238,6 +238,10 @@ func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	return core.ZeroHash, fmt.Errorf("not implemented yet")
 }
 
+func (tx *TxObjectStorage) Get(core.ObjectType, core.Hash) (core.Object, error) {
+	return nil, fmt.Errorf("not implemented yet")
+}
+
 func (tx *TxObjectStorage) Commit() error {
 	return fmt.Errorf("not implemented yet")
 }

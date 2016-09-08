@@ -143,6 +143,7 @@ func (o *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error)
 	if !ok || (core.AnyObject != t && obj.Type() != t) {
 		return nil, core.ErrObjectNotFound
 	}
+
 	return obj, nil
 }
 
@@ -190,6 +191,15 @@ func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	tx.Objects[h] = obj
 
 	return h, nil
+}
+
+func (tx *TxObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+	obj, ok := tx.Objects[h]
+	if !ok || (core.AnyObject != t && obj.Type() != t) {
+		return nil, core.ErrObjectNotFound
+	}
+
+	return obj, nil
 }
 
 func (tx *TxObjectStorage) Commit() error {

@@ -65,25 +65,24 @@ func (e *Encoder) encodeFanout(idx *Idxfile) (int, error) {
 }
 
 func (e *Encoder) encodeHashes(idx *Idxfile) (int, error) {
-	return e.encodeEntryField(idx, true)
+	sz := 0
+	for _, ent := range idx.Entries {
+		i, err := e.Write(ent.Hash[:])
+		sz += i
+
+		if err != nil {
+			return sz, err
+		}
+	}
+
+	return sz, nil
 }
 
 func (e *Encoder) encodeCRC32(idx *Idxfile) (int, error) {
-	return e.encodeEntryField(idx, false)
-}
-
-func (e *Encoder) encodeEntryField(idx *Idxfile, isHash bool) (int, error) {
 	sz := 0
 	for _, ent := range idx.Entries {
-		var data []byte
-		if isHash {
-			data = ent.Hash[:]
-		} else {
-			data = ent.CRC32[:]
-		}
-
-		i, err := e.Write(data)
-		sz += i
+		err := binary.Write(e, binary.BigEndian, ent.CRC32)
+		sz += 4
 
 		if err != nil {
 			return sz, err

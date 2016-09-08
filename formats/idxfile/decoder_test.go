@@ -1,11 +1,14 @@
 package idxfile
 
 import (
+	"bytes"
 	"fmt"
-	"os"
 	"testing"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -15,26 +18,50 @@ type IdxfileSuite struct{}
 var _ = Suite(&IdxfileSuite{})
 
 func (s *IdxfileSuite) TestDecode(c *C) {
-	f, err := os.Open("fixtures/git-fixture.idx")
+	f := fixtures.Basic().One()
+
+	d := NewDecoder(f.Idx())
+	idx := &Idxfile{}
+	err := d.Decode(idx)
 	c.Assert(err, IsNil)
 
-	d := NewDecoder(f)
+	c.Assert(idx.Entries, HasLen, 31)
+	c.Assert(idx.Entries[0].Hash.String(), Equals, "1669dce138d9b841a518c64b10914d88f5e488ea")
+	c.Assert(idx.Entries[0].Offset, Equals, uint64(615))
+	c.Assert(idx.Entries[0].CRC32, Equals, uint32(3645019190))
+
+	c.Assert(fmt.Sprintf("%x", idx.IdxChecksum), Equals, "fb794f1ec720b9bc8e43257451bd99c4be6fa1c9")
+	c.Assert(fmt.Sprintf("%x", idx.PackfileChecksum), Equals, f.PackfileHash.String())
+}
+
+func (s *IdxfileSuite) TestDecodeCRCs(c *C) {
+	f := fixtures.Basic().ByTag("ofs-delta")
+
+	scanner := packfile.NewScanner(f.Packfile())
+	storage := memory.NewStorage()
+
+	pd := packfile.NewDecoder(scanner, storage.ObjectStorage())
+	checksum, err := pd.Decode()
+	c.Assert(err, IsNil)
+
+	i := &Idxfile{Version: VersionSupported}
+	i.PackfileChecksum = checksum
+
+	offsets := pd.Offsets()
+	for h, crc := range pd.CRCs() {
+		i.Add(h, uint64(offsets[h]), crc)
+	}
+
+	buf := bytes.NewBuffer(nil)
+	e := NewEncoder(buf)
+	_, err = e.Encode(i)
+	c.Assert(err, IsNil)
+
 	idx := &Idxfile{}
+
+	d := NewDecoder(buf)
 	err = d.Decode(idx)
 	c.Assert(err, IsNil)
 
-	err = f.Close()
-	c.Assert(err, IsNil)
-
-	c.Assert(int(idx.ObjectCount), Equals, 31)
-	c.Assert(idx.Entries, HasLen, 31)
-	c.Assert(idx.Entries[0].Hash.String(), Equals,
-		"1669dce138d9b841a518c64b10914d88f5e488ea")
-	c.Assert(idx.Entries[0].Offset, Equals, uint64(615))
-
-	c.Assert(fmt.Sprintf("%x", idx.IdxChecksum), Equals,
-		"bba9b7a9895724819225a044c857d391bb9d61d9")
-	c.Assert(fmt.Sprintf("%x", idx.PackfileChecksum), Equals,
-		"54bb61360ab2dad1a3e344a8cd3f82b848518cba")
-
+	c.Assert(idx, DeepEquals, i)
 }

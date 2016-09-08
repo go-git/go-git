@@ -126,7 +126,6 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 			d := packfile.NewDecoder(r, repos[fixture.url].s.ObjectStorage())
 			_, err = d.Decode()
 			c.Assert(err, IsNil, comment)
-
 			c.Assert(f.Close(), IsNil, comment)
 		}
 	}
