@@ -49,7 +49,8 @@ type Scanner struct {
 
 	// pendingObject is used to detect if an object has been read, or still
 	// is waiting to be read
-	pendingObject *ObjectHeader
+	pendingObject    *ObjectHeader
+	version, objects uint32
 }
 
 // NewParser returns a new Parser that reads from the packfile represented by r.
@@ -70,6 +71,10 @@ func NewScanner(r io.ReadSeeker) *Scanner {
 // It returns the version and the object count and performs checks on the
 // validity of the signature and the version fields.
 func (s *Scanner) Header() (version, objects uint32, err error) {
+	if s.version != 0 {
+		return s.version, s.objects, nil
+	}
+
 	sig, err := s.readSignature()
 	if err != nil {
 		if err == io.EOF {
@@ -85,6 +90,7 @@ func (s *Scanner) Header() (version, objects uint32, err error) {
 	}
 
 	version, err = s.readVersion()
+	s.version = version
 	if err != nil {
 		return
 	}
@@ -95,6 +101,7 @@ func (s *Scanner) Header() (version, objects uint32, err error) {
 	}
 
 	objects, err = s.readCount()
+	s.objects = objects
 	return
 }
 
@@ -141,7 +148,7 @@ func (s *Scanner) readInt32() (uint32, error) {
 
 // NextObjectHeader returns the ObjectHeader for the next object in the reader
 func (s *Scanner) NextObjectHeader() (*ObjectHeader, error) {
-	if err := s.discardObjectIfNeeded(); err != nil {
+	if err := s.doPending(); err != nil {
 		return nil, err
 	}
 
@@ -178,6 +185,18 @@ func (s *Scanner) NextObjectHeader() (*ObjectHeader, error) {
 	}
 
 	return h, nil
+}
+
+func (s *Scanner) doPending() error {
+	if s.version == 0 {
+		var err error
+		s.version, s.objects, err = s.Header()
+		if err != nil {
+			return err
+		}
+	}
+
+	return s.discardObjectIfNeeded()
 }
 
 func (s *Scanner) discardObjectIfNeeded() error {
@@ -275,6 +294,11 @@ func (s *Scanner) copyObject(w io.Writer) (int64, error) {
 
 // Seek sets a new offset from start, returns the old position before the change
 func (s *Scanner) Seek(offset int64) (previous int64, err error) {
+	// if seeking we asume that you are not interested on the header
+	if s.version == 0 {
+		s.version = VersionSupported
+	}
+
 	previous, err = s.r.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return -1, err

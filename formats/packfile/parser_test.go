@@ -26,6 +26,20 @@ func (s *ScannerSuite) TestHeader(c *C) {
 	c.Assert(objects, Equals, uint32(31))
 }
 
+func (s *ScannerSuite) TestNextObjectHeaderWithoutHeader(c *C) {
+	r := fixtures.Basic().One().Packfile()
+	p := NewScanner(r)
+
+	h, err := p.NextObjectHeader()
+	c.Assert(err, IsNil)
+	c.Assert(h, DeepEquals, &expectedHeadersOFS[0])
+
+	version, objects, err := p.Header()
+	c.Assert(err, IsNil)
+	c.Assert(version, Equals, VersionSupported)
+	c.Assert(objects, Equals, uint32(31))
+}
+
 func (s *ScannerSuite) TestNextObjectHeaderREFDelta(c *C) {
 	s.testNextObjectHeader(c, "ref-delta", expectedHeadersREF)
 }
