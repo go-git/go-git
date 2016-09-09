@@ -41,11 +41,10 @@ func (s *IdxfileSuite) TestDecodeCRCs(c *C) {
 	storage := memory.NewStorage()
 
 	pd := packfile.NewDecoder(scanner, storage.ObjectStorage())
-	checksum, err := pd.Decode()
+	_, err := pd.Decode()
 	c.Assert(err, IsNil)
 
 	i := &Idxfile{Version: VersionSupported}
-	i.PackfileChecksum = checksum
 
 	offsets := pd.Offsets()
 	for h, crc := range pd.CRCs() {
@@ -63,5 +62,5 @@ func (s *IdxfileSuite) TestDecodeCRCs(c *C) {
 	err = d.Decode(idx)
 	c.Assert(err, IsNil)
 
-	c.Assert(idx, DeepEquals, i)
+	c.Assert(idx.Entries, DeepEquals, i.Entries)
 }

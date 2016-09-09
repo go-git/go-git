@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/core"
@@ -96,7 +95,6 @@ func readFanout(idx *Idxfile, r io.Reader) error {
 	}
 
 	idx.ObjectCount, err = readInt32(r)
-	fmt.Println(idx.ObjectCount)
 	return err
 }
 

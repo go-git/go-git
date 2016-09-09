@@ -50,19 +50,12 @@ func (idx *Idxfile) isValid() bool {
 
 func (idx *Idxfile) calculateFanout() [256]uint32 {
 	fanout := [256]uint32{}
-	var c uint32
 	for _, e := range idx.Entries {
-		c++
-		fanout[e.Hash[0]] = c
+		fanout[e.Hash[0]]++
 	}
 
-	var i uint32
-	for k, c := range fanout {
-		if c != 0 {
-			i = c
-		}
-
-		fanout[k] = i
+	for i := 1; i < 256; i++ {
+		fanout[i] += fanout[i-1]
 	}
 
 	return fanout
