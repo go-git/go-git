@@ -188,7 +188,7 @@ func (d *Decoder) recallByOffset(o int64) (core.Object, error) {
 		return d.recallByHash(h)
 	}
 
-	return nil, ErrCannotRecall.AddDetails("no object found at offset %d", o)
+	return d.ReadObjectAt(o)
 }
 
 func (d *Decoder) recallByHash(h core.Hash) (core.Object, error) {

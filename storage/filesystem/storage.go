@@ -18,17 +18,17 @@ type Storage struct {
 }
 
 func NewStorage(fs fs.Filesystem) (*Storage, error) {
-	return &Storage{dir: dotgit.New(fs), fs: fs}, nil
+	dir := dotgit.New(fs)
+	o, err := newObjectStorage(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Storage{dir: dir, fs: fs, o: o}, nil
 }
 
 func (s *Storage) ObjectStorage() core.ObjectStorage {
-	if s.o != nil {
-		return s.o
-	}
-
-	//TODO: error being ignored
-	i, _ := buildIndex(s.fs, s.dir)
-	return &ObjectStorage{dir: s.dir, index: i}
+	return s.o
 }
 
 func (s *Storage) ReferenceStorage() core.ReferenceStorage {

@@ -83,7 +83,21 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 	}
 
 	c.Assert(int(sum), Equals, 78022211966)
+}
 
+func (s *ReaderSuite) TestReadObjectAt(c *C) {
+	f := fixtures.Basic().One()
+
+	scanner := NewScanner(f.Packfile())
+	storage := memory.NewStorage()
+
+	d := NewDecoder(scanner, storage.ObjectStorage())
+
+	// the objects at reference 186, is a delta, so should be recall, without
+	// being read before.
+	obj, err := d.ReadObjectAt(186)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func AssertObjects(c *C, s *memory.Storage, expects []string) {

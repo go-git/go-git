@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/index"
+	"gopkg.in/src-d/go-git.v4/formats/idxfile"
+	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
@@ -34,8 +36,6 @@ var (
 	ErrIdxNotFound = errors.New("idx file not found")
 	// ErrPackfileNotFound is returned by Packfile when the packfile is not found
 	ErrPackfileNotFound = errors.New("packfile not found")
-	// ErrObjfileNotFound is returned by Objectfile when the objectffile is not found
-	ErrObjfileNotFound = errors.New("object file not found")
 	// ErrConfigNotFound is returned by Config when the config is not found
 	ErrConfigNotFound = errors.New("config file not found")
 )
@@ -77,12 +77,14 @@ func (d *DotGit) Refs() ([]*core.Reference, error) {
 	return refs, nil
 }
 
+// NewObjectPack return a writer for a new packfile, it saves the packfile to
+// disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	return newPackWrite(d.fs)
 }
 
-// ObjectsPacks returns the list of availables packfiles
-func (d *DotGit) ObjectsPacks() ([]fs.FileInfo, error) {
+// ObjectPacks returns the list of availables packfiles
+func (d *DotGit) ObjectPacks() ([]core.Hash, error) {
 	packDir := d.fs.Join(objectsPath, packPath)
 	files, err := d.fs.ReadDir(packDir)
 	if err != nil {
@@ -93,43 +95,51 @@ func (d *DotGit) ObjectsPacks() ([]fs.FileInfo, error) {
 		return nil, err
 	}
 
-	var packs []fs.FileInfo
+	var packs []core.Hash
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), packExt) {
-			packs = append(packs, f)
+		if !strings.HasSuffix(f.Name(), packExt) {
+			continue
 		}
+
+		n := f.Name()
+		h := core.NewHash(n[5 : len(n)-5]) //pack-(hash).pack
+		packs = append(packs, h)
+
 	}
 
 	return packs, nil
 }
 
-// ObjectPack returns the requested packfile and his idx
-func (d *DotGit) ObjectPack(filename string) (pack, idx fs.File, err error) {
-	if !strings.HasSuffix(filename, packExt) {
-		return nil, nil, fmt.Errorf("a .pack file should be provided")
-	}
+// ObjectPack returns a fs.File of the given packfile
+func (d *DotGit) ObjectPack(hash core.Hash) (fs.File, error) {
+	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.pack", hash.String()))
 
-	pack, err = d.fs.Open(d.fs.Join(objectsPath, packPath, filename))
+	pack, err := d.fs.Open(file)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil, ErrPackfileNotFound
+			return nil, ErrPackfileNotFound
 		}
 
-		return
+		return nil, err
 	}
 
-	idxfile := filename[0:len(filename)-len(packExt)] + idxExt
-	idxpath := d.fs.Join(objectsPath, packPath, idxfile)
-	idx, err = d.fs.Open(idxpath)
+	return pack, nil
+}
+
+// ObjectPackIdx returns a fs.File of the index file for a given packfile
+func (d *DotGit) ObjectPackIdx(hash core.Hash) (fs.File, error) {
+	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.idx", hash.String()))
+
+	idx, err := d.fs.Open(file)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil, ErrIdxNotFound
+			return nil, ErrPackfileNotFound
 		}
 
-		return
+		return nil, err
 	}
 
-	return
+	return idx, nil
 }
 
 // Objects returns a slice with the hashes of objects found under the
@@ -194,14 +204,15 @@ func isHexAlpha(b byte) bool {
 }
 
 type PackWriter struct {
-	fs     fs.Filesystem
-	sr     io.ReadCloser
-	sw     io.WriteCloser
-	fw     fs.File
-	mw     io.Writer
-	hash   core.Hash
-	index  index.Index
-	result chan error
+	fs fs.Filesystem
+	sr io.ReadCloser
+	sw io.WriteCloser
+	fw fs.File
+	mw io.Writer
+
+	checksum core.Hash
+	index    idxfile.Idxfile
+	result   chan error
 }
 
 func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
@@ -230,12 +241,23 @@ func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
 
 func (w *PackWriter) buildIndex() {
 	defer w.sr.Close()
-	index, hash, err := index.NewFromPackfile(w.sr)
+	o := memory.NewStorage().ObjectStorage()
+	s := packfile.NewScannerFromReader(w.sr)
+	d := packfile.NewDecoder(s, o)
 
-	w.index = index
-	w.hash = hash
+	checksum, err := d.Decode()
+	if err != nil {
+		w.result <- err
+		return
+	}
 
-	fmt.Println(hash, w.index)
+	w.checksum = checksum
+	w.index.PackfileChecksum = checksum
+
+	offsets := d.Offsets()
+	for h, crc := range d.CRCs() {
+		w.index.Add(h, uint64(offsets[h]), crc)
+	}
 
 	w.result <- err
 }
@@ -265,9 +287,26 @@ func (w *PackWriter) Close() error {
 }
 
 func (w *PackWriter) save() error {
-	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.hash))
+	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
 
-	//idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
+	idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
+	if err != nil {
+		return err
+	}
+
+	if err := w.encodeIdx(idx); err != nil {
+		return err
+	}
+
+	if err := idx.Close(); err != nil {
+		return err
+	}
 
 	return w.fs.Rename(w.fw.Filename(), fmt.Sprintf("%s.pack", base))
+}
+
+func (w *PackWriter) encodeIdx(writer io.Writer) error {
+	e := idxfile.NewEncoder(writer)
+	_, err := e.Encode(&w.index)
+	return err
 }

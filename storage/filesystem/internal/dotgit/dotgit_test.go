@@ -1,43 +1,23 @@
 package dotgit
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 
-	"github.com/alcortesm/tgz"
 	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
-
-var initFixtures = [...]struct {
-	name string
-	tgz  string
-}{
-	{
-		name: "spinnaker",
-		tgz:  "fixtures/spinnaker-gc.tgz",
-	}, {
-		name: "no-packfile-no-idx",
-		tgz:  "fixtures/no-packfile-no-idx.tgz",
-	}, {
-		name: "empty",
-		tgz:  "fixtures/empty-gitdir.tgz",
-	}, {
-		name: "unpacked",
-		tgz:  "fixtures/unpacked-objects-no-packfile-no-idx.tgz",
-	}, {
-		name: "unpacked-dummy",
-		tgz:  "fixtures/unpacked-objects-exist-one-dummy-object-no-packfile-no-idx.tgz",
-	},
-}
 
 type SuiteDotGit struct {
 	fixtures map[string]fs.Filesystem
@@ -46,16 +26,7 @@ type SuiteDotGit struct {
 var _ = Suite(&SuiteDotGit{})
 
 func (s *SuiteDotGit) SetUpSuite(c *C) {
-	s.fixtures = make(map[string]fs.Filesystem, len(initFixtures))
-
-	for _, init := range initFixtures {
-		com := Commentf("fixture name = %s\n", init.name)
-
-		path, err := tgz.Extract(init.tgz)
-		c.Assert(err, IsNil, com)
-
-		s.fixtures[init.name] = fs.NewOS(filepath.Join(path, ".git"))
-	}
+	fixtures.RootFolder = "../../../../fixtures"
 }
 
 func (s *SuiteDotGit) TearDownSuite(c *C) {
@@ -66,18 +37,20 @@ func (s *SuiteDotGit) TearDownSuite(c *C) {
 }
 
 func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	fs := fixtures.Basic().ByTag(".git").DotGit()
+	dir := New(fs)
 
 	refs, err := dir.Refs()
 	c.Assert(err, IsNil)
 
-	ref := findReference(refs, "refs/tags/v0.37.0")
+	ref := findReference(refs, "refs/remotes/origin/branch")
 	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "85ec60477681933961c9b64c18ada93220650ac5")
+	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
 }
 func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	fs := fixtures.Basic().ByTag(".git").DotGit()
+	dir := New(fs)
 
 	refs, err := dir.Refs()
 	c.Assert(err, IsNil)
@@ -90,7 +63,8 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 }
 
 func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	fs := fixtures.Basic().ByTag(".git").DotGit()
+	dir := New(fs)
 
 	refs, err := dir.Refs()
 	c.Assert(err, IsNil)
@@ -102,7 +76,8 @@ func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
 }
 
 func (s *SuiteDotGit) TestConfig(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	fs := fixtures.Basic().ByTag(".git").DotGit()
+	dir := New(fs)
 
 	file, err := dir.Config()
 	c.Assert(err, IsNil)
@@ -128,98 +103,76 @@ func (s *SuiteDotGit) newFixtureDir(c *C, fixName string) *DotGit {
 }
 
 func (s *SuiteDotGit) TestObjectsPack(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	f := fixtures.Basic().ByTag(".git")
+	fs := f.DotGit()
+	dir := New(fs)
 
-	files, err := dir.ObjectsPacks()
+	hashes, err := dir.ObjectPacks()
 	c.Assert(err, IsNil)
-	c.Assert(files, HasLen, 1)
-}
-
-func (s *SuiteDotGit) TestObjectsNoPackile(c *C) {
-	dir := s.newFixtureDir(c, "no-packfile-no-idx")
-
-	files, err := dir.ObjectsPacks()
-	c.Assert(err, IsNil)
-	c.Assert(files, HasLen, 0)
-}
-
-func (s *SuiteDotGit) TestObjectsPackFolderNotExists(c *C) {
-	dir := s.newFixtureDir(c, "empty")
-
-	files, err := dir.ObjectsPacks()
-	c.Assert(err, IsNil)
-	c.Assert(files, HasLen, 0)
+	c.Assert(hashes, HasLen, 1)
+	c.Assert(hashes[0], Equals, f.PackfileHash)
 }
 
 func (s *SuiteDotGit) TestObjectPack(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	f := fixtures.Basic().ByTag(".git")
+	fs := f.DotGit()
+	dir := New(fs)
 
-	filename := "pack-584416f86235cac0d54bfabbdc399fb2b09a5269.pack"
-	pack, idx, err := dir.ObjectPack(filename)
+	pack, err := dir.ObjectPack(f.PackfileHash)
 	c.Assert(err, IsNil)
 	c.Assert(filepath.Ext(pack.Filename()), Equals, ".pack")
+}
+
+func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
+	f := fixtures.Basic().ByTag(".git")
+	fs := f.DotGit()
+	dir := New(fs)
+
+	idx, err := dir.ObjectPackIdx(f.PackfileHash)
+	c.Assert(err, IsNil)
 	c.Assert(filepath.Ext(idx.Filename()), Equals, ".idx")
 }
 
 func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
-	dir := s.newFixtureDir(c, "spinnaker")
+	fs := fixtures.Basic().ByTag(".git").DotGit()
+	dir := New(fs)
 
-	filename := "pack-not-exists.pack"
-	pack, idx, err := dir.ObjectPack(filename)
+	pack, err := dir.ObjectPack(core.ZeroHash)
 	c.Assert(err, Equals, ErrPackfileNotFound)
 	c.Assert(pack, IsNil)
+
+	idx, err := dir.ObjectPackIdx(core.ZeroHash)
 	c.Assert(idx, IsNil)
 }
 
 func (s *SuiteDotGit) TestObjects(c *C) {
-	dir := s.newFixtureDir(c, "unpacked")
+	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	dir := New(fs)
 
 	hashes, err := dir.Objects()
 	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 3)
-	c.Assert(hashes[0].String(), Equals, "1e0304e3cb54d0ad612ad70f1f15a285a65a4b8e")
-	c.Assert(hashes[1].String(), Equals, "5efb9bc29c482e023e40e0a2b3b7e49cec842034")
-	c.Assert(hashes[2].String(), Equals, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
-}
-
-func (s *SuiteDotGit) TestObjectsWithGarbage(c *C) {
-	dir := s.newFixtureDir(c, "unpacked-dummy")
-
-	hashes, err := dir.Objects()
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 3)
-	c.Assert(hashes[0].String(), Equals, "1e0304e3cb54d0ad612ad70f1f15a285a65a4b8e")
-	c.Assert(hashes[1].String(), Equals, "5efb9bc29c482e023e40e0a2b3b7e49cec842034")
-	c.Assert(hashes[2].String(), Equals, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
-}
-
-func (s *SuiteDotGit) TestObjectsNoPackage(c *C) {
-	dir := s.newFixtureDir(c, "empty")
-
-	hashes, err := dir.Objects()
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 0)
-}
-
-func (s *SuiteDotGit) TestObjectsNoObjects(c *C) {
-	dir := s.newFixtureDir(c, "no-packfile-no-idx")
-
-	hashes, err := dir.Objects()
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 0)
+	c.Assert(hashes, HasLen, 187)
+	c.Assert(hashes[0].String(), Equals, "0097821d427a3c3385898eb13b50dcbc8702b8a3")
+	c.Assert(hashes[1].String(), Equals, "01d5fa556c33743006de7e76e67a2dfcd994ca04")
+	c.Assert(hashes[2].String(), Equals, "03db8e1fbe133a480f2867aac478fd866686d69e")
 }
 
 func (s *SuiteDotGit) TestObject(c *C) {
-	dir := s.newFixtureDir(c, "unpacked")
+	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	dir := New(fs)
 
-	hash := core.NewHash("1e0304e3cb54d0ad612ad70f1f15a285a65a4b8e")
+	hash := core.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	file, err := dir.Object(hash)
 	c.Assert(err, IsNil)
-	c.Assert(file.Filename(), Not(Equals), "")
+	c.Assert(strings.HasSuffix(
+		file.Filename(), "objects/03/db8e1fbe133a480f2867aac478fd866686d69e"),
+		Equals, true,
+	)
 }
 
 func (s *SuiteDotGit) TestObjectNotFound(c *C) {
-	dir := s.newFixtureDir(c, "unpacked")
+	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	dir := New(fs)
 
 	hash := core.NewHash("not-found-object")
 	file, err := dir.Object(hash)
@@ -228,22 +181,31 @@ func (s *SuiteDotGit) TestObjectNotFound(c *C) {
 }
 
 func (s *SuiteDotGit) TestNewObjectPack(c *C) {
+	f := fixtures.Basic().One()
+
 	dir, err := ioutil.TempDir("", "example")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	dot := New(fs.NewOS(dir))
+	defer os.RemoveAll(dir)
 
-	r, err := os.Open("../../../../formats/packfile/fixtures/git-fixture.ofs-delta")
-	c.Assert(err, IsNil)
+	fs := fs.NewOS(dir)
+	dot := New(fs)
 
 	w, err := dot.NewObjectPack()
 	c.Assert(err, IsNil)
 
-	n, err := io.Copy(w, r)
+	_, err = io.Copy(w, f.Packfile())
 	c.Assert(err, IsNil)
-	c.Check(n, Equals, int64(85300))
 
 	c.Assert(w.Close(), IsNil)
+
+	stat, err := fs.Stat(fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash))
+	c.Assert(err, IsNil)
+	c.Assert(stat.Size(), Equals, int64(84794))
+
+	stat, err = fs.Stat(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash))
+	c.Assert(err, IsNil)
+	c.Assert(stat.Size(), Equals, int64(1940))
 }
