@@ -16,7 +16,7 @@ type Idxfile struct {
 	Version          uint32
 	Fanout           [255]uint32
 	ObjectCount      uint32
-	Entries          []Entry
+	Entries          EntryList
 	PackfileChecksum [20]byte
 	IdxChecksum      [20]byte
 }
