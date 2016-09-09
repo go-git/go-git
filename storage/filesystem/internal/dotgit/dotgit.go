@@ -53,9 +53,33 @@ func New(fs fs.Filesystem) *DotGit {
 	return &DotGit{fs: fs}
 }
 
+func (d *DotGit) ConfigWriter() (fs.File, error) {
+	return d.fs.Create(configPath)
+}
+
 // Config returns the path of the config file
 func (d *DotGit) Config() (fs.File, error) {
 	return d.fs.Open(configPath)
+}
+
+func (d *DotGit) SetRef(r *core.Reference) error {
+	var content string
+	switch r.Type() {
+	case core.SymbolicReference:
+		content = fmt.Sprintf("ref: %s\n", r.Target())
+	case core.HashReference:
+		content = fmt.Sprintln(r.Hash().String())
+	}
+
+	f, err := d.fs.Create(r.Name().String())
+	if err != nil {
+		return err
+	}
+
+	if _, err := f.Write([]byte(content)); err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // Refs scans the git directory collecting references, which it returns.
@@ -129,7 +153,6 @@ func (d *DotGit) ObjectPack(hash core.Hash) (fs.File, error) {
 // ObjectPackIdx returns a fs.File of the index file for a given packfile
 func (d *DotGit) ObjectPackIdx(hash core.Hash) (fs.File, error) {
 	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.idx", hash.String()))
-
 	idx, err := d.fs.Open(file)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -253,6 +276,7 @@ func (w *PackWriter) buildIndex() {
 
 	w.checksum = checksum
 	w.index.PackfileChecksum = checksum
+	w.index.Version = idxfile.VersionSupported
 
 	offsets := d.Offsets()
 	for h, crc := range d.CRCs() {
@@ -288,7 +312,6 @@ func (w *PackWriter) Close() error {
 
 func (w *PackWriter) save() error {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
-
 	idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
 	if err != nil {
 		return err

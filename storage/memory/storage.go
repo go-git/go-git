@@ -3,7 +3,6 @@ package memory
 
 import (
 	"fmt"
-	"io"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
@@ -108,11 +107,6 @@ type ObjectStorage struct {
 // NewObject creates a new MemoryObject
 func (o *ObjectStorage) NewObject() core.Object {
 	return &core.MemoryObject{}
-}
-
-// Writer method not supported on Memory storage
-func (o *ObjectStorage) Writer() (io.WriteCloser, error) {
-	return nil, core.ErrNotImplemented
 }
 
 // Set stores an object, the object should be properly filled before set it.

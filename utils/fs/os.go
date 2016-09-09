@@ -36,7 +36,7 @@ func (fs *OS) Create(filename string) (File, error) {
 	}
 
 	return &OSFile{
-		BaseFile: BaseFile{filename: fullpath},
+		BaseFile: BaseFile{filename: filename},
 		file:     f,
 	}, nil
 }
@@ -60,14 +60,8 @@ func (fs *OS) ReadDir(path string) ([]FileInfo, error) {
 }
 
 func (fs *OS) Rename(from, to string) error {
-	if !filepath.IsAbs(from) {
-		from = fs.Join(fs.RootDir, from)
-	}
-
-	if !filepath.IsAbs(to) {
-		to = fs.Join(fs.RootDir, to)
-	}
-
+	from = fs.Join(fs.RootDir, from)
+	to = fs.Join(fs.RootDir, to)
 	return os.Rename(from, to)
 }
 
@@ -80,7 +74,7 @@ func (fs *OS) Open(filename string) (File, error) {
 	}
 
 	return &OSFile{
-		BaseFile: BaseFile{filename: fullpath},
+		BaseFile: BaseFile{filename: filename},
 		file:     f,
 	}, nil
 }

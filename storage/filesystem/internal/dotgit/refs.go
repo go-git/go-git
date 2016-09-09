@@ -81,6 +81,10 @@ func (d *DotGit) addRefsFromRefDir(refs *[]*core.Reference) error {
 func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) error {
 	files, err := d.fs.ReadDir(relPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
 		return err
 	}
 
@@ -110,6 +114,10 @@ func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) err
 func (d *DotGit) addRefFromHEAD(refs *[]*core.Reference) error {
 	ref, err := d.readReferenceFile(".", "HEAD")
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
 		return err
 	}
 

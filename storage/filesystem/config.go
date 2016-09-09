@@ -44,11 +44,12 @@ func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
 }
 
 func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
-	return fmt.Errorf("not implemented yet")
+	return nil
+	return fmt.Errorf("set remote - not implemented yet")
 }
 
 func (c *ConfigStorage) DeleteRemote(name string) error {
-	return fmt.Errorf("not implemented yet")
+	return fmt.Errorf("delete - remote not implemented yet")
 }
 
 func (c *ConfigStorage) read() (*ConfigFile, error) {

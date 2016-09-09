@@ -18,14 +18,14 @@ var RootFolder = ""
 const DataFolder = "data"
 
 var fixtures = []*Fixture{{
-	Tags:         []string{"ofs-delta", ".git"},
+	Tags:         []string{"packfile", "ofs-delta", ".git"},
 	URL:          "https://github.com/git-fixtures/basic",
 	Head:         core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	PackfileHash: core.NewHash("a3fed42da1e8189a077c0e6846c040dcf73fc9dd"),
 	DotGitHash:   core.NewHash("0a00a25543e6d732dbf4e8e9fec55c8e65fc4e8d"),
 	ObjectsCount: 31,
 }, {
-	Tags:         []string{"ref-delta"},
+	Tags:         []string{"packfile", "ref-delta"},
 	URL:          "https://github.com/git-fixtures/basic",
 	Head:         core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	PackfileHash: core.NewHash("c544593473465e6315ad4182d04d366c4592b829"),
@@ -36,6 +36,7 @@ var fixtures = []*Fixture{{
 	DotGitHash:   core.NewHash("174be6bd4292c18160542ae6dc6704b877b8a01a"),
 	ObjectsCount: 2133,
 }, {
+	Tags:         []string{"packfile"},
 	URL:          "https://github.com/spinnaker/spinnaker",
 	Head:         core.NewHash("06ce06d0fc49646c4de733c45b7788aabad98a6f"),
 	PackfileHash: core.NewHash("f2e0a8889a746f7600e07d2246a2e29a72f696be"),
@@ -115,7 +116,7 @@ type Fixtures []*Fixture
 
 func (g Fixtures) Test(c *check.C, test func(*Fixture)) {
 	for _, f := range g {
-		c.Logf("executing test at %s", f.URL)
+		c.Logf("executing test at %s %s", f.URL, f.Tags)
 		test(f)
 	}
 }

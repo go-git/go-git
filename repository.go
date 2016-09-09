@@ -345,6 +345,10 @@ func (r *Repository) Ref(name core.ReferenceName, resolved bool) (*core.Referenc
 
 // Refs returns a map with all the References
 func (r *Repository) Refs() core.ReferenceIter {
-	i, _ := r.s.ReferenceStorage().Iter()
+	i, err := r.s.ReferenceStorage().Iter()
+	if err != nil {
+		panic(err)
+	}
+
 	return i
 }

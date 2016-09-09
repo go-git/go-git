@@ -74,7 +74,7 @@ func (s *ObjectStorage) Writer() (io.WriteCloser, error) {
 // yet supported, this method always returns a "not implemented yet"
 // error an zero hash.
 func (s *ObjectStorage) Set(core.Object) (core.Hash, error) {
-	return core.ZeroHash, fmt.Errorf("not implemented yet")
+	return core.ZeroHash, fmt.Errorf("set - not implemented yet")
 }
 
 // Get returns the object with the given hash, by searching for it in
@@ -219,19 +219,19 @@ func (o *ObjectStorage) Begin() core.TxObjectStorage {
 type TxObjectStorage struct{}
 
 func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
-	return core.ZeroHash, fmt.Errorf("not implemented yet")
+	return core.ZeroHash, fmt.Errorf("tx.Set - not implemented yet")
 }
 
 func (tx *TxObjectStorage) Get(core.ObjectType, core.Hash) (core.Object, error) {
-	return nil, fmt.Errorf("not implemented yet")
+	return nil, fmt.Errorf("tx.Get - not implemented yet")
 }
 
 func (tx *TxObjectStorage) Commit() error {
-	return fmt.Errorf("not implemented yet")
+	return fmt.Errorf("tx.Commit - not implemented yet")
 }
 
 func (tx *TxObjectStorage) Rollback() error {
-	return fmt.Errorf("not implemented yet")
+	return fmt.Errorf("tx.Rollback - not implemented yet")
 }
 
 type index map[core.Hash]int64

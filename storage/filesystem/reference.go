@@ -1,8 +1,6 @@
 package filesystem
 
 import (
-	"fmt"
-
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 )
@@ -13,7 +11,7 @@ type ReferenceStorage struct {
 }
 
 func (r *ReferenceStorage) Set(ref *core.Reference) error {
-	return fmt.Errorf("not implemented yet")
+	return r.dir.SetRef(ref)
 }
 
 func (r *ReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {

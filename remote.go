@@ -161,9 +161,20 @@ func (r *Remote) buildRequest(
 }
 
 func (r *Remote) updateObjectStorage(reader io.Reader) error {
-	stream := packfile.NewScannerFromReader(reader)
+	s := r.s.ObjectStorage()
+	if sw, ok := s.(core.ObjectStorageWrite); ok {
+		w, err := sw.Writer()
+		if err != nil {
+			return err
+		}
 
-	d := packfile.NewDecoder(stream, r.s.ObjectStorage())
+		defer w.Close()
+		_, err = io.Copy(w, reader)
+		return err
+	}
+
+	stream := packfile.NewScannerFromReader(reader)
+	d := packfile.NewDecoder(stream, s)
 	_, err := d.Decode()
 	return err
 }
