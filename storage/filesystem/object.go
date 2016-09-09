@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 // ObjectStorage is an implementation of core.ObjectStorage that stores
@@ -165,34 +166,50 @@ func (s *ObjectStorage) findObjectInPackfile(h core.Hash) (core.Hash, int64) {
 // Iter returns an iterator for all the objects in the packfile with the
 // given type.
 func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
-	var objects []core.Object
-
-	hashes, err := s.dir.Objects()
+	objects, err := s.dir.Objects()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, hash := range hashes {
-		object, err := s.getFromUnpacked(hash)
+	seen := make(map[core.Hash]bool, 0)
+	var iters []core.ObjectIter
+	if len(objects) != 0 {
+		iters = append(iters, &objectsIter{s: s, t: t, h: objects})
+		seen = hashListAsMap(objects)
+	}
+
+	packi, err := s.buildPackfileIters(t, seen)
+	if err != nil {
+		return nil, err
+	}
+
+	iters = append(iters, packi...)
+	return core.NewMultiObjectIter(iters), nil
+}
+
+func (s *ObjectStorage) buildPackfileIters(
+	t core.ObjectType, seen map[core.Hash]bool) ([]core.ObjectIter, error) {
+	packs, err := s.dir.ObjectPacks()
+	if err != nil {
+		return nil, err
+	}
+
+	var iters []core.ObjectIter
+	for _, h := range packs {
+		pack, err := s.dir.ObjectPack(h)
 		if err != nil {
 			return nil, err
 		}
-		if object.Type() == t {
-			objects = append(objects, object)
-		}
-	}
 
-	for hash := range s.index {
-		object, err := s.getFromPackfile(hash)
+		iter, err := newPackfileIter(pack, t, seen)
 		if err != nil {
 			return nil, err
 		}
-		if t == core.AnyObject || object.Type() == t {
-			objects = append(objects, object)
-		}
+
+		iters = append(iters, iter)
 	}
 
-	return core.NewObjectSliceIter(objects), nil
+	return iters, nil
 }
 
 func (o *ObjectStorage) Begin() core.TxObjectStorage {
@@ -232,4 +249,104 @@ func (i index) Decode(r io.Reader) error {
 	}
 
 	return nil
+}
+
+type packfileIter struct {
+	f fs.File
+	d *packfile.Decoder
+	t core.ObjectType
+
+	seen     map[core.Hash]bool
+	position uint32
+	total    uint32
+}
+
+func newPackfileIter(
+	f fs.File,
+	t core.ObjectType,
+	seen map[core.Hash]bool,
+) (core.ObjectIter, error) {
+	s := packfile.NewScanner(f)
+	_, total, err := s.Header()
+	if err != nil {
+		return nil, err
+	}
+
+	d := packfile.NewDecoder(s, memory.NewStorage().ObjectStorage())
+	return &packfileIter{f: f, d: d, t: t, total: total, seen: seen}, nil
+}
+
+func (iter *packfileIter) Next() (core.Object, error) {
+	if iter.position >= iter.total {
+		return nil, io.EOF
+	}
+
+	obj, err := iter.d.ReadObject()
+	if err != nil {
+		return nil, err
+	}
+
+	iter.position++
+	if iter.seen[obj.Hash()] {
+		return iter.Next()
+	}
+
+	if iter.t != core.AnyObject && iter.t != obj.Type() {
+		return iter.Next()
+	}
+
+	return obj, nil
+}
+
+// ForEach is never called since is used inside of a MultiObjectIterator
+func (iter *packfileIter) ForEach(cb func(core.Object) error) error {
+	return nil
+}
+
+func (iter *packfileIter) Close() {
+	iter.f.Close()
+	iter.d.Close()
+}
+
+type objectsIter struct {
+	s *ObjectStorage
+	t core.ObjectType
+	h []core.Hash
+}
+
+func (iter *objectsIter) Next() (core.Object, error) {
+	if len(iter.h) == 0 {
+		return nil, io.EOF
+	}
+
+	obj, err := iter.s.getFromUnpacked(iter.h[0])
+	iter.h = iter.h[1:]
+
+	if err != nil {
+		return nil, err
+	}
+
+	if iter.t != core.AnyObject && iter.t != obj.Type() {
+		return iter.Next()
+	}
+
+	return obj, err
+}
+
+// ForEach is never called since is used inside of a MultiObjectIterator
+func (iter *objectsIter) ForEach(cb func(core.Object) error) error {
+	return nil
+}
+
+func (iter *objectsIter) Close() {
+	iter.h = []core.Hash{}
+}
+
+func hashListAsMap(l []core.Hash) map[core.Hash]bool {
+	m := make(map[core.Hash]bool, len(l))
+	for _, h := range l {
+		m[h] = true
+	}
+
+	return m
 }

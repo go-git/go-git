@@ -53,3 +53,41 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(obj.Hash(), Equals, expected)
 }
+
+func (s *FsSuite) TestIter(c *C) {
+	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		o, err := newObjectStorage(dotgit.New(fs))
+		c.Assert(err, IsNil)
+
+		iter, err := o.Iter(core.AnyObject)
+		c.Assert(err, IsNil)
+
+		var count int32
+		err = iter.ForEach(func(o core.Object) error {
+			count++
+			return nil
+		})
+
+		c.Assert(err, IsNil)
+		c.Assert(count, Equals, f.ObjectsCount)
+	})
+}
+
+func (s *FsSuite) TestIterWithType(c *C) {
+	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		o, err := newObjectStorage(dotgit.New(fs))
+		c.Assert(err, IsNil)
+
+		iter, err := o.Iter(core.CommitObject)
+		c.Assert(err, IsNil)
+
+		err = iter.ForEach(func(o core.Object) error {
+			c.Assert(o.Type(), Equals, core.CommitObject)
+			return nil
+		})
+
+		c.Assert(err, IsNil)
+	})
+}

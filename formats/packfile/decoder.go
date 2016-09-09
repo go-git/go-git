@@ -91,12 +91,8 @@ func (d *Decoder) doDecode() error {
 
 func (d *Decoder) readObjects(count uint32) error {
 	for i := 0; i < int(count); i++ {
-		obj, err := d.readObject()
+		_, err := d.ReadObject()
 		if err != nil {
-			return err
-		}
-
-		if _, err := d.tx.Set(obj); err != nil {
 			return err
 		}
 	}
@@ -104,7 +100,8 @@ func (d *Decoder) readObjects(count uint32) error {
 	return nil
 }
 
-func (d *Decoder) readObject() (core.Object, error) {
+// ReadObject reads a object from the stream and return it
+func (d *Decoder) ReadObject() (core.Object, error) {
 	h, err := d.s.NextObjectHeader()
 	if err != nil {
 		return nil, err
@@ -130,7 +127,29 @@ func (d *Decoder) readObject() (core.Object, error) {
 	}
 
 	d.remember(obj, h.Offset, crc)
+
+	if _, err := d.tx.Set(obj); err != nil {
+		return nil, err
+	}
+
 	return obj, nil
+}
+
+// ReadObjectAt reads an object at the given location
+func (d *Decoder) ReadObjectAt(offset int64) (core.Object, error) {
+	beforeJump, err := d.s.Seek(offset)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_, seekErr := d.s.Seek(beforeJump)
+		if err == nil {
+			err = seekErr
+		}
+	}()
+
+	return d.ReadObject()
 }
 
 func (d *Decoder) fillRegularObjectContent(obj core.Object) (uint32, error) {
@@ -193,23 +212,6 @@ func (d *Decoder) recallByOffset(o int64) (core.Object, error) {
 
 func (d *Decoder) recallByHash(h core.Hash) (core.Object, error) {
 	return d.tx.Get(core.AnyObject, h)
-}
-
-// ReadObjectAt reads an object at the given location
-func (d *Decoder) ReadObjectAt(offset int64) (core.Object, error) {
-	beforeJump, err := d.s.Seek(offset)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_, seekErr := d.s.Seek(beforeJump)
-		if err == nil {
-			err = seekErr
-		}
-	}()
-
-	return d.readObject()
 }
 
 // Offsets returns the objects read offset

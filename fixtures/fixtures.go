@@ -23,15 +23,18 @@ var fixtures = []*Fixture{{
 	Head:         core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	PackfileHash: core.NewHash("a3fed42da1e8189a077c0e6846c040dcf73fc9dd"),
 	DotGitHash:   core.NewHash("0a00a25543e6d732dbf4e8e9fec55c8e65fc4e8d"),
+	ObjectsCount: 31,
 }, {
 	Tags:         []string{"ref-delta"},
 	URL:          "https://github.com/git-fixtures/basic",
 	Head:         core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	PackfileHash: core.NewHash("c544593473465e6315ad4182d04d366c4592b829"),
+	ObjectsCount: 31,
 }, {
-	Tags:       []string{".git", "unpacked", "multi-packfile"},
-	URL:        "https://github.com/src-d/go-git.git",
-	DotGitHash: core.NewHash("174be6bd4292c18160542ae6dc6704b877b8a01a"),
+	Tags:         []string{".git", "unpacked", "multi-packfile"},
+	URL:          "https://github.com/src-d/go-git.git",
+	DotGitHash:   core.NewHash("174be6bd4292c18160542ae6dc6704b877b8a01a"),
+	ObjectsCount: 2133,
 }, {
 	URL:          "https://github.com/spinnaker/spinnaker",
 	Head:         core.NewHash("06ce06d0fc49646c4de733c45b7788aabad98a6f"),
@@ -76,6 +79,7 @@ type Fixture struct {
 	Head         core.Hash
 	PackfileHash core.Hash
 	DotGitHash   core.Hash
+	ObjectsCount int32
 }
 
 func (f *Fixture) Packfile() io.ReadSeeker {
