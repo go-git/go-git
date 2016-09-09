@@ -229,3 +229,66 @@ func (iter *ObjectSliceIter) ForEach(cb func(Object) error) error {
 func (iter *ObjectSliceIter) Close() {
 	iter.pos = len(iter.series)
 }
+
+// MultiObjectIter implements ObjectIter. It iterates over several ObjectIter,
+//
+// The MultiObjectIter must be closed with a call to Close() when it is no
+// longer needed.
+type MultiObjectIter struct {
+	iters []ObjectIter
+	pos   int
+}
+
+// NewMultiObjectIter returns an object iterator for the given slice of objects.
+func NewMultiObjectIter(iters []ObjectIter) ObjectIter {
+	return &MultiObjectIter{iters: iters}
+}
+
+// Next returns the next object from the iterator, if one iterator reach io.EOF
+// is removed and the next one is used.
+func (iter *MultiObjectIter) Next() (Object, error) {
+	if len(iter.iters) == 0 {
+		return nil, io.EOF
+	}
+
+	obj, err := iter.iters[0].Next()
+	if err == io.EOF {
+		iter.iters[0].Close()
+		iter.iters = iter.iters[1:]
+		return iter.Next()
+	}
+
+	return obj, err
+}
+
+// ForEach call the cb function for each object contained on this iter until
+// an error happends or the end of the iter is reached. If ErrStop is sent
+// the iteration is stop but no error is returned. The iterator is closed.
+func (iter *MultiObjectIter) ForEach(cb func(Object) error) error {
+	defer iter.Close()
+	for {
+		obj, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return err
+		}
+
+		if err := cb(obj); err != nil {
+			if err == ErrStop {
+				return nil
+			}
+
+			return nil
+		}
+	}
+}
+
+// Close releases any resources used by the iterator.
+func (iter *MultiObjectIter) Close() {
+	for _, i := range iter.iters {
+		i.Close()
+	}
+}
