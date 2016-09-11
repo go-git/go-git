@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	r := git.NewMemoryRepository()
+	r, _ := git.NewFilesystemRepository(".git")
 
 	// Clone the given repository, creating the remote, the local branches
 	// and fetching the objects, exactly as:
@@ -28,8 +28,8 @@ func main() {
 	// ... retrieving the branch being pointed by HEAD
 	ref, _ := r.Head()
 	// ... retrieving the commit object
-	commit, _ := r.Commit(ref.Hash())
-	fmt.Println(commit)
+	commit, err := r.Commit(ref.Hash())
+	fmt.Println(commit, err)
 
 	// List the tree from HEAD
 	// > git ls-tree -r HEAD

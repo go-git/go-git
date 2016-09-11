@@ -1,10 +1,12 @@
 package packfile
 
 import (
+	"io"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/formats/idxfile"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
@@ -68,7 +70,7 @@ func (s *ReaderSuite) TestDecode(c *C) {
 	})
 }
 func (s *ReaderSuite) TestDecodeCRCs(c *C) {
-	f := fixtures.Basic().ByTag("ofs-delta")
+	f := fixtures.Basic().ByTag("ofs-delta").One()
 
 	scanner := NewScanner(f.Packfile())
 	storage := memory.NewStorage()
@@ -86,18 +88,24 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 }
 
 func (s *ReaderSuite) TestReadObjectAt(c *C) {
-	f := fixtures.Basic().One()
+	fixtures.Basic().Test(c, func(f *fixtures.Fixture) {
+		scanner := NewScanner(f.Packfile())
+		storage := memory.NewStorage()
 
-	scanner := NewScanner(f.Packfile())
-	storage := memory.NewStorage()
+		d := NewDecoder(scanner, storage.ObjectStorage())
 
-	d := NewDecoder(scanner, storage.ObjectStorage())
+		// when the packfile is ref-delta based, the offsets are required
+		if f.Is("ref-delta") {
+			offsets := getOffsetsFromIdx(f.Idx())
+			d.SetOffsets(offsets)
+		}
 
-	// the objects at reference 186, is a delta, so should be recall, without
-	// being read before.
-	obj, err := d.ReadObjectAt(186)
-	c.Assert(err, IsNil)
-	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+		// the objects at reference 186, is a delta, so should be recall,
+		// without being read before.
+		obj, err := d.ReadObjectAt(186)
+		c.Assert(err, IsNil)
+		c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	})
 }
 
 func AssertObjects(c *C, s *memory.Storage, expects []string) {
@@ -109,4 +117,19 @@ func AssertObjects(c *C, s *memory.Storage, expects []string) {
 		c.Assert(err, IsNil)
 		c.Assert(obt.Hash().String(), Equals, exp)
 	}
+}
+
+func getOffsetsFromIdx(r io.Reader) map[core.Hash]int64 {
+	idx := &idxfile.Idxfile{}
+	err := idxfile.NewDecoder(r).Decode(idx)
+	if err != nil {
+		panic(err)
+	}
+
+	offsets := make(map[core.Hash]int64)
+	for _, e := range idx.Entries {
+		offsets[e.Hash] = int64(e.Offset)
+	}
+
+	return offsets
 }

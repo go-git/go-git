@@ -17,7 +17,9 @@ var RootFolder = ""
 
 const DataFolder = "data"
 
-var fixtures = []*Fixture{{
+var folders []string
+
+var fixtures = Fixtures{{
 	Tags:         []string{"packfile", "ofs-delta", ".git"},
 	URL:          "https://github.com/git-fixtures/basic",
 	Head:         core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -25,10 +27,11 @@ var fixtures = []*Fixture{{
 	DotGitHash:   core.NewHash("0a00a25543e6d732dbf4e8e9fec55c8e65fc4e8d"),
 	ObjectsCount: 31,
 }, {
-	Tags:         []string{"packfile", "ref-delta"},
+	Tags:         []string{"packfile", "ref-delta", ".git"},
 	URL:          "https://github.com/git-fixtures/basic",
 	Head:         core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	PackfileHash: core.NewHash("c544593473465e6315ad4182d04d366c4592b829"),
+	DotGitHash:   core.NewHash("7cbde0ca02f13aedd5ec8b358ca17b1c0bf5ee64"),
 	ObjectsCount: 31,
 }, {
 	Tags:         []string{".git", "unpacked", "multi-packfile"},
@@ -51,27 +54,11 @@ func Basic() Fixtures {
 }
 
 func ByURL(url string) Fixtures {
-	r := make(Fixtures, 0)
-	for _, f := range fixtures {
-		if f.URL == url {
-			r = append(r, f)
-		}
-	}
-
-	return r
+	return fixtures.ByURL(url)
 }
 
 func ByTag(tag string) Fixtures {
-	r := make(Fixtures, 0)
-	for _, f := range fixtures {
-		for _, t := range f.Tags {
-			if t == tag {
-				r = append(r, f)
-			}
-		}
-	}
-
-	return r
+	return fixtures.ByTag(tag)
 }
 
 type Fixture struct {
@@ -81,6 +68,16 @@ type Fixture struct {
 	PackfileHash core.Hash
 	DotGitHash   core.Hash
 	ObjectsCount int32
+}
+
+func (f *Fixture) Is(tag string) bool {
+	for _, t := range f.Tags {
+		if t == tag {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (f *Fixture) Packfile() io.ReadSeeker {
@@ -109,6 +106,8 @@ func (f *Fixture) DotGit() fs.Filesystem {
 	if err != nil {
 		panic(err)
 	}
+
+	folders = append(folders, path)
 	return fs.NewOS(path)
 }
 
@@ -125,14 +124,23 @@ func (g Fixtures) One() *Fixture {
 	return g[0]
 }
 
-func (g Fixtures) ByTag(tag string) *Fixture {
+func (g Fixtures) ByTag(tag string) Fixtures {
+	r := make(Fixtures, 0)
 	for _, f := range g {
-		for _, t := range f.Tags {
-			if t == tag {
-				return f
-			}
+		if f.Is(tag) {
+			r = append(r, f)
 		}
 	}
 
-	return nil
+	return r
+}
+func (g Fixtures) ByURL(url string) Fixtures {
+	r := make(Fixtures, 0)
+	for _, f := range g {
+		if f.URL == url {
+			r = append(r, f)
+		}
+	}
+
+	return r
 }

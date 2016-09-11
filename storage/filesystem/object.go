@@ -67,7 +67,19 @@ func (s *ObjectStorage) NewObject() core.Object {
 
 // Writer method not supported on Memory storage
 func (s *ObjectStorage) Writer() (io.WriteCloser, error) {
-	return s.dir.NewObjectPack()
+	w, err := s.dir.NewObjectPack()
+	if err != nil {
+		return nil, err
+	}
+
+	w.Notify = func(h core.Hash, idx idxfile.Idxfile) {
+		s.index[h] = make(index)
+		for _, e := range idx.Entries {
+			s.index[h][e.Hash] = int64(e.Offset)
+		}
+	}
+
+	return w, nil
 }
 
 // Set adds a new object to the storage. As this functionality is not
@@ -150,6 +162,7 @@ func (s *ObjectStorage) getFromPackfile(h core.Hash) (core.Object, error) {
 
 	p := packfile.NewScanner(f)
 	d := packfile.NewDecoder(p, memory.NewStorage().ObjectStorage())
+	d.SetOffsets(s.index[pack])
 	return d.ReadObjectAt(offset)
 }
 

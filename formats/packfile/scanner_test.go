@@ -49,7 +49,7 @@ func (s *ScannerSuite) TestNextObjectHeaderOFSDelta(c *C) {
 }
 
 func (s *ScannerSuite) testNextObjectHeader(c *C, tag string, expected []ObjectHeader) {
-	r := fixtures.Basic().ByTag(tag).Packfile()
+	r := fixtures.Basic().ByTag(tag).One().Packfile()
 	p := NewScanner(r)
 
 	_, objects, err := p.Header()
@@ -72,7 +72,7 @@ func (s *ScannerSuite) testNextObjectHeader(c *C, tag string, expected []ObjectH
 }
 
 func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {
-	f := fixtures.Basic().ByTag("ref-delta")
+	f := fixtures.Basic().ByTag("ref-delta").One()
 	r := f.Packfile()
 	p := NewScanner(r)
 

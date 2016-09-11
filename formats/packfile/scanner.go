@@ -41,8 +41,6 @@ type ObjectHeader struct {
 	OffsetReference int64
 }
 
-// A Parser is a collection of functions to read and process data form a packfile.
-// Values from this type are not zero-value safe. See the NewParser function bellow.
 type Scanner struct {
 	r   reader
 	crc hash.Hash32
@@ -53,18 +51,22 @@ type Scanner struct {
 	version, objects uint32
 }
 
-// NewParser returns a new Parser that reads from the packfile represented by r.
-func NewScannerFromReader(r io.Reader) *Scanner {
-	s := &trackableReader{Reader: r}
-	return NewScanner(s)
-}
+// NewScanner returns a new Scanner based on a reader, if the given reader
+// implements io.ReadSeeker the Scanner will be also Seekable
+func NewScanner(r io.Reader) *Scanner {
+	seeker, ok := r.(io.ReadSeeker)
+	if !ok {
+		seeker = &trackableReader{Reader: r}
+	}
 
-func NewScanner(r io.ReadSeeker) *Scanner {
 	crc := crc32.NewIEEE()
-	seeker := newByteReadSeeker(r)
-	tee := &teeReader{seeker, crc}
-
-	return &Scanner{r: tee, crc: crc}
+	return &Scanner{
+		r: &teeReader{
+			newByteReadSeeker(seeker),
+			crc,
+		},
+		crc: crc,
+	}
 }
 
 // Header reads the whole packfile header (signature, version and object count).
@@ -265,6 +267,8 @@ func (s *Scanner) readLength(first byte) (int64, error) {
 	return length, nil
 }
 
+// NextObject writes the content of the next object into the reader, returns
+// the number of bytes written, the CRC32 of the content and an error, if any
 func (s *Scanner) NextObject(w io.Writer) (written int64, crc32 uint32, err error) {
 	defer s.crc.Reset()
 
@@ -308,6 +312,7 @@ func (s *Scanner) Seek(offset int64) (previous int64, err error) {
 	return previous, err
 }
 
+// Checksum returns the checksum of the packfile
 func (s *Scanner) Checksum() (core.Hash, error) {
 	err := s.discardObjectIfNeeded()
 	if err != nil {
@@ -383,6 +388,7 @@ func (s *Scanner) readByte() (byte, error) {
 	return b, err
 }
 
+// Close reads the reader until io.EOF
 func (s *Scanner) Close() error {
 	_, err := io.Copy(ioutil.Discard, s.r)
 	return err

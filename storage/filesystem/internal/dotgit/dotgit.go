@@ -236,6 +236,7 @@ type PackWriter struct {
 	checksum core.Hash
 	index    idxfile.Idxfile
 	result   chan error
+	Notify   func(h core.Hash, i idxfile.Idxfile)
 }
 
 func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
@@ -265,7 +266,7 @@ func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
 func (w *PackWriter) buildIndex() {
 	defer w.sr.Close()
 	o := memory.NewStorage().ObjectStorage()
-	s := packfile.NewScannerFromReader(w.sr)
+	s := packfile.NewScanner(w.sr)
 	d := packfile.NewDecoder(s, o)
 
 	checksum, err := d.Decode()
@@ -307,7 +308,15 @@ func (w *PackWriter) Close() error {
 		return err
 	}
 
-	return w.save()
+	if err := w.save(); err != nil {
+		return err
+	}
+
+	if w.Notify != nil {
+		w.Notify(w.checksum, w.index)
+	}
+
+	return nil
 }
 
 func (w *PackWriter) save() error {

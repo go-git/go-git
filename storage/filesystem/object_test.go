@@ -17,7 +17,7 @@ func (s *FsSuite) SetUpSuite(c *C) {
 }
 
 func (s *FsSuite) TestGetFromObjectFile(c *C) {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	o, err := newObjectStorage(dotgit.New(fs))
 	c.Assert(err, IsNil)
 
@@ -28,18 +28,20 @@ func (s *FsSuite) TestGetFromObjectFile(c *C) {
 }
 
 func (s *FsSuite) TestGetFromPackfile(c *C) {
-	fs := fixtures.Basic().ByTag(".git").DotGit()
-	o, err := newObjectStorage(dotgit.New(fs))
-	c.Assert(err, IsNil)
+	fixtures.Basic().ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		o, err := newObjectStorage(dotgit.New(fs))
+		c.Assert(err, IsNil)
 
-	expected := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	obj, err := o.Get(core.AnyObject, expected)
-	c.Assert(err, IsNil)
-	c.Assert(obj.Hash(), Equals, expected)
+		expected := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+		obj, err := o.Get(core.AnyObject, expected)
+		c.Assert(err, IsNil)
+		c.Assert(obj.Hash(), Equals, expected)
+	})
 }
 
 func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
-	fs := fixtures.ByTag(".git").ByTag("multi-packfile").DotGit()
+	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
 	o, err := newObjectStorage(dotgit.New(fs))
 	c.Assert(err, IsNil)
 

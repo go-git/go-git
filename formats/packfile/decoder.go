@@ -43,8 +43,9 @@ type Decoder struct {
 	o  core.ObjectStorage
 	tx core.TxObjectStorage
 
-	offsets map[int64]core.Hash
-	crcs    map[core.Hash]uint32
+	offsetToHash map[int64]core.Hash
+	hashToOffset map[core.Hash]int64
+	crcs         map[core.Hash]uint32
 }
 
 // NewDecoder returns a new Decoder that reads from r.
@@ -54,8 +55,9 @@ func NewDecoder(s *Scanner, o core.ObjectStorage) *Decoder {
 		o:  o,
 		tx: o.Begin(),
 
-		offsets: make(map[int64]core.Hash, 0),
-		crcs:    make(map[core.Hash]uint32, 0),
+		offsetToHash: make(map[int64]core.Hash, 0),
+		hashToOffset: make(map[core.Hash]int64, 0),
+		crcs:         make(map[core.Hash]uint32, 0),
 	}
 }
 
@@ -82,11 +84,7 @@ func (d *Decoder) doDecode() error {
 		return err
 	}
 
-	if err := d.tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return d.tx.Commit()
 }
 
 func (d *Decoder) readObjects(count uint32) error {
@@ -126,7 +124,9 @@ func (d *Decoder) ReadObject() (core.Object, error) {
 		return obj, err
 	}
 
-	d.remember(obj, h.Offset, crc)
+	hash := obj.Hash()
+	d.setOffset(hash, h.Offset)
+	d.setCRC(hash, crc)
 
 	if _, err := d.tx.Set(obj); err != nil {
 		return nil, err
@@ -194,34 +194,45 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj core.Object, offset int64) (uint
 	return crc, ApplyDelta(obj, base, buf.Bytes())
 }
 
-func (d *Decoder) remember(obj core.Object, offset int64, crc uint32) {
-	h := obj.Hash()
+func (d *Decoder) setOffset(h core.Hash, offset int64) {
+	d.offsetToHash[offset] = h
+	d.hashToOffset[h] = offset
+}
 
-	d.offsets[offset] = h
+func (d *Decoder) setCRC(h core.Hash, crc uint32) {
 	d.crcs[h] = crc
 }
 
 func (d *Decoder) recallByOffset(o int64) (core.Object, error) {
-	h, ok := d.offsets[o]
-	if ok {
-		return d.recallByHash(h)
+	if h, ok := d.offsetToHash[o]; ok {
+		return d.tx.Get(core.AnyObject, h)
 	}
 
 	return d.ReadObjectAt(o)
 }
 
 func (d *Decoder) recallByHash(h core.Hash) (core.Object, error) {
-	return d.tx.Get(core.AnyObject, h)
+	obj, err := d.tx.Get(core.AnyObject, h)
+	if err != core.ErrObjectNotFound {
+		return obj, err
+	}
+
+	if o, ok := d.hashToOffset[h]; ok {
+		return d.ReadObjectAt(o)
+	}
+
+	return nil, core.ErrObjectNotFound
+}
+
+// SetOffsets sets the offsets, required when using the method ReadObjectAt,
+// without decoding the full packfile
+func (d *Decoder) SetOffsets(offsets map[core.Hash]int64) {
+	d.hashToOffset = offsets
 }
 
 // Offsets returns the objects read offset
 func (d *Decoder) Offsets() map[core.Hash]int64 {
-	i := make(map[core.Hash]int64, len(d.offsets))
-	for o, h := range d.offsets {
-		i[h] = o
-	}
-
-	return i
+	return d.hashToOffset
 }
 
 // CRCs returns the CRC-32 for each objected read
