@@ -3,35 +3,17 @@ package git
 import (
 	"bytes"
 	"fmt"
-	"os"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
 
 type ReferencesSuite struct {
-	repos map[string]*Repository
+	BaseSuite
 }
 
 var _ = Suite(&ReferencesSuite{})
-
-// create the repositories of the fixtures
-func (s *ReferencesSuite) SetUpSuite(c *C) {
-	s.repos = make(map[string]*Repository, 0)
-	for _, fix := range fixtureRepos {
-		s.repos[fix.url] = NewMemoryRepository()
-
-		f, err := os.Open(fix.packfile)
-		defer f.Close()
-		c.Assert(err, IsNil)
-		r := packfile.NewScanner(f)
-		d := packfile.NewDecoder(r, s.repos[fix.url].s.ObjectStorage())
-		_, err = d.Decode()
-		c.Assert(err, IsNil)
-	}
-}
 
 var referencesTests = [...]struct {
 	// input data to revlist
@@ -42,28 +24,28 @@ var referencesTests = [...]struct {
 	revs []string
 }{
 	// Tyba git-fixture
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", []string{
 		"35e85108805c84807bc66a02d91535e1e24b38b9",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", []string{
 		"b8e471f58bcbca63b07bda20e428190409c2db47",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", []string{
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", []string{
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", []string{
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", []string{
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", []string{
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", []string{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	}},
 	{"https://github.com/jamesob/desk.git", "d4edaf0e8101fcea437ebd982d899fe2cc0f9f7b", "LICENSE", []string{
@@ -305,7 +287,7 @@ var referencesTests = [...]struct {
 
 func (s *ReferencesSuite) TestRevList(c *C) {
 	for _, t := range referencesTests {
-		repo, ok := s.repos[t.repo]
+		repo, ok := s.Repositories[t.repo]
 		c.Assert(ok, Equals, true)
 
 		commit, err := repo.Commit(core.NewHash(t.commit))
@@ -371,7 +353,7 @@ func (s *ReferencesSuite) TestEquivalent(c *C) {
 
 // returns the commits from a slice of hashes
 func (s *ReferencesSuite) commits(cc *C, repo string, hs ...string) []*Commit {
-	r, ok := s.repos[repo]
+	r, ok := s.Repositories[repo]
 	cc.Assert(ok, Equals, true)
 	result := make([]*Commit, 0, len(hs))
 	for _, h := range hs {

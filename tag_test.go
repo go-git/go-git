@@ -29,7 +29,8 @@ var tagTests = []struct {
 }{
 	// https://api.github.com/repos/spinnaker/spinnaker/git/tags/TAGHASH
 	{"https://github.com/spinnaker/spinnaker.git", map[string]expectedTag{
-		"48b655898fa9c72d62e8dd73b022ecbddd6e4cc2": {"a77d88e40e86ae81b3ce1c19d04fd73f473f5644", core.CommitObject, "v0.13.0", "cfieber", "cfieber@netflix.com", "2015-11-20T19:37:31Z", "Release of 0.13.0\n\n- a77d88e40e86ae81b3ce1c19d04fd73f473f5644: Merge pull request #606 from duftler/check-log-dirs\n- a174b873e97fb9a2d551d007c92aa5889c081a99: Always check if log dirs exist before starting services via spinnaker umbrella service. Stop/start spinnaker instead of restart since restart seems not happy about a service that is not already running.\n- 8586b7cd3f70fe63053fd5fa321bc86c6b803622: Merge pull request #603 from ewiseblatt/remove_obsolete_scripts\n- 3525c938ab51af81cff2448c8c784b925af2fd0f: Merge pull request #604 from kenzanlabs/kenzan-master\n- b1b5146a77d363e136336923429134d0759eb9c8: Script to generate ami_table.md and ami_table.json files after the jenkins ami build is complete\n- 1ef157853d770a26e7682e543ac42de485b34f77: Removed obsolete scripts.\n"},
+		"48b655898fa9c72d62e8dd73b022ecbddd6e4cc2": {
+			"a77d88e40e86ae81b3ce1c19d04fd73f473f5644", core.CommitObject, "v0.13.0", "cfieber", "cfieber@netflix.com", "2015-11-20T19:37:31Z", "Release of 0.13.0\n\n- a77d88e40e86ae81b3ce1c19d04fd73f473f5644: Merge pull request #606 from duftler/check-log-dirs\n- a174b873e97fb9a2d551d007c92aa5889c081a99: Always check if log dirs exist before starting services via spinnaker umbrella service. Stop/start spinnaker instead of restart since restart seems not happy about a service that is not already running.\n- 8586b7cd3f70fe63053fd5fa321bc86c6b803622: Merge pull request #603 from ewiseblatt/remove_obsolete_scripts\n- 3525c938ab51af81cff2448c8c784b925af2fd0f: Merge pull request #604 from kenzanlabs/kenzan-master\n- b1b5146a77d363e136336923429134d0759eb9c8: Script to generate ami_table.md and ami_table.json files after the jenkins ami build is complete\n- 1ef157853d770a26e7682e543ac42de485b34f77: Removed obsolete scripts.\n"},
 		"82562fa518f0a2e2187ea2604b07b67f2e7049ae": {"1ea743cd62e8e60f97f55a434a3f46400b49f606", core.CommitObject, "v0.12.0", "cfieber", "cfieber@netflix.com", "2015-11-19T22:04:22Z", "Release of 0.12.0\n\n- 1ea743cd62e8e60f97f55a434a3f46400b49f606: Merge pull request #599 from ewiseblatt/no_distribution\n- 8fe3f13ad04ee25fde0add4ed19d29acd49a5916: Up GCE source image to trusty-v20151113\n- 855e3b979f1d65fbfbcc68df905dafb9945f3825: Merge pull request #601 from ewiseblatt/no_longer_tar\n- d79f2736da55c123ba638710284e2856041262a5: Removed obsolete tar packaging.\n- 2b1ab713af3789204594a45f265cc93858807e98: Merge pull request #600 from ewiseblatt/remove_bootstrap\n- 52831ed7689ab0f481486f62e81d2b4e9e1c535b: Removed obsolete BootstrapSpinnaker.sh\n- 1b44b5467f78a3f5e1915b6fe78f7d0814c29427: Merge pull request #595 from duftler/sync-settings-file\n- 637ba49300f701cfbd859c1ccf13c4f39a9ba1c8: Sync feature block in settings.js.\n- 4f3c7375fa7c661735a6a69beeeeac1aaa43f7c9: Merge pull request #593 from ewiseblatt/2_run_dev_autoconfigure\n- a74422026841e05debdcc417190428b419a99f39: Merge pull request #564 from mstantoncook/master\n- d73f9cee49a5ad27a42a6e18af7c49a8f28ad8a8: Auto-generate spinnaker-local.yml on run_dev first's run.\n- b260ce026a2505037876b4c21c0985882ff373b7: Merge pull request #591 from ewiseblatt/1_move_transform_yaml\n- bb6325e4e629fc7348a6d0e6842280d5304160ff: Moved yaml transform method.\n- 608976766959bdb1b18eaa53b3ca33ee6782bc3c: Merge pull request #590 from kenzanlabs/master\n- cfdd19354e2a3981484a7cfe4b0d95c9abce9296: Merge pull request #589 from ewiseblatt/readme\n- 8ef83dd443a05e9122681950399edaa58a38d466: Updated run_dev instructions.\n- 769ce2a32e60bf2219ffb5b8467d62f71f1e4877: Merge pull request #1 from skorten/cassandra-thrift-fix\n- b2c7142082d52b09ca20228606c31c7479c0833e: using apt-mark to put a hold on cassandra packages so they will not be get upgraded from 2.1 and break thrift\n- d25148149d6a67989be79cdb7452cdab8d2f1a4b: Merge pull request #586 from ewiseblatt/reconfigure\n- c89dab0d42f1856d157357e9010f8cc6a12f5b1f: Fixes reconfigure_spinnaker.sh to behave properly when not run as root.\n- 8a9804234551d61209f67b3c89f7706f248ae805: Merge pull request #581 from ewiseblatt/03_fix_run_dev\n- b45ffa99a6daaf045043ab0b0d8bcf823f10e157: Merge pull request #580 from ewiseblatt/02_create_dev\n- 827682091dd09c1887e82686e36822695b88bb1e: Merge pull request #579 from ewiseblatt/01_install_dev\n- 4f9cd01b6e533c3b1261660b9cc3302879e5b303: Merge pull request #554 from ewiseblatt/fix_transform\n- d1ff4e13e9e0b500821aa558373878f93487e34b: Refactored install_development.sh to use production install\n- 1c370109898641253617a4d48d77f2c9b0a4ccf5: Merge pull request #584 from dpeterka/master\n- 8d1e069744321ff97cbefeaba593c778105c3aad: Cosmetic changes. Fix ports in login script\n- dd7e66c862209e8b912694a582a09c0db3227f0d: Update InstallSpinnaker.sh\n- 4cce5f988005be72dca910fb53e4b2f5802bf7cf: need to add front50 url to clouddriver in configs\n- 0ae9771322873f03893180d90b0af5e3b30154e9: Merge pull request #583 from dpeterka/master\n- e805183c72f0426fb073728c01901c2fd2db1da6: Reconfigure AWS only on boot\n- f98b6099746b849abfb9d5b1db7e861363747be2: Consistent naming for packages\n- 52edbd4c10193f87f8f9768c92789637bfedb867: Don't prompt, just install packer so it's available for rush.\n- d7a3eedbf9fa133d7c4366afae555a2ed46d4849: Merge pull request #582 from saulshanabrook/patch-1\n- 9944d6cf72b8f82d622d85dad7434472bc8f397d: Fix readme link\n- 6694fb99ca6fbf469798f1fb9386b55ff80f0128: Merge pull request #578 from spinnaker/readme-cleanup\n- 174bdbf9edfb0ca88415dd4a673852d5b22e7036: Remove note about packer.\n- 2b28ea424acc8f2817d3298c143fae68bcad91a7: Fix run_dev\n- 206033f8afb2609982fdc6e929a94a340bc80054: Updated create_google_dev_vm (and run_dev)\n- 811795c8a185e88f5d269195cb68b29c8d0fe170: Update README.adoc\n- 4584fab37e93d66fd1896d07fa3427f8056711bc: Removed redudnant attribute\n"},
 		"3e349f806a0d02bf658c3544c46a0a7a9ee78673": {"6ea37d18b706aab813532254ce0d412843c68782", core.CommitObject, "v0.11.0", "cfieber", "cfieber@netflix.com", "2015-11-17T22:07:00Z", "Release of 0.11.0\n\n- 6ea37d18b706aab813532254ce0d412843c68782: Merge pull request #571 from dpeterka/changeRepoName\n- fad219f07e362f97eda945790320f1f0552a919c: Merge pull request #574 from duftler/always-install-packer\n- 376599177551c3f04ccc94d71bbb4d037dec0c3f: Don't prompt, just install packer so it's available for rush.\n- 9414750a933037ec4f0bc42af7ad81ec4f360c0a: Merge pull request #572 from erjohnso/master\n- d6e6fe0194447cc280f942d6a2e0521b68ea7796: Point non-devs to getting started user docs\n- e259e024b1c7a221e8329fb942a4992738bc81af: update docker compose to use /opt/spinnaker/config\n- b32b2aecae2cfca4840dd480f8082da206a538da: Merge pull request #566 from ewiseblatt/refactor_install\n- 8eed01ff4f2ef7c9c68ab031b54e0cf84a0b1cc9: Consistent naming for packages\n- 66ee9032d57be4bac236edec0e501aaa0501a57d: Merge pull request #570 from spinnaker/cleanup-instructions\n- 24551a5d486969a2972ee05e87f16444890f9555: Update instructions.\n- d4b48a39aba7d3bd3e8abef2274a95b112d1ae73: Add option to only install dependencies without installing spinnaker services.\n- 5ad50e028c59d67ae5d8160e685947582dc68f36: Merge pull request #569 from analytically/master\n- 9a06d3f20eabb254d0a1e2ff7735ef007ccd595e: Fix Ubuntu version.\n- c0a70a0f5aa494f0ae01c55ba191f2325556489a: change heading to setting up spinnaker for development\n- d6905eab6fec1841c7cf8e4484499f5c8d7d423e: update Readme to point to the getting started guide\n- f5300bb86b22eda66eb4baef6b2a211c85f14690: Merge pull request #560 from ewiseblatt/autogen_packages\n- d3046b5b2f7aafa0832da6806ee8c7dab7d0da9e: Merge pull request #559 from ewiseblatt/remove_obsolete_instructions\n- ca87222cb609773c56d43c960e8f0ade554fc138: Removed obsolete instructions output.\n- bd42370d3fe8d410e78acb96f81cb3d838ad1c21: change url for join slack button\n- 67f0a0f488b3592bb611391150f2e1d0ee037231: Merge pull request #558 from gregturn/convert-to-asciidoc\n- 638f61b3331695f46f1a88095e26dea0f09f176b: Convert README to asciidoctor\n- 09a4ea729b25714b6368959eea5113c99938f7b6: Generate bintray packages if needed.\n- 8731e9edc1619e798a76fedb30b26cf48fa62897: Merge pull request #555 from dpeterka/master\n- bcbbd656c19dbc47ffd5b247927ea99f3949c78a: Add VPC Scripts\n"},
 		"d081d66c2a76d04ff479a3431dc36e44116fde40": {"e0005f50e22140def60260960b21667f1fdfff80", core.CommitObject, "v0.10.0", "cfieber", "cfieber@netflix.com", "2015-11-16T15:25:36Z", "Release of 0.10.0\n\n- e0005f50e22140def60260960b21667f1fdfff80: Merge pull request #553 from ewiseblatt/rendezvous\n- e1a2b26b784179e6903a7ae967c037c721899eba: Wait for cassandra before starting spinnaker\n- c756e09461d071e98b8660818cf42d90c90f2854: Merge pull request #552 from duftler/google-c2d-tweaks\n- 0777fadf4ca6f458d7071de414f9bd5417911037: Fix incorrect config prop names:   s/SPINNAKER_GOOGLE_PROJECT_DEFAULT_REGION/SPINNAKER_GOOGLE_DEFAULT_REGION   s/SPINNAKER_GOOGLE_PROJECT_DEFAULT_ZONE/SPINNAKER_GOOGLE_DEFAULT_ZONE Hardcode profile name in generated ~/.aws/credentials to [default]. Restart all of spinnaker after updating cassandra and reconfiguring spinnaker, instead of just restarting clouddriver.\n- d8d031c1ac45801074418c43424a6f2c0dff642c: Merge pull request #551 from kenzanmedia/fixGroup\n- 626d23075f9e92aad19015f2964c95d45f41fa3a: Put in correct block for public image. Delineate cloud provider.\n"},
@@ -45,20 +46,17 @@ var tagTests = []struct {
 	// TODO: Add fixture with tagged blobs
 }
 
-type SuiteTag struct {
+type TagSuite struct {
 	repos map[string]*Repository
+	BaseSuite
 }
 
-var _ = Suite(&SuiteTag{})
+var _ = Suite(&TagSuite{})
 
-func (s *SuiteTag) SetUpSuite(c *C) {
-	s.repos = unpackFixtures(c, tagFixtures)
-}
-
-func (s *SuiteTag) TestCommit(c *C) {
+func (s *TagSuite) TestCommit(c *C) {
 	for _, t := range tagTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
+		r := s.Clone(t.repo)
+
 		k := 0
 		for hash, exp := range t.tags {
 			if exp.Type != core.CommitObject {
@@ -75,10 +73,9 @@ func (s *SuiteTag) TestCommit(c *C) {
 	}
 }
 
-func (s *SuiteTag) TestTree(c *C) {
+func (s *TagSuite) TestTree(c *C) {
 	for _, t := range tagTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
+		r := s.Clone(t.repo)
 		k := 0
 		for hash, exp := range t.tags {
 			if exp.Type != core.TreeObject {
@@ -95,15 +92,15 @@ func (s *SuiteTag) TestTree(c *C) {
 	}
 }
 
-func (s *SuiteTag) TestBlob(c *C) {
+func (s *TagSuite) TestBlob(c *C) {
 	for _, t := range tagTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
+		r := s.Clone(t.repo)
 		k := 0
 		for hashString, exp := range t.tags {
 			if exp.Type != core.BlobObject {
 				continue
 			}
+			fmt.Println(exp)
 			hash := core.NewHash(hashString)
 			tag, err := r.Tag(hash)
 			c.Assert(err, IsNil)
@@ -117,10 +114,9 @@ func (s *SuiteTag) TestBlob(c *C) {
 	}
 }
 
-func (s *SuiteTag) TestObject(c *C) {
+func (s *TagSuite) TestObject(c *C) {
 	for _, t := range tagTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
+		r := s.Clone(t.repo)
 		k := 0
 		for hashString, exp := range t.tags {
 			if exp.Type != core.BlobObject {
@@ -139,7 +135,7 @@ func (s *SuiteTag) TestObject(c *C) {
 	}
 }
 
-func (s *SuiteTag) TestTagEncodeDecodeIdempotent(c *C) {
+func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
 	c.Assert(err, IsNil)
 	tags := []*Tag{

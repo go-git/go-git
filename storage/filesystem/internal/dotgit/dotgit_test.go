@@ -20,24 +20,13 @@ import (
 func Test(t *testing.T) { TestingT(t) }
 
 type SuiteDotGit struct {
-	fixtures map[string]fs.Filesystem
+	fixtures.Suite
 }
 
 var _ = Suite(&SuiteDotGit{})
 
-func (s *SuiteDotGit) SetUpSuite(c *C) {
-	fixtures.RootFolder = "../../../../fixtures"
-}
-
-func (s *SuiteDotGit) TearDownSuite(c *C) {
-	for _, f := range s.fixtures {
-		err := os.RemoveAll(f.Base())
-		c.Assert(err, IsNil)
-	}
-}
-
 func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
-	fs := fixtures.Basic().ByTag(".git").DotGit()
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	refs, err := dir.Refs()
@@ -49,7 +38,7 @@ func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
 
 }
 func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
-	fs := fixtures.Basic().ByTag(".git").DotGit()
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	refs, err := dir.Refs()
@@ -63,7 +52,7 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 }
 
 func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
-	fs := fixtures.Basic().ByTag(".git").DotGit()
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	refs, err := dir.Refs()
@@ -76,7 +65,7 @@ func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
 }
 
 func (s *SuiteDotGit) TestConfig(c *C) {
-	fs := fixtures.Basic().ByTag(".git").DotGit()
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	file, err := dir.Config()
@@ -95,15 +84,8 @@ func findReference(refs []*core.Reference, name string) *core.Reference {
 	return nil
 }
 
-func (s *SuiteDotGit) newFixtureDir(c *C, fixName string) *DotGit {
-	f, ok := s.fixtures[fixName]
-	c.Assert(ok, Equals, true)
-
-	return New(f)
-}
-
 func (s *SuiteDotGit) TestObjectsPack(c *C) {
-	f := fixtures.Basic().ByTag(".git")
+	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
 
@@ -114,7 +96,7 @@ func (s *SuiteDotGit) TestObjectsPack(c *C) {
 }
 
 func (s *SuiteDotGit) TestObjectPack(c *C) {
-	f := fixtures.Basic().ByTag(".git")
+	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
 
@@ -124,7 +106,7 @@ func (s *SuiteDotGit) TestObjectPack(c *C) {
 }
 
 func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
-	f := fixtures.Basic().ByTag(".git")
+	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
 
@@ -134,7 +116,7 @@ func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
 }
 
 func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
-	fs := fixtures.Basic().ByTag(".git").DotGit()
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	pack, err := dir.ObjectPack(core.ZeroHash)
@@ -146,7 +128,7 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 }
 
 func (s *SuiteDotGit) TestObjects(c *C) {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hashes, err := dir.Objects()
@@ -158,7 +140,7 @@ func (s *SuiteDotGit) TestObjects(c *C) {
 }
 
 func (s *SuiteDotGit) TestObject(c *C) {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := core.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
@@ -171,7 +153,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 }
 
 func (s *SuiteDotGit) TestObjectNotFound(c *C) {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").DotGit()
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := core.NewHash("not-found-object")

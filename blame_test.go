@@ -1,39 +1,16 @@
 package git
 
 import (
-	"os"
-
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
 
 	. "gopkg.in/check.v1"
 )
 
-type BlameCommon struct {
-	repos map[string]*Repository
+type BlameSuite struct {
+	BaseSuite
 }
 
-var _ = Suite(&BlameCommon{})
-
-// create the repositories of the fixtures
-func (s *BlameCommon) SetUpSuite(c *C) {
-	s.repos = make(map[string]*Repository, 0)
-	for _, fixRepo := range fixtureRepos {
-		r := NewMemoryRepository()
-
-		f, err := os.Open(fixRepo.packfile)
-		c.Assert(err, IsNil)
-
-		stream := packfile.NewScanner(f)
-
-		d := packfile.NewDecoder(stream, r.s.ObjectStorage())
-		_, err = d.Decode()
-		c.Assert(err, IsNil)
-		c.Assert(f.Close(), IsNil)
-
-		s.repos[fixRepo.url] = r
-	}
-}
+var _ = Suite(&BlameSuite{})
 
 type blameTest struct {
 	repo   string
@@ -42,8 +19,8 @@ type blameTest struct {
 	blames []string // the commits blamed for each line
 }
 
-func (s *BlameCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
-	r, ok := s.repos[t.repo]
+func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
+	r, ok := s.Repositories[t.repo]
 	c.Assert(ok, Equals, true)
 
 	commit, err := r.Commit(core.NewHash(t.rev))
@@ -75,11 +52,11 @@ func (s *BlameCommon) mockBlame(t blameTest, c *C) (blame *Blame) {
 }
 
 // run a blame on all the suite's tests
-func (s *BlameCommon) TestBlame(c *C) {
+func (s *BlameSuite) TestBlame(c *C) {
 	for _, t := range blameTests {
 		exp := s.mockBlame(t, c)
 
-		r, ok := s.repos[t.repo]
+		r, ok := s.Repositories[t.repo]
 		c.Assert(ok, Equals, true)
 
 		commit, err := r.Commit(core.NewHash(t.rev))
@@ -116,28 +93,28 @@ func concat(vargs ...[]string) []string {
 
 var blameTests = [...]blameTest{
 	// use the blame2humantest.bash script to easily add more tests.
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "binary.jpg", concat(
 		repeat("35e85108805c84807bc66a02d91535e1e24b38b9", 285),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "CHANGELOG", concat(
 		repeat("b8e471f58bcbca63b07bda20e428190409c2db47", 1),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "go/example.go", concat(
 		repeat("918c48b83bd081e863dbe1b80f8998f058cd8294", 142),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/long.json", concat(
 		repeat("af2d6a6954d532f8ffb47615169c8fdf9d383a1a", 6492),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "json/short.json", concat(
 		repeat("af2d6a6954d532f8ffb47615169c8fdf9d383a1a", 22),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "LICENSE", concat(
 		repeat("b029517f6300c2da0f4b651b8642506cd6aaf45d", 22),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "php/crappy.php", concat(
 		repeat("918c48b83bd081e863dbe1b80f8998f058cd8294", 259),
 	)},
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", concat(
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", concat(
 		repeat("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", 7),
 	)},
 	/*

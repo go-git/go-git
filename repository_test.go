@@ -1,12 +1,8 @@
 package git
 
 import (
-	"fmt"
-	"os"
-
 	"gopkg.in/src-d/go-git.v4/core"
 
-	"github.com/alcortesm/tgz"
 	. "gopkg.in/check.v1"
 )
 
@@ -34,31 +30,6 @@ type RepositorySuite struct {
 }
 
 var _ = Suite(&RepositorySuite{})
-
-func (s *RepositorySuite) SetUpSuite(c *C) {
-	s.repos = unpackFixtures(c, tagFixtures, treeWalkerFixtures)
-
-	s.dirFixtures = make(map[string]dirFixture, len(dirFixturesInit))
-	for _, fix := range dirFixturesInit {
-		com := Commentf("fixture name = %s\n", fix.name)
-
-		path, err := tgz.Extract(fix.tgz)
-		c.Assert(err, IsNil, com)
-
-		s.dirFixtures[fix.name] = dirFixture{
-			path: path,
-			head: core.NewHash(fix.head),
-		}
-	}
-}
-
-func (s *RepositorySuite) TearDownSuite(c *C) {
-	for name, fix := range s.dirFixtures {
-		err := os.RemoveAll(fix.path)
-		c.Assert(err, IsNil, Commentf("cannot delete tmp dir for fixture %s: %s\n",
-			name, fix.path))
-	}
-}
 
 func (s *RepositorySuite) TestNewRepository(c *C) {
 	r := NewMemoryRepository()
@@ -271,44 +242,40 @@ func (s *RepositorySuite) TestCommits(c *C) {
 }
 
 func (s *RepositorySuite) TestTag(c *C) {
-	for i, t := range tagTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
-		k := 0
-		for hashString, exp := range t.tags {
-			hash := core.NewHash(hashString)
-			tag, err := r.Tag(hash)
-			c.Assert(err, IsNil)
-			testTagExpected(c, tag, hash, exp, fmt.Sprintf("subtest %d, tag %d: ", i, k))
-			k++
-		}
-	}
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: "https://github.com/spinnaker/spinnaker.git"})
+	c.Assert(err, IsNil)
+
+	hash := core.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
+	tag, err := r.Tag(hash)
+	c.Assert(err, IsNil)
+
+	c.Assert(tag.Hash.IsZero(), Equals, false)
+	c.Assert(tag.Hash, Equals, hash)
+	c.Assert(tag.Type(), Equals, core.TagObject)
+
 }
 
 func (s *RepositorySuite) TestTags(c *C) {
-	for i, t := range tagTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
-		tagsIter, err := r.Tags()
-		c.Assert(err, IsNil)
-		testTagIter(c, tagsIter, t.tags, fmt.Sprintf("subtest %d, ", i))
-	}
-}
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: "https://github.com/spinnaker/spinnaker.git"})
+	c.Assert(err, IsNil)
 
-func (s *RepositorySuite) TestObject(c *C) {
-	for i, t := range treeWalkerTests {
-		r, ok := s.repos[t.repo]
-		c.Assert(ok, Equals, true)
-		for k := 0; k < len(t.objs); k++ {
-			com := fmt.Sprintf("subtest %d, tag %d", i, k)
-			info := t.objs[k]
-			hash := core.NewHash(info.Hash)
-			obj, err := r.Object(hash, core.AnyObject)
-			c.Assert(err, IsNil, Commentf(com))
-			c.Assert(obj.Type(), Equals, info.Kind, Commentf(com))
-			c.Assert(obj.ID(), Equals, hash, Commentf(com))
+	count := 0
+	tags, err := r.Tags()
+	c.Assert(err, IsNil)
+	for {
+		tag, err := tags.Next()
+		if err != nil {
+			break
 		}
+
+		count++
+		c.Assert(tag.Hash.IsZero(), Equals, false)
+		c.Assert(tag.Type(), Equals, core.TagObject)
 	}
+
+	c.Assert(count, Equals, 11)
 }
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {

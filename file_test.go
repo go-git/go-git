@@ -8,23 +8,11 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type SuiteFile struct {
+type FileSuite struct {
 	BaseSuite
-	repos map[string]*Repository
 }
 
-var _ = Suite(&SuiteFile{})
-
-// create the repositories of the fixtures
-func (s *SuiteFile) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
-
-	fileFixtures := []packedFixture{
-		{"https://github.com/tyba/git-fixture.git", "formats/packfile/fixtures/git-fixture.ofs-delta"},
-		{"https://github.com/cpcs499/Final_Pres_P", "formats/packfile/fixtures/Final_Pres_P.ofs-delta"},
-	}
-	s.repos = unpackFixtures(c, fileFixtures)
-}
+var _ = Suite(&FileSuite{})
 
 type fileIterExpectedEntry struct {
 	Name string
@@ -37,7 +25,7 @@ var fileIterTests = []struct {
 	files  []fileIterExpectedEntry
 }{
 	// https://api.github.com/repos/tyba/git-fixture/git/trees/6ecf0ef2c2dffb796033e5a02219af86ec6584e5
-	{"https://github.com/tyba/git-fixture.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", []fileIterExpectedEntry{
+	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", []fileIterExpectedEntry{
 		{".gitignore", "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88"},
 		{"CHANGELOG", "d3ff53e0564a9f87d8e84b6e28e5060e517008aa"},
 		{"LICENSE", "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f"},
@@ -50,9 +38,9 @@ var fileIterTests = []struct {
 	}},
 }
 
-func (s *SuiteFile) TestIter(c *C) {
+func (s *FileSuite) TestIter(c *C) {
 	for i, t := range fileIterTests {
-		r := s.repos[t.repo]
+		r := s.Repositories[t.repo]
 		commit, err := r.Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
@@ -82,7 +70,7 @@ var contentsTests = []struct {
 	contents string // expected contents of the file
 }{
 	{
-		"https://github.com/tyba/git-fixture.git",
+		"https://github.com/git-fixtures/basic.git",
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 		".gitignore",
 		`*.class
@@ -100,7 +88,7 @@ hs_err_pid*
 `,
 	},
 	{
-		"https://github.com/tyba/git-fixture.git",
+		"https://github.com/git-fixtures/basic.git",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"CHANGELOG",
 		`Initial changelog
@@ -108,9 +96,9 @@ hs_err_pid*
 	},
 }
 
-func (s *SuiteFile) TestContents(c *C) {
+func (s *FileSuite) TestContents(c *C) {
 	for i, t := range contentsTests {
-		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
+		commit, err := s.Repositories[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		file, err := commit.File(t.path)
@@ -129,7 +117,7 @@ var linesTests = []struct {
 	lines  []string // expected lines in the file
 }{
 	{
-		"https://github.com/tyba/git-fixture.git",
+		"https://github.com/git-fixtures/basic.git",
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 		".gitignore",
 		[]string{
@@ -148,7 +136,7 @@ var linesTests = []struct {
 		},
 	},
 	{
-		"https://github.com/tyba/git-fixture.git",
+		"https://github.com/git-fixtures/basic.git",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"CHANGELOG",
 		[]string{
@@ -157,9 +145,12 @@ var linesTests = []struct {
 	},
 }
 
-func (s *SuiteFile) TestLines(c *C) {
+func (s *FileSuite) TestLines(c *C) {
 	for i, t := range linesTests {
-		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
+		r, ok := s.Repositories[t.repo]
+		c.Assert(ok, Equals, true, Commentf("cannot find repository %s", t.repo))
+
+		commit, err := r.Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		file, err := commit.File(t.path)
@@ -176,7 +167,7 @@ var ignoreEmptyDirEntriesTests = []struct {
 	commit string // the commit to search for the file
 }{
 	{
-		"https://github.com/cpcs499/Final_Pres_P",
+		"https://github.com/cpcs499/Final_Pres_P.git",
 		"70bade703ce556c2c7391a8065c45c943e8b6bc3",
 		// the Final dir in this commit is empty
 	},
@@ -187,9 +178,9 @@ var ignoreEmptyDirEntriesTests = []struct {
 //
 // At least this test has a high chance of panicking if
 // we don't ignore empty dirs.
-func (s *SuiteFile) TestIgnoreEmptyDirEntries(c *C) {
+func (s *FileSuite) TestIgnoreEmptyDirEntries(c *C) {
 	for i, t := range ignoreEmptyDirEntriesTests {
-		commit, err := s.repos[t.repo].Commit(core.NewHash(t.commit))
+		commit, err := s.Repositories[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		tree, err := commit.Tree()
@@ -204,7 +195,7 @@ func (s *SuiteFile) TestIgnoreEmptyDirEntries(c *C) {
 	}
 }
 
-func (s *SuiteFile) TestFileIter(c *C) {
+func (s *FileSuite) TestFileIter(c *C) {
 	hash := core.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
 
 	commit, err := s.Repository.Commit(hash)

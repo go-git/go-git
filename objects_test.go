@@ -9,31 +9,19 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-var fixtures = []packedFixture{
+var fixturesURL = []packedFixture{
 	{"https://github.com/spinnaker/spinnaker.git", "formats/packfile/fixtures/spinnaker-spinnaker.pack"},
 }
 
 type ObjectsSuite struct {
 	BaseSuite
-	r     *Repository
-	repos map[string]*Repository
 }
 
 var _ = Suite(&ObjectsSuite{})
 
-func (s *ObjectsSuite) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
-
-	s.r = NewMemoryRepository()
-	err := s.r.Clone(&CloneOptions{URL: RepositoryFixture})
-	c.Assert(err, IsNil)
-
-	s.repos = unpackFixtures(c, tagFixtures)
-}
-
 func (s *ObjectsSuite) TestNewCommit(c *C) {
 	hash := core.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
-	commit, err := s.r.Commit(hash)
+	commit, err := s.Repository.Commit(hash)
 	c.Assert(err, IsNil)
 
 	c.Assert(commit.Hash, Equals, commit.ID())
@@ -61,7 +49,7 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 
 func (s *ObjectsSuite) TestParseTree(c *C) {
 	hash := core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
-	tree, err := s.r.Tree(hash)
+	tree, err := s.Repository.Tree(hash)
 	c.Assert(err, IsNil)
 
 	c.Assert(tree.Entries, HasLen, 8)

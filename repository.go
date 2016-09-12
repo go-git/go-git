@@ -226,16 +226,12 @@ func (r *Repository) Pull(o *PullOptions) error {
 
 // Commit return the commit with the given hash
 func (r *Repository) Commit(h core.Hash) (*Commit, error) {
-	obj, err := r.s.ObjectStorage().Get(core.CommitObject, h)
+	commit, err := r.Object(core.CommitObject, h)
 	if err != nil {
-		if err == core.ErrObjectNotFound {
-			return nil, ErrObjectNotFound
-		}
 		return nil, err
 	}
 
-	commit := &Commit{r: r}
-	return commit, commit.Decode(obj)
+	return commit.(*Commit), nil
 }
 
 // Commits decode the objects into commits
@@ -250,44 +246,32 @@ func (r *Repository) Commits() (*CommitIter, error) {
 
 // Tree return the tree with the given hash
 func (r *Repository) Tree(h core.Hash) (*Tree, error) {
-	obj, err := r.s.ObjectStorage().Get(core.TreeObject, h)
+	tree, err := r.Object(core.TreeObject, h)
 	if err != nil {
-		if err == core.ErrObjectNotFound {
-			return nil, ErrObjectNotFound
-		}
 		return nil, err
 	}
 
-	tree := &Tree{r: r}
-	return tree, tree.Decode(obj)
+	return tree.(*Tree), nil
 }
 
 // Blob returns the blob with the given hash
 func (r *Repository) Blob(h core.Hash) (*Blob, error) {
-	obj, err := r.s.ObjectStorage().Get(core.BlobObject, h)
+	blob, err := r.Object(core.BlobObject, h)
 	if err != nil {
-		if err == core.ErrObjectNotFound {
-			return nil, ErrObjectNotFound
-		}
 		return nil, err
 	}
 
-	blob := &Blob{}
-	return blob, blob.Decode(obj)
+	return blob.(*Blob), nil
 }
 
 // Tag returns a tag with the given hash.
 func (r *Repository) Tag(h core.Hash) (*Tag, error) {
-	obj, err := r.s.ObjectStorage().Get(core.TagObject, h)
+	tag, err := r.Object(core.TagObject, h)
 	if err != nil {
-		if err == core.ErrObjectNotFound {
-			return nil, ErrObjectNotFound
-		}
 		return nil, err
 	}
 
-	t := &Tag{r: r}
-	return t, t.Decode(obj)
+	return tag.(*Tag), nil
 }
 
 // Tags returns a TagIter that can step through all of the annotated tags
@@ -302,7 +286,7 @@ func (r *Repository) Tags() (*TagIter, error) {
 }
 
 // Object returns an object with the given hash.
-func (r *Repository) Object(h core.Hash, t core.ObjectType) (Object, error) {
+func (r *Repository) Object(t core.ObjectType, h core.Hash) (Object, error) {
 	obj, err := r.s.ObjectStorage().Get(t, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {

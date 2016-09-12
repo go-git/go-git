@@ -8,13 +8,11 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type FsSuite struct{}
+type FsSuite struct {
+	fixtures.Suite
+}
 
 var _ = Suite(&FsSuite{})
-
-func (s *FsSuite) SetUpSuite(c *C) {
-	fixtures.RootFolder = "../../fixtures"
-}
 
 func (s *FsSuite) TestGetFromObjectFile(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()

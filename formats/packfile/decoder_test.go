@@ -14,13 +14,11 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-type ReaderSuite struct{}
+type ReaderSuite struct {
+	fixtures.Suite
+}
 
 var _ = Suite(&ReaderSuite{})
-
-func (s *ReaderSuite) SetUpSuite(c *C) {
-	fixtures.RootFolder = "../../fixtures"
-}
 
 func (s *ReaderSuite) TestDecode(c *C) {
 	fixtures.Basic().Test(c, func(f *fixtures.Fixture) {
@@ -88,24 +86,23 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 }
 
 func (s *ReaderSuite) TestReadObjectAt(c *C) {
-	fixtures.Basic().Test(c, func(f *fixtures.Fixture) {
-		scanner := NewScanner(f.Packfile())
-		storage := memory.NewStorage()
+	f := fixtures.Basic().One()
+	scanner := NewScanner(f.Packfile())
+	storage := memory.NewStorage()
 
-		d := NewDecoder(scanner, storage.ObjectStorage())
+	d := NewDecoder(scanner, storage.ObjectStorage())
 
-		// when the packfile is ref-delta based, the offsets are required
-		if f.Is("ref-delta") {
-			offsets := getOffsetsFromIdx(f.Idx())
-			d.SetOffsets(offsets)
-		}
+	// when the packfile is ref-delta based, the offsets are required
+	if f.Is("ref-delta") {
+		offsets := getOffsetsFromIdx(f.Idx())
+		d.SetOffsets(offsets)
+	}
 
-		// the objects at reference 186, is a delta, so should be recall,
-		// without being read before.
-		obj, err := d.ReadObjectAt(186)
-		c.Assert(err, IsNil)
-		c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	})
+	// the objects at reference 186, is a delta, so should be recall,
+	// without being read before.
+	obj, err := d.ReadObjectAt(186)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func AssertObjects(c *C, s *memory.Storage, expects []string) {

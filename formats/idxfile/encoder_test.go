@@ -9,10 +9,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/fixtures"
 )
 
-func (s *IdxfileSuite) SetUpSuite(c *C) {
-	fixtures.RootFolder = "../../fixtures"
-}
-
 func (s *IdxfileSuite) TestEncode(c *C) {
 	expected := &Idxfile{}
 	expected.Add(core.NewHash("4bfc730165c370df4a012afbb45ba3f9c332c0d4"), 82, 82)

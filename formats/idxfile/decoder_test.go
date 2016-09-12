@@ -13,7 +13,9 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-type IdxfileSuite struct{}
+type IdxfileSuite struct {
+	fixtures.Suite
+}
 
 var _ = Suite(&IdxfileSuite{})
 
@@ -35,7 +37,7 @@ func (s *IdxfileSuite) TestDecode(c *C) {
 }
 
 func (s *IdxfileSuite) TestDecodeCRCs(c *C) {
-	f := fixtures.Basic().ByTag("ofs-delta")
+	f := fixtures.Basic().ByTag("ofs-delta").One()
 
 	scanner := packfile.NewScanner(f.Packfile())
 	storage := memory.NewStorage()

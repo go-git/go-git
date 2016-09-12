@@ -8,13 +8,11 @@ import (
 	"gopkg.in/src-d/go-git.v4/fixtures"
 )
 
-type ScannerSuite struct{}
+type ScannerSuite struct {
+	fixtures.Suite
+}
 
 var _ = Suite(&ScannerSuite{})
-
-func (s *ScannerSuite) SetUpSuite(c *C) {
-	fixtures.RootFolder = "../../fixtures"
-}
 
 func (s *ScannerSuite) TestHeader(c *C) {
 	r := fixtures.Basic().One().Packfile()

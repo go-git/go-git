@@ -9,7 +9,9 @@ import (
 	"gopkg.in/src-d/go-git.v4/clients"
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
 	. "gopkg.in/check.v1"
 )
@@ -17,27 +19,51 @@ import (
 func Test(t *testing.T) { TestingT(t) }
 
 type BaseSuite struct {
-	Repository *Repository
+	fixtures.Suite
+
+	Repository   *Repository
+	Repositories map[string]*Repository
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
+	s.Suite.SetUpSuite(c)
 	s.installMockProtocol(c)
 	s.buildRepository(c)
+	s.buildRepositories(c)
 }
 
 func (s *BaseSuite) installMockProtocol(c *C) {
-	clients.InstallProtocol("mock", func(end common.Endpoint) common.GitUploadPackService {
+	clients.InstallProtocol("https", func(end common.Endpoint) common.GitUploadPackService {
 		return &MockGitUploadPackService{endpoint: end}
 	})
 }
 
 func (s *BaseSuite) buildRepository(c *C) {
-	s.Repository = NewMemoryRepository()
-	err := s.Repository.Clone(&CloneOptions{URL: RepositoryFixture})
+	f := fixtures.Basic().One()
+
+	var err error
+	s.Repository, err = NewFilesystemRepository(f.DotGit().Base())
 	c.Assert(err, IsNil)
 }
 
-const RepositoryFixture = "mock://formats/packfile/fixtures/git-fixture.ref-delta"
+func (s *BaseSuite) buildRepositories(c *C) {
+	s.Repositories = make(map[string]*Repository, 0)
+	for _, fixture := range fixtures.All() {
+		r := NewMemoryRepository()
+
+		f := fixture.Packfile()
+		defer f.Close()
+
+		n := packfile.NewScanner(f)
+		d := packfile.NewDecoder(n, r.s.ObjectStorage())
+		_, err := d.Decode()
+		c.Assert(err, IsNil)
+
+		s.Repositories[fixture.URL] = r
+	}
+}
+
+const RepositoryFixture = "https://github.com/git-fixtures/basic.git"
 
 type MockGitUploadPackService struct {
 	connected bool
@@ -84,11 +110,13 @@ func (p *MockGitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.Rea
 		return nil, errors.New("not connected")
 	}
 
+	f := fixtures.ByURL(p.endpoint.String())
+
 	if len(r.Wants) == 1 {
-		return os.Open("formats/packfile/fixtures/git-fixture.ref-delta")
+		return f.Exclude("single-branch").One().Packfile(), nil
 	}
 
-	return os.Open("fixtures/pack-63bbc2e1bde392e2205b30fa3584ddb14ef8bd41.pack")
+	return f.One().Packfile(), nil
 }
 
 func (p *MockGitUploadPackService) Disconnect() error {
@@ -157,4 +185,27 @@ func (s *SuiteCommon) TestCountLines(c *C) {
 		o := countLines(t.i)
 		c.Assert(o, Equals, t.e, Commentf("subtest %d, input=%q", i, t.i))
 	}
+}
+
+func (s *BaseSuite) Clone(url string) *Repository {
+	r := NewMemoryRepository()
+	if err := r.Clone(&CloneOptions{URL: url}); err != nil {
+		panic(err)
+	}
+
+	return r
+}
+
+func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
+	storage, err := filesystem.NewStorage(f.DotGit())
+	if err != nil {
+		panic(err)
+	}
+
+	r, err := NewRepository(storage)
+	if err != nil {
+		panic(err)
+	}
+
+	return r
 }
