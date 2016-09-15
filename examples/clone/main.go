@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,15 +16,15 @@ func main() {
 	url := os.Args[1]
 	directory := os.Args[2]
 
-	r := git.NewMemoryRepository()
+	r, err := git.NewFilesystemRepository(directory)
+	checkIfError(err)
 
 	// Clone the given repository, using depth we create a shallow clone :
 	// > git clone <url> --depth 1
 	color.Blue("git clone %s --depth 1 %s", url, directory)
 
-	err := r.Clone(&git.CloneOptions{
-		URL:   url,
-		Depth: 1,
+	err = r.Clone(&git.CloneOptions{
+		URL: url,
 	})
 	checkIfError(err)
 
@@ -33,6 +34,9 @@ func main() {
 	// ... retrieving the commit object
 	commit, err := r.Commit(ref.Hash())
 	checkIfError(err)
+
+	fmt.Println(commit)
+	os.Exit(0)
 
 	// ... we get all the files from the commit
 	files, err := commit.Files()

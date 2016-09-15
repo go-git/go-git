@@ -30,11 +30,13 @@ var (
 	// ErrZLib is returned by Decode when there was an error unzipping
 	// the packfile contents.
 	ErrZLib = NewError("zlib reading error")
-	// ErrNotSeeker not seeker supported
-	ErrNotSeeker = NewError("no seeker capable decode")
 	// ErrCannotRecall is returned by RecallByOffset or RecallByHash if the object
 	// to recall cannot be returned.
 	ErrCannotRecall = NewError("cannot recall object")
+	// ErrNonSeekable is returned if a NewDecoder is used with a non-seekable
+	// reader and without a core.ObjectStorage or ReadObjectAt method is called
+	// without a seekable scanner
+	ErrNonSeekable = NewError("non-seekable scanner")
 )
 
 // Decoder reads and decodes packfiles from an input stream.
@@ -49,16 +51,25 @@ type Decoder struct {
 }
 
 // NewDecoder returns a new Decoder that reads from r.
-func NewDecoder(s *Scanner, o core.ObjectStorage) *Decoder {
+func NewDecoder(s *Scanner, o core.ObjectStorage) (*Decoder, error) {
+	if !s.IsSeekable && o == nil {
+		return nil, ErrNonSeekable
+	}
+
+	var tx core.TxObjectStorage
+	if o != nil {
+		tx = o.Begin()
+	}
+
 	return &Decoder{
 		s:  s,
 		o:  o,
-		tx: o.Begin(),
+		tx: tx,
 
 		offsetToHash: make(map[int64]core.Hash, 0),
 		hashToOffset: make(map[core.Hash]int64, 0),
 		crcs:         make(map[core.Hash]uint32, 0),
-	}
+	}, nil
 }
 
 // Decode reads a packfile and stores it in the value pointed to by s.
@@ -76,6 +87,10 @@ func (d *Decoder) doDecode() error {
 		return err
 	}
 
+	if d.o == nil {
+		return d.readObjects(count)
+	}
+
 	if err := d.readObjects(count); err != nil {
 		if err := d.tx.Rollback(); err != nil {
 			return nil
@@ -89,10 +104,19 @@ func (d *Decoder) doDecode() error {
 
 func (d *Decoder) readObjects(count uint32) error {
 	for i := 0; i < int(count); i++ {
-		_, err := d.ReadObject()
+		obj, err := d.ReadObject()
 		if err != nil {
 			return err
 		}
+
+		if d.o == nil {
+			continue
+		}
+
+		if _, err := d.tx.Set(obj); err != nil {
+			return err
+		}
+
 	}
 
 	return nil
@@ -105,7 +129,7 @@ func (d *Decoder) ReadObject() (core.Object, error) {
 		return nil, err
 	}
 
-	obj := d.o.NewObject()
+	obj := d.newObject()
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
 	var crc uint32
@@ -128,15 +152,23 @@ func (d *Decoder) ReadObject() (core.Object, error) {
 	d.setOffset(hash, h.Offset)
 	d.setCRC(hash, crc)
 
-	if _, err := d.tx.Set(obj); err != nil {
-		return nil, err
+	return obj, nil
+}
+
+func (d *Decoder) newObject() core.Object {
+	if d.o == nil {
+		return &core.MemoryObject{}
 	}
 
-	return obj, nil
+	return d.o.NewObject()
 }
 
 // ReadObjectAt reads an object at the given location
 func (d *Decoder) ReadObjectAt(offset int64) (core.Object, error) {
+	if !d.s.IsSeekable {
+		return nil, ErrNonSeekable
+	}
+
 	beforeJump, err := d.s.Seek(offset)
 	if err != nil {
 		return nil, err
@@ -204,21 +236,27 @@ func (d *Decoder) setCRC(h core.Hash, crc uint32) {
 }
 
 func (d *Decoder) recallByOffset(o int64) (core.Object, error) {
+	if d.s.IsSeekable {
+		return d.ReadObjectAt(o)
+	}
+
 	if h, ok := d.offsetToHash[o]; ok {
 		return d.tx.Get(core.AnyObject, h)
 	}
 
-	return d.ReadObjectAt(o)
+	return nil, core.ErrObjectNotFound
 }
 
 func (d *Decoder) recallByHash(h core.Hash) (core.Object, error) {
+	if d.s.IsSeekable {
+		if o, ok := d.hashToOffset[h]; ok {
+			return d.ReadObjectAt(o)
+		}
+	}
+
 	obj, err := d.tx.Get(core.AnyObject, h)
 	if err != core.ErrObjectNotFound {
 		return obj, err
-	}
-
-	if o, ok := d.hashToOffset[h]; ok {
-		return d.ReadObjectAt(o)
 	}
 
 	return nil, core.ErrObjectNotFound

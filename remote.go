@@ -174,8 +174,12 @@ func (r *Remote) updateObjectStorage(reader io.Reader) error {
 	}
 
 	stream := packfile.NewScanner(reader)
-	d := packfile.NewDecoder(stream, s)
-	_, err := d.Decode()
+	d, err := packfile.NewDecoder(stream, s)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.Decode()
 	return err
 }
 

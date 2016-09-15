@@ -49,6 +49,10 @@ type Scanner struct {
 	// is waiting to be read
 	pendingObject    *ObjectHeader
 	version, objects uint32
+
+	// lsSeekable says if this scanner can do Seek or not, to have a Scanner
+	// seekable a r implementing io.Seeker is required
+	IsSeekable bool
 }
 
 // NewScanner returns a new Scanner based on a reader, if the given reader
@@ -65,7 +69,8 @@ func NewScanner(r io.Reader) *Scanner {
 			newByteReadSeeker(seeker),
 			crc,
 		},
-		crc: crc,
+		crc:        crc,
+		IsSeekable: ok,
 	}
 }
 

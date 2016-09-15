@@ -161,7 +161,11 @@ func (s *ObjectStorage) getFromPackfile(h core.Hash) (core.Object, error) {
 	defer f.Close()
 
 	p := packfile.NewScanner(f)
-	d := packfile.NewDecoder(p, memory.NewStorage().ObjectStorage())
+	d, err := packfile.NewDecoder(p, memory.NewStorage().ObjectStorage())
+	if err != nil {
+		return nil, err
+	}
+
 	d.SetOffsets(s.index[pack])
 	return d.ReadObjectAt(offset)
 }
@@ -285,7 +289,11 @@ func newPackfileIter(
 		return nil, err
 	}
 
-	d := packfile.NewDecoder(s, memory.NewStorage().ObjectStorage())
+	d, err := packfile.NewDecoder(s, memory.NewStorage().ObjectStorage())
+	if err != nil {
+		return nil, err
+	}
+
 	return &packfileIter{f: f, d: d, t: t, total: total, seen: seen}, nil
 }
 

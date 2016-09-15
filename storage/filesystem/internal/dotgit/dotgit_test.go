@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -190,4 +191,48 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 	stat, err = fs.Stat(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash))
 	c.Assert(err, IsNil)
 	c.Assert(stat.Size(), Equals, int64(1940))
+}
+
+func (s *SuiteDotGit) TestSyncedReader(c *C) {
+	tmpw, err := ioutil.TempFile("", "example")
+	c.Assert(err, IsNil)
+
+	tmpr, err := os.Open(tmpw.Name())
+	c.Assert(err, IsNil)
+
+	defer func() {
+		tmpw.Close()
+		tmpr.Close()
+		os.Remove(tmpw.Name())
+	}()
+
+	synced := newSyncedReader(tmpw, tmpr)
+
+	go func() {
+		for i := 0; i < 281; i++ {
+			_, err := synced.Write([]byte(strconv.Itoa(i) + "\n"))
+			c.Assert(err, IsNil)
+		}
+
+		synced.Close()
+	}()
+
+	o, err := synced.Seek(1002, io.SeekStart)
+	c.Assert(err, IsNil)
+	c.Assert(o, Equals, int64(1002))
+
+	head := make([]byte, 3)
+	n, err := io.ReadFull(synced, head)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+	c.Assert(string(head), Equals, "278")
+
+	o, err = synced.Seek(1010, io.SeekStart)
+	c.Assert(err, IsNil)
+	c.Assert(o, Equals, int64(1010))
+
+	n, err = io.ReadFull(synced, head)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+	c.Assert(string(head), Equals, "280")
 }
