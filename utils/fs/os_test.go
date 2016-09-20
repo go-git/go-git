@@ -20,7 +20,7 @@ func (s *WritersSuite) TestOSClient_Create(c *C) {
 
 	f, err := client.Create("foo")
 	c.Assert(err, IsNil)
-	c.Assert(f.(*OSFile).file.Name(), Equals, f.Filename())
+	c.Assert(f.Filename(), Equals, "foo")
 }
 
 func (s *WritersSuite) TestOSClient_Write(c *C) {
@@ -46,7 +46,7 @@ func (s *WritersSuite) TestOSClient_Close(c *C) {
 	f.Write([]byte("foo"))
 	c.Assert(f.Close(), IsNil)
 
-	wrote, _ := ioutil.ReadFile(f.Filename())
+	wrote, _ := ioutil.ReadFile(f.(*OSFile).file.Name())
 	c.Assert(wrote, DeepEquals, []byte("foo"))
 }
 

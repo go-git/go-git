@@ -299,14 +299,14 @@ func (w *PackWriter) Close() error {
 	}()
 
 	pipe := []func() error{
+		w.synced.Close,
 		func() error { return <-w.result },
 		w.fr.Close,
 		w.fw.Close,
-		w.synced.Close,
 		w.save,
 	}
 
-	for i, f := range pipe {
+	for _, f := range pipe {
 		if err := f(); err != nil {
 			return err
 		}

@@ -144,6 +144,10 @@ type TxObjectStorage struct {
 	Storage *ObjectStorage
 }
 
+func (tx *TxObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+	return tx.Storage.Get(t, h)
+}
+
 func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	return tx.Storage.Set(obj)
 }

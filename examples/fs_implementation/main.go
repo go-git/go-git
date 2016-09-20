@@ -1,5 +1,11 @@
 package main
 
+import "fmt"
+
+func main() {
+	fmt.Println("example to be fixed")
+}
+
 /*
 import (
 	"fmt"
