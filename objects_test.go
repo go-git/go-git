@@ -9,10 +9,6 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-var fixturesURL = []packedFixture{
-	{"https://github.com/spinnaker/spinnaker.git", "formats/packfile/fixtures/spinnaker-spinnaker.pack"},
-}
-
 type ObjectsSuite struct {
 	BaseSuite
 }

@@ -121,8 +121,31 @@ func (s *SuiteCommit) TestString(c *C) {
 	c.Assert(s.Commit.String(), Equals, ""+
 		"commit 1669dce138d9b841a518c64b10914d88f5e488ea\n"+
 		"Author: Máximo Cuadros Ortiz <mcuadros@gmail.com>\n"+
-		"Date:   2015-03-31 13:48:14 +0200 +0200\n",
+		"Date:   Tue Mar 31 13:48:14 2015 +0200\n"+
+		"\n"+
+		"    Merge branch 'master' of github.com:tyba/git-fixture\n"+
+		"\n",
 	)
+}
+
+func (s *SuiteCommit) TestStringMultiLine(c *C) {
+	hash := core.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
+
+	commit, err := s.Repositories["https://github.com/src-d/go-git.git"].Commit(hash)
+	c.Assert(err, IsNil)
+
+	c.Assert(commit.String(), Equals, ""+
+		"commit e7d896db87294e33ca3202e536d4d9bb16023db3\n"+
+		"Author: Alberto Cortés <alberto@sourced.tech>\n"+
+		"Date:   Wed Jan 27 11:13:49 2016 +0100\n"+
+		"\n"+
+		"    fix zlib invalid header error\n"+
+		"\n"+
+		"    The return value of reads to the packfile were being ignored, so zlib\n"+
+		"    was getting invalid data on it read buffers.\n"+
+		"\n",
+	)
+
 }
 
 func (s *SuiteCommit) TestCommitIterNext(c *C) {

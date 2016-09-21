@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v4/core"
 )
@@ -184,9 +185,23 @@ func (b *Commit) Encode(o core.Object) error {
 
 func (c *Commit) String() string {
 	return fmt.Sprintf(
-		"%s %s\nAuthor: %s\nDate:   %s\n",
-		core.CommitObject, c.Hash, c.Author.String(), c.Author.When,
+		"%s %s\nAuthor: %s\nDate:   %s\n\n%s\n",
+		core.CommitObject, c.Hash, c.Author.String(),
+		c.Author.When.Format(DateFormat), indent(c.Message),
 	)
+}
+
+func indent(t string) string {
+	var output []string
+	for _, line := range strings.Split(t, "\n") {
+		if len(line) != 0 {
+			line = "    " + line
+		}
+
+		output = append(output, line)
+	}
+
+	return strings.Join(output, "\n")
 }
 
 // CommitIter provides an iterator for a set of commits.

@@ -113,20 +113,25 @@ func (t *Tag) Encode(o core.Object) error {
 		return err
 	}
 	defer checkClose(w, &err)
+
 	if _, err = fmt.Fprintf(w,
 		"object %s\ntype %s\ntag %s\ntagger ",
 		t.Target.String(), t.TargetType.Bytes(), t.Name); err != nil {
 		return err
 	}
+
 	if err = t.Tagger.Encode(w); err != nil {
 		return err
 	}
+
 	if _, err = fmt.Fprint(w, "\n\n"); err != nil {
 		return err
 	}
+
 	if _, err = fmt.Fprint(w, t.Message); err != nil {
 		return err
 	}
+
 	return err
 }
 
@@ -143,7 +148,6 @@ func (t *Tag) Commit() (*Commit, error) {
 // object the tree of that commit will be returned. If the tag does not point
 // to a commit or tree object ErrUnsupportedObject will be returned.
 func (t *Tag) Tree() (*Tree, error) {
-	// TODO: If the tag is of type commit, follow the commit to its tree?
 	switch t.TargetType {
 	case core.CommitObject:
 		commit, err := t.r.Commit(t.Target)
@@ -175,9 +179,11 @@ func (t *Tag) Object() (Object, error) {
 // String returns the meta information contained in the tag as a formatted
 // string.
 func (t *Tag) String() string {
+	obj, _ := t.Object()
 	return fmt.Sprintf(
-		"%s %s\nObject: %s\nType: %s\nTag: %s\nTagger: %s\nDate:   %s\n",
-		core.TagObject, t.Hash, t.Target, t.TargetType, t.Name, t.Tagger.String(), t.Tagger.When,
+		"%s %s\nTagger: %s\nDate:   %s\n\n%s\n%s",
+		core.TagObject, t.Name, t.Tagger.String(), t.Tagger.When.Format(DateFormat),
+		t.Message, obj,
 	)
 }
 

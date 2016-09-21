@@ -51,3 +51,5 @@ func checkClose(c io.Closer, err *error) {
 		*err = cerr
 	}
 }
+
+const DateFormat = "Mon Jan 02 15:04:05 2006 -0700"
