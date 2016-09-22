@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -110,6 +111,29 @@ func (s *TagSuite) TestObject(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(obj.Type(), Equals, core.CommitObject)
 	c.Assert(obj.ID().String(), Equals, "f7b877701fbf855b44c0a9e86f3fdce2c298b07f")
+}
+
+func (s *TagSuite) TestTagItter(c *C) {
+	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
+	iter, err := r.s.ObjectStorage().Iter(core.TagObject)
+	c.Assert(err, IsNil)
+
+	var count int
+	i := NewTagIter(r, iter)
+	err = i.ForEach(func(t *Tag) error {
+		count++
+		return nil
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, 4)
+
+	i = NewTagIter(r, iter)
+	err = i.ForEach(func(t *Tag) error {
+		return fmt.Errorf("a random error")
+	})
+
+	c.Assert(err, NotNil)
 }
 
 func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {

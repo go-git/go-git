@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
@@ -13,7 +14,10 @@ import (
 )
 
 const (
-	maxTreeDepth = 1024
+	maxTreeDepth      = 1024
+	startingStackSize = 8
+	submoduleMode     = 0160000
+	directoryMode     = 0040000
 )
 
 // New errors defined by this package.
@@ -49,14 +53,7 @@ func (t *Tree) File(path string) (*File, error) {
 
 	obj, err := t.r.s.ObjectStorage().Get(core.BlobObject, e.Hash)
 	if err != nil {
-		if err == core.ErrObjectNotFound {
-			return nil, ErrFileNotFound // a git submodule
-		}
 		return nil, err
-	}
-
-	if obj.Type() != core.BlobObject {
-		return nil, ErrFileNotFound // a directory
 	}
 
 	blob := &Blob{}
@@ -89,14 +86,7 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 
 	obj, err := t.r.s.ObjectStorage().Get(core.TreeObject, entry.Hash)
 	if err != nil {
-		if err == core.ErrObjectNotFound { // git submodule
-			return nil, errDirNotFound
-		}
 		return nil, err
-	}
-
-	if obj.Type() != core.TreeObject {
-		return nil, errDirNotFound // a file
 	}
 
 	tree := &Tree{r: t.r}
@@ -266,64 +256,115 @@ func (iter *treeEntryIter) Next() (TreeEntry, error) {
 	return iter.t.Entries[iter.pos-1], nil
 }
 
-// TreeEntryIter facilitates iterating through the descendent subtrees of a
-// Tree.
+// TreeWalker provides a means of walking through all of the entries in a Tree.
 type TreeIter struct {
+	stack     []treeEntryIter
+	base      string
+	recursive bool
+
 	r *Repository
-	w TreeWalker
+	t *Tree
 }
 
-// NewTreeIter returns a new TreeIter instance
-func NewTreeIter(r *Repository, t *Tree) *TreeIter {
+// NewTreeIter returns a new TreeIter for the given repository and tree.
+//
+// It is the caller's responsibility to call Close() when finished with the
+// tree walker.
+func NewTreeIter(r *Repository, t *Tree, recursive bool) *TreeIter {
+	stack := make([]treeEntryIter, 0, startingStackSize)
+	stack = append(stack, treeEntryIter{t, 0})
+
 	return &TreeIter{
+		stack:     stack,
+		recursive: recursive,
+
 		r: r,
-		w: *NewTreeWalker(r, t),
+		t: t,
 	}
 }
 
-// Next returns the next Tree from the tree.
-func (iter *TreeIter) Next() (*Tree, error) {
+// Next returns the next object from the tree. Objects are returned in order
+// and subtrees are included. After the last object has been returned further
+// calls to Next() will return io.EOF.
+//
+// In the current implementation any objects which cannot be found in the
+// underlying repository will be skipped automatically. It is possible that this
+// may change in future versions.
+func (w *TreeIter) Next() (name string, entry TreeEntry, err error) {
+	var obj Object
 	for {
-		_, entry, err := iter.w.Next()
-		if err != nil {
-			return nil, err
+		current := len(w.stack) - 1
+		if current < 0 {
+			// Nothing left on the stack so we're finished
+			err = io.EOF
+			return
 		}
 
-		if !entry.Mode.IsDir() {
+		if current > maxTreeDepth {
+			// We're probably following bad data or some self-referencing tree
+			err = ErrMaxTreeDepth
+			return
+		}
+
+		entry, err = w.stack[current].Next()
+		if err == io.EOF {
+			// Finished with the current tree, move back up to the parent
+			w.stack = w.stack[:current]
+			w.base, _ = path.Split(w.base)
+			w.base = path.Clean(w.base) // Remove trailing slash
 			continue
 		}
 
-		return iter.r.Tree(entry.Hash)
-	}
-}
-
-// ForEach call the cb function for each tree contained on this iter until
-// an error happends or the end of the iter is reached. If core.ErrStop is sent
-// the iteration is stop but no error is returned. The iterator is closed.
-func (iter *TreeIter) ForEach(cb func(*Tree) error) error {
-	defer iter.Close()
-
-	for {
-		t, err := iter.Next()
 		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-
-			return err
+			return
 		}
 
-		if err := cb(t); err != nil {
-			if err == core.ErrStop {
-				return nil
-			}
-
-			return err
+		if entry.Mode == submoduleMode {
+			err = nil
+			continue
 		}
+
+		if entry.Mode.IsDir() {
+			obj, err = w.r.Tree(entry.Hash)
+		}
+
+		name = path.Join(w.base, entry.Name)
+
+		if err != nil {
+			err = io.EOF
+			return
+		}
+
+		break
 	}
+
+	if !w.recursive {
+		return
+	}
+
+	if t, ok := obj.(*Tree); ok {
+		w.stack = append(w.stack, treeEntryIter{t, 0})
+		w.base = path.Join(w.base, entry.Name)
+	}
+
+	return
 }
 
-// Close closes the TreeIter
-func (iter *TreeIter) Close() {
-	iter.w.Close()
+// Tree returns the tree that the tree walker most recently operated on.
+func (w *TreeIter) Tree() *Tree {
+	current := len(w.stack) - 1
+	if w.stack[current].pos == 0 {
+		current--
+	}
+
+	if current < 0 {
+		return nil
+	}
+
+	return w.stack[current].t
+}
+
+// Close releases any resources used by the TreeWalker.
+func (w *TreeIter) Close() {
+	w.stack = nil
 }

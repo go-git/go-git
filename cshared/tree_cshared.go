@@ -1,14 +1,21 @@
-// +build ignore
+// Created by cgo - DO NOT EDIT
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:2
 package main
 
-import (
-	"C"
+/*
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:5
 
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:4
+import (
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:7
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
-//export c_Tree_get_Entries_len
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:13
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:12
 func c_Tree_get_Entries_len(t uint64) int {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
@@ -18,19 +25,23 @@ func c_Tree_get_Entries_len(t uint64) int {
 	return len(tree.Entries)
 }
 
-//export c_Tree_get_Entries_item
-func c_Tree_get_Entries_item(t uint64, index int) (*C.char, uint32, *C.char) {
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:23
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:22
+func c_Tree_get_Entries_item(t uint64, index int) (*_Ctype_char, uint32, *_Ctype_char) {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
 		return nil, 0, nil
 	}
 	tree := obj.(*git.Tree)
 	item := tree.Entries[index]
-	return C.CString(item.Name), uint32(item.Mode), CBytes(item.Hash[:])
+	return _Cfunc_CString(item.Name), uint32(item.Mode), CBytes(item.Hash[:])
 }
 
-//export c_Tree_get_Hash
-func c_Tree_get_Hash(t uint64) *C.char {
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:34
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:33
+func c_Tree_get_Hash(t uint64) *_Ctype_char {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
 		return nil
@@ -39,21 +50,25 @@ func c_Tree_get_Hash(t uint64) *C.char {
 	return CBytes(tree.Hash[:])
 }
 
-//export c_Tree_File
-func c_Tree_File(t uint64, path string) (uint64, int, *C.char) {
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:44
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:43
+func c_Tree_File(t uint64, path string) (uint64, int, *_Ctype_char) {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
-		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
+		return IH, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
 	tree := obj.(*git.Tree)
 	file, err := tree.File(CopyString(path))
 	if err != nil {
-		return IH, ErrorCodeInternal, C.CString(err.Error())
+		return IH, ErrorCodeInternal, _Cfunc_CString(err.Error())
 	}
 	return uint64(RegisterObject(file)), ErrorCodeSuccess, nil
 }
 
-//export c_Tree_Type
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:58
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:57
 func c_Tree_Type(t uint64) int8 {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
@@ -63,7 +78,9 @@ func c_Tree_Type(t uint64) int8 {
 	return int8(tree.Type())
 }
 
-//export c_Tree_Files
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:68
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:67
 func c_Tree_Files(t uint64) uint64 {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
@@ -74,22 +91,26 @@ func c_Tree_Files(t uint64) uint64 {
 	return uint64(RegisterObject(iter))
 }
 
-//export c_Tree_Decode
-func c_Tree_Decode(o uint64) (uint64, int, *C.char) {
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:79
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:78
+func c_Tree_Decode(o uint64) (uint64, int, *_Ctype_char) {
 	obj, ok := GetObject(Handle(o))
 	if !ok {
-		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
+		return IH, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
 	cobj := obj.(*core.Object)
 	tree := git.Tree{}
 	err := tree.Decode(*cobj)
 	if err != nil {
-		return IH, ErrorCodeInternal, C.CString(err.Error())
+		return IH, ErrorCodeInternal, _Cfunc_CString(err.Error())
 	}
 	return uint64(RegisterObject(&tree)), ErrorCodeSuccess, nil
 }
 
-//export c_NewTreeWalker
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:94
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:93
 func c_NewTreeWalker(r uint64, t uint64) uint64 {
 	obj, ok := GetObject(Handle(r))
 	if !ok {
@@ -101,41 +122,48 @@ func c_NewTreeWalker(r uint64, t uint64) uint64 {
 		return IH
 	}
 	tree := obj.(*git.Tree)
-	walker := git.NewTreeWalker(repo, tree)
+	walker := git.NewTreeIter(repo, tree)
 	return uint64(RegisterObject(walker))
 }
 
-//export c_TreeWalker_Next
-func c_TreeWalker_Next(tw uint64) (*C.char, *C.char, uint32, *C.char, int, *C.char) {
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:110
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:109
+func c_TreeWalker_Next(tw uint64) (*_Ctype_char, *_Ctype_char, uint32, *_Ctype_char, int, *_Ctype_char) {
 	obj, ok := GetObject(Handle(tw))
 	if !ok {
-		return nil, nil, 0, nil, ErrorCodeNotFound, C.CString(MessageNotFound)
+		return nil, nil, 0, nil, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
-	walker := obj.(*git.TreeWalker)
+	walker := obj.(*git.TreeIter)
 	name, entry, err := walker.Next()
 	if err != nil {
-		return nil, nil, 0, nil, ErrorCodeInternal, C.CString(err.Error())
+		return nil, nil, 0, nil, ErrorCodeInternal, _Cfunc_CString(err.Error())
 	}
-	return C.CString(name), C.CString(entry.Name), uint32(entry.Mode),
+	return _Cfunc_CString(name), _Cfunc_CString(entry.Name), uint32(entry.Mode),
 		CBytes(entry.Hash[:]), ErrorCodeSuccess, nil
 }
 
-//export c_TreeWalker_Tree
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:125
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:124
 func c_TreeWalker_Tree(tw uint64) uint64 {
 	obj, ok := GetObject(Handle(tw))
 	if !ok {
 		return IH
 	}
-	walker := obj.(*git.TreeWalker)
+	walker := obj.(*git.TreeIter)
 	return uint64(RegisterObject(walker.Tree()))
 }
 
-//export c_TreeWalker_Close
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:135
+
+//line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:134
 func c_TreeWalker_Close(tw uint64) {
 	obj, ok := GetObject(Handle(tw))
 	if !ok {
 		return
 	}
-	walker := obj.(*git.TreeWalker)
+	walker := obj.(*git.TreeIter)
 	walker.Close()
 }
+*/

@@ -140,7 +140,7 @@ func newWithEmpty(a, b *Tree) (Changes, error) {
 		tree = a
 	}
 
-	w := NewTreeWalker(tree.r, tree)
+	w := NewTreeIter(tree.r, tree, true)
 	defer w.Close()
 
 	for {
@@ -178,7 +178,7 @@ func newWithEmpty(a, b *Tree) (Changes, error) {
 // while taking advantage of the tree hashes to avoid traversing
 // subtrees when the hash is equal in both inputs.
 func newDiffTree(a, b *Tree) ([]*Change, error) {
-	result := make([]*Change, 0)
+	var result []*Change
 
 	aChanges, err := newWithEmpty(a, nil)
 	if err != nil {

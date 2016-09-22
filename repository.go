@@ -178,8 +178,13 @@ func (r *Repository) createReferences(ref *core.Reference) error {
 
 // IsEmpty returns true if the repository is empty
 func (r *Repository) IsEmpty() (bool, error) {
+	iter, err := r.Refs()
+	if err != nil {
+		return false, err
+	}
+
 	var count int
-	return count == 0, r.Refs().ForEach(func(r *core.Reference) error {
+	return count == 0, iter.ForEach(func(r *core.Reference) error {
 		count++
 		return nil
 	})
@@ -328,11 +333,6 @@ func (r *Repository) Ref(name core.ReferenceName, resolved bool) (*core.Referenc
 }
 
 // Refs returns a map with all the References
-func (r *Repository) Refs() core.ReferenceIter {
-	i, err := r.s.ReferenceStorage().Iter()
-	if err != nil {
-		panic(err)
-	}
-
-	return i
+func (r *Repository) Refs() (core.ReferenceIter, error) {
+	return r.s.ReferenceStorage().Iter()
 }

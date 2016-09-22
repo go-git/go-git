@@ -1,9 +1,14 @@
 package git
 
 import (
+	"io/ioutil"
+	"os"
+
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/utils/fs"
 
 	. "gopkg.in/check.v1"
 )
@@ -13,10 +18,6 @@ type RemoteSuite struct {
 }
 
 var _ = Suite(&RemoteSuite{})
-
-func (s *RemoteSuite) SetUpSuite(c *C) {
-	s.installMockProtocol(c)
-}
 
 func (s *RemoteSuite) TestConnect(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
@@ -80,6 +81,38 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	c.Assert(sto.ObjectStorage().(*memory.ObjectStorage).Objects, HasLen, 31)
 }
 
+func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
+	dir, err := ioutil.TempDir("", "fetch")
+	c.Assert(err, IsNil)
+
+	defer os.RemoveAll(dir) // clean up
+
+	var sto Storage
+	sto, err = filesystem.NewStorage(fs.NewOS(dir))
+	c.Assert(err, IsNil)
+
+	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r.upSrv = &MockGitUploadPackService{}
+
+	c.Assert(r.Connect(), IsNil)
+
+	err = r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{config.DefaultRefSpec},
+	})
+
+	c.Assert(err, IsNil)
+
+	var count int
+	iter, err := sto.ObjectStorage().Iter(core.AnyObject)
+	c.Assert(err, IsNil)
+
+	iter.ForEach(func(core.Object) error {
+		count++
+		return nil
+	})
+	c.Assert(count, Equals, 31)
+}
+
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	sto := memory.NewStorage()
 	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
@@ -128,5 +161,16 @@ func (s *RemoteSuite) TestRefs(c *C) {
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
-	c.Assert(r.Refs(), NotNil)
+
+	iter, err := r.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(iter, NotNil)
+}
+
+func (s *RemoteSuite) TestString(c *C) {
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	c.Assert(r.String(), Equals, ""+
+		"foo\thttps://github.com/git-fixtures/basic.git (fetch)\n"+
+		"foo\thttps://github.com/git-fixtures/basic.git (push)",
+	)
 }

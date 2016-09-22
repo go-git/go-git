@@ -88,7 +88,7 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 		return nil, errors.New("not connected")
 	}
 
-	h := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	h := fixtures.ByURL(p.endpoint.String()).One().Head
 
 	c := common.NewCapabilities()
 	c.Decode("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf")

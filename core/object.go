@@ -218,7 +218,7 @@ func (iter *ObjectSliceIter) ForEach(cb func(Object) error) error {
 				return nil
 			}
 
-			return nil
+			return err
 		}
 	}
 

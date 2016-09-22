@@ -1,32 +1,15 @@
 package git
 
 import (
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
 
-var dirFixturesInit = [...]struct {
-	name string
-	tgz  string
-	head string
-}{
-	{
-		name: "binrels",
-		tgz:  "storage/filesystem/internal/dotgit/fixtures/alcortesm-binary-relations.tgz",
-		head: "c44b5176e99085c8fe36fa27b045590a7b9d34c9",
-	},
-}
-
-type dirFixture struct {
-	path string
-	head core.Hash
-}
-
 type RepositorySuite struct {
 	BaseSuite
-	repos       map[string]*Repository
-	dirFixtures map[string]dirFixture
 }
 
 var _ = Suite(&RepositorySuite{})
@@ -34,6 +17,47 @@ var _ = Suite(&RepositorySuite{})
 func (s *RepositorySuite) TestNewRepository(c *C) {
 	r := NewMemoryRepository()
 	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
+	r := NewMemoryRepository()
+	remote, err := r.CreateRemote(&config.RemoteConfig{
+		Name: "foo",
+		URL:  "http://foo/foo.git",
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(remote.Config().Name, Equals, "foo")
+
+	alt, err := r.Remote("foo")
+	c.Assert(err, IsNil)
+	c.Assert(alt, Not(Equals), remote)
+	c.Assert(alt.Config().Name, Equals, "foo")
+}
+
+func (s *RepositorySuite) TestCreateRemoteInvalid(c *C) {
+	r := NewMemoryRepository()
+	remote, err := r.CreateRemote(&config.RemoteConfig{})
+
+	c.Assert(err, Equals, config.ErrRemoteConfigEmptyName)
+	c.Assert(remote, IsNil)
+}
+
+func (s *RepositorySuite) TestDeleteRemote(c *C) {
+	r := NewMemoryRepository()
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: "foo",
+		URL:  "http://foo/foo.git",
+	})
+
+	c.Assert(err, IsNil)
+
+	err = r.DeleteRemote("foo")
+	c.Assert(err, IsNil)
+
+	alt, err := r.Remote("foo")
+	c.Assert(err, Equals, config.ErrRemoteConfigNotFound)
+	c.Assert(alt, IsNil)
 }
 
 func (s *RepositorySuite) TestClone(c *C) {
@@ -179,6 +203,39 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestPull(c *C) {
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{
+		URL:          RepositoryFixture,
+		SingleBranch: true,
+	})
+
+	c.Assert(err, IsNil)
+
+	err = r.Pull(&PullOptions{})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+
+	branch, err := r.Ref("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	storage := r.s.ObjectStorage().(*memory.ObjectStorage)
+	c.Assert(storage.Objects, HasLen, 31)
+
+	r.CreateRemote(&config.RemoteConfig{
+		Name: "foo",
+		URL:  "https://github.com/git-fixtures/tags.git",
+	})
+
+	err = r.Pull(&PullOptions{RemoteName: "foo"})
+	c.Assert(err, IsNil)
+	c.Assert(storage.Objects, HasLen, 38)
+
+	branch, err = r.Ref("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "f7b877701fbf855b44c0a9e86f3fdce2c298b07f")
+}
+
 func (s *RepositorySuite) TestIsEmpty(c *C) {
 	r := NewMemoryRepository()
 
@@ -253,7 +310,6 @@ func (s *RepositorySuite) TestTag(c *C) {
 	c.Assert(tag.Hash.IsZero(), Equals, false)
 	c.Assert(tag.Hash, Equals, hash)
 	c.Assert(tag.Type(), Equals, core.TagObject)
-
 }
 
 func (s *RepositorySuite) TestTags(c *C) {
@@ -308,5 +364,33 @@ func (s *RepositorySuite) TestRefs(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(err, IsNil)
-	c.Assert(r.Refs(), NotNil)
+
+	iter, err := r.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(iter, NotNil)
+}
+
+func (s *RepositorySuite) TestObject(c *C) {
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: "https://github.com/spinnaker/spinnaker.git"})
+	c.Assert(err, IsNil)
+
+	hash := core.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
+	tag, err := r.Tag(hash)
+	c.Assert(err, IsNil)
+
+	c.Assert(tag.Hash.IsZero(), Equals, false)
+	c.Assert(tag.Hash, Equals, hash)
+	c.Assert(tag.Type(), Equals, core.TagObject)
+}
+
+func (s *RepositorySuite) TestObjectNotFound(c *C) {
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{URL: "https://github.com/git-fixtures/basic.git"})
+	c.Assert(err, IsNil)
+
+	hash := core.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
+	tag, err := r.Object(core.TagObject, hash)
+	c.Assert(err, DeepEquals, core.ErrObjectNotFound)
+	c.Assert(tag, IsNil)
 }

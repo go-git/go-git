@@ -9,14 +9,14 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type SuiteTree struct {
+type TreeSuite struct {
 	BaseSuite
 	Tree *Tree
 }
 
-var _ = Suite(&SuiteTree{})
+var _ = Suite(&TreeSuite{})
 
-func (s *SuiteTree) SetUpSuite(c *C) {
+func (s *TreeSuite) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpSuite(c)
 	hash := core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 
@@ -25,7 +25,7 @@ func (s *SuiteTree) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *SuiteTree) TestDecode(c *C) {
+func (s *TreeSuite) TestDecode(c *C) {
 	c.Assert(s.Tree.Entries, HasLen, 8)
 	c.Assert(s.Tree.Entries[0].Name, Equals, ".gitignore")
 	c.Assert(s.Tree.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
@@ -35,7 +35,7 @@ func (s *SuiteTree) TestDecode(c *C) {
 	c.Assert(s.Tree.Entries[4].Mode.String(), Equals, "d---------")
 }
 
-func (s *SuiteTree) TestDecodeNonTree(c *C) {
+func (s *TreeSuite) TestDecodeNonTree(c *C) {
 	hash := core.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
 	blob, err := s.Repository.s.ObjectStorage().Get(core.BlobObject, hash)
 	c.Assert(err, IsNil)
@@ -45,23 +45,23 @@ func (s *SuiteTree) TestDecodeNonTree(c *C) {
 	c.Assert(err, Equals, ErrUnsupportedObject)
 }
 
-func (s *SuiteTree) TestType(c *C) {
+func (s *TreeSuite) TestType(c *C) {
 	c.Assert(s.Tree.Type(), Equals, core.TreeObject)
 }
 
-func (s *SuiteTree) TestFile(c *C) {
+func (s *TreeSuite) TestFile(c *C) {
 	f, err := s.Tree.File("LICENSE")
 	c.Assert(err, IsNil)
 	c.Assert(f.Name, Equals, "LICENSE")
 }
 
-func (s *SuiteTree) TestFileNotFound(c *C) {
+func (s *TreeSuite) TestFileNotFound(c *C) {
 	f, err := s.Tree.File("not-found")
 	c.Assert(f, IsNil)
 	c.Assert(err, Equals, ErrFileNotFound)
 }
 
-func (s *SuiteTree) TestFiles(c *C) {
+func (s *TreeSuite) TestFiles(c *C) {
 	var count int
 	err := s.Tree.Files().ForEach(func(f *File) error {
 		count++
@@ -124,6 +124,146 @@ func (o *SortReadCloser) Read(p []byte) (int, error) {
 	return nw, nil
 }
 
+func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
+	trees := []*Tree{
+		&Tree{
+			Entries: []TreeEntry{
+				TreeEntry{"foo", os.FileMode(0), core.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				TreeEntry{"bar", os.FileMode(0), core.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				TreeEntry{"baz", os.FileMode(0), core.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			},
+		},
+	}
+	for _, tree := range trees {
+		obj := &core.MemoryObject{}
+		err := tree.Encode(obj)
+		c.Assert(err, IsNil)
+		newTree := &Tree{}
+		err = newTree.Decode(obj)
+		c.Assert(err, IsNil)
+		tree.Hash = obj.Hash()
+		c.Assert(newTree, DeepEquals, tree)
+	}
+}
+
+func (s *TreeSuite) TestTreeIterNext(c *C) {
+	r := s.Repository
+	commit, err := r.Commit(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(err, IsNil)
+
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	walker := NewTreeIter(r, tree, true)
+	for _, e := range treeWalkerExpects {
+		name, entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(name, Equals, e.Path)
+		c.Assert(entry.Name, Equals, e.Name)
+		c.Assert(entry.Mode.String(), Equals, e.Mode)
+		c.Assert(entry.Hash.String(), Equals, e.Hash)
+
+		c.Assert(walker.Tree().ID().String(), Equals, e.Tree)
+	}
+}
+
+func (s *TreeSuite) TestTreeIterNextNonRecursive(c *C) {
+	r := s.Repository
+	commit, err := r.Commit(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(err, IsNil)
+
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	var count int
+	walker := NewTreeIter(r, tree, false)
+	for {
+		name, entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(name, Not(Equals), "")
+		c.Assert(entry, NotNil)
+
+		c.Assert(walker.Tree().ID().String(), Equals, "a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+
+		count++
+	}
+
+	c.Assert(count, Equals, 8)
+}
+
+var treeWalkerExpects = []struct {
+	Path, Mode, Name, Hash, Tree string
+}{{
+	Path: ".gitignore", Mode: "-rw-r--r--", Name: ".gitignore",
+	Hash: "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "CHANGELOG", Mode: "-rw-r--r--", Name: "CHANGELOG",
+	Hash: "d3ff53e0564a9f87d8e84b6e28e5060e517008aa", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "LICENSE", Mode: "-rw-r--r--", Name: "LICENSE",
+	Hash: "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "binary.jpg", Mode: "-rw-r--r--", Name: "binary.jpg",
+	Hash: "d5c0f4ab811897cadf03aec358ae60d21f91c50d", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "go", Mode: "d---------", Name: "go",
+	Hash: "a39771a7651f97faf5c72e08224d857fc35133db", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "go/example.go", Mode: "-rw-r--r--", Name: "example.go",
+	Hash: "880cd14280f4b9b6ed3986d6671f907d7cc2a198", Tree: "a39771a7651f97faf5c72e08224d857fc35133db",
+}, {
+	Path: "json", Mode: "d---------", Name: "json",
+	Hash: "5a877e6a906a2743ad6e45d99c1793642aaf8eda", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "json/long.json", Mode: "-rw-r--r--", Name: "long.json",
+	Hash: "49c6bb89b17060d7b4deacb7b338fcc6ea2352a9", Tree: "5a877e6a906a2743ad6e45d99c1793642aaf8eda",
+}, {
+	Path: "json/short.json", Mode: "-rw-r--r--", Name: "short.json",
+	Hash: "c8f1d8c61f9da76f4cb49fd86322b6e685dba956", Tree: "5a877e6a906a2743ad6e45d99c1793642aaf8eda",
+}, {
+	Path: "php", Mode: "d---------", Name: "php",
+	Hash: "586af567d0bb5e771e49bdd9434f5e0fb76d25fa", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "php/crappy.php", Mode: "-rw-r--r--", Name: "crappy.php",
+	Hash: "9a48f23120e880dfbe41f7c9b7b708e9ee62a492", Tree: "586af567d0bb5e771e49bdd9434f5e0fb76d25fa",
+}, {
+	Path: "vendor", Mode: "d---------", Name: "vendor",
+	Hash: "cf4aa3b38974fb7d81f367c0830f7d78d65ab86b", Tree: "a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+}, {
+	Path: "vendor/foo.go", Mode: "-rw-r--r--", Name: "foo.go",
+	Hash: "9dea2395f5403188298c1dabe8bdafe562c491e3", Tree: "cf4aa3b38974fb7d81f367c0830f7d78d65ab86b",
+}}
+
+func entriesEquals(a, b []TreeEntry) bool {
+	if a == nil && b == nil {
+		return true
+	}
+
+	if a == nil || b == nil {
+		return false
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
 // When decoding a tree we were not checking the return value of read
 // when reading hashes.  As a hash is quite small, it worked well nearly
 // all the time.
@@ -135,7 +275,7 @@ func (o *SortReadCloser) Read(p []byte) (int, error) {
 //
 // This tests is performed with that object but using a SortReadObject to
 // simulate incomplete reads on all platforms and operating systems.
-func (s *SuiteTree) TestTreeDecodeReadBug(c *C) {
+func (s *TreeSuite) TestTreeDecodeReadBug(c *C) {
 	cont := []byte{
 		0x31, 0x30, 0x30, 0x36, 0x34, 0x34, 0x20, 0x61, 0x6c, 0x74,
 		0x65, 0x72, 0x2e, 0x63, 0x0, 0xa4, 0x9d, 0x33, 0x49, 0xd7,
@@ -1252,49 +1392,5 @@ func (s *SuiteTree) TestTreeDecodeReadBug(c *C) {
 	var obtained Tree
 	err := obtained.Decode(obj)
 	c.Assert(err, IsNil)
-	c.Assert(EntriesEquals(obtained.Entries, expected.Entries), Equals, true)
-}
-
-func (s *SuiteTree) TestTreeDecodeEncodeIdempotent(c *C) {
-	trees := []*Tree{
-		&Tree{
-			Entries: []TreeEntry{
-				TreeEntry{"foo", os.FileMode(0), core.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
-				TreeEntry{"bar", os.FileMode(0), core.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
-				TreeEntry{"baz", os.FileMode(0), core.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
-			},
-		},
-	}
-	for _, tree := range trees {
-		obj := &core.MemoryObject{}
-		err := tree.Encode(obj)
-		c.Assert(err, IsNil)
-		newTree := &Tree{}
-		err = newTree.Decode(obj)
-		c.Assert(err, IsNil)
-		tree.Hash = obj.Hash()
-		c.Assert(newTree, DeepEquals, tree)
-	}
-}
-
-func EntriesEquals(a, b []TreeEntry) bool {
-	if a == nil && b == nil {
-		return true
-	}
-
-	if a == nil || b == nil {
-		return false
-	}
-
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-
-	return true
+	c.Assert(entriesEquals(obtained.Entries, expected.Entries), Equals, true)
 }

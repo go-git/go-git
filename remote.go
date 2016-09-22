@@ -114,7 +114,12 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 
 func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, error) {
 	var refs []*core.Reference
-	return refs, r.Refs().ForEach(func(ref *core.Reference) error {
+	iter, err := r.Refs()
+	if err != nil {
+		return refs, err
+	}
+
+	return refs, iter.ForEach(func(ref *core.Reference) error {
 		if ref.Type() != core.HashReference {
 			return nil
 		}
@@ -220,9 +225,8 @@ func (r *Remote) Ref(name core.ReferenceName, resolved bool) (*core.Reference, e
 }
 
 // Refs returns a map with all the References
-func (r *Remote) Refs() core.ReferenceIter {
-	i, _ := r.upInfo.Refs.Iter()
-	return i
+func (r *Remote) Refs() (core.ReferenceIter, error) {
+	return r.upInfo.Refs.Iter()
 }
 
 // Disconnect from the remote and save the config
