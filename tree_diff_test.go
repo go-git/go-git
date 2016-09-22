@@ -1,61 +1,23 @@
 package git
 
 import (
-	"os"
 	"sort"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 
 	. "gopkg.in/check.v1"
 )
 
 type DiffTreeSuite struct {
 	BaseSuite
-
-	repos map[string]*Repository
 }
 
 var _ = Suite(&DiffTreeSuite{})
 
 func (s *DiffTreeSuite) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpSuite(c)
-
-	fixtureRepos := [...]struct {
-		url      string
-		packfile string
-	}{
-		{"git://github.com/github/gem-builder.git",
-			"fixtures/pack-1ea0b3971fd64fdcdf3282bfb58e8cf10095e4e6.pack"},
-		{"git://github.com/githubtraining/example-branches.git",
-			"fixtures/pack-bb8ee94710d3fa39379a630f76812c187217b312.pack"},
-		{"git://github.com/rumpkernel/rumprun-xen.git",
-			"fixtures/pack-7861f2632868833a35fe5e4ab94f99638ec5129b.pack"},
-		{"git://github.com/mcuadros/skeetr.git",
-			"fixtures/pack-36ef7a2296bfd526020340d27c5e1faa805d8d38.pack"},
-		{"git://github.com/dezfowler/LiteMock.git",
-			"fixtures/pack-0d9b6cfc261785837939aaede5986d7a7c212518.pack"},
-		{"git://github.com/tyba/storable.git",
-			"fixtures/pack-0d3d824fb5c930e7e7e1f0f399f2976847d31fd3.pack"},
-		{"git://github.com/toqueteos/ts3.git",
-			"fixtures/pack-21b33a26eb7ffbd35261149fe5d886b9debab7cb.pack"},
-	}
-
-	s.repos = make(map[string]*Repository, 0)
-	for _, fixRepo := range fixtureRepos {
-		s.repos[fixRepo.url] = NewMemoryRepository()
-
-		f, err := os.Open(fixRepo.packfile)
-		c.Assert(err, IsNil)
-
-		r := packfile.NewScanner(f)
-		d, err := packfile.NewDecoder(r, s.repos[fixRepo.url].s.ObjectStorage())
-		c.Assert(err, IsNil)
-		_, err = d.Decode()
-		c.Assert(err, IsNil)
-
-		c.Assert(f.Close(), IsNil)
-	}
+	s.buildRepositories(c, fixtures.ByTag("diff-tree"))
 }
 
 func (s *DiffTreeSuite) TestActionString(c *C) {
@@ -173,19 +135,19 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 		expected []expectChange // the expected list of []changeExpect
 	}{
 		{
-			"git://github.com/dezfowler/LiteMock.git",
+			"https://github.com/dezfowler/LiteMock.git",
 			"",
 			"",
 			[]expectChange{},
 		},
 		{
-			"git://github.com/dezfowler/LiteMock.git",
+			"https://github.com/dezfowler/LiteMock.git",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
 			[]expectChange{},
 		},
 		{
-			"git://github.com/dezfowler/LiteMock.git",
+			"https://github.com/dezfowler/LiteMock.git",
 			"",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
 			[]expectChange{
@@ -193,7 +155,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/dezfowler/LiteMock.git",
+			"https://github.com/dezfowler/LiteMock.git",
 			"b7965eaa2c4f245d07191fe0bcfe86da032d672a",
 			"",
 			[]expectChange{
@@ -201,7 +163,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/githubtraining/example-branches.git",
+			"https://github.com/githubtraining/example-branches.git",
 			"",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
 			[]expectChange{
@@ -209,7 +171,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/githubtraining/example-branches.git",
+			"https://github.com/githubtraining/example-branches.git",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
 			"",
 			[]expectChange{
@@ -217,13 +179,13 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/githubtraining/example-branches.git",
+			"https://github.com/githubtraining/example-branches.git",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
 			"f0eb272cc8f77803478c6748103a1450aa1abd37",
 			[]expectChange{},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			[]expectChange{
@@ -233,7 +195,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			"",
 			[]expectChange{
@@ -243,13 +205,13 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			[]expectChange{},
 		},
 		{
-			"git://github.com/toqueteos/ts3.git",
+			"https://github.com/toqueteos/ts3.git",
 			"",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
 			[]expectChange{
@@ -261,7 +223,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/toqueteos/ts3.git",
+			"https://github.com/toqueteos/ts3.git",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
 			"",
 			[]expectChange{
@@ -273,13 +235,13 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/toqueteos/ts3.git",
+			"https://github.com/toqueteos/ts3.git",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
 			"764e914b75d6d6df1fc5d832aa9840f590abf1bb",
 			[]expectChange{},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"9608eed92b3839b06ebf72d5043da547de10ce85",
 			"6c41e05a17e19805879689414026eb4e279f7de0",
 			[]expectChange{
@@ -287,7 +249,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"6c41e05a17e19805879689414026eb4e279f7de0",
 			"89be3aac2f178719c12953cc9eaa23441f8d9371",
 			[]expectChange{
@@ -298,7 +260,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"89be3aac2f178719c12953cc9eaa23441f8d9371",
 			"597240b7da22d03ad555328f15abc480b820acc0",
 			[]expectChange{
@@ -306,7 +268,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"597240b7da22d03ad555328f15abc480b820acc0",
 			"0260380e375d2dd0e1a8fcab15f91ce56dbe778e",
 			[]expectChange{
@@ -319,7 +281,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"0260380e375d2dd0e1a8fcab15f91ce56dbe778e",
 			"597240b7da22d03ad555328f15abc480b820acc0",
 			[]expectChange{
@@ -332,7 +294,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"0260380e375d2dd0e1a8fcab15f91ce56dbe778e",
 			"ca9fd470bacb6262eb4ca23ee48bb2f43711c1ff",
 			[]expectChange{
@@ -342,7 +304,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/github/gem-builder.git",
+			"https://github.com/github/gem-builder.git",
 			"fe3c86745f887c23a0d38c85cfd87ca957312f86",
 			"b7e3f636febf7a0cd3ab473b6d30081786d2c5b6",
 			[]expectChange{
@@ -355,7 +317,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/rumpkernel/rumprun-xen.git",
+			"https://github.com/rumpkernel/rumprun-xen.git",
 			"1831e47b0c6db750714cd0e4be97b5af17fb1eb0",
 			"51d8515578ea0c88cc8fc1a057903675cf1fc16c",
 			[]expectChange{
@@ -366,7 +328,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 		{
-			"git://github.com/rumpkernel/rumprun-xen.git",
+			"https://github.com/rumpkernel/rumprun-xen.git",
 			"1831e47b0c6db750714cd0e4be97b5af17fb1eb0",
 			"e13e678f7ee9badd01b120889e0ec5fdc8ae3802",
 			[]expectChange{
@@ -374,7 +336,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			},
 		},
 	} {
-		repo, ok := s.repos[t.repo]
+		repo, ok := s.Repositories[t.repo]
 		c.Assert(ok, Equals, true,
 			Commentf("subtest %d: repo %s not found", i, t.repo))
 

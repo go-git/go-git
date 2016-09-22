@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 
 	. "gopkg.in/check.v1"
 )
@@ -131,6 +132,8 @@ func (s *SuiteCommit) TestString(c *C) {
 func (s *SuiteCommit) TestStringMultiLine(c *C) {
 	hash := core.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
+	s.buildRepositories(c, fixtures.ByURL("https://github.com/src-d/go-git.git"))
+
 	commit, err := s.Repositories["https://github.com/src-d/go-git.git"].Commit(hash)
 	c.Assert(err, IsNil)
 
@@ -145,7 +148,6 @@ func (s *SuiteCommit) TestStringMultiLine(c *C) {
 		"    was getting invalid data on it read buffers.\n"+
 		"\n",
 	)
-
 }
 
 func (s *SuiteCommit) TestCommitIterNext(c *C) {

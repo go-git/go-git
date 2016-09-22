@@ -67,6 +67,34 @@ var fixtures = Fixtures{{
 	URL:          "https://github.com/cpcs499/Final_Pres_P.git",
 	Head:         core.NewHash("70bade703ce556c2c7391a8065c45c943e8b6bc3"),
 	PackfileHash: core.NewHash("29f304662fd64f102d94722cf5bd8802d9a9472c"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/github/gem-builder.git",
+	PackfileHash: core.NewHash("1ea0b3971fd64fdcdf3282bfb58e8cf10095e4e6"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/githubtraining/example-branches.git",
+	PackfileHash: core.NewHash("bb8ee94710d3fa39379a630f76812c187217b312"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/rumpkernel/rumprun-xen.git",
+	PackfileHash: core.NewHash("7861f2632868833a35fe5e4ab94f99638ec5129b"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/mcuadros/skeetr.git",
+	PackfileHash: core.NewHash("36ef7a2296bfd526020340d27c5e1faa805d8d38"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/dezfowler/LiteMock.git",
+	PackfileHash: core.NewHash("0d9b6cfc261785837939aaede5986d7a7c212518"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/tyba/storable.git",
+	PackfileHash: core.NewHash("0d3d824fb5c930e7e7e1f0f399f2976847d31fd3"),
+}, {
+	Tags:         []string{"packfile", "diff-tree"},
+	URL:          "https://github.com/toqueteos/ts3.git",
+	PackfileHash: core.NewHash("21b33a26eb7ffbd35261149fe5d886b9debab7cb"),
 }}
 
 func All() Fixtures {

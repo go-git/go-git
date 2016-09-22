@@ -29,7 +29,9 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.installMockProtocol(c)
 	s.buildRepository(c)
-	s.buildRepositories(c)
+
+	s.Repositories = make(map[string]*Repository, 0)
+	s.buildRepositories(c, fixtures.Basic())
 }
 
 func (s *BaseSuite) installMockProtocol(c *C) {
@@ -46,9 +48,8 @@ func (s *BaseSuite) buildRepository(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *BaseSuite) buildRepositories(c *C) {
-	s.Repositories = make(map[string]*Repository, 0)
-	for _, fixture := range fixtures.All() {
+func (s *BaseSuite) buildRepositories(c *C, f fixtures.Fixtures) {
+	for _, fixture := range f {
 		r := NewMemoryRepository()
 
 		f := fixture.Packfile()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 
 	. "gopkg.in/check.v1"
 )
@@ -283,6 +284,11 @@ var referencesTests = [...]struct {
 			"079e42e7c979541b6fab7343838f7b9fd4a360cd",
 		}},
 	*/
+}
+
+func (s *ReferencesSuite) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
+	s.buildRepositories(c, fixtures.All())
 }
 
 func (s *ReferencesSuite) TestRevList(c *C) {

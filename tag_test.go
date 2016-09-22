@@ -5,6 +5,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 )
 
 type TagSuite struct {
@@ -12,6 +13,11 @@ type TagSuite struct {
 }
 
 var _ = Suite(&TagSuite{})
+
+func (s *TagSuite) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
+	s.buildRepositories(c, fixtures.ByTag("tags"))
+}
 
 func (s *TagSuite) TestName(c *C) {
 	r := s.Repositories["https://github.com/git-fixtures/tags.git"]

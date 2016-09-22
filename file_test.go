@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 
 	. "gopkg.in/check.v1"
 )
@@ -179,6 +180,8 @@ var ignoreEmptyDirEntriesTests = []struct {
 // At least this test has a high chance of panicking if
 // we don't ignore empty dirs.
 func (s *FileSuite) TestIgnoreEmptyDirEntries(c *C) {
+	s.buildRepositories(c, fixtures.ByTag("empty-folder"))
+
 	for i, t := range ignoreEmptyDirEntriesTests {
 		commit, err := s.Repositories[t.repo].Commit(core.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))

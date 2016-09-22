@@ -2,6 +2,7 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 
 	. "gopkg.in/check.v1"
 )
@@ -49,6 +50,11 @@ func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
 		Rev:   core.NewHash(t.rev),
 		Lines: blamedLines,
 	}
+}
+
+func (s *BlameSuite) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpSuite(c)
+	s.buildRepositories(c, fixtures.ByTag("packfile"))
 }
 
 // run a blame on all the suite's tests
