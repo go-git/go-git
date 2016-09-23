@@ -9,6 +9,11 @@ import (
 )
 
 func main() {
+	if len(os.Args) != 2 {
+		usage()
+		os.Exit(1)
+	}
+
 	fmt.Printf("Retrieving %q ...\n", os.Args[1])
 	r, err := git.NewRepository(os.Args[1], nil)
 	if err != nil {
@@ -38,4 +43,8 @@ func main() {
 
 		fmt.Println(commit)
 	}
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "%s <repository URL>", os.Args[0])
 }
