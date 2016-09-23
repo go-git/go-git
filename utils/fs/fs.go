@@ -26,6 +26,7 @@ type Filesystem interface {
 
 type File interface {
 	Filename() string
+	IsClosed() bool
 	io.Writer
 	io.Reader
 	io.Seeker
