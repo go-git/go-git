@@ -1,6 +1,10 @@
 package core
 
-import . "gopkg.in/check.v1"
+import (
+	"fmt"
+
+	. "gopkg.in/check.v1"
+)
 
 type ObjectSuite struct{}
 
@@ -135,6 +139,18 @@ func (s *ObjectSuite) TestObjectSliceIterStop(c *C) {
 
 	c.Assert(count, Equals, 1)
 	c.Assert(err, IsNil)
+}
+
+func (s *ObjectSuite) TestObjectSliceIterError(c *C) {
+	i := NewObjectSliceIter([]Object{
+		&MemoryObject{h: NewHash("4921e391f1128010a2d957f8db15c5e729ccf94a")},
+	})
+
+	err := i.ForEach(func(Object) error {
+		return fmt.Errorf("a random error")
+	})
+
+	c.Assert(err, NotNil)
 }
 
 type MockObjectStorage struct{}

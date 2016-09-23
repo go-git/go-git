@@ -127,8 +127,14 @@ func (s *TagSuite) TestTagItter(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(count, Equals, 4)
+}
 
-	i = NewTagIter(r, iter)
+func (s *TagSuite) TestTagIterError(c *C) {
+	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
+	iter, err := r.s.ObjectStorage().Iter(core.TagObject)
+	c.Assert(err, IsNil)
+
+	i := NewTagIter(r, iter)
 	err = i.ForEach(func(t *Tag) error {
 		return fmt.Errorf("a random error")
 	})

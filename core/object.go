@@ -274,7 +274,7 @@ func ForEachIterator(iter bareIterator, cb func(Object) error) error {
 				return nil
 			}
 
-			return nil
+			return err
 		}
 	}
 }
