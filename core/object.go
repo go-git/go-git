@@ -140,6 +140,7 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 	if iter.pos >= len(iter.series) {
 		return nil, io.EOF
 	}
+
 	hash := iter.series[iter.pos]
 	obj, err := iter.storage.Get(iter.t, hash)
 	if err == nil {
@@ -153,24 +154,7 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 // an error happends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *ObjectLookupIter) ForEach(cb func(Object) error) error {
-	defer iter.Close()
-
-	for _, hash := range iter.series {
-		obj, err := iter.storage.Get(AnyObject, hash)
-		if err != nil {
-			return err
-		}
-
-		if err := cb(obj); err != nil {
-			if err == ErrStop {
-				return nil
-			}
-
-			return nil
-		}
-	}
-
-	return nil
+	return ForEachIterator(iter, cb)
 }
 
 // Close releases any resources used by the iterator.
@@ -199,11 +183,13 @@ func NewObjectSliceIter(series []Object) *ObjectSliceIter {
 // the end it will return io.EOF as an error. If the object is retreieved
 // successfully error will be nil.
 func (iter *ObjectSliceIter) Next() (Object, error) {
-	if iter.pos >= len(iter.series) {
+	if len(iter.series) == 0 {
 		return nil, io.EOF
 	}
-	obj := iter.series[iter.pos]
-	iter.pos++
+
+	obj := iter.series[0]
+	iter.series = iter.series[1:]
+
 	return obj, nil
 }
 
@@ -211,23 +197,12 @@ func (iter *ObjectSliceIter) Next() (Object, error) {
 // an error happends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *ObjectSliceIter) ForEach(cb func(Object) error) error {
-	defer iter.Close()
-	for _, o := range iter.series {
-		if err := cb(o); err != nil {
-			if err == ErrStop {
-				return nil
-			}
-
-			return err
-		}
-	}
-
-	return nil
+	return ForEachIterator(iter, cb)
 }
 
 // Close releases any resources used by the iterator.
 func (iter *ObjectSliceIter) Close() {
-	iter.pos = len(iter.series)
+	iter.series = []Object{}
 }
 
 // MultiObjectIter implements ObjectIter. It iterates over several ObjectIter,
@@ -265,6 +240,24 @@ func (iter *MultiObjectIter) Next() (Object, error) {
 // an error happends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *MultiObjectIter) ForEach(cb func(Object) error) error {
+	return ForEachIterator(iter, cb)
+}
+
+// Close releases any resources used by the iterator.
+func (iter *MultiObjectIter) Close() {
+	for _, i := range iter.iters {
+		i.Close()
+	}
+}
+
+type bareIterator interface {
+	Next() (Object, error)
+	Close()
+}
+
+// ForEachIterator is a helper function to build iterators without need to
+// rewrite the same ForEach function each time.
+func ForEachIterator(iter bareIterator, cb func(Object) error) error {
 	defer iter.Close()
 	for {
 		obj, err := iter.Next()
@@ -283,12 +276,5 @@ func (iter *MultiObjectIter) ForEach(cb func(Object) error) error {
 
 			return nil
 		}
-	}
-}
-
-// Close releases any resources used by the iterator.
-func (iter *MultiObjectIter) Close() {
-	for _, i := range iter.iters {
-		i.Close()
 	}
 }
