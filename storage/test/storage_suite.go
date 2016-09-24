@@ -4,6 +4,7 @@ import (
 	"io"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
@@ -14,13 +15,19 @@ type TestObject struct {
 }
 
 type BaseStorageSuite struct {
-	ObjectStorage core.ObjectStorage
+	ObjectStorage    core.ObjectStorage
+	ReferenceStorage core.ReferenceStorage
+	ConfigStore      config.ConfigStorage
 
 	validTypes  []core.ObjectType
 	testObjects map[core.ObjectType]TestObject
 }
 
-func NewBaseStorageSuite(s core.ObjectStorage) BaseStorageSuite {
+func NewBaseStorageSuite(
+	os core.ObjectStorage,
+	rs core.ReferenceStorage,
+	cs config.ConfigStorage,
+) BaseStorageSuite {
 	commit := &core.MemoryObject{}
 	commit.SetType(core.CommitObject)
 	tree := &core.MemoryObject{}
@@ -31,7 +38,10 @@ func NewBaseStorageSuite(s core.ObjectStorage) BaseStorageSuite {
 	tag.SetType(core.TagObject)
 
 	return BaseStorageSuite{
-		ObjectStorage: s,
+		ObjectStorage:    os,
+		ReferenceStorage: rs,
+		ConfigStore:      cs,
+
 		validTypes: []core.ObjectType{
 			core.CommitObject,
 			core.BlobObject,
@@ -72,6 +82,14 @@ func (s *BaseStorageSuite) TestObjectStorageSetAndGet(c *C) {
 			c.Assert(err, Equals, core.ErrObjectNotFound)
 		}
 	}
+}
+
+func (s *BaseStorageSuite) TestObjectStorageGetIvalid(c *C) {
+	o := s.ObjectStorage.NewObject()
+	o.SetType(core.REFDeltaObject)
+
+	_, err := s.ObjectStorage.Set(o)
+	c.Assert(err, NotNil)
 }
 
 func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
@@ -143,6 +161,25 @@ func (s *BaseStorageSuite) TestTxObjectStorageSetAndCommit(c *C) {
 	c.Assert(count, Equals, 4)
 }
 
+func (s *BaseStorageSuite) TestTxObjectStorageSetAndGet(c *C) {
+	tx := s.ObjectStorage.Begin()
+	for _, expected := range s.testObjects {
+		h, err := tx.Set(expected.Object)
+		c.Assert(err, IsNil)
+		c.Assert(h.String(), Equals, expected.Hash)
+
+		o, err := tx.Get(expected.Type, core.NewHash(expected.Hash))
+		c.Assert(o.Hash().String(), DeepEquals, expected.Hash)
+	}
+}
+
+func (s *BaseStorageSuite) TestTxObjectStorageGetNotFound(c *C) {
+	tx := s.ObjectStorage.Begin()
+	o, err := tx.Get(core.AnyObject, core.ZeroHash)
+	c.Assert(o, IsNil)
+	c.Assert(err, Equals, core.ErrObjectNotFound)
+}
+
 func (s *BaseStorageSuite) TestTxObjectStorageSetAndRollback(c *C) {
 	tx := s.ObjectStorage.Begin()
 	for _, o := range s.testObjects {
@@ -158,4 +195,85 @@ func (s *BaseStorageSuite) TestTxObjectStorageSetAndRollback(c *C) {
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *BaseStorageSuite) TestReferenceStorageSetAndGet(c *C) {
+	err := s.ReferenceStorage.Set(
+		core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+	)
+	c.Assert(err, IsNil)
+
+	err = s.ReferenceStorage.Set(
+		core.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+	)
+	c.Assert(err, IsNil)
+
+	e, err := s.ReferenceStorage.Get(core.ReferenceName("foo"))
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+}
+
+func (s *BaseStorageSuite) TestReferenceStorageGetNotFound(c *C) {
+	r, err := s.ReferenceStorage.Get(core.ReferenceName("bar"))
+	c.Assert(err, Equals, core.ErrReferenceNotFound)
+	c.Assert(r, IsNil)
+}
+
+func (s *BaseStorageSuite) TestReferenceStorageIter(c *C) {
+	err := s.ReferenceStorage.Set(
+		core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+	)
+	c.Assert(err, IsNil)
+
+	i, err := s.ReferenceStorage.Iter()
+	c.Assert(err, IsNil)
+
+	e, err := i.Next()
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+
+	e, err = i.Next()
+	c.Assert(e, IsNil)
+	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *BaseStorageSuite) TestConfigStorageSetGetAndDelete(c *C) {
+	err := s.ConfigStore.SetRemote(&config.RemoteConfig{
+		Name: "foo",
+		URL:  "http://foo/bar.git",
+	})
+
+	c.Assert(err, IsNil)
+
+	r, err := s.ConfigStore.Remote("foo")
+	c.Assert(err, IsNil)
+	c.Assert(r.Name, Equals, "foo")
+
+	err = s.ConfigStore.DeleteRemote("foo")
+	c.Assert(err, IsNil)
+
+	r, err = s.ConfigStore.Remote("foo")
+	c.Assert(err, Equals, config.ErrRemoteConfigNotFound)
+	c.Assert(r, IsNil)
+}
+
+func (s *BaseStorageSuite) TestConfigStorageSetInvalid(c *C) {
+	err := s.ConfigStore.SetRemote(&config.RemoteConfig{})
+	c.Assert(err, NotNil)
+}
+
+func (s *BaseStorageSuite) TestConfigStorageRemotes(c *C) {
+	s.ConfigStore.SetRemote(&config.RemoteConfig{
+		Name: "foo", URL: "http://foo/bar.git",
+	})
+
+	s.ConfigStore.SetRemote(&config.RemoteConfig{
+		Name: "bar", URL: "http://foo/bar.git",
+	})
+
+	r, err := s.ConfigStore.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(r, HasLen, 2)
+	c.Assert(r[0].Name, Equals, "foo")
+	c.Assert(r[1].Name, Equals, "bar")
 }

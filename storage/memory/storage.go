@@ -86,6 +86,10 @@ func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
 	return o, nil
 }
 func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+
 	c.RemotesConfig[r.Name] = r
 	return nil
 }
@@ -124,7 +128,6 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	case core.TagObject:
 		o.Tags[h] = o.Objects[h]
 	default:
-		fmt.Println(obj.Type())
 		return h, ErrUnsupportedObjectType
 	}
 
