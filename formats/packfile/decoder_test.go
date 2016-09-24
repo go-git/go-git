@@ -20,6 +20,14 @@ type ReaderSuite struct {
 
 var _ = Suite(&ReaderSuite{})
 
+func (s *ReaderSuite) TestNewDecodeNonSeekable(c *C) {
+	scanner := NewScanner(nil)
+	d, err := NewDecoder(scanner, nil)
+
+	c.Assert(d, IsNil)
+	c.Assert(err, NotNil)
+}
+
 func (s *ReaderSuite) TestDecode(c *C) {
 	fixtures.Basic().Test(c, func(f *fixtures.Fixture) {
 		scanner := NewScanner(f.Packfile())
@@ -27,12 +35,13 @@ func (s *ReaderSuite) TestDecode(c *C) {
 
 		d, err := NewDecoder(scanner, storage.ObjectStorage())
 		c.Assert(err, IsNil)
+		defer d.Close()
 
 		ch, err := d.Decode()
 		c.Assert(err, IsNil)
 		c.Assert(ch, Equals, f.PackfileHash)
 
-		AssertObjects(c, storage, expectedHashes)
+		assertObjects(c, storage, expectedHashes)
 	})
 }
 
@@ -120,7 +129,35 @@ func (s *ReaderSuite) TestReadObjectAt(c *C) {
 	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
-func AssertObjects(c *C, s *memory.Storage, expects []string) {
+func (s *ReaderSuite) TestOffsets(c *C) {
+	f := fixtures.Basic().One()
+	scanner := NewScanner(f.Packfile())
+	d, err := NewDecoder(scanner, nil)
+	c.Assert(err, IsNil)
+
+	c.Assert(d.Offsets(), HasLen, 0)
+
+	_, err = d.Decode()
+	c.Assert(err, IsNil)
+
+	c.Assert(d.Offsets(), HasLen, 31)
+}
+
+func (s *ReaderSuite) TestSetOffsets(c *C) {
+	f := fixtures.Basic().One()
+	scanner := NewScanner(f.Packfile())
+	d, err := NewDecoder(scanner, nil)
+	c.Assert(err, IsNil)
+
+	h := core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	d.SetOffsets(map[core.Hash]int64{h: 42})
+
+	o := d.Offsets()
+	c.Assert(o, HasLen, 1)
+	c.Assert(o[h], Equals, int64(42))
+}
+
+func assertObjects(c *C, s *memory.Storage, expects []string) {
 	o := s.ObjectStorage().(*memory.ObjectStorage)
 
 	c.Assert(len(expects), Equals, len(o.Objects))

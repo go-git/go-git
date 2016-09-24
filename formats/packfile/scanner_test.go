@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"bytes"
+	"io"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
@@ -72,6 +73,28 @@ func (s *ScannerSuite) testNextObjectHeader(c *C, tag string, expected []ObjectH
 func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {
 	f := fixtures.Basic().ByTag("ref-delta").One()
 	r := f.Packfile()
+	p := NewScanner(r)
+
+	_, objects, err := p.Header()
+	c.Assert(err, IsNil)
+
+	for i := 0; i < int(objects); i++ {
+		h, _ := p.NextObjectHeader()
+		c.Assert(err, IsNil)
+		c.Assert(*h, DeepEquals, expectedHeadersREF[i])
+	}
+
+	err = p.discardObjectIfNeeded()
+	c.Assert(err, IsNil)
+
+	n, err := p.Checksum()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, f.PackfileHash)
+}
+
+func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObjectNonSeekable(c *C) {
+	f := fixtures.Basic().ByTag("ref-delta").One()
+	r := io.MultiReader(f.Packfile())
 	p := NewScanner(r)
 
 	_, objects, err := p.Header()
