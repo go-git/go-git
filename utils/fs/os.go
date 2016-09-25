@@ -23,11 +23,8 @@ func NewOS(rootDir string) *OS {
 func (fs *OS) Create(filename string) (File, error) {
 	fullpath := path.Join(fs.RootDir, filename)
 
-	dir := filepath.Dir(fullpath)
-	if dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, err
-		}
+	if err := fs.createDir(fullpath); err != nil {
+		return nil, err
 	}
 
 	f, err := os.Create(fullpath)
@@ -39,6 +36,17 @@ func (fs *OS) Create(filename string) (File, error) {
 		BaseFile: BaseFile{filename: filename},
 		file:     f,
 	}, nil
+}
+
+func (fs *OS) createDir(fullpath string) error {
+	dir := filepath.Dir(fullpath)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ReadDir returns the filesystem info for all the archives under the specified
@@ -62,6 +70,11 @@ func (fs *OS) ReadDir(path string) ([]FileInfo, error) {
 func (fs *OS) Rename(from, to string) error {
 	from = fs.Join(fs.RootDir, from)
 	to = fs.Join(fs.RootDir, to)
+
+	if err := fs.createDir(to); err != nil {
+		return err
+	}
+
 	return os.Rename(from, to)
 }
 

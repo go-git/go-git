@@ -1,142 +1,109 @@
 package objfile
 
 import (
+	"compress/zlib"
 	"errors"
 	"io"
+	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/core"
-
-	"github.com/klauspost/compress/zlib"
 )
 
 var (
-	// ErrOverflow is returned when an attempt is made to write more data than
-	// was declared in NewWriter.
 	ErrOverflow = errors.New("objfile: declared data length exceeded (overflow)")
 )
 
 // Writer writes and encodes data in compressed objfile format to a provided
-// io.Writer.
-//
-// Writer implements io.WriteCloser. Close should be called when finished with
-// the Writer. Close will not close the underlying io.Writer.
+// io.Writerº. Close should be called when finished with the Writer. Close will
+// not close the underlying io.Writer.
 type Writer struct {
-	header header
-	hash   core.Hash // final computed hash stored after Close
+	raw    io.Writer
+	zlib   io.WriteCloser
+	hasher core.Hasher
+	multi  io.Writer
 
-	w          io.Writer      // provided writer wrapped in compressor and tee
-	compressor io.WriteCloser // provided writer wrapped in compressor, retained for calling Close
-	h          core.Hasher    // streaming SHA1 hash of encoded data
-	written    int64          // Number of bytes written
+	closed  bool
+	pending int64 // number of unwritten bytes
 }
 
 // NewWriter returns a new Writer writing to w.
 //
-// The provided t is the type of object being written. The provided size is the
-// number of uncompressed bytes being written.
-//
-// Calling NewWriter causes it to immediately write header data containing
-// size and type information. Any errors encountered in that process will be
-// returned in err.
-//
-// If an invalid t is provided, core.ErrInvalidType is returned. If a negative
-// size is provided, ErrNegativeSize is returned.
-//
 // The returned Writer implements io.WriteCloser. Close should be called when
 // finished with the Writer. Close will not close the underlying io.Writer.
-func NewWriter(w io.Writer, t core.ObjectType, size int64) (*Writer, error) {
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{
+		raw:  w,
+		zlib: zlib.NewWriter(w),
+	}
+}
+
+// WriteHeader writes the type and the size and prepares to accept the object's
+// contents. If an invalid t is provided, core.ErrInvalidType is returned. If a
+// negative size is provided, ErrNegativeSize is returned.
+func (w *Writer) WriteHeader(t core.ObjectType, size int64) error {
 	if !t.Valid() {
-		return nil, core.ErrInvalidType
+		return core.ErrInvalidType
 	}
 	if size < 0 {
-		return nil, ErrNegativeSize
+		return ErrNegativeSize
 	}
-	writer := &Writer{
-		header: header{t: t, size: size},
-	}
-	return writer, writer.init(w)
+
+	b := t.Bytes()
+	b = append(b, ' ')
+	b = append(b, []byte(strconv.FormatInt(size, 10))...)
+	b = append(b, 0)
+
+	defer w.prepareForWrite(t, size)
+	_, err := w.zlib.Write(b)
+
+	return err
 }
 
-// init prepares the zlib compressor for the given output as well as a hasher
-// for computing its hash.
-//
-// init immediately writes header data to the output. This leaves the writer in
-// a state that is ready to write content.
-func (w *Writer) init(output io.Writer) (err error) {
-	w.compressor = zlib.NewWriter(output)
+func (w *Writer) prepareForWrite(t core.ObjectType, size int64) {
+	w.pending = size
 
-	err = w.header.Write(w.compressor)
-	if err != nil {
-		w.compressor.Close()
-		return
-	}
-
-	w.h = core.NewHasher(w.header.t, w.header.size)
-	w.w = io.MultiWriter(w.compressor, w.h) // All writes to the compressor also write to the hash
-
-	return
+	w.hasher = core.NewHasher(t, size)
+	w.multi = io.MultiWriter(w.zlib, w.hasher)
 }
 
-// Write reads len(p) from p to the object data stream. It returns the number of
-// bytes written from p (0 <= n <= len(p)) and any error encountered that caused
-// the write to stop early. The slice data contained in p will not be modified.
-//
-// If writing len(p) bytes would exceed the size provided in NewWriter,
-// ErrOverflow is returned without writing any data.
+// Write writes the object's contents. Write returns the error ErrOverflow if
+// more than size bytes are written after WriteHeader.
 func (w *Writer) Write(p []byte) (n int, err error) {
-	if w.w == nil {
+	if w.closed {
 		return 0, ErrClosed
 	}
 
-	if w.written+int64(len(p)) > w.header.size {
-		return 0, ErrOverflow
+	overwrite := false
+	if int64(len(p)) > w.pending {
+		p = p[0:w.pending]
+		overwrite = true
 	}
 
-	n, err = w.w.Write(p)
-	w.written += int64(n)
+	n, err = w.multi.Write(p)
+	w.pending -= int64(n)
+	if err == nil && overwrite {
+		err = ErrOverflow
+		return
+	}
 
 	return
-}
-
-// Type returns the type of the object.
-func (w *Writer) Type() core.ObjectType {
-	return w.header.t
-}
-
-// Size returns the uncompressed size of the object in bytes.
-func (w *Writer) Size() int64 {
-	return w.header.size
 }
 
 // Hash returns the hash of the object data stream that has been written so far.
 // It can be called before or after Close.
 func (w *Writer) Hash() core.Hash {
-	if w.w != nil {
-		return w.h.Sum() // Not yet closed, return hash of data written so far
-	}
-	return w.hash
+	return w.hasher.Sum() // Not yet closed, return hash of data written so far
 }
 
 // Close releases any resources consumed by the Writer.
 //
 // Calling Close does not close the wrapped io.Writer originally passed to
 // NewWriter.
-func (w *Writer) Close() (err error) {
-	if w.w == nil {
-		// TODO: Consider returning ErrClosed here?
-		return nil // Already closed
+func (w *Writer) Close() error {
+	if err := w.zlib.Close(); err != nil {
+		return err
 	}
 
-	// Release the compressor's resources
-	err = w.compressor.Close()
-
-	// Save the hash because we're about to throw away the hasher
-	w.hash = w.h.Sum()
-
-	// Release references
-	w.w = nil // Indicates closed state
-	w.compressor = nil
-	w.h.Hash = nil
-
-	return
+	w.closed = true
+	return nil
 }

@@ -1,13 +1,9 @@
 package dotgit
 
 import (
-	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -25,6 +21,41 @@ type SuiteDotGit struct {
 }
 
 var _ = Suite(&SuiteDotGit{})
+
+func (s *SuiteDotGit) TestSetRefs(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := fs.NewOS(tmp)
+	dir := New(fs)
+
+	err = dir.SetRef(core.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	))
+
+	c.Assert(err, IsNil)
+
+	err = dir.SetRef(core.NewReferenceFromStrings(
+		"refs/heads/symbolic",
+		"ref: refs/heads/foo",
+	))
+
+	c.Assert(err, IsNil)
+
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 2)
+
+	ref := findReference(refs, "refs/heads/foo")
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+
+	ref = findReference(refs, "refs/heads/symbolic")
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Target().String(), Equals, "refs/heads/foo")
+}
 
 func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
@@ -128,6 +159,31 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 	c.Assert(idx, IsNil)
 }
 
+func (s *SuiteDotGit) TestNewObject(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := fs.NewOS(tmp)
+	dir := New(fs)
+	w, err := dir.NewObject()
+	c.Assert(err, IsNil)
+
+	err = w.WriteHeader(core.BlobObject, 14)
+	n, err := w.Write([]byte("this is a test"))
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 14)
+
+	c.Assert(w.Hash().String(), Equals, "a8a940627d132695a9769df883f85992f0ff4a43")
+
+	err = w.Close()
+	c.Assert(err, IsNil)
+
+	i, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
+	c.Assert(err, IsNil)
+	c.Assert(i.Size(), Equals, int64(34))
+}
+
 func (s *SuiteDotGit) TestObjects(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
@@ -161,78 +217,4 @@ func (s *SuiteDotGit) TestObjectNotFound(c *C) {
 	file, err := dir.Object(hash)
 	c.Assert(err, NotNil)
 	c.Assert(file, IsNil)
-}
-
-func (s *SuiteDotGit) TestNewObjectPack(c *C) {
-	f := fixtures.Basic().One()
-
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer os.RemoveAll(dir)
-
-	fs := fs.NewOS(dir)
-	dot := New(fs)
-
-	w, err := dot.NewObjectPack()
-	c.Assert(err, IsNil)
-
-	_, err = io.Copy(w, f.Packfile())
-	c.Assert(err, IsNil)
-
-	c.Assert(w.Close(), IsNil)
-
-	stat, err := fs.Stat(fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash))
-	c.Assert(err, IsNil)
-	c.Assert(stat.Size(), Equals, int64(84794))
-
-	stat, err = fs.Stat(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash))
-	c.Assert(err, IsNil)
-	c.Assert(stat.Size(), Equals, int64(1940))
-}
-
-func (s *SuiteDotGit) TestSyncedReader(c *C) {
-	tmpw, err := ioutil.TempFile("", "example")
-	c.Assert(err, IsNil)
-
-	tmpr, err := os.Open(tmpw.Name())
-	c.Assert(err, IsNil)
-
-	defer func() {
-		tmpw.Close()
-		tmpr.Close()
-		os.Remove(tmpw.Name())
-	}()
-
-	synced := newSyncedReader(tmpw, tmpr)
-
-	go func() {
-		for i := 0; i < 281; i++ {
-			_, err := synced.Write([]byte(strconv.Itoa(i) + "\n"))
-			c.Assert(err, IsNil)
-		}
-
-		synced.Close()
-	}()
-
-	o, err := synced.Seek(1002, io.SeekStart)
-	c.Assert(err, IsNil)
-	c.Assert(o, Equals, int64(1002))
-
-	head := make([]byte, 3)
-	n, err := io.ReadFull(synced, head)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
-	c.Assert(string(head), Equals, "278")
-
-	o, err = synced.Seek(1010, io.SeekStart)
-	c.Assert(err, IsNil)
-	c.Assert(o, Equals, int64(1010))
-
-	n, err = io.ReadFull(synced, head)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
-	c.Assert(string(head), Equals, "280")
 }

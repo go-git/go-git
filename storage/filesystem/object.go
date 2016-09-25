@@ -118,31 +118,30 @@ func (s *ObjectStorage) getFromUnpacked(h core.Hash) (obj core.Object, err error
 		return nil, err
 	}
 
-	defer func() {
-		errClose := f.Close()
-		if err == nil {
-			err = errClose
-		}
-	}()
+	defer f.Close()
 
 	obj = s.NewObject()
-	objReader, err := objfile.NewReader(f)
+	r, err := objfile.NewReader(f)
 	if err != nil {
 		return nil, err
 	}
 
-	defer func() {
-		errClose := objReader.Close()
-		if err == nil {
-			err = errClose
-		}
-	}()
+	defer r.Close()
 
-	if err := objReader.FillObject(obj); err != nil {
+	t, size, err := r.Header()
+	if err != nil {
 		return nil, err
 	}
 
-	return obj, nil
+	obj.SetType(t)
+	obj.SetSize(size)
+	w, err := obj.Writer()
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = io.Copy(w, r)
+	return obj, err
 }
 
 // Get returns the object with the given hash, by searching for it in
@@ -278,11 +277,7 @@ type packfileIter struct {
 	total    uint32
 }
 
-func newPackfileIter(
-	f fs.File,
-	t core.ObjectType,
-	seen map[core.Hash]bool,
-) (core.ObjectIter, error) {
+func newPackfileIter(f fs.File, t core.ObjectType, seen map[core.Hash]bool) (core.ObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
 	if err != nil {
@@ -294,7 +289,14 @@ func newPackfileIter(
 		return nil, err
 	}
 
-	return &packfileIter{f: f, d: d, t: t, total: total, seen: seen}, nil
+	return &packfileIter{
+		f: f,
+		d: d,
+		t: t,
+
+		total: total,
+		seen:  seen,
+	}, nil
 }
 
 func (iter *packfileIter) Next() (core.Object, error) {
