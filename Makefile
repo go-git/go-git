@@ -14,11 +14,12 @@ COVERAGE_PROFILE = profile.out
 COVERAGE_MODE = atomic
 
 ifneq ($(origin CI), undefined)
-	WORKDIR := $(TRAVIS_BUILD_DIR)
+	WORKDIR := $(GOPATH)/src/gopkg.in/src-d/go-git.v4
 endif
 
 
 test:
+	cd $(WORKDIR); \
 	$(GOTEST) ./...
 
 test-coverage:
