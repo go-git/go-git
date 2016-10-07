@@ -56,7 +56,7 @@ if err != nil {
 defer iter.Close()
 
 for {
-	//the commits are not shorted in any special order
+	//the commits are not sorted in any special order
 	commit, err := iter.Next()
 	if err != nil {
 		if err == io.EOF {
