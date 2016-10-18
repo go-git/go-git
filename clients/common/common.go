@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/pktline"
+	"gopkg.in/src-d/go-git.v4/formats/packp/pktline"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
@@ -204,8 +204,8 @@ func NewGitUploadPackInfo() *GitUploadPackInfo {
 	return &GitUploadPackInfo{Capabilities: NewCapabilities()}
 }
 
-func (r *GitUploadPackInfo) Decode(d *pktline.Decoder) error {
-	if err := r.read(d); err != nil {
+func (r *GitUploadPackInfo) Decode(s *pktline.Scanner) error {
+	if err := r.read(s); err != nil {
 		if err == ErrEmptyGitUploadPack {
 			return core.NewPermanentError(err)
 		}
@@ -216,16 +216,29 @@ func (r *GitUploadPackInfo) Decode(d *pktline.Decoder) error {
 	return nil
 }
 
-func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
-	lines, err := d.ReadAll()
-	if err != nil {
-		return err
-	}
-
+func (r *GitUploadPackInfo) read(s *pktline.Scanner) error {
 	isEmpty := true
 	r.Refs = make(memory.ReferenceStorage, 0)
-	for _, line := range lines {
-		if !r.isValidLine(line) {
+	smartCommentIgnore := false
+	for s.Scan() {
+		line := string(s.Bytes())
+
+		if smartCommentIgnore {
+			// some servers like Github add a flush-pkt after the smart http comment
+			// that we must ignore to prevent a premature termination of the read.
+			if len(line) == 0 {
+				continue
+			}
+			smartCommentIgnore = false
+		}
+
+		// exit on first flush-pkt
+		if len(line) == 0 {
+			break
+		}
+
+		if isSmartHttpComment(line) {
+			smartCommentIgnore = true
 			continue
 		}
 
@@ -240,11 +253,11 @@ func (r *GitUploadPackInfo) read(d *pktline.Decoder) error {
 		return ErrEmptyGitUploadPack
 	}
 
-	return nil
+	return s.Err()
 }
 
-func (r *GitUploadPackInfo) isValidLine(line string) bool {
-	return line[0] != '#'
+func isSmartHttpComment(line string) bool {
+	return line[0] == '#'
 }
 
 func (r *GitUploadPackInfo) readLine(line string) error {
@@ -280,21 +293,28 @@ func (r *GitUploadPackInfo) String() string {
 }
 
 func (r *GitUploadPackInfo) Bytes() []byte {
-	e := pktline.NewEncoder()
-	e.AddLine("# service=git-upload-pack")
-	e.AddFlush()
-	e.AddLine(fmt.Sprintf("%s HEAD\x00%s", r.Head().Hash(), r.Capabilities.String()))
+	payloads := []string{}
+	payloads = append(payloads, "# service=git-upload-pack\n")
+	// inserting a flush-pkt here violates the protocol spec, but some
+	// servers do it, like Github.com
+	payloads = append(payloads, "")
+
+	firstLine := fmt.Sprintf("%s HEAD\x00%s\n", r.Head().Hash(), r.Capabilities.String())
+	payloads = append(payloads, firstLine)
 
 	for _, ref := range r.Refs {
 		if ref.Type() != core.HashReference {
 			continue
 		}
 
-		e.AddLine(fmt.Sprintf("%s %s", ref.Hash(), ref.Name()))
+		ref := fmt.Sprintf("%s %s\n", ref.Hash(), ref.Name())
+		payloads = append(payloads, ref)
 	}
 
-	e.AddFlush()
-	b, _ := ioutil.ReadAll(e.Reader())
+	payloads = append(payloads, "")
+	pktlines, _ := pktline.NewFromStrings(payloads...)
+	b, _ := ioutil.ReadAll(pktlines)
+
 	return b
 }
 
@@ -318,21 +338,25 @@ func (r *GitUploadPackRequest) String() string {
 }
 
 func (r *GitUploadPackRequest) Reader() *strings.Reader {
-	e := pktline.NewEncoder()
+	payloads := []string{}
+
 	for _, want := range r.Wants {
-		e.AddLine(fmt.Sprintf("want %s", want))
+		payloads = append(payloads, fmt.Sprintf("want %s\n", want))
 	}
 
 	for _, have := range r.Haves {
-		e.AddLine(fmt.Sprintf("have %s", have))
+		payloads = append(payloads, fmt.Sprintf("have %s\n", have))
 	}
 
 	if r.Depth != 0 {
-		e.AddLine(fmt.Sprintf("deepen %d", r.Depth))
+		payloads = append(payloads, fmt.Sprintf("deepen %d\n", r.Depth))
 	}
 
-	e.AddFlush()
-	e.AddLine("done")
+	payloads = append(payloads, "")
+	payloads = append(payloads, "done\n")
 
-	return e.Reader()
+	pktlines, _ := pktline.NewFromStrings(payloads...)
+	b, _ := ioutil.ReadAll(pktlines)
+
+	return strings.NewReader(string(b))
 }

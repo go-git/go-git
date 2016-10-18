@@ -2,6 +2,7 @@ package http
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +10,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/pktline"
+	"gopkg.in/src-d/go-git.v4/formats/packp/pktline"
 )
 
 // GitUploadPackService git-upoad-pack service over HTTP
@@ -77,7 +78,7 @@ func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	defer res.Body.Close()
 
 	i := common.NewGitUploadPackInfo()
-	return i, i.Decode(pktline.NewDecoder(res.Body))
+	return i, i.Decode(pktline.NewScanner(res.Body))
 }
 
 // Fetch request and returns a reader to a packfile
@@ -101,27 +102,22 @@ func (s *GitUploadPackService) Fetch(r *common.GitUploadPackRequest) (io.ReadClo
 		return nil, err
 	}
 
-	if err := s.discardResponseInfo(reader); err != nil {
+	if err := discardResponseInfo(reader); err != nil {
 		return nil, err
 	}
 
 	return reader, nil
 }
 
-func (s *GitUploadPackService) discardResponseInfo(r io.Reader) error {
-	decoder := pktline.NewDecoder(r)
-	for {
-		line, err := decoder.ReadLine()
-		if err != nil {
-			break
-		}
-
-		if line == "NAK\n" {
+func discardResponseInfo(r io.Reader) error {
+	s := pktline.NewScanner(r)
+	for s.Scan() {
+		if bytes.Equal(s.Bytes(), []byte{'N', 'A', 'K', '\n'}) {
 			break
 		}
 	}
 
-	return nil
+	return s.Err()
 }
 
 func (s *GitUploadPackService) doRequest(method, url string, content *strings.Reader) (*http.Response, error) {

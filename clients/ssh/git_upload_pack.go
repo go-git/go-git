@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/clients/common"
-	"gopkg.in/src-d/go-git.v4/formats/pktline"
+	"gopkg.in/src-d/go-git.v4/formats/packp/pktline"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -123,7 +123,7 @@ func (s *GitUploadPackService) Info() (i *common.GitUploadPackInfo, err error) {
 	}
 
 	i = common.NewGitUploadPackInfo()
-	return i, i.Decode(pktline.NewDecoder(bytes.NewReader(out)))
+	return i, i.Decode(pktline.NewScanner(bytes.NewReader(out)))
 }
 
 // Disconnect the SSH client.
