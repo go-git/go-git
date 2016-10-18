@@ -2,6 +2,7 @@ package test
 
 import (
 	"io"
+	"sort"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -274,6 +275,11 @@ func (s *BaseStorageSuite) TestConfigStorageRemotes(c *C) {
 	r, err := s.ConfigStore.Remotes()
 	c.Assert(err, IsNil)
 	c.Assert(r, HasLen, 2)
-	c.Assert(r[0].Name, Equals, "foo")
-	c.Assert(r[1].Name, Equals, "bar")
+
+	sorted := make([]string, 0, 2)
+	sorted = append(sorted, r[0].Name)
+	sorted = append(sorted, r[1].Name)
+	sort.Strings(sorted)
+	c.Assert(sorted[0], Equals, "bar")
+	c.Assert(sorted[1], Equals, "foo")
 }
