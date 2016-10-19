@@ -41,9 +41,10 @@ func (s *SuiteScanner) TestEmptyReader(c *C) {
 }
 
 func (s *SuiteScanner) TestFlush(c *C) {
-	r, err := pktline.NewFromStrings("")
-	c.Assert(err, IsNil)
-	sc := pktline.NewScanner(r)
+	p := pktline.New()
+	p.AddFlush()
+	sc := pktline.NewScanner(p)
+
 	c.Assert(sc.Scan(), Equals, true)
 	payload := sc.Bytes()
 	c.Assert(len(payload), Equals, 0)
@@ -69,9 +70,11 @@ func (s *SuiteScanner) TestScanAndPayload(c *C) {
 		strings.Repeat("a", pktline.MaxPayloadSize),
 		strings.Repeat("a", pktline.MaxPayloadSize-1) + "\n",
 	} {
-		r, err := pktline.NewFromStrings(test)
-		c.Assert(err, IsNil, Commentf("input len=%x, contents=%.10q\n", len(test), test))
-		sc := pktline.NewScanner(r)
+		p := pktline.New()
+		err := p.AddString(test)
+		c.Assert(err, IsNil,
+			Commentf("input len=%x, contents=%.10q\n", len(test), test))
+		sc := pktline.NewScanner(p)
 
 		c.Assert(sc.Scan(), Equals, true,
 			Commentf("test = %.20q...", test))
@@ -91,8 +94,7 @@ func (s *SuiteScanner) TestSkip(c *C) {
 			input: []string{
 				"first",
 				"second",
-				"third",
-				""},
+				"third"},
 			n:        1,
 			expected: []byte("second"),
 		},
@@ -100,15 +102,15 @@ func (s *SuiteScanner) TestSkip(c *C) {
 			input: []string{
 				"first",
 				"second",
-				"third",
-				""},
+				"third"},
 			n:        2,
 			expected: []byte("third"),
 		},
 	} {
-		r, err := pktline.NewFromStrings(test.input...)
+		p := pktline.New()
+		err := p.AddString(test.input...)
 		c.Assert(err, IsNil)
-		sc := pktline.NewScanner(r)
+		sc := pktline.NewScanner(p)
 		for i := 0; i < test.n; i++ {
 			c.Assert(sc.Scan(), Equals, true,
 				Commentf("scan error = %s", sc.Err()))
@@ -123,9 +125,10 @@ func (s *SuiteScanner) TestSkip(c *C) {
 }
 
 func (s *SuiteScanner) TestEOF(c *C) {
-	r, err := pktline.NewFromStrings("first", "second")
+	p := pktline.New()
+	err := p.AddString("first", "second")
 	c.Assert(err, IsNil)
-	sc := pktline.NewScanner(r)
+	sc := pktline.NewScanner(p)
 	for sc.Scan() {
 	}
 	c.Assert(sc.Err(), IsNil)
@@ -161,19 +164,19 @@ func (s *SuiteScanner) TestReadSomeSections(c *C) {
 // 0000
 // and so on
 func sectionsExample(c *C, nSections, nLines int) io.Reader {
-	ss := []string{}
+	p := pktline.New()
 	for section := 0; section < nSections; section++ {
+		ss := []string{}
 		for line := 0; line < nLines; line++ {
 			line := fmt.Sprintf(" %d.%d\n", section, line)
 			ss = append(ss, line)
 		}
-		ss = append(ss, "")
+		err := p.AddString(ss...)
+		c.Assert(err, IsNil)
+		p.AddFlush()
 	}
 
-	ret, err := pktline.NewFromStrings(ss...)
-	c.Assert(err, IsNil)
-
-	return ret
+	return p
 }
 
 func ExampleScanner() {

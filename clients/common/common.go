@@ -293,14 +293,14 @@ func (r *GitUploadPackInfo) String() string {
 }
 
 func (r *GitUploadPackInfo) Bytes() []byte {
-	payloads := []string{}
-	payloads = append(payloads, "# service=git-upload-pack\n")
+	p := pktline.New()
+	_ = p.AddString("# service=git-upload-pack\n")
 	// inserting a flush-pkt here violates the protocol spec, but some
 	// servers do it, like Github.com
-	payloads = append(payloads, "")
+	p.AddFlush()
 
 	firstLine := fmt.Sprintf("%s HEAD\x00%s\n", r.Head().Hash(), r.Capabilities.String())
-	payloads = append(payloads, firstLine)
+	_ = p.AddString(firstLine)
 
 	for _, ref := range r.Refs {
 		if ref.Type() != core.HashReference {
@@ -308,12 +308,11 @@ func (r *GitUploadPackInfo) Bytes() []byte {
 		}
 
 		ref := fmt.Sprintf("%s %s\n", ref.Hash(), ref.Name())
-		payloads = append(payloads, ref)
+		_ = p.AddString(ref)
 	}
 
-	payloads = append(payloads, "")
-	pktlines, _ := pktline.NewFromStrings(payloads...)
-	b, _ := ioutil.ReadAll(pktlines)
+	p.AddFlush()
+	b, _ := ioutil.ReadAll(p)
 
 	return b
 }
@@ -338,25 +337,24 @@ func (r *GitUploadPackRequest) String() string {
 }
 
 func (r *GitUploadPackRequest) Reader() *strings.Reader {
-	payloads := []string{}
+	p := pktline.New()
 
 	for _, want := range r.Wants {
-		payloads = append(payloads, fmt.Sprintf("want %s\n", want))
+		_ = p.AddString(fmt.Sprintf("want %s\n", want))
 	}
 
 	for _, have := range r.Haves {
-		payloads = append(payloads, fmt.Sprintf("have %s\n", have))
+		_ = p.AddString(fmt.Sprintf("have %s\n", have))
 	}
 
 	if r.Depth != 0 {
-		payloads = append(payloads, fmt.Sprintf("deepen %d\n", r.Depth))
+		_ = p.AddString(fmt.Sprintf("deepen %d\n", r.Depth))
 	}
 
-	payloads = append(payloads, "")
-	payloads = append(payloads, "done\n")
+	p.AddFlush()
+	_ = p.AddString("done\n")
 
-	pktlines, _ := pktline.NewFromStrings(payloads...)
-	b, _ := ioutil.ReadAll(pktlines)
+	b, _ := ioutil.ReadAll(p)
 
 	return strings.NewReader(string(b))
 }
