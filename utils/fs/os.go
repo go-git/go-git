@@ -170,3 +170,7 @@ func (f *OSFile) Close() error {
 
 	return f.file.Close()
 }
+
+func (f *OSFile) ReadAt(p []byte, off int64) (int, error) {
+	return f.file.ReadAt(p, off)
+}
