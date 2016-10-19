@@ -1,11 +1,9 @@
 package dotgit
 
 import (
-	"crypto/sha1"
 	"fmt"
 	"io"
 	"sync/atomic"
-	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/idxfile"
@@ -26,15 +24,12 @@ type PackWriter struct {
 }
 
 func newPackWrite(fs fs.Filesystem) (*PackWriter, error) {
-	seed := sha1.Sum([]byte(time.Now().String()))
-	tmp := fs.Join(objectsPath, packPath, fmt.Sprintf("tmp_pack_%x", seed))
-
-	fw, err := fs.Create(tmp)
+	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
 	}
 
-	fr, err := fs.Open(tmp)
+	fr, err := fs.Open(fw.Filename())
 	if err != nil {
 		return nil, err
 	}
@@ -228,10 +223,7 @@ type ObjectWriter struct {
 }
 
 func newObjectWriter(fs fs.Filesystem) (*ObjectWriter, error) {
-	seed := sha1.Sum([]byte(time.Now().String()))
-	tmp := fs.Join(objectsPath, fmt.Sprintf("tmp_obj_%x", seed))
-
-	f, err := fs.Create(tmp)
+	f, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_obj_")
 	if err != nil {
 		return nil, err
 	}

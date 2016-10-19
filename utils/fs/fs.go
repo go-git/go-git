@@ -16,9 +16,10 @@ var (
 type Filesystem interface {
 	Create(filename string) (File, error)
 	Open(filename string) (File, error)
-	Rename(from, to string) error
 	Stat(filename string) (FileInfo, error)
 	ReadDir(path string) ([]FileInfo, error)
+	TempFile(dir, prefix string) (File, error)
+	Rename(from, to string) error
 	Join(elem ...string) string
 	Dir(path string) Filesystem
 	Base() string
