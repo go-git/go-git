@@ -100,6 +100,11 @@ func (fs *OS) Stat(filename string) (FileInfo, error) {
 	return os.Stat(fullpath)
 }
 
+func (fs *OS) Remove(filename string) error {
+	fullpath := fs.Join(fs.base, filename)
+	return os.Remove(fullpath)
+}
+
 func (fs *OS) TempFile(dir, prefix string) (File, error) {
 	fullpath := fs.Join(fs.base, dir)
 	if err := fs.createDir(fullpath + string(os.PathSeparator)); err != nil {

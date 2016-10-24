@@ -22,6 +22,7 @@ type Filesystem interface {
 	ReadDir(path string) ([]FileInfo, error)
 	TempFile(dir, prefix string) (File, error)
 	Rename(from, to string) error
+	Remove(filename string) error
 	Join(elem ...string) string
 	Dir(path string) Filesystem
 	Base() string

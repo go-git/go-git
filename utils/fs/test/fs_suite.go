@@ -149,6 +149,28 @@ func (s *FilesystemSuite) TestOpenAndStat(c *C) {
 	c.Assert(stat.Name(), Equals, "foo")
 }
 
+func (s *FilesystemSuite) TestRemove(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	err = s.Fs.Remove("foo")
+	c.Assert(err, IsNil)
+}
+
+func (s *FilesystemSuite) TestRemoveNonExisting(c *C) {
+	c.Assert(s.Fs.Remove("NON-EXISTING"), NotNil)
+}
+
+func (s *FilesystemSuite) TestRemoveTempFile(c *C) {
+	f, err := s.Fs.TempFile("test-dir", "test-prefix")
+	fn := f.Filename()
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	c.Assert(s.Fs.Remove(fn), IsNil)
+}
+
 func (s *FilesystemSuite) TestJoin(c *C) {
 	c.Assert(s.Fs.Join("foo", "bar"), Equals, "foo/bar")
 }
