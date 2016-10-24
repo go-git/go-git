@@ -1,54 +1,42 @@
-package fs
+package test
 
 import (
-	"io"
+	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
 
 	. "gopkg.in/check.v1"
+	. "gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 func Test(t *testing.T) { TestingT(t) }
 
 type FilesystemSuite struct {
-	fs Filesystem
+	Fs Filesystem
 }
 
 func (s *FilesystemSuite) TestCreate(c *C) {
-	f, err := s.fs.Create("foo")
+	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
 	c.Assert(f.Filename(), Equals, "foo")
 }
 
 func (s *FilesystemSuite) TestCreateDepth(c *C) {
-	f, err := s.fs.Create("bar/foo")
+	f, err := s.Fs.Create("bar/foo")
 	c.Assert(err, IsNil)
 	c.Assert(f.Filename(), Equals, "bar/foo")
 }
 
 func (s *FilesystemSuite) TestCreateDepthAbsolute(c *C) {
-	f, err := s.fs.Create("/bar/foo")
+	f, err := s.Fs.Create("/bar/foo")
 	c.Assert(err, IsNil)
 	c.Assert(f.Filename(), Equals, "bar/foo")
 }
 
-func (s *FilesystemSuite) TestCreateAndWrite(c *C) {
-	f, err := s.fs.Create("foo")
-	c.Assert(err, IsNil)
-	l, err := f.Write([]byte("foo"))
-	c.Assert(err, IsNil)
-	c.Assert(l, Equals, 3)
-
-	f.Seek(0, io.SeekStart)
-	wrote, err := ioutil.ReadAll(f)
-	c.Assert(err, IsNil)
-	c.Assert(wrote, DeepEquals, []byte("foo"))
-}
-
 func (s *FilesystemSuite) TestCreateOverwrite(c *C) {
 	for i := 0; i < 2; i++ {
-		f, err := s.fs.Create("foo")
+		f, err := s.Fs.Create("foo")
 		c.Assert(err, IsNil)
 
 		l, err := f.Write([]byte("foo"))
@@ -59,7 +47,7 @@ func (s *FilesystemSuite) TestCreateOverwrite(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	f, err := s.fs.Open("foo")
+	f, err := s.Fs.Open("foo")
 	c.Assert(err, IsNil)
 
 	wrote, err := ioutil.ReadAll(f)
@@ -68,14 +56,14 @@ func (s *FilesystemSuite) TestCreateOverwrite(c *C) {
 }
 
 func (s *FilesystemSuite) TestCreateClose(c *C) {
-	f, err := s.fs.Create("foo")
+	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
 	c.Assert(f.IsClosed(), Equals, false)
 
 	f.Write([]byte("foo"))
 	c.Assert(f.Close(), IsNil)
 
-	file, err := s.fs.Open(f.Filename())
+	file, err := s.Fs.Open(f.Filename())
 	c.Assert(err, IsNil)
 
 	wrote, err := ioutil.ReadAll(file)
@@ -88,83 +76,83 @@ func (s *FilesystemSuite) TestCreateClose(c *C) {
 func (s *FilesystemSuite) TestReadDirAndDir(c *C) {
 	files := []string{"foo", "bar", "qux/baz", "qux/qux"}
 	for _, name := range files {
-		f, err := s.fs.Create(name)
+		f, err := s.Fs.Create(name)
 		c.Assert(err, IsNil)
 		c.Assert(f.Close(), IsNil)
 	}
 
-	info, err := s.fs.ReadDir("/")
+	info, err := s.Fs.ReadDir("/")
 	c.Assert(err, IsNil)
 	c.Assert(info, HasLen, 3)
 
-	info, err = s.fs.ReadDir("/qux")
+	info, err = s.Fs.ReadDir("/qux")
 	c.Assert(err, IsNil)
 	c.Assert(info, HasLen, 2)
 
-	qux := s.fs.Dir("/qux")
+	qux := s.Fs.Dir("/qux")
 	info, err = qux.ReadDir("/")
 	c.Assert(err, IsNil)
 	c.Assert(info, HasLen, 2)
 }
 
 func (s *FilesystemSuite) TestRename(c *C) {
-	f, err := s.fs.Create("foo")
+	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
 
-	err = s.fs.Rename("foo", "bar")
+	err = s.Fs.Rename("foo", "bar")
 	c.Assert(err, IsNil)
 
-	foo, err := s.fs.Stat("foo")
+	foo, err := s.Fs.Stat("foo")
 	c.Assert(foo, IsNil)
 	c.Assert(err, NotNil)
 
-	bar, err := s.fs.Stat("bar")
+	bar, err := s.Fs.Stat("bar")
 	c.Assert(bar, NotNil)
 	c.Assert(err, IsNil)
 }
 
 func (s *FilesystemSuite) TestTempFile(c *C) {
-	f, err := s.fs.TempFile("", "bar")
+	f, err := s.Fs.TempFile("", "bar")
 	c.Assert(err, IsNil)
 
 	c.Assert(strings.HasPrefix(f.Filename(), "bar"), Equals, true)
 }
 
 func (s *FilesystemSuite) TestTempFileWithPath(c *C) {
-	f, err := s.fs.TempFile("foo", "bar")
+	f, err := s.Fs.TempFile("foo", "bar")
 	c.Assert(err, IsNil)
-
-	c.Assert(strings.HasPrefix(f.Filename(), s.fs.Join("foo", "bar")), Equals, true)
+	fmt.Printf("f: %s\n", f.Filename())
+	c.Assert(strings.HasPrefix(f.Filename(), s.Fs.Join("foo", "bar")), Equals, true)
 }
 
 func (s *FilesystemSuite) TestTempFileFullWithPath(c *C) {
-	f, err := s.fs.TempFile("/foo", "bar")
+	f, err := s.Fs.TempFile("/foo", "bar")
 	c.Assert(err, IsNil)
-
-	c.Assert(strings.HasPrefix(f.Filename(), s.fs.Join("foo", "bar")), Equals, true)
+	fmt.Printf("f: %s\n", f.Filename())
+	c.Assert(strings.HasPrefix(f.Filename(), s.Fs.Join("foo", "bar")), Equals, true)
 }
 
 func (s *FilesystemSuite) TestOpenAndStat(c *C) {
-	f, err := s.fs.Create("foo")
+	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
 
-	foo, err := s.fs.Open("foo")
+	foo, err := s.Fs.Open("foo")
 	c.Assert(foo, NotNil)
 	c.Assert(foo.Filename(), Equals, "foo")
 	c.Assert(err, IsNil)
 
-	stat, err := s.fs.Stat("foo")
+	stat, err := s.Fs.Stat("foo")
 	c.Assert(stat, NotNil)
 	c.Assert(err, IsNil)
 	c.Assert(stat.Name(), Equals, "foo")
 }
 
 func (s *FilesystemSuite) TestJoin(c *C) {
-	c.Assert(s.fs.Join("foo", "bar"), Equals, "foo/bar")
+	c.Assert(s.Fs.Join("foo", "bar"), Equals, "foo/bar")
 }
 
 func (s *FilesystemSuite) TestBase(c *C) {
-	c.Assert(s.fs.Base(), Not(Equals), "")
+	c.Assert(s.Fs.Base(), Not(Equals), "")
 }

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
+	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 )
 
 var RootFolder = ""
@@ -161,7 +162,7 @@ func (f *Fixture) DotGit() fs.Filesystem {
 	}
 
 	folders = append(folders, path)
-	return fs.NewOS(path)
+	return osfs.NewOS(path)
 }
 
 type Fixtures []*Fixture

@@ -9,7 +9,7 @@ import (
 	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
+	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 
 	. "gopkg.in/check.v1"
 )
@@ -24,7 +24,7 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 
 	defer os.RemoveAll(dir)
 
-	fs := fs.NewOS(dir)
+	fs := osfs.NewOS(dir)
 	dot := New(fs)
 
 	w, err := dot.NewObjectPack()

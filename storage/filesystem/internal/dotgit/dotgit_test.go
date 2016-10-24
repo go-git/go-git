@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
+	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 
 	. "gopkg.in/check.v1"
 )
@@ -27,7 +27,7 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	c.Assert(err, IsNil)
 	defer os.RemoveAll(tmp)
 
-	fs := fs.NewOS(tmp)
+	fs := osfs.NewOS(tmp)
 	dir := New(fs)
 
 	err = dir.SetRef(core.NewReferenceFromStrings(
@@ -164,7 +164,7 @@ func (s *SuiteDotGit) TestNewObject(c *C) {
 	c.Assert(err, IsNil)
 	defer os.RemoveAll(tmp)
 
-	fs := fs.NewOS(tmp)
+	fs := osfs.NewOS(tmp)
 	dir := New(fs)
 	w, err := dir.NewObject()
 	c.Assert(err, IsNil)

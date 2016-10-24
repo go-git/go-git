@@ -8,7 +8,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
+	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 
 	. "gopkg.in/check.v1"
 )
@@ -88,7 +88,7 @@ func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
 	defer os.RemoveAll(dir) // clean up
 
 	var sto Storage
-	sto, err = filesystem.NewStorage(fs.NewOS(dir))
+	sto, err = filesystem.NewStorage(osfs.NewOS(dir))
 	c.Assert(err, IsNil)
 
 	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
