@@ -95,6 +95,14 @@ func (s *FilesystemSuite) TestReadDirAndDir(c *C) {
 	c.Assert(info, HasLen, 2)
 }
 
+func (s *FilesystemSuite) TestCreateInDir(c *C) {
+	dir := s.Fs.Dir("foo")
+	f, err := dir.Create("bar")
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+	c.Assert(f.Filename(), Equals, "bar")
+}
+
 func (s *FilesystemSuite) TestRename(c *C) {
 	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
