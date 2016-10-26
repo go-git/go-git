@@ -32,7 +32,7 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 	s.buildRepository(c)
 
 	s.Repositories = make(map[string]*Repository, 0)
-	s.buildRepositories(c, fixtures.Basic())
+	s.buildRepositories(c, fixtures.Basic().ByTag("packfile"))
 }
 
 func (s *BaseSuite) installMockProtocol(c *C) {

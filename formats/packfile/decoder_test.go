@@ -29,7 +29,7 @@ func (s *ReaderSuite) TestNewDecodeNonSeekable(c *C) {
 }
 
 func (s *ReaderSuite) TestDecode(c *C) {
-	fixtures.Basic().Test(c, func(f *fixtures.Fixture) {
+	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		scanner := NewScanner(f.Packfile())
 		storage := memory.NewStorage()
 
@@ -46,7 +46,7 @@ func (s *ReaderSuite) TestDecode(c *C) {
 }
 
 func (s *ReaderSuite) TestDecodeInMemory(c *C) {
-	fixtures.Basic().Test(c, func(f *fixtures.Fixture) {
+	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		scanner := NewScanner(f.Packfile())
 		d, err := NewDecoder(scanner, nil)
 		c.Assert(err, IsNil)

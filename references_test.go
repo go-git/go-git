@@ -288,7 +288,7 @@ var referencesTests = [...]struct {
 
 func (s *ReferencesSuite) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpSuite(c)
-	s.buildRepositories(c, fixtures.All())
+	s.buildRepositories(c, fixtures.All().ByTag("packfile"))
 }
 
 func (s *ReferencesSuite) TestRevList(c *C) {

@@ -55,7 +55,7 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 }
 
 func (s *FsSuite) TestIter(c *C) {
-	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+	fixtures.ByTag(".git").ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		fs := f.DotGit()
 		o, err := newObjectStorage(dotgit.New(fs))
 		c.Assert(err, IsNil)
