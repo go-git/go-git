@@ -42,6 +42,23 @@ var fixtures = Fixtures{{
 	DotGitHash:   core.NewHash("21504f6d2cc2ef0c9d6ebb8802c7b49abae40c1a"),
 	ObjectsCount: 28,
 }, {
+	Tags:       []string{".git", "merge-conflict"},
+	URL:        "https://github.com/git-fixtures/basic.git",
+	DotGitHash: core.NewHash("4870d54b5b04e43da8cf99ceec179d9675494af8"),
+}, {
+	Tags:       []string{".git", "resolve-undo"},
+	URL:        "https://github.com/git-fixtures/basic.git",
+	DotGitHash: core.NewHash("df6781fd40b8f4911d70ce71f8387b991615cd6d"),
+}, {
+	Tags:       []string{".git", "intent-to-add"},
+	URL:        "https://github.com/git-fixtures/basic.git",
+	DotGitHash: core.NewHash("4e7600af05c3356e8b142263e127b76f010facfc"),
+}, {
+	Tags:       []string{".git", "index-v4"},
+	URL:        "https://github.com/git-fixtures/basic.git",
+	DotGitHash: core.NewHash("935e5ac17c41c309c356639816ea0694a568c484"),
+}, {
+
 	Tags:         []string{"packfile", ".git", "unpacked", "multi-packfile"},
 	URL:          "https://github.com/src-d/go-git.git",
 	Head:         core.NewHash("e8788ad9165781196e917292d6055cba1d78664e"),
@@ -158,6 +175,8 @@ func (f *Fixture) DotGit() fs.Filesystem {
 	fn := filepath.Join(RootFolder, DataFolder, fmt.Sprintf("git-%s.tgz", f.DotGitHash))
 	path, err := tgz.Extract(fn)
 	if err != nil {
+		fmt.Println(os.Getwd())
+		fmt.Println(filepath.Clean(fn))
 		panic(err)
 	}
 
