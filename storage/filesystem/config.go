@@ -1,12 +1,15 @@
 package filesystem
 
 import (
-	"fmt"
-	"io"
-
-	"gopkg.in/gcfg.v1"
 	"gopkg.in/src-d/go-git.v4/config"
+	gitconfig "gopkg.in/src-d/go-git.v4/formats/config"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
+)
+
+const (
+	remoteSection = "remote"
+	fetchKey      = "fetch"
+	urlKey        = "url"
 )
 
 type ConfigStorage struct {
@@ -14,45 +17,63 @@ type ConfigStorage struct {
 }
 
 func (c *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
-	file, err := c.read()
+	cfg, err := c.read()
 	if err != nil {
 		return nil, err
 	}
 
-	r, ok := file.Remotes[name]
-	if ok {
-		return r, nil
+	s := cfg.Section(remoteSection).Subsection(name)
+	if s == nil {
+		return nil, config.ErrRemoteConfigNotFound
 	}
 
-	return nil, config.ErrRemoteConfigNotFound
+	return parseRemote(s), nil
 }
 
 func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
-	file, err := c.read()
+	cfg, err := c.read()
 	if err != nil {
 		return nil, err
 	}
 
-	remotes := make([]*config.RemoteConfig, len(file.Remotes))
-
-	var i int
-	for _, r := range file.Remotes {
-		remotes[i] = r
+	remotes := []*config.RemoteConfig{}
+	sect := cfg.Section(remoteSection)
+	for _, s := range sect.Subsections {
+		remotes = append(remotes, parseRemote(s))
 	}
 
 	return remotes, nil
 }
 
 func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
-	return nil
-	return fmt.Errorf("set remote - not implemented yet")
+	cfg, err := c.read()
+	if err != nil {
+		return err
+	}
+
+	s := cfg.Section(remoteSection).Subsection(r.Name)
+	s.Name = r.Name
+	s.SetOption(urlKey, r.URL)
+	s.RemoveOption(fetchKey)
+	for _, rs := range r.Fetch {
+		s.AddOption(fetchKey, rs.String())
+	}
+
+	return c.write(cfg)
 }
 
 func (c *ConfigStorage) DeleteRemote(name string) error {
-	return fmt.Errorf("delete - remote not implemented yet")
+	cfg, err := c.read()
+	if err != nil {
+		return err
+	}
+
+	cfg = cfg.RemoveSubsection(remoteSection, name)
+
+	return c.write(cfg)
 }
 
-func (c *ConfigStorage) read() (*ConfigFile, error) {
+func (c *ConfigStorage) read() (*gitconfig.Config, error) {
 	f, err := c.dir.Config()
 	if err != nil {
 		return nil, err
@@ -60,15 +81,45 @@ func (c *ConfigStorage) read() (*ConfigFile, error) {
 
 	defer f.Close()
 
-	config := &ConfigFile{}
-	return config, config.Decode(f)
+	cfg := gitconfig.New()
+	d := gitconfig.NewDecoder(f)
+	err = d.Decode(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
-type ConfigFile struct {
-	Remotes map[string]*config.RemoteConfig `gcfg:"remote"`
+func (c *ConfigStorage) write(cfg *gitconfig.Config) error {
+	f, err := c.dir.Config()
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	e := gitconfig.NewEncoder(f)
+	err = e.Encode(cfg)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-// Decode decode a git config file intro the ConfigStore
-func (c *ConfigFile) Decode(r io.Reader) error {
-	return gcfg.FatalOnly(gcfg.ReadInto(c, r))
+func parseRemote(s *gitconfig.Subsection) *config.RemoteConfig {
+	fetch := []config.RefSpec{}
+	for _, f := range s.Options.GetAll(fetchKey) {
+		rs := config.RefSpec(f)
+		if rs.IsValid() {
+			fetch = append(fetch, rs)
+		}
+	}
+
+	return &config.RemoteConfig{
+		Name:  s.Name,
+		URL:   s.Option(urlKey),
+		Fetch: fetch,
+	}
 }

@@ -1,7 +1,7 @@
 package filesystem
 
 import (
-	"bytes"
+	"gopkg.in/src-d/go-git.v4/formats/config"
 
 	. "gopkg.in/check.v1"
 )
@@ -10,31 +10,22 @@ type ConfigSuite struct{}
 
 var _ = Suite(&ConfigSuite{})
 
-func (s *ConfigSuite) TestConfigFileDecode(c *C) {
-	config := &ConfigFile{}
+func (s *ConfigSuite) TestParseRemote(c *C) {
+	remote := parseRemote(&config.Subsection{
+		Name: "origin",
+		Options: []*config.Option{
+			{
+				Key:   "url",
+				Value: "git@github.com:src-d/go-git.git",
+			},
+			{
+				Key:   "fetch",
+				Value: "+refs/heads/*:refs/remotes/origin/*",
+			},
+		},
+	})
 
-	err := config.Decode(bytes.NewBuffer(configFixture))
-	c.Assert(err, IsNil)
-
-	c.Assert(config.Remotes, HasLen, 2)
-	c.Assert(config.Remotes["origin"].URL, Equals, "git@github.com:src-d/go-git.git")
-	c.Assert(config.Remotes["origin"].Fetch, HasLen, 1)
-	c.Assert(config.Remotes["origin"].Fetch[0].String(), Equals, "+refs/heads/*:refs/remotes/origin/*")
+	c.Assert(remote.URL, Equals, "git@github.com:src-d/go-git.git")
+	c.Assert(remote.Fetch, HasLen, 1)
+	c.Assert(remote.Fetch[0].String(), Equals, "+refs/heads/*:refs/remotes/origin/*")
 }
-
-var configFixture = []byte(`
-[core]
-        repositoryformatversion = 0
-        filemode = true
-        bare = false
-        logallrefupdates = true
-[remote "origin"]
-        url = git@github.com:src-d/go-git.git
-        fetch = +refs/heads/*:refs/remotes/origin/*
-[branch "v4"]
-        remote = origin
-        merge = refs/heads/v4
-[remote "mcuadros"]
-        url = git@github.com:mcuadros/go-git.git
-        fetch = +refs/heads/*:refs/remotes/mcuadros/*
-`)
