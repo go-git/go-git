@@ -95,6 +95,24 @@ func (s *FilesystemSuite) TestReadDirAndDir(c *C) {
 	c.Assert(info, HasLen, 2)
 }
 
+func (s *FilesystemSuite) TestDirStat(c *C) {
+	files := []string{"foo", "bar", "qux/baz", "qux/qux"}
+	for _, name := range files {
+		f, err := s.Fs.Create(name)
+		c.Assert(err, IsNil)
+		c.Assert(f.Close(), IsNil)
+	}
+
+	qux := s.Fs.Dir("qux")
+	fi, err := qux.Stat("baz")
+	c.Assert(err, IsNil)
+	c.Assert(fi.Name(), Equals, "baz")
+
+	fi, err = qux.Stat("/baz")
+	c.Assert(err, IsNil)
+	c.Assert(fi.Name(), Equals, "baz")
+}
+
 func (s *FilesystemSuite) TestCreateInDir(c *C) {
 	dir := s.Fs.Dir("foo")
 	f, err := dir.Create("bar")
