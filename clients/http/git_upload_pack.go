@@ -78,7 +78,7 @@ func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	defer res.Body.Close()
 
 	i := common.NewGitUploadPackInfo()
-	return i, i.Decode(pktline.NewScanner(res.Body))
+	return i, i.Decode(res.Body)
 }
 
 // Fetch request and returns a reader to a packfile

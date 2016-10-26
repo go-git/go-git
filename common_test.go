@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/formats/packp"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
 	. "gopkg.in/check.v1"
@@ -90,7 +91,7 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 
 	h := fixtures.ByURL(p.endpoint.String()).One().Head
 
-	c := common.NewCapabilities()
+	c := packp.NewCapabilities()
 	c.Decode("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf")
 
 	ref := core.ReferenceName("refs/heads/master")

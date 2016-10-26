@@ -2,6 +2,7 @@
 package common
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/formats/packp"
+	"gopkg.in/src-d/go-git.v4/formats/packp/advrefs"
 	"gopkg.in/src-d/go-git.v4/formats/packp/pktline"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
@@ -75,246 +78,100 @@ func (e *Endpoint) String() string {
 	return u.String()
 }
 
-// Capabilities contains all the server capabilities
-// https://github.com/git/git/blob/master/Documentation/technical/protocol-capabilities.txt
-type Capabilities struct {
-	m map[string]*Capability
-	o []string
-}
-
-// Capability represents a server capability
-type Capability struct {
-	Name   string
-	Values []string
-}
-
-// NewCapabilities returns a new Capabilities struct
-func NewCapabilities() *Capabilities {
-	return &Capabilities{
-		m: make(map[string]*Capability, 0),
-	}
-}
-
-// Decode decodes a string
-func (c *Capabilities) Decode(raw string) {
-	params := strings.Split(raw, " ")
-	for _, p := range params {
-		s := strings.SplitN(p, "=", 2)
-
-		var value string
-		if len(s) == 2 {
-			value = s[1]
-		}
-
-		c.Add(s[0], value)
-	}
-}
-
-// Get returns the values for a capability
-func (c *Capabilities) Get(capability string) *Capability {
-	return c.m[capability]
-}
-
-// Set sets a capability removing the values
-func (c *Capabilities) Set(capability string, values ...string) {
-	if _, ok := c.m[capability]; ok {
-		delete(c.m, capability)
-	}
-
-	c.Add(capability, values...)
-}
-
-// Add adds a capability, values are optional
-func (c *Capabilities) Add(capability string, values ...string) {
-	if !c.Supports(capability) {
-		c.m[capability] = &Capability{Name: capability}
-		c.o = append(c.o, capability)
-	}
-
-	if len(values) == 0 {
-		return
-	}
-
-	c.m[capability].Values = append(c.m[capability].Values, values...)
-}
-
-// Supports returns true if capability is present
-func (c *Capabilities) Supports(capability string) bool {
-	_, ok := c.m[capability]
-	return ok
-}
-
-// SymbolicReference returns the reference for a given symbolic reference
-func (c *Capabilities) SymbolicReference(sym string) string {
-	if !c.Supports("symref") {
-		return ""
-	}
-
-	for _, symref := range c.Get("symref").Values {
-		parts := strings.Split(symref, ":")
-		if len(parts) != 2 {
-			continue
-		}
-
-		if parts[0] == sym {
-			return parts[1]
-		}
-	}
-
-	return ""
-}
-
-func (c *Capabilities) String() string {
-	if len(c.o) == 0 {
-		return ""
-	}
-
-	var o string
-	for _, key := range c.o {
-		cap := c.m[key]
-
-		added := false
-		for _, value := range cap.Values {
-			if value == "" {
-				continue
-			}
-
-			added = true
-			o += fmt.Sprintf("%s=%s ", key, value)
-		}
-
-		if len(cap.Values) == 0 || !added {
-			o += key + " "
-		}
-	}
-
-	if len(o) == 0 {
-		return o
-	}
-
-	return o[:len(o)-1]
-}
-
 type GitUploadPackInfo struct {
-	Capabilities *Capabilities
+	Capabilities *packp.Capabilities
 	Refs         memory.ReferenceStorage
 }
 
 func NewGitUploadPackInfo() *GitUploadPackInfo {
-	return &GitUploadPackInfo{Capabilities: NewCapabilities()}
+	return &GitUploadPackInfo{Capabilities: packp.NewCapabilities()}
 }
 
-func (r *GitUploadPackInfo) Decode(s *pktline.Scanner) error {
-	if err := r.read(s); err != nil {
-		if err == ErrEmptyGitUploadPack {
+func (i *GitUploadPackInfo) Decode(r io.Reader) error {
+	d := advrefs.NewDecoder(r)
+	ar := advrefs.New()
+	if err := d.Decode(ar); err != nil {
+		if err == advrefs.ErrEmpty {
 			return core.NewPermanentError(err)
 		}
+		return core.NewUnexpectedError(err)
+	}
 
+	i.Capabilities = ar.Capabilities
+
+	if err := i.addRefs(ar); err != nil {
 		return core.NewUnexpectedError(err)
 	}
 
 	return nil
 }
 
-func (r *GitUploadPackInfo) read(s *pktline.Scanner) error {
-	isEmpty := true
-	r.Refs = make(memory.ReferenceStorage, 0)
-	smartCommentIgnore := false
-	for s.Scan() {
-		line := string(s.Bytes())
-
-		if smartCommentIgnore {
-			// some servers like Github add a flush-pkt after the smart http comment
-			// that we must ignore to prevent a premature termination of the read.
-			if len(line) == 0 {
-				continue
-			}
-			smartCommentIgnore = false
-		}
-
-		// exit on first flush-pkt
-		if len(line) == 0 {
-			break
-		}
-
-		if isSmartHttpComment(line) {
-			smartCommentIgnore = true
-			continue
-		}
-
-		if err := r.readLine(line); err != nil {
-			return err
-		}
-
-		isEmpty = false
+func (i *GitUploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
+	i.Refs = make(memory.ReferenceStorage, 0)
+	for name, hash := range ar.References {
+		ref := core.NewReferenceFromStrings(name, hash.String())
+		i.Refs.Set(ref)
 	}
 
-	if isEmpty {
-		return ErrEmptyGitUploadPack
-	}
-
-	return s.Err()
+	return i.addSymbolicRefs(ar)
 }
 
-func isSmartHttpComment(line string) bool {
-	return line[0] == '#'
-}
-
-func (r *GitUploadPackInfo) readLine(line string) error {
-	hashEnd := strings.Index(line, " ")
-	hash := line[:hashEnd]
-
-	zeroID := strings.Index(line, string([]byte{0}))
-	if zeroID == -1 {
-		name := line[hashEnd+1 : len(line)-1]
-		ref := core.NewReferenceFromStrings(name, hash)
-		return r.Refs.Set(ref)
+func (i *GitUploadPackInfo) addSymbolicRefs(ar *advrefs.AdvRefs) error {
+	if !hasSymrefs(ar) {
+		return nil
 	}
 
-	name := line[hashEnd+1 : zeroID]
-	r.Capabilities.Decode(line[zeroID+1 : len(line)-1])
-	if !r.Capabilities.Supports("symref") {
-		ref := core.NewReferenceFromStrings(name, hash)
-		return r.Refs.Set(ref)
+	for _, symref := range ar.Capabilities.Get("symref").Values {
+		chunks := strings.Split(symref, ":")
+		if len(chunks) != 2 {
+			err := fmt.Errorf("bad number of `:` in symref value (%q)", symref)
+			return core.NewUnexpectedError(err)
+		}
+		name := core.ReferenceName(chunks[0])
+		target := core.ReferenceName(chunks[1])
+		ref := core.NewSymbolicReference(name, target)
+		i.Refs.Set(ref)
 	}
 
-	target := r.Capabilities.SymbolicReference(name)
-	ref := core.NewSymbolicReference(core.ReferenceName(name), core.ReferenceName(target))
-	return r.Refs.Set(ref)
+	return nil
 }
 
-func (r *GitUploadPackInfo) Head() *core.Reference {
-	ref, _ := core.ResolveReference(r.Refs, core.HEAD)
+func hasSymrefs(ar *advrefs.AdvRefs) bool {
+	return ar.Capabilities.Supports("symref")
+}
+
+func (i *GitUploadPackInfo) Head() *core.Reference {
+	ref, _ := core.ResolveReference(i.Refs, core.HEAD)
 	return ref
 }
 
-func (r *GitUploadPackInfo) String() string {
-	return string(r.Bytes())
+func (i *GitUploadPackInfo) String() string {
+	return string(i.Bytes())
 }
 
-func (r *GitUploadPackInfo) Bytes() []byte {
-	p := pktline.New()
-	_ = p.AddString("# service=git-upload-pack\n")
+func (i *GitUploadPackInfo) Bytes() []byte {
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+
+	_ = e.EncodeString("# service=git-upload-pack\n")
+
 	// inserting a flush-pkt here violates the protocol spec, but some
 	// servers do it, like Github.com
-	p.AddFlush()
+	e.Flush()
 
-	firstLine := fmt.Sprintf("%s HEAD\x00%s\n", r.Head().Hash(), r.Capabilities.String())
-	_ = p.AddString(firstLine)
+	_ = e.Encodef("%s HEAD\x00%s\n", i.Head().Hash(), i.Capabilities.String())
 
-	for _, ref := range r.Refs {
+	for _, ref := range i.Refs {
 		if ref.Type() != core.HashReference {
 			continue
 		}
 
-		ref := fmt.Sprintf("%s %s\n", ref.Hash(), ref.Name())
-		_ = p.AddString(ref)
+		_ = e.Encodef("%s %s\n", ref.Hash(), ref.Name())
 	}
 
-	p.AddFlush()
-	b, _ := ioutil.ReadAll(p)
+	e.Flush()
 
-	return b
+	return buf.Bytes()
 }
 
 type GitUploadPackRequest struct {
@@ -337,24 +194,23 @@ func (r *GitUploadPackRequest) String() string {
 }
 
 func (r *GitUploadPackRequest) Reader() *strings.Reader {
-	p := pktline.New()
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
 
 	for _, want := range r.Wants {
-		_ = p.AddString(fmt.Sprintf("want %s\n", want))
+		_ = e.Encodef("want %s\n", want)
 	}
 
 	for _, have := range r.Haves {
-		_ = p.AddString(fmt.Sprintf("have %s\n", have))
+		_ = e.Encodef("have %s\n", have)
 	}
 
 	if r.Depth != 0 {
-		_ = p.AddString(fmt.Sprintf("deepen %d\n", r.Depth))
+		_ = e.Encodef("deepen %d\n", r.Depth)
 	}
 
-	p.AddFlush()
-	_ = p.AddString("done\n")
+	_ = e.Flush()
+	_ = e.EncodeString("done\n")
 
-	b, _ := ioutil.ReadAll(p)
-
-	return strings.NewReader(string(b))
+	return strings.NewReader(buf.String())
 }

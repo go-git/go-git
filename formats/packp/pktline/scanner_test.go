@@ -1,6 +1,7 @@
 package pktline_test
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -41,11 +42,14 @@ func (s *SuiteScanner) TestEmptyReader(c *C) {
 }
 
 func (s *SuiteScanner) TestFlush(c *C) {
-	p := pktline.New()
-	p.AddFlush()
-	sc := pktline.NewScanner(p)
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+	err := e.Flush()
+	c.Assert(err, IsNil)
 
+	sc := pktline.NewScanner(&buf)
 	c.Assert(sc.Scan(), Equals, true)
+
 	payload := sc.Bytes()
 	c.Assert(len(payload), Equals, 0)
 }
@@ -70,14 +74,16 @@ func (s *SuiteScanner) TestScanAndPayload(c *C) {
 		strings.Repeat("a", pktline.MaxPayloadSize),
 		strings.Repeat("a", pktline.MaxPayloadSize-1) + "\n",
 	} {
-		p := pktline.New()
-		err := p.AddString(test)
+		var buf bytes.Buffer
+		e := pktline.NewEncoder(&buf)
+		err := e.EncodeString(test)
 		c.Assert(err, IsNil,
 			Commentf("input len=%x, contents=%.10q\n", len(test), test))
-		sc := pktline.NewScanner(p)
 
+		sc := pktline.NewScanner(&buf)
 		c.Assert(sc.Scan(), Equals, true,
 			Commentf("test = %.20q...", test))
+
 		obtained := sc.Bytes()
 		c.Assert(obtained, DeepEquals, []byte(test),
 			Commentf("in = %.20q out = %.20q", test, string(obtained)))
@@ -107,16 +113,19 @@ func (s *SuiteScanner) TestSkip(c *C) {
 			expected: []byte("third"),
 		},
 	} {
-		p := pktline.New()
-		err := p.AddString(test.input...)
+		var buf bytes.Buffer
+		e := pktline.NewEncoder(&buf)
+		err := e.EncodeString(test.input...)
 		c.Assert(err, IsNil)
-		sc := pktline.NewScanner(p)
+
+		sc := pktline.NewScanner(&buf)
 		for i := 0; i < test.n; i++ {
 			c.Assert(sc.Scan(), Equals, true,
 				Commentf("scan error = %s", sc.Err()))
 		}
 		c.Assert(sc.Scan(), Equals, true,
 			Commentf("scan error = %s", sc.Err()))
+
 		obtained := sc.Bytes()
 		c.Assert(obtained, DeepEquals, test.expected,
 			Commentf("\nin = %.20q\nout = %.20q\nexp = %.20q",
@@ -125,10 +134,12 @@ func (s *SuiteScanner) TestSkip(c *C) {
 }
 
 func (s *SuiteScanner) TestEOF(c *C) {
-	p := pktline.New()
-	err := p.AddString("first", "second")
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+	err := e.EncodeString("first", "second")
 	c.Assert(err, IsNil)
-	sc := pktline.NewScanner(p)
+
+	sc := pktline.NewScanner(&buf)
 	for sc.Scan() {
 	}
 	c.Assert(sc.Err(), IsNil)
@@ -164,19 +175,22 @@ func (s *SuiteScanner) TestReadSomeSections(c *C) {
 // 0000
 // and so on
 func sectionsExample(c *C, nSections, nLines int) io.Reader {
-	p := pktline.New()
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+
 	for section := 0; section < nSections; section++ {
 		ss := []string{}
 		for line := 0; line < nLines; line++ {
 			line := fmt.Sprintf(" %d.%d\n", section, line)
 			ss = append(ss, line)
 		}
-		err := p.AddString(ss...)
+		err := e.EncodeString(ss...)
 		c.Assert(err, IsNil)
-		p.AddFlush()
+		err = e.Flush()
+		c.Assert(err, IsNil)
 	}
 
-	return p
+	return &buf
 }
 
 func ExampleScanner() {

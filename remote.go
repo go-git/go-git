@@ -10,6 +10,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/formats/packp"
 )
 
 var NoErrAlreadyUpToDate = errors.New("already up-to-date")
@@ -71,7 +72,7 @@ func (r *Remote) Info() *common.GitUploadPackInfo {
 }
 
 // Capabilities returns the remote capabilities
-func (r *Remote) Capabilities() *common.Capabilities {
+func (r *Remote) Capabilities() *packp.Capabilities {
 	return r.upInfo.Capabilities
 }
 

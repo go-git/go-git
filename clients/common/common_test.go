@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/packp/pktline"
+	"gopkg.in/src-d/go-git.v4/formats/packp"
 
 	. "gopkg.in/check.v1"
 )
@@ -38,7 +38,7 @@ func (s *SuiteCommon) TestNewEndpointWrongForgat(c *C) {
 const CapabilitiesFixture = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf"
 
 func (s *SuiteCommon) TestCapabilitiesSymbolicReference(c *C) {
-	cap := NewCapabilities()
+	cap := packp.NewCapabilities()
 	cap.Decode(CapabilitiesFixture)
 	c.Assert(cap.SymbolicReference("HEAD"), Equals, "refs/heads/master")
 }
@@ -49,7 +49,7 @@ func (s *SuiteCommon) TestGitUploadPackInfo(c *C) {
 	b, _ := base64.StdEncoding.DecodeString(GitUploadPackInfoFixture)
 
 	i := NewGitUploadPackInfo()
-	err := i.Decode(pktline.NewScanner(bytes.NewBuffer(b)))
+	err := i.Decode(bytes.NewBuffer(b))
 	c.Assert(err, IsNil)
 
 	name := i.Capabilities.SymbolicReference("HEAD")
@@ -71,7 +71,7 @@ func (s *SuiteCommon) TestGitUploadPackInfoNoHEAD(c *C) {
 	b, _ := base64.StdEncoding.DecodeString(GitUploadPackInfoNoHEADFixture)
 
 	i := NewGitUploadPackInfo()
-	err := i.Decode(pktline.NewScanner(bytes.NewBuffer(b)))
+	err := i.Decode(bytes.NewBuffer(b))
 	c.Assert(err, IsNil)
 
 	name := i.Capabilities.SymbolicReference("HEAD")
@@ -87,41 +87,8 @@ func (s *SuiteCommon) TestGitUploadPackInfoEmpty(c *C) {
 	b := bytes.NewBuffer(nil)
 
 	i := NewGitUploadPackInfo()
-	err := i.Decode(pktline.NewScanner(b))
+	err := i.Decode(b)
 	c.Assert(err, ErrorMatches, "permanent.*empty.*")
-}
-
-func (s *SuiteCommon) TestCapabilitiesDecode(c *C) {
-	cap := NewCapabilities()
-	cap.Decode("symref=foo symref=qux thin-pack")
-
-	c.Assert(cap.m, HasLen, 2)
-	c.Assert(cap.Get("symref").Values, DeepEquals, []string{"foo", "qux"})
-	c.Assert(cap.Get("thin-pack").Values, DeepEquals, []string{""})
-}
-
-func (s *SuiteCommon) TestCapabilitiesSet(c *C) {
-	cap := NewCapabilities()
-	cap.Add("symref", "foo", "qux")
-	cap.Set("symref", "bar")
-
-	c.Assert(cap.m, HasLen, 1)
-	c.Assert(cap.Get("symref").Values, DeepEquals, []string{"bar"})
-}
-
-func (s *SuiteCommon) TestCapabilitiesSetEmpty(c *C) {
-	cap := NewCapabilities()
-	cap.Set("foo", "bar")
-
-	c.Assert(cap.Get("foo").Values, HasLen, 1)
-}
-
-func (s *SuiteCommon) TestCapabilitiesAdd(c *C) {
-	cap := NewCapabilities()
-	cap.Add("symref", "foo", "qux")
-	cap.Add("thin-pack")
-
-	c.Assert(cap.String(), Equals, "symref=foo symref=qux thin-pack")
 }
 
 func (s *SuiteCommon) TestGitUploadPackEncode(c *C) {
