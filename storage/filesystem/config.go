@@ -1,6 +1,8 @@
 package filesystem
 
 import (
+	"os"
+
 	"gopkg.in/src-d/go-git.v4/config"
 	gitconfig "gopkg.in/src-d/go-git.v4/formats/config"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
@@ -74,17 +76,21 @@ func (c *ConfigStorage) DeleteRemote(name string) error {
 }
 
 func (c *ConfigStorage) read() (*gitconfig.Config, error) {
+	cfg := gitconfig.New()
+
 	f, err := c.dir.Config()
 	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+
 		return nil, err
 	}
 
 	defer f.Close()
 
-	cfg := gitconfig.New()
 	d := gitconfig.NewDecoder(f)
-	err = d.Decode(cfg)
-	if err != nil {
+	if err := d.Decode(cfg); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +98,7 @@ func (c *ConfigStorage) read() (*gitconfig.Config, error) {
 }
 
 func (c *ConfigStorage) write(cfg *gitconfig.Config) error {
-	f, err := c.dir.Config()
+	f, err := c.dir.ConfigWriter()
 	if err != nil {
 		return err
 	}
