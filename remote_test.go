@@ -13,6 +13,8 @@ import (
 	. "gopkg.in/check.v1"
 )
 
+const FixRefSpec = config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+
 type RemoteSuite struct {
 	BaseSuite
 }
@@ -74,11 +76,22 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	c.Assert(r.Connect(), IsNil)
 
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{config.DefaultRefSpec},
+		RefSpecs: []config.RefSpec{FixRefSpec},
 	})
 
 	c.Assert(err, IsNil)
 	c.Assert(sto.ObjectStorage().(*memory.ObjectStorage).Objects, HasLen, 31)
+
+	expectedRefs := []*core.Reference{
+		core.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		core.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		core.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	}
+
+	for _, exp := range expectedRefs {
+		r, _ := sto.ReferenceStorage().Get(exp.Name())
+		c.Assert(exp.String(), Equals, r.String())
+	}
 }
 
 func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
@@ -97,7 +110,7 @@ func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
 	c.Assert(r.Connect(), IsNil)
 
 	err = r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{config.DefaultRefSpec},
+		RefSpecs: []config.RefSpec{FixRefSpec},
 	})
 
 	c.Assert(err, IsNil)
@@ -121,7 +134,7 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	c.Assert(r.Connect(), IsNil)
 
 	o := &FetchOptions{
-		RefSpecs: []config.RefSpec{config.DefaultRefSpec},
+		RefSpecs: []config.RefSpec{FixRefSpec},
 	}
 
 	err := r.Fetch(o)

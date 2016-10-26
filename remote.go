@@ -190,8 +190,8 @@ func (r *Remote) updateObjectStorage(reader io.Reader) error {
 }
 
 func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*core.Reference) error {
-	for _, ref := range refs {
-		for _, spec := range specs {
+	for _, spec := range specs {
+		for _, ref := range refs {
 			if !spec.Match(ref.Name()) {
 				continue
 			}
@@ -208,7 +208,32 @@ func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*cor
 		}
 	}
 
-	return nil
+	return r.buildFetchedTags()
+}
+
+func (r *Remote) buildFetchedTags() error {
+	iter, err := r.Refs()
+	if err != nil {
+		return err
+	}
+
+	os := r.s.ObjectStorage()
+	return iter.ForEach(func(ref *core.Reference) error {
+		if !ref.IsTag() {
+			return nil
+		}
+
+		_, err := os.Get(core.CommitObject, ref.Hash())
+		if err == core.ErrObjectNotFound {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		return r.s.ReferenceStorage().Set(ref)
+	})
 }
 
 // Head returns the Reference of the HEAD
