@@ -59,14 +59,15 @@ func (s RefSpec) Src() string {
 
 // Match match the given core.ReferenceName against the source
 func (s RefSpec) Match(n core.ReferenceName) bool {
-	if !s.isGlob() {
+	if !s.IsWildcard() {
 		return s.matchExact(n)
 	}
 
 	return s.matchGlob(n)
 }
 
-func (s RefSpec) isGlob() bool {
+// IsWildcard returns true if the RefSpec contains a wildcard
+func (s RefSpec) IsWildcard() bool {
 	return strings.Index(string(s), refSpecWildcard) != -1
 }
 
@@ -97,7 +98,7 @@ func (s RefSpec) Dst(n core.ReferenceName) core.ReferenceName {
 	dst := spec[start:len(spec)]
 	src := s.Src()
 
-	if !s.isGlob() {
+	if !s.IsWildcard() {
 		return core.ReferenceName(dst)
 	}
 

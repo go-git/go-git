@@ -28,13 +28,6 @@ type Tag struct {
 	r *Repository
 }
 
-// Type returns the type of object. It always returns core.TreeObject.
-/*
-func (t *Tag) Type() core.ObjectType {
-	return core.TagObject
-}
-*/
-
 // ID returns the object ID of the tag, not the object that the tag references.
 // The returned value will always match the current value of Tag.Hash.
 //
@@ -180,10 +173,11 @@ func (t *Tag) Object() (Object, error) {
 // string.
 func (t *Tag) String() string {
 	obj, _ := t.Object()
+
 	return fmt.Sprintf(
 		"%s %s\nTagger: %s\nDate:   %s\n\n%s\n%s",
 		core.TagObject, t.Name, t.Tagger.String(), t.Tagger.When.Format(DateFormat),
-		t.Message, obj,
+		t.Message, objectAsString(obj),
 	)
 }
 
@@ -225,4 +219,15 @@ func (iter *TagIter) ForEach(cb func(*Tag) error) error {
 
 		return cb(tag)
 	})
+}
+
+func objectAsString(obj Object) string {
+	switch o := obj.(type) {
+	case *Commit:
+		return o.String()
+	case *Tag:
+		return o.String()
+	}
+
+	return ""
 }

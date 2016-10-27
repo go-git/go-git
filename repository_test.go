@@ -314,24 +314,27 @@ func (s *RepositorySuite) TestTag(c *C) {
 
 func (s *RepositorySuite) TestTags(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: "https://github.com/spinnaker/spinnaker.git"})
+	err := r.Clone(&CloneOptions{URL: "https://github.com/git-fixtures/tags.git"})
 	c.Assert(err, IsNil)
 
 	count := 0
 	tags, err := r.Tags()
 	c.Assert(err, IsNil)
-	for {
-		tag, err := tags.Next()
-		if err != nil {
-			break
-		}
 
+	tags.ForEach(func(tag *Tag) error {
 		count++
 		c.Assert(tag.Hash.IsZero(), Equals, false)
 		c.Assert(tag.Type(), Equals, core.TagObject)
-	}
 
-	c.Assert(count, Equals, 11)
+		return nil
+	})
+
+	refs, _ := r.Refs()
+	refs.ForEach(func(ref *core.Reference) error {
+		return nil
+	})
+
+	c.Assert(count, Equals, 4)
 }
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {

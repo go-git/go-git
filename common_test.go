@@ -97,6 +97,7 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	ref := core.ReferenceName("refs/heads/master")
 	branch := core.ReferenceName("refs/heads/branch")
 	tag := core.ReferenceName("refs/tags/v1.0.0")
+
 	return &common.GitUploadPackInfo{
 		Capabilities: c,
 		Refs: map[core.ReferenceName]*core.Reference{

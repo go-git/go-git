@@ -79,7 +79,9 @@ func (o *PullOptions) Validate() error {
 // FetchOptions describe how a fetch should be perform
 type FetchOptions struct {
 	RefSpecs []config.RefSpec
-	Depth    int
+	// Depth limit fetching to the specified number of commits from the tip of
+	// each remote branch history.
+	Depth int
 }
 
 // Validate validate the fields and set the default values
