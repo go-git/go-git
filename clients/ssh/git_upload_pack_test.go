@@ -121,10 +121,21 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	req.Want(core.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 	reader, err := r.Fetch(req)
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(reader.Close(), IsNil) }()
 
 	b, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
-
-	//this is failling randomly, should be fixed ASAP
 	c.Check(len(b), Equals, 85585)
+}
+
+func (s *RemoteSuite) TestFetchError(c *C) {
+	r := NewGitUploadPackService(s.Endpoint)
+	c.Assert(r.Connect(), IsNil)
+	defer func() { c.Assert(r.Disconnect(), IsNil) }()
+
+	req := &common.GitUploadPackRequest{}
+	req.Want(core.NewHash("1111111111111111111111111111111111111111"))
+
+	_, err := r.Fetch(req)
+	c.Assert(err, Not(IsNil))
 }
