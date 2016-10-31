@@ -14,10 +14,9 @@ var (
 )
 
 type Filesystem interface {
-	//Create opens a file in write-only mode.
 	Create(filename string) (File, error)
-	//Open opens a file in read-only mode.
 	Open(filename string) (File, error)
+	OpenFile(filename string, flag int, perm os.FileMode) (File, error)
 	Stat(filename string) (FileInfo, error)
 	ReadDir(path string) ([]FileInfo, error)
 	TempFile(dir, prefix string) (File, error)
@@ -38,3 +37,16 @@ type File interface {
 }
 
 type FileInfo os.FileInfo
+
+type BaseFile struct {
+	BaseFilename string
+	Closed       bool
+}
+
+func (f *BaseFile) Filename() string {
+	return f.BaseFilename
+}
+
+func (f *BaseFile) IsClosed() bool {
+	return f.Closed
+}

@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
@@ -35,13 +36,13 @@ func (s *FilesystemSuite) TestCreateDepthAbsolute(c *C) {
 }
 
 func (s *FilesystemSuite) TestCreateOverwrite(c *C) {
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		f, err := s.Fs.Create("foo")
 		c.Assert(err, IsNil)
 
-		l, err := f.Write([]byte("foo"))
+		l, err := f.Write([]byte(fmt.Sprintf("foo%d", i)))
 		c.Assert(err, IsNil)
-		c.Assert(l, Equals, 3)
+		c.Assert(l, Equals, 4)
 
 		err = f.Close()
 		c.Assert(err, IsNil)
@@ -52,7 +53,7 @@ func (s *FilesystemSuite) TestCreateOverwrite(c *C) {
 
 	wrote, err := ioutil.ReadAll(f)
 	c.Assert(err, IsNil)
-	c.Assert(wrote, DeepEquals, []byte("foo"))
+	c.Assert(string(wrote), DeepEquals, "foo2")
 }
 
 func (s *FilesystemSuite) TestCreateClose(c *C) {
@@ -60,17 +61,127 @@ func (s *FilesystemSuite) TestCreateClose(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(f.IsClosed(), Equals, false)
 
-	f.Write([]byte("foo"))
+	_, err = f.Write([]byte("foo"))
+	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
 
-	file, err := s.Fs.Open(f.Filename())
+	f, err = s.Fs.Open(f.Filename())
 	c.Assert(err, IsNil)
 
-	wrote, err := ioutil.ReadAll(file)
+	wrote, err := ioutil.ReadAll(f)
 	c.Assert(err, IsNil)
-	c.Assert(wrote, DeepEquals, []byte("foo"))
+	c.Assert(string(wrote), DeepEquals, "foo")
+	c.Assert(f.Close(), IsNil)
+}
 
-	c.Assert(f.IsClosed(), Equals, true)
+func (s *FilesystemSuite) TestOpenFileNoTruncate(c *C) {
+	defaultMode := os.FileMode(0666)
+
+	// Create when it does not exist
+	f, err := s.Fs.OpenFile("foo1", os.O_CREATE|os.O_WRONLY, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testWriteClose(c, f, "foo1")
+
+	f, err = s.Fs.OpenFile("foo1", os.O_RDONLY, defaultMode)
+	c.Assert(err, IsNil)
+	s.testReadClose(c, f, "foo1")
+
+	// Create when it does exist
+	f, err = s.Fs.OpenFile("foo1", os.O_CREATE|os.O_WRONLY, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testWriteClose(c, f, "bar")
+
+	f, err = s.Fs.OpenFile("foo1", os.O_RDONLY, defaultMode)
+	c.Assert(err, IsNil)
+	s.testReadClose(c, f, "bar1")
+}
+
+func (s *FilesystemSuite) TestOpenFileAppend(c *C) {
+	defaultMode := os.FileMode(0666)
+
+	f, err := s.Fs.OpenFile("foo1", os.O_CREATE|os.O_WRONLY|os.O_APPEND, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testWriteClose(c, f, "foo1")
+
+	f, err = s.Fs.OpenFile("foo1", os.O_WRONLY|os.O_APPEND, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testWriteClose(c, f, "bar1")
+
+	f, err = s.Fs.OpenFile("foo1", os.O_RDONLY, defaultMode)
+	c.Assert(err, IsNil)
+	s.testReadClose(c, f, "foo1bar1")
+}
+
+func (s *FilesystemSuite) TestOpenFileReadWrite(c *C) {
+	defaultMode := os.FileMode(0666)
+
+	f, err := s.Fs.OpenFile("foo1", os.O_CREATE|os.O_TRUNC|os.O_RDWR, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+
+	written, err := f.Write([]byte("foobar"))
+	c.Assert(written, Equals, 6)
+	c.Assert(err, IsNil)
+
+	_, err = f.Seek(0, os.SEEK_SET)
+	c.Assert(err, IsNil)
+
+	written, err = f.Write([]byte("qux"))
+	c.Assert(written, Equals, 3)
+	c.Assert(err, IsNil)
+
+	_, err = f.Seek(0, os.SEEK_SET)
+	c.Assert(err, IsNil)
+
+	s.testReadClose(c, f, "quxbar")
+}
+
+func (s *FilesystemSuite) TestOpenFile(c *C) {
+	defaultMode := os.FileMode(0666)
+
+	f, err := s.Fs.OpenFile("foo1", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, defaultMode)
+	c.Assert(err, IsNil)
+	s.testWriteClose(c, f, "foo1")
+
+	// Truncate if it exists
+	f, err = s.Fs.OpenFile("foo1", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testWriteClose(c, f, "foo1overwritten")
+
+	// Read-only if it exists
+	f, err = s.Fs.OpenFile("foo1", os.O_RDONLY, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testReadClose(c, f, "foo1overwritten")
+
+	// Create when it does exist
+	f, err = s.Fs.OpenFile("foo1", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, defaultMode)
+	c.Assert(err, IsNil)
+	c.Assert(f.Filename(), Equals, "foo1")
+	s.testWriteClose(c, f, "bar")
+
+	f, err = s.Fs.OpenFile("foo1", os.O_RDONLY, defaultMode)
+	c.Assert(err, IsNil)
+	s.testReadClose(c, f, "bar")
+}
+
+func (s *FilesystemSuite) testWriteClose(c *C, f File, content string) {
+	written, err := f.Write([]byte(content))
+	c.Assert(written, Equals, len(content))
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+}
+
+func (s *FilesystemSuite) testReadClose(c *C, f File, content string) {
+	read, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+	c.Assert(string(read), Equals, content)
+	c.Assert(f.Close(), IsNil)
 }
 
 func (s *FilesystemSuite) TestReadDirAndDir(c *C) {
@@ -148,14 +259,12 @@ func (s *FilesystemSuite) TestTempFile(c *C) {
 func (s *FilesystemSuite) TestTempFileWithPath(c *C) {
 	f, err := s.Fs.TempFile("foo", "bar")
 	c.Assert(err, IsNil)
-	fmt.Printf("f: %s\n", f.Filename())
 	c.Assert(strings.HasPrefix(f.Filename(), s.Fs.Join("foo", "bar")), Equals, true)
 }
 
 func (s *FilesystemSuite) TestTempFileFullWithPath(c *C) {
 	f, err := s.Fs.TempFile("/foo", "bar")
 	c.Assert(err, IsNil)
-	fmt.Printf("f: %s\n", f.Filename())
 	c.Assert(strings.HasPrefix(f.Filename(), s.Fs.Join("foo", "bar")), Equals, true)
 }
 
