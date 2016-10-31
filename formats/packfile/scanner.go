@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/zlib"
-	"encoding/binary"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -12,6 +11,7 @@ import (
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 var (
@@ -129,7 +129,7 @@ func (s *Scanner) isValidSignature(sig []byte) bool {
 
 // readVersion reads and returns the version field of a packfile.
 func (s *Scanner) readVersion() (uint32, error) {
-	return s.readInt32()
+	return binary.ReadUint32(s.r)
 }
 
 // isSupportedVersion returns whether version v is supported by the parser.
@@ -140,17 +140,7 @@ func (s *Scanner) isSupportedVersion(v uint32) bool {
 
 // readCount reads and returns the count of objects field of a packfile.
 func (s *Scanner) readCount() (uint32, error) {
-	return s.readInt32()
-}
-
-// ReadInt32 reads 4 bytes and returns them as a Big Endian int32.
-func (s *Scanner) readInt32() (uint32, error) {
-	var v uint32
-	if err := binary.Read(s.r, binary.BigEndian, &v); err != nil {
-		return 0, err
-	}
-
-	return v, nil
+	return binary.ReadUint32(s.r)
 }
 
 // NextObjectHeader returns the ObjectHeader for the next object in the reader
@@ -177,15 +167,15 @@ func (s *Scanner) NextObjectHeader() (*ObjectHeader, error) {
 
 	switch h.Type {
 	case core.OFSDeltaObject:
-		no, err := s.readNegativeOffset()
+		no, err := binary.ReadVariableWidthInt(s.r)
 		if err != nil {
 			return nil, err
 		}
 
-		h.OffsetReference = h.Offset + no
+		h.OffsetReference = h.Offset - no
 	case core.REFDeltaObject:
 		var err error
-		h.Reference, err = s.readHash()
+		h.Reference, err = binary.ReadHash(s.r)
 		if err != nil {
 			return nil, err
 		}
@@ -240,16 +230,29 @@ func (s *Scanner) readObjectTypeAndLength() (core.ObjectType, int64, error) {
 	return t, l, err
 }
 
+const (
+	maskType        = uint8(112) // 0111 0000
+	maskFirstLength = uint8(15)  // 0000 1111
+	maskContinue    = uint8(128) // 1000 000
+	firstLengthBits = uint8(4)   // the first byte has 4 bits to store the length
+	maskLength      = uint8(127) // 0111 1111
+	lengthBits      = uint8(7)   // subsequent bytes has 7 bits to store the length
+)
+
 func (s *Scanner) readType() (core.ObjectType, byte, error) {
 	var c byte
 	var err error
-	if c, err = s.readByte(); err != nil {
+	if c, err = s.r.ReadByte(); err != nil {
 		return core.ObjectType(0), 0, err
 	}
 
 	typ := parseType(c)
 
 	return typ, c, nil
+}
+
+func parseType(b byte) core.ObjectType {
+	return core.ObjectType((b & maskType) >> firstLengthBits)
 }
 
 // the length is codified in the last 4 bits of the first byte and in
@@ -260,8 +263,8 @@ func (s *Scanner) readLength(first byte) (int64, error) {
 	c := first
 	shift := firstLengthBits
 	var err error
-	for moreBytesInLength(c) {
-		if c, err = s.readByte(); err != nil {
+	for c&maskContinue > 0 {
+		if c, err = s.r.ReadByte(); err != nil {
 			return 0, err
 		}
 
@@ -324,96 +327,13 @@ func (s *Scanner) Checksum() (core.Hash, error) {
 		return core.ZeroHash, err
 	}
 
-	return s.readHash()
-}
-
-// ReadHash reads a hash.
-func (s *Scanner) readHash() (core.Hash, error) {
-	var h core.Hash
-	if _, err := io.ReadFull(s.r, h[:]); err != nil {
-		return core.ZeroHash, err
-	}
-
-	return h, nil
-}
-
-// ReadNegativeOffset reads and returns an offset from a OFS DELTA
-// object entry in a packfile. OFS DELTA offsets are specified in Git
-// VLQ special format:
-//
-// Ordinary VLQ has some redundancies, example:  the number 358 can be
-// encoded as the 2-octet VLQ 0x8166 or the 3-octet VLQ 0x808166 or the
-// 4-octet VLQ 0x80808166 and so forth.
-//
-// To avoid these redundancies, the VLQ format used in Git removes this
-// prepending redundancy and extends the representable range of shorter
-// VLQs by adding an offset to VLQs of 2 or more octets in such a way
-// that the lowest possible value for such an (N+1)-octet VLQ becomes
-// exactly one more than the maximum possible value for an N-octet VLQ.
-// In particular, since a 1-octet VLQ can store a maximum value of 127,
-// the minimum 2-octet VLQ (0x8000) is assigned the value 128 instead of
-// 0. Conversely, the maximum value of such a 2-octet VLQ (0xff7f) is
-// 16511 instead of just 16383. Similarly, the minimum 3-octet VLQ
-// (0x808000) has a value of 16512 instead of zero, which means
-// that the maximum 3-octet VLQ (0xffff7f) is 2113663 instead of
-// just 2097151.  And so forth.
-//
-// This is how the offset is saved in C:
-//
-//     dheader[pos] = ofs & 127;
-//     while (ofs >>= 7)
-//         dheader[--pos] = 128 | (--ofs & 127);
-//
-func (s *Scanner) readNegativeOffset() (int64, error) {
-	var c byte
-	var err error
-
-	if c, err = s.readByte(); err != nil {
-		return 0, err
-	}
-
-	var offset = int64(c & maskLength)
-	for moreBytesInLength(c) {
-		offset++
-		if c, err = s.readByte(); err != nil {
-			return 0, err
-		}
-		offset = (offset << lengthBits) + int64(c&maskLength)
-	}
-
-	return -offset, nil
-}
-
-func (s *Scanner) readByte() (byte, error) {
-	b, err := s.r.ReadByte()
-	if err != nil {
-		return 0, err
-	}
-
-	return b, err
+	return binary.ReadHash(s.r)
 }
 
 // Close reads the reader until io.EOF
 func (s *Scanner) Close() error {
 	_, err := io.Copy(ioutil.Discard, s.r)
 	return err
-}
-
-func moreBytesInLength(c byte) bool {
-	return c&maskContinue > 0
-}
-
-var (
-	maskContinue    = uint8(128) // 1000 0000
-	maskType        = uint8(112) // 0111 0000
-	maskFirstLength = uint8(15)  // 0000 1111
-	firstLengthBits = uint8(4)   // the first byte has 4 bits to store the length
-	maskLength      = uint8(127) // 0111 1111
-	lengthBits      = uint8(7)   // subsequent bytes has 7 bits to store the length
-)
-
-func parseType(b byte) core.ObjectType {
-	return core.ObjectType((b & maskType) >> firstLengthBits)
 }
 
 type trackableReader struct {

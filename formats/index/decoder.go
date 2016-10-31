@@ -2,7 +2,6 @@ package index
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"io"
 	"io/ioutil"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 var (
@@ -50,14 +50,14 @@ func NewDecoder(r io.Reader) *Decoder {
 // Decode reads the whole index object from its input and stores it in the
 // value pointed to by idx.
 func (d *Decoder) Decode(idx *Index) error {
-	version, err := validateHeader(d.r)
+	var err error
+	idx.Version, err = validateHeader(d.r)
 	if err != nil {
 		return err
 	}
 
-	idx.Version = version
-
-	if err := binary.Read(d.r, binary.BigEndian, &idx.EntryCount); err != nil {
+	idx.EntryCount, err = binary.ReadUint32(d.r)
+	if err != nil {
 		return err
 	}
 
@@ -101,7 +101,7 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 		&e.Flags,
 	}
 
-	if err := readBinary(d.r, flow...); err != nil {
+	if err := binary.Read(d.r, flow...); err != nil {
 		return nil, err
 	}
 
@@ -111,8 +111,8 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 	e.Stage = Stage(e.Flags>>12) & 0x3
 
 	if e.Flags&EntryExtended != 0 {
-		var extended uint16
-		if err := readBinary(d.r, &extended); err != nil {
+		extended, err := binary.ReadUint16(d.r)
+		if err != nil {
 			return nil, err
 		}
 
@@ -150,7 +150,7 @@ func (d *Decoder) readEntryName(idx *Index, e *Entry) error {
 }
 
 func (d *Decoder) doReadEntryNameV4() (string, error) {
-	l, err := readVariableWidthInt(d.r)
+	l, err := binary.ReadVariableWidthInt(d.r)
 	if err != nil {
 		return "", err
 	}
@@ -160,7 +160,7 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 		base = d.lastEntry.Name[:len(d.lastEntry.Name)-int(l)]
 	}
 
-	name, err := readUntil(d.r, '\x00')
+	name, err := binary.ReadUntil(d.r, '\x00')
 	if err != nil {
 		return "", err
 	}
@@ -172,7 +172,7 @@ func (d *Decoder) doReadEntryName(e *Entry) (string, error) {
 	pLen := e.Flags & nameMask
 
 	name := make([]byte, int64(pLen))
-	if err := binary.Read(d.r, binary.BigEndian, &name); err != nil {
+	if err := binary.Read(d.r, &name); err != nil {
 		return "", err
 	}
 
@@ -217,8 +217,8 @@ func (d *Decoder) readExtension(idx *Index) error {
 		return err
 	}
 
-	var len uint32
-	if err := binary.Read(d.r, binary.BigEndian, &len); err != nil {
+	len, err := binary.ReadUint32(d.r)
+	if err != nil {
 		return err
 	}
 
@@ -254,7 +254,8 @@ func validateHeader(r io.Reader) (version uint32, err error) {
 		return 0, ErrMalformedSignature
 	}
 
-	if err := binary.Read(r, binary.BigEndian, &version); err != nil {
+	version, err = binary.ReadUint32(r)
+	if err != nil {
 		return 0, err
 	}
 
@@ -291,14 +292,14 @@ func (d *treeExtensionDecoder) Decode(t *Tree) error {
 func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	e := &TreeEntry{}
 
-	path, err := readUntil(d.r, '\x00')
+	path, err := binary.ReadUntil(d.r, '\x00')
 	if err != nil {
 		return nil, err
 	}
 
 	e.Path = string(path)
 
-	count, err := readUntil(d.r, ' ')
+	count, err := binary.ReadUntil(d.r, ' ')
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +316,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	}
 
 	e.Entries = i
-	trees, err := readUntil(d.r, '\n')
+	trees, err := binary.ReadUntil(d.r, '\n')
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +328,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 	e.Trees = i
 
-	if err := binary.Read(d.r, binary.BigEndian, &e.Hash); err != nil {
+	if err := binary.Read(d.r, &e.Hash); err != nil {
 		return nil, err
 	}
 
@@ -358,7 +359,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 		Stages: make(map[Stage]core.Hash, 0),
 	}
 
-	path, err := readUntil(d.r, '\x00')
+	path, err := binary.ReadUntil(d.r, '\x00')
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +374,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	for s := range e.Stages {
 		var hash core.Hash
-		if err := binary.Read(d.r, binary.BigEndian, hash[:]); err != nil {
+		if err := binary.Read(d.r, hash[:]); err != nil {
 			return nil, err
 		}
 
@@ -384,7 +385,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 }
 
 func (d *resolveUndoDecoder) readStage(e *ResolveUndoEntry, s Stage) error {
-	ascii, err := readUntil(d.r, '\x00')
+	ascii, err := binary.ReadUntil(d.r, '\x00')
 	if err != nil {
 		return err
 	}
@@ -399,68 +400,4 @@ func (d *resolveUndoDecoder) readStage(e *ResolveUndoEntry, s Stage) error {
 	}
 
 	return nil
-}
-
-func readBinary(r io.Reader, data ...interface{}) error {
-	for _, v := range data {
-		err := binary.Read(r, binary.BigEndian, v)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func readUntil(r io.Reader, delim byte) ([]byte, error) {
-	var buf [1]byte
-	value := make([]byte, 0, 16)
-	for {
-		if _, err := r.Read(buf[:]); err != nil {
-			if err == io.EOF {
-				return nil, err
-			}
-
-			return nil, err
-		}
-
-		if buf[0] == delim {
-			return value, nil
-		}
-
-		value = append(value, buf[0])
-	}
-}
-
-//     dheader[pos] = ofs & 127;
-//     while (ofs >>= 7)
-//         dheader[--pos] = 128 | (--ofs & 127);
-//
-func readVariableWidthInt(r io.Reader) (int64, error) {
-	var c byte
-	if err := readBinary(r, &c); err != nil {
-		return 0, err
-	}
-
-	var v = int64(c & maskLength)
-	for moreBytesInLength(c) {
-		v++
-		if err := readBinary(r, &c); err != nil {
-			return 0, err
-		}
-
-		v = (v << lengthBits) + int64(c&maskLength)
-	}
-
-	return v, nil
-}
-
-const (
-	maskContinue = uint8(128) // 1000 000
-	maskLength   = uint8(127) // 0111 1111
-	lengthBits   = uint8(7)   // subsequent bytes has 7 bits to store the length
-)
-
-func moreBytesInLength(c byte) bool {
-	return c&maskContinue > 0
 }

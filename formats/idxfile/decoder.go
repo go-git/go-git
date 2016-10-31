@@ -2,11 +2,11 @@ package idxfile
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 var (
@@ -70,7 +70,7 @@ func validateHeader(r io.Reader) error {
 }
 
 func readVersion(idx *Idxfile, r io.Reader) error {
-	v, err := readInt32(r)
+	v, err := binary.ReadUint32(r)
 	if err != nil {
 		return err
 	}
@@ -80,21 +80,19 @@ func readVersion(idx *Idxfile, r io.Reader) error {
 	}
 
 	idx.Version = v
-
 	return nil
 }
 
 func readFanout(idx *Idxfile, r io.Reader) error {
 	var err error
-
 	for i := 0; i < 255; i++ {
-		idx.Fanout[i], err = readInt32(r)
+		idx.Fanout[i], err = binary.ReadUint32(r)
 		if err != nil {
 			return err
 		}
 	}
 
-	idx.ObjectCount, err = readInt32(r)
+	idx.ObjectCount, err = binary.ReadUint32(r)
 	return err
 }
 
@@ -115,7 +113,7 @@ func readObjectNames(idx *Idxfile, r io.Reader) error {
 func readCRC32(idx *Idxfile, r io.Reader) error {
 	c := int(idx.ObjectCount)
 	for i := 0; i < c; i++ {
-		if err := binary.Read(r, binary.BigEndian, &idx.Entries[i].CRC32); err != nil {
+		if err := binary.Read(r, &idx.Entries[i].CRC32); err != nil {
 			return err
 		}
 	}
@@ -126,7 +124,7 @@ func readCRC32(idx *Idxfile, r io.Reader) error {
 func readOffsets(idx *Idxfile, r io.Reader) error {
 	c := int(idx.ObjectCount)
 	for i := 0; i < c; i++ {
-		o, err := readInt32(r)
+		o, err := binary.ReadUint32(r)
 		if err != nil {
 			return err
 		}
@@ -147,13 +145,4 @@ func readChecksums(idx *Idxfile, r io.Reader) error {
 	}
 
 	return nil
-}
-
-func readInt32(r io.Reader) (uint32, error) {
-	var v uint32
-	if err := binary.Read(r, binary.BigEndian, &v); err != nil {
-		return 0, err
-	}
-
-	return v, nil
 }

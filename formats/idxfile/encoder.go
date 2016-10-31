@@ -2,13 +2,11 @@ package idxfile
 
 import (
 	"crypto/sha1"
-	"encoding/binary"
-	"fmt"
 	"hash"
 	"io"
 	"sort"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 // An Encoder writes idx files to an output stream.
@@ -56,13 +54,13 @@ func (e *Encoder) encodeHeader(idx *Idxfile) (int, error) {
 		return c, err
 	}
 
-	return c + 4, e.writeInt32(idx.Version)
+	return c + 4, binary.WriteUint32(e, idx.Version)
 }
 
 func (e *Encoder) encodeFanout(idx *Idxfile) (int, error) {
 	fanout := idx.calculateFanout()
 	for _, c := range fanout {
-		if err := e.writeInt32(c); err != nil {
+		if err := binary.WriteUint32(e, c); err != nil {
 			return 0, err
 		}
 	}
@@ -71,31 +69,23 @@ func (e *Encoder) encodeFanout(idx *Idxfile) (int, error) {
 }
 
 func (e *Encoder) encodeHashes(idx *Idxfile) (int, error) {
-	repet := make(map[core.Hash]int, 0)
-
 	sz := 0
 	for _, ent := range idx.Entries {
 		i, err := e.Write(ent.Hash[:])
 		sz += i
 
-		repet[ent.Hash]++
 		if err != nil {
 			return sz, err
 		}
 	}
 
-	for h, c := range repet {
-		if c > 1 {
-			fmt.Println(h, c)
-		}
-	}
 	return sz, nil
 }
 
 func (e *Encoder) encodeCRC32(idx *Idxfile) (int, error) {
 	sz := 0
 	for _, ent := range idx.Entries {
-		err := binary.Write(e, binary.BigEndian, ent.CRC32)
+		err := binary.Write(e, ent.CRC32)
 		sz += 4
 
 		if err != nil {
@@ -109,7 +99,7 @@ func (e *Encoder) encodeCRC32(idx *Idxfile) (int, error) {
 func (e *Encoder) encodeOffsets(idx *Idxfile) (int, error) {
 	sz := 0
 	for _, ent := range idx.Entries {
-		if err := e.writeInt32(uint32(ent.Offset)); err != nil {
+		if err := binary.WriteUint32(e, uint32(ent.Offset)); err != nil {
 			return sz, err
 		}
 
@@ -131,10 +121,6 @@ func (e *Encoder) encodeChecksums(idx *Idxfile) (int, error) {
 	}
 
 	return 40, nil
-}
-
-func (e *Encoder) writeInt32(value uint32) error {
-	return binary.Write(e, binary.BigEndian, value)
 }
 
 type EntryList []Entry
