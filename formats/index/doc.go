@@ -1,4 +1,4 @@
-// Package idxfile implements a encoder/decoder of index format files
+// Package index implements a encoder/decoder of index format files
 package index
 
 /*

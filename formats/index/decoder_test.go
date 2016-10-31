@@ -26,7 +26,7 @@ func (s *IdxfileSuite) TestDecode(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.EntryCount, Equals, uint32(9))
+	c.Assert(idx.Entries, HasLen, 9)
 }
 
 func (s *IdxfileSuite) TestDecodeEntries(c *C) {
@@ -97,7 +97,7 @@ func (s *IdxfileSuite) TestDecodeMergeConflict(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.EntryCount, Equals, uint32(13))
+	c.Assert(idx.Entries, HasLen, 13)
 
 	expected := []struct {
 		Stage Stage
@@ -136,7 +136,7 @@ func (s *IdxfileSuite) TestDecodeExtendedV3(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(idx.Version, Equals, uint32(3))
-	c.Assert(idx.EntryCount, Equals, uint32(11))
+	c.Assert(idx.Entries, HasLen, 11)
 
 	c.Assert(idx.Entries[6].Name, Equals, "intent-to-add")
 	c.Assert(idx.Entries[6].IntentToAdd, Equals, true)
@@ -153,7 +153,7 @@ func (s *IdxfileSuite) TestDecodeResolveUndo(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.EntryCount, Equals, uint32(8))
+	c.Assert(idx.Entries, HasLen, 8)
 
 	ru := idx.ResolveUndo
 	c.Assert(ru.Entries, HasLen, 2)
@@ -178,7 +178,7 @@ func (s *IdxfileSuite) TestDecodeV4(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(idx.Version, Equals, uint32(4))
-	c.Assert(idx.EntryCount, Equals, uint32(11))
+	c.Assert(idx.Entries, HasLen, 11)
 
 	names := []string{
 		".gitignore", "CHANGELOG", "LICENSE", "binary.jpg", "go/example.go",

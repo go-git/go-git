@@ -1,12 +1,24 @@
 package index
 
 import (
+	"errors"
 	"os"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
+var (
+	// ErrUnsupportedVersion is returned by Decode when the idxindex file
+	// version is not supported.
+	ErrUnsupportedVersion = errors.New("Unsuported version")
+
+	indexSignature          = []byte{'D', 'I', 'R', 'C'}
+	treeExtSignature        = []byte{'T', 'R', 'E', 'E'}
+	resolveUndoExtSignature = []byte{'R', 'E', 'U', 'C'}
+)
+
+// Stage during merge
 type Stage int
 
 const (
@@ -25,7 +37,6 @@ const (
 // worktree are detected using this Index. The Index is also used during merges
 type Index struct {
 	Version     uint32
-	EntryCount  uint32
 	Entries     []Entry
 	Cache       *Tree
 	ResolveUndo *ResolveUndo
@@ -35,20 +46,31 @@ type Index struct {
 // represents exactly one stage of a file. If a file path is unmerged then
 // multiple Entry instances may appear for the same path name.
 type Entry struct {
-	CreatedAt  time.Time
-	ModifiedAt time.Time
-	Dev, Inode uint32
-	Mode       os.FileMode
-	UID, GID   uint32
-	Size       uint32
-	Flags      uint16
-	Stage      Stage
-
-	SkipWorktree bool
-	IntentToAdd  bool
-
+	// Hash is the SHA1 of the represented file
 	Hash core.Hash
+	// Name is the  Entry path name relative to top level directory
 	Name string
+	// CreatedAt time when the tracked path was created
+	CreatedAt time.Time
+	// ModifiedAt time when the tracked path was changed
+	ModifiedAt time.Time
+	// Dev and Inode of the tracked path
+	Dev, Inode uint32
+	// Mode of the path
+	Mode os.FileMode
+	// UID and GID, userid and group id of the owner
+	UID, GID uint32
+	// Size is the length in bytes for regular files
+	Size uint32
+	// Stage on a merge is defines what stage is representing this entry
+	// https://git-scm.com/book/en/v2/Git-Tools-Advanced-Merging
+	Stage Stage
+	// SkipWorktree used in sparse checkouts
+	// https://git-scm.com/docs/git-read-tree#_sparse_checkout
+	SkipWorktree bool
+	// IntentToAdd record only the fact that the path will be added later
+	// https://git-scm.com/docs/git-add ("git add -N")
+	IntentToAdd bool
 }
 
 // Tree contains pre-computed hashes for trees that can be derived from the
