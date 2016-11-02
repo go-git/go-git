@@ -136,6 +136,9 @@ func (s *RemoteSuite) TestFetchError(c *C) {
 	req := &common.GitUploadPackRequest{}
 	req.Want(core.NewHash("1111111111111111111111111111111111111111"))
 
-	_, err := r.Fetch(req)
+	reader, err := r.Fetch(req)
+	c.Assert(err, IsNil)
+
+	err = reader.Close()
 	c.Assert(err, Not(IsNil))
 }
