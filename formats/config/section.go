@@ -74,3 +74,13 @@ func (s *Section) Subsection(name string) *Subsection {
 	s.Subsections = append(s.Subsections, ss)
 	return ss
 }
+
+func (s *Section) HasSubsection(name string) bool {
+	for _, ss := range s.Subsections {
+		if ss.IsName(name) {
+			return true
+		}
+	}
+
+	return false
+}

@@ -215,6 +215,27 @@ func (d *DotGit) Refs() ([]*core.Reference, error) {
 	return refs, nil
 }
 
+// Ref returns the reference for a given reference name.
+func (d *DotGit) Ref(name core.ReferenceName) (*core.Reference, error) {
+	ref, err := d.readReferenceFile(".", name.String())
+	if err == nil {
+		return ref, nil
+	}
+
+	refs, err := d.Refs()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ref := range refs {
+		if ref.Name() == name {
+			return ref, nil
+		}
+	}
+
+	return nil, core.ErrReferenceNotFound
+}
+
 func (d *DotGit) addRefsFromPackedRefs(refs *[]*core.Reference) (err error) {
 	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {

@@ -24,12 +24,12 @@ func (c *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
 		return nil, err
 	}
 
-	s := cfg.Section(remoteSection).Subsection(name)
-	if s == nil {
+	s := cfg.Section(remoteSection)
+	if !s.HasSubsection(name) {
 		return nil, config.ErrRemoteConfigNotFound
 	}
 
-	return parseRemote(s), nil
+	return parseRemote(s.Subsection(name)), nil
 }
 
 func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
@@ -48,6 +48,10 @@ func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
 }
 
 func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+
 	cfg, err := c.read()
 	if err != nil {
 		return err
@@ -55,7 +59,9 @@ func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
 
 	s := cfg.Section(remoteSection).Subsection(r.Name)
 	s.Name = r.Name
-	s.SetOption(urlKey, r.URL)
+	if r.URL != "" {
+		s.SetOption(urlKey, r.URL)
+	}
 	s.RemoveOption(fetchKey)
 	for _, rs := range r.Fetch {
 		s.AddOption(fetchKey, rs.String())
@@ -103,15 +109,14 @@ func (c *ConfigStorage) write(cfg *gitconfig.Config) error {
 		return err
 	}
 
-	defer f.Close()
-
 	e := gitconfig.NewEncoder(f)
 	err = e.Encode(cfg)
 	if err != nil {
+		f.Close()
 		return err
 	}
 
-	return nil
+	return f.Close()
 }
 
 func parseRemote(s *gitconfig.Subsection) *config.RemoteConfig {

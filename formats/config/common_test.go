@@ -13,7 +13,7 @@ type CommonSuite struct{}
 var _ = Suite(&CommonSuite{})
 
 func (s *CommonSuite) TestConfig_SetOption(c *C) {
-	obtained := New().SetOption("section", "", "key1", "value1")
+	obtained := New().SetOption("section", NoSubsection, "key1", "value1")
 	expected := &Config{
 		Sections: []*Section{
 			{
@@ -25,7 +25,7 @@ func (s *CommonSuite) TestConfig_SetOption(c *C) {
 		},
 	}
 	c.Assert(obtained, DeepEquals, expected)
-	obtained = obtained.SetOption("section", "", "key1", "value1")
+	obtained = obtained.SetOption("section", NoSubsection, "key1", "value1")
 	c.Assert(obtained, DeepEquals, expected)
 
 	obtained = New().SetOption("section", "subsection", "key1", "value1")
@@ -50,7 +50,7 @@ func (s *CommonSuite) TestConfig_SetOption(c *C) {
 }
 
 func (s *CommonSuite) TestConfig_AddOption(c *C) {
-	obtained := New().AddOption("section", "", "key1", "value1")
+	obtained := New().AddOption("section", NoSubsection, "key1", "value1")
 	expected := &Config{
 		Sections: []*Section{
 			{
@@ -66,10 +66,10 @@ func (s *CommonSuite) TestConfig_AddOption(c *C) {
 
 func (s *CommonSuite) TestConfig_RemoveSection(c *C) {
 	sect := New().
-		AddOption("section1", "", "key1", "value1").
-		AddOption("section2", "", "key1", "value1")
+		AddOption("section1", NoSubsection, "key1", "value1").
+		AddOption("section2", NoSubsection, "key1", "value1")
 	expected := New().
-		AddOption("section1", "", "key1", "value1")
+		AddOption("section1", NoSubsection, "key1", "value1")
 	c.Assert(sect.RemoveSection("other"), DeepEquals, sect)
 	c.Assert(sect.RemoveSection("section2"), DeepEquals, expected)
 }

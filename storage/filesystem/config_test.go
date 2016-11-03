@@ -31,7 +31,7 @@ func (s *ConfigSuite) SetUpTest(c *C) {
 
 func (s *ConfigSuite) TestSetRemote(c *C) {
 	cfg := &ConfigStorage{s.dir}
-	err := cfg.SetRemote(&config.RemoteConfig{Name: "foo"})
+	err := cfg.SetRemote(&config.RemoteConfig{Name: "foo", URL: "foo"})
 	c.Assert(err, IsNil)
 
 	remote, err := cfg.Remote("foo")

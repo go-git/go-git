@@ -1,12 +1,17 @@
 package test
 
 import (
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"sort"
 
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
+
+	. "gopkg.in/check.v1"
 )
 
 type TestObject struct {
@@ -67,11 +72,11 @@ func (s *BaseStorageSuite) TestObjectStorageSetAndGet(c *C) {
 
 		o, err := s.ObjectStorage.Get(to.Type, h)
 		c.Assert(err, IsNil)
-		c.Assert(o, Equals, to.Object)
+		c.Assert(objectEquals(o, to.Object), IsNil)
 
 		o, err = s.ObjectStorage.Get(core.AnyObject, h)
 		c.Assert(err, IsNil)
-		c.Assert(o, Equals, to.Object)
+		c.Assert(objectEquals(o, to.Object), IsNil)
 
 		for _, t := range s.validTypes {
 			if t == to.Type {
@@ -85,7 +90,7 @@ func (s *BaseStorageSuite) TestObjectStorageSetAndGet(c *C) {
 	}
 }
 
-func (s *BaseStorageSuite) TestObjectStorageGetIvalid(c *C) {
+func (s *BaseStorageSuite) TestObjectStorageGetInvalid(c *C) {
 	o := s.ObjectStorage.NewObject()
 	o.SetType(core.REFDeltaObject)
 
@@ -95,7 +100,9 @@ func (s *BaseStorageSuite) TestObjectStorageGetIvalid(c *C) {
 
 func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
 	for _, o := range s.testObjects {
-		s.ObjectStorage.Set(o.Object)
+		h, err := s.ObjectStorage.Set(o.Object)
+		c.Assert(err, IsNil)
+		c.Assert(h, Equals, o.Object.Hash())
 	}
 
 	for _, t := range s.validTypes {
@@ -105,7 +112,7 @@ func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
 
 		o, err := i.Next()
 		c.Assert(err, IsNil)
-		c.Assert(o, Equals, s.testObjects[t].Object, comment)
+		c.Assert(objectEquals(o, s.testObjects[t].Object), IsNil)
 
 		o, err = i.Next()
 		c.Assert(o, IsNil)
@@ -125,7 +132,7 @@ func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
 	for _, to := range s.testObjects {
 		found := false
 		for _, o := range foundObjects {
-			if to.Object == o {
+			if to.Object.Hash() == o.Hash() {
 				found = true
 				break
 			}
@@ -222,7 +229,7 @@ func (s *BaseStorageSuite) TestReferenceStorageGetNotFound(c *C) {
 
 func (s *BaseStorageSuite) TestReferenceStorageIter(c *C) {
 	err := s.ReferenceStorage.Set(
-		core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		core.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
@@ -282,4 +289,39 @@ func (s *BaseStorageSuite) TestConfigStorageRemotes(c *C) {
 	sort.Strings(sorted)
 	c.Assert(sorted[0], Equals, "bar")
 	c.Assert(sorted[1], Equals, "foo")
+}
+
+func objectEquals(a core.Object, b core.Object) error {
+	ha := a.Hash()
+	hb := b.Hash()
+	if ha != hb {
+		return fmt.Errorf("hashes do not match: %s != %s",
+			ha.String(), hb.String())
+	}
+
+	ra, err := a.Reader()
+	if err != nil {
+		return fmt.Errorf("can't get reader on b: %q", err)
+	}
+
+	rb, err := b.Reader()
+	if err != nil {
+		return fmt.Errorf("can't get reader on a: %q", err)
+	}
+
+	ca, err := ioutil.ReadAll(ra)
+	if err != nil {
+		return fmt.Errorf("error reading a: %q", err)
+	}
+
+	cb, err := ioutil.ReadAll(rb)
+	if err != nil {
+		return fmt.Errorf("error reading b: %q", err)
+	}
+
+	if hex.EncodeToString(ca) != hex.EncodeToString(cb) {
+		return errors.New("content does not match")
+	}
+
+	return nil
 }

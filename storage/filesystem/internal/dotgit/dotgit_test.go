@@ -44,6 +44,12 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 
 	c.Assert(err, IsNil)
 
+	err = dir.SetRef(core.NewReferenceFromStrings(
+		"bar",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	))
+	c.Assert(err, IsNil)
+
 	refs, err := dir.Refs()
 	c.Assert(err, IsNil)
 	c.Assert(refs, HasLen, 2)
@@ -55,6 +61,25 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	ref = findReference(refs, "refs/heads/symbolic")
 	c.Assert(ref, NotNil)
 	c.Assert(ref.Target().String(), Equals, "refs/heads/foo")
+
+	ref = findReference(refs, "bar")
+	c.Assert(ref, IsNil)
+
+	ref, err = dir.Ref("refs/heads/foo")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+
+	ref, err = dir.Ref("refs/heads/symbolic")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Target().String(), Equals, "refs/heads/foo")
+
+	ref, err = dir.Ref("bar")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+
 }
 
 func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {

@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"fmt"
 	"io"
 	"os"
 
@@ -82,11 +81,35 @@ func (s *ObjectStorage) Writer() (io.WriteCloser, error) {
 	return w, nil
 }
 
-// Set adds a new object to the storage. As this functionality is not
-// yet supported, this method always returns a "not implemented yet"
-// error an zero hash.
-func (s *ObjectStorage) Set(core.Object) (core.Hash, error) {
-	return core.ZeroHash, fmt.Errorf("set - not implemented yet")
+// Set adds a new object to the storage.
+func (s *ObjectStorage) Set(o core.Object) (core.Hash, error) {
+	if o.Type() == core.OFSDeltaObject || o.Type() == core.REFDeltaObject {
+		return core.ZeroHash, core.ErrInvalidType
+	}
+
+	ow, err := s.dir.NewObject()
+	if err != nil {
+		return core.ZeroHash, err
+	}
+
+	defer ow.Close()
+
+	or, err := o.Reader()
+	if err != nil {
+		return core.ZeroHash, err
+	}
+
+	defer or.Close()
+
+	if err := ow.WriteHeader(o.Type(), o.Size()); err != nil {
+		return core.ZeroHash, err
+	}
+
+	if _, err := io.Copy(ow, or); err != nil {
+		return core.ZeroHash, err
+	}
+
+	return o.Hash(), nil
 }
 
 // Get returns the object with the given hash, by searching for it in
@@ -228,26 +251,18 @@ func (s *ObjectStorage) buildPackfileIters(
 	return iters, nil
 }
 
+// Begin opens a new transaction. However, this implementation is not
+// transactional, so Commit and Rollback have no effect.
 func (o *ObjectStorage) Begin() core.TxObjectStorage {
-	return &TxObjectStorage{}
+	return o
 }
 
-type TxObjectStorage struct{}
-
-func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
-	return core.ZeroHash, fmt.Errorf("tx.Set - not implemented yet")
+func (tx *ObjectStorage) Commit() error {
+	return nil
 }
 
-func (tx *TxObjectStorage) Get(core.ObjectType, core.Hash) (core.Object, error) {
-	return nil, fmt.Errorf("tx.Get - not implemented yet")
-}
-
-func (tx *TxObjectStorage) Commit() error {
-	return fmt.Errorf("tx.Commit - not implemented yet")
-}
-
-func (tx *TxObjectStorage) Rollback() error {
-	return fmt.Errorf("tx.Rollback - not implemented yet")
+func (tx *ObjectStorage) Rollback() error {
+	return nil
 }
 
 type index map[core.Hash]int64
