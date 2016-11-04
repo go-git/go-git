@@ -259,6 +259,16 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 	return tree.(*Tree), nil
 }
 
+// Trees decodes the objects into trees
+func (r *Repository) Trees() (*TreeIter, error) {
+	iter, err := r.s.ObjectStorage().Iter(core.TreeObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewTreeIter(r, iter), nil
+}
+
 // Blob returns the blob with the given hash
 func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 	blob, err := r.Object(core.BlobObject, h)
@@ -267,6 +277,16 @@ func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 	}
 
 	return blob.(*Blob), nil
+}
+
+// Blobs decodes the objects into blobs
+func (r *Repository) Blobs() (*BlobIter, error) {
+	iter, err := r.s.ObjectStorage().Iter(core.BlobObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewBlobIter(r, iter), nil
 }
 
 // Tag returns a tag with the given hash.
@@ -316,6 +336,17 @@ func (r *Repository) Object(t core.ObjectType, h core.Hash) (Object, error) {
 	default:
 		return nil, core.ErrInvalidType
 	}
+}
+
+// Objects returns an ObjectIter that can step through all of the annotated tags
+// in the repository.
+func (r *Repository) Objects() (*ObjectIter, error) {
+	iter, err := r.s.ObjectStorage().Iter(core.AnyObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewObjectIter(r, iter), nil
 }
 
 // Head returns the reference where HEAD is pointing

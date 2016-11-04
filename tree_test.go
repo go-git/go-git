@@ -146,7 +146,40 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 	}
 }
 
-func (s *TreeSuite) TestTreeIterNext(c *C) {
+func (s *TreeSuite) TestTreeIter(c *C) {
+	iter, err := s.Repository.Trees()
+	c.Assert(err, IsNil)
+
+	trees := []*Tree{}
+	iter.ForEach(func(t *Tree) error {
+		t.r = nil
+		trees = append(trees, t)
+		return nil
+	})
+
+	c.Assert(len(trees) > 0, Equals, true)
+	iter.Close()
+
+	iter, err = s.Repository.Trees()
+	c.Assert(err, IsNil)
+
+	i := 0
+	for {
+		t, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+
+		t.r = nil
+		c.Assert(err, IsNil)
+		c.Assert(t, DeepEquals, trees[i])
+		i += 1
+	}
+
+	iter.Close()
+}
+
+func (s *TreeSuite) TestTreeWalkerNext(c *C) {
 	r := s.Repository
 	commit, err := r.Commit(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	c.Assert(err, IsNil)
@@ -154,7 +187,7 @@ func (s *TreeSuite) TestTreeIterNext(c *C) {
 	tree, err := commit.Tree()
 	c.Assert(err, IsNil)
 
-	walker := NewTreeIter(r, tree, true)
+	walker := NewTreeWalker(r, tree, true)
 	for _, e := range treeWalkerExpects {
 		name, entry, err := walker.Next()
 		if err == io.EOF {
@@ -171,7 +204,7 @@ func (s *TreeSuite) TestTreeIterNext(c *C) {
 	}
 }
 
-func (s *TreeSuite) TestTreeIterNextNonRecursive(c *C) {
+func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
 	r := s.Repository
 	commit, err := r.Commit(core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	c.Assert(err, IsNil)
@@ -180,7 +213,7 @@ func (s *TreeSuite) TestTreeIterNextNonRecursive(c *C) {
 	c.Assert(err, IsNil)
 
 	var count int
-	walker := NewTreeIter(r, tree, false)
+	walker := NewTreeWalker(r, tree, false)
 	for {
 		name, entry, err := walker.Next()
 		if err == io.EOF {

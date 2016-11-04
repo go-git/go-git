@@ -7,6 +7,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/core"
 
 	. "gopkg.in/check.v1"
+	"io"
 )
 
 type ObjectsSuite struct {
@@ -73,53 +74,6 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 	c.Assert(count, Equals, 9)
 }
 
-func (s *ObjectsSuite) TestBlobHash(c *C) {
-	o := &core.MemoryObject{}
-	o.SetType(core.BlobObject)
-	o.SetSize(3)
-
-	writer, err := o.Writer()
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(writer.Close(), IsNil) }()
-
-	writer.Write([]byte{'F', 'O', 'O'})
-
-	blob := &Blob{}
-	c.Assert(blob.Decode(o), IsNil)
-
-	c.Assert(blob.Size, Equals, int64(3))
-	c.Assert(blob.Hash.String(), Equals, "d96c7efbfec2814ae0301ad054dc8d9fc416c9b5")
-
-	reader, err := blob.Reader()
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(reader.Close(), IsNil) }()
-
-	data, err := ioutil.ReadAll(reader)
-	c.Assert(err, IsNil)
-	c.Assert(string(data), Equals, "FOO")
-}
-
-func (s *ObjectsSuite) TestBlobDecodeEncodeIdempotent(c *C) {
-	var objects []*core.MemoryObject
-	for _, str := range []string{"foo", "foo\n"} {
-		obj := &core.MemoryObject{}
-		obj.Write([]byte(str))
-		obj.SetType(core.BlobObject)
-		obj.Hash()
-		objects = append(objects, obj)
-	}
-	for _, object := range objects {
-		blob := &Blob{}
-		err := blob.Decode(object)
-		c.Assert(err, IsNil)
-		newObject := &core.MemoryObject{}
-		err = blob.Encode(newObject)
-		c.Assert(err, IsNil)
-		newObject.Hash() // Ensure Hash is pre-computed before deep comparison
-		c.Assert(newObject, DeepEquals, object)
-	}
-}
-
 func (s *ObjectsSuite) TestParseSignature(c *C) {
 	cases := map[string]Signature{
 		`Foo Bar <foo@bar.com> 1257894000 +0100`: {
@@ -167,6 +121,37 @@ func (s *ObjectsSuite) TestParseSignature(c *C) {
 		c.Assert(got.Email, Equals, exp.Email)
 		c.Assert(got.When.Format(time.RFC3339), Equals, exp.When.Format(time.RFC3339))
 	}
+}
+
+func (s *ObjectsSuite) TestObjectIter(c *C) {
+	iter, err := s.Repository.Objects()
+	c.Assert(err, IsNil)
+
+	objects := []Object{}
+	iter.ForEach(func(o Object) error {
+		objects = append(objects, o)
+		return nil
+	})
+
+	c.Assert(len(objects) > 0, Equals, true)
+	iter.Close()
+
+	iter, err = s.Repository.Objects()
+	c.Assert(err, IsNil)
+
+	i := 0
+	for {
+		o, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(o, DeepEquals, objects[i])
+		i += 1
+	}
+
+	iter.Close()
 }
 
 func MustParseTime(value string) time.Time {

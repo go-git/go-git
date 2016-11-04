@@ -140,7 +140,7 @@ func newWithEmpty(a, b *Tree) (Changes, error) {
 		tree = a
 	}
 
-	w := NewTreeIter(tree.r, tree, true)
+	w := NewTreeWalker(tree.r, tree, true)
 	defer w.Close()
 
 	for {

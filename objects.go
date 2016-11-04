@@ -43,64 +43,6 @@ type Object interface {
 	Encode(core.Object) error
 }
 
-// Blob is used to store file data - it is generally a file.
-type Blob struct {
-	Hash core.Hash
-	Size int64
-
-	obj core.Object
-}
-
-// ID returns the object ID of the blob. The returned value will always match
-// the current value of Blob.Hash.
-//
-// ID is present to fulfill the Object interface.
-func (b *Blob) ID() core.Hash {
-	return b.Hash
-}
-
-// Type returns the type of object. It always returns core.BlobObject.
-//
-// Type is present to fulfill the Object interface.
-func (b *Blob) Type() core.ObjectType {
-	return core.BlobObject
-}
-
-// Decode transforms a core.Object into a Blob struct.
-func (b *Blob) Decode(o core.Object) error {
-	if o.Type() != core.BlobObject {
-		return ErrUnsupportedObject
-	}
-
-	b.Hash = o.Hash()
-	b.Size = o.Size()
-	b.obj = o
-
-	return nil
-}
-
-// Encode transforms a Blob into a core.Object.
-func (b *Blob) Encode(o core.Object) error {
-	w, err := o.Writer()
-	if err != nil {
-		return err
-	}
-	defer checkClose(w, &err)
-	r, err := b.Reader()
-	if err != nil {
-		return err
-	}
-	defer checkClose(r, &err)
-	_, err = io.Copy(w, r)
-	o.SetType(core.BlobObject)
-	return err
-}
-
-// Reader returns a reader allow the access to the content of the blob
-func (b *Blob) Reader() (core.ObjectReader, error) {
-	return b.obj.Reader()
-}
-
 // Signature represents an action signed by a person
 type Signature struct {
 	Name  string
@@ -170,4 +112,75 @@ func (s *Signature) encodeTimeAndTimeZone(w io.Writer) error {
 
 func (s *Signature) String() string {
 	return fmt.Sprintf("%s <%s>", s.Name, s.Email)
+}
+
+// ObjectIter provides an iterator for a set of objects.
+type ObjectIter struct {
+	core.ObjectIter
+	r *Repository
+}
+
+// NewObjectIter returns a ObjectIter for the given repository and underlying
+// object iterator.
+func NewObjectIter(r *Repository, iter core.ObjectIter) *ObjectIter {
+	return &ObjectIter{iter, r}
+}
+
+// Next moves the iterator to the next object and returns a pointer to it. If it
+// has reached the end of the set it will return io.EOF.
+func (iter *ObjectIter) Next() (Object, error) {
+	for {
+		obj, err := iter.ObjectIter.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		o, err := iter.toObject(obj)
+		if err == core.ErrInvalidType {
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		return o, nil
+	}
+}
+
+// ForEach call the cb function for each object contained on this iter until
+// an error happens or the end of the iter is reached. If ErrStop is sent
+// the iteration is stop but no error is returned. The iterator is closed.
+func (iter *ObjectIter) ForEach(cb func(Object) error) error {
+	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+		o, err := iter.toObject(obj)
+		if err == core.ErrInvalidType {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		return cb(o)
+	})
+}
+
+func (iter *ObjectIter) toObject(obj core.Object) (Object, error) {
+	switch obj.Type() {
+	case core.BlobObject:
+		blob := &Blob{}
+		return blob, blob.Decode(obj)
+	case core.TreeObject:
+		tree := &Tree{r: iter.r}
+		return tree, tree.Decode(obj)
+	case core.CommitObject:
+		commit := &Commit{}
+		return commit, commit.Decode(obj)
+	case core.TagObject:
+		tag := &Tag{}
+		return tag, tag.Decode(obj)
+	default:
+		return nil, core.ErrInvalidType
+	}
 }

@@ -257,7 +257,7 @@ func (iter *treeEntryIter) Next() (TreeEntry, error) {
 }
 
 // TreeWalker provides a means of walking through all of the entries in a Tree.
-type TreeIter struct {
+type TreeWalker struct {
 	stack     []treeEntryIter
 	base      string
 	recursive bool
@@ -266,15 +266,15 @@ type TreeIter struct {
 	t *Tree
 }
 
-// NewTreeIter returns a new TreeIter for the given repository and tree.
+// NewTreeWalker returns a new TreeWalker for the given repository and tree.
 //
 // It is the caller's responsibility to call Close() when finished with the
 // tree walker.
-func NewTreeIter(r *Repository, t *Tree, recursive bool) *TreeIter {
+func NewTreeWalker(r *Repository, t *Tree, recursive bool) *TreeWalker {
 	stack := make([]treeEntryIter, 0, startingStackSize)
 	stack = append(stack, treeEntryIter{t, 0})
 
-	return &TreeIter{
+	return &TreeWalker{
 		stack:     stack,
 		recursive: recursive,
 
@@ -290,7 +290,7 @@ func NewTreeIter(r *Repository, t *Tree, recursive bool) *TreeIter {
 // In the current implementation any objects which cannot be found in the
 // underlying repository will be skipped automatically. It is possible that this
 // may change in future versions.
-func (w *TreeIter) Next() (name string, entry TreeEntry, err error) {
+func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 	var obj Object
 	for {
 		current := len(w.stack) - 1
@@ -351,7 +351,7 @@ func (w *TreeIter) Next() (name string, entry TreeEntry, err error) {
 }
 
 // Tree returns the tree that the tree walker most recently operated on.
-func (w *TreeIter) Tree() *Tree {
+func (w *TreeWalker) Tree() *Tree {
 	current := len(w.stack) - 1
 	if w.stack[current].pos == 0 {
 		current--
@@ -365,6 +365,56 @@ func (w *TreeIter) Tree() *Tree {
 }
 
 // Close releases any resources used by the TreeWalker.
-func (w *TreeIter) Close() {
+func (w *TreeWalker) Close() {
 	w.stack = nil
+}
+
+// TreeIter provides an iterator for a set of trees.
+type TreeIter struct {
+	core.ObjectIter
+	r *Repository
+}
+
+// NewTreeIter returns a TreeIter for the given repository and underlying
+// object iterator.
+//
+// The returned TreeIter will automatically skip over non-tree objects.
+func NewTreeIter(r *Repository, iter core.ObjectIter) *TreeIter {
+	return &TreeIter{iter, r}
+}
+
+// Next moves the iterator to the next tree and returns a pointer to it. If it
+// has reached the end of the set it will return io.EOF.
+func (iter *TreeIter) Next() (*Tree, error) {
+	for {
+		obj, err := iter.ObjectIter.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		if obj.Type() != core.TreeObject {
+			continue
+		}
+
+		tree := &Tree{r: iter.r}
+		return tree, tree.Decode(obj)
+	}
+}
+
+// ForEach call the cb function for each tree contained on this iter until
+// an error happens or the end of the iter is reached. If ErrStop is sent
+// the iteration is stop but no error is returned. The iterator is closed.
+func (iter *TreeIter) ForEach(cb func(*Tree) error) error {
+	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+		if obj.Type() != core.TreeObject {
+			return nil
+		}
+
+		tree := &Tree{r: iter.r}
+		if err := tree.Decode(obj); err != nil {
+			return err
+		}
+
+		return cb(tree)
+	})
 }

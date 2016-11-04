@@ -55,11 +55,11 @@ func (f *File) Lines() ([]string, error) {
 
 type FileIter struct {
 	r *Repository
-	w TreeIter
+	w TreeWalker
 }
 
 func NewFileIter(r *Repository, t *Tree) *FileIter {
-	return &FileIter{r: r, w: *NewTreeIter(r, t, true)}
+	return &FileIter{r: r, w: *NewTreeWalker(r, t, true)}
 }
 
 func (iter *FileIter) Next() (*File, error) {
