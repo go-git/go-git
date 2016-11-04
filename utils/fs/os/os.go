@@ -14,8 +14,8 @@ type OS struct {
 	base string
 }
 
-// NewOS returns a new OS filesystem
-func NewOS(baseDir string) *OS {
+// New returns a new OS filesystem
+func New(baseDir string) *OS {
 	return &OS{
 		base: baseDir,
 	}
@@ -139,7 +139,7 @@ func (fs *OS) Join(elem ...string) string {
 // Dir returns a new Filesystem from the same type of fs using as baseDir the
 // given path
 func (fs *OS) Dir(path string) fs.Filesystem {
-	return NewOS(fs.Join(fs.base, path))
+	return New(fs.Join(fs.base, path))
 }
 
 // Base returns the base path of the filesytem

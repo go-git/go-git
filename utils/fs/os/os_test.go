@@ -21,7 +21,7 @@ var _ = Suite(&OSSuite{})
 
 func (s *OSSuite) SetUpTest(c *C) {
 	s.path, _ = ioutil.TempDir(stdos.TempDir(), "go-git-os-fs-test")
-	s.FilesystemSuite.Fs = os.NewOS(s.path)
+	s.FilesystemSuite.Fs = os.New(s.path)
 }
 func (s *OSSuite) TearDownTest(c *C) {
 	err := stdos.RemoveAll(s.path)

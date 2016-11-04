@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -184,6 +185,32 @@ func (s *FilesystemSuite) testReadClose(c *C, f File, content string) {
 	c.Assert(f.Close(), IsNil)
 }
 
+func (s *FilesystemSuite) TestFileReadSeek(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+
+	n, err := f.Write([]byte("0123456789abcdefghijklmnopqrstuvwxyz"))
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 36)
+
+	p, err := f.Seek(10, io.SeekStart)
+	c.Assert(err, IsNil)
+	c.Assert(int(p), Equals, 10)
+
+	all, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+	c.Assert(string(all), Equals, "abcdefghijklmnopqrstuvwxyz")
+	c.Assert(f.Close(), IsNil)
+}
+
+func (s *FilesystemSuite) TestFileCloseTwice(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+
+	c.Assert(f.Close(), IsNil)
+	c.Assert(f.Close(), NotNil)
+}
+
 func (s *FilesystemSuite) TestReadDirAndDir(c *C) {
 	files := []string{"foo", "bar", "qux/baz", "qux/qux"}
 	for _, name := range files {
@@ -268,6 +295,20 @@ func (s *FilesystemSuite) TestTempFileFullWithPath(c *C) {
 	c.Assert(strings.HasPrefix(f.Filename(), s.Fs.Join("foo", "bar")), Equals, true)
 }
 
+func (s *FilesystemSuite) TestOpenAndWrite(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	foo, err := s.Fs.Open("foo")
+	c.Assert(foo, NotNil)
+	c.Assert(err, IsNil)
+
+	n, err := foo.Write([]byte("foo"))
+	c.Assert(err, NotNil)
+	c.Assert(n, Equals, 0)
+}
+
 func (s *FilesystemSuite) TestOpenAndStat(c *C) {
 	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
@@ -299,6 +340,8 @@ func (s *FilesystemSuite) TestRemoveNonExisting(c *C) {
 
 func (s *FilesystemSuite) TestRemoveTempFile(c *C) {
 	f, err := s.Fs.TempFile("test-dir", "test-prefix")
+	c.Assert(err, IsNil)
+
 	fn := f.Filename()
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)

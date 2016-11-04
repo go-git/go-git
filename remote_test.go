@@ -101,7 +101,7 @@ func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
 	defer os.RemoveAll(dir) // clean up
 
 	var sto Storage
-	sto, err = filesystem.NewStorage(osfs.NewOS(dir))
+	sto, err = filesystem.NewStorage(osfs.New(dir))
 	c.Assert(err, IsNil)
 
 	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})

@@ -24,7 +24,7 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewOS(dir)
+	fs := osfs.New(dir)
 	dot := New(fs)
 
 	w, err := dot.NewObjectPack()

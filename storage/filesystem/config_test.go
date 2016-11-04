@@ -25,7 +25,7 @@ func (s *ConfigSuite) SetUpTest(c *C) {
 	tmp, err := ioutil.TempDir("", "go-git-filestystem-config")
 	c.Assert(err, IsNil)
 
-	s.dir = dotgit.New(os.NewOS(tmp))
+	s.dir = dotgit.New(os.New(tmp))
 	s.path = tmp
 }
 

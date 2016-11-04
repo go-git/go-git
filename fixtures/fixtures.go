@@ -181,7 +181,7 @@ func (f *Fixture) DotGit() fs.Filesystem {
 	}
 
 	folders = append(folders, path)
-	return osfs.NewOS(path)
+	return osfs.New(path)
 }
 
 type Fixtures []*Fixture
