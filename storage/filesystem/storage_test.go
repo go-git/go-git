@@ -19,7 +19,7 @@ var _ = Suite(&StorageSuite{})
 
 func (s *StorageSuite) SetUpTest(c *C) {
 	path := c.MkDir()
-	storage, err := NewStorage(os.NewOS(path))
+	storage, err := NewStorage(os.New(path))
 	c.Assert(err, IsNil)
 	s.BaseStorageSuite = test.NewBaseStorageSuite(
 		storage.ObjectStorage(),
