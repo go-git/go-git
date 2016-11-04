@@ -71,6 +71,7 @@ var fixtures = Fixtures{{
 	Head:         core.NewHash("f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	DotGitHash:   core.NewHash("c0c7c57ab1753ddbd26cc45322299ddd12842794"),
 	PackfileHash: core.NewHash("b68617dd8637fe6409d9842825a843a1d9a6e484"),
+	ObjectsCount: 7,
 }, {
 	Tags:         []string{"packfile"},
 	URL:          "https://github.com/spinnaker/spinnaker.git",
