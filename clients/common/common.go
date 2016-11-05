@@ -84,7 +84,10 @@ type GitUploadPackInfo struct {
 }
 
 func NewGitUploadPackInfo() *GitUploadPackInfo {
-	return &GitUploadPackInfo{Capabilities: packp.NewCapabilities()}
+	return &GitUploadPackInfo{
+		Capabilities: packp.NewCapabilities(),
+		Refs:         make(memory.ReferenceStorage, 0),
+	}
 }
 
 func (i *GitUploadPackInfo) Decode(r io.Reader) error {
