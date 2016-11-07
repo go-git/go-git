@@ -185,13 +185,36 @@ func (s *FilesystemSuite) testReadClose(c *C, f File, content string) {
 	c.Assert(f.Close(), IsNil)
 }
 
-func (s *FilesystemSuite) TestFileReadSeek(c *C) {
+func (s *FilesystemSuite) TestFileCreateReadSeek(c *C) {
 	f, err := s.Fs.Create("foo")
 	c.Assert(err, IsNil)
 
 	n, err := f.Write([]byte("0123456789abcdefghijklmnopqrstuvwxyz"))
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 36)
+
+	p, err := f.Seek(10, io.SeekStart)
+	c.Assert(err, IsNil)
+	c.Assert(int(p), Equals, 10)
+
+	all, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+	c.Assert(string(all), Equals, "abcdefghijklmnopqrstuvwxyz")
+	c.Assert(f.Close(), IsNil)
+}
+
+func (s *FilesystemSuite) TestFileOpenReadSeek(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+
+	n, err := f.Write([]byte("0123456789abcdefghijklmnopqrstuvwxyz"))
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 36)
+
+	c.Assert(f.Close(), IsNil)
+
+	f, err = s.Fs.Open("foo")
+	c.Assert(err, IsNil)
 
 	p, err := f.Seek(10, io.SeekStart)
 	c.Assert(err, IsNil)
