@@ -11,7 +11,7 @@ const (
 	DefaultRefSpec = "+refs/heads/*:refs/remotes/%s/*"
 )
 
-// ConfigStorer interface to persist Config objects
+// ConfigStorer generic storage of Config object
 type ConfigStorer interface {
 	Config() (*Config, error)
 	SetConfig(*Config) error
