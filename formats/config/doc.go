@@ -1,5 +1,4 @@
-// Package config implements decoding, encoding and manipulation
-// of git config files.
+// Package config implements decoding/encoding of git config files.
 package config
 
 /*

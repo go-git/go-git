@@ -115,7 +115,7 @@ func (s *TagSuite) TestObject(c *C) {
 
 func (s *TagSuite) TestTagItter(c *C) {
 	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-	iter, err := r.s.ObjectStorage().Iter(core.TagObject)
+	iter, err := r.s.IterObjects(core.TagObject)
 	c.Assert(err, IsNil)
 
 	var count int
@@ -131,7 +131,7 @@ func (s *TagSuite) TestTagItter(c *C) {
 
 func (s *TagSuite) TestTagIterError(c *C) {
 	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-	iter, err := r.s.ObjectStorage().Iter(core.TagObject)
+	iter, err := r.s.IterObjects(core.TagObject)
 	c.Assert(err, IsNil)
 
 	i := NewTagIter(r, iter)

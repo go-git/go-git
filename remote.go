@@ -18,14 +18,14 @@ var NoErrAlreadyUpToDate = errors.New("already up-to-date")
 // Remote represents a connection to a remote repository
 type Remote struct {
 	c *config.RemoteConfig
-	s Storage
+	s Storer
 
 	// cache fields, there during the connection is open
 	upSrv  common.GitUploadPackService
 	upInfo *common.GitUploadPackInfo
 }
 
-func newRemote(s Storage, c *config.RemoteConfig) *Remote {
+func newRemote(s Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
@@ -95,7 +95,7 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 		return NoErrAlreadyUpToDate
 	}
 
-	req, err := r.buildRequest(r.s.ReferenceStorage(), o, refs)
+	req, err := r.buildRequest(r.s, o, refs)
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, 
 			}
 		}
 
-		_, err := r.s.ObjectStorage().Get(core.CommitObject, ref.Hash())
+		_, err := r.s.Object(core.CommitObject, ref.Hash())
 		if err == core.ErrObjectNotFound {
 			refs = append(refs, ref)
 			return nil
@@ -150,7 +150,7 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*core.Reference, 
 }
 
 func (r *Remote) buildRequest(
-	s core.ReferenceStorage, o *FetchOptions, refs []*core.Reference,
+	s core.ReferenceStorer, o *FetchOptions, refs []*core.Reference,
 ) (*common.GitUploadPackRequest, error) {
 	req := &common.GitUploadPackRequest{}
 	req.Depth = o.Depth
@@ -159,7 +159,7 @@ func (r *Remote) buildRequest(
 		req.Want(ref.Hash())
 	}
 
-	i, err := s.Iter()
+	i, err := s.IterReferences()
 	if err != nil {
 		return nil, err
 	}
@@ -177,9 +177,8 @@ func (r *Remote) buildRequest(
 }
 
 func (r *Remote) updateObjectStorage(reader io.Reader) error {
-	s := r.s.ObjectStorage()
-	if sw, ok := s.(core.ObjectStorageWrite); ok {
-		w, err := sw.Writer()
+	if sw, ok := r.s.(core.PackfileWriter); ok {
+		w, err := sw.PackfileWriter()
 		if err != nil {
 			return err
 		}
@@ -190,7 +189,7 @@ func (r *Remote) updateObjectStorage(reader io.Reader) error {
 	}
 
 	stream := packfile.NewScanner(reader)
-	d, err := packfile.NewDecoder(stream, s)
+	d, err := packfile.NewDecoder(stream, r.s)
 	if err != nil {
 		return err
 	}
@@ -212,7 +211,7 @@ func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*cor
 
 			name := spec.Dst(ref.Name())
 			n := core.NewHashReference(name, ref.Hash())
-			if err := r.s.ReferenceStorage().Set(n); err != nil {
+			if err := r.s.SetReference(n); err != nil {
 				return err
 			}
 		}
@@ -227,13 +226,12 @@ func (r *Remote) buildFetchedTags() error {
 		return err
 	}
 
-	os := r.s.ObjectStorage()
 	return iter.ForEach(func(ref *core.Reference) error {
 		if !ref.IsTag() {
 			return nil
 		}
 
-		_, err := os.Get(core.AnyObject, ref.Hash())
+		_, err := r.s.Object(core.AnyObject, ref.Hash())
 		if err == core.ErrObjectNotFound {
 			return nil
 		}
@@ -242,7 +240,7 @@ func (r *Remote) buildFetchedTags() error {
 			return err
 		}
 
-		return r.s.ReferenceStorage().Set(ref)
+		return r.s.SetReference(ref)
 	})
 }
 
@@ -257,12 +255,12 @@ func (r *Remote) Ref(name core.ReferenceName, resolved bool) (*core.Reference, e
 		return core.ResolveReference(r.upInfo.Refs, name)
 	}
 
-	return r.upInfo.Refs.Get(name)
+	return r.upInfo.Refs.Reference(name)
 }
 
 // Refs returns a map with all the References
 func (r *Remote) Refs() (core.ReferenceIter, error) {
-	return r.upInfo.Refs.Iter()
+	return r.upInfo.Refs.IterReferences()
 }
 
 // Disconnect from the remote and save the config

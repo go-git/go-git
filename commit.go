@@ -37,11 +37,9 @@ func (c *Commit) Tree() (*Tree, error) {
 
 // Parents return a CommitIter to the parent Commits
 func (c *Commit) Parents() *CommitIter {
-	return NewCommitIter(c.r, core.NewObjectLookupIter(
-		c.r.s.ObjectStorage(),
-		core.CommitObject,
-		c.parents,
-	))
+	return NewCommitIter(c.r,
+		core.NewObjectLookupIter(c.r.s, core.CommitObject, c.parents),
+	)
 }
 
 // NumParents returns the number of parents in a commit.

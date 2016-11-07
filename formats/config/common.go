@@ -32,6 +32,7 @@ func (c *Config) Section(name string) *Section {
 			return s
 		}
 	}
+
 	s := &Section{Name: name}
 	c.Sections = append(c.Sections, s)
 	return s

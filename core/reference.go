@@ -203,15 +203,15 @@ func (iter *ReferenceSliceIter) Close() {
 	iter.pos = len(iter.series)
 }
 
-func ResolveReference(s ReferenceStorage, n ReferenceName) (*Reference, error) {
-	r, err := s.Get(n)
+func ResolveReference(s ReferenceStorer, n ReferenceName) (*Reference, error) {
+	r, err := s.Reference(n)
 	if err != nil || r == nil {
 		return r, err
 	}
 	return resolveReference(s, r, 0)
 }
 
-func resolveReference(s ReferenceStorage, r *Reference, recursion int) (*Reference, error) {
+func resolveReference(s ReferenceStorer, r *Reference, recursion int) (*Reference, error) {
 	if r.Type() != SymbolicReference {
 		return r, nil
 	}
@@ -220,7 +220,7 @@ func resolveReference(s ReferenceStorage, r *Reference, recursion int) (*Referen
 		return nil, ErrMaxResolveRecursion
 	}
 
-	t, err := s.Get(r.Target())
+	t, err := s.Reference(r.Target())
 	if err != nil {
 		return nil, err
 	}

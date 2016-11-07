@@ -18,70 +18,24 @@ type ConfigStorage struct {
 	dir *dotgit.DotGit
 }
 
-func (c *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
-	cfg, err := c.read()
+func (c *ConfigStorage) Config() (*config.Config, error) {
+	cfg := config.NewConfig()
+
+	ini, err := c.unmarshal()
 	if err != nil {
 		return nil, err
 	}
 
-	s := cfg.Section(remoteSection)
-	if !s.HasSubsection(name) {
-		return nil, config.ErrRemoteConfigNotFound
-	}
-
-	return parseRemote(s.Subsection(name)), nil
-}
-
-func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
-	cfg, err := c.read()
-	if err != nil {
-		return nil, err
-	}
-
-	remotes := []*config.RemoteConfig{}
-	sect := cfg.Section(remoteSection)
+	sect := ini.Section(remoteSection)
 	for _, s := range sect.Subsections {
-		remotes = append(remotes, parseRemote(s))
+		r := c.unmarshalRemote(s)
+		cfg.Remotes[r.Name] = r
 	}
 
-	return remotes, nil
+	return cfg, nil
 }
 
-func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
-	if err := r.Validate(); err != nil {
-		return err
-	}
-
-	cfg, err := c.read()
-	if err != nil {
-		return err
-	}
-
-	s := cfg.Section(remoteSection).Subsection(r.Name)
-	s.Name = r.Name
-	if r.URL != "" {
-		s.SetOption(urlKey, r.URL)
-	}
-	s.RemoveOption(fetchKey)
-	for _, rs := range r.Fetch {
-		s.AddOption(fetchKey, rs.String())
-	}
-
-	return c.write(cfg)
-}
-
-func (c *ConfigStorage) DeleteRemote(name string) error {
-	cfg, err := c.read()
-	if err != nil {
-		return err
-	}
-
-	cfg = cfg.RemoveSubsection(remoteSection, name)
-
-	return c.write(cfg)
-}
-
-func (c *ConfigStorage) read() (*gitconfig.Config, error) {
+func (c *ConfigStorage) unmarshal() (*gitconfig.Config, error) {
 	cfg := gitconfig.New()
 
 	f, err := c.dir.Config()
@@ -103,23 +57,7 @@ func (c *ConfigStorage) read() (*gitconfig.Config, error) {
 	return cfg, nil
 }
 
-func (c *ConfigStorage) write(cfg *gitconfig.Config) error {
-	f, err := c.dir.ConfigWriter()
-	if err != nil {
-		return err
-	}
-
-	e := gitconfig.NewEncoder(f)
-	err = e.Encode(cfg)
-	if err != nil {
-		f.Close()
-		return err
-	}
-
-	return f.Close()
-}
-
-func parseRemote(s *gitconfig.Subsection) *config.RemoteConfig {
+func (c *ConfigStorage) unmarshalRemote(s *gitconfig.Subsection) *config.RemoteConfig {
 	fetch := []config.RefSpec{}
 	for _, f := range s.Options.GetAll(fetchKey) {
 		rs := config.RefSpec(f)
@@ -133,4 +71,48 @@ func parseRemote(s *gitconfig.Subsection) *config.RemoteConfig {
 		URL:   s.Option(urlKey),
 		Fetch: fetch,
 	}
+}
+
+func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
+	ini, err := c.unmarshal()
+	if err != nil {
+		return err
+	}
+
+	s := ini.Section(remoteSection)
+	s.Subsections = make(gitconfig.Subsections, len(cfg.Remotes))
+
+	var i int
+	for _, r := range cfg.Remotes {
+		s.Subsections[i] = c.marshalRemote(r)
+		i++
+	}
+
+	return c.marshal(ini)
+}
+
+func (c *ConfigStorage) marshal(ini *gitconfig.Config) error {
+	f, err := c.dir.ConfigWriter()
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	e := gitconfig.NewEncoder(f)
+	return e.Encode(ini)
+}
+
+func (c *ConfigStorage) marshalRemote(r *config.RemoteConfig) *gitconfig.Subsection {
+	s := &gitconfig.Subsection{Name: r.Name}
+	s.AddOption(urlKey, r.URL)
+	for _, rs := range r.Fetch {
+		s.AddOption(fetchKey, rs.String())
+	}
+
+	return s
 }

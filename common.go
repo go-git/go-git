@@ -8,11 +8,14 @@ import (
 	"gopkg.in/src-d/go-git.v4/core"
 )
 
-// Storage storage of objects and references
-type Storage interface {
-	ConfigStorage() config.ConfigStorage
-	ObjectStorage() core.ObjectStorage
-	ReferenceStorage() core.ReferenceStorage
+// Storer is a generic storage of objects, references and any information
+// related to a particular repository. Some Storer implementations persist the
+// information in an system directory (such as `.git`) and others
+// implementations are in memmory being ephemeral
+type Storer interface {
+	core.ObjectStorer
+	core.ReferenceStorer
+	config.ConfigStorer
 }
 
 // countLines returns the number of lines in a string à la git, this is
@@ -52,4 +55,5 @@ func checkClose(c io.Closer, err *error) {
 	}
 }
 
+// DateFormat is the format being use in the orignal git implementation
 const DateFormat = "Mon Jan 02 15:04:05 2006 -0700"

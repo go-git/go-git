@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"sort"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/core"
 
 	. "gopkg.in/check.v1"
 )
+
+type storer interface {
+	core.ObjectStorer
+	core.ReferenceStorer
+	config.ConfigStorer
+}
 
 type TestObject struct {
 	Object core.Object
@@ -21,19 +26,13 @@ type TestObject struct {
 }
 
 type BaseStorageSuite struct {
-	ObjectStorage    core.ObjectStorage
-	ReferenceStorage core.ReferenceStorage
-	ConfigStore      config.ConfigStorage
+	Storer storer
 
 	validTypes  []core.ObjectType
 	testObjects map[core.ObjectType]TestObject
 }
 
-func NewBaseStorageSuite(
-	os core.ObjectStorage,
-	rs core.ReferenceStorage,
-	cs config.ConfigStorage,
-) BaseStorageSuite {
+func NewBaseStorageSuite(s storer) BaseStorageSuite {
 	commit := &core.MemoryObject{}
 	commit.SetType(core.CommitObject)
 	tree := &core.MemoryObject{}
@@ -44,10 +43,7 @@ func NewBaseStorageSuite(
 	tag.SetType(core.TagObject)
 
 	return BaseStorageSuite{
-		ObjectStorage:    os,
-		ReferenceStorage: rs,
-		ConfigStore:      cs,
-
+		Storer: s,
 		validTypes: []core.ObjectType{
 			core.CommitObject,
 			core.BlobObject,
@@ -62,19 +58,19 @@ func NewBaseStorageSuite(
 		}}
 }
 
-func (s *BaseStorageSuite) TestObjectStorageSetAndGet(c *C) {
+func (s *BaseStorageSuite) TestSetObjectAndGetObject(c *C) {
 	for _, to := range s.testObjects {
 		comment := Commentf("failed for type %s", to.Type.String())
 
-		h, err := s.ObjectStorage.Set(to.Object)
+		h, err := s.Storer.SetObject(to.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, to.Hash, comment)
 
-		o, err := s.ObjectStorage.Get(to.Type, h)
+		o, err := s.Storer.Object(to.Type, h)
 		c.Assert(err, IsNil)
 		c.Assert(objectEquals(o, to.Object), IsNil)
 
-		o, err = s.ObjectStorage.Get(core.AnyObject, h)
+		o, err = s.Storer.Object(core.AnyObject, h)
 		c.Assert(err, IsNil)
 		c.Assert(objectEquals(o, to.Object), IsNil)
 
@@ -83,31 +79,31 @@ func (s *BaseStorageSuite) TestObjectStorageSetAndGet(c *C) {
 				continue
 			}
 
-			o, err = s.ObjectStorage.Get(t, h)
+			o, err = s.Storer.Object(t, h)
 			c.Assert(o, IsNil)
 			c.Assert(err, Equals, core.ErrObjectNotFound)
 		}
 	}
 }
 
-func (s *BaseStorageSuite) TestObjectStorageGetInvalid(c *C) {
-	o := s.ObjectStorage.NewObject()
+func (s *BaseStorageSuite) TestSetObjectInvalid(c *C) {
+	o := s.Storer.NewObject()
 	o.SetType(core.REFDeltaObject)
 
-	_, err := s.ObjectStorage.Set(o)
+	_, err := s.Storer.SetObject(o)
 	c.Assert(err, NotNil)
 }
 
-func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
+func (s *BaseStorageSuite) TestStorerIter(c *C) {
 	for _, o := range s.testObjects {
-		h, err := s.ObjectStorage.Set(o.Object)
+		h, err := s.Storer.SetObject(o.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h, Equals, o.Object.Hash())
 	}
 
 	for _, t := range s.validTypes {
 		comment := Commentf("failed for type %s)", t.String())
-		i, err := s.ObjectStorage.Iter(t)
+		i, err := s.Storer.IterObjects(t)
 		c.Assert(err, IsNil, comment)
 
 		o, err := i.Next()
@@ -119,7 +115,7 @@ func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
 		c.Assert(err, Equals, io.EOF, comment)
 	}
 
-	i, err := s.ObjectStorage.Iter(core.AnyObject)
+	i, err := s.Storer.IterObjects(core.AnyObject)
 	c.Assert(err, IsNil)
 
 	foundObjects := []core.Object{}
@@ -141,15 +137,20 @@ func (s *BaseStorageSuite) TestObjectStorageIter(c *C) {
 	}
 }
 
-func (s *BaseStorageSuite) TestTxObjectStorageSetAndCommit(c *C) {
-	tx := s.ObjectStorage.Begin()
+func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
+	storer, ok := s.Storer.(core.Transactioner)
+	if !ok {
+		c.Skip("not a core.ObjectStorerTx")
+	}
+
+	tx := storer.Begin()
 	for _, o := range s.testObjects {
-		h, err := tx.Set(o.Object)
+		h, err := tx.SetObject(o.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, o.Hash)
 	}
 
-	iter, err := s.ObjectStorage.Iter(core.AnyObject)
+	iter, err := s.Storer.IterObjects(core.AnyObject)
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
@@ -157,7 +158,7 @@ func (s *BaseStorageSuite) TestTxObjectStorageSetAndCommit(c *C) {
 	err = tx.Commit()
 	c.Assert(err, IsNil)
 
-	iter, err = s.ObjectStorage.Iter(core.AnyObject)
+	iter, err = s.Storer.IterObjects(core.AnyObject)
 	c.Assert(err, IsNil)
 
 	var count int
@@ -169,29 +170,44 @@ func (s *BaseStorageSuite) TestTxObjectStorageSetAndCommit(c *C) {
 	c.Assert(count, Equals, 4)
 }
 
-func (s *BaseStorageSuite) TestTxObjectStorageSetAndGet(c *C) {
-	tx := s.ObjectStorage.Begin()
+func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndGetObject(c *C) {
+	storer, ok := s.Storer.(core.Transactioner)
+	if !ok {
+		c.Skip("not a core.ObjectStorerTx")
+	}
+
+	tx := storer.Begin()
 	for _, expected := range s.testObjects {
-		h, err := tx.Set(expected.Object)
+		h, err := tx.SetObject(expected.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, expected.Hash)
 
-		o, err := tx.Get(expected.Type, core.NewHash(expected.Hash))
+		o, err := tx.Object(expected.Type, core.NewHash(expected.Hash))
 		c.Assert(o.Hash().String(), DeepEquals, expected.Hash)
 	}
 }
 
-func (s *BaseStorageSuite) TestTxObjectStorageGetNotFound(c *C) {
-	tx := s.ObjectStorage.Begin()
-	o, err := tx.Get(core.AnyObject, core.ZeroHash)
+func (s *BaseStorageSuite) TestObjectStorerTxGetObjectNotFound(c *C) {
+	storer, ok := s.Storer.(core.Transactioner)
+	if !ok {
+		c.Skip("not a core.ObjectStorerTx")
+	}
+
+	tx := storer.Begin()
+	o, err := tx.Object(core.AnyObject, core.ZeroHash)
 	c.Assert(o, IsNil)
 	c.Assert(err, Equals, core.ErrObjectNotFound)
 }
 
-func (s *BaseStorageSuite) TestTxObjectStorageSetAndRollback(c *C) {
-	tx := s.ObjectStorage.Begin()
+func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
+	storer, ok := s.Storer.(core.Transactioner)
+	if !ok {
+		c.Skip("not a core.ObjectStorerTx")
+	}
+
+	tx := storer.Begin()
 	for _, o := range s.testObjects {
-		h, err := tx.Set(o.Object)
+		h, err := tx.SetObject(o.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, o.Hash)
 	}
@@ -199,41 +215,41 @@ func (s *BaseStorageSuite) TestTxObjectStorageSetAndRollback(c *C) {
 	err := tx.Rollback()
 	c.Assert(err, IsNil)
 
-	iter, err := s.ObjectStorage.Iter(core.AnyObject)
+	iter, err := s.Storer.IterObjects(core.AnyObject)
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
 }
 
-func (s *BaseStorageSuite) TestReferenceStorageSetAndGet(c *C) {
-	err := s.ReferenceStorage.Set(
+func (s *BaseStorageSuite) TestSetReferenceAndGetReference(c *C) {
+	err := s.Storer.SetReference(
 		core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
-	err = s.ReferenceStorage.Set(
+	err = s.Storer.SetReference(
 		core.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, IsNil)
 
-	e, err := s.ReferenceStorage.Get(core.ReferenceName("foo"))
+	e, err := s.Storer.Reference(core.ReferenceName("foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
-func (s *BaseStorageSuite) TestReferenceStorageGetNotFound(c *C) {
-	r, err := s.ReferenceStorage.Get(core.ReferenceName("bar"))
+func (s *BaseStorageSuite) TestGetReferenceNotFound(c *C) {
+	r, err := s.Storer.Reference(core.ReferenceName("bar"))
 	c.Assert(err, Equals, core.ErrReferenceNotFound)
 	c.Assert(r, IsNil)
 }
 
-func (s *BaseStorageSuite) TestReferenceStorageIter(c *C) {
-	err := s.ReferenceStorage.Set(
+func (s *BaseStorageSuite) TestIterReferences(c *C) {
+	err := s.Storer.SetReference(
 		core.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
-	i, err := s.ReferenceStorage.Iter()
+	i, err := s.Storer.IterReferences()
 	c.Assert(err, IsNil)
 
 	e, err := i.Next()
@@ -245,50 +261,27 @@ func (s *BaseStorageSuite) TestReferenceStorageIter(c *C) {
 	c.Assert(err, Equals, io.EOF)
 }
 
-func (s *BaseStorageSuite) TestConfigStorageSetGetAndDelete(c *C) {
-	err := s.ConfigStore.SetRemote(&config.RemoteConfig{
+func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {
+	expected := config.NewConfig()
+	expected.Remotes["foo"] = &config.RemoteConfig{
 		Name: "foo",
 		URL:  "http://foo/bar.git",
-	})
+	}
 
+	err := s.Storer.SetConfig(expected)
 	c.Assert(err, IsNil)
 
-	r, err := s.ConfigStore.Remote("foo")
+	cfg, err := s.Storer.Config()
 	c.Assert(err, IsNil)
-	c.Assert(r.Name, Equals, "foo")
-
-	err = s.ConfigStore.DeleteRemote("foo")
-	c.Assert(err, IsNil)
-
-	r, err = s.ConfigStore.Remote("foo")
-	c.Assert(err, Equals, config.ErrRemoteConfigNotFound)
-	c.Assert(r, IsNil)
+	c.Assert(cfg, DeepEquals, expected)
 }
 
-func (s *BaseStorageSuite) TestConfigStorageSetInvalid(c *C) {
-	err := s.ConfigStore.SetRemote(&config.RemoteConfig{})
+func (s *BaseStorageSuite) TestSetConfigInvalid(c *C) {
+	cfg := config.NewConfig()
+	cfg.Remotes["foo"] = &config.RemoteConfig{}
+
+	err := s.Storer.SetConfig(cfg)
 	c.Assert(err, NotNil)
-}
-
-func (s *BaseStorageSuite) TestConfigStorageRemotes(c *C) {
-	s.ConfigStore.SetRemote(&config.RemoteConfig{
-		Name: "foo", URL: "http://foo/bar.git",
-	})
-
-	s.ConfigStore.SetRemote(&config.RemoteConfig{
-		Name: "bar", URL: "http://foo/bar.git",
-	})
-
-	r, err := s.ConfigStore.Remotes()
-	c.Assert(err, IsNil)
-	c.Assert(r, HasLen, 2)
-
-	sorted := make([]string, 0, 2)
-	sorted = append(sorted, r[0].Name)
-	sorted = append(sorted, r[1].Name)
-	sort.Strings(sorted)
-	c.Assert(sorted[0], Equals, "bar")
-	c.Assert(sorted[1], Equals, "foo")
 }
 
 func objectEquals(a core.Object, b core.Object) error {

@@ -51,7 +51,7 @@ func (t *Tree) File(path string) (*File, error) {
 		return nil, ErrFileNotFound
 	}
 
-	obj, err := t.r.s.ObjectStorage().Get(core.BlobObject, e.Hash)
+	obj, err := t.r.s.Object(core.BlobObject, e.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 		return nil, errDirNotFound
 	}
 
-	obj, err := t.r.s.ObjectStorage().Get(core.TreeObject, entry.Hash)
+	obj, err := t.r.s.Object(core.TreeObject, entry.Hash)
 	if err != nil {
 		return nil, err
 	}

@@ -56,7 +56,7 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	c.Assert(err, IsNil)
 
 	alt, err := r.Remote("foo")
-	c.Assert(err, Equals, config.ErrRemoteConfigNotFound)
+	c.Assert(err, Equals, ErrRemoteNotFound)
 	c.Assert(alt, IsNil)
 }
 
@@ -219,7 +219,7 @@ func (s *RepositorySuite) TestPull(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	storage := r.s.ObjectStorage().(*memory.ObjectStorage)
+	storage := r.s.(*memory.Storage)
 	c.Assert(storage.Objects, HasLen, 31)
 
 	r.CreateRemote(&config.RemoteConfig{

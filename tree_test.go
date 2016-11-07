@@ -37,7 +37,7 @@ func (s *TreeSuite) TestDecode(c *C) {
 
 func (s *TreeSuite) TestDecodeNonTree(c *C) {
 	hash := core.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err := s.Repository.s.ObjectStorage().Get(core.BlobObject, hash)
+	blob, err := s.Repository.s.Object(core.BlobObject, hash)
 	c.Assert(err, IsNil)
 
 	tree := &Tree{}
@@ -89,12 +89,12 @@ func (o *SortReadObject) SetType(t core.ObjectType) { o.t = t }
 func (o *SortReadObject) Size() int64               { return o.sz }
 func (o *SortReadObject) SetSize(s int64)           { o.sz = s }
 func (o *SortReadObject) Content() []byte           { return o.cont }
-func (o *SortReadObject) Reader() (core.ObjectReader, error) {
+func (o *SortReadObject) Reader() (io.ReadCloser, error) {
 	return &SortReadCloser{pos: 0, data: o.cont}, nil
 }
-func (o *SortReadObject) Writer() (core.ObjectWriter, error) { return o, nil }
-func (o *SortReadObject) Write(p []byte) (n int, err error)  { return len(p), nil }
-func (o *SortReadObject) Close() error                       { return nil }
+func (o *SortReadObject) Writer() (io.WriteCloser, error)   { return o, nil }
+func (o *SortReadObject) Write(p []byte) (n int, err error) { return len(p), nil }
+func (o *SortReadObject) Close() error                      { return nil }
 
 // a ReadCloser that only returns 6 bytes at a time, to simulate incomplete reads.
 type SortReadCloser struct {

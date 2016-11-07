@@ -57,7 +57,7 @@ func (s *BaseSuite) buildRepositories(c *C, f fixtures.Fixtures) {
 		defer f.Close()
 
 		n := packfile.NewScanner(f)
-		d, err := packfile.NewDecoder(n, r.s.ObjectStorage())
+		d, err := packfile.NewDecoder(n, r.s)
 		c.Assert(err, IsNil)
 		_, err = d.Decode()
 		c.Assert(err, IsNil)
@@ -155,7 +155,7 @@ func unpackFixtures(c *C, fixtures ...[]packedFixture) map[string]*Repository {
 			c.Assert(err, IsNil, comment)
 
 			r := packfile.NewScanner(f)
-			d, err := packfile.NewDecoder(r, repos[fixture.url].s.ObjectStorage())
+			d, err := packfile.NewDecoder(r, repos[fixture.url].s)
 			c.Assert(err, IsNil, comment)
 			_, err = d.Decode()
 			c.Assert(err, IsNil, comment)

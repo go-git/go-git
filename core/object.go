@@ -12,21 +12,6 @@ var (
 	ErrInvalidType = errors.New("invalid object type")
 )
 
-// TODO: Consider adding a Hash function to the ObjectReader and ObjectWriter
-//       interfaces that returns the hash calculated for the reader or writer.
-
-// ObjectReader is a generic representation of an object reader.
-//
-// ObjectReader implements io.ReadCloser. Close should be called when finished
-// with it.
-type ObjectReader io.ReadCloser
-
-// ObjectWriter is a generic representation of an object writer.
-//
-// ObjectWriter implements io.WriterCloser. Close should be called when finished
-// with it.
-type ObjectWriter io.WriteCloser
-
 // Object is a generic representation of any git object
 type Object interface {
 	Hash() Hash
@@ -34,8 +19,8 @@ type Object interface {
 	SetType(ObjectType)
 	Size() int64
 	SetSize(int64)
-	Reader() (ObjectReader, error)
-	Writer() (ObjectWriter, error)
+	Reader() (io.ReadCloser, error)
+	Writer() (io.WriteCloser, error)
 }
 
 // ObjectType internal object type
@@ -116,7 +101,7 @@ func ParseObjectType(value string) (typ ObjectType, err error) {
 // The ObjectLookupIter must be closed with a call to Close() when it is no
 // longer needed.
 type ObjectLookupIter struct {
-	storage ObjectStorage
+	storage ObjectStorer
 	series  []Hash
 	t       ObjectType
 	pos     int
@@ -124,7 +109,7 @@ type ObjectLookupIter struct {
 
 // NewObjectLookupIter returns an object iterator given an object storage and
 // a slice of object hashes.
-func NewObjectLookupIter(storage ObjectStorage, t ObjectType, series []Hash) *ObjectLookupIter {
+func NewObjectLookupIter(storage ObjectStorer, t ObjectType, series []Hash) *ObjectLookupIter {
 	return &ObjectLookupIter{
 		storage: storage,
 		series:  series,
@@ -142,7 +127,7 @@ func (iter *ObjectLookupIter) Next() (Object, error) {
 	}
 
 	hash := iter.series[iter.pos]
-	obj, err := iter.storage.Get(iter.t, hash)
+	obj, err := iter.storage.Object(iter.t, hash)
 	if err == nil {
 		iter.pos++
 	}

@@ -159,18 +159,18 @@ func (o *MockObjectStorage) NewObject() Object {
 	return nil
 }
 
-func (o *MockObjectStorage) Set(obj Object) (Hash, error) {
+func (o *MockObjectStorage) SetObject(obj Object) (Hash, error) {
 	return ZeroHash, nil
 }
 
-func (o *MockObjectStorage) Get(t ObjectType, h Hash) (Object, error) {
+func (o *MockObjectStorage) Object(t ObjectType, h Hash) (Object, error) {
 	return &MemoryObject{h: h}, nil
 }
 
-func (o *MockObjectStorage) Iter(t ObjectType) (ObjectIter, error) {
+func (o *MockObjectStorage) IterObjects(t ObjectType) (ObjectIter, error) {
 	return nil, nil
 }
 
-func (o *MockObjectStorage) Begin() TxObjectStorage {
+func (o *MockObjectStorage) Begin() Transaction {
 	return nil
 }

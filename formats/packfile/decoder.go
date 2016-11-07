@@ -37,13 +37,15 @@ var (
 	// reader and without a core.ObjectStorage or ReadObjectAt method is called
 	// without a seekable scanner
 	ErrNonSeekable = NewError("non-seekable scanner")
+	// ErrRollback error making Rollback over a transaction after an error
+	ErrRollback = NewError("rollback error, during set error")
 )
 
 // Decoder reads and decodes packfiles from an input stream.
 type Decoder struct {
 	s  *Scanner
-	o  core.ObjectStorage
-	tx core.TxObjectStorage
+	o  core.ObjectStorer
+	tx core.Transaction
 
 	offsetToHash map[int64]core.Hash
 	hashToOffset map[core.Hash]int64
@@ -51,20 +53,14 @@ type Decoder struct {
 }
 
 // NewDecoder returns a new Decoder that reads from r.
-func NewDecoder(s *Scanner, o core.ObjectStorage) (*Decoder, error) {
+func NewDecoder(s *Scanner, o core.ObjectStorer) (*Decoder, error) {
 	if !s.IsSeekable && o == nil {
 		return nil, ErrNonSeekable
 	}
 
-	var tx core.TxObjectStorage
-	if o != nil {
-		tx = o.Begin()
-	}
-
 	return &Decoder{
-		s:  s,
-		o:  o,
-		tx: tx,
+		s: s,
+		o: o,
 
 		offsetToHash: make(map[int64]core.Hash, 0),
 		hashToOffset: make(map[core.Hash]int64, 0),
@@ -87,39 +83,64 @@ func (d *Decoder) doDecode() error {
 		return err
 	}
 
-	if d.o == nil {
-		return d.readObjects(count)
+	_, isTxStorer := d.o.(core.Transactioner)
+	switch {
+	case d.o == nil:
+		return d.readObjects(int(count))
+	case isTxStorer:
+		return d.readObjectsWithObjectStorerTx(int(count))
+	default:
+		return d.readObjectsWithObjectStorer(int(count))
 	}
-
-	if err := d.readObjects(count); err != nil {
-		if err := d.tx.Rollback(); err != nil {
-			return nil
-		}
-
-		return err
-	}
-
-	return d.tx.Commit()
 }
 
-func (d *Decoder) readObjects(count uint32) error {
-	for i := 0; i < int(count); i++ {
+func (d *Decoder) readObjects(count int) error {
+	for i := 0; i < count; i++ {
+		if _, err := d.ReadObject(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *Decoder) readObjectsWithObjectStorer(count int) error {
+	for i := 0; i < count; i++ {
 		obj, err := d.ReadObject()
 		if err != nil {
 			return err
 		}
 
-		if d.o == nil {
-			continue
+		if _, err := d.o.SetObject(obj); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *Decoder) readObjectsWithObjectStorerTx(count int) error {
+	tx := d.o.(core.Transactioner).Begin()
+
+	for i := 0; i < count; i++ {
+		obj, err := d.ReadObject()
+		if err != nil {
+			return err
 		}
 
-		if _, err := d.tx.Set(obj); err != nil {
+		if _, err := tx.SetObject(obj); err != nil {
+			if rerr := d.tx.Rollback(); rerr != nil {
+				return ErrRollback.AddDetails(
+					"error: %s, during tx.Set error: %s", rerr, err,
+				)
+			}
+
 			return err
 		}
 
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // ReadObject reads a object from the stream and return it
@@ -241,7 +262,7 @@ func (d *Decoder) recallByOffset(o int64) (core.Object, error) {
 	}
 
 	if h, ok := d.offsetToHash[o]; ok {
-		return d.tx.Get(core.AnyObject, h)
+		return d.tx.Object(core.AnyObject, h)
 	}
 
 	return nil, core.ErrObjectNotFound
@@ -254,7 +275,7 @@ func (d *Decoder) recallByHash(h core.Hash) (core.Object, error) {
 		}
 	}
 
-	obj, err := d.tx.Get(core.AnyObject, h)
+	obj, err := d.tx.Object(core.AnyObject, h)
 	if err != core.ErrObjectNotFound {
 		return obj, err
 	}

@@ -60,7 +60,7 @@ func (b *Blob) Encode(o core.Object) error {
 }
 
 // Reader returns a reader allow the access to the content of the blob
-func (b *Blob) Reader() (core.ObjectReader, error) {
+func (b *Blob) Reader() (io.ReadCloser, error) {
 	return b.obj.Reader()
 }
 

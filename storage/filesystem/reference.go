@@ -9,15 +9,15 @@ type ReferenceStorage struct {
 	dir *dotgit.DotGit
 }
 
-func (r *ReferenceStorage) Set(ref *core.Reference) error {
+func (r *ReferenceStorage) SetReference(ref *core.Reference) error {
 	return r.dir.SetRef(ref)
 }
 
-func (r *ReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {
+func (r *ReferenceStorage) Reference(n core.ReferenceName) (*core.Reference, error) {
 	return r.dir.Ref(n)
 }
 
-func (r *ReferenceStorage) Iter() (core.ReferenceIter, error) {
+func (r *ReferenceStorage) IterReferences() (core.ReferenceIter, error) {
 	refs, err := r.dir.Refs()
 	if err != nil {
 		return nil, err

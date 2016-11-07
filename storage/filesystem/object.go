@@ -13,25 +13,17 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
-// ObjectStorage is an implementation of core.ObjectStorage that stores
-// data on disk in the standard git format (this is, the .git directory).
-//
-// Zero values of this type are not safe to use, see the New function below.
-//
-// Currently only reads are supported, no writting.
-//
-// Also values from this type are not yet able to track changes on disk, this is,
-// Gitdir values will get outdated as soon as repositories change on disk.
 type ObjectStorage struct {
 	dir   *dotgit.DotGit
 	index map[core.Hash]index
 }
 
-func newObjectStorage(dir *dotgit.DotGit) (*ObjectStorage, error) {
-	s := &ObjectStorage{
+func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
+	s := ObjectStorage{
 		dir:   dir,
 		index: make(map[core.Hash]index, 0),
 	}
+
 	return s, s.loadIdxFiles()
 }
 
@@ -64,8 +56,7 @@ func (s *ObjectStorage) NewObject() core.Object {
 	return &core.MemoryObject{}
 }
 
-// Writer method not supported on Memory storage
-func (s *ObjectStorage) Writer() (io.WriteCloser, error) {
+func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 	w, err := s.dir.NewObjectPack()
 	if err != nil {
 		return nil, err
@@ -82,7 +73,7 @@ func (s *ObjectStorage) Writer() (io.WriteCloser, error) {
 }
 
 // Set adds a new object to the storage.
-func (s *ObjectStorage) Set(o core.Object) (core.Hash, error) {
+func (s *ObjectStorage) SetObject(o core.Object) (core.Hash, error) {
 	if o.Type() == core.OFSDeltaObject || o.Type() == core.REFDeltaObject {
 		return core.ZeroHash, core.ErrInvalidType
 	}
@@ -114,7 +105,7 @@ func (s *ObjectStorage) Set(o core.Object) (core.Hash, error) {
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile and the git object directories.
-func (s *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (s *ObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
 	obj, err := s.getFromUnpacked(h)
 	if err == core.ErrObjectNotFound {
 		obj, err = s.getFromPackfile(h)
@@ -183,7 +174,7 @@ func (s *ObjectStorage) getFromPackfile(h core.Hash) (core.Object, error) {
 	defer f.Close()
 
 	p := packfile.NewScanner(f)
-	d, err := packfile.NewDecoder(p, memory.NewStorage().ObjectStorage())
+	d, err := packfile.NewDecoder(p, memory.NewStorage())
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +195,7 @@ func (s *ObjectStorage) findObjectInPackfile(h core.Hash) (core.Hash, int64) {
 
 // Iter returns an iterator for all the objects in the packfile with the
 // given type.
-func (s *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
+func (s *ObjectStorage) IterObjects(t core.ObjectType) (core.ObjectIter, error) {
 	objects, err := s.dir.Objects()
 	if err != nil {
 		return nil, err
@@ -251,20 +242,6 @@ func (s *ObjectStorage) buildPackfileIters(
 	return iters, nil
 }
 
-// Begin opens a new transaction. However, this implementation is not
-// transactional, so Commit and Rollback have no effect.
-func (o *ObjectStorage) Begin() core.TxObjectStorage {
-	return o
-}
-
-func (tx *ObjectStorage) Commit() error {
-	return nil
-}
-
-func (tx *ObjectStorage) Rollback() error {
-	return nil
-}
-
 type index map[core.Hash]int64
 
 func (i index) Decode(r io.Reader) error {
@@ -299,7 +276,7 @@ func newPackfileIter(f fs.File, t core.ObjectType, seen map[core.Hash]bool) (cor
 		return nil, err
 	}
 
-	d, err := packfile.NewDecoder(s, memory.NewStorage().ObjectStorage())
+	d, err := packfile.NewDecoder(s, memory.NewStorage())
 	if err != nil {
 		return nil, err
 	}

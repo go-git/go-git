@@ -6,6 +6,26 @@ type ConfigSuite struct{}
 
 var _ = Suite(&ConfigSuite{})
 
+func (s *ConfigSuite) TestConfigValidateInvalidRemote(c *C) {
+	config := &Config{
+		Remotes: map[string]*RemoteConfig{
+			"foo": {Name: "foo"},
+		},
+	}
+
+	c.Assert(config.Validate(), Equals, ErrRemoteConfigEmptyURL)
+}
+
+func (s *ConfigSuite) TestConfigValidateInvalidKey(c *C) {
+	config := &Config{
+		Remotes: map[string]*RemoteConfig{
+			"bar": {Name: "foo"},
+		},
+	}
+
+	c.Assert(config.Validate(), Equals, ErrInvalid)
+}
+
 func (s *ConfigSuite) TestRemoteConfigValidateMissingURL(c *C) {
 	config := &RemoteConfig{Name: "foo"}
 	c.Assert(config.Validate(), Equals, ErrRemoteConfigEmptyURL)

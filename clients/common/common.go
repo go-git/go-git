@@ -110,10 +110,9 @@ func (i *GitUploadPackInfo) Decode(r io.Reader) error {
 }
 
 func (i *GitUploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
-	i.Refs = make(memory.ReferenceStorage, 0)
 	for name, hash := range ar.References {
 		ref := core.NewReferenceFromStrings(name, hash.String())
-		i.Refs.Set(ref)
+		i.Refs.SetReference(ref)
 	}
 
 	return i.addSymbolicRefs(ar)
@@ -133,7 +132,7 @@ func (i *GitUploadPackInfo) addSymbolicRefs(ar *advrefs.AdvRefs) error {
 		name := core.ReferenceName(chunks[0])
 		target := core.ReferenceName(chunks[1])
 		ref := core.NewSymbolicReference(name, target)
-		i.Refs.Set(ref)
+		i.Refs.SetReference(ref)
 	}
 
 	return nil

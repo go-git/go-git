@@ -33,7 +33,7 @@ func (s *ReaderSuite) TestDecode(c *C) {
 		scanner := NewScanner(f.Packfile())
 		storage := memory.NewStorage()
 
-		d, err := NewDecoder(scanner, storage.ObjectStorage())
+		d, err := NewDecoder(scanner, storage)
 		c.Assert(err, IsNil)
 		defer d.Close()
 
@@ -97,7 +97,7 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 	scanner := NewScanner(f.Packfile())
 	storage := memory.NewStorage()
 
-	d, err := NewDecoder(scanner, storage.ObjectStorage())
+	d, err := NewDecoder(scanner, storage)
 	c.Assert(err, IsNil)
 	_, err = d.Decode()
 	c.Assert(err, IsNil)
@@ -158,11 +158,9 @@ func (s *ReaderSuite) TestSetOffsets(c *C) {
 }
 
 func assertObjects(c *C, s *memory.Storage, expects []string) {
-	o := s.ObjectStorage().(*memory.ObjectStorage)
-
-	c.Assert(len(expects), Equals, len(o.Objects))
+	c.Assert(len(expects), Equals, len(s.Objects))
 	for _, exp := range expects {
-		obt, err := o.Get(core.AnyObject, core.NewHash(exp))
+		obt, err := s.Object(core.AnyObject, core.NewHash(exp))
 		c.Assert(err, IsNil)
 		c.Assert(obt.Hash().String(), Equals, exp)
 	}

@@ -10,96 +10,52 @@ import (
 
 var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
 
-// Storage in memory storage system
+// Storage is an implementation of git.Storer that stores data on memory, being
+// ephemeral. The use of this storage should be done in controlled envoriments,
+// since the representation in memory of some repository can fill the machine
+// memory. in the other hand this storage has the best performance.
 type Storage struct {
-	c *ConfigStorage
-	o *ObjectStorage
-	r *ReferenceStorage
+	ConfigStorage
+	ObjectStorage
+	ReferenceStorage
 }
 
-// NewStorage returns a new Storage
+// NewStorage returns a new Storage base on memory
 func NewStorage() *Storage {
-	return &Storage{}
-}
-
-// ConfigStorage return the ConfigStorage, if not exists create a new one
-func (s *Storage) ConfigStorage() config.ConfigStorage {
-	if s.c != nil {
-		return s.c
+	return &Storage{
+		ReferenceStorage: make(ReferenceStorage, 0),
+		ConfigStorage:    ConfigStorage{},
+		ObjectStorage: ObjectStorage{
+			Objects: make(map[core.Hash]core.Object, 0),
+			Commits: make(map[core.Hash]core.Object, 0),
+			Trees:   make(map[core.Hash]core.Object, 0),
+			Blobs:   make(map[core.Hash]core.Object, 0),
+			Tags:    make(map[core.Hash]core.Object, 0),
+		},
 	}
-
-	s.c = &ConfigStorage{
-		RemotesConfig: make(map[string]*config.RemoteConfig),
-	}
-
-	return s.c
-}
-
-// ObjectStorage returns the ObjectStorage, if not exists creates a new one
-func (s *Storage) ObjectStorage() core.ObjectStorage {
-	if s.o != nil {
-		return s.o
-	}
-
-	s.o = &ObjectStorage{
-		Objects: make(map[core.Hash]core.Object, 0),
-		Commits: make(map[core.Hash]core.Object, 0),
-		Trees:   make(map[core.Hash]core.Object, 0),
-		Blobs:   make(map[core.Hash]core.Object, 0),
-		Tags:    make(map[core.Hash]core.Object, 0),
-	}
-
-	return s.o
-}
-
-// ReferenceStorage returns the ReferenceStorage if not exists creates a new one
-func (s *Storage) ReferenceStorage() core.ReferenceStorage {
-	if s.r != nil {
-		return s.r
-	}
-
-	r := make(ReferenceStorage, 0)
-	s.r = &r
-
-	return s.r
 }
 
 type ConfigStorage struct {
-	RemotesConfig map[string]*config.RemoteConfig
+	config *config.Config
 }
 
-func (c *ConfigStorage) Remote(name string) (*config.RemoteConfig, error) {
-	r, ok := c.RemotesConfig[name]
-	if ok {
-		return r, nil
-	}
-
-	return nil, config.ErrRemoteConfigNotFound
-}
-
-func (c *ConfigStorage) Remotes() ([]*config.RemoteConfig, error) {
-	var o []*config.RemoteConfig
-	for _, r := range c.RemotesConfig {
-		o = append(o, r)
-	}
-
-	return o, nil
-}
-func (c *ConfigStorage) SetRemote(r *config.RemoteConfig) error {
-	if err := r.Validate(); err != nil {
+func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
+	if err := cfg.Validate(); err != nil {
 		return err
 	}
 
-	c.RemotesConfig[r.Name] = r
+	c.config = cfg
 	return nil
 }
 
-func (c *ConfigStorage) DeleteRemote(name string) error {
-	delete(c.RemotesConfig, name)
-	return nil
+func (c *ConfigStorage) Config() (*config.Config, error) {
+	if c.config == nil {
+		c.config = config.NewConfig()
+	}
+
+	return c.config, nil
 }
 
-// ObjectStorage is the implementation of core.ObjectStorage for memory.Object
 type ObjectStorage struct {
 	Objects map[core.Hash]core.Object
 	Commits map[core.Hash]core.Object
@@ -108,13 +64,11 @@ type ObjectStorage struct {
 	Tags    map[core.Hash]core.Object
 }
 
-// NewObject creates a new MemoryObject
 func (o *ObjectStorage) NewObject() core.Object {
 	return &core.MemoryObject{}
 }
 
-// Set stores an object, the object should be properly filled before set it.
-func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
+func (o *ObjectStorage) SetObject(obj core.Object) (core.Hash, error) {
 	h := obj.Hash()
 	o.Objects[h] = obj
 
@@ -134,8 +88,7 @@ func (o *ObjectStorage) Set(obj core.Object) (core.Hash, error) {
 	return h, nil
 }
 
-// Get returns a object with the given hash
-func (o *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (o *ObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
 	obj, ok := o.Objects[h]
 	if !ok || (core.AnyObject != t && obj.Type() != t) {
 		return nil, core.ErrObjectNotFound
@@ -144,8 +97,7 @@ func (o *ObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error)
 	return obj, nil
 }
 
-// Iter returns a core.ObjectIter for the given core.ObjectTybe
-func (o *ObjectStorage) Iter(t core.ObjectType) (core.ObjectIter, error) {
+func (o *ObjectStorage) IterObjects(t core.ObjectType) (core.ObjectIter, error) {
 	var series []core.Object
 	switch t {
 	case core.AnyObject:
@@ -171,7 +123,7 @@ func flattenObjectMap(m map[core.Hash]core.Object) []core.Object {
 	return objects
 }
 
-func (o *ObjectStorage) Begin() core.TxObjectStorage {
+func (o *ObjectStorage) Begin() core.Transaction {
 	return &TxObjectStorage{
 		Storage: o,
 		Objects: make(map[core.Hash]core.Object, 0),
@@ -183,14 +135,14 @@ type TxObjectStorage struct {
 	Objects map[core.Hash]core.Object
 }
 
-func (tx *TxObjectStorage) Set(obj core.Object) (core.Hash, error) {
+func (tx *TxObjectStorage) SetObject(obj core.Object) (core.Hash, error) {
 	h := obj.Hash()
 	tx.Objects[h] = obj
 
 	return h, nil
 }
 
-func (tx *TxObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (tx *TxObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
 	obj, ok := tx.Objects[h]
 	if !ok || (core.AnyObject != t && obj.Type() != t) {
 		return nil, core.ErrObjectNotFound
@@ -202,7 +154,7 @@ func (tx *TxObjectStorage) Get(t core.ObjectType, h core.Hash) (core.Object, err
 func (tx *TxObjectStorage) Commit() error {
 	for h, obj := range tx.Objects {
 		delete(tx.Objects, h)
-		if _, err := tx.Storage.Set(obj); err != nil {
+		if _, err := tx.Storage.SetObject(obj); err != nil {
 			return err
 		}
 	}
@@ -217,8 +169,7 @@ func (tx *TxObjectStorage) Rollback() error {
 
 type ReferenceStorage map[core.ReferenceName]*core.Reference
 
-// Set stores a reference.
-func (r ReferenceStorage) Set(ref *core.Reference) error {
+func (r ReferenceStorage) SetReference(ref *core.Reference) error {
 	if ref != nil {
 		r[ref.Name()] = ref
 	}
@@ -226,8 +177,7 @@ func (r ReferenceStorage) Set(ref *core.Reference) error {
 	return nil
 }
 
-// Get returns a stored reference with the given name
-func (r ReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {
+func (r ReferenceStorage) Reference(n core.ReferenceName) (*core.Reference, error) {
 	ref, ok := r[n]
 	if !ok {
 		return nil, core.ErrReferenceNotFound
@@ -236,8 +186,7 @@ func (r ReferenceStorage) Get(n core.ReferenceName) (*core.Reference, error) {
 	return ref, nil
 }
 
-// Iter returns a core.ReferenceIter
-func (r ReferenceStorage) Iter() (core.ReferenceIter, error) {
+func (r ReferenceStorage) IterReferences() (core.ReferenceIter, error) {
 	var refs []*core.Reference
 	for _, ref := range r {
 		refs = append(refs, ref)

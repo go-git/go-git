@@ -15,12 +15,14 @@ var (
 	ErrObjectNotFound     = errors.New("object not found")
 	ErrInvalidReference   = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNonEmpty = errors.New("repository non empty")
+	ErrRemoteNotFound     = errors.New("remote not found")
+	ErrRemoteExists       = errors.New("remote already exists")
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
 	r map[string]*Remote
-	s Storage
+	s Storer
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
@@ -42,7 +44,7 @@ func NewFilesystemRepository(path string) (*Repository, error) {
 }
 
 // NewRepository creates a new repository with the given Storage
-func NewRepository(s Storage) (*Repository, error) {
+func NewRepository(s Storer) (*Repository, error) {
 	return &Repository{
 		s: s,
 		r: make(map[string]*Remote, 0),
@@ -51,9 +53,14 @@ func NewRepository(s Storage) (*Repository, error) {
 
 // Remote return a remote if exists
 func (r *Repository) Remote(name string) (*Remote, error) {
-	c, err := r.s.ConfigStorage().Remote(name)
+	cfg, err := r.s.Config()
 	if err != nil {
 		return nil, err
+	}
+
+	c, ok := cfg.Remotes[name]
+	if !ok {
+		return nil, ErrRemoteNotFound
 	}
 
 	return newRemote(r.s, c), nil
@@ -61,14 +68,17 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 
 // Remotes return all the remotes
 func (r *Repository) Remotes() ([]*Remote, error) {
-	config, err := r.s.ConfigStorage().Remotes()
+	cfg, err := r.s.Config()
 	if err != nil {
 		return nil, err
 	}
 
-	remotes := make([]*Remote, len(config))
-	for i, c := range config {
+	remotes := make([]*Remote, len(cfg.Remotes))
+
+	var i int
+	for _, c := range cfg.Remotes {
 		remotes[i] = newRemote(r.s, c)
+		i++
 	}
 
 	return remotes, nil
@@ -81,16 +91,33 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 	}
 
 	remote := newRemote(r.s, c)
-	if err := r.s.ConfigStorage().SetRemote(c); err != nil {
+
+	cfg, err := r.s.Config()
+	if err != nil {
 		return nil, err
 	}
 
-	return remote, nil
+	if _, ok := cfg.Remotes[c.Name]; ok {
+		return nil, ErrRemoteExists
+	}
+
+	cfg.Remotes[c.Name] = c
+	return remote, r.s.SetConfig(cfg)
 }
 
 // DeleteRemote delete a remote from the repository and delete the config
 func (r *Repository) DeleteRemote(name string) error {
-	return r.s.ConfigStorage().DeleteRemote(name)
+	cfg, err := r.s.Config()
+	if err != nil {
+		return err
+	}
+
+	if _, ok := cfg.Remotes[name]; !ok {
+		return ErrRemoteNotFound
+	}
+
+	delete(cfg.Remotes, name)
+	return r.s.SetConfig(cfg)
 }
 
 // Clone clones a remote repository
@@ -145,35 +172,42 @@ const refspecSingleBranch = "+refs/heads/%s:refs/remotes/%s/%[1]s"
 func (r *Repository) updateRemoteConfig(
 	remote *Remote, o *CloneOptions, c *config.RemoteConfig,
 ) error {
-	if o.SingleBranch {
-		head, err := core.ResolveReference(remote.Info().Refs, o.ReferenceName)
-		if err != nil {
-			return err
-		}
-
-		c.Fetch = []config.RefSpec{
-			config.RefSpec(fmt.Sprintf(refspecSingleBranch, head.Name().Short(), c.Name)),
-		}
-
-		return r.s.ConfigStorage().SetRemote(c)
+	if !o.SingleBranch {
+		return nil
 	}
 
-	return nil
+	head, err := core.ResolveReference(remote.Info().Refs, o.ReferenceName)
+	if err != nil {
+		return err
+	}
+
+	c.Fetch = []config.RefSpec{
+		config.RefSpec(fmt.Sprintf(refspecSingleBranch, head.Name().Short(), c.Name)),
+	}
+
+	cfg, err := r.s.Config()
+	if err != nil {
+		return err
+	}
+
+	cfg.Remotes[c.Name] = c
+	return r.s.SetConfig(cfg)
+
 }
 
 func (r *Repository) createReferences(ref *core.Reference) error {
 	if !ref.IsBranch() {
 		// detached HEAD mode
 		head := core.NewHashReference(core.HEAD, ref.Hash())
-		return r.s.ReferenceStorage().Set(head)
+		return r.s.SetReference(head)
 	}
 
-	if err := r.s.ReferenceStorage().Set(ref); err != nil {
+	if err := r.s.SetReference(ref); err != nil {
 		return err
 	}
 
 	head := core.NewSymbolicReference(core.HEAD, ref.Name())
-	return r.s.ReferenceStorage().Set(head)
+	return r.s.SetReference(head)
 }
 
 // IsEmpty returns true if the repository is empty
@@ -241,7 +275,7 @@ func (r *Repository) Commit(h core.Hash) (*Commit, error) {
 
 // Commits decode the objects into commits
 func (r *Repository) Commits() (*CommitIter, error) {
-	iter, err := r.s.ObjectStorage().Iter(core.CommitObject)
+	iter, err := r.s.IterObjects(core.CommitObject)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +295,7 @@ func (r *Repository) Tree(h core.Hash) (*Tree, error) {
 
 // Trees decodes the objects into trees
 func (r *Repository) Trees() (*TreeIter, error) {
-	iter, err := r.s.ObjectStorage().Iter(core.TreeObject)
+	iter, err := r.s.IterObjects(core.TreeObject)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +315,7 @@ func (r *Repository) Blob(h core.Hash) (*Blob, error) {
 
 // Blobs decodes the objects into blobs
 func (r *Repository) Blobs() (*BlobIter, error) {
-	iter, err := r.s.ObjectStorage().Iter(core.BlobObject)
+	iter, err := r.s.IterObjects(core.BlobObject)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +336,7 @@ func (r *Repository) Tag(h core.Hash) (*Tag, error) {
 // Tags returns a TagIter that can step through all of the annotated tags
 // in the repository.
 func (r *Repository) Tags() (*TagIter, error) {
-	iter, err := r.s.ObjectStorage().Iter(core.TagObject)
+	iter, err := r.s.IterObjects(core.TagObject)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +346,7 @@ func (r *Repository) Tags() (*TagIter, error) {
 
 // Object returns an object with the given hash.
 func (r *Repository) Object(t core.ObjectType, h core.Hash) (Object, error) {
-	obj, err := r.s.ObjectStorage().Get(t, h)
+	obj, err := r.s.Object(t, h)
 	if err != nil {
 		if err == core.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -341,7 +375,7 @@ func (r *Repository) Object(t core.ObjectType, h core.Hash) (Object, error) {
 // Objects returns an ObjectIter that can step through all of the annotated tags
 // in the repository.
 func (r *Repository) Objects() (*ObjectIter, error) {
-	iter, err := r.s.ObjectStorage().Iter(core.AnyObject)
+	iter, err := r.s.IterObjects(core.AnyObject)
 	if err != nil {
 		return nil, err
 	}
@@ -351,19 +385,19 @@ func (r *Repository) Objects() (*ObjectIter, error) {
 
 // Head returns the reference where HEAD is pointing
 func (r *Repository) Head() (*core.Reference, error) {
-	return core.ResolveReference(r.s.ReferenceStorage(), core.HEAD)
+	return core.ResolveReference(r.s, core.HEAD)
 }
 
 // Ref returns the Hash pointing the given refName
 func (r *Repository) Ref(name core.ReferenceName, resolved bool) (*core.Reference, error) {
 	if resolved {
-		return core.ResolveReference(r.s.ReferenceStorage(), name)
+		return core.ResolveReference(r.s, name)
 	}
 
-	return r.s.ReferenceStorage().Get(name)
+	return r.s.Reference(name)
 }
 
 // Refs returns a map with all the References
 func (r *Repository) Refs() (core.ReferenceIter, error) {
-	return r.s.ReferenceStorage().Iter()
+	return r.s.IterReferences()
 }

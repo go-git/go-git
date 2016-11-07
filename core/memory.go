@@ -1,7 +1,8 @@
-package core 
+package core
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 )
 
@@ -39,12 +40,12 @@ func (o *MemoryObject) Size() int64 { return o.sz }
 func (o *MemoryObject) SetSize(s int64) { o.sz = s }
 
 // Reader returns a ObjectReader used to read the object's content.
-func (o *MemoryObject) Reader() (ObjectReader, error) {
+func (o *MemoryObject) Reader() (io.ReadCloser, error) {
 	return ioutil.NopCloser(bytes.NewBuffer(o.cont)), nil
 }
 
 // Writer returns a ObjectWriter used to write the object's content.
-func (o *MemoryObject) Writer() (ObjectWriter, error) {
+func (o *MemoryObject) Writer() (io.WriteCloser, error) {
 	return o, nil
 }
 

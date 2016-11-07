@@ -1,6 +1,7 @@
 package git
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 
@@ -80,7 +81,7 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	})
 
 	c.Assert(err, IsNil)
-	c.Assert(sto.ObjectStorage().(*memory.ObjectStorage).Objects, HasLen, 31)
+	c.Assert(sto.Objects, HasLen, 31)
 
 	expectedRefs := []*core.Reference{
 		core.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -89,22 +90,33 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	}
 
 	for _, exp := range expectedRefs {
-		r, _ := sto.ReferenceStorage().Get(exp.Name())
+		r, _ := sto.Reference(exp.Name())
 		c.Assert(exp.String(), Equals, r.String())
 	}
 }
 
-func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
+type mockPackfileWriter struct {
+	Storer
+	PackfileWriterCalled bool
+}
+
+func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
+	m.PackfileWriterCalled = true
+	return m.Storer.(core.PackfileWriter).PackfileWriter()
+}
+
+func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 	dir, err := ioutil.TempDir("", "fetch")
 	c.Assert(err, IsNil)
 
 	defer os.RemoveAll(dir) // clean up
 
-	var sto Storage
-	sto, err = filesystem.NewStorage(osfs.New(dir))
+	fss, err := filesystem.NewStorage(osfs.New(dir))
 	c.Assert(err, IsNil)
 
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	mock := &mockPackfileWriter{Storer: fss}
+
+	r := newRemote(mock, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(r.Connect(), IsNil)
@@ -116,14 +128,16 @@ func (s *RemoteSuite) TestFetchObjectStorageWriter(c *C) {
 	c.Assert(err, IsNil)
 
 	var count int
-	iter, err := sto.ObjectStorage().Iter(core.AnyObject)
+	iter, err := mock.IterObjects(core.AnyObject)
 	c.Assert(err, IsNil)
 
 	iter.ForEach(func(core.Object) error {
 		count++
 		return nil
 	})
+
 	c.Assert(count, Equals, 31)
+	c.Assert(mock.PackfileWriterCalled, Equals, true)
 }
 
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {

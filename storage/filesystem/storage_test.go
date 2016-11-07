@@ -18,20 +18,8 @@ type StorageSuite struct {
 var _ = Suite(&StorageSuite{})
 
 func (s *StorageSuite) SetUpTest(c *C) {
-	path := c.MkDir()
-	storage, err := NewStorage(os.New(path))
+	storage, err := NewStorage(os.New(c.MkDir()))
 	c.Assert(err, IsNil)
-	s.BaseStorageSuite = test.NewBaseStorageSuite(
-		storage.ObjectStorage(),
-		storage.ReferenceStorage(),
-		storage.ConfigStorage(),
-	)
-}
 
-func (s *StorageSuite) TestTxObjectStorageSetAndCommit(c *C) {
-	c.Skip("tx not supported")
-}
-
-func (s *StorageSuite) TestTxObjectStorageSetAndRollback(c *C) {
-	c.Skip("tx not supported")
+	s.BaseStorageSuite = test.NewBaseStorageSuite(storage)
 }

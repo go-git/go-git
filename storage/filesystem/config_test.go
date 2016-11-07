@@ -4,7 +4,6 @@ import (
 	"io/ioutil"
 	stdos "os"
 
-	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 	"gopkg.in/src-d/go-git.v4/utils/fs/os"
@@ -29,27 +28,20 @@ func (s *ConfigSuite) SetUpTest(c *C) {
 	s.path = tmp
 }
 
-func (s *ConfigSuite) TestSetRemote(c *C) {
-	cfg := &ConfigStorage{s.dir}
-	err := cfg.SetRemote(&config.RemoteConfig{Name: "foo", URL: "foo"})
-	c.Assert(err, IsNil)
-
-	remote, err := cfg.Remote("foo")
-	c.Assert(err, IsNil)
-	c.Assert(remote.Name, Equals, "foo")
-}
-
 func (s *ConfigSuite) TestRemotes(c *C) {
 	dir := dotgit.New(fixtures.Basic().ByTag(".git").One().DotGit())
-	cfg := &ConfigStorage{dir}
+	storer := &ConfigStorage{dir}
 
-	remotes, err := cfg.Remotes()
+	cfg, err := storer.Config()
 	c.Assert(err, IsNil)
+
+	remotes := cfg.Remotes
 	c.Assert(remotes, HasLen, 1)
-	c.Assert(remotes[0].Name, Equals, "origin")
-	c.Assert(remotes[0].URL, Equals, "https://github.com/git-fixtures/basic")
-	c.Assert(remotes[0].Fetch, HasLen, 1)
-	c.Assert(remotes[0].Fetch[0].String(), Equals, "+refs/heads/*:refs/remotes/origin/*")
+	remote := remotes["origin"]
+	c.Assert(remote.Name, Equals, "origin")
+	c.Assert(remote.URL, Equals, "https://github.com/git-fixtures/basic")
+	c.Assert(remote.Fetch, HasLen, 1)
+	c.Assert(remote.Fetch[0].String(), Equals, "+refs/heads/*:refs/remotes/origin/*")
 }
 
 func (s *ConfigSuite) TearDownTest(c *C) {

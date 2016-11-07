@@ -29,7 +29,7 @@ func (s *SuiteCommit) SetUpSuite(c *C) {
 
 func (s *SuiteCommit) TestDecodeNonCommit(c *C) {
 	hash := core.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err := s.Repository.s.ObjectStorage().Get(core.AnyObject, hash)
+	blob, err := s.Repository.s.Object(core.AnyObject, hash)
 	c.Assert(err, IsNil)
 
 	commit := &Commit{}
