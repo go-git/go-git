@@ -3,6 +3,7 @@ package os_test
 import (
 	"io/ioutil"
 	stdos "os"
+	"path/filepath"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -26,4 +27,11 @@ func (s *OSSuite) SetUpTest(c *C) {
 func (s *OSSuite) TearDownTest(c *C) {
 	err := stdos.RemoveAll(s.path)
 	c.Assert(err, IsNil)
+}
+
+func (s *OSSuite) TestOpenDoesNotCreateDir(c *C) {
+	_, err := s.Fs.Open("dir/non-existant")
+	c.Assert(err, NotNil)
+	_, err = stdos.Stat(filepath.Join(s.path, "dir"))
+	c.Assert(stdos.IsNotExist(err), Equals, true)
 }

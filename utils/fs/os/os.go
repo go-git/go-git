@@ -32,7 +32,7 @@ func (fs *OS) Create(filename string) (fs.File, error) {
 func (fs *OS) OpenFile(filename string, flag int, perm os.FileMode) (fs.File, error) {
 	fullpath := path.Join(fs.base, filename)
 
-	if flag|os.O_CREATE != 0 {
+	if flag&os.O_CREATE != 0 {
 		if err := fs.createDir(fullpath); err != nil {
 			return nil, err
 		}
