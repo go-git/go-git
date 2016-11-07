@@ -87,12 +87,12 @@ func c_ParseAuthorizedKey(in []byte) (uint64, *C.char, *C.char, *C.char, int, in
 	pkey, comment, options, rest, err := ssh.ParseAuthorizedKey(in)
 	if err != nil {
 		return IH, nil, nil, nil, 0, ErrorCodeInternal,
-		       C.CString(err.Error())
+			C.CString(err.Error())
 	}
 	pkey_handle := RegisterObject(&pkey)
 	mopt := strings.Join(options, "\xff")
 	return uint64(pkey_handle), C.CString(comment), C.CString(mopt),
-	    C.CString(string(rest)), len(rest), ErrorCodeSuccess, nil
+		C.CString(string(rest)), len(rest), ErrorCodeSuccess, nil
 }
 
 //export c_ssh_Password_New

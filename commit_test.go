@@ -68,14 +68,14 @@ func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
 	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
 	c.Assert(err, IsNil)
 	commits := []*Commit{
-		&Commit{
+		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
 			Message:   "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
 			tree:      core.NewHash("f000000000000000000000000000000000000001"),
 			parents:   []core.Hash{core.NewHash("f000000000000000000000000000000000000002")},
 		},
-		&Commit{
+		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
 			Message:   "Message\n\nFoo\nBar\nWith no trailing blank lines",

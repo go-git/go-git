@@ -90,14 +90,14 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 
 func (s *SuiteEncoder) TestEncodeErrPayloadTooLong(c *C) {
 	for i, input := range [...][][]byte{
-		[][]byte{
+		{
 			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
 		},
-		[][]byte{
+		{
 			[]byte("hello world!"),
 			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
 		},
-		[][]byte{
+		{
 			[]byte("hello world!"),
 			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
 			[]byte("foo"),
@@ -174,14 +174,14 @@ func (s *SuiteEncoder) TestEncodeStrings(c *C) {
 
 func (s *SuiteEncoder) TestEncodeStringErrPayloadTooLong(c *C) {
 	for i, input := range [...][]string{
-		[]string{
+		{
 			strings.Repeat("a", pktline.MaxPayloadSize+1),
 		},
-		[]string{
+		{
 			"hello world!",
 			strings.Repeat("a", pktline.MaxPayloadSize+1),
 		},
-		[]string{
+		{
 			"hello world!",
 			strings.Repeat("a", pktline.MaxPayloadSize+1),
 			"foo",

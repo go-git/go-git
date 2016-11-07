@@ -35,7 +35,7 @@ func (s RefSpec) IsValid() bool {
 	}
 
 	ws := strings.Count(spec[0:sep], refSpecWildcard)
-	wd := strings.Count(spec[sep+1:len(spec)], refSpecWildcard)
+	wd := strings.Count(spec[sep+1:], refSpecWildcard)
 	return ws == wd && ws < 2 && wd < 2
 }
 
@@ -95,7 +95,7 @@ func (s RefSpec) matchGlob(n core.ReferenceName) bool {
 func (s RefSpec) Dst(n core.ReferenceName) core.ReferenceName {
 	spec := string(s)
 	start := strings.Index(spec, refSpecSeparator) + 1
-	dst := spec[start:len(spec)]
+	dst := spec[start:]
 	src := s.Src()
 
 	if !s.IsWildcard() {
@@ -107,7 +107,7 @@ func (s RefSpec) Dst(n core.ReferenceName) core.ReferenceName {
 	wd := strings.Index(dst, refSpecWildcard)
 	match := name[ws : len(name)-(len(src)-(ws+1))]
 
-	return core.ReferenceName(dst[0:wd] + match + dst[wd+1:len(dst)])
+	return core.ReferenceName(dst[0:wd] + match + dst[wd+1:])
 }
 
 func (s RefSpec) String() string {

@@ -25,7 +25,7 @@ func c_std_map_get_str_str(m uint64, key string) *C.char {
 		return nil
 	}
 	if (val.Kind() == reflect.Slice || val.Kind() == reflect.Array) &&
-	    val.Type().Elem().Kind() == reflect.Uint8 {
+		val.Type().Elem().Kind() == reflect.Uint8 {
 		arr := make([]byte, val.Len(), val.Len())
 		reflect.Copy(reflect.ValueOf(arr), val)
 		return CBytes(arr)

@@ -5,14 +5,14 @@ import (
 	"C"
 	"fmt"
 	"math"
-	"sync"
 	"reflect"
+	"sync"
 )
 
 type Handle uint64
 
 const (
-	ErrorCodeSuccess = iota
+	ErrorCodeSuccess  = iota
 	ErrorCodeNotFound = -iota
 	ErrorCodeInternal = -iota
 )
@@ -20,6 +20,7 @@ const (
 const MessageNotFound string = "object not found"
 const InvalidHandle Handle = 0
 const IH uint64 = uint64(InvalidHandle)
+
 var counter Handle = InvalidHandle
 var opMutex sync.Mutex
 var registryHandle2Obj map[Handle]interface{} = map[Handle]interface{}{}
@@ -43,7 +44,7 @@ func RegisterObject(obj interface{}) Handle {
 	defer opMutex.Unlock()
 	handles, ok := registryObj2Handle[data_ptr]
 	if ok {
-		for _, h := range(handles) {
+		for _, h := range handles {
 			other, ok := registryHandle2Obj[h]
 			if !ok {
 				panic("Inconsistent internal object mapping state (1)")
@@ -56,7 +57,7 @@ func RegisterObject(obj interface{}) Handle {
 			}
 		}
 	}
-  handle := getNewHandle()
+	handle := getNewHandle()
 	registryHandle2Obj[handle] = obj
 	registryObj2Handle[data_ptr] = append(registryObj2Handle[data_ptr], handle)
 	if trace {
@@ -67,7 +68,7 @@ func RegisterObject(obj interface{}) Handle {
 
 func UnregisterObject(handle Handle) int {
 	if trace {
-	  fmt.Printf("UnregisterObject %d\n", handle)
+		fmt.Printf("UnregisterObject %d\n", handle)
 	}
 	if handle == InvalidHandle {
 		return ErrorCodeNotFound
@@ -83,10 +84,10 @@ func UnregisterObject(handle Handle) int {
 	other_handles, ok := registryObj2Handle[data_ptr]
 	if !ok {
 		panic(fmt.Sprintf("Inconsistent internal object mapping state (2): %d",
-			                handle))
+			handle))
 	}
 	hi := -1
-	for i, h := range(other_handles) {
+	for i, h := range other_handles {
 		if h == handle {
 			hi = i
 			break
@@ -94,12 +95,12 @@ func UnregisterObject(handle Handle) int {
 	}
 	if hi < 0 {
 		panic(fmt.Sprintf("Inconsistent internal object mapping state (3): %d",
-			                handle))
+			handle))
 	}
 	if len(other_handles) == 1 {
 		delete(registryObj2Handle, data_ptr)
 	} else {
-		registryObj2Handle[data_ptr] = append(other_handles[:hi], other_handles[hi + 1:]...)
+		registryObj2Handle[data_ptr] = append(other_handles[:hi], other_handles[hi+1:]...)
 	}
 	if trace {
 		c_dump_objects()
@@ -125,7 +126,7 @@ func GetHandle(obj interface{}) (Handle, bool) {
 	if !ok {
 		return InvalidHandle, false
 	}
-	for _, h := range(handles) {
+	for _, h := range handles {
 		candidate := registryHandle2Obj[h]
 		if candidate == obj {
 			return h, true
@@ -143,13 +144,13 @@ func CopyString(str string) string {
 // https://github.com/golang/go/issues/14838
 func CBytes(bytes []byte) *C.char {
 	ptr := C.malloc(C.size_t(len(bytes)))
-	copy((*[1<<30]byte)(ptr)[:], bytes)
+	copy((*[1 << 30]byte)(ptr)[:], bytes)
 	return (*C.char)(ptr)
 }
 
 func SafeIsNil(v reflect.Value) bool {
-  defer func() { recover() }()
-  return v.IsNil()
+	defer func() { recover() }()
+	return v.IsNil()
 }
 
 //export c_dispose
@@ -165,17 +166,17 @@ func c_objects_size() int {
 //export c_dump_objects
 func c_dump_objects() {
 	fmt.Printf("handles (%d):\n", len(registryHandle2Obj))
-	for h, obj := range(registryHandle2Obj) {
+	for h, obj := range registryHandle2Obj {
 		fmt.Printf("0x%x\t0x%x  %v\n", h,
 			reflect.ValueOf(&obj).Elem().InterfaceData()[1], obj)
 	}
 	fmt.Println()
 	phs := 0
-	for _, h := range(registryObj2Handle) {
+	for _, h := range registryObj2Handle {
 		phs += len(h)
 	}
 	fmt.Printf("pointers (%d):\n", phs)
-	for ptr, h := range(registryObj2Handle) {
+	for ptr, h := range registryObj2Handle {
 		fmt.Printf("0x%x\t%v\n", ptr, h)
 	}
 }

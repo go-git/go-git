@@ -90,7 +90,7 @@ func c_Blob_Read(b uint64) (int, *C.char) {
 	if err != nil {
 		return ErrorCodeInternal, C.CString(err.Error())
 	}
-  data, err := ioutil.ReadAll(reader)
+	data, err := ioutil.ReadAll(reader)
 	reader.Close()
 	if err != nil {
 		return ErrorCodeInternal, C.CString(err.Error())

@@ -27,7 +27,6 @@ func c_Blame_get_Rev(b uint64) *C.char {
 	return CBytes(blame.Rev[:])
 }
 
-
 //export c_Blame_get_Lines_len
 func c_Blame_get_Lines_len(b uint64) int {
 	obj, ok := GetObject(Handle(b))
@@ -48,4 +47,3 @@ func c_Blame_get_Lines_item(b uint64, i int) {
 	line := blame.Lines[i]
 	_ = line
 }
-

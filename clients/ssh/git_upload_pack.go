@@ -309,7 +309,7 @@ func (f *fetchSession) Close() (err error) {
 
 func (s *GitUploadPackService) getCommand() string {
 	directory := s.endpoint.Path
-	directory = directory[1:len(directory)]
+	directory = directory[1:]
 
 	return fmt.Sprintf("git-upload-pack '%s'", directory)
 }

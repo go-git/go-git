@@ -4,7 +4,7 @@ package main
 import (
 	"C"
 	"io"
-	
+
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/core"
 )
@@ -37,7 +37,7 @@ func c_Tag_get_Tagger(t uint64) uint64 {
 }
 
 func c_Tag_get_Message(t uint64) *C.char {
-  obj, ok := GetObject(Handle(t))
+	obj, ok := GetObject(Handle(t))
 	if !ok {
 		return nil
 	}
@@ -46,7 +46,7 @@ func c_Tag_get_Message(t uint64) *C.char {
 }
 
 func c_Tag_get_TargetType(t uint64) int8 {
-  obj, ok := GetObject(Handle(t))
+	obj, ok := GetObject(Handle(t))
 	if !ok {
 		return -1
 	}
@@ -55,7 +55,7 @@ func c_Tag_get_TargetType(t uint64) int8 {
 }
 
 func c_Tag_get_Target(t uint64) *C.char {
-  obj, ok := GetObject(Handle(t))
+	obj, ok := GetObject(Handle(t))
 	if !ok {
 		return nil
 	}

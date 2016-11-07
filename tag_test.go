@@ -146,14 +146,14 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
 	c.Assert(err, IsNil)
 	tags := []*Tag{
-		&Tag{
+		{
 			Name:       "foo",
 			Tagger:     Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			Message:    "Message\n\nFoo\nBar\nBaz\n\n",
 			TargetType: core.BlobObject,
 			Target:     core.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
 		},
-		&Tag{
+		{
 			Name:       "foo",
 			Tagger:     Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			TargetType: core.BlobObject,
