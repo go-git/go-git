@@ -4,7 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )
@@ -16,8 +16,8 @@ type BlobsSuite struct {
 var _ = Suite(&BlobsSuite{})
 
 func (s *BlobsSuite) TestBlobHash(c *C) {
-	o := &core.MemoryObject{}
-	o.SetType(core.BlobObject)
+	o := &plumbing.MemoryObject{}
+	o.SetType(plumbing.BlobObject)
 	o.SetSize(3)
 
 	writer, err := o.Writer()
@@ -42,11 +42,11 @@ func (s *BlobsSuite) TestBlobHash(c *C) {
 }
 
 func (s *BlobsSuite) TestBlobDecodeEncodeIdempotent(c *C) {
-	var objects []*core.MemoryObject
+	var objects []*plumbing.MemoryObject
 	for _, str := range []string{"foo", "foo\n"} {
-		obj := &core.MemoryObject{}
+		obj := &plumbing.MemoryObject{}
 		obj.Write([]byte(str))
-		obj.SetType(core.BlobObject)
+		obj.SetType(plumbing.BlobObject)
 		obj.Hash()
 		objects = append(objects, obj)
 	}
@@ -54,7 +54,7 @@ func (s *BlobsSuite) TestBlobDecodeEncodeIdempotent(c *C) {
 		blob := &Blob{}
 		err := blob.Decode(object)
 		c.Assert(err, IsNil)
-		newObject := &core.MemoryObject{}
+		newObject := &plumbing.MemoryObject{}
 		err = blob.Encode(newObject)
 		c.Assert(err, IsNil)
 		newObject.Hash() // Ensure Hash is pre-computed before deep comparison

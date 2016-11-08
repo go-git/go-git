@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
@@ -76,7 +76,7 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 }
 
 // ObjectPacks returns the list of availables packfiles
-func (d *DotGit) ObjectPacks() ([]core.Hash, error) {
+func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
 	packDir := d.fs.Join(objectsPath, packPath)
 	files, err := d.fs.ReadDir(packDir)
 	if err != nil {
@@ -87,14 +87,14 @@ func (d *DotGit) ObjectPacks() ([]core.Hash, error) {
 		return nil, err
 	}
 
-	var packs []core.Hash
+	var packs []plumbing.Hash
 	for _, f := range files {
 		if !strings.HasSuffix(f.Name(), packExt) {
 			continue
 		}
 
 		n := f.Name()
-		h := core.NewHash(n[5 : len(n)-5]) //pack-(hash).pack
+		h := plumbing.NewHash(n[5 : len(n)-5]) //pack-(hash).pack
 		packs = append(packs, h)
 
 	}
@@ -103,7 +103,7 @@ func (d *DotGit) ObjectPacks() ([]core.Hash, error) {
 }
 
 // ObjectPack returns a fs.File of the given packfile
-func (d *DotGit) ObjectPack(hash core.Hash) (fs.File, error) {
+func (d *DotGit) ObjectPack(hash plumbing.Hash) (fs.File, error) {
 	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.pack", hash.String()))
 
 	pack, err := d.fs.Open(file)
@@ -119,7 +119,7 @@ func (d *DotGit) ObjectPack(hash core.Hash) (fs.File, error) {
 }
 
 // ObjectPackIdx returns a fs.File of the index file for a given packfile
-func (d *DotGit) ObjectPackIdx(hash core.Hash) (fs.File, error) {
+func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (fs.File, error) {
 	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.idx", hash.String()))
 	idx, err := d.fs.Open(file)
 	if err != nil {
@@ -140,7 +140,7 @@ func (d *DotGit) NewObject() (*ObjectWriter, error) {
 
 // Objects returns a slice with the hashes of objects found under the
 // .git/objects/ directory.
-func (d *DotGit) Objects() ([]core.Hash, error) {
+func (d *DotGit) Objects() ([]plumbing.Hash, error) {
 	files, err := d.fs.ReadDir(objectsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -150,7 +150,7 @@ func (d *DotGit) Objects() ([]core.Hash, error) {
 		return nil, err
 	}
 
-	var objects []core.Hash
+	var objects []plumbing.Hash
 	for _, f := range files {
 		if f.IsDir() && len(f.Name()) == 2 && isHex(f.Name()) {
 			base := f.Name()
@@ -160,7 +160,7 @@ func (d *DotGit) Objects() ([]core.Hash, error) {
 			}
 
 			for _, o := range d {
-				objects = append(objects, core.NewHash(base+o.Name()))
+				objects = append(objects, plumbing.NewHash(base+o.Name()))
 			}
 		}
 	}
@@ -169,19 +169,19 @@ func (d *DotGit) Objects() ([]core.Hash, error) {
 }
 
 // Object return a fs.File poiting the object file, if exists
-func (d *DotGit) Object(h core.Hash) (fs.File, error) {
+func (d *DotGit) Object(h plumbing.Hash) (fs.File, error) {
 	hash := h.String()
 	file := d.fs.Join(objectsPath, hash[0:2], hash[2:40])
 
 	return d.fs.Open(file)
 }
 
-func (d *DotGit) SetRef(r *core.Reference) error {
+func (d *DotGit) SetRef(r *plumbing.Reference) error {
 	var content string
 	switch r.Type() {
-	case core.SymbolicReference:
+	case plumbing.SymbolicReference:
 		content = fmt.Sprintf("ref: %s\n", r.Target())
-	case core.HashReference:
+	case plumbing.HashReference:
 		content = fmt.Sprintln(r.Hash().String())
 	}
 
@@ -198,8 +198,8 @@ func (d *DotGit) SetRef(r *core.Reference) error {
 
 // Refs scans the git directory collecting references, which it returns.
 // Symbolic references are resolved and included in the output.
-func (d *DotGit) Refs() ([]*core.Reference, error) {
-	var refs []*core.Reference
+func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
+	var refs []*plumbing.Reference
 	if err := d.addRefsFromPackedRefs(&refs); err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (d *DotGit) Refs() ([]*core.Reference, error) {
 }
 
 // Ref returns the reference for a given reference name.
-func (d *DotGit) Ref(name core.ReferenceName) (*core.Reference, error) {
+func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	ref, err := d.readReferenceFile(".", name.String())
 	if err == nil {
 		return ref, nil
@@ -233,10 +233,10 @@ func (d *DotGit) Ref(name core.ReferenceName) (*core.Reference, error) {
 		}
 	}
 
-	return nil, core.ErrReferenceNotFound
+	return nil, plumbing.ErrReferenceNotFound
 }
 
-func (d *DotGit) addRefsFromPackedRefs(refs *[]*core.Reference) (err error) {
+func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference) (err error) {
 	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -267,7 +267,7 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*core.Reference) (err error) {
 }
 
 // process lines from a packed-refs file
-func (d *DotGit) processLine(line string) (*core.Reference, error) {
+func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
 	switch line[0] {
 	case '#': // comment - ignore
 		return nil, nil
@@ -279,15 +279,15 @@ func (d *DotGit) processLine(line string) (*core.Reference, error) {
 			return nil, ErrPackedRefsBadFormat
 		}
 
-		return core.NewReferenceFromStrings(ws[1], ws[0]), nil
+		return plumbing.NewReferenceFromStrings(ws[1], ws[0]), nil
 	}
 }
 
-func (d *DotGit) addRefsFromRefDir(refs *[]*core.Reference) error {
+func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference) error {
 	return d.walkReferencesTree(refs, refsPath)
 }
 
-func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) error {
+func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string) error {
 	files, err := d.fs.ReadDir(relPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -320,7 +320,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*core.Reference, relPath string) err
 	return nil
 }
 
-func (d *DotGit) addRefFromHEAD(refs *[]*core.Reference) error {
+func (d *DotGit) addRefFromHEAD(refs *[]*plumbing.Reference) error {
 	ref, err := d.readReferenceFile(".", "HEAD")
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -334,7 +334,7 @@ func (d *DotGit) addRefFromHEAD(refs *[]*core.Reference) error {
 	return nil
 }
 
-func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *core.Reference, err error) {
+func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Reference, err error) {
 	path := d.fs.Join(refsPath, refFile)
 
 	f, err := d.fs.Open(path)
@@ -354,7 +354,7 @@ func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *core.Referenc
 	}
 
 	line := strings.TrimSpace(string(b))
-	return core.NewReferenceFromStrings(refFile, line), nil
+	return plumbing.NewReferenceFromStrings(refFile, line), nil
 }
 
 func isHex(s string) bool {

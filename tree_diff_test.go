@@ -3,8 +3,8 @@ package git
 import (
 	"sort"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )
@@ -42,13 +42,13 @@ func (s *DiffTreeSuite) TestActionString(c *C) {
 }
 
 func (s *DiffTreeSuite) TestChangeFilesInsert(c *C) {
-	tree, err := s.Repository.Tree(core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+	tree, err := s.Repository.Tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 	c.Assert(err, IsNil)
 
 	change := &Change{Action: Insert}
 	change.To.Name = "json/long.json"
 	change.To.Tree = tree
-	change.To.TreeEntry.Hash = core.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
+	change.To.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 
 	from, to, err := change.Files()
 	c.Assert(err, IsNil)
@@ -57,13 +57,13 @@ func (s *DiffTreeSuite) TestChangeFilesInsert(c *C) {
 }
 
 func (s *DiffTreeSuite) TestChangeFilesDelete(c *C) {
-	tree, err := s.Repository.Tree(core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+	tree, err := s.Repository.Tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 	c.Assert(err, IsNil)
 
 	change := &Change{Action: Delete}
 	change.From.Name = "json/long.json"
 	change.From.Tree = tree
-	change.From.TreeEntry.Hash = core.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
+	change.From.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 
 	from, to, err := change.Files()
 	c.Assert(err, IsNil)
@@ -72,16 +72,16 @@ func (s *DiffTreeSuite) TestChangeFilesDelete(c *C) {
 }
 
 func (s *DiffTreeSuite) TestChangeFilesModify(c *C) {
-	tree, err := s.Repository.Tree(core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+	tree, err := s.Repository.Tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 	c.Assert(err, IsNil)
 
 	change := &Change{Action: Modify}
 	change.To.Name = "json/long.json"
 	change.To.Tree = tree
-	change.To.TreeEntry.Hash = core.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
+	change.To.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 	change.From.Name = "json/long.json"
 	change.From.Tree = tree
-	change.From.TreeEntry.Hash = core.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
+	change.From.TreeEntry.Hash = plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
 
 	from, to, err := change.Files()
 	c.Assert(err, IsNil)
@@ -410,7 +410,7 @@ func tree(repo *Repository, commitHashStr string) (*Tree, error) {
 		return nil, nil
 	}
 
-	commit, err := repo.Commit(core.NewHash(commitHashStr))
+	commit, err := repo.Commit(plumbing.NewHash(commitHashStr))
 	if err != nil {
 		return nil, err
 	}

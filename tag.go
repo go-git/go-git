@@ -7,7 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 // Tag represents an annotated tag object. It points to a single git object of
@@ -18,12 +19,12 @@ import (
 //
 // https://git-scm.com/book/en/v2/Git-Internals-Git-References#Tags
 type Tag struct {
-	Hash       core.Hash
+	Hash       plumbing.Hash
 	Name       string
 	Tagger     Signature
 	Message    string
-	TargetType core.ObjectType
-	Target     core.Hash
+	TargetType plumbing.ObjectType
+	Target     plumbing.Hash
 
 	r *Repository
 }
@@ -32,20 +33,20 @@ type Tag struct {
 // The returned value will always match the current value of Tag.Hash.
 //
 // ID is present to fulfill the Object interface.
-func (t *Tag) ID() core.Hash {
+func (t *Tag) ID() plumbing.Hash {
 	return t.Hash
 }
 
-// Type returns the type of object. It always returns core.TagObject.
+// Type returns the type of object. It always returns plumbing.TagObject.
 //
 // Type is present to fulfill the Object interface.
-func (t *Tag) Type() core.ObjectType {
-	return core.TagObject
+func (t *Tag) Type() plumbing.ObjectType {
+	return plumbing.TagObject
 }
 
-// Decode transforms a core.Object into a Tag struct.
-func (t *Tag) Decode(o core.Object) (err error) {
-	if o.Type() != core.TagObject {
+// Decode transforms a plumbing.Object into a Tag struct.
+func (t *Tag) Decode(o plumbing.Object) (err error) {
+	if o.Type() != plumbing.TagObject {
 		return ErrUnsupportedObject
 	}
 
@@ -72,9 +73,9 @@ func (t *Tag) Decode(o core.Object) (err error) {
 		split := bytes.SplitN(line, []byte{' '}, 2)
 		switch string(split[0]) {
 		case "object":
-			t.Target = core.NewHash(string(split[1]))
+			t.Target = plumbing.NewHash(string(split[1]))
 		case "type":
-			t.TargetType, err = core.ParseObjectType(string(split[1]))
+			t.TargetType, err = plumbing.ParseObjectType(string(split[1]))
 			if err != nil {
 				return err
 			}
@@ -98,9 +99,9 @@ func (t *Tag) Decode(o core.Object) (err error) {
 	return nil
 }
 
-// Encode transforms a Tag into a core.Object.
-func (t *Tag) Encode(o core.Object) error {
-	o.SetType(core.TagObject)
+// Encode transforms a Tag into a plumbing.Object.
+func (t *Tag) Encode(o plumbing.Object) error {
+	o.SetType(plumbing.TagObject)
 	w, err := o.Writer()
 	if err != nil {
 		return err
@@ -131,7 +132,7 @@ func (t *Tag) Encode(o core.Object) error {
 // Commit returns the commit pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
 func (t *Tag) Commit() (*Commit, error) {
-	if t.TargetType != core.CommitObject {
+	if t.TargetType != plumbing.CommitObject {
 		return nil, ErrUnsupportedObject
 	}
 	return t.r.Commit(t.Target)
@@ -142,13 +143,13 @@ func (t *Tag) Commit() (*Commit, error) {
 // to a commit or tree object ErrUnsupportedObject will be returned.
 func (t *Tag) Tree() (*Tree, error) {
 	switch t.TargetType {
-	case core.CommitObject:
+	case plumbing.CommitObject:
 		commit, err := t.r.Commit(t.Target)
 		if err != nil {
 			return nil, err
 		}
 		return commit.Tree()
-	case core.TreeObject:
+	case plumbing.TreeObject:
 		return t.r.Tree(t.Target)
 	default:
 		return nil, ErrUnsupportedObject
@@ -158,7 +159,7 @@ func (t *Tag) Tree() (*Tree, error) {
 // Blob returns the blob pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
 func (t *Tag) Blob() (*Blob, error) {
-	if t.TargetType != core.BlobObject {
+	if t.TargetType != plumbing.BlobObject {
 		return nil, ErrUnsupportedObject
 	}
 	return t.r.Blob(t.Target)
@@ -176,14 +177,14 @@ func (t *Tag) String() string {
 
 	return fmt.Sprintf(
 		"%s %s\nTagger: %s\nDate:   %s\n\n%s\n%s",
-		core.TagObject, t.Name, t.Tagger.String(), t.Tagger.When.Format(DateFormat),
+		plumbing.TagObject, t.Name, t.Tagger.String(), t.Tagger.When.Format(DateFormat),
 		t.Message, objectAsString(obj),
 	)
 }
 
 // TagIter provides an iterator for a set of tags.
 type TagIter struct {
-	core.ObjectIter
+	storer.ObjectIter
 	r *Repository
 }
 
@@ -191,7 +192,7 @@ type TagIter struct {
 // object iterator.
 //
 // The returned TagIter will automatically skip over non-tag objects.
-func NewTagIter(r *Repository, iter core.ObjectIter) *TagIter {
+func NewTagIter(r *Repository, iter storer.ObjectIter) *TagIter {
 	return &TagIter{iter, r}
 }
 
@@ -211,7 +212,7 @@ func (iter *TagIter) Next() (*Tag, error) {
 // an error happends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *TagIter) ForEach(cb func(*Tag) error) error {
-	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+	return iter.ObjectIter.ForEach(func(obj plumbing.Object) error {
 		tag := &Tag{r: iter.r}
 		if err := tag.Decode(obj); err != nil {
 			return err

@@ -8,11 +8,12 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 // Hash hash of an object
-type Hash core.Hash
+type Hash plumbing.Hash
 
 // Commit points to a single tree, marking it as what the project looked like
 // at a certain point in time. It contains meta-information about that point
@@ -20,13 +21,13 @@ type Hash core.Hash
 // commit, a pointer to the previous commit(s), etc.
 // http://schacon.github.io/gitbook/1_the_git_object_model.html
 type Commit struct {
-	Hash      core.Hash
+	Hash      plumbing.Hash
 	Author    Signature
 	Committer Signature
 	Message   string
 
-	tree    core.Hash
-	parents []core.Hash
+	tree    plumbing.Hash
+	parents []plumbing.Hash
 	r       *Repository
 }
 
@@ -38,7 +39,7 @@ func (c *Commit) Tree() (*Tree, error) {
 // Parents return a CommitIter to the parent Commits
 func (c *Commit) Parents() *CommitIter {
 	return NewCommitIter(c.r,
-		core.NewObjectLookupIter(c.r.s, core.CommitObject, c.parents),
+		storer.NewObjectLookupIter(c.r.s, plumbing.CommitObject, c.parents),
 	)
 }
 
@@ -73,20 +74,20 @@ func (c *Commit) Files() (*FileIter, error) {
 // the current value of Commit.Hash.
 //
 // ID is present to fulfill the Object interface.
-func (c *Commit) ID() core.Hash {
+func (c *Commit) ID() plumbing.Hash {
 	return c.Hash
 }
 
-// Type returns the type of object. It always returns core.CommitObject.
+// Type returns the type of object. It always returns plumbing.CommitObject.
 //
 // Type is present to fulfill the Object interface.
-func (c *Commit) Type() core.ObjectType {
-	return core.CommitObject
+func (c *Commit) Type() plumbing.ObjectType {
+	return plumbing.CommitObject
 }
 
-// Decode transforms a core.Object into a Commit struct.
-func (c *Commit) Decode(o core.Object) (err error) {
-	if o.Type() != core.CommitObject {
+// Decode transforms a plumbing.Object into a Commit struct.
+func (c *Commit) Decode(o plumbing.Object) (err error) {
+	if o.Type() != plumbing.CommitObject {
 		return ErrUnsupportedObject
 	}
 
@@ -117,9 +118,9 @@ func (c *Commit) Decode(o core.Object) (err error) {
 			split := bytes.SplitN(line, []byte{' '}, 2)
 			switch string(split[0]) {
 			case "tree":
-				c.tree = core.NewHash(string(split[1]))
+				c.tree = plumbing.NewHash(string(split[1]))
 			case "parent":
-				c.parents = append(c.parents, core.NewHash(string(split[1])))
+				c.parents = append(c.parents, plumbing.NewHash(string(split[1])))
 			case "author":
 				c.Author.Decode(split[1])
 			case "committer":
@@ -147,9 +148,9 @@ func (c *Commit) History() ([]*Commit, error) {
 	return commits, err
 }
 
-// Encode transforms a Commit into a core.Object.
-func (b *Commit) Encode(o core.Object) error {
-	o.SetType(core.CommitObject)
+// Encode transforms a Commit into a plumbing.Object.
+func (b *Commit) Encode(o plumbing.Object) error {
+	o.SetType(plumbing.CommitObject)
 	w, err := o.Writer()
 	if err != nil {
 		return err
@@ -184,7 +185,7 @@ func (b *Commit) Encode(o core.Object) error {
 func (c *Commit) String() string {
 	return fmt.Sprintf(
 		"%s %s\nAuthor: %s\nDate:   %s\n\n%s\n",
-		core.CommitObject, c.Hash, c.Author.String(),
+		plumbing.CommitObject, c.Hash, c.Author.String(),
 		c.Author.When.Format(DateFormat), indent(c.Message),
 	)
 }
@@ -204,7 +205,7 @@ func indent(t string) string {
 
 // CommitIter provides an iterator for a set of commits.
 type CommitIter struct {
-	core.ObjectIter
+	storer.ObjectIter
 	r *Repository
 }
 
@@ -212,7 +213,7 @@ type CommitIter struct {
 // object iterator.
 //
 // The returned CommitIter will automatically skip over non-commit objects.
-func NewCommitIter(r *Repository, iter core.ObjectIter) *CommitIter {
+func NewCommitIter(r *Repository, iter storer.ObjectIter) *CommitIter {
 	return &CommitIter{iter, r}
 }
 
@@ -232,7 +233,7 @@ func (iter *CommitIter) Next() (*Commit, error) {
 // an error happends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *CommitIter) ForEach(cb func(*Commit) error) error {
-	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+	return iter.ObjectIter.ForEach(func(obj plumbing.Object) error {
 		commit := &Commit{r: iter.r}
 		if err := commit.Decode(obj); err != nil {
 			return err

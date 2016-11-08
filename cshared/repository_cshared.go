@@ -83,7 +83,7 @@ func c_Repository_set_Storage(r uint64, val uint64) {
 	if !ok {
 		return
 	}
-	repo.Storage = *obj.(*core.ObjectStorage)
+	repo.Storage = *obj.(*plumbing.ObjectStorage)
 }
 
 //export c_Repository_Pull
@@ -121,7 +121,7 @@ func c_Repository_Commit(r uint64, h []byte) (uint64, int, *C.char) {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	var hash core.Hash
+	var hash plumbing.Hash
 	copy(hash[:], h)
 	commit, err := repo.Commit(hash)
 	if err != nil {
@@ -153,7 +153,7 @@ func c_Repository_Tree(r uint64, h []byte) (uint64, int, *C.char) {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	var hash core.Hash
+	var hash plumbing.Hash
 	copy(hash[:], h)
 	tree, err := repo.Tree(hash)
 	if err != nil {
@@ -170,7 +170,7 @@ func c_Repository_Blob(r uint64, h []byte) (uint64, int, *C.char) {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	var hash core.Hash
+	var hash plumbing.Hash
 	copy(hash[:], h)
 	blob, err := repo.Blob(hash)
 	if err != nil {
@@ -187,7 +187,7 @@ func c_Repository_Tag(r uint64, h []byte) (uint64, int, *C.char) {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	var hash core.Hash
+	var hash plumbing.Hash
 	copy(hash[:], h)
 	tag, err := repo.Tag(hash)
 	if err != nil {
@@ -219,7 +219,7 @@ func c_Repository_Object(r uint64, h []byte) (uint64, int, *C.char) {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
 	repo := obj.(*git.Repository)
-	var hash core.Hash
+	var hash plumbing.Hash
 	copy(hash[:], h)
 	robj, err := repo.Object(hash)
 	if err != nil {

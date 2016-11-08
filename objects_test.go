@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"time"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 	"io"
@@ -17,7 +17,7 @@ type ObjectsSuite struct {
 var _ = Suite(&ObjectsSuite{})
 
 func (s *ObjectsSuite) TestNewCommit(c *C) {
-	hash := core.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	hash := plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
 	commit, err := s.Repository.Commit(hash)
 	c.Assert(err, IsNil)
 
@@ -45,7 +45,7 @@ func (s *ObjectsSuite) TestNewCommit(c *C) {
 }
 
 func (s *ObjectsSuite) TestParseTree(c *C) {
-	hash := core.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 	tree, err := s.Repository.Tree(hash)
 	c.Assert(err, IsNil)
 

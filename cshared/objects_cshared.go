@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 //export c_Signature_Name
@@ -73,7 +73,7 @@ func c_Blob_Decode(o uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	cobj := obj.(*core.Object)
+	cobj := obj.(*plumbing.Object)
 	blob := git.Blob{}
 	blob.Decode(*cobj)
 	return uint64(RegisterObject(&blob))

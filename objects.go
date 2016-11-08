@@ -8,7 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 // ErrUnsupportedObject trigger when a non-supported object is being decoded.
@@ -34,13 +35,13 @@ var ErrUnsupportedObject = errors.New("unsupported object type")
 //   	}
 //   }
 //
-// This interface is intentionally different from core.Object, which is a lower
+// This interface is intentionally different from plumbing.Object, which is a lower
 // level interface used by storage implementations to read and write objects.
 type Object interface {
-	ID() core.Hash
-	Type() core.ObjectType
-	Decode(core.Object) error
-	Encode(core.Object) error
+	ID() plumbing.Hash
+	Type() plumbing.ObjectType
+	Decode(plumbing.Object) error
+	Encode(plumbing.Object) error
 }
 
 // Signature represents an action signed by a person
@@ -116,13 +117,13 @@ func (s *Signature) String() string {
 
 // ObjectIter provides an iterator for a set of objects.
 type ObjectIter struct {
-	core.ObjectIter
+	storer.ObjectIter
 	r *Repository
 }
 
 // NewObjectIter returns a ObjectIter for the given repository and underlying
 // object iterator.
-func NewObjectIter(r *Repository, iter core.ObjectIter) *ObjectIter {
+func NewObjectIter(r *Repository, iter storer.ObjectIter) *ObjectIter {
 	return &ObjectIter{iter, r}
 }
 
@@ -136,7 +137,7 @@ func (iter *ObjectIter) Next() (Object, error) {
 		}
 
 		o, err := iter.toObject(obj)
-		if err == core.ErrInvalidType {
+		if err == plumbing.ErrInvalidType {
 			continue
 		}
 
@@ -152,9 +153,9 @@ func (iter *ObjectIter) Next() (Object, error) {
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *ObjectIter) ForEach(cb func(Object) error) error {
-	return iter.ObjectIter.ForEach(func(obj core.Object) error {
+	return iter.ObjectIter.ForEach(func(obj plumbing.Object) error {
 		o, err := iter.toObject(obj)
-		if err == core.ErrInvalidType {
+		if err == plumbing.ErrInvalidType {
 			return nil
 		}
 
@@ -166,21 +167,21 @@ func (iter *ObjectIter) ForEach(cb func(Object) error) error {
 	})
 }
 
-func (iter *ObjectIter) toObject(obj core.Object) (Object, error) {
+func (iter *ObjectIter) toObject(obj plumbing.Object) (Object, error) {
 	switch obj.Type() {
-	case core.BlobObject:
+	case plumbing.BlobObject:
 		blob := &Blob{}
 		return blob, blob.Decode(obj)
-	case core.TreeObject:
+	case plumbing.TreeObject:
 		tree := &Tree{r: iter.r}
 		return tree, tree.Decode(obj)
-	case core.CommitObject:
+	case plumbing.CommitObject:
 		commit := &Commit{}
 		return commit, commit.Decode(obj)
-	case core.TagObject:
+	case plumbing.TagObject:
 		tag := &Tag{}
 		return tag, tag.Decode(obj)
 	default:
-		return nil, core.ErrInvalidType
+		return nil, plumbing.ErrInvalidType
 	}
 }

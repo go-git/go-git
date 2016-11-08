@@ -5,7 +5,8 @@ import (
 	"fmt"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
@@ -26,11 +27,11 @@ func NewStorage() *Storage {
 		ReferenceStorage: make(ReferenceStorage, 0),
 		ConfigStorage:    ConfigStorage{},
 		ObjectStorage: ObjectStorage{
-			Objects: make(map[core.Hash]core.Object, 0),
-			Commits: make(map[core.Hash]core.Object, 0),
-			Trees:   make(map[core.Hash]core.Object, 0),
-			Blobs:   make(map[core.Hash]core.Object, 0),
-			Tags:    make(map[core.Hash]core.Object, 0),
+			Objects: make(map[plumbing.Hash]plumbing.Object, 0),
+			Commits: make(map[plumbing.Hash]plumbing.Object, 0),
+			Trees:   make(map[plumbing.Hash]plumbing.Object, 0),
+			Blobs:   make(map[plumbing.Hash]plumbing.Object, 0),
+			Tags:    make(map[plumbing.Hash]plumbing.Object, 0),
 		},
 	}
 }
@@ -57,29 +58,29 @@ func (c *ConfigStorage) Config() (*config.Config, error) {
 }
 
 type ObjectStorage struct {
-	Objects map[core.Hash]core.Object
-	Commits map[core.Hash]core.Object
-	Trees   map[core.Hash]core.Object
-	Blobs   map[core.Hash]core.Object
-	Tags    map[core.Hash]core.Object
+	Objects map[plumbing.Hash]plumbing.Object
+	Commits map[plumbing.Hash]plumbing.Object
+	Trees   map[plumbing.Hash]plumbing.Object
+	Blobs   map[plumbing.Hash]plumbing.Object
+	Tags    map[plumbing.Hash]plumbing.Object
 }
 
-func (o *ObjectStorage) NewObject() core.Object {
-	return &core.MemoryObject{}
+func (o *ObjectStorage) NewObject() plumbing.Object {
+	return &plumbing.MemoryObject{}
 }
 
-func (o *ObjectStorage) SetObject(obj core.Object) (core.Hash, error) {
+func (o *ObjectStorage) SetObject(obj plumbing.Object) (plumbing.Hash, error) {
 	h := obj.Hash()
 	o.Objects[h] = obj
 
 	switch obj.Type() {
-	case core.CommitObject:
+	case plumbing.CommitObject:
 		o.Commits[h] = o.Objects[h]
-	case core.TreeObject:
+	case plumbing.TreeObject:
 		o.Trees[h] = o.Objects[h]
-	case core.BlobObject:
+	case plumbing.BlobObject:
 		o.Blobs[h] = o.Objects[h]
-	case core.TagObject:
+	case plumbing.TagObject:
 		o.Tags[h] = o.Objects[h]
 	default:
 		return h, ErrUnsupportedObjectType
@@ -88,64 +89,64 @@ func (o *ObjectStorage) SetObject(obj core.Object) (core.Hash, error) {
 	return h, nil
 }
 
-func (o *ObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (o *ObjectStorage) Object(t plumbing.ObjectType, h plumbing.Hash) (plumbing.Object, error) {
 	obj, ok := o.Objects[h]
-	if !ok || (core.AnyObject != t && obj.Type() != t) {
-		return nil, core.ErrObjectNotFound
+	if !ok || (plumbing.AnyObject != t && obj.Type() != t) {
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	return obj, nil
 }
 
-func (o *ObjectStorage) IterObjects(t core.ObjectType) (core.ObjectIter, error) {
-	var series []core.Object
+func (o *ObjectStorage) IterObjects(t plumbing.ObjectType) (storer.ObjectIter, error) {
+	var series []plumbing.Object
 	switch t {
-	case core.AnyObject:
+	case plumbing.AnyObject:
 		series = flattenObjectMap(o.Objects)
-	case core.CommitObject:
+	case plumbing.CommitObject:
 		series = flattenObjectMap(o.Commits)
-	case core.TreeObject:
+	case plumbing.TreeObject:
 		series = flattenObjectMap(o.Trees)
-	case core.BlobObject:
+	case plumbing.BlobObject:
 		series = flattenObjectMap(o.Blobs)
-	case core.TagObject:
+	case plumbing.TagObject:
 		series = flattenObjectMap(o.Tags)
 	}
 
-	return core.NewObjectSliceIter(series), nil
+	return storer.NewObjectSliceIter(series), nil
 }
 
-func flattenObjectMap(m map[core.Hash]core.Object) []core.Object {
-	objects := make([]core.Object, 0, len(m))
+func flattenObjectMap(m map[plumbing.Hash]plumbing.Object) []plumbing.Object {
+	objects := make([]plumbing.Object, 0, len(m))
 	for _, obj := range m {
 		objects = append(objects, obj)
 	}
 	return objects
 }
 
-func (o *ObjectStorage) Begin() core.Transaction {
+func (o *ObjectStorage) Begin() storer.Transaction {
 	return &TxObjectStorage{
 		Storage: o,
-		Objects: make(map[core.Hash]core.Object, 0),
+		Objects: make(map[plumbing.Hash]plumbing.Object, 0),
 	}
 }
 
 type TxObjectStorage struct {
 	Storage *ObjectStorage
-	Objects map[core.Hash]core.Object
+	Objects map[plumbing.Hash]plumbing.Object
 }
 
-func (tx *TxObjectStorage) SetObject(obj core.Object) (core.Hash, error) {
+func (tx *TxObjectStorage) SetObject(obj plumbing.Object) (plumbing.Hash, error) {
 	h := obj.Hash()
 	tx.Objects[h] = obj
 
 	return h, nil
 }
 
-func (tx *TxObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (tx *TxObjectStorage) Object(t plumbing.ObjectType, h plumbing.Hash) (plumbing.Object, error) {
 	obj, ok := tx.Objects[h]
-	if !ok || (core.AnyObject != t && obj.Type() != t) {
-		return nil, core.ErrObjectNotFound
+	if !ok || (plumbing.AnyObject != t && obj.Type() != t) {
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	return obj, nil
@@ -163,13 +164,13 @@ func (tx *TxObjectStorage) Commit() error {
 }
 
 func (tx *TxObjectStorage) Rollback() error {
-	tx.Objects = make(map[core.Hash]core.Object, 0)
+	tx.Objects = make(map[plumbing.Hash]plumbing.Object, 0)
 	return nil
 }
 
-type ReferenceStorage map[core.ReferenceName]*core.Reference
+type ReferenceStorage map[plumbing.ReferenceName]*plumbing.Reference
 
-func (r ReferenceStorage) SetReference(ref *core.Reference) error {
+func (r ReferenceStorage) SetReference(ref *plumbing.Reference) error {
 	if ref != nil {
 		r[ref.Name()] = ref
 	}
@@ -177,20 +178,20 @@ func (r ReferenceStorage) SetReference(ref *core.Reference) error {
 	return nil
 }
 
-func (r ReferenceStorage) Reference(n core.ReferenceName) (*core.Reference, error) {
+func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Reference, error) {
 	ref, ok := r[n]
 	if !ok {
-		return nil, core.ErrReferenceNotFound
+		return nil, plumbing.ErrReferenceNotFound
 	}
 
 	return ref, nil
 }
 
-func (r ReferenceStorage) IterReferences() (core.ReferenceIter, error) {
-	var refs []*core.Reference
+func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
+	var refs []*plumbing.Reference
 	for _, ref := range r {
 		refs = append(refs, ref)
 	}
 
-	return core.NewReferenceSliceIter(refs), nil
+	return storer.NewReferenceSliceIter(refs), nil
 }

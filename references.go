@@ -3,8 +3,8 @@ package git
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/diff"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -20,7 +20,7 @@ import (
 //   (see git path-id for hints on how to fix this).
 func (c *Commit) References(path string) ([]*Commit, error) {
 	var result []*Commit
-	seen := make(map[core.Hash]struct{}, 0)
+	seen := make(map[plumbing.Hash]struct{}, 0)
 	if err := walkGraph(&result, &seen, c.r, c, path); err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (c *Commit) References(path string) ([]*Commit, error) {
 
 // Recursive traversal of the commit graph, generating a linear history
 // of the path.
-func walkGraph(result *[]*Commit, seen *map[core.Hash]struct{}, repo *Repository, current *Commit, path string) error {
+func walkGraph(result *[]*Commit, seen *map[plumbing.Hash]struct{}, repo *Repository, current *Commit, path string) error {
 	// check and update seen
 	if _, ok := (*seen)[current.Hash]; ok {
 		return nil
@@ -117,10 +117,10 @@ func differentContents(path string, c *Commit, cs []*Commit) ([]*Commit, error) 
 }
 
 // blobHash returns the hash of a path in a commit
-func blobHash(path string, commit *Commit) (hash core.Hash, found bool) {
+func blobHash(path string, commit *Commit) (hash plumbing.Hash, found bool) {
 	file, err := commit.File(path)
 	if err != nil {
-		var empty core.Hash
+		var empty plumbing.Hash
 		return empty, found
 	}
 	return file.Hash, true

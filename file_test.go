@@ -3,8 +3,9 @@ package git
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 	. "gopkg.in/check.v1"
 )
@@ -42,7 +43,7 @@ var fileIterTests = []struct {
 func (s *FileSuite) TestIter(c *C) {
 	for i, t := range fileIterTests {
 		r := s.Repositories[t.repo]
-		commit, err := r.Commit(core.NewHash(t.commit))
+		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		tree, err := commit.Tree()
@@ -99,7 +100,7 @@ hs_err_pid*
 
 func (s *FileSuite) TestContents(c *C) {
 	for i, t := range contentsTests {
-		commit, err := s.Repositories[t.repo].Commit(core.NewHash(t.commit))
+		commit, err := s.Repositories[t.repo].Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		file, err := commit.File(t.path)
@@ -151,7 +152,7 @@ func (s *FileSuite) TestLines(c *C) {
 		r, ok := s.Repositories[t.repo]
 		c.Assert(ok, Equals, true, Commentf("cannot find repository %s", t.repo))
 
-		commit, err := r.Commit(core.NewHash(t.commit))
+		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		file, err := commit.File(t.path)
@@ -183,7 +184,7 @@ func (s *FileSuite) TestIgnoreEmptyDirEntries(c *C) {
 	s.buildRepositories(c, fixtures.ByTag("empty-folder"))
 
 	for i, t := range ignoreEmptyDirEntriesTests {
-		commit, err := s.Repositories[t.repo].Commit(core.NewHash(t.commit))
+		commit, err := s.Repositories[t.repo].Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		tree, err := commit.Tree()
@@ -199,7 +200,7 @@ func (s *FileSuite) TestIgnoreEmptyDirEntries(c *C) {
 }
 
 func (s *FileSuite) TestFileIter(c *C) {
-	hash := core.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+	hash := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
 
 	commit, err := s.Repository.Commit(hash)
 	c.Assert(err, IsNil)
@@ -227,7 +228,7 @@ func (s *FileSuite) TestFileIter(c *C) {
 	i = tree.Files()
 	i.ForEach(func(f *File) error {
 		count++
-		return core.ErrStop
+		return storer.ErrStop
 	})
 
 	c.Assert(count, Equals, 1)

@@ -1,8 +1,8 @@
 package git
 
 import (
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )
@@ -24,7 +24,7 @@ func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
 	r, ok := s.Repositories[t.repo]
 	c.Assert(ok, Equals, true)
 
-	commit, err := r.Commit(core.NewHash(t.rev))
+	commit, err := r.Commit(plumbing.NewHash(t.rev))
 	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, r, t.rev))
 
 	f, err := commit.File(t.path)
@@ -36,7 +36,7 @@ func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
 
 	blamedLines := make([]*line, 0, len(t.blames))
 	for i := range t.blames {
-		commit, err := r.Commit(core.NewHash(t.blames[i]))
+		commit, err := r.Commit(plumbing.NewHash(t.blames[i]))
 		c.Assert(err, IsNil)
 		l := &line{
 			author: commit.Author.Email,
@@ -47,7 +47,7 @@ func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
 
 	return &Blame{
 		Path:  t.path,
-		Rev:   core.NewHash(t.rev),
+		Rev:   plumbing.NewHash(t.rev),
 		Lines: blamedLines,
 	}
 }
@@ -65,7 +65,7 @@ func (s *BlameSuite) TestBlame(c *C) {
 		r, ok := s.Repositories[t.repo]
 		c.Assert(ok, Equals, true)
 
-		commit, err := r.Commit(core.NewHash(t.rev))
+		commit, err := r.Commit(plumbing.NewHash(t.rev))
 		c.Assert(err, IsNil)
 
 		obt, err := commit.Blame(t.path)

@@ -7,7 +7,8 @@ import (
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 	driver "github.com/aerospike/aerospike-client-go"
 )
@@ -32,11 +33,11 @@ func NewStorage(client *driver.Client, ns, url string) (*Storage, error) {
 	return &Storage{client: client, ns: ns, url: url}, nil
 }
 
-func (s *Storage) NewObject() core.Object {
-	return &core.MemoryObject{}
+func (s *Storage) NewObject() plumbing.Object {
+	return &plumbing.MemoryObject{}
 }
 
-func (s *Storage) SetObject(obj core.Object) (core.Hash, error) {
+func (s *Storage) SetObject(obj plumbing.Object) (plumbing.Hash, error) {
 	key, err := s.buildKey(obj.Hash(), obj.Type())
 	if err != nil {
 		return obj.Hash(), err
@@ -63,7 +64,7 @@ func (s *Storage) SetObject(obj core.Object) (core.Hash, error) {
 	return obj.Hash(), err
 }
 
-func (s *Storage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (s *Storage) Object(t plumbing.ObjectType, h plumbing.Hash) (plumbing.Object, error) {
 	key, err := s.buildKey(h, t)
 	if err != nil {
 		return nil, err
@@ -75,13 +76,13 @@ func (s *Storage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
 	}
 
 	if rec == nil {
-		return nil, core.ErrObjectNotFound
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	return objectFromRecord(rec, t)
 }
 
-func (s *Storage) IterObjects(t core.ObjectType) (core.ObjectIter, error) {
+func (s *Storage) IterObjects(t plumbing.ObjectType) (storer.ObjectIter, error) {
 	stmnt := driver.NewStatement(s.ns, t.String())
 	err := stmnt.Addfilter(driver.NewEqualFilter(urlField, s.url))
 
@@ -93,16 +94,16 @@ func (s *Storage) IterObjects(t core.ObjectType) (core.ObjectIter, error) {
 	return &ObjectIter{t, rs.Records}, nil
 }
 
-func (s *Storage) buildKey(h core.Hash, t core.ObjectType) (*driver.Key, error) {
+func (s *Storage) buildKey(h plumbing.Hash, t plumbing.ObjectType) (*driver.Key, error) {
 	return driver.NewKey(s.ns, t.String(), fmt.Sprintf("%s|%s", s.url, h.String()))
 }
 
 type ObjectIter struct {
-	t  core.ObjectType
+	t  plumbing.ObjectType
 	ch chan *driver.Record
 }
 
-func (i *ObjectIter) Next() (core.Object, error) {
+func (i *ObjectIter) Next() (plumbing.Object, error) {
 	r := <-i.ch
 	if r == nil {
 		return nil, io.EOF
@@ -111,7 +112,7 @@ func (i *ObjectIter) Next() (core.Object, error) {
 	return objectFromRecord(r, i.t)
 }
 
-func (i *ObjectIter) ForEach(cb func(obj core.Object) error) error {
+func (i *ObjectIter) ForEach(cb func(obj plumbing.Object) error) error {
 	for {
 		obj, err := i.Next()
 		if err != nil {
@@ -123,7 +124,7 @@ func (i *ObjectIter) ForEach(cb func(obj core.Object) error) error {
 		}
 
 		if err := cb(obj); err != nil {
-			if err == core.ErrStop {
+			if err == storer.ErrStop {
 				return nil
 			}
 
@@ -134,10 +135,10 @@ func (i *ObjectIter) ForEach(cb func(obj core.Object) error) error {
 
 func (i *ObjectIter) Close() {}
 
-func objectFromRecord(r *driver.Record, t core.ObjectType) (core.Object, error) {
+func objectFromRecord(r *driver.Record, t plumbing.ObjectType) (plumbing.Object, error) {
 	content := r.Bins["blob"].([]byte)
 
-	o := &core.MemoryObject{}
+	o := &plumbing.MemoryObject{}
 	o.SetType(t)
 	o.SetSize(int64(len(content)))
 
@@ -149,7 +150,7 @@ func objectFromRecord(r *driver.Record, t core.ObjectType) (core.Object, error) 
 	return o, nil
 }
 
-func (s *Storage) SetReference(ref *core.Reference) error {
+func (s *Storage) SetReference(ref *plumbing.Reference) error {
 	key, err := s.buildReferenceKey(ref.Name())
 	if err != nil {
 		return err
@@ -165,7 +166,7 @@ func (s *Storage) SetReference(ref *core.Reference) error {
 	return s.client.Put(nil, key, bins)
 }
 
-func (s *Storage) Reference(n core.ReferenceName) (*core.Reference, error) {
+func (s *Storage) Reference(n plumbing.ReferenceName) (*plumbing.Reference, error) {
 	key, err := s.buildReferenceKey(n)
 	if err != nil {
 		return nil, err
@@ -176,17 +177,17 @@ func (s *Storage) Reference(n core.ReferenceName) (*core.Reference, error) {
 		return nil, err
 	}
 
-	return core.NewReferenceFromStrings(
+	return plumbing.NewReferenceFromStrings(
 		rec.Bins["name"].(string),
 		rec.Bins["target"].(string),
 	), nil
 }
 
-func (s *Storage) buildReferenceKey(n core.ReferenceName) (*driver.Key, error) {
+func (s *Storage) buildReferenceKey(n plumbing.ReferenceName) (*driver.Key, error) {
 	return driver.NewKey(s.ns, referencesSet, fmt.Sprintf("%s|%s", s.url, n))
 }
 
-func (s *Storage) IterReferences() (core.ReferenceIter, error) {
+func (s *Storage) IterReferences() (storer.ReferenceIter, error) {
 	stmnt := driver.NewStatement(s.ns, referencesSet)
 	err := stmnt.Addfilter(driver.NewEqualFilter(urlField, s.url))
 	if err != nil {
@@ -198,15 +199,15 @@ func (s *Storage) IterReferences() (core.ReferenceIter, error) {
 		return nil, err
 	}
 
-	var refs []*core.Reference
+	var refs []*plumbing.Reference
 	for r := range rs.Records {
-		refs = append(refs, core.NewReferenceFromStrings(
+		refs = append(refs, plumbing.NewReferenceFromStrings(
 			r.Bins["name"].(string),
 			r.Bins["target"].(string),
 		))
 	}
 
-	return core.NewReferenceSliceIter(refs), nil
+	return storer.NewReferenceSliceIter(refs), nil
 }
 
 func (s *Storage) Config() (*config.Config, error) {
@@ -251,10 +252,10 @@ func createIndexes(c *driver.Client, ns string) error {
 	for _, set := range [...]string{
 		referencesSet,
 		configSet,
-		core.BlobObject.String(),
-		core.TagObject.String(),
-		core.TreeObject.String(),
-		core.CommitObject.String(),
+		plumbing.BlobObject.String(),
+		plumbing.TagObject.String(),
+		plumbing.TreeObject.String(),
+		plumbing.CommitObject.String(),
 	} {
 		if err := createIndex(c, ns, set); err != nil {
 			return err

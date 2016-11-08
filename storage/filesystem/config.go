@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	gitconfig "gopkg.in/src-d/go-git.v4/formats/config"
+	gitconfig "gopkg.in/src-d/go-git.v4/plumbing/format/config"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 )
 

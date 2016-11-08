@@ -4,10 +4,11 @@ import (
 	"io"
 	"os"
 
-	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/idxfile"
-	"gopkg.in/src-d/go-git.v4/formats/objfile"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/objfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
@@ -15,13 +16,13 @@ import (
 
 type ObjectStorage struct {
 	dir   *dotgit.DotGit
-	index map[core.Hash]index
+	index map[plumbing.Hash]index
 }
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
 		dir:   dir,
-		index: make(map[core.Hash]index, 0),
+		index: make(map[plumbing.Hash]index, 0),
 	}
 
 	return s, s.loadIdxFiles()
@@ -42,7 +43,7 @@ func (s *ObjectStorage) loadIdxFiles() error {
 	return nil
 }
 
-func (s *ObjectStorage) loadIdxFile(h core.Hash) error {
+func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
 	idx, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
@@ -52,8 +53,8 @@ func (s *ObjectStorage) loadIdxFile(h core.Hash) error {
 	return s.index[h].Decode(idx)
 }
 
-func (s *ObjectStorage) NewObject() core.Object {
-	return &core.MemoryObject{}
+func (s *ObjectStorage) NewObject() plumbing.Object {
+	return &plumbing.MemoryObject{}
 }
 
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
@@ -62,7 +63,7 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 		return nil, err
 	}
 
-	w.Notify = func(h core.Hash, idx idxfile.Idxfile) {
+	w.Notify = func(h plumbing.Hash, idx idxfile.Idxfile) {
 		s.index[h] = make(index)
 		for _, e := range idx.Entries {
 			s.index[h][e.Hash] = int64(e.Offset)
@@ -73,31 +74,31 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 }
 
 // Set adds a new object to the storage.
-func (s *ObjectStorage) SetObject(o core.Object) (core.Hash, error) {
-	if o.Type() == core.OFSDeltaObject || o.Type() == core.REFDeltaObject {
-		return core.ZeroHash, core.ErrInvalidType
+func (s *ObjectStorage) SetObject(o plumbing.Object) (plumbing.Hash, error) {
+	if o.Type() == plumbing.OFSDeltaObject || o.Type() == plumbing.REFDeltaObject {
+		return plumbing.ZeroHash, plumbing.ErrInvalidType
 	}
 
 	ow, err := s.dir.NewObject()
 	if err != nil {
-		return core.ZeroHash, err
+		return plumbing.ZeroHash, err
 	}
 
 	defer ow.Close()
 
 	or, err := o.Reader()
 	if err != nil {
-		return core.ZeroHash, err
+		return plumbing.ZeroHash, err
 	}
 
 	defer or.Close()
 
 	if err := ow.WriteHeader(o.Type(), o.Size()); err != nil {
-		return core.ZeroHash, err
+		return plumbing.ZeroHash, err
 	}
 
 	if _, err := io.Copy(ow, or); err != nil {
-		return core.ZeroHash, err
+		return plumbing.ZeroHash, err
 	}
 
 	return o.Hash(), nil
@@ -105,9 +106,9 @@ func (s *ObjectStorage) SetObject(o core.Object) (core.Hash, error) {
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile and the git object directories.
-func (s *ObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, error) {
+func (s *ObjectStorage) Object(t plumbing.ObjectType, h plumbing.Hash) (plumbing.Object, error) {
 	obj, err := s.getFromUnpacked(h)
-	if err == core.ErrObjectNotFound {
+	if err == plumbing.ErrObjectNotFound {
 		obj, err = s.getFromPackfile(h)
 	}
 
@@ -115,18 +116,18 @@ func (s *ObjectStorage) Object(t core.ObjectType, h core.Hash) (core.Object, err
 		return nil, err
 	}
 
-	if core.AnyObject != t && obj.Type() != t {
-		return nil, core.ErrObjectNotFound
+	if plumbing.AnyObject != t && obj.Type() != t {
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	return obj, nil
 }
 
-func (s *ObjectStorage) getFromUnpacked(h core.Hash) (obj core.Object, err error) {
+func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.Object, err error) {
 	f, err := s.dir.Object(h)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, core.ErrObjectNotFound
+			return nil, plumbing.ErrObjectNotFound
 		}
 
 		return nil, err
@@ -160,10 +161,10 @@ func (s *ObjectStorage) getFromUnpacked(h core.Hash) (obj core.Object, err error
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile.
-func (s *ObjectStorage) getFromPackfile(h core.Hash) (core.Object, error) {
+func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.Object, error) {
 	pack, offset := s.findObjectInPackfile(h)
 	if offset == -1 {
-		return nil, core.ErrObjectNotFound
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	f, err := s.dir.ObjectPack(pack)
@@ -183,26 +184,26 @@ func (s *ObjectStorage) getFromPackfile(h core.Hash) (core.Object, error) {
 	return d.ReadObjectAt(offset)
 }
 
-func (s *ObjectStorage) findObjectInPackfile(h core.Hash) (core.Hash, int64) {
+func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, int64) {
 	for packfile, index := range s.index {
 		if offset, ok := index[h]; ok {
 			return packfile, offset
 		}
 	}
 
-	return core.ZeroHash, -1
+	return plumbing.ZeroHash, -1
 }
 
 // Iter returns an iterator for all the objects in the packfile with the
 // given type.
-func (s *ObjectStorage) IterObjects(t core.ObjectType) (core.ObjectIter, error) {
+func (s *ObjectStorage) IterObjects(t plumbing.ObjectType) (storer.ObjectIter, error) {
 	objects, err := s.dir.Objects()
 	if err != nil {
 		return nil, err
 	}
 
-	seen := make(map[core.Hash]bool, 0)
-	var iters []core.ObjectIter
+	seen := make(map[plumbing.Hash]bool, 0)
+	var iters []storer.ObjectIter
 	if len(objects) != 0 {
 		iters = append(iters, &objectsIter{s: s, t: t, h: objects})
 		seen = hashListAsMap(objects)
@@ -214,17 +215,17 @@ func (s *ObjectStorage) IterObjects(t core.ObjectType) (core.ObjectIter, error) 
 	}
 
 	iters = append(iters, packi...)
-	return core.NewMultiObjectIter(iters), nil
+	return storer.NewMultiObjectIter(iters), nil
 }
 
 func (s *ObjectStorage) buildPackfileIters(
-	t core.ObjectType, seen map[core.Hash]bool) ([]core.ObjectIter, error) {
+	t plumbing.ObjectType, seen map[plumbing.Hash]bool) ([]storer.ObjectIter, error) {
 	packs, err := s.dir.ObjectPacks()
 	if err != nil {
 		return nil, err
 	}
 
-	var iters []core.ObjectIter
+	var iters []storer.ObjectIter
 	for _, h := range packs {
 		pack, err := s.dir.ObjectPack(h)
 		if err != nil {
@@ -242,7 +243,7 @@ func (s *ObjectStorage) buildPackfileIters(
 	return iters, nil
 }
 
-type index map[core.Hash]int64
+type index map[plumbing.Hash]int64
 
 func (i index) Decode(r io.Reader) error {
 	idx := &idxfile.Idxfile{}
@@ -262,14 +263,14 @@ func (i index) Decode(r io.Reader) error {
 type packfileIter struct {
 	f fs.File
 	d *packfile.Decoder
-	t core.ObjectType
+	t plumbing.ObjectType
 
-	seen     map[core.Hash]bool
+	seen     map[plumbing.Hash]bool
 	position uint32
 	total    uint32
 }
 
-func newPackfileIter(f fs.File, t core.ObjectType, seen map[core.Hash]bool) (core.ObjectIter, error) {
+func newPackfileIter(f fs.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool) (storer.ObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
 	if err != nil {
@@ -291,7 +292,7 @@ func newPackfileIter(f fs.File, t core.ObjectType, seen map[core.Hash]bool) (cor
 	}, nil
 }
 
-func (iter *packfileIter) Next() (core.Object, error) {
+func (iter *packfileIter) Next() (plumbing.Object, error) {
 	if iter.position >= iter.total {
 		return nil, io.EOF
 	}
@@ -306,7 +307,7 @@ func (iter *packfileIter) Next() (core.Object, error) {
 		return iter.Next()
 	}
 
-	if iter.t != core.AnyObject && iter.t != obj.Type() {
+	if iter.t != plumbing.AnyObject && iter.t != obj.Type() {
 		return iter.Next()
 	}
 
@@ -314,7 +315,7 @@ func (iter *packfileIter) Next() (core.Object, error) {
 }
 
 // ForEach is never called since is used inside of a MultiObjectIterator
-func (iter *packfileIter) ForEach(cb func(core.Object) error) error {
+func (iter *packfileIter) ForEach(cb func(plumbing.Object) error) error {
 	return nil
 }
 
@@ -325,11 +326,11 @@ func (iter *packfileIter) Close() {
 
 type objectsIter struct {
 	s *ObjectStorage
-	t core.ObjectType
-	h []core.Hash
+	t plumbing.ObjectType
+	h []plumbing.Hash
 }
 
-func (iter *objectsIter) Next() (core.Object, error) {
+func (iter *objectsIter) Next() (plumbing.Object, error) {
 	if len(iter.h) == 0 {
 		return nil, io.EOF
 	}
@@ -341,7 +342,7 @@ func (iter *objectsIter) Next() (core.Object, error) {
 		return nil, err
 	}
 
-	if iter.t != core.AnyObject && iter.t != obj.Type() {
+	if iter.t != plumbing.AnyObject && iter.t != obj.Type() {
 		return iter.Next()
 	}
 
@@ -349,16 +350,16 @@ func (iter *objectsIter) Next() (core.Object, error) {
 }
 
 // ForEach is never called since is used inside of a MultiObjectIterator
-func (iter *objectsIter) ForEach(cb func(core.Object) error) error {
+func (iter *objectsIter) ForEach(cb func(plumbing.Object) error) error {
 	return nil
 }
 
 func (iter *objectsIter) Close() {
-	iter.h = []core.Hash{}
+	iter.h = []plumbing.Hash{}
 }
 
-func hashListAsMap(l []core.Hash) map[core.Hash]bool {
-	m := make(map[core.Hash]bool, len(l))
+func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]bool {
+	m := make(map[plumbing.Hash]bool, len(l))
 	for _, h := range l {
 		m[h] = true
 	}

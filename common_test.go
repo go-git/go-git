@@ -6,12 +6,12 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/clients"
-	"gopkg.in/src-d/go-git.v4/clients/common"
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
-	"gopkg.in/src-d/go-git.v4/formats/packp"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/client"
+	"gopkg.in/src-d/go-git.v4/plumbing/client/common"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packp"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
 	. "gopkg.in/check.v1"
@@ -94,17 +94,17 @@ func (p *MockGitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	c := packp.NewCapabilities()
 	c.Decode("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADmulti_ack thin-pack side-band side-band-64k ofs-delta shallow no-progress include-tag multi_ack_detailed no-done symref=HEAD:refs/heads/master agent=git/2:2.4.8~dbussink-fix-enterprise-tokens-compilation-1167-gc7006cf")
 
-	ref := core.ReferenceName("refs/heads/master")
-	branch := core.ReferenceName("refs/heads/branch")
-	tag := core.ReferenceName("refs/tags/v1.0.0")
+	ref := plumbing.ReferenceName("refs/heads/master")
+	branch := plumbing.ReferenceName("refs/heads/branch")
+	tag := plumbing.ReferenceName("refs/tags/v1.0.0")
 
 	return &common.GitUploadPackInfo{
 		Capabilities: c,
-		Refs: map[core.ReferenceName]*core.Reference{
-			core.HEAD: core.NewSymbolicReference(core.HEAD, ref),
-			ref:       core.NewHashReference(ref, h),
-			tag:       core.NewHashReference(tag, h),
-			branch:    core.NewHashReference(branch, core.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")),
+		Refs: map[plumbing.ReferenceName]*plumbing.Reference{
+			plumbing.HEAD: plumbing.NewSymbolicReference(plumbing.HEAD, ref),
+			ref:           plumbing.NewHashReference(ref, h),
+			tag:           plumbing.NewHashReference(tag, h),
+			branch:        plumbing.NewHashReference(branch, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")),
 		},
 	}, nil
 }

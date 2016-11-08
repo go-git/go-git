@@ -6,7 +6,8 @@ import (
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
@@ -58,7 +59,7 @@ func (s *RemoteSuite) TestDefaultBranch(c *C) {
 	r.upSrv = &MockGitUploadPackService{}
 
 	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.Head().Name(), Equals, core.ReferenceName("refs/heads/master"))
+	c.Assert(r.Head().Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
 }
 
 func (s *RemoteSuite) TestCapabilities(c *C) {
@@ -83,10 +84,10 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(sto.Objects, HasLen, 31)
 
-	expectedRefs := []*core.Reference{
-		core.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-		core.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
-		core.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	expectedRefs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	}
 
 	for _, exp := range expectedRefs {
@@ -102,7 +103,7 @@ type mockPackfileWriter struct {
 
 func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
 	m.PackfileWriterCalled = true
-	return m.Storer.(core.PackfileWriter).PackfileWriter()
+	return m.Storer.(storer.PackfileWriter).PackfileWriter()
 }
 
 func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
@@ -128,10 +129,10 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 	c.Assert(err, IsNil)
 
 	var count int
-	iter, err := mock.IterObjects(core.AnyObject)
+	iter, err := mock.IterObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
-	iter.ForEach(func(core.Object) error {
+	iter.ForEach(func(plumbing.Object) error {
 		count++
 		return nil
 	})
@@ -163,7 +164,7 @@ func (s *RemoteSuite) TestHead(c *C) {
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
-	c.Assert(r.Head().Hash(), Equals, core.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(r.Head().Hash(), Equals, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 }
 
 func (s *RemoteSuite) TestRef(c *C) {
@@ -173,13 +174,13 @@ func (s *RemoteSuite) TestRef(c *C) {
 	err := r.Connect()
 	c.Assert(err, IsNil)
 
-	ref, err := r.Ref(core.HEAD, false)
+	ref, err := r.Ref(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
-	c.Assert(ref.Name(), Equals, core.HEAD)
+	c.Assert(ref.Name(), Equals, plumbing.HEAD)
 
-	ref, err = r.Ref(core.HEAD, true)
+	ref, err = r.Ref(plumbing.HEAD, true)
 	c.Assert(err, IsNil)
-	c.Assert(ref.Name(), Equals, core.ReferenceName("refs/heads/master"))
+	c.Assert(ref.Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
 }
 
 func (s *RemoteSuite) TestRefs(c *C) {

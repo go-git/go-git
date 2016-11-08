@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 // Storer is a generic storage of objects, references and any information
@@ -13,8 +13,8 @@ import (
 // information in an system directory (such as `.git`) and others
 // implementations are in memmory being ephemeral
 type Storer interface {
-	core.ObjectStorer
-	core.ReferenceStorer
+	storer.ObjectStorer
+	storer.ReferenceStorer
 	config.ConfigStorer
 }
 

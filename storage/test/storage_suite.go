@@ -8,53 +8,54 @@ import (
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 	. "gopkg.in/check.v1"
 )
 
-type storer interface {
-	core.ObjectStorer
-	core.ReferenceStorer
+type Storer interface {
+	storer.ObjectStorer
+	storer.ReferenceStorer
 	config.ConfigStorer
 }
 
 type TestObject struct {
-	Object core.Object
+	Object plumbing.Object
 	Hash   string
-	Type   core.ObjectType
+	Type   plumbing.ObjectType
 }
 
 type BaseStorageSuite struct {
-	Storer storer
+	Storer Storer
 
-	validTypes  []core.ObjectType
-	testObjects map[core.ObjectType]TestObject
+	validTypes  []plumbing.ObjectType
+	testObjects map[plumbing.ObjectType]TestObject
 }
 
-func NewBaseStorageSuite(s storer) BaseStorageSuite {
-	commit := &core.MemoryObject{}
-	commit.SetType(core.CommitObject)
-	tree := &core.MemoryObject{}
-	tree.SetType(core.TreeObject)
-	blob := &core.MemoryObject{}
-	blob.SetType(core.BlobObject)
-	tag := &core.MemoryObject{}
-	tag.SetType(core.TagObject)
+func NewBaseStorageSuite(s Storer) BaseStorageSuite {
+	commit := &plumbing.MemoryObject{}
+	commit.SetType(plumbing.CommitObject)
+	tree := &plumbing.MemoryObject{}
+	tree.SetType(plumbing.TreeObject)
+	blob := &plumbing.MemoryObject{}
+	blob.SetType(plumbing.BlobObject)
+	tag := &plumbing.MemoryObject{}
+	tag.SetType(plumbing.TagObject)
 
 	return BaseStorageSuite{
 		Storer: s,
-		validTypes: []core.ObjectType{
-			core.CommitObject,
-			core.BlobObject,
-			core.TagObject,
-			core.TreeObject,
+		validTypes: []plumbing.ObjectType{
+			plumbing.CommitObject,
+			plumbing.BlobObject,
+			plumbing.TagObject,
+			plumbing.TreeObject,
 		},
-		testObjects: map[core.ObjectType]TestObject{
-			core.CommitObject: {commit, "dcf5b16e76cce7425d0beaef62d79a7d10fce1f5", core.CommitObject},
-			core.TreeObject:   {tree, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", core.TreeObject},
-			core.BlobObject:   {blob, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", core.BlobObject},
-			core.TagObject:    {tag, "d994c6bb648123a17e8f70a966857c546b2a6f94", core.TagObject},
+		testObjects: map[plumbing.ObjectType]TestObject{
+			plumbing.CommitObject: {commit, "dcf5b16e76cce7425d0beaef62d79a7d10fce1f5", plumbing.CommitObject},
+			plumbing.TreeObject:   {tree, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", plumbing.TreeObject},
+			plumbing.BlobObject:   {blob, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", plumbing.BlobObject},
+			plumbing.TagObject:    {tag, "d994c6bb648123a17e8f70a966857c546b2a6f94", plumbing.TagObject},
 		}}
 }
 
@@ -70,7 +71,7 @@ func (s *BaseStorageSuite) TestSetObjectAndGetObject(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(objectEquals(o, to.Object), IsNil)
 
-		o, err = s.Storer.Object(core.AnyObject, h)
+		o, err = s.Storer.Object(plumbing.AnyObject, h)
 		c.Assert(err, IsNil)
 		c.Assert(objectEquals(o, to.Object), IsNil)
 
@@ -81,14 +82,14 @@ func (s *BaseStorageSuite) TestSetObjectAndGetObject(c *C) {
 
 			o, err = s.Storer.Object(t, h)
 			c.Assert(o, IsNil)
-			c.Assert(err, Equals, core.ErrObjectNotFound)
+			c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 		}
 	}
 }
 
 func (s *BaseStorageSuite) TestSetObjectInvalid(c *C) {
 	o := s.Storer.NewObject()
-	o.SetType(core.REFDeltaObject)
+	o.SetType(plumbing.REFDeltaObject)
 
 	_, err := s.Storer.SetObject(o)
 	c.Assert(err, NotNil)
@@ -115,11 +116,11 @@ func (s *BaseStorageSuite) TestStorerIter(c *C) {
 		c.Assert(err, Equals, io.EOF, comment)
 	}
 
-	i, err := s.Storer.IterObjects(core.AnyObject)
+	i, err := s.Storer.IterObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
-	foundObjects := []core.Object{}
-	i.ForEach(func(o core.Object) error {
+	foundObjects := []plumbing.Object{}
+	i.ForEach(func(o plumbing.Object) error {
 		foundObjects = append(foundObjects, o)
 		return nil
 	})
@@ -138,9 +139,9 @@ func (s *BaseStorageSuite) TestStorerIter(c *C) {
 }
 
 func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
-	storer, ok := s.Storer.(core.Transactioner)
+	storer, ok := s.Storer.(storer.Transactioner)
 	if !ok {
-		c.Skip("not a core.ObjectStorerTx")
+		c.Skip("not a plumbing.ObjectStorerTx")
 	}
 
 	tx := storer.Begin()
@@ -150,7 +151,7 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
 		c.Assert(h.String(), Equals, o.Hash)
 	}
 
-	iter, err := s.Storer.IterObjects(core.AnyObject)
+	iter, err := s.Storer.IterObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
@@ -158,11 +159,11 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
 	err = tx.Commit()
 	c.Assert(err, IsNil)
 
-	iter, err = s.Storer.IterObjects(core.AnyObject)
+	iter, err = s.Storer.IterObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
 	var count int
-	iter.ForEach(func(o core.Object) error {
+	iter.ForEach(func(o plumbing.Object) error {
 		count++
 		return nil
 	})
@@ -171,9 +172,9 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
 }
 
 func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndGetObject(c *C) {
-	storer, ok := s.Storer.(core.Transactioner)
+	storer, ok := s.Storer.(storer.Transactioner)
 	if !ok {
-		c.Skip("not a core.ObjectStorerTx")
+		c.Skip("not a plumbing.ObjectStorerTx")
 	}
 
 	tx := storer.Begin()
@@ -182,27 +183,27 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndGetObject(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, expected.Hash)
 
-		o, err := tx.Object(expected.Type, core.NewHash(expected.Hash))
+		o, err := tx.Object(expected.Type, plumbing.NewHash(expected.Hash))
 		c.Assert(o.Hash().String(), DeepEquals, expected.Hash)
 	}
 }
 
 func (s *BaseStorageSuite) TestObjectStorerTxGetObjectNotFound(c *C) {
-	storer, ok := s.Storer.(core.Transactioner)
+	storer, ok := s.Storer.(storer.Transactioner)
 	if !ok {
-		c.Skip("not a core.ObjectStorerTx")
+		c.Skip("not a plumbing.ObjectStorerTx")
 	}
 
 	tx := storer.Begin()
-	o, err := tx.Object(core.AnyObject, core.ZeroHash)
+	o, err := tx.Object(plumbing.AnyObject, plumbing.ZeroHash)
 	c.Assert(o, IsNil)
-	c.Assert(err, Equals, core.ErrObjectNotFound)
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 }
 
 func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
-	storer, ok := s.Storer.(core.Transactioner)
+	storer, ok := s.Storer.(storer.Transactioner)
 	if !ok {
-		c.Skip("not a core.ObjectStorerTx")
+		c.Skip("not a plumbing.ObjectStorerTx")
 	}
 
 	tx := storer.Begin()
@@ -215,7 +216,7 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
 	err := tx.Rollback()
 	c.Assert(err, IsNil)
 
-	iter, err := s.Storer.IterObjects(core.AnyObject)
+	iter, err := s.Storer.IterObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
@@ -223,29 +224,29 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
 
 func (s *BaseStorageSuite) TestSetReferenceAndGetReference(c *C) {
 	err := s.Storer.SetReference(
-		core.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
 	err = s.Storer.SetReference(
-		core.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+		plumbing.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, IsNil)
 
-	e, err := s.Storer.Reference(core.ReferenceName("foo"))
+	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
 func (s *BaseStorageSuite) TestGetReferenceNotFound(c *C) {
-	r, err := s.Storer.Reference(core.ReferenceName("bar"))
-	c.Assert(err, Equals, core.ErrReferenceNotFound)
+	r, err := s.Storer.Reference(plumbing.ReferenceName("bar"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(r, IsNil)
 }
 
 func (s *BaseStorageSuite) TestIterReferences(c *C) {
 	err := s.Storer.SetReference(
-		core.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
@@ -284,7 +285,7 @@ func (s *BaseStorageSuite) TestSetConfigInvalid(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func objectEquals(a core.Object, b core.Object) error {
+func objectEquals(a plumbing.Object, b plumbing.Object) error {
 	ha := a.Hash()
 	hb := b.Hash()
 	if ha != hb {

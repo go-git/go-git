@@ -8,13 +8,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/diff"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 type Blame struct {
 	Path  string
-	Rev   core.Hash
+	Rev   plumbing.Hash
 	Lines []*line
 }
 
@@ -256,7 +256,7 @@ func prettyPrintAuthor(c *Commit) string {
 // utility function to calculate the number of runes needed
 // to print the longest author name in the blame of a file.
 func (b *blame) maxAuthorLength() int {
-	memo := make(map[core.Hash]struct{}, len(b.graph)-1)
+	memo := make(map[plumbing.Hash]struct{}, len(b.graph)-1)
 	fVs := b.graph[len(b.graph)-1]
 	m := 0
 	for ln := range fVs {

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )
@@ -296,7 +296,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 		repo, ok := s.Repositories[t.repo]
 		c.Assert(ok, Equals, true)
 
-		commit, err := repo.Commit(core.NewHash(t.commit))
+		commit, err := repo.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil)
 
 		revs, err := commit.References(t.path)
@@ -305,7 +305,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 
 		for i := range revs {
 			if revs[i].Hash.String() != t.revs[i] {
-				commit, err := repo.Commit(core.NewHash(t.revs[i]))
+				commit, err := repo.Commit(plumbing.NewHash(t.revs[i]))
 				c.Assert(err, IsNil)
 				equiv, err := equivalent(t.path, revs[i], commit)
 				c.Assert(err, IsNil)
@@ -363,7 +363,7 @@ func (s *ReferencesSuite) commits(cc *C, repo string, hs ...string) []*Commit {
 	cc.Assert(ok, Equals, true)
 	result := make([]*Commit, 0, len(hs))
 	for _, h := range hs {
-		c, err := r.Commit(core.NewHash(h))
+		c, err := r.Commit(plumbing.NewHash(h))
 		cc.Assert(err, IsNil)
 		result = append(result, c)
 	}

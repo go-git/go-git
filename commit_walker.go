@@ -3,11 +3,11 @@ package git
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 type commitWalker struct {
-	seen  map[core.Hash]bool
+	seen  map[plumbing.Hash]bool
 	stack []*CommitIter
 	start *Commit
 	cb    func(*Commit) error
@@ -16,7 +16,7 @@ type commitWalker struct {
 // WalkCommitHistory walks the commit history
 func WalkCommitHistory(c *Commit, cb func(*Commit) error) error {
 	w := &commitWalker{
-		seen:  make(map[core.Hash]bool),
+		seen:  make(map[plumbing.Hash]bool),
 		stack: make([]*CommitIter, 0),
 		start: c,
 		cb:    cb,

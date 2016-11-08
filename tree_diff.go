@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 type Action int
@@ -250,10 +250,10 @@ func hasChange(a, b *Tree, path string) (bool, error) {
 	return ha != hb, nil
 }
 
-func hash(tree *Tree, path string) (core.Hash, error) {
+func hash(tree *Tree, path string) (plumbing.Hash, error) {
 	file, err := tree.File(path)
 	if err != nil {
-		var empty core.Hash
+		var empty plumbing.Hash
 		return empty, fmt.Errorf("cannot find file %s in tree: %s", path, err)
 	}
 

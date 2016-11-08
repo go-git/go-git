@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 type RefSpecSuite struct{}
@@ -42,20 +42,20 @@ func (s *RefSpecSuite) TestRefSpecSrc(c *C) {
 
 func (s *RefSpecSuite) TestRefSpecMatch(c *C) {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.Match(core.ReferenceName("refs/heads/foo")), Equals, false)
-	c.Assert(spec.Match(core.ReferenceName("refs/heads/master")), Equals, true)
+	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, false)
+	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/master")), Equals, true)
 }
 
 func (s *RefSpecSuite) TestRefSpecMatchBlob(c *C) {
 	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Match(core.ReferenceName("refs/tag/foo")), Equals, false)
-	c.Assert(spec.Match(core.ReferenceName("refs/heads/foo")), Equals, true)
+	c.Assert(spec.Match(plumbing.ReferenceName("refs/tag/foo")), Equals, false)
+	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, true)
 }
 
 func (s *RefSpecSuite) TestRefSpecDst(c *C) {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
 	c.Assert(
-		spec.Dst(core.ReferenceName("refs/heads/master")).String(), Equals,
+		spec.Dst(plumbing.ReferenceName("refs/heads/master")).String(), Equals,
 		"refs/remotes/origin/master",
 	)
 }
@@ -63,7 +63,7 @@ func (s *RefSpecSuite) TestRefSpecDst(c *C) {
 func (s *RefSpecSuite) TestRefSpecDstBlob(c *C) {
 	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
 	c.Assert(
-		spec.Dst(core.ReferenceName("refs/heads/foo")).String(), Equals,
+		spec.Dst(plumbing.ReferenceName("refs/heads/foo")).String(), Equals,
 		"refs/remotes/origin/foo",
 	)
 }
@@ -73,7 +73,7 @@ func (s *RefSpecSuite) TestMatchAny(c *C) {
 		"refs/heads/foo:refs/remotes/origin/bar",
 	}
 
-	c.Assert(MatchAny(specs, core.ReferenceName("refs/heads/foo")), Equals, true)
-	c.Assert(MatchAny(specs, core.ReferenceName("refs/heads/bar")), Equals, true)
-	c.Assert(MatchAny(specs, core.ReferenceName("refs/heads/master")), Equals, false)
+	c.Assert(MatchAny(specs, plumbing.ReferenceName("refs/heads/foo")), Equals, true)
+	c.Assert(MatchAny(specs, plumbing.ReferenceName("refs/heads/bar")), Equals, true)
+	c.Assert(MatchAny(specs, plumbing.ReferenceName("refs/heads/master")), Equals, false)
 }

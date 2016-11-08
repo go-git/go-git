@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 //export c_File_get_Name
@@ -55,7 +55,7 @@ func c_File_Decode(o uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	cobj := obj.(*core.Object)
+	cobj := obj.(*plumbing.Object)
 	file := git.File{}
 	file.Decode(*cobj)
 	return uint64(RegisterObject(&file))

@@ -4,8 +4,8 @@ import (
 	"io"
 	"time"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )
@@ -20,7 +20,7 @@ var _ = Suite(&SuiteCommit{})
 func (s *SuiteCommit) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpSuite(c)
 
-	hash := core.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+	hash := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
 
 	var err error
 	s.Commit, err = s.Repository.Commit(hash)
@@ -28,8 +28,8 @@ func (s *SuiteCommit) SetUpSuite(c *C) {
 }
 
 func (s *SuiteCommit) TestDecodeNonCommit(c *C) {
-	hash := core.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err := s.Repository.s.Object(core.AnyObject, hash)
+	hash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
+	blob, err := s.Repository.s.Object(plumbing.AnyObject, hash)
 	c.Assert(err, IsNil)
 
 	commit := &Commit{}
@@ -38,7 +38,7 @@ func (s *SuiteCommit) TestDecodeNonCommit(c *C) {
 }
 
 func (s *SuiteCommit) TestType(c *C) {
-	c.Assert(s.Commit.Type(), Equals, core.CommitObject)
+	c.Assert(s.Commit.Type(), Equals, plumbing.CommitObject)
 }
 
 func (s *SuiteCommit) TestTree(c *C) {
@@ -72,24 +72,24 @@ func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
 			Message:   "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
-			tree:      core.NewHash("f000000000000000000000000000000000000001"),
-			parents:   []core.Hash{core.NewHash("f000000000000000000000000000000000000002")},
+			tree:      plumbing.NewHash("f000000000000000000000000000000000000001"),
+			parents:   []plumbing.Hash{plumbing.NewHash("f000000000000000000000000000000000000002")},
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
 			Message:   "Message\n\nFoo\nBar\nWith no trailing blank lines",
-			tree:      core.NewHash("0000000000000000000000000000000000000003"),
-			parents: []core.Hash{
-				core.NewHash("f000000000000000000000000000000000000004"),
-				core.NewHash("f000000000000000000000000000000000000005"),
-				core.NewHash("f000000000000000000000000000000000000006"),
-				core.NewHash("f000000000000000000000000000000000000007"),
+			tree:      plumbing.NewHash("0000000000000000000000000000000000000003"),
+			parents: []plumbing.Hash{
+				plumbing.NewHash("f000000000000000000000000000000000000004"),
+				plumbing.NewHash("f000000000000000000000000000000000000005"),
+				plumbing.NewHash("f000000000000000000000000000000000000006"),
+				plumbing.NewHash("f000000000000000000000000000000000000007"),
 			},
 		},
 	}
 	for _, commit := range commits {
-		obj := &core.MemoryObject{}
+		obj := &plumbing.MemoryObject{}
 		err = commit.Encode(obj)
 		c.Assert(err, IsNil)
 		newCommit := &Commit{}
@@ -130,7 +130,7 @@ func (s *SuiteCommit) TestString(c *C) {
 }
 
 func (s *SuiteCommit) TestStringMultiLine(c *C) {
-	hash := core.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
+	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
 	s.buildRepositories(c, fixtures.ByURL("https://github.com/src-d/go-git.git"))
 

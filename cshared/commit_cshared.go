@@ -8,8 +8,9 @@ import (
 	"unsafe"
 
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
+import "gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 //export c_Commit_get_Hash
 func c_Commit_get_Hash(c uint64) *C.char {
@@ -130,7 +131,7 @@ func c_Commit_Decode(o uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	cobj := obj.(*core.Object)
+	cobj := obj.(*plumbing.Object)
 	err := commit.Decode(*cobj)
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -196,7 +197,7 @@ func c_NewCommitIter(r uint64, iter uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	obj_iter := obj.(*core.ObjectIter)
+	obj_iter := obj.(*storer.ObjectIter)
 	commit_iter := git.NewCommitIter(repo, *obj_iter)
 	handle := RegisterObject(commit_iter)
 	return uint64(handle)

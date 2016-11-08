@@ -10,7 +10,7 @@ package main
 import (
 //line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:7
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 //line /home/mcuadros/workspace/go/src/gopkg.in/src-d/go-git.v4/cshared/tree_cshared.go:13
@@ -99,7 +99,7 @@ func c_Tree_Decode(o uint64) (uint64, int, *_Ctype_char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
-	cobj := obj.(*core.Object)
+	cobj := obj.(*plumbing.Object)
 	tree := git.Tree{}
 	err := tree.Decode(*cobj)
 	if err != nil {

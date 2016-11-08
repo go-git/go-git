@@ -3,9 +3,9 @@ package git
 import (
 	"errors"
 
-	"gopkg.in/src-d/go-git.v4/clients/common"
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/core"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/client/common"
 )
 
 const (
@@ -27,7 +27,7 @@ type CloneOptions struct {
 	// Name of the remote to be added, by default `origin`
 	RemoteName string
 	// Remote branch to clone
-	ReferenceName core.ReferenceName
+	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true
 	SingleBranch bool
 	// Limit fetching to the specified number of commits
@@ -45,7 +45,7 @@ func (o *CloneOptions) Validate() error {
 	}
 
 	if o.ReferenceName == "" {
-		o.ReferenceName = core.HEAD
+		o.ReferenceName = plumbing.HEAD
 	}
 
 	return nil
@@ -56,7 +56,7 @@ type PullOptions struct {
 	// Name of the remote to be pulled
 	RemoteName string
 	// Remote branch to clone
-	ReferenceName core.ReferenceName
+	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true
 	SingleBranch bool
 	// Limit fetching to the specified number of commits
@@ -70,7 +70,7 @@ func (o *PullOptions) Validate() error {
 	}
 
 	if o.ReferenceName == "" {
-		o.ReferenceName = core.HEAD
+		o.ReferenceName = plumbing.HEAD
 	}
 
 	return nil

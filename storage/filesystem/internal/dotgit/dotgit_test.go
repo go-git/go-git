@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/core"
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 
 	. "gopkg.in/check.v1"
@@ -30,21 +30,21 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	fs := osfs.New(tmp)
 	dir := New(fs)
 
-	err = dir.SetRef(core.NewReferenceFromStrings(
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	))
 
 	c.Assert(err, IsNil)
 
-	err = dir.SetRef(core.NewReferenceFromStrings(
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/symbolic",
 		"ref: refs/heads/foo",
 	))
 
 	c.Assert(err, IsNil)
 
-	err = dir.SetRef(core.NewReferenceFromStrings(
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"bar",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	))
@@ -103,7 +103,7 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 
 	ref := findReference(refs, "refs/remotes/origin/HEAD")
 	c.Assert(ref, NotNil)
-	c.Assert(ref.Type(), Equals, core.SymbolicReference)
+	c.Assert(ref.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(string(ref.Target()), Equals, "refs/remotes/origin/master")
 
 }
@@ -117,7 +117,7 @@ func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
 
 	ref := findReference(refs, "HEAD")
 	c.Assert(ref, NotNil)
-	c.Assert(ref.Type(), Equals, core.SymbolicReference)
+	c.Assert(ref.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(string(ref.Target()), Equals, "refs/heads/master")
 }
 
@@ -130,8 +130,8 @@ func (s *SuiteDotGit) TestConfig(c *C) {
 	c.Assert(filepath.Base(file.Filename()), Equals, "config")
 }
 
-func findReference(refs []*core.Reference, name string) *core.Reference {
-	n := core.ReferenceName(name)
+func findReference(refs []*plumbing.Reference, name string) *plumbing.Reference {
+	n := plumbing.ReferenceName(name)
 	for _, ref := range refs {
 		if ref.Name() == n {
 			return ref
@@ -176,11 +176,11 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
-	pack, err := dir.ObjectPack(core.ZeroHash)
+	pack, err := dir.ObjectPack(plumbing.ZeroHash)
 	c.Assert(err, Equals, ErrPackfileNotFound)
 	c.Assert(pack, IsNil)
 
-	idx, err := dir.ObjectPackIdx(core.ZeroHash)
+	idx, err := dir.ObjectPackIdx(plumbing.ZeroHash)
 	c.Assert(idx, IsNil)
 }
 
@@ -194,7 +194,7 @@ func (s *SuiteDotGit) TestNewObject(c *C) {
 	w, err := dir.NewObject()
 	c.Assert(err, IsNil)
 
-	err = w.WriteHeader(core.BlobObject, 14)
+	err = w.WriteHeader(plumbing.BlobObject, 14)
 	n, err := w.Write([]byte("this is a test"))
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 14)
@@ -225,7 +225,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
-	hash := core.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
+	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	file, err := dir.Object(hash)
 	c.Assert(err, IsNil)
 	c.Assert(strings.HasSuffix(
@@ -238,7 +238,7 @@ func (s *SuiteDotGit) TestObjectNotFound(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
-	hash := core.NewHash("not-found-object")
+	hash := plumbing.NewHash("not-found-object")
 	file, err := dir.Object(hash)
 	c.Assert(err, NotNil)
 	c.Assert(file, IsNil)

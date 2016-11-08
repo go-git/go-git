@@ -5,20 +5,20 @@ import (
 	"io"
 	"sync/atomic"
 
-	"gopkg.in/src-d/go-git.v4/core"
-	"gopkg.in/src-d/go-git.v4/formats/idxfile"
-	"gopkg.in/src-d/go-git.v4/formats/objfile"
-	"gopkg.in/src-d/go-git.v4/formats/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/objfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/utils/fs"
 )
 
 type PackWriter struct {
-	Notify func(h core.Hash, i idxfile.Idxfile)
+	Notify func(h plumbing.Hash, i idxfile.Idxfile)
 
 	fs       fs.Filesystem
 	fr, fw   fs.File
 	synced   *syncedReader
-	checksum core.Hash
+	checksum plumbing.Hash
 	index    idxfile.Idxfile
 	result   chan error
 }
