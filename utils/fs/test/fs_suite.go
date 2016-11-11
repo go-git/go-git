@@ -379,3 +379,37 @@ func (s *FilesystemSuite) TestJoin(c *C) {
 func (s *FilesystemSuite) TestBase(c *C) {
 	c.Assert(s.Fs.Base(), Not(Equals), "")
 }
+
+func (s *FilesystemSuite) TestReadAtOnReadWrite(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("abcdefg"))
+	c.Assert(err, IsNil)
+	rf, ok := f.(io.ReaderAt)
+	c.Assert(ok, Equals, true)
+	b := make([]byte, 3)
+	n, err := rf.ReadAt(b, 2)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+	c.Assert(string(b), Equals, "cde")
+	c.Assert(f.Close(), IsNil)
+}
+
+func (s *FilesystemSuite) TestReadAtOnReadOnly(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("abcdefg"))
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	f, err = s.Fs.Open("foo")
+	c.Assert(err, IsNil)
+	rf, ok := f.(io.ReaderAt)
+	c.Assert(ok, Equals, true)
+	b := make([]byte, 3)
+	n, err := rf.ReadAt(b, 2)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+	c.Assert(string(b), Equals, "cde")
+	c.Assert(f.Close(), IsNil)
+}

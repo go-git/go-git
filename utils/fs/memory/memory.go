@@ -189,6 +189,16 @@ func newFile(base, fullpath string, flag int) *file {
 }
 
 func (f *file) Read(b []byte) (int, error) {
+	n, err := f.ReadAt(b, f.position)
+	if err != nil {
+		return 0, err
+	}
+
+	f.position += int64(n)
+	return n, err
+}
+
+func (f *file) ReadAt(b []byte, off int64) (int, error) {
 	if f.IsClosed() {
 		return 0, fs.ErrClosed
 	}
@@ -197,7 +207,7 @@ func (f *file) Read(b []byte) (int, error) {
 		return 0, errors.New("read not supported")
 	}
 
-	n, err := f.content.ReadAt(b, f.position)
+	n, err := f.content.ReadAt(b, off)
 	f.position += int64(n)
 
 	return n, err
