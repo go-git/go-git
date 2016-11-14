@@ -57,6 +57,34 @@ func (s *ReaderSuite) TestDecodeInMemory(c *C) {
 	})
 }
 
+type nonSeekableReader struct {
+	r io.Reader
+}
+
+func (nsr nonSeekableReader) Read(b []byte) (int, error) {
+	return nsr.r.Read(b)
+}
+
+func (s *ReaderSuite) TestDecodeNoSeekable(c *C) {
+	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
+		reader := nonSeekableReader{
+			r: f.Packfile(),
+		}
+
+		scanner := NewScanner(reader)
+		storage := memory.NewStorage()
+		d, err := NewDecoder(scanner, storage)
+		c.Assert(err, IsNil)
+		defer d.Close()
+
+		ch, err := d.Decode()
+		c.Assert(err, IsNil)
+		c.Assert(ch, Equals, f.PackfileHash)
+
+		assertObjects(c, storage, expectedHashes)
+	})
+}
+
 var expectedHashes = []string{
 	"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",

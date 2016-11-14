@@ -121,7 +121,7 @@ func (d *Decoder) readObjectsWithObjectStorer(count int) error {
 }
 
 func (d *Decoder) readObjectsWithObjectStorerTx(count int) error {
-	tx := d.o.(storer.Transactioner).Begin()
+	d.tx = d.o.(storer.Transactioner).Begin()
 
 	for i := 0; i < count; i++ {
 		obj, err := d.ReadObject()
@@ -129,7 +129,7 @@ func (d *Decoder) readObjectsWithObjectStorerTx(count int) error {
 			return err
 		}
 
-		if _, err := tx.SetObject(obj); err != nil {
+		if _, err := d.tx.SetObject(obj); err != nil {
 			if rerr := d.tx.Rollback(); rerr != nil {
 				return ErrRollback.AddDetails(
 					"error: %s, during tx.Set error: %s", rerr, err,
@@ -141,7 +141,7 @@ func (d *Decoder) readObjectsWithObjectStorerTx(count int) error {
 
 	}
 
-	return tx.Commit()
+	return d.tx.Commit()
 }
 
 // ReadObject reads a object from the stream and return it
