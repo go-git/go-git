@@ -6,31 +6,32 @@
 // extensions.
 //
 // Small example extracting the commits from a repository:
-// func ExampleBasic_printCommits() {
-//   r := git.NewMemoryRepository()
-//   o := &git.CloneOptions{
-//       URL: "https://github.com/src-d/go-git",
-//   }
-//   if err := r.Clone(o); err != nil {
-//       panic(err)
-//   }
 //
-// 	 iter, err := r.Commits()
-// 	 if err != nil {
-//       panic(err)
-//   }
-//   defer iter.Close()
+//     func ExampleBasic_printCommits() {
+//         r := git.NewMemoryRepository()
+//         o := &git.CloneOptions{
+//             URL: "https://github.com/src-d/go-git",
+//         }
+//         if err := r.Clone(o); err != nil {
+//             panic(err)
+//         }
 //
-//   for {
-//       commit, err := iter.Next()
-//       if err != nil {
-//           if err == io.EOF {
-//               break
-//           }
-//           panic(err)
-//       }
+//         iter, err := r.Commits()
+//         if err != nil {
+//             panic(err)
+//         }
+//         defer iter.Close()
 //
-//   fmt.Println(commit)
-//  }
-// }
+//         for {
+//             commit, err := iter.Next()
+//             if err != nil {
+//                 if err == io.EOF {
+//                     break
+//                 }
+//                 panic(err)
+//             }
+//
+//             fmt.Println(commit)
+//         }
+//    }
 package git // import "gopkg.in/src-d/go-git.v4"

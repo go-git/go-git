@@ -1,12 +1,18 @@
 package git
 
 import (
+	"crypto/tls"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/client"
+	githttp "gopkg.in/src-d/go-git.v4/plumbing/client/http"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -201,4 +207,44 @@ func (s *RemoteSuite) TestString(c *C) {
 		"foo\thttps://github.com/git-fixtures/basic.git (fetch)\n"+
 		"foo\thttps://github.com/git-fixtures/basic.git (push)",
 	)
+}
+
+// Here is an example to configure http client according to our own needs.
+func Example_customHTTPClient() {
+	const url = "https://github.com/git-fixtures/basic.git"
+
+	// Create a custom http(s) client with your config
+	customClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}, // accept any certificate (might be useful for testing)
+		Timeout: 15 * time.Second, // 15 second timeout
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { // don't follow redirect
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Override http(s) default protocol to use our custom client
+	clients.InstallProtocol(
+		"https",
+		githttp.NewGitUploadPackServiceFactory(customClient))
+
+	// Create an in-memory repository
+	r := NewMemoryRepository()
+
+	// Clone repo
+	if err := r.Clone(&CloneOptions{URL: url}); err != nil {
+		panic(err)
+	}
+
+	// Retrieve the branch pointed by HEAD
+	head, err := r.Head()
+	if err != nil {
+		panic(err)
+	}
+
+	// Print latest commit hash
+	fmt.Println(head.Hash())
+	// Output:
+	// 6ecf0ef2c2dffb796033e5a02219af86ec6584e5
 }

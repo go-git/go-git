@@ -30,7 +30,7 @@ Installation
 The recommended way to install *go-git* is:
 
 ```
-go get -u gopkg.in/src-d/go-git.v3/...
+go get -u gopkg.in/src-d/go-git.v4/...
 ```
 
 

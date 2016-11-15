@@ -20,23 +20,22 @@ func (s *SuiteCommon) TestNewBasicAuth(c *C) {
 	c.Assert(a.String(), Equals, "http-basic-auth - foo:*******")
 }
 
-func (s *SuiteCommon) TestNewHTTPError200(c *C) {
-	res := &http.Response{StatusCode: 200}
-	res.StatusCode = 200
-	err := NewHTTPError(res)
+func (s *SuiteCommon) TestNewErrOK(c *C) {
+	res := &http.Response{StatusCode: http.StatusOK}
+	err := NewErr(res)
 	c.Assert(err, IsNil)
 }
 
-func (s *SuiteCommon) TestNewHTTPError401(c *C) {
-	s.testNewHTTPError(c, 401, "authorization required")
+func (s *SuiteCommon) TestNewErrUnauthorized(c *C) {
+	s.testNewHTTPError(c, http.StatusUnauthorized, "authorization required")
 }
 
-func (s *SuiteCommon) TestNewHTTPError404(c *C) {
-	s.testNewHTTPError(c, 404, "repository not found")
+func (s *SuiteCommon) TestNewErrNotFound(c *C) {
+	s.testNewHTTPError(c, http.StatusNotFound, "repository not found")
 }
 
 func (s *SuiteCommon) TestNewHTTPError40x(c *C) {
-	s.testNewHTTPError(c, 402, "unexpected client error.*")
+	s.testNewHTTPError(c, http.StatusPaymentRequired, "unexpected client error.*")
 }
 
 func (s *SuiteCommon) testNewHTTPError(c *C, code int, msg string) {
@@ -46,7 +45,7 @@ func (s *SuiteCommon) testNewHTTPError(c *C, code int, msg string) {
 		Request:    req,
 	}
 
-	err := NewHTTPError(res)
+	err := NewErr(res)
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, msg)
 }

@@ -9,8 +9,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/client/common"
 )
 
-// HTTPAuthMethod concrete implementation of common.AuthMethod for HTTP services
-type HTTPAuthMethod interface {
+// AuthMethod is concrete implementation of common.AuthMethod for HTTP services
+type AuthMethod interface {
 	common.AuthMethod
 	setAuth(r *http.Request)
 }
@@ -29,7 +29,7 @@ func (a *BasicAuth) setAuth(r *http.Request) {
 	r.SetBasicAuth(a.username, a.password)
 }
 
-// Name name of the auth
+// Name is name of the auth
 func (a *BasicAuth) Name() string {
 	return "http-basic-auth"
 }
@@ -43,34 +43,33 @@ func (a *BasicAuth) String() string {
 	return fmt.Sprintf("%s - %s:%s", a.Name(), a.username, masked)
 }
 
-// HTTPError a dedicated error to return errors bases on status codes
-type HTTPError struct {
+// Err is a dedicated error to return errors based on status code
+type Err struct {
 	Response *http.Response
 }
 
-// NewHTTPError returns a new HTTPError based on a http response
-func NewHTTPError(r *http.Response) error {
-	if r.StatusCode >= 200 && r.StatusCode < 300 {
+// NewErr returns a new Err based on a http response
+func NewErr(r *http.Response) error {
+	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
 
 	switch r.StatusCode {
-	case 401:
+	case http.StatusUnauthorized:
 		return common.ErrAuthorizationRequired
-	case 404:
+	case http.StatusNotFound:
 		return common.ErrRepositoryNotFound
 	}
 
-	err := &HTTPError{r}
-	return plumbing.NewUnexpectedError(err)
+	return plumbing.NewUnexpectedError(&Err{r})
 }
 
 // StatusCode returns the status code of the response
-func (e *HTTPError) StatusCode() int {
+func (e *Err) StatusCode() int {
 	return e.Response.StatusCode
 }
 
-func (e *HTTPError) Error() string {
+func (e *Err) Error() string {
 	return fmt.Sprintf("unexpected requesting %q status code: %d",
 		e.Response.Request.URL, e.Response.StatusCode,
 	)

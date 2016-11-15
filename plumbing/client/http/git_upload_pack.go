@@ -13,26 +13,41 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
 )
 
-// GitUploadPackService git-upoad-pack service over HTTP
+// GitUploadPackService git-upload-pack service over HTTP
 type GitUploadPackService struct {
 	client   *http.Client
 	endpoint common.Endpoint
-	auth     HTTPAuthMethod
+	auth     AuthMethod
 }
 
 // NewGitUploadPackService connects to a git-upload-pack service over HTTP, the
 // auth is extracted from the URL, or can be provided using the SetAuth method
 func NewGitUploadPackService(endpoint common.Endpoint) common.GitUploadPackService {
+	return newGitUploadPackService(endpoint, http.DefaultClient)
+}
+
+// NewGitUploadPackServiceFactory creates a http client factory with a customizable client
+// See `InstallProtocol` to install and override default http client.
+// Unless a properly initialized client is given, it will fall back into `http.DefaultClient`.
+func NewGitUploadPackServiceFactory(client *http.Client) common.GitUploadPackServiceFactory {
+	return func(endpoint common.Endpoint) common.GitUploadPackService {
+		return newGitUploadPackService(endpoint, client)
+	}
+}
+
+func newGitUploadPackService(endpoint common.Endpoint, client *http.Client) common.GitUploadPackService {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	s := &GitUploadPackService{
-		client:   http.DefaultClient,
+		client:   client,
 		endpoint: endpoint,
 	}
-
 	s.setBasicAuthFromEndpoint()
 	return s
 }
 
-// Connect has not any effect, is here just for meet the interface
+// Connect has not any effect, is here to satisfy interface
 func (s *GitUploadPackService) Connect() error {
 	return nil
 }
@@ -54,7 +69,7 @@ func (s *GitUploadPackService) setBasicAuthFromEndpoint() {
 
 // SetAuth sets the AuthMethod
 func (s *GitUploadPackService) SetAuth(auth common.AuthMethod) error {
-	httpAuth, ok := auth.(HTTPAuthMethod)
+	httpAuth, ok := auth.(AuthMethod)
 	if !ok {
 		return common.ErrInvalidAuthMethod
 	}
@@ -139,7 +154,8 @@ func (s *GitUploadPackService) doRequest(method, url string, content *strings.Re
 		return nil, plumbing.NewUnexpectedError(err)
 	}
 
-	if err := NewHTTPError(res); err != nil {
+	if err := NewErr(res); err != nil {
+		_ = res.Body.Close()
 		return nil, err
 	}
 
@@ -168,7 +184,7 @@ func (s *GitUploadPackService) applyAuthToRequest(req *http.Request) {
 }
 
 // Disconnect do nothing
-func (s *GitUploadPackService) Disconnect() (err error) {
+func (s *GitUploadPackService) Disconnect() error {
 	return nil
 }
 

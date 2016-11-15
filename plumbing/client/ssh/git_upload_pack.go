@@ -84,11 +84,7 @@ func (s *GitUploadPackService) setAuthFromEndpoint() error {
 
 	var err error
 	s.auth, err = NewSSHAgentAuth(u)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // SetAuth sets the AuthMethod
@@ -105,7 +101,7 @@ func (s *GitUploadPackService) SetAuth(auth common.AuthMethod) error {
 // Info returns the GitUploadPackInfo of the repository. The client must be
 // connected with the repository (using the ConnectWithAuth() method) before
 // using this method.
-func (s *GitUploadPackService) Info() (i *common.GitUploadPackInfo, err error) {
+func (s *GitUploadPackService) Info() (*common.GitUploadPackInfo, error) {
 	if !s.connected {
 		return nil, ErrNotConnected
 	}
@@ -125,12 +121,12 @@ func (s *GitUploadPackService) Info() (i *common.GitUploadPackInfo, err error) {
 		return nil, err
 	}
 
-	i = common.NewGitUploadPackInfo()
+	i := common.NewGitUploadPackInfo()
 	return i, i.Decode(bytes.NewReader(out))
 }
 
 // Disconnect the SSH client.
-func (s *GitUploadPackService) Disconnect() (err error) {
+func (s *GitUploadPackService) Disconnect() error {
 	if !s.connected {
 		return ErrNotConnected
 	}
@@ -142,7 +138,7 @@ func (s *GitUploadPackService) Disconnect() (err error) {
 // SSH session on a connected GitUploadPackService, sends the given
 // upload request to the server and returns a reader for the received
 // packfile.  Closing the returned reader will close the SSH session.
-func (s *GitUploadPackService) Fetch(req *common.GitUploadPackRequest) (rc io.ReadCloser, err error) {
+func (s *GitUploadPackService) Fetch(req *common.GitUploadPackRequest) (io.ReadCloser, error) {
 	if !s.connected {
 		return nil, ErrNotConnected
 	}
@@ -243,7 +239,7 @@ func sendHaves(w io.Writer, req *common.GitUploadPackRequest) error {
 	e := pktline.NewEncoder(w)
 	for _, have := range req.Haves {
 		if err := e.Encodef("have %s\n", have); err != nil {
-			return fmt.Errorf("sending haves for %q: err ", have, err)
+			return fmt.Errorf("sending haves for %q: %s", have, err)
 		}
 	}
 

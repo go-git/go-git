@@ -1,4 +1,4 @@
-// Package clients includes the implementation for diferent transport protocols
+// Package clients includes the implementation for different transport protocols
 //
 // go-git needs the packfile and the refs of the repo. The
 // `NewGitUploadPackService` function returns an object that allows to
@@ -21,17 +21,15 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/client/ssh"
 )
 
-type GitUploadPackServiceFactory func(common.Endpoint) common.GitUploadPackService
-
 // Protocols are the protocols supported by default.
-var Protocols = map[string]GitUploadPackServiceFactory{
+var Protocols = map[string]common.GitUploadPackServiceFactory{
 	"http":  http.NewGitUploadPackService,
 	"https": http.NewGitUploadPackService,
 	"ssh":   ssh.NewGitUploadPackService,
 }
 
 // InstallProtocol adds or modifies an existing protocol.
-func InstallProtocol(scheme string, f GitUploadPackServiceFactory) {
+func InstallProtocol(scheme string, f common.GitUploadPackServiceFactory) {
 	Protocols[scheme] = f
 }
 

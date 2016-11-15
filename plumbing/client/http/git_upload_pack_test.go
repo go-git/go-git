@@ -1,7 +1,9 @@
 package http
 
 import (
+	"crypto/tls"
 	"io/ioutil"
+	"net/http"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -28,6 +30,18 @@ func (s *RemoteSuite) TestNewGitUploadPackServiceAuth(c *C) {
 	auth := r.(*GitUploadPackService).auth
 
 	c.Assert(auth.String(), Equals, "http-basic-auth - foo:*******")
+}
+
+func (s *RemoteSuite) TestNewGitUploadPackServiceFactory(c *C) {
+	e, err := common.NewEndpoint("https://foo:bar@github.com/git-fixtures/basic")
+	c.Assert(err, IsNil)
+
+	roundTripper := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	client := &http.Client{Transport: roundTripper}
+	r := NewGitUploadPackServiceFactory(client)(e).(*GitUploadPackService)
+
+	c.Assert(r.auth.String(), Equals, "http-basic-auth - foo:*******")
+	c.Assert(r.client.Transport, Equals, roundTripper)
 }
 
 func (s *RemoteSuite) TestConnect(c *C) {

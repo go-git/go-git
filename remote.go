@@ -60,11 +60,8 @@ func (r *Remote) connectUploadPackService() error {
 
 func (r *Remote) retrieveUpInfo() error {
 	var err error
-	if r.upInfo, err = r.upSrv.Info(); err != nil {
-		return err
-	}
-
-	return nil
+	r.upInfo, err = r.upSrv.Info()
+	return err
 }
 
 // Info returns the git-upload-pack info

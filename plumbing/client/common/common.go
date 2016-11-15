@@ -36,6 +36,9 @@ type GitUploadPackService interface {
 	Disconnect() error
 }
 
+// GitUploadPackServiceFactory is capable of instantiating GitUploadPackService with given endpoint
+type GitUploadPackServiceFactory func(Endpoint) GitUploadPackService
+
 type AuthMethod interface {
 	Name() string
 	String() string
