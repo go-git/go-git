@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"bytes"
+
 	. "gopkg.in/check.v1"
 	. "gopkg.in/src-d/go-git.v4/utils/fs"
 )
@@ -454,4 +456,24 @@ func (s *FilesystemSuite) TestReadAtOnReadOnly(c *C) {
 	c.Assert(n, Equals, 3)
 	c.Assert(string(b), Equals, "cde")
 	c.Assert(f.Close(), IsNil)
+}
+
+func (s *FilesystemSuite) TestReadWriteLargeFile(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+
+	size := 1 << 20
+
+	n, err := f.Write(bytes.Repeat([]byte("F"), size))
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, size)
+
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	f, err = s.Fs.Open("foo")
+	c.Assert(err, IsNil)
+	b, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+	c.Assert(len(b), Equals, size)
 }

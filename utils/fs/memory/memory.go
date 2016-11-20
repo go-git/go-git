@@ -40,6 +40,7 @@ func (fs *Memory) Open(filename string) (fs.File, error) {
 func (fs *Memory) OpenFile(filename string, flag int, perm os.FileMode) (fs.File, error) {
 	fullpath := fs.Join(fs.base, filename)
 	f, ok := fs.s.files[fullpath]
+
 	if !ok && !isCreate(flag) {
 		return nil, os.ErrNotExist
 	}
@@ -194,7 +195,6 @@ func (f *file) Read(b []byte) (int, error) {
 		return 0, err
 	}
 
-	f.position += int64(n)
 	return n, err
 }
 
