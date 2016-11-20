@@ -91,7 +91,7 @@ func (fs *Memory) ReadDir(base string) (entries []fs.FileInfo, err error) {
 		parts := strings.Split(fullpath, string(separator))
 
 		if len(parts) == 1 {
-			entries = append(entries, newFileInfo(fs.base, fullpath, f.content.Len()))
+			entries = append(entries, &fileInfo{name: parts[0], size: f.content.Len()})
 			continue
 		}
 

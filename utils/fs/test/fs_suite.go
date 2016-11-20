@@ -256,6 +256,48 @@ func (s *FilesystemSuite) TestReadDirAndDir(c *C) {
 	c.Assert(info, HasLen, 2)
 }
 
+func (s *FilesystemSuite) TestReadDirFileInfo(c *C) {
+	f, err := s.Fs.Create("foo")
+	c.Assert(err, IsNil)
+	n, err := f.Write([]byte{'F', 'O', 'O'})
+	c.Assert(n, Equals, 3)
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	info, err := s.Fs.ReadDir("/")
+	c.Assert(err, IsNil)
+	c.Assert(info, HasLen, 1)
+
+	c.Assert(info[0].Size(), Equals, int64(3))
+	c.Assert(info[0].IsDir(), Equals, false)
+	c.Assert(info[0].Name(), Equals, "foo")
+}
+
+func (s *FilesystemSuite) TestReadDirFileInfoDirs(c *C) {
+	files := []string{"qux/baz/foo"}
+	for _, name := range files {
+		f, err := s.Fs.Create(name)
+		c.Assert(err, IsNil)
+		n, err := f.Write([]byte{'F', 'O', 'O'})
+		c.Assert(n, Equals, 3)
+		c.Assert(err, IsNil)
+		c.Assert(f.Close(), IsNil)
+	}
+
+	info, err := s.Fs.ReadDir("qux")
+	c.Assert(err, IsNil)
+	c.Assert(info, HasLen, 1)
+	c.Assert(info[0].IsDir(), Equals, true)
+	c.Assert(info[0].Name(), Equals, "baz")
+
+	info, err = s.Fs.ReadDir("qux/baz")
+	c.Assert(err, IsNil)
+	c.Assert(info, HasLen, 1)
+	c.Assert(info[0].Size(), Equals, int64(3))
+	c.Assert(info[0].IsDir(), Equals, false)
+	c.Assert(info[0].Name(), Equals, "foo")
+}
+
 func (s *FilesystemSuite) TestDirStat(c *C) {
 	files := []string{"foo", "bar", "qux/baz", "qux/qux"}
 	for _, name := range files {
