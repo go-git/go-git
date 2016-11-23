@@ -1,14 +1,10 @@
-// Package common contains interfaces and non-specific protocol entities
-package common
+package transport
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net/url"
-	"regexp"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -19,82 +15,20 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
-var (
-	ErrRepositoryNotFound    = errors.New("repository not found")
-	ErrAuthorizationRequired = errors.New("authorization required")
-	ErrEmptyGitUploadPack    = errors.New("empty git-upload-pack given")
-	ErrInvalidAuthMethod     = errors.New("invalid auth method")
-)
-
-const GitUploadPackServiceName = "git-upload-pack"
-
-type GitUploadPackService interface {
-	Connect() error
-	SetAuth(AuthMethod) error
-	Info() (*GitUploadPackInfo, error)
-	Fetch(*GitUploadPackRequest) (io.ReadCloser, error)
-	Disconnect() error
-}
-
-// GitUploadPackServiceFactory is capable of instantiating GitUploadPackService with given endpoint
-type GitUploadPackServiceFactory func(Endpoint) GitUploadPackService
-
-type AuthMethod interface {
-	Name() string
-	String() string
-}
-
-type Endpoint url.URL
-
-var (
-	isSchemeRegExp   = regexp.MustCompile("^[^:]+://")
-	scpLikeUrlRegExp = regexp.MustCompile("^(?P<user>[^@]+@)?(?P<host>[^:]+):/?(?P<path>.+)$")
-)
-
-func NewEndpoint(endpoint string) (Endpoint, error) {
-	endpoint = transformSCPLikeIfNeeded(endpoint)
-
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return Endpoint{}, plumbing.NewPermanentError(err)
-	}
-
-	if !u.IsAbs() {
-		return Endpoint{}, plumbing.NewPermanentError(fmt.Errorf(
-			"invalid endpoint: %s", endpoint,
-		))
-	}
-
-	return Endpoint(*u), nil
-}
-
-func transformSCPLikeIfNeeded(endpoint string) string {
-	if !isSchemeRegExp.MatchString(endpoint) && scpLikeUrlRegExp.MatchString(endpoint) {
-		m := scpLikeUrlRegExp.FindStringSubmatch(endpoint)
-		return fmt.Sprintf("ssh://%s%s/%s", m[1], m[2], m[3])
-	}
-
-	return endpoint
-}
-
-func (e *Endpoint) String() string {
-	u := url.URL(*e)
-	return u.String()
-}
-
-type GitUploadPackInfo struct {
+//TODO: Replace this by advrefs.AdvRefs.
+type UploadPackInfo struct {
 	Capabilities *packp.Capabilities
 	Refs         memory.ReferenceStorage
 }
 
-func NewGitUploadPackInfo() *GitUploadPackInfo {
-	return &GitUploadPackInfo{
+func NewUploadPackInfo() *UploadPackInfo {
+	return &UploadPackInfo{
 		Capabilities: packp.NewCapabilities(),
 		Refs:         make(memory.ReferenceStorage, 0),
 	}
 }
 
-func (i *GitUploadPackInfo) Decode(r io.Reader) error {
+func (i *UploadPackInfo) Decode(r io.Reader) error {
 	d := advrefs.NewDecoder(r)
 	ar := advrefs.New()
 	if err := d.Decode(ar); err != nil {
@@ -113,7 +47,7 @@ func (i *GitUploadPackInfo) Decode(r io.Reader) error {
 	return nil
 }
 
-func (i *GitUploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
+func (i *UploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
 	for name, hash := range ar.References {
 		ref := plumbing.NewReferenceFromStrings(name, hash.String())
 		i.Refs.SetReference(ref)
@@ -122,7 +56,7 @@ func (i *GitUploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
 	return i.addSymbolicRefs(ar)
 }
 
-func (i *GitUploadPackInfo) addSymbolicRefs(ar *advrefs.AdvRefs) error {
+func (i *UploadPackInfo) addSymbolicRefs(ar *advrefs.AdvRefs) error {
 	if !hasSymrefs(ar) {
 		return nil
 	}
@@ -146,16 +80,16 @@ func hasSymrefs(ar *advrefs.AdvRefs) bool {
 	return ar.Capabilities.Supports("symref")
 }
 
-func (i *GitUploadPackInfo) Head() *plumbing.Reference {
+func (i *UploadPackInfo) Head() *plumbing.Reference {
 	ref, _ := storer.ResolveReference(i.Refs, plumbing.HEAD)
 	return ref
 }
 
-func (i *GitUploadPackInfo) String() string {
+func (i *UploadPackInfo) String() string {
 	return string(i.Bytes())
 }
 
-func (i *GitUploadPackInfo) Bytes() []byte {
+func (i *UploadPackInfo) Bytes() []byte {
 	var buf bytes.Buffer
 	e := pktline.NewEncoder(&buf)
 
@@ -180,26 +114,26 @@ func (i *GitUploadPackInfo) Bytes() []byte {
 	return buf.Bytes()
 }
 
-type GitUploadPackRequest struct {
+type UploadPackRequest struct {
 	Wants []plumbing.Hash
 	Haves []plumbing.Hash
 	Depth int
 }
 
-func (r *GitUploadPackRequest) Want(h ...plumbing.Hash) {
+func (r *UploadPackRequest) Want(h ...plumbing.Hash) {
 	r.Wants = append(r.Wants, h...)
 }
 
-func (r *GitUploadPackRequest) Have(h ...plumbing.Hash) {
+func (r *UploadPackRequest) Have(h ...plumbing.Hash) {
 	r.Haves = append(r.Haves, h...)
 }
 
-func (r *GitUploadPackRequest) String() string {
+func (r *UploadPackRequest) String() string {
 	b, _ := ioutil.ReadAll(r.Reader())
 	return string(b)
 }
 
-func (r *GitUploadPackRequest) Reader() *strings.Reader {
+func (r *UploadPackRequest) Reader() *strings.Reader {
 	var buf bytes.Buffer
 	e := pktline.NewEncoder(&buf)
 

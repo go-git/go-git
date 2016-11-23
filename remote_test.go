@@ -11,9 +11,9 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/client"
-	githttp "gopkg.in/src-d/go-git.v4/plumbing/client/http"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
+	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
@@ -52,7 +52,7 @@ func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
 
 func (s *RemoteSuite) TestInfo(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	c.Assert(r.Info(), IsNil)
 	c.Assert(r.Connect(), IsNil)
@@ -62,7 +62,7 @@ func (s *RemoteSuite) TestInfo(c *C) {
 
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Head().Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
@@ -70,7 +70,7 @@ func (s *RemoteSuite) TestDefaultBranch(c *C) {
 
 func (s *RemoteSuite) TestCapabilities(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Capabilities().Get("agent").Values, HasLen, 1)
@@ -79,7 +79,7 @@ func (s *RemoteSuite) TestCapabilities(c *C) {
 func (s *RemoteSuite) TestFetch(c *C) {
 	sto := memory.NewStorage()
 	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	c.Assert(r.Connect(), IsNil)
 
@@ -124,7 +124,7 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 	mock := &mockPackfileWriter{Storer: fss}
 
 	r := newRemote(mock, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	c.Assert(r.Connect(), IsNil)
 
@@ -150,7 +150,7 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	sto := memory.NewStorage()
 	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	c.Assert(r.Connect(), IsNil)
 
@@ -166,7 +166,7 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 
 func (s *RemoteSuite) TestHead(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
@@ -175,7 +175,7 @@ func (s *RemoteSuite) TestHead(c *C) {
 
 func (s *RemoteSuite) TestRef(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
@@ -191,7 +191,7 @@ func (s *RemoteSuite) TestRef(c *C) {
 
 func (s *RemoteSuite) TestRefs(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.upSrv = &MockGitUploadPackService{}
+	r.client = &MockClient{}
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
@@ -225,9 +225,9 @@ func Example_customHTTPClient() {
 	}
 
 	// Override http(s) default protocol to use our custom client
-	clients.InstallProtocol(
+	client.InstallProtocol(
 		"https",
-		githttp.NewGitUploadPackServiceFactory(customClient))
+		githttp.NewClient(customClient))
 
 	// Create an in-memory repository
 	r := NewMemoryRepository()

@@ -5,7 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/client/common"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
 const (
@@ -23,7 +23,7 @@ type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from
 	URL string
 	// Auth credentials, if required, to uses with the remote repository
-	Auth common.AuthMethod
+	Auth transport.AuthMethod
 	// Name of the remote to be added, by default `origin`
 	RemoteName string
 	// Remote branch to clone

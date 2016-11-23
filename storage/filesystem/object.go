@@ -181,7 +181,7 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.Object, error
 	}
 
 	d.SetOffsets(s.index[pack])
-	return d.ReadObjectAt(offset)
+	return d.DecodeObjectAt(offset)
 }
 
 func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, int64) {
@@ -297,7 +297,7 @@ func (iter *packfileIter) Next() (plumbing.Object, error) {
 		return nil, io.EOF
 	}
 
-	obj, err := iter.d.ReadObject()
+	obj, err := iter.d.DecodeObject()
 	if err != nil {
 		return nil, err
 	}

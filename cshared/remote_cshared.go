@@ -141,7 +141,7 @@ func c_Remote_Fetch(r uint64, req uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	request := obj.(*common.GitUploadPackRequest)
+	request := obj.(*common.UploadPackRequest)
 	reader, err := remote.Fetch(request)
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
