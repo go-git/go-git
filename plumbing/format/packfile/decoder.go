@@ -34,29 +34,46 @@ var (
 	// ErrCannotRecall is returned by RecallByOffset or RecallByHash if the object
 	// to recall cannot be returned.
 	ErrCannotRecall = NewError("cannot recall object")
-	// ErrNonSeekable is returned if a NewDecoder is used with a non-seekable
-	// reader and without a plumbing.ObjectStorage or ReadObjectAt method is called
-	// without a seekable scanner
+	// ErrResolveDeltasNotSupported is returned if a NewDecoder is used with a
+	// non-seekable scanner and without a plumbing.ObjectStorage
+	ErrResolveDeltasNotSupported = NewError("resolve delta is not supported")
+	// ErrNonSeekable is returned if a ReadObjectAt method is called without a
+	// seekable scanner
 	ErrNonSeekable = NewError("non-seekable scanner")
 	// ErrRollback error making Rollback over a transaction after an error
 	ErrRollback = NewError("rollback error, during set error")
+	// ErrAlreadyDecoded is returned if NewDecoder is called for a second time
+	ErrAlreadyDecoded = NewError("packfile was already decoded")
 )
 
-// Decoder reads and decodes packfiles from an input stream.
+// Decoder reads and decodes packfiles from an input Scanner, if an ObjectStorer
+// was provided the decoded objects are store there. If not the decode object
+// is destroyed. The Offsets and CRCs are calculated independand if the an
+// ObjectStorer was provided or not.
 type Decoder struct {
 	s  *Scanner
 	o  storer.ObjectStorer
 	tx storer.Transaction
 
+	isDecoded    bool
 	offsetToHash map[int64]plumbing.Hash
 	hashToOffset map[plumbing.Hash]int64
 	crcs         map[plumbing.Hash]uint32
 }
 
-// NewDecoder returns a new Decoder that reads from r.
+// NewDecoder returns a new Decoder that decodes a Packfile using the given
+// s and store the objects in the provided o. ObjectStorer can be nil, in this
+// case the objects are not stored but objects offsets on the Packfile and the
+// CRCs are calculated.
+//
+// If ObjectStorer is nil and the Scanner is not Seekable, ErrNonSeekable is
+// returned.
+//
+// If the ObjectStorer implements storer.Transactioner, a transaction is created
+// during the Decode execution, if something fails the Rollback is called
 func NewDecoder(s *Scanner, o storer.ObjectStorer) (*Decoder, error) {
-	if !s.IsSeekable && o == nil {
-		return nil, ErrNonSeekable
+	if !canResolveDeltas(s, o) {
+		return nil, ErrResolveDeltasNotSupported
 	}
 
 	return &Decoder{
@@ -69,8 +86,19 @@ func NewDecoder(s *Scanner, o storer.ObjectStorer) (*Decoder, error) {
 	}, nil
 }
 
-// Decode reads a packfile and stores it in the value pointed to by s.
+func canResolveDeltas(s *Scanner, o storer.ObjectStorer) bool {
+	return s.IsSeekable || o != nil
+}
+
+// Decode reads a packfile and stores it in the value pointed to by s. The
+// offsets and the CRCs are calculated by this method
 func (d *Decoder) Decode() (checksum plumbing.Hash, err error) {
+	defer func() { d.isDecoded = true }()
+
+	if d.isDecoded {
+		return plumbing.ZeroHash, ErrAlreadyDecoded
+	}
+
 	if err := d.doDecode(); err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -87,17 +115,17 @@ func (d *Decoder) doDecode() error {
 	_, isTxStorer := d.o.(storer.Transactioner)
 	switch {
 	case d.o == nil:
-		return d.readObjects(int(count))
+		return d.decodeObjects(int(count))
 	case isTxStorer:
-		return d.readObjectsWithObjectStorerTx(int(count))
+		return d.decodeObjectsWithObjectStorerTx(int(count))
 	default:
-		return d.readObjectsWithObjectStorer(int(count))
+		return d.decodeObjectsWithObjectStorer(int(count))
 	}
 }
 
-func (d *Decoder) readObjects(count int) error {
+func (d *Decoder) decodeObjects(count int) error {
 	for i := 0; i < count; i++ {
-		if _, err := d.ReadObject(); err != nil {
+		if _, err := d.DecodeObject(); err != nil {
 			return err
 		}
 	}
@@ -105,9 +133,9 @@ func (d *Decoder) readObjects(count int) error {
 	return nil
 }
 
-func (d *Decoder) readObjectsWithObjectStorer(count int) error {
+func (d *Decoder) decodeObjectsWithObjectStorer(count int) error {
 	for i := 0; i < count; i++ {
-		obj, err := d.ReadObject()
+		obj, err := d.DecodeObject()
 		if err != nil {
 			return err
 		}
@@ -120,11 +148,11 @@ func (d *Decoder) readObjectsWithObjectStorer(count int) error {
 	return nil
 }
 
-func (d *Decoder) readObjectsWithObjectStorerTx(count int) error {
+func (d *Decoder) decodeObjectsWithObjectStorerTx(count int) error {
 	d.tx = d.o.(storer.Transactioner).Begin()
 
 	for i := 0; i < count; i++ {
-		obj, err := d.ReadObject()
+		obj, err := d.DecodeObject()
 		if err != nil {
 			return err
 		}
@@ -144,8 +172,10 @@ func (d *Decoder) readObjectsWithObjectStorerTx(count int) error {
 	return d.tx.Commit()
 }
 
-// ReadObject reads a object from the stream and return it
-func (d *Decoder) ReadObject() (plumbing.Object, error) {
+// DecodeObject reads the next object from the scanner and returns it. This
+// method can be used in replacement of the Decode method, to work in a
+// interative way
+func (d *Decoder) DecodeObject() (plumbing.Object, error) {
 	h, err := d.s.NextObjectHeader()
 	if err != nil {
 		return nil, err
@@ -185,8 +215,9 @@ func (d *Decoder) newObject() plumbing.Object {
 	return d.o.NewObject()
 }
 
-// ReadObjectAt reads an object at the given location
-func (d *Decoder) ReadObjectAt(offset int64) (plumbing.Object, error) {
+// DecodeObjectAt reads an object at the given location, if Decode wasn't called
+// previously objects offset should provided using the SetOffsets method
+func (d *Decoder) DecodeObjectAt(offset int64) (plumbing.Object, error) {
 	if !d.s.IsSeekable {
 		return nil, ErrNonSeekable
 	}
@@ -203,7 +234,7 @@ func (d *Decoder) ReadObjectAt(offset int64) (plumbing.Object, error) {
 		}
 	}()
 
-	return d.ReadObject()
+	return d.DecodeObject()
 }
 
 func (d *Decoder) fillRegularObjectContent(obj plumbing.Object) (uint32, error) {
@@ -259,11 +290,11 @@ func (d *Decoder) setCRC(h plumbing.Hash, crc uint32) {
 
 func (d *Decoder) recallByOffset(o int64) (plumbing.Object, error) {
 	if d.s.IsSeekable {
-		return d.ReadObjectAt(o)
+		return d.DecodeObjectAt(o)
 	}
 
 	if h, ok := d.offsetToHash[o]; ok {
-		return d.tx.Object(plumbing.AnyObject, h)
+		return d.recallByHashNonSeekable(h)
 	}
 
 	return nil, plumbing.ErrObjectNotFound
@@ -272,11 +303,22 @@ func (d *Decoder) recallByOffset(o int64) (plumbing.Object, error) {
 func (d *Decoder) recallByHash(h plumbing.Hash) (plumbing.Object, error) {
 	if d.s.IsSeekable {
 		if o, ok := d.hashToOffset[h]; ok {
-			return d.ReadObjectAt(o)
+			return d.DecodeObjectAt(o)
 		}
 	}
 
-	obj, err := d.tx.Object(plumbing.AnyObject, h)
+	return d.recallByHashNonSeekable(h)
+}
+
+// recallByHashNonSeekable if we are in a transaction the objects are read from
+// the transaction, if not are directly read from the ObjectStorer
+func (d *Decoder) recallByHashNonSeekable(h plumbing.Hash) (obj plumbing.Object, err error) {
+	if d.tx != nil {
+		obj, err = d.tx.Object(plumbing.AnyObject, h)
+	} else {
+		obj, err = d.o.Object(plumbing.AnyObject, h)
+	}
+
 	if err != plumbing.ErrObjectNotFound {
 		return obj, err
 	}
@@ -284,18 +326,20 @@ func (d *Decoder) recallByHash(h plumbing.Hash) (plumbing.Object, error) {
 	return nil, plumbing.ErrObjectNotFound
 }
 
-// SetOffsets sets the offsets, required when using the method ReadObjectAt,
+// SetOffsets sets the offsets, required when using the method DecodeObjectAt,
 // without decoding the full packfile
 func (d *Decoder) SetOffsets(offsets map[plumbing.Hash]int64) {
 	d.hashToOffset = offsets
 }
 
-// Offsets returns the objects read offset
+// Offsets returns the objects read offset, Decode method should be called
+// before to calculate the Offsets
 func (d *Decoder) Offsets() map[plumbing.Hash]int64 {
 	return d.hashToOffset
 }
 
-// CRCs returns the CRC-32 for each objected read
+// CRCs returns the CRC-32 for each objected read,Decode method should be called
+// before to calculate the CRCs
 func (d *Decoder) CRCs() map[plumbing.Hash]uint32 {
 	return d.crcs
 }
