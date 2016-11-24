@@ -26,11 +26,6 @@ var (
 	ErrSeekNotSupported = NewError("not seek support")
 )
 
-const (
-	// VersionSupported is the packfile version supported by this parser.
-	VersionSupported uint32 = 2
-)
-
 // ObjectHeader contains the information related to the object, this information
 // is collected from the previous bytes to the content of the object.
 type ObjectHeader struct {
@@ -124,7 +119,7 @@ func (s *Scanner) readSignature() ([]byte, error) {
 
 // isValidSignature returns if sig is a valid packfile signature.
 func (s *Scanner) isValidSignature(sig []byte) bool {
-	return bytes.Equal(sig, []byte{'P', 'A', 'C', 'K'})
+	return bytes.Equal(sig, signature)
 }
 
 // readVersion reads and returns the version field of a packfile.
@@ -229,15 +224,6 @@ func (s *Scanner) readObjectTypeAndLength() (plumbing.ObjectType, int64, error) 
 
 	return t, l, err
 }
-
-const (
-	maskType        = uint8(112) // 0111 0000
-	maskFirstLength = uint8(15)  // 0000 1111
-	maskContinue    = uint8(128) // 1000 000
-	firstLengthBits = uint8(4)   // the first byte has 4 bits to store the length
-	maskLength      = uint8(127) // 0111 1111
-	lengthBits      = uint8(7)   // subsequent bytes has 7 bits to store the length
-)
 
 func (s *Scanner) readType() (plumbing.ObjectType, byte, error) {
 	var c byte
