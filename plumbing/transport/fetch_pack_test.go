@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/advrefs"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 
 	. "gopkg.in/check.v1"
 )
@@ -59,7 +59,7 @@ func (s *UploadPackSuite) TestUploadPackInfoEmpty(c *C) {
 
 	i := NewUploadPackInfo()
 	err := i.Decode(b)
-	c.Assert(err, Equals, advrefs.ErrEmpty)
+	c.Assert(err, Equals, packp.ErrEmpty)
 }
 
 func (s *UploadPackSuite) TestUploadPackEncode(c *C) {

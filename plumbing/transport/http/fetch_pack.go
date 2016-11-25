@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/advrefs"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
@@ -64,7 +64,7 @@ func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
 
 	i := transport.NewUploadPackInfo()
 	if err := i.Decode(res.Body); err != nil {
-		if err == advrefs.ErrEmpty {
+		if err == packp.ErrEmpty {
 			err = transport.ErrEmptyRemoteRepository
 		}
 

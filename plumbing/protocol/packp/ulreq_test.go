@@ -1,23 +1,18 @@
-package ulreq
+package packp
 
 import (
 	"fmt"
 	"os"
 	"strings"
-	"testing"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
-
-	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-func ExampleEncoder_Encode() {
+func ExampleUlReqEncoder_Encode() {
 	// Create an empty UlReq with the contents you want...
-	ur := New()
+	ur := NewUlReq()
 
 	// Add a couple of wants
 	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
@@ -37,7 +32,7 @@ func ExampleEncoder_Encode() {
 	ur.Depth = DepthSince(since)
 
 	// Create a new Encode for the stdout...
-	e := NewEncoder(os.Stdout)
+	e := NewUlReqEncoder(os.Stdout)
 	// ...and encode the upload-request to it.
 	_ = e.Encode(ur) // ignoring errors for brevity
 	// Output:
@@ -50,7 +45,7 @@ func ExampleEncoder_Encode() {
 	// 0000
 }
 
-func ExampleDecoder_Decode() {
+func ExampleUlReqDecoder_Decode() {
 	// Here is a raw advertised-ref message.
 	raw := "" +
 		"005bwant 1111111111111111111111111111111111111111 ofs-delta sysref=HEAD:/refs/heads/master\n" +
@@ -65,10 +60,10 @@ func ExampleDecoder_Decode() {
 	input := strings.NewReader(raw)
 
 	// Create the Decoder reading from our input.
-	d := NewDecoder(input)
+	d := NewUlReqDecoder(input)
 
 	// Decode the input into a newly allocated UlReq value.
-	ur := New()
+	ur := NewUlReq()
 	_ = d.Decode(ur) // error check ignored for brevity
 
 	// Do something interesting with the UlReq, e.g. print its contents.

@@ -1,4 +1,4 @@
-package advrefs
+package packp
 
 import (
 	"bytes"
@@ -8,11 +8,11 @@ import (
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 )
 
-// A Decoder reads and decodes AdvRef values from an input stream.
-type Decoder struct {
+// A AdvRefsDecoder reads and decodes AdvRef values from an input stream.
+type AdvRefsDecoder struct {
 	s     *pktline.Scanner // a pkt-line scanner from the input stream
 	line  []byte           // current pkt-line contents, use parser.nextLine() to make it advance
 	nLine int              // current pkt-line number for debugging, begins at 1
@@ -24,18 +24,18 @@ type Decoder struct {
 // ErrEmpty is returned by Decode when there was no advertised-message at all
 var ErrEmpty = errors.New("empty advertised-ref message")
 
-// NewDecoder returns a new decoder that reads from r.
+// NewAdvRefsDecoder returns a new decoder that reads from r.
 //
 // Will not read more data from r than necessary.
-func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{
+func NewAdvRefsDecoder(r io.Reader) *AdvRefsDecoder {
+	return &AdvRefsDecoder{
 		s: pktline.NewScanner(r),
 	}
 }
 
 // Decode reads the next advertised-refs message form its input and
 // stores it in the value pointed to by v.
-func (d *Decoder) Decode(v *AdvRefs) error {
+func (d *AdvRefsDecoder) Decode(v *AdvRefs) error {
 	d.data = v
 
 	for state := decodePrefix; state != nil; {
@@ -45,10 +45,10 @@ func (d *Decoder) Decode(v *AdvRefs) error {
 	return d.err
 }
 
-type decoderStateFn func(*Decoder) decoderStateFn
+type decoderStateFn func(*AdvRefsDecoder) decoderStateFn
 
 // fills out the parser stiky error
-func (d *Decoder) error(format string, a ...interface{}) {
+func (d *AdvRefsDecoder) error(format string, a ...interface{}) {
 	d.err = fmt.Errorf("pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...))
 }
@@ -57,7 +57,7 @@ func (d *Decoder) error(format string, a ...interface{}) {
 // p.line and increments p.nLine.  A successful invocation returns true,
 // otherwise, false is returned and the sticky error is filled out
 // accordingly.  Trims eols at the end of the payloads.
-func (d *Decoder) nextLine() bool {
+func (d *AdvRefsDecoder) nextLine() bool {
 	d.nLine++
 
 	if !d.s.Scan() {
@@ -81,7 +81,7 @@ func (d *Decoder) nextLine() bool {
 }
 
 // The HTTP smart prefix is often followed by a flush-pkt.
-func decodePrefix(d *Decoder) decoderStateFn {
+func decodePrefix(d *AdvRefsDecoder) decoderStateFn {
 	if ok := d.nextLine(); !ok {
 		return nil
 	}
@@ -122,7 +122,7 @@ func isFlush(payload []byte) bool {
 // If the first hash is zero, then a no-refs is comming. Otherwise, a
 // list-of-refs is comming, and the hash will be followed by the first
 // advertised ref.
-func decodeFirstHash(p *Decoder) decoderStateFn {
+func decodeFirstHash(p *AdvRefsDecoder) decoderStateFn {
 	// If the repository is empty, we receive a flush here (HTTP).
 	if isFlush(p.line) {
 		p.err = ErrEmpty
@@ -149,7 +149,7 @@ func decodeFirstHash(p *Decoder) decoderStateFn {
 }
 
 // Skips SP "capabilities^{}" NUL
-func decodeSkipNoRefs(p *Decoder) decoderStateFn {
+func decodeSkipNoRefs(p *AdvRefsDecoder) decoderStateFn {
 	if len(p.line) < len(noHeadMark) {
 		p.error("too short zero-id ref")
 		return nil
@@ -166,7 +166,7 @@ func decodeSkipNoRefs(p *Decoder) decoderStateFn {
 }
 
 // decode the refname, expectes SP refname NULL
-func decodeFirstRef(l *Decoder) decoderStateFn {
+func decodeFirstRef(l *AdvRefsDecoder) decoderStateFn {
 	if len(l.line) < 3 {
 		l.error("line too short after hash")
 		return nil
@@ -195,7 +195,7 @@ func decodeFirstRef(l *Decoder) decoderStateFn {
 	return decodeCaps
 }
 
-func decodeCaps(p *Decoder) decoderStateFn {
+func decodeCaps(p *AdvRefsDecoder) decoderStateFn {
 	if len(p.line) == 0 {
 		return decodeOtherRefs
 	}
@@ -208,21 +208,9 @@ func decodeCaps(p *Decoder) decoderStateFn {
 	return decodeOtherRefs
 }
 
-// Capabilities are a single string or a name=value.
-// Even though we are only going to read at moust 1 value, we return
-// a slice of values, as Capability.Add receives that.
-func readCapability(data []byte) (name string, values []string) {
-	pair := bytes.SplitN(data, []byte{'='}, 2)
-	if len(pair) == 2 {
-		values = append(values, string(pair[1]))
-	}
-
-	return string(pair[0]), values
-}
-
 // The refs are either tips (obj-id SP refname) or a peeled (obj-id SP refname^{}).
 // If there are no refs, then there might be a shallow or flush-ptk.
-func decodeOtherRefs(p *Decoder) decoderStateFn {
+func decodeOtherRefs(p *AdvRefsDecoder) decoderStateFn {
 	if ok := p.nextLine(); !ok {
 		return nil
 	}
@@ -265,7 +253,7 @@ func readRef(data []byte) (string, plumbing.Hash, error) {
 }
 
 // Keeps reading shallows until a flush-pkt is found
-func decodeShallow(p *Decoder) decoderStateFn {
+func decodeShallow(p *AdvRefsDecoder) decoderStateFn {
 	if !bytes.HasPrefix(p.line, shallow) {
 		p.error("malformed shallow prefix, found %q... instead", p.line[:len(shallow)])
 		return nil

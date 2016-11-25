@@ -1,33 +1,22 @@
-package ulreq
+package packp
 
 import (
 	"bytes"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 
 	. "gopkg.in/check.v1"
 )
 
-type SuiteEncoder struct{}
+type UlReqEncodeSuite struct{}
 
-var _ = Suite(&SuiteEncoder{})
+var _ = Suite(&UlReqEncodeSuite{})
 
-// returns a byte slice with the pkt-lines for the given payloads.
-func pktlines(c *C, payloads ...string) []byte {
+func testUlReqEncode(c *C, ur *UlReq, expectedPayloads []string) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-
-	err := e.EncodeString(payloads...)
-	c.Assert(err, IsNil, Commentf("building pktlines for %v\n", payloads))
-
-	return buf.Bytes()
-}
-
-func testEncode(c *C, ur *UlReq, expectedPayloads []string) {
-	var buf bytes.Buffer
-	e := NewEncoder(&buf)
+	e := NewUlReqEncoder(&buf)
 
 	err := e.Encode(ur)
 	c.Assert(err, IsNil)
@@ -40,23 +29,23 @@ func testEncode(c *C, ur *UlReq, expectedPayloads []string) {
 	c.Assert(obtained, DeepEquals, expected, comment)
 }
 
-func testEncodeError(c *C, ur *UlReq, expectedErrorRegEx string) {
+func testUlReqEncodeError(c *C, ur *UlReq, expectedErrorRegEx string) {
 	var buf bytes.Buffer
-	e := NewEncoder(&buf)
+	e := NewUlReqEncoder(&buf)
 
 	err := e.Encode(ur)
 	c.Assert(err, ErrorMatches, expectedErrorRegEx)
 }
 
-func (s *SuiteEncoder) TestZeroValue(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestZeroValue(c *C) {
+	ur := NewUlReq()
 	expectedErrorRegEx := ".*empty wants.*"
 
-	testEncodeError(c, ur, expectedErrorRegEx)
+	testUlReqEncodeError(c, ur, expectedErrorRegEx)
 }
 
-func (s *SuiteEncoder) TestOneWant(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestOneWant(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	expected := []string{
@@ -64,11 +53,11 @@ func (s *SuiteEncoder) TestOneWant(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestOneWantWithCapabilities(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestOneWantWithCapabilities(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add("sysref", "HEAD:/refs/heads/master")
 	ur.Capabilities.Add("multi_ack")
@@ -81,11 +70,11 @@ func (s *SuiteEncoder) TestOneWantWithCapabilities(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestWants(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestWants(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("4444444444444444444444444444444444444444"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
@@ -101,11 +90,11 @@ func (s *SuiteEncoder) TestWants(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestWantsWithCapabilities(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("4444444444444444444444444444444444444444"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
@@ -127,11 +116,11 @@ func (s *SuiteEncoder) TestWantsWithCapabilities(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestShallow(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestShallow(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add("multi_ack")
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
@@ -142,11 +131,11 @@ func (s *SuiteEncoder) TestShallow(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestManyShallows(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add("multi_ack")
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
@@ -163,11 +152,11 @@ func (s *SuiteEncoder) TestManyShallows(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestDepthCommits(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestDepthCommits(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthCommits(1234)
 
@@ -177,11 +166,11 @@ func (s *SuiteEncoder) TestDepthCommits(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestDepthSinceUTC(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestDepthSinceUTC(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
 	ur.Depth = DepthSince(since)
@@ -192,11 +181,11 @@ func (s *SuiteEncoder) TestDepthSinceUTC(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestDepthSinceNonUTC(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestDepthSinceNonUTC(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	c.Assert(err, IsNil)
@@ -211,11 +200,11 @@ func (s *SuiteEncoder) TestDepthSinceNonUTC(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestDepthReference(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestDepthReference(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthReference("refs/heads/feature-foo")
 
@@ -225,11 +214,11 @@ func (s *SuiteEncoder) TestDepthReference(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }
 
-func (s *SuiteEncoder) TestAll(c *C) {
-	ur := New()
+func (s *UlReqEncodeSuite) TestAll(c *C) {
+	ur := NewUlReq()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("4444444444444444444444444444444444444444"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
@@ -264,5 +253,5 @@ func (s *SuiteEncoder) TestAll(c *C) {
 		pktline.FlushString,
 	}
 
-	testEncode(c, ur, expected)
+	testUlReqEncode(c, ur, expected)
 }

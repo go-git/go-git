@@ -8,14 +8,13 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/advrefs"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
-//TODO: Replace this by advrefs.AdvRefs.
+//TODO: Replace this by packpAdvRefs.
 type UploadPackInfo struct {
 	Capabilities *packp.Capabilities
 	Refs         memory.ReferenceStorage
@@ -29,10 +28,10 @@ func NewUploadPackInfo() *UploadPackInfo {
 }
 
 func (i *UploadPackInfo) Decode(r io.Reader) error {
-	d := advrefs.NewDecoder(r)
-	ar := advrefs.New()
+	d := packp.NewAdvRefsDecoder(r)
+	ar := packp.NewAdvRefs()
 	if err := d.Decode(ar); err != nil {
-		if err == advrefs.ErrEmpty {
+		if err == packp.ErrEmpty {
 			return err
 		}
 		return plumbing.NewUnexpectedError(err)
@@ -47,7 +46,7 @@ func (i *UploadPackInfo) Decode(r io.Reader) error {
 	return nil
 }
 
-func (i *UploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
+func (i *UploadPackInfo) addRefs(ar *packp.AdvRefs) error {
 	for name, hash := range ar.References {
 		ref := plumbing.NewReferenceFromStrings(name, hash.String())
 		i.Refs.SetReference(ref)
@@ -56,7 +55,7 @@ func (i *UploadPackInfo) addRefs(ar *advrefs.AdvRefs) error {
 	return i.addSymbolicRefs(ar)
 }
 
-func (i *UploadPackInfo) addSymbolicRefs(ar *advrefs.AdvRefs) error {
+func (i *UploadPackInfo) addSymbolicRefs(ar *packp.AdvRefs) error {
 	if !hasSymrefs(ar) {
 		return nil
 	}
@@ -76,7 +75,7 @@ func (i *UploadPackInfo) addSymbolicRefs(ar *advrefs.AdvRefs) error {
 	return nil
 }
 
-func hasSymrefs(ar *advrefs.AdvRefs) bool {
+func hasSymrefs(ar *packp.AdvRefs) bool {
 	return ar.Capabilities.Supports("symref")
 }
 

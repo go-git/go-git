@@ -1,25 +1,7 @@
-// Package advrefs implements encoding and decoding advertised-refs
-// messages from a git-upload-pack command.
-package advrefs
+package packp
 
 import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp"
-)
-
-const (
-	hashSize = 40
-	head     = "HEAD"
-	noHead   = "capabilities^{}"
-)
-
-var (
-	sp         = []byte(" ")
-	null       = []byte("\x00")
-	eol        = []byte("\n")
-	peeled     = []byte("^{}")
-	shallow    = []byte("shallow ")
-	noHeadMark = []byte(" capabilities^{}\x00")
 )
 
 // AdvRefs values represent the information transmitted on an
@@ -40,17 +22,17 @@ var (
 type AdvRefs struct {
 	Prefix       [][]byte // payloads of the prefix
 	Head         *plumbing.Hash
-	Capabilities *packp.Capabilities
+	Capabilities *Capabilities
 	References   map[string]plumbing.Hash
 	Peeled       map[string]plumbing.Hash
 	Shallows     []plumbing.Hash
 }
 
-// New returns a pointer to a new AdvRefs value, ready to be used.
-func New() *AdvRefs {
+// NewAdvRefs returns a pointer to a new AdvRefs value, ready to be used.
+func NewAdvRefs() *AdvRefs {
 	return &AdvRefs{
 		Prefix:       [][]byte{},
-		Capabilities: packp.NewCapabilities(),
+		Capabilities: NewCapabilities(),
 		References:   make(map[string]plumbing.Hash),
 		Peeled:       make(map[string]plumbing.Hash),
 		Shallows:     []plumbing.Hash{},

@@ -1,4 +1,4 @@
-package advrefs_test
+package packp_test
 
 import (
 	"bytes"
@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/advrefs"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 
 	. "gopkg.in/check.v1"
 )
@@ -43,13 +43,13 @@ func (s *SuiteDecodeEncode) test(c *C, in []string, exp []string) {
 
 	var obtained []byte
 	{
-		ar := advrefs.New()
-		d := advrefs.NewDecoder(input)
+		ar := packp.NewAdvRefs()
+		d := packp.NewAdvRefsDecoder(input)
 		err = d.Decode(ar)
 		c.Assert(err, IsNil)
 
 		var buf bytes.Buffer
-		e := advrefs.NewEncoder(&buf)
+		e := packp.NewAdvRefsEncoder(&buf)
 		err := e.Encode(ar)
 		c.Assert(err, IsNil)
 
@@ -258,11 +258,11 @@ func ExampleDecoder_Decode() {
 	// Use the raw message as our input.
 	input := strings.NewReader(raw)
 
-	// Create a advref.Decoder reading from our input.
-	d := advrefs.NewDecoder(input)
+	// Create a Decoder reading from our input.
+	d := packp.NewAdvRefsDecoder(input)
 
 	// Decode the input into a newly allocated AdvRefs value.
-	ar := advrefs.New()
+	ar := packp.NewAdvRefs()
 	_ = d.Decode(ar) // error check ignored for brevity
 
 	// Do something interesting with the AdvRefs, e.g. print its contents.
@@ -278,7 +278,7 @@ func ExampleDecoder_Decode() {
 
 func ExampleEncoder_Encode() {
 	// Create an AdvRefs with the contents you want...
-	ar := advrefs.New()
+	ar := packp.NewAdvRefs()
 
 	// ...add a hash for the HEAD...
 	head := plumbing.NewHash("1111111111111111111111111111111111111111")
@@ -299,11 +299,11 @@ func ExampleEncoder_Encode() {
 	// ...and finally add a shallow
 	ar.Shallows = append(ar.Shallows, plumbing.NewHash("5555555555555555555555555555555555555555"))
 
-	// Encode the advrefs.Contents to a bytes.Buffer.
+	// Encode the packpContents to a bytes.Buffer.
 	// You can encode into stdout too, but you will not be able
 	// see the '\x00' after "HEAD".
 	var buf bytes.Buffer
-	e := advrefs.NewEncoder(&buf)
+	e := packp.NewAdvRefsEncoder(&buf)
 	_ = e.Encode(ar) // error checks ignored for brevity
 
 	// Print the contents of the buffer as a quoted string.
