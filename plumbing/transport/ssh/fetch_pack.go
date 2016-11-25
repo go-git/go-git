@@ -2,13 +2,16 @@
 package ssh
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
 
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/advrefs"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/ulreq"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -35,23 +38,45 @@ func newFetchPackSession(ep transport.Endpoint) (*fetchPackSession, error) {
 
 func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo, error) {
 	if s.advRefsRun {
-		return nil, ErrAdvertistedReferencesAlreadyCalled
+		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
 	}
+
+	defer func() { s.advRefsRun = true }()
 
 	if err := s.ensureRunCommand(); err != nil {
 		return nil, err
 	}
 
-	defer func() { s.advRefsRun = true }()
-
 	i := transport.NewUploadPackInfo()
-	return i, i.Decode(s.stdout)
+	if err := i.Decode(s.stdout); err != nil {
+		if err != advrefs.ErrEmpty {
+			return nil, err
+		}
+
+		_ = s.stdin.Close()
+		scan := bufio.NewScanner(s.stderr)
+		if !scan.Scan() {
+			return nil, transport.ErrEmptyRemoteRepository
+		}
+
+		if isRepoNotFoundError(string(scan.Bytes())) {
+			return nil, transport.ErrRepositoryNotFound
+		}
+
+		return nil, err
+	}
+
+	return i, nil
 }
 
 // FetchPack returns a packfile for a given upload request.
 // Closing the returned reader will close the SSH session.
 func (s *fetchPackSession) FetchPack(req *transport.UploadPackRequest) (
 	io.ReadCloser, error) {
+
+	if req.IsEmpty() {
+		return nil, transport.ErrEmptyUploadPackRequest
+	}
 
 	if !s.advRefsRun {
 		if _, err := s.AdvertisedReferences(); err != nil {
@@ -63,11 +88,19 @@ func (s *fetchPackSession) FetchPack(req *transport.UploadPackRequest) (
 		return nil, err
 	}
 
-	return &fetchSession{
+	fs := &fetchSession{
 		Reader:  s.stdout,
 		session: s.session.session,
 		done:    s.done,
-	}, nil
+	}
+
+	r, err := ioutil.NonEmptyReader(fs)
+	if err == ioutil.ErrEmptyReader {
+		_ = fs.Close()
+		return nil, transport.ErrEmptyUploadPackRequest
+	}
+
+	return ioutil.NewReadCloser(r, fs), nil
 }
 
 func (s *fetchPackSession) ensureRunCommand() error {

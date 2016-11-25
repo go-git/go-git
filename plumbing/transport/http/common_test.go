@@ -20,16 +20,20 @@ var _ = Suite(&ClientSuite{})
 
 func (s *ClientSuite) SetUpSuite(c *C) {
 	var err error
-	s.Endpoint, err = transport.NewEndpoint("https://github.com/git-fixtures/basic")
+	s.Endpoint, err = transport.NewEndpoint(
+		"https://github.com/git-fixtures/basic",
+	)
 	c.Assert(err, IsNil)
 }
 
 func (s *FetchPackSuite) TestNewClient(c *C) {
-	roundTripper := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-	client := &http.Client{Transport: roundTripper}
-	r := NewClient(client).(*Client)
-
-	c.Assert(r.c, Equals, client)
+	roundTripper := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	cl := &http.Client{Transport: roundTripper}
+	r, ok := NewClient(cl).(*client)
+	c.Assert(ok, Equals, true)
+	c.Assert(r.c, Equals, cl)
 }
 
 func (s *ClientSuite) TestNewBasicAuth(c *C) {
@@ -54,7 +58,8 @@ func (s *ClientSuite) TestNewErrNotFound(c *C) {
 }
 
 func (s *ClientSuite) TestNewHTTPError40x(c *C) {
-	s.testNewHTTPError(c, http.StatusPaymentRequired, "unexpected client error.*")
+	s.testNewHTTPError(c, http.StatusPaymentRequired,
+		"unexpected client error.*")
 }
 
 func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {

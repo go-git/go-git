@@ -7,11 +7,3 @@ import (
 )
 
 func Test(t *testing.T) { TestingT(t) }
-
-type ClientSuite struct{}
-
-var _ = Suite(&ClientSuite{})
-
-func (s *ClientSuite) TestNewClient(c *C) {
-	c.Assert(DefaultClient, DeepEquals, NewClient())
-}

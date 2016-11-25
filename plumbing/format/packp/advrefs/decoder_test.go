@@ -26,6 +26,32 @@ func (s *SuiteDecoder) TestEmpty(c *C) {
 	c.Assert(err, Equals, advrefs.ErrEmpty)
 }
 
+func (s *SuiteDecoder) TestEmptyFlush(c *C) {
+	ar := advrefs.New()
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+	e.Flush()
+
+	d := advrefs.NewDecoder(&buf)
+
+	err := d.Decode(ar)
+	c.Assert(err, Equals, advrefs.ErrEmpty)
+}
+
+func (s *SuiteDecoder) TestEmptyPrefixFlush(c *C) {
+	ar := advrefs.New()
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+	e.EncodeString("# service=git-upload-pack")
+	e.Flush()
+	e.Flush()
+
+	d := advrefs.NewDecoder(&buf)
+
+	err := d.Decode(ar)
+	c.Assert(err, Equals, advrefs.ErrEmpty)
+}
+
 func (s *SuiteDecoder) TestShortForHash(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796",

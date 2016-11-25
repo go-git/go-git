@@ -33,7 +33,7 @@ func (i *UploadPackInfo) Decode(r io.Reader) error {
 	ar := advrefs.New()
 	if err := d.Decode(ar); err != nil {
 		if err == advrefs.ErrEmpty {
-			return plumbing.NewPermanentError(err)
+			return err
 		}
 		return plumbing.NewUnexpectedError(err)
 	}
@@ -126,6 +126,28 @@ func (r *UploadPackRequest) Want(h ...plumbing.Hash) {
 
 func (r *UploadPackRequest) Have(h ...plumbing.Hash) {
 	r.Haves = append(r.Haves, h...)
+}
+
+func (r *UploadPackRequest) IsEmpty() bool {
+	return isSubset(r.Wants, r.Haves)
+}
+
+func isSubset(needle []plumbing.Hash, haystack []plumbing.Hash) bool {
+	for _, h := range needle {
+		found := false
+		for _, oh := range haystack {
+			if h == oh {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (r *UploadPackRequest) String() string {

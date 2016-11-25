@@ -24,9 +24,12 @@ import (
 
 var (
 	ErrRepositoryNotFound     = errors.New("repository not found")
+	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
 	ErrAuthorizationRequired  = errors.New("authorization required")
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
 	ErrInvalidAuthMethod      = errors.New("invalid auth method")
+
+	ErrAdvertistedReferencesAlreadyCalled = errors.New("cannot call AdvertisedReference twice")
 )
 
 const (

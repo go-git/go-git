@@ -9,33 +9,38 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
-type Client struct {
+type client struct {
 	c *http.Client
 }
 
+// DefaultClient is the default HTTP client, which uses `http.DefaultClient`.
 var DefaultClient = NewClient(nil)
 
 // NewClient creates a new client with a custom net/http client.
 // See `InstallProtocol` to install and override default http client.
 // Unless a properly initialized client is given, it will fall back into
 // `http.DefaultClient`.
+//
+// Note that for HTTP client cannot distinguist between private repositories and
+// unexistent repositories on GitHub. So it returns `ErrAuthorizationRequired`
+// for both.
 func NewClient(c *http.Client) transport.Client {
 	if c == nil {
-		return &Client{http.DefaultClient}
+		return &client{http.DefaultClient}
 	}
 
-	return &Client{
+	return &client{
 		c: c,
 	}
 }
 
-func (c *Client) NewFetchPackSession(ep transport.Endpoint) (
+func (c *client) NewFetchPackSession(ep transport.Endpoint) (
 	transport.FetchPackSession, error) {
 
 	return newFetchPackSession(c.c, ep), nil
 }
 
-func (c *Client) NewSendPackSession(ep transport.Endpoint) (
+func (c *client) NewSendPackSession(ep transport.Endpoint) (
 	transport.SendPackSession, error) {
 
 	return newSendPackSession(c.c, ep), nil

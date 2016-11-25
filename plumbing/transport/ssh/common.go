@@ -11,32 +11,22 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// New errors introduced by this package.
 var (
-	ErrAdvertistedReferencesAlreadyCalled = errors.New("cannot call AdvertisedReference twice")
-	ErrAlreadyConnected                   = errors.New("ssh session already created")
-	ErrAuthRequired                       = errors.New("cannot connect: auth required")
-	ErrNotConnected                       = errors.New("not connected")
-	ErrUploadPackAnswerFormat             = errors.New("git-upload-pack bad answer format")
-	ErrUnsupportedVCS                     = errors.New("only git is supported")
-	ErrUnsupportedRepo                    = errors.New("only github.com is supported")
+	errAlreadyConnected = errors.New("ssh session already created")
 )
 
-type Client struct{}
+type client struct{}
 
-var DefaultClient = NewClient()
+// DefaultClient is the default SSH client.
+var DefaultClient = &client{}
 
-func NewClient() transport.Client {
-	return &Client{}
-}
-
-func (c *Client) NewFetchPackSession(ep transport.Endpoint) (
+func (c *client) NewFetchPackSession(ep transport.Endpoint) (
 	transport.FetchPackSession, error) {
 
 	return newFetchPackSession(ep)
 }
 
-func (c *Client) NewSendPackSession(ep transport.Endpoint) (
+func (c *client) NewSendPackSession(ep transport.Endpoint) (
 	transport.SendPackSession, error) {
 
 	return newSendPackSession(ep)
@@ -49,6 +39,7 @@ type session struct {
 	session     *ssh.Session
 	stdin       io.WriteCloser
 	stdout      io.Reader
+	stderr      io.Reader
 	sessionDone chan error
 	auth        AuthMethod
 }
@@ -70,6 +61,11 @@ func (s *session) Close() error {
 	}
 
 	s.connected = false
+
+	//XXX: If did read the full packfile, then the session might be already
+	//     closed.
+	_ = s.session.Close()
+
 	return s.client.Close()
 }
 
@@ -79,7 +75,7 @@ func (s *session) Close() error {
 // environment var.
 func (s *session) connect() error {
 	if s.connected {
-		return ErrAlreadyConnected
+		return errAlreadyConnected
 	}
 
 	if err := s.setAuthFromEndpoint(); err != nil {
@@ -138,6 +134,11 @@ func (s *session) openSSHSession() error {
 		return fmt.Errorf("cannot pipe remote stdout: %s", err)
 	}
 
+	s.stderr, err = s.session.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("cannot pipe remote stderr: %s", err)
+	}
+
 	return nil
 }
 
@@ -148,4 +149,21 @@ func (s *session) runCommand(cmd string) chan error {
 	}()
 
 	return done
+}
+
+const (
+	githubRepoNotFoundErr    = "ERROR: Repository not found."
+	bitbucketRepoNotFoundErr = "conq: repository does not exist."
+)
+
+func isRepoNotFoundError(s string) bool {
+	if strings.HasPrefix(s, githubRepoNotFoundErr) {
+		return true
+	}
+
+	if strings.HasPrefix(s, bitbucketRepoNotFoundErr) {
+		return true
+	}
+
+	return false
 }

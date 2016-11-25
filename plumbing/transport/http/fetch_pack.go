@@ -1,7 +1,6 @@
 package http
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -9,12 +8,15 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/advrefs"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packp/pktline"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 type fetchPackSession struct {
 	*session
+	advRefsRun bool
 }
 
 func newFetchPackSession(c *http.Client,
@@ -31,6 +33,11 @@ func newFetchPackSession(c *http.Client,
 
 func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
 	error) {
+	if s.advRefsRun {
+		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
+	}
+
+	defer func() { s.advRefsRun = true }()
 
 	url := fmt.Sprintf(
 		"%s/info/refs?service=%s",
@@ -50,15 +57,28 @@ func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
 	}
 
 	defer res.Body.Close()
+
 	if res.StatusCode == http.StatusUnauthorized {
 		return nil, transport.ErrAuthorizationRequired
 	}
 
 	i := transport.NewUploadPackInfo()
-	return i, i.Decode(res.Body)
+	if err := i.Decode(res.Body); err != nil {
+		if err == advrefs.ErrEmpty {
+			err = transport.ErrEmptyRemoteRepository
+		}
+
+		return nil, err
+	}
+
+	return i, nil
 }
 
 func (s *fetchPackSession) FetchPack(r *transport.UploadPackRequest) (io.ReadCloser, error) {
+	if r.IsEmpty() {
+		return nil, transport.ErrEmptyUploadPackRequest
+	}
+
 	url := fmt.Sprintf(
 		"%s/%s",
 		s.endpoint.String(), transport.UploadPackServiceName,
@@ -69,20 +89,21 @@ func (s *fetchPackSession) FetchPack(r *transport.UploadPackRequest) (io.ReadClo
 		return nil, err
 	}
 
-	reader := newBufferedReadCloser(res.Body)
-	if _, err := reader.Peek(1); err != nil {
-		if err == io.ErrUnexpectedEOF {
-			return nil, transport.ErrEmptyUploadPackRequest
-		}
+	reader, err := ioutil.NonEmptyReader(res.Body)
+	if err == ioutil.ErrEmptyReader || err == io.ErrUnexpectedEOF {
+		return nil, transport.ErrEmptyUploadPackRequest
+	}
 
+	if err != nil {
 		return nil, err
 	}
 
-	if err := discardResponseInfo(reader); err != nil {
+	rc := ioutil.NewReadCloser(reader, res.Body)
+	if err := discardResponseInfo(rc); err != nil {
 		return nil, err
 	}
 
-	return reader, nil
+	return rc, nil
 }
 
 // Close does nothing.
@@ -139,17 +160,4 @@ func (s *fetchPackSession) applyHeadersToRequest(req *http.Request, content *str
 		req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
 		req.Header.Add("Content-Length", string(content.Len()))
 	}
-}
-
-type bufferedReadCloser struct {
-	*bufio.Reader
-	closer io.Closer
-}
-
-func newBufferedReadCloser(r io.ReadCloser) *bufferedReadCloser {
-	return &bufferedReadCloser{bufio.NewReader(r), r}
-}
-
-func (r *bufferedReadCloser) Close() error {
-	return r.closer.Close()
 }

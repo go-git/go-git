@@ -86,6 +86,12 @@ func decodePrefix(d *Decoder) decoderStateFn {
 		return nil
 	}
 
+	// If the repository is empty, we receive a flush here (SSH).
+	if isFlush(d.line) {
+		d.err = ErrEmpty
+		return nil
+	}
+
 	if isPrefix(d.line) {
 		tmp := make([]byte, len(d.line))
 		copy(tmp, d.line)
@@ -117,6 +123,12 @@ func isFlush(payload []byte) bool {
 // list-of-refs is comming, and the hash will be followed by the first
 // advertised ref.
 func decodeFirstHash(p *Decoder) decoderStateFn {
+	// If the repository is empty, we receive a flush here (HTTP).
+	if isFlush(p.line) {
+		p.err = ErrEmpty
+		return nil
+	}
+
 	if len(p.line) < hashSize {
 		p.error("cannot read hash, pkt-line too short")
 		return nil
