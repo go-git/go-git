@@ -11,8 +11,14 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 )
 
-// A AdvRefsDecoder reads and decodes AdvRef values from an input stream.
-type AdvRefsDecoder struct {
+// Decode reads the next advertised-refs message form its input and
+// stores it in the AdvRefs.
+func (a *AdvRefs) Decode(r io.Reader) error {
+	d := newAdvRefsDecoder(r)
+	return d.Decode(a)
+}
+
+type advRefsDecoder struct {
 	s     *pktline.Scanner // a pkt-line scanner from the input stream
 	line  []byte           // current pkt-line contents, use parser.nextLine() to make it advance
 	nLine int              // current pkt-line number for debugging, begins at 1
@@ -21,21 +27,16 @@ type AdvRefsDecoder struct {
 	data  *AdvRefs         // parsed data is stored here
 }
 
-// ErrEmpty is returned by Decode when there was no advertised-message at all
-var ErrEmpty = errors.New("empty advertised-ref message")
+// ErrEmptyAdvRefs is returned by Decode when there was no advertised-message at all
+var ErrEmptyAdvRefs = errors.New("empty advertised-ref message")
 
-// NewAdvRefsDecoder returns a new decoder that reads from r.
-//
-// Will not read more data from r than necessary.
-func NewAdvRefsDecoder(r io.Reader) *AdvRefsDecoder {
-	return &AdvRefsDecoder{
+func newAdvRefsDecoder(r io.Reader) *advRefsDecoder {
+	return &advRefsDecoder{
 		s: pktline.NewScanner(r),
 	}
 }
 
-// Decode reads the next advertised-refs message form its input and
-// stores it in the value pointed to by v.
-func (d *AdvRefsDecoder) Decode(v *AdvRefs) error {
+func (d *advRefsDecoder) Decode(v *AdvRefs) error {
 	d.data = v
 
 	for state := decodePrefix; state != nil; {
@@ -45,10 +46,10 @@ func (d *AdvRefsDecoder) Decode(v *AdvRefs) error {
 	return d.err
 }
 
-type decoderStateFn func(*AdvRefsDecoder) decoderStateFn
+type decoderStateFn func(*advRefsDecoder) decoderStateFn
 
 // fills out the parser stiky error
-func (d *AdvRefsDecoder) error(format string, a ...interface{}) {
+func (d *advRefsDecoder) error(format string, a ...interface{}) {
 	d.err = fmt.Errorf("pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...))
 }
@@ -57,7 +58,7 @@ func (d *AdvRefsDecoder) error(format string, a ...interface{}) {
 // p.line and increments p.nLine.  A successful invocation returns true,
 // otherwise, false is returned and the sticky error is filled out
 // accordingly.  Trims eols at the end of the payloads.
-func (d *AdvRefsDecoder) nextLine() bool {
+func (d *advRefsDecoder) nextLine() bool {
 	d.nLine++
 
 	if !d.s.Scan() {
@@ -66,7 +67,7 @@ func (d *AdvRefsDecoder) nextLine() bool {
 		}
 
 		if d.nLine == 1 {
-			d.err = ErrEmpty
+			d.err = ErrEmptyAdvRefs
 			return false
 		}
 
@@ -81,14 +82,14 @@ func (d *AdvRefsDecoder) nextLine() bool {
 }
 
 // The HTTP smart prefix is often followed by a flush-pkt.
-func decodePrefix(d *AdvRefsDecoder) decoderStateFn {
+func decodePrefix(d *advRefsDecoder) decoderStateFn {
 	if ok := d.nextLine(); !ok {
 		return nil
 	}
 
 	// If the repository is empty, we receive a flush here (SSH).
 	if isFlush(d.line) {
-		d.err = ErrEmpty
+		d.err = ErrEmptyAdvRefs
 		return nil
 	}
 
@@ -122,10 +123,10 @@ func isFlush(payload []byte) bool {
 // If the first hash is zero, then a no-refs is comming. Otherwise, a
 // list-of-refs is comming, and the hash will be followed by the first
 // advertised ref.
-func decodeFirstHash(p *AdvRefsDecoder) decoderStateFn {
+func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
 	// If the repository is empty, we receive a flush here (HTTP).
 	if isFlush(p.line) {
-		p.err = ErrEmpty
+		p.err = ErrEmptyAdvRefs
 		return nil
 	}
 
@@ -149,7 +150,7 @@ func decodeFirstHash(p *AdvRefsDecoder) decoderStateFn {
 }
 
 // Skips SP "capabilities^{}" NUL
-func decodeSkipNoRefs(p *AdvRefsDecoder) decoderStateFn {
+func decodeSkipNoRefs(p *advRefsDecoder) decoderStateFn {
 	if len(p.line) < len(noHeadMark) {
 		p.error("too short zero-id ref")
 		return nil
@@ -166,7 +167,7 @@ func decodeSkipNoRefs(p *AdvRefsDecoder) decoderStateFn {
 }
 
 // decode the refname, expectes SP refname NULL
-func decodeFirstRef(l *AdvRefsDecoder) decoderStateFn {
+func decodeFirstRef(l *advRefsDecoder) decoderStateFn {
 	if len(l.line) < 3 {
 		l.error("line too short after hash")
 		return nil
@@ -195,7 +196,7 @@ func decodeFirstRef(l *AdvRefsDecoder) decoderStateFn {
 	return decodeCaps
 }
 
-func decodeCaps(p *AdvRefsDecoder) decoderStateFn {
+func decodeCaps(p *advRefsDecoder) decoderStateFn {
 	if len(p.line) == 0 {
 		return decodeOtherRefs
 	}
@@ -210,7 +211,7 @@ func decodeCaps(p *AdvRefsDecoder) decoderStateFn {
 
 // The refs are either tips (obj-id SP refname) or a peeled (obj-id SP refname^{}).
 // If there are no refs, then there might be a shallow or flush-ptk.
-func decodeOtherRefs(p *AdvRefsDecoder) decoderStateFn {
+func decodeOtherRefs(p *advRefsDecoder) decoderStateFn {
 	if ok := p.nextLine(); !ok {
 		return nil
 	}
@@ -253,7 +254,7 @@ func readRef(data []byte) (string, plumbing.Hash, error) {
 }
 
 // Keeps reading shallows until a flush-pkt is found
-func decodeShallow(p *AdvRefsDecoder) decoderStateFn {
+func decodeShallow(p *advRefsDecoder) decoderStateFn {
 	if !bytes.HasPrefix(p.line, shallow) {
 		p.error("malformed shallow prefix, found %q... instead", p.line[:len(shallow)])
 		return nil

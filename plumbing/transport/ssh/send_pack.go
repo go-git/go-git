@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
@@ -19,8 +20,7 @@ func newSendPackSession(ep transport.Endpoint) (transport.SendPackSession,
 	return &sendPackSession{&session{}}, nil
 }
 
-func (s *sendPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
-	error) {
+func (s *sendPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 
 	return nil, errSendPackNotSupported
 }

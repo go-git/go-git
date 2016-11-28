@@ -35,7 +35,7 @@ func newFetchPackSession(ep transport.Endpoint) (*fetchPackSession, error) {
 	return s, nil
 }
 
-func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo, error) {
+func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	if s.advRefsRun {
 		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
 	}
@@ -46,9 +46,9 @@ func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo, er
 		return nil, err
 	}
 
-	i := transport.NewUploadPackInfo()
-	if err := i.Decode(s.stdout); err != nil {
-		if err != packp.ErrEmpty {
+	ar := packp.NewAdvRefs()
+	if err := ar.Decode(s.stdout); err != nil {
+		if err != packp.ErrEmptyAdvRefs {
 			return nil, err
 		}
 
@@ -65,12 +65,12 @@ func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo, er
 		return nil, err
 	}
 
-	return i, nil
+	return ar, nil
 }
 
 // FetchPack returns a packfile for a given upload request.
 // Closing the returned reader will close the SSH session.
-func (s *fetchPackSession) FetchPack(req *transport.UploadPackRequest) (
+func (s *fetchPackSession) FetchPack(req *packp.UploadPackRequest) (
 	io.ReadCloser, error) {
 
 	if req.IsEmpty() {
@@ -161,13 +161,13 @@ var (
 // TODO support acks for common objects
 // TODO build a proper state machine for all these processing options
 func fetchPack(w io.WriteCloser, r io.Reader,
-	req *transport.UploadPackRequest) error {
+	req *packp.UploadPackRequest) error {
 
-	if err := sendUlReq(w, req); err != nil {
+	if err := req.UploadRequest.Encode(w); err != nil {
 		return fmt.Errorf("sending upload-req message: %s", err)
 	}
 
-	if err := sendHaves(w, req); err != nil {
+	if err := req.UploadHaves.Encode(w); err != nil {
 		return fmt.Errorf("sending haves message: %s", err)
 	}
 
@@ -181,32 +181,6 @@ func fetchPack(w io.WriteCloser, r io.Reader,
 
 	if err := readNAK(r); err != nil {
 		return fmt.Errorf("reading NAK: %s", err)
-	}
-
-	return nil
-}
-
-func sendUlReq(w io.Writer, req *transport.UploadPackRequest) error {
-	ur := packp.NewUlReq()
-	ur.Wants = req.Wants
-	ur.Depth = packp.DepthCommits(req.Depth)
-	e := packp.NewUlReqEncoder(w)
-
-	return e.Encode(ur)
-}
-
-func sendHaves(w io.Writer, req *transport.UploadPackRequest) error {
-	e := pktline.NewEncoder(w)
-	for _, have := range req.Haves {
-		if err := e.Encodef("have %s\n", have); err != nil {
-			return fmt.Errorf("sending haves for %q: %s", have, err)
-		}
-	}
-
-	if len(req.Haves) != 0 {
-		if err := e.Flush(); err != nil {
-			return fmt.Errorf("sending flush-pkt after haves: %s", err)
-		}
 	}
 
 	return nil

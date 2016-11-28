@@ -1,6 +1,10 @@
 package http
 
 import (
+	"io/ioutil"
+
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
 
@@ -35,4 +39,21 @@ func (s *FetchPackSuite) TestInfoNotExists(c *C) {
 	info, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrAuthorizationRequired)
 	c.Assert(info, IsNil)
+}
+
+func (s *FetchPackSuite) TestuploadPackRequestToReader(c *C) {
+	r := packp.NewUploadPackRequest()
+	r.Want(plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
+	r.Want(plumbing.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
+	r.Have(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	sr, err := uploadPackRequestToReader(r)
+	c.Assert(err, IsNil)
+	b, _ := ioutil.ReadAll(sr)
+	c.Assert(string(b), Equals,
+		"0032want d82f291cde9987322c8a0c81a325e1ba6159684c\n"+
+			"0032want 2b41ef280fdb67a9b250678686a0c3e03b0a9989\n"+
+			"0032have 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n0000"+
+			"0009done\n",
+	)
 }

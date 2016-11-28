@@ -12,27 +12,28 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 )
 
-// A UlReqDecoder reads and decodes AdvRef values from an input stream.
-type UlReqDecoder struct {
+// Decode reads the next upload-request form its input and
+// stores it in the UploadRequest.
+func (u *UploadRequest) Decode(r io.Reader) error {
+	d := newUlReqDecoder(r)
+	return d.Decode(u)
+}
+
+type ulReqDecoder struct {
 	s     *pktline.Scanner // a pkt-line scanner from the input stream
 	line  []byte           // current pkt-line contents, use parser.nextLine() to make it advance
 	nLine int              // current pkt-line number for debugging, begins at 1
 	err   error            // sticky error, use the parser.error() method to fill this out
-	data  *UlReq           // parsed data is stored here
+	data  *UploadRequest   // parsed data is stored here
 }
 
-// NewUlReqDecoder returns a new decoder that reads from r.
-//
-// Will not read more data from r than necessary.
-func NewUlReqDecoder(r io.Reader) *UlReqDecoder {
-	return &UlReqDecoder{
+func newUlReqDecoder(r io.Reader) *ulReqDecoder {
+	return &ulReqDecoder{
 		s: pktline.NewScanner(r),
 	}
 }
 
-// Decode reads the next upload-request form its input and
-// stores it in the value pointed to by v.
-func (d *UlReqDecoder) Decode(v *UlReq) error {
+func (d *ulReqDecoder) Decode(v *UploadRequest) error {
 	d.data = v
 
 	for state := d.decodeFirstWant; state != nil; {
@@ -43,7 +44,7 @@ func (d *UlReqDecoder) Decode(v *UlReq) error {
 }
 
 // fills out the parser stiky error
-func (d *UlReqDecoder) error(format string, a ...interface{}) {
+func (d *ulReqDecoder) error(format string, a ...interface{}) {
 	d.err = fmt.Errorf("pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...))
 }
@@ -52,7 +53,7 @@ func (d *UlReqDecoder) error(format string, a ...interface{}) {
 // p.line and increments p.nLine.  A successful invocation returns true,
 // otherwise, false is returned and the sticky error is filled out
 // accordingly.  Trims eols at the end of the payloads.
-func (d *UlReqDecoder) nextLine() bool {
+func (d *ulReqDecoder) nextLine() bool {
 	d.nLine++
 
 	if !d.s.Scan() {
@@ -71,7 +72,7 @@ func (d *UlReqDecoder) nextLine() bool {
 }
 
 // Expected format: want <hash>[ capabilities]
-func (d *UlReqDecoder) decodeFirstWant() stateFn {
+func (d *ulReqDecoder) decodeFirstWant() stateFn {
 	if ok := d.nextLine(); !ok {
 		return nil
 	}
@@ -91,7 +92,7 @@ func (d *UlReqDecoder) decodeFirstWant() stateFn {
 	return d.decodeCaps
 }
 
-func (d *UlReqDecoder) readHash() (plumbing.Hash, bool) {
+func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 	if len(d.line) < hashSize {
 		d.err = fmt.Errorf("malformed hash: %v", d.line)
 		return plumbing.ZeroHash, false
@@ -108,7 +109,7 @@ func (d *UlReqDecoder) readHash() (plumbing.Hash, bool) {
 }
 
 // Expected format: sp cap1 sp cap2 sp cap3...
-func (d *UlReqDecoder) decodeCaps() stateFn {
+func (d *ulReqDecoder) decodeCaps() stateFn {
 	if len(d.line) == 0 {
 		return d.decodeOtherWants
 	}
@@ -124,7 +125,7 @@ func (d *UlReqDecoder) decodeCaps() stateFn {
 }
 
 // Expected format: want <hash>
-func (d *UlReqDecoder) decodeOtherWants() stateFn {
+func (d *ulReqDecoder) decodeOtherWants() stateFn {
 	if ok := d.nextLine(); !ok {
 		return nil
 	}
@@ -157,7 +158,7 @@ func (d *UlReqDecoder) decodeOtherWants() stateFn {
 }
 
 // Expected format: shallow <hash>
-func (d *UlReqDecoder) decodeShallow() stateFn {
+func (d *ulReqDecoder) decodeShallow() stateFn {
 	if bytes.HasPrefix(d.line, deepen) {
 		return d.decodeDeepen
 	}
@@ -186,7 +187,7 @@ func (d *UlReqDecoder) decodeShallow() stateFn {
 }
 
 // Expected format: deepen <n> / deepen-since <ul> / deepen-not <ref>
-func (d *UlReqDecoder) decodeDeepen() stateFn {
+func (d *ulReqDecoder) decodeDeepen() stateFn {
 	if bytes.HasPrefix(d.line, deepenCommits) {
 		return d.decodeDeepenCommits
 	}
@@ -207,7 +208,7 @@ func (d *UlReqDecoder) decodeDeepen() stateFn {
 	return nil
 }
 
-func (d *UlReqDecoder) decodeDeepenCommits() stateFn {
+func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 	d.line = bytes.TrimPrefix(d.line, deepenCommits)
 
 	var n int
@@ -223,7 +224,7 @@ func (d *UlReqDecoder) decodeDeepenCommits() stateFn {
 	return d.decodeFlush
 }
 
-func (d *UlReqDecoder) decodeDeepenSince() stateFn {
+func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 	d.line = bytes.TrimPrefix(d.line, deepenSince)
 
 	var secs int64
@@ -237,7 +238,7 @@ func (d *UlReqDecoder) decodeDeepenSince() stateFn {
 	return d.decodeFlush
 }
 
-func (d *UlReqDecoder) decodeDeepenReference() stateFn {
+func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 	d.line = bytes.TrimPrefix(d.line, deepenReference)
 
 	d.data.Depth = DepthReference(string(d.line))
@@ -245,7 +246,7 @@ func (d *UlReqDecoder) decodeDeepenReference() stateFn {
 	return d.decodeFlush
 }
 
-func (d *UlReqDecoder) decodeFlush() stateFn {
+func (d *ulReqDecoder) decodeFlush() stateFn {
 	if ok := d.nextLine(); !ok {
 		return nil
 	}

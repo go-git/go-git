@@ -5,12 +5,13 @@ import (
 	"io"
 	"net/http"
 
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
 var errSendPackNotSupported = errors.New("send-pack not supported yet")
 
-type sendPackSession struct{
+type sendPackSession struct {
 	*session
 }
 
@@ -18,8 +19,7 @@ func newSendPackSession(c *http.Client, ep transport.Endpoint) transport.SendPac
 	return &sendPackSession{&session{}}
 }
 
-func (s *sendPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
-	error) {
+func (s *sendPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 
 	return nil, errSendPackNotSupported
 }

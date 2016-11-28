@@ -31,8 +31,7 @@ func newFetchPackSession(c *http.Client,
 	}
 }
 
-func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
-	error) {
+func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	if s.advRefsRun {
 		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
 	}
@@ -62,19 +61,19 @@ func (s *fetchPackSession) AdvertisedReferences() (*transport.UploadPackInfo,
 		return nil, transport.ErrAuthorizationRequired
 	}
 
-	i := transport.NewUploadPackInfo()
-	if err := i.Decode(res.Body); err != nil {
-		if err == packp.ErrEmpty {
+	ar := packp.NewAdvRefs()
+	if err := ar.Decode(res.Body); err != nil {
+		if err == packp.ErrEmptyAdvRefs {
 			err = transport.ErrEmptyRemoteRepository
 		}
 
 		return nil, err
 	}
 
-	return i, nil
+	return ar, nil
 }
 
-func (s *fetchPackSession) FetchPack(r *transport.UploadPackRequest) (io.ReadCloser, error) {
+func (s *fetchPackSession) FetchPack(r *packp.UploadPackRequest) (io.ReadCloser, error) {
 	if r.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -84,7 +83,12 @@ func (s *fetchPackSession) FetchPack(r *transport.UploadPackRequest) (io.ReadClo
 		s.endpoint.String(), transport.UploadPackServiceName,
 	)
 
-	res, err := s.doRequest("POST", url, r.Reader())
+	content, err := uploadPackRequestToReader(r)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.doRequest("POST", url, content)
 	if err != nil {
 		return nil, err
 	}
@@ -160,4 +164,33 @@ func (s *fetchPackSession) applyHeadersToRequest(req *http.Request, content *str
 		req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
 		req.Header.Add("Content-Length", string(content.Len()))
 	}
+}
+
+func uploadPackRequestToReader(r *packp.UploadPackRequest) (*strings.Reader, error) {
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+
+	for _, want := range r.Wants {
+		_ = e.Encodef("want %s\n", want)
+	}
+
+	for _, have := range r.Haves {
+		_ = e.Encodef("have %s\n", have)
+	}
+
+	if r.Depth != nil {
+		depth, ok := r.Depth.(packp.DepthCommits)
+		if !ok {
+			return nil, fmt.Errorf("only commit depth is supported")
+		}
+
+		if depth != 0 {
+			_ = e.Encodef("deepen %d\n", depth)
+		}
+	}
+
+	_ = e.Flush()
+	_ = e.EncodeString("done\n")
+
+	return strings.NewReader(buf.String()), nil
 }

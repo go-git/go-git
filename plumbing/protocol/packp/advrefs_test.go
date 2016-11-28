@@ -44,14 +44,10 @@ func (s *SuiteDecodeEncode) test(c *C, in []string, exp []string) {
 	var obtained []byte
 	{
 		ar := packp.NewAdvRefs()
-		d := packp.NewAdvRefsDecoder(input)
-		err = d.Decode(ar)
-		c.Assert(err, IsNil)
+		c.Assert(ar.Decode(input), IsNil)
 
 		var buf bytes.Buffer
-		e := packp.NewAdvRefsEncoder(&buf)
-		err := e.Encode(ar)
-		c.Assert(err, IsNil)
+		c.Assert(ar.Encode(&buf), IsNil)
 
 		obtained = buf.Bytes()
 	}
@@ -258,12 +254,9 @@ func ExampleDecoder_Decode() {
 	// Use the raw message as our input.
 	input := strings.NewReader(raw)
 
-	// Create a Decoder reading from our input.
-	d := packp.NewAdvRefsDecoder(input)
-
 	// Decode the input into a newly allocated AdvRefs value.
 	ar := packp.NewAdvRefs()
-	_ = d.Decode(ar) // error check ignored for brevity
+	_ = ar.Decode(input) // error check ignored for brevity
 
 	// Do something interesting with the AdvRefs, e.g. print its contents.
 	fmt.Println("head =", ar.Head)
@@ -303,8 +296,7 @@ func ExampleEncoder_Encode() {
 	// You can encode into stdout too, but you will not be able
 	// see the '\x00' after "HEAD".
 	var buf bytes.Buffer
-	e := packp.NewAdvRefsEncoder(&buf)
-	_ = e.Encode(ar) // error checks ignored for brevity
+	_ = ar.Encode(&buf) // error checks ignored for brevity
 
 	// Print the contents of the buffer as a quoted string.
 	// Printing is as a non-quoted string will be prettier but you

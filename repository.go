@@ -160,7 +160,7 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
-	head, err := remote.Ref(o.ReferenceName, true)
+	head, err := remote.Reference(o.ReferenceName, true)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,12 @@ func (r *Repository) updateRemoteConfig(
 		return nil
 	}
 
-	head, err := storer.ResolveReference(remote.Info().Refs, o.ReferenceName)
+	refs, err := remote.AdvertisedReferences().AllReferences()
+	if err != nil {
+		return err
+	}
+
+	head, err := storer.ResolveReference(refs, o.ReferenceName)
 	if err != nil {
 		return err
 	}
@@ -242,7 +247,7 @@ func (r *Repository) Pull(o *PullOptions) error {
 
 	defer remote.Disconnect()
 
-	head, err := remote.Ref(o.ReferenceName, true)
+	head, err := remote.Reference(o.ReferenceName, true)
 	if err != nil {
 		return err
 	}

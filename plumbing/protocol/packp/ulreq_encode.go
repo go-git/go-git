@@ -10,27 +10,30 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 )
 
-// An UlReqEncoder writes UlReq values to an output stream.
-type UlReqEncoder struct {
-	pe          *pktline.Encoder // where to write the encoded data
-	data        *UlReq           // the data to encode
-	sortedWants []string
-	err         error // sticky error
-}
-
-// NewUlReqEncoder returns a new encoder that writes to w.
-func NewUlReqEncoder(w io.Writer) *UlReqEncoder {
-	return &UlReqEncoder{
-		pe: pktline.NewEncoder(w),
-	}
-}
-
-// Encode writes the UlReq encoding of v to the stream.
+// Encode writes the UlReq encoding of u to the stream.
 //
 // All the payloads will end with a newline character.  Wants and
 // shallows are sorted alphabetically.  A depth of 0 means no depth
 // request is sent.
-func (e *UlReqEncoder) Encode(v *UlReq) error {
+func (u *UploadRequest) Encode(w io.Writer) error {
+	e := newUlReqEncoder(w)
+	return e.Encode(u)
+}
+
+type ulReqEncoder struct {
+	pe          *pktline.Encoder // where to write the encoded data
+	data        *UploadRequest   // the data to encode
+	sortedWants []string
+	err         error // sticky error
+}
+
+func newUlReqEncoder(w io.Writer) *ulReqEncoder {
+	return &ulReqEncoder{
+		pe: pktline.NewEncoder(w),
+	}
+}
+
+func (e *ulReqEncoder) Encode(v *UploadRequest) error {
 	if len(v.Wants) == 0 {
 		return fmt.Errorf("empty wants provided")
 	}
@@ -55,7 +58,7 @@ func sortHashes(list []plumbing.Hash) []string {
 	return sorted
 }
 
-func (e *UlReqEncoder) encodeFirstWant() stateFn {
+func (e *ulReqEncoder) encodeFirstWant() stateFn {
 	var err error
 	if e.data.Capabilities.IsEmpty() {
 		err = e.pe.Encodef("want %s\n", e.sortedWants[0])
@@ -75,7 +78,7 @@ func (e *UlReqEncoder) encodeFirstWant() stateFn {
 	return e.encodeAditionalWants
 }
 
-func (e *UlReqEncoder) encodeAditionalWants() stateFn {
+func (e *ulReqEncoder) encodeAditionalWants() stateFn {
 	for _, w := range e.sortedWants[1:] {
 		if err := e.pe.Encodef("want %s\n", w); err != nil {
 			e.err = fmt.Errorf("encoding want %q: %s", w, err)
@@ -86,7 +89,7 @@ func (e *UlReqEncoder) encodeAditionalWants() stateFn {
 	return e.encodeShallows
 }
 
-func (e *UlReqEncoder) encodeShallows() stateFn {
+func (e *ulReqEncoder) encodeShallows() stateFn {
 	sorted := sortHashes(e.data.Shallows)
 	for _, s := range sorted {
 		if err := e.pe.Encodef("shallow %s\n", s); err != nil {
@@ -98,7 +101,7 @@ func (e *UlReqEncoder) encodeShallows() stateFn {
 	return e.encodeDepth
 }
 
-func (e *UlReqEncoder) encodeDepth() stateFn {
+func (e *ulReqEncoder) encodeDepth() stateFn {
 	switch depth := e.data.Depth.(type) {
 	case DepthCommits:
 		if depth != 0 {
@@ -128,7 +131,7 @@ func (e *UlReqEncoder) encodeDepth() stateFn {
 	return e.encodeFlush
 }
 
-func (e *UlReqEncoder) encodeFlush() stateFn {
+func (e *ulReqEncoder) encodeFlush() stateFn {
 	if err := e.pe.Flush(); err != nil {
 		e.err = fmt.Errorf("encoding flush-pkt: %s", err)
 		return nil

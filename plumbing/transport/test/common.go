@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
@@ -40,7 +41,7 @@ func (s *FetchPackSuite) TestInfoNotExists(c *C) {
 
 	r, err = s.Client.NewFetchPackSession(s.NonExistentEndpoint)
 	c.Assert(err, IsNil)
-	req := &transport.UploadPackRequest{}
+	req := packp.NewUploadPackRequest()
 	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	reader, err := r.FetchPack(req)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
@@ -85,7 +86,7 @@ func (s *FetchPackSuite) TestFullFetchPack(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 
-	req := &transport.UploadPackRequest{}
+	req := packp.NewUploadPackRequest()
 	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.FetchPack(req)
@@ -99,7 +100,7 @@ func (s *FetchPackSuite) TestFetchPack(c *C) {
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
-	req := &transport.UploadPackRequest{}
+	req := packp.NewUploadPackRequest()
 	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.FetchPack(req)
@@ -113,7 +114,7 @@ func (s *FetchPackSuite) TestFetchPackNoChanges(c *C) {
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
-	req := &transport.UploadPackRequest{}
+	req := packp.NewUploadPackRequest()
 	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Have(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
@@ -127,7 +128,7 @@ func (s *FetchPackSuite) TestFetchPackMulti(c *C) {
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
-	req := &transport.UploadPackRequest{}
+	req := packp.NewUploadPackRequest()
 	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Want(plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 
@@ -141,7 +142,7 @@ func (s *FetchPackSuite) TestFetchError(c *C) {
 	r, err := s.Client.NewFetchPackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 
-	req := &transport.UploadPackRequest{}
+	req := packp.NewUploadPackRequest()
 	req.Want(plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	reader, err := r.FetchPack(req)

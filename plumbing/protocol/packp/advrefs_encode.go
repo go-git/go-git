@@ -9,26 +9,29 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 )
 
-// An AdvRefsEncoder writes AdvRefs values to an output stream.
-type AdvRefsEncoder struct {
+// Encode writes the AdvRefs encoding to a writer.
+//
+// All the payloads will end with a newline character.  Capabilities,
+// references and shallows are writen in alphabetical order, except for
+// peeled references that always follow their corresponding references.
+func (a *AdvRefs) Encode(w io.Writer) error {
+	e := newAdvRefsEncoder(w)
+	return e.Encode(a)
+}
+
+type advRefsEncoder struct {
 	data *AdvRefs         // data to encode
 	pe   *pktline.Encoder // where to write the encoded data
 	err  error            // sticky error
 }
 
-// NewAdvRefsEncoder returns a new encoder that writes to w.
-func NewAdvRefsEncoder(w io.Writer) *AdvRefsEncoder {
-	return &AdvRefsEncoder{
+func newAdvRefsEncoder(w io.Writer) *advRefsEncoder {
+	return &advRefsEncoder{
 		pe: pktline.NewEncoder(w),
 	}
 }
 
-// Encode writes the AdvRefs encoding of v to the stream.
-//
-// All the payloads will end with a newline character.  Capabilities,
-// references and shallows are writen in alphabetical order, except for
-// peeled references that always follow their corresponding references.
-func (e *AdvRefsEncoder) Encode(v *AdvRefs) error {
+func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	e.data = v
 
 	for state := encodePrefix; state != nil; {
@@ -38,9 +41,9 @@ func (e *AdvRefsEncoder) Encode(v *AdvRefs) error {
 	return e.err
 }
 
-type encoderStateFn func(*AdvRefsEncoder) encoderStateFn
+type encoderStateFn func(*advRefsEncoder) encoderStateFn
 
-func encodePrefix(e *AdvRefsEncoder) encoderStateFn {
+func encodePrefix(e *advRefsEncoder) encoderStateFn {
 	for _, p := range e.data.Prefix {
 		if bytes.Equal(p, pktline.Flush) {
 			if e.err = e.pe.Flush(); e.err != nil {
@@ -58,7 +61,7 @@ func encodePrefix(e *AdvRefsEncoder) encoderStateFn {
 
 // Adds the first pkt-line payload: head hash, head ref and capabilities.
 // Also handle the special case when no HEAD ref is found.
-func encodeFirstLine(e *AdvRefsEncoder) encoderStateFn {
+func encodeFirstLine(e *advRefsEncoder) encoderStateFn {
 	head := formatHead(e.data.Head)
 	separator := formatSeparator(e.data.Head)
 	capabilities := formatCaps(e.data.Capabilities)
@@ -98,7 +101,7 @@ func formatCaps(c *Capabilities) string {
 
 // Adds the (sorted) refs: hash SP refname EOL
 // and their peeled refs if any.
-func encodeRefs(e *AdvRefsEncoder) encoderStateFn {
+func encodeRefs(e *advRefsEncoder) encoderStateFn {
 	refs := sortRefs(e.data.References)
 	for _, r := range refs {
 		hash, _ := e.data.References[r]
@@ -127,7 +130,7 @@ func sortRefs(m map[string]plumbing.Hash) []string {
 }
 
 // Adds the (sorted) shallows: "shallow" SP hash EOL
-func encodeShallow(e *AdvRefsEncoder) encoderStateFn {
+func encodeShallow(e *advRefsEncoder) encoderStateFn {
 	sorted := sortShallows(e.data.Shallows)
 	for _, hash := range sorted {
 		if e.err = e.pe.Encodef("shallow %s\n", hash); e.err != nil {
@@ -148,7 +151,7 @@ func sortShallows(c []plumbing.Hash) []string {
 	return ret
 }
 
-func encodeFlush(e *AdvRefsEncoder) encoderStateFn {
+func encodeFlush(e *advRefsEncoder) encoderStateFn {
 	e.err = e.pe.Flush()
 	return nil
 }

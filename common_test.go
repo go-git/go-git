@@ -93,8 +93,7 @@ func (c *MockFetchPackSession) SetAuth(auth transport.AuthMethod) error {
 	return nil
 }
 
-func (c *MockFetchPackSession) AdvertisedReferences() (
-	*transport.UploadPackInfo, error) {
+func (c *MockFetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 
 	h := fixtures.ByURL(c.endpoint.String()).One().Head
 
@@ -105,19 +104,19 @@ func (c *MockFetchPackSession) AdvertisedReferences() (
 	branch := plumbing.ReferenceName("refs/heads/branch")
 	tag := plumbing.ReferenceName("refs/tags/v1.0.0")
 
-	return &transport.UploadPackInfo{
-		Capabilities: cap,
-		Refs: map[plumbing.ReferenceName]*plumbing.Reference{
-			plumbing.HEAD: plumbing.NewSymbolicReference(plumbing.HEAD, ref),
-			ref:           plumbing.NewHashReference(ref, h),
-			tag:           plumbing.NewHashReference(tag, h),
-			branch:        plumbing.NewHashReference(branch, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")),
-		},
-	}, nil
+	a := packp.NewAdvRefs()
+	a.Capabilities = cap
+	a.Head = &h
+	a.AddReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref))
+	a.AddReference(plumbing.NewHashReference(ref, h))
+	a.AddReference(plumbing.NewHashReference(tag, h))
+	a.AddReference(plumbing.NewHashReference(branch, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")))
+
+	return a, nil
 }
 
 func (c *MockFetchPackSession) FetchPack(
-	r *transport.UploadPackRequest) (io.ReadCloser, error) {
+	r *packp.UploadPackRequest) (io.ReadCloser, error) {
 
 	f := fixtures.ByURL(c.endpoint.String())
 

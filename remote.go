@@ -12,6 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 var NoErrAlreadyUpToDate = errors.New("already up-to-date")
@@ -25,7 +26,8 @@ type Remote struct {
 	endpoint     transport.Endpoint
 	client       transport.Client
 	fetchSession transport.FetchPackSession
-	upInfo       *transport.UploadPackInfo
+	advRefs      *packp.AdvRefs
+	refs         memory.ReferenceStorage
 }
 
 func newRemote(s Storer, c *config.RemoteConfig) *Remote {
@@ -49,7 +51,7 @@ func (r *Remote) Connect() error {
 		return nil
 	}
 
-	return r.retrieveUpInfo()
+	return r.retrieveAdvertisedReferences()
 }
 
 func (r *Remote) initClient() error {
@@ -71,20 +73,25 @@ func (r *Remote) initClient() error {
 	return nil
 }
 
-func (r *Remote) retrieveUpInfo() error {
+func (r *Remote) retrieveAdvertisedReferences() error {
 	var err error
-	r.upInfo, err = r.fetchSession.AdvertisedReferences()
+	r.advRefs, err = r.fetchSession.AdvertisedReferences()
+	if err != nil {
+		return err
+	}
+
+	r.refs, err = r.advRefs.AllReferences()
 	return err
 }
 
-// Info returns the git-upload-pack info
-func (r *Remote) Info() *transport.UploadPackInfo {
-	return r.upInfo
+// AdvertisedReferences returns the git-upload-pack advertised references.
+func (r *Remote) AdvertisedReferences() *packp.AdvRefs {
+	return r.advRefs
 }
 
 // Capabilities returns the remote capabilities
 func (r *Remote) Capabilities() *packp.Capabilities {
-	return r.upInfo.Capabilities
+	return r.advRefs.Capabilities
 }
 
 // Fetch returns a reader using the request
@@ -126,7 +133,7 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 
 func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*plumbing.Reference, error) {
 	var refs []*plumbing.Reference
-	iter, err := r.Refs()
+	iter, err := r.References()
 	if err != nil {
 		return refs, err
 	}
@@ -162,9 +169,9 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*plumbing.Referen
 
 func (r *Remote) buildRequest(
 	s storer.ReferenceStorer, o *FetchOptions, refs []*plumbing.Reference,
-) (*transport.UploadPackRequest, error) {
-	req := &transport.UploadPackRequest{}
-	req.Depth = o.Depth
+) (*packp.UploadPackRequest, error) {
+	req := packp.NewUploadPackRequest()
+	req.Depth = packp.DepthCommits(o.Depth)
 
 	for _, ref := range refs {
 		req.Want(ref.Hash())
@@ -232,7 +239,7 @@ func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*plu
 }
 
 func (r *Remote) buildFetchedTags() error {
-	iter, err := r.Refs()
+	iter, err := r.References()
 	if err != nil {
 		return err
 	}
@@ -257,26 +264,31 @@ func (r *Remote) buildFetchedTags() error {
 
 // Head returns the Reference of the HEAD
 func (r *Remote) Head() *plumbing.Reference {
-	return r.upInfo.Head()
-}
-
-// Ref returns the Hash pointing the given refName
-func (r *Remote) Ref(name plumbing.ReferenceName, resolved bool) (*plumbing.Reference, error) {
-	if resolved {
-		return storer.ResolveReference(r.upInfo.Refs, name)
+	ref, err := storer.ResolveReference(r.refs, plumbing.HEAD)
+	if err != nil {
+		return nil
 	}
 
-	return r.upInfo.Refs.Reference(name)
+	return ref
 }
 
-// Refs returns a map with all the References
-func (r *Remote) Refs() (storer.ReferenceIter, error) {
-	return r.upInfo.Refs.IterReferences()
+// Reference returns a Reference for a ReferenceName.
+func (r *Remote) Reference(name plumbing.ReferenceName, resolved bool) (*plumbing.Reference, error) {
+	if resolved {
+		return storer.ResolveReference(r.refs, name)
+	}
+
+	return r.refs.Reference(name)
+}
+
+// References returns an iterator for all references.
+func (r *Remote) References() (storer.ReferenceIter, error) {
+	return r.refs.IterReferences()
 }
 
 // Disconnect from the remote and save the config
 func (r *Remote) Disconnect() error {
-	r.upInfo = nil
+	r.advRefs = nil
 	return r.fetchSession.Close()
 }
 

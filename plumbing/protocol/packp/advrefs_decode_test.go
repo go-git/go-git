@@ -18,10 +18,10 @@ var _ = Suite(&AdvRefsDecodeSuite{})
 func (s *AdvRefsDecodeSuite) TestEmpty(c *C) {
 	ar := NewAdvRefs()
 	var buf bytes.Buffer
-	d := NewAdvRefsDecoder(&buf)
+	d := newAdvRefsDecoder(&buf)
 
 	err := d.Decode(ar)
-	c.Assert(err, Equals, ErrEmpty)
+	c.Assert(err, Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {
@@ -30,10 +30,10 @@ func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {
 	e := pktline.NewEncoder(&buf)
 	e.Flush()
 
-	d := NewAdvRefsDecoder(&buf)
+	d := newAdvRefsDecoder(&buf)
 
 	err := d.Decode(ar)
-	c.Assert(err, Equals, ErrEmpty)
+	c.Assert(err, Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
@@ -44,10 +44,10 @@ func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
 	e.Flush()
 	e.Flush()
 
-	d := NewAdvRefsDecoder(&buf)
+	d := newAdvRefsDecoder(&buf)
 
 	err := d.Decode(ar)
-	c.Assert(err, Equals, ErrEmpty)
+	c.Assert(err, Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
@@ -61,7 +61,7 @@ func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
 
 func (s *AdvRefsDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {
 	ar := NewAdvRefs()
-	d := NewAdvRefsDecoder(input)
+	d := newAdvRefsDecoder(input)
 
 	err := d.Decode(ar)
 	c.Assert(err, ErrorMatches, pattern)
@@ -92,7 +92,7 @@ func (s *AdvRefsDecodeSuite) testDecodeOK(c *C, payloads []string) *AdvRefs {
 	c.Assert(err, IsNil)
 
 	ar := NewAdvRefs()
-	d := NewAdvRefsDecoder(&buf)
+	d := newAdvRefsDecoder(&buf)
 
 	err = d.Decode(ar)
 	c.Assert(err, IsNil)
