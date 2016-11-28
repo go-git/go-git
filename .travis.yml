@@ -13,6 +13,7 @@ before_install:
   - eval "$(ssh-agent -s)"
   # we only decrypt the SSH key when we aren't in a pull request 
   - 'if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash .travis/install_key.sh; fi'
+  - 'if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then export SSH_AUTH_SOCK="" ; fi'
 
 install:
   - rm -rf $GOPATH/src/gopkg.in/src-d
