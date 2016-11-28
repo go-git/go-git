@@ -44,6 +44,27 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 	c.Assert(stat.Size(), Equals, int64(1940))
 }
 
+func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
+	dir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	fs := osfs.New(dir)
+	dot := New(fs)
+
+	w, err := dot.NewObjectPack()
+	c.Assert(err, IsNil)
+
+	c.Assert(w.Close(), IsNil)
+
+	info, err := fs.ReadDir("objects/pack")
+	c.Assert(err, IsNil)
+	c.Assert(info, HasLen, 0)
+}
+
 func (s *SuiteDotGit) TestSyncedReader(c *C) {
 	tmpw, err := ioutil.TempFile("", "example")
 	c.Assert(err, IsNil)
