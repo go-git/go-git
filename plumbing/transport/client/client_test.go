@@ -38,7 +38,7 @@ func (s *ClientSuite) TestNewClientSSH(c *C) {
 
 	output, err := NewClient(e)
 	c.Assert(err, IsNil)
-	c.Assert(typeAsString(output), Equals, "*ssh.client")
+	c.Assert(output, NotNil)
 }
 
 func (s *ClientSuite) TestNewClientUnknown(c *C) {

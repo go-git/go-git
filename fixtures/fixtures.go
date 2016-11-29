@@ -115,6 +115,11 @@ var fixtures = Fixtures{{
 	Tags:         []string{"packfile", "diff-tree"},
 	URL:          "https://github.com/toqueteos/ts3.git",
 	PackfileHash: plumbing.NewHash("21b33a26eb7ffbd35261149fe5d886b9debab7cb"),
+}, {
+	Tags:         []string{"empty", ".git"},
+	URL:          "https://github.com/git-fixtures/empty.git",
+	DotGitHash:   plumbing.NewHash("4abe340d8d378baf7c2bfb2854c0fa498642bac3"),
+	ObjectsCount: 0,
 }}
 
 func All() Fixtures {

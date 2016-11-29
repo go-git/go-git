@@ -34,7 +34,8 @@ var (
 )
 
 const (
-	UploadPackServiceName = "git-upload-pack"
+	UploadPackServiceName  = "git-upload-pack"
+	ReceivePackServiceName = "git-receive-pack"
 )
 
 // Client can initiate git-fetch-pack and git-send-pack processes.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/file"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
@@ -13,6 +14,7 @@ var Protocols = map[string]transport.Client{
 	"http":  http.DefaultClient,
 	"https": http.DefaultClient,
 	"ssh":   ssh.DefaultClient,
+	"file":  file.DefaultClient,
 }
 
 // InstallProtocol adds or modifies an existing protocol.
@@ -21,7 +23,8 @@ func InstallProtocol(scheme string, c transport.Client) {
 }
 
 // NewClient returns the appropriate client among of the set of known protocols:
-// HTTP, SSH. See `InstallProtocol` to add or modify protocols.
+// http://, https://, ssh:// and file://.
+// See `InstallProtocol` to add or modify protocols.
 func NewClient(endpoint transport.Endpoint) (transport.Client, error) {
 	f, ok := Protocols[endpoint.Scheme]
 	if !ok {

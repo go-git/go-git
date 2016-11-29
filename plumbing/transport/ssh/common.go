@@ -3,10 +3,10 @@ package ssh
 import (
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -15,155 +15,110 @@ var (
 	errAlreadyConnected = errors.New("ssh session already created")
 )
 
-type client struct{}
-
 // DefaultClient is the default SSH client.
-var DefaultClient = &client{}
+var DefaultClient = common.NewClient(&runner{})
 
-func (c *client) NewFetchPackSession(ep transport.Endpoint) (
-	transport.FetchPackSession, error) {
+type runner struct{}
 
-	return newFetchPackSession(ep)
+func (r *runner) Command(cmd string, ep transport.Endpoint) (common.Command, error) {
+	c := &command{command: cmd, endpoint: ep}
+	if err := c.connect(); err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
-func (c *client) NewSendPackSession(ep transport.Endpoint) (
-	transport.SendPackSession, error) {
-
-	return newSendPackSession(ep)
+type command struct {
+	*ssh.Session
+	connected bool
+	command   string
+	endpoint  transport.Endpoint
+	client    *ssh.Client
+	auth      AuthMethod
 }
 
-type session struct {
-	connected   bool
-	endpoint    transport.Endpoint
-	client      *ssh.Client
-	session     *ssh.Session
-	stdin       io.WriteCloser
-	stdout      io.Reader
-	stderr      io.Reader
-	sessionDone chan error
-	auth        AuthMethod
-}
-
-func (s *session) SetAuth(auth transport.AuthMethod) error {
+func (c *command) SetAuth(auth transport.AuthMethod) error {
 	a, ok := auth.(AuthMethod)
 	if !ok {
 		return transport.ErrInvalidAuthMethod
 	}
 
-	s.auth = a
+	c.auth = a
 	return nil
 }
 
-// Close closes the SSH session.
-func (s *session) Close() error {
-	if !s.connected {
+func (c *command) Start() error {
+	return c.Session.Start(endpointToCommand(c.command, c.endpoint))
+}
+
+// Close closes the SSH session and connection.
+func (c *command) Close() error {
+	if !c.connected {
 		return nil
 	}
 
-	s.connected = false
+	c.connected = false
 
 	//XXX: If did read the full packfile, then the session might be already
 	//     closed.
-	_ = s.session.Close()
+	_ = c.Session.Close()
 
-	return s.client.Close()
+	return c.client.Close()
 }
 
-// ensureConnected connects to the SSH server, unless a AuthMethod was set with
+// connect connects to the SSH server, unless a AuthMethod was set with
 // SetAuth method, by default uses an auth method based on PublicKeysCallback,
 // it connects to a SSH agent, using the address stored in the SSH_AUTH_SOCK
 // environment var.
-func (s *session) connect() error {
-	if s.connected {
+func (c *command) connect() error {
+	if c.connected {
 		return errAlreadyConnected
 	}
 
-	if err := s.setAuthFromEndpoint(); err != nil {
+	if err := c.setAuthFromEndpoint(); err != nil {
 		return err
 	}
 
 	var err error
-	s.client, err = ssh.Dial("tcp", s.getHostWithPort(), s.auth.clientConfig())
+	c.client, err = ssh.Dial("tcp", c.getHostWithPort(), c.auth.clientConfig())
 	if err != nil {
 		return err
 	}
 
-	if err := s.openSSHSession(); err != nil {
-		_ = s.client.Close()
+	c.Session, err = c.client.NewSession()
+	if err != nil {
+		_ = c.client.Close()
 		return err
 	}
 
-	s.connected = true
+	c.connected = true
 	return nil
 }
 
-func (s *session) getHostWithPort() string {
-	host := s.endpoint.Host
-	if strings.Index(s.endpoint.Host, ":") == -1 {
+func (c *command) getHostWithPort() string {
+	host := c.endpoint.Host
+	if strings.Index(c.endpoint.Host, ":") == -1 {
 		host += ":22"
 	}
 
 	return host
 }
 
-func (s *session) setAuthFromEndpoint() error {
+func (c *command) setAuthFromEndpoint() error {
 	var u string
-	if info := s.endpoint.User; info != nil {
+	if info := c.endpoint.User; info != nil {
 		u = info.Username()
 	}
 
 	var err error
-	s.auth, err = NewSSHAgentAuth(u)
+	c.auth, err = NewSSHAgentAuth(u)
 	return err
 }
 
-func (s *session) openSSHSession() error {
-	var err error
-	s.session, err = s.client.NewSession()
-	if err != nil {
-		return fmt.Errorf("cannot open SSH session: %s", err)
-	}
+func endpointToCommand(cmd string, ep transport.Endpoint) string {
+	directory := ep.Path
+	directory = directory[1:]
 
-	s.stdin, err = s.session.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("cannot pipe remote stdin: %s", err)
-	}
-
-	s.stdout, err = s.session.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("cannot pipe remote stdout: %s", err)
-	}
-
-	s.stderr, err = s.session.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("cannot pipe remote stderr: %s", err)
-	}
-
-	return nil
-}
-
-func (s *session) runCommand(cmd string) chan error {
-	done := make(chan error)
-	go func() {
-		done <- s.session.Run(cmd)
-	}()
-
-	return done
-}
-
-const (
-	githubRepoNotFoundErr    = "ERROR: Repository not found."
-	bitbucketRepoNotFoundErr = "conq: repository does not exist."
-)
-
-func isRepoNotFoundError(s string) bool {
-	if strings.HasPrefix(s, githubRepoNotFoundErr) {
-		return true
-	}
-
-	if strings.HasPrefix(s, bitbucketRepoNotFoundErr) {
-		return true
-	}
-
-	return false
+	return fmt.Sprintf("%s '%s'", cmd, directory)
 }
