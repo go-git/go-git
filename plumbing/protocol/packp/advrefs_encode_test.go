@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
 )
@@ -52,10 +53,10 @@ func (s *AdvRefsEncodeSuite) TestHead(c *C) {
 }
 
 func (s *AdvRefsEncodeSuite) TestCapsNoHead(c *C) {
-	capabilities := NewCapabilities()
-	capabilities.Add("symref", "HEAD:/refs/heads/master")
-	capabilities.Add("ofs-delta")
-	capabilities.Add("multi_ack")
+	capabilities := capability.NewList()
+	capabilities.Add(capability.MultiACK)
+	capabilities.Add(capability.OFSDelta)
+	capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
 	ar := &AdvRefs{
 		Capabilities: capabilities,
 	}
@@ -70,10 +71,10 @@ func (s *AdvRefsEncodeSuite) TestCapsNoHead(c *C) {
 
 func (s *AdvRefsEncodeSuite) TestCapsWithHead(c *C) {
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	capabilities := NewCapabilities()
-	capabilities.Add("symref", "HEAD:/refs/heads/master")
-	capabilities.Add("ofs-delta")
-	capabilities.Add("multi_ack")
+	capabilities := capability.NewList()
+	capabilities.Add(capability.MultiACK)
+	capabilities.Add(capability.OFSDelta)
+	capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
 	ar := &AdvRefs{
 		Head:         &hash,
 		Capabilities: capabilities,
@@ -170,10 +171,10 @@ func (s *AdvRefsEncodeSuite) TestShallow(c *C) {
 func (s *AdvRefsEncodeSuite) TestAll(c *C) {
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	capabilities := NewCapabilities()
-	capabilities.Add("symref", "HEAD:/refs/heads/master")
-	capabilities.Add("ofs-delta")
-	capabilities.Add("multi_ack")
+	capabilities := capability.NewList()
+	capabilities.Add(capability.MultiACK)
+	capabilities.Add(capability.OFSDelta)
+	capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
 
 	references := map[string]plumbing.Hash{
 		"refs/heads/master":      plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7"),

@@ -19,6 +19,7 @@ import (
 	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 const FixRefSpec = config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
@@ -57,7 +58,7 @@ func (s *RemoteSuite) TestInfo(c *C) {
 	c.Assert(r.AdvertisedReferences(), IsNil)
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.AdvertisedReferences(), NotNil)
-	c.Assert(r.AdvertisedReferences().Capabilities.Get("ofs-delta"), NotNil)
+	c.Assert(r.AdvertisedReferences().Capabilities.Get(capability.Agent), NotNil)
 }
 
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
@@ -73,7 +74,7 @@ func (s *RemoteSuite) TestCapabilities(c *C) {
 	r.client = &MockClient{}
 
 	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.Capabilities().Get("agent").Values, HasLen, 1)
+	c.Assert(r.Capabilities().Get(capability.Agent), HasLen, 1)
 }
 
 func (s *RemoteSuite) TestFetch(c *C) {

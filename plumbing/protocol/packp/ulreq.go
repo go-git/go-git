@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 // UploadRequest values represent the information transmitted on a
@@ -11,7 +12,7 @@ import (
 // safe, use the New function instead.
 // This is a low level type, use UploadPackRequest instead.
 type UploadRequest struct {
-	Capabilities *Capabilities
+	Capabilities *capability.List
 	Wants        []plumbing.Hash
 	Shallows     []plumbing.Hash
 	Depth        Depth
@@ -46,7 +47,7 @@ func (d DepthReference) isDepth() {}
 // wanted hash.
 func NewUploadRequest() *UploadRequest {
 	return &UploadRequest{
-		Capabilities: NewCapabilities(),
+		Capabilities: capability.NewList(),
 		Wants:        []plumbing.Hash{},
 		Shallows:     []plumbing.Hash{},
 		Depth:        DepthCommits(0),

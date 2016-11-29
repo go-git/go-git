@@ -15,6 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 type FetchPackSuite struct {
@@ -64,7 +65,9 @@ func (s *FetchPackSuite) TestDefaultBranch(c *C) {
 
 	info, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
-	c.Assert(info.Capabilities.SymbolicReference("HEAD"), Equals, "refs/heads/master")
+	symrefs := info.Capabilities.Get(capability.SymRef)
+	c.Assert(symrefs, HasLen, 1)
+	c.Assert(symrefs[0], Equals, "HEAD:refs/heads/master")
 }
 
 func (s *FetchPackSuite) TestCapabilities(c *C) {
@@ -74,7 +77,7 @@ func (s *FetchPackSuite) TestCapabilities(c *C) {
 
 	info, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
-	c.Assert(info.Capabilities.Get("agent").Values, HasLen, 1)
+	c.Assert(info.Capabilities.Get(capability.Agent), HasLen, 1)
 }
 
 func (s *FetchPackSuite) TestFullFetchPack(c *C) {

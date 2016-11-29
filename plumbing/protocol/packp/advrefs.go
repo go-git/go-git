@@ -5,12 +5,9 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-)
-
-const (
-	symref = "symref"
 )
 
 // AdvRefs values represent the information transmitted on an
@@ -31,7 +28,7 @@ const (
 type AdvRefs struct {
 	Prefix       [][]byte // payloads of the prefix
 	Head         *plumbing.Hash
-	Capabilities *Capabilities
+	Capabilities *capability.List
 	References   map[string]plumbing.Hash
 	Peeled       map[string]plumbing.Hash
 	Shallows     []plumbing.Hash
@@ -41,7 +38,7 @@ type AdvRefs struct {
 func NewAdvRefs() *AdvRefs {
 	return &AdvRefs{
 		Prefix:       [][]byte{},
-		Capabilities: NewCapabilities(),
+		Capabilities: capability.NewList(),
 		References:   make(map[string]plumbing.Hash),
 		Peeled:       make(map[string]plumbing.Hash),
 		Shallows:     []plumbing.Hash{},
@@ -52,7 +49,7 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	switch r.Type() {
 	case plumbing.SymbolicReference:
 		v := fmt.Sprintf("%s:%s", r.Name().String(), r.Target().String())
-		a.Capabilities.Add(symref, v)
+		a.Capabilities.Add(capability.SymRef, v)
 	case plumbing.HashReference:
 		a.References[r.Name().String()] = r.Hash()
 	default:
@@ -87,7 +84,7 @@ func addSymbolicRefs(s storer.ReferenceStorer, ar *AdvRefs) error {
 		return nil
 	}
 
-	for _, symref := range ar.Capabilities.Get(symref).Values {
+	for _, symref := range ar.Capabilities.Get(capability.SymRef) {
 		chunks := strings.Split(symref, ":")
 		if len(chunks) != 2 {
 			err := fmt.Errorf("bad number of `:` in symref value (%q)", symref)
@@ -105,5 +102,5 @@ func addSymbolicRefs(s storer.ReferenceStorer, ar *AdvRefs) error {
 }
 
 func hasSymrefs(ar *AdvRefs) bool {
-	return ar.Capabilities.Supports(symref)
+	return ar.Capabilities.Supports(capability.SymRef)
 }

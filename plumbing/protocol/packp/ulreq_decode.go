@@ -115,10 +115,8 @@ func (d *ulReqDecoder) decodeCaps() stateFn {
 	}
 
 	d.line = bytes.TrimPrefix(d.line, sp)
-
-	for _, c := range bytes.Split(d.line, sp) {
-		name, values := readCapability(c)
-		d.data.Capabilities.Add(name, values...)
+	if err := d.data.Capabilities.Decode(d.line); err != nil {
+		d.error("invalid capabilities: %s", err)
 	}
 
 	return d.decodeOtherWants

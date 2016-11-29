@@ -63,7 +63,6 @@ func (e *ulReqEncoder) encodeFirstWant() stateFn {
 	if e.data.Capabilities.IsEmpty() {
 		err = e.pe.Encodef("want %s\n", e.sortedWants[0])
 	} else {
-		e.data.Capabilities.Sort()
 		err = e.pe.Encodef(
 			"want %s %s\n",
 			e.sortedWants[0],

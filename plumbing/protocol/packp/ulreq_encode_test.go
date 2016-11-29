@@ -8,6 +8,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 type UlReqEncodeSuite struct{}
@@ -59,14 +60,14 @@ func (s *UlReqEncodeSuite) TestOneWant(c *C) {
 func (s *UlReqEncodeSuite) TestOneWantWithCapabilities(c *C) {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Capabilities.Add("sysref", "HEAD:/refs/heads/master")
-	ur.Capabilities.Add("multi_ack")
-	ur.Capabilities.Add("thin-pack")
-	ur.Capabilities.Add("side-band")
-	ur.Capabilities.Add("ofs-delta")
+	ur.Capabilities.Add(capability.MultiACK)
+	ur.Capabilities.Add(capability.OFSDelta)
+	ur.Capabilities.Add(capability.Sideband)
+	ur.Capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
+	ur.Capabilities.Add(capability.ThinPack)
 
 	expected := []string{
-		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band sysref=HEAD:/refs/heads/master thin-pack\n",
+		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band symref=HEAD:/refs/heads/master thin-pack\n",
 		pktline.FlushString,
 	}
 
@@ -101,14 +102,14 @@ func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
 	ur.Wants = append(ur.Wants, plumbing.NewHash("2222222222222222222222222222222222222222"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("5555555555555555555555555555555555555555"))
 
-	ur.Capabilities.Add("sysref", "HEAD:/refs/heads/master")
-	ur.Capabilities.Add("multi_ack")
-	ur.Capabilities.Add("thin-pack")
-	ur.Capabilities.Add("side-band")
-	ur.Capabilities.Add("ofs-delta")
+	ur.Capabilities.Add(capability.MultiACK)
+	ur.Capabilities.Add(capability.OFSDelta)
+	ur.Capabilities.Add(capability.Sideband)
+	ur.Capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
+	ur.Capabilities.Add(capability.ThinPack)
 
 	expected := []string{
-		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band sysref=HEAD:/refs/heads/master thin-pack\n",
+		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band symref=HEAD:/refs/heads/master thin-pack\n",
 		"want 2222222222222222222222222222222222222222\n",
 		"want 3333333333333333333333333333333333333333\n",
 		"want 4444444444444444444444444444444444444444\n",
@@ -122,7 +123,7 @@ func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
 func (s *UlReqEncodeSuite) TestShallow(c *C) {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Capabilities.Add("multi_ack")
+	ur.Capabilities.Add(capability.MultiACK)
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 
 	expected := []string{
@@ -137,7 +138,7 @@ func (s *UlReqEncodeSuite) TestShallow(c *C) {
 func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Capabilities.Add("multi_ack")
+	ur.Capabilities.Add(capability.MultiACK)
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddd"))
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"))
@@ -225,11 +226,11 @@ func (s *UlReqEncodeSuite) TestAll(c *C) {
 	ur.Wants = append(ur.Wants, plumbing.NewHash("2222222222222222222222222222222222222222"))
 	ur.Wants = append(ur.Wants, plumbing.NewHash("5555555555555555555555555555555555555555"))
 
-	ur.Capabilities.Add("sysref", "HEAD:/refs/heads/master")
-	ur.Capabilities.Add("multi_ack")
-	ur.Capabilities.Add("thin-pack")
-	ur.Capabilities.Add("side-band")
-	ur.Capabilities.Add("ofs-delta")
+	ur.Capabilities.Add(capability.MultiACK)
+	ur.Capabilities.Add(capability.OFSDelta)
+	ur.Capabilities.Add(capability.Sideband)
+	ur.Capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
+	ur.Capabilities.Add(capability.ThinPack)
 
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddd"))
@@ -240,7 +241,7 @@ func (s *UlReqEncodeSuite) TestAll(c *C) {
 	ur.Depth = DepthSince(since)
 
 	expected := []string{
-		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band sysref=HEAD:/refs/heads/master thin-pack\n",
+		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band symref=HEAD:/refs/heads/master thin-pack\n",
 		"want 2222222222222222222222222222222222222222\n",
 		"want 3333333333333333333333333333333333333333\n",
 		"want 4444444444444444444444444444444444444444\n",

@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
 )
@@ -176,82 +177,70 @@ func (s *AdvRefsDecodeSuite) TestNoCaps(c *C) {
 }
 
 func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
+	type entry struct {
+		Name   capability.Capability
+		Values []string
+	}
+
 	for _, test := range [...]struct {
 		input        []string
-		capabilities []Capability
-	}{
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{},
+		capabilities []entry
+	}{{
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00",
+			pktline.FlushString,
 		},
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00\n",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{},
+		capabilities: []entry{},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00\n",
+			pktline.FlushString,
 		},
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{
-				{
-					Name:   "ofs-delta",
-					Values: []string(nil),
-				},
+		capabilities: []entry{},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta",
+			pktline.FlushString,
+		},
+		capabilities: []entry{
+			{
+				Name:   capability.OFSDelta,
+				Values: []string(nil),
 			},
 		},
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta multi_ack",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{
-				{Name: "ofs-delta", Values: []string(nil)},
-				{Name: "multi_ack", Values: []string(nil)},
-			},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta multi_ack",
+			pktline.FlushString,
 		},
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta multi_ack\n",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{
-				{Name: "ofs-delta", Values: []string(nil)},
-				{Name: "multi_ack", Values: []string(nil)},
-			},
+		capabilities: []entry{
+			{Name: capability.OFSDelta, Values: []string(nil)},
+			{Name: capability.MultiACK, Values: []string(nil)},
 		},
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:refs/heads/master agent=foo=bar\n",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{
-				{Name: "symref", Values: []string{"HEAD:refs/heads/master"}},
-				{Name: "agent", Values: []string{"foo=bar"}},
-			},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta multi_ack\n",
+			pktline.FlushString,
 		},
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:refs/heads/master agent=foo=bar agent=new-agent\n",
-				pktline.FlushString,
-			},
-			capabilities: []Capability{
-				{Name: "symref", Values: []string{"HEAD:refs/heads/master"}},
-				{Name: "agent", Values: []string{"foo=bar", "new-agent"}},
-			},
+		capabilities: []entry{
+			{Name: capability.OFSDelta, Values: []string(nil)},
+			{Name: capability.MultiACK, Values: []string(nil)},
 		},
-	} {
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:refs/heads/master agent=foo=bar\n",
+			pktline.FlushString,
+		},
+		capabilities: []entry{
+			{Name: capability.SymRef, Values: []string{"HEAD:refs/heads/master"}},
+			{Name: capability.Agent, Values: []string{"foo=bar"}},
+		},
+	}} {
 		ar := s.testDecodeOK(c, test.input)
 		for _, fixCap := range test.capabilities {
 			c.Assert(ar.Capabilities.Supports(fixCap.Name), Equals, true,
 				Commentf("input = %q, capability = %q", test.input, fixCap.Name))
-			c.Assert(ar.Capabilities.Get(fixCap.Name).Values, DeepEquals, fixCap.Values,
+			c.Assert(ar.Capabilities.Get(fixCap.Name), DeepEquals, fixCap.Values,
 				Commentf("input = %q, capability = %q", test.input, fixCap.Name))
 		}
 	}
@@ -260,7 +249,7 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 func (s *AdvRefsDecodeSuite) TestWithPrefix(c *C) {
 	payloads := []string{
 		"# this is a prefix\n",
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00foo\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta\n",
 		pktline.FlushString,
 	}
 	ar := s.testDecodeOK(c, payloads)
@@ -272,7 +261,7 @@ func (s *AdvRefsDecodeSuite) TestWithPrefixAndFlush(c *C) {
 	payloads := []string{
 		"# this is a prefix\n",
 		pktline.FlushString,
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00foo\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta\n",
 		pktline.FlushString,
 	}
 	ar := s.testDecodeOK(c, payloads)
@@ -286,98 +275,96 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 		input      []string
 		references map[string]plumbing.Hash
 		peeled     map[string]plumbing.Hash
-	}{
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				pktline.FlushString,
-			},
-			references: make(map[string]plumbing.Hash),
-			peeled:     make(map[string]plumbing.Hash),
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"1111111111111111111111111111111111111111 ref/foo",
-				pktline.FlushString,
-			},
-			references: map[string]plumbing.Hash{
-				"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
-			},
-			peeled: make(map[string]plumbing.Hash),
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"1111111111111111111111111111111111111111 ref/foo\n",
-				pktline.FlushString,
-			},
-			references: map[string]plumbing.Hash{
-				"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
-			},
-			peeled: make(map[string]plumbing.Hash),
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"1111111111111111111111111111111111111111 ref/foo\n",
-				"2222222222222222222222222222222222222222 ref/bar",
-				pktline.FlushString,
-			},
-			references: map[string]plumbing.Hash{
-				"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
-				"ref/bar": plumbing.NewHash("2222222222222222222222222222222222222222"),
-			},
-			peeled: make(map[string]plumbing.Hash),
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"1111111111111111111111111111111111111111 ref/foo^{}\n",
-				pktline.FlushString,
-			},
-			references: make(map[string]plumbing.Hash),
-			peeled: map[string]plumbing.Hash{
-				"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
-			},
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"1111111111111111111111111111111111111111 ref/foo\n",
-				"2222222222222222222222222222222222222222 ref/bar^{}",
-				pktline.FlushString,
-			},
-			references: map[string]plumbing.Hash{
-				"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
-			},
-			peeled: map[string]plumbing.Hash{
-				"ref/bar": plumbing.NewHash("2222222222222222222222222222222222222222"),
-			},
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-				"51b8b4fb32271d39fbdd760397406177b2b0fd36 refs/pull/10/head\n",
-				"02b5a6031ba7a8cbfde5d65ff9e13ecdbc4a92ca refs/pull/100/head\n",
-				"c284c212704c43659bf5913656b8b28e32da1621 refs/pull/100/merge\n",
-				"3d6537dce68c8b7874333a1720958bd8db3ae8ca refs/pull/101/merge\n",
-				"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11\n",
-				"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11^{}\n",
-				"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-				"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-				pktline.FlushString,
-			},
-			references: map[string]plumbing.Hash{
-				"refs/heads/master":      plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7"),
-				"refs/pull/10/head":      plumbing.NewHash("51b8b4fb32271d39fbdd760397406177b2b0fd36"),
-				"refs/pull/100/head":     plumbing.NewHash("02b5a6031ba7a8cbfde5d65ff9e13ecdbc4a92ca"),
-				"refs/pull/100/merge":    plumbing.NewHash("c284c212704c43659bf5913656b8b28e32da1621"),
-				"refs/pull/101/merge":    plumbing.NewHash("3d6537dce68c8b7874333a1720958bd8db3ae8ca"),
-				"refs/tags/v2.6.11":      plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"),
-				"refs/tags/v2.6.11-tree": plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"),
-			},
-			peeled: map[string]plumbing.Hash{
-				"refs/tags/v2.6.11":      plumbing.NewHash("c39ae07f393806ccf406ef966e9a15afc43cc36a"),
-				"refs/tags/v2.6.11-tree": plumbing.NewHash("c39ae07f393806ccf406ef966e9a15afc43cc36a"),
-			},
+	}{{
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			pktline.FlushString,
 		},
-	} {
+		references: make(map[string]plumbing.Hash),
+		peeled:     make(map[string]plumbing.Hash),
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"1111111111111111111111111111111111111111 ref/foo",
+			pktline.FlushString,
+		},
+		references: map[string]plumbing.Hash{
+			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
+		},
+		peeled: make(map[string]plumbing.Hash),
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"1111111111111111111111111111111111111111 ref/foo\n",
+			pktline.FlushString,
+		},
+		references: map[string]plumbing.Hash{
+			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
+		},
+		peeled: make(map[string]plumbing.Hash),
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"1111111111111111111111111111111111111111 ref/foo\n",
+			"2222222222222222222222222222222222222222 ref/bar",
+			pktline.FlushString,
+		},
+		references: map[string]plumbing.Hash{
+			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
+			"ref/bar": plumbing.NewHash("2222222222222222222222222222222222222222"),
+		},
+		peeled: make(map[string]plumbing.Hash),
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"1111111111111111111111111111111111111111 ref/foo^{}\n",
+			pktline.FlushString,
+		},
+		references: make(map[string]plumbing.Hash),
+		peeled: map[string]plumbing.Hash{
+			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
+		},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"1111111111111111111111111111111111111111 ref/foo\n",
+			"2222222222222222222222222222222222222222 ref/bar^{}",
+			pktline.FlushString,
+		},
+		references: map[string]plumbing.Hash{
+			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
+		},
+		peeled: map[string]plumbing.Hash{
+			"ref/bar": plumbing.NewHash("2222222222222222222222222222222222222222"),
+		},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+			"51b8b4fb32271d39fbdd760397406177b2b0fd36 refs/pull/10/head\n",
+			"02b5a6031ba7a8cbfde5d65ff9e13ecdbc4a92ca refs/pull/100/head\n",
+			"c284c212704c43659bf5913656b8b28e32da1621 refs/pull/100/merge\n",
+			"3d6537dce68c8b7874333a1720958bd8db3ae8ca refs/pull/101/merge\n",
+			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11\n",
+			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11^{}\n",
+			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+			pktline.FlushString,
+		},
+		references: map[string]plumbing.Hash{
+			"refs/heads/master":      plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7"),
+			"refs/pull/10/head":      plumbing.NewHash("51b8b4fb32271d39fbdd760397406177b2b0fd36"),
+			"refs/pull/100/head":     plumbing.NewHash("02b5a6031ba7a8cbfde5d65ff9e13ecdbc4a92ca"),
+			"refs/pull/100/merge":    plumbing.NewHash("c284c212704c43659bf5913656b8b28e32da1621"),
+			"refs/pull/101/merge":    plumbing.NewHash("3d6537dce68c8b7874333a1720958bd8db3ae8ca"),
+			"refs/tags/v2.6.11":      plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"),
+			"refs/tags/v2.6.11-tree": plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"),
+		},
+		peeled: map[string]plumbing.Hash{
+			"refs/tags/v2.6.11":      plumbing.NewHash("c39ae07f393806ccf406ef966e9a15afc43cc36a"),
+			"refs/tags/v2.6.11-tree": plumbing.NewHash("c39ae07f393806ccf406ef966e9a15afc43cc36a"),
+		},
+	}} {
 		ar := s.testDecodeOK(c, test.input)
 		comment := Commentf("input = %v\n", test.input)
 		c.Assert(ar.References, DeepEquals, test.references, comment)
@@ -409,42 +396,40 @@ func (s *AdvRefsDecodeSuite) TestShallow(c *C) {
 	for _, test := range [...]struct {
 		input    []string
 		shallows []plumbing.Hash
-	}{
-		{
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-				"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-				"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-				pktline.FlushString,
-			},
-			shallows: []plumbing.Hash{},
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-				"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-				"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-				"shallow 1111111111111111111111111111111111111111\n",
-				pktline.FlushString,
-			},
-			shallows: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
-		}, {
-			input: []string{
-				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-				"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-				"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-				"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-				"shallow 1111111111111111111111111111111111111111\n",
-				"shallow 2222222222222222222222222222222222222222\n",
-				pktline.FlushString,
-			},
-			shallows: []plumbing.Hash{
-				plumbing.NewHash("1111111111111111111111111111111111111111"),
-				plumbing.NewHash("2222222222222222222222222222222222222222"),
-			},
+	}{{
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+			pktline.FlushString,
 		},
-	} {
+		shallows: []plumbing.Hash{},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+			"shallow 1111111111111111111111111111111111111111\n",
+			pktline.FlushString,
+		},
+		shallows: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+	}, {
+		input: []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
+			"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+			"shallow 1111111111111111111111111111111111111111\n",
+			"shallow 2222222222222222222222222222222222222222\n",
+			pktline.FlushString,
+		},
+		shallows: []plumbing.Hash{
+			plumbing.NewHash("1111111111111111111111111111111111111111"),
+			plumbing.NewHash("2222222222222222222222222222222222222222"),
+		},
+	}} {
 		ar := s.testDecodeOK(c, test.input)
 		comment := Commentf("input = %v\n", test.input)
 		c.Assert(ar.Shallows, DeepEquals, test.shallows, comment)

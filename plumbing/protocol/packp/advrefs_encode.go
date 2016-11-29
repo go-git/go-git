@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 // Encode writes the AdvRefs encoding to a writer.
@@ -89,12 +90,10 @@ func formatSeparator(h *plumbing.Hash) string {
 	return head
 }
 
-func formatCaps(c *Capabilities) string {
+func formatCaps(c *capability.List) string {
 	if c == nil {
 		return ""
 	}
-
-	c.Sort()
 
 	return c.String()
 }

@@ -201,9 +201,8 @@ func decodeCaps(p *advRefsDecoder) decoderStateFn {
 		return decodeOtherRefs
 	}
 
-	for _, c := range bytes.Split(p.line, sp) {
-		name, values := readCapability(c)
-		p.data.Capabilities.Add(name, values...)
+	if err := p.data.Capabilities.Decode(p.line); err != nil {
+		p.error("invalid capabilities: %s", err)
 	}
 
 	return decodeOtherRefs
