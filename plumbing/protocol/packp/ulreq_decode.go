@@ -110,10 +110,6 @@ func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 
 // Expected format: sp cap1 sp cap2 sp cap3...
 func (d *ulReqDecoder) decodeCaps() stateFn {
-	if len(d.line) == 0 {
-		return d.decodeOtherWants
-	}
-
 	d.line = bytes.TrimPrefix(d.line, sp)
 	if err := d.data.Capabilities.Decode(d.line); err != nil {
 		d.error("invalid capabilities: %s", err)

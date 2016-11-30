@@ -27,6 +27,13 @@ func (s *SuiteCapabilities) TestDecode(c *check.C) {
 	c.Assert(cap.Get(ThinPack), check.IsNil)
 }
 
+func (s *SuiteCapabilities) TestDecodeEmpty(c *check.C) {
+	cap := NewList()
+	err := cap.Decode(nil)
+	c.Assert(err, check.IsNil)
+	c.Assert(cap, check.DeepEquals, NewList())
+}
+
 func (s *SuiteCapabilities) TestDecodeWithErrArguments(c *check.C) {
 	cap := NewList()
 	err := cap.Decode([]byte("thin-pack=foo"))

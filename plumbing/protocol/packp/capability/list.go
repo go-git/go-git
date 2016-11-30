@@ -48,6 +48,10 @@ func (l *List) IsEmpty() bool {
 
 // Decode decodes list of capabilities from raw into the list
 func (l *List) Decode(raw []byte) error {
+	if len(raw) == 0 {
+		return nil
+	}
+
 	for _, data := range bytes.Split(raw, []byte{' '}) {
 		pair := bytes.SplitN(data, []byte{'='}, 2)
 

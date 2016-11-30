@@ -197,10 +197,6 @@ func decodeFirstRef(l *advRefsDecoder) decoderStateFn {
 }
 
 func decodeCaps(p *advRefsDecoder) decoderStateFn {
-	if len(p.line) == 0 {
-		return decodeOtherRefs
-	}
-
 	if err := p.data.Capabilities.Decode(p.line); err != nil {
 		p.error("invalid capabilities: %s", err)
 	}
