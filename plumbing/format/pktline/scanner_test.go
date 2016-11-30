@@ -2,6 +2,7 @@ package pktline_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -143,6 +144,16 @@ func (s *SuiteScanner) TestEOF(c *C) {
 	for sc.Scan() {
 	}
 	c.Assert(sc.Err(), IsNil)
+}
+
+type mockReader struct{}
+
+func (r *mockReader) Read([]byte) (int, error) { return 0, errors.New("foo") }
+
+func (s *SuiteScanner) TestInternalReadError(c *C) {
+	sc := pktline.NewScanner(&mockReader{})
+	c.Assert(sc.Scan(), Equals, false)
+	c.Assert(sc.Err(), ErrorMatches, "foo")
 }
 
 // A section are several non flush-pkt lines followed by a flush-pkt, which

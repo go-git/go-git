@@ -80,10 +80,11 @@ func (s *Scanner) Bytes() []byte {
 // pkt-len and substracting the pkt-len size.
 func (s *Scanner) readPayloadLen() (int, error) {
 	if _, err := io.ReadFull(s.r, s.len[:]); err != nil {
-		if err == io.EOF {
-			return 0, err
+		if err == io.ErrUnexpectedEOF {
+			return 0, ErrInvalidPktLen
 		}
-		return 0, ErrInvalidPktLen
+
+		return 0, err
 	}
 
 	n, err := hexDecode(s.len)
