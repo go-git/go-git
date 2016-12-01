@@ -132,9 +132,9 @@ func (s *SuiteCommit) TestString(c *C) {
 func (s *SuiteCommit) TestStringMultiLine(c *C) {
 	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
-	s.buildRepositories(c, fixtures.ByURL("https://github.com/src-d/go-git.git"))
+	r := s.NewRepositoryFromPackfile(fixtures.ByURL("https://github.com/src-d/go-git.git").One())
 
-	commit, err := s.Repositories["https://github.com/src-d/go-git.git"].Commit(hash)
+	commit, err := r.Commit(hash)
 	c.Assert(err, IsNil)
 
 	c.Assert(commit.String(), Equals, ""+

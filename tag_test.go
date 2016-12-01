@@ -17,29 +17,23 @@ var _ = Suite(&TagSuite{})
 
 func (s *TagSuite) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpSuite(c)
-	s.buildRepositories(c, fixtures.ByTag("tags"))
+	s.Repository = s.NewRepository(fixtures.ByURL("https://github.com/git-fixtures/tags.git").One())
 }
 
 func (s *TagSuite) TestName(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Name, Equals, "annotated-tag")
 }
 
 func (s *TagSuite) TestTagger(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Tagger.String(), Equals, "Máximo Cuadros <mcuadros@gmail.com>")
 }
 
 func (s *TagSuite) TestAnnotated(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Message, Equals, "example annotated tag\n")
 
@@ -50,9 +44,7 @@ func (s *TagSuite) TestAnnotated(c *C) {
 }
 
 func (s *TagSuite) TestCommit(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Message, Equals, "a tagged commit\n")
 
@@ -63,9 +55,7 @@ func (s *TagSuite) TestCommit(c *C) {
 }
 
 func (s *TagSuite) TestBlob(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Message, Equals, "a tagged blob\n")
 
@@ -76,9 +66,7 @@ func (s *TagSuite) TestBlob(c *C) {
 }
 
 func (s *TagSuite) TestTree(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Message, Equals, "a tagged tree\n")
 
@@ -89,9 +77,7 @@ func (s *TagSuite) TestTree(c *C) {
 }
 
 func (s *TagSuite) TestTreeFromCommit(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.Message, Equals, "a tagged commit\n")
 
@@ -102,9 +88,7 @@ func (s *TagSuite) TestTreeFromCommit(c *C) {
 }
 
 func (s *TagSuite) TestObject(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	c.Assert(err, IsNil)
 
 	obj, err := tag.Object()
@@ -114,12 +98,11 @@ func (s *TagSuite) TestObject(c *C) {
 }
 
 func (s *TagSuite) TestTagItter(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-	iter, err := r.s.IterObjects(plumbing.TagObject)
+	iter, err := s.Repository.s.IterObjects(plumbing.TagObject)
 	c.Assert(err, IsNil)
 
 	var count int
-	i := NewTagIter(r, iter)
+	i := NewTagIter(s.Repository, iter)
 	err = i.ForEach(func(t *Tag) error {
 		count++
 		return nil
@@ -130,11 +113,10 @@ func (s *TagSuite) TestTagItter(c *C) {
 }
 
 func (s *TagSuite) TestTagIterError(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-	iter, err := r.s.IterObjects(plumbing.TagObject)
+	iter, err := s.Repository.s.IterObjects(plumbing.TagObject)
 	c.Assert(err, IsNil)
 
-	i := NewTagIter(r, iter)
+	i := NewTagIter(s.Repository, iter)
 	err = i.ForEach(func(t *Tag) error {
 		return fmt.Errorf("a random error")
 	})
@@ -173,9 +155,7 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 }
 
 func (s *TagSuite) TestString(c *C) {
-	r := s.Repositories["https://github.com/git-fixtures/tags.git"]
-
-	tag, err := r.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(err, IsNil)
 	c.Assert(tag.String(), Equals, ""+
 		"tag annotated-tag\n"+

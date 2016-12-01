@@ -10,13 +10,13 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-type IdxfileSuite struct {
+type IndexSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&IdxfileSuite{})
+var _ = Suite(&IndexSuite{})
 
-func (s *IdxfileSuite) TestDecode(c *C) {
+func (s *IndexSuite) TestDecode(c *C) {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 
@@ -29,7 +29,7 @@ func (s *IdxfileSuite) TestDecode(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 }
 
-func (s *IdxfileSuite) TestDecodeEntries(c *C) {
+func (s *IndexSuite) TestDecodeEntries(c *C) {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 
@@ -41,12 +41,12 @@ func (s *IdxfileSuite) TestDecodeEntries(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 
 	e := idx.Entries[0]
-	c.Assert(e.CreatedAt.Unix(), Equals, int64(1473350251))
-	c.Assert(e.CreatedAt.Nanosecond(), Equals, 12059307)
-	c.Assert(e.ModifiedAt.Unix(), Equals, int64(1473350251))
-	c.Assert(e.ModifiedAt.Nanosecond(), Equals, 12059307)
-	c.Assert(e.Dev, Equals, uint32(38))
-	c.Assert(e.Inode, Equals, uint32(1715795))
+	c.Assert(e.CreatedAt.Unix(), Equals, int64(1480626693))
+	c.Assert(e.CreatedAt.Nanosecond(), Equals, 498593596)
+	c.Assert(e.ModifiedAt.Unix(), Equals, int64(1480626693))
+	c.Assert(e.ModifiedAt.Nanosecond(), Equals, 498593596)
+	c.Assert(e.Dev, Equals, uint32(39))
+	c.Assert(e.Inode, Equals, uint32(140626))
 	c.Assert(e.UID, Equals, uint32(1000))
 	c.Assert(e.GID, Equals, uint32(100))
 	c.Assert(e.Size, Equals, uint32(189))
@@ -58,7 +58,7 @@ func (s *IdxfileSuite) TestDecodeEntries(c *C) {
 	c.Assert(e.Name, Equals, "CHANGELOG")
 }
 
-func (s *IdxfileSuite) TestDecodeCacheTree(c *C) {
+func (s *IndexSuite) TestDecodeCacheTree(c *C) {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 
@@ -87,7 +87,7 @@ var expectedEntries = []TreeEntry{
 	{Path: "vendor", Entries: 1, Trees: 0, Hash: plumbing.NewHash("cf4aa3b38974fb7d81f367c0830f7d78d65ab86b")},
 }
 
-func (s *IdxfileSuite) TestDecodeMergeConflict(c *C) {
+func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
 	f, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 
@@ -126,7 +126,7 @@ func (s *IdxfileSuite) TestDecodeMergeConflict(c *C) {
 
 }
 
-func (s *IdxfileSuite) TestDecodeExtendedV3(c *C) {
+func (s *IndexSuite) TestDecodeExtendedV3(c *C) {
 	f, err := fixtures.Basic().ByTag("intent-to-add").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 
@@ -143,7 +143,7 @@ func (s *IdxfileSuite) TestDecodeExtendedV3(c *C) {
 	c.Assert(idx.Entries[6].SkipWorktree, Equals, false)
 }
 
-func (s *IdxfileSuite) TestDecodeResolveUndo(c *C) {
+func (s *IndexSuite) TestDecodeResolveUndo(c *C) {
 	f, err := fixtures.Basic().ByTag("resolve-undo").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 
@@ -168,7 +168,7 @@ func (s *IdxfileSuite) TestDecodeResolveUndo(c *C) {
 	c.Assert(ru.Entries[1].Stages[TheirMode], Not(Equals), plumbing.ZeroHash)
 }
 
-func (s *IdxfileSuite) TestDecodeV4(c *C) {
+func (s *IndexSuite) TestDecodeV4(c *C) {
 	f, err := fixtures.Basic().ByTag("index-v4").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
 

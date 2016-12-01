@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
 	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
@@ -19,10 +20,7 @@ import (
 	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
-
-const FixRefSpec = config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 
 type RemoteSuite struct {
 	BaseSuite
@@ -31,7 +29,8 @@ type RemoteSuite struct {
 var _ = Suite(&RemoteSuite{})
 
 func (s *RemoteSuite) TestConnect(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
@@ -52,9 +51,8 @@ func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
 }
 
 func (s *RemoteSuite) TestInfo(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.AdvertisedReferences(), IsNil)
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.AdvertisedReferences(), NotNil)
@@ -62,30 +60,28 @@ func (s *RemoteSuite) TestInfo(c *C) {
 }
 
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Head().Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
 }
 
 func (s *RemoteSuite) TestCapabilities(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Capabilities().Get(capability.Agent), HasLen, 1)
 }
 
 func (s *RemoteSuite) TestFetch(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
+	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{FixRefSpec},
+		RefSpecs: []config.RefSpec{refspec},
 	})
 
 	c.Assert(err, IsNil)
@@ -94,7 +90,6 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	expectedRefs := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
-		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	}
 
 	for _, exp := range expectedRefs {
@@ -114,6 +109,7 @@ func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
 }
 
 func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
+
 	dir, err := ioutil.TempDir("", "fetch")
 	c.Assert(err, IsNil)
 
@@ -124,13 +120,13 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 
 	mock := &mockPackfileWriter{Storer: fss}
 
-	r := newRemote(mock, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(mock, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
+	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err = r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{FixRefSpec},
+		RefSpecs: []config.RefSpec{refspec},
 	})
 
 	c.Assert(err, IsNil)
@@ -149,14 +145,14 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 }
 
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
+	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	o := &FetchOptions{
-		RefSpecs: []config.RefSpec{FixRefSpec},
+		RefSpecs: []config.RefSpec{refspec},
 	}
 
 	err := r.Fetch(o)
@@ -166,8 +162,8 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 }
 
 func (s *RemoteSuite) TestHead(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
@@ -175,9 +171,8 @@ func (s *RemoteSuite) TestHead(c *C) {
 }
 
 func (s *RemoteSuite) TestRef(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 	err := r.Connect()
 	c.Assert(err, IsNil)
 
@@ -191,9 +186,8 @@ func (s *RemoteSuite) TestRef(c *C) {
 }
 
 func (s *RemoteSuite) TestRefs(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
-	r.client = &MockClient{}
-
+	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
 	err := r.Connect()
 	c.Assert(err, IsNil)
 
@@ -203,7 +197,11 @@ func (s *RemoteSuite) TestRefs(c *C) {
 }
 
 func (s *RemoteSuite) TestString(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: RepositoryFixture})
+	r := newRemote(nil, &config.RemoteConfig{
+		Name: "foo",
+		URL:  "https://github.com/git-fixtures/basic.git",
+	})
+
 	c.Assert(r.String(), Equals, ""+
 		"foo\thttps://github.com/git-fixtures/basic.git (fetch)\n"+
 		"foo\thttps://github.com/git-fixtures/basic.git (push)",

@@ -26,7 +26,6 @@ var fileIterTests = []struct {
 	commit string // the commit to search for the file
 	files  []fileIterExpectedEntry
 }{
-	// https://api.github.com/repos/tyba/git-fixture/git/trees/6ecf0ef2c2dffb796033e5a02219af86ec6584e5
 	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", []fileIterExpectedEntry{
 		{".gitignore", "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88"},
 		{"CHANGELOG", "d3ff53e0564a9f87d8e84b6e28e5060e517008aa"},
@@ -42,14 +41,14 @@ var fileIterTests = []struct {
 
 func (s *FileSuite) TestIter(c *C) {
 	for i, t := range fileIterTests {
-		r := s.Repositories[t.repo]
+		r := s.NewRepository(fixtures.ByURL(t.repo).One())
 		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		tree, err := commit.Tree()
 		c.Assert(err, IsNil)
 
-		iter := NewFileIter(r, tree)
+		iter := NewFileIter(s.Repository, tree)
 		for k := 0; k < len(t.files); k++ {
 			exp := t.files[k]
 			file, err := iter.Next()
@@ -100,7 +99,8 @@ hs_err_pid*
 
 func (s *FileSuite) TestContents(c *C) {
 	for i, t := range contentsTests {
-		commit, err := s.Repositories[t.repo].Commit(plumbing.NewHash(t.commit))
+		r := s.NewRepository(fixtures.ByURL(t.repo).One())
+		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		file, err := commit.File(t.path)
@@ -149,9 +149,7 @@ var linesTests = []struct {
 
 func (s *FileSuite) TestLines(c *C) {
 	for i, t := range linesTests {
-		r, ok := s.Repositories[t.repo]
-		c.Assert(ok, Equals, true, Commentf("cannot find repository %s", t.repo))
-
+		r := s.NewRepository(fixtures.ByURL(t.repo).One())
 		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
@@ -181,10 +179,9 @@ var ignoreEmptyDirEntriesTests = []struct {
 // At least this test has a high chance of panicking if
 // we don't ignore empty dirs.
 func (s *FileSuite) TestIgnoreEmptyDirEntries(c *C) {
-	s.buildRepositories(c, fixtures.ByTag("empty-folder"))
-
 	for i, t := range ignoreEmptyDirEntriesTests {
-		commit, err := s.Repositories[t.repo].Commit(plumbing.NewHash(t.commit))
+		r := s.NewRepository(fixtures.ByURL(t.repo).One())
+		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil, Commentf("subtest %d: %v (%s)", i, err, t.commit))
 
 		tree, err := commit.Tree()

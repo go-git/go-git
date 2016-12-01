@@ -2,6 +2,7 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v4/config"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
@@ -68,7 +69,7 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(head, IsNil)
 
 	err = r.Clone(&CloneOptions{
-		URL: RepositoryFixture,
+		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
 	c.Assert(err, IsNil)
@@ -93,12 +94,6 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Type(), Equals, plumbing.HashReference)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	branch, err = r.Ref("refs/remotes/origin/branch", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch, NotNil)
-	c.Assert(branch.Type(), Equals, plumbing.HashReference)
-	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
 
 func (s *RepositorySuite) TestCloneNonEmpty(c *C) {
@@ -108,7 +103,7 @@ func (s *RepositorySuite) TestCloneNonEmpty(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	o := &CloneOptions{URL: RepositoryFixture}
+	o := &CloneOptions{URL: s.GetBasicLocalRepositoryURL()}
 	err = r.Clone(o)
 	c.Assert(err, IsNil)
 
@@ -124,7 +119,7 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	c.Assert(head, IsNil)
 
 	err = r.Clone(&CloneOptions{
-		URL:           RepositoryFixture,
+		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/heads/branch"),
 		SingleBranch:  true,
 	})
@@ -161,7 +156,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(head, IsNil)
 
 	err = r.Clone(&CloneOptions{
-		URL:          RepositoryFixture,
+		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})
 
@@ -192,7 +187,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	r := NewMemoryRepository()
 	err := r.Clone(&CloneOptions{
-		URL:           RepositoryFixture,
+		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
 	})
 
@@ -203,10 +198,10 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
-func (s *RepositorySuite) TestPull(c *C) {
+func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	r := NewMemoryRepository()
 	err := r.Clone(&CloneOptions{
-		URL:          RepositoryFixture,
+		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})
 
@@ -219,21 +214,34 @@ func (s *RepositorySuite) TestPull(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
+	branch, err = r.Ref("refs/remotes/foo/branch", false)
+	c.Assert(err, NotNil)
+
 	storage := r.s.(*memory.Storage)
-	c.Assert(storage.Objects, HasLen, 31)
+	c.Assert(storage.Objects, HasLen, 28)
+}
+
+func (s *RepositorySuite) TestPull(c *C) {
+	r := NewMemoryRepository()
 
 	r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
-		URL:  "https://github.com/git-fixtures/tags.git",
+		URL:  s.GetBasicLocalRepositoryURL(),
 	})
 
-	err = r.Pull(&PullOptions{RemoteName: "foo"})
+	err := r.Pull(&PullOptions{RemoteName: "foo"})
 	c.Assert(err, IsNil)
-	c.Assert(storage.Objects, HasLen, 38)
 
-	branch, err = r.Ref("refs/heads/master", false)
+	storage := r.s.(*memory.Storage)
+	c.Assert(storage.Objects, HasLen, 31)
+
+	branch, err := r.Ref("refs/heads/master", false)
 	c.Assert(err, IsNil)
-	c.Assert(branch.Hash().String(), Equals, "f7b877701fbf855b44c0a9e86f3fdce2c298b07f")
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err = r.Ref("refs/remotes/foo/branch", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
 
 func (s *RepositorySuite) TestIsEmpty(c *C) {
@@ -243,7 +251,7 @@ func (s *RepositorySuite) TestIsEmpty(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(empty, Equals, true)
 
-	err = r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err = r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	empty, err = r.IsEmpty()
@@ -254,7 +262,7 @@ func (s *RepositorySuite) TestIsEmpty(c *C) {
 func (s *RepositorySuite) TestCommit(c *C) {
 	r := NewMemoryRepository()
 	err := r.Clone(&CloneOptions{
-		URL: RepositoryFixture,
+		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
 	c.Assert(err, IsNil)
@@ -277,7 +285,7 @@ func (s *RepositorySuite) TestCommit(c *C) {
 
 func (s *RepositorySuite) TestCommits(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -299,11 +307,15 @@ func (s *RepositorySuite) TestCommits(c *C) {
 }
 
 func (s *RepositorySuite) TestTag(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: "https://github.com/spinnaker/spinnaker.git"})
+	err := r.Clone(&CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
-	hash := plumbing.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
+	hash := plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")
 	tag, err := r.Tag(hash)
 	c.Assert(err, IsNil)
 
@@ -313,8 +325,12 @@ func (s *RepositorySuite) TestTag(c *C) {
 }
 
 func (s *RepositorySuite) TestTags(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: "https://github.com/git-fixtures/tags.git"})
+	err := r.Clone(&CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -323,9 +339,9 @@ func (s *RepositorySuite) TestTags(c *C) {
 
 	tags.ForEach(func(tag *Tag) error {
 		count++
+
 		c.Assert(tag.Hash.IsZero(), Equals, false)
 		c.Assert(tag.Type(), Equals, plumbing.TagObject)
-
 		return nil
 	})
 
@@ -339,7 +355,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	commits, err := r.Commits()
@@ -349,7 +365,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 
 func (s *RepositorySuite) TestRef(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	ref, err := r.Ref(plumbing.HEAD, false)
@@ -363,7 +379,7 @@ func (s *RepositorySuite) TestRef(c *C) {
 
 func (s *RepositorySuite) TestRefs(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: RepositoryFixture})
+	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	c.Assert(err, IsNil)
@@ -375,21 +391,20 @@ func (s *RepositorySuite) TestRefs(c *C) {
 
 func (s *RepositorySuite) TestObject(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: "https://github.com/spinnaker/spinnaker.git"})
+	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
-	hash := plumbing.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
-	tag, err := r.Tag(hash)
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	o, err := r.Object(plumbing.CommitObject, hash)
 	c.Assert(err, IsNil)
 
-	c.Assert(tag.Hash.IsZero(), Equals, false)
-	c.Assert(tag.Hash, Equals, hash)
-	c.Assert(tag.Type(), Equals, plumbing.TagObject)
+	c.Assert(o.ID().IsZero(), Equals, false)
+	c.Assert(o.Type(), Equals, plumbing.CommitObject)
 }
 
 func (s *RepositorySuite) TestObjectNotFound(c *C) {
 	r := NewMemoryRepository()
-	err := r.Clone(&CloneOptions{URL: "https://github.com/git-fixtures/basic.git"})
+	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")

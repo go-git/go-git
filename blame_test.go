@@ -20,12 +20,24 @@ type blameTest struct {
 	blames []string // the commits blamed for each line
 }
 
-func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
-	r, ok := s.Repositories[t.repo]
-	c.Assert(ok, Equals, true)
+// run a blame on all the suite's tests
+func (s *BlameSuite) TestBlame(c *C) {
+	for _, t := range blameTests {
+		r := s.NewRepositoryFromPackfile(fixtures.ByURL(t.repo).One())
 
+		exp := s.mockBlame(c, t, r)
+		commit, err := r.Commit(plumbing.NewHash(t.rev))
+		c.Assert(err, IsNil)
+
+		obt, err := commit.Blame(t.path)
+		c.Assert(err, IsNil)
+		c.Assert(obt, DeepEquals, exp)
+	}
+}
+
+func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *Blame) {
 	commit, err := r.Commit(plumbing.NewHash(t.rev))
-	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, r, t.rev))
+	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
 
 	f, err := commit.File(t.path)
 	c.Assert(err, IsNil)
@@ -49,28 +61,6 @@ func (s *BlameSuite) mockBlame(t blameTest, c *C) (blame *Blame) {
 		Path:  t.path,
 		Rev:   plumbing.NewHash(t.rev),
 		Lines: blamedLines,
-	}
-}
-
-func (s *BlameSuite) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
-	s.buildRepositories(c, fixtures.ByTag("packfile"))
-}
-
-// run a blame on all the suite's tests
-func (s *BlameSuite) TestBlame(c *C) {
-	for _, t := range blameTests {
-		exp := s.mockBlame(t, c)
-
-		r, ok := s.Repositories[t.repo]
-		c.Assert(ok, Equals, true)
-
-		commit, err := r.Commit(plumbing.NewHash(t.rev))
-		c.Assert(err, IsNil)
-
-		obt, err := commit.Blame(t.path)
-		c.Assert(err, IsNil)
-		c.Assert(obt, DeepEquals, exp)
 	}
 }
 

@@ -18,14 +18,14 @@ var RootFolder = ""
 
 const DataFolder = "data"
 
-var folders []string
+var folders = make(map[string]string, 0)
 
 var fixtures = Fixtures{{
 	Tags:         []string{"packfile", "ofs-delta", ".git"},
 	URL:          "https://github.com/git-fixtures/basic.git",
 	Head:         plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	PackfileHash: plumbing.NewHash("a3fed42da1e8189a077c0e6846c040dcf73fc9dd"),
-	DotGitHash:   plumbing.NewHash("0a00a25543e6d732dbf4e8e9fec55c8e65fc4e8d"),
+	DotGitHash:   plumbing.NewHash("7a725350b88b05ca03541b59dd0649fda7f521f2"),
 	ObjectsCount: 31,
 }, {
 	Tags:         []string{"packfile", "ref-delta", ".git"},
@@ -87,6 +87,7 @@ var fixtures = Fixtures{{
 	URL:          "https://github.com/cpcs499/Final_Pres_P.git",
 	Head:         plumbing.NewHash("70bade703ce556c2c7391a8065c45c943e8b6bc3"),
 	PackfileHash: plumbing.NewHash("29f304662fd64f102d94722cf5bd8802d9a9472c"),
+	DotGitHash:   plumbing.NewHash("e1580a78f7d36791249df76df8a2a2613d629902"),
 }, {
 	Tags:         []string{"packfile", "diff-tree"},
 	URL:          "https://github.com/github/gem-builder.git",
@@ -179,15 +180,18 @@ func (f *Fixture) Idx() *os.File {
 }
 
 func (f *Fixture) DotGit() fs.Filesystem {
+	h := f.DotGitHash.String()
+	if path, ok := folders[h]; ok {
+		return osfs.New(path)
+	}
+
 	fn := filepath.Join(RootFolder, DataFolder, fmt.Sprintf("git-%s.tgz", f.DotGitHash))
 	path, err := tgz.Extract(fn)
 	if err != nil {
-		fmt.Println(os.Getwd())
-		fmt.Println(filepath.Clean(fn))
 		panic(err)
 	}
 
-	folders = append(folders, path)
+	folders[h] = path
 	return osfs.New(path)
 }
 
@@ -246,8 +250,10 @@ func (s *Suite) SetUpSuite(c *check.C) {
 }
 
 func (s *Suite) TearDownSuite(c *check.C) {
-	for _, f := range folders {
+	for hash, f := range folders {
 		err := os.RemoveAll(f)
 		c.Assert(err, check.IsNil)
+
+		delete(folders, hash)
 	}
 }

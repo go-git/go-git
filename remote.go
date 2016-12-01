@@ -172,7 +172,11 @@ func (r *Remote) buildRequest(
 	s storer.ReferenceStorer, o *FetchOptions, refs []*plumbing.Reference,
 ) (*packp.UploadPackRequest, error) {
 	req := packp.NewUploadPackRequestFromCapabilities(r.advRefs.Capabilities)
-	req.Depth = packp.DepthCommits(o.Depth)
+
+	if o.Depth != 0 {
+		req.Depth = packp.DepthCommits(o.Depth)
+		req.Capabilities.Set(capability.Shallow)
+	}
 
 	for _, ref := range refs {
 		req.Wants = append(req.Wants, ref.Hash())

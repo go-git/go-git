@@ -9,7 +9,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
-func (s *IdxfileSuite) TestEncode(c *C) {
+func (s *IndexSuite) TestEncode(c *C) {
 	idx := &Index{
 		Version: 2,
 		Entries: []Entry{{
@@ -44,7 +44,7 @@ func (s *IdxfileSuite) TestEncode(c *C) {
 	c.Assert(idx, DeepEquals, output)
 }
 
-func (s *IdxfileSuite) TestEncodeUnsuportedVersion(c *C) {
+func (s *IndexSuite) TestEncodeUnsuportedVersion(c *C) {
 	idx := &Index{Version: 3}
 
 	buf := bytes.NewBuffer(nil)
@@ -53,7 +53,7 @@ func (s *IdxfileSuite) TestEncodeUnsuportedVersion(c *C) {
 	c.Assert(err, Equals, ErrUnsupportedVersion)
 }
 
-func (s *IdxfileSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
+func (s *IndexSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
 	idx := &Index{
 		Version: 2,
 		Entries: []Entry{{IntentToAdd: true}},
@@ -65,7 +65,7 @@ func (s *IdxfileSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
 	c.Assert(err, Equals, ErrUnsupportedVersion)
 }
 
-func (s *IdxfileSuite) TestEncodeWithSkipWorktreeUnsuportedVersion(c *C) {
+func (s *IndexSuite) TestEncodeWithSkipWorktreeUnsuportedVersion(c *C) {
 	idx := &Index{
 		Version: 2,
 		Entries: []Entry{{SkipWorktree: true}},
