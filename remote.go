@@ -171,11 +171,11 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*plumbing.Referen
 func (r *Remote) buildRequest(
 	s storer.ReferenceStorer, o *FetchOptions, refs []*plumbing.Reference,
 ) (*packp.UploadPackRequest, error) {
-	req := packp.NewUploadPackRequest()
+	req := packp.NewUploadPackRequestFromCapabilities(r.advRefs.Capabilities)
 	req.Depth = packp.DepthCommits(o.Depth)
 
 	for _, ref := range refs {
-		req.Want(ref.Hash())
+		req.Wants = append(req.Wants, ref.Hash())
 	}
 
 	i, err := s.IterReferences()
@@ -188,7 +188,7 @@ func (r *Remote) buildRequest(
 			return nil
 		}
 
-		req.Have(ref.Hash())
+		req.Haves = append(req.Haves, ref.Hash())
 		return nil
 	})
 

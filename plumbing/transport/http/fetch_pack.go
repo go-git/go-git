@@ -70,12 +70,17 @@ func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 		return nil, err
 	}
 
+	transport.FilterUnsupportedCapabilities(ar.Capabilities)
 	return ar, nil
 }
 
 func (s *fetchPackSession) FetchPack(r *packp.UploadPackRequest) (io.ReadCloser, error) {
 	if r.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
+	}
+
+	if err := r.Validate(); err != nil {
+		return nil, err
 	}
 
 	url := fmt.Sprintf(

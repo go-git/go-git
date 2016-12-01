@@ -1,27 +1,89 @@
-package packp_test
+package packp
 
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"strings"
-	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type AdvRefSuite struct{}
 
-type SuiteDecodeEncode struct{}
+var _ = Suite(&AdvRefSuite{})
 
-var _ = Suite(&SuiteDecodeEncode{})
+func (s *AdvRefSuite) TestAddReferenceSymbolic(c *C) {
+	ref := plumbing.NewSymbolicReference("foo", "bar")
 
-func (s *SuiteDecodeEncode) test(c *C, in []string, exp []string) {
+	a := NewAdvRefs()
+	err := a.AddReference(ref)
+	c.Assert(err, IsNil)
+
+	values := a.Capabilities.Get(capability.SymRef)
+	c.Assert(values, HasLen, 1)
+	c.Assert(values[0], Equals, "foo:bar")
+}
+
+func (s *AdvRefSuite) TestAddReferenceHash(c *C) {
+	ref := plumbing.NewHashReference("foo", plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+
+	a := NewAdvRefs()
+	err := a.AddReference(ref)
+	c.Assert(err, IsNil)
+
+	c.Assert(a.References, HasLen, 1)
+	c.Assert(a.References["foo"].String(), Equals, "5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+}
+
+func (s *AdvRefSuite) TestAllReferences(c *C) {
+	hash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+
+	a := NewAdvRefs()
+	err := a.AddReference(plumbing.NewSymbolicReference("foo", "bar"))
+	c.Assert(err, IsNil)
+	err = a.AddReference(plumbing.NewHashReference("bar", hash))
+	c.Assert(err, IsNil)
+
+	refs, err := a.AllReferences()
+	c.Assert(err, IsNil)
+
+	iter, err := refs.IterReferences()
+	c.Assert(err, IsNil)
+
+	var count int
+	iter.ForEach(func(ref *plumbing.Reference) error {
+		count++
+		switch ref.Name() {
+		case "bar":
+			c.Assert(ref.Hash(), Equals, hash)
+		case "foo":
+			c.Assert(ref.Target().String(), Equals, "bar")
+		}
+		return nil
+	})
+
+	c.Assert(count, Equals, 2)
+}
+
+func (s *AdvRefSuite) TestAllReferencesBadSymref(c *C) {
+	a := NewAdvRefs()
+	err := a.Capabilities.Set(capability.SymRef, "foo")
+	c.Assert(err, IsNil)
+
+	_, err = a.AllReferences()
+	c.Assert(err, NotNil)
+}
+
+type AdvRefsDecodeEncodeSuite struct{}
+
+var _ = Suite(&AdvRefsDecodeEncodeSuite{})
+
+func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string) {
 	var err error
 	var input io.Reader
 	{
@@ -44,7 +106,7 @@ func (s *SuiteDecodeEncode) test(c *C, in []string, exp []string) {
 
 	var obtained []byte
 	{
-		ar := packp.NewAdvRefs()
+		ar := NewAdvRefs()
 		c.Assert(ar.Decode(input), IsNil)
 
 		var buf bytes.Buffer
@@ -56,7 +118,7 @@ func (s *SuiteDecodeEncode) test(c *C, in []string, exp []string) {
 	c.Assert(string(obtained), DeepEquals, string(expected))
 }
 
-func (s *SuiteDecodeEncode) TestNoHead(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestNoHead(c *C) {
 	input := []string{
 		"0000000000000000000000000000000000000000 capabilities^{}\x00",
 		pktline.FlushString,
@@ -70,7 +132,7 @@ func (s *SuiteDecodeEncode) TestNoHead(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestNoHeadSmart(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00",
@@ -86,7 +148,7 @@ func (s *SuiteDecodeEncode) TestNoHeadSmart(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestNoHeadSmartBug(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmartBug(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
 		pktline.FlushString,
@@ -104,7 +166,7 @@ func (s *SuiteDecodeEncode) TestNoHeadSmartBug(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestRefs(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestRefs(c *C) {
 	input := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master",
@@ -124,7 +186,7 @@ func (s *SuiteDecodeEncode) TestRefs(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestPeeled(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestPeeled(c *C) {
 	input := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack",
 		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
@@ -148,7 +210,7 @@ func (s *SuiteDecodeEncode) TestPeeled(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestAll(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
 	input := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
@@ -176,7 +238,7 @@ func (s *SuiteDecodeEncode) TestAll(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestAllSmart(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
 		pktline.FlushString,
@@ -208,7 +270,7 @@ func (s *SuiteDecodeEncode) TestAllSmart(c *C) {
 	s.test(c, input, expected)
 }
 
-func (s *SuiteDecodeEncode) TestAllSmartBug(c *C) {
+func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
 		pktline.FlushString,
@@ -254,7 +316,7 @@ func ExampleDecoder_Decode() {
 	input := strings.NewReader(raw)
 
 	// Decode the input into a newly allocated AdvRefs value.
-	ar := packp.NewAdvRefs()
+	ar := NewAdvRefs()
 	_ = ar.Decode(input) // error check ignored for brevity
 
 	// Do something interesting with the AdvRefs, e.g. print its contents.
@@ -270,7 +332,7 @@ func ExampleDecoder_Decode() {
 
 func ExampleEncoder_Encode() {
 	// Create an AdvRefs with the contents you want...
-	ar := packp.NewAdvRefs()
+	ar := NewAdvRefs()
 
 	// ...add a hash for the HEAD...
 	head := plumbing.NewHash("1111111111111111111111111111111111111111")

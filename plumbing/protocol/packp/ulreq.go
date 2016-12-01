@@ -1,11 +1,14 @@
 package packp
 
 import (
+	"fmt"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
+
+const DefaultAgent = "go-git/4.x"
 
 // UploadRequest values represent the information transmitted on a
 // upload-request message.  Values from this type are not zero-value
@@ -41,10 +44,9 @@ type DepthReference string
 
 func (d DepthReference) isDepth() {}
 
-// NewUploadRequest returns a pointer to a new UlReq value, ready to be used.  It has
-// no capabilities, wants or shallows and an infinite depth.  Please
-// note that to encode an upload-request it has to have at least one
-// wanted hash.
+// NewUploadRequest returns a pointer to a new UploadRequest value, ready to be
+// used. It has no capabilities, wants or shallows and an infinite depth. Please
+// note that to encode an upload-request it has to have at least one wanted hash.
 func NewUploadRequest() *UploadRequest {
 	return &UploadRequest{
 		Capabilities: capability.NewList(),
@@ -54,7 +56,96 @@ func NewUploadRequest() *UploadRequest {
 	}
 }
 
-// Want adds a hash reference to the 'wants' list.
-func (r *UploadRequest) Want(h ...plumbing.Hash) {
-	r.Wants = append(r.Wants, h...)
+// NewUploadRequestFromCapabilities returns a pointer to a new UploadRequest
+// value, the request capabilities are filled with the most optiomal ones, based
+// on the adv value (advertaised capabilities), the UploadRequest generated it
+// has no wants or shallows and an infinite depth.
+func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
+	r := NewUploadRequest()
+
+	if adv.Supports(capability.MultiACKDetailed) {
+		r.Capabilities.Set(capability.MultiACKDetailed)
+	} else if adv.Supports(capability.MultiACK) {
+		r.Capabilities.Set(capability.MultiACK)
+	}
+
+	if adv.Supports(capability.ThinPack) {
+		r.Capabilities.Set(capability.ThinPack)
+	}
+
+	if adv.Supports(capability.OFSDelta) {
+		r.Capabilities.Set(capability.OFSDelta)
+	}
+
+	if adv.Supports(capability.Agent) {
+		r.Capabilities.Set(capability.Agent, DefaultAgent)
+	}
+
+	return r
+}
+
+// Validate validates the content of UploadRequest, following the next rules:
+//   - Wants MUST have at least one reference
+//   - capability.Shallow MUST be present if Shallows is not empty
+//   - is a non-zero DepthCommits is given capability.Shallow MUST be present
+//   - is a DepthSince is given capability.Shallow MUST be present
+//   - is a DepthReference is given capability.DeepenNot MUST be present
+//   - MUST contain only maximum of one of capability.Sideband and capability.Sideband64k
+//   - MUST contain only maximum of one of capability.MultiACK and capability.MultiACKDetailed
+func (r *UploadRequest) Validate() error {
+	if len(r.Wants) == 0 {
+		return fmt.Errorf("want can't be empty")
+	}
+
+	if err := r.validateRequiredCapabilities(); err != nil {
+		return err
+	}
+
+	if err := r.validateConflictCapabilities(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *UploadRequest) validateRequiredCapabilities() error {
+	msg := "missing capability %s"
+
+	if len(r.Shallows) != 0 && !r.Capabilities.Supports(capability.Shallow) {
+		return fmt.Errorf(msg, capability.Shallow)
+	}
+
+	switch r.Depth.(type) {
+	case DepthCommits:
+		if r.Depth != DepthCommits(0) {
+			if !r.Capabilities.Supports(capability.Shallow) {
+				return fmt.Errorf(msg, capability.Shallow)
+			}
+		}
+	case DepthSince:
+		if !r.Capabilities.Supports(capability.DeepenSince) {
+			return fmt.Errorf(msg, capability.DeepenSince)
+		}
+	case DepthReference:
+		if !r.Capabilities.Supports(capability.DeepenNot) {
+			return fmt.Errorf(msg, capability.DeepenNot)
+		}
+	}
+
+	return nil
+}
+
+func (r *UploadRequest) validateConflictCapabilities() error {
+	msg := "capabilities %s and %s are mutually exclusive"
+	if r.Capabilities.Supports(capability.Sideband) &&
+		r.Capabilities.Supports(capability.Sideband64k) {
+		return fmt.Errorf(msg, capability.Sideband, capability.Sideband64k)
+	}
+
+	if r.Capabilities.Supports(capability.MultiACK) &&
+		r.Capabilities.Supports(capability.MultiACKDetailed) {
+		return fmt.Errorf(msg, capability.MultiACK, capability.MultiACKDetailed)
+	}
+
+	return nil
 }

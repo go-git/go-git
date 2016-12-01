@@ -43,7 +43,7 @@ func (s *FetchPackSuite) TestInfoNotExists(c *C) {
 	r, err = s.Client.NewFetchPackSession(s.NonExistentEndpoint)
 	c.Assert(err, IsNil)
 	req := packp.NewUploadPackRequest()
-	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	reader, err := r.FetchPack(req)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(reader, IsNil)
@@ -70,6 +70,16 @@ func (s *FetchPackSuite) TestDefaultBranch(c *C) {
 	c.Assert(symrefs[0], Equals, "HEAD:refs/heads/master")
 }
 
+func (s *FetchPackSuite) TestAdvertisedReferencesFilterUnsupported(c *C) {
+	r, err := s.Client.NewFetchPackSession(s.Endpoint)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	info, err := r.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(info.Capabilities.Supports(capability.MultiACK), Equals, false)
+}
+
 func (s *FetchPackSuite) TestCapabilities(c *C) {
 	r, err := s.Client.NewFetchPackSession(s.Endpoint)
 	c.Assert(err, IsNil)
@@ -90,7 +100,7 @@ func (s *FetchPackSuite) TestFullFetchPack(c *C) {
 	c.Assert(info, NotNil)
 
 	req := packp.NewUploadPackRequest()
-	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.FetchPack(req)
 	c.Assert(err, IsNil)
@@ -104,12 +114,26 @@ func (s *FetchPackSuite) TestFetchPack(c *C) {
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
 	req := packp.NewUploadPackRequest()
-	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.FetchPack(req)
 	c.Assert(err, IsNil)
 
 	s.checkObjectNumber(c, reader, 28)
+}
+
+func (s *FetchPackSuite) TestFetchPackInvalidReq(c *C) {
+	r, err := s.Client.NewFetchPackSession(s.Endpoint)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	req := packp.NewUploadPackRequest()
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Capabilities.Set(capability.Sideband)
+	req.Capabilities.Set(capability.Sideband64k)
+
+	_, err = r.FetchPack(req)
+	c.Assert(err, NotNil)
 }
 
 func (s *FetchPackSuite) TestFetchPackNoChanges(c *C) {
@@ -118,8 +142,8 @@ func (s *FetchPackSuite) TestFetchPackNoChanges(c *C) {
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
 	req := packp.NewUploadPackRequest()
-	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	req.Have(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.FetchPack(req)
 	c.Assert(err, Equals, transport.ErrEmptyUploadPackRequest)
@@ -132,8 +156,8 @@ func (s *FetchPackSuite) TestFetchPackMulti(c *C) {
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
 	req := packp.NewUploadPackRequest()
-	req.Want(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	req.Want(plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 
 	reader, err := r.FetchPack(req)
 	c.Assert(err, IsNil)
@@ -146,7 +170,7 @@ func (s *FetchPackSuite) TestFetchError(c *C) {
 	c.Assert(err, IsNil)
 
 	req := packp.NewUploadPackRequest()
-	req.Want(plumbing.NewHash("1111111111111111111111111111111111111111"))
+	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	reader, err := r.FetchPack(req)
 	c.Assert(err, Equals, transport.ErrEmptyUploadPackRequest)

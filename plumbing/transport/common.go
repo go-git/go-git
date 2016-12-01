@@ -21,6 +21,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 var (
@@ -123,4 +124,23 @@ func transformSCPLikeIfNeeded(endpoint string) string {
 	}
 
 	return endpoint
+}
+
+// UnsupportedCapabilities are the capabilities not supported by any client
+// implementation
+var UnsupportedCapabilities = []capability.Capability{
+	capability.MultiACK,
+	capability.MultiACKDetailed,
+	capability.Sideband,
+	capability.Sideband64k,
+	capability.ThinPack,
+}
+
+// FilterUnsupportedCapabilities it filter out all the UnsupportedCapabilities
+// from a capability.List, the intended usage is on the client implementation
+// to filter the capabilities from an AdvRefs message.
+func FilterUnsupportedCapabilities(list *capability.List) {
+	for _, c := range UnsupportedCapabilities {
+		list.Delete(c)
+	}
 }

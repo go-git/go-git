@@ -43,9 +43,9 @@ func (s *FetchPackSuite) TestInfoNotExists(c *C) {
 
 func (s *FetchPackSuite) TestuploadPackRequestToReader(c *C) {
 	r := packp.NewUploadPackRequest()
-	r.Want(plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
-	r.Want(plumbing.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
-	r.Have(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	r.Wants = append(r.Wants, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
+	r.Wants = append(r.Wants, plumbing.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
+	r.Haves = append(r.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	sr, err := uploadPackRequestToReader(r)
 	c.Assert(err, IsNil)

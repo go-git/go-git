@@ -119,6 +119,13 @@ func (c *MockFetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 func (c *MockFetchPackSession) FetchPack(
 	r *packp.UploadPackRequest) (io.ReadCloser, error) {
 
+	if !r.Capabilities.Supports(capability.Agent) {
+		return nil, fmt.Errorf("" +
+			"invalid test rquest, missing Agent capability, the request" +
+			"should be created using NewUploadPackRequestFromCapabilities",
+		)
+	}
+
 	f := fixtures.ByURL(c.endpoint.String())
 
 	if len(r.Wants) == 1 {

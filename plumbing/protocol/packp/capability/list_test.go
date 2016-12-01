@@ -97,6 +97,22 @@ func (s *SuiteCapabilities) TestGetEmpty(c *check.C) {
 	c.Assert(cap.Get(Agent), check.HasLen, 0)
 }
 
+func (s *SuiteCapabilities) TestDelete(c *check.C) {
+	cap := NewList()
+	cap.Delete(SymRef)
+
+	err := cap.Add(Sideband)
+	c.Assert(err, check.IsNil)
+	err = cap.Set(SymRef, "bar")
+	c.Assert(err, check.IsNil)
+	err = cap.Set(Sideband64k)
+	c.Assert(err, check.IsNil)
+
+	cap.Delete(SymRef)
+
+	c.Assert(cap.String(), check.Equals, "side-band side-band-64k")
+}
+
 func (s *SuiteCapabilities) TestAdd(c *check.C) {
 	cap := NewList()
 	err := cap.Add(SymRef, "foo", "qux")

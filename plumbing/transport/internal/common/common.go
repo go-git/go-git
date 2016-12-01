@@ -162,6 +162,7 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 		return nil, err
 	}
 
+	transport.FilterUnsupportedCapabilities(ar.Capabilities)
 	return ar, nil
 }
 
@@ -170,6 +171,10 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 func (s *session) FetchPack(req *packp.UploadPackRequest) (io.ReadCloser, error) {
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
 	}
 
 	if !s.advRefsRun {

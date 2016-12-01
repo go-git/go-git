@@ -145,6 +145,23 @@ func (l *List) Supports(capability Capability) bool {
 	return ok
 }
 
+// Delete deletes a capability from the List
+func (l *List) Delete(capability Capability) {
+	if !l.Supports(capability) {
+		return
+	}
+
+	delete(l.m, capability)
+	for i, c := range l.sort {
+		if c != string(capability) {
+			continue
+		}
+
+		l.sort = append(l.sort[:i], l.sort[i+1:]...)
+		return
+	}
+}
+
 // String generates the capabilities strings, the capabilities are sorted in
 // insertion order
 func (l *List) String() string {
