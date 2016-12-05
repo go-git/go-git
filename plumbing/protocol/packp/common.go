@@ -15,6 +15,7 @@ var (
 	// common
 	sp  = []byte(" ")
 	eol = []byte("\n")
+	eq  = []byte{'='}
 
 	// advrefs
 	null       = []byte("\x00")
@@ -28,4 +29,7 @@ var (
 	deepenCommits   = []byte("deepen ")
 	deepenSince     = []byte("deepen-since ")
 	deepenReference = []byte("deepen-not ")
+
+	// updreq
+	shallowNoSp = []byte("shallow")
 )
