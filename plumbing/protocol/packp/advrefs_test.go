@@ -302,7 +302,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 	s.test(c, input, expected)
 }
 
-func ExampleDecoder_Decode() {
+func ExampleAdvRefs_Decode() {
 	// Here is a raw advertised-ref message.
 	raw := "" +
 		"0065a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 HEAD\x00multi_ack ofs-delta symref=HEAD:/refs/heads/master\n" +
@@ -330,7 +330,7 @@ func ExampleDecoder_Decode() {
 	// shallows = [5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c]
 }
 
-func ExampleEncoder_Encode() {
+func ExampleAdvRefs_Encode() {
 	// Create an AdvRefs with the contents you want...
 	ar := NewAdvRefs()
 

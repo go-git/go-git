@@ -17,38 +17,27 @@ type AdvRefsDecodeSuite struct{}
 var _ = Suite(&AdvRefsDecodeSuite{})
 
 func (s *AdvRefsDecodeSuite) TestEmpty(c *C) {
-	ar := NewAdvRefs()
 	var buf bytes.Buffer
-	d := newAdvRefsDecoder(&buf)
-
-	err := d.Decode(ar)
-	c.Assert(err, Equals, ErrEmptyAdvRefs)
+	ar := NewAdvRefs()
+	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {
-	ar := NewAdvRefs()
 	var buf bytes.Buffer
 	e := pktline.NewEncoder(&buf)
 	e.Flush()
-
-	d := newAdvRefsDecoder(&buf)
-
-	err := d.Decode(ar)
-	c.Assert(err, Equals, ErrEmptyAdvRefs)
+	ar := NewAdvRefs()
+	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
-	ar := NewAdvRefs()
 	var buf bytes.Buffer
 	e := pktline.NewEncoder(&buf)
 	e.EncodeString("# service=git-upload-pack")
 	e.Flush()
 	e.Flush()
-
-	d := newAdvRefsDecoder(&buf)
-
-	err := d.Decode(ar)
-	c.Assert(err, Equals, ErrEmptyAdvRefs)
+	ar := NewAdvRefs()
+	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
@@ -62,10 +51,7 @@ func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
 
 func (s *AdvRefsDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {
 	ar := NewAdvRefs()
-	d := newAdvRefsDecoder(input)
-
-	err := d.Decode(ar)
-	c.Assert(err, ErrorMatches, pattern)
+	c.Assert(ar.Decode(input), ErrorMatches, pattern)
 }
 
 func (s *AdvRefsDecodeSuite) TestInvalidFirstHash(c *C) {
@@ -93,10 +79,7 @@ func (s *AdvRefsDecodeSuite) testDecodeOK(c *C, payloads []string) *AdvRefs {
 	c.Assert(err, IsNil)
 
 	ar := NewAdvRefs()
-	d := newAdvRefsDecoder(&buf)
-
-	err = d.Decode(ar)
-	c.Assert(err, IsNil)
+	c.Assert(ar.Decode(&buf), IsNil)
 
 	return ar
 }

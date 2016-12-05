@@ -17,9 +17,7 @@ var _ = Suite(&AdvRefsEncodeSuite{})
 
 func testEncode(c *C, input *AdvRefs, expected []byte) {
 	var buf bytes.Buffer
-	e := newAdvRefsEncoder(&buf)
-	err := e.Encode(input)
-	c.Assert(err, IsNil)
+	c.Assert(input.Encode(&buf), IsNil)
 	obtained := buf.Bytes()
 
 	comment := Commentf("\nobtained = %s\nexpected = %s\n", string(obtained), string(expected))
@@ -232,7 +230,6 @@ func (s *AdvRefsEncodeSuite) TestErrorTooLong(c *C) {
 	}
 
 	var buf bytes.Buffer
-	e := newAdvRefsEncoder(&buf)
-	err := e.Encode(ar)
+	err := ar.Encode(&buf)
 	c.Assert(err, ErrorMatches, ".*payload is too long.*")
 }
