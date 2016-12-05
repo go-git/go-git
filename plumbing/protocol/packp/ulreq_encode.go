@@ -1,9 +1,9 @@
 package packp
 
 import (
+	"bytes"
 	"fmt"
 	"io"
-	"sort"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -21,10 +21,9 @@ func (u *UploadRequest) Encode(w io.Writer) error {
 }
 
 type ulReqEncoder struct {
-	pe          *pktline.Encoder // where to write the encoded data
-	data        *UploadRequest   // the data to encode
-	sortedWants []string
-	err         error // sticky error
+	pe   *pktline.Encoder // where to write the encoded data
+	data *UploadRequest   // the data to encode
+	err  error            // sticky error
 }
 
 func newUlReqEncoder(w io.Writer) *ulReqEncoder {
@@ -34,13 +33,13 @@ func newUlReqEncoder(w io.Writer) *ulReqEncoder {
 }
 
 func (e *ulReqEncoder) Encode(v *UploadRequest) error {
+	e.data = v
+
 	if len(v.Wants) == 0 {
 		return fmt.Errorf("empty wants provided")
 	}
 
-	e.data = v
-	e.sortedWants = sortHashes(v.Wants)
-
+	plumbing.HashesSort(e.data.Wants)
 	for state := e.encodeFirstWant; state != nil; {
 		state = state()
 	}
@@ -48,27 +47,18 @@ func (e *ulReqEncoder) Encode(v *UploadRequest) error {
 	return e.err
 }
 
-func sortHashes(list []plumbing.Hash) []string {
-	sorted := make([]string, len(list))
-	for i, hash := range list {
-		sorted[i] = hash.String()
-	}
-	sort.Strings(sorted)
-
-	return sorted
-}
-
 func (e *ulReqEncoder) encodeFirstWant() stateFn {
 	var err error
 	if e.data.Capabilities.IsEmpty() {
-		err = e.pe.Encodef("want %s\n", e.sortedWants[0])
+		err = e.pe.Encodef("want %s\n", e.data.Wants[0])
 	} else {
 		err = e.pe.Encodef(
 			"want %s %s\n",
-			e.sortedWants[0],
+			e.data.Wants[0],
 			e.data.Capabilities.String(),
 		)
 	}
+
 	if err != nil {
 		e.err = fmt.Errorf("encoding first want line: %s", err)
 		return nil
@@ -78,23 +68,38 @@ func (e *ulReqEncoder) encodeFirstWant() stateFn {
 }
 
 func (e *ulReqEncoder) encodeAditionalWants() stateFn {
-	for _, w := range e.sortedWants[1:] {
+	last := e.data.Wants[0]
+	for _, w := range e.data.Wants[1:] {
+		if bytes.Compare(last[:], w[:]) == 0 {
+			continue
+		}
+
 		if err := e.pe.Encodef("want %s\n", w); err != nil {
 			e.err = fmt.Errorf("encoding want %q: %s", w, err)
 			return nil
 		}
+
+		last = w
 	}
 
 	return e.encodeShallows
 }
 
 func (e *ulReqEncoder) encodeShallows() stateFn {
-	sorted := sortHashes(e.data.Shallows)
-	for _, s := range sorted {
+	plumbing.HashesSort(e.data.Shallows)
+
+	var last plumbing.Hash
+	for _, s := range e.data.Shallows {
+		if bytes.Compare(last[:], s[:]) == 0 {
+			continue
+		}
+
 		if err := e.pe.Encodef("shallow %s\n", s); err != nil {
 			e.err = fmt.Errorf("encoding shallow %q: %s", s, err)
 			return nil
 		}
+
+		last = s
 	}
 
 	return e.encodeDepth

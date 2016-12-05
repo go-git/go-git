@@ -76,11 +76,13 @@ func (s *UlReqEncodeSuite) TestOneWantWithCapabilities(c *C) {
 
 func (s *UlReqEncodeSuite) TestWants(c *C) {
 	ur := NewUploadRequest()
-	ur.Wants = append(ur.Wants, plumbing.NewHash("4444444444444444444444444444444444444444"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("2222222222222222222222222222222222222222"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("5555555555555555555555555555555555555555"))
+	ur.Wants = append(ur.Wants,
+		plumbing.NewHash("4444444444444444444444444444444444444444"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("3333333333333333333333333333333333333333"),
+		plumbing.NewHash("2222222222222222222222222222222222222222"),
+		plumbing.NewHash("5555555555555555555555555555555555555555"),
+	)
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -94,13 +96,37 @@ func (s *UlReqEncodeSuite) TestWants(c *C) {
 	testUlReqEncode(c, ur, expected)
 }
 
+func (s *UlReqEncodeSuite) TestWantsDuplicates(c *C) {
+	ur := NewUploadRequest()
+	ur.Wants = append(ur.Wants,
+		plumbing.NewHash("4444444444444444444444444444444444444444"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("3333333333333333333333333333333333333333"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("2222222222222222222222222222222222222222"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+	)
+
+	expected := []string{
+		"want 1111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222\n",
+		"want 3333333333333333333333333333333333333333\n",
+		"want 4444444444444444444444444444444444444444\n",
+		pktline.FlushString,
+	}
+
+	testUlReqEncode(c, ur, expected)
+}
+
 func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
 	ur := NewUploadRequest()
-	ur.Wants = append(ur.Wants, plumbing.NewHash("4444444444444444444444444444444444444444"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("2222222222222222222222222222222222222222"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("5555555555555555555555555555555555555555"))
+	ur.Wants = append(ur.Wants,
+		plumbing.NewHash("4444444444444444444444444444444444444444"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("3333333333333333333333333333333333333333"),
+		plumbing.NewHash("2222222222222222222222222222222222222222"),
+		plumbing.NewHash("5555555555555555555555555555555555555555"),
+	)
 
 	ur.Capabilities.Add(capability.MultiACK)
 	ur.Capabilities.Add(capability.OFSDelta)
@@ -139,10 +165,12 @@ func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
-	ur.Shallows = append(ur.Shallows, plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
-	ur.Shallows = append(ur.Shallows, plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddd"))
-	ur.Shallows = append(ur.Shallows, plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"))
-	ur.Shallows = append(ur.Shallows, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	ur.Shallows = append(ur.Shallows,
+		plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddd"),
+		plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"),
+		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	)
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111 multi_ack\n",
@@ -150,6 +178,28 @@ func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
 		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
 		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
 		"shallow dddddddddddddddddddddddddddddddddddddddd\n",
+		pktline.FlushString,
+	}
+
+	testUlReqEncode(c, ur, expected)
+}
+
+func (s *UlReqEncodeSuite) TestShallowsDuplicate(c *C) {
+	ur := NewUploadRequest()
+	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	ur.Capabilities.Add(capability.MultiACK)
+	ur.Shallows = append(ur.Shallows,
+		plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"),
+		plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"),
+		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	)
+
+	expected := []string{
+		"want 1111111111111111111111111111111111111111 multi_ack\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
 		pktline.FlushString,
 	}
 
@@ -220,11 +270,13 @@ func (s *UlReqEncodeSuite) TestDepthReference(c *C) {
 
 func (s *UlReqEncodeSuite) TestAll(c *C) {
 	ur := NewUploadRequest()
-	ur.Wants = append(ur.Wants, plumbing.NewHash("4444444444444444444444444444444444444444"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("3333333333333333333333333333333333333333"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("2222222222222222222222222222222222222222"))
-	ur.Wants = append(ur.Wants, plumbing.NewHash("5555555555555555555555555555555555555555"))
+	ur.Wants = append(ur.Wants,
+		plumbing.NewHash("4444444444444444444444444444444444444444"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("3333333333333333333333333333333333333333"),
+		plumbing.NewHash("2222222222222222222222222222222222222222"),
+		plumbing.NewHash("5555555555555555555555555555555555555555"),
+	)
 
 	ur.Capabilities.Add(capability.MultiACK)
 	ur.Capabilities.Add(capability.OFSDelta)

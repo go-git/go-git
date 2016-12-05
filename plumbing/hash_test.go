@@ -40,3 +40,15 @@ func (s *HashSuite) TestNewHasher(c *C) {
 	hasher.Write([]byte(content))
 	c.Assert(hasher.Sum().String(), Equals, "dc42c3cc80028d0ec61f0a6b24cadd1c195c4dfc")
 }
+
+func (s *HashSuite) TestHashesSort(c *C) {
+	i := []Hash{
+		NewHash("2222222222222222222222222222222222222222"),
+		NewHash("1111111111111111111111111111111111111111"),
+	}
+
+	HashesSort(i)
+
+	c.Assert(i[0], Equals, NewHash("1111111111111111111111111111111111111111"))
+	c.Assert(i[1], Equals, NewHash("2222222222222222222222222222222222222222"))
+}

@@ -4,6 +4,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 
+	"bytes"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -39,4 +41,29 @@ func (s *UploadPackRequestSuite) TestIsEmpty(c *C) {
 	r.Haves = append(r.Haves, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
 
 	c.Assert(r.IsEmpty(), Equals, true)
+}
+
+type UploadHavesSuite struct{}
+
+var _ = Suite(&UploadHavesSuite{})
+
+func (s *UploadHavesSuite) TestEncode(c *C) {
+	uh := &UploadHaves{}
+	uh.Haves = append(uh.Haves,
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("3333333333333333333333333333333333333333"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("2222222222222222222222222222222222222222"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+	)
+
+	buf := bytes.NewBuffer(nil)
+	err := uh.Encode(buf)
+	c.Assert(err, IsNil)
+	c.Assert(buf.String(), Equals, ""+
+		"0032have 1111111111111111111111111111111111111111\n"+
+		"0032have 2222222222222222222222222222222222222222\n"+
+		"0032have 3333333333333333333333333333333333333333\n"+
+		"0000",
+	)
 }
