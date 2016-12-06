@@ -29,6 +29,12 @@ func NewClient(uploadPackBin, receivePackBin string) transport.Client {
 }
 
 func (r *runner) Command(cmd string, ep transport.Endpoint) (common.Command, error) {
+	switch cmd {
+	case transport.UploadPackServiceName:
+		cmd = r.UploadPackBin
+	case transport.ReceivePackServiceName:
+		cmd = r.ReceivePackBin
+	}
 	return &command{cmd: exec.Command(cmd, ep.Path)}, nil
 }
 

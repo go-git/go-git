@@ -19,7 +19,7 @@ var _ = Suite(&AdvRefsDecodeSuite{})
 func (s *AdvRefsDecodeSuite) TestEmpty(c *C) {
 	var buf bytes.Buffer
 	ar := NewAdvRefs()
-	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
+	c.Assert(ar.Decode(&buf), Equals, ErrEmptyInput)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {

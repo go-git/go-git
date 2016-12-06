@@ -12,11 +12,21 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
+)
+
+const (
+	readErrorSecondsTimeout = 10
+	errLinesBuffer          = 1000
+)
+
+var (
+	ErrTimeoutExceeded = errors.New("timeout exceeded")
 )
 
 // Commander creates Command instances. This is the main entry point for
@@ -56,10 +66,9 @@ type Command interface {
 	// problems copying stdin, stdout, and stderr, and exits with a zero
 	// exit status.
 	Wait() error
-	// Close closes the command without waiting for it to exit and releases
-	// any resources. It can be called to forcibly finish the command
-	// without calling to Wait or to release resources after calling
-	// Wait.
+	// Close closes the command and releases any resources used by it. It
+	// can be called to forcibly finish the command without calling to Wait
+	// or to release resources after calling Wait.
 	Close() error
 }
 
@@ -89,10 +98,12 @@ func (c *client) NewSendPackSession(ep transport.Endpoint) (
 type session struct {
 	Stdin   io.WriteCloser
 	Stdout  io.Reader
-	Stderr  io.Reader
 	Command Command
 
 	advRefsRun bool
+	packRun    bool
+	finished   bool
+	errLines   chan string
 }
 
 func (c *client) newSession(s string, ep transport.Endpoint) (*session, error) {
@@ -120,11 +131,20 @@ func (c *client) newSession(s string, ep transport.Endpoint) (*session, error) {
 		return nil, err
 	}
 
+	errLines := make(chan string, errLinesBuffer)
+	go func() {
+		s := bufio.NewScanner(stderr)
+		for s.Scan() {
+			line := string(s.Bytes())
+			errLines <- line
+		}
+	}()
+
 	return &session{
-		Stdin:   stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
-		Command: cmd,
+		Stdin:    stdin,
+		Stdout:   stdout,
+		Command:  cmd,
+		errLines: errLines,
 	}, nil
 }
 
@@ -139,24 +159,29 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
 	}
 
-	defer func() { s.advRefsRun = true }()
+	s.advRefsRun = true
 
 	ar := packp.NewAdvRefs()
 	if err := ar.Decode(s.Stdout); err != nil {
-		if err != packp.ErrEmptyAdvRefs {
-			return nil, err
+		// If repository is not found, we get empty stdout and server
+		// writes an error to stderr.
+		if err == packp.ErrEmptyInput {
+			if err := s.checkNotFoundError(); err != nil {
+				return nil, err
+			}
+
+			return nil, io.ErrUnexpectedEOF
 		}
 
-		_ = s.Stdin.Close()
-		err = transport.ErrEmptyRemoteRepository
+		// For empty (but existing) repositories, we get empty
+		// advertised-references message. But valid. That is, it
+		// includes at least a flush.
+		if err == packp.ErrEmptyAdvRefs {
+			if err := s.finish(); err != nil {
+				return nil, err
+			}
 
-		scan := bufio.NewScanner(s.Stderr)
-		if !scan.Scan() {
 			return nil, transport.ErrEmptyRemoteRepository
-		}
-
-		if isRepoNotFoundError(string(scan.Bytes())) {
-			return nil, transport.ErrRepositoryNotFound
 		}
 
 		return nil, err
@@ -183,6 +208,8 @@ func (s *session) FetchPack(req *packp.UploadPackRequest) (io.ReadCloser, error)
 		}
 	}
 
+	s.packRun = true
+
 	if err := fetchPack(s.Stdin, s.Stdout, req); err != nil {
 		return nil, err
 	}
@@ -206,11 +233,55 @@ func (s *session) FetchPack(req *packp.UploadPackRequest) (io.ReadCloser, error)
 	return rc, nil
 }
 
+func (s *session) finish() error {
+	if s.finished {
+		return nil
+	}
+
+	s.finished = true
+
+	// If we did not run fetch-pack or send-pack, we close the connection
+	// gracefully by sending a flush packet to the server. If the server
+	// operates correctly, it will exit with status 0.
+	if !s.packRun {
+		_, err := s.Stdin.Write(pktline.FlushPkt)
+		return err
+	}
+
+	return nil
+}
+
 func (s *session) Close() error {
+	if err := s.finish(); err != nil {
+		_ = s.Command.Close()
+		return nil
+	}
+
 	return s.Command.Close()
 }
 
-const (
+func (s *session) checkNotFoundError() error {
+	t := time.NewTicker(time.Second * readErrorSecondsTimeout)
+	defer t.Stop()
+
+	select {
+	case <-t.C:
+		return ErrTimeoutExceeded
+	case line, ok := <-s.errLines:
+		if !ok {
+			return nil
+		}
+
+		if isRepoNotFoundError(line) {
+			return transport.ErrRepositoryNotFound
+		}
+
+		return fmt.Errorf("unknown error: %s", line)
+	}
+	return nil
+}
+
+var (
 	githubRepoNotFoundErr    = "ERROR: Repository not found."
 	bitbucketRepoNotFoundErr = "conq: repository does not exist."
 	localRepoNotFoundErr     = "does not appear to be a git repository"

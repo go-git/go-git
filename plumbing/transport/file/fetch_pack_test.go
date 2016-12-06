@@ -2,6 +2,7 @@ package file
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
@@ -45,4 +46,33 @@ func (s *FetchPackSuite) SetUpSuite(c *C) {
 	ep, err = transport.NewEndpoint(url)
 	c.Assert(err, IsNil)
 	s.NonExistentEndpoint = ep
+}
+
+// TODO: fix test
+func (s *FetchPackSuite) TestCommandNoOutput(c *C) {
+	c.Skip("failing test")
+
+	if _, err := os.Stat("/bin/true"); os.IsNotExist(err) {
+		c.Skip("/bin/true not found")
+	}
+
+	client := NewClient("true", "true")
+	session, err := client.NewFetchPackSession(s.Endpoint)
+	c.Assert(err, IsNil)
+	ar, err := session.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(ar, IsNil)
+}
+
+func (s *FetchPackSuite) TestMalformedInputNoErrors(c *C) {
+	if _, err := os.Stat("/usr/bin/yes"); os.IsNotExist(err) {
+		c.Skip("/usr/bin/yes not found")
+	}
+
+	client := NewClient("yes", "yes")
+	session, err := client.NewFetchPackSession(s.Endpoint)
+	c.Assert(err, IsNil)
+	ar, err := session.AdvertisedReferences()
+	c.Assert(err, NotNil)
+	c.Assert(ar, IsNil)
 }
