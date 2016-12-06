@@ -14,6 +14,8 @@ before_install:
   # we only decrypt the SSH key when we aren't in a pull request 
   - 'if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash .travis/install_key.sh; fi'
   - 'if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then export SSH_AUTH_SOCK="" ; fi'
+  - git config --global user.email "travis@example.com"
+  - git config --global user.name "Travis CI"
 
 install:
   - rm -rf $GOPATH/src/gopkg.in/src-d
