@@ -7,7 +7,6 @@ package common
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -193,7 +192,7 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 
 // FetchPack performs a request to the server to fetch a packfile. A reader is
 // returned with the packfile content. The reader must be closed after reading.
-func (s *session) FetchPack(req *packp.UploadPackRequest) (io.ReadCloser, error) {
+func (s *session) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -230,7 +229,7 @@ func (s *session) FetchPack(req *packp.UploadPackRequest) (io.ReadCloser, error)
 	wc := &waitCloser{s.Command}
 	rc := ioutil.NewReadCloser(r, wc)
 
-	return rc, nil
+	return DecodeUploadPackResponse(rc, req)
 }
 
 func (s *session) finish() error {
@@ -314,9 +313,7 @@ var (
 // TODO support multi_ack_detailed mode
 // TODO support acks for common objects
 // TODO build a proper state machine for all these processing options
-func fetchPack(w io.WriteCloser, r io.Reader,
-	req *packp.UploadPackRequest) error {
-
+func fetchPack(w io.WriteCloser, r io.Reader, req *packp.UploadPackRequest) error {
 	if err := req.UploadRequest.Encode(w); err != nil {
 		return fmt.Errorf("sending upload-req message: %s", err)
 	}
@@ -333,10 +330,6 @@ func fetchPack(w io.WriteCloser, r io.Reader,
 		return fmt.Errorf("closing input: %s", err)
 	}
 
-	if err := readNAK(r); err != nil {
-		return fmt.Errorf("reading NAK: %s", err)
-	}
-
 	return nil
 }
 
@@ -346,19 +339,16 @@ func sendDone(w io.Writer) error {
 	return e.Encodef("done\n")
 }
 
-func readNAK(r io.Reader) error {
-	s := pktline.NewScanner(r)
-	if !s.Scan() {
-		return s.Err()
+// DecodeUploadPackResponse decodes r into a new packp.UploadPackResponse
+func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
+	*packp.UploadPackResponse, error,
+) {
+	res := packp.NewUploadPackResponse(req)
+	if err := res.Decode(r); err != nil {
+		return nil, fmt.Errorf("error decoding upload-pack response: %s", err)
 	}
 
-	b := s.Bytes()
-	b = bytes.TrimSuffix(b, eol)
-	if !bytes.Equal(b, nak) {
-		return fmt.Errorf("expecting NAK, found %q instead", string(b))
-	}
-
-	return nil
+	return res, nil
 }
 
 type waitCloser struct {

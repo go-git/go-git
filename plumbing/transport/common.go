@@ -69,10 +69,10 @@ type FetchPackSession interface {
 	AdvertisedReferences() (*packp.AdvRefs, error)
 	// FetchPack takes a request and returns a reader for the packfile
 	// received from the server.
-	FetchPack(req *packp.UploadPackRequest) (io.ReadCloser, error)
+	FetchPack(*packp.UploadPackRequest) (*packp.UploadPackResponse, error)
 }
 
-// FetchPackSession represents a git-send-pack session.
+// SendPackSession represents a git-send-pack session.
 // A git-send-pack session has two steps: reference discovery
 // (`AdvertisedReferences` function) and sending pack (`SendPack` function).
 // In that order.

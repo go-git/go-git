@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
@@ -74,12 +75,12 @@ func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return ar, nil
 }
 
-func (s *fetchPackSession) FetchPack(r *packp.UploadPackRequest) (io.ReadCloser, error) {
-	if r.IsEmpty() {
+func (s *fetchPackSession) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
 
-	if err := r.Validate(); err != nil {
+	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -88,47 +89,32 @@ func (s *fetchPackSession) FetchPack(r *packp.UploadPackRequest) (io.ReadCloser,
 		s.endpoint.String(), transport.UploadPackServiceName,
 	)
 
-	content, err := uploadPackRequestToReader(r)
+	content, err := uploadPackRequestToReader(req)
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := s.doRequest("POST", url, content)
+	res, err := s.doRequest(http.MethodPost, url, content)
 	if err != nil {
 		return nil, err
 	}
 
-	reader, err := ioutil.NonEmptyReader(res.Body)
-	if err == ioutil.ErrEmptyReader || err == io.ErrUnexpectedEOF {
-		return nil, transport.ErrEmptyUploadPackRequest
-	}
-
+	r, err := ioutil.NonEmptyReader(res.Body)
 	if err != nil {
+		if err == ioutil.ErrEmptyReader || err == io.ErrUnexpectedEOF {
+			return nil, transport.ErrEmptyUploadPackRequest
+		}
+
 		return nil, err
 	}
 
-	rc := ioutil.NewReadCloser(reader, res.Body)
-	if err := discardResponseInfo(rc); err != nil {
-		return nil, err
-	}
-
-	return rc, nil
+	rc := ioutil.NewReadCloser(r, res.Body)
+	return common.DecodeUploadPackResponse(rc, req)
 }
 
 // Close does nothing.
 func (s *fetchPackSession) Close() error {
 	return nil
-}
-
-func discardResponseInfo(r io.Reader) error {
-	s := pktline.NewScanner(r)
-	for s.Scan() {
-		if bytes.Equal(s.Bytes(), []byte{'N', 'A', 'K', '\n'}) {
-			break
-		}
-	}
-
-	return s.Err()
 }
 
 func (s *fetchPackSession) doRequest(method, url string, content *strings.Reader) (*http.Response, error) {

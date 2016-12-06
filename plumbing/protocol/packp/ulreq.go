@@ -25,6 +25,7 @@ type UploadRequest struct {
 // DepthCommit, DepthSince and DepthReference.
 type Depth interface {
 	isDepth()
+	IsZero() bool
 }
 
 // DepthCommits values stores the maximum number of requested commits in
@@ -34,15 +35,27 @@ type DepthCommits int
 
 func (d DepthCommits) isDepth() {}
 
+func (d DepthCommits) IsZero() bool {
+	return d == 0
+}
+
 // DepthSince values requests only commits newer than the specified time.
 type DepthSince time.Time
 
 func (d DepthSince) isDepth() {}
 
+func (d DepthSince) IsZero() bool {
+	return time.Time(d).IsZero()
+}
+
 // DepthReference requests only commits not to found in the specified reference.
 type DepthReference string
 
 func (d DepthReference) isDepth() {}
+
+func (d DepthReference) IsZero() bool {
+	return string(d) == ""
+}
 
 // NewUploadRequest returns a pointer to a new UploadRequest value, ready to be
 // used. It has no capabilities, wants or shallows and an infinite depth. Please

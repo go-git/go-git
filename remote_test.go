@@ -98,6 +98,32 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	}
 }
 
+func (s *RemoteSuite) TestFetchDepth(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
+	sto := memory.NewStorage()
+	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
+	c.Assert(r.Connect(), IsNil)
+
+	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{refspec},
+		Depth:    1,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(sto.Objects, HasLen, 18)
+
+	expectedRefs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+	}
+
+	for _, exp := range expectedRefs {
+		r, _ := sto.Reference(exp.Name())
+		c.Assert(exp.String(), Equals, r.String())
+	}
+}
+
 type mockPackfileWriter struct {
 	Storer
 	PackfileWriterCalled bool

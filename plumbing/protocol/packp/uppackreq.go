@@ -13,15 +13,16 @@ import (
 // UploadPackRequest represents a upload-pack request.
 // Zero-value is not safe, use NewUploadPackRequest instead.
 type UploadPackRequest struct {
-	*UploadRequest
-	*UploadHaves
+	UploadRequest
+	UploadHaves
 }
 
 // NewUploadPackRequest creates a new UploadPackRequest and returns a pointer.
 func NewUploadPackRequest() *UploadPackRequest {
+	ur := NewUploadRequest()
 	return &UploadPackRequest{
-		UploadHaves:   &UploadHaves{},
-		UploadRequest: NewUploadRequest(),
+		UploadHaves:   UploadHaves{},
+		UploadRequest: *ur,
 	}
 }
 
@@ -30,9 +31,10 @@ func NewUploadPackRequest() *UploadPackRequest {
 // ones, based on the adv value (advertaised capabilities), the UploadPackRequest
 // it has no wants, haves or shallows and an infinite depth
 func NewUploadPackRequestFromCapabilities(adv *capability.List) *UploadPackRequest {
+	ur := NewUploadRequestFromCapabilities(adv)
 	return &UploadPackRequest{
-		UploadHaves:   &UploadHaves{},
-		UploadRequest: NewUploadRequestFromCapabilities(adv),
+		UploadHaves:   UploadHaves{},
+		UploadRequest: *ur,
 	}
 }
 

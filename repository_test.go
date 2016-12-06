@@ -1,10 +1,19 @@
 package git
 
 import (
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+
+	"os"
+
+	"bytes"
 
 	. "gopkg.in/check.v1"
 )
@@ -221,15 +230,14 @@ func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	c.Assert(storage.Objects, HasLen, 28)
 }
 
-func (s *RepositorySuite) TestPull(c *C) {
-	r := NewMemoryRepository()
+func (s *RepositorySuite) TestPullA(c *C) {
+	path := fixtures.Basic().One().Worktree().Base()
 
-	r.CreateRemote(&config.RemoteConfig{
-		Name: "foo",
-		URL:  s.GetBasicLocalRepositoryURL(),
+	r := NewMemoryRepository()
+	err := r.Clone(&CloneOptions{
+		URL: fmt.Sprintf("file://%s", filepath.Join(path, ".git")),
 	})
 
-	err := r.Pull(&PullOptions{RemoteName: "foo"})
 	c.Assert(err, IsNil)
 
 	storage := r.s.(*memory.Storage)
@@ -239,7 +247,30 @@ func (s *RepositorySuite) TestPull(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Ref("refs/remotes/foo/branch", false)
+	branch, err = r.Ref("refs/remotes/origin/branch", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+
+	ExecuteOnPath(c, path,
+		"touch foo",
+		"git add foo",
+		"git config --global user.email you@foo.com",
+		"git config --global user.name foo",
+		"git commit -m foo foo",
+	)
+
+	err = r.Pull(&PullOptions{RemoteName: "origin"})
+	c.Assert(err, IsNil)
+
+	// the commit command has introduced a new commit, tree and blob
+	c.Assert(storage.Objects, HasLen, 34)
+
+	branch, err = r.Ref("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	// the commit command, was in the local branch, so the remote should be read ok
+	branch, err = r.Ref("refs/remotes/origin/branch", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
@@ -411,4 +442,29 @@ func (s *RepositorySuite) TestObjectNotFound(c *C) {
 	tag, err := r.Object(plumbing.TagObject, hash)
 	c.Assert(err, DeepEquals, plumbing.ErrObjectNotFound)
 	c.Assert(tag, IsNil)
+}
+
+func ExecuteOnPath(c *C, path string, cmds ...string) error {
+	for _, cmd := range cmds {
+		err := executeOnPath(path, cmd)
+		c.Assert(err, IsNil)
+	}
+
+	return nil
+}
+
+func executeOnPath(path, cmd string) error {
+	args := strings.Split(cmd, " ")
+
+	c := exec.Command(args[0], args[1:]...)
+	c.Dir = path
+	c.Env = os.Environ()
+
+	buf := bytes.NewBuffer(nil)
+	c.Stderr = buf
+	c.Stdout = buf
+
+	//defer func() { fmt.Println(buf.String()) }()
+
+	return c.Run()
 }

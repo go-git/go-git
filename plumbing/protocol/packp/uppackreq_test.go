@@ -1,10 +1,10 @@
 package packp
 
 import (
+	"bytes"
+
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
-
-	"bytes"
 
 	. "gopkg.in/check.v1"
 )

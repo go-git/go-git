@@ -3,6 +3,7 @@ package fixtures
 import (
 	"fmt"
 	"go/build"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -193,6 +194,25 @@ func (f *Fixture) DotGit() fs.Filesystem {
 
 	folders[h] = path
 	return osfs.New(path)
+}
+
+func (f *Fixture) Worktree() fs.Filesystem {
+	fn := filepath.Join(RootFolder, DataFolder, fmt.Sprintf("git-%s.tgz", f.DotGitHash))
+	git, err := tgz.Extract(fn)
+	if err != nil {
+		panic(err)
+	}
+
+	worktree, err := ioutil.TempDir("", "worktree")
+	if err != nil {
+		panic(err)
+	}
+
+	if err := os.Rename(git, filepath.Join(worktree, ".git")); err != nil {
+		panic(err)
+	}
+
+	return osfs.New(worktree)
 }
 
 type Fixtures []*Fixture
