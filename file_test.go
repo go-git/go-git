@@ -203,6 +203,7 @@ func (s *FileSuite) TestFileIter(c *C) {
 	c.Assert(err, IsNil)
 
 	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
 
 	expected := []string{
 		".gitignore",

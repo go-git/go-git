@@ -184,6 +184,7 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndGetObject(c *C) {
 		c.Assert(h.String(), Equals, expected.Hash)
 
 		o, err := tx.Object(expected.Type, plumbing.NewHash(expected.Hash))
+		c.Assert(err, IsNil)
 		c.Assert(o.Hash().String(), DeepEquals, expected.Hash)
 	}
 }

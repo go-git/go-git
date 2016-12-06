@@ -3,9 +3,9 @@
 //
 // `Client` can be used to fetch and send packfiles to a git server.
 // The `client` package provides higher level functions to instantiate the
-// appropiate `Client` based on the repository URL.
+// appropriate `Client` based on the repository URL.
 //
-// Go-git supports HTTP and SSH (see `Protocols`), but you can also install
+// go-git supports HTTP and SSH (see `Protocols`), but you can also install
 // your own protocols (see the `client` package).
 //
 // Each protocol has its own implementation of `Client`, but you should

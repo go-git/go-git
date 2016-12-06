@@ -112,7 +112,7 @@ func (s *UlReqSuite) TestValidateConflictMultiACK(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func ExampleUlReqEncoder_Encode() {
+func ExampleUploadRequest_Encode() {
 	// Create an empty UlReq with the contents you want...
 	ur := NewUploadRequest()
 
@@ -147,7 +147,7 @@ func ExampleUlReqEncoder_Encode() {
 	// 0000
 }
 
-func ExampleUlReqDecoder_Decode() {
+func ExampleUploadRequest_Decode() {
 	// Here is a raw advertised-ref message.
 	raw := "" +
 		"005bwant 1111111111111111111111111111111111111111 ofs-delta symref=HEAD:/refs/heads/master\n" +

@@ -277,7 +277,6 @@ func (s *session) checkNotFoundError() error {
 
 		return fmt.Errorf("unknown error: %s", line)
 	}
-	return nil
 }
 
 var (

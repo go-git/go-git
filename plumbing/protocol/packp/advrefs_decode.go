@@ -119,8 +119,8 @@ func isPrefix(payload []byte) bool {
 	return len(payload) > 0 && payload[0] == '#'
 }
 
-// If the first hash is zero, then a no-refs is comming. Otherwise, a
-// list-of-refs is comming, and the hash will be followed by the first
+// If the first hash is zero, then a no-refs is coming. Otherwise, a
+// list-of-refs is coming, and the hash will be followed by the first
 // advertised ref.
 func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
 	// If the repository is empty, we receive a flush here (HTTP).

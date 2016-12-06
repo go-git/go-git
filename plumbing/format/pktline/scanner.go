@@ -77,7 +77,7 @@ func (s *Scanner) Bytes() []byte {
 }
 
 // Method readPayloadLen returns the payload length by reading the
-// pkt-len and substracting the pkt-len size.
+// pkt-len and subtracting the pkt-len size.
 func (s *Scanner) readPayloadLen() (int, error) {
 	if _, err := io.ReadFull(s.r, s.len[:]); err != nil {
 		if err == io.ErrUnexpectedEOF {

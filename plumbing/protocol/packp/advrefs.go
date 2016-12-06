@@ -24,7 +24,7 @@ type AdvRefs struct {
 	// Moreover, some (all) git HTTP smart servers will send a flush-pkt
 	// just after the first pkt-line.
 	//
-	// To accomodate both situations, the Prefix field allow you to store
+	// To accommodate both situations, the Prefix field allow you to store
 	// any data you want to send before the actual pktlines.  It will also
 	// be filled up with whatever is found on the line.
 	Prefix [][]byte

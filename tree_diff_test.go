@@ -32,7 +32,7 @@ func (s *DiffTreeSuite) TestActionString(c *C) {
 	c.Assert(obtained, Equals, expected)
 
 	action = 37
-	c.Assert(func() { action.String() },
+	c.Assert(func() { _ = action.String() },
 		PanicMatches, "unsupported action: 37")
 }
 

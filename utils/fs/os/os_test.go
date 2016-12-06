@@ -30,7 +30,7 @@ func (s *OSSuite) TearDownTest(c *C) {
 }
 
 func (s *OSSuite) TestOpenDoesNotCreateDir(c *C) {
-	_, err := s.Fs.Open("dir/non-existant")
+	_, err := s.Fs.Open("dir/non-existent")
 	c.Assert(err, NotNil)
 	_, err = stdos.Stat(filepath.Join(s.path, "dir"))
 	c.Assert(stdos.IsNotExist(err), Equals, true)

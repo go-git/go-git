@@ -461,7 +461,7 @@ func executeOnPath(path, cmd string) error {
 	c.Stderr = buf
 	c.Stdout = buf
 
-	defer func() { fmt.Println(buf.String()) }()
+	//defer func() { fmt.Println(buf.String()) }()
 
 	return c.Run()
 }

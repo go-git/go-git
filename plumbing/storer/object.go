@@ -45,7 +45,7 @@ type Transactioner interface {
 // PackfileWriter is a optional method for ObjectStorer, it enable direct write
 // of packfile to the storage
 type PackfileWriter interface {
-	// PackfileWriter retuns a writer for writing a packfile to the storage
+	// PackfileWriter returns a writer for writing a packfile to the storage
 	//
 	// If the Storer not implements PackfileWriter the objects should be written
 	// using the Set method.

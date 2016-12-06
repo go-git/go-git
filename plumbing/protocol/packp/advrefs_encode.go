@@ -12,8 +12,8 @@ import (
 
 // Encode writes the AdvRefs encoding to a writer.
 //
-// All the payloads will end with a newline character.  Capabilities,
-// references and shallows are writen in alphabetical order, except for
+// All the payloads will end with a newline character. Capabilities,
+// references and shallows are written in alphabetical order, except for
 // peeled references that always follow their corresponding references.
 func (a *AdvRefs) Encode(w io.Writer) error {
 	e := newAdvRefsEncoder(w)

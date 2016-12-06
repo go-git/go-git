@@ -292,7 +292,7 @@ func (s *Scanner) copyObject(w io.Writer) (int64, error) {
 
 // Seek sets a new offset from start, returns the old position before the change
 func (s *Scanner) Seek(offset int64) (previous int64, err error) {
-	// if seeking we asume that you are not interested on the header
+	// if seeking we assume that you are not interested on the header
 	if s.version == 0 {
 		s.version = VersionSupported
 	}

@@ -181,6 +181,7 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 	c.Assert(pack, IsNil)
 
 	idx, err := dir.ObjectPackIdx(plumbing.ZeroHash)
+	c.Assert(err, Equals, ErrPackfileNotFound)
 	c.Assert(idx, IsNil)
 }
 

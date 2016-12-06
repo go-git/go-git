@@ -47,7 +47,7 @@ func main() {
 
 	refs, _ := r.Refs()
 	refs.ForEach(func(ref *plumbing.Reference) error {
-		// The HEAD is ommitted in a `git show-ref` so we ignore the symbolic
+		// The HEAD is omitted in a `git show-ref` so we ignore the symbolic
 		// references, the HEAD
 		if ref.Type() == plumbing.SymbolicReference {
 			return nil
