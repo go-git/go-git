@@ -82,6 +82,12 @@ func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
 		r.Capabilities.Set(capability.MultiACK)
 	}
 
+	if adv.Supports(capability.Sideband64k) {
+		r.Capabilities.Set(capability.Sideband64k)
+	} else if adv.Supports(capability.Sideband) {
+		r.Capabilities.Set(capability.Sideband)
+	}
+
 	if adv.Supports(capability.ThinPack) {
 		r.Capabilities.Set(capability.ThinPack)
 	}

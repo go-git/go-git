@@ -24,6 +24,7 @@ func (s *SidebandSuite) TestDecode(c *C) {
 	buf := bytes.NewBuffer(nil)
 	e := pktline.NewEncoder(buf)
 	e.Encode(PackData.WithPayload(expected[0:8]))
+	e.Encode(ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
 	e.Encode(PackData.WithPayload(expected[8:16]))
 	e.Encode(PackData.WithPayload(expected[16:26]))
 
@@ -92,6 +93,8 @@ func (s *SidebandSuite) TestDecodeWithProgress(c *C) {
 
 	content := make([]byte, 26)
 	d := NewDemuxer(Sideband64k, buf)
+	d.Progress = bytes.NewBuffer(nil)
+
 	n, err := io.ReadFull(d, content)
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 26)

@@ -131,8 +131,6 @@ func transformSCPLikeIfNeeded(endpoint string) string {
 var UnsupportedCapabilities = []capability.Capability{
 	capability.MultiACK,
 	capability.MultiACKDetailed,
-	capability.Sideband,
-	capability.Sideband64k,
 	capability.ThinPack,
 }
 

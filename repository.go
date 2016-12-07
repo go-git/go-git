@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -24,6 +25,11 @@ var (
 type Repository struct {
 	r map[string]*Remote
 	s Storer
+
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
 // NewMemoryRepository creates a new repository, backed by a memory.Storage
@@ -64,7 +70,7 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 		return nil, ErrRemoteNotFound
 	}
 
-	return newRemote(r.s, c), nil
+	return newRemote(r.s, r.Progress, c), nil
 }
 
 // Remotes return all the remotes
@@ -78,7 +84,7 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 
 	var i int
 	for _, c := range cfg.Remotes {
-		remotes[i] = newRemote(r.s, c)
+		remotes[i] = newRemote(r.s, r.Progress, c)
 		i++
 	}
 
@@ -91,7 +97,7 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 		return nil, err
 	}
 
-	remote := newRemote(r.s, c)
+	remote := newRemote(r.s, r.Progress, c)
 
 	cfg, err := r.s.Config()
 	if err != nil {

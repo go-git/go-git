@@ -10,6 +10,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
@@ -22,6 +23,7 @@ var NoErrAlreadyUpToDate = errors.New("already up-to-date")
 type Remote struct {
 	c *config.RemoteConfig
 	s Storer
+	p sideband.Progress
 
 	// cache fields, there during the connection is open
 	endpoint     transport.Endpoint
@@ -31,8 +33,8 @@ type Remote struct {
 	refs         memory.ReferenceStorage
 }
 
-func newRemote(s Storer, c *config.RemoteConfig) *Remote {
-	return &Remote{s: s, c: c}
+func newRemote(s Storer, p sideband.Progress, c *config.RemoteConfig) *Remote {
+	return &Remote{s: s, p: p, c: c}
 }
 
 // Config return the config
@@ -125,7 +127,10 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 	}
 
 	defer checkClose(reader, &err)
-	if err := r.updateObjectStorage(reader); err != nil {
+
+	if err = r.updateObjectStorage(
+		r.buildSidebandIfSupported(req.Capabilities, reader),
+	); err != nil {
 		return err
 	}
 
@@ -178,6 +183,10 @@ func (r *Remote) buildRequest(
 		req.Capabilities.Set(capability.Shallow)
 	}
 
+	if r.p == nil && r.advRefs.Capabilities.Supports(capability.NoProgress) {
+		req.Capabilities.Set(capability.NoProgress)
+	}
+
 	for _, ref := range refs {
 		req.Wants = append(req.Wants, ref.Hash())
 	}
@@ -219,6 +228,24 @@ func (r *Remote) updateObjectStorage(reader io.Reader) error {
 
 	_, err = d.Decode()
 	return err
+}
+
+func (r *Remote) buildSidebandIfSupported(l *capability.List, reader io.Reader) io.Reader {
+	var t sideband.Type
+
+	switch {
+	case l.Supports(capability.Sideband):
+		t = sideband.Sideband
+	case l.Supports(capability.Sideband64k):
+		t = sideband.Sideband64k
+	default:
+		return reader
+	}
+
+	d := sideband.NewDemuxer(t, reader)
+	d.Progress = r.p
+
+	return d
 }
 
 func (r *Remote) updateLocalReferenceStorage(specs []config.RefSpec, refs []*plumbing.Reference) error {

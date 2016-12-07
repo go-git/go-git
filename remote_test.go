@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -30,21 +31,21 @@ var _ = Suite(&RemoteSuite{})
 
 func (s *RemoteSuite) TestConnect(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
 }
 
 func (s *RemoteSuite) TestnewRemoteInvalidEndpoint(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
 
 	err := r.Connect()
 	c.Assert(err, NotNil)
 }
 
 func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
 
 	err := r.Connect()
 	c.Assert(err, NotNil)
@@ -52,7 +53,7 @@ func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
 
 func (s *RemoteSuite) TestInfo(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.AdvertisedReferences(), IsNil)
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.AdvertisedReferences(), NotNil)
@@ -61,14 +62,14 @@ func (s *RemoteSuite) TestInfo(c *C) {
 
 func (s *RemoteSuite) TestDefaultBranch(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Head().Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
 }
 
 func (s *RemoteSuite) TestCapabilities(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 	c.Assert(r.Capabilities().Get(capability.Agent), HasLen, 1)
 }
@@ -76,7 +77,7 @@ func (s *RemoteSuite) TestCapabilities(c *C) {
 func (s *RemoteSuite) TestFetch(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
@@ -101,7 +102,7 @@ func (s *RemoteSuite) TestFetch(c *C) {
 func (s *RemoteSuite) TestFetchDepth(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
@@ -124,6 +125,25 @@ func (s *RemoteSuite) TestFetchDepth(c *C) {
 	}
 }
 
+func (s *RemoteSuite) TestFetchWithProgress(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
+	sto := memory.NewStorage()
+	buf := bytes.NewBuffer(nil)
+
+	r := newRemote(sto, buf, &config.RemoteConfig{Name: "foo", URL: url})
+	c.Assert(r.Connect(), IsNil)
+
+	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{refspec},
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(sto.Objects, HasLen, 31)
+
+	c.Assert(buf.Len(), Not(Equals), 0)
+}
+
 type mockPackfileWriter struct {
 	Storer
 	PackfileWriterCalled bool
@@ -135,7 +155,6 @@ func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
 }
 
 func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
-
 	dir, err := ioutil.TempDir("", "fetch")
 	c.Assert(err, IsNil)
 
@@ -147,7 +166,7 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 	mock := &mockPackfileWriter{Storer: fss}
 
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(mock, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(mock, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
@@ -173,7 +192,7 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
@@ -189,7 +208,7 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 
 func (s *RemoteSuite) TestHead(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 
 	err := r.Connect()
 	c.Assert(err, IsNil)
@@ -198,7 +217,7 @@ func (s *RemoteSuite) TestHead(c *C) {
 
 func (s *RemoteSuite) TestRef(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	err := r.Connect()
 	c.Assert(err, IsNil)
 
@@ -213,7 +232,7 @@ func (s *RemoteSuite) TestRef(c *C) {
 
 func (s *RemoteSuite) TestRefs(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: url})
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
 	err := r.Connect()
 	c.Assert(err, IsNil)
 
@@ -223,7 +242,7 @@ func (s *RemoteSuite) TestRefs(c *C) {
 }
 
 func (s *RemoteSuite) TestString(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{
+	r := newRemote(nil, nil, &config.RemoteConfig{
 		Name: "foo",
 		URL:  "https://github.com/git-fixtures/basic.git",
 	})

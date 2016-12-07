@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
@@ -117,7 +117,7 @@ func (s *fetchPackSession) Close() error {
 	return nil
 }
 
-func (s *fetchPackSession) doRequest(method, url string, content *strings.Reader) (*http.Response, error) {
+func (s *fetchPackSession) doRequest(method, url string, content *bytes.Buffer) (*http.Response, error) {
 	var body io.Reader
 	if content != nil {
 		body = content
@@ -144,44 +144,33 @@ func (s *fetchPackSession) doRequest(method, url string, content *strings.Reader
 	return res, nil
 }
 
-func (s *fetchPackSession) applyHeadersToRequest(req *http.Request, content *strings.Reader) {
+// it requires a bytes.Buffer, because we need to know the length
+func (s *fetchPackSession) applyHeadersToRequest(req *http.Request, content *bytes.Buffer) {
 	req.Header.Add("User-Agent", "git/1.0")
-	req.Header.Add("Host", "github.com")
+	req.Header.Add("Host", s.endpoint.Host)
 
 	if content == nil {
 		req.Header.Add("Accept", "*/*")
-	} else {
-		req.Header.Add("Accept", "application/x-git-upload-pack-result")
-		req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
-		req.Header.Add("Content-Length", string(content.Len()))
+		return
 	}
+
+	req.Header.Add("Accept", "application/x-git-upload-pack-result")
+	req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
+	req.Header.Add("Content-Length", strconv.Itoa(content.Len()))
 }
 
-func uploadPackRequestToReader(r *packp.UploadPackRequest) (*strings.Reader, error) {
-	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
+func uploadPackRequestToReader(req *packp.UploadPackRequest) (*bytes.Buffer, error) {
+	buf := bytes.NewBuffer(nil)
+	e := pktline.NewEncoder(buf)
 
-	for _, want := range r.Wants {
-		_ = e.Encodef("want %s\n", want)
+	if err := req.UploadRequest.Encode(buf); err != nil {
+		return nil, fmt.Errorf("sending upload-req message: %s", err)
 	}
 
-	for _, have := range r.Haves {
-		_ = e.Encodef("have %s\n", have)
+	if err := req.UploadHaves.Encode(buf); err != nil {
+		return nil, fmt.Errorf("sending haves message: %s", err)
 	}
 
-	if r.Depth != nil {
-		depth, ok := r.Depth.(packp.DepthCommits)
-		if !ok {
-			return nil, fmt.Errorf("only commit depth is supported")
-		}
-
-		if depth != 0 {
-			_ = e.Encodef("deepen %d\n", depth)
-		}
-	}
-
-	_ = e.Flush()
 	_ = e.EncodeString("done\n")
-
-	return strings.NewReader(buf.String()), nil
+	return buf, nil
 }
