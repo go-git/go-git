@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
@@ -50,6 +51,7 @@ type session struct {
 	auth     AuthMethod
 	client   *http.Client
 	endpoint transport.Endpoint
+	advRefs  *packp.AdvRefs
 }
 
 func (s *session) SetAuth(auth transport.AuthMethod) error {

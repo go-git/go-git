@@ -49,13 +49,15 @@ func (s *FetchPackSuite) TestInfoNotExists(c *C) {
 	c.Assert(reader, IsNil)
 }
 
-func (s *FetchPackSuite) TestCannotCallAdvertisedReferenceTwice(c *C) {
+func (s *FetchPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	r, err := s.Client.NewFetchPackSession(s.Endpoint)
 	c.Assert(err, IsNil)
-	_, err = r.AdvertisedReferences()
+	ar1, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
-	_, err = r.AdvertisedReferences()
-	c.Assert(err, Equals, transport.ErrAdvertistedReferencesAlreadyCalled)
+	c.Assert(ar1, NotNil)
+	ar2, err := r.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(ar2, DeepEquals, ar1)
 }
 
 func (s *FetchPackSuite) TestDefaultBranch(c *C) {

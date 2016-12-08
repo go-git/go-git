@@ -17,7 +17,6 @@ import (
 
 type fetchPackSession struct {
 	*session
-	advRefsRun bool
 }
 
 func newFetchPackSession(c *http.Client,
@@ -33,11 +32,9 @@ func newFetchPackSession(c *http.Client,
 }
 
 func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
-	if s.advRefsRun {
-		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
+	if s.advRefs != nil {
+		return s.advRefs, nil
 	}
-
-	defer func() { s.advRefsRun = true }()
 
 	url := fmt.Sprintf(
 		"%s/info/refs?service=%s",
@@ -72,6 +69,7 @@ func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	}
 
 	transport.FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advRefs = ar
 	return ar, nil
 }
 

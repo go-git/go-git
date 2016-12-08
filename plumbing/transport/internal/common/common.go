@@ -99,10 +99,10 @@ type session struct {
 	Stdout  io.Reader
 	Command Command
 
-	advRefsRun bool
-	packRun    bool
-	finished   bool
-	errLines   chan string
+	advRefs  *packp.AdvRefs
+	packRun  bool
+	finished bool
+	errLines chan string
 }
 
 func (c *client) newSession(s string, ep transport.Endpoint) (*session, error) {
@@ -154,11 +154,9 @@ func (s *session) SetAuth(auth transport.AuthMethod) error {
 
 // AdvertisedReferences retrieves the advertised references from the server.
 func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
-	if s.advRefsRun {
-		return nil, transport.ErrAdvertistedReferencesAlreadyCalled
+	if s.advRefs != nil {
+		return s.advRefs, nil
 	}
-
-	s.advRefsRun = true
 
 	ar := packp.NewAdvRefs()
 	if err := ar.Decode(s.Stdout); err != nil {
@@ -187,6 +185,7 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 	}
 
 	transport.FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advRefs = ar
 	return ar, nil
 }
 
@@ -201,10 +200,8 @@ func (s *session) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResp
 		return nil, err
 	}
 
-	if !s.advRefsRun {
-		if _, err := s.AdvertisedReferences(); err != nil {
-			return nil, err
-		}
+	if _, err := s.AdvertisedReferences(); err != nil {
+		return nil, err
 	}
 
 	s.packRun = true
