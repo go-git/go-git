@@ -19,7 +19,7 @@ var RootFolder = ""
 
 const DataFolder = "data"
 
-var folders = make(map[string]string, 0)
+var folders = make(map[string]bool, 0)
 
 var fixtures = Fixtures{{
 	Tags:         []string{"packfile", "ofs-delta", ".git"},
@@ -180,19 +180,16 @@ func (f *Fixture) Idx() *os.File {
 	return file
 }
 
+// DotGit creates a new temporary directory and unpacks the repository .git
+// directory into it. Multiple calls to DotGit returns different directories.
 func (f *Fixture) DotGit() fs.Filesystem {
-	h := f.DotGitHash.String()
-	if path, ok := folders[h]; ok {
-		return osfs.New(path)
-	}
-
 	fn := filepath.Join(RootFolder, DataFolder, fmt.Sprintf("git-%s.tgz", f.DotGitHash))
 	path, err := tgz.Extract(fn)
 	if err != nil {
 		panic(err)
 	}
 
-	folders[h] = path
+	folders[path] = true
 	return osfs.New(path)
 }
 
@@ -270,10 +267,10 @@ func (s *Suite) SetUpSuite(c *check.C) {
 }
 
 func (s *Suite) TearDownSuite(c *check.C) {
-	for hash, f := range folders {
+	for f := range folders {
 		err := os.RemoveAll(f)
 		c.Assert(err, check.IsNil)
 
-		delete(folders, hash)
+		delete(folders, f)
 	}
 }
