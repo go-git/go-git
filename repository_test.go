@@ -100,18 +100,18 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
 
-	head, err = r.Ref(plumbing.HEAD, false)
+	head, err = r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
 	c.Assert(head.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(head.Target().String(), Equals, "refs/heads/master")
 
-	branch, err := r.Ref(head.Target(), false)
+	branch, err := r.Reference(head.Target(), false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Ref("refs/remotes/origin/master", false)
+	branch, err = r.Reference("refs/remotes/origin/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Type(), Equals, plumbing.HashReference)
@@ -152,18 +152,18 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
 
-	head, err = r.Ref(plumbing.HEAD, false)
+	head, err = r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
 	c.Assert(head.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(head.Target().String(), Equals, "refs/heads/branch")
 
-	branch, err := r.Ref(head.Target(), false)
+	branch, err := r.Reference(head.Target(), false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
-	branch, err = r.Ref("refs/remotes/origin/branch", false)
+	branch, err = r.Reference("refs/remotes/origin/branch", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Type(), Equals, plumbing.HashReference)
@@ -188,18 +188,18 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
 
-	head, err = r.Ref(plumbing.HEAD, false)
+	head, err = r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
 	c.Assert(head.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(head.Target().String(), Equals, "refs/heads/master")
 
-	branch, err := r.Ref(head.Target(), false)
+	branch, err := r.Reference(head.Target(), false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Ref("refs/remotes/origin/master", false)
+	branch, err = r.Reference("refs/remotes/origin/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Type(), Equals, plumbing.HashReference)
@@ -213,7 +213,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
 	})
 
-	head, err := r.Ref(plumbing.HEAD, false)
+	head, err := r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
 	c.Assert(head.Type(), Equals, plumbing.HashReference)
@@ -232,11 +232,11 @@ func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	err = r.Pull(&PullOptions{})
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 
-	branch, err := r.Ref("refs/heads/master", false)
+	branch, err := r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Ref("refs/remotes/foo/branch", false)
+	branch, err = r.Reference("refs/remotes/foo/branch", false)
 	c.Assert(err, NotNil)
 
 	storage := r.s.(*memory.Storage)
@@ -256,11 +256,11 @@ func (s *RepositorySuite) TestPullA(c *C) {
 	storage := r.s.(*memory.Storage)
 	c.Assert(storage.Objects, HasLen, 31)
 
-	branch, err := r.Ref("refs/heads/master", false)
+	branch, err := r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Ref("refs/remotes/origin/branch", false)
+	branch, err = r.Reference("refs/remotes/origin/branch", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
@@ -276,12 +276,12 @@ func (s *RepositorySuite) TestPullA(c *C) {
 	// the commit command has introduced a new commit, tree and blob
 	c.Assert(storage.Objects, HasLen, 34)
 
-	branch, err = r.Ref("refs/heads/master", false)
+	branch, err = r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	// the commit command, was in the local branch, so the remote should be read ok
-	branch, err = r.Ref("refs/remotes/origin/branch", false)
+	branch, err = r.Reference("refs/remotes/origin/branch", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
@@ -387,7 +387,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 		return nil
 	})
 
-	refs, _ := r.Refs()
+	refs, _ := r.References()
 	refs.ForEach(func(ref *plumbing.Reference) error {
 		return nil
 	})
@@ -410,11 +410,11 @@ func (s *RepositorySuite) TestRef(c *C) {
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
-	ref, err := r.Ref(plumbing.HEAD, false)
+	ref, err := r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(ref.Name(), Equals, plumbing.HEAD)
 
-	ref, err = r.Ref(plumbing.HEAD, true)
+	ref, err = r.Reference(plumbing.HEAD, true)
 	c.Assert(err, IsNil)
 	c.Assert(ref.Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
 }
@@ -426,7 +426,7 @@ func (s *RepositorySuite) TestRefs(c *C) {
 
 	c.Assert(err, IsNil)
 
-	iter, err := r.Refs()
+	iter, err := r.References()
 	c.Assert(err, IsNil)
 	c.Assert(iter, NotNil)
 }

@@ -45,7 +45,7 @@ func main() {
 	// > git show-ref
 	color.Blue("git show-ref")
 
-	refs, _ := r.Refs()
+	refs, _ := r.References()
 	refs.ForEach(func(ref *plumbing.Reference) error {
 		// The HEAD is omitted in a `git show-ref` so we ignore the symbolic
 		// references, the HEAD

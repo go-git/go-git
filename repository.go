@@ -224,7 +224,7 @@ func (r *Repository) createReferences(ref *plumbing.Reference) error {
 
 // IsEmpty returns true if the repository is empty
 func (r *Repository) IsEmpty() (bool, error) {
-	iter, err := r.Refs()
+	iter, err := r.References()
 	if err != nil {
 		return false, err
 	}
@@ -395,13 +395,16 @@ func (r *Repository) Objects() (*ObjectIter, error) {
 	return NewObjectIter(r, iter), nil
 }
 
-// Head returns the reference where HEAD is pointing
+// Head returns the reference where HEAD is pointing to.
 func (r *Repository) Head() (*plumbing.Reference, error) {
 	return storer.ResolveReference(r.s, plumbing.HEAD)
 }
 
-// Ref returns the Hash pointing the given refName
-func (r *Repository) Ref(name plumbing.ReferenceName, resolved bool) (*plumbing.Reference, error) {
+// Reference returns the reference for a given reference name. If resolved is
+// true, any symbolic reference will be resolved.
+func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
+	*plumbing.Reference, error) {
+
 	if resolved {
 		return storer.ResolveReference(r.s, name)
 	}
@@ -409,7 +412,7 @@ func (r *Repository) Ref(name plumbing.ReferenceName, resolved bool) (*plumbing.
 	return r.s.Reference(name)
 }
 
-// Refs returns a map with all the References
-func (r *Repository) Refs() (storer.ReferenceIter, error) {
+// References returns a ReferenceIter for all references.
+func (r *Repository) References() (storer.ReferenceIter, error) {
 	return r.s.IterReferences()
 }
