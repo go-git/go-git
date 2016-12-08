@@ -44,6 +44,13 @@ func (s *RemoteSuite) TestnewRemoteInvalidEndpoint(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RemoteSuite) TestnewRemoteNonExistentEndpoint(c *C) {
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "ssh://non-existent/foo.git"})
+
+	err := r.Connect()
+	c.Assert(err, NotNil)
+}
+
 func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
 	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
 

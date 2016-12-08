@@ -51,7 +51,7 @@ func (r *Remote) Connect() error {
 	var err error
 	r.fetchSession, err = r.client.NewFetchPackSession(r.endpoint)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	return r.retrieveAdvertisedReferences()
