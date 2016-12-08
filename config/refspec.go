@@ -48,6 +48,15 @@ func (s RefSpec) IsForceUpdate() bool {
 	return false
 }
 
+// IsDelete returns true if the refspec indicates a delete (empty src).
+func (s RefSpec) IsDelete() bool {
+	if s[0] == refSpecSeparator[0] {
+		return true
+	}
+
+	return false
+}
+
 // Src return the src side
 func (s RefSpec) Src() string {
 	spec := string(s)

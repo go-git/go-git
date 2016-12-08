@@ -23,6 +23,15 @@ func (s *RefSpecSuite) TestRefSpecIsValid(c *C) {
 	spec = RefSpec("refs/heads/master:refs/remotes/origin/master")
 	c.Assert(spec.IsValid(), Equals, true)
 
+	spec = RefSpec(":refs/heads/master")
+	c.Assert(spec.IsValid(), Equals, true)
+
+	spec = RefSpec(":refs/heads/*")
+	c.Assert(spec.IsValid(), Equals, false)
+
+	spec = RefSpec(":*")
+	c.Assert(spec.IsValid(), Equals, false)
+
 	spec = RefSpec("refs/heads/*")
 	c.Assert(spec.IsValid(), Equals, false)
 }
@@ -35,18 +44,36 @@ func (s *RefSpecSuite) TestRefSpecIsForceUpdate(c *C) {
 	c.Assert(spec.IsForceUpdate(), Equals, false)
 }
 
+func (s *RefSpecSuite) TestRefSpecIsDelete(c *C) {
+	spec := RefSpec(":refs/heads/master")
+	c.Assert(spec.IsDelete(), Equals, true)
+
+	spec = RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	c.Assert(spec.IsDelete(), Equals, false)
+
+	spec = RefSpec("refs/heads/*:refs/remotes/origin/*")
+	c.Assert(spec.IsDelete(), Equals, false)
+}
+
 func (s *RefSpecSuite) TestRefSpecSrc(c *C) {
 	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
 	c.Assert(spec.Src(), Equals, "refs/heads/*")
+
+	spec = RefSpec(":refs/heads/master")
+	c.Assert(spec.Src(), Equals, "")
 }
 
 func (s *RefSpecSuite) TestRefSpecMatch(c *C) {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
 	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, false)
 	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/master")), Equals, true)
+
+	spec = RefSpec(":refs/heads/master")
+	c.Assert(spec.Match(plumbing.ReferenceName("")), Equals, true)
+	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/master")), Equals, false)
 }
 
-func (s *RefSpecSuite) TestRefSpecMatchBlob(c *C) {
+func (s *RefSpecSuite) TestRefSpecMatchGlob(c *C) {
 	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
 	c.Assert(spec.Match(plumbing.ReferenceName("refs/tag/foo")), Equals, false)
 	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, true)
