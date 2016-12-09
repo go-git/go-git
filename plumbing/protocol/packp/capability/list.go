@@ -48,6 +48,11 @@ func (l *List) IsEmpty() bool {
 
 // Decode decodes list of capabilities from raw into the list
 func (l *List) Decode(raw []byte) error {
+	// git 1.x receive pack used to send a leading space on its
+	// git-receive-pack capabilities announcement. We just trim space to be
+	// tolerant to space changes in different versions.
+	raw = bytes.TrimSpace(raw)
+
 	if len(raw) == 0 {
 		return nil
 	}

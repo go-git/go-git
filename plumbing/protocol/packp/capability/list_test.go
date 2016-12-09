@@ -27,6 +27,15 @@ func (s *SuiteCapabilities) TestDecode(c *check.C) {
 	c.Assert(cap.Get(ThinPack), check.IsNil)
 }
 
+func (s *SuiteCapabilities) TestDecodeWithLeadingSpace(c *check.C) {
+	cap := NewList()
+	err := cap.Decode([]byte(" report-status"))
+	c.Assert(err, check.IsNil)
+
+	c.Assert(cap.m, check.HasLen, 1)
+	c.Assert(cap.Supports(ReportStatus), check.Equals, true)
+}
+
 func (s *SuiteCapabilities) TestDecodeEmpty(c *check.C) {
 	cap := NewList()
 	err := cap.Decode(nil)
