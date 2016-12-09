@@ -49,6 +49,8 @@ type Session interface {
 	SetAuth(auth AuthMethod) error
 	// AdvertisedReferences retrieves the advertised references for a
 	// repository.
+	// If the repository does not exist, returns ErrRepositoryNotFound.
+	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
 	AdvertisedReferences() (*packp.AdvRefs, error)
 	io.Closer
 }
@@ -75,10 +77,9 @@ type FetchPackSession interface {
 // In that order.
 type SendPackSession interface {
 	Session
-	// UpdateReferences sends an update references request and returns a
-	// writer to be used for packfile writing.
-	//TODO: Complete signature.
-	SendPack() (io.WriteCloser, error)
+	// UpdateReferences sends an update references request and a packfile
+	// reader and returns a ReportStatus and error.
+	SendPack(*packp.ReferenceUpdateRequest) (*packp.ReportStatus, error)
 }
 
 type Endpoint url.URL

@@ -8,8 +8,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 )
 
-const DefaultAgent = "go-git/4.x"
-
 // UploadRequest values represent the information transmitted on a
 // upload-request message.  Values from this type are not zero-value
 // safe, use the New function instead.
@@ -97,7 +95,7 @@ func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
 	}
 
 	if adv.Supports(capability.Agent) {
-		r.Capabilities.Set(capability.Agent, DefaultAgent)
+		r.Capabilities.Set(capability.Agent, capability.DefaultAgent)
 	}
 
 	return r

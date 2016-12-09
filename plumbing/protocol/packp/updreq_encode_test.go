@@ -7,6 +7,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 
 	. "gopkg.in/check.v1"
+	"io/ioutil"
 )
 
 type UpdReqEncodeSuite struct{}
@@ -114,6 +115,30 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 0000000000000000000000000000000000000000 myref3",
 		pktline.FlushString,
 	)
+
+	s.testEncode(c, r, expected)
+}
+
+func (s *UpdReqEncodeSuite) TestWithPackfile(c *C) {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	name := "myref"
+
+	packfileContent := []byte("PACKabc")
+	packfileReader := bytes.NewReader(packfileContent)
+	packfileReadCloser := ioutil.NopCloser(packfileReader)
+
+	r := NewReferenceUpdateRequest()
+	r.Commands = []*Command{
+		{Name: name, Old: hash1, New: hash2},
+	}
+	r.Packfile = packfileReadCloser
+
+	expected := pktlines(c,
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
+		pktline.FlushString,
+	)
+	expected = append(expected, packfileContent...)
 
 	s.testEncode(c, r, expected)
 }

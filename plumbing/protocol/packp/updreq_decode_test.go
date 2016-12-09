@@ -3,6 +3,7 @@ package packp
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
@@ -156,13 +157,14 @@ func (s *UpdReqDecodeSuite) TestOneUpdateCommand(c *C) {
 	expected.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
+	expected.Packfile = ioutil.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		pktline.FlushString,
 	}
 
-	c.Assert(s.testDecodeOK(c, payloads), DeepEquals, expected)
+	s.testDecodeOkExpected(c, expected, payloads)
 }
 
 func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
@@ -175,6 +177,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
 		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
 		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
 	}
+	expected.Packfile = ioutil.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00",
@@ -183,10 +186,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
 		pktline.FlushString,
 	}
 
-	c.Assert(s.testDecodeOK(c, payloads).Commands, DeepEquals, expected.Commands)
-	c.Assert(s.testDecodeOK(c, payloads).Shallow, DeepEquals, expected.Shallow)
-	c.Assert(s.testDecodeOK(c, payloads).Capabilities, DeepEquals, expected.Capabilities)
-	c.Assert(s.testDecodeOK(c, payloads), DeepEquals, expected)
+	s.testDecodeOkExpected(c, expected, payloads)
 }
 
 func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
@@ -200,6 +200,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
 	}
 	expected.Capabilities.Add("shallow")
+	expected.Packfile = ioutil.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
@@ -208,7 +209,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 		pktline.FlushString,
 	}
 
-	c.Assert(s.testDecodeOK(c, payloads), DeepEquals, expected)
+	s.testDecodeOkExpected(c, expected, payloads)
 }
 
 func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
@@ -223,6 +224,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 	}
 	expected.Capabilities.Add("shallow")
 	expected.Shallow = &hash1
+	expected.Packfile = ioutil.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -232,7 +234,31 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 		pktline.FlushString,
 	}
 
-	c.Assert(s.testDecodeOK(c, payloads), DeepEquals, expected)
+	s.testDecodeOkExpected(c, expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	name := "myref"
+
+	expected := NewReferenceUpdateRequest()
+	expected.Commands = []*Command{
+		{Name: name, Old: hash1, New: hash2},
+	}
+	packfileContent := []byte("PACKabc")
+	expected.Packfile = ioutil.NopCloser(bytes.NewReader(packfileContent))
+
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
+		pktline.FlushString,
+	}
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+	c.Assert(e.EncodeString(payloads...), IsNil)
+	buf.Write(packfileContent)
+
+	s.testDecodeOkRaw(c, expected, buf.Bytes())
 }
 
 func (s *UpdReqDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {
@@ -250,4 +276,33 @@ func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *ReferenceUpda
 	c.Assert(r.Decode(&buf), IsNil)
 
 	return r
+}
+
+func (s *UpdReqDecodeSuite) testDecodeOkRaw(c *C, expected *ReferenceUpdateRequest, raw []byte) {
+	req := NewReferenceUpdateRequest()
+	c.Assert(req.Decode(bytes.NewBuffer(raw)), IsNil)
+	c.Assert(req.Packfile, NotNil)
+	s.compareReaders(c, req.Packfile, expected.Packfile)
+	req.Packfile = nil
+	expected.Packfile = nil
+	c.Assert(req, DeepEquals, expected)
+}
+
+func (s *UpdReqDecodeSuite) testDecodeOkExpected(c *C, expected *ReferenceUpdateRequest, payloads []string) {
+	req := s.testDecodeOK(c, payloads)
+	c.Assert(req.Packfile, NotNil)
+	s.compareReaders(c, req.Packfile, expected.Packfile)
+	req.Packfile = nil
+	expected.Packfile = nil
+	c.Assert(req, DeepEquals, expected)
+}
+
+func (s *UpdReqDecodeSuite) compareReaders(c *C, a io.ReadCloser, b io.ReadCloser) {
+	pba, err := ioutil.ReadAll(a)
+	c.Assert(err, IsNil)
+	c.Assert(a.Close(), IsNil)
+	pbb, err := ioutil.ReadAll(b)
+	c.Assert(err, IsNil)
+	c.Assert(b.Close(), IsNil)
+	c.Assert(pba, DeepEquals, pbb)
 }

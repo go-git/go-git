@@ -231,6 +231,8 @@ const (
 	SymRef Capability = "symref"
 )
 
+const DefaultAgent = "go-git/4.x"
+
 var valid = map[Capability]bool{
 	MultiACK: true, MultiACKDetailed: true, NoDone: true, ThinPack: true,
 	Sideband: true, Sideband64k: true, OFSDelta: true, Agent: true,

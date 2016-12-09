@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
@@ -76,23 +77,32 @@ func errMalformedCommand(err error) error {
 
 // Decode reads the next update-request message form the reader and wr
 func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
-	d := &updReqDecoder{s: pktline.NewScanner(r)}
+	var rc io.ReadCloser
+	var ok bool
+	rc, ok = r.(io.ReadCloser)
+	if !ok {
+		rc = ioutil.NopCloser(r)
+	}
+
+	d := &updReqDecoder{r: rc, s: pktline.NewScanner(r)}
 	return d.Decode(req)
 }
 
 type updReqDecoder struct {
-	s *pktline.Scanner
-	r *ReferenceUpdateRequest
+	r   io.ReadCloser
+	s   *pktline.Scanner
+	req *ReferenceUpdateRequest
 }
 
-func (d *updReqDecoder) Decode(r *ReferenceUpdateRequest) error {
-	d.r = r
+func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
+	d.req = req
 	funcs := []func() error{
 		d.scanLine,
 		d.decodeShallow,
 		d.decodeCommandAndCapabilities,
 		d.decodeCommands,
-		r.validate,
+		d.setPackfile,
+		req.validate,
 	}
 
 	for _, f := range funcs {
@@ -132,7 +142,7 @@ func (d *updReqDecoder) decodeShallow() error {
 		return d.scanErrorOr(errNoCommands)
 	}
 
-	d.r.Shallow = &h
+	d.req.Shallow = &h
 
 	return nil
 }
@@ -149,7 +159,7 @@ func (d *updReqDecoder) decodeCommands() error {
 			return err
 		}
 
-		d.r.Commands = append(d.r.Commands, c)
+		d.req.Commands = append(d.req.Commands, c)
 
 		if ok := d.s.Scan(); !ok {
 			return d.s.Err()
@@ -173,15 +183,21 @@ func (d *updReqDecoder) decodeCommandAndCapabilities() error {
 		return err
 	}
 
-	d.r.Commands = append(d.r.Commands, cmd)
+	d.req.Commands = append(d.req.Commands, cmd)
 
-	if err := d.r.Capabilities.Decode(b[i+1:]); err != nil {
+	if err := d.req.Capabilities.Decode(b[i+1:]); err != nil {
 		return err
 	}
 
 	if err := d.scanLine(); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (d *updReqDecoder) setPackfile() error {
+	d.req.Packfile = d.r
 
 	return nil
 }

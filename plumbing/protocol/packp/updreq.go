@@ -2,6 +2,7 @@ package packp
 
 import (
 	"errors"
+	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
@@ -20,6 +21,8 @@ type ReferenceUpdateRequest struct {
 	Capabilities *capability.List
 	Commands     []*Command
 	Shallow      *plumbing.Hash
+	// Packfile contains an optional packfile reader.
+	Packfile io.ReadCloser
 }
 
 // New returns a pointer to a new ReferenceUpdateRequest value.
@@ -28,6 +31,37 @@ func NewReferenceUpdateRequest() *ReferenceUpdateRequest {
 		Capabilities: capability.NewList(),
 		Commands:     nil,
 	}
+}
+
+// NewReferenceUpdateRequestFromCapabilities returns a pointer to a new
+// ReferenceUpdateRequest value, the request capabilities are filled with the
+// most optimal ones, based on the adv value (advertised capabilities), the
+// ReferenceUpdateRequest contains no commands
+//
+// It does set the following capabilities:
+//   - agent
+//   - report-status
+//   - ofs-delta
+//   - ref-delta
+// It leaves up to the user to add the following capabilities later:
+//   - atomic
+//   - ofs-delta
+//   - side-band
+//   - side-band-64k
+//   - quiet
+//   - push-cert
+func NewReferenceUpdateRequestFromCapabilities(adv *capability.List) *ReferenceUpdateRequest {
+	r := NewReferenceUpdateRequest()
+
+	if adv.Supports(capability.Agent) {
+		r.Capabilities.Set(capability.Agent, capability.DefaultAgent)
+	}
+
+	if adv.Supports(capability.ReportStatus) {
+		r.Capabilities.Set(capability.ReportStatus)
+	}
+
+	return r
 }
 
 func (r *ReferenceUpdateRequest) validate() error {

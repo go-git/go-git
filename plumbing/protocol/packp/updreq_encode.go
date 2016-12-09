@@ -29,6 +29,14 @@ func (r *ReferenceUpdateRequest) Encode(w io.Writer) error {
 		return err
 	}
 
+	if r.Packfile != nil {
+		if _, err := io.Copy(w, r.Packfile); err != nil {
+			return err
+		}
+
+		return r.Packfile.Close()
+	}
+
 	return nil
 }
 

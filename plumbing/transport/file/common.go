@@ -69,6 +69,10 @@ func (c *command) StdoutPipe() (io.Reader, error) {
 
 // Close waits for the command to exit.
 func (c *command) Close() error {
+	if c.closed {
+		return nil
+	}
+
 	return c.cmd.Process.Kill()
 }
 
