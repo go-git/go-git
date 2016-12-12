@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/config"
@@ -10,8 +11,10 @@ import (
 
 const (
 	remoteSection = "remote"
+	coreSection   = "core"
 	fetchKey      = "fetch"
 	urlKey        = "url"
+	bareKey       = "bare"
 )
 
 type ConfigStorage struct {
@@ -26,11 +29,8 @@ func (c *ConfigStorage) Config() (*config.Config, error) {
 		return nil, err
 	}
 
-	sect := ini.Section(remoteSection)
-	for _, s := range sect.Subsections {
-		r := c.unmarshalRemote(s)
-		cfg.Remotes[r.Name] = r
-	}
+	c.unmarshalCore(cfg, ini)
+	c.unmarshalRemotes(cfg, ini)
 
 	return cfg, nil
 }
@@ -55,6 +55,21 @@ func (c *ConfigStorage) unmarshal() (*gitconfig.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func (c *ConfigStorage) unmarshalCore(cfg *config.Config, ini *gitconfig.Config) {
+	s := ini.Section(coreSection)
+	if s.Options.Get(bareKey) == "true" {
+		cfg.Core.IsBare = true
+	}
+}
+
+func (c *ConfigStorage) unmarshalRemotes(cfg *config.Config, ini *gitconfig.Config) {
+	s := ini.Section(remoteSection)
+	for _, sub := range s.Subsections {
+		r := c.unmarshalRemote(sub)
+		cfg.Remotes[r.Name] = r
+	}
 }
 
 func (c *ConfigStorage) unmarshalRemote(s *gitconfig.Subsection) *config.RemoteConfig {
@@ -83,6 +98,17 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
 		return err
 	}
 
+	c.marshalCore(cfg, ini)
+	c.marshalRemotes(cfg, ini)
+	return c.marshal(ini)
+}
+
+func (c *ConfigStorage) marshalCore(cfg *config.Config, ini *gitconfig.Config) {
+	s := ini.Section(coreSection)
+	s.AddOption(bareKey, fmt.Sprintf("%t", cfg.Core.IsBare))
+}
+
+func (c *ConfigStorage) marshalRemotes(cfg *config.Config, ini *gitconfig.Config) {
 	s := ini.Section(remoteSection)
 	s.Subsections = make(gitconfig.Subsections, len(cfg.Remotes))
 
@@ -91,8 +117,16 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
 		s.Subsections[i] = c.marshalRemote(r)
 		i++
 	}
+}
 
-	return c.marshal(ini)
+func (c *ConfigStorage) marshalRemote(r *config.RemoteConfig) *gitconfig.Subsection {
+	s := &gitconfig.Subsection{Name: r.Name}
+	s.AddOption(urlKey, r.URL)
+	for _, rs := range r.Fetch {
+		s.AddOption(fetchKey, rs.String())
+	}
+
+	return s
 }
 
 func (c *ConfigStorage) marshal(ini *gitconfig.Config) error {
@@ -105,14 +139,4 @@ func (c *ConfigStorage) marshal(ini *gitconfig.Config) error {
 
 	e := gitconfig.NewEncoder(f)
 	return e.Encode(ini)
-}
-
-func (c *ConfigStorage) marshalRemote(r *config.RemoteConfig) *gitconfig.Subsection {
-	s := &gitconfig.Subsection{Name: r.Name}
-	s.AddOption(urlKey, r.URL)
-	for _, rs := range r.Fetch {
-		s.AddOption(fetchKey, rs.String())
-	}
-
-	return s
 }

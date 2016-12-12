@@ -26,6 +26,9 @@ var (
 
 // Config contains the repository configuration
 type Config struct {
+	Core struct {
+		IsBare bool
+	}
 	Remotes map[string]*RemoteConfig
 }
 

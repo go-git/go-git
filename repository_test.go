@@ -118,6 +118,27 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestCloneConfig(c *C) {
+	r := NewMemoryRepository()
+
+	head, err := r.Head()
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	c.Assert(head, IsNil)
+
+	err = r.Clone(&CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+
+	c.Assert(cfg.Core.IsBare, Equals, true)
+	c.Assert(cfg.Remotes, HasLen, 1)
+	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
+	c.Assert(cfg.Remotes["origin"].URL, Not(Equals), "")
+}
 func (s *RepositorySuite) TestCloneNonEmpty(c *C) {
 	r := NewMemoryRepository()
 

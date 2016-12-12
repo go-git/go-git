@@ -58,6 +58,11 @@ func NewRepository(s Storer) (*Repository, error) {
 	}, nil
 }
 
+// Config return the repository config
+func (r *Repository) Config() (*config.Config, error) {
+	return r.s.Config()
+}
+
 // Remote return a remote if exists
 func (r *Repository) Remote(name string) (*Remote, error) {
 	cfg, err := r.s.Config()
@@ -142,6 +147,12 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
+	// marks the repository as bare in the config, until we have Worktree, all
+	// the repository are bare
+	if err := r.setIsBare(true); err != nil {
+		return err
+	}
+
 	c := &config.RemoteConfig{
 		Name: o.RemoteName,
 		URL:  o.URL,
@@ -172,6 +183,16 @@ func (r *Repository) Clone(o *CloneOptions) error {
 	}
 
 	return r.createReferences(head)
+}
+
+func (r *Repository) setIsBare(isBare bool) error {
+	cfg, err := r.s.Config()
+	if err != nil {
+		return err
+	}
+
+	cfg.Core.IsBare = isBare
+	return r.s.SetConfig(cfg)
 }
 
 const refspecSingleBranch = "+refs/heads/%s:refs/remotes/%s/%[1]s"

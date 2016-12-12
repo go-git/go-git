@@ -265,6 +265,7 @@ func (s *BaseStorageSuite) TestIterReferences(c *C) {
 
 func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {
 	expected := config.NewConfig()
+	expected.Core.IsBare = true
 	expected.Remotes["foo"] = &config.RemoteConfig{
 		Name: "foo",
 		URL:  "http://foo/bar.git",
