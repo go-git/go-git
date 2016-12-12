@@ -3,50 +3,53 @@ package main
 import (
 	"fmt"
 
-	"github.com/fatih/color"
-
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/config"
+	. "gopkg.in/src-d/go-git.v4/examples"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 func main() {
 	// Create a new repository
-	color.Blue("git init")
+	Info("git init")
 	r := git.NewMemoryRepository()
 
 	// Add a new remote, with the default fetch refspec
-	// > git remote add example https://github.com/git-fixtures/basic.git
-	color.Blue("git remote add example https://github.com/git-fixtures/basic.git")
+	Info("git remote add example https://github.com/git-fixtures/basic.git")
 
-	r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "example",
 		URL:  "https://github.com/git-fixtures/basic.git",
 	})
 
-	// List remotes from a repository
-	// > git remotes -v
-	color.Blue("git remotes -v")
+	CheckIfError(err)
 
-	list, _ := r.Remotes()
+	// List remotes from a repository
+	Info("git remotes -v")
+
+	list, err := r.Remotes()
+	CheckIfError(err)
+
 	for _, r := range list {
 		fmt.Println(r)
 	}
 
 	// Pull using the create repository
-	// > git pull example
-	color.Blue("git pull example")
-
-	r.Pull(&git.PullOptions{
+	Info("git pull example")
+	err = r.Pull(&git.PullOptions{
 		RemoteName: "example",
 	})
 
+	CheckIfError(err)
+
 	// List the branches
 	// > git show-ref
-	color.Blue("git show-ref")
+	Info("git show-ref")
 
-	refs, _ := r.References()
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	refs, err := r.References()
+	CheckIfError(err)
+
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
 		// The HEAD is omitted in a `git show-ref` so we ignore the symbolic
 		// references, the HEAD
 		if ref.Type() == plumbing.SymbolicReference {
@@ -57,8 +60,11 @@ func main() {
 		return nil
 	})
 
+	CheckIfError(err)
+
 	// Delete the example remote
-	// > git remote rm example
-	color.Blue("git remote rm example")
-	r.DeleteRemote("example")
+	Info("git remote rm example")
+
+	err = r.DeleteRemote("example")
+	CheckIfError(err)
 }

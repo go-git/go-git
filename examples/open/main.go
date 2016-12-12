@@ -3,38 +3,33 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/src-d/go-git.v4"
+	. "gopkg.in/src-d/go-git.v4/examples"
 )
 
 func main() {
-	path, _ := filepath.Abs(os.Args[1])
-	fmt.Printf("Opening repository %q ...\n", path)
+	CheckArgs("<path>")
+	path := os.Args[1]
 
+	// We instance a new repository targeting the given path (the .git folder)
 	r, err := git.NewFilesystemRepository(path)
-	if err != nil {
-		panic(err)
-	}
+	CheckIfError(err)
 
-	iter, err := r.Commits()
-	if err != nil {
-		panic(err)
-	}
+	// Length of the HEAD history
+	Info("git rev-list HEAD --count")
 
-	defer iter.Close()
+	// ... retrieving the HEAD reference
+	ref, err := r.Head()
+	CheckIfError(err)
 
-	var count = 0
-	err = iter.ForEach(func(commit *git.Commit) error {
-		count++
-		fmt.Println(commit)
+	// ... retrieving the commit object
+	commit, err := r.Commit(ref.Hash())
+	CheckIfError(err)
 
-		return nil
-	})
+	// ... calculating the commit history
+	commits, err := commit.History()
+	CheckIfError(err)
 
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("total commits:", count)
+	fmt.Println(len(commits))
 }

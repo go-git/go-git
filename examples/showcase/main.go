@@ -2,41 +2,45 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/fatih/color"
-
 	"gopkg.in/src-d/go-git.v4"
+	. "gopkg.in/src-d/go-git.v4/examples"
 )
 
 func main() {
-	r, _ := git.NewFilesystemRepository(".git")
+	CheckArgs("<url>")
+	url := os.Args[1]
+
+	r := git.NewMemoryRepository()
 
 	// Clone the given repository, creating the remote, the local branches
 	// and fetching the objects, exactly as:
-	// > git clone https://github.com/git-fixtures/basic.git
-	color.Blue("git clone https://github.com/git-fixtures/basic.git")
+	Info("git clone %s", url)
 
-	r.Clone(&git.CloneOptions{
-		URL: "https://github.com/git-fixtures/basic.git",
-	})
+	err := r.Clone(&git.CloneOptions{URL: url})
+	CheckIfError(err)
 
 	// Getting the latest commit on the current branch
-	// > git log -1
-	color.Blue("git log -1")
+	Info("git log -1")
 
 	// ... retrieving the branch being pointed by HEAD
-	ref, _ := r.Head()
+	ref, err := r.Head()
+	CheckIfError(err)
+
 	// ... retrieving the commit object
 	commit, err := r.Commit(ref.Hash())
-	fmt.Println(commit, err)
+	CheckIfError(err)
+	fmt.Println(commit)
 
 	// List the tree from HEAD
-	// > git ls-tree -r HEAD
-	color.Blue("git ls-tree -r HEAD")
+	Info("git ls-tree -r HEAD")
 
 	// ... retrieve the tree from the commit
-	tree, _ := commit.Tree()
+	tree, err := commit.Tree()
+	CheckIfError(err)
+
 	// ... get the files iterator and print the file
 	tree.Files().ForEach(func(f *git.File) error {
 		fmt.Printf("100644 blob %s    %s\n", f.Hash, f.Name)
@@ -44,14 +48,14 @@ func main() {
 	})
 
 	// List the history of the repository
-	// > git log --oneline
-	color.Blue("git log --oneline")
+	Info("git log --oneline")
 
-	commits, _ := commit.History()
+	commits, err := commit.History()
+	CheckIfError(err)
+
 	for _, c := range commits {
 		hash := c.Hash.String()
 		line := strings.Split(c.Message, "\n")
 		fmt.Println(hash[:7], line[0])
 	}
-
 }
