@@ -120,7 +120,7 @@ var fixtures = Fixtures{{
 }, {
 	Tags:         []string{"empty", ".git"},
 	URL:          "https://github.com/git-fixtures/empty.git",
-	DotGitHash:   plumbing.NewHash("4abe340d8d378baf7c2bfb2854c0fa498642bac3"),
+	DotGitHash:   plumbing.NewHash("bf3fedcc8e20fd0dec9172987ceea0038d17b516"),
 	ObjectsCount: 0,
 }}
 
