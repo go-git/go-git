@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"strings"
-	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
@@ -48,13 +47,9 @@ func (c *command) SetAuth(auth transport.AuthMethod) error {
 // Start executes the command sending the required message to the TCP connection
 func (c *command) Start() error {
 	cmd := endpointToCommand(c.command, c.endpoint)
-	line, err := pktline.EncodeFromString(cmd)
-	if err != nil {
-		return err
-	}
 
-	_, err = c.conn.Write([]byte(line))
-	return err
+	e := pktline.NewEncoder(c.conn)
+	return e.Encode([]byte(cmd))
 }
 
 func (c *command) connect() error {
@@ -63,7 +58,7 @@ func (c *command) connect() error {
 	}
 
 	var err error
-	c.conn, err = net.DialTimeout("tcp", c.getHostWithPort(), time.Second)
+	c.conn, err = net.Dial("tcp", c.getHostWithPort())
 	if err != nil {
 		return err
 	}
