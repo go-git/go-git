@@ -50,3 +50,15 @@ func (r *readCloser) Close() error {
 func NewReadCloser(r io.Reader, c io.Closer) io.ReadCloser {
 	return &readCloser{Reader: r, closer: c}
 }
+
+type writeNopCloser struct {
+	io.Writer
+}
+
+func (writeNopCloser) Close() error { return nil }
+
+// WriteNopCloser returns a WriteCloser with a no-op Close method wrapping
+// the provided Writer w.
+func WriteNopCloser(w io.Writer) io.WriteCloser {
+	return writeNopCloser{w}
+}

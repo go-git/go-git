@@ -46,7 +46,7 @@ func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
 		pktline.FlushString,
 	}
 	r := toPktLines(c, payloads)
-	s.testDecoderErrorMatches(c, r, ".*too short")
+	s.testDecoderErrorMatches(c, r, ".*too short.*")
 }
 
 func (s *AdvRefsDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {

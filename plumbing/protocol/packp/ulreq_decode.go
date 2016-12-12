@@ -45,8 +45,12 @@ func (d *ulReqDecoder) Decode(v *UploadRequest) error {
 
 // fills out the parser stiky error
 func (d *ulReqDecoder) error(format string, a ...interface{}) {
-	d.err = fmt.Errorf("pkt-line %d: %s", d.nLine,
-		fmt.Sprintf(format, a...))
+	msg := fmt.Sprintf(
+		"pkt-line %d: %s", d.nLine,
+		fmt.Sprintf(format, a...),
+	)
+
+	d.err = NewErrUnexpectedData(msg, d.line)
 }
 
 // Reads a new pkt-line from the scanner, makes its payload available as

@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/file"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/git"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
@@ -14,6 +15,7 @@ var Protocols = map[string]transport.Client{
 	"http":  http.DefaultClient,
 	"https": http.DefaultClient,
 	"ssh":   ssh.DefaultClient,
+	"git":   git.DefaultClient,
 	"file":  file.DefaultClient,
 }
 

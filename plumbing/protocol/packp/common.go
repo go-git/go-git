@@ -1,5 +1,9 @@
 package packp
 
+import (
+	"fmt"
+)
+
 type stateFn func() stateFn
 
 const (
@@ -43,4 +47,24 @@ var (
 
 func isFlush(payload []byte) bool {
 	return len(payload) == 0
+}
+
+// ErrUnexpectedData represents an unexpected data decoding a message
+type ErrUnexpectedData struct {
+	Msg  string
+	Data []byte
+}
+
+// NewErrUnexpectedData returns a new ErrUnexpectedData containing the data and
+// the message given
+func NewErrUnexpectedData(msg string, data []byte) error {
+	return &ErrUnexpectedData{Msg: msg, Data: data}
+}
+
+func (err *ErrUnexpectedData) Error() string {
+	if len(err.Data) == 0 {
+		return err.Msg
+	}
+
+	return fmt.Sprintf("%s (%s)", err.Msg, err.Data)
 }

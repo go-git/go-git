@@ -132,22 +132,30 @@ func (c *client) newSession(s string, ep transport.Endpoint) (*session, error) {
 		return nil, err
 	}
 
+	return &session{
+		Stdin:         stdin,
+		Stdout:        stdout,
+		Command:       cmd,
+		errLines:      c.listenErrors(stderr),
+		isReceivePack: s == transport.ReceivePackServiceName,
+	}, nil
+}
+
+func (c *client) listenErrors(r io.Reader) chan string {
+	if r == nil {
+		return nil
+	}
+
 	errLines := make(chan string, errLinesBuffer)
 	go func() {
-		s := bufio.NewScanner(stderr)
+		s := bufio.NewScanner(r)
 		for s.Scan() {
 			line := string(s.Bytes())
 			errLines <- line
 		}
 	}()
 
-	return &session{
-		Stdin:         stdin,
-		Stdout:        stdout,
-		Command:       cmd,
-		errLines:      errLines,
-		isReceivePack: s == transport.ReceivePackServiceName,
-	}, nil
+	return errLines
 }
 
 // SetAuth delegates to the command's SetAuth.
@@ -163,38 +171,52 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 
 	ar := packp.NewAdvRefs()
 	if err := ar.Decode(s.Stdout); err != nil {
-		// If repository is not found, we get empty stdout and server
-		// writes an error to stderr.
-		if err == packp.ErrEmptyInput {
-			if err := s.checkNotFoundError(); err != nil {
-				return nil, err
-			}
-
-			return nil, io.ErrUnexpectedEOF
+		if err := s.handleAdvRefDecodeError(err); err != nil {
+			return nil, err
 		}
-
-		// For empty (but existing) repositories, we get empty
-		// advertised-references message. But valid. That is, it
-		// includes at least a flush.
-		if err == packp.ErrEmptyAdvRefs {
-			// Empty repositories are valid for git-receive-pack.
-			if s.isReceivePack {
-				return ar, nil
-			}
-
-			if err := s.finish(); err != nil {
-				return nil, err
-			}
-
-			return nil, transport.ErrEmptyRemoteRepository
-		}
-
-		return nil, err
 	}
 
 	transport.FilterUnsupportedCapabilities(ar.Capabilities)
 	s.advRefs = ar
 	return ar, nil
+}
+
+func (s *session) handleAdvRefDecodeError(err error) error {
+	// If repository is not found, we get empty stdout and server writes an
+	// error to stderr.
+	if err == packp.ErrEmptyInput {
+		if err := s.checkNotFoundError(); err != nil {
+			return err
+		}
+
+		return io.ErrUnexpectedEOF
+	}
+
+	// For empty (but existing) repositories, we get empty advertised-references
+	// message. But valid. That is, it includes at least a flush.
+	if err == packp.ErrEmptyAdvRefs {
+		// Empty repositories are valid for git-receive-pack.
+		if s.isReceivePack {
+			return nil
+		}
+
+		if err := s.finish(); err != nil {
+			return err
+		}
+
+		return transport.ErrEmptyRemoteRepository
+	}
+
+	// Some server sends the errors as normal content (git protocol), so when
+	// we try to decode it fails, we need to check the content of it, to detect
+	// not found errors
+	if uerr, ok := err.(*packp.ErrUnexpectedData); ok {
+		if isRepoNotFoundError(string(uerr.Data)) {
+			return transport.ErrRepositoryNotFound
+		}
+	}
+
+	return err
 }
 
 // FetchPack performs a request to the server to fetch a packfile. A reader is
@@ -317,6 +339,7 @@ var (
 	githubRepoNotFoundErr    = "ERROR: Repository not found."
 	bitbucketRepoNotFoundErr = "conq: repository does not exist."
 	localRepoNotFoundErr     = "does not appear to be a git repository"
+	gitProtocolNotFoundErr   = "ERR \n  Repository not found."
 )
 
 func isRepoNotFoundError(s string) bool {
@@ -329,6 +352,10 @@ func isRepoNotFoundError(s string) bool {
 	}
 
 	if strings.HasSuffix(s, localRepoNotFoundErr) {
+		return true
+	}
+
+	if strings.HasPrefix(s, gitProtocolNotFoundErr) {
 		return true
 	}
 
