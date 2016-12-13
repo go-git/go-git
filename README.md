@@ -1,28 +1,18 @@
-# go-git [![GoDoc](https://godoc.org/gopkg.in/src-d/go-git.v3?status.svg)](https://godoc.org/gopkg.in/src-d/go-git.v4) [![Build Status](https://travis-ci.org/src-d/go-git.svg)](https://travis-ci.org/src-d/go-git) [![codecov.io](https://codecov.io/github/src-d/go-git/coverage.svg)](https://codecov.io/github/src-d/go-git) [![codebeat badge](https://codebeat.co/badges/b6cb2f73-9e54-483d-89f9-4b95a911f40c)](https://codebeat.co/projects/github-com-src-d-go-git)
+# go-git [![GoDoc](https://godoc.org/gopkg.in/src-d/go-git.v4?status.svg)](https://godoc.org/gopkg.in/src-d/go-git.v4) [![Build Status](https://travis-ci.org/src-d/go-git.svg)](https://travis-ci.org/src-d/go-git) [![codecov.io](https://codecov.io/github/src-d/go-git/coverage.svg)](https://codecov.io/github/src-d/go-git) [![codebeat badge](https://codebeat.co/badges/b6cb2f73-9e54-483d-89f9-4b95a911f40c)](https://codebeat.co/projects/github-com-src-d-go-git)
 
-A low level and highly extensible git client library for **reading** repositories from git servers.  It is written in Go from scratch, without any C dependencies.
+A low level and highly extensible git implementation in **pure Go**. 
 
-We have been following the open/close principle in its design to facilitate extensions.
+*go-git* aims to reach the completeness of [libgit2](https://libgit2.github.com/) or [jgit](http://www.eclipse.org/jgit/), nowadays covers the **majority** of the plumbing **read operations** and **some** of the main **write operations**, but lacks the main porcelain operations such as merges.
 
-*go-git* does not claim to be a replacement of [git2go](https://github.com/libgit2/git2go) as its approach and functionality is quite different.
+It is **highly extensible**, we have been following the open/close principle in its design to facilitate extensions, mainly focusing the efforts on the persistence of the objects.
 
-### ok, but why? ...
+### ... is this production ready?
 
-At [source{d}](http://sourced.tech) we analyze almost **all** the public open source contributions made to git repositories in the world.
+The master branch represents the `v4` of the library, it is currently under active development and is planned to be released in early 2017.
 
-We want to extract detailed information from each GitHub repository, which requires downloading repository packfiles and analyzing them: extracting their code, authors, dates and the languages and ecosystems they use.  We are also interested in knowing who contributes to what, so we can tell top contributors from the more casual ones.
+If you are looking for a production ready version, please take a look to the [`v3`](https://github.com/src-d/go-git/tree/v3) which is being used in production at [source{d}](http://sourced.tech) since August 2015 to analyze all GitHub public repositories (i.e. 16M repositories).
 
-You can obtain all this information using the standard `git` command running over a local clone of a repository, but this simple solution does not scale well over millions of repositories: we want to avoid having local copies of the unpacked repositories in a regular file system; *go-git* allows us to work with an in-memory representation of repositories instead.
-
-### I see... but this is production ready?
-
-*Yes!!!*, we have been using *go-git* at [source{d}](http://sourced.tech) since August 2015 to analyze all GitHub public repositories (i.e. 16M of repositories).
-
-### Coming Soon
-
-Blame support: right now we are using a forward version of a line-tracking
-algorithm and we are having some problems handling merges. The plan is to get
-merges right and change to a backward line-tracking algorithm soon.
+We recommend the use of `v4` to develop new projects since it includes much new functionality and provides a more *idiomatic git* API 
 
 Installation
 ------------
@@ -37,36 +27,40 @@ go get -u gopkg.in/src-d/go-git.v4/...
 Examples
 --------
 
-Retrieving the commits for a given repository:
+Cloning a repository and printing the history of HEAD, just like `git log` does
+
+> Please note that the functions `CheckIfError` and `Inf`o used in the examples are from the [examples package](https://github.com/src-d/go-git/blob/master/examples/common.go#L17) just to be used in the examples.
+
 
 ```go
-r, err := git.NewRepository("https://github.com/src-d/go-git", nil)
-if err != nil {
-	panic(err)
-}
+// Instances an in-memory git repository
+r := git.NewMemoryRepository()
 
-if err := r.PullDefault(); err != nil {
-	panic(err)
-}
+// Clones the given repository, creating the remote, the local branches
+// and fetching the objects, exactly as:
+Info("git clone https://github.com/src-d/go-siva")
 
-iter, err := r.Commits()
-if err != nil {
-	panic(err)
-}
-defer iter.Close()
+err := r.Clone(&git.CloneOptions{URL: "https://github.com/src-d/go-siva"})
+CheckIfError(err)
 
-for {
-	//the commits are not sorted in any special order
-	commit, err := iter.Next()
-	if err != nil {
-		if err == io.EOF {
-			break
-		}
+// Gets the HEAD history from HEAD, just like does:
+Info("git log")
 
-		panic(err)
-	}
+// ... retrieves the branch pointed by HEAD
+ref, err := r.Head()
+CheckIfError(err)
 
-	fmt.Println(commit)
+// ... retrieves the commit object
+commit, err := r.Commit(ref.Hash())
+CheckIfError(err)
+
+// ... retrieves the commit history
+history, err := commit.History()
+CheckIfError(err)
+
+// ... just iterates over the commits, printing it
+for _, c := range history {
+    fmt.Println(c)
 }
 ```
 
@@ -90,100 +84,12 @@ Date:   2015-12-11 17:57:10 +0100 +0100
 ...
 ```
 
-Retrieving the latest commit for a given repository:
+You can find this [example](examples/log/main.go) and many other at the [examples](examples) folder
 
-```go
-r, err := git.NewRepository("https://github.com/src-d/go-git", nil)
-if err != nil {
-	panic(err)
-}
+Contribute
+----------
 
-if err := r.PullDefault(); err != nil {
-	panic(err)
-}
-
-hash, err := r.Remotes[git.DefaultRemoteName].Head()
-if err != nil {
-	panic(err)
-}
-
-commit, err := r.Commit(hash)
-if err != nil {
-	panic(err)
-}
-
-fmt.Println(commit)
-```
-
-Creating a repository from an ordinary local git directory (that has been
-previously prepared by running `git gc` on it).
-
-```go
-// Download any git repository and prepare it as as follows:
-//
-//   $ git clone https://github.com/src-d/go-git /tmp/go-git
-//   $ pushd /tmp/go-git ; git gc ; popd
-//
-// Then, create a go-git repository from the local content
-// and print its commits as follows:
-
-package main
-
-import (
-	"fmt"
-	"io"
-
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
-)
-
-func main() {
-	fs := fs.NewOS() // a simple proxy for the local host filesystem
-	path := "/tmp/go-git/.git"
-
-	repo, err := git.NewRepositoryFromFS(fs, path)
-	if err != nil {
-		panic(err)
-	}
-
-	iter, err := repo.Commits()
-	if err != nil {
-		panic(err)
-	}
-	defer iter.Close()
-
-	for {
-		commit, err := iter.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			panic(err)
-		}
-
-		fmt.Println(commit)
-	}
-}
-```
-
-Implementing your own filesystem will let you access repositories stored on
-remote services (e.g. amazon S3), see the
-[examples](https://github.com/src-d/go-git/tree/master/examples/fs_implementation/)
-directory for a simple filesystem implementation and usage.
-
-Wrapping
---------
-
-go-git can be wrapped into any language which supports shared library interop.
-[Python wrapper](https://github.com/src-d/gypogit) already exists.
-This is provided by "cshared" [cgo](https://golang.org/cmd/cgo/) files which can be built
-with `go build -o libgogit.so -buildmode=c-shared github.com/src-d/go-git/cshared`.
-
-Acknowledgements
-----------------
-
-The earlier versions of the [packfile reader](https://godoc.org/gopkg.in/src-d/go-git.v4/formats/packfile) are based on [git-chain](https://github.com/gitchain/gitchain/blob/master/git/pack.go), project done by [@yrashk](https://github.com/yrashk)
-
+If you are interested on contributing to go-git, open an [issue](https://github.com/src-d/go-git/issues) explaining which missing functionality you want to work in, and we will guide you through the implementation.
 
 License
 -------
