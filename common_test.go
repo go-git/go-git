@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
 
 	. "gopkg.in/check.v1"
@@ -16,6 +17,7 @@ func Test(t *testing.T) { TestingT(t) }
 type BaseSuite struct {
 	fixtures.Suite
 	Repository *Repository
+	Storer     storer.EncodedObjectStorer
 
 	cache map[string]*Repository
 }
@@ -31,6 +33,7 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 func (s *BaseSuite) buildBasicRepository(c *C) {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)
+	s.Storer = s.Repository.s
 }
 
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {

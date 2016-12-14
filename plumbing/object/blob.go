@@ -1,10 +1,11 @@
-package git
+package object
 
 import (
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 // Blob is used to store file data - it is generally a file.
@@ -12,7 +13,26 @@ type Blob struct {
 	Hash plumbing.Hash
 	Size int64
 
-	obj plumbing.Object
+	obj plumbing.EncodedObject
+}
+
+// GetBlob gets a blob from an object storer and decodes it.
+func GetBlob(s storer.EncodedObjectStorer, h plumbing.Hash) (*Blob, error) {
+	o, err := s.EncodedObject(plumbing.BlobObject, h)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecodeBlob(o)
+}
+
+func DecodeBlob(o plumbing.EncodedObject) (*Blob, error) {
+	b := &Blob{}
+	if err := b.Decode(o); err != nil {
+		return nil, err
+	}
+
+	return b, nil
 }
 
 // ID returns the object ID of the blob. The returned value will always match
@@ -30,8 +50,8 @@ func (b *Blob) Type() plumbing.ObjectType {
 	return plumbing.BlobObject
 }
 
-// Decode transforms a plumbing.Object into a Blob struct.
-func (b *Blob) Decode(o plumbing.Object) error {
+// Decode transforms a plumbing.EncodedObject into a Blob struct.
+func (b *Blob) Decode(o plumbing.EncodedObject) error {
 	if o.Type() != plumbing.BlobObject {
 		return ErrUnsupportedObject
 	}
@@ -43,18 +63,18 @@ func (b *Blob) Decode(o plumbing.Object) error {
 	return nil
 }
 
-// Encode transforms a Blob into a plumbing.Object.
-func (b *Blob) Encode(o plumbing.Object) error {
+// Encode transforms a Blob into a plumbing.EncodedObject.
+func (b *Blob) Encode(o plumbing.EncodedObject) error {
 	w, err := o.Writer()
 	if err != nil {
 		return err
 	}
-	defer checkClose(w, &err)
+	defer ioutil.CheckClose(w, &err)
 	r, err := b.Reader()
 	if err != nil {
 		return err
 	}
-	defer checkClose(r, &err)
+	defer ioutil.CheckClose(r, &err)
 	_, err = io.Copy(w, r)
 	o.SetType(plumbing.BlobObject)
 	return err
@@ -67,23 +87,23 @@ func (b *Blob) Reader() (io.ReadCloser, error) {
 
 // BlobIter provides an iterator for a set of blobs.
 type BlobIter struct {
-	storer.ObjectIter
-	r *Repository
+	storer.EncodedObjectIter
+	s storer.EncodedObjectStorer
 }
 
 // NewBlobIter returns a CommitIter for the given repository and underlying
 // object iterator.
 //
 // The returned BlobIter will automatically skip over non-blob objects.
-func NewBlobIter(r *Repository, iter storer.ObjectIter) *BlobIter {
-	return &BlobIter{iter, r}
+func NewBlobIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *BlobIter {
+	return &BlobIter{iter, s}
 }
 
 // Next moves the iterator to the next blob and returns a pointer to it. If it
 // has reached the end of the set it will return io.EOF.
 func (iter *BlobIter) Next() (*Blob, error) {
 	for {
-		obj, err := iter.ObjectIter.Next()
+		obj, err := iter.EncodedObjectIter.Next()
 		if err != nil {
 			return nil, err
 		}
@@ -92,8 +112,7 @@ func (iter *BlobIter) Next() (*Blob, error) {
 			continue
 		}
 
-		blob := &Blob{}
-		return blob, blob.Decode(obj)
+		return DecodeBlob(obj)
 	}
 }
 
@@ -101,16 +120,16 @@ func (iter *BlobIter) Next() (*Blob, error) {
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *BlobIter) ForEach(cb func(*Blob) error) error {
-	return iter.ObjectIter.ForEach(func(obj plumbing.Object) error {
+	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
 		if obj.Type() != plumbing.BlobObject {
 			return nil
 		}
 
-		blob := &Blob{}
-		if err := blob.Decode(obj); err != nil {
+		b, err := DecodeBlob(obj)
+		if err != nil {
 			return err
 		}
 
-		return cb(blob)
+		return cb(b)
 	})
 }

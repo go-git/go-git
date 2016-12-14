@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"time"
 
-	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 //export c_Signature_Name
@@ -16,7 +16,7 @@ func c_Signature_Name(s uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	sign := obj.(*git.Signature)
+	sign := obj.(*object.Signature)
 	return C.CString(sign.Name)
 }
 
@@ -26,7 +26,7 @@ func c_Signature_Email(s uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	sign := obj.(*git.Signature)
+	sign := obj.(*object.Signature)
 	return C.CString(sign.Email)
 }
 
@@ -36,13 +36,13 @@ func c_Signature_When(s uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	sign := obj.(*git.Signature)
+	sign := obj.(*object.Signature)
 	return C.CString(sign.When.Format(time.RFC3339))
 }
 
 //export c_Signature_Decode
 func c_Signature_Decode(b []byte) uint64 {
-	sign := git.Signature{}
+	sign := object.Signature{}
 	sign.Decode(b)
 	return uint64(RegisterObject(&sign))
 }
@@ -53,7 +53,7 @@ func c_Blob_get_Hash(b uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	blob := obj.(*git.Blob)
+	blob := obj.(*object.Blob)
 	return CBytes(blob.Hash[:])
 }
 
@@ -63,7 +63,7 @@ func c_Blob_Size(b uint64) int64 {
 	if !ok {
 		return -1
 	}
-	blob := obj.(*git.Blob)
+	blob := obj.(*object.Blob)
 	return blob.Size
 }
 
@@ -73,8 +73,8 @@ func c_Blob_Decode(o uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	cobj := obj.(*plumbing.Object)
-	blob := git.Blob{}
+	cobj := obj.(*plumbing.EncodedObject)
+	blob := object.Blob{}
 	blob.Decode(*cobj)
 	return uint64(RegisterObject(&blob))
 }
@@ -85,7 +85,7 @@ func c_Blob_Read(b uint64) (int, *C.char) {
 	if !ok {
 		return ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	blob := obj.(*git.Blob)
+	blob := obj.(*object.Blob)
 	reader, err := blob.Reader()
 	if err != nil {
 		return ErrorCodeInternal, C.CString(err.Error())
@@ -104,6 +104,6 @@ func c_Blob_Type(c uint64) int8 {
 	if !ok {
 		return -1
 	}
-	blob := obj.(*git.Blob)
+	blob := obj.(*object.Blob)
 	return int8(blob.Type())
 }

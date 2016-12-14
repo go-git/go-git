@@ -8,11 +8,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gopkg.in/src-d/go-git.v4/diff"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/utils/diff"
 )
 
-type Blame struct {
+type BlameResult struct {
 	Path  string
 	Rev   plumbing.Hash
 	Lines []*line
@@ -62,7 +63,7 @@ type Blame struct {
 // 1. Add memoization between revlist and assign.
 //
 // 2. It is using much more memory than needed, see the TODOs below.
-func (c *Commit) Blame(path string) (*Blame, error) {
+func Blame(c *object.Commit, path string) (*BlameResult, error) {
 	b := new(blame)
 	b.fRev = c
 	b.path = path
@@ -92,7 +93,7 @@ func (c *Commit) Blame(path string) (*Blame, error) {
 		return nil, err
 	}
 
-	return &Blame{
+	return &BlameResult{
 		Path:  path,
 		Rev:   c.Hash,
 		Lines: lines,
@@ -111,7 +112,7 @@ func newLine(author, text string) *line {
 	}
 }
 
-func newLines(contents []string, commits []*Commit) ([]*line, error) {
+func newLines(contents []string, commits []*object.Commit) ([]*line, error) {
 	if len(contents) != len(commits) {
 		return nil, errors.New("contents and commits have different length")
 	}
@@ -126,18 +127,18 @@ func newLines(contents []string, commits []*Commit) ([]*line, error) {
 // this struct is internally used by the blame function to hold its
 // inputs, outputs and state.
 type blame struct {
-	path  string      // the path of the file to blame
-	fRev  *Commit     // the commit of the final revision of the file to blame
-	revs  []*Commit   // the chain of revisions affecting the the file to blame
-	data  []string    // the contents of the file across all its revisions
-	graph [][]*Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
+	path  string             // the path of the file to blame
+	fRev  *object.Commit     // the commit of the final revision of the file to blame
+	revs  []*object.Commit   // the chain of revisions affecting the the file to blame
+	data  []string           // the contents of the file across all its revisions
+	graph [][]*object.Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
 }
 
 // calculte the history of a file "path", starting from commit "from", sorted by commit date.
 func (b *blame) fillRevs() error {
 	var err error
 
-	b.revs, err = b.fRev.References(b.path)
+	b.revs, err = References(b.fRev, b.path)
 	if err != nil {
 		return err
 	}
@@ -146,7 +147,7 @@ func (b *blame) fillRevs() error {
 
 // build graph of a file from its revision history
 func (b *blame) fillGraphAndData() error {
-	b.graph = make([][]*Commit, len(b.revs))
+	b.graph = make([][]*object.Commit, len(b.revs))
 	b.data = make([]string, len(b.revs)) // file contents in all the revisions
 	// for every revision of the file, starting with the first
 	// one...
@@ -162,13 +163,13 @@ func (b *blame) fillGraphAndData() error {
 		}
 		nLines := countLines(b.data[i])
 		// create a node for each line
-		b.graph[i] = make([]*Commit, nLines)
+		b.graph[i] = make([]*object.Commit, nLines)
 		// assign a commit to each node
 		// if this is the first revision, then the node is assigned to
 		// this first commit.
 		if i == 0 {
 			for j := 0; j < nLines; j++ {
-				b.graph[i][j] = (*Commit)(b.revs[i])
+				b.graph[i][j] = (*object.Commit)(b.revs[i])
 			}
 		} else {
 			// if this is not the first commit, then assign to the old
@@ -182,11 +183,11 @@ func (b *blame) fillGraphAndData() error {
 
 // sliceGraph returns a slice of commits (one per line) for a particular
 // revision of a file (0=first revision).
-func (b *blame) sliceGraph(i int) []*Commit {
+func (b *blame) sliceGraph(i int) []*object.Commit {
 	fVs := b.graph[i]
-	result := make([]*Commit, 0, len(fVs))
+	result := make([]*object.Commit, 0, len(fVs))
 	for _, v := range fVs {
-		c := Commit(*v)
+		c := object.Commit(*v)
 		result = append(result, &c)
 	}
 	return result
@@ -209,7 +210,7 @@ func (b *blame) assignOrigin(c, p int) {
 				b.graph[c][dl] = b.graph[p][sl]
 			case hunks[h].Type == 1:
 				dl++
-				b.graph[c][dl] = (*Commit)(b.revs[c])
+				b.graph[c][dl] = (*object.Commit)(b.revs[c])
 			case hunks[h].Type == -1:
 				sl++
 			default:
@@ -249,7 +250,7 @@ func (b *blame) GoString() string {
 }
 
 // utility function to pretty print the author.
-func prettyPrintAuthor(c *Commit) string {
+func prettyPrintAuthor(c *object.Commit) string {
 	return fmt.Sprintf("%s %s", c.Author.Name, c.Author.When.Format("2006-01-02"))
 }
 

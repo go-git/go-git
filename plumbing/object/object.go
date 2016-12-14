@@ -1,4 +1,4 @@
-package git
+package object
 
 import (
 	"bytes"
@@ -35,14 +35,44 @@ var ErrUnsupportedObject = errors.New("unsupported object type")
 //   	}
 //   }
 //
-// This interface is intentionally different from plumbing.Object, which is a lower
+// This interface is intentionally different from plumbing.EncodedObject, which is a lower
 // level interface used by storage implementations to read and write objects.
 type Object interface {
 	ID() plumbing.Hash
 	Type() plumbing.ObjectType
-	Decode(plumbing.Object) error
-	Encode(plumbing.Object) error
+	Decode(plumbing.EncodedObject) error
+	Encode(plumbing.EncodedObject) error
 }
+
+// GetObject gets an object from an object storer and decodes it.
+func GetObject(s storer.EncodedObjectStorer, h plumbing.Hash) (Object, error) {
+	o, err := s.EncodedObject(plumbing.AnyObject, h)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecodeObject(s, o)
+}
+
+// DecodeObject decodes an encoded object into an Object and associates it to
+// the given object storer.
+func DecodeObject(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (Object, error) {
+	switch o.Type() {
+	case plumbing.CommitObject:
+		return DecodeCommit(s, o)
+	case plumbing.TreeObject:
+		return DecodeTree(s, o)
+	case plumbing.BlobObject:
+		return DecodeBlob(o)
+	case plumbing.TagObject:
+		return DecodeTag(s, o)
+	default:
+		return nil, plumbing.ErrInvalidType
+	}
+}
+
+// DateFormat is the format being use in the orignal git implementation
+const DateFormat = "Mon Jan 02 15:04:05 2006 -0700"
 
 // Signature represents an action signed by a person
 type Signature struct {
@@ -117,21 +147,21 @@ func (s *Signature) String() string {
 
 // ObjectIter provides an iterator for a set of objects.
 type ObjectIter struct {
-	storer.ObjectIter
-	r *Repository
+	storer.EncodedObjectIter
+	s storer.EncodedObjectStorer
 }
 
 // NewObjectIter returns a ObjectIter for the given repository and underlying
 // object iterator.
-func NewObjectIter(r *Repository, iter storer.ObjectIter) *ObjectIter {
-	return &ObjectIter{iter, r}
+func NewObjectIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *ObjectIter {
+	return &ObjectIter{iter, s}
 }
 
 // Next moves the iterator to the next object and returns a pointer to it. If it
 // has reached the end of the set it will return io.EOF.
 func (iter *ObjectIter) Next() (Object, error) {
 	for {
-		obj, err := iter.ObjectIter.Next()
+		obj, err := iter.EncodedObjectIter.Next()
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +183,7 @@ func (iter *ObjectIter) Next() (Object, error) {
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *ObjectIter) ForEach(cb func(Object) error) error {
-	return iter.ObjectIter.ForEach(func(obj plumbing.Object) error {
+	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
 		o, err := iter.toObject(obj)
 		if err == plumbing.ErrInvalidType {
 			return nil
@@ -167,13 +197,13 @@ func (iter *ObjectIter) ForEach(cb func(Object) error) error {
 	})
 }
 
-func (iter *ObjectIter) toObject(obj plumbing.Object) (Object, error) {
+func (iter *ObjectIter) toObject(obj plumbing.EncodedObject) (Object, error) {
 	switch obj.Type() {
 	case plumbing.BlobObject:
 		blob := &Blob{}
 		return blob, blob.Decode(obj)
 	case plumbing.TreeObject:
-		tree := &Tree{r: iter.r}
+		tree := &Tree{s: iter.s}
 		return tree, tree.Decode(obj)
 	case plumbing.CommitObject:
 		commit := &Commit{}

@@ -1,4 +1,4 @@
-package git
+package object
 
 import (
 	"io"
@@ -10,7 +10,7 @@ import (
 )
 
 type BlobsSuite struct {
-	BaseSuite
+	BaseObjectsSuite
 }
 
 var _ = Suite(&BlobsSuite{})
@@ -63,8 +63,9 @@ func (s *BlobsSuite) TestBlobDecodeEncodeIdempotent(c *C) {
 }
 
 func (s *BlobsSuite) TestBlobIter(c *C) {
-	iter, err := s.Repository.Blobs()
+	encIter, err := s.Storer.IterEncodedObjects(plumbing.BlobObject)
 	c.Assert(err, IsNil)
+	iter := NewBlobIter(s.Storer, encIter)
 
 	blobs := []*Blob{}
 	iter.ForEach(func(b *Blob) error {
@@ -75,8 +76,9 @@ func (s *BlobsSuite) TestBlobIter(c *C) {
 	c.Assert(len(blobs) > 0, Equals, true)
 	iter.Close()
 
-	iter, err = s.Repository.Blobs()
+	encIter, err = s.Storer.IterEncodedObjects(plumbing.BlobObject)
 	c.Assert(err, IsNil)
+	iter = NewBlobIter(s.Storer, encIter)
 
 	i := 0
 	for {

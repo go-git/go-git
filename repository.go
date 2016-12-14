@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
@@ -296,124 +297,90 @@ func (r *Repository) Pull(o *PullOptions) error {
 	return r.createReferences(head)
 }
 
-// Commit return the commit with the given hash
-func (r *Repository) Commit(h plumbing.Hash) (*Commit, error) {
-	commit, err := r.Object(plumbing.CommitObject, h)
-	if err != nil {
-		return nil, err
-	}
-
-	return commit.(*Commit), nil
+// object.Commit return the commit with the given hash
+func (r *Repository) Commit(h plumbing.Hash) (*object.Commit, error) {
+	return object.GetCommit(r.s, h)
 }
 
 // Commits decode the objects into commits
-func (r *Repository) Commits() (*CommitIter, error) {
-	iter, err := r.s.IterObjects(plumbing.CommitObject)
+func (r *Repository) Commits() (*object.CommitIter, error) {
+	iter, err := r.s.IterEncodedObjects(plumbing.CommitObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewCommitIter(r, iter), nil
+	return object.NewCommitIter(r.s, iter), nil
 }
 
 // Tree return the tree with the given hash
-func (r *Repository) Tree(h plumbing.Hash) (*Tree, error) {
-	tree, err := r.Object(plumbing.TreeObject, h)
-	if err != nil {
-		return nil, err
-	}
-
-	return tree.(*Tree), nil
+func (r *Repository) Tree(h plumbing.Hash) (*object.Tree, error) {
+	return object.GetTree(r.s, h)
 }
 
 // Trees decodes the objects into trees
-func (r *Repository) Trees() (*TreeIter, error) {
-	iter, err := r.s.IterObjects(plumbing.TreeObject)
+func (r *Repository) Trees() (*object.TreeIter, error) {
+	iter, err := r.s.IterEncodedObjects(plumbing.TreeObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewTreeIter(r, iter), nil
+	return object.NewTreeIter(r.s, iter), nil
 }
 
 // Blob returns the blob with the given hash
-func (r *Repository) Blob(h plumbing.Hash) (*Blob, error) {
-	blob, err := r.Object(plumbing.BlobObject, h)
-	if err != nil {
-		return nil, err
-	}
-
-	return blob.(*Blob), nil
+func (r *Repository) Blob(h plumbing.Hash) (*object.Blob, error) {
+	return object.GetBlob(r.s, h)
 }
 
 // Blobs decodes the objects into blobs
-func (r *Repository) Blobs() (*BlobIter, error) {
-	iter, err := r.s.IterObjects(plumbing.BlobObject)
+func (r *Repository) Blobs() (*object.BlobIter, error) {
+	iter, err := r.s.IterEncodedObjects(plumbing.BlobObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewBlobIter(r, iter), nil
+	return object.NewBlobIter(r.s, iter), nil
 }
 
 // Tag returns a tag with the given hash.
-func (r *Repository) Tag(h plumbing.Hash) (*Tag, error) {
-	tag, err := r.Object(plumbing.TagObject, h)
-	if err != nil {
-		return nil, err
-	}
-
-	return tag.(*Tag), nil
+func (r *Repository) Tag(h plumbing.Hash) (*object.Tag, error) {
+	return object.GetTag(r.s, h)
 }
 
-// Tags returns a TagIter that can step through all of the annotated tags
+// Tags returns a object.TagIter that can step through all of the annotated tags
 // in the repository.
-func (r *Repository) Tags() (*TagIter, error) {
-	iter, err := r.s.IterObjects(plumbing.TagObject)
+func (r *Repository) Tags() (*object.TagIter, error) {
+	iter, err := r.s.IterEncodedObjects(plumbing.TagObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewTagIter(r, iter), nil
+	return object.NewTagIter(r.s, iter), nil
 }
 
 // Object returns an object with the given hash.
-func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (Object, error) {
-	obj, err := r.s.Object(t, h)
+func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Object, error) {
+	obj, err := r.s.EncodedObject(t, h)
 	if err != nil {
 		if err == plumbing.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
 		}
+
 		return nil, err
 	}
 
-	switch obj.Type() {
-	case plumbing.CommitObject:
-		commit := &Commit{r: r}
-		return commit, commit.Decode(obj)
-	case plumbing.TreeObject:
-		tree := &Tree{r: r}
-		return tree, tree.Decode(obj)
-	case plumbing.BlobObject:
-		blob := &Blob{}
-		return blob, blob.Decode(obj)
-	case plumbing.TagObject:
-		tag := &Tag{r: r}
-		return tag, tag.Decode(obj)
-	default:
-		return nil, plumbing.ErrInvalidType
-	}
+	return object.DecodeObject(r.s, obj)
 }
 
-// Objects returns an ObjectIter that can step through all of the annotated tags
+// Objects returns an object.ObjectIter that can step through all of the annotated tags
 // in the repository.
-func (r *Repository) Objects() (*ObjectIter, error) {
-	iter, err := r.s.IterObjects(plumbing.AnyObject)
+func (r *Repository) Objects() (*object.ObjectIter, error) {
+	iter, err := r.s.IterEncodedObjects(plumbing.AnyObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewObjectIter(r, iter), nil
+	return object.NewObjectIter(r.s, iter), nil
 }
 
 // Head returns the reference where HEAD is pointing to.

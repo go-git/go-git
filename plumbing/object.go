@@ -13,7 +13,7 @@ var (
 )
 
 // Object is a generic representation of any git object
-type Object interface {
+type EncodedObject interface {
 	Hash() Hash
 	Type() ObjectType
 	SetType(ObjectType)

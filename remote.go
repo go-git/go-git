@@ -15,6 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 var NoErrAlreadyUpToDate = errors.New("already up-to-date")
@@ -126,7 +127,7 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 		return err
 	}
 
-	defer checkClose(reader, &err)
+	defer ioutil.CheckClose(reader, &err)
 
 	if err = r.updateObjectStorage(
 		r.buildSidebandIfSupported(req.Capabilities, reader),
@@ -163,7 +164,7 @@ func (r *Remote) getWantedReferences(spec []config.RefSpec) ([]*plumbing.Referen
 			}
 		}
 
-		_, err := r.s.Object(plumbing.CommitObject, ref.Hash())
+		_, err := r.s.EncodedObject(plumbing.CommitObject, ref.Hash())
 		if err == plumbing.ErrObjectNotFound {
 			refs = append(refs, ref)
 			return nil
@@ -281,7 +282,7 @@ func (r *Remote) buildFetchedTags() error {
 			return nil
 		}
 
-		_, err := r.s.Object(plumbing.AnyObject, ref.Hash())
+		_, err := r.s.EncodedObject(plumbing.AnyObject, ref.Hash())
 		if err == plumbing.ErrObjectNotFound {
 			return nil
 		}

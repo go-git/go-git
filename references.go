@@ -3,8 +3,9 @@ package git
 import (
 	"io"
 
-	"gopkg.in/src-d/go-git.v4/diff"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/utils/diff"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -18,22 +19,22 @@ import (
 // - Cherry-picks are not detected unless there are no commits between them and
 //   therefore can appear repeated in the list.
 //   (see git path-id for hints on how to fix this).
-func (c *Commit) References(path string) ([]*Commit, error) {
-	var result []*Commit
+func References(c *object.Commit, path string) ([]*object.Commit, error) {
+	var result []*object.Commit
 	seen := make(map[plumbing.Hash]struct{}, 0)
-	if err := walkGraph(&result, &seen, c.r, c, path); err != nil {
+	if err := walkGraph(&result, &seen, c, path); err != nil {
 		return nil, err
 	}
 
-	SortCommits(result)
+	object.SortCommits(result)
 
 	// for merges of identical cherry-picks
 	return removeComp(path, result, equivalent)
 }
 
-// Recursive traversal of the commit graph, generating a linear history
-// of the path.
-func walkGraph(result *[]*Commit, seen *map[plumbing.Hash]struct{}, repo *Repository, current *Commit, path string) error {
+// Recursive traversal of the commit graph, generating a linear history of the
+// path.
+func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, current *object.Commit, path string) error {
 	// check and update seen
 	if _, ok := (*seen)[current.Hash]; ok {
 		return nil
@@ -67,12 +68,12 @@ func walkGraph(result *[]*Commit, seen *map[plumbing.Hash]struct{}, repo *Reposi
 			*result = append(*result, current)
 		}
 		// in any case, walk the parent
-		return walkGraph(result, seen, repo, parents[0], path)
+		return walkGraph(result, seen, parents[0], path)
 	default: // more than one parent contains the path
 		// TODO: detect merges that had a conflict, because they must be
 		// included in the result here.
 		for _, p := range parents {
-			err := walkGraph(result, seen, repo, p, path)
+			err := walkGraph(result, seen, p, path)
 			if err != nil {
 				return err
 			}
@@ -81,10 +82,10 @@ func walkGraph(result *[]*Commit, seen *map[plumbing.Hash]struct{}, repo *Reposi
 	return nil
 }
 
-// TODO: benchmark this making git.Commit.parent public instead of using
+// TODO: benchmark this making git.object.Commit.parent public instead of using
 // an iterator
-func parentsContainingPath(path string, c *Commit) []*Commit {
-	var result []*Commit
+func parentsContainingPath(path string, c *object.Commit) []*object.Commit {
+	var result []*object.Commit
 	iter := c.Parents()
 	for {
 		parent, err := iter.Next()
@@ -102,11 +103,11 @@ func parentsContainingPath(path string, c *Commit) []*Commit {
 
 // Returns an slice of the commits in "cs" that has the file "path", but with different
 // contents than what can be found in "c".
-func differentContents(path string, c *Commit, cs []*Commit) ([]*Commit, error) {
-	result := make([]*Commit, 0, len(cs))
+func differentContents(path string, c *object.Commit, cs []*object.Commit) ([]*object.Commit, error) {
+	result := make([]*object.Commit, 0, len(cs))
 	h, found := blobHash(path, c)
 	if !found {
-		return nil, ErrFileNotFound
+		return nil, object.ErrFileNotFound
 	}
 	for _, cx := range cs {
 		if hx, found := blobHash(path, cx); found && h != hx {
@@ -117,7 +118,7 @@ func differentContents(path string, c *Commit, cs []*Commit) ([]*Commit, error) 
 }
 
 // blobHash returns the hash of a path in a commit
-func blobHash(path string, commit *Commit) (hash plumbing.Hash, found bool) {
+func blobHash(path string, commit *object.Commit) (hash plumbing.Hash, found bool) {
 	file, err := commit.File(path)
 	if err != nil {
 		var empty plumbing.Hash
@@ -126,13 +127,13 @@ func blobHash(path string, commit *Commit) (hash plumbing.Hash, found bool) {
 	return file.Hash, true
 }
 
-type contentsComparatorFn func(path string, a, b *Commit) (bool, error)
+type contentsComparatorFn func(path string, a, b *object.Commit) (bool, error)
 
 // Returns a new slice of commits, with duplicates removed.  Expects a
 // sorted commit list.  Duplication is defined according to "comp".  It
 // will always keep the first commit of a series of duplicated commits.
-func removeComp(path string, cs []*Commit, comp contentsComparatorFn) ([]*Commit, error) {
-	result := make([]*Commit, 0, len(cs))
+func removeComp(path string, cs []*object.Commit, comp contentsComparatorFn) ([]*object.Commit, error) {
+	result := make([]*object.Commit, 0, len(cs))
 	if len(cs) == 0 {
 		return result, nil
 	}
@@ -150,7 +151,7 @@ func removeComp(path string, cs []*Commit, comp contentsComparatorFn) ([]*Commit
 }
 
 // Equivalent commits are commits whose patch is the same.
-func equivalent(path string, a, b *Commit) (bool, error) {
+func equivalent(path string, a, b *object.Commit) (bool, error) {
 	numParentsA := a.NumParents()
 	numParentsB := b.NumParents()
 
@@ -172,7 +173,7 @@ func equivalent(path string, a, b *Commit) (bool, error) {
 	return sameDiffs(diffsA, diffsB), nil
 }
 
-func patch(c *Commit, path string) ([]diffmatchpatch.Diff, error) {
+func patch(c *object.Commit, path string) ([]diffmatchpatch.Diff, error) {
 	// get contents of the file in the commit
 	file, err := c.File(path)
 	if err != nil {

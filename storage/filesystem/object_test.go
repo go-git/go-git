@@ -20,7 +20,7 @@ func (s *FsSuite) TestGetFromObjectFile(c *C) {
 	c.Assert(err, IsNil)
 
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
-	obj, err := o.Object(plumbing.AnyObject, expected)
+	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
 	c.Assert(err, IsNil)
 	c.Assert(obj.Hash(), Equals, expected)
 }
@@ -32,7 +32,7 @@ func (s *FsSuite) TestGetFromPackfile(c *C) {
 		c.Assert(err, IsNil)
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-		obj, err := o.Object(plumbing.AnyObject, expected)
+		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
 		c.Assert(err, IsNil)
 		c.Assert(obj.Hash(), Equals, expected)
 	})
@@ -60,11 +60,11 @@ func (s *FsSuite) TestIter(c *C) {
 		o, err := newObjectStorage(dotgit.New(fs))
 		c.Assert(err, IsNil)
 
-		iter, err := o.IterObjects(plumbing.AnyObject)
+		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
 		c.Assert(err, IsNil)
 
 		var count int32
-		err = iter.ForEach(func(o plumbing.Object) error {
+		err = iter.ForEach(func(o plumbing.EncodedObject) error {
 			count++
 			return nil
 		})
@@ -80,10 +80,10 @@ func (s *FsSuite) TestIterWithType(c *C) {
 		o, err := newObjectStorage(dotgit.New(fs))
 		c.Assert(err, IsNil)
 
-		iter, err := o.IterObjects(plumbing.CommitObject)
+		iter, err := o.IterEncodedObjects(plumbing.CommitObject)
 		c.Assert(err, IsNil)
 
-		err = iter.ForEach(func(o plumbing.Object) error {
+		err = iter.ForEach(func(o plumbing.EncodedObject) error {
 			c.Assert(o.Type(), Equals, plumbing.CommitObject)
 			return nil
 		})

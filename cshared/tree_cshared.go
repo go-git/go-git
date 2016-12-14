@@ -21,7 +21,7 @@ func c_Tree_get_Entries_len(t uint64) int {
 	if !ok {
 		return 0
 	}
-	tree := obj.(*git.Tree)
+	tree := obj.(*object.Tree)
 	return len(tree.Entries)
 }
 
@@ -33,7 +33,7 @@ func c_Tree_get_Entries_item(t uint64, index int) (*_Ctype_char, uint32, *_Ctype
 	if !ok {
 		return nil, 0, nil
 	}
-	tree := obj.(*git.Tree)
+	tree := obj.(*object.Tree)
 	item := tree.Entries[index]
 	return _Cfunc_CString(item.Name), uint32(item.Mode), CBytes(item.Hash[:])
 }
@@ -46,7 +46,7 @@ func c_Tree_get_Hash(t uint64) *_Ctype_char {
 	if !ok {
 		return nil
 	}
-	tree := obj.(*git.Tree)
+	tree := obj.(*object.Tree)
 	return CBytes(tree.Hash[:])
 }
 
@@ -58,7 +58,7 @@ func c_Tree_File(t uint64, path string) (uint64, int, *_Ctype_char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
-	tree := obj.(*git.Tree)
+	tree := obj.(*object.Tree)
 	file, err := tree.File(CopyString(path))
 	if err != nil {
 		return IH, ErrorCodeInternal, _Cfunc_CString(err.Error())
@@ -74,7 +74,7 @@ func c_Tree_Type(t uint64) int8 {
 	if !ok {
 		return -1
 	}
-	tree := obj.(*git.Tree)
+	tree := obj.(*object.Tree)
 	return int8(tree.Type())
 }
 
@@ -86,7 +86,7 @@ func c_Tree_Files(t uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	tree := obj.(*git.Tree)
+	tree := obj.(*object.Tree)
 	iter := tree.Files()
 	return uint64(RegisterObject(iter))
 }
@@ -99,8 +99,8 @@ func c_Tree_Decode(o uint64) (uint64, int, *_Ctype_char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
-	cobj := obj.(*plumbing.Object)
-	tree := git.Tree{}
+	cobj := obj.(*plumbing.EncodedObject)
+	tree := object.Tree{}
 	err := tree.Decode(*cobj)
 	if err != nil {
 		return IH, ErrorCodeInternal, _Cfunc_CString(err.Error())
@@ -121,8 +121,8 @@ func c_NewTreeWalker(r uint64, t uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	tree := obj.(*git.Tree)
-	walker := git.NewTreeIter(repo, tree)
+	tree := obj.(*object.Tree)
+	walker := object.NewTreeIter(repo, tree)
 	return uint64(RegisterObject(walker))
 }
 
@@ -134,7 +134,7 @@ func c_TreeWalker_Next(tw uint64) (*_Ctype_char, *_Ctype_char, uint32, *_Ctype_c
 	if !ok {
 		return nil, nil, 0, nil, ErrorCodeNotFound, _Cfunc_CString(MessageNotFound)
 	}
-	walker := obj.(*git.TreeIter)
+	walker := obj.(*object.TreeIter)
 	name, entry, err := walker.Next()
 	if err != nil {
 		return nil, nil, 0, nil, ErrorCodeInternal, _Cfunc_CString(err.Error())
@@ -151,7 +151,7 @@ func c_TreeWalker_Tree(tw uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	walker := obj.(*git.TreeIter)
+	walker := obj.(*object.TreeIter)
 	return uint64(RegisterObject(walker.Tree()))
 }
 
@@ -163,7 +163,7 @@ func c_TreeWalker_Close(tw uint64) {
 	if !ok {
 		return
 	}
-	walker := obj.(*git.TreeIter)
+	walker := obj.(*object.TreeIter)
 	walker.Close()
 }
 */

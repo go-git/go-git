@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+
 	. "gopkg.in/src-d/go-git.v4/examples"
 )
 
@@ -42,7 +44,7 @@ func main() {
 	CheckIfError(err)
 
 	// ... get the files iterator and print the file
-	tree.Files().ForEach(func(f *git.File) error {
+	tree.Files().ForEach(func(f *object.File) error {
 		fmt.Printf("100644 blob %s    %s\n", f.Hash, f.Name)
 		return nil
 	})

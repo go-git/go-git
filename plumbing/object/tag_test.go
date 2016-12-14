@@ -1,40 +1,41 @@
-package git
+package object
 
 import (
 	"fmt"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+
+	. "gopkg.in/check.v1"
 )
 
 type TagSuite struct {
-	BaseSuite
+	BaseObjectsSuite
 }
 
 var _ = Suite(&TagSuite{})
 
 func (s *TagSuite) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
-	s.Repository = s.NewRepository(fixtures.ByURL("https://github.com/git-fixtures/tags.git").One())
+	s.BaseObjectsSuite.SetUpSuite(c)
+	storer, err := filesystem.NewStorage(fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit())
+	c.Assert(err, IsNil)
+	s.Storer = storer
 }
 
 func (s *TagSuite) TestName(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(tag.Name, Equals, "annotated-tag")
 }
 
 func (s *TagSuite) TestTagger(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(tag.Tagger.String(), Equals, "Máximo Cuadros <mcuadros@gmail.com>")
 }
 
 func (s *TagSuite) TestAnnotated(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(tag.Message, Equals, "example annotated tag\n")
 
 	commit, err := tag.Commit()
@@ -44,8 +45,7 @@ func (s *TagSuite) TestAnnotated(c *C) {
 }
 
 func (s *TagSuite) TestCommit(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	c.Assert(tag.Message, Equals, "a tagged commit\n")
 
 	commit, err := tag.Commit()
@@ -55,8 +55,7 @@ func (s *TagSuite) TestCommit(c *C) {
 }
 
 func (s *TagSuite) TestBlob(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
 	c.Assert(tag.Message, Equals, "a tagged blob\n")
 
 	blob, err := tag.Blob()
@@ -66,8 +65,7 @@ func (s *TagSuite) TestBlob(c *C) {
 }
 
 func (s *TagSuite) TestTree(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"))
 	c.Assert(tag.Message, Equals, "a tagged tree\n")
 
 	tree, err := tag.Tree()
@@ -77,8 +75,7 @@ func (s *TagSuite) TestTree(c *C) {
 }
 
 func (s *TagSuite) TestTreeFromCommit(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	c.Assert(tag.Message, Equals, "a tagged commit\n")
 
 	tree, err := tag.Tree()
@@ -88,8 +85,7 @@ func (s *TagSuite) TestTreeFromCommit(c *C) {
 }
 
 func (s *TagSuite) TestObject(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 
 	obj, err := tag.Object()
 	c.Assert(err, IsNil)
@@ -98,11 +94,11 @@ func (s *TagSuite) TestObject(c *C) {
 }
 
 func (s *TagSuite) TestTagItter(c *C) {
-	iter, err := s.Repository.s.IterObjects(plumbing.TagObject)
+	iter, err := s.Storer.IterEncodedObjects(plumbing.TagObject)
 	c.Assert(err, IsNil)
 
 	var count int
-	i := NewTagIter(s.Repository, iter)
+	i := NewTagIter(s.Storer, iter)
 	err = i.ForEach(func(t *Tag) error {
 		count++
 		return nil
@@ -113,10 +109,10 @@ func (s *TagSuite) TestTagItter(c *C) {
 }
 
 func (s *TagSuite) TestTagIterError(c *C) {
-	iter, err := s.Repository.s.IterObjects(plumbing.TagObject)
+	iter, err := s.Storer.IterEncodedObjects(plumbing.TagObject)
 	c.Assert(err, IsNil)
 
-	i := NewTagIter(s.Repository, iter)
+	i := NewTagIter(s.Storer, iter)
 	err = i.ForEach(func(t *Tag) error {
 		return fmt.Errorf("a random error")
 	})
@@ -155,8 +151,7 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 }
 
 func (s *TagSuite) TestString(c *C) {
-	tag, err := s.Repository.Tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
-	c.Assert(err, IsNil)
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	c.Assert(tag.String(), Equals, ""+
 		"tag annotated-tag\n"+
 		"Tagger: Máximo Cuadros <mcuadros@gmail.com>\n"+

@@ -9,8 +9,9 @@ import (
 
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
-import "gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 //export c_Commit_get_Hash
 func c_Commit_get_Hash(c uint64) *C.char {
@@ -18,7 +19,7 @@ func c_Commit_get_Hash(c uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	return CBytes(commit.Hash[:])
 }
 
@@ -28,7 +29,7 @@ func c_Commit_get_Author(c uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	author := &commit.Author
 	author_handle := RegisterObject(author)
 	return uint64(author_handle)
@@ -40,7 +41,7 @@ func c_Commit_get_Committer(c uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	committer := &commit.Committer
 	committer_handle := RegisterObject(committer)
 	return uint64(committer_handle)
@@ -52,7 +53,7 @@ func c_Commit_get_Message(c uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	return C.CString(commit.Message)
 }
 
@@ -62,7 +63,7 @@ func c_Commit_Tree(c uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	tree, err := commit.Tree()
 	if err != nil {
 		return IH
@@ -78,7 +79,7 @@ func c_Commit_Parents(c uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	parents := commit.Parents()
 	parents_handle := RegisterObject(parents)
 	return uint64(parents_handle)
@@ -90,7 +91,7 @@ func c_Commit_NumParents(c uint64) int {
 	if !ok {
 		return -1
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	return commit.NumParents()
 }
 
@@ -100,7 +101,7 @@ func c_Commit_File(c uint64, path string) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	file, err := commit.File(CopyString(path))
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -120,18 +121,18 @@ func c_Commit_Type(c uint64) int8 {
 	if !ok {
 		return -1
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	return int8(commit.Type())
 }
 
 //export c_Commit_Decode
 func c_Commit_Decode(o uint64) (uint64, int, *C.char) {
-	commit := git.Commit{}
+	commit := object.Commit{}
 	obj, ok := GetObject(Handle(o))
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	cobj := obj.(*plumbing.Object)
+	cobj := obj.(*plumbing.EncodedObject)
 	err := commit.Decode(*cobj)
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -145,7 +146,7 @@ func c_Commit_String(c uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	commit := obj.(*git.Commit)
+	commit := obj.(*object.Commit)
 	return C.CString(commit.String())
 }
 
@@ -155,8 +156,8 @@ func c_Commit_References(c uint64, path string) (*C.char, int, int, *C.char) {
 	if !ok {
 		return nil, 0, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	commit := obj.(*git.Commit)
-	refs, err := commit.References(CopyString(path))
+	commit := obj.(*object.Commit)
+	refs, err := git.References(commit, CopyString(path))
 	if err != nil {
 		return nil, 0, ErrorCodeInternal, C.CString(err.Error())
 	}
@@ -178,8 +179,8 @@ func c_Commit_Blame(c uint64, path string) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	commit := obj.(*git.Commit)
-	blame, err := commit.Blame(CopyString(path))
+	commit := obj.(*object.Commit)
+	blame, err := git.Blame(commit, CopyString(path))
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
 	}
@@ -192,13 +193,13 @@ func c_NewCommitIter(r uint64, iter uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	repo := obj.(*git.Repository)
+	s := obj.(storer.EncodedObjectStorer)
 	obj, ok = GetObject(Handle(iter))
 	if !ok {
 		return IH
 	}
-	obj_iter := obj.(*storer.ObjectIter)
-	commit_iter := git.NewCommitIter(repo, *obj_iter)
+	obj_iter := obj.(storer.EncodedObjectIter)
+	commit_iter := object.NewCommitIter(s, obj_iter)
 	handle := RegisterObject(commit_iter)
 	return uint64(handle)
 }
@@ -209,7 +210,7 @@ func c_CommitIter_Next(iter uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	commitIter := obj.(*git.CommitIter)
+	commitIter := obj.(*object.CommitIter)
 	commit, err := commitIter.Next()
 	if err != nil {
 		if err == io.EOF {

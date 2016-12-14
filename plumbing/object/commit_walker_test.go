@@ -1,19 +1,15 @@
-package git
+package object
 
 import . "gopkg.in/check.v1"
 
 type CommitWalkerSuite struct {
-	BaseSuite
+	BaseObjectsSuite
 }
 
 var _ = Suite(&CommitWalkerSuite{})
 
 func (s *CommitWalkerSuite) TestWalkerNext(c *C) {
-	r, err := s.Repository.Head()
-	c.Assert(err, IsNil)
-
-	commit, err := s.Repository.Commit(r.Hash())
-	c.Assert(err, IsNil)
+	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
 

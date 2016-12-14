@@ -2,15 +2,76 @@ package git
 
 import (
 	"sort"
+	"testing"
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
 
+func Test(t *testing.T) { TestingT(t) }
+
 type DiffTreeSuite struct {
-	BaseSuite
+	fixtures.Suite
+	Storer  storer.EncodedObjectStorer
+	Fixture *fixtures.Fixture
+	cache   map[string]storer.EncodedObjectStorer
+}
+
+func (s *DiffTreeSuite) SetUpSuite(c *C) {
+	s.Suite.SetUpSuite(c)
+	s.Fixture = fixtures.Basic().One()
+	sto, err := filesystem.NewStorage(s.Fixture.DotGit())
+	c.Assert(err, IsNil)
+	s.Storer = sto
+	s.cache = make(map[string]storer.EncodedObjectStorer)
+}
+
+func (s *DiffTreeSuite) tree(c *C, h plumbing.Hash) *object.Tree {
+	t, err := object.GetTree(s.Storer, h)
+	c.Assert(err, IsNil)
+	return t
+}
+
+func (s *DiffTreeSuite) commitFromStorer(c *C, sto storer.EncodedObjectStorer,
+	h plumbing.Hash) *object.Commit {
+
+	commit, err := object.GetCommit(sto, h)
+	c.Assert(err, IsNil)
+	return commit
+}
+
+func (s *DiffTreeSuite) storageFromPackfile(f *fixtures.Fixture) storer.EncodedObjectStorer {
+	sto, ok := s.cache[f.URL]
+	if ok {
+		return sto
+	}
+
+	sto = memory.NewStorage()
+
+	pf := f.Packfile()
+
+	defer pf.Close()
+
+	n := packfile.NewScanner(pf)
+	d, err := packfile.NewDecoder(n, sto)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = d.Decode()
+	if err != nil {
+		panic(err)
+	}
+
+	s.cache[f.URL] = sto
+	return sto
 }
 
 var _ = Suite(&DiffTreeSuite{})
@@ -37,8 +98,7 @@ func (s *DiffTreeSuite) TestActionString(c *C) {
 }
 
 func (s *DiffTreeSuite) TestChangeFilesInsert(c *C) {
-	tree, err := s.Repository.Tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
-	c.Assert(err, IsNil)
+	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := &Change{Action: Insert}
 	change.To.Name = "json/long.json"
@@ -52,8 +112,7 @@ func (s *DiffTreeSuite) TestChangeFilesInsert(c *C) {
 }
 
 func (s *DiffTreeSuite) TestChangeFilesDelete(c *C) {
-	tree, err := s.Repository.Tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
-	c.Assert(err, IsNil)
+	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := &Change{Action: Delete}
 	change.From.Name = "json/long.json"
@@ -67,8 +126,7 @@ func (s *DiffTreeSuite) TestChangeFilesDelete(c *C) {
 }
 
 func (s *DiffTreeSuite) TestChangeFilesModify(c *C) {
-	tree, err := s.Repository.Tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
-	c.Assert(err, IsNil)
+	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := &Change{Action: Modify}
 	change.To.Name = "json/long.json"
@@ -308,17 +366,21 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 			{Action: Modify, Name: "app-tools/rumprun"},
 		},
 	}} {
-		r := s.NewRepositoryFromPackfile(fixtures.ByURL(t.repository).One())
+		f := fixtures.ByURL(t.repository).One()
+		sto := s.storageFromPackfile(f)
 
-		tree1, err := tree(r, t.commit1)
-		c.Assert(err, IsNil,
-			Commentf("subtest %d: unable to retrieve tree from commit %s and repo %s: %s", i, t.commit1, t.repository, err))
+		var tree1, tree2 *object.Tree
+		var err error
+		if t.commit1 != "" {
+			tree1, err = s.commitFromStorer(c, sto,
+				plumbing.NewHash(t.commit1)).Tree()
+			c.Assert(err, IsNil,
+				Commentf("subtest %d: unable to retrieve tree from commit %s and repo %s: %s", i, t.commit1, t.repository, err))
+		}
 
-		var tree2 *Tree
-		if t.commit1 == t.commit2 {
-			tree2 = tree1
-		} else {
-			tree2, err = tree(r, t.commit2)
+		if t.commit2 != "" {
+			tree2, err = s.commitFromStorer(c, sto,
+				plumbing.NewHash(t.commit2)).Tree()
 			c.Assert(err, IsNil,
 				Commentf("subtest %d: unable to retrieve tree from commit %s and repo %s", i, t.commit2, t.repository, err))
 		}
@@ -351,14 +413,6 @@ func assertChanges(a Changes, c *C) {
 }
 
 func equalChanges(a Changes, b []expectChange) bool {
-	if a == nil && b == nil {
-		return true
-	}
-
-	if a == nil || b == nil {
-		return false
-	}
-
 	if len(a) != len(b) {
 		return false
 	}
@@ -373,17 +427,4 @@ func equalChanges(a Changes, b []expectChange) bool {
 	}
 
 	return true
-}
-
-func tree(repo *Repository, commitHashStr string) (*Tree, error) {
-	if commitHashStr == "" {
-		return nil, nil
-	}
-
-	commit, err := repo.Commit(plumbing.NewHash(commitHashStr))
-	if err != nil {
-		return nil, err
-	}
-
-	return commit.Tree()
 }

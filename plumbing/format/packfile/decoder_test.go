@@ -95,7 +95,7 @@ func (s *ReaderSuite) TestDecodeNoSeekableWithTxStorer(c *C) {
 
 		scanner := packfile.NewScanner(reader)
 
-		var storage storer.ObjectStorer = memory.NewStorage()
+		var storage storer.EncodedObjectStorer = memory.NewStorage()
 		_, isTxStorer := storage.(storer.Transactioner)
 		c.Assert(isTxStorer, Equals, true)
 
@@ -119,7 +119,7 @@ func (s *ReaderSuite) TestDecodeNoSeekableWithoutTxStorer(c *C) {
 
 		scanner := packfile.NewScanner(reader)
 
-		var storage storer.ObjectStorer
+		var storage storer.EncodedObjectStorer
 		storage, _ = filesystem.NewStorage(fs.New())
 		_, isTxStorer := storage.(storer.Transactioner)
 		c.Assert(isTxStorer, Equals, false)
@@ -236,18 +236,18 @@ func (s *ReaderSuite) TestSetOffsets(c *C) {
 	c.Assert(o[h], Equals, int64(42))
 }
 
-func assertObjects(c *C, s storer.ObjectStorer, expects []string) {
+func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
 
-	i, err := s.IterObjects(plumbing.AnyObject)
+	i, err := s.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
 	var count int
-	err = i.ForEach(func(plumbing.Object) error { count++; return nil })
+	err = i.ForEach(func(plumbing.EncodedObject) error { count++; return nil })
 	c.Assert(err, IsNil)
 	c.Assert(count, Equals, len(expects))
 
 	for _, exp := range expects {
-		obt, err := s.Object(plumbing.AnyObject, plumbing.NewHash(exp))
+		obt, err := s.EncodedObject(plumbing.AnyObject, plumbing.NewHash(exp))
 		c.Assert(err, IsNil)
 		c.Assert(obt.Hash().String(), Equals, exp)
 	}

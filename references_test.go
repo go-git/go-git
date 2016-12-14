@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
 	. "gopkg.in/check.v1"
 )
@@ -293,7 +294,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 		commit, err := r.Commit(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil)
 
-		revs, err := commit.References(t.path)
+		revs, err := References(commit, t.path)
 		c.Assert(err, IsNil)
 		c.Assert(len(revs), Equals, len(t.revs))
 
@@ -315,7 +316,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 }
 
 // same length is assumed
-func compareSideBySide(a []string, b []*Commit) string {
+func compareSideBySide(a []string, b []*object.Commit) string {
 	var buf bytes.Buffer
 	buf.WriteString("\t              EXPECTED                                          OBTAINED        ")
 	var sep string
@@ -352,10 +353,10 @@ func (s *ReferencesSuite) TestEquivalent(c *C) {
 }
 
 // returns the commits from a slice of hashes
-func (s *ReferencesSuite) commits(c *C, repo string, hs ...string) []*Commit {
+func (s *ReferencesSuite) commits(c *C, repo string, hs ...string) []*object.Commit {
 	r := s.NewRepositoryFromPackfile(fixtures.ByURL(repo).One())
 
-	result := make([]*Commit, 0, len(hs))
+	result := make([]*object.Commit, 0, len(hs))
 	for _, h := range hs {
 		commit, err := r.Commit(plumbing.NewHash(h))
 		c.Assert(err, IsNil)

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
@@ -400,7 +401,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 	tags, err := r.Tags()
 	c.Assert(err, IsNil)
 
-	tags.ForEach(func(tag *Tag) error {
+	tags.ForEach(func(tag *object.Tag) error {
 		count++
 
 		c.Assert(tag.Hash.IsZero(), Equals, false)

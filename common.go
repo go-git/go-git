@@ -1,7 +1,6 @@
 package git
 
 import (
-	"io"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/config"
@@ -13,7 +12,7 @@ import (
 // information in an system directory (such as `.git`) and others
 // implementations are in memmory being ephemeral
 type Storer interface {
-	storer.ObjectStorer
+	storer.EncodedObjectStorer
 	storer.ReferenceStorer
 	config.ConfigStorer
 }
@@ -34,26 +33,3 @@ func countLines(s string) int {
 
 	return nEOL + 1
 }
-
-// checkClose is used with defer to close the given io.Closer and check its
-// returned error value. If Close returns an error and the given *error
-// is not nil, *error is set to the error returned by Close.
-//
-// checkClose is typically used with named return values like so:
-//
-//   func do(obj *Object) (err error) {
-//     w, err := obj.Writer()
-//     if err != nil {
-//       return nil
-//     }
-//     defer checkClose(w, &err)
-//     // work with w
-//   }
-func checkClose(c io.Closer, err *error) {
-	if cerr := c.Close(); cerr != nil && *err == nil {
-		*err = cerr
-	}
-}
-
-// DateFormat is the format being use in the orignal git implementation
-const DateFormat = "Mon Jan 02 15:04:05 2006 -0700"

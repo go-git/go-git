@@ -17,17 +17,17 @@ const (
 
 // GetOFSDelta returns an offset delta that knows the way of how to transform
 // base object to target object
-func GetOFSDelta(base, target plumbing.Object) (plumbing.Object, error) {
+func GetOFSDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	return getDelta(base, target, plumbing.OFSDeltaObject)
 }
 
 // GetRefDelta returns a reference delta that knows the way of how to transform
 // base object to target object
-func GetRefDelta(base, target plumbing.Object) (plumbing.Object, error) {
+func GetRefDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	return getDelta(base, target, plumbing.REFDeltaObject)
 }
 
-func getDelta(base, target plumbing.Object, t plumbing.ObjectType) (plumbing.Object, error) {
+func getDelta(base, target plumbing.EncodedObject, t plumbing.ObjectType) (plumbing.EncodedObject, error) {
 	if t != plumbing.OFSDeltaObject && t != plumbing.REFDeltaObject {
 		return nil, fmt.Errorf("Type not supported: %v", t)
 	}

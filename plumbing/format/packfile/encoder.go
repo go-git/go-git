@@ -14,7 +14,7 @@ import (
 // Encoder gets the data from the storage and write it into the writer in PACK
 // format
 type Encoder struct {
-	storage storer.ObjectStorer
+	storage storer.EncodedObjectStorer
 	w       *offsetWriter
 	zw      *zlib.Writer
 	hasher  plumbing.Hasher
@@ -23,7 +23,7 @@ type Encoder struct {
 
 // NewEncoder creates a new packfile encoder using a specific Writer and
 // ObjectStorer
-func NewEncoder(w io.Writer, s storer.ObjectStorer) *Encoder {
+func NewEncoder(w io.Writer, s storer.EncodedObjectStorer) *Encoder {
 	h := plumbing.Hasher{
 		Hash: sha1.New(),
 	}
@@ -44,7 +44,7 @@ func NewEncoder(w io.Writer, s storer.ObjectStorer) *Encoder {
 func (e *Encoder) Encode(hashes []plumbing.Hash) (plumbing.Hash, error) {
 	var objects []*ObjectToPack
 	for _, h := range hashes {
-		o, err := e.storage.Object(plumbing.AnyObject, h)
+		o, err := e.storage.EncodedObject(plumbing.AnyObject, h)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}

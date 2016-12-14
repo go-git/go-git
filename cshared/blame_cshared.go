@@ -13,7 +13,7 @@ func c_Blame_get_Path(b uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	blame := obj.(*git.Blame)
+	blame := obj.(*git.BlameResult)
 	return C.CString(blame.Path)
 }
 
@@ -23,7 +23,7 @@ func c_Blame_get_Rev(b uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	blame := obj.(*git.Blame)
+	blame := obj.(*git.BlameResult)
 	return CBytes(blame.Rev[:])
 }
 
@@ -33,7 +33,7 @@ func c_Blame_get_Lines_len(b uint64) int {
 	if !ok {
 		return 0
 	}
-	blame := obj.(*git.Blame)
+	blame := obj.(*git.BlameResult)
 	return len(blame.Lines)
 }
 
@@ -43,7 +43,7 @@ func c_Blame_get_Lines_item(b uint64, i int) {
 	if !ok {
 		return
 	}
-	blame := obj.(*git.Blame)
+	blame := obj.(*git.BlameResult)
 	line := blame.Lines[i]
 	_ = line
 }

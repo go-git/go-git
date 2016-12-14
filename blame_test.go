@@ -29,13 +29,13 @@ func (s *BlameSuite) TestBlame(c *C) {
 		commit, err := r.Commit(plumbing.NewHash(t.rev))
 		c.Assert(err, IsNil)
 
-		obt, err := commit.Blame(t.path)
+		obt, err := Blame(commit, t.path)
 		c.Assert(err, IsNil)
 		c.Assert(obt, DeepEquals, exp)
 	}
 }
 
-func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *Blame) {
+func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *BlameResult) {
 	commit, err := r.Commit(plumbing.NewHash(t.rev))
 	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
 
@@ -57,7 +57,7 @@ func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *Blame) 
 		blamedLines = append(blamedLines, l)
 	}
 
-	return &Blame{
+	return &BlameResult{
 		Path:  t.path,
 		Rev:   plumbing.NewHash(t.rev),
 		Lines: blamedLines,

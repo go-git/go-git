@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 type Action int
@@ -39,13 +40,13 @@ type Change struct {
 
 type ChangeEntry struct {
 	Name      string
-	Tree      *Tree
-	TreeEntry TreeEntry
+	Tree      *object.Tree
+	TreeEntry object.TreeEntry
 }
 
-func (c *Change) Files() (from *File, to *File, err error) {
+func (c *Change) Files() (from, to *object.File, err error) {
 	if c.Action == Insert || c.Action == Modify {
-		to, err = newFileFromTreeEntry(c.To.Tree, &c.To.TreeEntry)
+		to, err = c.To.Tree.TreeEntryFile(&c.To.TreeEntry)
 		if err != nil {
 			return
 		}
@@ -53,22 +54,13 @@ func (c *Change) Files() (from *File, to *File, err error) {
 	}
 
 	if c.Action == Delete || c.Action == Modify {
-		from, err = newFileFromTreeEntry(c.From.Tree, &c.From.TreeEntry)
+		from, err = c.From.Tree.TreeEntryFile(&c.From.TreeEntry)
 		if err != nil {
 			return
 		}
 	}
 
 	return
-}
-
-func newFileFromTreeEntry(t *Tree, e *TreeEntry) (*File, error) {
-	blob, err := t.r.Blob(e.Hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFile(e.Name, e.Mode, blob), nil
 }
 
 func (c *Change) String() string {
@@ -89,7 +81,7 @@ func newEmpty() Changes {
 	return make([]*Change, 0, 0)
 }
 
-func DiffTree(a, b *Tree) ([]*Change, error) {
+func DiffTree(a, b *object.Tree) ([]*Change, error) {
 	if a == b {
 		return newEmpty(), nil
 	}
@@ -127,11 +119,11 @@ func (c Changes) String() string {
 	return buffer.String()
 }
 
-func newWithEmpty(a, b *Tree) (Changes, error) {
+func newWithEmpty(a, b *object.Tree) (Changes, error) {
 	changes := newEmpty()
 
 	var action Action
-	var tree *Tree
+	var tree *object.Tree
 	if a == nil {
 		action = Insert
 		tree = b
@@ -140,7 +132,7 @@ func newWithEmpty(a, b *Tree) (Changes, error) {
 		tree = a
 	}
 
-	w := NewTreeWalker(tree.r, tree, true)
+	w := object.NewTreeWalker(tree, true)
 	defer w.Close()
 
 	for {
@@ -177,7 +169,7 @@ func newWithEmpty(a, b *Tree) (Changes, error) {
 // The proper way to do this is to implement a diff-tree algorithm,
 // while taking advantage of the tree hashes to avoid traversing
 // subtrees when the hash is equal in both inputs.
-func newDiffTree(a, b *Tree) ([]*Change, error) {
+func newDiffTree(a, b *object.Tree) ([]*Change, error) {
 	var result []*Change
 
 	aChanges, err := newWithEmpty(a, nil)
@@ -236,7 +228,7 @@ func mergeInsertAndDeleteIntoModify(a, b *Change) *Change {
 	return c
 }
 
-func hasChange(a, b *Tree, path string) (bool, error) {
+func hasChange(a, b *object.Tree, path string) (bool, error) {
 	ha, err := hash(a, path)
 	if err != nil {
 		return false, err
@@ -250,7 +242,7 @@ func hasChange(a, b *Tree, path string) (bool, error) {
 	return ha != hb, nil
 }
 
-func hash(tree *Tree, path string) (plumbing.Hash, error) {
+func hash(tree *object.Tree, path string) (plumbing.Hash, error) {
 	file, err := tree.File(path)
 	if err != nil {
 		var empty plumbing.Hash

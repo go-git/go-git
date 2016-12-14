@@ -44,7 +44,7 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
 	o := &plumbing.MemoryObject{}
 	o.SetType(plumbing.CommitObject)
 	o.SetSize(0)
-	_, err := s.store.SetObject(o)
+	_, err := s.store.SetEncodedObject(o)
 	c.Assert(err, IsNil)
 
 	hash, err := s.enc.Encode([]plumbing.Hash{o.Hash()})
@@ -69,10 +69,10 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
 }
 
 func (s *EncoderSuite) TestMaxObjectSize(c *C) {
-	o := s.store.NewObject()
+	o := s.store.NewEncodedObject()
 	o.SetSize(9223372036854775807)
 	o.SetType(plumbing.CommitObject)
-	_, err := s.store.SetObject(o)
+	_, err := s.store.SetEncodedObject(o)
 	c.Assert(err, IsNil)
 	hash, err := s.enc.Encode([]plumbing.Hash{o.Hash()})
 	c.Assert(err, IsNil)
@@ -98,14 +98,14 @@ func (s *EncoderSuite) TestDecodeEncodeDecode(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(ch, Equals, f.PackfileHash)
 
-		objIter, err := d.o.IterObjects(plumbing.AnyObject)
+		objIter, err := d.o.IterEncodedObjects(plumbing.AnyObject)
 		c.Assert(err, IsNil)
 
-		objects := []plumbing.Object{}
+		objects := []plumbing.EncodedObject{}
 		hashes := []plumbing.Hash{}
-		err = objIter.ForEach(func(o plumbing.Object) error {
+		err = objIter.ForEach(func(o plumbing.EncodedObject) error {
 			objects = append(objects, o)
-			hash, err := s.store.SetObject(o)
+			hash, err := s.store.SetEncodedObject(o)
 			c.Assert(err, IsNil)
 
 			hashes = append(hashes, hash)
@@ -124,10 +124,10 @@ func (s *EncoderSuite) TestDecodeEncodeDecode(c *C) {
 		_, err = d.Decode()
 		c.Assert(err, IsNil)
 
-		objIter, err = d.o.IterObjects(plumbing.AnyObject)
+		objIter, err = d.o.IterEncodedObjects(plumbing.AnyObject)
 		c.Assert(err, IsNil)
-		obtainedObjects := []plumbing.Object{}
-		err = objIter.ForEach(func(o plumbing.Object) error {
+		obtainedObjects := []plumbing.EncodedObject{}
+		err = objIter.ForEach(func(o plumbing.EncodedObject) error {
 			obtainedObjects = append(obtainedObjects, o)
 
 			return nil
@@ -187,11 +187,11 @@ func (s *EncoderSuite) simpleDeltaTest(c *C, t plumbing.ObjectType) {
 	_, err = d.Decode()
 	c.Assert(err, IsNil)
 
-	decSrc, err := storage.Object(srcObject.Type(), srcObject.Hash())
+	decSrc, err := storage.EncodedObject(srcObject.Type(), srcObject.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(decSrc, DeepEquals, srcObject)
 
-	decTarget, err := storage.Object(targetObject.Type(), targetObject.Hash())
+	decTarget, err := storage.EncodedObject(targetObject.Type(), targetObject.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(decTarget, DeepEquals, targetObject)
 }
@@ -226,20 +226,20 @@ func (s *EncoderSuite) deltaOverDeltaTest(c *C, t plumbing.ObjectType) {
 	_, err = d.Decode()
 	c.Assert(err, IsNil)
 
-	decSrc, err := storage.Object(srcObject.Type(), srcObject.Hash())
+	decSrc, err := storage.EncodedObject(srcObject.Type(), srcObject.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(decSrc, DeepEquals, srcObject)
 
-	decTarget, err := storage.Object(targetObject.Type(), targetObject.Hash())
+	decTarget, err := storage.EncodedObject(targetObject.Type(), targetObject.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(decTarget, DeepEquals, targetObject)
 
-	decOtherTarget, err := storage.Object(otherTargetObject.Type(), otherTargetObject.Hash())
+	decOtherTarget, err := storage.EncodedObject(otherTargetObject.Type(), otherTargetObject.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(decOtherTarget, DeepEquals, otherTargetObject)
 }
 
-func delta(base, target plumbing.Object, t plumbing.ObjectType) (plumbing.Object, error) {
+func delta(base, target plumbing.EncodedObject, t plumbing.ObjectType) (plumbing.EncodedObject, error) {
 	switch t {
 	case plumbing.OFSDeltaObject:
 		return GetOFSDelta(base, target)
@@ -250,7 +250,7 @@ func delta(base, target plumbing.Object, t plumbing.ObjectType) (plumbing.Object
 	}
 }
 
-func newObject(t plumbing.ObjectType, cont []byte) plumbing.Object {
+func newObject(t plumbing.ObjectType, cont []byte) plumbing.EncodedObject {
 	o := plumbing.MemoryObject{}
 	o.SetType(t)
 	o.SetSize(int64(len(cont)))

@@ -5,17 +5,17 @@ import (
 	"C"
 	"io"
 
-	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
-import "gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 func c_Tag_get_Hash(t uint64) *C.char {
 	obj, ok := GetObject(Handle(t))
 	if !ok {
 		return nil
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return CBytes(tag.Hash[:])
 }
 
@@ -24,7 +24,7 @@ func c_Tag_get_Name(t uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return C.CString(tag.Name)
 }
 
@@ -33,7 +33,7 @@ func c_Tag_get_Tagger(t uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return uint64(RegisterObject(&tag.Tagger))
 }
 
@@ -42,7 +42,7 @@ func c_Tag_get_Message(t uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return C.CString(tag.Message)
 }
 
@@ -51,7 +51,7 @@ func c_Tag_get_TargetType(t uint64) int8 {
 	if !ok {
 		return -1
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return int8(tag.TargetType)
 }
 
@@ -60,7 +60,7 @@ func c_Tag_get_Target(t uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return CBytes(tag.Target[:])
 }
 
@@ -70,7 +70,7 @@ func c_Tag_Type(t uint64) int8 {
 	if !ok {
 		return -1
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return int8(tag.Type())
 }
 
@@ -80,8 +80,8 @@ func c_Tag_Decode(o uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	cobj := obj.(*plumbing.Object)
-	tag := git.Tag{}
+	cobj := obj.(*plumbing.EncodedObject)
+	tag := object.Tag{}
 	err := tag.Decode(*cobj)
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -95,7 +95,7 @@ func c_Tag_Commit(t uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	commit, err := tag.Commit()
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -109,7 +109,7 @@ func c_Tag_Tree(t uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	tree, err := tag.Tree()
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -123,7 +123,7 @@ func c_Tag_Blob(t uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	blob, err := tag.Blob()
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -137,7 +137,7 @@ func c_Tag_Object(t uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	object, err := tag.Object()
 	if err != nil {
 		return IH, ErrorCodeInternal, C.CString(err.Error())
@@ -151,7 +151,7 @@ func c_Tag_String(t uint64) *C.char {
 	if !ok {
 		return nil
 	}
-	tag := obj.(*git.Tag)
+	tag := obj.(*object.Tag)
 	return C.CString(tag.String())
 }
 
@@ -161,13 +161,13 @@ func c_NewTagIter(r uint64, i uint64) uint64 {
 	if !ok {
 		return IH
 	}
-	repo := obj.(*git.Repository)
+	s := obj.(storer.EncodedObjectStorer)
 	obj, ok = GetObject(Handle(i))
 	if !ok {
 		return IH
 	}
-	iter := obj.(*storer.ObjectIter)
-	return uint64(RegisterObject(git.NewTagIter(repo, *iter)))
+	iter := obj.(*storer.EncodedObjectIter)
+	return uint64(RegisterObject(object.NewTagIter(s, *iter)))
 }
 
 //export c_TagIter_Next
@@ -176,7 +176,7 @@ func c_TagIter_Next(i uint64) (uint64, int, *C.char) {
 	if !ok {
 		return IH, ErrorCodeNotFound, C.CString(MessageNotFound)
 	}
-	tagiter := obj.(*git.TagIter)
+	tagiter := obj.(*object.TagIter)
 	tag, err := tagiter.Next()
 	if err != nil {
 		if err == io.EOF {

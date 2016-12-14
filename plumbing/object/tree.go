@@ -1,4 +1,4 @@
-package git
+package object
 
 import (
 	"bufio"
@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 const (
@@ -33,8 +34,29 @@ type Tree struct {
 	Entries []TreeEntry
 	Hash    plumbing.Hash
 
-	r *Repository
+	s storer.EncodedObjectStorer
 	m map[string]*TreeEntry
+}
+
+// GetTree gets a tree from an object storer and decodes it.
+func GetTree(s storer.EncodedObjectStorer, h plumbing.Hash) (*Tree, error) {
+	o, err := s.EncodedObject(plumbing.TreeObject, h)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecodeTree(s, o)
+}
+
+// DecodeTree decodes an encoded object into a *Tree and associates it to the
+// given object storer.
+func DecodeTree(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Tree, error) {
+	t := &Tree{s: s}
+	if err := t.Decode(o); err != nil {
+		return nil, err
+	}
+
+	return t, nil
 }
 
 // TreeEntry represents a file
@@ -52,15 +74,22 @@ func (t *Tree) File(path string) (*File, error) {
 		return nil, ErrFileNotFound
 	}
 
-	obj, err := t.r.s.Object(plumbing.BlobObject, e.Hash)
+	blob, err := GetBlob(t.s, e.Hash)
 	if err != nil {
 		return nil, err
 	}
 
-	blob := &Blob{}
-	blob.Decode(obj)
-
 	return NewFile(path, e.Mode, blob), nil
+}
+
+// TreeEntryFile returns the *File for a given *TreeEntry.
+func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
+	blob, err := GetBlob(t.s, e.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewFile(e.Name, e.Mode, blob), nil
 }
 
 func (t *Tree) findEntry(path string) (*TreeEntry, error) {
@@ -85,12 +114,12 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 		return nil, errDirNotFound
 	}
 
-	obj, err := t.r.s.Object(plumbing.TreeObject, entry.Hash)
+	obj, err := t.s.EncodedObject(plumbing.TreeObject, entry.Hash)
 	if err != nil {
 		return nil, err
 	}
 
-	tree := &Tree{r: t.r}
+	tree := &Tree{s: t.s}
 	tree.Decode(obj)
 
 	return tree, nil
@@ -112,7 +141,7 @@ func (t *Tree) entry(baseName string) (*TreeEntry, error) {
 
 // Files returns a FileIter allowing to iterate over the Tree
 func (t *Tree) Files() *FileIter {
-	return NewFileIter(t.r, t)
+	return NewFileIter(t.s, t)
 }
 
 // ID returns the object ID of the tree. The returned value will always match
@@ -128,8 +157,8 @@ func (t *Tree) Type() plumbing.ObjectType {
 	return plumbing.TreeObject
 }
 
-// Decode transform an plumbing.Object into a Tree struct
-func (t *Tree) Decode(o plumbing.Object) (err error) {
+// Decode transform an plumbing.EncodedObject into a Tree struct
+func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.TreeObject {
 		return ErrUnsupportedObject
 	}
@@ -146,7 +175,7 @@ func (t *Tree) Decode(o plumbing.Object) (err error) {
 	if err != nil {
 		return err
 	}
-	defer checkClose(reader, &err)
+	defer ioutil.CheckClose(reader, &err)
 
 	r := bufio.NewReader(reader)
 	for {
@@ -202,8 +231,8 @@ func (t *Tree) decodeFileMode(mode string) (os.FileMode, error) {
 	return m, nil
 }
 
-// Encode transforms a Tree into a plumbing.Object.
-func (t *Tree) Encode(o plumbing.Object) error {
+// Encode transforms a Tree into a plumbing.EncodedObject.
+func (t *Tree) Encode(o plumbing.EncodedObject) error {
 	o.SetType(plumbing.TreeObject)
 	w, err := o.Writer()
 	if err != nil {
@@ -211,7 +240,7 @@ func (t *Tree) Encode(o plumbing.Object) error {
 	}
 
 	var size int
-	defer checkClose(w, &err)
+	defer ioutil.CheckClose(w, &err)
 	for _, entry := range t.Entries {
 		n, err := fmt.Fprintf(w, "%o %s", entry.Mode, entry.Name)
 		if err != nil {
@@ -263,15 +292,15 @@ type TreeWalker struct {
 	base      string
 	recursive bool
 
-	r *Repository
+	s storer.EncodedObjectStorer
 	t *Tree
 }
 
-// NewTreeWalker returns a new TreeWalker for the given repository and tree.
+// NewTreeWalker returns a new TreeWalker for the given tree.
 //
 // It is the caller's responsibility to call Close() when finished with the
 // tree walker.
-func NewTreeWalker(r *Repository, t *Tree, recursive bool) *TreeWalker {
+func NewTreeWalker(t *Tree, recursive bool) *TreeWalker {
 	stack := make([]treeEntryIter, 0, startingStackSize)
 	stack = append(stack, treeEntryIter{t, 0})
 
@@ -279,7 +308,7 @@ func NewTreeWalker(r *Repository, t *Tree, recursive bool) *TreeWalker {
 		stack:     stack,
 		recursive: recursive,
 
-		r: r,
+		s: t.s,
 		t: t,
 	}
 }
@@ -326,7 +355,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		}
 
 		if entry.Mode.IsDir() {
-			obj, err = w.r.Tree(entry.Hash)
+			obj, err = GetTree(w.s, entry.Hash)
 		}
 
 		name = path.Join(w.base, entry.Name)
@@ -372,23 +401,23 @@ func (w *TreeWalker) Close() {
 
 // TreeIter provides an iterator for a set of trees.
 type TreeIter struct {
-	storer.ObjectIter
-	r *Repository
+	storer.EncodedObjectIter
+	s storer.EncodedObjectStorer
 }
 
 // NewTreeIter returns a TreeIter for the given repository and underlying
 // object iterator.
 //
 // The returned TreeIter will automatically skip over non-tree objects.
-func NewTreeIter(r *Repository, iter storer.ObjectIter) *TreeIter {
-	return &TreeIter{iter, r}
+func NewTreeIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *TreeIter {
+	return &TreeIter{iter, s}
 }
 
 // Next moves the iterator to the next tree and returns a pointer to it. If it
 // has reached the end of the set it will return io.EOF.
 func (iter *TreeIter) Next() (*Tree, error) {
 	for {
-		obj, err := iter.ObjectIter.Next()
+		obj, err := iter.EncodedObjectIter.Next()
 		if err != nil {
 			return nil, err
 		}
@@ -397,8 +426,7 @@ func (iter *TreeIter) Next() (*Tree, error) {
 			continue
 		}
 
-		tree := &Tree{r: iter.r}
-		return tree, tree.Decode(obj)
+		return DecodeTree(iter.s, obj)
 	}
 }
 
@@ -406,16 +434,16 @@ func (iter *TreeIter) Next() (*Tree, error) {
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *TreeIter) ForEach(cb func(*Tree) error) error {
-	return iter.ObjectIter.ForEach(func(obj plumbing.Object) error {
+	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
 		if obj.Type() != plumbing.TreeObject {
 			return nil
 		}
 
-		tree := &Tree{r: iter.r}
-		if err := tree.Decode(obj); err != nil {
+		t, err := DecodeTree(iter.s, obj)
+		if err != nil {
 			return err
 		}
 
-		return cb(tree)
+		return cb(t)
 	})
 }

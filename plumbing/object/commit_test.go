@@ -1,4 +1,4 @@
-package git
+package object
 
 import (
 	"io"
@@ -8,28 +8,27 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 )
 
 type SuiteCommit struct {
-	BaseSuite
+	BaseObjectsSuite
 	Commit *Commit
 }
 
 var _ = Suite(&SuiteCommit{})
 
 func (s *SuiteCommit) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
+	s.BaseObjectsSuite.SetUpSuite(c)
 
 	hash := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
 
-	var err error
-	s.Commit, err = s.Repository.Commit(hash)
-	c.Assert(err, IsNil)
+	s.Commit = s.commit(c, hash)
 }
 
 func (s *SuiteCommit) TestDecodeNonCommit(c *C) {
 	hash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err := s.Repository.s.Object(plumbing.AnyObject, hash)
+	blob, err := s.Storer.EncodedObject(plumbing.AnyObject, hash)
 	c.Assert(err, IsNil)
 
 	commit := &Commit{}
@@ -132,9 +131,12 @@ func (s *SuiteCommit) TestString(c *C) {
 func (s *SuiteCommit) TestStringMultiLine(c *C) {
 	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
-	r := s.NewRepositoryFromPackfile(fixtures.ByURL("https://github.com/src-d/go-git.git").One())
+	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
+	sto, err := filesystem.NewStorage(f.DotGit())
 
-	commit, err := r.Commit(hash)
+	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
+	c.Assert(err, IsNil)
+	commit, err := DecodeCommit(sto, o)
 	c.Assert(err, IsNil)
 
 	c.Assert(commit.String(), Equals, ""+

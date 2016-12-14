@@ -15,13 +15,13 @@ import (
 )
 
 type Storer interface {
-	storer.ObjectStorer
+	storer.EncodedObjectStorer
 	storer.ReferenceStorer
 	config.ConfigStorer
 }
 
 type TestObject struct {
-	Object plumbing.Object
+	Object plumbing.EncodedObject
 	Hash   string
 	Type   plumbing.ObjectType
 }
@@ -59,19 +59,19 @@ func NewBaseStorageSuite(s Storer) BaseStorageSuite {
 		}}
 }
 
-func (s *BaseStorageSuite) TestSetObjectAndGetObject(c *C) {
+func (s *BaseStorageSuite) TestSetEncodedObjectAndEncodedObject(c *C) {
 	for _, to := range s.testObjects {
 		comment := Commentf("failed for type %s", to.Type.String())
 
-		h, err := s.Storer.SetObject(to.Object)
+		h, err := s.Storer.SetEncodedObject(to.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, to.Hash, comment)
 
-		o, err := s.Storer.Object(to.Type, h)
+		o, err := s.Storer.EncodedObject(to.Type, h)
 		c.Assert(err, IsNil)
 		c.Assert(objectEquals(o, to.Object), IsNil)
 
-		o, err = s.Storer.Object(plumbing.AnyObject, h)
+		o, err = s.Storer.EncodedObject(plumbing.AnyObject, h)
 		c.Assert(err, IsNil)
 		c.Assert(objectEquals(o, to.Object), IsNil)
 
@@ -80,31 +80,31 @@ func (s *BaseStorageSuite) TestSetObjectAndGetObject(c *C) {
 				continue
 			}
 
-			o, err = s.Storer.Object(t, h)
+			o, err = s.Storer.EncodedObject(t, h)
 			c.Assert(o, IsNil)
 			c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 		}
 	}
 }
 
-func (s *BaseStorageSuite) TestSetObjectInvalid(c *C) {
-	o := s.Storer.NewObject()
+func (s *BaseStorageSuite) TestSetEncodedObjectInvalid(c *C) {
+	o := s.Storer.NewEncodedObject()
 	o.SetType(plumbing.REFDeltaObject)
 
-	_, err := s.Storer.SetObject(o)
+	_, err := s.Storer.SetEncodedObject(o)
 	c.Assert(err, NotNil)
 }
 
-func (s *BaseStorageSuite) TestStorerIter(c *C) {
+func (s *BaseStorageSuite) TestIterEncodedObjects(c *C) {
 	for _, o := range s.testObjects {
-		h, err := s.Storer.SetObject(o.Object)
+		h, err := s.Storer.SetEncodedObject(o.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h, Equals, o.Object.Hash())
 	}
 
 	for _, t := range s.validTypes {
 		comment := Commentf("failed for type %s)", t.String())
-		i, err := s.Storer.IterObjects(t)
+		i, err := s.Storer.IterEncodedObjects(t)
 		c.Assert(err, IsNil, comment)
 
 		o, err := i.Next()
@@ -116,11 +116,11 @@ func (s *BaseStorageSuite) TestStorerIter(c *C) {
 		c.Assert(err, Equals, io.EOF, comment)
 	}
 
-	i, err := s.Storer.IterObjects(plumbing.AnyObject)
+	i, err := s.Storer.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
-	foundObjects := []plumbing.Object{}
-	i.ForEach(func(o plumbing.Object) error {
+	foundObjects := []plumbing.EncodedObject{}
+	i.ForEach(func(o plumbing.EncodedObject) error {
 		foundObjects = append(foundObjects, o)
 		return nil
 	})
@@ -138,7 +138,7 @@ func (s *BaseStorageSuite) TestStorerIter(c *C) {
 	}
 }
 
-func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
+func (s *BaseStorageSuite) TestObjectStorerTxSetEncodedObjectAndCommit(c *C) {
 	storer, ok := s.Storer.(storer.Transactioner)
 	if !ok {
 		c.Skip("not a plumbing.ObjectStorerTx")
@@ -146,12 +146,12 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
 
 	tx := storer.Begin()
 	for _, o := range s.testObjects {
-		h, err := tx.SetObject(o.Object)
+		h, err := tx.SetEncodedObject(o.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, o.Hash)
 	}
 
-	iter, err := s.Storer.IterObjects(plumbing.AnyObject)
+	iter, err := s.Storer.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
@@ -159,11 +159,11 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndCommit(c *C) {
 	err = tx.Commit()
 	c.Assert(err, IsNil)
 
-	iter, err = s.Storer.IterObjects(plumbing.AnyObject)
+	iter, err = s.Storer.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
 	var count int
-	iter.ForEach(func(o plumbing.Object) error {
+	iter.ForEach(func(o plumbing.EncodedObject) error {
 		count++
 		return nil
 	})
@@ -179,11 +179,11 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndGetObject(c *C) {
 
 	tx := storer.Begin()
 	for _, expected := range s.testObjects {
-		h, err := tx.SetObject(expected.Object)
+		h, err := tx.SetEncodedObject(expected.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, expected.Hash)
 
-		o, err := tx.Object(expected.Type, plumbing.NewHash(expected.Hash))
+		o, err := tx.EncodedObject(expected.Type, plumbing.NewHash(expected.Hash))
 		c.Assert(err, IsNil)
 		c.Assert(o.Hash().String(), DeepEquals, expected.Hash)
 	}
@@ -196,7 +196,7 @@ func (s *BaseStorageSuite) TestObjectStorerTxGetObjectNotFound(c *C) {
 	}
 
 	tx := storer.Begin()
-	o, err := tx.Object(plumbing.AnyObject, plumbing.ZeroHash)
+	o, err := tx.EncodedObject(plumbing.AnyObject, plumbing.ZeroHash)
 	c.Assert(o, IsNil)
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 }
@@ -209,7 +209,7 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
 
 	tx := storer.Begin()
 	for _, o := range s.testObjects {
-		h, err := tx.SetObject(o.Object)
+		h, err := tx.SetEncodedObject(o.Object)
 		c.Assert(err, IsNil)
 		c.Assert(h.String(), Equals, o.Hash)
 	}
@@ -217,7 +217,7 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
 	err := tx.Rollback()
 	c.Assert(err, IsNil)
 
-	iter, err := s.Storer.IterObjects(plumbing.AnyObject)
+	iter, err := s.Storer.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 	_, err = iter.Next()
 	c.Assert(err, Equals, io.EOF)
@@ -287,7 +287,7 @@ func (s *BaseStorageSuite) TestSetConfigInvalid(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func objectEquals(a plumbing.Object, b plumbing.Object) error {
+func objectEquals(a plumbing.EncodedObject, b plumbing.EncodedObject) error {
 	ha := a.Hash()
 	hb := b.Hash()
 	if ha != hb {
