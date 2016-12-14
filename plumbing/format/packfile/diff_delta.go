@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"fmt"
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -14,28 +15,53 @@ const (
 	maxCopyLen = 0xffff
 )
 
-// GetDelta returns the way of how to transform base object to target object
-func GetDelta(base, target plumbing.Object) ([]byte, error) {
-	baseReader, err := base.Reader()
+// GetOFSDelta returns an offset delta that knows the way of how to transform
+// base object to target object
+func GetOFSDelta(base, target plumbing.Object) (plumbing.Object, error) {
+	return getDelta(base, target, plumbing.OFSDeltaObject)
+}
+
+// GetRefDelta returns a reference delta that knows the way of how to transform
+// base object to target object
+func GetRefDelta(base, target plumbing.Object) (plumbing.Object, error) {
+	return getDelta(base, target, plumbing.REFDeltaObject)
+}
+
+func getDelta(base, target plumbing.Object, t plumbing.ObjectType) (plumbing.Object, error) {
+	if t != plumbing.OFSDeltaObject && t != plumbing.REFDeltaObject {
+		return nil, fmt.Errorf("Type not supported: %v", t)
+	}
+
+	br, err := base.Reader()
 	if err != nil {
 		return nil, err
 	}
-	targetReader, err := target.Reader()
+	tr, err := target.Reader()
 	if err != nil {
 		return nil, err
 	}
 
-	baseBuf, err := ioutil.ReadAll(baseReader)
+	bb, err := ioutil.ReadAll(br)
 	if err != nil {
 		return nil, err
 	}
 
-	targetBuf, err := ioutil.ReadAll(targetReader)
+	tb, err := ioutil.ReadAll(tr)
 	if err != nil {
 		return nil, err
 	}
 
-	return DiffDelta(baseBuf, targetBuf), nil
+	db := DiffDelta(bb, tb)
+	delta := &plumbing.MemoryObject{}
+	_, err = delta.Write(db)
+	if err != nil {
+		return nil, err
+	}
+
+	delta.SetSize(int64(len(db)))
+	delta.SetType(t)
+
+	return delta, nil
 }
 
 // DiffDelta returns the way of how to transform baseBuf to targetBuf

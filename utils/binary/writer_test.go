@@ -41,3 +41,19 @@ func (s *BinarySuite) TestWriteUint16(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(buf, DeepEquals, expected)
 }
+
+func (s *BinarySuite) TestWriteVariableWidthInt(c *C) {
+	buf := bytes.NewBuffer(nil)
+
+	err := WriteVariableWidthInt(buf, 366)
+	c.Assert(err, IsNil)
+	c.Assert(buf.Bytes(), DeepEquals, []byte{129, 110})
+}
+
+func (s *BinarySuite) TestWriteVariableWidthIntShort(c *C) {
+	buf := bytes.NewBuffer(nil)
+
+	err := WriteVariableWidthInt(buf, 19)
+	c.Assert(err, IsNil)
+	c.Assert(buf.Bytes(), DeepEquals, []byte{19})
+}

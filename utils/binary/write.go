@@ -17,6 +17,20 @@ func Write(w io.Writer, data ...interface{}) error {
 	return nil
 }
 
+func WriteVariableWidthInt(w io.Writer, n int64) error {
+	buf := []byte{byte(n & 0x7f)}
+	n >>= 7
+	for n != 0 {
+		n--
+		buf = append([]byte{0x80 | (byte(n & 0x7f))}, buf...)
+		n >>= 7
+	}
+
+	_, err := w.Write(buf)
+
+	return err
+}
+
 // WriteUint32 writes the binary representation of a uint32 into w, in BigEndian
 // order
 func WriteUint32(w io.Writer, value uint32) error {
