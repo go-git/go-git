@@ -134,39 +134,21 @@ func encodeCopyOperation(offset, length int) []byte {
 	code := 0x80
 	var opcodes []byte
 
-	if offset&0xff != 0 {
-		opcodes = append(opcodes, byte(offset&0xff))
-		code |= 0x01
+	var i uint
+	for i = 0; i < 4; i++ {
+		f := 0xff << (i * 8)
+		if offset&f != 0 {
+			opcodes = append(opcodes, byte(offset&f>>(i*8)))
+			code |= 0x01 << i
+		}
 	}
 
-	if offset&0xff00 != 0 {
-		opcodes = append(opcodes, byte((offset&0xff00)>>8))
-		code |= 0x02
-	}
-
-	if offset&0xff0000 != 0 {
-		opcodes = append(opcodes, byte((offset&0xff0000)>>16))
-		code |= 0x04
-	}
-
-	if offset&0xff000000 != 0 {
-		opcodes = append(opcodes, byte((offset&0xff000000)>>24))
-		code |= 0x08
-	}
-
-	if length&0xff != 0 {
-		opcodes = append(opcodes, byte(length&0xff))
-		code |= 0x10
-	}
-
-	if length&0xff00 != 0 {
-		opcodes = append(opcodes, byte((length&0xff00)>>8))
-		code |= 0x20
-	}
-
-	if length&0xff0000 != 0 {
-		opcodes = append(opcodes, byte((length&0xff0000)>>16))
-		code |= 0x40
+	for i = 0; i < 3; i++ {
+		f := 0xff << (i * 8)
+		if length&f != 0 {
+			opcodes = append(opcodes, byte(length&f>>(i*8)))
+			code |= 0x10 << i
+		}
 	}
 
 	return append([]byte{byte(code)}, opcodes...)
