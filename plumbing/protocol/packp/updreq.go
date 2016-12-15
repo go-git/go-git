@@ -88,7 +88,7 @@ const (
 )
 
 type Command struct {
-	Name string
+	Name plumbing.ReferenceName
 	Old  plumbing.Hash
 	New  plumbing.Hash
 }

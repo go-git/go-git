@@ -37,7 +37,7 @@ func (s *UpdReqEncodeSuite) TestZeroValue(c *C) {
 func (s *UpdReqEncodeSuite) TestOneUpdateCommand(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	name := "myref"
+	name := plumbing.ReferenceName("myref")
 
 	r := NewReferenceUpdateRequest()
 	r.Commands = []*Command{
@@ -58,9 +58,9 @@ func (s *UpdReqEncodeSuite) TestMultipleCommands(c *C) {
 
 	r := NewReferenceUpdateRequest()
 	r.Commands = []*Command{
-		{Name: "myref1", Old: hash1, New: hash2},
-		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
-		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 
 	expected := pktlines(c,
@@ -79,9 +79,9 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 
 	r := NewReferenceUpdateRequest()
 	r.Commands = []*Command{
-		{Name: "myref1", Old: hash1, New: hash2},
-		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
-		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	r.Capabilities.Add("shallow")
 
@@ -101,9 +101,9 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 
 	r := NewReferenceUpdateRequest()
 	r.Commands = []*Command{
-		{Name: "myref1", Old: hash1, New: hash2},
-		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
-		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	r.Capabilities.Add("shallow")
 	r.Shallow = &hash1
@@ -122,7 +122,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 func (s *UpdReqEncodeSuite) TestWithPackfile(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	name := "myref"
+	name := plumbing.ReferenceName("myref")
 
 	packfileContent := []byte("PACKabc")
 	packfileReader := bytes.NewReader(packfileContent)

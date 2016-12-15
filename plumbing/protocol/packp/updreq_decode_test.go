@@ -151,7 +151,7 @@ func (s *UpdReqDecodeSuite) TestInvalidCommandMissingName(c *C) {
 func (s *UpdReqDecodeSuite) TestOneUpdateCommand(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	name := "myref"
+	name := plumbing.ReferenceName("myref")
 
 	expected := NewReferenceUpdateRequest()
 	expected.Commands = []*Command{
@@ -173,9 +173,9 @@ func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
 
 	expected := NewReferenceUpdateRequest()
 	expected.Commands = []*Command{
-		{Name: "myref1", Old: hash1, New: hash2},
-		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
-		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	expected.Packfile = ioutil.NopCloser(bytes.NewReader([]byte{}))
 
@@ -195,9 +195,9 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 
 	expected := NewReferenceUpdateRequest()
 	expected.Commands = []*Command{
-		{Name: "myref1", Old: hash1, New: hash2},
-		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
-		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	expected.Capabilities.Add("shallow")
 	expected.Packfile = ioutil.NopCloser(bytes.NewReader([]byte{}))
@@ -218,9 +218,9 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 
 	expected := NewReferenceUpdateRequest()
 	expected.Commands = []*Command{
-		{Name: "myref1", Old: hash1, New: hash2},
-		{Name: "myref2", Old: plumbing.ZeroHash, New: hash2},
-		{Name: "myref3", Old: hash1, New: plumbing.ZeroHash},
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	expected.Capabilities.Add("shallow")
 	expected.Shallow = &hash1
@@ -240,7 +240,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	name := "myref"
+	name := plumbing.ReferenceName("myref")
 
 	expected := NewReferenceUpdateRequest()
 	expected.Commands = []*Command{

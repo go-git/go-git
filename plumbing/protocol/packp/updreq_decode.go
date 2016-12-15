@@ -207,7 +207,10 @@ func parseCommand(b []byte) (*Command, error) {
 		return nil, errInvalidCommandLineLength(len(b))
 	}
 
-	var os, ns, n string
+	var (
+		os, ns string
+		n      plumbing.ReferenceName
+	)
 	if _, err := fmt.Sscanf(string(b), "%s %s %s", &os, &ns, &n); err != nil {
 		return nil, errMalformedCommand(err)
 	}
