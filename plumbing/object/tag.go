@@ -260,9 +260,7 @@ func objectAsString(obj Object) string {
 	switch o := obj.(type) {
 	case *Commit:
 		return o.String()
-	case *Tag:
-		return o.String()
+	default:
+		return ""
 	}
-
-	return ""
 }
