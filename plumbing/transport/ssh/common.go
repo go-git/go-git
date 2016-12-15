@@ -117,8 +117,5 @@ func (c *command) setAuthFromEndpoint() error {
 }
 
 func endpointToCommand(cmd string, ep transport.Endpoint) string {
-	directory := ep.Path
-	directory = directory[1:]
-
-	return fmt.Sprintf("%s '%s'", cmd, directory)
+	return fmt.Sprintf("%s '%s'", cmd, ep.Path)
 }
