@@ -4,14 +4,26 @@ go:
   - 1.7
   - tip
 
+env:
+  - GIT_VERSION=master
+  - GIT_VERSION=v1.9.3
+  - GIT_VERSION=v2.11.0
+
 matrix:
   allow_failures:
     - go: tip
 
+cache:
+  directories:
+  - $HOME/.git-dist
+
+before_script:
+  - export GIT_DIST_PATH=$HOME/.git-dist
+  - make build-git
 
 before_install:
   - eval "$(ssh-agent -s)"
-  # we only decrypt the SSH key when we aren't in a pull request 
+  # we only decrypt the SSH key when we aren't in a pull request
   - 'if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash .travis/install_key.sh; fi'
   - 'if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then export SSH_AUTH_SOCK="" ; fi'
   - git config --global user.email "travis@example.com"
@@ -25,6 +37,9 @@ install:
   - go get -v -t ./...
 
 script:
+  - export GIT_EXEC_PATH=$GIT_DIST_PATH
+  - export PATH=$GIT_DIST_PATH:$PATH
+  - git version
   - make test-coverage
 
 after_success:
