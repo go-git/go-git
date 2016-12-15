@@ -17,6 +17,7 @@ const (
 	suffix         = ".git"
 	packedRefsPath = "packed-refs"
 	configPath     = "config"
+	shallowPath    = "shallow"
 
 	objectsPath = "objects"
 	packPath    = "pack"
@@ -60,13 +61,33 @@ func New(fs fs.Filesystem) *DotGit {
 	return &DotGit{fs: fs}
 }
 
+// ConfigWriter returns a file pointer for write to the config file
 func (d *DotGit) ConfigWriter() (fs.File, error) {
 	return d.fs.Create(configPath)
 }
 
-// Config returns the path of the config file
+// Config returns a file pointer for read to the config file
 func (d *DotGit) Config() (fs.File, error) {
 	return d.fs.Open(configPath)
+}
+
+// ShallowWriter returns a file pointer for write to the shallow file
+func (d *DotGit) ShallowWriter() (fs.File, error) {
+	return d.fs.Create(shallowPath)
+}
+
+// Shallow returns a file pointer for read to the shallow file
+func (d *DotGit) Shallow() (fs.File, error) {
+	f, err := d.fs.Open(shallowPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return f, nil
 }
 
 // NewObjectPack return a writer for a new packfile, it saves the packfile to

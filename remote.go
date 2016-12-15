@@ -129,6 +129,10 @@ func (r *Remote) Fetch(o *FetchOptions) (err error) {
 
 	defer ioutil.CheckClose(reader, &err)
 
+	if err := r.updateShallow(o, reader); err != nil {
+		return err
+	}
+
 	if err = r.updateObjectStorage(
 		r.buildSidebandIfSupported(req.Capabilities, reader),
 	); err != nil {
@@ -293,6 +297,14 @@ func (r *Remote) buildFetchedTags() error {
 
 		return r.s.SetReference(ref)
 	})
+}
+
+func (r *Remote) updateShallow(o *FetchOptions, resp *packp.UploadPackResponse) error {
+	if o.Depth == 0 {
+		return nil
+	}
+
+	return r.s.SetShallow(resp.Shallows)
 }
 
 // Head returns the Reference of the HEAD

@@ -124,6 +124,14 @@ func (s *RemoteSuite) TestFetchDepth(c *C) {
 		r, _ := sto.Reference(exp.Name())
 		c.Assert(exp.String(), Equals, r.String())
 	}
+
+	h, err := sto.Shallow()
+	c.Assert(err, IsNil)
+	c.Assert(h, HasLen, 2)
+	c.Assert(h, DeepEquals, []plumbing.Hash{
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
 }
 
 func (s *RemoteSuite) TestFetchWithProgress(c *C) {

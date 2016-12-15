@@ -130,6 +130,61 @@ func (s *SuiteDotGit) TestConfig(c *C) {
 	c.Assert(filepath.Base(file.Filename()), Equals, "config")
 }
 
+func (s *SuiteDotGit) TestConfigWriteAndConfig(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := osfs.New(tmp)
+	dir := New(fs)
+
+	f, err := dir.ConfigWriter()
+	c.Assert(err, IsNil)
+
+	_, err = f.Write([]byte("foo"))
+	c.Assert(err, IsNil)
+
+	f, err = dir.Config()
+	c.Assert(err, IsNil)
+
+	cnt, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+
+	c.Assert(string(cnt), Equals, "foo")
+}
+
+func (s *SuiteDotGit) TestShallow(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	file, err := dir.Shallow()
+	c.Assert(err, IsNil)
+	c.Assert(file, IsNil)
+}
+
+func (s *SuiteDotGit) TestShallowWriteAndShallow(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := osfs.New(tmp)
+	dir := New(fs)
+
+	f, err := dir.ShallowWriter()
+	c.Assert(err, IsNil)
+
+	_, err = f.Write([]byte("foo"))
+	c.Assert(err, IsNil)
+
+	f, err = dir.Shallow()
+	c.Assert(err, IsNil)
+
+	cnt, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+
+	c.Assert(string(cnt), Equals, "foo")
+}
+
 func findReference(refs []*plumbing.Reference, name string) *plumbing.Reference {
 	n := plumbing.ReferenceName(name)
 	for _, ref := range refs {
@@ -220,6 +275,18 @@ func (s *SuiteDotGit) TestObjects(c *C) {
 	c.Assert(hashes[0].String(), Equals, "0097821d427a3c3385898eb13b50dcbc8702b8a3")
 	c.Assert(hashes[1].String(), Equals, "01d5fa556c33743006de7e76e67a2dfcd994ca04")
 	c.Assert(hashes[2].String(), Equals, "03db8e1fbe133a480f2867aac478fd866686d69e")
+}
+
+func (s *SuiteDotGit) TestObjectsNoFolder(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := osfs.New(tmp)
+	dir := New(fs)
+	hash, err := dir.Objects()
+	c.Assert(err, IsNil)
+	c.Assert(hash, HasLen, 0)
 }
 
 func (s *SuiteDotGit) TestObject(c *C) {

@@ -14,6 +14,7 @@ import (
 type Storer interface {
 	storer.EncodedObjectStorer
 	storer.ReferenceStorer
+	storer.ShallowStorer
 	config.ConfigStorer
 }
 

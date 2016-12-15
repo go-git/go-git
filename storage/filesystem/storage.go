@@ -12,6 +12,7 @@ import (
 type Storage struct {
 	ObjectStorage
 	ReferenceStorage
+	ShallowStorage
 	ConfigStorage
 }
 
@@ -26,6 +27,7 @@ func NewStorage(fs fs.Filesystem) (*Storage, error) {
 	return &Storage{
 		ObjectStorage:    o,
 		ReferenceStorage: ReferenceStorage{dir: dir},
+		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir},
 	}, nil
 }

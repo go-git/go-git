@@ -17,6 +17,7 @@ import (
 type Storer interface {
 	storer.EncodedObjectStorer
 	storer.ReferenceStorer
+	storer.ShallowStorer
 	config.ConfigStorer
 }
 
@@ -261,6 +262,21 @@ func (s *BaseStorageSuite) TestIterReferences(c *C) {
 	e, err = i.Next()
 	c.Assert(e, IsNil)
 	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *BaseStorageSuite) TestSetShallowAndShallow(c *C) {
+	expected := []plumbing.Hash{
+		plumbing.NewHash("b66c08ba28aa1f81eb06a1127aa3936ff77e5e2c"),
+		plumbing.NewHash("c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
+		plumbing.NewHash("c78874f116be67ecf54df225a613162b84cc6ebf"),
+	}
+
+	err := s.Storer.SetShallow(expected)
+	c.Assert(err, IsNil)
+
+	result, err := s.Storer.Shallow()
+	c.Assert(err, IsNil)
+	c.Assert(result, DeepEquals, expected)
 }
 
 func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {

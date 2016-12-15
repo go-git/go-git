@@ -248,6 +248,44 @@ func (s *Storage) buildConfigKey() (*driver.Key, error) {
 	return driver.NewKey(s.ns, configSet, fmt.Sprintf("%s|config", s.url))
 }
 
+func (s *Storage) Shallow() ([]plumbing.Hash, error) {
+	key, err := s.buildShallowKey()
+	if err != nil {
+		return nil, err
+	}
+
+	rec, err := s.client.Get(nil, key)
+	if err != nil {
+		return nil, err
+	}
+
+	var h []plumbing.Hash
+	return h, json.Unmarshal(rec.Bins["blob"].([]byte), h)
+}
+
+func (s *Storage) SetShallow(hash []plumbing.Hash) error {
+	key, err := s.buildShallowKey()
+	if err != nil {
+		return err
+	}
+
+	json, err := json.Marshal(hash)
+	if err != nil {
+		return err
+	}
+
+	bins := driver.BinMap{
+		urlField: s.url,
+		"blob":   json,
+	}
+
+	return s.client.Put(nil, key, bins)
+}
+
+func (s *Storage) buildShallowKey() (*driver.Key, error) {
+	return driver.NewKey(s.ns, configSet, fmt.Sprintf("%s|config", s.url))
+}
+
 func createIndexes(c *driver.Client, ns string) error {
 	for _, set := range [...]string{
 		referencesSet,

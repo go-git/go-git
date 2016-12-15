@@ -18,6 +18,7 @@ var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
 type Storage struct {
 	ConfigStorage
 	ObjectStorage
+	ShallowStorage
 	ReferenceStorage
 }
 
@@ -26,6 +27,7 @@ func NewStorage() *Storage {
 	return &Storage{
 		ReferenceStorage: make(ReferenceStorage, 0),
 		ConfigStorage:    ConfigStorage{},
+		ShallowStorage:   ShallowStorage{},
 		ObjectStorage: ObjectStorage{
 			Objects: make(map[plumbing.Hash]plumbing.EncodedObject, 0),
 			Commits: make(map[plumbing.Hash]plumbing.EncodedObject, 0),
@@ -194,4 +196,15 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil
+}
+
+type ShallowStorage []plumbing.Hash
+
+func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
+	*s = commits
+	return nil
+}
+
+func (s ShallowStorage) Shallow() ([]plumbing.Hash, error) {
+	return s, nil
 }
