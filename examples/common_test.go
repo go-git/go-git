@@ -18,6 +18,7 @@ var args = map[string][]string{
 	"showcase":    []string{defaultURL},
 	"custom_http": []string{defaultURL},
 	"clone":       []string{defaultURL, tempFolder()},
+	"progress":    []string{defaultURL, tempFolder()},
 	"open":        []string{filepath.Join(cloneRepository(defaultURL, tempFolder()), ".git")},
 }
 

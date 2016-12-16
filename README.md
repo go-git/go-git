@@ -1,6 +1,6 @@
 # go-git [![GoDoc](https://godoc.org/gopkg.in/src-d/go-git.v4?status.svg)](https://godoc.org/gopkg.in/src-d/go-git.v4) [![Build Status](https://travis-ci.org/src-d/go-git.svg)](https://travis-ci.org/src-d/go-git) [![codecov.io](https://codecov.io/github/src-d/go-git/coverage.svg)](https://codecov.io/github/src-d/go-git) [![codebeat badge](https://codebeat.co/badges/b6cb2f73-9e54-483d-89f9-4b95a911f40c)](https://codebeat.co/projects/github-com-src-d-go-git)
 
-A low level and highly extensible git implementation in **pure Go**. 
+A low level and highly extensible git implementation in **pure Go**.
 
 *go-git* aims to reach the completeness of [libgit2](https://libgit2.github.com/) or [jgit](http://www.eclipse.org/jgit/), nowadays covers the **majority** of the plumbing **read operations** and **some** of the main **write operations**, but lacks the main porcelain operations such as merges.
 
@@ -12,7 +12,7 @@ The master branch represents the `v4` of the library, it is currently under acti
 
 If you are looking for a production ready version, please take a look to the [`v3`](https://github.com/src-d/go-git/tree/v3) which is being used in production at [source{d}](http://sourced.tech) since August 2015 to analyze all GitHub public repositories (i.e. 16M repositories).
 
-We recommend the use of `v4` to develop new projects since it includes much new functionality and provides a more *idiomatic git* API 
+We recommend the use of `v4` to develop new projects since it includes much new functionality and provides a more *idiomatic git* API
 
 Installation
 ------------
@@ -29,7 +29,7 @@ Examples
 
 Cloning a repository and printing the history of HEAD, just like `git log` does
 
-> Please note that the functions `CheckIfError` and `Inf`o used in the examples are from the [examples package](https://github.com/src-d/go-git/blob/master/examples/common.go#L17) just to be used in the examples.
+> Please note that the functions `CheckIfError` and `Info` used in the examples are from the [examples package](https://github.com/src-d/go-git/blob/master/examples/common.go#L17) just to be used in the examples.
 
 
 ```go
@@ -66,21 +66,20 @@ for _, c := range history {
 
 Outputs:
 ```
-commit 2275fa7d0c75d20103f90b0e1616937d5a9fc5e6
-Author: Máximo Cuadros <mcuadros@gmail.com>
-Date:   2015-10-23 00:44:33 +0200 +0200
+commit ded8054fd0c3994453e9c8aacaf48d118d42991e
+Author: Santiago M. Mola <santi@mola.io>
+Date:   Sat Nov 12 21:18:41 2016 +0100
 
-commit 35b585759cbf29f8ec428ef89da20705d59f99ec
-Author: Carlos Cobo <toqueteos@gmail.com>
-Date:   2015-05-20 15:21:37 +0200 +0200
+    index: ReadFrom/WriteTo returns IndexReadError/IndexWriteError. (#9)
 
-commit 7e3259c191a9de23d88b6077dcb1cd427e925432
-Author: Alberto Cortés <alberto@sourced.tech>
-Date:   2016-01-21 03:29:57 +0100 +0100
+commit df707095626f384ce2dc1a83b30f9a21d69b9dfc
+Author: Santiago M. Mola <santi@mola.io>
+Date:   Fri Nov 11 13:23:22 2016 +0100
 
-commit 24b8ae50db91f3909b11304014564bffc6fdee79
-Author: Alberto Cortés <alberto@sourced.tech>
-Date:   2015-12-11 17:57:10 +0100 +0100
+    readwriter: fix bug when writing index. (#10)
+
+    When using ReadWriter on an existing siva file, absolute offset for
+    index entries was not being calculated correctly.
 ...
 ```
 
