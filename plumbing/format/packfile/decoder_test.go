@@ -2,7 +2,6 @@ package packfile_test
 
 import (
 	"io"
-	"testing"
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -15,8 +14,6 @@ import (
 
 	. "gopkg.in/check.v1"
 )
-
-func Test(t *testing.T) { TestingT(t) }
 
 type ReaderSuite struct {
 	fixtures.Suite

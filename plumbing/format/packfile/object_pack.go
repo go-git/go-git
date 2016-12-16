@@ -46,3 +46,9 @@ func (o *ObjectToPack) IsDelta() bool {
 
 	return false
 }
+
+func (o *ObjectToPack) SetDelta(base *ObjectToPack, delta plumbing.EncodedObject) {
+	o.Object = delta
+	o.Base = base
+	o.Depth = base.Depth + 1
+}

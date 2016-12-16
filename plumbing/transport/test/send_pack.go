@@ -275,7 +275,7 @@ func (s *SendPackSuite) testSendPackDeleteReference(c *C) {
 
 func (s *SendPackSuite) emptyPackfile() io.ReadCloser {
 	var buf bytes.Buffer
-	e := packfile.NewEncoder(&buf, memory.NewStorage())
+	e := packfile.NewEncoder(&buf, memory.NewStorage(), false)
 	_, err := e.Encode(nil)
 	if err != nil {
 		panic(err)

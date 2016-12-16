@@ -12,11 +12,6 @@ type DeltaSuite struct {
 
 var _ = Suite(&DeltaSuite{})
 
-type piece struct {
-	val   string
-	times int
-}
-
 type deltaTest struct {
 	description string
 	base        []piece
@@ -79,15 +74,4 @@ func (s *DeltaSuite) TestAddDelta(c *C) {
 		c.Log(fmt.Printf("Executing test case: %s\n", t.description))
 		c.Assert(result, DeepEquals, targetBuf)
 	}
-}
-
-func genBytes(elements []piece) []byte {
-	var result []byte
-	for _, e := range elements {
-		for i := 0; i < e.times; i++ {
-			result = append(result, e.val...)
-		}
-	}
-
-	return result
 }

@@ -1,7 +1,6 @@
 package packfile
 
 import (
-	"fmt"
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -15,23 +14,9 @@ const (
 	maxCopyLen = 0xffff
 )
 
-// GetOFSDelta returns an offset delta that knows the way of how to transform
+// GetDelta returns an offset delta that knows the way of how to transform
 // base object to target object
-func GetOFSDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
-	return getDelta(base, target, plumbing.OFSDeltaObject)
-}
-
-// GetRefDelta returns a reference delta that knows the way of how to transform
-// base object to target object
-func GetRefDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
-	return getDelta(base, target, plumbing.REFDeltaObject)
-}
-
-func getDelta(base, target plumbing.EncodedObject, t plumbing.ObjectType) (plumbing.EncodedObject, error) {
-	if t != plumbing.OFSDeltaObject && t != plumbing.REFDeltaObject {
-		return nil, fmt.Errorf("Type not supported: %v", t)
-	}
-
+func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	br, err := base.Reader()
 	if err != nil {
 		return nil, err
@@ -59,7 +44,7 @@ func getDelta(base, target plumbing.EncodedObject, t plumbing.ObjectType) (plumb
 	}
 
 	delta.SetSize(int64(len(db)))
-	delta.SetType(t)
+	delta.SetType(plumbing.OFSDeltaObject)
 
 	return delta, nil
 }
