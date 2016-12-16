@@ -164,26 +164,43 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
-	if err = remote.Connect(); err != nil {
-		return err
-	}
-
-	defer remote.Disconnect()
-
-	if err := r.updateRemoteConfig(remote, o, c); err != nil {
-		return err
-	}
-
-	if err = remote.Fetch(&FetchOptions{Depth: o.Depth}); err != nil {
-		return err
-	}
-
-	head, err := remote.Reference(o.ReferenceName, true)
+	remoteRefs, err := remote.fetch(&FetchOptions{
+		RefSpecs: r.cloneRefSpec(o, c),
+		Depth:    o.Depth,
+	})
 	if err != nil {
 		return err
 	}
 
-	return r.createReferences(head)
+	head, err := storer.ResolveReference(remoteRefs, o.ReferenceName)
+	if err != nil {
+		return err
+	}
+
+	if err := r.createReferences(c.Fetch, o.ReferenceName, head); err != nil {
+		return err
+	}
+
+	return r.updateRemoteConfig(remote, o, c, head)
+}
+
+func (r *Repository) cloneRefSpec(o *CloneOptions,
+	c *config.RemoteConfig) []config.RefSpec {
+
+	if !o.SingleBranch {
+		return c.Fetch
+	}
+
+	var rs string
+
+	if o.ReferenceName == plumbing.HEAD {
+		rs = fmt.Sprintf(refspecSingleBranchHEAD, c.Name)
+	} else {
+		rs = fmt.Sprintf(refspecSingleBranch,
+			o.ReferenceName.Short(), c.Name)
+	}
+
+	return []config.RefSpec{config.RefSpec(rs)}
 }
 
 func (r *Repository) setIsBare(isBare bool) error {
@@ -196,28 +213,21 @@ func (r *Repository) setIsBare(isBare bool) error {
 	return r.s.SetConfig(cfg)
 }
 
-const refspecSingleBranch = "+refs/heads/%s:refs/remotes/%s/%[1]s"
+const (
+	refspecSingleBranch     = "+refs/heads/%s:refs/remotes/%s/%[1]s"
+	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
+)
 
-func (r *Repository) updateRemoteConfig(
-	remote *Remote, o *CloneOptions, c *config.RemoteConfig,
-) error {
+func (r *Repository) updateRemoteConfig(remote *Remote, o *CloneOptions,
+	c *config.RemoteConfig, head *plumbing.Reference) error {
+
 	if !o.SingleBranch {
 		return nil
 	}
 
-	refs, err := remote.AdvertisedReferences().AllReferences()
-	if err != nil {
-		return err
-	}
-
-	head, err := storer.ResolveReference(refs, o.ReferenceName)
-	if err != nil {
-		return err
-	}
-
-	c.Fetch = []config.RefSpec{
-		config.RefSpec(fmt.Sprintf(refspecSingleBranch, head.Name().Short(), c.Name)),
-	}
+	c.Fetch = []config.RefSpec{config.RefSpec(fmt.Sprintf(
+		refspecSingleBranch, head.Name().Short(), c.Name,
+	))}
 
 	cfg, err := r.s.Config()
 	if err != nil {
@@ -226,22 +236,59 @@ func (r *Repository) updateRemoteConfig(
 
 	cfg.Remotes[c.Name] = c
 	return r.s.SetConfig(cfg)
-
 }
 
-func (r *Repository) createReferences(ref *plumbing.Reference) error {
-	if !ref.IsBranch() {
-		// detached HEAD mode
-		head := plumbing.NewHashReference(plumbing.HEAD, ref.Hash())
+func (r *Repository) createReferences(spec []config.RefSpec,
+	headName plumbing.ReferenceName, resolvedHead *plumbing.Reference) error {
+
+	if !resolvedHead.IsBranch() {
+		// Detached HEAD mode
+		head := plumbing.NewHashReference(plumbing.HEAD, resolvedHead.Hash())
 		return r.s.SetReference(head)
 	}
 
-	if err := r.s.SetReference(ref); err != nil {
+	// Create local reference for the resolved head
+	if err := r.s.SetReference(resolvedHead); err != nil {
 		return err
 	}
 
-	head := plumbing.NewSymbolicReference(plumbing.HEAD, ref.Name())
-	return r.s.SetReference(head)
+	// Create local symbolic HEAD
+	head := plumbing.NewSymbolicReference(plumbing.HEAD, resolvedHead.Name())
+	if err := r.s.SetReference(head); err != nil {
+		return err
+	}
+
+	return r.createRemoteHeadReference(spec, resolvedHead)
+}
+
+func (r *Repository) createRemoteHeadReference(spec []config.RefSpec,
+	resolvedHead *plumbing.Reference) error {
+
+	// Create resolved HEAD reference with remote prefix if it does not
+	// exist. This is needed when using single branch and HEAD.
+	for _, rs := range spec {
+		name := resolvedHead.Name()
+		if !rs.Match(name) {
+			continue
+		}
+
+		name = rs.Dst(name)
+		_, err := r.s.Reference(name)
+		if err == plumbing.ErrReferenceNotFound {
+			ref := plumbing.NewHashReference(name, resolvedHead.Hash())
+			if err := r.s.SetReference(ref); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // IsEmpty returns true if the repository is empty
@@ -269,32 +316,33 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return err
 	}
 
-	if err = remote.Connect(); err != nil {
-		return err
-	}
-
-	defer remote.Disconnect()
-
-	head, err := remote.Reference(o.ReferenceName, true)
-	if err != nil {
-		return err
-	}
-
-	if err = remote.Connect(); err != nil {
-		return err
-	}
-
-	defer remote.Disconnect()
-
-	err = remote.Fetch(&FetchOptions{
+	remoteRefs, err := remote.fetch(&FetchOptions{
 		Depth: o.Depth,
 	})
-
 	if err != nil {
 		return err
 	}
 
-	return r.createReferences(head)
+	head, err := storer.ResolveReference(remoteRefs, o.ReferenceName)
+	if err != nil {
+		return err
+	}
+
+	return r.createReferences(remote.c.Fetch, o.ReferenceName, head)
+}
+
+// Fetch fetches changes from a remote repository.
+func (r *Repository) Fetch(o *FetchOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	remote, err := r.Remote(o.RemoteName)
+	if err != nil {
+		return err
+	}
+
+	return remote.Fetch(o)
 }
 
 // object.Commit return the commit with the given hash

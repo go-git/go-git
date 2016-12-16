@@ -51,19 +51,19 @@ func (o *CloneOptions) Validate() error {
 	return nil
 }
 
-// PullOptions describe how a pull should be perform
+// PullOptions describe how a pull should be perform.
 type PullOptions struct {
-	// Name of the remote to be pulled
+	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
-	// Remote branch to clone
+	// Remote branch to clone.  If empty, uses HEAD.
 	ReferenceName plumbing.ReferenceName
-	// Fetch only ReferenceName if true
+	// Fetch only ReferenceName if true.
 	SingleBranch bool
-	// Limit fetching to the specified number of commits
+	// Limit fetching to the specified number of commits.
 	Depth int
 }
 
-// Validate validate the fields and set the default values
+// Validate validate the fields and set the default values.
 func (o *PullOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -78,7 +78,9 @@ func (o *PullOptions) Validate() error {
 
 // FetchOptions describe how a fetch should be perform
 type FetchOptions struct {
-	RefSpecs []config.RefSpec
+	// Name of the remote to fetch from. Defaults to origin.
+	RemoteName string
+	RefSpecs   []config.RefSpec
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
@@ -86,6 +88,10 @@ type FetchOptions struct {
 
 // Validate validate the fields and set the default values
 func (o *FetchOptions) Validate() error {
+	if o.RemoteName == "" {
+		o.RemoteName = DefaultRemoteName
+	}
+
 	for _, r := range o.RefSpecs {
 		if !r.IsValid() {
 			return ErrInvalidRefSpec

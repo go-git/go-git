@@ -84,6 +84,29 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	c.Assert(alt, IsNil)
 }
 
+func (s *RepositorySuite) TestFetch(c *C) {
+	r := NewMemoryRepository()
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(r.Fetch(&FetchOptions{}), IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+
+	_, err = r.Reference(plumbing.HEAD, false)
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+
+	branch, err := r.Reference("refs/remotes/origin/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, plumbing.HashReference)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+}
+
 func (s *RepositorySuite) TestClone(c *C) {
 	r := NewMemoryRepository()
 

@@ -8,7 +8,6 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -23,63 +22,35 @@ type RemoteSuite struct {
 
 var _ = Suite(&RemoteSuite{})
 
-func (s *RemoteSuite) TestConnect(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-
-	err := r.Connect()
-	c.Assert(err, IsNil)
-}
-
-func (s *RemoteSuite) TestnewRemoteInvalidEndpoint(c *C) {
+func (s *RemoteSuite) TestFetchInvalidEndpoint(c *C) {
 	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
-
-	err := r.Connect()
-	c.Assert(err, NotNil)
+	err := r.Fetch(&FetchOptions{})
+	c.Assert(err, ErrorMatches, ".*invalid endpoint.*")
 }
 
-func (s *RemoteSuite) TestnewRemoteNonExistentEndpoint(c *C) {
+func (s *RemoteSuite) TestFetchNonExistentEndpoint(c *C) {
 	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "ssh://non-existent/foo.git"})
-
-	err := r.Connect()
+	err := r.Fetch(&FetchOptions{})
 	c.Assert(err, NotNil)
 }
 
-func (s *RemoteSuite) TestnewRemoteInvalidSchemaEndpoint(c *C) {
+func (s *RemoteSuite) TestFetchInvalidSchemaEndpoint(c *C) {
 	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
-
-	err := r.Connect()
-	c.Assert(err, NotNil)
+	err := r.Fetch(&FetchOptions{})
+	c.Assert(err, ErrorMatches, ".*unsupported scheme.*")
 }
 
-func (s *RemoteSuite) TestInfo(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.AdvertisedReferences(), IsNil)
-	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.AdvertisedReferences(), NotNil)
-	c.Assert(r.AdvertisedReferences().Capabilities.Get(capability.Agent), NotNil)
-}
-
-func (s *RemoteSuite) TestDefaultBranch(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.Head().Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
-}
-
-func (s *RemoteSuite) TestCapabilities(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
-	c.Assert(r.Capabilities().Get(capability.Agent), HasLen, 1)
+func (s *RemoteSuite) TestFetchInvalidFetchOptions(c *C) {
+	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
+	invalid := config.RefSpec("^*$ñ")
+	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{invalid}})
+	c.Assert(err, Equals, ErrInvalidRefSpec)
 }
 
 func (s *RemoteSuite) TestFetch(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
 	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
@@ -104,7 +75,6 @@ func (s *RemoteSuite) TestFetchDepth(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
 	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
@@ -140,7 +110,6 @@ func (s *RemoteSuite) TestFetchWithProgress(c *C) {
 	buf := bytes.NewBuffer(nil)
 
 	r := newRemote(sto, buf, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
@@ -176,7 +145,6 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 
 	url := s.GetBasicLocalRepositoryURL()
 	r := newRemote(mock, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err = r.Fetch(&FetchOptions{
@@ -202,7 +170,6 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	sto := memory.NewStorage()
 	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	c.Assert(r.Connect(), IsNil)
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	o := &FetchOptions{
@@ -213,41 +180,6 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	c.Assert(err, IsNil)
 	err = r.Fetch(o)
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
-}
-
-func (s *RemoteSuite) TestHead(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-
-	err := r.Connect()
-	c.Assert(err, IsNil)
-	c.Assert(r.Head().Hash(), Equals, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-}
-
-func (s *RemoteSuite) TestRef(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	err := r.Connect()
-	c.Assert(err, IsNil)
-
-	ref, err := r.Reference(plumbing.HEAD, false)
-	c.Assert(err, IsNil)
-	c.Assert(ref.Name(), Equals, plumbing.HEAD)
-
-	ref, err = r.Reference(plumbing.HEAD, true)
-	c.Assert(err, IsNil)
-	c.Assert(ref.Name(), Equals, plumbing.ReferenceName("refs/heads/master"))
-}
-
-func (s *RemoteSuite) TestRefs(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	r := newRemote(nil, nil, &config.RemoteConfig{Name: "foo", URL: url})
-	err := r.Connect()
-	c.Assert(err, IsNil)
-
-	iter, err := r.References()
-	c.Assert(err, IsNil)
-	c.Assert(iter, NotNil)
 }
 
 func (s *RemoteSuite) TestString(c *C) {
