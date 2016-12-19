@@ -138,7 +138,7 @@ func (iter *Iter) current() (Noder, bool) {
 }
 
 // removes the current node and all the frames that become empty as a
-// consecuence of this action. It returns true if something was dropped,
+// consequence of this action. It returns true if something was dropped,
 // and false if there were no more nodes in the iterator.
 func (iter *Iter) drop() bool {
 	frame, ok := iter.top()
