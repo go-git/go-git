@@ -281,8 +281,8 @@ func (s *session) SendPack(req *packp.ReferenceUpdateRequest) (*packp.ReportStat
 		return nil, err
 	}
 
-	if !report.Ok() {
-		return report, fmt.Errorf("report status: %s", report.UnpackStatus)
+	if err := report.Error(); err != nil {
+		return report, err
 	}
 
 	return report, s.Command.Wait()

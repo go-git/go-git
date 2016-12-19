@@ -15,6 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 )
 
 type RepositorySuite struct {
@@ -329,6 +330,59 @@ func (s *RepositorySuite) TestPullA(c *C) {
 	branch, err = r.Reference("refs/remotes/origin/branch", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+}
+
+func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
+	srcFs := fixtures.Basic().One().DotGit()
+	sto, err := filesystem.NewStorage(srcFs)
+	c.Assert(err, IsNil)
+
+	dstFs := fixtures.ByTag("empty").One().DotGit()
+	url := fmt.Sprintf("file://%s", dstFs.Base())
+
+	r, err := NewRepository(sto)
+	c.Assert(err, IsNil)
+
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name: "myremote",
+		URL:  url,
+	})
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{RemoteName: "myremote"})
+	c.Assert(err, IsNil)
+
+	sto, err = filesystem.NewStorage(dstFs)
+	c.Assert(err, IsNil)
+	dstRepo, err := NewRepository(sto)
+	c.Assert(err, IsNil)
+
+	iter, err := sto.IterReferences()
+	c.Assert(err, IsNil)
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if !ref.IsBranch() {
+			return nil
+		}
+
+		dstRef, err := dstRepo.Reference(ref.Name(), true)
+		c.Assert(err, IsNil)
+		c.Assert(dstRef, DeepEquals, ref)
+
+		return nil
+	})
+	c.Assert(err, IsNil)
+}
+
+func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
+	srcFs := fixtures.Basic().One().DotGit()
+	sto, err := filesystem.NewStorage(srcFs)
+	c.Assert(err, IsNil)
+
+	r, err := NewRepository(sto)
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{RemoteName: "myremote"})
+	c.Assert(err, ErrorMatches, ".*remote not found.*")
 }
 
 func (s *RepositorySuite) TestIsEmpty(c *C) {

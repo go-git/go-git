@@ -13,22 +13,25 @@ type ReportStatusSuite struct{}
 
 var _ = Suite(&ReportStatusSuite{})
 
-func (s *ReportStatusSuite) TestOk(c *C) {
+func (s *ReportStatusSuite) TestError(c *C) {
 	rs := NewReportStatus()
 	rs.UnpackStatus = "ok"
-	c.Assert(rs.Ok(), Equals, true)
+	c.Assert(rs.Error(), IsNil)
 	rs.UnpackStatus = "OK"
-	c.Assert(rs.Ok(), Equals, false)
+	c.Assert(rs.Error(), ErrorMatches, "unpack error: OK")
 	rs.UnpackStatus = ""
-	c.Assert(rs.Ok(), Equals, false)
+	c.Assert(rs.Error(), ErrorMatches, "unpack error: ")
 
-	cs := &CommandStatus{}
+	cs := &CommandStatus{ReferenceName: plumbing.ReferenceName("ref")}
+	rs.UnpackStatus = "ok"
+	rs.CommandStatuses = append(rs.CommandStatuses, cs)
+
 	cs.Status = "ok"
-	c.Assert(cs.Ok(), Equals, true)
+	c.Assert(rs.Error(), IsNil)
 	cs.Status = "OK"
-	c.Assert(cs.Ok(), Equals, false)
+	c.Assert(rs.Error(), ErrorMatches, "command error on ref: OK")
 	cs.Status = ""
-	c.Assert(cs.Ok(), Equals, false)
+	c.Assert(rs.Error(), ErrorMatches, "command error on ref: ")
 }
 
 func (s *ReportStatusSuite) testEncodeDecodeOk(c *C, rs *ReportStatus, lines ...string) {

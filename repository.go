@@ -346,6 +346,20 @@ func (r *Repository) Fetch(o *FetchOptions) error {
 	return remote.Fetch(o)
 }
 
+// Push pushes changes to a remote.
+func (r *Repository) Push(o *PushOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	remote, err := r.Remote(o.RemoteName)
+	if err != nil {
+		return err
+	}
+
+	return remote.Push(o)
+}
+
 // object.Commit return the commit with the given hash
 func (r *Repository) Commit(h plumbing.Hash) (*object.Commit, error) {
 	return object.GetCommit(r.s, h)

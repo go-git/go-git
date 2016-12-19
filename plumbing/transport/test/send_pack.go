@@ -131,7 +131,7 @@ func (s *SendPackSuite) TestFullSendPackOnNonEmpty(c *C) {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := packp.NewReferenceUpdateRequest()
 	req.Commands = []*packp.Command{
-		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
+		{"refs/heads/master", fixture.Head, fixture.Head},
 	}
 	s.sendPack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
@@ -143,7 +143,7 @@ func (s *SendPackSuite) TestSendPackOnNonEmpty(c *C) {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := packp.NewReferenceUpdateRequest()
 	req.Commands = []*packp.Command{
-		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
+		{"refs/heads/master", fixture.Head, fixture.Head},
 	}
 	s.sendPack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
@@ -155,7 +155,7 @@ func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := packp.NewReferenceUpdateRequest()
 	req.Commands = []*packp.Command{
-		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
+		{"refs/heads/master", fixture.Head, fixture.Head},
 	}
 	req.Capabilities.Set(capability.ReportStatus)
 
@@ -163,10 +163,30 @@ func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) sendPack(c *C, ep transport.Endpoint,
-	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
-	callAdvertisedReferences bool) {
+func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C) {
+	endpoint := s.Endpoint
+	full := false
+	fixture := fixtures.Basic().ByTag("packfile").One()
+	req := packp.NewReferenceUpdateRequest()
+	req.Commands = []*packp.Command{
+		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
+	}
+	req.Capabilities.Set(capability.ReportStatus)
 
+	report, err := s.sendPackNoCheck(c, endpoint, req, fixture, full)
+	//XXX: Recent git versions return "failed to update ref", while older
+	//     (>=1.9) return "failed to lock".
+	c.Assert(err, ErrorMatches, ".*(failed to update ref|failed to lock).*")
+	c.Assert(report.UnpackStatus, Equals, "ok")
+	c.Assert(len(report.CommandStatuses), Equals, 1)
+	c.Assert(report.CommandStatuses[0].ReferenceName, Equals, plumbing.ReferenceName("refs/heads/master"))
+	c.Assert(report.CommandStatuses[0].Status, Matches, "(failed to update ref|failed to lock)")
+	s.checkRemoteHead(c, endpoint, fixture.Head)
+}
+
+func (s *SendPackSuite) sendPackNoCheck(c *C, ep transport.Endpoint,
+	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
+	callAdvertisedReferences bool) (*packp.ReportStatus, error) {
 	url := ""
 	if fixture != nil {
 		url = fixture.URL
@@ -193,11 +213,28 @@ func (s *SendPackSuite) sendPack(c *C, ep transport.Endpoint,
 		req.Packfile = s.emptyPackfile()
 	}
 
-	report, err := r.SendPack(req)
+	return r.SendPack(req)
+}
+
+func (s *SendPackSuite) sendPack(c *C, ep transport.Endpoint,
+	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
+	callAdvertisedReferences bool) {
+
+	url := ""
+	if fixture != nil {
+		url = fixture.URL
+	}
+
+	comment := Commentf(
+		"failed with ep=%s fixture=%s callAdvertisedReferences=%s",
+		ep.String(), url, callAdvertisedReferences,
+	)
+	report, err := s.sendPackNoCheck(c, ep, req, fixture, callAdvertisedReferences)
+
 	c.Assert(err, IsNil, comment)
 	if req.Capabilities.Supports(capability.ReportStatus) {
 		c.Assert(report, NotNil, comment)
-		c.Assert(report.Ok(), Equals, true, comment)
+		c.Assert(report.Error(), IsNil, comment)
 	} else {
 		c.Assert(report, IsNil, comment)
 	}

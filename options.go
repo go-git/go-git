@@ -100,3 +100,33 @@ func (o *FetchOptions) Validate() error {
 
 	return nil
 }
+
+// PushOptions describe how a push should be performed.
+type PushOptions struct {
+	// RemoteName is the name of the remote to be pushed to.
+	RemoteName string
+	// RefSpecs specify what destination ref to update with what source
+	// object. A refspec with empty src can be used to delete a reference.
+	RefSpecs []config.RefSpec
+}
+
+// Validate validate the fields and set the default values
+func (o *PushOptions) Validate() error {
+	if o.RemoteName == "" {
+		o.RemoteName = DefaultRemoteName
+	}
+
+	if len(o.RefSpecs) == 0 {
+		o.RefSpecs = []config.RefSpec{
+			config.RefSpec(config.DefaultPushRefSpec),
+		}
+	}
+
+	for _, r := range o.RefSpecs {
+		if !r.IsValid() {
+			return ErrInvalidRefSpec
+		}
+	}
+
+	return nil
+}

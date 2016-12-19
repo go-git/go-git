@@ -26,9 +26,19 @@ func NewReportStatus() *ReportStatus {
 	return &ReportStatus{}
 }
 
-// Ok returns true if the report status reported no error.
-func (s *ReportStatus) Ok() bool {
-	return s.UnpackStatus == ok
+// Error returns the first error if any.
+func (s *ReportStatus) Error() error {
+	if s.UnpackStatus != ok {
+		return fmt.Errorf("unpack error: %s", s.UnpackStatus)
+	}
+
+	for _, s := range s.CommandStatuses {
+		if err := s.Error(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Encode writes the report status to a writer.
@@ -135,14 +145,19 @@ type CommandStatus struct {
 	Status        string
 }
 
-// Ok returns true if the command status reported no error.
-func (s *CommandStatus) Ok() bool {
-	return s.Status == ok
+// Error returns the error, if any.
+func (s *CommandStatus) Error() error {
+	if s.Status == ok {
+		return nil
+	}
+
+	return fmt.Errorf("command error on %s: %s",
+		s.ReferenceName.String(), s.Status)
 }
 
 func (s *CommandStatus) encode(w io.Writer) error {
 	e := pktline.NewEncoder(w)
-	if s.Ok() {
+	if s.Error() == nil {
 		return e.Encodef("ok %s\n", s.ReferenceName.String())
 	}
 
