@@ -11,7 +11,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	osfs "gopkg.in/src-d/go-git.v4/utils/fs/os"
+
+	osfs "srcd.works/go-billy.v1/os"
 )
 
 var (

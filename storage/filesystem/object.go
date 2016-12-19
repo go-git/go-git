@@ -11,7 +11,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	"gopkg.in/src-d/go-git.v4/utils/fs"
+
+	"srcd.works/go-billy.v1"
 )
 
 type ObjectStorage struct {
@@ -261,7 +262,7 @@ func (i index) Decode(r io.Reader) error {
 }
 
 type packfileIter struct {
-	f fs.File
+	f billy.File
 	d *packfile.Decoder
 	t plumbing.ObjectType
 
@@ -270,7 +271,7 @@ type packfileIter struct {
 	total    uint32
 }
 
-func newPackfileIter(f fs.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool) (storer.EncodedObjectIter, error) {
+func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool) (storer.EncodedObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
 	if err != nil {

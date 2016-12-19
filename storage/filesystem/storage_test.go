@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/storage/test"
-	"gopkg.in/src-d/go-git.v4/utils/fs/os"
+
+	"srcd.works/go-billy.v1/os"
 
 	. "gopkg.in/check.v1"
 )
