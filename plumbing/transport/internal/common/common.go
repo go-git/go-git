@@ -77,20 +77,20 @@ type client struct {
 }
 
 // NewClient creates a new client using the given Commander.
-func NewClient(runner Commander) transport.Client {
+func NewClient(runner Commander) transport.Transport {
 	return &client{runner}
 }
 
-// NewFetchPackSession creates a new FetchPackSession.
-func (c *client) NewFetchPackSession(ep transport.Endpoint) (
-	transport.FetchPackSession, error) {
+// NewUploadPackSession creates a new UploadPackSession.
+func (c *client) NewUploadPackSession(ep transport.Endpoint) (
+	transport.UploadPackSession, error) {
 
 	return c.newSession(transport.UploadPackServiceName, ep)
 }
 
-// NewSendPackSession creates a new SendPackSession.
-func (c *client) NewSendPackSession(ep transport.Endpoint) (
-	transport.SendPackSession, error) {
+// NewReceivePackSession creates a new ReceivePackSession.
+func (c *client) NewReceivePackSession(ep transport.Endpoint) (
+	transport.ReceivePackSession, error) {
 
 	return c.newSession(transport.ReceivePackServiceName, ep)
 }
@@ -219,9 +219,9 @@ func (s *session) handleAdvRefDecodeError(err error) error {
 	return err
 }
 
-// FetchPack performs a request to the server to fetch a packfile. A reader is
+// UploadPack performs a request to the server to fetch a packfile. A reader is
 // returned with the packfile content. The reader must be closed after reading.
-func (s *session) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+func (s *session) UploadPack(req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -236,7 +236,7 @@ func (s *session) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResp
 
 	s.packRun = true
 
-	if err := fetchPack(s.Stdin, s.Stdout, req); err != nil {
+	if err := uploadPack(s.Stdin, s.Stdout, req); err != nil {
 		return nil, err
 	}
 
@@ -259,7 +259,7 @@ func (s *session) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResp
 	return DecodeUploadPackResponse(rc, req)
 }
 
-func (s *session) SendPack(req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+func (s *session) ReceivePack(req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
 	if _, err := s.AdvertisedReferences(); err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func (s *session) finish() error {
 
 	s.finished = true
 
-	// If we did not run fetch-pack or send-pack, we close the connection
+	// If we did not run a upload/receive-pack, we close the connection
 	// gracefully by sending a flush packet to the server. If the server
 	// operates correctly, it will exit with status 0.
 	if !s.packRun {
@@ -367,13 +367,13 @@ var (
 	eol = []byte("\n")
 )
 
-// fetchPack implements the git-fetch-pack protocol.
+// uploadPack implements the git-upload-pack protocol.
 //
 // TODO support multi_ack mode
 // TODO support multi_ack_detailed mode
 // TODO support acks for common objects
 // TODO build a proper state machine for all these processing options
-func fetchPack(w io.WriteCloser, r io.Reader, req *packp.UploadPackRequest) error {
+func uploadPack(w io.WriteCloser, r io.Reader, req *packp.UploadPackRequest) error {
 	if err := req.UploadRequest.Encode(w); err != nil {
 		return fmt.Errorf("sending upload-req message: %s", err)
 	}

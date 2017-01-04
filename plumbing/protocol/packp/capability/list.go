@@ -167,6 +167,16 @@ func (l *List) Delete(capability Capability) {
 	}
 }
 
+// All returns a slice with all defined capabilities.
+func (l *List) All() []Capability {
+	var cs []Capability
+	for _, key := range l.sort {
+		cs = append(cs, Capability(key))
+	}
+
+	return cs
+}
+
 // String generates the capabilities strings, the capabilities are sorted in
 // insertion order
 func (l *List) String() string {

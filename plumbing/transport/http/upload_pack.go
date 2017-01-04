@@ -15,14 +15,14 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
-type fetchPackSession struct {
+type upSession struct {
 	*session
 }
 
-func newFetchPackSession(c *http.Client,
-	ep transport.Endpoint) transport.FetchPackSession {
+func newUploadPackSession(c *http.Client,
+	ep transport.Endpoint) transport.UploadPackSession {
 
-	return &fetchPackSession{
+	return &upSession{
 		session: &session{
 			auth:     basicAuthFromEndpoint(ep),
 			client:   c,
@@ -31,7 +31,7 @@ func newFetchPackSession(c *http.Client,
 	}
 }
 
-func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
+func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	if s.advRefs != nil {
 		return s.advRefs, nil
 	}
@@ -73,7 +73,7 @@ func (s *fetchPackSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return ar, nil
 }
 
-func (s *fetchPackSession) FetchPack(req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+func (s *upSession) UploadPack(req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -111,11 +111,11 @@ func (s *fetchPackSession) FetchPack(req *packp.UploadPackRequest) (*packp.Uploa
 }
 
 // Close does nothing.
-func (s *fetchPackSession) Close() error {
+func (s *upSession) Close() error {
 	return nil
 }
 
-func (s *fetchPackSession) doRequest(method, url string, content *bytes.Buffer) (*http.Response, error) {
+func (s *upSession) doRequest(method, url string, content *bytes.Buffer) (*http.Response, error) {
 	var body io.Reader
 	if content != nil {
 		body = content
@@ -143,7 +143,7 @@ func (s *fetchPackSession) doRequest(method, url string, content *bytes.Buffer) 
 }
 
 // it requires a bytes.Buffer, because we need to know the length
-func (s *fetchPackSession) applyHeadersToRequest(req *http.Request, content *bytes.Buffer) {
+func (s *upSession) applyHeadersToRequest(req *http.Request, content *bytes.Buffer) {
 	req.Header.Add("User-Agent", "git/1.0")
 	req.Header.Add("Host", s.endpoint.Host)
 

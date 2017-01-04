@@ -1,40 +1,39 @@
 package file
 
 import (
-	"fmt"
-	"io"
 	"os"
-	"strings"
-	"testing"
+	"os/exec"
+	"path/filepath"
 
-	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/fixtures"
 
 	. "gopkg.in/check.v1"
+	"io/ioutil"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type CommonSuite struct {
+	fixtures.Suite
+	ReceivePackBin string
+	UploadPackBin  string
+}
 
-const bareConfig = `[core]
-repositoryformatversion = 0
-filemode = true
-bare = true`
+var _ = Suite(&CommonSuite{})
 
-func prepareRepo(c *C, path string) transport.Endpoint {
-	url := fmt.Sprintf("file://%s", path)
-	ep, err := transport.NewEndpoint(url)
-	c.Assert(err, IsNil)
+func (s *CommonSuite) SetUpSuite(c *C) {
+	s.Suite.SetUpSuite(c)
 
-	// git-receive-pack refuses to update refs/heads/master on non-bare repo
-	// so we ensure bare repo config.
-	config := fmt.Sprintf("%s/config", path)
-	if _, err := os.Stat(config); err == nil {
-		f, err := os.OpenFile(config, os.O_TRUNC|os.O_WRONLY, 0)
-		c.Assert(err, IsNil)
-		content := strings.NewReader(bareConfig)
-		_, err = io.Copy(f, content)
-		c.Assert(err, IsNil)
-		c.Assert(f.Close(), IsNil)
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		c.Skip("git command not found")
 	}
 
-	return ep
+	binDir, err := ioutil.TempDir(os.TempDir(), "")
+	c.Assert(err, IsNil)
+	s.ReceivePackBin = filepath.Join(binDir, "git-receive-pack")
+	s.UploadPackBin = filepath.Join(binDir, "git-upload-pack")
+	bin := filepath.Join(binDir, "go-git")
+	cmd := exec.Command("go", "build", "-o", bin,
+		"../../../cli/go-git/...")
+	c.Assert(cmd.Run(), IsNil)
+	c.Assert(os.Symlink(bin, s.ReceivePackBin), IsNil)
+	c.Assert(os.Symlink(bin, s.UploadPackBin), IsNil)
 }

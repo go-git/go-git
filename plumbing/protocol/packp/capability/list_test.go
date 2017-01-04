@@ -171,3 +171,14 @@ func (s *SuiteCapabilities) TestAddErrMultipleArgumentsAtTheSameTime(c *check.C)
 	err := cap.Add(Agent, "foo", "bar")
 	c.Assert(err, check.Equals, ErrMultipleArguments)
 }
+
+func (s *SuiteCapabilities) TestAll(c *check.C) {
+	cap := NewList()
+	c.Assert(NewList().All(), check.IsNil)
+
+	cap.Add(Agent, "foo")
+	c.Assert(cap.All(), check.DeepEquals, []Capability{Agent})
+
+	cap.Add(OFSDelta)
+	c.Assert(cap.All(), check.DeepEquals, []Capability{Agent, OFSDelta})
+}

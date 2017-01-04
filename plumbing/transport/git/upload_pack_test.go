@@ -8,28 +8,28 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type FetchPackSuite struct {
-	test.FetchPackSuite
+type UploadPackSuite struct {
+	test.UploadPackSuite
 	fixtures.Suite
 }
 
-var _ = Suite(&FetchPackSuite{})
+var _ = Suite(&UploadPackSuite{})
 
-func (s *FetchPackSuite) SetUpSuite(c *C) {
+func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 
-	s.FetchPackSuite.Client = DefaultClient
+	s.UploadPackSuite.Client = DefaultClient
 
 	ep, err := transport.NewEndpoint("git://github.com/git-fixtures/basic.git")
 	c.Assert(err, IsNil)
-	s.FetchPackSuite.Endpoint = ep
+	s.UploadPackSuite.Endpoint = ep
 
 	ep, err = transport.NewEndpoint("git://github.com/git-fixtures/empty.git")
 	c.Assert(err, IsNil)
-	s.FetchPackSuite.EmptyEndpoint = ep
+	s.UploadPackSuite.EmptyEndpoint = ep
 
 	ep, err = transport.NewEndpoint("git://github.com/git-fixtures/non-existent.git")
 	c.Assert(err, IsNil)
-	s.FetchPackSuite.NonExistentEndpoint = ep
+	s.UploadPackSuite.NonExistentEndpoint = ep
 
 }

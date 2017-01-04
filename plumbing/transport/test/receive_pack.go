@@ -19,44 +19,44 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type SendPackSuite struct {
+type ReceivePackSuite struct {
 	Endpoint            transport.Endpoint
 	EmptyEndpoint       transport.Endpoint
 	NonExistentEndpoint transport.Endpoint
-	Client              transport.Client
+	Client              transport.Transport
 }
 
-func (s *SendPackSuite) TestInfoEmpty(c *C) {
-	r, err := s.Client.NewSendPackSession(s.EmptyEndpoint)
+func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.EmptyEndpoint)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
-	info, err := r.AdvertisedReferences()
+	ar, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
-	c.Assert(info.Head, IsNil)
+	c.Assert(ar.Head, IsNil)
 }
 
-func (s *SendPackSuite) TestInfoNotExists(c *C) {
-	r, err := s.Client.NewSendPackSession(s.NonExistentEndpoint)
+func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
-	info, err := r.AdvertisedReferences()
+	ar, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(info, IsNil)
+	c.Assert(ar, IsNil)
 
-	r, err = s.Client.NewSendPackSession(s.NonExistentEndpoint)
+	r, err = s.Client.NewReceivePackSession(s.NonExistentEndpoint)
 	c.Assert(err, IsNil)
 	req := packp.NewReferenceUpdateRequest()
 	req.Commands = []*packp.Command{
 		{"master", plumbing.ZeroHash, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
 	}
 
-	writer, err := r.SendPack(req)
+	writer, err := r.ReceivePack(req)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(writer, IsNil)
 }
 
-func (s *SendPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
-	r, err := s.Client.NewSendPackSession(s.Endpoint)
+func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	ar1, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
@@ -66,8 +66,8 @@ func (s *SendPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	c.Assert(ar2, DeepEquals, ar1)
 }
 
-func (s *SendPackSuite) TestDefaultBranch(c *C) {
-	r, err := s.Client.NewSendPackSession(s.Endpoint)
+func (s *ReceivePackSuite) TestDefaultBranch(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -78,8 +78,8 @@ func (s *SendPackSuite) TestDefaultBranch(c *C) {
 	c.Assert(ref, Equals, fixtures.Basic().One().Head)
 }
 
-func (s *SendPackSuite) TestCapabilities(c *C) {
-	r, err := s.Client.NewSendPackSession(s.Endpoint)
+func (s *ReceivePackSuite) TestCapabilities(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -88,7 +88,7 @@ func (s *SendPackSuite) TestCapabilities(c *C) {
 	c.Assert(info.Capabilities.Get("agent"), HasLen, 1)
 }
 
-func (s *SendPackSuite) TestFullSendPackOnEmpty(c *C) {
+func (s *ReceivePackSuite) TestFullSendPackOnEmpty(c *C) {
 	endpoint := s.EmptyEndpoint
 	full := true
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -96,11 +96,11 @@ func (s *SendPackSuite) TestFullSendPackOnEmpty(c *C) {
 	req.Commands = []*packp.Command{
 		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
 	}
-	s.sendPack(c, endpoint, req, fixture, full)
+	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) TestSendPackOnEmpty(c *C) {
+func (s *ReceivePackSuite) TestSendPackOnEmpty(c *C) {
 	endpoint := s.EmptyEndpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -108,11 +108,11 @@ func (s *SendPackSuite) TestSendPackOnEmpty(c *C) {
 	req.Commands = []*packp.Command{
 		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
 	}
-	s.sendPack(c, endpoint, req, fixture, full)
+	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) TestSendPackOnEmptyWithReportStatus(c *C) {
+func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus(c *C) {
 	endpoint := s.EmptyEndpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -121,11 +121,11 @@ func (s *SendPackSuite) TestSendPackOnEmptyWithReportStatus(c *C) {
 		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
 	}
 	req.Capabilities.Set(capability.ReportStatus)
-	s.sendPack(c, endpoint, req, fixture, full)
+	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) TestFullSendPackOnNonEmpty(c *C) {
+func (s *ReceivePackSuite) TestFullSendPackOnNonEmpty(c *C) {
 	endpoint := s.Endpoint
 	full := true
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -133,11 +133,11 @@ func (s *SendPackSuite) TestFullSendPackOnNonEmpty(c *C) {
 	req.Commands = []*packp.Command{
 		{"refs/heads/master", fixture.Head, fixture.Head},
 	}
-	s.sendPack(c, endpoint, req, fixture, full)
+	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) TestSendPackOnNonEmpty(c *C) {
+func (s *ReceivePackSuite) TestSendPackOnNonEmpty(c *C) {
 	endpoint := s.Endpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -145,11 +145,11 @@ func (s *SendPackSuite) TestSendPackOnNonEmpty(c *C) {
 	req.Commands = []*packp.Command{
 		{"refs/heads/master", fixture.Head, fixture.Head},
 	}
-	s.sendPack(c, endpoint, req, fixture, full)
+	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
+func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
 	endpoint := s.Endpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -159,11 +159,11 @@ func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
 	}
 	req.Capabilities.Set(capability.ReportStatus)
 
-	s.sendPack(c, endpoint, req, fixture, full)
+	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C) {
+func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C) {
 	endpoint := s.Endpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
@@ -173,7 +173,7 @@ func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C) {
 	}
 	req.Capabilities.Set(capability.ReportStatus)
 
-	report, err := s.sendPackNoCheck(c, endpoint, req, fixture, full)
+	report, err := s.receivePackNoCheck(c, endpoint, req, fixture, full)
 	//XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
 	c.Assert(err, ErrorMatches, ".*(failed to update ref|failed to lock).*")
@@ -184,7 +184,7 @@ func (s *SendPackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C) {
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *SendPackSuite) sendPackNoCheck(c *C, ep transport.Endpoint,
+func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool) (*packp.ReportStatus, error) {
 	url := ""
@@ -196,7 +196,7 @@ func (s *SendPackSuite) sendPackNoCheck(c *C, ep transport.Endpoint,
 		ep.String(), url, callAdvertisedReferences,
 	)
 
-	r, err := s.Client.NewSendPackSession(ep)
+	r, err := s.Client.NewReceivePackSession(ep)
 	c.Assert(err, IsNil, comment)
 	defer func() { c.Assert(r.Close(), IsNil, comment) }()
 
@@ -213,10 +213,10 @@ func (s *SendPackSuite) sendPackNoCheck(c *C, ep transport.Endpoint,
 		req.Packfile = s.emptyPackfile()
 	}
 
-	return r.SendPack(req)
+	return r.ReceivePack(req)
 }
 
-func (s *SendPackSuite) sendPack(c *C, ep transport.Endpoint,
+func (s *ReceivePackSuite) receivePack(c *C, ep transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool) {
 
@@ -229,7 +229,7 @@ func (s *SendPackSuite) sendPack(c *C, ep transport.Endpoint,
 		"failed with ep=%s fixture=%s callAdvertisedReferences=%s",
 		ep.String(), url, callAdvertisedReferences,
 	)
-	report, err := s.sendPackNoCheck(c, ep, req, fixture, callAdvertisedReferences)
+	report, err := s.receivePackNoCheck(c, ep, req, fixture, callAdvertisedReferences)
 
 	c.Assert(err, IsNil, comment)
 	if req.Capabilities.Supports(capability.ReportStatus) {
@@ -240,14 +240,14 @@ func (s *SendPackSuite) sendPack(c *C, ep transport.Endpoint,
 	}
 }
 
-func (s *SendPackSuite) checkRemoteHead(c *C, ep transport.Endpoint, head plumbing.Hash) {
+func (s *ReceivePackSuite) checkRemoteHead(c *C, ep transport.Endpoint, head plumbing.Hash) {
 	s.checkRemoteReference(c, ep, "refs/heads/master", head)
 }
 
-func (s *SendPackSuite) checkRemoteReference(c *C, ep transport.Endpoint,
+func (s *ReceivePackSuite) checkRemoteReference(c *C, ep transport.Endpoint,
 	refName string, head plumbing.Hash) {
 
-	r, err := s.Client.NewFetchPackSession(ep)
+	r, err := s.Client.NewUploadPackSession(ep)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 	ar, err := r.AdvertisedReferences()
@@ -261,13 +261,13 @@ func (s *SendPackSuite) checkRemoteReference(c *C, ep transport.Endpoint,
 	}
 }
 
-func (s *SendPackSuite) TestSendPackAddDeleteReference(c *C) {
+func (s *ReceivePackSuite) TestSendPackAddDeleteReference(c *C) {
 	s.testSendPackAddReference(c)
 	s.testSendPackDeleteReference(c)
 }
 
-func (s *SendPackSuite) testSendPackAddReference(c *C) {
-	r, err := s.Client.NewSendPackSession(s.Endpoint)
+func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -284,12 +284,12 @@ func (s *SendPackSuite) testSendPackAddReference(c *C) {
 		req.Capabilities.Set(capability.ReportStatus)
 	}
 
-	s.sendPack(c, s.Endpoint, req, nil, false)
+	s.receivePack(c, s.Endpoint, req, nil, false)
 	s.checkRemoteReference(c, s.Endpoint, "refs/heads/newbranch", fixture.Head)
 }
 
-func (s *SendPackSuite) testSendPackDeleteReference(c *C) {
-	r, err := s.Client.NewSendPackSession(s.Endpoint)
+func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
+	r, err := s.Client.NewReceivePackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -306,11 +306,11 @@ func (s *SendPackSuite) testSendPackDeleteReference(c *C) {
 		req.Capabilities.Set(capability.ReportStatus)
 	}
 
-	s.sendPack(c, s.Endpoint, req, nil, false)
+	s.receivePack(c, s.Endpoint, req, nil, false)
 	s.checkRemoteReference(c, s.Endpoint, "refs/heads/newbranch", plumbing.ZeroHash)
 }
 
-func (s *SendPackSuite) emptyPackfile() io.ReadCloser {
+func (s *ReceivePackSuite) emptyPackfile() io.ReadCloser {
 	var buf bytes.Buffer
 	e := packfile.NewEncoder(&buf, memory.NewStorage(), false)
 	_, err := e.Encode(nil)

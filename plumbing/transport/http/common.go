@@ -25,7 +25,7 @@ var DefaultClient = NewClient(nil)
 // Note that for HTTP client cannot distinguist between private repositories and
 // unexistent repositories on GitHub. So it returns `ErrAuthorizationRequired`
 // for both.
-func NewClient(c *http.Client) transport.Client {
+func NewClient(c *http.Client) transport.Transport {
 	if c == nil {
 		return &client{http.DefaultClient}
 	}
@@ -35,16 +35,16 @@ func NewClient(c *http.Client) transport.Client {
 	}
 }
 
-func (c *client) NewFetchPackSession(ep transport.Endpoint) (
-	transport.FetchPackSession, error) {
+func (c *client) NewUploadPackSession(ep transport.Endpoint) (
+	transport.UploadPackSession, error) {
 
-	return newFetchPackSession(c.c, ep), nil
+	return newUploadPackSession(c.c, ep), nil
 }
 
-func (c *client) NewSendPackSession(ep transport.Endpoint) (
-	transport.SendPackSession, error) {
+func (c *client) NewReceivePackSession(ep transport.Endpoint) (
+	transport.ReceivePackSession, error) {
 
-	return newSendPackSession(c.c, ep), nil
+	return newReceivePackSession(c.c, ep), nil
 }
 
 type session struct {

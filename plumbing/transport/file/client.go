@@ -21,7 +21,7 @@ type runner struct {
 
 // NewClient returns a new local client using the given git-upload-pack and
 // git-receive-pack binaries.
-func NewClient(uploadPackBin, receivePackBin string) transport.Client {
+func NewClient(uploadPackBin, receivePackBin string) transport.Transport {
 	return common.NewClient(&runner{
 		UploadPackBin:  uploadPackBin,
 		ReceivePackBin: receivePackBin,

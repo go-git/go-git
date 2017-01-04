@@ -3,7 +3,6 @@ package file
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
@@ -12,21 +11,17 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type FetchPackSuite struct {
-	fixtures.Suite
-	test.FetchPackSuite
+type UploadPackSuite struct {
+	CommonSuite
+	test.UploadPackSuite
 }
 
-var _ = Suite(&FetchPackSuite{})
+var _ = Suite(&UploadPackSuite{})
 
-func (s *FetchPackSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
+func (s *UploadPackSuite) SetUpSuite(c *C) {
+	s.CommonSuite.SetUpSuite(c)
 
-	if err := exec.Command("git", "--version").Run(); err != nil {
-		c.Skip("git command not found")
-	}
-
-	s.FetchPackSuite.Client = DefaultClient
+	s.UploadPackSuite.Client = DefaultClient
 
 	fixture := fixtures.Basic().One()
 	path := fixture.DotGit().Base()
@@ -49,7 +44,7 @@ func (s *FetchPackSuite) SetUpSuite(c *C) {
 }
 
 // TODO: fix test
-func (s *FetchPackSuite) TestCommandNoOutput(c *C) {
+func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
 	c.Skip("failing test")
 
 	if _, err := os.Stat("/bin/true"); os.IsNotExist(err) {
@@ -57,30 +52,30 @@ func (s *FetchPackSuite) TestCommandNoOutput(c *C) {
 	}
 
 	client := NewClient("true", "true")
-	session, err := client.NewFetchPackSession(s.Endpoint)
+	session, err := client.NewUploadPackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
 	c.Assert(err, IsNil)
 	c.Assert(ar, IsNil)
 }
 
-func (s *FetchPackSuite) TestMalformedInputNoErrors(c *C) {
+func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
 	if _, err := os.Stat("/usr/bin/yes"); os.IsNotExist(err) {
 		c.Skip("/usr/bin/yes not found")
 	}
 
 	client := NewClient("yes", "yes")
-	session, err := client.NewFetchPackSession(s.Endpoint)
+	session, err := client.NewUploadPackSession(s.Endpoint)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
 	c.Assert(err, NotNil)
 	c.Assert(ar, IsNil)
 }
 
-func (s *FetchPackSuite) TestNonExistentCommand(c *C) {
+func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
-	session, err := client.NewFetchPackSession(s.Endpoint)
+	session, err := client.NewUploadPackSession(s.Endpoint)
 	c.Assert(err, ErrorMatches, ".*no such file or directory.*")
 	c.Assert(session, IsNil)
 }

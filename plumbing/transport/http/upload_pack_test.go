@@ -11,37 +11,38 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type FetchPackSuite struct {
-	test.FetchPackSuite
+type UploadPackSuite struct {
+	test.UploadPackSuite
 }
 
-var _ = Suite(&FetchPackSuite{})
+var _ = Suite(&UploadPackSuite{})
 
-func (s *FetchPackSuite) SetUpSuite(c *C) {
-	s.FetchPackSuite.Client = DefaultClient
+func (s *UploadPackSuite) SetUpSuite(c *C) {
+	s.UploadPackSuite.Client = DefaultClient
 
 	ep, err := transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
 	c.Assert(err, IsNil)
-	s.FetchPackSuite.Endpoint = ep
+	s.UploadPackSuite.Endpoint = ep
 
 	ep, err = transport.NewEndpoint("https://github.com/git-fixtures/empty.git")
 	c.Assert(err, IsNil)
-	s.FetchPackSuite.EmptyEndpoint = ep
+	s.UploadPackSuite.EmptyEndpoint = ep
 
 	ep, err = transport.NewEndpoint("https://github.com/git-fixtures/non-existent.git")
 	c.Assert(err, IsNil)
-	s.FetchPackSuite.NonExistentEndpoint = ep
+	s.UploadPackSuite.NonExistentEndpoint = ep
 }
 
-func (s *FetchPackSuite) TestInfoNotExists(c *C) {
-	r, err := s.Client.NewFetchPackSession(s.NonExistentEndpoint)
+// Overwritten, different behaviour for HTTP.
+func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
+	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint)
 	c.Assert(err, IsNil)
 	info, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrAuthorizationRequired)
 	c.Assert(info, IsNil)
 }
 
-func (s *FetchPackSuite) TestuploadPackRequestToReader(c *C) {
+func (s *UploadPackSuite) TestuploadPackRequestToReader(c *C) {
 	r := packp.NewUploadPackRequest()
 	r.Wants = append(r.Wants, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
 	r.Wants = append(r.Wants, plumbing.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
