@@ -83,9 +83,13 @@ type Signature struct {
 
 // Decode decodes a byte slice into a signature
 func (s *Signature) Decode(b []byte) {
-	open := bytes.IndexByte(b, '<')
-	close := bytes.IndexByte(b, '>')
+	open := bytes.LastIndexByte(b, '<')
+	close := bytes.LastIndexByte(b, '>')
 	if open == -1 || close == -1 {
+		return
+	}
+
+	if close < open {
 		return
 	}
 
