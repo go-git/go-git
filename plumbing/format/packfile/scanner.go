@@ -38,6 +38,7 @@ type ObjectHeader struct {
 
 type Scanner struct {
 	r   reader
+	zr  readerResetter
 	crc hash.Hash32
 
 	// pendingObject is used to detect if an object has been read, or still
@@ -275,19 +276,28 @@ func (s *Scanner) NextObject(w io.Writer) (written int64, crc32 uint32, err erro
 // ReadRegularObject reads and write a non-deltified object
 // from it zlib stream in an object entry in the packfile.
 func (s *Scanner) copyObject(w io.Writer) (int64, error) {
-	zr, err := zlib.NewReader(s.r)
-	if err != nil {
-		return -1, fmt.Errorf("zlib reading error: %s", err)
+	var err error
+	if s.zr == nil {
+		zr, err := zlib.NewReader(s.r)
+		if err != nil {
+			return 0, fmt.Errorf("zlib initialization error: %s", err)
+		}
+
+		s.zr = zr.(readerResetter)
+	} else {
+		if err := s.zr.Reset(s.r, nil); err != nil {
+			return 0, fmt.Errorf("zlib reset error: %s", err)
+		}
 	}
 
 	defer func() {
-		closeErr := zr.Close()
+		closeErr := s.zr.Close()
 		if err == nil {
 			err = closeErr
 		}
 	}()
 
-	return io.Copy(w, zr)
+	return io.Copy(w, s.zr)
 }
 
 // Seek sets a new offset from start, returns the old position before the change
@@ -368,6 +378,11 @@ func (r *bufferedSeeker) Seek(offset int64, whence int) (int64, error) {
 
 	defer r.Reader.Reset(r.r)
 	return r.r.Seek(offset, whence)
+}
+
+type readerResetter interface {
+	io.ReadCloser
+	zlib.Resetter
 }
 
 type reader interface {
