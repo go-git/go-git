@@ -271,6 +271,10 @@ type packfileIter struct {
 	total    uint32
 }
 
+func NewPackfileIter(f billy.File, t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+	return newPackfileIter(f, t, make(map[plumbing.Hash]bool))
+}
+
 func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool) (storer.EncodedObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
@@ -278,7 +282,7 @@ func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash
 		return nil, err
 	}
 
-	d, err := packfile.NewDecoder(s, memory.NewStorage())
+	d, err := packfile.NewDecoderForType(s, memory.NewStorage(), t)
 	if err != nil {
 		return nil, err
 	}
@@ -294,25 +298,27 @@ func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash
 }
 
 func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
-	if iter.position >= iter.total {
-		return nil, io.EOF
-	}
+	for {
+		if iter.position >= iter.total {
+			return nil, io.EOF
+		}
 
-	obj, err := iter.d.DecodeObject()
-	if err != nil {
-		return nil, err
-	}
+		obj, err := iter.d.DecodeObject()
+		if err != nil {
+			return nil, err
+		}
 
-	iter.position++
-	if iter.seen[obj.Hash()] {
-		return iter.Next()
-	}
+		iter.position++
+		if obj == nil {
+			continue
+		}
 
-	if iter.t != plumbing.AnyObject && iter.t != obj.Type() {
-		return iter.Next()
-	}
+		if iter.seen[obj.Hash()] {
+			return iter.Next()
+		}
 
-	return obj, nil
+		return obj, nil
+	}
 }
 
 // ForEach is never called since is used inside of a MultiObjectIterator

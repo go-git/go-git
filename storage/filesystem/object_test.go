@@ -10,9 +10,17 @@ import (
 
 type FsSuite struct {
 	fixtures.Suite
+	Types []plumbing.ObjectType
 }
 
-var _ = Suite(&FsSuite{})
+var _ = Suite(&FsSuite{
+	Types: []plumbing.ObjectType{
+		plumbing.CommitObject,
+		plumbing.TagObject,
+		plumbing.TreeObject,
+		plumbing.BlobObject,
+	},
+})
 
 func (s *FsSuite) TestGetFromObjectFile(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
@@ -76,18 +84,47 @@ func (s *FsSuite) TestIter(c *C) {
 
 func (s *FsSuite) TestIterWithType(c *C) {
 	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
-		fs := f.DotGit()
-		o, err := newObjectStorage(dotgit.New(fs))
-		c.Assert(err, IsNil)
+		for _, t := range s.Types {
+			fs := f.DotGit()
+			o, err := newObjectStorage(dotgit.New(fs))
+			c.Assert(err, IsNil)
 
-		iter, err := o.IterEncodedObjects(plumbing.CommitObject)
-		c.Assert(err, IsNil)
+			iter, err := o.IterEncodedObjects(t)
+			c.Assert(err, IsNil)
 
-		err = iter.ForEach(func(o plumbing.EncodedObject) error {
-			c.Assert(o.Type(), Equals, plumbing.CommitObject)
-			return nil
-		})
+			err = iter.ForEach(func(o plumbing.EncodedObject) error {
+				c.Assert(o.Type(), Equals, t)
+				return nil
+			})
 
-		c.Assert(err, IsNil)
+			c.Assert(err, IsNil)
+		}
+
 	})
+}
+
+func (s *FsSuite) TestPackfileIter(c *C) {
+	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		dg := dotgit.New(fs)
+
+		for _, t := range s.Types {
+			ph, err := dg.ObjectPacks()
+			c.Assert(err, IsNil)
+
+			for _, h := range ph {
+				f, err := dg.ObjectPack(h)
+				c.Assert(err, IsNil)
+				iter, err := NewPackfileIter(f, t)
+				c.Assert(err, IsNil)
+				err = iter.ForEach(func(o plumbing.EncodedObject) error {
+					c.Assert(o.Type(), Equals, t)
+					return nil
+				})
+
+				c.Assert(err, IsNil)
+			}
+		}
+	})
+
 }

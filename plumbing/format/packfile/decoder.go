@@ -59,6 +59,9 @@ type Decoder struct {
 	offsetToHash map[int64]plumbing.Hash
 	hashToOffset map[plumbing.Hash]int64
 	crcs         map[plumbing.Hash]uint32
+
+	offsetToType map[int64]plumbing.ObjectType
+	decoderType  plumbing.ObjectType
 }
 
 // NewDecoder returns a new Decoder that decodes a Packfile using the given
@@ -72,6 +75,22 @@ type Decoder struct {
 // If the ObjectStorer implements storer.Transactioner, a transaction is created
 // during the Decode execution, if something fails the Rollback is called
 func NewDecoder(s *Scanner, o storer.EncodedObjectStorer) (*Decoder, error) {
+	return NewDecoderForType(s, o, plumbing.AnyObject)
+}
+
+// NewDecoderForType returns a new Decoder but in this case for a specific object type.
+// When an object is read using this Decoder instance and it is not of the same type of
+// the specified one, nil will be returned. This is intended to avoid the content
+// deserialization of all the objects
+func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
+	t plumbing.ObjectType) (*Decoder, error) {
+
+	if t == plumbing.OFSDeltaObject ||
+		t == plumbing.REFDeltaObject ||
+		t == plumbing.InvalidObject {
+		return nil, plumbing.ErrInvalidType
+	}
+
 	if !canResolveDeltas(s, o) {
 		return nil, ErrResolveDeltasNotSupported
 	}
@@ -83,6 +102,9 @@ func NewDecoder(s *Scanner, o storer.EncodedObjectStorer) (*Decoder, error) {
 		offsetToHash: make(map[int64]plumbing.Hash, 0),
 		hashToOffset: make(map[plumbing.Hash]int64, 0),
 		crcs:         make(map[plumbing.Hash]uint32, 0),
+
+		offsetToType: make(map[int64]plumbing.ObjectType, 0),
+		decoderType:  t,
 	}, nil
 }
 
@@ -174,17 +196,82 @@ func (d *Decoder) decodeObjectsWithObjectStorerTx(count int) error {
 
 // DecodeObject reads the next object from the scanner and returns it. This
 // method can be used in replacement of the Decode method, to work in a
-// interative way
+// interactive way. If you created a new decoder instance using NewDecoderForType
+// constructor, if the object decoded is not equals to the specified one, nil will
+// be returned
 func (d *Decoder) DecodeObject() (plumbing.EncodedObject, error) {
 	h, err := d.s.NextObjectHeader()
 	if err != nil {
 		return nil, err
 	}
 
+	if d.decoderType == plumbing.AnyObject {
+		return d.decodeByHeader(h)
+	}
+
+	return d.decodeIfSpecificType(h)
+}
+
+func (d *Decoder) decodeIfSpecificType(h *ObjectHeader) (plumbing.EncodedObject, error) {
+	var realType plumbing.ObjectType
+	var err error
+	switch h.Type {
+	case plumbing.OFSDeltaObject:
+		realType, err = d.ofsDeltaType(h.OffsetReference)
+	case plumbing.REFDeltaObject:
+		realType, err = d.refDeltaType(h.Reference)
+
+		// If a reference delta is not found, it means that it isn't of
+		// the type we are looking for, because we don't have any reference
+		// and it is not present into the object storer
+		if err == plumbing.ErrObjectNotFound {
+			return nil, nil
+		}
+	default:
+		realType = h.Type
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	d.offsetToType[h.Offset] = realType
+
+	if d.decoderType == realType {
+		return d.decodeByHeader(h)
+	}
+
+	return nil, nil
+}
+
+func (d *Decoder) ofsDeltaType(offset int64) (plumbing.ObjectType, error) {
+	t, ok := d.offsetToType[offset]
+	if !ok {
+		return plumbing.InvalidObject, plumbing.ErrObjectNotFound
+	}
+
+	return t, nil
+}
+
+func (d *Decoder) refDeltaType(ref plumbing.Hash) (plumbing.ObjectType, error) {
+	if o, ok := d.hashToOffset[ref]; ok {
+		return d.ofsDeltaType(o)
+	}
+
+	obj, err := d.o.EncodedObject(plumbing.AnyObject, ref)
+	if err != nil {
+		return plumbing.InvalidObject, err
+	}
+
+	return obj.Type(), nil
+}
+
+func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error) {
 	obj := d.newObject()
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
 	var crc uint32
+	var err error
 	switch h.Type {
 	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
 		crc, err = d.fillRegularObjectContent(obj)
