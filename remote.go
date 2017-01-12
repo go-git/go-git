@@ -355,7 +355,8 @@ func getWants(spec []config.RefSpec, localStorer Storer, remoteRefs storer.Refer
 		}
 
 		hash := ref.Hash()
-		exists, err := commitExists(localStorer, hash)
+
+		exists, err := objectExists(localStorer, hash)
 		if err != nil {
 			return err
 		}
@@ -378,8 +379,8 @@ func getWants(spec []config.RefSpec, localStorer Storer, remoteRefs storer.Refer
 	return result, nil
 }
 
-func commitExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
-	_, err := s.EncodedObject(plumbing.CommitObject, h)
+func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
+	_, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err == plumbing.ErrObjectNotFound {
 		return false, nil
 	}

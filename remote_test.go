@@ -171,6 +171,17 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
+	s.doTestFetchNoErrAlreadyUpToDate(c, url)
+}
+
+func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateWithNonCommitObjects(c *C) {
+	fixture := fixtures.ByTag("tags").One()
+	url := s.GetLocalRepositoryURL(fixture)
+	s.doTestFetchNoErrAlreadyUpToDate(c, url)
+}
+
+func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(c *C, url string) {
+
 	sto := memory.NewStorage()
 	r := newRemote(sto, nil, &config.RemoteConfig{Name: "foo", URL: url})
 
