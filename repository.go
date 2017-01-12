@@ -306,7 +306,9 @@ func (r *Repository) IsEmpty() (bool, error) {
 	})
 }
 
-// Pull incorporates changes from a remote repository into the current branch
+// Pull incorporates changes from a remote repository into the current branch.
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
 func (r *Repository) Pull(o *PullOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
@@ -333,6 +335,8 @@ func (r *Repository) Pull(o *PullOptions) error {
 }
 
 // Fetch fetches changes from a remote repository.
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
 func (r *Repository) Fetch(o *FetchOptions) error {
 	if err := o.Validate(); err != nil {
 		return err

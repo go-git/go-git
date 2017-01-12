@@ -46,6 +46,8 @@ func (r *Remote) String() string {
 }
 
 // Fetch fetches references from the remote to the local repository.
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
 func (r *Remote) Fetch(o *FetchOptions) error {
 	_, err := r.fetch(o)
 	return err
