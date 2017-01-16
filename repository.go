@@ -178,7 +178,7 @@ func (r *Repository) Clone(o *CloneOptions) error {
 		return err
 	}
 
-	if err := r.createReferences(c.Fetch, o.ReferenceName, head); err != nil {
+	if _, err := r.updateReferences(c.Fetch, o.ReferenceName, head); err != nil {
 		return err
 	}
 
@@ -239,31 +239,42 @@ func (r *Repository) updateRemoteConfig(remote *Remote, o *CloneOptions,
 	return r.s.SetConfig(cfg)
 }
 
-func (r *Repository) createReferences(spec []config.RefSpec,
-	headName plumbing.ReferenceName, resolvedHead *plumbing.Reference) error {
+func (r *Repository) updateReferences(spec []config.RefSpec,
+	headName plumbing.ReferenceName, resolvedHead *plumbing.Reference) (updated bool, err error) {
 
 	if !resolvedHead.IsBranch() {
 		// Detached HEAD mode
 		head := plumbing.NewHashReference(plumbing.HEAD, resolvedHead.Hash())
-		return r.s.SetReference(head)
+		return updateReferenceStorerIfNeeded(r.s, head)
 	}
 
-	// Create local reference for the resolved head
-	if err := r.s.SetReference(resolvedHead); err != nil {
-		return err
+	refs := []*plumbing.Reference{
+		// Create local reference for the resolved head
+		resolvedHead,
+		// Create local symbolic HEAD
+		plumbing.NewSymbolicReference(plumbing.HEAD, resolvedHead.Name()),
 	}
 
-	// Create local symbolic HEAD
-	head := plumbing.NewSymbolicReference(plumbing.HEAD, resolvedHead.Name())
-	if err := r.s.SetReference(head); err != nil {
-		return err
+	refs = append(refs, r.calculateRemoteHeadReference(spec, resolvedHead)...)
+
+	for _, ref := range refs {
+		u, err := updateReferenceStorerIfNeeded(r.s, ref)
+		if err != nil {
+			return updated, err
+		}
+
+		if u {
+			updated = true
+		}
 	}
 
-	return r.createRemoteHeadReference(spec, resolvedHead)
+	return
 }
 
-func (r *Repository) createRemoteHeadReference(spec []config.RefSpec,
-	resolvedHead *plumbing.Reference) error {
+func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
+	resolvedHead *plumbing.Reference) []*plumbing.Reference {
+
+	var refs []*plumbing.Reference
 
 	// Create resolved HEAD reference with remote prefix if it does not
 	// exist. This is needed when using single branch and HEAD.
@@ -276,20 +287,31 @@ func (r *Repository) createRemoteHeadReference(spec []config.RefSpec,
 		name = rs.Dst(name)
 		_, err := r.s.Reference(name)
 		if err == plumbing.ErrReferenceNotFound {
-			ref := plumbing.NewHashReference(name, resolvedHead.Hash())
-			if err := r.s.SetReference(ref); err != nil {
-				return err
-			}
-
-			continue
-		}
-
-		if err != nil {
-			return err
+			refs = append(refs, plumbing.NewHashReference(name, resolvedHead.Hash()))
 		}
 	}
 
-	return nil
+	return refs
+}
+
+func updateReferenceStorerIfNeeded(
+	s storer.ReferenceStorer, r *plumbing.Reference) (updated bool, err error) {
+
+	p, err := s.Reference(r.Name())
+	if err != nil && err != plumbing.ErrReferenceNotFound {
+		return false, err
+	}
+
+	// we use the string method to compare references, is the easiest way
+	if err == plumbing.ErrReferenceNotFound || r.String() != p.String() {
+		if err := s.SetReference(r); err != nil {
+			return false, err
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // IsEmpty returns true if the repository is empty
@@ -322,7 +344,11 @@ func (r *Repository) Pull(o *PullOptions) error {
 	remoteRefs, err := remote.fetch(&FetchOptions{
 		Depth: o.Depth,
 	})
-	if err != nil {
+
+	updated := true
+	if err == NoErrAlreadyUpToDate {
+		updated = false
+	} else if err != nil {
 		return err
 	}
 
@@ -331,7 +357,20 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return err
 	}
 
-	return r.createReferences(remote.c.Fetch, o.ReferenceName, head)
+	refsUpdated, err := r.updateReferences(remote.c.Fetch, o.ReferenceName, head)
+	if err != nil {
+		return err
+	}
+
+	if refsUpdated {
+		updated = refsUpdated
+	}
+
+	if !updated {
+		return NoErrAlreadyUpToDate
+	}
+
+	return nil
 }
 
 // Fetch fetches changes from a remote repository.

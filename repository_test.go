@@ -266,6 +266,34 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestPullUpdateReferencesIfNeeded(c *C) {
+	r := NewMemoryRepository()
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+
+	err := r.Fetch(&FetchOptions{})
+	c.Assert(err, IsNil)
+
+	_, err = r.Reference("refs/heads/master", false)
+	c.Assert(err, NotNil)
+
+	err = r.Pull(&PullOptions{})
+	c.Assert(err, IsNil)
+
+	head, err := r.Reference(plumbing.HEAD, true)
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err := r.Reference("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	err = r.Pull(&PullOptions{})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+}
+
 func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	r := NewMemoryRepository()
 	err := r.Clone(&CloneOptions{
@@ -289,7 +317,7 @@ func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	c.Assert(storage.Objects, HasLen, 28)
 }
 
-func (s *RepositorySuite) TestPullA(c *C) {
+func (s *RepositorySuite) TestPullAdd(c *C) {
 	path := fixtures.Basic().One().Worktree().Base()
 
 	r := NewMemoryRepository()
