@@ -35,7 +35,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 
 // Overwritten, different behaviour for HTTP.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint)
+	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	info, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrAuthorizationRequired)

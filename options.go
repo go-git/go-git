@@ -22,7 +22,7 @@ var (
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from
 	URL string
-	// Auth credentials, if required, to uses with the remote repository
+	// Auth credentials, if required, to use with the remote repository
 	Auth transport.AuthMethod
 	// Name of the remote to be added, by default `origin`
 	RemoteName string
@@ -61,6 +61,8 @@ type PullOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits.
 	Depth int
+	// Auth credentials, if required, to use with the remote repository
+	Auth transport.AuthMethod
 }
 
 // Validate validate the fields and set the default values.
@@ -84,6 +86,8 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
+	// Auth credentials, if required, to use with the remote repository
+	Auth transport.AuthMethod
 }
 
 // Validate validate the fields and set the default values
@@ -108,6 +112,8 @@ type PushOptions struct {
 	// RefSpecs specify what destination ref to update with what source
 	// object. A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
+	// Auth credentials, if required, to use with the remote repository
+	Auth transport.AuthMethod
 }
 
 // Validate validate the fields and set the default values

@@ -19,7 +19,8 @@ func ServeUploadPack(path string) error {
 		return err
 	}
 
-	s, err := server.DefaultServer.NewUploadPackSession(ep)
+	// TODO: define and implement a server-side AuthMethod
+	s, err := server.DefaultServer.NewUploadPackSession(ep, nil)
 	if err != nil {
 		return fmt.Errorf("error creating session: %s", err)
 	}
@@ -36,7 +37,8 @@ func ServeReceivePack(path string) error {
 		return err
 	}
 
-	s, err := server.DefaultServer.NewReceivePackSession(ep)
+	// TODO: define and implement a server-side AuthMethod
+	s, err := server.DefaultServer.NewReceivePackSession(ep, nil)
 	if err != nil {
 		return fmt.Errorf("error creating session: %s", err)
 	}

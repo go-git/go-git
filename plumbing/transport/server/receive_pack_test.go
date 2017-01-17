@@ -34,7 +34,7 @@ func (s *ReceivePackSuite) TestSendPackAddDeleteReference(c *C) {
 
 // Overwritten, server returns error earlier.
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
-	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint)
+	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(r, IsNil)
 }

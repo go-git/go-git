@@ -46,7 +46,7 @@ func (s *ReceivePackSuite) TestCommandNoOutput(c *C) {
 	}
 
 	client := NewClient("true", "true")
-	session, err := client.NewReceivePackSession(s.Endpoint)
+	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
 	c.Assert(err, IsNil)
@@ -59,7 +59,7 @@ func (s *ReceivePackSuite) TestMalformedInputNoErrors(c *C) {
 	}
 
 	client := NewClient("yes", "yes")
-	session, err := client.NewReceivePackSession(s.Endpoint)
+	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
 	c.Assert(err, NotNil)
@@ -69,7 +69,7 @@ func (s *ReceivePackSuite) TestMalformedInputNoErrors(c *C) {
 func (s *ReceivePackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
-	session, err := client.NewReceivePackSession(s.Endpoint)
+	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, ErrorMatches, ".*no such file or directory.*")
 	c.Assert(session, IsNil)
 }

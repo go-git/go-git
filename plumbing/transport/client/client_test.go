@@ -58,12 +58,12 @@ type dummyClient struct {
 	*http.Client
 }
 
-func (*dummyClient) NewUploadPackSession(transport.Endpoint) (
+func (*dummyClient) NewUploadPackSession(transport.Endpoint, transport.AuthMethod) (
 	transport.UploadPackSession, error) {
 	return nil, nil
 }
 
-func (*dummyClient) NewReceivePackSession(transport.Endpoint) (
+func (*dummyClient) NewReceivePackSession(transport.Endpoint, transport.AuthMethod) (
 	transport.ReceivePackSession, error) {
 	return nil, nil
 }

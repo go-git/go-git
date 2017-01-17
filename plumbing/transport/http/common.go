@@ -35,16 +35,16 @@ func NewClient(c *http.Client) transport.Transport {
 	}
 }
 
-func (c *client) NewUploadPackSession(ep transport.Endpoint) (
+func (c *client) NewUploadPackSession(ep transport.Endpoint, auth transport.AuthMethod) (
 	transport.UploadPackSession, error) {
 
-	return newUploadPackSession(c.c, ep), nil
+	return newUploadPackSession(c.c, ep, auth)
 }
 
-func (c *client) NewReceivePackSession(ep transport.Endpoint) (
+func (c *client) NewReceivePackSession(ep transport.Endpoint, auth transport.AuthMethod) (
 	transport.ReceivePackSession, error) {
 
-	return newReceivePackSession(c.c, ep), nil
+	return newReceivePackSession(c.c, ep, auth)
 }
 
 type session struct {
@@ -52,16 +52,6 @@ type session struct {
 	client   *http.Client
 	endpoint transport.Endpoint
 	advRefs  *packp.AdvRefs
-}
-
-func (s *session) SetAuth(auth transport.AuthMethod) error {
-	a, ok := auth.(AuthMethod)
-	if !ok {
-		return transport.ErrInvalidAuthMethod
-	}
-
-	s.auth = a
-	return nil
 }
 
 func (*session) Close() error {

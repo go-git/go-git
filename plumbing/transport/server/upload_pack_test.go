@@ -25,7 +25,7 @@ func (s *UploadPackSuite) SetUpTest(c *C) {
 
 // Overwritten, it's not an error in server-side.
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint)
+	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
@@ -34,7 +34,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
 
 // Overwritten, server returns error earlier.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint)
+	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(r, IsNil)
 }

@@ -72,7 +72,7 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
 
-	s, err := newSendPackSession(r.c.URL)
+	s, err := newSendPackSession(r.c.URL, o.Auth)
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (r *Remote) fetch(o *FetchOptions) (refs storer.ReferenceStorer, err error)
 		o.RefSpecs = r.c.Fetch
 	}
 
-	s, err := newUploadPackSession(r.c.URL)
+	s, err := newUploadPackSession(r.c.URL, o.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -175,22 +175,22 @@ func (r *Remote) fetch(o *FetchOptions) (refs storer.ReferenceStorer, err error)
 	return remoteRefs, err
 }
 
-func newUploadPackSession(url string) (transport.UploadPackSession, error) {
+func newUploadPackSession(url string, auth transport.AuthMethod) (transport.UploadPackSession, error) {
 	c, ep, err := newClient(url)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.NewUploadPackSession(ep)
+	return c.NewUploadPackSession(ep, auth)
 }
 
-func newSendPackSession(url string) (transport.ReceivePackSession, error) {
+func newSendPackSession(url string, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
 	c, ep, err := newClient(url)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.NewReceivePackSession(ep)
+	return c.NewReceivePackSession(ep, auth)
 }
 
 func newClient(url string) (transport.Transport, transport.Endpoint, error) {

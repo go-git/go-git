@@ -14,8 +14,8 @@ type rpSession struct {
 	*session
 }
 
-func newReceivePackSession(c *http.Client, ep transport.Endpoint) transport.ReceivePackSession {
-	return &rpSession{&session{}}
+func newReceivePackSession(c *http.Client, ep transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
+	return &rpSession{&session{}}, nil
 }
 
 func (s *rpSession) AdvertisedReferences() (*packp.AdvRefs, error) {

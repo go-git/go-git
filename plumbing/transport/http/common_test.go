@@ -13,7 +13,8 @@ import (
 func Test(t *testing.T) { TestingT(t) }
 
 type ClientSuite struct {
-	Endpoint transport.Endpoint
+	Endpoint  transport.Endpoint
+	EmptyAuth transport.AuthMethod
 }
 
 var _ = Suite(&ClientSuite{})
@@ -76,9 +77,8 @@ func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 
 func (s *ClientSuite) TestSetAuth(c *C) {
 	auth := &BasicAuth{}
-	r, err := DefaultClient.NewUploadPackSession(s.Endpoint)
+	r, err := DefaultClient.NewUploadPackSession(s.Endpoint, auth)
 	c.Assert(err, IsNil)
-	r.SetAuth(auth)
 	c.Assert(auth, Equals, r.(*upSession).auth)
 }
 
@@ -88,7 +88,6 @@ func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
 func (s *ClientSuite) TestSetAuthWrongType(c *C) {
-	r, err := DefaultClient.NewUploadPackSession(s.Endpoint)
-	c.Assert(err, IsNil)
-	c.Assert(r.SetAuth(&mockAuth{}), Equals, transport.ErrInvalidAuthMethod)
+	_, err := DefaultClient.NewUploadPackSession(s.Endpoint, &mockAuth{})
+	c.Assert(err, Equals, transport.ErrInvalidAuthMethod)
 }

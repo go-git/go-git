@@ -37,15 +37,13 @@ type Commander interface {
 	// error should be returned if the endpoint is not supported or the
 	// command cannot be created (e.g. binary does not exist, connection
 	// cannot be established).
-	Command(cmd string, ep transport.Endpoint) (Command, error)
+	Command(cmd string, ep transport.Endpoint, auth transport.AuthMethod) (Command, error)
 }
 
 // Command is used for a single command execution.
 // This interface is modeled after exec.Cmd and ssh.Session in the standard
 // library.
 type Command interface {
-	// SetAuth sets the authentication method.
-	SetAuth(transport.AuthMethod) error
 	// StderrPipe returns a pipe that will be connected to the command's
 	// standard error when the command starts. It should not be called after
 	// Start.
@@ -82,17 +80,17 @@ func NewClient(runner Commander) transport.Transport {
 }
 
 // NewUploadPackSession creates a new UploadPackSession.
-func (c *client) NewUploadPackSession(ep transport.Endpoint) (
+func (c *client) NewUploadPackSession(ep transport.Endpoint, auth transport.AuthMethod) (
 	transport.UploadPackSession, error) {
 
-	return c.newSession(transport.UploadPackServiceName, ep)
+	return c.newSession(transport.UploadPackServiceName, ep, auth)
 }
 
 // NewReceivePackSession creates a new ReceivePackSession.
-func (c *client) NewReceivePackSession(ep transport.Endpoint) (
+func (c *client) NewReceivePackSession(ep transport.Endpoint, auth transport.AuthMethod) (
 	transport.ReceivePackSession, error) {
 
-	return c.newSession(transport.ReceivePackServiceName, ep)
+	return c.newSession(transport.ReceivePackServiceName, ep, auth)
 }
 
 type session struct {
@@ -107,8 +105,8 @@ type session struct {
 	errLines      chan string
 }
 
-func (c *client) newSession(s string, ep transport.Endpoint) (*session, error) {
-	cmd, err := c.cmdr.Command(s, ep)
+func (c *client) newSession(s string, ep transport.Endpoint, auth transport.AuthMethod) (*session, error) {
+	cmd, err := c.cmdr.Command(s, ep, auth)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +154,6 @@ func (c *client) listenErrors(r io.Reader) chan string {
 	}()
 
 	return errLines
-}
-
-// SetAuth delegates to the command's SetAuth.
-func (s *session) SetAuth(auth transport.AuthMethod) error {
-	return s.Command.SetAuth(auth)
 }
 
 // AdvertisedReferences retrieves the advertised references from the server.

@@ -30,6 +30,7 @@ var (
 	ErrAuthorizationRequired  = errors.New("authorization required")
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
 	ErrInvalidAuthMethod      = errors.New("invalid auth method")
+	ErrAlreadyConnected       = errors.New("session already established")
 )
 
 const (
@@ -41,9 +42,9 @@ const (
 // It is implemented both by the client and the server, making this a RPC.
 type Transport interface {
 	// NewUploadPackSession starts a git-upload-pack session for an endpoint.
-	NewUploadPackSession(Endpoint) (UploadPackSession, error)
+	NewUploadPackSession(Endpoint, AuthMethod) (UploadPackSession, error)
 	// NewReceivePackSession starts a git-receive-pack session for an endpoint.
-	NewReceivePackSession(Endpoint) (ReceivePackSession, error)
+	NewReceivePackSession(Endpoint, AuthMethod) (ReceivePackSession, error)
 }
 
 type Session interface {
@@ -52,8 +53,6 @@ type Session interface {
 	// If the repository does not exist, returns ErrRepositoryNotFound.
 	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
 	AdvertisedReferences() (*packp.AdvRefs, error)
-	//TODO: Move to Client level.
-	SetAuth(auth AuthMethod) error
 	io.Closer
 }
 

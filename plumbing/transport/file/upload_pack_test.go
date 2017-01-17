@@ -52,7 +52,7 @@ func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
 	}
 
 	client := NewClient("true", "true")
-	session, err := client.NewUploadPackSession(s.Endpoint)
+	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
 	c.Assert(err, IsNil)
@@ -65,7 +65,7 @@ func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
 	}
 
 	client := NewClient("yes", "yes")
-	session, err := client.NewUploadPackSession(s.Endpoint)
+	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
 	c.Assert(err, NotNil)
@@ -75,7 +75,7 @@ func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
 func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
-	session, err := client.NewUploadPackSession(s.Endpoint)
+	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, ErrorMatches, ".*no such file or directory.*")
 	c.Assert(session, IsNil)
 }

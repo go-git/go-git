@@ -22,11 +22,12 @@ type UploadPackSuite struct {
 	Endpoint            transport.Endpoint
 	EmptyEndpoint       transport.Endpoint
 	NonExistentEndpoint transport.Endpoint
+	EmptyAuth           transport.AuthMethod
 	Client              transport.Transport
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint)
+	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrEmptyRemoteRepository)
@@ -34,13 +35,13 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint)
+	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(ar, IsNil)
 
-	r, err = s.Client.NewUploadPackSession(s.NonExistentEndpoint)
+	r, err = s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
@@ -50,7 +51,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 }
 
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar1, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
@@ -61,7 +62,7 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 }
 
 func (s *UploadPackSuite) TestDefaultBranch(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -73,7 +74,7 @@ func (s *UploadPackSuite) TestDefaultBranch(c *C) {
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -83,7 +84,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported(c *C) {
 }
 
 func (s *UploadPackSuite) TestCapabilities(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -93,7 +94,7 @@ func (s *UploadPackSuite) TestCapabilities(c *C) {
 }
 
 func (s *UploadPackSuite) TestFullUploadPack(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -111,7 +112,7 @@ func (s *UploadPackSuite) TestFullUploadPack(c *C) {
 }
 
 func (s *UploadPackSuite) TestUploadPack(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -125,7 +126,7 @@ func (s *UploadPackSuite) TestUploadPack(c *C) {
 }
 
 func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -139,7 +140,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
 }
 
 func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -153,7 +154,7 @@ func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
 }
 
 func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
 
@@ -168,7 +169,7 @@ func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
 }
 
 func (s *UploadPackSuite) TestFetchError(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.Endpoint)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
 	req := packp.NewUploadPackRequest()

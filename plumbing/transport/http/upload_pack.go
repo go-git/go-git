@@ -19,16 +19,22 @@ type upSession struct {
 	*session
 }
 
-func newUploadPackSession(c *http.Client,
-	ep transport.Endpoint) transport.UploadPackSession {
-
-	return &upSession{
-		session: &session{
-			auth:     basicAuthFromEndpoint(ep),
-			client:   c,
-			endpoint: ep,
-		},
+func newUploadPackSession(c *http.Client, ep transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
+	s := &session{
+		auth:     basicAuthFromEndpoint(ep),
+		client:   c,
+		endpoint: ep,
 	}
+	if auth != nil {
+		a, ok := auth.(AuthMethod)
+		if !ok {
+			return nil, transport.ErrInvalidAuthMethod
+		}
+
+		s.auth = a
+	}
+
+	return &upSession{session: s}, nil
 }
 
 func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {

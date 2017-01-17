@@ -30,7 +30,7 @@ func NewServer(loader Loader) transport.Transport {
 	return &server{loader, &handler{}}
 }
 
-func (s *server) NewUploadPackSession(ep transport.Endpoint) (transport.UploadPackSession, error) {
+func (s *server) NewUploadPackSession(ep transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
 	sto, err := s.loader.Load(ep)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (s *server) NewUploadPackSession(ep transport.Endpoint) (transport.UploadPa
 	return s.handler.NewUploadPackSession(sto)
 }
 
-func (s *server) NewReceivePackSession(ep transport.Endpoint) (transport.ReceivePackSession, error) {
+func (s *server) NewReceivePackSession(ep transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
 	sto, err := s.loader.Load(ep)
 	if err != nil {
 		return nil, err

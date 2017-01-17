@@ -168,6 +168,7 @@ func (r *Repository) Clone(o *CloneOptions) error {
 	remoteRefs, err := remote.fetch(&FetchOptions{
 		RefSpecs: r.cloneRefSpec(o, c),
 		Depth:    o.Depth,
+		Auth:     o.Auth,
 	})
 	if err != nil {
 		return err
@@ -343,6 +344,7 @@ func (r *Repository) Pull(o *PullOptions) error {
 
 	remoteRefs, err := remote.fetch(&FetchOptions{
 		Depth: o.Depth,
+		Auth:  o.Auth,
 	})
 
 	updated := true
