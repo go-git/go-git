@@ -7,6 +7,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
 
 	. "gopkg.in/check.v1"
@@ -19,15 +20,21 @@ type BaseSuite struct {
 	Repository *Repository
 	Storer     storer.EncodedObjectStorer
 
-	cache map[string]*Repository
+	backupProtocol transport.Transport
+	cache          map[string]*Repository
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
-	s.installMockProtocol(c)
+	s.installMockProtocol()
 	s.buildBasicRepository(c)
 
 	s.cache = make(map[string]*Repository, 0)
+}
+
+func (s *BaseSuite) TearDownSuite(c *C) {
+	s.Suite.TearDownSuite(c)
+	s.uninstallMockProtocol()
 }
 
 func (s *BaseSuite) buildBasicRepository(c *C) {
@@ -71,8 +78,13 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 	return r
 }
 
-func (s *BaseSuite) installMockProtocol(c *C) {
+func (s *BaseSuite) installMockProtocol() {
+	s.backupProtocol = client.Protocols["https"]
 	client.InstallProtocol("https", nil)
+}
+
+func (s *BaseSuite) uninstallMockProtocol() {
+	client.InstallProtocol("https", s.backupProtocol)
 }
 
 func (s *BaseSuite) GetBasicLocalRepositoryURL() string {
