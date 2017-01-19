@@ -46,13 +46,13 @@ func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *BlameRe
 	c.Assert(len(t.blames), Equals, len(lines), Commentf(
 		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
 
-	blamedLines := make([]*line, 0, len(t.blames))
+	blamedLines := make([]*Line, 0, len(t.blames))
 	for i := range t.blames {
 		commit, err := r.Commit(plumbing.NewHash(t.blames[i]))
 		c.Assert(err, IsNil)
-		l := &line{
-			author: commit.Author.Email,
-			text:   lines[i],
+		l := &Line{
+			Author: commit.Author.Email,
+			Text:   lines[i],
 		}
 		blamedLines = append(blamedLines, l)
 	}

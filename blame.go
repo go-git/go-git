@@ -16,7 +16,7 @@ import (
 type BlameResult struct {
 	Path  string
 	Rev   plumbing.Hash
-	Lines []*line
+	Lines []*Line
 }
 
 // Blame returns the last commit that modified each line of a file in a
@@ -100,23 +100,24 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 	}, nil
 }
 
-type line struct {
-	author string
-	text   string
+// Line values represent the contents and author of a line in BlamedResult values.
+type Line struct {
+	Author string // email address of the author of the line.
+	Text   string // original text of the line.
 }
 
-func newLine(author, text string) *line {
-	return &line{
-		author: author,
-		text:   text,
+func newLine(author, text string) *Line {
+	return &Line{
+		Author: author,
+		Text:   text,
 	}
 }
 
-func newLines(contents []string, commits []*object.Commit) ([]*line, error) {
+func newLines(contents []string, commits []*object.Commit) ([]*Line, error) {
 	if len(contents) != len(commits) {
 		return nil, errors.New("contents and commits have different length")
 	}
-	result := make([]*line, 0, len(contents))
+	result := make([]*Line, 0, len(contents))
 	for i := range contents {
 		l := newLine(commits[i].Author.Email, contents[i])
 		result = append(result, l)
