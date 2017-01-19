@@ -264,20 +264,34 @@ func (g Fixtures) Exclude(tag string) Fixtures {
 	return r
 }
 
-type Suite struct{}
-
-func (s *Suite) SetUpSuite(c *check.C) {
+// Init set the correct path to be able to access to the fixtures files
+func Init() {
 	RootFolder = filepath.Join(
 		build.Default.GOPATH,
 		"src", "gopkg.in/src-d/go-git.v4", "fixtures",
 	)
 }
 
-func (s *Suite) TearDownSuite(c *check.C) {
+// Clean cleans all the temporal files created
+func Clean() error {
 	for f := range folders {
 		err := os.RemoveAll(f)
-		c.Assert(err, check.IsNil)
+		if err != nil {
+			return err
+		}
 
 		delete(folders, f)
 	}
+
+	return nil
+}
+
+type Suite struct{}
+
+func (s *Suite) SetUpSuite(c *check.C) {
+	Init()
+}
+
+func (s *Suite) TearDownSuite(c *check.C) {
+	c.Assert(Clean(), check.IsNil)
 }
