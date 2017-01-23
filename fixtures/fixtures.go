@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"errors"
 	"fmt"
 	"go/build"
 	"io/ioutil"
@@ -28,7 +29,7 @@ var fixtures = Fixtures{{
 	PackfileHash: plumbing.NewHash("135fe3d1ad828afe68706f1d481aedbcfa7a86d2"),
 	DotGitHash:   plumbing.NewHash("78c5fb882e76286d8201016cffee63ea7060a0c2"),
 	ObjectsCount: 68,
-},{
+}, {
 	Tags:         []string{"packfile", "ofs-delta", ".git"},
 	URL:          "https://github.com/git-fixtures/basic.git",
 	Head:         plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -265,11 +266,21 @@ func (g Fixtures) Exclude(tag string) Fixtures {
 }
 
 // Init set the correct path to be able to access to the fixtures files
-func Init() {
-	RootFolder = filepath.Join(
-		build.Default.GOPATH,
-		"src", "gopkg.in/src-d/go-git.v4", "fixtures",
-	)
+func Init() error {
+	srcs := build.Default.SrcDirs()
+
+	for _, src := range srcs {
+		rf := filepath.Join(
+			src, "gopkg.in/src-d/go-git.v4", "fixtures",
+		)
+
+		if _, err := os.Stat(rf); err == nil {
+			RootFolder = rf
+			return nil
+		}
+	}
+
+	return errors.New("fixtures folder not found")
 }
 
 // Clean cleans all the temporal files created
@@ -289,7 +300,7 @@ func Clean() error {
 type Suite struct{}
 
 func (s *Suite) SetUpSuite(c *check.C) {
-	Init()
+	c.Assert(Init(), check.IsNil)
 }
 
 func (s *Suite) TearDownSuite(c *check.C) {
