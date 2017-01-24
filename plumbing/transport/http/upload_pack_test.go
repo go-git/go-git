@@ -54,7 +54,7 @@ func (s *UploadPackSuite) TestuploadPackRequestToReader(c *C) {
 	c.Assert(string(b), Equals,
 		"0032want 2b41ef280fdb67a9b250678686a0c3e03b0a9989\n"+
 			"0032want d82f291cde9987322c8a0c81a325e1ba6159684c\n0000"+
-			"0032have 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n0000"+
+			"0032have 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"+
 			"0009done\n",
 	)
 }

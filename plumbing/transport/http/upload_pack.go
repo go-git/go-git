@@ -171,10 +171,13 @@ func uploadPackRequestToReader(req *packp.UploadPackRequest) (*bytes.Buffer, err
 		return nil, fmt.Errorf("sending upload-req message: %s", err)
 	}
 
-	if err := req.UploadHaves.Encode(buf); err != nil {
+	if err := req.UploadHaves.Encode(buf, false); err != nil {
 		return nil, fmt.Errorf("sending haves message: %s", err)
 	}
 
-	_ = e.EncodeString("done\n")
+	if err := e.EncodeString("done\n"); err != nil {
+		return nil, err
+	}
+
 	return buf, nil
 }

@@ -371,7 +371,7 @@ func uploadPack(w io.WriteCloser, r io.Reader, req *packp.UploadPackRequest) err
 		return fmt.Errorf("sending upload-req message: %s", err)
 	}
 
-	if err := req.UploadHaves.Encode(w); err != nil {
+	if err := req.UploadHaves.Encode(w, true); err != nil {
 		return fmt.Errorf("sending haves message: %s", err)
 	}
 

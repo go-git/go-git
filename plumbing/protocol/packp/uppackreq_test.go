@@ -58,7 +58,7 @@ func (s *UploadHavesSuite) TestEncode(c *C) {
 	)
 
 	buf := bytes.NewBuffer(nil)
-	err := uh.Encode(buf)
+	err := uh.Encode(buf, true)
 	c.Assert(err, IsNil)
 	c.Assert(buf.String(), Equals, ""+
 		"0032have 1111111111111111111111111111111111111111\n"+

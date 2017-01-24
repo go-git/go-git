@@ -168,6 +168,21 @@ func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
 	s.checkObjectNumber(c, reader, 31)
 }
 
+func (s *UploadPackSuite) TestUploadPackPartial(c *C) {
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	req := packp.NewUploadPackRequest()
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+
+	reader, err := r.UploadPack(req)
+	c.Assert(err, IsNil)
+
+	s.checkObjectNumber(c, reader, 4)
+}
+
 func (s *UploadPackSuite) TestFetchError(c *C) {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
