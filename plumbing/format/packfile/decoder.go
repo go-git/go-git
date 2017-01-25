@@ -3,6 +3,7 @@ package packfile
 import (
 	"bytes"
 
+	"gopkg.in/src-d/go-git.v4/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
@@ -62,6 +63,8 @@ type Decoder struct {
 
 	offsetToType map[int64]plumbing.ObjectType
 	decoderType  plumbing.ObjectType
+
+	cache cache.Object
 }
 
 // NewDecoder returns a new Decoder that decodes a Packfile using the given
@@ -105,6 +108,8 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 
 		offsetToType: make(map[int64]plumbing.ObjectType, 0),
 		decoderType:  t,
+
+		cache: cache.NewObjectFIFO(cache.MaxSize),
 	}, nil
 }
 
@@ -341,13 +346,20 @@ func (d *Decoder) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plum
 		return 0, err
 	}
 
-	base, err := d.recallByHash(ref)
-	if err != nil {
-		return 0, err
+	base := d.cache.Get(ref)
+
+	if base == nil {
+		base, err = d.recallByHash(ref)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	obj.SetType(base.Type())
-	return crc, ApplyDelta(obj, base, buf.Bytes())
+	err = ApplyDelta(obj, base, buf.Bytes())
+	d.cache.Add(obj)
+
+	return crc, err
 }
 
 func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset int64) (uint32, error) {
@@ -357,13 +369,24 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 		return 0, err
 	}
 
-	base, err := d.recallByOffset(offset)
-	if err != nil {
-		return 0, err
+	h := d.offsetToHash[offset]
+	var base plumbing.EncodedObject
+	if h != plumbing.ZeroHash {
+		base = d.cache.Get(h)
+	}
+
+	if base == nil {
+		base, err = d.recallByOffset(offset)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	obj.SetType(base.Type())
-	return crc, ApplyDelta(obj, base, buf.Bytes())
+	err = ApplyDelta(obj, base, buf.Bytes())
+	d.cache.Add(obj)
+
+	return crc, err
 }
 
 func (d *Decoder) setOffset(h plumbing.Hash, offset int64) {
@@ -434,5 +457,7 @@ func (d *Decoder) CRCs() map[plumbing.Hash]uint32 {
 // Close close the Scanner, usually this mean that the whole reader is read and
 // discarded
 func (d *Decoder) Close() error {
+	d.cache.Clear()
+
 	return d.s.Close()
 }
