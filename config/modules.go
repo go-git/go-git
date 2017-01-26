@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 
-	"gopkg.in/src-d/go-git.v4/plumbing/format/config"
+	format "gopkg.in/src-d/go-git.v4/plumbing/format/config"
 )
 
 var (
@@ -12,18 +12,20 @@ var (
 	ErrModuleEmptyPath = errors.New("module config: empty path")
 )
 
-// Modules defines the submodules properties
+// Modules defines the submodules properties, represents a .gitmodules file
+// https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
 type Modules struct {
+	// Submodules is a map of submodules being the key the name of the submodule
 	Submodules map[string]*Submodule
 
-	raw *config.Config
+	raw *format.Config
 }
 
 // NewModules returns a new empty Modules
 func NewModules() *Modules {
 	return &Modules{
 		Submodules: make(map[string]*Submodule, 0),
-		raw:        config.New(),
+		raw:        format.New(),
 	}
 }
 
@@ -36,9 +38,9 @@ const (
 // Unmarshal parses a git-config file and stores it
 func (m *Modules) Unmarshal(b []byte) error {
 	r := bytes.NewBuffer(b)
-	d := config.NewDecoder(r)
+	d := format.NewDecoder(r)
 
-	m.raw = config.New()
+	m.raw = format.New()
 	if err := d.Decode(m.raw); err != nil {
 		return err
 	}
@@ -57,7 +59,7 @@ func (m *Modules) Unmarshal(b []byte) error {
 // Marshal returns Modules encoded as a git-config file
 func (m *Modules) Marshal() ([]byte, error) {
 	s := m.raw.Section(submoduleSection)
-	s.Subsections = make(config.Subsections, len(m.Submodules))
+	s.Subsections = make(format.Subsections, len(m.Submodules))
 
 	var i int
 	for _, r := range m.Submodules {
@@ -66,7 +68,7 @@ func (m *Modules) Marshal() ([]byte, error) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	if err := config.NewEncoder(buf).Encode(m.raw); err != nil {
+	if err := format.NewEncoder(buf).Encode(m.raw); err != nil {
 		return nil, err
 	}
 
@@ -74,7 +76,6 @@ func (m *Modules) Marshal() ([]byte, error) {
 }
 
 // Submodule defines a submodule
-// https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
 type Submodule struct {
 	// Name module name
 	Name string
@@ -84,10 +85,12 @@ type Submodule struct {
 	// URL defines a URL from which the submodule repository can be cloned.
 	URL string
 	// Branch is a remote branch name for tracking updates in the upstream
-	// submodule.
+	// submodule. Optional value.
 	Branch string
 
-	raw *config.Subsection
+	// raw representation of the subsection, filled by marshal or unmarshal are
+	// called
+	raw *format.Subsection
 }
 
 // Validate validate the fields and set the default values
@@ -103,7 +106,7 @@ func (m *Submodule) Validate() error {
 	return nil
 }
 
-func (m *Submodule) unmarshal(s *config.Subsection) {
+func (m *Submodule) unmarshal(s *format.Subsection) {
 	m.raw = s
 
 	m.Name = m.raw.Name
@@ -112,9 +115,9 @@ func (m *Submodule) unmarshal(s *config.Subsection) {
 	m.Branch = m.raw.Option(branchKey)
 }
 
-func (m *Submodule) marshal() *config.Subsection {
+func (m *Submodule) marshal() *format.Subsection {
 	if m.raw == nil {
-		m.raw = &config.Subsection{}
+		m.raw = &format.Subsection{}
 	}
 
 	m.raw.Name = m.Name

@@ -1,9 +1,8 @@
 package filesystem
 
 import (
-	"os"
-
 	"io/ioutil"
+	"os"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"

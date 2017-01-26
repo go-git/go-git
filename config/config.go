@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"gopkg.in/src-d/go-git.v4/plumbing/format/config"
+	format "gopkg.in/src-d/go-git.v4/plumbing/format/config"
 )
 
 const (
@@ -30,24 +30,28 @@ var (
 )
 
 // Config contains the repository configuration
-// https://www.kernel.org/pub/software/scm/git/docs/git-config.html
+// ftp://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
 type Config struct {
+	// Core variables
 	Core struct {
+		// IsBare if true this repository is assumed to be bare and has no
+		// working directory associated with it
 		IsBare bool
 	}
+	// Remote list of repository remotes
 	Remotes map[string]*RemoteConfig
 
 	// contains the raw information of a config file, the main goal is preserve
-	// the parsed information from the original format, to avoid miss not
-	// supported properties
-	raw *config.Config
+	// the parsed information from the original format, to avoid missing
+	// unsupported features.
+	raw *format.Config
 }
 
 // NewConfig returns a new empty Config
 func NewConfig() *Config {
 	return &Config{
 		Remotes: make(map[string]*RemoteConfig, 0),
-		raw:     config.New(),
+		raw:     format.New(),
 	}
 }
 
@@ -77,9 +81,9 @@ const (
 // Unmarshal parses a git-config file and stores it
 func (c *Config) Unmarshal(b []byte) error {
 	r := bytes.NewBuffer(b)
-	d := config.NewDecoder(r)
+	d := format.NewDecoder(r)
 
-	c.raw = config.New()
+	c.raw = format.New()
 	if err := d.Decode(c.raw); err != nil {
 		return err
 	}
@@ -112,7 +116,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalRemotes()
 
 	buf := bytes.NewBuffer(nil)
-	if err := config.NewEncoder(buf).Encode(c.raw); err != nil {
+	if err := format.NewEncoder(buf).Encode(c.raw); err != nil {
 		return nil, err
 	}
 
@@ -126,7 +130,7 @@ func (c *Config) marshalCore() {
 
 func (c *Config) marshalRemotes() {
 	s := c.raw.Section(remoteSection)
-	s.Subsections = make(config.Subsections, len(c.Remotes))
+	s.Subsections = make(format.Subsections, len(c.Remotes))
 
 	var i int
 	for _, r := range c.Remotes {
@@ -135,13 +139,18 @@ func (c *Config) marshalRemotes() {
 	}
 }
 
-// RemoteConfig contains the configuration for a given repository
+// RemoteConfig contains the configuration for a given remote repository
 type RemoteConfig struct {
-	Name  string
-	URL   string
+	// Name of the remote
+	Name string
+	// URL the URL of a remote repository
+	URL string
+	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
 
-	raw *config.Subsection
+	// raw representation of the subsection, filled by marshal or unmarshal are
+	// called
+	raw *format.Subsection
 }
 
 // Validate validate the fields and set the default values
@@ -161,7 +170,7 @@ func (c *RemoteConfig) Validate() error {
 	return nil
 }
 
-func (c *RemoteConfig) unmarshal(s *config.Subsection) {
+func (c *RemoteConfig) unmarshal(s *format.Subsection) {
 	c.raw = s
 
 	fetch := []RefSpec{}
@@ -177,9 +186,9 @@ func (c *RemoteConfig) unmarshal(s *config.Subsection) {
 	c.Fetch = fetch
 }
 
-func (c *RemoteConfig) marshal() *config.Subsection {
+func (c *RemoteConfig) marshal() *format.Subsection {
 	if c.raw == nil {
-		c.raw = &config.Subsection{}
+		c.raw = &format.Subsection{}
 	}
 
 	c.raw.Name = c.Name
