@@ -24,8 +24,9 @@ const (
 
 // New errors defined by this package.
 var (
-	ErrMaxTreeDepth = errors.New("maximum tree depth exceeded")
-	ErrFileNotFound = errors.New("file not found")
+	ErrMaxTreeDepth      = errors.New("maximum tree depth exceeded")
+	ErrFileNotFound      = errors.New("file not found")
+	ErrDirectoryNotFound = errors.New("directory not found")
 )
 
 // Tree is basically like a directory - it references a bunch of other trees
@@ -76,10 +77,29 @@ func (t *Tree) File(path string) (*File, error) {
 
 	blob, err := GetBlob(t.s, e.Hash)
 	if err != nil {
+		if err == plumbing.ErrObjectNotFound {
+			return nil, ErrFileNotFound
+		}
 		return nil, err
 	}
 
 	return NewFile(path, e.Mode, blob), nil
+}
+
+// Tree returns the tree identified by the `path` argument.
+// The path is interpreted as relative to the tree receiver.
+func (t *Tree) Tree(path string) (*Tree, error) {
+	e, err := t.findEntry(path)
+	if err != nil {
+		return nil, ErrDirectoryNotFound
+	}
+
+	tree, err := GetTree(t.s, e.Hash)
+	if err == plumbing.ErrObjectNotFound {
+		return nil, ErrDirectoryNotFound
+	}
+
+	return tree, err
 }
 
 // TreeEntryFile returns the *File for a given *TreeEntry.
@@ -106,12 +126,10 @@ func (t *Tree) findEntry(path string) (*TreeEntry, error) {
 	return tree.entry(pathParts[0])
 }
 
-var errDirNotFound = errors.New("directory not found")
-
 func (t *Tree) dir(baseName string) (*Tree, error) {
 	entry, err := t.entry(baseName)
 	if err != nil {
-		return nil, errDirNotFound
+		return nil, ErrDirectoryNotFound
 	}
 
 	obj, err := t.s.EncodedObject(plumbing.TreeObject, entry.Hash)

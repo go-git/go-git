@@ -48,6 +48,31 @@ func (s *TreeSuite) TestType(c *C) {
 	c.Assert(s.Tree.Type(), Equals, plumbing.TreeObject)
 }
 
+func (s *TreeSuite) TestTree(c *C) {
+	expectedEntry, ok := s.Tree.m["vendor"]
+	c.Assert(ok, Equals, true)
+	expected := expectedEntry.Hash
+
+	obtainedTree, err := s.Tree.Tree("vendor")
+	c.Assert(err, IsNil)
+	c.Assert(obtainedTree.Hash, Equals, expected)
+}
+
+func (s *TreeSuite) TestTreeNotFound(c *C) {
+	d, err := s.Tree.Tree("not-found")
+	c.Assert(d, IsNil)
+	c.Assert(err, Equals, ErrDirectoryNotFound)
+}
+
+func (s *TreeSuite) TestTreeFailsWithExistingFiles(c *C) {
+	_, err := s.Tree.File("LICENSE")
+	c.Assert(err, IsNil)
+
+	d, err := s.Tree.Tree("LICENSE")
+	c.Assert(d, IsNil)
+	c.Assert(err, Equals, ErrDirectoryNotFound)
+}
+
 func (s *TreeSuite) TestFile(c *C) {
 	f, err := s.Tree.File("LICENSE")
 	c.Assert(err, IsNil)
@@ -56,6 +81,15 @@ func (s *TreeSuite) TestFile(c *C) {
 
 func (s *TreeSuite) TestFileNotFound(c *C) {
 	f, err := s.Tree.File("not-found")
+	c.Assert(f, IsNil)
+	c.Assert(err, Equals, ErrFileNotFound)
+}
+
+func (s *TreeSuite) TestFileFailsWithExistingTrees(c *C) {
+	_, err := s.Tree.Tree("vendor")
+	c.Assert(err, IsNil)
+
+	f, err := s.Tree.File("vendor")
 	c.Assert(f, IsNil)
 	c.Assert(err, Equals, ErrFileNotFound)
 }
