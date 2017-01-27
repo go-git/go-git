@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -10,23 +11,27 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 
+	billy "srcd.works/go-billy.v1"
 	osfs "srcd.works/go-billy.v1/os"
 )
 
 var (
-	ErrObjectNotFound     = errors.New("object not found")
-	ErrInvalidReference   = errors.New("invalid reference, should be a tag or a branch")
-	ErrRepositoryNonEmpty = errors.New("repository non empty")
-	ErrRemoteNotFound     = errors.New("remote not found")
-	ErrRemoteExists       = errors.New("remote already exists")
+	ErrObjectNotFound          = errors.New("object not found")
+	ErrInvalidReference        = errors.New("invalid reference, should be a tag or a branch")
+	ErrRepositoryNotExists     = errors.New("repository not exists")
+	ErrRepositoryAlreadyExists = errors.New("repository already exists")
+	ErrRemoteNotFound          = errors.New("remote not found")
+	ErrRemoteExists            = errors.New("remote already exists")
+	ErrWorktreeNotProvided     = errors.New("worktree should be provided")
+	ErrIsBareRepository        = errors.New("worktree not available in a bare repository")
 )
 
 // Repository giturl string, auth common.AuthMethod repository struct
 type Repository struct {
-	r map[string]*Remote
-	s Storer
+	r  map[string]*Remote
+	s  Storer
+	wt billy.Filesystem
 
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
@@ -34,30 +39,136 @@ type Repository struct {
 	Progress sideband.Progress
 }
 
-// NewMemoryRepository creates a new repository, backed by a memory.Storage
-func NewMemoryRepository() *Repository {
-	r, _ := NewRepository(memory.NewStorage())
-	return r
+// Init create an empty git repository, based on the given Storer and worktree.
+// The worktree Filesystem is optional, if nil a bare repository is created. If
+// the given storer is not empty ErrRepositoryAlreadyExists is returned
+func Init(s Storer, worktree billy.Filesystem) (*Repository, error) {
+	r := newRepository(s, worktree)
+	_, err := r.Reference(plumbing.HEAD, false)
+	switch err {
+	case plumbing.ErrReferenceNotFound:
+	case nil:
+		return nil, ErrRepositoryAlreadyExists
+	default:
+		return nil, err
+	}
+
+	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)
+	if err := s.SetReference(h); err != nil {
+		return nil, err
+	}
+
+	if worktree == nil {
+		r.setIsBare(true)
+	}
+
+	return r, nil
 }
 
-// NewFilesystemRepository creates a new repository, backed by a filesystem.Storage
-// based on a fs.OS, if you want to use a custom one you need to use the function
-// NewRepository and build you filesystem.Storage
-func NewFilesystemRepository(path string) (*Repository, error) {
-	s, err := filesystem.NewStorage(osfs.New(path))
+// Open opens a git repository using the given Storer and worktree filesystem,
+// if the given storer is complete empty ErrRepositoryNotExists is returned.
+// The worktree can be nil when the repository being open is bare, if the
+// a non-bare repository is not provied and worktree is nil, the err
+// ErrWorktreeNotProvided is returned
+func Open(s Storer, worktree billy.Filesystem) (*Repository, error) {
+	_, err := s.Reference(plumbing.HEAD)
+	if err == plumbing.ErrReferenceNotFound {
+		return nil, ErrRepositoryNotExists
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	return NewRepository(s)
+	cfg, err := s.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	if !cfg.Core.IsBare && worktree == nil {
+		return nil, ErrWorktreeNotProvided
+	}
+
+	return newRepository(s, worktree), nil
 }
 
-// NewRepository creates a new repository with the given Storage
-func NewRepository(s Storer) (*Repository, error) {
+// Clone a repository into the given Storer and worktree Filesystem with the
+// given options, if worktree is nil a bare repository is created. If the given
+// storer is not empty ErrRepositoryAlreadyExists is returned
+func Clone(s Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
+	r, err := Init(s, worktree)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, r.Clone(o)
+}
+
+// PlainInit create an empty git repository at the given path. isBare defines
+// if the repository will have worktree (non-bare) or not (bare), if the path
+// is not empty ErrRepositoryAlreadyExists is returned
+func PlainInit(path string, isBare bool) (*Repository, error) {
+	var wt, dot billy.Filesystem
+
+	if isBare {
+		dot = osfs.New(path)
+	} else {
+		wt = osfs.New(path)
+		dot = wt.Dir(".git")
+	}
+
+	s, err := filesystem.NewStorage(dot)
+	if err != nil {
+		return nil, err
+	}
+
+	return Init(s, wt)
+}
+
+// PlainOpen opens a git repository from the given path. It detects is the
+// repository is bare or a normal one. If the path doesn't contain a valid
+// repository ErrRepositoryNotExists is returned
+func PlainOpen(path string) (*Repository, error) {
+	var wt, dot billy.Filesystem
+
+	fs := osfs.New(path)
+	if _, err := fs.Stat(".git"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		dot = fs
+	} else {
+		wt = fs
+		dot = fs.Dir(".git")
+	}
+
+	s, err := filesystem.NewStorage(dot)
+	if err != nil {
+		return nil, err
+	}
+
+	return Open(s, wt)
+}
+
+// PlainClone a repository into the path with the given options, isBare defines
+// if the new repository will be bare or normal. If the path is not empty
+// ErrRepositoryAlreadyExists is returned
+func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) {
+	r, err := PlainInit(path, isBare)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, r.Clone(o)
+}
+
+func newRepository(s Storer, worktree billy.Filesystem) *Repository {
 	return &Repository{
-		s: s,
-		r: make(map[string]*Remote, 0),
-	}, nil
+		s:  s,
+		wt: worktree,
+		r:  make(map[string]*Remote, 0),
+	}
 }
 
 // Config return the repository config
@@ -136,15 +247,6 @@ func (r *Repository) DeleteRemote(name string) error {
 
 // Clone clones a remote repository
 func (r *Repository) Clone(o *CloneOptions) error {
-	empty, err := r.IsEmpty()
-	if err != nil {
-		return err
-	}
-
-	if !empty {
-		return ErrRepositoryNonEmpty
-	}
-
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -180,6 +282,10 @@ func (r *Repository) Clone(o *CloneOptions) error {
 	}
 
 	if _, err := r.updateReferences(c.Fetch, o.ReferenceName, head); err != nil {
+		return err
+	}
+
+	if err := r.updateWorktree(); err != nil {
 		return err
 	}
 
@@ -315,20 +421,6 @@ func updateReferenceStorerIfNeeded(
 	return false, nil
 }
 
-// IsEmpty returns true if the repository is empty
-func (r *Repository) IsEmpty() (bool, error) {
-	iter, err := r.References()
-	if err != nil {
-		return false, err
-	}
-
-	var count int
-	return count == 0, iter.ForEach(func(r *plumbing.Reference) error {
-		count++
-		return nil
-	})
-}
-
 // Pull incorporates changes from a remote repository into the current branch.
 // Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
@@ -372,7 +464,25 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return NoErrAlreadyUpToDate
 	}
 
-	return nil
+	return r.updateWorktree()
+}
+
+func (r *Repository) updateWorktree() error {
+	if r.wt == nil {
+		return nil
+	}
+
+	w, err := r.Worktree(nil)
+	if err != nil {
+		return err
+	}
+
+	h, err := r.Head()
+	if err != nil {
+		return err
+	}
+
+	return w.Checkout(h.Hash())
 }
 
 // Fetch fetches changes from a remote repository.
@@ -511,4 +621,18 @@ func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
 // References returns a ReferenceIter for all references.
 func (r *Repository) References() (storer.ReferenceIter, error) {
 	return r.s.IterReferences()
+}
+
+// Worktree returns a worktree based on the given fs, if nil the default
+// worktree will be used.
+func (r *Repository) Worktree(fs billy.Filesystem) (*Worktree, error) {
+	if r.wt == nil && fs == nil {
+		return nil, ErrIsBareRepository
+	}
+
+	if fs == nil {
+		fs = r.wt
+	}
+
+	return &Worktree{r: r, fs: fs}, nil
 }

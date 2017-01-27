@@ -67,7 +67,10 @@ var fixtures = Fixtures{{
 	URL:        "https://github.com/git-fixtures/basic.git",
 	DotGitHash: plumbing.NewHash("935e5ac17c41c309c356639816ea0694a568c484"),
 }, {
-
+	Tags:         []string{".git", "worktree"},
+	URL:          "https://github.com/git-fixtures/basic.git",
+	WorktreeHash: plumbing.NewHash("e4413db6700d0e72e7680b17c3d5ebbc2d1861bc"),
+}, {
 	Tags:         []string{"packfile", ".git", "unpacked", "multi-packfile"},
 	URL:          "https://github.com/src-d/go-git.git",
 	Head:         plumbing.NewHash("e8788ad9165781196e917292d6055cba1d78664e"),
@@ -155,6 +158,7 @@ type Fixture struct {
 	Head         plumbing.Hash
 	PackfileHash plumbing.Hash
 	DotGitHash   plumbing.Hash
+	WorktreeHash plumbing.Hash
 	ObjectsCount int32
 }
 

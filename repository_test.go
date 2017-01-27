@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,10 +13,11 @@ import (
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	memoryfs "srcd.works/go-billy.v1/memory"
 )
 
 type RepositorySuite struct {
@@ -24,13 +26,95 @@ type RepositorySuite struct {
 
 var _ = Suite(&RepositorySuite{})
 
-func (s *RepositorySuite) TestNewRepository(c *C) {
-	r := NewMemoryRepository()
+func (s *RepositorySuite) TestInit(c *C) {
+	r, err := Init(memory.NewStorage(), memoryfs.New())
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.IsBare, Equals, false)
+}
+
+func (s *RepositorySuite) TestInitBare(c *C) {
+	r, err := Init(memory.NewStorage(), nil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.IsBare, Equals, true)
+
+}
+
+func (s *RepositorySuite) TestInitAlreadyExists(c *C) {
+	st := memory.NewStorage()
+
+	r, err := Init(st, nil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = Init(st, nil)
+	c.Assert(err, Equals, ErrRepositoryAlreadyExists)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestOpen(c *C) {
+	st := memory.NewStorage()
+
+	r, err := Init(st, memoryfs.New())
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = Open(st, memoryfs.New())
+	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 }
 
+func (s *RepositorySuite) TestOpenBare(c *C) {
+	st := memory.NewStorage()
+
+	r, err := Init(st, nil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = Open(st, nil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestOpenMissingWorktree(c *C) {
+	st := memory.NewStorage()
+
+	r, err := Init(st, memoryfs.New())
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = Open(st, nil)
+	c.Assert(err, Equals, ErrWorktreeNotProvided)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestOpenNotExists(c *C) {
+	r, err := Open(memory.NewStorage(), nil)
+	c.Assert(err, Equals, ErrRepositoryNotExists)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestClone(c *C) {
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+}
+
 func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
 		URL:  "http://foo/foo.git",
@@ -48,7 +132,7 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
 func (s *RepositorySuite) TestRemoteWithProgress(c *C) {
 	buf := bytes.NewBuffer(nil)
 
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	r.Progress = buf
 
 	remote, err := r.CreateRemote(&config.RemoteConfig{
@@ -61,7 +145,7 @@ func (s *RepositorySuite) TestRemoteWithProgress(c *C) {
 }
 
 func (s *RepositorySuite) TestCreateRemoteInvalid(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{})
 
 	c.Assert(err, Equals, config.ErrRemoteConfigEmptyName)
@@ -69,7 +153,7 @@ func (s *RepositorySuite) TestCreateRemoteInvalid(c *C) {
 }
 
 func (s *RepositorySuite) TestDeleteRemote(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
 		URL:  "http://foo/foo.git",
@@ -85,8 +169,94 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	c.Assert(alt, IsNil)
 }
 
+func (s *RepositorySuite) TestPlainInit(c *C) {
+	dir, err := ioutil.TempDir("", "plain-init")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, true)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.IsBare, Equals, true)
+}
+
+func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
+	dir, err := ioutil.TempDir("", "plain-init")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, true)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = PlainInit(dir, true)
+	c.Assert(err, Equals, ErrRepositoryAlreadyExists)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestPlainOpen(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = PlainOpen(dir)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestPlainOpenBare(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, true)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = PlainOpen(dir)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	r, err = PlainOpen(filepath.Join(dir, ".git"))
+	c.Assert(err, Equals, ErrWorktreeNotProvided)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
+	r, err := PlainOpen("/not-exists/")
+	c.Assert(err, Equals, ErrRepositoryNotExists)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestPlainClone(c *C) {
+	dir, err := ioutil.TempDir("", "plain-clone")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainClone(dir, false, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+}
+
 func (s *RepositorySuite) TestFetch(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  s.GetBasicLocalRepositoryURL(),
@@ -98,7 +268,7 @@ func (s *RepositorySuite) TestFetch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
 
-	_, err = r.Reference(plumbing.HEAD, false)
+	_, err = r.Head()
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 
 	branch, err := r.Reference("refs/remotes/origin/master", false)
@@ -108,8 +278,9 @@ func (s *RepositorySuite) TestFetch(c *C) {
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
-func (s *RepositorySuite) TestClone(c *C) {
-	r := NewMemoryRepository()
+func (s *RepositorySuite) TestCloneDeep(c *C) {
+	fs := memoryfs.New()
+	r, _ := Init(memory.NewStorage(), fs)
 
 	head, err := r.Head()
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
@@ -141,10 +312,14 @@ func (s *RepositorySuite) TestClone(c *C) {
 	c.Assert(branch, NotNil)
 	c.Assert(branch.Type(), Equals, plumbing.HashReference)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	fi, err := fs.ReadDir("")
+	c.Assert(err, IsNil)
+	c.Assert(fi, HasLen, 8)
 }
 
 func (s *RepositorySuite) TestCloneConfig(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 
 	head, err := r.Head()
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
@@ -164,23 +339,9 @@ func (s *RepositorySuite) TestCloneConfig(c *C) {
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URL, Not(Equals), "")
 }
-func (s *RepositorySuite) TestCloneNonEmpty(c *C) {
-	r := NewMemoryRepository()
-
-	head, err := r.Head()
-	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
-	c.Assert(head, IsNil)
-
-	o := &CloneOptions{URL: s.GetBasicLocalRepositoryURL()}
-	err = r.Clone(o)
-	c.Assert(err, IsNil)
-
-	err = r.Clone(o)
-	c.Assert(err, Equals, ErrRepositoryNonEmpty)
-}
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 
 	head, err := r.Head()
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
@@ -217,7 +378,7 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 
 	head, err := r.Head()
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
@@ -253,7 +414,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
@@ -266,8 +427,24 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestPullCheckout(c *C) {
+	fs := memoryfs.New()
+	r, _ := Init(memory.NewStorage(), fs)
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+
+	err := r.Pull(&PullOptions{})
+	c.Assert(err, IsNil)
+
+	fi, err := fs.ReadDir("")
+	c.Assert(err, IsNil)
+	c.Assert(fi, HasLen, 8)
+}
+
 func (s *RepositorySuite) TestPullUpdateReferencesIfNeeded(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  s.GetBasicLocalRepositoryURL(),
@@ -295,7 +472,7 @@ func (s *RepositorySuite) TestPullUpdateReferencesIfNeeded(c *C) {
 }
 
 func (s *RepositorySuite) TestPullSingleBranch(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
@@ -320,7 +497,7 @@ func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 func (s *RepositorySuite) TestPullAdd(c *C) {
 	path := fixtures.Basic().One().Worktree().Base()
 
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{
 		URL: fmt.Sprintf("file://%s", filepath.Join(path, ".git")),
 	})
@@ -368,7 +545,7 @@ func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
 	dstFs := fixtures.ByTag("empty").One().DotGit()
 	url := fmt.Sprintf("file://%s", dstFs.Base())
 
-	r, err := NewRepository(sto)
+	r, err := Open(sto, srcFs)
 	c.Assert(err, IsNil)
 
 	_, err = r.CreateRemote(&config.RemoteConfig{
@@ -382,7 +559,7 @@ func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
 
 	sto, err = filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
-	dstRepo, err := NewRepository(sto)
+	dstRepo, err := Open(sto, nil)
 	c.Assert(err, IsNil)
 
 	iter, err := sto.IterReferences()
@@ -406,30 +583,15 @@ func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
 	sto, err := filesystem.NewStorage(srcFs)
 	c.Assert(err, IsNil)
 
-	r, err := NewRepository(sto)
+	r, err := Open(sto, srcFs)
 	c.Assert(err, IsNil)
 
 	err = r.Push(&PushOptions{RemoteName: "myremote"})
 	c.Assert(err, ErrorMatches, ".*remote not found.*")
 }
 
-func (s *RepositorySuite) TestIsEmpty(c *C) {
-	r := NewMemoryRepository()
-
-	empty, err := r.IsEmpty()
-	c.Assert(err, IsNil)
-	c.Assert(empty, Equals, true)
-
-	err = r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
-	c.Assert(err, IsNil)
-
-	empty, err = r.IsEmpty()
-	c.Assert(err, IsNil)
-	c.Assert(empty, Equals, false)
-}
-
 func (s *RepositorySuite) TestCommit(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -453,7 +615,7 @@ func (s *RepositorySuite) TestCommit(c *C) {
 }
 
 func (s *RepositorySuite) TestCommits(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
@@ -480,7 +642,7 @@ func (s *RepositorySuite) TestTag(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
@@ -498,7 +660,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
@@ -523,7 +685,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 }
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
@@ -533,7 +695,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 }
 
 func (s *RepositorySuite) TestRef(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
@@ -547,7 +709,7 @@ func (s *RepositorySuite) TestRef(c *C) {
 }
 
 func (s *RepositorySuite) TestRefs(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
@@ -559,7 +721,7 @@ func (s *RepositorySuite) TestRefs(c *C) {
 }
 
 func (s *RepositorySuite) TestObject(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
@@ -572,7 +734,7 @@ func (s *RepositorySuite) TestObject(c *C) {
 }
 
 func (s *RepositorySuite) TestObjectNotFound(c *C) {
-	r := NewMemoryRepository()
+	r, _ := Init(memory.NewStorage(), nil)
 	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
@@ -580,6 +742,30 @@ func (s *RepositorySuite) TestObjectNotFound(c *C) {
 	tag, err := r.Object(plumbing.TagObject, hash)
 	c.Assert(err, DeepEquals, plumbing.ErrObjectNotFound)
 	c.Assert(tag, IsNil)
+}
+
+func (s *RepositorySuite) TestWorktree(c *C) {
+	def := memoryfs.New()
+	r, _ := Init(memory.NewStorage(), def)
+	w, err := r.Worktree(nil)
+	c.Assert(err, IsNil)
+	c.Assert(w.fs, Equals, def)
+}
+
+func (s *RepositorySuite) TestWorktreeAlternative(c *C) {
+	r, _ := Init(memory.NewStorage(), memoryfs.New())
+
+	alt := memoryfs.New()
+	w, err := r.Worktree(alt)
+	c.Assert(err, IsNil)
+	c.Assert(w.fs, Equals, alt)
+}
+
+func (s *RepositorySuite) TestWorktreeBare(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	w, err := r.Worktree(nil)
+	c.Assert(err, Equals, ErrIsBareRepository)
+	c.Assert(w, IsNil)
 }
 
 func ExecuteOnPath(c *C, path string, cmds ...string) error {
