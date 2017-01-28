@@ -112,8 +112,15 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 	}
 
 	read := entryHeaderLength
-	e.CreatedAt = time.Unix(int64(sec), int64(nsec))
-	e.ModifiedAt = time.Unix(int64(msec), int64(mnsec))
+
+	if sec != 0 || nsec != 0 {
+		e.CreatedAt = time.Unix(int64(sec), int64(nsec))
+	}
+
+	if msec != 0 || mnsec != 0 {
+		e.ModifiedAt = time.Unix(int64(msec), int64(mnsec))
+	}
+
 	e.Stage = Stage(flags>>12) & 0x3
 
 	if flags&entryExtended != 0 {
