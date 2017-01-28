@@ -18,6 +18,7 @@ const (
 	suffix         = ".git"
 	packedRefsPath = "packed-refs"
 	configPath     = "config"
+	indexPath      = "index"
 	shallowPath    = "shallow"
 
 	objectsPath = "objects"
@@ -70,6 +71,16 @@ func (d *DotGit) ConfigWriter() (billy.File, error) {
 // Config returns a file pointer for read to the config file
 func (d *DotGit) Config() (billy.File, error) {
 	return d.fs.Open(configPath)
+}
+
+// IndexWriter returns a file pointer for write to the index file
+func (d *DotGit) IndexWriter() (billy.File, error) {
+	return d.fs.Create(indexPath)
+}
+
+// Index returns a file pointer for read to the index file
+func (d *DotGit) Index() (billy.File, error) {
+	return d.fs.Open(indexPath)
 }
 
 // ShallowWriter returns a file pointer for write to the shallow file

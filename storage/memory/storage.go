@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
@@ -19,6 +20,7 @@ type Storage struct {
 	ConfigStorage
 	ObjectStorage
 	ShallowStorage
+	IndexStorage
 	ReferenceStorage
 }
 
@@ -57,6 +59,23 @@ func (c *ConfigStorage) Config() (*config.Config, error) {
 	}
 
 	return c.config, nil
+}
+
+type IndexStorage struct {
+	index *index.Index
+}
+
+func (c *IndexStorage) SetIndex(idx *index.Index) error {
+	c.index = idx
+	return nil
+}
+
+func (c *IndexStorage) Index() (*index.Index, error) {
+	if c.index == nil {
+		c.index = &index.Index{}
+	}
+
+	return c.index, nil
 }
 
 type ObjectStorage struct {

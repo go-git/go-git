@@ -17,13 +17,13 @@ import (
 
 type ObjectStorage struct {
 	dir   *dotgit.DotGit
-	index map[plumbing.Hash]index
+	index map[plumbing.Hash]idx
 }
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
 		dir:   dir,
-		index: make(map[plumbing.Hash]index, 0),
+		index: make(map[plumbing.Hash]idx, 0),
 	}
 
 	return s, s.loadIdxFiles()
@@ -45,13 +45,13 @@ func (s *ObjectStorage) loadIdxFiles() error {
 }
 
 func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
-	idx, err := s.dir.ObjectPackIdx(h)
+	idxfile, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
 	}
 
-	s.index[h] = make(index)
-	return s.index[h].Decode(idx)
+	s.index[h] = make(idx)
+	return s.index[h].Decode(idxfile)
 }
 
 func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
@@ -64,9 +64,9 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 		return nil, err
 	}
 
-	w.Notify = func(h plumbing.Hash, idx idxfile.Idxfile) {
-		s.index[h] = make(index)
-		for _, e := range idx.Entries {
+	w.Notify = func(h plumbing.Hash, idxfile idxfile.Idxfile) {
+		s.index[h] = make(idx)
+		for _, e := range idxfile.Entries {
 			s.index[h][e.Hash] = int64(e.Offset)
 		}
 	}
@@ -244,9 +244,9 @@ func (s *ObjectStorage) buildPackfileIters(
 	return iters, nil
 }
 
-type index map[plumbing.Hash]int64
+type idx map[plumbing.Hash]int64
 
-func (i index) Decode(r io.Reader) error {
+func (i idx) Decode(r io.Reader) error {
 	idx := &idxfile.Idxfile{}
 
 	d := idxfile.NewDecoder(r)
