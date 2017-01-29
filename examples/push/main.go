@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"gopkg.in/src-d/go-git.v4"
@@ -9,14 +8,13 @@ import (
 )
 
 func main() {
-	CheckArgs("<repo path>")
-	repoPath := os.Args[1]
+	CheckArgs("<repository-path>")
+	path := os.Args[1]
 
-	repo, err := git.NewFilesystemRepository(repoPath)
+	r, err := git.PlainOpen(path)
 	CheckIfError(err)
 
-	err = repo.Push(&git.PushOptions{})
+	Info("git push")
+	err = r.Push(&git.PushOptions{})
 	CheckIfError(err)
-
-	fmt.Print("pushed")
 }

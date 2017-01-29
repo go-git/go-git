@@ -12,16 +12,15 @@ import (
 )
 
 func main() {
-	CheckArgs("<url>")
+	CheckArgs("<url> <path>")
 	url := os.Args[1]
-
-	r := git.NewMemoryRepository()
+	path := os.Args[2]
 
 	// Clone the given repository, creating the remote, the local branches
 	// and fetching the objects, exactly as:
-	Info("git clone %s", url)
+	Info("git clone %s %s", url, path)
 
-	err := r.Clone(&git.CloneOptions{URL: url})
+	r, err := git.PlainClone(path, false, &git.CloneOptions{URL: url})
 	CheckIfError(err)
 
 	// Getting the latest commit on the current branch

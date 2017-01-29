@@ -5,17 +5,14 @@ import (
 
 	"gopkg.in/src-d/go-git.v4"
 	. "gopkg.in/src-d/go-git.v4/examples"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 func main() {
-	// Instances an in-memory git repository
-	r := git.NewMemoryRepository()
-
 	// Clones the given repository, creating the remote, the local branches
-	// and fetching the objects, exactly as:
+	// and fetching the objects, everything in memory:
 	Info("git clone https://github.com/src-d/go-siva")
-
-	err := r.Clone(&git.CloneOptions{URL: "https://github.com/src-d/go-siva"})
+	r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{URL: "https://github.com/src-d/go-siva"})
 	CheckIfError(err)
 
 	// Gets the HEAD history from HEAD, just like does:
