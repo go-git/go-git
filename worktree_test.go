@@ -1,7 +1,6 @@
 package git
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -133,7 +132,6 @@ func (s *WorktreeSuite) TestStatus(c *C) {
 	status, err := w.Status()
 	c.Assert(err, IsNil)
 
-	fmt.Println(status)
 	c.Assert(status.IsClean(), Equals, true)
 }
 

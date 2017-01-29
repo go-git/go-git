@@ -12,7 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
-	billy "srcd.works/go-billy.v1"
+	"srcd.works/go-billy.v1"
 	osfs "srcd.works/go-billy.v1/os"
 )
 
@@ -101,7 +101,7 @@ func Clone(s Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, e
 		return nil, err
 	}
 
-	return r, r.Clone(o)
+	return r, r.clone(o)
 }
 
 // PlainInit create an empty git repository at the given path. isBare defines
@@ -160,7 +160,7 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 		return nil, err
 	}
 
-	return r, r.Clone(o)
+	return r, r.clone(o)
 }
 
 func newRepository(s Storer, worktree billy.Filesystem) *Repository {
@@ -246,7 +246,7 @@ func (r *Repository) DeleteRemote(name string) error {
 }
 
 // Clone clones a remote repository
-func (r *Repository) Clone(o *CloneOptions) error {
+func (r *Repository) clone(o *CloneOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}

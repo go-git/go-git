@@ -286,7 +286,7 @@ func (s *RepositorySuite) TestCloneDeep(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&CloneOptions{
+	err = r.clone(&CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -325,7 +325,7 @@ func (s *RepositorySuite) TestCloneConfig(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&CloneOptions{
+	err = r.clone(&CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -347,7 +347,7 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&CloneOptions{
+	err = r.clone(&CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/heads/branch"),
 		SingleBranch:  true,
@@ -384,7 +384,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.Clone(&CloneOptions{
+	err = r.clone(&CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})
@@ -415,7 +415,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{
+	err := r.clone(&CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
 	})
@@ -473,7 +473,7 @@ func (s *RepositorySuite) TestPullUpdateReferencesIfNeeded(c *C) {
 
 func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{
+	err := r.clone(&CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})
@@ -498,7 +498,7 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	path := fixtures.Basic().One().Worktree().Base()
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{
+	err := r.clone(&CloneOptions{
 		URL: fmt.Sprintf("file://%s", filepath.Join(path, ".git")),
 	})
 
@@ -592,7 +592,7 @@ func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
 
 func (s *RepositorySuite) TestCommit(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{
+	err := r.clone(&CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -616,7 +616,7 @@ func (s *RepositorySuite) TestCommit(c *C) {
 
 func (s *RepositorySuite) TestCommits(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -643,7 +643,7 @@ func (s *RepositorySuite) TestTag(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: url})
+	err := r.clone(&CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")
@@ -661,7 +661,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: url})
+	err := r.clone(&CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -686,7 +686,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	commits, err := r.Commits()
@@ -696,7 +696,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 
 func (s *RepositorySuite) TestRef(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	ref, err := r.Reference(plumbing.HEAD, false)
@@ -710,7 +710,7 @@ func (s *RepositorySuite) TestRef(c *C) {
 
 func (s *RepositorySuite) TestRefs(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	c.Assert(err, IsNil)
@@ -722,7 +722,7 @@ func (s *RepositorySuite) TestRefs(c *C) {
 
 func (s *RepositorySuite) TestObject(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -735,7 +735,7 @@ func (s *RepositorySuite) TestObject(c *C) {
 
 func (s *RepositorySuite) TestObjectNotFound(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.Clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
