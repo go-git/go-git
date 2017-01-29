@@ -72,7 +72,7 @@ func (c *IndexStorage) SetIndex(idx *index.Index) error {
 
 func (c *IndexStorage) Index() (*index.Index, error) {
 	if c.index == nil {
-		c.index = &index.Index{}
+		c.index = &index.Index{Version: 2}
 	}
 
 	return c.index, nil

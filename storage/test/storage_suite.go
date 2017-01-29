@@ -297,6 +297,15 @@ func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {
 	c.Assert(cfg, DeepEquals, expected)
 }
 
+func (s *BaseStorageSuite) TestIndex(c *C) {
+	expected := &index.Index{}
+	expected.Version = 2
+
+	idx, err := s.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx, DeepEquals, expected)
+}
+
 func (s *BaseStorageSuite) TestSetIndexAndIndex(c *C) {
 	expected := &index.Index{}
 	expected.Version = 2
