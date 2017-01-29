@@ -13,13 +13,10 @@ func main() {
 	url := os.Args[1]
 	directory := os.Args[2]
 
-	r, err := git.NewFilesystemRepository(directory)
-	CheckIfError(err)
-
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
 
-	err = r.Clone(&git.CloneOptions{
+	r, err := git.PlainClone(directory, false, &git.CloneOptions{
 		URL:   url,
 		Depth: 1,
 	})

@@ -50,7 +50,6 @@ func (s *BaseSuite) buildBasicRepository(c *C) {
 }
 
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-
 	fs := os.New(f.DotGit().Base())
 	st, err := filesystem.NewStorage(fs)
 	if err != nil {
