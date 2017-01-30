@@ -81,7 +81,7 @@ func (w *Worktree) indexFile(f *object.File, idx *index.Index) error {
 	e := index.Entry{
 		Hash:       f.Hash,
 		Name:       f.Name,
-		Mode:       fi.Mode(),
+		Mode:       w.getMode(fi),
 		ModifiedAt: fi.ModTime(),
 		Size:       uint32(fi.Size()),
 	}
@@ -142,7 +142,7 @@ func (w *Worktree) compareFileWithEntry(fi billy.FileInfo, e *index.Entry) (Stat
 		return Modified, nil
 	}
 
-	if fi.Mode().Perm() != e.Mode.Perm() {
+	if w.getMode(fi) != e.Mode {
 		return Modified, nil
 	}
 
@@ -153,6 +153,23 @@ func (w *Worktree) compareFileWithEntry(fi billy.FileInfo, e *index.Entry) (Stat
 	}
 
 	return Unmodified, nil
+}
+
+func (w *Worktree) getMode(fi billy.FileInfo) os.FileMode {
+	if fi.Mode().IsDir() {
+		return object.TreeMode
+	}
+
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return object.SymlinkMode
+	}
+
+	const modeExec = 0111
+	if fi.Mode()&modeExec != 0 {
+		return object.ExecutableMode
+	}
+
+	return object.FileMode
 }
 
 // Status current status of a Worktree

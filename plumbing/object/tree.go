@@ -19,11 +19,11 @@ const (
 	maxTreeDepth      = 1024
 	startingStackSize = 8
 
-	fileMode       = 0100644
-	executableMode = 0100755
-	submoduleMode  = 0160000
-	symlinkMode    = 0120000
-	treeMode       = 0040000
+	FileMode       os.FileMode = 0100644
+	ExecutableMode os.FileMode = 0100755
+	SubmoduleMode  os.FileMode = 0160000
+	SymlinkMode    os.FileMode = 0120000
+	TreeMode       os.FileMode = 0040000
 )
 
 // New errors defined by this package.
@@ -243,14 +243,14 @@ func (t *Tree) decodeFileMode(mode string) (os.FileMode, error) {
 	}
 
 	m := os.FileMode(fm)
-	switch fm {
-	case fileMode:
+	switch os.FileMode(fm) {
+	case FileMode:
 		m = 0644
-	case executableMode:
+	case ExecutableMode:
 		m = 0755
-	case treeMode:
+	case TreeMode:
 		m = m | os.ModeDir
-	case symlinkMode:
+	case SymlinkMode:
 		m = m | os.ModeSymlink
 	}
 
@@ -375,7 +375,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			return
 		}
 
-		if entry.Mode == submoduleMode {
+		if entry.Mode == SubmoduleMode {
 			err = nil
 			continue
 		}

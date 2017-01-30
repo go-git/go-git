@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
 	. "gopkg.in/check.v1"
 	"srcd.works/go-billy.v1/memory"
@@ -70,8 +71,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMemory(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 	c.Assert(idx.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 	c.Assert(idx.Entries[0].Name, Equals, ".gitignore")
-	// in memoryfs the perms are not supported
-	c.Assert(idx.Entries[0].Mode, Equals, os.FileMode(0))
+	c.Assert(idx.Entries[0].Mode, Equals, object.FileMode)
 	c.Assert(idx.Entries[0].ModifiedAt.IsZero(), Equals, false)
 	c.Assert(idx.Entries[0].Size, Equals, uint32(189))
 
@@ -104,7 +104,7 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 	c.Assert(idx.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 	c.Assert(idx.Entries[0].Name, Equals, ".gitignore")
-	c.Assert(idx.Entries[0].Mode, Equals, os.FileMode(0644))
+	c.Assert(idx.Entries[0].Mode, Equals, object.FileMode)
 	c.Assert(idx.Entries[0].ModifiedAt.IsZero(), Equals, false)
 	c.Assert(idx.Entries[0].Size, Equals, uint32(189))
 
