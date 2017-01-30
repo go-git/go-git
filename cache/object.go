@@ -54,13 +54,13 @@ func (c *ObjectFIFO) Add(o plumbing.EncodedObject) {
 	c.actualSize += o.Size()
 }
 
-// Get returns an object by his hash. If the object is not into the cache, it
+// Get returns an object by his hash. If the object is not found in the cache, it
 // returns nil
 func (c *ObjectFIFO) Get(k plumbing.Hash) plumbing.EncodedObject {
 	return c.objects[k]
 }
 
-// Clear the content of this cache object
+// Clear the content of this object cache
 func (c *ObjectFIFO) Clear() {
 	c.objects = make(map[plumbing.Hash]plumbing.EncodedObject)
 	c.order = newQueue(initialQueueSize)

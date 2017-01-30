@@ -8,7 +8,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
@@ -32,11 +31,6 @@ type Repository struct {
 	r  map[string]*Remote
 	s  Storer
 	wt billy.Filesystem
-
-	// Progress is where the human readable information sent by the server is
-	// stored, if nil nothing is stored and the capability (if supported)
-	// no-progress, is sent to the server to avoid send this information
-	Progress sideband.Progress
 }
 
 // Init creates an empty git repository, based on the given Storer and worktree.
@@ -188,7 +182,7 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 		return nil, ErrRemoteNotFound
 	}
 
-	return newRemote(r.s, r.Progress, c), nil
+	return newRemote(r.s, c), nil
 }
 
 // Remotes return all the remotes
@@ -202,7 +196,7 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 
 	var i int
 	for _, c := range cfg.Remotes {
-		remotes[i] = newRemote(r.s, r.Progress, c)
+		remotes[i] = newRemote(r.s, c)
 		i++
 	}
 
@@ -215,7 +209,7 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 		return nil, err
 	}
 
-	remote := newRemote(r.s, r.Progress, c)
+	remote := newRemote(r.s, c)
 
 	cfg, err := r.s.Config()
 	if err != nil {
@@ -271,6 +265,7 @@ func (r *Repository) clone(o *CloneOptions) error {
 		RefSpecs: r.cloneRefSpec(o, c),
 		Depth:    o.Depth,
 		Auth:     o.Auth,
+		Progress: o.Progress,
 	})
 	if err != nil {
 		return err
@@ -435,8 +430,9 @@ func (r *Repository) Pull(o *PullOptions) error {
 	}
 
 	remoteRefs, err := remote.fetch(&FetchOptions{
-		Depth: o.Depth,
-		Auth:  o.Auth,
+		Depth:    o.Depth,
+		Auth:     o.Auth,
+		Progress: o.Progress,
 	})
 
 	updated := true
@@ -515,7 +511,7 @@ func (r *Repository) Push(o *PushOptions) error {
 	return remote.Push(o)
 }
 
-// object.Commit return the commit with the given hash
+// Commit return the commit with the given hash
 func (r *Repository) Commit(h plumbing.Hash) (*object.Commit, error) {
 	return object.GetCommit(r.s, h)
 }

@@ -129,21 +129,6 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
 	c.Assert(alt.Config().Name, Equals, "foo")
 }
 
-func (s *RepositorySuite) TestRemoteWithProgress(c *C) {
-	buf := bytes.NewBuffer(nil)
-
-	r, _ := Init(memory.NewStorage(), nil)
-	r.Progress = buf
-
-	remote, err := r.CreateRemote(&config.RemoteConfig{
-		Name: "foo",
-		URL:  "http://foo/foo.git",
-	})
-
-	c.Assert(err, IsNil)
-	c.Assert(remote.p, Equals, buf)
-}
-
 func (s *RepositorySuite) TestCreateRemoteInvalid(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{})
@@ -449,6 +434,19 @@ func (s *RepositorySuite) TestPullCheckout(c *C) {
 	c.Assert(fi, HasLen, 8)
 }
 
+func (s *RepositorySuite) TestCloneWithProgress(c *C) {
+	fs := memoryfs.New()
+
+	buf := bytes.NewBuffer(nil)
+	_, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL:      s.GetBasicLocalRepositoryURL(),
+		Progress: buf,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(buf.Len(), Not(Equals), 0)
+}
+
 func (s *RepositorySuite) TestPullUpdateReferencesIfNeeded(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	r.CreateRemote(&config.RemoteConfig{
@@ -498,6 +496,23 @@ func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 
 	storage := r.s.(*memory.Storage)
 	c.Assert(storage.Objects, HasLen, 28)
+}
+
+func (s *RepositorySuite) TestPullProgress(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+
+	buf := bytes.NewBuffer(nil)
+	err := r.Pull(&PullOptions{
+		Progress: buf,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(buf.Len(), Not(Equals), 0)
 }
 
 func (s *RepositorySuite) TestPullAdd(c *C) {

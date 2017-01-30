@@ -26,11 +26,10 @@ var NoErrAlreadyUpToDate = errors.New("already up-to-date")
 type Remote struct {
 	c *config.RemoteConfig
 	s Storer
-	p sideband.Progress
 }
 
-func newRemote(s Storer, p sideband.Progress, c *config.RemoteConfig) *Remote {
-	return &Remote{s: s, p: p, c: c}
+func newRemote(s Storer, c *config.RemoteConfig) *Remote {
+	return &Remote{s: s, c: c}
 }
 
 // Config return the config
@@ -59,6 +58,7 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 // TODO: Support deletes.
 // TODO: Support pushing tags.
 // TODO: Check if force update is given, otherwise reject non-fast forward.
+// TODO: Sideband support
 func (r *Remote) Push(o *PushOptions) (err error) {
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
@@ -222,7 +222,7 @@ func (r *Remote) fetchPack(o *FetchOptions, s transport.UploadPackSession,
 	}
 
 	if err = packfile.UpdateObjectStorage(r.s,
-		buildSidebandIfSupported(req.Capabilities, reader, r.p),
+		buildSidebandIfSupported(req.Capabilities, reader, o.Progress),
 	); err != nil {
 		return err
 	}
@@ -400,7 +400,7 @@ func (r *Remote) newUploadPackRequest(o *FetchOptions,
 		}
 	}
 
-	if r.p == nil && ar.Capabilities.Supports(capability.NoProgress) {
+	if o.Progress == nil && ar.Capabilities.Supports(capability.NoProgress) {
 		if err := req.Capabilities.Set(capability.NoProgress); err != nil {
 			return nil, err
 		}

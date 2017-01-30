@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
@@ -18,7 +19,7 @@ var (
 	ErrInvalidRefSpec = errors.New("invalid refspec")
 )
 
-// CloneOptions describe how a clone should be perform
+// CloneOptions describes how a clone should be performed
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from
 	URL string
@@ -32,9 +33,13 @@ type CloneOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits
 	Depth int
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
 		return ErrMissingURL
@@ -51,7 +56,7 @@ func (o *CloneOptions) Validate() error {
 	return nil
 }
 
-// PullOptions describe how a pull should be perform.
+// PullOptions describes how a pull should be performed
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
@@ -63,9 +68,13 @@ type PullOptions struct {
 	Depth int
 	// Auth credentials, if required, to use with the remote repository
 	Auth transport.AuthMethod
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
-// Validate validate the fields and set the default values.
+// Validate validates the fields and sets the default values.
 func (o *PullOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -78,7 +87,7 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
-// FetchOptions describe how a fetch should be perform
+// FetchOptions describes how a fetch should be performed
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
 	RemoteName string
@@ -88,9 +97,13 @@ type FetchOptions struct {
 	Depth int
 	// Auth credentials, if required, to use with the remote repository
 	Auth transport.AuthMethod
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (o *FetchOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -105,7 +118,7 @@ func (o *FetchOptions) Validate() error {
 	return nil
 }
 
-// PushOptions describe how a push should be performed.
+// PushOptions describes how a push should be performed
 type PushOptions struct {
 	// RemoteName is the name of the remote to be pushed to.
 	RemoteName string
@@ -116,7 +129,7 @@ type PushOptions struct {
 	Auth transport.AuthMethod
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (o *PushOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName

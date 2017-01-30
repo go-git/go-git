@@ -84,23 +84,24 @@ func (s *SidebandSuite) TestDecodeFromFailingReader(c *C) {
 func (s *SidebandSuite) TestDecodeWithProgress(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
-	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
+	input := bytes.NewBuffer(nil)
+	e := pktline.NewEncoder(input)
 	e.Encode(PackData.WithPayload(expected[0:8]))
 	e.Encode(ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
 	e.Encode(PackData.WithPayload(expected[8:16]))
 	e.Encode(PackData.WithPayload(expected[16:26]))
 
+	output := bytes.NewBuffer(nil)
 	content := make([]byte, 26)
-	d := NewDemuxer(Sideband64k, buf)
-	d.Progress = bytes.NewBuffer(nil)
+	d := NewDemuxer(Sideband64k, input)
+	d.Progress = output
 
 	n, err := io.ReadFull(d, content)
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 26)
 	c.Assert(content, DeepEquals, expected)
 
-	progress, err := ioutil.ReadAll(d.Progress)
+	progress, err := ioutil.ReadAll(output)
 	c.Assert(err, IsNil)
 	c.Assert(progress, DeepEquals, []byte{'F', 'O', 'O', '\n'})
 }
