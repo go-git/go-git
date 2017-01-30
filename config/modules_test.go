@@ -54,10 +54,7 @@ func (s *ModulesSuite) TestUnmarshall(c *C) {
 }
 
 func (s *ModulesSuite) TestUnmarshallMarshall(c *C) {
-	input := []byte(`[submodule "qux"]
-	path = qux
-	url = https://github.com/foo/qux.git
-[submodule "foo/bar"]
+	input := []byte(`[submodule "foo/bar"]
 	path = foo/bar
 	url = https://github.com/foo/bar.git
 	ignore = all
