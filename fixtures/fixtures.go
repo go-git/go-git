@@ -265,7 +265,7 @@ func (g Fixtures) Exclude(tag string) Fixtures {
 	return r
 }
 
-// Init set the correct path to be able to access to the fixtures files
+// Init sets the correct path to access the fixtures files
 func Init() error {
 	srcs := build.Default.SrcDirs()
 
