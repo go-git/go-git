@@ -93,7 +93,7 @@ type Submodule struct {
 	raw *format.Subsection
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (m *Submodule) Validate() error {
 	if m.Path == "" {
 		return ErrModuleEmptyPath

@@ -55,7 +55,7 @@ func NewConfig() *Config {
 	}
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (c *Config) Validate() error {
 	for name, r := range c.Remotes {
 		if r.Name != name {
@@ -153,7 +153,7 @@ type RemoteConfig struct {
 	raw *format.Subsection
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (c *RemoteConfig) Validate() error {
 	if c.Name == "" {
 		return ErrRemoteConfigEmptyName
