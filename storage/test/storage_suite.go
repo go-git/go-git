@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 	. "gopkg.in/check.v1"
@@ -18,6 +19,7 @@ type Storer interface {
 	storer.EncodedObjectStorer
 	storer.ReferenceStorer
 	storer.ShallowStorer
+	storer.IndexStorer
 	config.ConfigStorer
 }
 
@@ -293,6 +295,27 @@ func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {
 	cfg, err := s.Storer.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg, DeepEquals, expected)
+}
+
+func (s *BaseStorageSuite) TestIndex(c *C) {
+	expected := &index.Index{}
+	expected.Version = 2
+
+	idx, err := s.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx, DeepEquals, expected)
+}
+
+func (s *BaseStorageSuite) TestSetIndexAndIndex(c *C) {
+	expected := &index.Index{}
+	expected.Version = 2
+
+	err := s.Storer.SetIndex(expected)
+	c.Assert(err, IsNil)
+
+	idx, err := s.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx, DeepEquals, expected)
 }
 
 func (s *BaseStorageSuite) TestSetConfigInvalid(c *C) {

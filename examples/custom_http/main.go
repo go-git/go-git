@@ -11,6 +11,7 @@ import (
 	. "gopkg.in/src-d/go-git.v4/examples"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
 	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 // Here is an example to configure http client according to our own needs.
@@ -37,13 +38,10 @@ func main() {
 	// Override http(s) default protocol to use our custom client
 	client.InstallProtocol("https", githttp.NewClient(customClient))
 
-	// Create an in-memory repository
-	r := git.NewMemoryRepository()
-
 	// Clone repository using the new client if the protocol is https://
 	Info("git clone %s", url)
 
-	err := r.Clone(&git.CloneOptions{URL: url})
+	r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{URL: url})
 	CheckIfError(err)
 
 	// Retrieve the branch pointed by HEAD

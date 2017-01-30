@@ -13,7 +13,7 @@ func main() {
 	path := os.Args[1]
 
 	// We instance a new repository targeting the given path (the .git folder)
-	r, err := git.NewFilesystemRepository(path)
+	r, err := git.PlainOpen(path)
 	CheckIfError(err)
 
 	// Length of the HEAD history

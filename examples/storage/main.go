@@ -26,30 +26,31 @@ func main() {
 	s, err := aerospike.NewStorage(client, "test", url)
 	CheckIfError(err)
 
-	// A new repository instance using as storage the custom implementation
-	r, err := git.NewRepository(s)
-	CheckIfError(err)
-
 	switch action {
 	case "clone":
-		clone(r, url)
+		clone(s, url)
 	case "log":
-		log(r)
+		log(s)
 	default:
 		panic("unknown option")
 	}
 }
 
-func clone(r *git.Repository, url string) {
+func clone(s git.Storer, url string) {
 	// Clone the given repository, all the objects, references and
-	// configuration sush as remotes, are save into the Aerospike database.
+	// configuration sush as remotes, are save into the Aerospike database
+	// using the custom storer
 	Info("git clone %s", url)
 
-	err := r.Clone(&git.CloneOptions{URL: url})
+	_, err := git.Clone(s, nil, &git.CloneOptions{URL: url})
 	CheckIfError(err)
 }
 
-func log(r *git.Repository) {
+func log(s git.Storer) {
+	// We open the repository using as storer the custom implementation
+	r, err := git.Open(s, nil)
+	CheckIfError(err)
+
 	// Prints the history of the repository starting in the current HEAD, the
 	// objects are retrieved from Aerospike database.
 	Info("git log --oneline")

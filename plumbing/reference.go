@@ -42,7 +42,8 @@ func (r ReferenceName) Short() string {
 }
 
 const (
-	HEAD ReferenceName = "HEAD"
+	HEAD   ReferenceName = "HEAD"
+	Master ReferenceName = "refs/heads/master"
 )
 
 // Reference is a representation of git reference

@@ -230,7 +230,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
-	dstRepo, err := NewRepository(dstSto)
+	dstRepo, err := Open(dstSto, nil)
 	c.Assert(err, IsNil)
 
 	iter, err := sto.IterReferences()

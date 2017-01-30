@@ -5,12 +5,17 @@ import (
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
+	memoryfs "srcd.works/go-billy.v1/memory"
+	"srcd.works/go-billy.v1/os"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -44,7 +49,13 @@ func (s *BaseSuite) buildBasicRepository(c *C) {
 }
 
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	r, err := NewFilesystemRepository(f.DotGit().Base())
+	fs := os.New(f.DotGit().Base())
+	st, err := filesystem.NewStorage(fs)
+	if err != nil {
+		panic(err)
+	}
+
+	r, err := Open(st, fs)
 	if err != nil {
 		panic(err)
 	}
@@ -58,18 +69,24 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 		return r
 	}
 
-	r := NewMemoryRepository()
-
+	storer := memory.NewStorage()
 	p := f.Packfile()
 	defer p.Close()
 
 	n := packfile.NewScanner(p)
-	d, err := packfile.NewDecoder(n, r.s)
+	d, err := packfile.NewDecoder(n, storer)
 	if err != nil {
 		panic(err)
 	}
 
 	_, err = d.Decode()
+	if err != nil {
+		panic(err)
+	}
+
+	storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, f.Head))
+
+	r, err := Open(storer, memoryfs.New())
 	if err != nil {
 		panic(err)
 	}

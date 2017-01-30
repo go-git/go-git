@@ -7,17 +7,18 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	. "gopkg.in/src-d/go-git.v4/examples"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 func main() {
 	// Create a new repository
 	Info("git init")
-	r := git.NewMemoryRepository()
+	r, err := git.Init(memory.NewStorage(), nil)
+	CheckIfError(err)
 
 	// Add a new remote, with the default fetch refspec
 	Info("git remote add example https://github.com/git-fixtures/basic.git")
-
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "example",
 		URL:  "https://github.com/git-fixtures/basic.git",
 	})

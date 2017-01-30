@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 	driver "github.com/aerospike/aerospike-client-go"
@@ -248,6 +249,44 @@ func (s *Storage) buildConfigKey() (*driver.Key, error) {
 	return driver.NewKey(s.ns, configSet, fmt.Sprintf("%s|config", s.url))
 }
 
+func (s *Storage) Index() (*index.Index, error) {
+	key, err := s.buildIndexKey()
+	if err != nil {
+		return nil, err
+	}
+
+	rec, err := s.client.Get(nil, key)
+	if err != nil {
+		return nil, err
+	}
+
+	idx := &index.Index{}
+	return idx, json.Unmarshal(rec.Bins["blob"].([]byte), idx)
+}
+
+func (s *Storage) SetIndex(idx *index.Index) error {
+	key, err := s.buildIndexKey()
+	if err != nil {
+		return err
+	}
+
+	json, err := json.Marshal(idx)
+	if err != nil {
+		return err
+	}
+
+	bins := driver.BinMap{
+		urlField: s.url,
+		"blob":   json,
+	}
+
+	return s.client.Put(nil, key, bins)
+}
+
+func (s *Storage) buildIndexKey() (*driver.Key, error) {
+	return driver.NewKey(s.ns, configSet, fmt.Sprintf("%s|index", s.url))
+}
+
 func (s *Storage) Shallow() ([]plumbing.Hash, error) {
 	key, err := s.buildShallowKey()
 	if err != nil {
@@ -283,7 +322,7 @@ func (s *Storage) SetShallow(hash []plumbing.Hash) error {
 }
 
 func (s *Storage) buildShallowKey() (*driver.Key, error) {
-	return driver.NewKey(s.ns, configSet, fmt.Sprintf("%s|config", s.url))
+	return driver.NewKey(s.ns, configSet, fmt.Sprintf("%s|shallow", s.url))
 }
 
 func createIndexes(c *driver.Client, ns string) error {

@@ -13,6 +13,7 @@ import (
 type Storage struct {
 	ObjectStorage
 	ReferenceStorage
+	IndexStorage
 	ShallowStorage
 	ConfigStorage
 }
@@ -28,6 +29,7 @@ func NewStorage(fs billy.Filesystem) (*Storage, error) {
 	return &Storage{
 		ObjectStorage:    o,
 		ReferenceStorage: ReferenceStorage{dir: dir},
+		IndexStorage:     IndexStorage{dir: dir},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir},
 	}, nil

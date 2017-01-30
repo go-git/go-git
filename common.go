@@ -15,6 +15,7 @@ type Storer interface {
 	storer.EncodedObjectStorer
 	storer.ReferenceStorer
 	storer.ShallowStorer
+	storer.IndexStorer
 	config.ConfigStorer
 }
 
