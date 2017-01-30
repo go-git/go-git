@@ -11,9 +11,8 @@ import (
 // ErrMaxPackedExceeded returned by Read, if the maximum packed size is exceeded
 var ErrMaxPackedExceeded = errors.New("max. packed size exceeded")
 
-// Progress allows to read the progress information
+// Progress where the progress information is stored
 type Progress interface {
-	io.Reader
 	io.Writer
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
@@ -32,6 +33,10 @@ type CloneOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits
 	Depth int
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
 // Validate validates the fields and sets the default values
@@ -63,6 +68,10 @@ type PullOptions struct {
 	Depth int
 	// Auth credentials, if required, to use with the remote repository
 	Auth transport.AuthMethod
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
 // Validate validates the fields and sets the default values.
@@ -88,6 +97,10 @@ type FetchOptions struct {
 	Depth int
 	// Auth credentials, if required, to use with the remote repository
 	Auth transport.AuthMethod
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored and the capability (if supported)
+	// no-progress, is sent to the server to avoid send this information
+	Progress sideband.Progress
 }
 
 // Validate validates the fields and sets the default values
