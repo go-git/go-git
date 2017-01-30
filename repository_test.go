@@ -171,6 +171,7 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 
 func (s *RepositorySuite) TestPlainInit(c *C) {
 	dir, err := ioutil.TempDir("", "plain-init")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, true)
@@ -184,6 +185,7 @@ func (s *RepositorySuite) TestPlainInit(c *C) {
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
 	dir, err := ioutil.TempDir("", "plain-init")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, true)
@@ -197,6 +199,7 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
 
 func (s *RepositorySuite) TestPlainOpen(c *C) {
 	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, false)
@@ -210,6 +213,7 @@ func (s *RepositorySuite) TestPlainOpen(c *C) {
 
 func (s *RepositorySuite) TestPlainOpenBare(c *C) {
 	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, true)
@@ -223,6 +227,7 @@ func (s *RepositorySuite) TestPlainOpenBare(c *C) {
 
 func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
 	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, false)
@@ -242,6 +247,7 @@ func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
 
 func (s *RepositorySuite) TestPlainClone(c *C) {
 	dir, err := ioutil.TempDir("", "plain-clone")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainClone(dir, false, &CloneOptions{

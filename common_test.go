@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"srcd.works/go-billy.v1/os"
-
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -17,6 +15,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	memoryfs "srcd.works/go-billy.v1/memory"
+	"srcd.works/go-billy.v1/os"
 )
 
 func Test(t *testing.T) { TestingT(t) }

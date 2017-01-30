@@ -39,7 +39,7 @@ type Repository struct {
 	Progress sideband.Progress
 }
 
-// Init create an empty git repository, based on the given Storer and worktree.
+// Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
 func Init(s Storer, worktree billy.Filesystem) (*Repository, error) {
@@ -67,8 +67,8 @@ func Init(s Storer, worktree billy.Filesystem) (*Repository, error) {
 
 // Open opens a git repository using the given Storer and worktree filesystem,
 // if the given storer is complete empty ErrRepositoryNotExists is returned.
-// The worktree can be nil when the repository being open is bare, if the
-// a non-bare repository is not provied and worktree is nil, the err
+// The worktree can be nil when the repository being opened is bare, if the
+// repository is a normal one (not bare) and worktree is nil the err
 // ErrWorktreeNotProvided is returned
 func Open(s Storer, worktree billy.Filesystem) (*Repository, error) {
 	_, err := s.Reference(plumbing.HEAD)
