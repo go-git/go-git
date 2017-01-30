@@ -8,8 +8,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
 	. "gopkg.in/check.v1"
-	"srcd.works/go-billy.v1/memory"
-	osfs "srcd.works/go-billy.v1/os"
+	"srcd.works/go-billy.v1/memfs"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 type WorktreeSuite struct {
@@ -28,7 +28,7 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	h, err := s.Repository.Head()
 	c.Assert(err, IsNil)
 
-	fs := memory.New()
+	fs := memfs.New()
 	w := &Worktree{
 		r:  s.Repository,
 		fs: fs,
@@ -53,11 +53,11 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 }
 
-func (s *WorktreeSuite) TestCheckoutIndexMemory(c *C) {
+func (s *WorktreeSuite) TestCheckoutIndexmemfs(c *C) {
 	h, err := s.Repository.Head()
 	c.Assert(err, IsNil)
 
-	fs := memory.New()
+	fs := memfs.New()
 	w := &Worktree{
 		r:  s.Repository,
 		fs: fs,
@@ -75,7 +75,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMemory(c *C) {
 	c.Assert(idx.Entries[0].ModifiedAt.IsZero(), Equals, false)
 	c.Assert(idx.Entries[0].Size, Equals, uint32(189))
 
-	// ctime, dev, inode, uid and gid are not supported on memory fs
+	// ctime, dev, inode, uid and gid are not supported on memfs fs
 	c.Assert(idx.Entries[0].CreatedAt.IsZero(), Equals, true)
 	c.Assert(idx.Entries[0].Dev, Equals, uint32(0))
 	c.Assert(idx.Entries[0].Inode, Equals, uint32(0))
@@ -120,7 +120,7 @@ func (s *WorktreeSuite) TestStatus(c *C) {
 	h, err := s.Repository.Head()
 	c.Assert(err, IsNil)
 
-	fs := memory.New()
+	fs := memfs.New()
 	w := &Worktree{
 		r:  s.Repository,
 		fs: fs,

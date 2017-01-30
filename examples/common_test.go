@@ -24,9 +24,7 @@ var args = map[string][]string{
 	"push":        []string{setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
 }
 
-var ignored = map[string]bool{
-	"storage": true,
-}
+var ignored = map[string]bool{}
 
 var tempFolders = []string{}
 

@@ -6,11 +6,11 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
 	"srcd.works/go-billy.v1"
-	"srcd.works/go-billy.v1/os"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 // DefaultLoader is a filesystem loader ignoring host and resolving paths to /.
-var DefaultLoader = NewFilesystemLoader(os.New("/"))
+var DefaultLoader = NewFilesystemLoader(osfs.New("/"))
 
 // Loader loads repository's storer.Storer based on an optional host and a path.
 type Loader interface {

@@ -1,4 +1,4 @@
-// Package config storage is the implementation of git config for go-git
+// Package config contains the abstraction of config files
 package config
 
 import (

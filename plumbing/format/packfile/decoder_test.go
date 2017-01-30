@@ -3,6 +3,8 @@ package packfile_test
 import (
 	"io"
 
+	"srcd.works/go-billy.v1/memfs"
+
 	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
@@ -10,8 +12,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-
-	fs "srcd.works/go-billy.v1/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -164,7 +164,7 @@ func (s *ReaderSuite) TestDecodeNoSeekableWithoutTxStorer(c *C) {
 		scanner := packfile.NewScanner(reader)
 
 		var storage storer.EncodedObjectStorer
-		storage, _ = filesystem.NewStorage(fs.New())
+		storage, _ = filesystem.NewStorage(memfs.New())
 		_, isTxStorer := storage.(storer.Transactioner)
 		c.Assert(isTxStorer, Equals, false)
 

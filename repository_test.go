@@ -17,7 +17,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	memoryfs "srcd.works/go-billy.v1/memory"
+	"srcd.works/go-billy.v1/memfs"
 )
 
 type RepositorySuite struct {
@@ -27,7 +27,7 @@ type RepositorySuite struct {
 var _ = Suite(&RepositorySuite{})
 
 func (s *RepositorySuite) TestInit(c *C) {
-	r, err := Init(memory.NewStorage(), memoryfs.New())
+	r, err := Init(memory.NewStorage(), memfs.New())
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
@@ -62,11 +62,11 @@ func (s *RepositorySuite) TestInitAlreadyExists(c *C) {
 func (s *RepositorySuite) TestOpen(c *C) {
 	st := memory.NewStorage()
 
-	r, err := Init(st, memoryfs.New())
+	r, err := Init(st, memfs.New())
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	r, err = Open(st, memoryfs.New())
+	r, err = Open(st, memfs.New())
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 }
@@ -86,7 +86,7 @@ func (s *RepositorySuite) TestOpenBare(c *C) {
 func (s *RepositorySuite) TestOpenMissingWorktree(c *C) {
 	st := memory.NewStorage()
 
-	r, err := Init(st, memoryfs.New())
+	r, err := Init(st, memfs.New())
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
@@ -270,7 +270,7 @@ func (s *RepositorySuite) TestFetch(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneDeep(c *C) {
-	fs := memoryfs.New()
+	fs := memfs.New()
 	r, _ := Init(memory.NewStorage(), fs)
 
 	head, err := r.Head()
@@ -419,7 +419,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 }
 
 func (s *RepositorySuite) TestPullCheckout(c *C) {
-	fs := memoryfs.New()
+	fs := memfs.New()
 	r, _ := Init(memory.NewStorage(), fs)
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -435,7 +435,7 @@ func (s *RepositorySuite) TestPullCheckout(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneWithProgress(c *C) {
-	fs := memoryfs.New()
+	fs := memfs.New()
 
 	buf := bytes.NewBuffer(nil)
 	_, err := Clone(memory.NewStorage(), fs, &CloneOptions{
@@ -766,7 +766,7 @@ func (s *RepositorySuite) TestObjectNotFound(c *C) {
 }
 
 func (s *RepositorySuite) TestWorktree(c *C) {
-	def := memoryfs.New()
+	def := memfs.New()
 	r, _ := Init(memory.NewStorage(), def)
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)

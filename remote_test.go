@@ -14,9 +14,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
-	osfs "srcd.works/go-billy.v1/os"
-
 	. "gopkg.in/check.v1"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 type RemoteSuite struct {

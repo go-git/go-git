@@ -14,8 +14,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	memoryfs "srcd.works/go-billy.v1/memory"
-	"srcd.works/go-billy.v1/os"
+	"srcd.works/go-billy.v1/memfs"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -49,7 +49,7 @@ func (s *BaseSuite) buildBasicRepository(c *C) {
 }
 
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	fs := os.New(f.DotGit().Base())
+	fs := osfs.New(f.DotGit().Base())
 	st, err := filesystem.NewStorage(fs)
 	if err != nil {
 		panic(err)
@@ -86,7 +86,7 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 
 	storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, f.Head))
 
-	r, err := Open(storer, memoryfs.New())
+	r, err := Open(storer, memfs.New())
 	if err != nil {
 		panic(err)
 	}

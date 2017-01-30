@@ -12,7 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
 	"srcd.works/go-billy.v1"
-	osfs "srcd.works/go-billy.v1/os"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 var (
