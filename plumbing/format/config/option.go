@@ -8,14 +8,14 @@ type Option struct {
 	// Key preserving original caseness.
 	// Use IsKey instead to compare key regardless of caseness.
 	Key string
-	// Original value as string, could be not notmalized.
+	// Original value as string, could be not normalized.
 	Value string
 }
 
 type Options []*Option
 
 // IsKey returns true if the given key matches
-// this options' key in a case-insensitive comparison.
+// this option's key in a case-insensitive comparison.
 func (o *Option) IsKey(key string) bool {
 	return strings.ToLower(o.Key) == strings.ToLower(key)
 }

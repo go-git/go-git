@@ -49,7 +49,7 @@ var (
 
 // Decoder reads and decodes packfiles from an input Scanner, if an ObjectStorer
 // was provided the decoded objects are store there. If not the decode object
-// is destroyed. The Offsets and CRCs are calculated independand if the an
+// is destroyed. The Offsets and CRCs are calculated whether an
 // ObjectStorer was provided or not.
 type Decoder struct {
 	s  *Scanner
@@ -68,15 +68,15 @@ type Decoder struct {
 }
 
 // NewDecoder returns a new Decoder that decodes a Packfile using the given
-// s and store the objects in the provided o. ObjectStorer can be nil, in this
-// case the objects are not stored but objects offsets on the Packfile and the
-// CRCs are calculated.
+// Scanner and stores the objects in the provided EncodedObjectStorer. ObjectStorer can be nil, in this
+// If the passed EncodedObjectStorer is nil, objects are not stored, but
+// offsets on the Packfile and CRCs are calculated.
 //
-// If ObjectStorer is nil and the Scanner is not Seekable, ErrNonSeekable is
+// If EncodedObjectStorer is nil and the Scanner is not Seekable, ErrNonSeekable is
 // returned.
 //
 // If the ObjectStorer implements storer.Transactioner, a transaction is created
-// during the Decode execution, if something fails the Rollback is called
+// during the Decode execution. If anything fails, Rollback is called
 func NewDecoder(s *Scanner, o storer.EncodedObjectStorer) (*Decoder, error) {
 	return NewDecoderForType(s, o, plumbing.AnyObject)
 }
@@ -448,13 +448,13 @@ func (d *Decoder) Offsets() map[plumbing.Hash]int64 {
 	return d.hashToOffset
 }
 
-// CRCs returns the CRC-32 for each objected read,Decode method should be called
+// CRCs returns the CRC-32 for each read object. Decode method should be called
 // before to calculate the CRCs
 func (d *Decoder) CRCs() map[plumbing.Hash]uint32 {
 	return d.crcs
 }
 
-// Close close the Scanner, usually this mean that the whole reader is read and
+// Close closes the Scanner. usually this mean that the whole reader is read and
 // discarded
 func (d *Decoder) Close() error {
 	d.cache.Clear()

@@ -1,4 +1,4 @@
-// Package idxfile implements a encoder/decoder of idx files
+// Package idxfile implements an encoder and a decoder of idx files
 package idxfile
 
 /*

@@ -1,4 +1,4 @@
-// Package index implements a encoder/decoder of index format files
+// Package index implements an encoder and a decoder of index format files
 package index
 
 /*

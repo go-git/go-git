@@ -16,10 +16,10 @@ import (
 var ErrUnsupportedObject = errors.New("unsupported object type")
 
 // Object is a generic representation of any git object. It is implemented by
-// Commit, Tree, Blob and Tag, and includes the functions that are common to
+// Commit, Tree, Blob, and Tag, and includes the functions that are common to
 // them.
 //
-// Object is returned when an object could of any type. It is frequently used
+// Object is returned when an object can be of any type. It is frequently used
 // with a type cast to acquire the specific type of object:
 //
 //   func process(obj Object) {
@@ -71,7 +71,7 @@ func DecodeObject(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (Objec
 	}
 }
 
-// DateFormat is the format being use in the orignal git implementation
+// DateFormat is the format being used in the original git implementation
 const DateFormat = "Mon Jan 02 15:04:05 2006 -0700"
 
 // Signature represents an action signed by a person

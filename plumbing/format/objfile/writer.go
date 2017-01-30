@@ -14,7 +14,7 @@ var (
 )
 
 // Writer writes and encodes data in compressed objfile format to a provided
-// io.Writerº. Close should be called when finished with the Writer. Close will
+// io.Writer. Close should be called when finished with the Writer. Close will
 // not close the underlying io.Writer.
 type Writer struct {
 	raw    io.Writer

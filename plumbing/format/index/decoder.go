@@ -37,7 +37,7 @@ const (
 	skipWorkTreeMask  = 1 << 14
 )
 
-// A Decoder reads and decodes idx files from an input stream.
+// A Decoder reads and decodes index files from an input stream.
 type Decoder struct {
 	r         io.Reader
 	hash      hash.Hash

@@ -91,7 +91,7 @@ type BlobIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewBlobIter returns a CommitIter for the given repository and underlying
+// NewBlobIter returns a BlobIter for the given repository and underlying
 // object iterator.
 //
 // The returned BlobIter will automatically skip over non-blob objects.

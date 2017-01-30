@@ -20,7 +20,7 @@ const (
 	maskType        = uint8(112) // 0111 0000
 )
 
-// UpdateObjectStorage updates the given ObjectStorer with the contents of the
+// UpdateObjectStorage updates the given storer.EncodedObjectStorer with the contents of the
 // packfile.
 func UpdateObjectStorage(s storer.EncodedObjectStorer, packfile io.Reader) error {
 	if sw, ok := s.(storer.PackfileWriter); ok {

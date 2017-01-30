@@ -85,8 +85,8 @@ func (iter *FileIter) Next() (*File, error) {
 	}
 }
 
-// ForEach call the cb function for each file contained on this iter until
-// an error happends or the end of the iter is reached. If plumbing.ErrStop is sent
+// ForEach call the cb function for each file contained in this iter until
+// an error happens or the end of the iter is reached. If plumbing.ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *FileIter) ForEach(cb func(*File) error) error {
 	defer iter.Close()

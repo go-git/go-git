@@ -23,7 +23,7 @@ type Encoder struct {
 }
 
 // NewEncoder creates a new packfile encoder using a specific Writer and
-// ObjectStorer
+// EncodedObjectStorer
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
 	h := plumbing.Hasher{
 		Hash: sha1.New(),

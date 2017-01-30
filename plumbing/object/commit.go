@@ -13,7 +13,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
-// Hash hash of an object
+// Hash represents the hash of an object
 type Hash plumbing.Hash
 
 // Commit points to a single tree, marking it as what the project looked like
@@ -280,13 +280,13 @@ func (s commitSorterer) Swap(i, j int) {
 	s.l[i], s.l[j] = s.l[j], s.l[i]
 }
 
-// SortCommits sort a commit list by commit date, from older to newer.
+// SortCommits sorts a commit list by commit date, from older to newer.
 func SortCommits(l []*Commit) {
 	s := &commitSorterer{l}
 	sort.Sort(s)
 }
 
-// ReverseSortCommits sort a commit list by commit date, from newer to older.
+// ReverseSortCommits sorts a commit list by commit date, from newer to older.
 func ReverseSortCommits(l []*Commit) {
 	s := &commitSorterer{l}
 	sort.Sort(sort.Reverse(s))

@@ -16,12 +16,12 @@ type Progress interface {
 	io.Writer
 }
 
-// Demuxer demultiplex the progress reports and error info interleaved with the
+// Demuxer demultiplexes the progress reports and error info interleaved with the
 // packfile itself.
 //
-// A sideband has three different channels the main one, call PackData, contains
-// the packfile data, the ErrorMessage channel, that contains server errors and
-// the last one ProgressMessage channel containing information about the ongoing
+// A sideband has three different channels the main one, called PackData, contains
+// the packfile data; the ErrorMessage channel, that contains server errors; and
+// the last one, ProgressMessage channel, containing information about the ongoing
 // task happening in the server (optional, can be suppressed sending NoProgress
 // or Quiet capabilities to the server)
 //

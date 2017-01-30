@@ -13,7 +13,7 @@ type Config struct {
 
 type Includes []*Include
 
-// A reference to a included configuration.
+// A reference to an included configuration.
 type Include struct {
 	Path   string
 	Config *Config

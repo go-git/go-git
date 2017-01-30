@@ -49,7 +49,7 @@ func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, erro
 	return delta, nil
 }
 
-// DiffDelta returns the way of how to transform baseBuf to targetBuf
+// DiffDelta returns the delta that transforms baseBuf into targetBuf.
 func DiffDelta(baseBuf []byte, targetBuf []byte) []byte {
 	var outBuff []byte
 
