@@ -472,7 +472,7 @@ func (r *Repository) updateWorktree() error {
 		return nil
 	}
 
-	w, err := r.Worktree(nil)
+	w, err := r.Worktree()
 	if err != nil {
 		return err
 	}
@@ -625,14 +625,10 @@ func (r *Repository) References() (storer.ReferenceIter, error) {
 
 // Worktree returns a worktree based on the given fs, if nil the default
 // worktree will be used.
-func (r *Repository) Worktree(fs billy.Filesystem) (*Worktree, error) {
-	if r.wt == nil && fs == nil {
+func (r *Repository) Worktree() (*Worktree, error) {
+	if r.wt == nil {
 		return nil, ErrIsBareRepository
 	}
 
-	if fs == nil {
-		fs = r.wt
-	}
-
-	return &Worktree{r: r, fs: fs}, nil
+	return &Worktree{r: r, fs: r.wt}, nil
 }

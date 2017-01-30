@@ -747,23 +747,14 @@ func (s *RepositorySuite) TestObjectNotFound(c *C) {
 func (s *RepositorySuite) TestWorktree(c *C) {
 	def := memoryfs.New()
 	r, _ := Init(memory.NewStorage(), def)
-	w, err := r.Worktree(nil)
+	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 	c.Assert(w.fs, Equals, def)
 }
 
-func (s *RepositorySuite) TestWorktreeAlternative(c *C) {
-	r, _ := Init(memory.NewStorage(), memoryfs.New())
-
-	alt := memoryfs.New()
-	w, err := r.Worktree(alt)
-	c.Assert(err, IsNil)
-	c.Assert(w.fs, Equals, alt)
-}
-
 func (s *RepositorySuite) TestWorktreeBare(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	w, err := r.Worktree(nil)
+	w, err := r.Worktree()
 	c.Assert(err, Equals, ErrIsBareRepository)
 	c.Assert(w, IsNil)
 }
