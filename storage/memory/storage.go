@@ -4,10 +4,10 @@ package memory
 import (
 	"fmt"
 
-	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/config"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/format/index"
+	"srcd.works/go-git.v4/plumbing/storer"
 )
 
 var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")

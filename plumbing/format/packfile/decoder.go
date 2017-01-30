@@ -3,9 +3,9 @@ package packfile
 import (
 	"bytes"
 
-	"gopkg.in/src-d/go-git.v4/cache"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/cache"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/storer"
 )
 
 // Format specifies if the packfile uses ref-deltas or ofs-deltas.

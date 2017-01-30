@@ -4,8 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
-	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"srcd.works/go-git.v4/plumbing/format/index"
+	"srcd.works/go-git.v4/plumbing/object"
 
 	. "gopkg.in/check.v1"
 	"srcd.works/go-billy.v1/memfs"

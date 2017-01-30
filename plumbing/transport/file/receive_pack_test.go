@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/src-d/go-git-fixtures"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
+	"srcd.works/go-git.v4/plumbing/transport/test"
 
 	. "gopkg.in/check.v1"
 )

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/storer"
 )
 
 // ErrUnsupportedObject trigger when a non-supported object is being decoded.

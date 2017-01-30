@@ -3,7 +3,7 @@ package packfile
 import (
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )

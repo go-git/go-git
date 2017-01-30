@@ -34,4 +34,4 @@
 //             fmt.Println(commit)
 //         }
 //    }
-package git
+package git // import "srcd.works/go-git.v4"

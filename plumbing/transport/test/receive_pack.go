@@ -9,12 +9,12 @@ import (
 	"io/ioutil"
 
 	"github.com/src-d/go-git-fixtures"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/format/packfile"
+	"srcd.works/go-git.v4/plumbing/protocol/packp"
+	"srcd.works/go-git.v4/plumbing/protocol/packp/capability"
+	"srcd.works/go-git.v4/plumbing/transport"
+	"srcd.works/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )

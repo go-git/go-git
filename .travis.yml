@@ -32,8 +32,8 @@ before_install:
 install:
   - rm -rf $GOPATH/src/gopkg.in/src-d
   - mkdir -p $GOPATH/src/gopkg.in/src-d
-  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v4
-  - cd $GOPATH/src/gopkg.in/src-d/go-git.v4
+  - ln -s $PWD $GOPATH/src/srcd.works/go-git.v4
+  - cd $GOPATH/src/srcd.works/go-git.v4
   - go get -v -t ./...
 
 script:

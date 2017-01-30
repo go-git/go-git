@@ -3,7 +3,7 @@ package config
 import (
 	"strings"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing"
 )
 
 const (

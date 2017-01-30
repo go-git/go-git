@@ -4,8 +4,8 @@ import (
 	"io"
 	"os/exec"
 
-	"gopkg.in/src-d/go-git.v4/plumbing/transport"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common"
+	"srcd.works/go-git.v4/plumbing/transport"
+	"srcd.works/go-git.v4/plumbing/transport/internal/common"
 )
 
 // DefaultClient is the default local client.

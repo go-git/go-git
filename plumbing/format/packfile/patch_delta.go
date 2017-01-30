@@ -3,7 +3,7 @@ package packfile
 import (
 	"io/ioutil"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing"
 )
 
 // See https://github.com/git/git/blob/49fa3dc76179e04b0833542fa52d0f287a4955ac/delta.h

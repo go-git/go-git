@@ -7,9 +7,9 @@ import (
 	"io"
 	stdioutil "io/ioutil"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"gopkg.in/src-d/go-git.v4/utils/ioutil"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/utils/ioutil"
 )
 
 // Tag represents an annotated tag object. It points to a single git object of

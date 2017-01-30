@@ -5,10 +5,10 @@ import (
 	"time"
 
 	"github.com/src-d/go-git-fixtures"
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"srcd.works/go-git.v4/storage/filesystem"
 )
 
 type SuiteCommit struct {

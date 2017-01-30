@@ -6,7 +6,7 @@ import (
 	"io"
 	"sort"
 
-	"gopkg.in/src-d/go-git.v4/utils/binary"
+	"srcd.works/go-git.v4/utils/binary"
 )
 
 // An Encoder writes idx files to an output stream.

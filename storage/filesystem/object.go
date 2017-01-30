@@ -4,13 +4,13 @@ import (
 	"io"
 	"os"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/objfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/format/idxfile"
+	"srcd.works/go-git.v4/plumbing/format/objfile"
+	"srcd.works/go-git.v4/plumbing/format/packfile"
+	"srcd.works/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/storage/filesystem/internal/dotgit"
+	"srcd.works/go-git.v4/storage/memory"
 
 	"srcd.works/go-billy.v1"
 )

@@ -5,10 +5,10 @@ import (
 	"io"
 	"sync/atomic"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/objfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/format/idxfile"
+	"srcd.works/go-git.v4/plumbing/format/objfile"
+	"srcd.works/go-git.v4/plumbing/format/packfile"
 
 	"srcd.works/go-billy.v1"
 )

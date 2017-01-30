@@ -3,8 +3,8 @@ package git
 import (
 	"strings"
 
-	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/config"
+	"srcd.works/go-git.v4/plumbing/storer"
 )
 
 // Storer is a generic storage of objects, references and any information

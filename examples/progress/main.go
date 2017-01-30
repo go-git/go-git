@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"gopkg.in/src-d/go-git.v4"
-	. "gopkg.in/src-d/go-git.v4/examples"
+	"srcd.works/go-git.v4"
+	. "srcd.works/go-git.v4/examples"
 )
 
 func main() {

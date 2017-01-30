@@ -19,9 +19,9 @@ import (
 	"net/url"
 	"regexp"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
-	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/protocol/packp"
+	"srcd.works/go-git.v4/plumbing/protocol/packp/capability"
 )
 
 var (

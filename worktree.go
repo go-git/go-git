@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
-	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/format/index"
+	"srcd.works/go-git.v4/plumbing/object"
 
 	"srcd.works/go-billy.v1"
 )

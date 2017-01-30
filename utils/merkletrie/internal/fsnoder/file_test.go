@@ -3,7 +3,7 @@ package fsnoder
 import (
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
+	"srcd.works/go-git.v4/utils/merkletrie/noder"
 
 	. "gopkg.in/check.v1"
 )
