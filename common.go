@@ -9,8 +9,8 @@ import (
 
 // Storer is a generic storage of objects, references and any information
 // related to a particular repository. Some Storer implementations persist the
-// information in an system directory (such as `.git`) and others
-// implementations are in memmory being ephemeral
+// information in a system directory (such as `.git`) and others
+// implementations are in memory being ephemeral
 type Storer interface {
 	storer.EncodedObjectStorer
 	storer.ReferenceStorer

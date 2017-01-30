@@ -18,7 +18,7 @@ var (
 	ErrInvalidRefSpec = errors.New("invalid refspec")
 )
 
-// CloneOptions describe how a clone should be perform
+// CloneOptions describes how a clone should be performed
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from
 	URL string
@@ -34,7 +34,7 @@ type CloneOptions struct {
 	Depth int
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
 		return ErrMissingURL
@@ -51,7 +51,7 @@ func (o *CloneOptions) Validate() error {
 	return nil
 }
 
-// PullOptions describe how a pull should be perform.
+// PullOptions describes how a pull should be performed
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
@@ -65,7 +65,7 @@ type PullOptions struct {
 	Auth transport.AuthMethod
 }
 
-// Validate validate the fields and set the default values.
+// Validate validates the fields and sets the default values.
 func (o *PullOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -78,7 +78,7 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
-// FetchOptions describe how a fetch should be perform
+// FetchOptions describes how a fetch should be performed
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
 	RemoteName string
@@ -90,7 +90,7 @@ type FetchOptions struct {
 	Auth transport.AuthMethod
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (o *FetchOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -105,7 +105,7 @@ func (o *FetchOptions) Validate() error {
 	return nil
 }
 
-// PushOptions describe how a push should be performed.
+// PushOptions describes how a push should be performed
 type PushOptions struct {
 	// RemoteName is the name of the remote to be pushed to.
 	RemoteName string
@@ -116,7 +116,7 @@ type PushOptions struct {
 	Auth transport.AuthMethod
 }
 
-// Validate validate the fields and set the default values
+// Validate validates the fields and sets the default values
 func (o *PushOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
