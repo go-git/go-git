@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"gopkg.in/src-d/go-git.v4/fixtures"
+	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 
 	. "gopkg.in/check.v1"

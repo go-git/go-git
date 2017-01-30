@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/fixtures"
+	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 

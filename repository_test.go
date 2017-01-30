@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/fixtures"
+	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"

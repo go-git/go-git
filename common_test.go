@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -13,6 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
+	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 	"srcd.works/go-billy.v1/memfs"
 	"srcd.works/go-billy.v1/osfs"

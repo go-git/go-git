@@ -5,7 +5,7 @@ import (
 
 	"srcd.works/go-billy.v1/memfs"
 
-	"gopkg.in/src-d/go-git.v4/fixtures"
+	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"

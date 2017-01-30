@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 
-	"gopkg.in/src-d/go-git.v4/fixtures"
+	"github.com/src-d/go-git-fixtures"
 
 	. "gopkg.in/check.v1"
 )
