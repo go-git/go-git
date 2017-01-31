@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"srcd.works/go-git.v4/config"
 	"github.com/src-d/go-git-fixtures"
+	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
@@ -46,7 +46,7 @@ func (s *RemoteSuite) TestFetchInvalidFetchOptions(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
 	invalid := config.RefSpec("^*$ñ")
 	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{invalid}})
-	c.Assert(err, Equals, ErrInvalidRefSpec)
+	c.Assert(err, Equals, config.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestFetch(c *C) {
@@ -287,7 +287,7 @@ func (s *RemoteSuite) TestPushInvalidFetchOptions(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
 	invalid := config.RefSpec("^*$ñ")
 	err := r.Push(&PushOptions{RefSpecs: []config.RefSpec{invalid}})
-	c.Assert(err, Equals, ErrInvalidRefSpec)
+	c.Assert(err, Equals, config.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestPushInvalidRefSpec(c *C) {
@@ -300,7 +300,7 @@ func (s *RemoteSuite) TestPushInvalidRefSpec(c *C) {
 	err := r.Push(&PushOptions{
 		RefSpecs: []config.RefSpec{rs},
 	})
-	c.Assert(err, ErrorMatches, ".*invalid.*")
+	c.Assert(err, Equals, config.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {

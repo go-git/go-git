@@ -15,25 +15,28 @@ func Test(t *testing.T) { TestingT(t) }
 
 func (s *RefSpecSuite) TestRefSpecIsValid(c *C) {
 	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsValid(), Equals, true)
+	c.Assert(spec.Validate(), Equals, nil)
 
 	spec = RefSpec("refs/heads/*:refs/remotes/origin/")
-	c.Assert(spec.IsValid(), Equals, false)
+	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.IsValid(), Equals, true)
+	c.Assert(spec.Validate(), Equals, nil)
 
 	spec = RefSpec(":refs/heads/master")
-	c.Assert(spec.IsValid(), Equals, true)
+	c.Assert(spec.Validate(), Equals, nil)
 
 	spec = RefSpec(":refs/heads/*")
-	c.Assert(spec.IsValid(), Equals, false)
+	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec(":*")
-	c.Assert(spec.IsValid(), Equals, false)
+	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec("refs/heads/*")
-	c.Assert(spec.IsValid(), Equals, false)
+	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedSeparator)
+
+	spec = RefSpec("refs/heads:")
+	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedSeparator)
 }
 
 func (s *RefSpecSuite) TestRefSpecIsForceUpdate(c *C) {

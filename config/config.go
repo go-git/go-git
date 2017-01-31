@@ -1,4 +1,4 @@
-// Package config contains the abstraction of config files
+// Package config contains the abstraction of multiple config files
 package config
 
 import (
@@ -89,8 +89,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	c.unmarshalCore()
-	c.unmarshalRemotes()
-	return nil
+	return c.unmarshalRemotes()
 }
 
 func (c *Config) unmarshalCore() {
@@ -100,14 +99,18 @@ func (c *Config) unmarshalCore() {
 	}
 }
 
-func (c *Config) unmarshalRemotes() {
+func (c *Config) unmarshalRemotes() error {
 	s := c.raw.Section(remoteSection)
 	for _, sub := range s.Subsections {
 		r := &RemoteConfig{}
-		r.unmarshal(sub)
+		if err := r.unmarshal(sub); err != nil {
+			return err
+		}
 
 		c.Remotes[r.Name] = r
 	}
+
+	return nil
 }
 
 // Marshal returns Config encoded as a git-config file
@@ -163,6 +166,12 @@ func (c *RemoteConfig) Validate() error {
 		return ErrRemoteConfigEmptyURL
 	}
 
+	for _, r := range c.Fetch {
+		if err := r.Validate(); err != nil {
+			return err
+		}
+	}
+
 	if len(c.Fetch) == 0 {
 		c.Fetch = []RefSpec{RefSpec(fmt.Sprintf(DefaultFetchRefSpec, c.Name))}
 	}
@@ -170,20 +179,24 @@ func (c *RemoteConfig) Validate() error {
 	return nil
 }
 
-func (c *RemoteConfig) unmarshal(s *format.Subsection) {
+func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.raw = s
 
 	fetch := []RefSpec{}
 	for _, f := range c.raw.Options.GetAll(fetchKey) {
 		rs := RefSpec(f)
-		if rs.IsValid() {
-			fetch = append(fetch, rs)
+		if err := rs.Validate(); err != nil {
+			return err
 		}
+
+		fetch = append(fetch, rs)
 	}
 
 	c.Name = c.raw.Name
 	c.URL = c.raw.Option(urlKey)
 	c.Fetch = fetch
+
+	return nil
 }
 
 func (c *RemoteConfig) marshal() *format.Subsection {

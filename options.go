@@ -15,8 +15,7 @@ const (
 )
 
 var (
-	ErrMissingURL     = errors.New("URL field is required")
-	ErrInvalidRefSpec = errors.New("invalid refspec")
+	ErrMissingURL = errors.New("URL field is required")
 )
 
 // CloneOptions describes how a clone should be performed
@@ -110,8 +109,8 @@ func (o *FetchOptions) Validate() error {
 	}
 
 	for _, r := range o.RefSpecs {
-		if !r.IsValid() {
-			return ErrInvalidRefSpec
+		if err := r.Validate(); err != nil {
+			return err
 		}
 	}
 
@@ -142,8 +141,8 @@ func (o *PushOptions) Validate() error {
 	}
 
 	for _, r := range o.RefSpecs {
-		if !r.IsValid() {
-			return ErrInvalidRefSpec
+		if err := r.Validate(); err != nil {
+			return err
 		}
 	}
 
