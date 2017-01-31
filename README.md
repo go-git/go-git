@@ -27,20 +27,46 @@ go get -u srcd.works/go-git.v4/...
 Examples
 --------
 
-Cloning a repository and printing the history of HEAD, just like `git log` does
-
 > Please note that the functions `CheckIfError` and `Info` used in the examples are from the [examples package](https://github.com/src-d/go-git/blob/master/examples/common.go#L17) just to be used in the examples.
 
 
-```go
-// Instances an in-memory git repository
-r := git.NewMemoryRepository()
+### Basic example
 
-// Clones the given repository, creating the remote, the local branches
-// and fetching the objects, exactly as:
+A basic example that mimics the standard `git clone` command
+
+```go
+// Clone the given repository to the given directory
+Info("git clone https://github.com/src-d/go-git")
+
+_, err := git.PlainClone("/tmp/foo", false, &git.CloneOptions{
+    URL:      "https://github.com/src-d/go-git",
+    Progress: os.Stdout,
+})
+
+CheckIfError(err)
+```
+
+Outputs:
+```
+Counting objects: 4924, done.
+Compressing objects: 100% (1333/1333), done.
+Total 4924 (delta 530), reused 6 (delta 6), pack-reused 3533
+```
+
+### In-memory example
+
+Cloning a repository into memory and printing the history of HEAD, just like `git log` does
+
+
+```go
+// Clones the given repository in memory, creating the remote, the local
+// branches and fetching the objects, exactly as:
 Info("git clone https://github.com/src-d/go-siva")
 
-err := r.Clone(&git.CloneOptions{URL: "https://github.com/src-d/go-siva"})
+r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
+    URL: "https://github.com/src-d/go-siva",
+})
+
 CheckIfError(err)
 
 // Gets the HEAD history from HEAD, just like does:
