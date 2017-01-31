@@ -207,9 +207,10 @@ func (d *Decoder) padEntry(idx *Index, e *Entry, read int) error {
 	return nil
 }
 
-// TODO: support 'Split index' and 'Untracked cache' extensions, take in count
-//       that they are not supported by jgit or libgit
 func (d *Decoder) readExtensions(idx *Index) error {
+	// TODO: support 'Split index' and 'Untracked cache' extensions, take in
+	// count that they are not supported by jgit or libgit
+
 	var expected []byte
 	var err error
 

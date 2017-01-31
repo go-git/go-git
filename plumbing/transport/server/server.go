@@ -72,8 +72,8 @@ func (s *session) Close() error {
 	return nil
 }
 
-//TODO: deprecate
 func (s *session) SetAuth(transport.AuthMethod) error {
+	//TODO: deprecate
 	return nil
 }
 

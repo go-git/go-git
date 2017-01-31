@@ -8,9 +8,9 @@ import (
 )
 
 // Storer is a generic storage of objects, references and any information
-// related to a particular repository. Some Storer implementations persist the
-// information in a system directory (such as `.git`) and others
-// implementations are in memory being ephemeral
+// related to a particular repository. The package srcd.works/go-git.v4/storage
+// contains two implementation a filesystem base implementation (such as `.git`)
+// and a memory implementations being ephemeral
 type Storer interface {
 	storer.EncodedObjectStorer
 	storer.ReferenceStorer

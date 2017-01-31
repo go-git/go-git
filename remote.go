@@ -54,12 +54,12 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
 // remote was already up-to-date.
-//
-// TODO: Support deletes.
-// TODO: Support pushing tags.
-// TODO: Check if force update is given, otherwise reject non-fast forward.
-// TODO: Sideband support
 func (r *Remote) Push(o *PushOptions) (err error) {
+	// TODO: Support deletes.
+	// TODO: Support pushing tags.
+	// TODO: Check if force update is given, otherwise reject non-fast forward.
+	// TODO: Sideband suppor
+
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
 	}

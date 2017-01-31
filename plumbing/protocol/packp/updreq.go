@@ -15,9 +15,8 @@ var (
 
 // ReferenceUpdateRequest values represent reference upload requests.
 // Values from this type are not zero-value safe, use the New function instead.
-//
-// TODO: Add support for push-cert
 type ReferenceUpdateRequest struct {
+	// TODO: Add support for push-cert
 	Capabilities *capability.List
 	Commands     []*Command
 	Shallow      *plumbing.Hash

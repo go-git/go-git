@@ -50,20 +50,16 @@ type BlameResult struct {
 // All this work is done in the assignOrigin function which holds all
 // the internal relevant data in a "blame" struct, that is not
 // exported.
-//
-// TODO: ways to improve the efficiency of this function:
-//
-// 1. Improve revlist
-//
-// 2. Improve how to traverse the history (example a backward
-// traversal will be much more efficient)
-//
-// TODO: ways to improve the function in general:
-//
-// 1. Add memoization between revlist and assign.
-//
-// 2. It is using much more memory than needed, see the TODOs below.
 func Blame(c *object.Commit, path string) (*BlameResult, error) {
+	// TODO: ways to improve the efficiency of this function:
+	// 1. Improve revlist
+	// 2. Improve how to traverse the history (example a backward traversal will
+	// be much more efficient)
+	//
+	// TODO: ways to improve the function in general:
+	// 1. Add memoization between revlist and assign.
+	// 2. It is using much more memory than needed, see the TODOs below.
+
 	b := new(blame)
 	b.fRev = c
 	b.path = path

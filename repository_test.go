@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"srcd.works/go-git.v4/config"
 	"github.com/src-d/go-git-fixtures"
+	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/storage/filesystem"

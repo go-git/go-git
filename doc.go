@@ -1,37 +1,10 @@
-// Package git is a low level and highly extensible git client library for
-// reading repositories from git servers.  It is written in Go from scratch,
-// without any C dependencies.
+// A highly extensible git implementation in pure Go.
 //
-// We have been following the open/close principle in its design to facilitate
-// extensions.
+// go-git aims to reach the completeness of libgit2 or jgit, nowadays covers the
+// majority of the plumbing read operations and some of the main write
+// operations, but lacks the main porcelain operations such as merges.
 //
-// Small example extracting the commits from a repository:
-//
-//     func ExampleBasic_printCommits() {
-//         r := git.NewMemoryRepository()
-//         o := &git.CloneOptions{
-//             URL: "https://github.com/src-d/go-git",
-//         }
-//         if err := r.Clone(o); err != nil {
-//             panic(err)
-//         }
-//
-//         iter, err := r.Commits()
-//         if err != nil {
-//             panic(err)
-//         }
-//         defer iter.Close()
-//
-//         for {
-//             commit, err := iter.Next()
-//             if err != nil {
-//                 if err == io.EOF {
-//                     break
-//                 }
-//                 panic(err)
-//             }
-//
-//             fmt.Println(commit)
-//         }
-//    }
+// It is highly extensible, we have been following the open/close principle in
+// its design to facilitate extensions, mainly focusing the efforts on the
+// persistence of the objects.
 package git // import "srcd.works/go-git.v4"

@@ -13,8 +13,8 @@ import (
 const ackLineLen = 44
 
 // ServerResponse object acknowledgement from upload-pack service
-// TODO: implement support for multi_ack or multi_ack_detailed responses
 type ServerResponse struct {
+	// TODO: implement support for multi_ack or multi_ack_detailed responses
 	ACKs []plumbing.Hash
 }
 
