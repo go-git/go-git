@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"srcd.works/go-git.v4"
+	. "srcd.works/go-git.v4/_examples"
 	"srcd.works/go-git.v4/config"
-	. "srcd.works/go-git.v4/examples"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/storage/memory"
 )

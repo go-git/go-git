@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"srcd.works/go-git.v4"
-	. "srcd.works/go-git.v4/examples"
+	. "srcd.works/go-git.v4/_examples"
 )
 
 func main() {

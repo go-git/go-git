@@ -8,7 +8,7 @@ import (
 	"srcd.works/go-git.v4"
 	"srcd.works/go-git.v4/plumbing/object"
 
-	. "srcd.works/go-git.v4/examples"
+	. "srcd.works/go-git.v4/_examples"
 )
 
 func main() {

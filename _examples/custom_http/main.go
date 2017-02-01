@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"srcd.works/go-git.v4"
-	. "srcd.works/go-git.v4/examples"
+	. "srcd.works/go-git.v4/_examples"
 	"srcd.works/go-git.v4/plumbing/transport/client"
 	githttp "srcd.works/go-git.v4/plumbing/transport/http"
 	"srcd.works/go-git.v4/storage/memory"

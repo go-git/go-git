@@ -73,7 +73,7 @@ func packageFolder() string {
 func examplesFolder() string {
 	return filepath.Join(
 		packageFolder(),
-		"examples", "*", "main.go",
+		"_examples", "*", "main.go",
 	)
 }
 

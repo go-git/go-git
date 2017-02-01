@@ -1,10 +1,9 @@
 package examples
 
 import (
+	"fmt"
 	"os"
 	"strings"
-
-	"github.com/fatih/color"
 )
 
 func CheckArgs(arg ...string) {
@@ -19,14 +18,14 @@ func CheckIfError(err error) {
 		return
 	}
 
-	color.Red("error: %s", err)
+	fmt.Printf("\x1b[31;1m%s\x1b[0m\n", fmt.Sprintf("error: %s", err))
 	os.Exit(1)
 }
 
 func Info(format string, args ...interface{}) {
-	color.Blue(format, args...)
+	fmt.Printf("\x1b[34;1m%s\x1b[0m\n", fmt.Sprintf(format, args...))
 }
 
 func Warning(format string, args ...interface{}) {
-	color.Cyan(format, args...)
+	fmt.Printf("\x1b[36;1m%s\x1b[0m\n", fmt.Sprintf(format, args...))
 }
