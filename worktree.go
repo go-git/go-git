@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"syscall"
 
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/index"
@@ -71,7 +70,7 @@ func (w *Worktree) checkoutFile(f *object.File, idx *index.Index) error {
 	return w.indexFile(f, idx)
 }
 
-var fillSystemInfo func(e *index.Entry, os *syscall.Stat_t)
+var fillSystemInfo func(e *index.Entry, sys interface{})
 
 func (w *Worktree) indexFile(f *object.File, idx *index.Index) error {
 	fi, err := w.fs.Stat(f.Name)
@@ -89,9 +88,8 @@ func (w *Worktree) indexFile(f *object.File, idx *index.Index) error {
 
 	// if the FileInfo.Sys() comes from os the ctime, dev, inode, uid and gid
 	// can be retrieved, otherwise this doesn't apply
-	os, ok := fi.Sys().(*syscall.Stat_t)
-	if ok && fillSystemInfo != nil {
-		fillSystemInfo(&e, os)
+	if fillSystemInfo != nil {
+		fillSystemInfo(&e, fi.Sys())
 	}
 
 	idx.Entries = append(idx.Entries, e)
