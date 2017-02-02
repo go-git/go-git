@@ -11,4 +11,4 @@ Here you can find a list of annotated _go-git_ examples:
 
 ### Advanced
 - [custom_http](custom_http/main.go) - Replacing the HTTP client using a custom one
-- [storage](storage/main.go) - Implementing a custom storage system
+- [storage](storage/README.md) - Implementing a custom storage system

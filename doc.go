@@ -7,4 +7,4 @@
 // It is highly extensible, we have been following the open/close principle in
 // its design to facilitate extensions, mainly focusing the efforts on the
 // persistence of the objects.
-package git
+package git // import "srcd.works/go-git.v4"
