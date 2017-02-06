@@ -1,3 +1,5 @@
+// Package object contains implementations of all Git objects and utility
+// functions to work with them.
 package object
 
 import (
@@ -35,8 +37,9 @@ var ErrUnsupportedObject = errors.New("unsupported object type")
 //   	}
 //   }
 //
-// This interface is intentionally different from plumbing.EncodedObject, which is a lower
-// level interface used by storage implementations to read and write objects.
+// This interface is intentionally different from plumbing.EncodedObject, which
+// is a lower level interface used by storage implementations to read and write
+// objects in its encoded form.
 type Object interface {
 	ID() plumbing.Hash
 	Type() plumbing.ObjectType

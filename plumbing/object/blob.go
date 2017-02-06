@@ -8,7 +8,7 @@ import (
 	"srcd.works/go-git.v4/utils/ioutil"
 )
 
-// Blob is used to store file data - it is generally a file.
+// Blob is used to store arbitrary data - it is generally a file.
 type Blob struct {
 	Hash plumbing.Hash
 	Size int64
@@ -26,6 +26,7 @@ func GetBlob(s storer.EncodedObjectStorer, h plumbing.Hash) (*Blob, error) {
 	return DecodeBlob(o)
 }
 
+// DecodeObject decodes an encoded object into a *Blob.
 func DecodeBlob(o plumbing.EncodedObject) (*Blob, error) {
 	b := &Blob{}
 	if err := b.Decode(o); err != nil {
