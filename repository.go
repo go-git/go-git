@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"srcd.works/go-git.v4/config"
+	"srcd.works/go-git.v4/internal/revision"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/storer"
@@ -631,4 +632,130 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	}
 
 	return &Worktree{r: r, fs: r.wt}, nil
+}
+
+// ResolveRevision resolves revision to corresponding hash
+func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, error) {
+	p := revision.NewParserFromString(string(rev))
+
+	items, err := p.Parse()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var commit *object.Commit
+
+	for _, item := range items {
+		switch item.(type) {
+		case revision.Ref:
+			ref, err := storer.ResolveReference(r.s, plumbing.ReferenceName(item.(revision.Ref)))
+
+			if err != nil {
+				return &plumbing.ZeroHash, err
+			}
+
+			h := ref.Hash()
+
+			commit, err = r.Commit(h)
+
+			if err != nil {
+				return &plumbing.ZeroHash, err
+			}
+		case revision.CaretPath:
+			depth := item.(revision.CaretPath).Depth
+
+			if depth == 0 {
+				break
+			}
+
+			iter := commit.Parents()
+
+			c, err := iter.Next()
+
+			if err != nil {
+				return &plumbing.ZeroHash, err
+			}
+
+			if depth == 1 {
+				commit = c
+
+				break
+			}
+
+			c, err = iter.Next()
+
+			if err != nil {
+				return &plumbing.ZeroHash, err
+			}
+
+			commit = c
+		case revision.TildePath:
+			for i := 0; i < item.(revision.TildePath).Depth; i++ {
+				c, err := commit.Parents().Next()
+
+				if err != nil {
+					return &plumbing.ZeroHash, err
+				}
+
+				commit = c
+			}
+		case revision.CaretReg:
+			history, err := commit.History()
+
+			if err != nil {
+				return &plumbing.ZeroHash, err
+			}
+
+			re := item.(revision.CaretReg).Regexp
+			negate := item.(revision.CaretReg).Negate
+
+			var c *object.Commit
+
+			for i := 0; i < len(history); i++ {
+				if !negate && re.MatchString(history[i].Message) {
+					c = history[i]
+
+					break
+				}
+
+				if negate && !re.MatchString(history[i].Message) {
+					c = history[i]
+
+					break
+				}
+			}
+
+			if c == nil {
+				return &plumbing.ZeroHash, fmt.Errorf(`No commit message match regexp : "%s"`, re.String())
+			}
+
+			commit = c
+		case revision.AtDate:
+			history, err := commit.History()
+
+			if err != nil {
+				return &plumbing.ZeroHash, err
+			}
+
+			date := item.(revision.AtDate).Date
+			var c *object.Commit
+
+			for i := 0; i < len(history); i++ {
+				if date.Equal(history[i].Committer.When.UTC()) || history[i].Committer.When.UTC().Before(date) {
+					c = history[i]
+
+					break
+				}
+			}
+
+			if c == nil {
+				return &plumbing.ZeroHash, fmt.Errorf(`No commit exists prior to date "%s"`, date.String())
+			}
+
+			commit = c
+		}
+	}
+
+	return &commit.Hash, nil
 }

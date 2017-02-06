@@ -780,6 +780,58 @@ func (s *RepositorySuite) TestWorktreeBare(c *C) {
 	c.Assert(w, IsNil)
 }
 
+func (s *RepositorySuite) TestResolveRevision(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	datas := map[string]string{
+		"HEAD": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"refs/heads/master~2^^~":      "b029517f6300c2da0f4b651b8642506cd6aaf45d",
+		"HEAD~2^^~":                   "b029517f6300c2da0f4b651b8642506cd6aaf45d",
+		"HEAD~3^2":                    "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+		"HEAD~3^2^0":                  "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+		"HEAD~2^{/binary file}":       "35e85108805c84807bc66a02d91535e1e24b38b9",
+		"HEAD~^{!-some}":              "1669dce138d9b841a518c64b10914d88f5e488ea",
+		"HEAD@{2015-03-31T11:56:18Z}": "918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"HEAD@{2015-03-31T11:49:00Z}": "1669dce138d9b841a518c64b10914d88f5e488ea",
+	}
+
+	for rev, hash := range datas {
+		h, err := r.ResolveRevision(plumbing.Revision(rev))
+
+		c.Assert(err, IsNil)
+		c.Assert(h.String(), Equals, hash)
+	}
+}
+
+func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	datas := map[string]string{
+		"efs/heads/master~":           "reference not found",
+		"HEAD^3":                      `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":            `No commit message match regexp : "whatever"`,
+		"HEAD@{2015-03-31T09:49:00Z}": `No commit exists prior to date "2015-03-31 09:49:00 +0000 UTC"`,
+	}
+
+	for rev, rerr := range datas {
+		_, err := r.ResolveRevision(plumbing.Revision(rev))
+
+		c.Assert(err.Error(), Equals, rerr)
+	}
+}
+
 func ExecuteOnPath(c *C, path string, cmds ...string) error {
 	for _, cmd := range cmds {
 		err := executeOnPath(path, cmd)
