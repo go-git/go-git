@@ -64,20 +64,9 @@ func WriteNopCloser(w io.Writer) io.WriteCloser {
 	return writeNopCloser{w}
 }
 
-// CheckClose is used with defer to close the given io.Closer and check its
-// returned error value. If Close returns an error and the given *error
-// is not nil, *error is set to the error returned by Close.
-//
-// CheckClose is typically used with named return values like so:
-//
-//   func do(obj *Object) (err error) {
-//     w, err := obj.Writer()
-//     if err != nil {
-//       return nil
-//     }
-//     defer CheckClose(w, &err)
-//     // work with w
-//   }
+// CheckClose calls Close on the given io.Closer. If the given *error points to
+// nil, it will be assigned the error returned by Close. Otherwise, any error
+// returned by Close will be ignored. CheckClose is usually called with defer.
 func CheckClose(c io.Closer, err *error) {
 	if cerr := c.Close(); cerr != nil && *err == nil {
 		*err = cerr
