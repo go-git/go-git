@@ -53,12 +53,12 @@ func DecodeCommit(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Comm
 	return c, nil
 }
 
-// Tree returns the Tree from the commit
+// Tree returns the Tree from the commit.
 func (c *Commit) Tree() (*Tree, error) {
 	return GetTree(c.s, c.tree)
 }
 
-// Parents return a CommitIter to the parent Commits
+// Parents return a CommitIter to the parent Commits.
 func (c *Commit) Parents() *CommitIter {
 	return NewCommitIter(c.s,
 		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.parents),
@@ -158,7 +158,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	}
 }
 
-// History return a slice with the previous commits in the history of this commit
+// History returns a slice with the previous commits in the history of this
+// commit, sorted in reverse chronological order.
 func (c *Commit) History() ([]*Commit, error) {
 	var commits []*Commit
 	err := WalkCommitHistory(c, func(commit *Commit) error {
@@ -231,16 +232,17 @@ type CommitIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewCommitIter returns a CommitIter for the given object storer and underlying
-// object iterator.
+// NewCommitIter takes a storer.EncodedObjectStorer and a
+// storer.EncodedObjectIter and returns a *CommitIter that iterates over all
+// commits contained in the storer.EncodedObjectIter.
 //
-// The returned CommitIter will automatically skip over non-commit objects.
+// Any non-commit object returned by the storer.EncodedObjectIter is skipped.
 func NewCommitIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *CommitIter {
 	return &CommitIter{iter, s}
 }
 
-// Next moves the iterator to the next commit and returns a pointer to it. If it
-// has reached the end of the set it will return io.EOF.
+// Next moves the iterator to the next commit and returns a pointer to it. If
+// there are no more commits, it returns io.EOF.
 func (iter *CommitIter) Next() (*Commit, error) {
 	obj, err := iter.EncodedObjectIter.Next()
 	if err != nil {

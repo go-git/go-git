@@ -158,14 +158,15 @@ type ObjectIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewObjectIter returns a ObjectIter for the given repository and underlying
-// object iterator.
+// NewObjectIter takes a storer.EncodedObjectStorer and a
+// storer.EncodedObjectIter and returns an *ObjectIter that iterates over all
+// objects contained in the storer.EncodedObjectIter.
 func NewObjectIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *ObjectIter {
 	return &ObjectIter{iter, s}
 }
 
-// Next moves the iterator to the next object and returns a pointer to it. If it
-// has reached the end of the set it will return io.EOF.
+// Next moves the iterator to the next object and returns a pointer to it. If
+// there are no more objects, it returns io.EOF.
 func (iter *ObjectIter) Next() (Object, error) {
 	for {
 		obj, err := iter.EncodedObjectIter.Next()

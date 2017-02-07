@@ -56,15 +56,20 @@ func (f *File) Lines() ([]string, error) {
 	return splits, nil
 }
 
+// FileIter provides an iterator for the files in a tree.
 type FileIter struct {
 	s storer.EncodedObjectStorer
 	w TreeWalker
 }
 
+// NewFileIter takes a storer.EncodedObjectStorer and a Tree and returns a
+// *FileIter that iterates over all files contained in the tree, recursively.
 func NewFileIter(s storer.EncodedObjectStorer, t *Tree) *FileIter {
 	return &FileIter{s: s, w: *NewTreeWalker(t, true)}
 }
 
+// Next moves the iterator to the next file and returns a pointer to it. If
+// there are no more files, it returns io.EOF.
 func (iter *FileIter) Next() (*File, error) {
 	for {
 		name, entry, err := iter.w.Next()

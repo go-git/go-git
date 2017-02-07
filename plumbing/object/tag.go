@@ -223,16 +223,17 @@ type TagIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewTagIter returns a TagIter for the given object storer and underlying
-// object iterator.
+// NewTagIter takes a storer.EncodedObjectStorer and a
+// storer.EncodedObjectIter and returns a *TagIter that iterates over all
+// tags contained in the storer.EncodedObjectIter.
 //
-// The returned TagIter will automatically skip over non-tag objects.
+// Any non-tag object returned by the storer.EncodedObjectIter is skipped.
 func NewTagIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *TagIter {
 	return &TagIter{iter, s}
 }
 
-// Next moves the iterator to the next tag and returns a pointer to it. If it
-// has reached the end of the set it will return io.EOF.
+// Next moves the iterator to the next tag and returns a pointer to it. If
+// there are no more tags, it returns io.EOF.
 func (iter *TagIter) Next() (*Tag, error) {
 	obj, err := iter.EncodedObjectIter.Next()
 	if err != nil {
