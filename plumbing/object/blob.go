@@ -10,7 +10,9 @@ import (
 
 // Blob is used to store arbitrary data - it is generally a file.
 type Blob struct {
+	// Hash of the blob.
 	Hash plumbing.Hash
+	// Size of the (uncompressed) blob.
 	Size int64
 
 	obj plumbing.EncodedObject

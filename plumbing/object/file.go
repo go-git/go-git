@@ -12,8 +12,12 @@ import (
 
 // File represents git file objects.
 type File struct {
+	// Name is the path of the file. It might be relative to a tree,
+	// depending of the function that generates it.
 	Name string
+	// Mode is the file mode.
 	Mode os.FileMode
+	// Blob with the contents of the file.
 	Blob
 }
 

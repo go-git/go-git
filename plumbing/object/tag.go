@@ -20,9 +20,13 @@ import (
 //
 // https://git-scm.com/book/en/v2/Git-Internals-Git-References#Tags
 type Tag struct {
-	Hash       plumbing.Hash
-	Name       string
-	Tagger     Signature
+	// Hash of the tag.
+	Hash plumbing.Hash
+	// Name of the tag.
+	Name string
+	// Tagger is the one who created the tag.
+	Tagger Signature
+	// Message is an arbitrary text message
 	Message    string
 	TargetType plumbing.ObjectType
 	Target     plumbing.Hash
