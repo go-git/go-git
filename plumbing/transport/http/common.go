@@ -1,4 +1,4 @@
-// Package http implements a HTTP client for go-git.
+// Package http implements the HTTP transport protocol.
 package http
 
 import (

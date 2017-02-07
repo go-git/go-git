@@ -1,3 +1,4 @@
+// Package git implements the git transport protocol.
 package git
 
 import (

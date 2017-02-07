@@ -4,6 +4,7 @@ import (
 	"strings"
 )
 
+// Option defines a key/value entity in a config file.
 type Option struct {
 	// Key preserving original caseness.
 	// Use IsKey instead to compare key regardless of caseness.

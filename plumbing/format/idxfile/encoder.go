@@ -9,20 +9,20 @@ import (
 	"srcd.works/go-git.v4/utils/binary"
 )
 
-// An Encoder writes idx files to an output stream.
+// Encoder writes Idxfile structs to an output stream.
 type Encoder struct {
 	io.Writer
 	hash hash.Hash
 }
 
-// NewEncoder returns a new encoder that writes to w.
+// NewEncoder returns a new stream encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
 	h := sha1.New()
 	mw := io.MultiWriter(w, h)
 	return &Encoder{mw, h}
 }
 
-// Encode writes the idx in an idx file format to the stream of the encoder.
+// Encode encodes an Idxfile to the encoder writer.
 func (e *Encoder) Encode(idx *Idxfile) (int, error) {
 	idx.Entries.Sort()
 
@@ -123,6 +123,7 @@ func (e *Encoder) encodeChecksums(idx *Idxfile) (int, error) {
 	return 40, nil
 }
 
+// EntryList implements sort.Interface allowing sorting in increasing order.
 type EntryList []Entry
 
 func (p EntryList) Len() int           { return len(p) }

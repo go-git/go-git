@@ -93,10 +93,10 @@ type TreeEntry struct {
 	Hash plumbing.Hash
 }
 
-// ResolveUndo when a conflict is resolved (e.g. with "git add path"), these
-// higher stage entries will be removed and a stage-0 entry with proper
+// ResolveUndo is used when a conflict is resolved (e.g. with "git add path"),
+// these higher stage entries are removed and a stage-0 entry with proper
 // resolution is added. When these higher stage entries are removed, they are
-// saved in the resolve undo extension
+// saved in the resolve undo extension.
 type ResolveUndo struct {
 	Entries []ResolveUndoEntry
 }
