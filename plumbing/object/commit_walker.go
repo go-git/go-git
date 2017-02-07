@@ -13,7 +13,11 @@ type commitWalker struct {
 	cb    func(*Commit) error
 }
 
-// WalkCommitHistory walks the commit history
+// WalkCommitHistory walks the commit history, starting at the given commit and
+// visiting its parents in pre-order. The given callback will be called for each
+// visited commit. Each commit will be visited only once. If the callback returns
+// an error, walking will stop and will return the error. Other errors might be
+// returned if the history cannot be traversed (e.g. missing objects).
 func WalkCommitHistory(c *Commit, cb func(*Commit) error) error {
 	w := &commitWalker{
 		seen:  make(map[plumbing.Hash]bool),
