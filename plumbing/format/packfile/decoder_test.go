@@ -47,6 +47,65 @@ func (s *ReaderSuite) TestDecode(c *C) {
 	})
 }
 
+func (s *ReaderSuite) TestDecodeByTypeRefDelta(c *C) {
+	f := fixtures.Basic().ByTag("ref-delta").One()
+
+	storage := memory.NewStorage()
+	scanner := packfile.NewScanner(f.Packfile())
+	d, err := packfile.NewDecoderForType(scanner, storage, plumbing.CommitObject)
+	c.Assert(err, IsNil)
+
+	// Specific offset elements needed to decode correctly the ref-delta
+	offsets := map[plumbing.Hash]int64{
+		plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"): 84880,
+		plumbing.NewHash("fb72698cab7617ac416264415f13224dfd7a165e"): 85141,
+		plumbing.NewHash("eba74343e2f15d62adedfd8c883ee0262b5c8021"): 85300,
+	}
+
+	d.SetOffsets(offsets)
+
+	defer d.Close()
+
+	_, count, err := scanner.Header()
+	c.Assert(err, IsNil)
+
+	var i uint32
+	for i = 0; i < count; i++ {
+		obj, err := d.DecodeObject()
+		c.Assert(err, IsNil)
+
+		if obj != nil {
+			c.Assert(obj.Type(), Equals, plumbing.CommitObject)
+		}
+	}
+}
+
+func (s *ReaderSuite) TestDecodeByTypeRefDeltaError(c *C) {
+	fixtures.Basic().ByTag("ref-delta").Test(c, func(f *fixtures.Fixture) {
+		storage := memory.NewStorage()
+		scanner := packfile.NewScanner(f.Packfile())
+		d, err := packfile.NewDecoderForType(scanner, storage, plumbing.CommitObject)
+		c.Assert(err, IsNil)
+
+		defer d.Close()
+
+		_, count, err := scanner.Header()
+		c.Assert(err, IsNil)
+
+		isError := false
+		var i uint32
+		for i = 0; i < count; i++ {
+			_, err := d.DecodeObject()
+			if err != nil {
+				isError = true
+				break
+			}
+		}
+		c.Assert(isError, Equals, true)
+	})
+
+}
+
 func (s *ReaderSuite) TestDecodeByType(c *C) {
 	ts := []plumbing.ObjectType{
 		plumbing.CommitObject,
@@ -61,6 +120,12 @@ func (s *ReaderSuite) TestDecodeByType(c *C) {
 			scanner := packfile.NewScanner(f.Packfile())
 			d, err := packfile.NewDecoderForType(scanner, storage, t)
 			c.Assert(err, IsNil)
+
+			// when the packfile is ref-delta based, the offsets are required
+			if f.Is("ref-delta") {
+				d.SetOffsets(getOffsetsFromIdx(f.Idx()))
+			}
+
 			defer d.Close()
 
 			_, count, err := scanner.Header()
