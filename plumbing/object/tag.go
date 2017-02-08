@@ -18,6 +18,8 @@ import (
 // contains meta-information about the tag, including the tagger, tag date and
 // message.
 //
+// Note that this is not used for lightweight tags.
+//
 // https://git-scm.com/book/en/v2/Git-Internals-Git-References#Tags
 type Tag struct {
 	// Hash of the tag.
@@ -26,10 +28,12 @@ type Tag struct {
 	Name string
 	// Tagger is the one who created the tag.
 	Tagger Signature
-	// Message is an arbitrary text message
-	Message    string
+	// Message is an arbitrary text message.
+	Message string
+	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
-	Target     plumbing.Hash
+	// Target is the hash of the target object.
+	Target plumbing.Hash
 
 	s storer.EncodedObjectStorer
 }
