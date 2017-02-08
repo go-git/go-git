@@ -431,16 +431,17 @@ type TreeIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewTreeIter returns a TreeIter for the given repository and underlying
-// object iterator.
+// NewTreeIter takes a storer.EncodedObjectStorer and a
+// storer.EncodedObjectIter and returns a *TreeIter that iterates over all
+// tree contained in the storer.EncodedObjectIter.
 //
-// The returned TreeIter will automatically skip over non-tree objects.
+// Any non-tree object returned by the storer.EncodedObjectIter is skipped.
 func NewTreeIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *TreeIter {
 	return &TreeIter{iter, s}
 }
 
-// Next moves the iterator to the next tree and returns a pointer to it. If it
-// has reached the end of the set it will return io.EOF.
+// Next moves the iterator to the next tree and returns a pointer to it. If
+// there are no more trees, it returns io.EOF.
 func (iter *TreeIter) Next() (*Tree, error) {
 	for {
 		obj, err := iter.EncodedObjectIter.Next()

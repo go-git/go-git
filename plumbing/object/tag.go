@@ -18,14 +18,22 @@ import (
 // contains meta-information about the tag, including the tagger, tag date and
 // message.
 //
+// Note that this is not used for lightweight tags.
+//
 // https://git-scm.com/book/en/v2/Git-Internals-Git-References#Tags
 type Tag struct {
-	Hash       plumbing.Hash
-	Name       string
-	Tagger     Signature
-	Message    string
+	// Hash of the tag.
+	Hash plumbing.Hash
+	// Name of the tag.
+	Name string
+	// Tagger is the one who created the tag.
+	Tagger Signature
+	// Message is an arbitrary text message.
+	Message string
+	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
-	Target     plumbing.Hash
+	// Target is the hash of the target object.
+	Target plumbing.Hash
 
 	s storer.EncodedObjectStorer
 }
@@ -223,16 +231,17 @@ type TagIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewTagIter returns a TagIter for the given object storer and underlying
-// object iterator.
+// NewTagIter takes a storer.EncodedObjectStorer and a
+// storer.EncodedObjectIter and returns a *TagIter that iterates over all
+// tags contained in the storer.EncodedObjectIter.
 //
-// The returned TagIter will automatically skip over non-tag objects.
+// Any non-tag object returned by the storer.EncodedObjectIter is skipped.
 func NewTagIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *TagIter {
 	return &TagIter{iter, s}
 }
 
-// Next moves the iterator to the next tag and returns a pointer to it. If it
-// has reached the end of the set it will return io.EOF.
+// Next moves the iterator to the next tag and returns a pointer to it. If
+// there are no more tags, it returns io.EOF.
 func (iter *TagIter) Next() (*Tag, error) {
 	obj, err := iter.EncodedObjectIter.Next()
 	if err != nil {

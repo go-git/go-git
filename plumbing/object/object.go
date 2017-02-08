@@ -1,3 +1,5 @@
+// Package object contains implementations of all Git objects and utility
+// functions to work with them.
 package object
 
 import (
@@ -35,8 +37,9 @@ var ErrUnsupportedObject = errors.New("unsupported object type")
 //   	}
 //   }
 //
-// This interface is intentionally different from plumbing.EncodedObject, which is a lower
-// level interface used by storage implementations to read and write objects.
+// This interface is intentionally different from plumbing.EncodedObject, which
+// is a lower level interface used by storage implementations to read and write
+// objects in its encoded form.
 type Object interface {
 	ID() plumbing.Hash
 	Type() plumbing.ObjectType
@@ -74,11 +77,14 @@ func DecodeObject(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (Objec
 // DateFormat is the format being used in the original git implementation
 const DateFormat = "Mon Jan 02 15:04:05 2006 -0700"
 
-// Signature represents an action signed by a person
+// Signature is used to identify who and when created a commit or tag.
 type Signature struct {
-	Name  string
+	// Name represents a person name. It is an arbitrary string.
+	Name string
+	// Email is an email, but it cannot be assumed to be well-formed.
 	Email string
-	When  time.Time
+	// When is the timestamp of the signature.
+	When time.Time
 }
 
 // Decode decodes a byte slice into a signature
@@ -155,14 +161,15 @@ type ObjectIter struct {
 	s storer.EncodedObjectStorer
 }
 
-// NewObjectIter returns a ObjectIter for the given repository and underlying
-// object iterator.
+// NewObjectIter takes a storer.EncodedObjectStorer and a
+// storer.EncodedObjectIter and returns an *ObjectIter that iterates over all
+// objects contained in the storer.EncodedObjectIter.
 func NewObjectIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *ObjectIter {
 	return &ObjectIter{iter, s}
 }
 
-// Next moves the iterator to the next object and returns a pointer to it. If it
-// has reached the end of the set it will return io.EOF.
+// Next moves the iterator to the next object and returns a pointer to it. If
+// there are no more objects, it returns io.EOF.
 func (iter *ObjectIter) Next() (Object, error) {
 	for {
 		obj, err := iter.EncodedObjectIter.Next()
