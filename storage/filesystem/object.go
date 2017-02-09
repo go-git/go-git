@@ -233,7 +233,7 @@ func (s *ObjectStorage) buildPackfileIters(
 			return nil, err
 		}
 
-		iter, err := newPackfileIter(pack, t, seen)
+		iter, err := newPackfileIter(pack, t, seen, s.index[h])
 		if err != nil {
 			return nil, err
 		}
@@ -272,10 +272,11 @@ type packfileIter struct {
 }
 
 func NewPackfileIter(f billy.File, t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
-	return newPackfileIter(f, t, make(map[plumbing.Hash]bool))
+	return newPackfileIter(f, t, make(map[plumbing.Hash]bool), nil)
 }
 
-func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool) (storer.EncodedObjectIter, error) {
+func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool,
+	index idx) (storer.EncodedObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
 	if err != nil {
@@ -286,6 +287,8 @@ func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash
 	if err != nil {
 		return nil, err
 	}
+
+	d.SetOffsets(index)
 
 	return &packfileIter{
 		f: f,

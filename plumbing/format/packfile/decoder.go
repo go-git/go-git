@@ -225,13 +225,6 @@ func (d *Decoder) decodeIfSpecificType(h *ObjectHeader) (plumbing.EncodedObject,
 		realType, err = d.ofsDeltaType(h.OffsetReference)
 	case plumbing.REFDeltaObject:
 		realType, err = d.refDeltaType(h.Reference)
-
-		// If a reference delta is not found, it means that it isn't of
-		// the type we are looking for, because we don't have any reference
-		// and it is not present into the object storer
-		if err == plumbing.ErrObjectNotFound {
-			return nil, nil
-		}
 	default:
 		realType = h.Type
 	}
