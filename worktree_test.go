@@ -21,7 +21,7 @@ var _ = Suite(&WorktreeSuite{})
 func (s *WorktreeSuite) SetUpTest(c *C) {
 	s.buildBasicRepository(c)
 	// the index is removed if not the Repository will be not clean
-	c.Assert(s.Repository.s.SetIndex(&index.Index{Version: 2}), IsNil)
+	c.Assert(s.Repository.Storer.SetIndex(&index.Index{Version: 2}), IsNil)
 }
 
 func (s *WorktreeSuite) TestCheckout(c *C) {
@@ -48,7 +48,7 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(string(content), Equals, "Initial changelog\n")
 
-	idx, err := s.Repository.s.Index()
+	idx, err := s.Repository.Storer.Index()
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
 }
@@ -66,7 +66,7 @@ func (s *WorktreeSuite) TestCheckoutIndexmemfs(c *C) {
 	err = w.Checkout(h.Hash())
 	c.Assert(err, IsNil)
 
-	idx, err := s.Repository.s.Index()
+	idx, err := s.Repository.Storer.Index()
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
 	c.Assert(idx.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
@@ -99,7 +99,7 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 	err = w.Checkout(h.Hash())
 	c.Assert(err, IsNil)
 
-	idx, err := s.Repository.s.Index()
+	idx, err := s.Repository.Storer.Index()
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
 	c.Assert(idx.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
@@ -136,7 +136,7 @@ func (s *WorktreeSuite) TestStatus(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatusModified(c *C) {
-	c.Assert(s.Repository.s.SetIndex(&index.Index{Version: 2}), IsNil)
+	c.Assert(s.Repository.Storer.SetIndex(&index.Index{Version: 2}), IsNil)
 
 	h, err := s.Repository.Head()
 	c.Assert(err, IsNil)

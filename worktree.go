@@ -47,7 +47,7 @@ func (w *Worktree) Checkout(commit plumbing.Hash) error {
 		return err
 	}
 
-	return w.r.s.SetIndex(idx)
+	return w.r.Storer.SetIndex(idx)
 }
 
 func (w *Worktree) checkoutFile(f *object.File, idx *index.Index) error {
@@ -97,7 +97,7 @@ func (w *Worktree) indexFile(f *object.File, idx *index.Index) error {
 }
 
 func (w *Worktree) Status() (Status, error) {
-	idx, err := w.r.s.Index()
+	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
 	}

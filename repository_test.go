@@ -494,7 +494,7 @@ func (s *RepositorySuite) TestPullSingleBranch(c *C) {
 	branch, err = r.Reference("refs/remotes/foo/branch", false)
 	c.Assert(err, NotNil)
 
-	storage := r.s.(*memory.Storage)
+	storage := r.Storer.(*memory.Storage)
 	c.Assert(storage.Objects, HasLen, 28)
 }
 
@@ -525,7 +525,7 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 
 	c.Assert(err, IsNil)
 
-	storage := r.s.(*memory.Storage)
+	storage := r.Storer.(*memory.Storage)
 	c.Assert(storage.Objects, HasLen, 31)
 
 	branch, err := r.Reference("refs/heads/master", false)
