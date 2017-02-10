@@ -29,8 +29,9 @@ var (
 
 // Repository represents a git repository
 type Repository struct {
+	Storer Storer
+
 	r  map[string]*Remote
-	s  Storer
 	wt billy.Filesystem
 }
 
@@ -160,20 +161,20 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 
 func newRepository(s Storer, worktree billy.Filesystem) *Repository {
 	return &Repository{
-		s:  s,
-		wt: worktree,
-		r:  make(map[string]*Remote, 0),
+		Storer: s,
+		wt:     worktree,
+		r:      make(map[string]*Remote, 0),
 	}
 }
 
 // Config return the repository config
 func (r *Repository) Config() (*config.Config, error) {
-	return r.s.Config()
+	return r.Storer.Config()
 }
 
 // Remote return a remote if exists
 func (r *Repository) Remote(name string) (*Remote, error) {
-	cfg, err := r.s.Config()
+	cfg, err := r.Storer.Config()
 	if err != nil {
 		return nil, err
 	}
@@ -183,12 +184,12 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 		return nil, ErrRemoteNotFound
 	}
 
-	return newRemote(r.s, c), nil
+	return newRemote(r.Storer, c), nil
 }
 
 // Remotes returns a list with all the remotes
 func (r *Repository) Remotes() ([]*Remote, error) {
-	cfg, err := r.s.Config()
+	cfg, err := r.Storer.Config()
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +198,7 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 
 	var i int
 	for _, c := range cfg.Remotes {
-		remotes[i] = newRemote(r.s, c)
+		remotes[i] = newRemote(r.Storer, c)
 		i++
 	}
 
@@ -210,9 +211,9 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 		return nil, err
 	}
 
-	remote := newRemote(r.s, c)
+	remote := newRemote(r.Storer, c)
 
-	cfg, err := r.s.Config()
+	cfg, err := r.Storer.Config()
 	if err != nil {
 		return nil, err
 	}
@@ -222,12 +223,12 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 	}
 
 	cfg.Remotes[c.Name] = c
-	return remote, r.s.SetConfig(cfg)
+	return remote, r.Storer.SetConfig(cfg)
 }
 
 // DeleteRemote delete a remote from the repository and delete the config
 func (r *Repository) DeleteRemote(name string) error {
-	cfg, err := r.s.Config()
+	cfg, err := r.Storer.Config()
 	if err != nil {
 		return err
 	}
@@ -237,7 +238,7 @@ func (r *Repository) DeleteRemote(name string) error {
 	}
 
 	delete(cfg.Remotes, name)
-	return r.s.SetConfig(cfg)
+	return r.Storer.SetConfig(cfg)
 }
 
 // Clone clones a remote repository
@@ -308,13 +309,13 @@ func (r *Repository) cloneRefSpec(o *CloneOptions,
 }
 
 func (r *Repository) setIsBare(isBare bool) error {
-	cfg, err := r.s.Config()
+	cfg, err := r.Storer.Config()
 	if err != nil {
 		return err
 	}
 
 	cfg.Core.IsBare = isBare
-	return r.s.SetConfig(cfg)
+	return r.Storer.SetConfig(cfg)
 }
 
 const (
@@ -333,13 +334,13 @@ func (r *Repository) updateRemoteConfig(remote *Remote, o *CloneOptions,
 		refspecSingleBranch, head.Name().Short(), c.Name,
 	))}
 
-	cfg, err := r.s.Config()
+	cfg, err := r.Storer.Config()
 	if err != nil {
 		return err
 	}
 
 	cfg.Remotes[c.Name] = c
-	return r.s.SetConfig(cfg)
+	return r.Storer.SetConfig(cfg)
 }
 
 func (r *Repository) updateReferences(spec []config.RefSpec,
@@ -348,7 +349,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 	if !resolvedHead.IsBranch() {
 		// Detached HEAD mode
 		head := plumbing.NewHashReference(plumbing.HEAD, resolvedHead.Hash())
-		return updateReferenceStorerIfNeeded(r.s, head)
+		return updateReferenceStorerIfNeeded(r.Storer, head)
 	}
 
 	refs := []*plumbing.Reference{
@@ -361,7 +362,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 	refs = append(refs, r.calculateRemoteHeadReference(spec, resolvedHead)...)
 
 	for _, ref := range refs {
-		u, err := updateReferenceStorerIfNeeded(r.s, ref)
+		u, err := updateReferenceStorerIfNeeded(r.Storer, ref)
 		if err != nil {
 			return updated, err
 		}
@@ -388,7 +389,7 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 		}
 
 		name = rs.Dst(name)
-		_, err := r.s.Reference(name)
+		_, err := r.Storer.Reference(name)
 		if err == plumbing.ErrReferenceNotFound {
 			refs = append(refs, plumbing.NewHashReference(name, resolvedHead.Hash()))
 		}
@@ -515,72 +516,72 @@ func (r *Repository) Push(o *PushOptions) error {
 // Commit return a Commit with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned
 func (r *Repository) Commit(h plumbing.Hash) (*object.Commit, error) {
-	return object.GetCommit(r.s, h)
+	return object.GetCommit(r.Storer, h)
 }
 
 // Commits returns an unsorted CommitIter with all the commits in the repository
 func (r *Repository) Commits() (*object.CommitIter, error) {
-	iter, err := r.s.IterEncodedObjects(plumbing.CommitObject)
+	iter, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewCommitIter(r.s, iter), nil
+	return object.NewCommitIter(r.Storer, iter), nil
 }
 
 // Tree return a Tree with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned
 func (r *Repository) Tree(h plumbing.Hash) (*object.Tree, error) {
-	return object.GetTree(r.s, h)
+	return object.GetTree(r.Storer, h)
 }
 
 // Trees returns an unsorted TreeIter with all the trees in the repository
 func (r *Repository) Trees() (*object.TreeIter, error) {
-	iter, err := r.s.IterEncodedObjects(plumbing.TreeObject)
+	iter, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewTreeIter(r.s, iter), nil
+	return object.NewTreeIter(r.Storer, iter), nil
 }
 
 // Blob returns a Blob with the given hash. If not found
 // plumbing.ErrObjectNotFound is returne
 func (r *Repository) Blob(h plumbing.Hash) (*object.Blob, error) {
-	return object.GetBlob(r.s, h)
+	return object.GetBlob(r.Storer, h)
 }
 
 // Blobs returns an unsorted BlobIter with all the blobs in the repository
 func (r *Repository) Blobs() (*object.BlobIter, error) {
-	iter, err := r.s.IterEncodedObjects(plumbing.BlobObject)
+	iter, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewBlobIter(r.s, iter), nil
+	return object.NewBlobIter(r.Storer, iter), nil
 }
 
 // Tag returns a Tag with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned
 func (r *Repository) Tag(h plumbing.Hash) (*object.Tag, error) {
-	return object.GetTag(r.s, h)
+	return object.GetTag(r.Storer, h)
 }
 
 // Tags returns a unsorted TagIter that can step through all of the annotated
 // tags in the repository.
 func (r *Repository) Tags() (*object.TagIter, error) {
-	iter, err := r.s.IterEncodedObjects(plumbing.TagObject)
+	iter, err := r.Storer.IterEncodedObjects(plumbing.TagObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewTagIter(r.s, iter), nil
+	return object.NewTagIter(r.Storer, iter), nil
 }
 
 // Object returns an Object with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned
 func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Object, error) {
-	obj, err := r.s.EncodedObject(t, h)
+	obj, err := r.Storer.EncodedObject(t, h)
 	if err != nil {
 		if err == plumbing.ErrObjectNotFound {
 			return nil, ErrObjectNotFound
@@ -589,22 +590,22 @@ func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Obje
 		return nil, err
 	}
 
-	return object.DecodeObject(r.s, obj)
+	return object.DecodeObject(r.Storer, obj)
 }
 
 // Objects returns an unsorted BlobIter with all the objects in the repository
 func (r *Repository) Objects() (*object.ObjectIter, error) {
-	iter, err := r.s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewObjectIter(r.s, iter), nil
+	return object.NewObjectIter(r.Storer, iter), nil
 }
 
 // Head returns the reference where HEAD is pointing to.
 func (r *Repository) Head() (*plumbing.Reference, error) {
-	return storer.ResolveReference(r.s, plumbing.HEAD)
+	return storer.ResolveReference(r.Storer, plumbing.HEAD)
 }
 
 // Reference returns the reference for a given reference name. If resolved is
@@ -613,15 +614,15 @@ func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
 	*plumbing.Reference, error) {
 
 	if resolved {
-		return storer.ResolveReference(r.s, name)
+		return storer.ResolveReference(r.Storer, name)
 	}
 
-	return r.s.Reference(name)
+	return r.Storer.Reference(name)
 }
 
 // References returns an unsorted ReferenceIter for all references.
 func (r *Repository) References() (storer.ReferenceIter, error) {
-	return r.s.IterReferences()
+	return r.Storer.IterReferences()
 }
 
 // Worktree returns a worktree based on the given fs, if nil the default
@@ -649,7 +650,7 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 	for _, item := range items {
 		switch item.(type) {
 		case revision.Ref:
-			ref, err := storer.ResolveReference(r.s, plumbing.ReferenceName(item.(revision.Ref)))
+			ref, err := storer.ResolveReference(r.Storer, plumbing.ReferenceName(item.(revision.Ref)))
 
 			if err != nil {
 				return &plumbing.ZeroHash, err

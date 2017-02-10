@@ -6,7 +6,6 @@ import (
 
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/packfile"
-	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/plumbing/transport"
 	"srcd.works/go-git.v4/plumbing/transport/client"
 	"srcd.works/go-git.v4/storage/filesystem"
@@ -23,7 +22,6 @@ func Test(t *testing.T) { TestingT(t) }
 type BaseSuite struct {
 	fixtures.Suite
 	Repository *Repository
-	Storer     storer.EncodedObjectStorer
 
 	backupProtocol transport.Transport
 	cache          map[string]*Repository
@@ -45,7 +43,6 @@ func (s *BaseSuite) TearDownSuite(c *C) {
 func (s *BaseSuite) buildBasicRepository(c *C) {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)
-	s.Storer = s.Repository.s
 }
 
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
