@@ -81,7 +81,7 @@ func (iter *FileIter) Next() (*File, error) {
 			return nil, err
 		}
 
-		if entry.Mode.IsDir() {
+		if entry.Mode.IsDir() || entry.Mode == SubmoduleMode {
 			continue
 		}
 
