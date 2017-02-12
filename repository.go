@@ -10,6 +10,7 @@ import (
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/storage"
 	"srcd.works/go-git.v4/storage/filesystem"
 
 	"srcd.works/go-billy.v1"
@@ -29,7 +30,7 @@ var (
 
 // Repository represents a git repository
 type Repository struct {
-	Storer Storer
+	Storer storage.Storer
 
 	r  map[string]*Remote
 	wt billy.Filesystem
@@ -38,7 +39,7 @@ type Repository struct {
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
-func Init(s Storer, worktree billy.Filesystem) (*Repository, error) {
+func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 	r := newRepository(s, worktree)
 	_, err := r.Reference(plumbing.HEAD, false)
 	switch err {
@@ -66,7 +67,7 @@ func Init(s Storer, worktree billy.Filesystem) (*Repository, error) {
 // The worktree can be nil when the repository being opened is bare, if the
 // repository is a normal one (not bare) and worktree is nil the err
 // ErrWorktreeNotProvided is returned
-func Open(s Storer, worktree billy.Filesystem) (*Repository, error) {
+func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 	_, err := s.Reference(plumbing.HEAD)
 	if err == plumbing.ErrReferenceNotFound {
 		return nil, ErrRepositoryNotExists
@@ -91,7 +92,7 @@ func Open(s Storer, worktree billy.Filesystem) (*Repository, error) {
 // Clone a repository into the given Storer and worktree Filesystem with the
 // given options, if worktree is nil a bare repository is created. If the given
 // storer is not empty ErrRepositoryAlreadyExists is returned
-func Clone(s Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
+func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
 	r, err := Init(s, worktree)
 	if err != nil {
 		return nil, err
@@ -159,7 +160,7 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 	return r, r.clone(o)
 }
 
-func newRepository(s Storer, worktree billy.Filesystem) *Repository {
+func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 	return &Repository{
 		Storer: s,
 		wt:     worktree,
@@ -247,12 +248,6 @@ func (r *Repository) clone(o *CloneOptions) error {
 		return err
 	}
 
-	// marks the repository as bare in the config, until we have Worktree, all
-	// the repository are bare
-	if err := r.setIsBare(true); err != nil {
-		return err
-	}
-
 	c := &config.RemoteConfig{
 		Name: o.RemoteName,
 		URL:  o.URL,
@@ -270,11 +265,13 @@ func (r *Repository) clone(o *CloneOptions) error {
 		Progress: o.Progress,
 	})
 	if err != nil {
+
 		return err
 	}
 
 	head, err := storer.ResolveReference(remoteRefs, o.ReferenceName)
 	if err != nil {
+
 		return err
 	}
 
@@ -283,10 +280,31 @@ func (r *Repository) clone(o *CloneOptions) error {
 	}
 
 	if err := r.updateWorktree(); err != nil {
+		fmt.Println("q", err)
 		return err
 	}
 
+	if o.RecursiveSubmodules && r.wt != nil {
+		if err := r.initSubmodules(); err != nil {
+			return err
+		}
+	}
+
 	return r.updateRemoteConfig(remote, o, c, head)
+}
+
+func (r *Repository) initSubmodules() error {
+	w, err := r.Worktree()
+	if err != nil {
+		return err
+	}
+
+	s, err := w.Submodules()
+	if err != nil {
+		return err
+	}
+
+	return s.Init()
 }
 
 func (r *Repository) cloneRefSpec(o *CloneOptions,

@@ -16,6 +16,7 @@ import (
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/plumbing/transport"
 	"srcd.works/go-git.v4/plumbing/transport/client"
+	"srcd.works/go-git.v4/storage"
 	"srcd.works/go-git.v4/storage/memory"
 	"srcd.works/go-git.v4/utils/ioutil"
 )
@@ -25,10 +26,10 @@ var NoErrAlreadyUpToDate = errors.New("already up-to-date")
 // Remote represents a connection to a remote repository
 type Remote struct {
 	c *config.RemoteConfig
-	s Storer
+	s storage.Storer
 }
 
-func newRemote(s Storer, c *config.RemoteConfig) *Remote {
+func newRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
@@ -321,7 +322,9 @@ func getHaves(localRefs storer.ReferenceStorer) ([]plumbing.Hash, error) {
 	return haves, nil
 }
 
-func getWants(spec []config.RefSpec, localStorer Storer, remoteRefs storer.ReferenceStorer) ([]plumbing.Hash, error) {
+func getWants(
+	spec []config.RefSpec, localStorer storage.Storer, remoteRefs storer.ReferenceStorer,
+) ([]plumbing.Hash, error) {
 	wantTags := true
 	for _, s := range spec {
 		if !s.IsWildcard() {

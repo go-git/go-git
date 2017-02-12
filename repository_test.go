@@ -516,25 +516,20 @@ func (s *RepositorySuite) TestPullProgress(c *C) {
 }
 
 func (s *RepositorySuite) TestPullAdd(c *C) {
-	path := fixtures.Basic().One().Worktree().Base()
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Base()
 
-	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
 		URL: fmt.Sprintf("file://%s", filepath.Join(path, ".git")),
 	})
 
 	c.Assert(err, IsNil)
 
 	storage := r.Storer.(*memory.Storage)
-	c.Assert(storage.Objects, HasLen, 31)
+	c.Assert(storage.Objects, HasLen, 28)
 
 	branch, err := r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	branch, err = r.Reference("refs/remotes/origin/branch", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
 	ExecuteOnPath(c, path,
 		"touch foo",
@@ -546,16 +541,11 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	c.Assert(err, IsNil)
 
 	// the commit command has introduced a new commit, tree and blob
-	c.Assert(storage.Objects, HasLen, 34)
+	c.Assert(storage.Objects, HasLen, 31)
 
 	branch, err = r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	// the commit command, was in the local branch, so the remote should be read ok
-	branch, err = r.Reference("refs/remotes/origin/branch", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
 
 func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {

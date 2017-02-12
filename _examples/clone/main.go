@@ -17,8 +17,9 @@ func main() {
 	Info("git clone %s %s", url, directory)
 
 	r, err := git.PlainClone(directory, false, &git.CloneOptions{
-		URL:   url,
-		Depth: 1,
+		URL:                 url,
+		RecursiveSubmodules: true,
+		Depth:               1,
 	})
 
 	CheckIfError(err)

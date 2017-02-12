@@ -11,6 +11,7 @@ import (
 	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/storage"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/storage/memory"
 
@@ -126,7 +127,7 @@ func (s *RemoteSuite) TestFetchWithProgress(c *C) {
 }
 
 type mockPackfileWriter struct {
-	Storer
+	storage.Storer
 	PackfileWriterCalled bool
 }
 

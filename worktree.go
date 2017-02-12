@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 
+	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/index"
 	"srcd.works/go-git.v4/plumbing/object"
@@ -104,6 +106,7 @@ func (w *Worktree) Status() (Status, error) {
 
 	files, err := readDirAll(w.fs)
 	if err != nil {
+		fmt.Println("ch", err)
 		return nil, err
 	}
 
@@ -165,6 +168,61 @@ func (w *Worktree) getMode(fi billy.FileInfo) os.FileMode {
 	}
 
 	return object.FileMode
+}
+
+const gitmodulesFile = ".gitmodules"
+
+func (w *Worktree) Submodules() (Submodules, error) {
+	l := make(Submodules, 0)
+	m, err := w.readGitmodulesFile()
+	if err != nil || m == nil {
+		return l, err
+	}
+
+	for _, c := range m.Submodules {
+		s, err := w.newSubmodule(c)
+		if err != nil {
+			return nil, err
+		}
+
+		l = append(l, s)
+	}
+
+	return l, nil
+}
+
+func (w *Worktree) newSubmodule(m *config.Submodule) (*Submodule, error) {
+	s, err := w.r.Storer.Module(m.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Submodule{
+		Name: m.Name,
+		URL:  m.URL,
+
+		r: newRepository(s, w.fs.Dir(m.Path)),
+	}, nil
+}
+
+func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
+	f, err := w.fs.Open(gitmodulesFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	input, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+
+	m := config.NewModules()
+	return m, m.Unmarshal(input)
+
 }
 
 // Status current status of a Worktree
@@ -287,6 +345,10 @@ func doReadDirAll(fs billy.Filesystem, path string, files map[string]billy.FileI
 
 	l, err := fs.ReadDir(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
 		return err
 	}
 

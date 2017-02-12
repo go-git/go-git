@@ -32,6 +32,10 @@ type CloneOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits
 	Depth int
+	// RecursiveSubmodules after the clone is created, initialize all submodules
+	// within, using their default settings. This option is ignored if the
+	// cloned repository does not have a worktree
+	RecursiveSubmodules bool
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information
