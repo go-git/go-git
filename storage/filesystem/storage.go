@@ -16,6 +16,7 @@ type Storage struct {
 	IndexStorage
 	ShallowStorage
 	ConfigStorage
+	ModuleStorage
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem`
@@ -32,5 +33,6 @@ func NewStorage(fs billy.Filesystem) (*Storage, error) {
 		IndexStorage:     IndexStorage{dir: dir},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir},
+		ModuleStorage:    ModuleStorage{dir: dir},
 	}, nil
 }
