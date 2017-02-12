@@ -37,29 +37,57 @@ func (w *Worktree) Checkout(commit plumbing.Hash) error {
 		return err
 	}
 
-	files, err := c.Files()
+	t, err := c.Tree()
 	if err != nil {
 		return err
 	}
 
 	idx := &index.Index{Version: 2}
-	if err := files.ForEach(func(f *object.File) error {
-		return w.checkoutFile(f, idx)
-	}); err != nil {
-		return err
+	walker := object.NewTreeWalker(t, true)
+
+	for {
+		_, entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if err := w.checkoutEntry(&entry, idx); err != nil {
+			return err
+		}
 	}
 
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) checkoutFile(f *object.File, idx *index.Index) error {
-	from, err := f.Reader()
+func (w *Worktree) checkoutEntry(e *object.TreeEntry, idx *index.Index) error {
+	if e.Mode == object.SubmoduleMode {
+		return w.indexEntry(e, idx)
+	}
+
+	if e.Mode.IsDir() {
+		return nil
+	}
+
+	return w.checkoutFile(e, idx)
+}
+
+func (w *Worktree) checkoutFile(e *object.TreeEntry, idx *index.Index) error {
+	blob, err := object.GetBlob(w.r.Storer, e.Hash)
+	if err != nil {
+		return err
+	}
+
+	from, err := blob.Reader()
 	if err != nil {
 		return err
 	}
 
 	defer from.Close()
-	to, err := w.fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode.Perm())
+	to, err := w.fs.OpenFile(e.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, e.Mode.Perm())
 	if err != nil {
 		return err
 	}
@@ -69,12 +97,22 @@ func (w *Worktree) checkoutFile(f *object.File, idx *index.Index) error {
 	}
 
 	defer to.Close()
-	return w.indexFile(f, idx)
+	return w.indexFile(e, idx)
 }
 
 var fillSystemInfo func(e *index.Entry, sys interface{})
 
-func (w *Worktree) indexFile(f *object.File, idx *index.Index) error {
+func (w *Worktree) indexEntry(f *object.TreeEntry, idx *index.Index) error {
+	idx.Entries = append(idx.Entries, index.Entry{
+		Hash: f.Hash,
+		Name: f.Name,
+		Mode: object.SubmoduleMode,
+	})
+
+	return nil
+}
+
+func (w *Worktree) indexFile(f *object.TreeEntry, idx *index.Index) error {
 	fi, err := w.fs.Stat(f.Name)
 	if err != nil {
 		return err

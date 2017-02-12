@@ -40,7 +40,7 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	entries, err := fs.ReadDir("/")
 	c.Assert(err, IsNil)
 
-	c.Assert(entries, HasLen, 8)
+	c.Assert(entries, HasLen, 9)
 	ch, err := fs.Open("CHANGELOG")
 	c.Assert(err, IsNil)
 

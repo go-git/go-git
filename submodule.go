@@ -1,6 +1,10 @@
 package git
 
-import "srcd.works/go-git.v4/plumbing"
+import (
+	"fmt"
+
+	"srcd.works/go-git.v4/plumbing"
+)
 
 type Submodule struct {
 	Name   string
@@ -21,7 +25,9 @@ type Submodules []*Submodule
 
 func (s Submodules) Init() error {
 	for _, sub := range s {
+		fmt.Println("clone", sub.URL)
 		if err := sub.Init(); err != nil {
+			fmt.Println(err)
 			return err
 		}
 	}

@@ -306,7 +306,7 @@ func (s *RepositorySuite) TestCloneDeep(c *C) {
 
 	fi, err := fs.ReadDir("")
 	c.Assert(err, IsNil)
-	c.Assert(fi, HasLen, 8)
+	c.Assert(fi, HasLen, 9)
 }
 
 func (s *RepositorySuite) TestCloneConfig(c *C) {
@@ -431,7 +431,7 @@ func (s *RepositorySuite) TestPullCheckout(c *C) {
 
 	fi, err := fs.ReadDir("")
 	c.Assert(err, IsNil)
-	c.Assert(fi, HasLen, 8)
+	c.Assert(fi, HasLen, 9)
 }
 
 func (s *RepositorySuite) TestCloneWithProgress(c *C) {
