@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"testing"
 
 	"srcd.works/go-git.v4/utils/merkletrie"
 	"srcd.works/go-git.v4/utils/merkletrie/internal/fsnoder"
@@ -12,8 +11,6 @@ import (
 
 	. "gopkg.in/check.v1"
 )
-
-func Test(t *testing.T) { TestingT(t) }
 
 type IterSuite struct{}
 
