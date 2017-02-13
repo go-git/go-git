@@ -36,9 +36,14 @@ const (
 // in the worktree, having information about the working files. Changes in
 // worktree are detected using this Index. The Index is also used during merges
 type Index struct {
-	Version     uint32
-	Entries     []Entry
-	Cache       *Tree
+	// Version is index version
+	Version uint32
+	// Entries collection of entries represented by this Index. The order of
+	// this collection is not guaranteed
+	Entries []Entry
+	// Cache represents the 'Cached tree' extension
+	Cache *Tree
+	// ResolveUndo represents the 'Resolve undo' extension
 	ResolveUndo *ResolveUndo
 }
 
@@ -84,7 +89,7 @@ type TreeEntry struct {
 	// Path component (relative to its parent directory)
 	Path string
 	// Entries is the number of entries in the index that is covered by the tree
-	// this entry represents
+	// this entry represents.
 	Entries int
 	// Trees is the number that represents the number of subtrees this tree has
 	Trees int
