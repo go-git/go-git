@@ -217,6 +217,11 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	return storer.NewReferenceSliceIter(refs), nil
 }
 
+func (r ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
+	delete(r, n)
+	return nil
+}
+
 type ShallowStorage []plumbing.Hash
 
 func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {

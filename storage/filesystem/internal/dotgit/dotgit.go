@@ -5,11 +5,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	stdioutil "io/ioutil"
 	"os"
 	"strings"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/utils/ioutil"
 
 	"srcd.works/go-billy.v1"
 )
@@ -20,6 +21,8 @@ const (
 	configPath     = "config"
 	indexPath      = "index"
 	shallowPath    = "shallow"
+
+	tmpPackedRefsPrefix = "._packed-refs"
 
 	objectsPath = "objects"
 	packPath    = "pack"
@@ -269,6 +272,21 @@ func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	return nil, plumbing.ErrReferenceNotFound
 }
 
+// RemoveRef removes a reference by name.
+func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
+	path := d.fs.Join(".", name.String())
+	_, err := d.fs.Stat(path)
+	if err == nil {
+		return d.fs.Remove(path)
+	}
+
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return d.rewritePackedRefsWithoutRef(name)
+}
+
 func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference) (err error) {
 	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
@@ -277,12 +295,7 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference) (err error) 
 		}
 		return err
 	}
-
-	defer func() {
-		if errClose := f.Close(); err == nil {
-			err = errClose
-		}
-	}()
+	defer ioutil.CheckClose(f, &err)
 
 	s := bufio.NewScanner(f)
 	for s.Scan() {
@@ -299,8 +312,64 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference) (err error) 
 	return s.Err()
 }
 
+func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err error) {
+	f, err := d.fs.Open(packedRefsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return err
+	}
+	defer ioutil.CheckClose(f, &err)
+
+	// Creating the temp file in the same directory as the target file
+	// improves our chances for rename operation to be atomic.
+	tmp, err := d.fs.TempFile("", tmpPackedRefsPrefix)
+	if err != nil {
+		return err
+	}
+
+	tmpPath := tmp.Filename()
+	defer ioutil.CheckClose(tmp, &err)
+	defer d.fs.Remove(tmpPath)
+
+	s := bufio.NewScanner(f)
+	found := false
+	for s.Scan() {
+		line := s.Text()
+		ref, err := d.processLine(line)
+		if err != nil {
+			return err
+		}
+
+		if ref != nil && ref.Name() == name {
+			found = true
+			continue
+		}
+
+		if _, err := fmt.Fprintln(tmp, line); err != nil {
+			return err
+		}
+	}
+
+	if err := s.Err(); err != nil {
+		return err
+	}
+
+	if !found {
+		return nil
+	}
+
+	return d.fs.Rename(tmpPath, packedRefsPath)
+}
+
 // process lines from a packed-refs file
 func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
+	if len(line) == 0 {
+		return nil, nil
+	}
+
 	switch line[0] {
 	case '#': // comment - ignore
 		return nil, nil
@@ -374,14 +443,9 @@ func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Refe
 	if err != nil {
 		return nil, err
 	}
+	defer ioutil.CheckClose(f, &err)
 
-	defer func() {
-		if errClose := f.Close(); err == nil {
-			err = errClose
-		}
-	}()
-
-	b, err := ioutil.ReadAll(f)
+	b, err := stdioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
