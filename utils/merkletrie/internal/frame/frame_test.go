@@ -89,20 +89,13 @@ func checkFirstAndDrop(c *C, f *Frame, expectedNodeName string, expectedOK bool)
 }
 
 // a mock noder that returns error when Children() is called
-type errorNoder struct{}
+type errorNoder struct{ noder.Noder }
 
-func (e *errorNoder) Hash() []byte   { return nil }
-func (e *errorNoder) Name() string   { return "" }
-func (e *errorNoder) String() string { return "" }
-func (e *errorNoder) IsDir() bool    { return true }
 func (e *errorNoder) Children() ([]noder.Noder, error) {
 	return nil, fmt.Errorf("mock error")
-}
-func (e *errorNoder) NumChildren() (int, error) {
-	return 0, fmt.Errorf("mock error")
 }
 
 func (s *FrameSuite) TestNewFrameErrors(c *C) {
 	_, err := New(&errorNoder{})
-	c.Assert(err, Not(IsNil))
+	c.Assert(err, ErrorMatches, "mock error")
 }
