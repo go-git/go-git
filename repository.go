@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/internal/revision"
@@ -57,9 +58,75 @@ func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 
 	if worktree == nil {
 		r.setIsBare(true)
+		return r, nil
 	}
 
-	return r, nil
+	return r, setWorktreeAndStoragePaths(r, worktree)
+}
+
+func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error {
+	type fsBased interface {
+		Filesystem() billy.Filesystem
+	}
+
+	// .git file is only created if the storage is file based and the file
+	// system is osfs.OS
+	fs, isFSBased := r.Storer.(fsBased)
+	if !isFSBased {
+		return nil
+	}
+
+	_, isOS := fs.Filesystem().(*osfs.OS)
+	if !isOS {
+		return nil
+	}
+
+	if err := createDotGitFile(worktree, fs.Filesystem()); err != nil {
+		return err
+	}
+
+	return setConfigWorktree(r, worktree, fs.Filesystem())
+}
+
+func createDotGitFile(worktree, storage billy.Filesystem) error {
+	path, err := filepath.Rel(worktree.Base(), storage.Base())
+	if err != nil {
+		path = storage.Base()
+	}
+
+	if path == ".git" {
+		// not needed, since the folder is the default place
+		return nil
+	}
+
+	f, err := worktree.Create(".git")
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "gitdir: %s\n", path)
+	return err
+}
+
+func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error {
+	path, err := filepath.Rel(storage.Base(), worktree.Base())
+	if err != nil {
+		path = worktree.Base()
+	}
+
+	if path == ".." {
+		// not needed, since the folder is the default place
+		return nil
+	}
+
+	cfg, err := r.Storer.Config()
+	if err != nil {
+		return err
+	}
+
+	cfg.Core.Worktree = path
+	return r.Storer.SetConfig(cfg)
 }
 
 // Open opens a git repository using the given Storer and worktree filesystem,
@@ -280,7 +347,6 @@ func (r *Repository) clone(o *CloneOptions) error {
 	}
 
 	if err := r.updateWorktree(); err != nil {
-		fmt.Println("q", err)
 		return err
 	}
 

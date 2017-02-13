@@ -18,6 +18,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"srcd.works/go-billy.v1/memfs"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 type RepositorySuite struct {
@@ -34,6 +35,52 @@ func (s *RepositorySuite) TestInit(c *C) {
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Core.IsBare, Equals, false)
+}
+
+func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
+	dir, err := ioutil.TempDir("", "init-non-standard")
+	c.Assert(err, IsNil)
+	c.Assert(os.RemoveAll(dir), IsNil)
+
+	fs := osfs.New(dir)
+	storage, err := filesystem.NewStorage(fs.Dir("storage"))
+	c.Assert(err, IsNil)
+
+	r, err := Init(storage, fs.Dir("worktree"))
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	f, err := fs.Open("worktree/.git")
+	c.Assert(err, IsNil)
+
+	all, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+	c.Assert(string(all), Equals, "gitdir: ../storage\n")
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.Worktree, Equals, "../worktree")
+}
+
+func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
+	dir, err := ioutil.TempDir("", "init-standard")
+	c.Assert(err, IsNil)
+	c.Assert(os.RemoveAll(dir), IsNil)
+
+	fs := osfs.New(dir)
+	storage, err := filesystem.NewStorage(fs.Dir(".git"))
+	c.Assert(err, IsNil)
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	l, err := fs.ReadDir(".git")
+	c.Assert(len(l) > 0, Equals, true)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.Worktree, Equals, "")
 }
 
 func (s *RepositorySuite) TestInitBare(c *C) {
@@ -306,7 +353,7 @@ func (s *RepositorySuite) TestCloneDeep(c *C) {
 
 	fi, err := fs.ReadDir("")
 	c.Assert(err, IsNil)
-	c.Assert(fi, HasLen, 9)
+	c.Assert(fi, HasLen, 8)
 }
 
 func (s *RepositorySuite) TestCloneConfig(c *C) {
@@ -431,7 +478,7 @@ func (s *RepositorySuite) TestPullCheckout(c *C) {
 
 	fi, err := fs.ReadDir("")
 	c.Assert(err, IsNil)
-	c.Assert(fi, HasLen, 9)
+	c.Assert(fi, HasLen, 8)
 }
 
 func (s *RepositorySuite) TestCloneWithProgress(c *C) {

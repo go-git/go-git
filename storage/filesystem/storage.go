@@ -11,6 +11,8 @@ import (
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
+	fs billy.Filesystem
+
 	ObjectStorage
 	ReferenceStorage
 	IndexStorage
@@ -28,6 +30,8 @@ func NewStorage(fs billy.Filesystem) (*Storage, error) {
 	}
 
 	return &Storage{
+		fs: fs,
+
 		ObjectStorage:    o,
 		ReferenceStorage: ReferenceStorage{dir: dir},
 		IndexStorage:     IndexStorage{dir: dir},
@@ -35,4 +39,9 @@ func NewStorage(fs billy.Filesystem) (*Storage, error) {
 		ConfigStorage:    ConfigStorage{dir: dir},
 		ModuleStorage:    ModuleStorage{dir: dir},
 	}, nil
+}
+
+// Filesystem returns the underlying filesystem
+func (s *Storage) Filesystem() billy.Filesystem {
+	return s.fs
 }
