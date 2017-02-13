@@ -7,6 +7,7 @@ import (
 	"srcd.works/go-git.v4/plumbing/format/index"
 	"srcd.works/go-git.v4/plumbing/object"
 
+	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 	"srcd.works/go-billy.v1/memfs"
 	"srcd.works/go-billy.v1/osfs"
@@ -40,7 +41,7 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	entries, err := fs.ReadDir("/")
 	c.Assert(err, IsNil)
 
-	c.Assert(entries, HasLen, 9)
+	c.Assert(entries, HasLen, 8)
 	ch, err := fs.Open("CHANGELOG")
 	c.Assert(err, IsNil)
 
@@ -116,7 +117,6 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatus(c *C) {
-
 	h, err := s.Repository.Head()
 	c.Assert(err, IsNil)
 
@@ -163,4 +163,32 @@ func (s *WorktreeSuite) TestStatusModified(c *C) {
 	status, err := w.Status()
 	c.Assert(err, IsNil)
 	c.Assert(status.IsClean(), Equals, false)
+}
+
+func (s *WorktreeSuite) TestSubmodule(c *C) {
+	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	r, err := PlainOpen(path)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	m, err := w.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	c.Assert(m.Config().Name, Equals, "basic")
+}
+
+func (s *WorktreeSuite) TestSubmodules(c *C) {
+	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	r, err := PlainOpen(path)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	l, err := w.Submodules()
+	c.Assert(err, IsNil)
+
+	c.Assert(l, HasLen, 2)
 }
