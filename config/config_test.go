@@ -9,6 +9,7 @@ var _ = Suite(&ConfigSuite{})
 func (s *ConfigSuite) TestUnmarshall(c *C) {
 	input := []byte(`[core]
         bare = true
+		worktree = foo
 [remote "origin"]
         url = git@github.com:mcuadros/go-git.git
         fetch = +refs/heads/*:refs/remotes/origin/*
@@ -22,15 +23,39 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(cfg.Core.IsBare, Equals, true)
+	c.Assert(cfg.Core.Worktree, Equals, "foo")
 	c.Assert(cfg.Remotes, HasLen, 1)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URL, Equals, "git@github.com:mcuadros/go-git.git")
 	c.Assert(cfg.Remotes["origin"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*"})
 }
 
+func (s *ConfigSuite) TestMarshall(c *C) {
+	output := []byte(`[core]
+	bare = true
+	worktree = bar
+[remote "origin"]
+	url = git@github.com:mcuadros/go-git.git
+`)
+
+	cfg := NewConfig()
+	cfg.Core.IsBare = true
+	cfg.Core.Worktree = "bar"
+	cfg.Remotes["origin"] = &RemoteConfig{
+		Name: "origin",
+		URL:  "git@github.com:mcuadros/go-git.git",
+	}
+
+	b, err := cfg.Marshal()
+	c.Assert(err, IsNil)
+
+	c.Assert(string(b), Equals, string(output))
+}
+
 func (s *ConfigSuite) TestUnmarshallMarshall(c *C) {
 	input := []byte(`[core]
 	bare = true
+	worktree = foo
 	custom = ignored
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git

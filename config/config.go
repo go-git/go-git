@@ -37,6 +37,8 @@ type Config struct {
 		// IsBare if true this repository is assumed to be bare and has no
 		// working directory associated with it
 		IsBare bool
+		// Worktree is the path to the root of the working tree
+		Worktree string
 	}
 	// Remote list of repository remotes
 	Remotes map[string]*RemoteConfig
@@ -76,6 +78,7 @@ const (
 	fetchKey      = "fetch"
 	urlKey        = "url"
 	bareKey       = "bare"
+	worktreeKey   = "worktree"
 )
 
 // Unmarshal parses a git-config file and stores it
@@ -97,6 +100,8 @@ func (c *Config) unmarshalCore() {
 	if s.Options.Get(bareKey) == "true" {
 		c.Core.IsBare = true
 	}
+
+	c.Core.Worktree = s.Options.Get(worktreeKey)
 }
 
 func (c *Config) unmarshalRemotes() error {
@@ -129,6 +134,10 @@ func (c *Config) Marshal() ([]byte, error) {
 func (c *Config) marshalCore() {
 	s := c.raw.Section(coreSection)
 	s.SetOption(bareKey, fmt.Sprintf("%t", c.Core.IsBare))
+
+	if c.Core.Worktree != "" {
+		s.SetOption(worktreeKey, c.Core.Worktree)
+	}
 }
 
 func (c *Config) marshalRemotes() {
