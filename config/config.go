@@ -40,8 +40,10 @@ type Config struct {
 		// Worktree is the path to the root of the working tree
 		Worktree string
 	}
-	// Remote list of repository remotes
+	// Remotes list of repository remotes
 	Remotes map[string]*RemoteConfig
+	// Submodules list of repository submodules
+	Submodules map[string]*Submodule
 
 	// contains the raw information of a config file, the main goal is preserve
 	// the parsed information from the original format, to avoid missing
@@ -52,8 +54,9 @@ type Config struct {
 // NewConfig returns a new empty Config
 func NewConfig() *Config {
 	return &Config{
-		Remotes: make(map[string]*RemoteConfig, 0),
-		raw:     format.New(),
+		Remotes:    make(map[string]*RemoteConfig, 0),
+		Submodules: make(map[string]*Submodule, 0),
+		raw:        format.New(),
 	}
 }
 
@@ -73,12 +76,13 @@ func (c *Config) Validate() error {
 }
 
 const (
-	remoteSection = "remote"
-	coreSection   = "core"
-	fetchKey      = "fetch"
-	urlKey        = "url"
-	bareKey       = "bare"
-	worktreeKey   = "worktree"
+	remoteSection    = "remote"
+	submoduleSection = "submodule"
+	coreSection      = "core"
+	fetchKey         = "fetch"
+	urlKey           = "url"
+	bareKey          = "bare"
+	worktreeKey      = "worktree"
 )
 
 // Unmarshal parses a git-config file and stores it
@@ -92,6 +96,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	c.unmarshalCore()
+	c.unmarshalSubmodules()
 	return c.unmarshalRemotes()
 }
 
@@ -118,10 +123,21 @@ func (c *Config) unmarshalRemotes() error {
 	return nil
 }
 
+func (c *Config) unmarshalSubmodules() {
+	s := c.raw.Section(submoduleSection)
+	for _, sub := range s.Subsections {
+		m := &Submodule{}
+		m.unmarshal(sub)
+
+		c.Submodules[m.Name] = m
+	}
+}
+
 // Marshal returns Config encoded as a git-config file
 func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
 	c.marshalRemotes()
+	c.marshalSubmodules()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.raw); err != nil {
@@ -147,6 +163,21 @@ func (c *Config) marshalRemotes() {
 	var i int
 	for _, r := range c.Remotes {
 		s.Subsections[i] = r.marshal()
+		i++
+	}
+}
+
+func (c *Config) marshalSubmodules() {
+	s := c.raw.Section(submoduleSection)
+	s.Subsections = make(format.Subsections, len(c.Submodules))
+
+	var i int
+	for _, r := range c.Submodules {
+		section := r.marshal()
+		// the submodule section at config is a subset of the .gitmodule file
+		// we should remove the non-valid options for the config file.
+		section.RemoveOption(pathKey)
+		s.Subsections[i] = section
 		i++
 	}
 }

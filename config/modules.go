@@ -30,9 +30,8 @@ func NewModules() *Modules {
 }
 
 const (
-	submoduleSection = "submodule"
-	pathKey          = "path"
-	branchKey        = "branch"
+	pathKey   = "path"
+	branchKey = "branch"
 )
 
 // Unmarshal parses a git-config file and stores it
