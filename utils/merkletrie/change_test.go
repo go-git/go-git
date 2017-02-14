@@ -12,6 +12,17 @@ type ChangeSuite struct{}
 
 var _ = Suite(&ChangeSuite{})
 
+func (s *ChangeSuite) TestActionString(c *C) {
+	action := merkletrie.Insert
+	c.Assert(action.String(), Equals, "Insert")
+
+	action = merkletrie.Delete
+	c.Assert(action.String(), Equals, "Delete")
+
+	action = merkletrie.Modify
+	c.Assert(action.String(), Equals, "Modify")
+}
+
 func (s *ChangeSuite) TestUnsupportedAction(c *C) {
 	a := merkletrie.Action(42)
 	c.Assert(a.String, PanicMatches, "unsupported action.*")

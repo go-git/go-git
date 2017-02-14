@@ -13,7 +13,7 @@ type Action int
 
 // The set of possible actions in a change.
 const (
-	_ = iota
+	_ Action = iota
 	Insert
 	Delete
 	Modify
