@@ -350,8 +350,8 @@ func (r *Repository) clone(o *CloneOptions) error {
 		return err
 	}
 
-	if o.RecursiveSubmodules && r.wt != nil {
-		if err := r.initSubmodules(); err != nil {
+	if o.RecurseSubmodules != NoRecursivity && r.wt != nil {
+		if err := r.updateSubmodules(o.RecurseSubmodules); err != nil {
 			return err
 		}
 	}
@@ -359,7 +359,7 @@ func (r *Repository) clone(o *CloneOptions) error {
 	return r.updateRemoteConfig(remote, o, c, head)
 }
 
-func (r *Repository) initSubmodules() error {
+func (r *Repository) updateSubmodules(recursion SubmoduleRescursivity) error {
 	w, err := r.Worktree()
 	if err != nil {
 		return err
@@ -370,7 +370,10 @@ func (r *Repository) initSubmodules() error {
 		return err
 	}
 
-	return s.Init()
+	return s.Update(&SubmoduleUpdateOptions{
+		Init:              true,
+		RecurseSubmodules: recursion,
+	})
 }
 
 func (r *Repository) cloneRefSpec(o *CloneOptions,
@@ -546,7 +549,17 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return NoErrAlreadyUpToDate
 	}
 
-	return r.updateWorktree()
+	if err := r.updateWorktree(); err != nil {
+		return err
+	}
+
+	if o.RecurseSubmodules != NoRecursivity && r.wt != nil {
+		if err := r.updateSubmodules(o.RecurseSubmodules); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *Repository) updateWorktree() error {

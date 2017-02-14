@@ -9,9 +9,18 @@ import (
 	"srcd.works/go-git.v4/plumbing/transport"
 )
 
+// SubmoduleRescursivity defines how depth will affect any submodule recursive
+// operation
+type SubmoduleRescursivity int
+
 const (
 	// DefaultRemoteName name of the default Remote, just like git command
 	DefaultRemoteName = "origin"
+
+	// NoRecursivity disables the recursion for a submodule operation
+	NoRecursivity SubmoduleRescursivity = 0
+	// DefaultRecursivity allow recursion in a submodule operation
+	DefaultRecursivity SubmoduleRescursivity = 10
 )
 
 var (
@@ -32,10 +41,10 @@ type CloneOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits
 	Depth int
-	// RecursiveSubmodules after the clone is created, initialize all submodules
+	// RecurseSubmodules after the clone is created, initialize all submodules
 	// within, using their default settings. This option is ignored if the
 	// cloned repository does not have a worktree
-	RecursiveSubmodules bool
+	RecurseSubmodules SubmoduleRescursivity
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information
@@ -71,6 +80,9 @@ type PullOptions struct {
 	Depth int
 	// Auth credentials, if required, to use with the remote repository
 	Auth transport.AuthMethod
+	// RecurseSubmodules controls if new commits of all populated submodules
+	// should be fetched too
+	RecurseSubmodules SubmoduleRescursivity
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information
@@ -151,4 +163,17 @@ func (o *PushOptions) Validate() error {
 	}
 
 	return nil
+}
+
+// SubmoduleUpdateOptions describes how a submodule update should be performed
+type SubmoduleUpdateOptions struct {
+	// Init initializes the submodules recorded in the index
+	Init bool
+	// NoFetch tell to the update command to don’t fetch new objects from the
+	// remote site.
+	NoFetch bool
+	// RecurseSubmodules the update is performed not only in the submodules of
+	// the current repository but also in any nested submodules inside those
+	// submodules (and so on). Until the SubmoduleRescursivity is reached.
+	RecurseSubmodules SubmoduleRescursivity
 }

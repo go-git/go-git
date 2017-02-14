@@ -212,17 +212,18 @@ const gitmodulesFile = ".gitmodules"
 
 // Submodule returns the submodule with the given name
 func (w *Worktree) Submodule(name string) (*Submodule, error) {
-	m, err := w.readGitmodulesFile()
-	if err != nil || m == nil {
+	l, err := w.Submodules()
+	if err != nil {
 		return nil, err
 	}
 
-	c, ok := m.Submodules[name]
-	if !ok {
-		return nil, ErrSubmoduleNotFound
+	for _, m := range l {
+		if m.Config().Name == name {
+			return m, nil
+		}
 	}
 
-	return w.newSubmodule(c)
+	return nil, ErrSubmoduleNotFound
 }
 
 // Submodules returns all the available submodules
@@ -233,34 +234,26 @@ func (w *Worktree) Submodules() (Submodules, error) {
 		return l, err
 	}
 
-	for _, c := range m.Submodules {
-		s, err := w.newSubmodule(c)
-		if err != nil {
-			return nil, err
-		}
-
-		l = append(l, s)
+	c, err := w.r.Config()
+	for _, s := range m.Submodules {
+		l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
 	}
 
 	return l, nil
 }
 
-func (w *Worktree) newSubmodule(m *config.Submodule) (*Submodule, error) {
-	s, err := w.r.Storer.Module(m.Name)
-	if err != nil {
-		return nil, err
+func (w *Worktree) newSubmodule(fromModules, fromConfig *config.Submodule) *Submodule {
+	m := &Submodule{w: w}
+	m.initialized = fromConfig != nil
+
+	if !m.initialized {
+		m.c = fromModules
+		return m
 	}
 
-	r, err := Init(s, w.fs.Dir(m.Path))
-	if err != nil {
-		return nil, err
-	}
-
-	return &Submodule{
-		m: m,
-		w: w,
-		r: r,
-	}, nil
+	m.c = fromConfig
+	m.c.Path = fromModules.Path
+	return m
 }
 
 func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {

@@ -36,7 +36,7 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 	s.Worktree, err = r.Worktree()
 	c.Assert(err, IsNil)
 
-	s.path = path
+	s.path = dir
 }
 
 func (s *SubmoduleSuite) TearDownTest(c *C) {
@@ -48,32 +48,78 @@ func (s *SubmoduleSuite) TestInit(c *C) {
 	sm, err := s.Worktree.Submodule("basic")
 	c.Assert(err, IsNil)
 
-	_, err = sm.r.Reference(plumbing.HEAD, true)
-	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
-
 	err = sm.Init()
 	c.Assert(err, IsNil)
 
-	ref, err := sm.r.Reference(plumbing.HEAD, true)
-	c.Assert(err, IsNil)
-	c.Assert(ref.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	w, err := sm.r.Worktree()
+	cfg, err := s.Repository.Config()
 	c.Assert(err, IsNil)
 
-	status, err := w.Status()
-	c.Assert(err, IsNil)
-	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(cfg.Submodules, HasLen, 1)
+	c.Assert(cfg.Submodules["basic"], NotNil)
 }
 
 func (s *SubmoduleSuite) TestUpdate(c *C) {
 	sm, err := s.Worktree.Submodule("basic")
 	c.Assert(err, IsNil)
 
-	_, err = sm.r.Reference(plumbing.HEAD, true)
-	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init: true,
+	})
 
-	err = sm.Init()
+	c.Assert(err, IsNil)
+
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.HEAD, true)
+	c.Assert(err, IsNil)
+	c.Assert(ref.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+}
+
+func (s *SubmoduleSuite) TestUpdateWithoutInit(c *C) {
+	sm, err := s.Worktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	err = sm.Update(&SubmoduleUpdateOptions{})
+	c.Assert(err, Equals, ErrSubmoduleNotInitialized)
+}
+
+func (s *SubmoduleSuite) TestUpdateWithNotFetch(c *C) {
+	sm, err := s.Worktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init:    true,
+		NoFetch: true,
+	})
+
+	// Since we are not fetching, the object is not there
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+}
+
+func (s *SubmoduleSuite) TestUpdateWithRecursion(c *C) {
+	sm, err := s.Worktree.Submodule("itself")
+	c.Assert(err, IsNil)
+
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init:              true,
+		RecurseSubmodules: 2,
+	})
+
+	c.Assert(err, IsNil)
+
+	_, err = s.Worktree.fs.Stat("itself/basic/LICENSE")
+	c.Assert(err, IsNil)
+}
+
+func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate(c *C) {
+	sm, err := s.Worktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init: true,
+	})
 	c.Assert(err, IsNil)
 
 	idx, err := s.Repository.Storer.Index()
@@ -90,10 +136,13 @@ func (s *SubmoduleSuite) TestUpdate(c *C) {
 	err = s.Repository.Storer.SetIndex(idx)
 	c.Assert(err, IsNil)
 
-	err = sm.Update()
+	err = sm.Update(&SubmoduleUpdateOptions{})
 	c.Assert(err, IsNil)
 
-	ref, err := sm.r.Reference(plumbing.HEAD, true)
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.HEAD, true)
 	c.Assert(err, IsNil)
 	c.Assert(ref.Hash().String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
 
@@ -106,9 +155,10 @@ func (s *SubmoduleSuite) TestSubmodulesInit(c *C) {
 	err = sm.Init()
 	c.Assert(err, IsNil)
 
+	sm, err = s.Worktree.Submodules()
+	c.Assert(err, IsNil)
+
 	for _, m := range sm {
-		ref, err := m.r.Reference(plumbing.HEAD, true)
-		c.Assert(err, IsNil)
-		c.Assert(ref.Hash(), Not(Equals), plumbing.ZeroHash)
+		c.Assert(m.initialized, Equals, true)
 	}
 }

@@ -293,6 +293,25 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	c.Assert(remotes, HasLen, 1)
 }
 
+func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
+	dir, err := ioutil.TempDir("", "plain-clone-submodule")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	path := fixtures.ByTag("submodule").One().Worktree().Base()
+
+	r, err := PlainClone(dir, false, &CloneOptions{
+		URL:               fmt.Sprintf("file://%s", path),
+		RecurseSubmodules: DefaultRecursivity,
+	})
+
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(cfg.Remotes, HasLen, 1)
+	c.Assert(cfg.Submodules, HasLen, 2)
+}
+
 func (s *RepositorySuite) TestFetch(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
@@ -560,6 +579,28 @@ func (s *RepositorySuite) TestPullProgress(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(buf.Len(), Not(Equals), 0)
+}
+
+func (s *RepositorySuite) TestPullProgressWithRecursion(c *C) {
+	path := fixtures.ByTag("submodule").One().Worktree().Base()
+
+	dir, err := ioutil.TempDir("", "plain-clone-submodule")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	r, _ := PlainInit(dir, false)
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  fmt.Sprintf("file://%s", path),
+	})
+
+	err = r.Pull(&PullOptions{
+		RecurseSubmodules: DefaultRecursivity,
+	})
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(cfg.Submodules, HasLen, 2)
 }
 
 func (s *RepositorySuite) TestPullAdd(c *C) {
