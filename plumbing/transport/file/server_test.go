@@ -2,8 +2,6 @@ package file
 
 import (
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 
@@ -48,8 +46,8 @@ func (s *ServerSuite) TestPush(c *C) {
 	cmd.Dir = s.SrcPath
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "GIT_TRACE=true", "GIT_TRACE_PACKET=true")
-	stdout, stderr, err := execAndGetOutput(c, cmd)
-	c.Assert(err, IsNil, Commentf("STDOUT:\n%s\nSTDERR:\n%s\n", stdout, stderr))
+	out, err := cmd.CombinedOutput()
+	c.Assert(err, IsNil, Commentf("combined stdout and stderr:\n%s\n", out))
 }
 
 func (s *ServerSuite) TestClone(c *C) {
@@ -61,45 +59,6 @@ func (s *ServerSuite) TestClone(c *C) {
 	)
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "GIT_TRACE=true", "GIT_TRACE_PACKET=true")
-	stdout, stderr, err := execAndGetOutput(c, cmd)
-	c.Assert(err, IsNil, Commentf("STDOUT:\n%s\nSTDERR:\n%s\n", stdout, stderr))
-}
-
-func execAndGetOutput(c *C, cmd *exec.Cmd) (stdout, stderr string, err error) {
-	sout, err := cmd.StdoutPipe()
-	c.Assert(err, IsNil)
-	serr, err := cmd.StderrPipe()
-	c.Assert(err, IsNil)
-
-	outChan, outErr := readAllAsync(sout)
-	errChan, errErr := readAllAsync(serr)
-
-	c.Assert(cmd.Start(), IsNil)
-
-	if err = cmd.Wait(); err != nil {
-		return <-outChan, <-errChan, err
-	}
-
-	if err := <-outErr; err != nil {
-		return <-outChan, <-errChan, err
-	}
-
-	return <-outChan, <-errChan, <-errErr
-}
-
-func readAllAsync(r io.Reader) (out chan string, err chan error) {
-	out = make(chan string, 1)
-	err = make(chan error, 1)
-	go func() {
-		b, e := ioutil.ReadAll(r)
-		if e != nil {
-			err <- e
-		} else {
-			err <- nil
-		}
-
-		out <- string(b)
-	}()
-
-	return out, err
+	out, err := cmd.CombinedOutput()
+	c.Assert(err, IsNil, Commentf("combined stdout and stderr:\n%s\n", out))
 }
