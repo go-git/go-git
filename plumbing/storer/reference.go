@@ -18,6 +18,7 @@ type ReferenceStorer interface {
 	SetReference(*plumbing.Reference) error
 	Reference(plumbing.ReferenceName) (*plumbing.Reference, error)
 	IterReferences() (ReferenceIter, error)
+	RemoveReference(plumbing.ReferenceName) error
 }
 
 // ReferenceIter is a generic closable interface for iterating over references

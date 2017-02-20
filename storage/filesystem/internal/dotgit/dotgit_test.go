@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"bufio"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -106,6 +107,96 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 	c.Assert(ref.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(string(ref.Target()), Equals, "refs/remotes/origin/master")
 
+}
+
+func (s *SuiteDotGit) TestRemoveRefFromReferenceFile(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	name := plumbing.ReferenceName("refs/remotes/origin/HEAD")
+	err := dir.RemoveRef(name)
+	c.Assert(err, IsNil)
+
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+
+	ref := findReference(refs, string(name))
+	c.Assert(ref, IsNil)
+}
+
+func (s *SuiteDotGit) TestRemoveRefFromPackedRefs(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	name := plumbing.ReferenceName("refs/remotes/origin/master")
+	err := dir.RemoveRef(name)
+	c.Assert(err, IsNil)
+
+	b, err := ioutil.ReadFile(filepath.Join(fs.Base(), packedRefsPath))
+	c.Assert(err, IsNil)
+
+	c.Assert(string(b), Equals, ""+
+		"# pack-refs with: peeled fully-peeled \n"+
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"+
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/remotes/origin/branch\n")
+}
+
+func (s *SuiteDotGit) TestRemoveRefNonExistent(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	packedRefs := filepath.Join(fs.Base(), packedRefsPath)
+	before, err := ioutil.ReadFile(packedRefs)
+	c.Assert(err, IsNil)
+
+	name := plumbing.ReferenceName("refs/heads/nonexistent")
+	err = dir.RemoveRef(name)
+	c.Assert(err, IsNil)
+
+	after, err := ioutil.ReadFile(packedRefs)
+	c.Assert(err, IsNil)
+
+	c.Assert(string(before), Equals, string(after))
+}
+
+func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	packedRefs := filepath.Join(fs.Base(), packedRefsPath)
+	brokenContent := "BROKEN STUFF REALLY BROKEN"
+
+	err := ioutil.WriteFile(packedRefs, []byte(brokenContent), os.FileMode(0755))
+	c.Assert(err, IsNil)
+
+	name := plumbing.ReferenceName("refs/heads/nonexistent")
+	err = dir.RemoveRef(name)
+	c.Assert(err, NotNil)
+
+	after, err := ioutil.ReadFile(filepath.Join(fs.Base(), packedRefsPath))
+	c.Assert(err, IsNil)
+
+	c.Assert(brokenContent, Equals, string(after))
+}
+
+func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	packedRefs := filepath.Join(fs.Base(), packedRefsPath)
+	brokenContent := strings.Repeat("a", bufio.MaxScanTokenSize*2)
+
+	err := ioutil.WriteFile(packedRefs, []byte(brokenContent), os.FileMode(0755))
+	c.Assert(err, IsNil)
+
+	name := plumbing.ReferenceName("refs/heads/nonexistent")
+	err = dir.RemoveRef(name)
+	c.Assert(err, NotNil)
+
+	after, err := ioutil.ReadFile(filepath.Join(fs.Base(), packedRefsPath))
+	c.Assert(err, IsNil)
+
+	c.Assert(brokenContent, Equals, string(after))
 }
 
 func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {

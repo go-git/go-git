@@ -242,6 +242,33 @@ func (s *BaseStorageSuite) TestSetReferenceAndGetReference(c *C) {
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
+func (s *BaseStorageSuite) TestRemoveReference(c *C) {
+	err := s.Storer.SetReference(
+		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+	)
+	c.Assert(err, IsNil)
+
+	err = s.Storer.RemoveReference(plumbing.ReferenceName("foo"))
+	c.Assert(err, IsNil)
+
+	_, err = s.Storer.Reference(plumbing.ReferenceName("foo"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+}
+
+func (s *BaseStorageSuite) TestRemoveReferenceNonExistent(c *C) {
+	err := s.Storer.SetReference(
+		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+	)
+	c.Assert(err, IsNil)
+
+	err = s.Storer.RemoveReference(plumbing.ReferenceName("nonexistent"))
+	c.Assert(err, IsNil)
+
+	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+}
+
 func (s *BaseStorageSuite) TestGetReferenceNotFound(c *C) {
 	r, err := s.Storer.Reference(plumbing.ReferenceName("bar"))
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)

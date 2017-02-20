@@ -26,3 +26,7 @@ func (r *ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 
 	return storer.NewReferenceSliceIter(refs), nil
 }
+
+func (r *ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
+	return r.dir.RemoveRef(n)
+}
