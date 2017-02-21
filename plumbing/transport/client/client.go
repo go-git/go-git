@@ -23,6 +23,11 @@ var Protocols = map[string]transport.Transport{
 
 // InstallProtocol adds or modifies an existing protocol.
 func InstallProtocol(scheme string, c transport.Transport) {
+	if c == nil {
+		delete(Protocols, scheme)
+		return
+	}
+
 	Protocols[scheme] = c
 }
 
@@ -33,6 +38,10 @@ func NewClient(endpoint transport.Endpoint) (transport.Transport, error) {
 	f, ok := Protocols[endpoint.Scheme]
 	if !ok {
 		return nil, fmt.Errorf("unsupported scheme %q", endpoint.Scheme)
+	}
+
+	if f == nil {
+		return nil, fmt.Errorf("malformed client for scheme %q, client is defined as nil", endpoint.Scheme)
 	}
 
 	return f, nil

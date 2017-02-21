@@ -16,22 +16,6 @@ type ClientSuite struct{}
 
 var _ = Suite(&ClientSuite{})
 
-func (s *ClientSuite) TestNewClientHTTP(c *C) {
-	e, err := transport.NewEndpoint("http://github.com/src-d/go-git")
-	c.Assert(err, IsNil)
-
-	output, err := NewClient(e)
-	c.Assert(err, IsNil)
-	c.Assert(typeAsString(output), Equals, "*http.client")
-
-	e, err = transport.NewEndpoint("https://github.com/src-d/go-git")
-	c.Assert(err, IsNil)
-
-	output, err = NewClient(e)
-	c.Assert(err, IsNil)
-	c.Assert(typeAsString(output), Equals, "*http.client")
-}
-
 func (s *ClientSuite) TestNewClientSSH(c *C) {
 	e, err := transport.NewEndpoint("ssh://github.com/src-d/go-git")
 	c.Assert(err, IsNil)
@@ -49,9 +33,26 @@ func (s *ClientSuite) TestNewClientUnknown(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *ClientSuite) TestNewClientNil(c *C) {
+	Protocols["newscheme"] = nil
+	e, err := transport.NewEndpoint("newscheme://github.com/src-d/go-git")
+	c.Assert(err, IsNil)
+
+	_, err = NewClient(e)
+	c.Assert(err, NotNil)
+}
+
 func (s *ClientSuite) TestInstallProtocol(c *C) {
 	InstallProtocol("newscheme", &dummyClient{})
 	c.Assert(Protocols["newscheme"], NotNil)
+}
+
+func (s *ClientSuite) TestInstallProtocolNilValue(c *C) {
+	InstallProtocol("newscheme", &dummyClient{})
+	InstallProtocol("newscheme", nil)
+
+	_, ok := Protocols["newscheme"]
+	c.Assert(ok, Equals, false)
 }
 
 type dummyClient struct {
