@@ -31,11 +31,11 @@ build-git:
 	fi
 
 test:
-	cd $(WORKDIR); \
+	@cd $(WORKDIR); \
 	$(GOTEST) ./...
 
 test-coverage:
-	cd $(WORKDIR); \
+	@cd $(WORKDIR); \
 	echo "" > $(COVERAGE_REPORT); \
 	for dir in `find . -name "*.go" | grep -o '.*/' | sort | uniq`; do \
 		$(GOTEST) $$dir -coverprofile=$(COVERAGE_PROFILE) -covermode=$(COVERAGE_MODE); \
