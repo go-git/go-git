@@ -3,8 +3,8 @@ package packfile
 import (
 	"bytes"
 
-	"srcd.works/go-git.v4/cache"
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/cache"
 	"srcd.works/go-git.v4/plumbing/storer"
 )
 
