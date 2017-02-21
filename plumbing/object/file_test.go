@@ -247,3 +247,31 @@ func (s *FileSuite) TestFileIter(c *C) {
 
 	c.Assert(count, Equals, 1)
 }
+
+func (s *FileSuite) TestFileIterSubmodule(c *C) {
+	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	st, err := filesystem.NewStorage(dotgit)
+
+	c.Assert(err, IsNil)
+
+	hash := plumbing.NewHash("a692ec699bff9117c1ed91752afbb7d9d272ebef")
+	commit, err := GetCommit(st, hash)
+	c.Assert(err, IsNil)
+
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	expected := []string{
+		".gitmodules",
+	}
+
+	var count int
+	i := tree.Files()
+	i.ForEach(func(f *File) error {
+		c.Assert(f.Name, Equals, expected[count])
+		count++
+		return nil
+	})
+
+	c.Assert(count, Equals, 1)
+}

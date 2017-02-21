@@ -18,6 +18,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"srcd.works/go-billy.v1/memfs"
+	"srcd.works/go-billy.v1/osfs"
 )
 
 type RepositorySuite struct {
@@ -34,6 +35,52 @@ func (s *RepositorySuite) TestInit(c *C) {
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Core.IsBare, Equals, false)
+}
+
+func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
+	dir, err := ioutil.TempDir("", "init-non-standard")
+	c.Assert(err, IsNil)
+	c.Assert(os.RemoveAll(dir), IsNil)
+
+	fs := osfs.New(dir)
+	storage, err := filesystem.NewStorage(fs.Dir("storage"))
+	c.Assert(err, IsNil)
+
+	r, err := Init(storage, fs.Dir("worktree"))
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	f, err := fs.Open("worktree/.git")
+	c.Assert(err, IsNil)
+
+	all, err := ioutil.ReadAll(f)
+	c.Assert(err, IsNil)
+	c.Assert(string(all), Equals, "gitdir: ../storage\n")
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.Worktree, Equals, "../worktree")
+}
+
+func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
+	dir, err := ioutil.TempDir("", "init-standard")
+	c.Assert(err, IsNil)
+	c.Assert(os.RemoveAll(dir), IsNil)
+
+	fs := osfs.New(dir)
+	storage, err := filesystem.NewStorage(fs.Dir(".git"))
+	c.Assert(err, IsNil)
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	l, err := fs.ReadDir(".git")
+	c.Assert(len(l) > 0, Equals, true)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.Worktree, Equals, "")
 }
 
 func (s *RepositorySuite) TestInitBare(c *C) {
@@ -244,6 +291,24 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	remotes, err := r.Remotes()
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
+}
+
+func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
+	dir, err := ioutil.TempDir("", "plain-clone-submodule")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	r, err := PlainClone(dir, false, &CloneOptions{
+		URL:               fmt.Sprintf("file://%s", path),
+		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+	})
+
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(cfg.Remotes, HasLen, 1)
+	c.Assert(cfg.Submodules, HasLen, 2)
 }
 
 func (s *RepositorySuite) TestFetch(c *C) {
@@ -515,26 +580,43 @@ func (s *RepositorySuite) TestPullProgress(c *C) {
 	c.Assert(buf.Len(), Not(Equals), 0)
 }
 
-func (s *RepositorySuite) TestPullAdd(c *C) {
-	path := fixtures.Basic().One().Worktree().Base()
+func (s *RepositorySuite) TestPullProgressWithRecursion(c *C) {
+	path := fixtures.ByTag("submodule").One().Worktree().Base()
 
-	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	dir, err := ioutil.TempDir("", "plain-clone-submodule")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	r, _ := PlainInit(dir, false)
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  fmt.Sprintf("file://%s", path),
+	})
+
+	err = r.Pull(&PullOptions{
+		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+	})
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(cfg.Submodules, HasLen, 2)
+}
+
+func (s *RepositorySuite) TestPullAdd(c *C) {
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Base()
+
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
 		URL: fmt.Sprintf("file://%s", filepath.Join(path, ".git")),
 	})
 
 	c.Assert(err, IsNil)
 
 	storage := r.Storer.(*memory.Storage)
-	c.Assert(storage.Objects, HasLen, 31)
+	c.Assert(storage.Objects, HasLen, 28)
 
 	branch, err := r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	branch, err = r.Reference("refs/remotes/origin/branch", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
 	ExecuteOnPath(c, path,
 		"touch foo",
@@ -546,16 +628,11 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	c.Assert(err, IsNil)
 
 	// the commit command has introduced a new commit, tree and blob
-	c.Assert(storage.Objects, HasLen, 34)
+	c.Assert(storage.Objects, HasLen, 31)
 
 	branch, err = r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	// the commit command, was in the local branch, so the remote should be read ok
-	branch, err = r.Reference("refs/remotes/origin/branch", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
 
 func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {

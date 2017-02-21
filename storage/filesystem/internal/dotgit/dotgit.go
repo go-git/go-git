@@ -21,12 +21,12 @@ const (
 	configPath     = "config"
 	indexPath      = "index"
 	shallowPath    = "shallow"
+	modulePath     = "module"
+	objectsPath    = "objects"
+	packPath       = "pack"
+	refsPath       = "refs"
 
 	tmpPackedRefsPrefix = "._packed-refs"
-
-	objectsPath = "objects"
-	packPath    = "pack"
-	refsPath    = "refs"
 
 	packExt = ".pack"
 	idxExt  = ".idx"
@@ -452,6 +452,11 @@ func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Refe
 
 	line := strings.TrimSpace(string(b))
 	return plumbing.NewReferenceFromStrings(refFile, line), nil
+}
+
+// Module return a billy.Filesystem poiting to the module folder
+func (d *DotGit) Module(name string) billy.Filesystem {
+	return d.fs.Dir(d.fs.Join(modulePath, name))
 }
 
 func isHex(s string) bool {

@@ -375,11 +375,6 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			return
 		}
 
-		if entry.Mode == SubmoduleMode {
-			err = nil
-			continue
-		}
-
 		if entry.Mode.IsDir() {
 			obj, err = GetTree(w.s, entry.Hash)
 		}

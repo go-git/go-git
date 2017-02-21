@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 
+	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/index"
 	"srcd.works/go-git.v4/plumbing/object"
@@ -14,6 +16,7 @@ import (
 )
 
 var ErrWorktreeNotClean = errors.New("worktree is not clean")
+var ErrSubmoduleNotFound = errors.New("submodule not found")
 
 type Worktree struct {
 	r  *Repository
@@ -35,29 +38,57 @@ func (w *Worktree) Checkout(commit plumbing.Hash) error {
 		return err
 	}
 
-	files, err := c.Files()
+	t, err := c.Tree()
 	if err != nil {
 		return err
 	}
 
 	idx := &index.Index{Version: 2}
-	if err := files.ForEach(func(f *object.File) error {
-		return w.checkoutFile(f, idx)
-	}); err != nil {
-		return err
+	walker := object.NewTreeWalker(t, true)
+
+	for {
+		name, entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if err := w.checkoutEntry(name, &entry, idx); err != nil {
+			return err
+		}
 	}
 
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) checkoutFile(f *object.File, idx *index.Index) error {
-	from, err := f.Reader()
+func (w *Worktree) checkoutEntry(name string, e *object.TreeEntry, idx *index.Index) error {
+	if e.Mode == object.SubmoduleMode {
+		return w.addIndexFromTreeEntry(name, e, idx)
+	}
+
+	if e.Mode.IsDir() {
+		return nil
+	}
+
+	return w.checkoutFile(name, e, idx)
+}
+
+func (w *Worktree) checkoutFile(name string, e *object.TreeEntry, idx *index.Index) error {
+	blob, err := object.GetBlob(w.r.Storer, e.Hash)
+	if err != nil {
+		return err
+	}
+
+	from, err := blob.Reader()
 	if err != nil {
 		return err
 	}
 
 	defer from.Close()
-	to, err := w.fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode.Perm())
+	to, err := w.fs.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, e.Mode.Perm())
 	if err != nil {
 		return err
 	}
@@ -67,20 +98,30 @@ func (w *Worktree) checkoutFile(f *object.File, idx *index.Index) error {
 	}
 
 	defer to.Close()
-	return w.indexFile(f, idx)
+	return w.addIndexFromFile(name, e, idx)
 }
 
 var fillSystemInfo func(e *index.Entry, sys interface{})
 
-func (w *Worktree) indexFile(f *object.File, idx *index.Index) error {
-	fi, err := w.fs.Stat(f.Name)
+func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *index.Index) error {
+	idx.Entries = append(idx.Entries, index.Entry{
+		Hash: f.Hash,
+		Name: name,
+		Mode: object.SubmoduleMode,
+	})
+
+	return nil
+}
+
+func (w *Worktree) addIndexFromFile(name string, f *object.TreeEntry, idx *index.Index) error {
+	fi, err := w.fs.Stat(name)
 	if err != nil {
 		return err
 	}
 
 	e := index.Entry{
 		Hash:       f.Hash,
-		Name:       f.Name,
+		Name:       name,
 		Mode:       w.getMode(fi),
 		ModifiedAt: fi.ModTime(),
 		Size:       uint32(fi.Size()),
@@ -165,6 +206,90 @@ func (w *Worktree) getMode(fi billy.FileInfo) os.FileMode {
 	}
 
 	return object.FileMode
+}
+
+const gitmodulesFile = ".gitmodules"
+
+// Submodule returns the submodule with the given name
+func (w *Worktree) Submodule(name string) (*Submodule, error) {
+	l, err := w.Submodules()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, m := range l {
+		if m.Config().Name == name {
+			return m, nil
+		}
+	}
+
+	return nil, ErrSubmoduleNotFound
+}
+
+// Submodules returns all the available submodules
+func (w *Worktree) Submodules() (Submodules, error) {
+	l := make(Submodules, 0)
+	m, err := w.readGitmodulesFile()
+	if err != nil || m == nil {
+		return l, err
+	}
+
+	c, err := w.r.Config()
+	for _, s := range m.Submodules {
+		l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
+	}
+
+	return l, nil
+}
+
+func (w *Worktree) newSubmodule(fromModules, fromConfig *config.Submodule) *Submodule {
+	m := &Submodule{w: w}
+	m.initialized = fromConfig != nil
+
+	if !m.initialized {
+		m.c = fromModules
+		return m
+	}
+
+	m.c = fromConfig
+	m.c.Path = fromModules.Path
+	return m
+}
+
+func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
+	f, err := w.fs.Open(gitmodulesFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	input, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+
+	m := config.NewModules()
+	return m, m.Unmarshal(input)
+}
+
+func (w *Worktree) readIndexEntry(path string) (index.Entry, error) {
+	var e index.Entry
+
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return e, err
+	}
+
+	for _, e := range idx.Entries {
+		if e.Name == path {
+			return e, nil
+		}
+	}
+
+	return e, fmt.Errorf("unable to find %q entry in the index", path)
 }
 
 // Status current status of a Worktree
@@ -281,17 +406,25 @@ func readDirAll(filesystem billy.Filesystem) (map[string]billy.FileInfo, error) 
 }
 
 func doReadDirAll(fs billy.Filesystem, path string, files map[string]billy.FileInfo) error {
-	if path == ".git" {
+	if path == defaultDotGitPath {
 		return nil
 	}
 
 	l, err := fs.ReadDir(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
 		return err
 	}
 
 	for _, info := range l {
 		file := fs.Join(path, info.Name())
+		if file == defaultDotGitPath {
+			continue
+		}
+
 		if !info.IsDir() {
 			files[file] = info
 			continue

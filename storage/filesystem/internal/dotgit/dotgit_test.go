@@ -434,3 +434,11 @@ func (s *SuiteDotGit) TestObjectNotFound(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(file, IsNil)
 }
+
+func (s *SuiteDotGit) TestSubmodules(c *C) {
+	fs := fixtures.ByTag("submodule").One().DotGit()
+	dir := New(fs)
+
+	m := dir.Module("basic")
+	c.Assert(strings.HasSuffix(m.Base(), ".git/module/basic"), Equals, true)
+}

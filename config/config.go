@@ -32,14 +32,19 @@ var (
 // Config contains the repository configuration
 // ftp://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
 type Config struct {
-	// Core variables
 	Core struct {
 		// IsBare if true this repository is assumed to be bare and has no
-		// working directory associated with it
+		// working directory associated with it.
 		IsBare bool
+		// Worktree is the path to the root of the working tree.
+		Worktree string
 	}
-	// Remote list of repository remotes
+	// Remotes list of repository remotes, the key of the map is the name
+	// of the remote, should equal to RemoteConfig.Name.
 	Remotes map[string]*RemoteConfig
+	// Submodules list of repository submodules, the key of the map is the name
+	// of the submodule, should equal to Submodule.Name.
+	Submodules map[string]*Submodule
 
 	// contains the raw information of a config file, the main goal is preserve
 	// the parsed information from the original format, to avoid missing
@@ -47,15 +52,16 @@ type Config struct {
 	raw *format.Config
 }
 
-// NewConfig returns a new empty Config
+// NewConfig returns a new empty Config.
 func NewConfig() *Config {
 	return &Config{
-		Remotes: make(map[string]*RemoteConfig, 0),
-		raw:     format.New(),
+		Remotes:    make(map[string]*RemoteConfig, 0),
+		Submodules: make(map[string]*Submodule, 0),
+		raw:        format.New(),
 	}
 }
 
-// Validate validates the fields and sets the default values
+// Validate validates the fields and sets the default values.
 func (c *Config) Validate() error {
 	for name, r := range c.Remotes {
 		if r.Name != name {
@@ -71,14 +77,16 @@ func (c *Config) Validate() error {
 }
 
 const (
-	remoteSection = "remote"
-	coreSection   = "core"
-	fetchKey      = "fetch"
-	urlKey        = "url"
-	bareKey       = "bare"
+	remoteSection    = "remote"
+	submoduleSection = "submodule"
+	coreSection      = "core"
+	fetchKey         = "fetch"
+	urlKey           = "url"
+	bareKey          = "bare"
+	worktreeKey      = "worktree"
 )
 
-// Unmarshal parses a git-config file and stores it
+// Unmarshal parses a git-config file and stores it.
 func (c *Config) Unmarshal(b []byte) error {
 	r := bytes.NewBuffer(b)
 	d := format.NewDecoder(r)
@@ -89,6 +97,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	c.unmarshalCore()
+	c.unmarshalSubmodules()
 	return c.unmarshalRemotes()
 }
 
@@ -97,6 +106,8 @@ func (c *Config) unmarshalCore() {
 	if s.Options.Get(bareKey) == "true" {
 		c.Core.IsBare = true
 	}
+
+	c.Core.Worktree = s.Options.Get(worktreeKey)
 }
 
 func (c *Config) unmarshalRemotes() error {
@@ -113,10 +124,21 @@ func (c *Config) unmarshalRemotes() error {
 	return nil
 }
 
-// Marshal returns Config encoded as a git-config file
+func (c *Config) unmarshalSubmodules() {
+	s := c.raw.Section(submoduleSection)
+	for _, sub := range s.Subsections {
+		m := &Submodule{}
+		m.unmarshal(sub)
+
+		c.Submodules[m.Name] = m
+	}
+}
+
+// Marshal returns Config encoded as a git-config file.
 func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
 	c.marshalRemotes()
+	c.marshalSubmodules()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.raw); err != nil {
@@ -129,6 +151,10 @@ func (c *Config) Marshal() ([]byte, error) {
 func (c *Config) marshalCore() {
 	s := c.raw.Section(coreSection)
 	s.SetOption(bareKey, fmt.Sprintf("%t", c.Core.IsBare))
+
+	if c.Core.Worktree != "" {
+		s.SetOption(worktreeKey, c.Core.Worktree)
+	}
 }
 
 func (c *Config) marshalRemotes() {
@@ -142,7 +168,22 @@ func (c *Config) marshalRemotes() {
 	}
 }
 
-// RemoteConfig contains the configuration for a given remote repository
+func (c *Config) marshalSubmodules() {
+	s := c.raw.Section(submoduleSection)
+	s.Subsections = make(format.Subsections, len(c.Submodules))
+
+	var i int
+	for _, r := range c.Submodules {
+		section := r.marshal()
+		// the submodule section at config is a subset of the .gitmodule file
+		// we should remove the non-valid options for the config file.
+		section.RemoveOption(pathKey)
+		s.Subsections[i] = section
+		i++
+	}
+}
+
+// RemoteConfig contains the configuration for a given remote repository.
 type RemoteConfig struct {
 	// Name of the remote
 	Name string
@@ -156,7 +197,7 @@ type RemoteConfig struct {
 	raw *format.Subsection
 }
 
-// Validate validates the fields and sets the default values
+// Validate validates the fields and sets the default values.
 func (c *RemoteConfig) Validate() error {
 	if c.Name == "" {
 		return ErrRemoteConfigEmptyName

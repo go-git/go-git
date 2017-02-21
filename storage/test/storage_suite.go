@@ -11,6 +11,7 @@ import (
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/index"
 	"srcd.works/go-git.v4/plumbing/storer"
+	"srcd.works/go-git.v4/storage"
 
 	. "gopkg.in/check.v1"
 )
@@ -21,6 +22,7 @@ type Storer interface {
 	storer.ShallowStorer
 	storer.IndexStorer
 	config.ConfigStorer
+	storage.ModuleStorer
 }
 
 type TestObject struct {
@@ -321,7 +323,9 @@ func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {
 
 	cfg, err := s.Storer.Config()
 	c.Assert(err, IsNil)
-	c.Assert(cfg, DeepEquals, expected)
+
+	c.Assert(cfg.Core.IsBare, DeepEquals, expected.Core.IsBare)
+	c.Assert(cfg.Remotes, DeepEquals, expected.Remotes)
 }
 
 func (s *BaseStorageSuite) TestIndex(c *C) {
@@ -351,6 +355,16 @@ func (s *BaseStorageSuite) TestSetConfigInvalid(c *C) {
 
 	err := s.Storer.SetConfig(cfg)
 	c.Assert(err, NotNil)
+}
+
+func (s *BaseStorageSuite) TestModule(c *C) {
+	storer, err := s.Storer.Module("foo")
+	c.Assert(err, IsNil)
+	c.Assert(storer, NotNil)
+
+	storer, err = s.Storer.Module("foo")
+	c.Assert(err, IsNil)
+	c.Assert(storer, NotNil)
 }
 
 func objectEquals(a plumbing.EncodedObject, b plumbing.EncodedObject) error {

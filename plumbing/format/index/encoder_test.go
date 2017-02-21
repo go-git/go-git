@@ -26,6 +26,11 @@ func (s *IndexSuite) TestEncode(c *C) {
 		}, {
 			CreatedAt:  time.Now(),
 			ModifiedAt: time.Now(),
+			Name:       "bar",
+			Size:       82,
+		}, {
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
 			Name:       strings.Repeat(" ", 20),
 			Size:       82,
 		}},
@@ -42,6 +47,11 @@ func (s *IndexSuite) TestEncode(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(idx, DeepEquals, output)
+
+	c.Assert(output.Entries[0].Name, Equals, strings.Repeat(" ", 20))
+	c.Assert(output.Entries[1].Name, Equals, "bar")
+	c.Assert(output.Entries[2].Name, Equals, "foo")
+
 }
 
 func (s *IndexSuite) TestEncodeUnsuportedVersion(c *C) {

@@ -4,7 +4,10 @@ import (
 	"io"
 	"os"
 
+	fixtures "github.com/src-d/go-git-fixtures"
+
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/storage/filesystem"
 
 	. "gopkg.in/check.v1"
 	"srcd.works/go-git.v4/plumbing/storer"
@@ -260,6 +263,44 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
 	}
 
 	c.Assert(count, Equals, 8)
+}
+
+func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
+	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	st, err := filesystem.NewStorage(dotgit)
+	c.Assert(err, IsNil)
+
+	hash := plumbing.NewHash("a692ec699bff9117c1ed91752afbb7d9d272ebef")
+	commit, err := GetCommit(st, hash)
+	c.Assert(err, IsNil)
+
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	expected := []string{
+		".gitmodules",
+		"basic",
+		"itself",
+	}
+
+	var count int
+	walker := NewTreeWalker(tree, true)
+	defer walker.Close()
+
+	for {
+		name, entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(entry, NotNil)
+		c.Assert(name, Equals, expected[count])
+
+		count++
+	}
+
+	c.Assert(count, Equals, 3)
 }
 
 var treeWalkerExpects = []struct {
