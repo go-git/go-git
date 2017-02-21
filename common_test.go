@@ -7,7 +7,6 @@ import (
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/packfile"
 	"srcd.works/go-git.v4/plumbing/transport"
-	"srcd.works/go-git.v4/plumbing/transport/client"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/storage/memory"
 
@@ -29,7 +28,6 @@ type BaseSuite struct {
 
 func (s *BaseSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
-	s.installMockProtocol()
 	s.buildBasicRepository(c)
 
 	s.cache = make(map[string]*Repository, 0)
@@ -37,7 +35,6 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 
 func (s *BaseSuite) TearDownSuite(c *C) {
 	s.Suite.TearDownSuite(c)
-	s.uninstallMockProtocol()
 }
 
 func (s *BaseSuite) buildBasicRepository(c *C) {
@@ -90,15 +87,6 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 
 	s.cache[h] = r
 	return r
-}
-
-func (s *BaseSuite) installMockProtocol() {
-	s.backupProtocol = client.Protocols["https"]
-	client.InstallProtocol("https", nil)
-}
-
-func (s *BaseSuite) uninstallMockProtocol() {
-	client.InstallProtocol("https", s.backupProtocol)
 }
 
 func (s *BaseSuite) GetBasicLocalRepositoryURL() string {

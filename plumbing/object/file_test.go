@@ -254,7 +254,7 @@ func (s *FileSuite) TestFileIterSubmodule(c *C) {
 
 	c.Assert(err, IsNil)
 
-	hash := plumbing.NewHash("a692ec699bff9117c1ed91752afbb7d9d272ebef")
+	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)
 	c.Assert(err, IsNil)
 
@@ -263,6 +263,7 @@ func (s *FileSuite) TestFileIterSubmodule(c *C) {
 
 	expected := []string{
 		".gitmodules",
+		"README.md",
 	}
 
 	var count int
@@ -273,5 +274,5 @@ func (s *FileSuite) TestFileIterSubmodule(c *C) {
 		return nil
 	})
 
-	c.Assert(count, Equals, 1)
+	c.Assert(count, Equals, 2)
 }

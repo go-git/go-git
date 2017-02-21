@@ -270,7 +270,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 	st, err := filesystem.NewStorage(dotgit)
 	c.Assert(err, IsNil)
 
-	hash := plumbing.NewHash("a692ec699bff9117c1ed91752afbb7d9d272ebef")
+	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)
 	c.Assert(err, IsNil)
 
@@ -279,6 +279,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 
 	expected := []string{
 		".gitmodules",
+		"README.md",
 		"basic",
 		"itself",
 	}
@@ -300,7 +301,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 		count++
 	}
 
-	c.Assert(count, Equals, 3)
+	c.Assert(count, Equals, 4)
 }
 
 var treeWalkerExpects = []struct {
