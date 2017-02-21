@@ -249,7 +249,9 @@ func (s *FileSuite) TestFileIter(c *C) {
 }
 
 func (s *FileSuite) TestFileIterSubmodule(c *C) {
-	st, err := filesystem.NewStorage(fixtures.ByTag("submodule").One().DotGit())
+	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	st, err := filesystem.NewStorage(dotgit)
+
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("a692ec699bff9117c1ed91752afbb7d9d272ebef")

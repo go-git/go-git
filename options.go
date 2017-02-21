@@ -10,48 +10,48 @@ import (
 )
 
 // SubmoduleRescursivity defines how depth will affect any submodule recursive
-// operation
-type SubmoduleRescursivity int
+// operation.
+type SubmoduleRescursivity uint
 
 const (
-	// DefaultRemoteName name of the default Remote, just like git command
+	// DefaultRemoteName name of the default Remote, just like git command.
 	DefaultRemoteName = "origin"
 
-	// NoRecursivity disables the recursion for a submodule operation
-	NoRecursivity SubmoduleRescursivity = 0
-	// DefaultRecursivity allow recursion in a submodule operation
-	DefaultRecursivity SubmoduleRescursivity = 10
+	// NoRecurseSubmodules disables the recursion for a submodule operation.
+	NoRecurseSubmodules SubmoduleRescursivity = 0
+	// DefaultSubmoduleRecursionDepth allow recursion in a submodule operation.
+	DefaultSubmoduleRecursionDepth SubmoduleRescursivity = 10
 )
 
 var (
 	ErrMissingURL = errors.New("URL field is required")
 )
 
-// CloneOptions describes how a clone should be performed
+// CloneOptions describes how a clone should be performed.
 type CloneOptions struct {
-	// The (possibly remote) repository URL to clone from
+	// The (possibly remote) repository URL to clone from.
 	URL string
-	// Auth credentials, if required, to use with the remote repository
+	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
-	// Name of the remote to be added, by default `origin`
+	// Name of the remote to be added, by default `origin`.
 	RemoteName string
-	// Remote branch to clone
+	// Remote branch to clone.
 	ReferenceName plumbing.ReferenceName
-	// Fetch only ReferenceName if true
+	// Fetch only ReferenceName if true.
 	SingleBranch bool
-	// Limit fetching to the specified number of commits
+	// Limit fetching to the specified number of commits.
 	Depth int
 	// RecurseSubmodules after the clone is created, initialize all submodules
 	// within, using their default settings. This option is ignored if the
-	// cloned repository does not have a worktree
+	// cloned repository does not have a worktree.
 	RecurseSubmodules SubmoduleRescursivity
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
-	// no-progress, is sent to the server to avoid send this information
+	// no-progress, is sent to the server to avoid send this information.
 	Progress sideband.Progress
 }
 
-// Validate validates the fields and sets the default values
+// Validate validates the fields and sets the default values.
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
 		return ErrMissingURL
@@ -68,7 +68,7 @@ func (o *CloneOptions) Validate() error {
 	return nil
 }
 
-// PullOptions describes how a pull should be performed
+// PullOptions describes how a pull should be performed.
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
@@ -78,14 +78,14 @@ type PullOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits.
 	Depth int
-	// Auth credentials, if required, to use with the remote repository
+	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// RecurseSubmodules controls if new commits of all populated submodules
-	// should be fetched too
+	// should be fetched too.
 	RecurseSubmodules SubmoduleRescursivity
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
-	// no-progress, is sent to the server to avoid send this information
+	// no-progress, is sent to the server to avoid send this information.
 	Progress sideband.Progress
 }
 
@@ -110,15 +110,15 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
-	// Auth credentials, if required, to use with the remote repository
+	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
-	// no-progress, is sent to the server to avoid send this information
+	// no-progress, is sent to the server to avoid send this information.
 	Progress sideband.Progress
 }
 
-// Validate validates the fields and sets the default values
+// Validate validates the fields and sets the default values.
 func (o *FetchOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -133,18 +133,18 @@ func (o *FetchOptions) Validate() error {
 	return nil
 }
 
-// PushOptions describes how a push should be performed
+// PushOptions describes how a push should be performed.
 type PushOptions struct {
 	// RemoteName is the name of the remote to be pushed to.
 	RemoteName string
 	// RefSpecs specify what destination ref to update with what source
 	// object. A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
-	// Auth credentials, if required, to use with the remote repository
+	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 }
 
-// Validate validates the fields and sets the default values
+// Validate validates the fields and sets the default values.
 func (o *PushOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
@@ -165,11 +165,11 @@ func (o *PushOptions) Validate() error {
 	return nil
 }
 
-// SubmoduleUpdateOptions describes how a submodule update should be performed
+// SubmoduleUpdateOptions describes how a submodule update should be performed.
 type SubmoduleUpdateOptions struct {
-	// Init initializes the submodules recorded in the index
+	// Init, if true initializes the submodules recorded in the index.
 	Init bool
-	// NoFetch tell to the update command to don’t fetch new objects from the
+	// NoFetch tell to the update command to not fetch new objects from the
 	// remote site.
 	NoFetch bool
 	// RecurseSubmodules the update is performed not only in the submodules of

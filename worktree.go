@@ -273,7 +273,6 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 
 	m := config.NewModules()
 	return m, m.Unmarshal(input)
-
 }
 
 func (w *Worktree) readIndexEntry(path string) (index.Entry, error) {

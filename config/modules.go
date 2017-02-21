@@ -15,7 +15,7 @@ var (
 // Modules defines the submodules properties, represents a .gitmodules file
 // https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
 type Modules struct {
-	// Submodules is a map of submodules being the key the name of the submodule
+	// Submodules is a map of submodules being the key the name of the submodule.
 	Submodules map[string]*Submodule
 
 	raw *format.Config
@@ -34,7 +34,7 @@ const (
 	branchKey = "branch"
 )
 
-// Unmarshal parses a git-config file and stores it
+// Unmarshal parses a git-config file and stores it.
 func (m *Modules) Unmarshal(b []byte) error {
 	r := bytes.NewBuffer(b)
 	d := format.NewDecoder(r)
@@ -55,7 +55,7 @@ func (m *Modules) Unmarshal(b []byte) error {
 	return nil
 }
 
-// Marshal returns Modules encoded as a git-config file
+// Marshal returns Modules encoded as a git-config file.
 func (m *Modules) Marshal() ([]byte, error) {
 	s := m.raw.Section(submoduleSection)
 	s.Subsections = make(format.Subsections, len(m.Submodules))
@@ -74,12 +74,12 @@ func (m *Modules) Marshal() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Submodule defines a submodule
+// Submodule defines a submodule.
 type Submodule struct {
 	// Name module name
 	Name string
 	// Path defines the path, relative to the top-level directory of the Git
-	// working tree,
+	// working tree.
 	Path string
 	// URL defines a URL from which the submodule repository can be cloned.
 	URL string
@@ -88,11 +88,11 @@ type Submodule struct {
 	Branch string
 
 	// raw representation of the subsection, filled by marshal or unmarshal are
-	// called
+	// called.
 	raw *format.Subsection
 }
 
-// Validate validates the fields and sets the default values
+// Validate validates the fields and sets the default values.
 func (m *Submodule) Validate() error {
 	if m.Path == "" {
 		return ErrModuleEmptyPath

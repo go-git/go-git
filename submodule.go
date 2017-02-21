@@ -107,7 +107,7 @@ func (s *Submodule) Update(o *SubmoduleUpdateOptions) error {
 }
 
 func (s *Submodule) doRecrusiveUpdate(r *Repository, o *SubmoduleUpdateOptions) error {
-	if o.RecurseSubmodules == NoRecursivity {
+	if o.RecurseSubmodules == NoRecurseSubmodules {
 		return nil
 	}
 

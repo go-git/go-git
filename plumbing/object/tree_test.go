@@ -266,7 +266,8 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
 }
 
 func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
-	st, err := filesystem.NewStorage(fixtures.ByTag("submodule").One().DotGit())
+	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	st, err := filesystem.NewStorage(dotgit)
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("a692ec699bff9117c1ed91752afbb7d9d272ebef")
@@ -284,6 +285,8 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 
 	var count int
 	walker := NewTreeWalker(tree, true)
+	defer walker.Close()
+
 	for {
 		name, entry, err := walker.Next()
 		if err == io.EOF {

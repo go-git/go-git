@@ -332,13 +332,11 @@ func (r *Repository) clone(o *CloneOptions) error {
 		Progress: o.Progress,
 	})
 	if err != nil {
-
 		return err
 	}
 
 	head, err := storer.ResolveReference(remoteRefs, o.ReferenceName)
 	if err != nil {
-
 		return err
 	}
 
@@ -350,7 +348,7 @@ func (r *Repository) clone(o *CloneOptions) error {
 		return err
 	}
 
-	if o.RecurseSubmodules != NoRecursivity && r.wt != nil {
+	if o.RecurseSubmodules != NoRecurseSubmodules && r.wt != nil {
 		if err := r.updateSubmodules(o.RecurseSubmodules); err != nil {
 			return err
 		}
@@ -553,7 +551,7 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return err
 	}
 
-	if o.RecurseSubmodules != NoRecursivity && r.wt != nil {
+	if o.RecurseSubmodules != NoRecurseSubmodules && r.wt != nil {
 		if err := r.updateSubmodules(o.RecurseSubmodules); err != nil {
 			return err
 		}

@@ -220,6 +220,11 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	return storer.NewReferenceSliceIter(refs), nil
 }
 
+func (r ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
+	delete(r, n)
+	return nil
+}
+
 type ShallowStorage []plumbing.Hash
 
 func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
@@ -234,9 +239,12 @@ func (s ShallowStorage) Shallow() ([]plumbing.Hash, error) {
 type ModuleStorage map[string]*Storage
 
 func (s ModuleStorage) Module(name string) (storage.Storer, error) {
-	if _, ok := s[name]; !ok {
-		s[name] = NewStorage()
+	if m, ok := s[name]; ok {
+		return m, nil
 	}
 
-	return s[name], nil
+	m := NewStorage()
+	s[name] = m
+
+	return m, nil
 }
