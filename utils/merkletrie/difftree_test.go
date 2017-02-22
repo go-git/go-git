@@ -427,3 +427,13 @@ func (s *DiffTreeSuite) TestSameNames(c *C) {
 		},
 	})
 }
+
+func (s *DiffTreeSuite) TestIssue275(c *C) {
+	do(c, []diffTreeTest{
+		{
+			"(a(b(c.go<1>) b.go<2>))",
+			"(a(b(c.go<1> d.go<3>) b.go<2>))",
+			"+a/b/d.go",
+		},
+	})
+}

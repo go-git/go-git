@@ -249,7 +249,6 @@ package merkletrie
 
 import (
 	"fmt"
-	"strings"
 
 	"srcd.works/go-git.v4/utils/merkletrie/noder"
 )
@@ -302,7 +301,7 @@ func diffNodes(changes *Changes, ii *doubleIter) error {
 	var err error
 
 	// compare their full paths as strings
-	switch strings.Compare(from.String(), to.String()) {
+	switch from.Compare(to) {
 	case -1:
 		if err = changes.AddRecursiveDelete(from); err != nil {
 			return err

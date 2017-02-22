@@ -29,30 +29,24 @@ func decodeDir(data []byte, isRoot bool) (*dir, error) {
 		return nil, io.EOF
 	}
 
-	// get the name of the dir (a single letter) and remove it from the
-	// data.  In case the there is no name and isRoot is true, just use
-	// "" as the name.
+	// get the name of the dir and remove it from the data.  In case the
+	// there is no name and isRoot is true, just use "" as the name.
 	var name string
-	if data[0] == dirStartMark {
+	switch end := bytes.IndexRune(data, dirStartMark); end {
+	case -1:
+		return nil, fmt.Errorf("%c not found")
+	case 0:
 		if isRoot {
 			name = ""
 		} else {
 			return nil, fmt.Errorf("inner unnamed dirs not allowed: %s", data)
 		}
-	} else {
-		name = string(data[0])
-		data = data[1:]
+	default:
+		name = string(data[0:end])
+		data = data[end:]
 	}
 
-	// check that data is enclosed in parents and it is big enough and
-	// remove them.
-	if len(data) < 2 {
-		return nil, fmt.Errorf("malformed data: too short")
-	}
-	if data[0] != dirStartMark {
-		return nil, fmt.Errorf("malformed data: first %q not found",
-			dirStartMark)
-	}
+	// check data ends with the dirEndMark
 	if data[len(data)-1] != dirEndMark {
 		return nil, fmt.Errorf("malformed data: last %q not found",
 			dirEndMark)
@@ -67,11 +61,11 @@ func decodeDir(data []byte, isRoot bool) (*dir, error) {
 	return newDir(name, children)
 }
 
-func isNumber(b byte) bool {
+func isNumber(b rune) bool {
 	return '0' <= b && b <= '9'
 }
 
-func isLetter(b byte) bool {
+func isLetter(b rune) bool {
 	return ('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
 }
 
@@ -126,64 +120,77 @@ func decodeChild(data []byte) (noder.Noder, error) {
 		return nil, fmt.Errorf("element too short: %s", clean)
 	}
 
-	switch clean[1] {
-	case fileStartMark:
-		return decodeFile(clean)
-	case dirStartMark:
+	fileNameEnd := bytes.IndexRune(data, fileStartMark)
+	dirNameEnd := bytes.IndexRune(data, dirStartMark)
+	switch {
+	case fileNameEnd == -1 && dirNameEnd == -1:
+		return nil, fmt.Errorf(
+			"malformed child, no file or dir start mark found")
+	case fileNameEnd == -1:
 		return decodeDir(clean, nonRoot)
-	default:
-		if clean[0] == dirStartMark {
-			return nil, fmt.Errorf("non-root unnamed dir are not allowed: %s",
-				clean)
-		}
-		return nil, fmt.Errorf("malformed dir element: %s", clean)
+	case dirNameEnd == -1:
+		return decodeFile(clean)
+	case dirNameEnd < fileNameEnd:
+		return decodeDir(clean, nonRoot)
+	case dirNameEnd > fileNameEnd:
+		return decodeFile(clean)
 	}
+
+	return nil, fmt.Errorf("unreachable")
 }
 
 func decodeFile(data []byte) (noder.Noder, error) {
-	if len(data) == 3 {
-		return decodeEmptyFile(data)
+	nameEnd := bytes.IndexRune(data, fileStartMark)
+	if nameEnd == -1 {
+		return nil, fmt.Errorf("malformed file, no %c found", fileStartMark)
+	}
+	contentStart := nameEnd + 1
+	contentEnd := bytes.IndexRune(data, fileEndMark)
+	if contentEnd == -1 {
+		return nil, fmt.Errorf("malformed file, no %c found", fileEndMark)
 	}
 
-	if len(data) != 4 {
-		return nil, fmt.Errorf("length is not 4")
+	switch {
+	case nameEnd > contentEnd:
+		return nil, fmt.Errorf("malformed file, found %c before %c",
+			fileEndMark, fileStartMark)
+	case contentStart == contentEnd:
+		name := string(data[:nameEnd])
+		if !validFileName(name) {
+			return nil, fmt.Errorf("invalid file name")
+		}
+		return newFile(name, "")
+	default:
+		name := string(data[:nameEnd])
+		if !validFileName(name) {
+			return nil, fmt.Errorf("invalid file name")
+		}
+		contents := string(data[contentStart:contentEnd])
+		if !validFileContents(contents) {
+			return nil, fmt.Errorf("invalid file contents")
+		}
+		return newFile(name, contents)
 	}
-	if !isLetter(data[0]) {
-		return nil, fmt.Errorf("name must be a letter")
-	}
-	if data[1] != '<' {
-		return nil, fmt.Errorf("wrong file start character")
-	}
-	if !isNumber(data[2]) {
-		return nil, fmt.Errorf("contents must be a number")
-	}
-	if data[3] != '>' {
-		return nil, fmt.Errorf("wrong file end character")
-	}
-
-	name := string(data[0])
-	contents := string(data[2])
-
-	return newFile(name, contents)
 }
 
-func decodeEmptyFile(data []byte) (noder.Noder, error) {
-	if len(data) != 3 {
-		return nil, fmt.Errorf("length is not 3: %s", data)
-	}
-	if !isLetter(data[0]) {
-		return nil, fmt.Errorf("name must be a letter: %s", data)
-	}
-	if data[1] != '<' {
-		return nil, fmt.Errorf("wrong file start character: %s", data)
-	}
-	if data[2] != '>' {
-		return nil, fmt.Errorf("wrong file end character: %s", data)
+func validFileName(s string) bool {
+	for _, c := range s {
+		if !isLetter(c) && c != '.' {
+			return false
+		}
 	}
 
-	name := string(data[0])
+	return true
+}
 
-	return newFile(name, "")
+func validFileContents(s string) bool {
+	for _, c := range s {
+		if !isNumber(c) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // HashEqual returns if a and b have the same hash.

@@ -1,6 +1,9 @@
 package noder
 
-import "bytes"
+import (
+	"bytes"
+	"strings"
+)
 
 // Path values represent a noder and its ancestors.  The root goes first
 // and the actual final noder the path is refering to will be the last.
@@ -56,4 +59,30 @@ func (p Path) Children() ([]Noder, error) {
 // path has.
 func (p Path) NumChildren() (int, error) {
 	return p.Last().NumChildren()
+}
+
+// Compare returns -1, 0 or 1 if the path p is smaller, equal or bigger
+// than other, in "directory order"; for example:
+//
+// "a" < "b"
+// "a/b/c/d/z" < "b"
+// "a/b/a" > "a/b"
+func (p Path) Compare(other Path) int {
+	i := 0
+	for {
+		switch {
+		case len(other) == len(p) && i == len(p):
+			return 0
+		case i == len(other):
+			return 1
+		case i == len(p):
+			return -1
+		default:
+			cmp := strings.Compare(p[i].Name(), other[i].Name())
+			if cmp != 0 {
+				return cmp
+			}
+		}
+		i++
+	}
 }

@@ -18,13 +18,15 @@ will create a noder as follows:
 
 Files are expressed as:
 
-- a single letter for the name of the file.
+- one or more letters and dots for the name of the file
 
 - a single number, between angle brackets, for the contents of the file.
 
+- examples: a<1>, foo.go<2>.
+
 Directories are expressed as:
 
-- a single letter for the name of the directory.
+- one or more letters for the name of the directory.
 
 - its elements between parents, separated with spaces, in any order.
 

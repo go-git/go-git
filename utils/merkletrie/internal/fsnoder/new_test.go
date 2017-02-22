@@ -40,15 +40,8 @@ func (s *FSNoderSuite) TestUnnamedInnerFails(c *C) {
 	c.Assert(err, Not(IsNil))
 }
 
-func (s *FSNoderSuite) TestMalformedInnerName(c *C) {
-	_, err := New("(ab<>)")
-	c.Assert(err, Not(IsNil))
-}
-
 func (s *FSNoderSuite) TestMalformedFile(c *C) {
-	_, err := New("(a<12>)")
-	c.Assert(err, Not(IsNil))
-	_, err = New("(4<>)")
+	_, err := New("(4<>)")
 	c.Assert(err, Not(IsNil))
 	_, err = New("(4<1>)")
 	c.Assert(err, Not(IsNil))
@@ -66,13 +59,11 @@ func (s *FSNoderSuite) TestMalformedFile(c *C) {
 	_, err = decodeFile([]byte("a<1?"))
 	c.Assert(err, Not(IsNil))
 
-	_, err = decodeEmptyFile([]byte("a<1>"))
+	_, err = decodeFile([]byte("a?>"))
 	c.Assert(err, Not(IsNil))
-	_, err = decodeEmptyFile([]byte("a?>"))
+	_, err = decodeFile([]byte("1<>"))
 	c.Assert(err, Not(IsNil))
-	_, err = decodeEmptyFile([]byte("1<>"))
-	c.Assert(err, Not(IsNil))
-	_, err = decodeEmptyFile([]byte("a<?"))
+	_, err = decodeFile([]byte("a<?"))
 	c.Assert(err, Not(IsNil))
 }
 
@@ -204,6 +195,32 @@ func (s *FSNoderSuite) TestDirWithEmtpyFileSameName(c *C) {
 	f, err := newFile("A", "")
 	c.Assert(err, IsNil)
 	A, err := newDir("A", []noder.Noder{f})
+	c.Assert(err, IsNil)
+	expected, err := newDir("", []noder.Noder{A})
+	c.Assert(err, IsNil)
+
+	check(c, input, expected)
+}
+
+func (s *FSNoderSuite) TestDirWithFileLongContents(c *C) {
+	input := "(A(a<12>))"
+
+	a1, err := newFile("a", "12")
+	c.Assert(err, IsNil)
+	A, err := newDir("A", []noder.Noder{a1})
+	c.Assert(err, IsNil)
+	expected, err := newDir("", []noder.Noder{A})
+	c.Assert(err, IsNil)
+
+	check(c, input, expected)
+}
+
+func (s *FSNoderSuite) TestDirWithFileLongName(c *C) {
+	input := "(A(abc<12>))"
+
+	a1, err := newFile("abc", "12")
+	c.Assert(err, IsNil)
+	A, err := newDir("A", []noder.Noder{a1})
 	c.Assert(err, IsNil)
 	expected, err := newDir("", []noder.Noder{A})
 	c.Assert(err, IsNil)
