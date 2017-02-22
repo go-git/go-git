@@ -1,6 +1,7 @@
 package difftree
 
 import (
+	"os"
 	"sort"
 	"testing"
 
@@ -352,4 +353,27 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 
 		assertChanges(obtained, c)
 	}
+}
+
+func (s *DiffTreeSuite) TestIssue279(c *C) {
+	// HashEqual should ignore files if the only change is from a 100664
+	// mode to a 100644 or vice versa.
+	from := &treeNoder{
+		hash: plumbing.NewHash("d08e895238bac36d8220586fdc28c27e1a7a76d3"),
+		mode: os.FileMode(0100664),
+	}
+	to := &treeNoder{
+		hash: plumbing.NewHash("d08e895238bac36d8220586fdc28c27e1a7a76d3"),
+		mode: os.FileMode(0100644),
+	}
+	c.Assert(hashEqual(from, to), Equals, true)
+	c.Assert(hashEqual(to, from), Equals, true)
+
+	// but should detect if the contents of the file also changed.
+	to = &treeNoder{
+		hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		mode: os.FileMode(0100644),
+	}
+	c.Assert(hashEqual(from, to), Equals, false)
+	c.Assert(hashEqual(to, from), Equals, false)
 }
