@@ -1,17 +1,16 @@
-package difftree
+package object
 
 import (
 	"bytes"
 	"os"
 
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/utils/merkletrie"
 	"srcd.works/go-git.v4/utils/merkletrie/noder"
 )
 
 // DiffTree compares the content and mode of the blobs found via two
 // tree objects.
-func DiffTree(a, b *object.Tree) ([]*Change, error) {
+func DiffTree(a, b *Tree) (Changes, error) {
 	from := newTreeNoder(a)
 	to := newTreeNoder(b)
 
@@ -50,8 +49,8 @@ func equivalentMode(a, b []byte) bool {
 }
 
 var (
-	file           = modeToBytes(object.FileMode)
-	fileDeprecated = modeToBytes(object.FileModeDeprecated)
+	file           = modeToBytes(FileMode)
+	fileDeprecated = modeToBytes(FileModeDeprecated)
 	// remove this by fixing plumbing.Object mode ASAP
 	fileGoGit = modeToBytes(os.FileMode(0644))
 )

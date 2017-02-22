@@ -1,13 +1,11 @@
-package difftree
+package object
 
 import (
 	"os"
 	"sort"
-	"testing"
 
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/packfile"
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/storage/memory"
@@ -16,8 +14,6 @@ import (
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 )
-
-func Test(t *testing.T) { TestingT(t) }
 
 type DiffTreeSuite struct {
 	fixtures.Suite
@@ -36,9 +32,9 @@ func (s *DiffTreeSuite) SetUpSuite(c *C) {
 }
 
 func (s *DiffTreeSuite) commitFromStorer(c *C, sto storer.EncodedObjectStorer,
-	h plumbing.Hash) *object.Commit {
+	h plumbing.Hash) *Commit {
 
-	commit, err := object.GetCommit(sto, h)
+	commit, err := GetCommit(sto, h)
 	c.Assert(err, IsNil)
 	return commit
 }
@@ -328,7 +324,7 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 		f := fixtures.ByURL(t.repository).One()
 		sto := s.storageFromPackfile(f)
 
-		var tree1, tree2 *object.Tree
+		var tree1, tree2 *Tree
 		var err error
 		if t.commit1 != "" {
 			tree1, err = s.commitFromStorer(c, sto,
@@ -347,6 +343,12 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 		obtained, err := DiffTree(tree1, tree2)
 		c.Assert(err, IsNil,
 			Commentf("subtest %d: unable to calculate difftree: %s", i, err))
+		obtainedFromMethod, err := tree1.Diff(tree2)
+		c.Assert(err, IsNil,
+			Commentf("subtest %d: unable to calculate difftree: %s. Result calling Diff method from Tree object returns an error", i, err))
+
+		c.Assert(obtained, DeepEquals, obtainedFromMethod)
+
 		c.Assert(equalChanges(obtained, t.expected, c), Equals, true,
 			Commentf("subtest:%d\nrepo=%s\ncommit1=%s\ncommit2=%s\nexpected=%s\nobtained=%s",
 				i, t.repository, t.commit1, t.commit2, t.expected, obtained))

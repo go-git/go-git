@@ -1,15 +1,14 @@
-package difftree
-
-// The folowing functions transform changes types form the merkletrie
-// package to changes types from this package.
+package object
 
 import (
 	"fmt"
 
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/utils/merkletrie"
 	"srcd.works/go-git.v4/utils/merkletrie/noder"
 )
+
+// The folowing functions transform changes types form the merkletrie
+// package to changes types from this package.
 
 func newChange(c merkletrie.Change) (*Change, error) {
 	ret := &Change{}
@@ -39,7 +38,7 @@ func newChangeEntry(p noder.Path) (ChangeEntry, error) {
 	return ChangeEntry{
 		Name: p.String(),
 		Tree: asTreeNoder.parent,
-		TreeEntry: object.TreeEntry{
+		TreeEntry: TreeEntry{
 			Name: asTreeNoder.name,
 			Mode: asTreeNoder.mode,
 			Hash: asTreeNoder.hash,
