@@ -14,8 +14,10 @@ const (
 	maxCopyLen = 0xffff
 )
 
-// GetDelta returns an offset delta that knows the way of how to transform
-// base object to target object
+// GetDelta returns an EncodedObject of type OFSDeltaObject. Base and Target object,
+// will be loaded into memory to be able to create the delta object.
+// To generate target again, you will need the obtained object and "base" one.
+// Error will be returned if base or target object cannot be read.
 func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	br, err := base.Reader()
 	if err != nil {

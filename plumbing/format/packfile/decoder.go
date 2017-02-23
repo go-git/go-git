@@ -300,8 +300,11 @@ func (d *Decoder) newObject() plumbing.EncodedObject {
 	return d.o.NewEncodedObject()
 }
 
-// DecodeObjectAt reads an object at the given location, if Decode wasn't called
-// previously objects offset should provided using the SetOffsets method
+// DecodeObjectAt reads an object at the given location. Every EncodedObject
+// returned is added into a internal index. This is intended to be able to regenerate
+// objects from deltas (offset deltas or reference deltas) without an package index
+// (.idx file). If Decode wasn't called previously objects offset should provided
+// using the SetOffsets method.
 func (d *Decoder) DecodeObjectAt(offset int64) (plumbing.EncodedObject, error) {
 	if !d.s.IsSeekable {
 		return nil, ErrNonSeekable
