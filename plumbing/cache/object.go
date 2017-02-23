@@ -11,13 +11,13 @@ type ObjectFIFO struct {
 	objects map[plumbing.Hash]plumbing.EncodedObject
 	order   *queue
 
-	maxSize    int64
-	actualSize int64
+	maxSize    FileSize
+	actualSize FileSize
 }
 
 // NewObjectFIFO returns an Object cache that keeps the newest objects that fit
 // into the specific memory size
-func NewObjectFIFO(size int64) *ObjectFIFO {
+func NewObjectFIFO(size FileSize) *ObjectFIFO {
 	return &ObjectFIFO{
 		objects: make(map[plumbing.Hash]plumbing.EncodedObject),
 		order:   newQueue(initialQueueSize),
@@ -30,7 +30,7 @@ func NewObjectFIFO(size int64) *ObjectFIFO {
 func (c *ObjectFIFO) Add(o plumbing.EncodedObject) {
 	// if the size of the object is bigger or equal than the cache size,
 	// skip it
-	if o.Size() >= c.maxSize {
+	if FileSize(o.Size()) >= c.maxSize {
 		return
 	}
 
@@ -44,14 +44,14 @@ func (c *ObjectFIFO) Add(o plumbing.EncodedObject) {
 		h := c.order.Pop()
 		o := c.objects[h]
 		if o != nil {
-			c.actualSize -= o.Size()
+			c.actualSize -= FileSize(o.Size())
 			delete(c.objects, h)
 		}
 	}
 
 	c.objects[o.Hash()] = o
 	c.order.Push(o.Hash())
-	c.actualSize += o.Size()
+	c.actualSize += FileSize(o.Size())
 }
 
 // Get returns an object by his hash. If the object is not found in the cache, it
