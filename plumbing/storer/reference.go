@@ -70,7 +70,7 @@ func (iter *ReferenceSliceIter) ForEach(cb func(*plumbing.Reference) error) erro
 				return nil
 			}
 
-			return nil
+			return err
 		}
 	}
 
