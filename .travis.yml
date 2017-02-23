@@ -10,6 +10,7 @@ env:
   - GIT_VERSION=v2.11.0
 
 matrix:
+  fast_finish: true
   allow_failures:
     - go: tip
 
