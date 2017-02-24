@@ -1,6 +1,7 @@
 package storer
 
 import (
+	"errors"
 	"io"
 
 	. "gopkg.in/check.v1"
@@ -45,6 +46,29 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEach(c *C) {
 		return nil
 	})
 
+	c.Assert(count, Equals, 2)
+}
+
+func (s *ReferenceSuite) TestReferenceSliceIterForEachError(c *C) {
+	slice := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("foo", "foo"),
+		plumbing.NewReferenceFromStrings("bar", "bar"),
+	}
+
+	i := NewReferenceSliceIter(slice)
+	var count int
+	exampleErr := errors.New("SOME ERROR")
+	err := i.ForEach(func(r *plumbing.Reference) error {
+		c.Assert(r == slice[count], Equals, true)
+		count++
+		if count == 2 {
+			return exampleErr
+		}
+
+		return nil
+	})
+
+	c.Assert(err, Equals, exampleErr)
 	c.Assert(count, Equals, 2)
 }
 
