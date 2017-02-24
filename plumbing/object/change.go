@@ -1,11 +1,10 @@
-package difftree
+package object
 
 import (
 	"bytes"
 	"fmt"
 	"strings"
 
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/utils/merkletrie"
 )
 
@@ -39,7 +38,7 @@ func (c *Change) Action() (merkletrie.Action, error) {
 
 // Files return the files before and after a change.
 // For insertions from will be nil. For deletions to will be nil.
-func (c *Change) Files() (from, to *object.File, err error) {
+func (c *Change) Files() (from, to *File, err error) {
 	action, err := c.Action()
 	if err != nil {
 		return
@@ -84,9 +83,9 @@ type ChangeEntry struct {
 	// Full path of the node using "/" as separator.
 	Name string
 	// Parent tree of the node that has changed.
-	Tree *object.Tree
+	Tree *Tree
 	// The entry of the node.
-	TreeEntry object.TreeEntry
+	TreeEntry TreeEntry
 }
 
 // Changes represents a collection of changes between two git trees.

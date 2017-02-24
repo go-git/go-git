@@ -1,11 +1,10 @@
-package difftree
+package object
 
 import (
 	"os"
 	"sort"
 
 	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/utils/merkletrie"
@@ -29,8 +28,8 @@ func (s *ChangeAdaptorSuite) SetUpSuite(c *C) {
 	s.Storer = sto
 }
 
-func (s *ChangeAdaptorSuite) tree(c *C, h plumbing.Hash) *object.Tree {
-	t, err := object.GetTree(s.Storer, h)
+func (s *ChangeAdaptorSuite) tree(c *C, h plumbing.Hash) *Tree {
+	t, err := GetTree(s.Storer, h)
 	c.Assert(err, IsNil)
 	return t
 }
@@ -38,7 +37,7 @@ func (s *ChangeAdaptorSuite) tree(c *C, h plumbing.Hash) *object.Tree {
 var _ = Suite(&ChangeAdaptorSuite{})
 
 // utility function to build Noders from a tree and an tree entry.
-func newNoder(t *object.Tree, e object.TreeEntry) noder.Noder {
+func newNoder(t *Tree, e TreeEntry) noder.Noder {
 	return &treeNoder{
 		parent: t,
 		name:   e.Name,
@@ -52,7 +51,7 @@ func newPath(nn ...noder.Noder) noder.Path { return noder.Path(nn) }
 
 func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode(c *C) {
 	hash := plumbing.NewHash("aaaa")
-	mode := object.FileMode
+	mode := FileMode
 
 	treeNoder := &treeNoder{
 		hash: hash,
@@ -72,8 +71,8 @@ func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode(c *C) {
 }
 
 func (s *ChangeAdaptorSuite) TestNewChangeInsert(c *C) {
-	tree := &object.Tree{}
-	entry := object.TreeEntry{
+	tree := &Tree{}
+	entry := TreeEntry{
 		Name: "name",
 		Mode: os.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
@@ -98,8 +97,8 @@ func (s *ChangeAdaptorSuite) TestNewChangeInsert(c *C) {
 }
 
 func (s *ChangeAdaptorSuite) TestNewChangeDelete(c *C) {
-	tree := &object.Tree{}
-	entry := object.TreeEntry{
+	tree := &Tree{}
+	entry := TreeEntry{
 		Name: "name",
 		Mode: os.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
@@ -124,8 +123,8 @@ func (s *ChangeAdaptorSuite) TestNewChangeDelete(c *C) {
 }
 
 func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
-	treeA := &object.Tree{}
-	entryA := object.TreeEntry{
+	treeA := &Tree{}
+	entryA := TreeEntry{
 		Name: "name",
 		Mode: os.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
@@ -134,8 +133,8 @@ func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
 	expectedFrom, err := newChangeEntry(pathA)
 	c.Assert(err, IsNil)
 
-	treeB := &object.Tree{}
-	entryB := object.TreeEntry{
+	treeB := &Tree{}
+	entryB := TreeEntry{
 		Name: "name",
 		Mode: os.FileMode(42),
 		Hash: plumbing.NewHash("bbbb"),
@@ -293,8 +292,8 @@ func (s *ChangeAdaptorSuite) TestChangeEntryFromNilIsZero(c *C) {
 }
 
 func (s *ChangeAdaptorSuite) TestChangeEntryFromSortPath(c *C) {
-	tree := &object.Tree{}
-	entry := object.TreeEntry{
+	tree := &Tree{}
+	entry := TreeEntry{
 		Name: "name",
 		Mode: os.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
@@ -310,15 +309,15 @@ func (s *ChangeAdaptorSuite) TestChangeEntryFromSortPath(c *C) {
 }
 
 func (s *ChangeAdaptorSuite) TestChangeEntryFromLongPath(c *C) {
-	treeA := &object.Tree{}
-	entryA := object.TreeEntry{
+	treeA := &Tree{}
+	entryA := TreeEntry{
 		Name: "nameA",
 		Mode: os.FileMode(42),
 		Hash: plumbing.NewHash("aaaa"),
 	}
 
-	treeB := &object.Tree{}
-	entryB := object.TreeEntry{
+	treeB := &Tree{}
+	entryB := TreeEntry{
 		Name: "nameB",
 		Mode: os.FileMode(24),
 		Hash: plumbing.NewHash("bbbb"),
@@ -352,16 +351,16 @@ func (s *ChangeAdaptorSuite) TestNewChangesEmpty(c *C) {
 }
 
 func (s *ChangeAdaptorSuite) TestNewChanges(c *C) {
-	treeA := &object.Tree{}
-	entryA := object.TreeEntry{Name: "nameA"}
+	treeA := &Tree{}
+	entryA := TreeEntry{Name: "nameA"}
 	pathA := newPath(newNoder(treeA, entryA))
 	changeA := merkletrie.Change{
 		From: nil,
 		To:   pathA,
 	}
 
-	treeB := &object.Tree{}
-	entryB := object.TreeEntry{Name: "nameB"}
+	treeB := &Tree{}
+	entryB := TreeEntry{Name: "nameB"}
 	pathB := newPath(newNoder(treeB, entryB))
 	changeB := merkletrie.Change{
 		From: pathB,

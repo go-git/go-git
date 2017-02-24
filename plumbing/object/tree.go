@@ -299,6 +299,11 @@ func (t *Tree) buildMap() {
 	}
 }
 
+// Diff returns a list of changes between this tree and the provided one
+func (from *Tree) Diff(to *Tree) (Changes, error) {
+	return DiffTree(from, to)
+}
+
 // treeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
 type treeEntryIter struct {
 	t   *Tree

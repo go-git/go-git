@@ -1,4 +1,4 @@
-package difftree
+package object
 
 // A treenoder is a helper type that wraps git trees into merkletrie
 // noders.
@@ -14,19 +14,18 @@ import (
 	"os"
 
 	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/utils/merkletrie/noder"
 )
 
 type treeNoder struct {
-	parent   *object.Tree // the root node is its own parent
-	name     string       // empty string for the root node
+	parent   *Tree  // the root node is its own parent
+	name     string // empty string for the root node
 	mode     os.FileMode
 	hash     plumbing.Hash
 	children []noder.Noder // memoized
 }
 
-func newTreeNoder(t *object.Tree) *treeNoder {
+func newTreeNoder(t *Tree) *treeNoder {
 	if t == nil {
 		return &treeNoder{}
 	}
@@ -94,9 +93,9 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 
 // Returns the children of a tree as treenoders.
 // Efficiency is key here.
-func transformChildren(t *object.Tree) ([]noder.Noder, error) {
+func transformChildren(t *Tree) ([]noder.Noder, error) {
 	var err error
-	var e object.TreeEntry
+	var e TreeEntry
 
 	// there will be more tree entries than children in the tree,
 	// due to submodules and empty directories, but I think it is still
@@ -104,7 +103,7 @@ func transformChildren(t *object.Tree) ([]noder.Noder, error) {
 	// is bigger than needed.
 	ret := make([]noder.Noder, 0, len(t.Entries))
 
-	walker := object.NewTreeWalker(t, false) // don't recurse
+	walker := NewTreeWalker(t, false) // don't recurse
 	// don't defer walker.Close() for efficiency reasons.
 	for {
 		_, e, err = walker.Next()

@@ -1,11 +1,10 @@
-package difftree
+package object
 
 import (
 	"os"
 	"sort"
 
 	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/utils/merkletrie"
@@ -29,8 +28,8 @@ func (s *ChangeSuite) SetUpSuite(c *C) {
 	s.Storer = sto
 }
 
-func (s *ChangeSuite) tree(c *C, h plumbing.Hash) *object.Tree {
-	t, err := object.GetTree(s.Storer, h)
+func (s *ChangeSuite) tree(c *C, h plumbing.Hash) *Tree {
+	t, err := GetTree(s.Storer, h)
 	c.Assert(err, IsNil)
 	return t
 }
@@ -58,7 +57,7 @@ func (s *ChangeSuite) TestInsert(c *C) {
 		To: ChangeEntry{
 			Name: path,
 			Tree: s.tree(c, tree),
-			TreeEntry: object.TreeEntry{
+			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
 				Hash: blob,
@@ -103,7 +102,7 @@ func (s *ChangeSuite) TestDelete(c *C) {
 		From: ChangeEntry{
 			Name: path,
 			Tree: s.tree(c, tree),
-			TreeEntry: object.TreeEntry{
+			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
 				Hash: blob,
@@ -153,7 +152,7 @@ func (s *ChangeSuite) TestModify(c *C) {
 		From: ChangeEntry{
 			Name: path,
 			Tree: s.tree(c, fromTree),
-			TreeEntry: object.TreeEntry{
+			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
 				Hash: fromBlob,
@@ -162,7 +161,7 @@ func (s *ChangeSuite) TestModify(c *C) {
 		To: ChangeEntry{
 			Name: path,
 			Tree: s.tree(c, toTree),
-			TreeEntry: object.TreeEntry{
+			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
 				Hash: toBlob,
@@ -226,7 +225,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 		From: ChangeEntry{
 			Name: path,
 			Tree: s.tree(c, fromTree),
-			TreeEntry: object.TreeEntry{
+			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
 				Hash: fromBlob,
@@ -243,7 +242,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 		To: ChangeEntry{
 			Name: path,
 			Tree: s.tree(c, toTree),
-			TreeEntry: object.TreeEntry{
+			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
 				Hash: toBlob,
