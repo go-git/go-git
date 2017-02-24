@@ -19,11 +19,12 @@ const (
 	maxTreeDepth      = 1024
 	startingStackSize = 8
 
-	FileMode       os.FileMode = 0100644
-	ExecutableMode os.FileMode = 0100755
-	SubmoduleMode  os.FileMode = 0160000
-	SymlinkMode    os.FileMode = 0120000
-	TreeMode       os.FileMode = 0040000
+	FileMode           os.FileMode = 0100644
+	FileModeDeprecated os.FileMode = 0100664
+	ExecutableMode     os.FileMode = 0100755
+	SubmoduleMode      os.FileMode = 0160000
+	SymlinkMode        os.FileMode = 0120000
+	TreeMode           os.FileMode = 0040000
 )
 
 // New errors defined by this package.
