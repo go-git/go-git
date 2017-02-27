@@ -23,7 +23,8 @@ type Encoder struct {
 }
 
 // NewEncoder creates a new packfile encoder using a specific Writer and
-// EncodedObjectStorer
+// EncodedObjectStorer. By default deltas used to generate the packfile will be
+// OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
 	h := plumbing.Hasher{
 		Hash: sha1.New(),

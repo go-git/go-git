@@ -13,7 +13,7 @@ const MaxResolveRecursion = 1024
 // is exceeded
 var ErrMaxResolveRecursion = errors.New("max. recursion level reached")
 
-// ReferenceStorer generic storage of references
+// ReferenceStorer is a generic storage of references.
 type ReferenceStorer interface {
 	SetReference(*plumbing.Reference) error
 	Reference(plumbing.ReferenceName) (*plumbing.Reference, error)
@@ -21,7 +21,7 @@ type ReferenceStorer interface {
 	RemoveReference(plumbing.ReferenceName) error
 }
 
-// ReferenceIter is a generic closable interface for iterating over references
+// ReferenceIter is a generic closable interface for iterating over references.
 type ReferenceIter interface {
 	Next() (*plumbing.Reference, error)
 	ForEach(func(*plumbing.Reference) error) error
@@ -82,7 +82,7 @@ func (iter *ReferenceSliceIter) Close() {
 	iter.pos = len(iter.series)
 }
 
-// ResolveReference resolve a SymbolicReference to a HashReference
+// ResolveReference resolves a SymbolicReference to a HashReference.
 func ResolveReference(s ReferenceStorer, n plumbing.ReferenceName) (*plumbing.Reference, error) {
 	r, err := s.Reference(n)
 	if err != nil || r == nil {
