@@ -361,12 +361,12 @@ var (
 )
 
 // uploadPack implements the git-upload-pack protocol.
-//
-// TODO support multi_ack mode
-// TODO support multi_ack_detailed mode
-// TODO support acks for common objects
-// TODO build a proper state machine for all these processing options
 func uploadPack(w io.WriteCloser, r io.Reader, req *packp.UploadPackRequest) error {
+	// TODO support multi_ack mode
+	// TODO support multi_ack_detailed mode
+	// TODO support acks for common objects
+	// TODO build a proper state machine for all these processing options
+
 	if err := req.UploadRequest.Encode(w); err != nil {
 		return fmt.Errorf("sending upload-req message: %s", err)
 	}

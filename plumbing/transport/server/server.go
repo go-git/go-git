@@ -421,8 +421,8 @@ func setHEAD(s storer.Storer, ar *packp.AdvRefs) error {
 	return nil
 }
 
-//TODO: add peeled references.
 func setReferences(s storer.Storer, ar *packp.AdvRefs) error {
+	//TODO: add peeled references.
 	iter, err := s.IterReferences()
 	if err != nil {
 		return err

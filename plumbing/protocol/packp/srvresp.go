@@ -14,13 +14,13 @@ const ackLineLen = 44
 
 // ServerResponse object acknowledgement from upload-pack service
 type ServerResponse struct {
-	// TODO: implement support for multi_ack or multi_ack_detailed responses
 	ACKs []plumbing.Hash
 }
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
 // the request was done with multi_ack or multi_ack_detailed capabilities
 func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
+	// TODO: implement support for multi_ack or multi_ack_detailed responses
 	if isMultiACK {
 		return errors.New("multi_ack and multi_ack_detailed are not supported")
 	}
