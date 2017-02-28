@@ -10,15 +10,18 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// References returns a References for the file at "path", the commits are
-// sorted in commit order. It stops searching a branch for a file upon reaching
-// the commit were the file was created.
+// References returns a slice of Commits for the file at "path", starting from
+// the commit provided that contains the file from the provided path. The last
+// commit into the returned slice is the commit where the file was created.
+// If the provided commit does not contains the specified path, a nil slice is
+// returned. The commits are sorted in commit order, newer to older.
 //
 // Caveats:
+//
 // - Moves and copies are not currently supported.
+//
 // - Cherry-picks are not detected unless there are no commits between them and
-//   therefore can appear repeated in the list.
-//   (see git path-id for hints on how to fix this).
+// therefore can appear repeated in the list. (see git path-id for hints on how to fix this).
 func References(c *object.Commit, path string) ([]*object.Commit, error) {
 	var result []*object.Commit
 	seen := make(map[plumbing.Hash]struct{}, 0)

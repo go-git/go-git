@@ -32,7 +32,7 @@ func newRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
-// Config return the config
+// Config returns the RemoteConfig object used to instantiate this Remote
 func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
 }

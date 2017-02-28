@@ -13,17 +13,21 @@ import (
 	"srcd.works/go-git.v4/utils/diff"
 )
 
+// BlameResult represents the result of a Blame operation
 type BlameResult struct {
-	Path  string
-	Rev   plumbing.Hash
+	// Path is the path of the File that we're blaming
+	Path string
+	// Rev is the hash of the specified Commit used to generate this result
+	Rev plumbing.Hash
+	// Lines contains every line with its authorship
 	Lines []*Line
 }
 
-// Blame returns the last commit that modified each line of a file in a
-// repository.
-//
-// The file to blame is identified by the input arguments: repo, commit and path.
-// The output is a slice of commits, one for each line in the file.
+// Blame returns a BlameResult that contains all the data needed to know the
+// last author of each line of an specified file starting the history from
+// a specified commit. The file to blame is identified by the input arguments:
+// commit and path. commit is a Commit object obtained from a Repository. Path
+// represents a path to a specific file contained into the repository.
 //
 // Blaming a file is a two step process:
 //
@@ -32,12 +36,6 @@ type BlameResult struct {
 //
 // 2. Then build a graph with a node for every line in every file in
 // the history of the file.
-//
-// Each node (line) holds the commit where it was introduced or
-// last modified. To achieve that we use the FORWARD algorithm
-// described in Zimmermann, et al. "Mining Version Archives for
-// Co-changed Lines", in proceedings of the Mining Software
-// Repositories workshop, Shanghai, May 22-23, 2006.
 //
 // Each node is assigned a commit: Start by the nodes in the first
 // commit. Assign that commit as the creator of all its lines.
@@ -98,8 +96,10 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 
 // Line values represent the contents and author of a line in BlamedResult values.
 type Line struct {
-	Author string // email address of the author of the line.
-	Text   string // original text of the line.
+	// Author is the email address of the last author that modified the line
+	Author string
+	// Text is the original text of the line.
+	Text string
 }
 
 func newLine(author, text string) *Line {
