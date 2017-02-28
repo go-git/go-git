@@ -11,11 +11,11 @@ import (
 )
 
 // Example of how to:
-// - Create a new repository into memory
-// - Create a new remote called "example"
+// - Create a new in-memory repository
+// - Create a new remote named "example"
 // - List remotes and print them
 // - Pull using the new remote "example"
-// - Iterate again the references, but only showing hash references, not simbolic ones
+// - Iterate the references again, but only showing hash references, not symbolic ones
 // - Remove remote "example"
 func main() {
 	// Create a new repository
