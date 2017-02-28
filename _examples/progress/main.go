@@ -7,6 +7,7 @@ import (
 	. "srcd.works/go-git.v4/_examples"
 )
 
+// Example of how to show the progress when you do a basic clone operation.
 func main() {
 	CheckArgs("<url>", "<directory>")
 	url := os.Args[1]

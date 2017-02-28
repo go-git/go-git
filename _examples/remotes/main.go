@@ -10,6 +10,13 @@ import (
 	"srcd.works/go-git.v4/storage/memory"
 )
 
+// Example of how to:
+// - Create a new repository into memory
+// - Create a new remote called "example"
+// - List remotes and print them
+// - Pull using the new remote "example"
+// - Iterate again the references, but only showing hash references, not simbolic ones
+// - Remove remote "example"
 func main() {
 	// Create a new repository
 	Info("git init")

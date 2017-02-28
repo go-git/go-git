@@ -8,6 +8,11 @@ import (
 	"srcd.works/go-git.v4/storage/memory"
 )
 
+// Example of how to:
+// - Clone a repository into memory
+// - Get the HEAD reference
+// - Using the HEAD reference, obtain the commit this reference is pointing to
+// - Using the commit, obtain its history and print it
 func main() {
 	// Clones the given repository, creating the remote, the local branches
 	// and fetching the objects, everything in memory:

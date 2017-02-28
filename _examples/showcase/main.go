@@ -11,6 +11,14 @@ import (
 	. "srcd.works/go-git.v4/_examples"
 )
 
+// Example of an specific use case:
+// - Clone a repository in a specific path
+// - Get the HEAD reference
+// - Using the HEAD reference, obtain the commit this reference is pointing to
+// - Print the commit content
+// - Using the commit, iterate all its files and print them
+// - Print all the commit history with commit messages, short hash and the
+// first line of the commit message
 func main() {
 	CheckArgs("<url> <path>")
 	url := os.Args[1]
