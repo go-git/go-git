@@ -9,7 +9,6 @@ import (
 
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/packfile"
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/protocol/packp"
 	"srcd.works/go-git.v4/plumbing/protocol/packp/capability"
 	"srcd.works/go-git.v4/plumbing/revlist"
@@ -153,26 +152,12 @@ func (s *upSession) UploadPack(req *packp.UploadPackRequest) (*packp.UploadPackR
 }
 
 func (s *upSession) objectsToUpload(req *packp.UploadPackRequest) ([]plumbing.Hash, error) {
-	commits, err := s.commitsToUpload(req.Wants)
+	haves, err := revlist.Objects(s.storer, req.Haves, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return revlist.Objects(s.storer, commits, req.Haves)
-}
-
-func (s *upSession) commitsToUpload(wants []plumbing.Hash) ([]*object.Commit, error) {
-	var commits []*object.Commit
-	for _, h := range wants {
-		c, err := object.GetCommit(s.storer, h)
-		if err != nil {
-			return nil, err
-		}
-
-		commits = append(commits, c)
-	}
-
-	return commits, nil
+	return revlist.Objects(s.storer, req.Wants, haves)
 }
 
 func (*upSession) setSupportedCapabilities(c *capability.List) error {

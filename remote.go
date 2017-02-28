@@ -8,7 +8,6 @@ import (
 	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
 	"srcd.works/go-git.v4/plumbing/format/packfile"
-	"srcd.works/go-git.v4/plumbing/object"
 	"srcd.works/go-git.v4/plumbing/protocol/packp"
 	"srcd.works/go-git.v4/plumbing/protocol/packp/capability"
 	"srcd.works/go-git.v4/plumbing/protocol/packp/sideband"
@@ -97,7 +96,7 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 		return NoErrAlreadyUpToDate
 	}
 
-	commits, err := commitsToPush(r.s, req.Commands)
+	objects, err := objectsToPush(req.Commands)
 	if err != nil {
 		return err
 	}
@@ -107,7 +106,7 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 		return err
 	}
 
-	hashesToPush, err := revlist.Objects(r.s, commits, haves)
+	hashesToPush, err := revlist.Objects(r.s, objects, haves)
 	if err != nil {
 		return err
 	}
@@ -476,22 +475,17 @@ func (r *Remote) buildFetchedTags(refs storer.ReferenceStorer) error {
 	})
 }
 
-func commitsToPush(s storer.EncodedObjectStorer, commands []*packp.Command) ([]*object.Commit, error) {
-	var commits []*object.Commit
+func objectsToPush(commands []*packp.Command) ([]plumbing.Hash, error) {
+	var objects []plumbing.Hash
 	for _, cmd := range commands {
 		if cmd.New == plumbing.ZeroHash {
 			continue
 		}
 
-		c, err := object.GetCommit(s, cmd.New)
-		if err != nil {
-			return nil, err
-		}
-
-		commits = append(commits, c)
+		objects = append(objects, cmd.New)
 	}
 
-	return commits, nil
+	return objects, nil
 }
 
 func referencesToHashes(refs storer.ReferenceStorer) ([]plumbing.Hash, error) {

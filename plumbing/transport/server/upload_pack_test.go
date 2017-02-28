@@ -38,8 +38,3 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(r, IsNil)
 }
-
-// TODO revList implementation is returning more objects than expected.
-func (s *UploadPackSuite) TestUploadPackPartial(c *C) {
-	c.Skip("Fix revList implementation")
-}
