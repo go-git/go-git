@@ -697,7 +697,7 @@ func (s *RepositorySuite) TestCommit(c *C) {
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47")
-	commit, err := r.Commit(hash)
+	commit, err := r.CommitObject(hash)
 	c.Assert(err, IsNil)
 
 	c.Assert(commit.Hash.IsZero(), Equals, false)
@@ -718,7 +718,7 @@ func (s *RepositorySuite) TestCommits(c *C) {
 	c.Assert(err, IsNil)
 
 	count := 0
-	commits, err := r.Commits()
+	commits, err := r.CommitObjects()
 	c.Assert(err, IsNil)
 	for {
 		commit, err := commits.Next()
@@ -735,7 +735,52 @@ func (s *RepositorySuite) TestCommits(c *C) {
 	c.Assert(count, Equals, 9)
 }
 
-func (s *RepositorySuite) TestTag(c *C) {
+func (s *RepositorySuite) TestBlob(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	blob, err := r.BlobObject(plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"))
+	c.Assert(err, NotNil)
+	c.Assert(blob, IsNil)
+
+	blobHash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
+	blob, err = r.BlobObject(blobHash)
+	c.Assert(err, IsNil)
+
+	c.Assert(blob.Hash.IsZero(), Equals, false)
+	c.Assert(blob.Hash, Equals, blob.ID())
+	c.Assert(blob.Hash, Equals, blobHash)
+	c.Assert(blob.Type(), Equals, plumbing.BlobObject)
+}
+
+func (s *RepositorySuite) TestBlobs(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	c.Assert(err, IsNil)
+
+	count := 0
+	blobs, err := r.BlobObjects()
+	c.Assert(err, IsNil)
+	for {
+		blob, err := blobs.Next()
+		if err != nil {
+			break
+		}
+
+		count++
+		c.Assert(blob.Hash.IsZero(), Equals, false)
+		c.Assert(blob.Hash, Equals, blob.ID())
+		c.Assert(blob.Type(), Equals, plumbing.BlobObject)
+	}
+
+	c.Assert(count, Equals, 10)
+}
+
+func (s *RepositorySuite) TestTagObject(c *C) {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
@@ -745,7 +790,7 @@ func (s *RepositorySuite) TestTag(c *C) {
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")
-	tag, err := r.Tag(hash)
+	tag, err := r.TagObject(hash)
 	c.Assert(err, IsNil)
 
 	c.Assert(tag.Hash.IsZero(), Equals, false)
@@ -764,6 +809,121 @@ func (s *RepositorySuite) TestTags(c *C) {
 
 	count := 0
 	tags, err := r.Tags()
+	c.Assert(err, IsNil)
+
+	tags.ForEach(func(tag *plumbing.Reference) error {
+		count++
+		c.Assert(tag.Hash().IsZero(), Equals, false)
+		c.Assert(tag.IsTag(), Equals, true)
+		return nil
+	})
+
+	c.Assert(count, Equals, 5)
+}
+
+func (s *RepositorySuite) TestBranches(c *C) {
+	f := fixtures.ByURL("https://github.com/git-fixtures/root-references.git").One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+	r, err := Open(sto, f.DotGit())
+	c.Assert(err, IsNil)
+
+	count := 0
+	branches, err := r.Branches()
+	c.Assert(err, IsNil)
+
+	branches.ForEach(func(branch *plumbing.Reference) error {
+		count++
+		c.Assert(branch.Hash().IsZero(), Equals, false)
+		c.Assert(branch.IsBranch(), Equals, true)
+		return nil
+	})
+
+	c.Assert(count, Equals, 8)
+}
+
+func (s *RepositorySuite) TestNotes(c *C) {
+	// TODO add fixture with Notes
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	count := 0
+	notes, err := r.Notes()
+	c.Assert(err, IsNil)
+
+	notes.ForEach(func(note *plumbing.Reference) error {
+		count++
+		c.Assert(note.Hash().IsZero(), Equals, false)
+		c.Assert(note.IsNote(), Equals, true)
+		return nil
+	})
+
+	c.Assert(count, Equals, 0)
+}
+
+func (s *RepositorySuite) TestTree(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	invalidHash := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	tree, err := r.TreeObject(invalidHash)
+	c.Assert(tree, IsNil)
+	c.Assert(err, NotNil)
+
+	hash := plumbing.NewHash("dbd3641b371024f44d0e469a9c8f5457b0660de1")
+	tree, err = r.TreeObject(hash)
+	c.Assert(err, IsNil)
+
+	c.Assert(tree.Hash.IsZero(), Equals, false)
+	c.Assert(tree.Hash, Equals, tree.ID())
+	c.Assert(tree.Hash, Equals, hash)
+	c.Assert(tree.Type(), Equals, plumbing.TreeObject)
+	c.Assert(len(tree.Entries), Not(Equals), 0)
+}
+
+func (s *RepositorySuite) TestTrees(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	c.Assert(err, IsNil)
+
+	count := 0
+	trees, err := r.TreeObjects()
+	c.Assert(err, IsNil)
+	for {
+		tree, err := trees.Next()
+		if err != nil {
+			break
+		}
+
+		count++
+		c.Assert(tree.Hash.IsZero(), Equals, false)
+		c.Assert(tree.Hash, Equals, tree.ID())
+		c.Assert(tree.Type(), Equals, plumbing.TreeObject)
+		c.Assert(len(tree.Entries), Not(Equals), 0)
+	}
+
+	c.Assert(count, Equals, 12)
+}
+
+func (s *RepositorySuite) TestTagObjects(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	count := 0
+	tags, err := r.TagObjects()
 	c.Assert(err, IsNil)
 
 	tags.ForEach(func(tag *object.Tag) error {
@@ -787,7 +947,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
-	commits, err := r.Commits()
+	commits, err := r.CommitObjects()
 	c.Assert(err, IsNil)
 	commits.Close()
 }
@@ -829,6 +989,28 @@ func (s *RepositorySuite) TestObject(c *C) {
 
 	c.Assert(o.ID().IsZero(), Equals, false)
 	c.Assert(o.Type(), Equals, plumbing.CommitObject)
+}
+
+func (s *RepositorySuite) TestObjects(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	c.Assert(err, IsNil)
+
+	count := 0
+	objects, err := r.Objects()
+	c.Assert(err, IsNil)
+	for {
+		o, err := objects.Next()
+		if err != nil {
+			break
+		}
+
+		count++
+		c.Assert(o.ID().IsZero(), Equals, false)
+		c.Assert(o.Type(), Not(Equals), plumbing.AnyObject)
+	}
+
+	c.Assert(count, Equals, 31)
 }
 
 func (s *RepositorySuite) TestObjectNotFound(c *C) {

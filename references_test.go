@@ -291,7 +291,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 	for _, t := range referencesTests {
 		r := s.NewRepositoryFromPackfile(fixtures.ByURL(t.repo).One())
 
-		commit, err := r.Commit(plumbing.NewHash(t.commit))
+		commit, err := r.CommitObject(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil)
 
 		revs, err := References(commit, t.path)
@@ -300,7 +300,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 
 		for i := range revs {
 			if revs[i].Hash.String() != t.revs[i] {
-				commit, err := s.Repository.Commit(plumbing.NewHash(t.revs[i]))
+				commit, err := s.Repository.CommitObject(plumbing.NewHash(t.revs[i]))
 				c.Assert(err, IsNil)
 				equiv, err := equivalent(t.path, revs[i], commit)
 				c.Assert(err, IsNil)
@@ -358,7 +358,7 @@ func (s *ReferencesSuite) commits(c *C, repo string, hs ...string) []*object.Com
 
 	result := make([]*object.Commit, 0, len(hs))
 	for _, h := range hs {
-		commit, err := r.Commit(plumbing.NewHash(h))
+		commit, err := r.CommitObject(plumbing.NewHash(h))
 		c.Assert(err, IsNil)
 
 		result = append(result, commit)

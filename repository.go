@@ -608,30 +608,54 @@ func (r *Repository) Push(o *PushOptions) error {
 	return remote.Push(o)
 }
 
-// Commit return a Commit with the given hash. If not found
-// plumbing.ErrObjectNotFound is returned
-func (r *Repository) Commit(h plumbing.Hash) (*object.Commit, error) {
-	return object.GetCommit(r.Storer, h)
-}
-
-// Commits returns an unsorted CommitIter with all the commits in the repository
-func (r *Repository) Commits() (*object.CommitIter, error) {
-	iter, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
+// Tags returns all the References from Tags. This method returns all the tag
+// types, lightweight, and annotated ones.
+func (r *Repository) Tags() (storer.ReferenceIter, error) {
+	refIter, err := r.Storer.IterReferences()
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewCommitIter(r.Storer, iter), nil
+	return storer.NewReferenceFilteredIter(
+		func(r *plumbing.Reference) bool {
+			return r.IsTag()
+		}, refIter), nil
 }
 
-// Tree return a Tree with the given hash. If not found
+// Branches returns all the References that are Branches.
+func (r *Repository) Branches() (storer.ReferenceIter, error) {
+	refIter, err := r.Storer.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	return storer.NewReferenceFilteredIter(
+		func(r *plumbing.Reference) bool {
+			return r.IsBranch()
+		}, refIter), nil
+}
+
+// Notes returns all the References that are Branches.
+func (r *Repository) Notes() (storer.ReferenceIter, error) {
+	refIter, err := r.Storer.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	return storer.NewReferenceFilteredIter(
+		func(r *plumbing.Reference) bool {
+			return r.IsNote()
+		}, refIter), nil
+}
+
+// TreeObject return a Tree with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned
-func (r *Repository) Tree(h plumbing.Hash) (*object.Tree, error) {
+func (r *Repository) TreeObject(h plumbing.Hash) (*object.Tree, error) {
 	return object.GetTree(r.Storer, h)
 }
 
-// Trees returns an unsorted TreeIter with all the trees in the repository
-func (r *Repository) Trees() (*object.TreeIter, error) {
+// TreeObjects returns an unsorted TreeIter with all the trees in the repository
+func (r *Repository) TreeObjects() (*object.TreeIter, error) {
 	iter, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
 	if err != nil {
 		return nil, err
@@ -640,14 +664,30 @@ func (r *Repository) Trees() (*object.TreeIter, error) {
 	return object.NewTreeIter(r.Storer, iter), nil
 }
 
-// Blob returns a Blob with the given hash. If not found
-// plumbing.ErrObjectNotFound is returne
-func (r *Repository) Blob(h plumbing.Hash) (*object.Blob, error) {
+// CommitObject return a Commit with the given hash. If not found
+// plumbing.ErrObjectNotFound is returned.
+func (r *Repository) CommitObject(h plumbing.Hash) (*object.Commit, error) {
+	return object.GetCommit(r.Storer, h)
+}
+
+// CommitObjects returns an unsorted CommitIter with all the commits in the repository.
+func (r *Repository) CommitObjects() (*object.CommitIter, error) {
+	iter, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return object.NewCommitIter(r.Storer, iter), nil
+}
+
+// BlobObject returns a Blob with the given hash. If not found
+// plumbing.ErrObjectNotFound is returned.
+func (r *Repository) BlobObject(h plumbing.Hash) (*object.Blob, error) {
 	return object.GetBlob(r.Storer, h)
 }
 
-// Blobs returns an unsorted BlobIter with all the blobs in the repository
-func (r *Repository) Blobs() (*object.BlobIter, error) {
+// BlobObjects returns an unsorted BlobIter with all the blobs in the repository.
+func (r *Repository) BlobObjects() (*object.BlobIter, error) {
 	iter, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
 	if err != nil {
 		return nil, err
@@ -656,15 +696,16 @@ func (r *Repository) Blobs() (*object.BlobIter, error) {
 	return object.NewBlobIter(r.Storer, iter), nil
 }
 
-// Tag returns a Tag with the given hash. If not found
-// plumbing.ErrObjectNotFound is returned
-func (r *Repository) Tag(h plumbing.Hash) (*object.Tag, error) {
+// TagObject returns a Tag with the given hash. If not found
+// plumbing.ErrObjectNotFound is returned. This method only returns
+// annotated Tags, no lightweight Tags.
+func (r *Repository) TagObject(h plumbing.Hash) (*object.Tag, error) {
 	return object.GetTag(r.Storer, h)
 }
 
-// Tags returns a unsorted TagIter that can step through all of the annotated
+// TagObjects returns a unsorted TagIter that can step through all of the annotated
 // tags in the repository.
-func (r *Repository) Tags() (*object.TagIter, error) {
+func (r *Repository) TagObjects() (*object.TagIter, error) {
 	iter, err := r.Storer.IterEncodedObjects(plumbing.TagObject)
 	if err != nil {
 		return nil, err
@@ -674,7 +715,7 @@ func (r *Repository) Tags() (*object.TagIter, error) {
 }
 
 // Object returns an Object with the given hash. If not found
-// plumbing.ErrObjectNotFound is returned
+// plumbing.ErrObjectNotFound is returned.
 func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Object, error) {
 	obj, err := r.Storer.EncodedObject(t, h)
 	if err != nil {
@@ -688,7 +729,7 @@ func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Obje
 	return object.DecodeObject(r.Storer, obj)
 }
 
-// Objects returns an unsorted BlobIter with all the objects in the repository
+// Objects returns an unsorted ObjectIter with all the objects in the repository.
 func (r *Repository) Objects() (*object.ObjectIter, error) {
 	iter, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
 	if err != nil {
@@ -730,7 +771,7 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	return &Worktree{r: r, fs: r.wt}, nil
 }
 
-// ResolveRevision resolves revision to corresponding hash
+// ResolveRevision resolves revision to corresponding hash.
 func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, error) {
 	p := revision.NewParserFromString(string(rev))
 
@@ -753,7 +794,7 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 
 			h := ref.Hash()
 
-			commit, err = r.Commit(h)
+			commit, err = r.CommitObject(h)
 
 			if err != nil {
 				return &plumbing.ZeroHash, err

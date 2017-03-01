@@ -89,3 +89,102 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachStop(c *C) {
 
 	c.Assert(count, Equals, 1)
 }
+
+func (s *ReferenceSuite) TestReferenceFilteredIterNext(c *C) {
+	slice := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("foo", "foo"),
+		plumbing.NewReferenceFromStrings("bar", "bar"),
+	}
+
+	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
+		if r.Name() == "bar" {
+			return true
+		}
+
+		return false
+	}, NewReferenceSliceIter(slice))
+	foo, err := i.Next()
+	c.Assert(err, IsNil)
+	c.Assert(foo == slice[0], Equals, false)
+	c.Assert(foo == slice[1], Equals, true)
+
+	empty, err := i.Next()
+	c.Assert(err, Equals, io.EOF)
+	c.Assert(empty, IsNil)
+}
+
+func (s *ReferenceSuite) TestReferenceFilteredIterForEach(c *C) {
+	slice := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("foo", "foo"),
+		plumbing.NewReferenceFromStrings("bar", "bar"),
+	}
+
+	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
+		if r.Name() == "bar" {
+			return true
+		}
+
+		return false
+	}, NewReferenceSliceIter(slice))
+	var count int
+	i.ForEach(func(r *plumbing.Reference) error {
+		c.Assert(r == slice[1], Equals, true)
+		count++
+		return nil
+	})
+
+	c.Assert(count, Equals, 1)
+}
+
+func (s *ReferenceSuite) TestReferenceFilteredIterError(c *C) {
+	slice := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("foo", "foo"),
+		plumbing.NewReferenceFromStrings("bar", "bar"),
+	}
+
+	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
+		if r.Name() == "bar" {
+			return true
+		}
+
+		return false
+	}, NewReferenceSliceIter(slice))
+	var count int
+	exampleErr := errors.New("SOME ERROR")
+	err := i.ForEach(func(r *plumbing.Reference) error {
+		c.Assert(r == slice[1], Equals, true)
+		count++
+		if count == 1 {
+			return exampleErr
+		}
+
+		return nil
+	})
+
+	c.Assert(err, Equals, exampleErr)
+	c.Assert(count, Equals, 1)
+}
+
+func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop(c *C) {
+	slice := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("foo", "foo"),
+		plumbing.NewReferenceFromStrings("bar", "bar"),
+	}
+
+	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
+		if r.Name() == "bar" {
+			return true
+		}
+
+		return false
+	}, NewReferenceSliceIter(slice))
+
+	var count int
+	i.ForEach(func(r *plumbing.Reference) error {
+		c.Assert(r == slice[1], Equals, true)
+		count++
+		return ErrStop
+	})
+
+	c.Assert(count, Equals, 1)
+}
