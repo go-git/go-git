@@ -45,7 +45,17 @@ func (t *treeNoder) String() string {
 	return "treeNoder <" + t.name + ">"
 }
 
+// The hash of a treeNoder is the result of concatenating the hash of
+// its contents and its mode; that way the difftree algorithm will
+// detect changes in the contents of files and also in their mode.
+//
+// Files with Regular and Deprecated file modes are considered the same
+// for the purpose of difftree, so Regular will be used as the mode for
+// Deprecated files here.
 func (t *treeNoder) Hash() []byte {
+	if t.mode == filemode.Deprecated {
+		return append(t.hash[:], filemode.Regular.Bytes()...)
+	}
 	return append(t.hash[:], t.mode.Bytes()...)
 }
 
