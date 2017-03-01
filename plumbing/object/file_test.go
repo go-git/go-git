@@ -3,11 +3,12 @@ package object
 import (
 	"io"
 
-	"github.com/src-d/go-git-fixtures"
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 
+	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 )
 
@@ -58,7 +59,7 @@ func (s *FileSuite) TestIter(c *C) {
 			exp := t.files[k]
 			file, err := iter.Next()
 			c.Assert(err, IsNil, Commentf("subtest %d, iter %d, err=%v", i, k, err))
-			c.Assert(file.Mode.String(), Equals, "-rw-r--r--")
+			c.Assert(file.Mode, Equals, filemode.Regular)
 			c.Assert(file.Hash.IsZero(), Equals, false)
 			c.Assert(file.Hash, Equals, file.ID())
 			c.Assert(file.Name, Equals, exp.Name, Commentf("subtest %d, iter %d, name=%s, expected=%s", i, k, file.Name, exp.Hash))

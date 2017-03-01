@@ -2,10 +2,10 @@ package index
 
 import (
 	"errors"
-	"os"
 	"time"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 )
 
 var (
@@ -62,7 +62,7 @@ type Entry struct {
 	// Dev and Inode of the tracked path
 	Dev, Inode uint32
 	// Mode of the path
-	Mode os.FileMode
+	Mode filemode.FileMode
 	// UID and GID, userid and group id of the owner
 	UID, GID uint32
 	// Size is the length in bytes for regular files
