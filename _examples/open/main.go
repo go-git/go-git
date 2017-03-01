@@ -8,6 +8,7 @@ import (
 	. "srcd.works/go-git.v4/_examples"
 )
 
+// Open an existing repository in a specific folder.
 func main() {
 	CheckArgs("<path>")
 	path := os.Args[1]

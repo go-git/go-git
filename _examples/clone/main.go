@@ -8,6 +8,7 @@ import (
 	. "srcd.works/go-git.v4/_examples"
 )
 
+// Basic example of how to clone a repository using clone options.
 func main() {
 	CheckArgs("<url>", "<directory>")
 	url := os.Args[1]
