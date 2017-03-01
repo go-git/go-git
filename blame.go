@@ -124,11 +124,16 @@ func newLines(contents []string, commits []*object.Commit) ([]*Line, error) {
 // this struct is internally used by the blame function to hold its
 // inputs, outputs and state.
 type blame struct {
-	path  string             // the path of the file to blame
-	fRev  *object.Commit     // the commit of the final revision of the file to blame
-	revs  []*object.Commit   // the chain of revisions affecting the the file to blame
-	data  []string           // the contents of the file across all its revisions
-	graph [][]*object.Commit // the graph of the lines in the file across all the revisions TODO: not all commits are needed, only the current rev and the prev
+	// the path of the file to blame
+	path string
+	// the commit of the final revision of the file to blame
+	fRev *object.Commit
+	// the chain of revisions affecting the the file to blame
+	revs []*object.Commit
+	// the contents of the file across all its revisions
+	data []string
+	// the graph of the lines in the file across all the revisions
+	graph [][]*object.Commit
 }
 
 // calculte the history of a file "path", starting from commit "from", sorted by commit date.
@@ -144,6 +149,7 @@ func (b *blame) fillRevs() error {
 
 // build graph of a file from its revision history
 func (b *blame) fillGraphAndData() error {
+	//TODO: not all commits are needed, only the current rev and the prev
 	b.graph = make([][]*object.Commit, len(b.revs))
 	b.data = make([]string, len(b.revs)) // file contents in all the revisions
 	// for every revision of the file, starting with the first

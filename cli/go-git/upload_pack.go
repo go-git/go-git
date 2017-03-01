@@ -8,7 +8,6 @@ import (
 	"srcd.works/go-git.v4/plumbing/transport/file"
 )
 
-//TODO: usage: git upload-pack [--strict] [--timeout=<n>] <dir>
 type CmdUploadPack struct {
 	cmd
 
@@ -18,6 +17,7 @@ type CmdUploadPack struct {
 }
 
 func (CmdUploadPack) Usage() string {
+	//TODO: usage: git upload-pack [--strict] [--timeout=<n>] <dir>
 	//TODO: git-upload-pack returns error code 129 if arguments are invalid.
 	return fmt.Sprintf("usage: %s <git-dir>", os.Args[0])
 }

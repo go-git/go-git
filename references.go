@@ -82,9 +82,9 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 	return nil
 }
 
-// TODO: benchmark this making git.object.Commit.parent public instead of using
-// an iterator
 func parentsContainingPath(path string, c *object.Commit) []*object.Commit {
+	// TODO: benchmark this method making git.object.Commit.parent public instead of using
+	// an iterator
 	var result []*object.Commit
 	iter := c.Parents()
 	for {
