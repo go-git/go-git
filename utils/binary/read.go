@@ -27,7 +27,7 @@ func ReadUntil(r io.Reader, delim byte) ([]byte, error) {
 	var buf [1]byte
 	value := make([]byte, 0, 16)
 	for {
-		if _, err := r.Read(buf[:]); err != nil {
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
 			if err == io.EOF {
 				return nil, err
 			}

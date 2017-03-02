@@ -57,7 +57,7 @@ func (d *Decoder) Decode(idx *Idxfile) error {
 
 func validateHeader(r io.Reader) error {
 	var h = make([]byte, 4)
-	if _, err := r.Read(h); err != nil {
+	if _, err := io.ReadFull(r, h); err != nil {
 		return err
 	}
 
@@ -99,7 +99,7 @@ func readObjectNames(idx *Idxfile, r io.Reader) error {
 	c := int(idx.ObjectCount)
 	for i := 0; i < c; i++ {
 		var ref plumbing.Hash
-		if _, err := r.Read(ref[:]); err != nil {
+		if _, err := io.ReadFull(r, ref[:]); err != nil {
 			return err
 		}
 
@@ -135,11 +135,11 @@ func readOffsets(idx *Idxfile, r io.Reader) error {
 }
 
 func readChecksums(idx *Idxfile, r io.Reader) error {
-	if _, err := r.Read(idx.PackfileChecksum[:]); err != nil {
+	if _, err := io.ReadFull(r, idx.PackfileChecksum[:]); err != nil {
 		return err
 	}
 
-	if _, err := r.Read(idx.IdxChecksum[:]); err != nil {
+	if _, err := io.ReadFull(r, idx.IdxChecksum[:]); err != nil {
 		return err
 	}
 
