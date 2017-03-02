@@ -23,32 +23,33 @@ type BlameResult struct {
 	Lines []*Line
 }
 
-// Blame returns a BlameResult that contains all the data needed to know the
-// last author of each line of an specified file starting the history from
-// a specified commit. The file to blame is identified by the input arguments:
-// commit and path. commit is a Commit object obtained from a Repository. Path
-// represents a path to a specific file contained into the repository.
-//
-// Blaming a file is a two step process:
-//
-// 1. Create a linear history of the commits affecting a file. We use
-// revlist.New for that.
-//
-// 2. Then build a graph with a node for every line in every file in
-// the history of the file.
-//
-// Each node is assigned a commit: Start by the nodes in the first
-// commit. Assign that commit as the creator of all its lines.
-//
-// Then jump to the nodes in the next commit, and calculate the diff
-// between the two files. Newly created lines get
-// assigned the new commit as its origin. Modified lines also get
-// this new commit. Untouched lines retain the old commit.
-//
-// All this work is done in the assignOrigin function which holds all
-// the internal relevant data in a "blame" struct, that is not
-// exported.
+// Blame returns a BlameResult with the information about the last author of
+// each line from file `path` at commit `c`.
 func Blame(c *object.Commit, path string) (*BlameResult, error) {
+	// The file to blame is identified by the input arguments:
+	// commit and path. commit is a Commit object obtained from a Repository. Path
+	// represents a path to a specific file contained into the repository.
+	//
+	// Blaming a file is a two step process:
+	//
+	// 1. Create a linear history of the commits affecting a file. We use
+	// revlist.New for that.
+	//
+	// 2. Then build a graph with a node for every line in every file in
+	// the history of the file.
+	//
+	// Each node is assigned a commit: Start by the nodes in the first
+	// commit. Assign that commit as the creator of all its lines.
+	//
+	// Then jump to the nodes in the next commit, and calculate the diff
+	// between the two files. Newly created lines get
+	// assigned the new commit as its origin. Modified lines also get
+	// this new commit. Untouched lines retain the old commit.
+	//
+	// All this work is done in the assignOrigin function which holds all
+	// the internal relevant data in a "blame" struct, that is not
+	// exported.
+	//
 	// TODO: ways to improve the efficiency of this function:
 	// 1. Improve revlist
 	// 2. Improve how to traverse the history (example a backward traversal will
