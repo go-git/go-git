@@ -21,7 +21,8 @@ import (
 // - Moves and copies are not currently supported.
 //
 // - Cherry-picks are not detected unless there are no commits between them and
-// therefore can appear repeated in the list. (see git path-id for hints on how to fix this).
+// therefore can appear repeated in the list. (see git path-id for hints on how
+// to fix this).
 func References(c *object.Commit, path string) ([]*object.Commit, error) {
 	var result []*object.Commit
 	seen := make(map[plumbing.Hash]struct{}, 0)

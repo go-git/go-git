@@ -13,13 +13,13 @@ import (
 	"srcd.works/go-git.v4/utils/diff"
 )
 
-// BlameResult represents the result of a Blame operation
+// BlameResult represents the result of a Blame operation.
 type BlameResult struct {
-	// Path is the path of the File that we're blaming
+	// Path is the path of the File that we're blaming.
 	Path string
-	// Rev is the hash of the specified Commit used to generate this result
+	// Rev (Revision) is the hash of the specified Commit used to generate this result.
 	Rev plumbing.Hash
-	// Lines contains every line with its authorship
+	// Lines contains every line with its authorship.
 	Lines []*Line
 }
 
@@ -82,6 +82,11 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 		return nil, err
 	}
 
+	// Each node (line) holds the commit where it was introduced or
+	// last modified. To achieve that we use the FORWARD algorithm
+	// described in Zimmermann, et al. "Mining Version Archives for
+	// Co-changed Lines", in proceedings of the Mining Software
+	// Repositories workshop, Shanghai, May 22-23, 2006.
 	lines, err := newLines(finalLines, b.sliceGraph(len(b.graph)-1))
 	if err != nil {
 		return nil, err
@@ -96,7 +101,7 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 
 // Line values represent the contents and author of a line in BlamedResult values.
 type Line struct {
-	// Author is the email address of the last author that modified the line
+	// Author is the email address of the last author that modified the line.
 	Author string
 	// Text is the original text of the line.
 	Text string
