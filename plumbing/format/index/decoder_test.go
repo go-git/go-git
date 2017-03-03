@@ -3,9 +3,11 @@ package index
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
-	"github.com/src-d/go-git-fixtures"
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
+
+	"github.com/src-d/go-git-fixtures"
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -53,7 +55,7 @@ func (s *IndexSuite) TestDecodeEntries(c *C) {
 	c.Assert(e.Size, Equals, uint32(189))
 	c.Assert(e.Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 	c.Assert(e.Name, Equals, ".gitignore")
-	c.Assert(e.Mode.String(), Equals, "-rw-r--r--")
+	c.Assert(e.Mode, Equals, filemode.Regular)
 
 	e = idx.Entries[1]
 	c.Assert(e.Name, Equals, "CHANGELOG")

@@ -9,6 +9,7 @@ import (
 
 	"srcd.works/go-git.v4/config"
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/format/index"
 	"srcd.works/go-git.v4/plumbing/object"
 
@@ -65,11 +66,11 @@ func (w *Worktree) Checkout(commit plumbing.Hash) error {
 }
 
 func (w *Worktree) checkoutEntry(name string, e *object.TreeEntry, idx *index.Index) error {
-	if e.Mode == object.SubmoduleMode {
+	if e.Mode == filemode.Submodule {
 		return w.addIndexFromTreeEntry(name, e, idx)
 	}
 
-	if e.Mode.IsDir() {
+	if e.Mode == filemode.Dir {
 		return nil
 	}
 
@@ -86,18 +87,23 @@ func (w *Worktree) checkoutFile(name string, e *object.TreeEntry, idx *index.Ind
 	if err != nil {
 		return err
 	}
-
 	defer from.Close()
-	to, err := w.fs.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, e.Mode.Perm())
+
+	mode, err := e.Mode.ToOSFileMode()
 	if err != nil {
 		return err
 	}
+
+	to, err := w.fs.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
+	if err != nil {
+		return err
+	}
+	defer to.Close()
 
 	if _, err := io.Copy(to, from); err != nil {
 		return err
 	}
 
-	defer to.Close()
 	return w.addIndexFromFile(name, e, idx)
 }
 
@@ -107,7 +113,7 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 	idx.Entries = append(idx.Entries, index.Entry{
 		Hash: f.Hash,
 		Name: name,
-		Mode: object.SubmoduleMode,
+		Mode: filemode.Submodule,
 	})
 
 	return nil
@@ -119,10 +125,15 @@ func (w *Worktree) addIndexFromFile(name string, f *object.TreeEntry, idx *index
 		return err
 	}
 
+	mode, err := filemode.NewFromOSFileMode(fi.Mode())
+	if err != nil {
+		return err
+	}
+
 	e := index.Entry{
 		Hash:       f.Hash,
 		Name:       name,
-		Mode:       w.getMode(fi),
+		Mode:       mode,
 		ModifiedAt: fi.ModTime(),
 		Size:       uint32(fi.Size()),
 	}
@@ -178,7 +189,12 @@ func (w *Worktree) compareFileWithEntry(fi billy.FileInfo, e *index.Entry) (Stat
 		return Modified, nil
 	}
 
-	if w.getMode(fi) != e.Mode {
+	mode, err := filemode.NewFromOSFileMode(fi.Mode())
+	if err != nil {
+		return Modified, err
+	}
+
+	if mode != e.Mode {
 		return Modified, nil
 	}
 
@@ -189,23 +205,6 @@ func (w *Worktree) compareFileWithEntry(fi billy.FileInfo, e *index.Entry) (Stat
 	}
 
 	return Unmodified, nil
-}
-
-func (w *Worktree) getMode(fi billy.FileInfo) os.FileMode {
-	if fi.Mode().IsDir() {
-		return object.TreeMode
-	}
-
-	if fi.Mode()&os.ModeSymlink != 0 {
-		return object.SymlinkMode
-	}
-
-	const modeExec = 0111
-	if fi.Mode()&modeExec != 0 {
-		return object.ExecutableMode
-	}
-
-	return object.FileMode
 }
 
 const gitmodulesFile = ".gitmodules"

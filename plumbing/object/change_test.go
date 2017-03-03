@@ -1,10 +1,10 @@
 package object
 
 import (
-	"os"
 	"sort"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/utils/merkletrie"
@@ -48,7 +48,7 @@ func (s *ChangeSuite) TestInsert(c *C) {
 
 	path := "examples/clone/main.go"
 	name := "main.go"
-	mode := os.FileMode(100644)
+	mode := filemode.Regular
 	blob := plumbing.NewHash("f95dc8f7923add1a8b9f72ecb1e8db1402de601a")
 	tree := plumbing.NewHash("6efca3ff41cab651332f9ebc0c96bb26be809615")
 
@@ -94,7 +94,7 @@ func (s *ChangeSuite) TestDelete(c *C) {
 
 	path := "utils/difftree/difftree.go"
 	name := "difftree.go"
-	mode := os.FileMode(100644)
+	mode := filemode.Regular
 	blob := plumbing.NewHash("e2cb9a5719daf634d45a063112b4044ee81da13e")
 	tree := plumbing.NewHash("f3d11566401ce4b0808aab9dd6fad3d5abf1481a")
 
@@ -142,7 +142,7 @@ func (s *ChangeSuite) TestModify(c *C) {
 
 	path := "utils/difftree/difftree.go"
 	name := "difftree.go"
-	mode := os.FileMode(100644)
+	mode := filemode.Regular
 	fromBlob := plumbing.NewHash("05f583ace3a9a078d8150905a53a4d82567f125f")
 	fromTree := plumbing.NewHash("b1f01b730b855c82431918cb338ad47ed558999b")
 	toBlob := plumbing.NewHash("de927fad935d172929aacf20e71f3bf0b91dd6f9")
@@ -215,7 +215,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 
 	path := "utils/difftree/difftree.go"
 	name := "difftree.go"
-	mode := os.FileMode(100644)
+	mode := filemode.Regular
 	fromBlob := plumbing.NewHash("aaaa") // does not exists
 	fromTree := plumbing.NewHash("b1f01b730b855c82431918cb338ad47ed558999b")
 	toBlob := plumbing.NewHash("bbbb") // does not exists

@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/src-d/go-git-fixtures"
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 
+	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 )
 
@@ -91,7 +92,7 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 	tree.buildMap()
 	c.Assert(tree.m, HasLen, 8)
 	c.Assert(tree.m[".gitignore"].Name, Equals, ".gitignore")
-	c.Assert(tree.m[".gitignore"].Mode.String(), Equals, "-rw-r--r--")
+	c.Assert(tree.m[".gitignore"].Mode, Equals, filemode.Regular)
 	c.Assert(tree.m[".gitignore"].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 
 	count := 0

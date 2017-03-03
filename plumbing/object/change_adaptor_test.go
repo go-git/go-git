@@ -1,10 +1,10 @@
 package object
 
 import (
-	"os"
 	"sort"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
 	"srcd.works/go-git.v4/utils/merkletrie"
@@ -51,7 +51,7 @@ func newPath(nn ...noder.Noder) noder.Path { return noder.Path(nn) }
 
 func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode(c *C) {
 	hash := plumbing.NewHash("aaaa")
-	mode := FileMode
+	mode := filemode.Regular
 
 	treeNoder := &treeNoder{
 		hash: hash,
@@ -64,8 +64,8 @@ func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode(c *C) {
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
-		0xa4, 0x81, 0x00, 0x00, // object.FileMode in little endian
 	}
+	expected = append(expected, filemode.Regular.Bytes()...)
 
 	c.Assert(treeNoder.Hash(), DeepEquals, expected)
 }
@@ -74,7 +74,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeInsert(c *C) {
 	tree := &Tree{}
 	entry := TreeEntry{
 		Name: "name",
-		Mode: os.FileMode(42),
+		Mode: filemode.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
 	}
 	path := newPath(newNoder(tree, entry))
@@ -100,7 +100,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeDelete(c *C) {
 	tree := &Tree{}
 	entry := TreeEntry{
 		Name: "name",
-		Mode: os.FileMode(42),
+		Mode: filemode.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
 	}
 	path := newPath(newNoder(tree, entry))
@@ -126,7 +126,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
 	treeA := &Tree{}
 	entryA := TreeEntry{
 		Name: "name",
-		Mode: os.FileMode(42),
+		Mode: filemode.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
 	}
 	pathA := newPath(newNoder(treeA, entryA))
@@ -136,7 +136,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
 	treeB := &Tree{}
 	entryB := TreeEntry{
 		Name: "name",
-		Mode: os.FileMode(42),
+		Mode: filemode.FileMode(42),
 		Hash: plumbing.NewHash("bbbb"),
 	}
 	pathB := newPath(newNoder(treeB, entryB))
@@ -295,7 +295,7 @@ func (s *ChangeAdaptorSuite) TestChangeEntryFromSortPath(c *C) {
 	tree := &Tree{}
 	entry := TreeEntry{
 		Name: "name",
-		Mode: os.FileMode(42),
+		Mode: filemode.FileMode(42),
 		Hash: plumbing.NewHash("aaaaa"),
 	}
 	path := newPath(newNoder(tree, entry))
@@ -312,14 +312,14 @@ func (s *ChangeAdaptorSuite) TestChangeEntryFromLongPath(c *C) {
 	treeA := &Tree{}
 	entryA := TreeEntry{
 		Name: "nameA",
-		Mode: os.FileMode(42),
+		Mode: filemode.FileMode(42),
 		Hash: plumbing.NewHash("aaaa"),
 	}
 
 	treeB := &Tree{}
 	entryB := TreeEntry{
 		Name: "nameB",
-		Mode: os.FileMode(24),
+		Mode: filemode.FileMode(24),
 		Hash: plumbing.NewHash("bbbb"),
 	}
 

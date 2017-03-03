@@ -9,18 +9,17 @@ package object
 // to the file contents by the merkletrie difftree algorithm.  This is
 // consistent with how the "git diff-tree" command works.
 import (
-	"encoding/binary"
 	"io"
-	"os"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/utils/merkletrie/noder"
 )
 
 type treeNoder struct {
 	parent   *Tree  // the root node is its own parent
 	name     string // empty string for the root node
-	mode     os.FileMode
+	mode     filemode.FileMode
 	hash     plumbing.Hash
 	children []noder.Noder // memoized
 }
@@ -33,7 +32,7 @@ func newTreeNoder(t *Tree) *treeNoder {
 	return &treeNoder{
 		parent: t,
 		name:   "",
-		mode:   os.ModeDir,
+		mode:   filemode.Dir,
 		hash:   t.Hash,
 	}
 }
@@ -47,14 +46,7 @@ func (t *treeNoder) String() string {
 }
 
 func (t *treeNoder) Hash() []byte {
-	return append(t.hash[:], modeToBytes(t.mode)...)
-}
-
-// mode in little endian (endianess is an arbitrary decission).
-func modeToBytes(m os.FileMode) []byte {
-	ret := make([]byte, 4)
-	binary.LittleEndian.PutUint32(ret, uint32(m))
-	return ret
+	return append(t.hash[:], t.mode.Bytes()...)
 }
 
 func (t *treeNoder) Name() string {
@@ -62,13 +54,13 @@ func (t *treeNoder) Name() string {
 }
 
 func (t *treeNoder) IsDir() bool {
-	return t.mode.IsDir()
+	return t.mode == filemode.Dir
 }
 
 // Children will return the children of a treenoder as treenoders,
 // building them from the children of the wrapped git tree.
 func (t *treeNoder) Children() ([]noder.Noder, error) {
-	if !t.mode.IsDir() {
+	if t.mode != filemode.Dir {
 		return noder.NoChildren, nil
 	}
 

@@ -2,8 +2,8 @@ package object
 
 import (
 	"bytes"
-	"os"
 
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/utils/merkletrie"
 	"srcd.works/go-git.v4/utils/merkletrie/noder"
 )
@@ -49,14 +49,11 @@ func equivalentMode(a, b []byte) bool {
 }
 
 var (
-	file           = modeToBytes(FileMode)
-	fileDeprecated = modeToBytes(FileModeDeprecated)
-	// remove this by fixing plumbing.Object mode ASAP
-	fileGoGit = modeToBytes(os.FileMode(0644))
+	file           = filemode.Regular.Bytes()
+	fileDeprecated = filemode.Deprecated.Bytes()
 )
 
 func isFilish(b []byte) bool {
 	return bytes.Equal(b, file) ||
-		bytes.Equal(b, fileDeprecated) ||
-		bytes.Equal(b, fileGoGit)
+		bytes.Equal(b, fileDeprecated)
 }

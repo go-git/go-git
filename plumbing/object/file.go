@@ -3,9 +3,9 @@ package object
 import (
 	"bytes"
 	"io"
-	"os"
 	"strings"
 
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/utils/ioutil"
 )
@@ -16,13 +16,13 @@ type File struct {
 	// depending of the function that generates it.
 	Name string
 	// Mode is the file mode.
-	Mode os.FileMode
+	Mode filemode.FileMode
 	// Blob with the contents of the file.
 	Blob
 }
 
 // NewFile returns a File based on the given blob object
-func NewFile(name string, m os.FileMode, b *Blob) *File {
+func NewFile(name string, m filemode.FileMode, b *Blob) *File {
 	return &File{Name: name, Mode: m, Blob: *b}
 }
 
@@ -81,7 +81,7 @@ func (iter *FileIter) Next() (*File, error) {
 			return nil, err
 		}
 
-		if entry.Mode.IsDir() || entry.Mode == SubmoduleMode {
+		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
 			continue
 		}
 

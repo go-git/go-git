@@ -4,8 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/format/index"
-	"srcd.works/go-git.v4/plumbing/object"
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
@@ -72,7 +72,7 @@ func (s *WorktreeSuite) TestCheckoutIndexmemfs(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 	c.Assert(idx.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 	c.Assert(idx.Entries[0].Name, Equals, ".gitignore")
-	c.Assert(idx.Entries[0].Mode, Equals, object.FileMode)
+	c.Assert(idx.Entries[0].Mode, Equals, filemode.Regular)
 	c.Assert(idx.Entries[0].ModifiedAt.IsZero(), Equals, false)
 	c.Assert(idx.Entries[0].Size, Equals, uint32(189))
 
@@ -105,7 +105,7 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 	c.Assert(idx.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
 	c.Assert(idx.Entries[0].Name, Equals, ".gitignore")
-	c.Assert(idx.Entries[0].Mode, Equals, object.FileMode)
+	c.Assert(idx.Entries[0].Mode, Equals, filemode.Regular)
 	c.Assert(idx.Entries[0].ModifiedAt.IsZero(), Equals, false)
 	c.Assert(idx.Entries[0].Size, Equals, uint32(189))
 

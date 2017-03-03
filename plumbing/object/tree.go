@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
-	"strconv"
 	"strings"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/utils/ioutil"
 )
@@ -18,13 +17,6 @@ import (
 const (
 	maxTreeDepth      = 1024
 	startingStackSize = 8
-
-	FileMode           os.FileMode = 0100644
-	FileModeDeprecated os.FileMode = 0100664
-	ExecutableMode     os.FileMode = 0100755
-	SubmoduleMode      os.FileMode = 0160000
-	SymlinkMode        os.FileMode = 0120000
-	TreeMode           os.FileMode = 0040000
 )
 
 // New errors defined by this package.
@@ -68,7 +60,7 @@ func DecodeTree(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Tree, 
 // TreeEntry represents a file
 type TreeEntry struct {
 	Name string
-	Mode os.FileMode
+	Mode filemode.FileMode
 	Hash plumbing.Hash
 }
 
@@ -202,7 +194,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	r := bufio.NewReader(reader)
 	for {
-		mode, err := r.ReadString(' ')
+		str, err := r.ReadString(' ')
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -210,9 +202,10 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 			return err
 		}
+		str = str[:len(str)-1] // strip last byte (' ')
 
-		fm, err := t.decodeFileMode(mode[:len(mode)-1])
-		if err != nil && err != io.EOF {
+		mode, err := filemode.New(str)
+		if err != nil {
 			return err
 		}
 
@@ -229,33 +222,12 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		baseName := name[:len(name)-1]
 		t.Entries = append(t.Entries, TreeEntry{
 			Hash: hash,
-			Mode: fm,
+			Mode: mode,
 			Name: baseName,
 		})
 	}
 
 	return nil
-}
-
-func (t *Tree) decodeFileMode(mode string) (os.FileMode, error) {
-	fm, err := strconv.ParseInt(mode, 8, 32)
-	if err != nil && err != io.EOF {
-		return 0, err
-	}
-
-	m := os.FileMode(fm)
-	switch os.FileMode(fm) {
-	case FileMode:
-		m = 0644
-	case ExecutableMode:
-		m = 0755
-	case TreeMode:
-		m = m | os.ModeDir
-	case SymlinkMode:
-		m = m | os.ModeSymlink
-	}
-
-	return m, nil
 }
 
 // Encode transforms a Tree into a plumbing.EncodedObject.
@@ -381,7 +353,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			return
 		}
 
-		if entry.Mode.IsDir() {
+		if entry.Mode == filemode.Dir {
 			obj, err = GetTree(w.s, entry.Hash)
 		}
 

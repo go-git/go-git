@@ -1,10 +1,10 @@
 package object
 
 import (
-	"os"
 	"sort"
 
 	"srcd.works/go-git.v4/plumbing"
+	"srcd.works/go-git.v4/plumbing/filemode"
 	"srcd.works/go-git.v4/plumbing/format/packfile"
 	"srcd.works/go-git.v4/plumbing/storer"
 	"srcd.works/go-git.v4/storage/filesystem"
@@ -362,11 +362,11 @@ func (s *DiffTreeSuite) TestIssue279(c *C) {
 	// mode to a 100644 or vice versa.
 	from := &treeNoder{
 		hash: plumbing.NewHash("d08e895238bac36d8220586fdc28c27e1a7a76d3"),
-		mode: os.FileMode(0100664),
+		mode: filemode.Regular,
 	}
 	to := &treeNoder{
 		hash: plumbing.NewHash("d08e895238bac36d8220586fdc28c27e1a7a76d3"),
-		mode: os.FileMode(0100644),
+		mode: filemode.Regular,
 	}
 	c.Assert(hashEqual(from, to), Equals, true)
 	c.Assert(hashEqual(to, from), Equals, true)
@@ -374,7 +374,7 @@ func (s *DiffTreeSuite) TestIssue279(c *C) {
 	// but should detect if the contents of the file also changed.
 	to = &treeNoder{
 		hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		mode: os.FileMode(0100644),
+		mode: filemode.Regular,
 	}
 	c.Assert(hashEqual(from, to), Equals, false)
 	c.Assert(hashEqual(to, from), Equals, false)
