@@ -22,7 +22,7 @@ import (
 
 var NoErrAlreadyUpToDate = errors.New("already up-to-date")
 
-// Remote represents a connection to a remote repository
+// Remote represents a connection to a remote repository.
 type Remote struct {
 	c *config.RemoteConfig
 	s storage.Storer
@@ -32,7 +32,7 @@ func newRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
-// Config return the config
+// Config returns the RemoteConfig object used to instantiate this Remote.
 func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
 }
