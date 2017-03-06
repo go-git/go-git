@@ -28,7 +28,7 @@ type ReferenceIter interface {
 	Close()
 }
 
-type ReferenceFilteredIter struct {
+type referenceFilteredIter struct {
 	ff   func(r *plumbing.Reference) bool
 	iter ReferenceIter
 }
@@ -38,12 +38,12 @@ type ReferenceFilteredIter struct {
 // provided function.
 func NewReferenceFilteredIter(
 	ff func(r *plumbing.Reference) bool, iter ReferenceIter) ReferenceIter {
-	return &ReferenceFilteredIter{ff, iter}
+	return &referenceFilteredIter{ff, iter}
 }
 
 // Next returns the next reference from the iterator. If the iterator has reached
 // the end it will return io.EOF as an error.
-func (iter *ReferenceFilteredIter) Next() (*plumbing.Reference, error) {
+func (iter *referenceFilteredIter) Next() (*plumbing.Reference, error) {
 	for {
 		r, err := iter.iter.Next()
 		if err != nil {
@@ -61,7 +61,7 @@ func (iter *ReferenceFilteredIter) Next() (*plumbing.Reference, error) {
 // ForEach call the cb function for each reference contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stopped but no error is returned. The iterator is closed.
-func (iter *ReferenceFilteredIter) ForEach(cb func(*plumbing.Reference) error) error {
+func (iter *referenceFilteredIter) ForEach(cb func(*plumbing.Reference) error) error {
 	defer iter.Close()
 	for {
 		r, err := iter.Next()
@@ -85,7 +85,7 @@ func (iter *ReferenceFilteredIter) ForEach(cb func(*plumbing.Reference) error) e
 }
 
 // Close releases any resources used by the iterator.
-func (iter *ReferenceFilteredIter) Close() {
+func (iter *referenceFilteredIter) Close() {
 	iter.iter.Close()
 }
 
