@@ -11,7 +11,7 @@ import (
 	"github.com/src-d/go-git-fixtures"
 
 	. "gopkg.in/check.v1"
-	"srcd.works/go-billy.v1/osfs"
+	"gopkg.in/src-d/go-billy.v1/osfs"
 )
 
 func (s *SuiteDotGit) TestNewObjectPack(c *C) {

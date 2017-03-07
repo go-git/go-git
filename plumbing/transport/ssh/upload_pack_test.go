@@ -3,8 +3,8 @@ package ssh
 import (
 	"os"
 
-	"srcd.works/go-git.v4/plumbing/transport"
-	"srcd.works/go-git.v4/plumbing/transport/test"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
 
 	. "gopkg.in/check.v1"
 )

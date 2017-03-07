@@ -4,8 +4,8 @@ import (
 	"errors"
 	"io"
 
-	"srcd.works/go-git.v4/plumbing/protocol/packp/capability"
-	"srcd.works/go-git.v4/utils/ioutil"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 // ErrUploadPackResponseNotDecoded is returned if Read is called without

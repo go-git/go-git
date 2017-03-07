@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
-	"srcd.works/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 func Test(t *testing.T) { TestingT(t) }

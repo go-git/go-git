@@ -3,8 +3,8 @@ package object
 import (
 	"fmt"
 
-	"srcd.works/go-git.v4/utils/merkletrie"
-	"srcd.works/go-git.v4/utils/merkletrie/noder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 // The folowing functions transform changes types form the merkletrie

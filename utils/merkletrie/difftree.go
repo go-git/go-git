@@ -250,7 +250,7 @@ package merkletrie
 import (
 	"fmt"
 
-	"srcd.works/go-git.v4/utils/merkletrie/noder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 // DiffTree calculates the list of changes between two merkletries.  It

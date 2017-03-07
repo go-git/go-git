@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/storer"
-	"srcd.works/go-git.v4/utils/binary"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 // Encoder gets the data from the storage and write it into the writer in PACK

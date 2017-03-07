@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"srcd.works/go-git.v4"
-	. "srcd.works/go-git.v4/_examples"
+	"gopkg.in/src-d/go-git.v4"
+	. "gopkg.in/src-d/go-git.v4/_examples"
 )
 
 // Example of how to show the progress when you do a basic clone operation.

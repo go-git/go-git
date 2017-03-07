@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"srcd.works/go-git.v4/utils/binary"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 var (

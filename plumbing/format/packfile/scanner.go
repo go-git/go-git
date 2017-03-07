@@ -10,8 +10,8 @@ import (
 	"io"
 	"io/ioutil"
 
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/utils/binary"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 var (

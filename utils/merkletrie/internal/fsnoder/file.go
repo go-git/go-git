@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 
-	"srcd.works/go-git.v4/utils/merkletrie/noder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 // file values represent file-like noders in a merkle trie.
