@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"srcd.works/go-git.v4/utils/merkletrie/noder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 // A Frame is a collection of siblings in a trie, sorted alphabetically

@@ -1,6 +1,6 @@
 package packfile
 
-import "srcd.works/go-git.v4/plumbing"
+import "gopkg.in/src-d/go-git.v4/plumbing"
 
 // ObjectToPack is a representation of an object that is going to be into a
 // pack file.

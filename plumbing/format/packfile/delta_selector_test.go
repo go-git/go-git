@@ -1,8 +1,8 @@
 package packfile
 
 import (
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )

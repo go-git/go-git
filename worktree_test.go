@@ -4,13 +4,13 @@ import (
 	"io/ioutil"
 	"os"
 
-	"srcd.works/go-git.v4/plumbing/filemode"
-	"srcd.works/go-git.v4/plumbing/format/index"
+	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
-	"srcd.works/go-billy.v1/memfs"
-	"srcd.works/go-billy.v1/osfs"
+	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-billy.v2/osfs"
 )
 
 type WorktreeSuite struct {

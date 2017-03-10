@@ -2,7 +2,7 @@ package git
 
 import (
 	"github.com/src-d/go-git-fixtures"
-	"srcd.works/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 )

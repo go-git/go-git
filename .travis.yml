@@ -33,10 +33,10 @@ before_install:
   - git config --global user.name "Travis CI"
 
 install:
-  - rm -rf $GOPATH/src/srcd.works
-  - mkdir -p $GOPATH/src/srcd.works
-  - ln -s $PWD $GOPATH/src/srcd.works/go-git.v4
-  - cd $GOPATH/src/srcd.works/go-git.v4
+  - rm -rf $GOPATH/src/gopkg.in/src-d
+  - mkdir -p $GOPATH/src/gopkg.in/src-d
+  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v4
+  - cd $GOPATH/src/gopkg.in/src-d/go-git.v4
   - go get -v -t ./...
 
 script:

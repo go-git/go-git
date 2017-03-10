@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"srcd.works/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 
 	. "gopkg.in/check.v1"
 )

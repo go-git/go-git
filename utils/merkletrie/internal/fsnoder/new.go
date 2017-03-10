@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"srcd.works/go-git.v4/utils/merkletrie/noder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 // New function creates a full merkle trie from the string description of

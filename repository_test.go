@@ -10,15 +10,15 @@ import (
 	"strings"
 
 	"github.com/src-d/go-git-fixtures"
-	"srcd.works/go-git.v4/config"
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/object"
-	"srcd.works/go-git.v4/storage/filesystem"
-	"srcd.works/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/config"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"srcd.works/go-billy.v1/memfs"
-	"srcd.works/go-billy.v1/osfs"
+	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-billy.v2/osfs"
 )
 
 type RepositorySuite struct {

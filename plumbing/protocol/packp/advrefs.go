@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/protocol/packp/capability"
-	"srcd.works/go-git.v4/plumbing/storer"
-	"srcd.works/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 // AdvRefs values represent the information transmitted on an

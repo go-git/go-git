@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 
-	format "srcd.works/go-git.v4/plumbing/format/config"
+	format "gopkg.in/src-d/go-git.v4/plumbing/format/config"
 )
 
 var (

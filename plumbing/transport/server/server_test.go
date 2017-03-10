@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/src-d/go-git-fixtures"
-	"srcd.works/go-git.v4/plumbing/transport"
-	"srcd.works/go-git.v4/plumbing/transport/client"
-	"srcd.works/go-git.v4/plumbing/transport/server"
-	"srcd.works/go-git.v4/storage/filesystem"
-	"srcd.works/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/client"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/server"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )

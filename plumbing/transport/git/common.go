@@ -7,10 +7,10 @@ import (
 	"net"
 	"strings"
 
-	"srcd.works/go-git.v4/plumbing/format/pktline"
-	"srcd.works/go-git.v4/plumbing/transport"
-	"srcd.works/go-git.v4/plumbing/transport/internal/common"
-	"srcd.works/go-git.v4/utils/ioutil"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 // DefaultClient is the default git client.

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"unicode"
 
-	"srcd.works/go-git.v4/utils/merkletrie"
-	"srcd.works/go-git.v4/utils/merkletrie/internal/fsnoder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/internal/fsnoder"
 
 	. "gopkg.in/check.v1"
 )

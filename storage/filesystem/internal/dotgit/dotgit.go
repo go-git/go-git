@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/utils/ioutil"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
-	"srcd.works/go-billy.v1"
+	"gopkg.in/src-d/go-billy.v2"
 )
 
 const (

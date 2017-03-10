@@ -1,6 +1,6 @@
 package cache
 
-import "srcd.works/go-git.v4/plumbing"
+import "gopkg.in/src-d/go-git.v4/plumbing"
 
 const (
 	initialQueueSize = 20

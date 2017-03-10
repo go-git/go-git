@@ -3,15 +3,15 @@ package packfile_test
 import (
 	"io"
 
-	"srcd.works/go-billy.v1/memfs"
+	"gopkg.in/src-d/go-billy.v2/memfs"
 
 	"github.com/src-d/go-git-fixtures"
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/format/idxfile"
-	"srcd.works/go-git.v4/plumbing/format/packfile"
-	"srcd.works/go-git.v4/plumbing/storer"
-	"srcd.works/go-git.v4/storage/filesystem"
-	"srcd.works/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )

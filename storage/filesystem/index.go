@@ -3,8 +3,8 @@ package filesystem
 import (
 	"os"
 
-	"srcd.works/go-git.v4/plumbing/format/index"
-	"srcd.works/go-git.v4/storage/filesystem/internal/dotgit"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 )
 
 type IndexStorage struct {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"srcd.works/go-git.v4/utils/merkletrie/noder"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 // A doubleIter is a convenience type to keep track of the current

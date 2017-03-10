@@ -6,7 +6,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"github.com/src-d/go-git-fixtures"
-	"srcd.works/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 func (s *IdxfileSuite) TestEncode(c *C) {

@@ -3,9 +3,9 @@ package object
 import (
 	"io"
 
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/storer"
-	"srcd.works/go-git.v4/utils/ioutil"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 // Blob is used to store arbitrary data - it is generally a file.

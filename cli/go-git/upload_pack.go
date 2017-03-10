@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"srcd.works/go-git.v4/plumbing/transport/file"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/file"
 )
 
 type CmdUploadPack struct {

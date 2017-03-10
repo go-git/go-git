@@ -7,13 +7,13 @@ import (
 	"io/ioutil"
 	"os"
 
-	"srcd.works/go-git.v4/config"
-	"srcd.works/go-git.v4/plumbing"
-	"srcd.works/go-git.v4/plumbing/filemode"
-	"srcd.works/go-git.v4/plumbing/format/index"
-	"srcd.works/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/config"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
-	"srcd.works/go-billy.v1"
+	"gopkg.in/src-d/go-billy.v2"
 )
 
 var ErrWorktreeNotClean = errors.New("worktree is not clean")
