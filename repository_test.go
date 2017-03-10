@@ -17,8 +17,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v1/memfs"
-	"gopkg.in/src-d/go-billy.v1/osfs"
+	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-billy.v2/osfs"
 )
 
 type RepositorySuite struct {

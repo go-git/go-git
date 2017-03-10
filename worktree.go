@@ -13,7 +13,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
-	"gopkg.in/src-d/go-billy.v1"
+	"gopkg.in/src-d/go-billy.v2"
 )
 
 var ErrWorktreeNotClean = errors.New("worktree is not clean")

@@ -14,8 +14,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
-	"gopkg.in/src-d/go-billy.v1"
-	"gopkg.in/src-d/go-billy.v1/osfs"
+	"gopkg.in/src-d/go-billy.v2"
+	"gopkg.in/src-d/go-billy.v2/osfs"
 )
 
 var (
