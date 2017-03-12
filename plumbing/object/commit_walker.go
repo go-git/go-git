@@ -69,3 +69,28 @@ func (w *commitWalker) walk() error {
 
 	return w.walk()
 }
+
+// WalkCommitHistoryPost walks the commit history like WalkCommitHistory
+// but in post-order. This means that after walking a merge commit, the
+// merged commit will be walked before the base it was merged on. This
+// can be useful if you wish to see the history in chronological order.
+func WalkCommitHistoryPost(c *Commit, cb func(*Commit) error) error {
+	stack := []*Commit{c}
+	seen := make(map[plumbing.Hash]bool)
+	for len(stack) > 0 {
+		c := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[c.Hash] {
+			continue
+		}
+		seen[c.Hash] = true
+		if err := cb(c); err != nil {
+			return err
+		}
+		c.Parents().ForEach(func(pcm *Commit) error {
+			stack = append(stack, pcm)
+			return nil
+		})
+	}
+	return nil
+}
