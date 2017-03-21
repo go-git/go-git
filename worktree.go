@@ -34,7 +34,7 @@ func (w *Worktree) Checkout(commit plumbing.Hash) error {
 		return ErrWorktreeNotClean
 	}
 
-	c, err := w.r.Commit(commit)
+	c, err := w.r.CommitObject(commit)
 	if err != nil {
 		return err
 	}

@@ -39,7 +39,7 @@ func main() {
 	CheckIfError(err)
 
 	// ... retrieving the commit object
-	commit, err := r.Commit(ref.Hash())
+	commit, err := r.CommitObject(ref.Hash())
 	CheckIfError(err)
 	fmt.Println(commit)
 

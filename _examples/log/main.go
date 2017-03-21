@@ -30,7 +30,7 @@ func main() {
 	CheckIfError(err)
 
 	// ... retrieves the commit object
-	commit, err := r.Commit(ref.Hash())
+	commit, err := r.CommitObject(ref.Hash())
 	CheckIfError(err)
 
 	// ... retrieves the commit history
