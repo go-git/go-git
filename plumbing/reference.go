@@ -28,6 +28,19 @@ const (
 	SymbolicReference ReferenceType = 2
 )
 
+func (r ReferenceType) String() string {
+	switch r {
+	case InvalidReference:
+		return "invalid-reference"
+	case HashReference:
+		return "hash-reference"
+	case SymbolicReference:
+		return "symbolic-reference"
+	}
+
+	return ""
+}
+
 // ReferenceName reference name's
 type ReferenceName string
 

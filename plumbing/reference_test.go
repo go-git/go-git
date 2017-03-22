@@ -10,6 +10,10 @@ const (
 	ExampleReferenceName ReferenceName = "refs/heads/v4"
 )
 
+func (s *ReferenceSuite) TestReferenceTypeString(c *C) {
+	c.Assert(SymbolicReference.String(), Equals, "symbolic-reference")
+}
+
 func (s *ReferenceSuite) TestReferenceNameShort(c *C) {
 	c.Assert(ExampleReferenceName.Short(), Equals, "v4")
 }
