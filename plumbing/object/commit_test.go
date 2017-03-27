@@ -2,6 +2,7 @@ package object
 
 import (
 	"io"
+	"strings"
 	"time"
 
 	"github.com/src-d/go-git-fixtures"
@@ -166,4 +167,20 @@ func (s *SuiteCommit) TestCommitIterNext(c *C) {
 	commit, err = i.Next()
 	c.Assert(err, Equals, io.EOF)
 	c.Assert(commit, IsNil)
+}
+
+func (s *SuiteCommit) TestLongCommitMessageSerialization(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Commit{}
+	commit := *s.Commit
+
+	longMessage := "my message: message\n\n" + strings.Repeat("test", 4096) + "\nOK"
+	commit.Message = longMessage
+
+	err := commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.Message, Equals, longMessage)
 }
