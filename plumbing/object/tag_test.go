@@ -3,6 +3,7 @@ package object
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/src-d/go-git-fixtures"
@@ -268,4 +269,20 @@ func (s *TagSuite) TestTagToTagString(c *C) {
 			"Date:   Mon Jan 01 00:00:00 0001 +0000\n"+
 			"\n"+
 			"\n")
+}
+
+func (s *TagSuite) TestLongTagNameSerialization(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Tag{}
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+
+	longName := "my tag: name " + strings.Repeat("test", 4096) + " OK"
+	tag.Name = longName
+
+	err := tag.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.Name, Equals, longName)
 }

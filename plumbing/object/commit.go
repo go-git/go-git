@@ -130,7 +130,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 
 	var message bool
 	for {
-		line, err := r.ReadSlice('\n')
+		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
 		}

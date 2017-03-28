@@ -90,7 +90,7 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 
 	r := bufio.NewReader(reader)
 	for {
-		line, err := r.ReadSlice('\n')
+		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
 		}
