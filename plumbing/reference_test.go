@@ -18,6 +18,11 @@ func (s *ReferenceSuite) TestReferenceNameShort(c *C) {
 	c.Assert(ExampleReferenceName.Short(), Equals, "v4")
 }
 
+func (s *ReferenceSuite) TestReferenceNameWithSlash(c *C) {
+	r := ReferenceName("refs/remotes/origin/feature/AllowSlashes")
+	c.Assert(r.Short(), Equals, "origin/feature/AllowSlashes")
+}
+
 func (s *ReferenceSuite) TestNewReferenceFromStrings(c *C) {
 	r := NewReferenceFromStrings("refs/heads/v4", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	c.Assert(r.Type(), Equals, HashReference)
