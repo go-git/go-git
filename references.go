@@ -76,8 +76,10 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 
 	// optimization: don't traverse branches that does not
 	// contain the path.
-	parents := parentsContainingPath(path, current)
-
+	parents, err := parentsContainingPath(path, current)
+	if err != nil {
+		return err
+	}
 	switch len(parents) {
 	// if the path is not found in any of its parents, the path was
 	// created by this commit; we must add it to the revisions list and
@@ -110,18 +112,18 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 	return nil
 }
 
-func parentsContainingPath(path string, c *object.Commit) []*object.Commit {
+func parentsContainingPath(path string, c *object.Commit) ([]*object.Commit, error) {
 	// TODO: benchmark this method making git.object.Commit.parent public instead of using
 	// an iterator
 	var result []*object.Commit
 	iter := c.Parents()
 	for {
 		parent, err := iter.Next()
+		if err == io.EOF {
+			return result, nil
+		}
 		if err != nil {
-			if err == io.EOF {
-				return result
-			}
-			panic("unreachable")
+			return nil, err
 		}
 		if _, err := parent.File(path); err == nil {
 			result = append(result, parent)
