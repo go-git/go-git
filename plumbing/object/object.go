@@ -138,7 +138,12 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 		return
 	}
 
-	tl, err := time.Parse("-0700", string(b[tzStart:tzStart+timeZoneLength]))
+	// Include a dummy year in this time.Parse() call to avoid a bug in Go:
+	// https://github.com/golang/go/issues/19750
+	//
+	// Parsing the timezone with no other details causes the tl.Location() call
+	// below to return time.Local instead of the parsed zone in some cases
+	tl, err := time.Parse("2006 -0700", "1970 "+string(b[tzStart:tzStart+timeZoneLength]))
 	if err != nil {
 		return
 	}
