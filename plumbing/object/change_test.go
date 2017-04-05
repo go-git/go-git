@@ -198,6 +198,54 @@ func (s *ChangeSuite) TestEmptyChangeFails(c *C) {
 	c.Assert(str, Equals, "malformed change")
 }
 
+// test reproducing bug #317
+func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
+	s.Suite.SetUpSuite(c)
+	f := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One()
+
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+
+	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
+	c.Assert(err, IsNil)
+	var commits []*Commit
+	iter.ForEach(func(o plumbing.EncodedObject) error {
+		if o.Type() == plumbing.CommitObject {
+			commit, err := GetCommit(sto, o.Hash())
+			c.Assert(err, IsNil)
+			commits = append(commits, commit)
+
+		}
+
+		return nil
+	})
+
+	c.Assert(len(commits), Not(Equals), 0)
+
+	var prev *Commit
+	for _, commit := range commits {
+		if prev == nil {
+			prev = commit
+			continue
+		}
+		tree, err := commit.Tree()
+		c.Assert(err, IsNil)
+		prevTree, err := prev.Tree()
+		c.Assert(err, IsNil)
+		changes, err := DiffTree(tree, prevTree)
+		c.Assert(err, IsNil)
+		for _, change := range changes {
+			_, _, err := change.Files()
+			if err != nil {
+				panic(err)
+				c.Assert(err, IsNil)
+			}
+		}
+
+		prev = commit
+	}
+}
+
 func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 	// Commit 7beaad711378a4daafccc2c04bc46d36df2a0fd1 of the go-git
 	// fixture modified "examples/latest/latest.go".

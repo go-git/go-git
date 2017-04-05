@@ -46,6 +46,10 @@ func (c *Change) Files() (from, to *File, err error) {
 
 	if action == merkletrie.Insert || action == merkletrie.Modify {
 		to, err = c.To.Tree.TreeEntryFile(&c.To.TreeEntry)
+		if !c.To.TreeEntry.Mode.IsFile() {
+			return nil, nil, nil
+		}
+
 		if err != nil {
 			return
 		}
@@ -53,6 +57,10 @@ func (c *Change) Files() (from, to *File, err error) {
 
 	if action == merkletrie.Delete || action == merkletrie.Modify {
 		from, err = c.From.Tree.TreeEntryFile(&c.From.TreeEntry)
+		if !c.From.TreeEntry.Mode.IsFile() {
+			return nil, nil, nil
+		}
+
 		if err != nil {
 			return
 		}
