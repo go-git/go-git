@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// CheckArgs should be uesed to esnure the right command line arguments are
+// CheckArgs should be used to esnure the right command line arguments are
 // passed before executing an example.
 func CheckArgs(arg ...string) {
 	if len(os.Args) < len(arg)+1 {
@@ -15,7 +15,7 @@ func CheckArgs(arg ...string) {
 	}
 }
 
-// CheckIfError should be used to naiivly panics if an error is not nil.
+// CheckIfError should be used to naively panics if an error is not nil.
 func CheckIfError(err error) {
 	if err == nil {
 		return
