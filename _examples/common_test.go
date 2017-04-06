@@ -16,12 +16,13 @@ var examplesTest = flag.Bool("examples", false, "run the examples tests")
 var defaultURL = "https://github.com/mcuadros/basic.git"
 
 var args = map[string][]string{
-	"showcase":    []string{defaultURL, tempFolder()},
-	"custom_http": []string{defaultURL},
+	"checkout":    []string{defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
 	"clone":       []string{defaultURL, tempFolder()},
-	"progress":    []string{defaultURL, tempFolder()},
+	"custom_http": []string{defaultURL},
 	"open":        []string{cloneRepository(defaultURL, tempFolder())},
+	"progress":    []string{defaultURL, tempFolder()},
 	"push":        []string{setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
+	"showcase":    []string{defaultURL, tempFolder()},
 }
 
 var ignored = map[string]bool{}
