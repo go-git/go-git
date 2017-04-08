@@ -46,10 +46,10 @@ type Config struct {
 	// of the submodule, should equal to Submodule.Name.
 	Submodules map[string]*Submodule
 
-	// contains the raw information of a config file, the main goal is preserve
-	// the parsed information from the original format, to avoid missing
-	// unsupported features.
-	raw *format.Config
+	// Raw contains the raw information of a config file. The main goal is
+	// preserve the parsed information from the original format, to avoid
+	// dropping unsupported fields.
+	Raw *format.Config
 }
 
 // NewConfig returns a new empty Config.
@@ -57,7 +57,7 @@ func NewConfig() *Config {
 	return &Config{
 		Remotes:    make(map[string]*RemoteConfig, 0),
 		Submodules: make(map[string]*Submodule, 0),
-		raw:        format.New(),
+		Raw:        format.New(),
 	}
 }
 
@@ -91,8 +91,8 @@ func (c *Config) Unmarshal(b []byte) error {
 	r := bytes.NewBuffer(b)
 	d := format.NewDecoder(r)
 
-	c.raw = format.New()
-	if err := d.Decode(c.raw); err != nil {
+	c.Raw = format.New()
+	if err := d.Decode(c.Raw); err != nil {
 		return err
 	}
 
@@ -102,7 +102,7 @@ func (c *Config) Unmarshal(b []byte) error {
 }
 
 func (c *Config) unmarshalCore() {
-	s := c.raw.Section(coreSection)
+	s := c.Raw.Section(coreSection)
 	if s.Options.Get(bareKey) == "true" {
 		c.Core.IsBare = true
 	}
@@ -111,7 +111,7 @@ func (c *Config) unmarshalCore() {
 }
 
 func (c *Config) unmarshalRemotes() error {
-	s := c.raw.Section(remoteSection)
+	s := c.Raw.Section(remoteSection)
 	for _, sub := range s.Subsections {
 		r := &RemoteConfig{}
 		if err := r.unmarshal(sub); err != nil {
@@ -125,7 +125,7 @@ func (c *Config) unmarshalRemotes() error {
 }
 
 func (c *Config) unmarshalSubmodules() {
-	s := c.raw.Section(submoduleSection)
+	s := c.Raw.Section(submoduleSection)
 	for _, sub := range s.Subsections {
 		m := &Submodule{}
 		m.unmarshal(sub)
@@ -141,7 +141,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalSubmodules()
 
 	buf := bytes.NewBuffer(nil)
-	if err := format.NewEncoder(buf).Encode(c.raw); err != nil {
+	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
 		return nil, err
 	}
 
@@ -149,7 +149,7 @@ func (c *Config) Marshal() ([]byte, error) {
 }
 
 func (c *Config) marshalCore() {
-	s := c.raw.Section(coreSection)
+	s := c.Raw.Section(coreSection)
 	s.SetOption(bareKey, fmt.Sprintf("%t", c.Core.IsBare))
 
 	if c.Core.Worktree != "" {
@@ -158,7 +158,7 @@ func (c *Config) marshalCore() {
 }
 
 func (c *Config) marshalRemotes() {
-	s := c.raw.Section(remoteSection)
+	s := c.Raw.Section(remoteSection)
 	s.Subsections = make(format.Subsections, len(c.Remotes))
 
 	var i int
@@ -169,7 +169,7 @@ func (c *Config) marshalRemotes() {
 }
 
 func (c *Config) marshalSubmodules() {
-	s := c.raw.Section(submoduleSection)
+	s := c.Raw.Section(submoduleSection)
 	s.Subsections = make(format.Subsections, len(c.Submodules))
 
 	var i int
