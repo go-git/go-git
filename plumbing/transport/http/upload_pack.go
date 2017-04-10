@@ -59,10 +59,9 @@ func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 		return nil, err
 	}
 
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized {
-		return nil, transport.ErrAuthorizationRequired
+	if err := NewErr(res); err != nil {
+		_ = res.Body.Close()
+		return nil, err
 	}
 
 	ar := packp.NewAdvRefs()

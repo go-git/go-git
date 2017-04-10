@@ -51,7 +51,11 @@ func (s *ClientSuite) TestNewErrOK(c *C) {
 }
 
 func (s *ClientSuite) TestNewErrUnauthorized(c *C) {
-	s.testNewHTTPError(c, http.StatusUnauthorized, "authorization required")
+	s.testNewHTTPError(c, http.StatusUnauthorized, "authentication required")
+}
+
+func (s *ClientSuite) TestNewErrForbidden(c *C) {
+	s.testNewHTTPError(c, http.StatusForbidden, "authorization failed")
 }
 
 func (s *ClientSuite) TestNewErrNotFound(c *C) {
