@@ -82,20 +82,21 @@ func reachableObjects(
 	commit *object.Commit,
 	seen map[plumbing.Hash]bool,
 	cb func(h plumbing.Hash)) error {
-	return object.WalkCommitHistory(commit, func(commit *object.Commit) error {
-		if seen[commit.Hash] {
-			return nil
-		}
+	return object.NewCommitPreIterator(commit).
+		ForEach(func(commit *object.Commit) error {
+			if seen[commit.Hash] {
+				return nil
+			}
 
-		cb(commit.Hash)
+			cb(commit.Hash)
 
-		tree, err := commit.Tree()
-		if err != nil {
-			return err
-		}
+			tree, err := commit.Tree()
+			if err != nil {
+				return err
+			}
 
-		return iterateCommitTrees(seen, tree, cb)
-	})
+			return iterateCommitTrees(seen, tree, cb)
+		})
 }
 
 // iterateCommitTrees iterate all reachable trees from the given commit

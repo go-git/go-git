@@ -142,11 +142,11 @@ type blame struct {
 	graph [][]*object.Commit
 }
 
-// calculte the history of a file "path", starting from commit "from", sorted by commit date.
+// calculate the history of a file "path", starting from commit "from", sorted by commit date.
 func (b *blame) fillRevs() error {
 	var err error
 
-	b.revs, err = References(b.fRev, b.path)
+	b.revs, err = references(b.fRev, b.path)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package git
 
 import (
 	"io"
+	"sort"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
@@ -23,17 +24,40 @@ import (
 // - Cherry-picks are not detected unless there are no commits between them and
 // therefore can appear repeated in the list. (see git path-id for hints on how
 // to fix this).
-func References(c *object.Commit, path string) ([]*object.Commit, error) {
+func references(c *object.Commit, path string) ([]*object.Commit, error) {
 	var result []*object.Commit
 	seen := make(map[plumbing.Hash]struct{}, 0)
 	if err := walkGraph(&result, &seen, c, path); err != nil {
 		return nil, err
 	}
 
-	object.SortCommits(result)
+	// TODO result should be returned without ordering
+	sortCommits(result)
 
 	// for merges of identical cherry-picks
 	return removeComp(path, result, equivalent)
+}
+
+type commitSorterer struct {
+	l []*object.Commit
+}
+
+func (s commitSorterer) Len() int {
+	return len(s.l)
+}
+
+func (s commitSorterer) Less(i, j int) bool {
+	return s.l[i].Committer.When.Before(s.l[j].Committer.When)
+}
+
+func (s commitSorterer) Swap(i, j int) {
+	s.l[i], s.l[j] = s.l[j], s.l[i]
+}
+
+// SortCommits sorts a commit list by commit date, from older to newer.
+func sortCommits(l []*object.Commit) {
+	s := &commitSorterer{l}
+	sort.Sort(s)
 }
 
 // Recursive traversal of the commit graph, generating a linear history of the

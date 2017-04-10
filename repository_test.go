@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -686,6 +687,80 @@ func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
 
 	err = r.Push(&PushOptions{RemoteName: "myremote"})
 	c.Assert(err, ErrorMatches, ".*remote not found.*")
+}
+
+func (s *RepositorySuite) TestLog(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cIter, err := r.Log(&LogOptions{
+		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+	})
+
+	c.Assert(err, IsNil)
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+	}
+
+	for _, o := range commitOrder {
+		commit, err := cIter.Next()
+		c.Assert(err, IsNil)
+		c.Assert(commit.Hash, Equals, o)
+	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *RepositorySuite) TestLogHead(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cIter, err := r.Log(&LogOptions{})
+
+	c.Assert(err, IsNil)
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+	}
+
+	for _, o := range commitOrder {
+		commit, err := cIter.Next()
+		c.Assert(err, IsNil)
+		c.Assert(commit.Hash, Equals, o)
+	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *RepositorySuite) TestLogError(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(&CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	_, err = r.Log(&LogOptions{
+		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	})
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestCommit(c *C) {
