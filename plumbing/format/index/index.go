@@ -2,6 +2,7 @@ package index
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -47,6 +48,16 @@ type Index struct {
 	ResolveUndo *ResolveUndo
 }
 
+// String is equivalent to `git ls-files --stage --debug`
+func (i *Index) String() string {
+	var o string
+	for _, e := range i.Entries {
+		o += e.String()
+	}
+
+	return o
+}
+
 // Entry represents a single file (or stage of a file) in the cache. An entry
 // represents exactly one stage of a file. If a file path is unmerged then
 // multiple Entry instances may appear for the same path name.
@@ -76,6 +87,18 @@ type Entry struct {
 	// IntentToAdd record only the fact that the path will be added later
 	// https://git-scm.com/docs/git-add ("git add -N")
 	IntentToAdd bool
+}
+
+func (e Entry) String() string {
+	var o string
+	o += fmt.Sprintf("%06o %s %d\t%s\n", e.Mode, e.Hash, e.Stage, e.Name)
+	o += fmt.Sprintf("  ctime: %d:%d\n", e.CreatedAt.Unix(), e.CreatedAt.Nanosecond())
+	o += fmt.Sprintf("  mtime: %d:%d\n", e.ModifiedAt.Unix(), e.ModifiedAt.Nanosecond())
+	o += fmt.Sprintf("  dev: %d\tino: %d\n", e.Dev, e.Inode)
+	o += fmt.Sprintf("  uid: %d\tgid: %d\n", e.UID, e.GID)
+	o += fmt.Sprintf("  size: %d\tflags: %x\n", e.Size, 0)
+
+	return o
 }
 
 // Tree contains pre-computed hashes for trees that can be derived from the
