@@ -107,6 +107,12 @@ func (s *TreeSuite) TestFiles(c *C) {
 	c.Assert(count, Equals, 9)
 }
 
+func (s *TreeSuite) TestFindEntry(c *C) {
+	e, err := s.Tree.FindEntry("vendor/foo.go")
+	c.Assert(err, IsNil)
+	c.Assert(e.Name, Equals, "foo.go")
+}
+
 // This plumbing.EncodedObject implementation has a reader that only returns 6
 // bytes at a time, this should simulate the conditions when a read
 // returns less bytes than asked, for example when reading a hash which

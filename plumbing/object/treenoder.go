@@ -21,10 +21,11 @@ type treeNoder struct {
 	name     string // empty string for the root node
 	mode     filemode.FileMode
 	hash     plumbing.Hash
-	children []noder.Noder // memoized
+	children []noder.Noder // memorized
 }
 
-func newTreeNoder(t *Tree) *treeNoder {
+// NewTreeRootNode returns the root node of a Tree
+func NewTreeRootNode(t *Tree) *treeNoder {
 	if t == nil {
 		return &treeNoder{}
 	}
@@ -74,7 +75,7 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 		return noder.NoChildren, nil
 	}
 
-	// children are memoized for efficiency
+	// children are memorized for efficiency
 	if t.children != nil {
 		return t.children, nil
 	}
