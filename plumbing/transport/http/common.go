@@ -132,7 +132,9 @@ func NewErr(r *http.Response) error {
 
 	switch r.StatusCode {
 	case http.StatusUnauthorized:
-		return transport.ErrAuthorizationRequired
+		return transport.ErrAuthenticationRequired
+	case http.StatusForbidden:
+		return transport.ErrAuthorizationFailed
 	case http.StatusNotFound:
 		return transport.ErrRepositoryNotFound
 	}

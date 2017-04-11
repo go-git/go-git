@@ -229,3 +229,11 @@ func (o *ResetOptions) Validate(r *Repository) error {
 
 	return nil
 }
+
+// LogOptions describes how a log action should be performed.
+type LogOptions struct {
+	// When the From option is set the log will only contain commits
+	// reachable from it. If this option is not set, HEAD will be used as
+	// the default From.
+	From plumbing.Hash
+}
