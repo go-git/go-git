@@ -1,113 +1,86 @@
 package index
 
 import (
-	"bytes"
 	"path/filepath"
-
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
-func IsEquals(a, b noder.Hasher) bool {
-	pathA := a.(noder.Path)
-	pathB := b.(noder.Path)
-	if pathA[len(pathA)-1].IsDir() || pathB[len(pathB)-1].IsDir() {
-		return false
+// The node represents a index.Entry or a directory inferred from the path
+// of all entries. It implements the interface noder.Noder of merkletrie
+// package.
+//
+// This implementation implements a "standard" hash method being able to be
+// compared with any other noder.Noder implementation inside of go-git
+type node struct {
+	path     string
+	entry    index.Entry
+	children []noder.Noder
+	isDir    bool
+}
+
+// NewRootNode returns the root node of a computed tree from a index.Index,
+func NewRootNode(idx *index.Index) noder.Noder {
+	const rootNode = ""
+
+	m := map[string]*node{rootNode: {isDir: true}}
+
+	for _, e := range idx.Entries {
+		parts := strings.Split(e.Name, string(filepath.Separator))
+
+		var path string
+		for _, part := range parts {
+			parent := path
+			path = filepath.Join(path, part)
+
+			if _, ok := m[path]; ok {
+				continue
+			}
+
+			n := &node{path: path}
+			if path == e.Name {
+				n.entry = e
+			} else {
+				n.isDir = true
+			}
+
+			m[n.path] = n
+			m[parent].children = append(m[parent].children, n)
+		}
 	}
 
-	return bytes.Equal(a.Hash(), b.Hash())
+	return m[rootNode]
 }
 
-type Node struct {
-	index  *index.Index
-	parent string
-	name   string
-	entry  index.Entry
-	isDir  bool
+func (n *node) String() string {
+	return n.path
 }
 
-func NewRootNode(idx *index.Index) (*Node, error) {
-	return &Node{index: idx, isDir: true}, nil
-}
-
-func (n *Node) String() string {
-	return n.fullpath()
-}
-
-func (n *Node) Hash() []byte {
-	if n.IsDir() {
-		return nil
-	}
-
+// Hash the hash of a filesystem is a 24-byte slice, is the result of
+// concatenating the computed plumbing.Hash of the file as a Blob and its
+// plumbing.FileMode; that way the difftree algorithm will detect changes in the
+// contents of files and also in their mode.
+//
+// If the node is computed and not based on a index.Entry the hash is equals
+// to a 24-bytes slices of zero values.
+func (n *node) Hash() []byte {
 	return append(n.entry.Hash[:], n.entry.Mode.Bytes()...)
 }
 
-func (n *Node) Name() string {
-	return n.name
+func (n *node) Name() string {
+	return filepath.Base(n.path)
 }
 
-func (n *Node) IsDir() bool {
+func (n *node) IsDir() bool {
 	return n.isDir
 }
 
-func (n *Node) Children() ([]noder.Noder, error) {
-	path := n.fullpath()
-	dirs := make(map[string]bool)
-
-	var c []noder.Noder
-	for _, e := range n.index.Entries {
-		if e.Name == path {
-			continue
-		}
-
-		prefix := path
-		if prefix != "" {
-			prefix += "/"
-		}
-
-		if !strings.HasPrefix(e.Name, prefix) {
-			continue
-		}
-
-		name := e.Name[len(path):]
-		if len(name) != 0 && name[0] == '/' {
-			name = name[1:]
-		}
-
-		parts := strings.Split(name, "/")
-		if len(parts) > 1 {
-			dirs[parts[0]] = true
-			continue
-		}
-
-		c = append(c, &Node{
-			index:  n.index,
-			parent: path,
-			name:   name,
-			entry:  e,
-		})
-	}
-
-	for dir := range dirs {
-		c = append(c, &Node{
-			index:  n.index,
-			parent: path,
-			name:   dir,
-			isDir:  true,
-		})
-
-	}
-
-	return c, nil
+func (n *node) Children() ([]noder.Noder, error) {
+	return n.children, nil
 }
 
-func (n *Node) NumChildren() (int, error) {
-	files, err := n.Children()
-	return len(files), err
-}
-
-func (n *Node) fullpath() string {
-	return filepath.Join(n.parent, n.name)
+func (n *node) NumChildren() (int, error) {
+	return len(n.children), nil
 }

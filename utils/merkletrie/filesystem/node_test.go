@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"gopkg.in/src-d/go-billy.v2"
 	"gopkg.in/src-d/go-billy.v2/memfs"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -28,12 +30,7 @@ func (s *NoderSuite) TestDiff(c *C) {
 	WriteFile(fsB, "qux/bar", []byte("foo"), 0644)
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
-	nodeA, err := NewRootNode(fsA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(fsB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 0)
 }
@@ -49,12 +46,7 @@ func (s *NoderSuite) TestDiffChangeContent(c *C) {
 	WriteFile(fsB, "qux/bar", []byte("bar"), 0644)
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
-	nodeA, err := NewRootNode(fsA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(fsB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 1)
 }
@@ -66,12 +58,7 @@ func (s *NoderSuite) TestDiffChangeMissing(c *C) {
 	fsB := memfs.New()
 	WriteFile(fsB, "bar", []byte("bar"), 0644)
 
-	nodeA, err := NewRootNode(fsA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(fsB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 2)
 }
@@ -83,12 +70,7 @@ func (s *NoderSuite) TestDiffChangeMode(c *C) {
 	fsB := memfs.New()
 	WriteFile(fsB, "foo", []byte("foo"), 0755)
 
-	nodeA, err := NewRootNode(fsA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(fsB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 1)
 }
@@ -100,12 +82,7 @@ func (s *NoderSuite) TestDiffChangeModeNotRelevant(c *C) {
 	fsB := memfs.New()
 	WriteFile(fsB, "foo", []byte("foo"), 0655)
 
-	nodeA, err := NewRootNode(fsA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(fsB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 0)
 }
@@ -124,4 +101,14 @@ func WriteFile(fs billy.Filesystem, filename string, data []byte, perm os.FileMo
 		err = err1
 	}
 	return err
+}
+
+var empty = make([]byte, 24)
+
+func IsEquals(a, b noder.Hasher) bool {
+	if bytes.Equal(a.Hash(), empty) || bytes.Equal(b.Hash(), empty) {
+		return false
+	}
+
+	return bytes.Equal(a.Hash(), b.Hash())
 }

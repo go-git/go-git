@@ -1,12 +1,14 @@
 package index
 
 import (
+	"bytes"
 	"testing"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -34,12 +36,7 @@ func (s *NoderSuite) TestDiff(c *C) {
 		},
 	}
 
-	nodeA, err := NewRootNode(indexA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(indexB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 0)
 }
@@ -57,12 +54,7 @@ func (s *NoderSuite) TestDiffChange(c *C) {
 		},
 	}
 
-	nodeA, err := NewRootNode(indexA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(indexB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 2)
 }
@@ -80,12 +72,7 @@ func (s *NoderSuite) TestDiffDir(c *C) {
 		},
 	}
 
-	nodeA, err := NewRootNode(indexA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(indexB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 2)
 }
@@ -105,12 +92,17 @@ func (s *NoderSuite) TestDiffSameRoot(c *C) {
 		},
 	}
 
-	nodeA, err := NewRootNode(indexA)
-	c.Assert(err, IsNil)
-	nodeB, err := NewRootNode(indexB)
-	c.Assert(err, IsNil)
-
-	ch, err := merkletrie.DiffTree(nodeA, nodeB, IsEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 1)
+}
+
+var empty = make([]byte, 24)
+
+func isEquals(a, b noder.Hasher) bool {
+	if bytes.Equal(a.Hash(), empty) || bytes.Equal(b.Hash(), empty) {
+		return false
+	}
+
+	return bytes.Equal(a.Hash(), b.Hash())
 }
