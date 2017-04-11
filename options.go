@@ -177,3 +177,55 @@ type SubmoduleUpdateOptions struct {
 	// submodules (and so on). Until the SubmoduleRescursivity is reached.
 	RecurseSubmodules SubmoduleRescursivity
 }
+
+// CheckoutOptions describes how a checkout operation should be performed.
+type CheckoutOptions struct {
+	// Branch to be checked out, if empty uses `master`
+	Branch plumbing.ReferenceName
+	Hash   plumbing.Hash
+	// RemoteName is the name of the remote to be pushed to.
+	Force bool
+}
+
+// Validate validates the fields and sets the default values.
+func (o *CheckoutOptions) Validate() error {
+	if o.Branch == "" {
+		o.Branch = plumbing.Master
+	}
+
+	return nil
+}
+
+type ResetMode int
+
+const (
+	// HardReset resets the index and working tree. Any changes to tracked files
+	// in the working tree are discarded.
+	HardReset ResetMode = iota
+	// MixedReset Resets the index but not the working tree (i.e., the changed
+	// files are preserved but not marked for commit) and reports what has not
+	// been updated. This is the default action.
+	MixedReset
+)
+
+// ResetOptions describes how a reset operation should be performed.
+type ResetOptions struct {
+	// Commit, if commit is pressent set the current branch head (HEAD) to it.
+	Commit plumbing.Hash
+	// Mode
+	Mode ResetMode
+}
+
+// Validate validates the fields and sets the default values.
+func (o *ResetOptions) Validate(r *Repository) error {
+	if o.Commit == plumbing.ZeroHash {
+		ref, err := r.Head()
+		if err != nil {
+			return err
+		}
+
+		o.Commit = ref.Hash()
+	}
+
+	return nil
+}

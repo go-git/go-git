@@ -26,8 +26,8 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 	dir, err := ioutil.TempDir("", "submodule")
 	c.Assert(err, IsNil)
 
-	r, err := PlainClone(dir, false, &CloneOptions{
-		URL: fmt.Sprintf("file://%s", filepath.Join(path)),
+	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
+		URL: fmt.Sprintf("file://%s", path),
 	})
 
 	c.Assert(err, IsNil)
@@ -74,7 +74,6 @@ func (s *SubmoduleSuite) TestUpdate(c *C) {
 	ref, err := r.Reference(plumbing.HEAD, true)
 	c.Assert(err, IsNil)
 	c.Assert(ref.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
 }
 
 func (s *SubmoduleSuite) TestUpdateWithoutInit(c *C) {

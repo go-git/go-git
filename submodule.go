@@ -103,10 +103,10 @@ func (s *Submodule) Update(o *SubmoduleUpdateOptions) error {
 		return err
 	}
 
-	return s.doRecrusiveUpdate(r, o)
+	return s.doRecursiveUpdate(r, o)
 }
 
-func (s *Submodule) doRecrusiveUpdate(r *Repository, o *SubmoduleUpdateOptions) error {
+func (s *Submodule) doRecursiveUpdate(r *Repository, o *SubmoduleUpdateOptions) error {
 	if o.RecurseSubmodules == NoRecurseSubmodules {
 		return nil
 	}
@@ -140,7 +140,7 @@ func (s *Submodule) fetchAndCheckout(r *Repository, o *SubmoduleUpdateOptions, h
 		return err
 	}
 
-	if err := w.Checkout(hash); err != nil {
+	if err := w.Checkout(&CheckoutOptions{Hash: hash}); err != nil {
 		return err
 	}
 

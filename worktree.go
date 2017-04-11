@@ -12,6 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
 
 	"gopkg.in/src-d/go-billy.v2"
 )
@@ -24,40 +25,110 @@ type Worktree struct {
 	fs billy.Filesystem
 }
 
-func (w *Worktree) Checkout(commit plumbing.Hash) error {
-	s, err := w.Status()
+// Checkout switch branches or restore working tree files.
+func (w *Worktree) Checkout(opts *CheckoutOptions) error {
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+
+	c, err := w.getCommitFromCheckoutOptions(opts)
 	if err != nil {
 		return err
 	}
 
-	if !s.IsClean() {
-		return ErrWorktreeNotClean
+	ro := &ResetOptions{Commit: c}
+	if opts.Force {
+		ro.Mode = HardReset
 	}
 
-	c, err := w.r.CommitObject(commit)
-	if err != nil {
+	if err := w.Reset(ro); err != nil {
 		return err
 	}
 
-	t, err := c.Tree()
-	if err != nil {
-		return err
+	if !opts.Hash.IsZero() {
+		return w.setCommit(opts.Hash)
 	}
 
-	idx := &index.Index{Version: 2}
-	walker := object.NewTreeWalker(t, true)
+	return w.setBranch(opts.Branch, c)
+}
 
-	for {
-		name, entry, err := walker.Next()
-		if err == io.EOF {
-			break
+func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing.Hash, error) {
+	if !opts.Hash.IsZero() {
+		return opts.Hash, nil
+	}
+
+	b, err := w.r.Reference(opts.Branch, true)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if !b.IsTag() {
+		return b.Hash(), nil
+	}
+
+	o, err := w.r.Object(plumbing.AnyObject, b.Hash())
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	switch o := o.(type) {
+	case *object.Tag:
+		if o.TargetType != plumbing.CommitObject {
+			return plumbing.ZeroHash, fmt.Errorf("unsupported tag object target %q", o.TargetType)
 		}
 
-		if err != nil {
-			return err
-		}
+		return o.Target, nil
+	case *object.Commit:
+		return o.Hash, nil
+	}
 
-		if err := w.checkoutEntry(name, &entry, idx); err != nil {
+	return plumbing.ZeroHash, fmt.Errorf("unsupported tag target %q", o.Type())
+}
+
+func (w *Worktree) setCommit(commit plumbing.Hash) error {
+	head := plumbing.NewHashReference(plumbing.HEAD, commit)
+	return w.r.Storer.SetReference(head)
+}
+
+func (w *Worktree) setBranch(branch plumbing.ReferenceName, commit plumbing.Hash) error {
+	target, err := w.r.Storer.Reference(branch)
+	if err != nil {
+		return err
+	}
+
+	var head *plumbing.Reference
+	if target.IsBranch() {
+		head = plumbing.NewSymbolicReference(plumbing.HEAD, target.Name())
+	} else {
+		head = plumbing.NewHashReference(plumbing.HEAD, commit)
+	}
+
+	return w.r.Storer.SetReference(head)
+}
+
+// Reset the worktree to a specified state.
+func (w *Worktree) Reset(opts *ResetOptions) error {
+	if err := opts.Validate(w.r); err != nil {
+		return err
+	}
+
+	changes, err := w.diffCommitWithStaging(opts.Commit, true)
+	if err != nil {
+		return err
+	}
+
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+
+	t, err := w.getTreeFromCommitHash(opts.Commit)
+	if err != nil {
+		return err
+	}
+
+	for _, ch := range changes {
+		if err := w.checkoutChange(ch, t, idx); err != nil {
 			return err
 		}
 	}
@@ -65,36 +136,72 @@ func (w *Worktree) Checkout(commit plumbing.Hash) error {
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) checkoutEntry(name string, e *object.TreeEntry, idx *index.Index) error {
-	if e.Mode == filemode.Submodule {
-		return w.addIndexFromTreeEntry(name, e, idx)
-	}
-
-	if e.Mode == filemode.Dir {
-		return nil
-	}
-
-	return w.checkoutFile(name, e, idx)
-}
-
-func (w *Worktree) checkoutFile(name string, e *object.TreeEntry, idx *index.Index) error {
-	blob, err := object.GetBlob(w.r.Storer, e.Hash)
+func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *index.Index) error {
+	a, err := ch.Action()
 	if err != nil {
 		return err
 	}
 
-	from, err := blob.Reader()
+	switch a {
+	case merkletrie.Modify:
+		name := ch.To.String()
+		if err := w.rmIndexFromFile(name, idx); err != nil {
+			return err
+		}
+
+		// to apply perm changes the file is deleted, billy doesn't implement
+		// chmod
+		if err := w.fs.Remove(name); err != nil {
+			return err
+		}
+
+		fallthrough
+	case merkletrie.Insert:
+		name := ch.To.String()
+		e, err := t.FindEntry(name)
+		if err != nil {
+			return err
+		}
+
+		if e.Mode == filemode.Submodule {
+			return w.addIndexFromTreeEntry(name, e, idx)
+		}
+
+		f, err := t.File(name)
+		if err != nil {
+			return err
+		}
+
+		if err := w.checkoutFile(f); err != nil {
+			return err
+		}
+
+		return w.addIndexFromFile(name, e.Hash, idx)
+	case merkletrie.Delete:
+		name := ch.From.String()
+		if err := w.fs.Remove(name); err != nil {
+			return err
+		}
+
+		return w.rmIndexFromFile(name, idx)
+	}
+
+	return nil
+}
+
+func (w *Worktree) checkoutFile(f *object.File) error {
+	from, err := f.Reader()
 	if err != nil {
 		return err
 	}
 	defer from.Close()
 
-	mode, err := e.Mode.ToOSFileMode()
+	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
 		return err
 	}
 
-	to, err := w.fs.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
+	to, err := w.fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return err
 	}
@@ -104,10 +211,8 @@ func (w *Worktree) checkoutFile(name string, e *object.TreeEntry, idx *index.Ind
 		return err
 	}
 
-	return w.addIndexFromFile(name, e, idx)
+	return err
 }
-
-var fillSystemInfo func(e *index.Entry, sys interface{})
 
 func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *index.Index) error {
 	idx.Entries = append(idx.Entries, index.Entry{
@@ -119,7 +224,7 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 	return nil
 }
 
-func (w *Worktree) addIndexFromFile(name string, f *object.TreeEntry, idx *index.Index) error {
+func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *index.Index) error {
 	fi, err := w.fs.Stat(name)
 	if err != nil {
 		return err
@@ -131,7 +236,7 @@ func (w *Worktree) addIndexFromFile(name string, f *object.TreeEntry, idx *index
 	}
 
 	e := index.Entry{
-		Hash:       f.Hash,
+		Hash:       h,
 		Name:       name,
 		Mode:       mode,
 		ModifiedAt: fi.ModTime(),
@@ -148,64 +253,33 @@ func (w *Worktree) addIndexFromFile(name string, f *object.TreeEntry, idx *index
 	return nil
 }
 
-func (w *Worktree) Status() (Status, error) {
-	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return nil, err
-	}
-
-	files, err := readDirAll(w.fs)
-	if err != nil {
-		return nil, err
-	}
-
-	s := make(Status, 0)
-	for _, e := range idx.Entries {
-		fi, ok := files[e.Name]
-		delete(files, e.Name)
-
-		if !ok {
-			s.File(e.Name).Worktree = Deleted
+func (w *Worktree) rmIndexFromFile(name string, idx *index.Index) error {
+	for i, e := range idx.Entries {
+		if e.Name != name {
 			continue
 		}
 
-		status, err := w.compareFileWithEntry(fi, &e)
-		if err != nil {
-			return nil, err
-		}
-
-		s.File(e.Name).Worktree = status
+		idx.Entries = append(idx.Entries[:i], idx.Entries[i+1:]...)
+		return nil
 	}
 
-	for f := range files {
-		s.File(f).Worktree = Untracked
-	}
-
-	return s, nil
+	return nil
 }
 
-func (w *Worktree) compareFileWithEntry(fi billy.FileInfo, e *index.Entry) (StatusCode, error) {
-	if fi.Size() != int64(e.Size) {
-		return Modified, nil
-	}
-
-	mode, err := filemode.NewFromOSFileMode(fi.Mode())
+func (w *Worktree) getTreeFromCommitHash(commit plumbing.Hash) (*object.Tree, error) {
+	c, err := w.r.CommitObject(commit)
 	if err != nil {
-		return Modified, err
+		return nil, err
 	}
 
-	if mode != e.Mode {
-		return Modified, nil
-	}
-
-	h, err := calcSHA1(w.fs, e.Name)
-	if h != e.Hash || err != nil {
-		return Modified, err
-
-	}
-
-	return Unmodified, nil
+	return c.Tree()
 }
+
+func (w *Worktree) initializeIndex() error {
+	return w.r.Storer.SetIndex(&index.Index{Version: 2})
+}
+
+var fillSystemInfo func(e *index.Entry, sys interface{})
 
 const gitmodulesFile = ".gitmodules"
 
@@ -289,150 +363,4 @@ func (w *Worktree) readIndexEntry(path string) (index.Entry, error) {
 	}
 
 	return e, fmt.Errorf("unable to find %q entry in the index", path)
-}
-
-// Status current status of a Worktree
-type Status map[string]*FileStatus
-
-func (s Status) File(filename string) *FileStatus {
-	if _, ok := (s)[filename]; !ok {
-		s[filename] = &FileStatus{}
-	}
-
-	return s[filename]
-
-}
-
-func (s Status) IsClean() bool {
-	for _, status := range s {
-		if status.Worktree != Unmodified || status.Staging != Unmodified {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (s Status) String() string {
-	var names []string
-	for name := range s {
-		names = append(names, name)
-	}
-
-	var output string
-	for _, name := range names {
-		status := s[name]
-		if status.Staging == 0 && status.Worktree == 0 {
-			continue
-		}
-
-		if status.Staging == Renamed {
-			name = fmt.Sprintf("%s -> %s", name, status.Extra)
-		}
-
-		output += fmt.Sprintf("%s%s %s\n", status.Staging, status.Worktree, name)
-	}
-
-	return output
-}
-
-// FileStatus status of a file in the Worktree
-type FileStatus struct {
-	Staging  StatusCode
-	Worktree StatusCode
-	Extra    string
-}
-
-// StatusCode status code of a file in the Worktree
-type StatusCode int8
-
-const (
-	Unmodified StatusCode = iota
-	Untracked
-	Modified
-	Added
-	Deleted
-	Renamed
-	Copied
-	UpdatedButUnmerged
-)
-
-func (c StatusCode) String() string {
-	switch c {
-	case Unmodified:
-		return " "
-	case Modified:
-		return "M"
-	case Added:
-		return "A"
-	case Deleted:
-		return "D"
-	case Renamed:
-		return "R"
-	case Copied:
-		return "C"
-	case UpdatedButUnmerged:
-		return "U"
-	case Untracked:
-		return "?"
-	default:
-		return "-"
-	}
-}
-
-func calcSHA1(fs billy.Filesystem, filename string) (plumbing.Hash, error) {
-	file, err := fs.Open(filename)
-	if err != nil {
-		return plumbing.ZeroHash, err
-	}
-
-	stat, err := fs.Stat(filename)
-	if err != nil {
-		return plumbing.ZeroHash, err
-	}
-
-	h := plumbing.NewHasher(plumbing.BlobObject, stat.Size())
-	if _, err := io.Copy(h, file); err != nil {
-		return plumbing.ZeroHash, err
-	}
-
-	return h.Sum(), nil
-}
-
-func readDirAll(filesystem billy.Filesystem) (map[string]billy.FileInfo, error) {
-	all := make(map[string]billy.FileInfo, 0)
-	return all, doReadDirAll(filesystem, "", all)
-}
-
-func doReadDirAll(fs billy.Filesystem, path string, files map[string]billy.FileInfo) error {
-	if path == defaultDotGitPath {
-		return nil
-	}
-
-	l, err := fs.ReadDir(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return err
-	}
-
-	for _, info := range l {
-		file := fs.Join(path, info.Name())
-		if file == defaultDotGitPath {
-			continue
-		}
-
-		if !info.IsDir() {
-			files[file] = info
-			continue
-		}
-
-		if err := doReadDirAll(fs, file, files); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
