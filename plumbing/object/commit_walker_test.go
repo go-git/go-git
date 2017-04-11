@@ -8,11 +8,12 @@ type CommitWalkerSuite struct {
 
 var _ = Suite(&CommitWalkerSuite{})
 
-func (s *CommitWalkerSuite) TestWalkHistory(c *C) {
+func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	WalkCommitHistory(commit, func(c *Commit) error {
+	wIter := NewCommitPreIterator(commit)
+	wIter.ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -34,11 +35,12 @@ func (s *CommitWalkerSuite) TestWalkHistory(c *C) {
 	}
 }
 
-func (s *CommitWalkerSuite) TestWalkHistoryPost(c *C) {
+func (s *CommitWalkerSuite) TestCommitPostIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	WalkCommitHistoryPost(commit, func(c *Commit) error {
+	wIter := NewCommitPostIterator(commit)
+	wIter.ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})

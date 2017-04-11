@@ -294,7 +294,7 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 		commit, err := r.CommitObject(plumbing.NewHash(t.commit))
 		c.Assert(err, IsNil)
 
-		revs, err := References(commit, t.path)
+		revs, err := references(commit, t.path)
 		c.Assert(err, IsNil)
 		c.Assert(len(revs), Equals, len(t.revs))
 

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -64,7 +63,7 @@ func (c *Commit) Tree() (*Tree, error) {
 }
 
 // Parents return a CommitIter to the parent Commits.
-func (c *Commit) Parents() *CommitIter {
+func (c *Commit) Parents() CommitIter {
 	return NewCommitIter(c.s,
 		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.parents),
 	)
@@ -163,19 +162,6 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	}
 }
 
-// History returns a slice with the previous commits in the history of this
-// commit, sorted in reverse chronological order.
-func (c *Commit) History() ([]*Commit, error) {
-	var commits []*Commit
-	err := WalkCommitHistory(c, func(commit *Commit) error {
-		commits = append(commits, commit)
-		return nil
-	})
-
-	ReverseSortCommits(commits)
-	return commits, err
-}
-
 // Encode transforms a Commit into a plumbing.EncodedObject.
 func (b *Commit) Encode(o plumbing.EncodedObject) error {
 	o.SetType(plumbing.CommitObject)
@@ -231,24 +217,31 @@ func indent(t string) string {
 	return strings.Join(output, "\n")
 }
 
-// CommitIter provides an iterator for a set of commits.
-type CommitIter struct {
+// CommitIter is a generic closable interface for iterating over commits.
+type CommitIter interface {
+	Next() (*Commit, error)
+	ForEach(func(*Commit) error) error
+	Close()
+}
+
+// storerCommitIter provides an iterator from commits in an EncodedObjectStorer.
+type storerCommitIter struct {
 	storer.EncodedObjectIter
 	s storer.EncodedObjectStorer
 }
 
 // NewCommitIter takes a storer.EncodedObjectStorer and a
-// storer.EncodedObjectIter and returns a *CommitIter that iterates over all
+// storer.EncodedObjectIter and returns a CommitIter that iterates over all
 // commits contained in the storer.EncodedObjectIter.
 //
 // Any non-commit object returned by the storer.EncodedObjectIter is skipped.
-func NewCommitIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *CommitIter {
-	return &CommitIter{iter, s}
+func NewCommitIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) CommitIter {
+	return &storerCommitIter{iter, s}
 }
 
 // Next moves the iterator to the next commit and returns a pointer to it. If
 // there are no more commits, it returns io.EOF.
-func (iter *CommitIter) Next() (*Commit, error) {
+func (iter *storerCommitIter) Next() (*Commit, error) {
 	obj, err := iter.EncodedObjectIter.Next()
 	if err != nil {
 		return nil, err
@@ -260,7 +253,7 @@ func (iter *CommitIter) Next() (*Commit, error) {
 // ForEach call the cb function for each commit contained on this iter until
 // an error appends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *CommitIter) ForEach(cb func(*Commit) error) error {
+func (iter *storerCommitIter) ForEach(cb func(*Commit) error) error {
 	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
 		c, err := DecodeCommit(iter.s, obj)
 		if err != nil {
@@ -271,30 +264,6 @@ func (iter *CommitIter) ForEach(cb func(*Commit) error) error {
 	})
 }
 
-type commitSorterer struct {
-	l []*Commit
-}
-
-func (s commitSorterer) Len() int {
-	return len(s.l)
-}
-
-func (s commitSorterer) Less(i, j int) bool {
-	return s.l[i].Committer.When.Before(s.l[j].Committer.When)
-}
-
-func (s commitSorterer) Swap(i, j int) {
-	s.l[i], s.l[j] = s.l[j], s.l[i]
-}
-
-// SortCommits sorts a commit list by commit date, from older to newer.
-func SortCommits(l []*Commit) {
-	s := &commitSorterer{l}
-	sort.Sort(s)
-}
-
-// ReverseSortCommits sorts a commit list by commit date, from newer to older.
-func ReverseSortCommits(l []*Commit) {
-	s := &commitSorterer{l}
-	sort.Sort(sort.Reverse(s))
+func (iter *storerCommitIter) Close() {
+	iter.EncodedObjectIter.Close()
 }

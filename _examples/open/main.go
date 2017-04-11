@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4"
 	. "gopkg.in/src-d/go-git.v4/_examples"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 // Open an existing repository in a specific folder.
@@ -24,13 +25,18 @@ func main() {
 	ref, err := r.Head()
 	CheckIfError(err)
 
-	// ... retrieving the commit object
-	commit, err := r.CommitObject(ref.Hash())
+	// ... retrieves the commit history
+	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
 	CheckIfError(err)
 
-	// ... calculating the commit history
-	commits, err := commit.History()
+	// ... just iterates over the commits
+	var cCount int
+	err = cIter.ForEach(func(c *object.Commit) error {
+		cCount++
+
+		return nil
+	})
 	CheckIfError(err)
 
-	fmt.Println(len(commits))
+	fmt.Println(cCount)
 }
