@@ -67,7 +67,7 @@ type TreeEntry struct {
 // File returns the hash of the file identified by the `path` argument.
 // The path is interpreted as relative to the tree receiver.
 func (t *Tree) File(path string) (*File, error) {
-	e, err := t.findEntry(path)
+	e, err := t.FindEntry(path)
 	if err != nil {
 		return nil, ErrFileNotFound
 	}
@@ -86,7 +86,7 @@ func (t *Tree) File(path string) (*File, error) {
 // Tree returns the tree identified by the `path` argument.
 // The path is interpreted as relative to the tree receiver.
 func (t *Tree) Tree(path string) (*Tree, error) {
-	e, err := t.findEntry(path)
+	e, err := t.FindEntry(path)
 	if err != nil {
 		return nil, ErrDirectoryNotFound
 	}
@@ -109,7 +109,8 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 	return NewFile(e.Name, e.Mode, blob), nil
 }
 
-func (t *Tree) findEntry(path string) (*TreeEntry, error) {
+// FindEntry search a TreeEntry in this tree or any subtree.
+func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	pathParts := strings.Split(path, "/")
 
 	var tree *Tree
@@ -146,6 +147,7 @@ func (t *Tree) entry(baseName string) (*TreeEntry, error) {
 	if t.m == nil {
 		t.buildMap()
 	}
+
 	entry, ok := t.m[baseName]
 	if !ok {
 		return nil, errEntryNotFound

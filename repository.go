@@ -340,11 +340,11 @@ func (r *Repository) clone(o *CloneOptions) error {
 		return err
 	}
 
-	if _, err := r.updateReferences(c.Fetch, o.ReferenceName, head); err != nil {
+	if _, err := r.updateReferences(c.Fetch, head); err != nil {
 		return err
 	}
 
-	if err := r.updateWorktree(); err != nil {
+	if err := r.updateWorktree(head.Name()); err != nil {
 		return err
 	}
 
@@ -429,7 +429,7 @@ func (r *Repository) updateRemoteConfig(remote *Remote, o *CloneOptions,
 }
 
 func (r *Repository) updateReferences(spec []config.RefSpec,
-	headName plumbing.ReferenceName, resolvedHead *plumbing.Reference) (updated bool, err error) {
+	resolvedHead *plumbing.Reference) (updated bool, err error) {
 
 	if !resolvedHead.IsBranch() {
 		// Detached HEAD mode
@@ -534,7 +534,7 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return err
 	}
 
-	refsUpdated, err := r.updateReferences(remote.c.Fetch, o.ReferenceName, head)
+	refsUpdated, err := r.updateReferences(remote.c.Fetch, head)
 	if err != nil {
 		return err
 	}
@@ -547,7 +547,7 @@ func (r *Repository) Pull(o *PullOptions) error {
 		return NoErrAlreadyUpToDate
 	}
 
-	if err := r.updateWorktree(); err != nil {
+	if err := r.updateWorktree(head.Name()); err != nil {
 		return err
 	}
 
@@ -560,9 +560,14 @@ func (r *Repository) Pull(o *PullOptions) error {
 	return nil
 }
 
-func (r *Repository) updateWorktree() error {
+func (r *Repository) updateWorktree(branch plumbing.ReferenceName) error {
 	if r.wt == nil {
 		return nil
+	}
+
+	b, err := r.Reference(branch, true)
+	if err != nil {
+		return err
 	}
 
 	w, err := r.Worktree()
@@ -570,12 +575,9 @@ func (r *Repository) updateWorktree() error {
 		return err
 	}
 
-	h, err := r.Head()
-	if err != nil {
-		return err
-	}
-
-	return w.Checkout(h.Hash())
+	return w.Reset(&ResetOptions{
+		Commit: b.Hash(),
+	})
 }
 
 // Fetch fetches changes from a remote repository.

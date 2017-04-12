@@ -10,8 +10,8 @@ import (
 // DiffTree compares the content and mode of the blobs found via two
 // tree objects.
 func DiffTree(a, b *Tree) (Changes, error) {
-	from := newTreeNoder(a)
-	to := newTreeNoder(b)
+	from := NewTreeRootNode(a)
+	to := NewTreeRootNode(b)
 
 	hashEqual := func(a, b noder.Hasher) bool {
 		return bytes.Equal(a.Hash(), b.Hash())
