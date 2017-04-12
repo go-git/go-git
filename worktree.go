@@ -17,9 +17,13 @@ import (
 	"gopkg.in/src-d/go-billy.v2"
 )
 
-var ErrWorktreeNotClean = errors.New("worktree is not clean")
-var ErrSubmoduleNotFound = errors.New("submodule not found")
+var (
+	ErrWorktreeNotClean  = errors.New("worktree is not clean")
+	ErrSubmoduleNotFound = errors.New("submodule not found")
+	ErrUnstaggedChanges  = errors.New("worktree contains unstagged changes")
+)
 
+// Worktree represents a git worktree.
 type Worktree struct {
 	r  *Repository
 	fs billy.Filesystem
@@ -31,25 +35,38 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		return err
 	}
 
+	if !opts.Force {
+		unstaged, err := w.cointainsUnstagedChanges()
+		if err != nil {
+			return err
+		}
+
+		if unstaged {
+			return ErrUnstaggedChanges
+		}
+	}
+
 	c, err := w.getCommitFromCheckoutOptions(opts)
 	if err != nil {
 		return err
 	}
 
-	ro := &ResetOptions{Commit: c}
+	ro := &ResetOptions{Commit: c, Mode: MergeReset}
 	if opts.Force {
 		ro.Mode = HardReset
 	}
 
-	if err := w.Reset(ro); err != nil {
+	if !opts.Hash.IsZero() {
+		err = w.setHEADToCommit(opts.Hash)
+	} else {
+		err = w.setHEADToBranch(opts.Branch, c)
+	}
+
+	if err != nil {
 		return err
 	}
 
-	if !opts.Hash.IsZero() {
-		return w.setCommit(opts.Hash)
-	}
-
-	return w.setBranch(opts.Branch, c)
+	return w.Reset(ro)
 }
 
 func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing.Hash, error) {
@@ -85,12 +102,12 @@ func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing
 	return plumbing.ZeroHash, fmt.Errorf("unsupported tag target %q", o.Type())
 }
 
-func (w *Worktree) setCommit(commit plumbing.Hash) error {
+func (w *Worktree) setHEADToCommit(commit plumbing.Hash) error {
 	head := plumbing.NewHashReference(plumbing.HEAD, commit)
 	return w.r.Storer.SetReference(head)
 }
 
-func (w *Worktree) setBranch(branch plumbing.ReferenceName, commit plumbing.Hash) error {
+func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbing.Hash) error {
 	target, err := w.r.Storer.Reference(branch)
 	if err != nil {
 		return err
@@ -110,6 +127,17 @@ func (w *Worktree) setBranch(branch plumbing.ReferenceName, commit plumbing.Hash
 func (w *Worktree) Reset(opts *ResetOptions) error {
 	if err := opts.Validate(w.r); err != nil {
 		return err
+	}
+
+	if opts.Mode == MergeReset {
+		unstaged, err := w.cointainsUnstagedChanges()
+		if err != nil {
+			return err
+		}
+
+		if unstaged {
+			return ErrUnstaggedChanges
+		}
 	}
 
 	changes, err := w.diffCommitWithStaging(opts.Commit, true)
@@ -133,7 +161,44 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
-	return w.r.Storer.SetIndex(idx)
+	if err := w.r.Storer.SetIndex(idx); err != nil {
+		return err
+	}
+
+	return w.setHEADCommit(opts.Commit)
+}
+
+func (w *Worktree) cointainsUnstagedChanges() (bool, error) {
+	ch, err := w.diffStagingWithWorktree()
+	if err != nil {
+		return false, err
+	}
+
+	return len(ch) != 0, nil
+}
+
+func (w *Worktree) setHEADCommit(commit plumbing.Hash) error {
+	head, err := w.r.Reference(plumbing.HEAD, false)
+	if err != nil {
+		return err
+	}
+
+	if head.Type() == plumbing.HashReference {
+		head = plumbing.NewHashReference(plumbing.HEAD, commit)
+		return w.r.Storer.SetReference(head)
+	}
+
+	branch, err := w.r.Reference(head.Target(), false)
+	if err != nil {
+		return err
+	}
+
+	if !branch.IsBranch() {
+		return fmt.Errorf("invalid HEAD target should be a branch, found %s", branch.Type())
+	}
+
+	branch = plumbing.NewHashReference(branch.Name(), commit)
+	return w.r.Storer.SetReference(branch)
 }
 
 func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *index.Index) error {

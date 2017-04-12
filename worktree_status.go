@@ -80,26 +80,13 @@ func (w *Worktree) diffStagingWithWorktree() (merkletrie.Changes, error) {
 		return nil, err
 	}
 
-	from, err := index.NewRootNode(idx)
-	if err != nil {
-		return nil, err
-	}
-
-	to, err := filesystem.NewRootNode(w.fs)
-	if err != nil {
-		return nil, err
-	}
-
-	return merkletrie.DiffTree(from, to, IsEquals)
+	from := index.NewRootNode(idx)
+	to := filesystem.NewRootNode(w.fs)
+	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
 }
 
 func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
 	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return nil, err
-	}
-
-	to, err := index.NewRootNode(idx)
 	if err != nil {
 		return nil, err
 	}
@@ -114,20 +101,31 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 		return nil, err
 	}
 
+	to := index.NewRootNode(idx)
 	from := object.NewTreeRootNode(t)
+
 	if reverse {
-		return merkletrie.DiffTree(to, from, IsEquals)
+		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
 	}
 
-	return merkletrie.DiffTree(from, to, IsEquals)
+	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
 }
 
-func IsEquals(a, b noder.Hasher) bool {
-	pathA := a.(noder.Path)
-	pathB := b.(noder.Path)
-	if pathA[len(pathA)-1].IsDir() || pathB[len(pathB)-1].IsDir() {
+var emptyNoderHash = make([]byte, 24)
+
+// diffTreeIsEquals is a implementation of noder.Equals, used to compare
+// noder.Noder, it compare the content and the length of the hashes.
+//
+// Since some of the noder.Noder implementations doesn't compute a hash for
+// some directories, if any of the hashes is a 24-byte slice of zero values
+// the comparison is not done and the hashes are take as different.
+func diffTreeIsEquals(a, b noder.Hasher) bool {
+	hashA := a.Hash()
+	hashB := b.Hash()
+
+	if bytes.Equal(hashA, emptyNoderHash) || bytes.Equal(hashB, emptyNoderHash) {
 		return false
 	}
 
-	return bytes.Equal(a.Hash(), b.Hash())
+	return bytes.Equal(hashA, hashB)
 }

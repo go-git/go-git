@@ -1,19 +1,23 @@
 package git
 
 import "fmt"
+import "bytes"
 
-// Status current status of a Worktree
+// Status represents the current status of a Worktree.
+// The key of the map is the path of the file.
 type Status map[string]*FileStatus
 
-func (s Status) File(filename string) *FileStatus {
-	if _, ok := (s)[filename]; !ok {
-		s[filename] = &FileStatus{}
+// File returns the FileStatus for a given path, if the FileStatus doesn't
+// exists a new FileStatus is added to the map using the path as key.
+func (s Status) File(path string) *FileStatus {
+	if _, ok := (s)[path]; !ok {
+		s[path] = &FileStatus{Worktree: Unmodified, Staging: Unmodified}
 	}
 
-	return s[filename]
-
+	return s[path]
 }
 
+// IsClean returns true if all the files aren't in Unmodified status.
 func (s Status) IsClean() bool {
 	for _, status := range s {
 		if status.Worktree != Unmodified || status.Staging != Unmodified {
@@ -25,68 +29,42 @@ func (s Status) IsClean() bool {
 }
 
 func (s Status) String() string {
-	var names []string
-	for name := range s {
-		names = append(names, name)
-	}
-
-	var output string
-	for _, name := range names {
-		status := s[name]
-		if status.Staging == 0 && status.Worktree == 0 {
+	buf := bytes.NewBuffer(nil)
+	for path, status := range s {
+		if status.Staging == Unmodified && status.Worktree == Unmodified {
 			continue
 		}
 
 		if status.Staging == Renamed {
-			name = fmt.Sprintf("%s -> %s", name, status.Extra)
+			path = fmt.Sprintf("%s -> %s", path, status.Extra)
 		}
 
-		output += fmt.Sprintf("%s%s %s\n", status.Staging, status.Worktree, name)
+		fmt.Fprintf(buf, "%c%c %s\n", status.Staging, status.Worktree, path)
 	}
 
-	return output
+	return buf.String()
 }
 
-// FileStatus status of a file in the Worktree
+// FileStatus contains the status of a file in the worktree
 type FileStatus struct {
-	Staging  StatusCode
+	// Staging is the status of a file in the staging area
+	Staging StatusCode
+	// Worktree is the status of a file in the worktree
 	Worktree StatusCode
-	Extra    string
+	// Extra contains extra information, such as the previous name in a rename
+	Extra string
 }
 
 // StatusCode status code of a file in the Worktree
-type StatusCode int8
+type StatusCode byte
 
 const (
-	Unmodified StatusCode = iota
-	Untracked
-	Modified
-	Added
-	Deleted
-	Renamed
-	Copied
-	UpdatedButUnmerged
+	Unmodified         StatusCode = ' '
+	Untracked          StatusCode = '?'
+	Modified           StatusCode = 'M'
+	Added              StatusCode = 'A'
+	Deleted            StatusCode = 'D'
+	Renamed            StatusCode = 'R'
+	Copied             StatusCode = 'C'
+	UpdatedButUnmerged StatusCode = 'U'
 )
-
-func (c StatusCode) String() string {
-	switch c {
-	case Unmodified:
-		return " "
-	case Modified:
-		return "M"
-	case Added:
-		return "A"
-	case Deleted:
-		return "D"
-	case Renamed:
-		return "R"
-	case Copied:
-		return "C"
-	case UpdatedButUnmerged:
-		return "U"
-	case Untracked:
-		return "?"
-	default:
-		return "-"
-	}
-}

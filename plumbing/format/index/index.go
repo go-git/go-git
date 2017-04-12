@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"bytes"
+
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 )
@@ -50,12 +52,12 @@ type Index struct {
 
 // String is equivalent to `git ls-files --stage --debug`
 func (i *Index) String() string {
-	var o string
+	buf := bytes.NewBuffer(nil)
 	for _, e := range i.Entries {
-		o += e.String()
+		buf.WriteString(e.String())
 	}
 
-	return o
+	return buf.String()
 }
 
 // Entry represents a single file (or stage of a file) in the cache. An entry
@@ -90,15 +92,16 @@ type Entry struct {
 }
 
 func (e Entry) String() string {
-	var o string
-	o += fmt.Sprintf("%06o %s %d\t%s\n", e.Mode, e.Hash, e.Stage, e.Name)
-	o += fmt.Sprintf("  ctime: %d:%d\n", e.CreatedAt.Unix(), e.CreatedAt.Nanosecond())
-	o += fmt.Sprintf("  mtime: %d:%d\n", e.ModifiedAt.Unix(), e.ModifiedAt.Nanosecond())
-	o += fmt.Sprintf("  dev: %d\tino: %d\n", e.Dev, e.Inode)
-	o += fmt.Sprintf("  uid: %d\tgid: %d\n", e.UID, e.GID)
-	o += fmt.Sprintf("  size: %d\tflags: %x\n", e.Size, 0)
+	buf := bytes.NewBuffer(nil)
 
-	return o
+	fmt.Fprintf(buf, "%06o %s %d\t%s\n", e.Mode, e.Hash, e.Stage, e.Name)
+	fmt.Fprintf(buf, "  ctime: %d:%d\n", e.CreatedAt.Unix(), e.CreatedAt.Nanosecond())
+	fmt.Fprintf(buf, "  mtime: %d:%d\n", e.ModifiedAt.Unix(), e.ModifiedAt.Nanosecond())
+	fmt.Fprintf(buf, "  dev: %d\tino: %d\n", e.Dev, e.Inode)
+	fmt.Fprintf(buf, "  uid: %d\tgid: %d\n", e.UID, e.GID)
+	fmt.Fprintf(buf, "  size: %d\tflags: %x\n", e.Size, 0)
+
+	return buf.String()
 }
 
 // Tree contains pre-computed hashes for trees that can be derived from the

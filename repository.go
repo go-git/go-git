@@ -575,7 +575,7 @@ func (r *Repository) updateWorktree(branch plumbing.ReferenceName) error {
 		return err
 	}
 
-	return w.reset(&ResetOptions{
+	return w.Reset(&ResetOptions{
 		Commit: b.Hash(),
 	})
 }

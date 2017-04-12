@@ -109,7 +109,7 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 	return NewFile(e.Name, e.Mode, blob), nil
 }
 
-// FindEntry search a TreeEntry in this tree or any subtree
+// FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	pathParts := strings.Split(path, "/")
 

@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
@@ -193,38 +195,42 @@ func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	c.Assert(head.Name().String(), Equals, "HEAD")
 }
 
+func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
+	s.testCheckoutBisect(c, "https://github.com/src-d/go-git.git")
+}
+
+func (s *WorktreeSuite) TestCheckoutBisectSubmodules(c *C) {
+	c.Skip("not-submodule-support")
+	s.testCheckoutBisect(c, "https://github.com/git-fixtures/submodule.git")
+}
+
 // TestCheckoutBisect simulates a git bisect going through the git history and
 // checking every commit over the previous commit
-func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
-	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
-	fs := memfs.New()
+func (s *WorktreeSuite) testCheckoutBisect(c *C, url string) {
+	f := fixtures.ByURL(url).One()
 
 	w := &Worktree{
 		r:  s.NewRepository(f),
-		fs: fs,
+		fs: memfs.New(),
 	}
 
 	// we delete the index, since the fixture comes with a real index
 	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
 	c.Assert(err, IsNil)
 
-	ref, err := w.r.Head()
+	iter, err := w.r.Log(&LogOptions{})
 	c.Assert(err, IsNil)
 
-	commit, err := w.r.CommitObject(ref.Hash())
-	c.Assert(err, IsNil)
-
-	history, err := commit.History()
-	c.Assert(err, IsNil)
-
-	for i := len(history) - 1; i >= 0; i-- {
-		err := w.Checkout(&CheckoutOptions{Hash: history[i].Hash})
+	iter.ForEach(func(commit *object.Commit) error {
+		err := w.Checkout(&CheckoutOptions{Hash: commit.Hash})
 		c.Assert(err, IsNil)
 
 		status, err := w.Status()
 		c.Assert(err, IsNil)
 		c.Assert(status.IsClean(), Equals, true)
-	}
+
+		return nil
+	})
 }
 
 func (s *WorktreeSuite) TestStatus(c *C) {
@@ -240,6 +246,84 @@ func (s *WorktreeSuite) TestStatus(c *C) {
 	c.Assert(status, HasLen, 9)
 }
 
+func (s *WorktreeSuite) TestReset(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Not(Equals), commit)
+
+	err = w.Reset(&ResetOptions{Commit: commit})
+	c.Assert(err, IsNil)
+
+	branch, err = w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Equals, commit)
+}
+
+func (s *WorktreeSuite) TestResetMerge(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	f, err := fs.Create(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("foo"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commit})
+	c.Assert(err, Equals, ErrUnstaggedChanges)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Not(Equals), commit)
+}
+
+func (s *WorktreeSuite) TestResetHard(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	f, err := fs.Create(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("foo"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	err = w.Reset(&ResetOptions{Mode: HardReset, Commit: commit})
+	c.Assert(err, IsNil)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Equals, commit)
+}
+
 func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
@@ -253,6 +337,7 @@ func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 	status, err := w.Status()
 	c.Assert(err, IsNil)
 	c.Assert(status.IsClean(), Equals, true)
+
 }
 
 func (s *WorktreeSuite) TestStatusModified(c *C) {
