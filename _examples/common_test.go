@@ -13,7 +13,7 @@ import (
 
 var examplesTest = flag.Bool("examples", false, "run the examples tests")
 
-var defaultURL = "https://github.com/mcuadros/basic.git"
+var defaultURL = "https://github.com/git-fixtures/basic.git"
 
 var args = map[string][]string{
 	"checkout":    []string{defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
