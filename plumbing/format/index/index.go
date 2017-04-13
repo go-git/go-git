@@ -1,20 +1,21 @@
 package index
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"time"
-
-	"bytes"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 )
 
 var (
-	// ErrUnsupportedVersion is returned by Decode when the idxindex file
-	// version is not supported.
-	ErrUnsupportedVersion = errors.New("Unsuported version")
+	// ErrUnsupportedVersion is returned by Decode when the index file version
+	// is not supported.
+	ErrUnsupportedVersion = errors.New("unsupported version")
+	// ErrEntryNotFound is returned by Index.Entry, if an entry is not found.
+	ErrEntryNotFound = errors.New("entry not found")
 
 	indexSignature          = []byte{'D', 'I', 'R', 'C'}
 	treeExtSignature        = []byte{'T', 'R', 'E', 'E'}
@@ -48,6 +49,17 @@ type Index struct {
 	Cache *Tree
 	// ResolveUndo represents the 'Resolve undo' extension
 	ResolveUndo *ResolveUndo
+}
+
+// Entry returns the entry that match the given path, if any.
+func (i *Index) Entry(path string) (Entry, error) {
+	for _, e := range i.Entries {
+		if e.Name == path {
+			return e, nil
+		}
+	}
+
+	return Entry{}, ErrEntryNotFound
 }
 
 // String is equivalent to `git ls-files --stage --debug`
