@@ -4,6 +4,8 @@ go:
   - 1.8
   - tip
 
+go_import_path: gopkg.in/src-d/go-git.v4
+
 env:
   - GIT_VERSION=master
   - GIT_VERSION=v1.9.3
@@ -33,10 +35,6 @@ before_install:
   - git config --global user.name "Travis CI"
 
 install:
-  - rm -rf $GOPATH/src/gopkg.in/src-d
-  - mkdir -p $GOPATH/src/gopkg.in/src-d
-  - ln -s $PWD $GOPATH/src/gopkg.in/src-d/go-git.v4
-  - cd $GOPATH/src/gopkg.in/src-d/go-git.v4
   - go get -v -t ./...
 
 script:
