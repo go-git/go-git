@@ -54,6 +54,48 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 }
 
+func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
+	url := "https://github.com/git-fixtures/submodule.git"
+	w := &Worktree{
+		r:  s.NewRepository(fixtures.ByURL(url).One()),
+		fs: memfs.New(),
+	}
+
+	// we delete the index, since the fixture comes with a real index
+	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
+	c.Assert(err, IsNil)
+
+	err = w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *WorktreeSuite) TestCheckoutSubmoduleInitialized(c *C) {
+	url := "https://github.com/git-fixtures/submodule.git"
+	w := &Worktree{
+		r:  s.NewRepository(fixtures.ByURL(url).One()),
+		fs: memfs.New(),
+	}
+
+	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
+	c.Assert(err, IsNil)
+
+	err = w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+	sub, err := w.Submodules()
+	c.Assert(err, IsNil)
+
+	err = sub.Update(&SubmoduleUpdateOptions{Init: true})
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
 func (s *WorktreeSuite) TestCheckoutIndexMem(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
@@ -119,6 +161,7 @@ func (s *WorktreeSuite) TestCheckoutChange(c *C) {
 
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
+
 	head, err := w.r.Head()
 	c.Assert(err, IsNil)
 	c.Assert(head.Name().String(), Equals, "refs/heads/master")
@@ -143,6 +186,7 @@ func (s *WorktreeSuite) TestCheckoutChange(c *C) {
 
 	_, err = fs.Stat("README")
 	c.Assert(err, Equals, nil)
+
 	_, err = fs.Stat("vendor")
 	c.Assert(err, Equals, os.ErrNotExist)
 
@@ -200,7 +244,6 @@ func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
 }
 
 func (s *WorktreeSuite) TestCheckoutBisectSubmodules(c *C) {
-	c.Skip("not-submodule-support")
 	s.testCheckoutBisect(c, "https://github.com/git-fixtures/submodule.git")
 }
 

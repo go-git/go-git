@@ -21,7 +21,8 @@ var ignore = map[string]bool{
 // This implementation implements a "standard" hash method being able to be
 // compared with any other noder.Noder implementation inside of go-git.
 type node struct {
-	fs billy.Filesystem
+	fs         billy.Filesystem
+	submodules map[string]plumbing.Hash
 
 	path     string
 	hash     []byte
@@ -29,9 +30,16 @@ type node struct {
 	isDir    bool
 }
 
-// NewRootNode returns the root node based on a given billy.Filesystem
-func NewRootNode(fs billy.Filesystem) noder.Noder {
-	return &node{fs: fs, isDir: true}
+// NewRootNode returns the root node based on a given billy.Filesystem.
+//
+// In order to provide the submodule hash status, a map[string]plumbing.Hash
+// should be provided where the key is the path of the submodule and the commit
+// of the submodule HEAD
+func NewRootNode(
+	fs billy.Filesystem,
+	submodules map[string]plumbing.Hash,
+) noder.Noder {
+	return &node{fs: fs, submodules: submodules, isDir: true}
 }
 
 // Hash the hash of a filesystem is the result of concatenating the computed
@@ -100,17 +108,27 @@ func (n *node) calculateChildren() error {
 
 func (n *node) newChildNode(file billy.FileInfo) (*node, error) {
 	path := filepath.Join(n.path, file.Name())
+
 	hash, err := n.calculateHash(path, file)
 	if err != nil {
 		return nil, err
 	}
 
-	return &node{
-		fs:    n.fs,
+	node := &node{
+		fs:         n.fs,
+		submodules: n.submodules,
+
 		path:  path,
 		hash:  hash,
 		isDir: file.IsDir(),
-	}, nil
+	}
+
+	if hash, isSubmodule := n.submodules[path]; isSubmodule {
+		node.hash = append(hash[:], filemode.Submodule.Bytes()...)
+		node.isDir = false
+	}
+
+	return node, nil
 }
 
 func (n *node) calculateHash(path string, file billy.FileInfo) ([]byte, error) {

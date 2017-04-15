@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -207,9 +208,91 @@ func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *ind
 		return err
 	}
 
+	var e *object.TreeEntry
+	var name string
+	var isSubmodule bool
+
+	switch a {
+	case merkletrie.Modify, merkletrie.Insert:
+		name = ch.To.String()
+		e, err = t.FindEntry(name)
+		if err != nil {
+			return err
+		}
+
+		isSubmodule = e.Mode == filemode.Submodule
+	case merkletrie.Delete:
+		name = ch.From.String()
+		ie, err := idx.Entry(name)
+		if err != nil {
+			return err
+		}
+
+		isSubmodule = ie.Mode == filemode.Submodule
+	}
+
+	if isSubmodule {
+		return w.checkoutChangeSubmodule(name, a, e, idx)
+	}
+
+	return w.checkoutChangeRegularFile(name, a, t, e, idx)
+}
+
+func (w *Worktree) checkoutChangeSubmodule(name string,
+	a merkletrie.Action,
+	e *object.TreeEntry,
+	idx *index.Index,
+) error {
 	switch a {
 	case merkletrie.Modify:
-		name := ch.To.String()
+		sub, err := w.Submodule(name)
+		if err != nil {
+			return err
+		}
+
+		if !sub.initialized {
+			return nil
+		}
+
+		if err := w.rmIndexFromFile(name, idx); err != nil {
+			return err
+		}
+
+		if err := w.addIndexFromTreeEntry(name, e, idx); err != nil {
+			return err
+		}
+
+		return sub.update(&SubmoduleUpdateOptions{}, e.Hash)
+	case merkletrie.Insert:
+		mode, err := e.Mode.ToOSFileMode()
+		if err != nil {
+			return err
+		}
+
+		if err := w.fs.MkdirAll(name, mode); err != nil {
+			return err
+		}
+
+		return w.addIndexFromTreeEntry(name, e, idx)
+	case merkletrie.Delete:
+		if err := rmFileAndDirIfEmpty(w.fs, name); err != nil {
+			return err
+		}
+
+		return w.rmIndexFromFile(name, idx)
+	}
+
+	return nil
+}
+
+func (w *Worktree) checkoutChangeRegularFile(name string,
+	a merkletrie.Action,
+	t *object.Tree,
+	e *object.TreeEntry,
+	idx *index.Index,
+) error {
+	switch a {
+	case merkletrie.Modify:
 		if err := w.rmIndexFromFile(name, idx); err != nil {
 			return err
 		}
@@ -222,16 +305,6 @@ func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *ind
 
 		fallthrough
 	case merkletrie.Insert:
-		name := ch.To.String()
-		e, err := t.FindEntry(name)
-		if err != nil {
-			return err
-		}
-
-		if e.Mode == filemode.Submodule {
-			return w.addIndexFromTreeEntry(name, e, idx)
-		}
-
 		f, err := t.File(name)
 		if err != nil {
 			return err
@@ -243,8 +316,7 @@ func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *ind
 
 		return w.addIndexFromFile(name, e.Hash, idx)
 	case merkletrie.Delete:
-		name := ch.From.String()
-		if err := w.fs.Remove(name); err != nil {
+		if err := rmFileAndDirIfEmpty(w.fs, name); err != nil {
 			return err
 		}
 
@@ -413,19 +485,20 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 	return m, m.Unmarshal(input)
 }
 
-func (w *Worktree) readIndexEntry(path string) (index.Entry, error) {
-	var e index.Entry
+func rmFileAndDirIfEmpty(fs billy.Filesystem, name string) error {
+	if err := billy.RemoveAll(fs, name); err != nil {
+		return err
+	}
 
-	idx, err := w.r.Storer.Index()
+	path := filepath.Dir(name)
+	files, err := fs.ReadDir(path)
 	if err != nil {
-		return e, err
+		return err
 	}
 
-	for _, e := range idx.Entries {
-		if e.Name == path {
-			return e, nil
-		}
+	if len(files) == 0 {
+		fs.Remove(path)
 	}
 
-	return e, fmt.Errorf("unable to find %q entry in the index", path)
+	return nil
 }
