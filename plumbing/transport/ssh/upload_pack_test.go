@@ -33,5 +33,4 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	ep, err = transport.NewEndpoint("git@github.com:git-fixtures/non-existent.git")
 	c.Assert(err, IsNil)
 	s.UploadPackSuite.NonExistentEndpoint = ep
-
 }
