@@ -8,9 +8,9 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"github.com/src-d/crypto/ssh/knownhosts"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 var ErrEmptySSHAgentAddr = errors.New("SSH_AUTH_SOCK env variable is required")
