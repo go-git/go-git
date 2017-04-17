@@ -1,6 +1,10 @@
 version: "{build}"
 platform: x64
 
+matrix:
+  allow_failures:
+    - platform: x64
+    
 clone_folder: c:\gopath\src\gopkg.in\src-d\go-git.v4
 
 environment:
