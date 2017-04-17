@@ -20,7 +20,7 @@ type Storer interface {
 
 // ModuleStorer allows interact with the modules' Storers
 type ModuleStorer interface {
-	// Module returns a Storer reprensting a submodule, if not exists returns a
+	// Module returns a Storer representing a submodule, if not exists returns a
 	// new empty Storer is returned
 	Module(name string) (Storer, error)
 }

@@ -9,6 +9,7 @@ import (
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v2"
 	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
@@ -30,7 +31,12 @@ func (s *NoderSuite) TestDiff(c *C) {
 	WriteFile(fsB, "qux/bar", []byte("foo"), 0644)
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
-	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 0)
 }
@@ -46,7 +52,12 @@ func (s *NoderSuite) TestDiffChangeContent(c *C) {
 	WriteFile(fsB, "qux/bar", []byte("bar"), 0644)
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
-	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 1)
 }
@@ -58,7 +69,12 @@ func (s *NoderSuite) TestDiffChangeMissing(c *C) {
 	fsB := memfs.New()
 	WriteFile(fsB, "bar", []byte("bar"), 0644)
 
-	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 2)
 }
@@ -70,7 +86,12 @@ func (s *NoderSuite) TestDiffChangeMode(c *C) {
 	fsB := memfs.New()
 	WriteFile(fsB, "foo", []byte("foo"), 0755)
 
-	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 1)
 }
@@ -82,9 +103,39 @@ func (s *NoderSuite) TestDiffChangeModeNotRelevant(c *C) {
 	fsB := memfs.New()
 	WriteFile(fsB, "foo", []byte("foo"), 0655)
 
-	ch, err := merkletrie.DiffTree(NewRootNode(fsA), NewRootNode(fsB), IsEquals)
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
 	c.Assert(err, IsNil)
 	c.Assert(ch, HasLen, 0)
+}
+
+func (s *NoderSuite) TestDiffDirectory(c *C) {
+	fsA := memfs.New()
+	fsA.MkdirAll("qux/bar", 0644)
+
+	fsB := memfs.New()
+	fsB.MkdirAll("qux/bar", 0644)
+
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, map[string]plumbing.Hash{
+			"qux/bar": plumbing.NewHash("aa102815663d23f8b75a47e7a01965dcdc96468c"),
+		}),
+		NewRootNode(fsB, map[string]plumbing.Hash{
+			"qux/bar": plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"),
+		}),
+		IsEquals,
+	)
+
+	c.Assert(err, IsNil)
+	c.Assert(ch, HasLen, 1)
+
+	a, err := ch[0].Action()
+	c.Assert(err, IsNil)
+	c.Assert(a, Equals, merkletrie.Modify)
 }
 
 func WriteFile(fs billy.Filesystem, filename string, data []byte, perm os.FileMode) error {

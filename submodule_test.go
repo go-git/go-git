@@ -48,14 +48,21 @@ func (s *SubmoduleSuite) TestInit(c *C) {
 	sm, err := s.Worktree.Submodule("basic")
 	c.Assert(err, IsNil)
 
+	c.Assert(sm.initialized, Equals, false)
 	err = sm.Init()
 	c.Assert(err, IsNil)
+
+	c.Assert(sm.initialized, Equals, true)
 
 	cfg, err := s.Repository.Config()
 	c.Assert(err, IsNil)
 
 	c.Assert(cfg.Submodules, HasLen, 1)
 	c.Assert(cfg.Submodules["basic"], NotNil)
+
+	status, err := sm.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
 }
 
 func (s *SubmoduleSuite) TestUpdate(c *C) {
@@ -74,6 +81,19 @@ func (s *SubmoduleSuite) TestUpdate(c *C) {
 	ref, err := r.Reference(plumbing.HEAD, true)
 	c.Assert(err, IsNil)
 	c.Assert(ref.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	status, err := sm.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *SubmoduleSuite) TestRepositoryWithoutInit(c *C) {
+	sm, err := s.Worktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	r, err := sm.Repository()
+	c.Assert(err, Equals, ErrSubmoduleNotInitialized)
+	c.Assert(r, IsNil)
 }
 
 func (s *SubmoduleSuite) TestUpdateWithoutInit(c *C) {
@@ -160,4 +180,13 @@ func (s *SubmoduleSuite) TestSubmodulesInit(c *C) {
 	for _, m := range sm {
 		c.Assert(m.initialized, Equals, true)
 	}
+}
+
+func (s *SubmoduleSuite) TestSubmodulesStatus(c *C) {
+	sm, err := s.Worktree.Submodules()
+	c.Assert(err, IsNil)
+
+	status, err := sm.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
 }

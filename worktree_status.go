@@ -28,6 +28,27 @@ func (w *Worktree) Status() (Status, error) {
 func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 	s := make(Status, 0)
 
+	left, err := w.diffCommitWithStaging(commit, false)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ch := range left {
+		a, err := ch.Action()
+		if err != nil {
+			return nil, err
+		}
+
+		switch a {
+		case merkletrie.Delete:
+			s.File(ch.From.String()).Staging = Deleted
+		case merkletrie.Insert:
+			s.File(ch.To.String()).Staging = Added
+		case merkletrie.Modify:
+			s.File(ch.To.String()).Staging = Modified
+		}
+	}
+
 	right, err := w.diffStagingWithWorktree()
 	if err != nil {
 		return nil, err
@@ -50,27 +71,6 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 		}
 	}
 
-	left, err := w.diffCommitWithStaging(commit, false)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, ch := range left {
-		a, err := ch.Action()
-		if err != nil {
-			return nil, err
-		}
-
-		switch a {
-		case merkletrie.Delete:
-			s.File(ch.From.String()).Staging = Deleted
-		case merkletrie.Insert:
-			s.File(ch.To.String()).Staging = Added
-		case merkletrie.Modify:
-			s.File(ch.To.String()).Staging = Modified
-		}
-	}
-
 	return s, nil
 }
 
@@ -81,8 +81,38 @@ func (w *Worktree) diffStagingWithWorktree() (merkletrie.Changes, error) {
 	}
 
 	from := index.NewRootNode(idx)
-	to := filesystem.NewRootNode(w.fs)
+	submodules, err := w.getSubmodulesStatus()
+	if err != nil {
+		return nil, err
+	}
+
+	to := filesystem.NewRootNode(w.fs, submodules)
 	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
+}
+
+func (w *Worktree) getSubmodulesStatus() (map[string]plumbing.Hash, error) {
+	o := map[string]plumbing.Hash{}
+
+	sub, err := w.Submodules()
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := sub.Status()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range status {
+		if s.Current.IsZero() {
+			o[s.Path] = s.Expected
+			continue
+		}
+
+		o[s.Path] = s.Current
+	}
+
+	return o, nil
 }
 
 func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
