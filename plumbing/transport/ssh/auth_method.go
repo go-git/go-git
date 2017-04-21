@@ -3,6 +3,7 @@ package ssh
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/user"
@@ -12,6 +13,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
+
+const DefaultUsername = "git"
 
 var ErrEmptySSHAgentAddr = errors.New("SSH_AUTH_SOCK env variable is required")
 
@@ -102,12 +105,33 @@ func (a *PasswordCallback) clientConfig() *ssh.ClientConfig {
 	}
 }
 
-// PublicKeys implements AuthMethod by using the given
-// key pairs.
+// PublicKeys implements AuthMethod by using the given key pairs.
 type PublicKeys struct {
 	User   string
 	Signer ssh.Signer
 	baseAuthMethod
+}
+
+// NewPublicKeys returns a PublicKeys from a PEM encoded private key. It
+// supports RSA (PKCS#1), DSA (OpenSSL), and ECDSA private keys.
+func NewPublicKeys(user string, pemBytes []byte) (AuthMethod, error) {
+	signer, err := ssh.ParsePrivateKey(pemBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PublicKeys{User: user, Signer: signer}, nil
+}
+
+// NewPublicKeysFromFile returns a PublicKeys from a file containing a PEM
+// encoded private key.
+func NewPublicKeysFromFile(user string, pemFile string) (AuthMethod, error) {
+	bytes, err := ioutil.ReadFile(pemFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewPublicKeys(user, bytes)
 }
 
 func (a *PublicKeys) Name() string {
@@ -133,28 +157,12 @@ type PublicKeysCallback struct {
 	baseAuthMethod
 }
 
-func (a *PublicKeysCallback) Name() string {
-	return PublicKeysCallbackName
-}
-
-func (a *PublicKeysCallback) String() string {
-	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
-}
-
-func (a *PublicKeysCallback) clientConfig() *ssh.ClientConfig {
-	return &ssh.ClientConfig{
-		User: a.User,
-		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(a.Callback)},
-	}
-}
-
-const DefaultSSHUsername = "git"
-
-// NewSSHAgentAuth opens a pipe with the SSH agent and uses the pipe
-// as the implementer of the public key callback function.
-func NewSSHAgentAuth(user string) (*PublicKeysCallback, error) {
+// NewSSHAgentAuth returns a PublicKeysCallback based on a SSH agent, it opens
+// a pipe with the SSH agent and uses the pipe as the implementer of the public
+// key callback function.
+func NewSSHAgentAuth(user string) (AuthMethod, error) {
 	if user == "" {
-		user = DefaultSSHUsername
+		user = DefaultUsername
 	}
 
 	sshAgentAddr := os.Getenv("SSH_AUTH_SOCK")
@@ -171,6 +179,21 @@ func NewSSHAgentAuth(user string) (*PublicKeysCallback, error) {
 		User:     user,
 		Callback: agent.NewClient(pipe).Signers,
 	}, nil
+}
+
+func (a *PublicKeysCallback) Name() string {
+	return PublicKeysCallbackName
+}
+
+func (a *PublicKeysCallback) String() string {
+	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
+}
+
+func (a *PublicKeysCallback) clientConfig() *ssh.ClientConfig {
+	return &ssh.ClientConfig{
+		User: a.User,
+		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(a.Callback)},
+	}
 }
 
 // NewKnownHostsCallback returns ssh.HostKeyCallback based on a file based on a
