@@ -14,6 +14,12 @@ import (
 // DefaultClient is the default SSH client.
 var DefaultClient = common.NewClient(&runner{})
 
+// DefaultAuthBuilder is the function used to create a default AuthMethod, when
+// the user doesn't provide any.
+var DefaultAuthBuilder = func(user string) (AuthMethod, error) {
+	return NewSSHAgentAuth(user)
+}
+
 type runner struct{}
 
 func (r *runner) Command(cmd string, ep transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
@@ -119,7 +125,7 @@ func (c *command) setAuthFromEndpoint() error {
 	}
 
 	var err error
-	c.auth, err = NewSSHAgentAuth(u)
+	c.auth, err = DefaultAuthBuilder(u)
 	return err
 }
 
