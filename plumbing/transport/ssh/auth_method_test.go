@@ -2,7 +2,10 @@ package ssh
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+
+	"golang.org/x/crypto/ssh/testdata"
 
 	. "gopkg.in/check.v1"
 )
@@ -103,4 +106,23 @@ func (s *SuiteCommon) TestNewSSHAgentAuth(c *C) {
 	k, err := NewSSHAgentAuth("foo")
 	c.Assert(k, IsNil)
 	c.Assert(err, Equals, ErrEmptySSHAgentAddr)
+}
+
+func (*SuiteCommon) TestNewPublicKeys(c *C) {
+	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"])
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+}
+
+func (*SuiteCommon) TestNewPublicKeysFromFile(c *C) {
+	f, err := ioutil.TempFile("", "ssh-test")
+	c.Assert(err, IsNil)
+	_, err = f.Write(testdata.PEMBytes["rsa"])
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+	defer os.RemoveAll(f.Name())
+
+	auth, err := NewPublicKeysFromFile("foo", f.Name())
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
 }
