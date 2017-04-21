@@ -272,6 +272,93 @@ func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
 	c.Assert(r, IsNil)
 }
 
+func (s *RepositorySuite) testPlainOpenGitFile(c *C, f func(string, string) string) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, true)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	altDir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(altDir)
+
+	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(f(dir, altDir)), 0644)
+	c.Assert(err, IsNil)
+
+	r, err = PlainOpen(altDir)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFile(c *C) {
+	s.testPlainOpenGitFile(c, func(dir, altDir string) string {
+		return fmt.Sprintf("gitdir: %s\n", dir)
+	})
+}
+
+func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFileNoEOL(c *C) {
+	s.testPlainOpenGitFile(c, func(dir, altDir string) string {
+		return fmt.Sprintf("gitdir: %s", dir)
+	})
+}
+
+func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFile(c *C) {
+	s.testPlainOpenGitFile(c, func(dir, altDir string) string {
+		dir, err := filepath.Rel(altDir, dir)
+		c.Assert(err, IsNil)
+		return fmt.Sprintf("gitdir: %s\n", dir)
+	})
+}
+
+func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileNoEOL(c *C) {
+	s.testPlainOpenGitFile(c, func(dir, altDir string) string {
+		dir, err := filepath.Rel(altDir, dir)
+		c.Assert(err, IsNil)
+		return fmt.Sprintf("gitdir: %s\n", dir)
+	})
+}
+
+func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, true)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	altDir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(fmt.Sprintf("gitdir: %s\nTRAILING", dir)), 0644)
+	c.Assert(err, IsNil)
+
+	r, err = PlainOpen(altDir)
+	c.Assert(err, Equals, ErrRepositoryNotExists)
+	c.Assert(r, IsNil)
+}
+
+func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, true)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	altDir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(fmt.Sprintf("xgitdir: %s\n", dir)), 0644)
+	c.Assert(err, IsNil)
+
+	r, err = PlainOpen(altDir)
+	c.Assert(err, ErrorMatches, ".*gitdir.*")
+	c.Assert(r, IsNil)
+}
+
 func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
 	r, err := PlainOpen("/not-exists/")
 	c.Assert(err, Equals, ErrRepositoryNotExists)
