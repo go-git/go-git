@@ -1,6 +1,8 @@
 package ssh
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -9,9 +11,11 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/src-d/crypto/ssh/knownhosts"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const DefaultUsername = "git"
@@ -22,6 +26,7 @@ var ErrEmptySSHAgentAddr = errors.New("SSH_AUTH_SOCK env variable is required")
 // must implement. The clientConfig method returns the ssh client
 // configuration needed to establish an ssh connection.
 type AuthMethod interface {
+	transport.AuthMethod
 	clientConfig() *ssh.ClientConfig
 	hostKeyCallback() (ssh.HostKeyCallback, error)
 }
@@ -112,9 +117,22 @@ type PublicKeys struct {
 	baseAuthMethod
 }
 
-// NewPublicKeys returns a PublicKeys from a PEM encoded private key. It
-// supports RSA (PKCS#1), DSA (OpenSSL), and ECDSA private keys.
-func NewPublicKeys(user string, pemBytes []byte) (AuthMethod, error) {
+// NewPublicKeys returns a PublicKeys from a PEM encoded private key. An
+// encryption password should be given if the pemBytes contains a password
+// encrypted PEM block otherwise password should be empty. It supports RSA
+// (PKCS#1), DSA (OpenSSL), and ECDSA private keys.
+func NewPublicKeys(user string, pemBytes []byte, password string) (AuthMethod, error) {
+	block, _ := pem.Decode(pemBytes)
+	if x509.IsEncryptedPEMBlock(block) {
+		key, err := x509.DecryptPEMBlock(block, []byte(password))
+		if err != nil {
+			return nil, err
+		}
+
+		block = &pem.Block{Type: block.Type, Bytes: key}
+		pemBytes = pem.EncodeToMemory(block)
+	}
+
 	signer, err := ssh.ParsePrivateKey(pemBytes)
 	if err != nil {
 		return nil, err
@@ -124,14 +142,15 @@ func NewPublicKeys(user string, pemBytes []byte) (AuthMethod, error) {
 }
 
 // NewPublicKeysFromFile returns a PublicKeys from a file containing a PEM
-// encoded private key.
-func NewPublicKeysFromFile(user string, pemFile string) (AuthMethod, error) {
+// encoded private key. An encryption password should be given if the pemBytes
+// contains a password encrypted PEM block otherwise password should be empty.
+func NewPublicKeysFromFile(user, pemFile, password string) (AuthMethod, error) {
 	bytes, err := ioutil.ReadFile(pemFile)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewPublicKeys(user, bytes)
+	return NewPublicKeys(user, bytes, password)
 }
 
 func (a *PublicKeys) Name() string {
