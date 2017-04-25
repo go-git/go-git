@@ -109,7 +109,14 @@ func (s *SuiteCommon) TestNewSSHAgentAuth(c *C) {
 }
 
 func (*SuiteCommon) TestNewPublicKeys(c *C) {
-	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"])
+	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+}
+
+func (*SuiteCommon) TestNewPublicKeysWithEncryptedPEM(c *C) {
+	f := testdata.PEMEncryptedKeys[0]
+	auth, err := NewPublicKeys("foo", f.PEMBytes, f.EncryptionKey)
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 }
@@ -122,7 +129,7 @@ func (*SuiteCommon) TestNewPublicKeysFromFile(c *C) {
 	c.Assert(f.Close(), IsNil)
 	defer os.RemoveAll(f.Name())
 
-	auth, err := NewPublicKeysFromFile("foo", f.Name())
+	auth, err := NewPublicKeysFromFile("foo", f.Name(), "")
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 }
