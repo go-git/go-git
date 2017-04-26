@@ -234,7 +234,7 @@ func (w *Worktree) addOrUpdateFileToIndex(filename string, h plumbing.Hash) erro
 }
 
 func (w *Worktree) doAddFileToIndex(idx *index.Index, filename string) error {
-	idx.Entries = append(idx.Entries, index.Entry{
+	idx.Entries = append(idx.Entries, &index.Entry{
 		Name: filename,
 	})
 
@@ -247,21 +247,18 @@ func (w *Worktree) doUpdateFileToIndex(idx *index.Index, filename string, h plum
 		return err
 	}
 
-	for i, e := range idx.Entries {
-		if e.Name != filename {
-			continue
-		}
-
-		e.Hash = h
-		e.ModifiedAt = info.ModTime()
-		e.Mode, err = filemode.NewFromOSFileMode(info.Mode())
-		if err != nil {
-			return err
-		}
-
-		fillSystemInfo(&e, info.Sys())
-		idx.Entries[i] = e
+	e, err := idx.Entry(filename)
+	if err != nil {
+		return err
 	}
 
+	e.Hash = h
+	e.ModifiedAt = info.ModTime()
+	e.Mode, err = filemode.NewFromOSFileMode(info.Mode())
+	if err != nil {
+		return err
+	}
+
+	fillSystemInfo(e, info.Sys())
 	return nil
 }
