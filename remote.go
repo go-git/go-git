@@ -41,7 +41,7 @@ func (r *Remote) String() string {
 	fetch := r.c.URL
 	push := r.c.URL
 
-	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%s (push)", r.c.Name, fetch, push)
+	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
 }
 
 // Fetch fetches references from the remote to the local repository.

@@ -218,7 +218,7 @@ func ExampleScanner() {
 	for s.Scan() {
 		payload := s.Bytes()
 		if len(payload) == 0 { // zero sized payloads correspond to flush-pkts.
-			fmt.Println("FLUSH-PKT DETECTED\n")
+			fmt.Println("FLUSH-PKT DETECTED")
 		} else { // otherwise, you will be able to access the full payload.
 			fmt.Printf("PAYLOAD = %q\n", string(payload))
 		}
