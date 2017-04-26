@@ -65,7 +65,7 @@ func (e *Encoder) encodeEntries(idx *Index) error {
 	sort.Sort(byName(idx.Entries))
 
 	for _, entry := range idx.Entries {
-		if err := e.encodeEntry(&entry); err != nil {
+		if err := e.encodeEntry(entry); err != nil {
 			return err
 		}
 
@@ -143,7 +143,7 @@ func (e *Encoder) encodeFooter() error {
 	return binary.Write(e.w, e.hash.Sum(nil))
 }
 
-type byName []Entry
+type byName []*Entry
 
 func (l byName) Len() int           { return len(l) }
 func (l byName) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }

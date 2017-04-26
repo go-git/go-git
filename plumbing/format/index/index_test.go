@@ -6,7 +6,7 @@ import (
 
 func (s *IndexSuite) TestIndexEntry(c *C) {
 	idx := &Index{
-		Entries: []Entry{
+		Entries: []*Entry{
 			{Name: "foo", Size: 42},
 			{Name: "bar", Size: 82},
 		},
@@ -17,6 +17,6 @@ func (s *IndexSuite) TestIndexEntry(c *C) {
 	c.Assert(e.Name, Equals, "foo")
 
 	e, err = idx.Entry("missing")
+	c.Assert(e, IsNil)
 	c.Assert(err, Equals, ErrEntryNotFound)
-	c.Assert(e.Name, Equals, "")
 }
