@@ -12,6 +12,7 @@ import (
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-billy.v2"
 	"gopkg.in/src-d/go-billy.v2/memfs"
 	"gopkg.in/src-d/go-billy.v2/osfs"
 )
@@ -477,4 +478,97 @@ func (s *WorktreeSuite) TestSubmodules(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(l, HasLen, 2)
+}
+
+func (s *WorktreeSuite) TestAddUntracked(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = billy.WriteFile(w.fs, "foo", []byte("FOO"), 0755)
+	c.Assert(err, IsNil)
+
+	hash, err := w.Add("foo")
+	c.Assert(hash.String(), Equals, "d96c7efbfec2814ae0301ad054dc8d9fc416c9b5")
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 10)
+
+	e, err := idx.Entry("foo")
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash, Equals, hash)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+
+	file := status.File("foo")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+}
+
+func (s *WorktreeSuite) TestAddModified(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = billy.WriteFile(w.fs, "LICENSE", []byte("FOO"), 0644)
+	c.Assert(err, IsNil)
+
+	hash, err := w.Add("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(hash.String(), Equals, "d96c7efbfec2814ae0301ad054dc8d9fc416c9b5")
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	e, err := idx.Entry("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash, Equals, hash)
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+
+	file := status.File("LICENSE")
+	c.Assert(file.Staging, Equals, Modified)
+	c.Assert(file.Worktree, Equals, Unmodified)
+}
+
+func (s *WorktreeSuite) TestAddUnmodified(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Add("LICENSE")
+	c.Assert(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+	c.Assert(err, IsNil)
 }
