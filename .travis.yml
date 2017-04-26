@@ -32,7 +32,7 @@ before_install:
   - >
     if [ "$TRAVIS_PULL_REQUEST" = "false" ] ; then \
       bash .travis/install_key.sh; \
-      SSH_TEST_PRIVATE_KEY=$HOME/.travis/deploy.pem; \
+      export SSH_TEST_PRIVATE_KEY=$HOME/.travis/deploy.pem; \
     else \
       export SSH_AUTH_SOCK=""; \
     fi
