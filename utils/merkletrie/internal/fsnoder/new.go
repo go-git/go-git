@@ -34,7 +34,7 @@ func decodeDir(data []byte, isRoot bool) (*dir, error) {
 	var name string
 	switch end := bytes.IndexRune(data, dirStartMark); end {
 	case -1:
-		return nil, fmt.Errorf("%c not found")
+		return nil, fmt.Errorf("%c not found", dirStartMark)
 	case 0:
 		if isRoot {
 			name = ""

@@ -236,10 +236,7 @@ func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
 		c.Assert(err, IsNil)
 		for _, change := range changes {
 			_, _, err := change.Files()
-			if err != nil {
-				panic(err)
-				c.Assert(err, IsNil)
-			}
+			c.Assert(err, IsNil)
 		}
 
 		prev = commit

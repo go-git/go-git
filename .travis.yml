@@ -45,6 +45,7 @@ script:
   - export PATH=$GIT_DIST_PATH:$PATH
   - git version
   - make test-coverage
+  - go vet ./...
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)

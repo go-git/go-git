@@ -65,7 +65,7 @@ func (t test) run(c *C, iter *merkletrie.Iter,
 
 	var obtained noder.Path
 	var err error
-	for i := range t.operations {
+	for i, b := range t.operations {
 		comment := Commentf("\ntree: %q\ntest #%d (%q)\noperation #%d (%q)",
 			treeDescription, testNumber, t.operations, i, t.operations[i])
 
@@ -81,8 +81,8 @@ func (t test) run(c *C, iter *merkletrie.Iter,
 				c.Assert(err, IsNil)
 			}
 		default:
-			c.Fatalf("unknown operation at test %d, operation %d (%s)\n",
-				testNumber, i, t.operations[i])
+			c.Fatalf("unknown operation at test %d, operation %d (%c)\n",
+				testNumber, i, b)
 		}
 		if i >= len(expectedChunks) {
 			c.Assert(err, Equals, io.EOF, comment)
