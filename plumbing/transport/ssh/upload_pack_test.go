@@ -36,7 +36,7 @@ func (s *UploadPackSuite) setAuthBuilder(c *C) {
 	privateKey := os.Getenv("SSH_TEST_PRIVATE_KEY")
 	if privateKey != "" {
 		DefaultAuthBuilder = func(user string) (AuthMethod, error) {
-			return NewPublicKeysFromFile(user, privateKey)
+			return NewPublicKeysFromFile(user, privateKey, "")
 		}
 	}
 
