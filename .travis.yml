@@ -25,14 +25,17 @@ before_script:
   - make build-git
 
 before_install:
-  - eval "$(ssh-agent -s)"
-  # we only decrypt the SSH key when we aren't in a pull request
-  #- 'if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then bash .travis/install_key.sh; fi'
-  #- 'if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then export SSH_AUTH_SOCK="" ; fi'\
-  # temporal fix skip of SSH test
-  - export SSH_AUTH_SOCK=""
   - git config --global user.email "travis@example.com"
   - git config --global user.name "Travis CI"
+
+  # we only decrypt the SSH key when we aren't in a pull request
+  - >
+    if [ "$TRAVIS_PULL_REQUEST" = "false" ] ; then \
+      bash .travis/install_key.sh; \
+      SSH_TEST_PRIVATE_KEY=$HOME/.travis/deploy.pem; \
+    else \
+      export SSH_AUTH_SOCK=""; \
+    fi
 
 install:
   - go get -v -t ./...
