@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"io"
 
-	. "gopkg.in/check.v1"
-	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+
+	"github.com/src-d/go-git-fixtures"
+	. "gopkg.in/check.v1"
 )
 
 type ScannerSuite struct {

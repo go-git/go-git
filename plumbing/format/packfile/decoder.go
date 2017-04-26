@@ -310,13 +310,13 @@ func (d *Decoder) DecodeObjectAt(offset int64) (plumbing.EncodedObject, error) {
 		return nil, ErrNonSeekable
 	}
 
-	beforeJump, err := d.s.Seek(offset)
+	beforeJump, err := d.s.SeekFromStart(offset)
 	if err != nil {
 		return nil, err
 	}
 
 	defer func() {
-		_, seekErr := d.s.Seek(beforeJump)
+		_, seekErr := d.s.SeekFromStart(beforeJump)
 		if err == nil {
 			err = seekErr
 		}
