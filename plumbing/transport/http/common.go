@@ -73,18 +73,12 @@ type AuthMethod interface {
 }
 
 func basicAuthFromEndpoint(ep transport.Endpoint) *BasicAuth {
-	info := ep.User
-	if info == nil {
+	u := ep.User()
+	if u == "" {
 		return nil
 	}
 
-	p, ok := info.Password()
-	if !ok {
-		return nil
-	}
-
-	u := info.Username()
-	return NewBasicAuth(u, p)
+	return NewBasicAuth(u, ep.Password())
 }
 
 // BasicAuth represent a HTTP basic auth

@@ -41,7 +41,7 @@ func (r *runner) Command(cmd string, ep transport.Endpoint, auth transport.AuthM
 		return nil, err
 	}
 
-	return &command{cmd: exec.Command(cmd, ep.Path)}, nil
+	return &command{cmd: exec.Command(cmd, ep.Path())}, nil
 }
 
 type command struct {
