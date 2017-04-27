@@ -196,12 +196,12 @@ func newSendPackSession(url string, auth transport.AuthMethod) (transport.Receiv
 func newClient(url string) (transport.Transport, transport.Endpoint, error) {
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
-		return nil, transport.Endpoint{}, err
+		return nil, nil, err
 	}
 
 	c, err := client.NewClient(ep)
 	if err != nil {
-		return nil, transport.Endpoint{}, err
+		return nil, nil, err
 	}
 
 	return c, ep, err

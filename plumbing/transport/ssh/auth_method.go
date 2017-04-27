@@ -179,9 +179,14 @@ type PublicKeysCallback struct {
 // NewSSHAgentAuth returns a PublicKeysCallback based on a SSH agent, it opens
 // a pipe with the SSH agent and uses the pipe as the implementer of the public
 // key callback function.
-func NewSSHAgentAuth(user string) (AuthMethod, error) {
-	if user == "" {
-		user = DefaultUsername
+func NewSSHAgentAuth(u string) (AuthMethod, error) {
+	if u == "" {
+		usr, err := user.Current()
+		if err != nil {
+			return nil, fmt.Errorf("error getting current user: %q", err)
+		}
+
+		u = usr.Username
 	}
 
 	sshAgentAddr := os.Getenv("SSH_AUTH_SOCK")
@@ -195,7 +200,7 @@ func NewSSHAgentAuth(user string) (AuthMethod, error) {
 	}
 
 	return &PublicKeysCallback{
-		User:     user,
+		User:     u,
 		Callback: agent.NewClient(pipe).Signers,
 	}, nil
 }

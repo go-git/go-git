@@ -34,7 +34,7 @@ func NewFilesystemLoader(base billy.Filesystem) Loader {
 // storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
 func (l *fsLoader) Load(ep transport.Endpoint) (storer.Storer, error) {
-	fs := l.base.Dir(ep.Path)
+	fs := l.base.Dir(ep.Path())
 	if _, err := fs.Stat("config"); err != nil {
 		return nil, transport.ErrRepositoryNotFound
 	}
