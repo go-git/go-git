@@ -266,6 +266,93 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
+func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
+	f := fixtures.Basic().One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+
+	dstFs := f.DotGit()
+	dstSto, err := filesystem.NewStorage(dstFs)
+	c.Assert(err, IsNil)
+
+	url := fmt.Sprintf("file://%s", dstFs.Base())
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  url,
+	})
+
+	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(oldRef, NotNil)
+
+	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		config.RefSpec("refs/heads/master:refs/heads/branch"),
+	}})
+	c.Assert(err, ErrorMatches, "non-fast-forward update: refs/heads/branch")
+
+	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef, DeepEquals, oldRef)
+}
+
+func (s *RemoteSuite) TestPushForce(c *C) {
+	f := fixtures.Basic().One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+
+	dstFs := f.DotGit()
+	dstSto, err := filesystem.NewStorage(dstFs)
+	c.Assert(err, IsNil)
+
+	url := fmt.Sprintf("file://%s", dstFs.Base())
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  url,
+	})
+
+	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(oldRef, NotNil)
+
+	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		config.RefSpec("+refs/heads/master:refs/heads/branch"),
+	}})
+	c.Assert(err, IsNil)
+
+	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef, Not(DeepEquals), oldRef)
+}
+
+func (s *RemoteSuite) TestPushNewReference(c *C) {
+	f := fixtures.Basic().One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+
+	dstFs := f.DotGit()
+	dstSto, err := filesystem.NewStorage(dstFs)
+	c.Assert(err, IsNil)
+
+	url := fmt.Sprintf("file://%s", dstFs.Base())
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  url,
+	})
+
+	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(oldRef, NotNil)
+
+	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		config.RefSpec("refs/heads/branch:refs/heads/branch2"),
+	}})
+	c.Assert(err, IsNil)
+
+	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch2"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef.Hash(), Equals, oldRef.Hash())
+}
+
 func (s *RemoteSuite) TestPushInvalidEndpoint(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
 	err := r.Push(&PushOptions{})
