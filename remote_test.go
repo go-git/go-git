@@ -249,6 +249,51 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *RemoteSuite) TestPushTags(c *C) {
+	srcFs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto, err := filesystem.NewStorage(srcFs)
+	c.Assert(err, IsNil)
+
+	dstFs := fixtures.ByTag("empty").One().DotGit()
+	url := fmt.Sprintf("file://%s", dstFs.Base())
+
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  url,
+	})
+
+	rs := config.RefSpec("refs/tags/*:refs/tags/*")
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{rs},
+	})
+	c.Assert(err, IsNil)
+
+	dstSto, err := filesystem.NewStorage(dstFs)
+	c.Assert(err, IsNil)
+	dstRepo, err := Open(dstSto, nil)
+	c.Assert(err, IsNil)
+
+	ref, err := dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/lightweight-tag"))
+	c.Assert(err, IsNil)
+	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"))
+
+	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/annotated-tag"))
+	c.Assert(err, IsNil)
+	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+
+	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/commit-tag"))
+	c.Assert(err, IsNil)
+	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
+
+	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/blob-tag"))
+	c.Assert(err, IsNil)
+	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
+
+	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/tree-tag"))
+	c.Assert(err, IsNil)
+	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"))
+}
+
 func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	f := fixtures.Basic().One()
 	sto, err := filesystem.NewStorage(f.DotGit())

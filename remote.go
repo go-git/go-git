@@ -57,7 +57,6 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 // remote was already up-to-date.
 func (r *Remote) Push(o *PushOptions) (err error) {
 	// TODO: Support deletes.
-	// TODO: Support pushing tags.
 	// TODO: Sideband support
 
 	if o.RemoteName == "" {
