@@ -388,7 +388,7 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 
 	path := fixtures.ByTag("submodule").One().Worktree().Base()
 	r, err := PlainClone(dir, false, &CloneOptions{
-		URL:               fmt.Sprintf("file://%s", path),
+		URL:               path,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 	})
 
@@ -678,7 +678,7 @@ func (s *RepositorySuite) TestPullProgressWithRecursion(c *C) {
 	r, _ := PlainInit(dir, false)
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  fmt.Sprintf("file://%s", path),
+		URL:  path,
 	})
 
 	err = r.Pull(&PullOptions{
@@ -694,7 +694,7 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Base()
 
 	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
-		URL: fmt.Sprintf("file://%s", filepath.Join(path, ".git")),
+		URL: filepath.Join(path, ".git"),
 	})
 
 	c.Assert(err, IsNil)
@@ -729,7 +729,7 @@ func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := fmt.Sprintf("file://%s", dstFs.Base())
+	url := dstFs.Base()
 
 	r, err := Open(sto, srcFs)
 	c.Assert(err, IsNil)

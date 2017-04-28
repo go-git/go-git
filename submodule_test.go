@@ -1,15 +1,14 @@
 package git
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/src-d/go-git-fixtures"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 type SubmoduleSuite struct {
@@ -27,7 +26,7 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 
 	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
-		URL: fmt.Sprintf("file://%s", path),
+		URL: path,
 	})
 
 	c.Assert(err, IsNil)

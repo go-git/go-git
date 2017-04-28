@@ -295,7 +295,7 @@ func (s *ReferencesSuite) TestObjectNotFoundError(c *C) {
 	url := fixtures.ByURL("https://github.com/git-fixtures/basic.git").One().DotGit().Base()
 	storer := memory.NewStorage()
 	r, err := Clone(storer, nil, &CloneOptions{
-		URL: "file://" + url,
+		URL: url,
 	})
 	c.Assert(err, IsNil)
 

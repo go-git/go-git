@@ -2,7 +2,6 @@ package git
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -26,9 +25,9 @@ type RemoteSuite struct {
 var _ = Suite(&RemoteSuite{})
 
 func (s *RemoteSuite) TestFetchInvalidEndpoint(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
-	err := r.Fetch(&FetchOptions{})
-	c.Assert(err, ErrorMatches, ".*invalid endpoint.*")
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "http://\\"})
+	err := r.Fetch(&FetchOptions{RemoteName: "foo"})
+	c.Assert(err, ErrorMatches, ".*invalid character.*")
 }
 
 func (s *RemoteSuite) TestFetchNonExistentEndpoint(c *C) {
@@ -215,7 +214,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := fmt.Sprintf("file://%s", dstFs.Base())
+	url := dstFs.Base()
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -255,7 +254,7 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 	c.Assert(err, IsNil)
 
 	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := fmt.Sprintf("file://%s", dstFs.Base())
+	url := dstFs.Base()
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -298,7 +297,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	f := fixtures.Basic().One()
 	sto, err := filesystem.NewStorage(f.DotGit())
 	c.Assert(err, IsNil)
-	url := fmt.Sprintf("file://%s", f.DotGit().Base())
+	url := f.DotGit().Base()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -320,7 +319,7 @@ func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
 
-	url := fmt.Sprintf("file://%s", dstFs.Base())
+	url := dstFs.Base()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -349,7 +348,7 @@ func (s *RemoteSuite) TestPushForce(c *C) {
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
 
-	url := fmt.Sprintf("file://%s", dstFs.Base())
+	url := dstFs.Base()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -378,7 +377,7 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
 
-	url := fmt.Sprintf("file://%s", dstFs.Base())
+	url := dstFs.Base()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -399,9 +398,9 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 }
 
 func (s *RemoteSuite) TestPushInvalidEndpoint(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux"})
-	err := r.Push(&PushOptions{})
-	c.Assert(err, ErrorMatches, ".*invalid endpoint.*")
+	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "http://\\"})
+	err := r.Push(&PushOptions{RemoteName: "foo"})
+	c.Assert(err, ErrorMatches, ".*invalid character.*")
 }
 
 func (s *RemoteSuite) TestPushNonExistentEndpoint(c *C) {
@@ -426,7 +425,7 @@ func (s *RemoteSuite) TestPushInvalidFetchOptions(c *C) {
 func (s *RemoteSuite) TestPushInvalidRefSpec(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  "file:///some-url",
+		URL:  "some-url",
 	})
 
 	rs := config.RefSpec("^*$**")
@@ -439,7 +438,7 @@ func (s *RemoteSuite) TestPushInvalidRefSpec(c *C) {
 func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  "file:///some-url",
+		URL:  "some-url",
 	})
 
 	err := r.Push(&PushOptions{

@@ -14,7 +14,7 @@ import (
 // and error. This is meant to be used when implementing a git-upload-pack
 // command.
 func ServeUploadPack(path string) error {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("file://%s", path))
+	ep, err := transport.NewEndpoint(path)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func ServeUploadPack(path string) error {
 // input and error. This is meant to be used when implementing a
 // git-receive-pack command.
 func ServeReceivePack(path string) error {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("file://%s", path))
+	ep, err := transport.NewEndpoint(path)
 	if err != nil {
 		return err
 	}

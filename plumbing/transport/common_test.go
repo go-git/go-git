@@ -74,8 +74,56 @@ func (s *SuiteCommon) TestNewEndpointSCPLike(c *C) {
 	c.Assert(e.String(), Equals, "git@github.com:user/repository.git")
 }
 
-func (s *SuiteCommon) TestNewEndpointWrongForgat(c *C) {
-	e, err := NewEndpoint("foo")
+func (s *SuiteCommon) TestNewEndpointFileAbs(c *C) {
+	e, err := NewEndpoint("/foo.git")
+	c.Assert(err, IsNil)
+	c.Assert(e.Protocol(), Equals, "file")
+	c.Assert(e.User(), Equals, "")
+	c.Assert(e.Password(), Equals, "")
+	c.Assert(e.Host(), Equals, "")
+	c.Assert(e.Port(), Equals, 0)
+	c.Assert(e.Path(), Equals, "/foo.git")
+	c.Assert(e.String(), Equals, "/foo.git")
+}
+
+func (s *SuiteCommon) TestNewEndpointFileRel(c *C) {
+	e, err := NewEndpoint("foo.git")
+	c.Assert(err, IsNil)
+	c.Assert(e.Protocol(), Equals, "file")
+	c.Assert(e.User(), Equals, "")
+	c.Assert(e.Password(), Equals, "")
+	c.Assert(e.Host(), Equals, "")
+	c.Assert(e.Port(), Equals, 0)
+	c.Assert(e.Path(), Equals, "foo.git")
+	c.Assert(e.String(), Equals, "foo.git")
+}
+
+func (s *SuiteCommon) TestNewEndpointFileWindows(c *C) {
+	e, err := NewEndpoint("C:\\foo.git")
+	c.Assert(err, IsNil)
+	c.Assert(e.Protocol(), Equals, "file")
+	c.Assert(e.User(), Equals, "")
+	c.Assert(e.Password(), Equals, "")
+	c.Assert(e.Host(), Equals, "")
+	c.Assert(e.Port(), Equals, 0)
+	c.Assert(e.Path(), Equals, "C:\\foo.git")
+	c.Assert(e.String(), Equals, "C:\\foo.git")
+}
+
+func (s *SuiteCommon) TestNewEndpointFileURL(c *C) {
+	e, err := NewEndpoint("file:///foo.git")
+	c.Assert(err, IsNil)
+	c.Assert(e.Protocol(), Equals, "file")
+	c.Assert(e.User(), Equals, "")
+	c.Assert(e.Password(), Equals, "")
+	c.Assert(e.Host(), Equals, "")
+	c.Assert(e.Port(), Equals, 0)
+	c.Assert(e.Path(), Equals, "/foo.git")
+	c.Assert(e.String(), Equals, "file:///foo.git")
+}
+
+func (s *SuiteCommon) TestNewEndpointInvalidURL(c *C) {
+	e, err := NewEndpoint("http://\\")
 	c.Assert(err, NotNil)
 	c.Assert(e, IsNil)
 }
