@@ -74,6 +74,7 @@ func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, ErrorMatches, ".*no such file or directory.*")
+	// Error message is OS-dependant, so do a broad check
+	c.Assert(err, ErrorMatches, ".*file.*")
 	c.Assert(session, IsNil)
 }
