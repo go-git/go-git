@@ -413,11 +413,11 @@ func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
 }
 
 func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference) error {
-	return d.walkReferencesTree(refs, refsPath)
+	return d.walkReferencesTree(refs, []string{refsPath})
 }
 
-func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string) error {
-	files, err := d.fs.ReadDir(relPath)
+func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string) error {
+	files, err := d.fs.ReadDir(d.fs.Join(relPath...))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -427,7 +427,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string)
 	}
 
 	for _, f := range files {
-		newRelPath := d.fs.Join(relPath, f.Name())
+		newRelPath := append(append([]string(nil), relPath...), f.Name())
 		if f.IsDir() {
 			if err = d.walkReferencesTree(refs, newRelPath); err != nil {
 				return err
@@ -436,7 +436,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string)
 			continue
 		}
 
-		ref, err := d.readReferenceFile(".", newRelPath)
+		ref, err := d.readReferenceFile(".", strings.Join(newRelPath, "/"))
 		if err != nil {
 			return err
 		}
@@ -463,9 +463,8 @@ func (d *DotGit) addRefFromHEAD(refs *[]*plumbing.Reference) error {
 	return nil
 }
 
-func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Reference, err error) {
-	path := d.fs.Join(refsPath, refFile)
-
+func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, err error) {
+	path = d.fs.Join(path, d.fs.Join(strings.Split(name, "/")...))
 	f, err := d.fs.Open(path)
 	if err != nil {
 		return nil, err
@@ -478,7 +477,7 @@ func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Refe
 	}
 
 	line := strings.TrimSpace(string(b))
-	return plumbing.NewReferenceFromStrings(refFile, line), nil
+	return plumbing.NewReferenceFromStrings(name, line), nil
 }
 
 // Module return a billy.Filesystem poiting to the module folder
