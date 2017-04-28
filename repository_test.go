@@ -51,16 +51,16 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	f, err := fs.Open("worktree/.git")
+	f, err := fs.Open(fs.Join("worktree", ".git"))
 	c.Assert(err, IsNil)
 
 	all, err := ioutil.ReadAll(f)
 	c.Assert(err, IsNil)
-	c.Assert(string(all), Equals, "gitdir: ../storage\n")
+	c.Assert(string(all), Equals, fmt.Sprintf("gitdir: %s\n", filepath.Join("..", "storage")))
 
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
-	c.Assert(cfg.Core.Worktree, Equals, "../worktree")
+	c.Assert(cfg.Core.Worktree, Equals, filepath.Join("..", "worktree"))
 }
 
 func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
