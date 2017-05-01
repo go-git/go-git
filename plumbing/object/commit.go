@@ -30,10 +30,12 @@ type Commit struct {
 	Committer Signature
 	// Message is the commit message, contains arbitrary text.
 	Message string
+	// TreeHash hash of the tree pointed by the commit.
+	TreeHash plumbing.Hash
+	// ParentHashes hashes of the parent commits of the commit.
+	ParentHashes []plumbing.Hash
 
-	tree    plumbing.Hash
-	parents []plumbing.Hash
-	s       storer.EncodedObjectStorer
+	s storer.EncodedObjectStorer
 }
 
 // GetCommit gets a commit from an object storer and decodes it.
@@ -59,19 +61,19 @@ func DecodeCommit(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Comm
 
 // Tree returns the Tree from the commit.
 func (c *Commit) Tree() (*Tree, error) {
-	return GetTree(c.s, c.tree)
+	return GetTree(c.s, c.TreeHash)
 }
 
 // Parents return a CommitIter to the parent Commits.
 func (c *Commit) Parents() CommitIter {
 	return NewCommitIter(c.s,
-		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.parents),
+		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.ParentHashes),
 	)
 }
 
 // NumParents returns the number of parents in a commit.
 func (c *Commit) NumParents() int {
-	return len(c.parents)
+	return len(c.ParentHashes)
 }
 
 // File returns the file with the specified "path" in the commit and a
@@ -144,9 +146,9 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			split := bytes.SplitN(line, []byte{' '}, 2)
 			switch string(split[0]) {
 			case "tree":
-				c.tree = plumbing.NewHash(string(split[1]))
+				c.TreeHash = plumbing.NewHash(string(split[1]))
 			case "parent":
-				c.parents = append(c.parents, plumbing.NewHash(string(split[1])))
+				c.ParentHashes = append(c.ParentHashes, plumbing.NewHash(string(split[1])))
 			case "author":
 				c.Author.Decode(split[1])
 			case "committer":
@@ -170,10 +172,10 @@ func (b *Commit) Encode(o plumbing.EncodedObject) error {
 		return err
 	}
 	defer ioutil.CheckClose(w, &err)
-	if _, err = fmt.Fprintf(w, "tree %s\n", b.tree.String()); err != nil {
+	if _, err = fmt.Fprintf(w, "tree %s\n", b.TreeHash.String()); err != nil {
 		return err
 	}
-	for _, parent := range b.parents {
+	for _, parent := range b.ParentHashes {
 		if _, err = fmt.Fprintf(w, "parent %s\n", parent.String()); err != nil {
 			return err
 		}
