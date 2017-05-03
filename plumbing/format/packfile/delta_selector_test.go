@@ -197,3 +197,8 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 	c.Assert(otp[2].IsDelta(), Equals, true)
 	c.Assert(otp[2].Depth, Equals, 2)
 }
+
+func (s *DeltaSelectorSuite) TestMaxDepth(c *C) {
+	dsl := s.ds.deltaSizeLimit(0, 0, int(maxDepth), true)
+	c.Assert(dsl, Equals, int64(0))
+}
