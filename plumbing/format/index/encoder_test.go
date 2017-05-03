@@ -12,7 +12,7 @@ import (
 func (s *IndexSuite) TestEncode(c *C) {
 	idx := &Index{
 		Version: 2,
-		Entries: []Entry{{
+		Entries: []*Entry{{
 			CreatedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Dev:        4242,
@@ -66,7 +66,7 @@ func (s *IndexSuite) TestEncodeUnsuportedVersion(c *C) {
 func (s *IndexSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
 	idx := &Index{
 		Version: 2,
-		Entries: []Entry{{IntentToAdd: true}},
+		Entries: []*Entry{{IntentToAdd: true}},
 	}
 
 	buf := bytes.NewBuffer(nil)
@@ -78,7 +78,7 @@ func (s *IndexSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
 func (s *IndexSuite) TestEncodeWithSkipWorktreeUnsuportedVersion(c *C) {
 	idx := &Index{
 		Version: 2,
-		Entries: []Entry{{SkipWorktree: true}},
+		Entries: []*Entry{{SkipWorktree: true}},
 	}
 
 	buf := bytes.NewBuffer(nil)

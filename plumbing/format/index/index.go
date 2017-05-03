@@ -44,7 +44,7 @@ type Index struct {
 	Version uint32
 	// Entries collection of entries represented by this Index. The order of
 	// this collection is not guaranteed
-	Entries []Entry
+	Entries []*Entry
 	// Cache represents the 'Cached tree' extension
 	Cache *Tree
 	// ResolveUndo represents the 'Resolve undo' extension
@@ -52,14 +52,14 @@ type Index struct {
 }
 
 // Entry returns the entry that match the given path, if any.
-func (i *Index) Entry(path string) (Entry, error) {
+func (i *Index) Entry(path string) (*Entry, error) {
 	for _, e := range i.Entries {
 		if e.Name == path {
 			return e, nil
 		}
 	}
 
-	return Entry{}, ErrEntryNotFound
+	return nil, ErrEntryNotFound
 }
 
 // String is equivalent to `git ls-files --stage --debug`

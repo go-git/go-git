@@ -19,7 +19,7 @@ var _ = Suite(&NoderSuite{})
 
 func (s *NoderSuite) TestDiff(c *C) {
 	indexA := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 			{Name: "bar/foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 			{Name: "bar/qux", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
@@ -28,7 +28,7 @@ func (s *NoderSuite) TestDiff(c *C) {
 	}
 
 	indexB := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 			{Name: "bar/foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 			{Name: "bar/qux", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
@@ -43,13 +43,13 @@ func (s *NoderSuite) TestDiff(c *C) {
 
 func (s *NoderSuite) TestDiffChange(c *C) {
 	indexA := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "bar/baz/bar", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 		},
 	}
 
 	indexB := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "bar/baz/foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 		},
 	}
@@ -61,13 +61,13 @@ func (s *NoderSuite) TestDiffChange(c *C) {
 
 func (s *NoderSuite) TestDiffDir(c *C) {
 	indexA := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 		},
 	}
 
 	indexB := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "foo/bar", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 		},
 	}
@@ -79,14 +79,14 @@ func (s *NoderSuite) TestDiffDir(c *C) {
 
 func (s *NoderSuite) TestDiffSameRoot(c *C) {
 	indexA := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "foo.go", Hash: plumbing.NewHash("aab686eafeb1f44702738c8b0f24f2567c36da6d")},
 			{Name: "foo/bar", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 		},
 	}
 
 	indexB := &index.Index{
-		Entries: []index.Entry{
+		Entries: []*index.Entry{
 			{Name: "foo/bar", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 			{Name: "foo.go", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
 		},

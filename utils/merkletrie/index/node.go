@@ -16,7 +16,7 @@ import (
 // compared with any other noder.Noder implementation inside of go-git
 type node struct {
 	path     string
-	entry    index.Entry
+	entry    *index.Entry
 	children []noder.Noder
 	isDir    bool
 }
@@ -66,6 +66,10 @@ func (n *node) String() string {
 // If the node is computed and not based on a index.Entry the hash is equals
 // to a 24-bytes slices of zero values.
 func (n *node) Hash() []byte {
+	if n.entry == nil {
+		return make([]byte, 24)
+	}
+
 	return append(n.entry.Hash[:], n.entry.Mode.Bytes()...)
 }
 

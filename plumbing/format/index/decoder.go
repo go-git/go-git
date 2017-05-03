@@ -82,7 +82,7 @@ func (d *Decoder) readEntries(idx *Index, count int) error {
 		}
 
 		d.lastEntry = e
-		idx.Entries = append(idx.Entries, *e)
+		idx.Entries = append(idx.Entries, e)
 	}
 
 	return nil

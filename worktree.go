@@ -352,7 +352,7 @@ func (w *Worktree) checkoutFile(f *object.File) error {
 }
 
 func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *index.Index) error {
-	idx.Entries = append(idx.Entries, index.Entry{
+	idx.Entries = append(idx.Entries, &index.Entry{
 		Hash: f.Hash,
 		Name: name,
 		Mode: filemode.Submodule,
@@ -372,7 +372,7 @@ func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *index.Ind
 		return err
 	}
 
-	e := index.Entry{
+	e := &index.Entry{
 		Hash:       h,
 		Name:       name,
 		Mode:       mode,
@@ -383,7 +383,7 @@ func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *index.Ind
 	// if the FileInfo.Sys() comes from os the ctime, dev, inode, uid and gid
 	// can be retrieved, otherwise this doesn't apply
 	if fillSystemInfo != nil {
-		fillSystemInfo(&e, fi.Sys())
+		fillSystemInfo(e, fi.Sys())
 	}
 
 	idx.Entries = append(idx.Entries, e)
