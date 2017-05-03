@@ -9,6 +9,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
@@ -288,6 +289,22 @@ func (s *WorktreeSuite) TestStatus(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(status.IsClean(), Equals, false)
 	c.Assert(status, HasLen, 9)
+}
+
+func (s *WorktreeSuite) TestStatusEmpty(c *C) {
+	fs := memfs.New()
+	storage := memory.NewStorage()
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status, NotNil)
 }
 
 func (s *WorktreeSuite) TestReset(c *C) {

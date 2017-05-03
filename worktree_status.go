@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 
+	"fmt"
+
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
@@ -19,7 +21,7 @@ import (
 func (w *Worktree) Status() (Status, error) {
 	ref, err := w.r.Head()
 	if err == plumbing.ErrReferenceNotFound {
-		return nil, nil
+		return make(Status, 0), nil
 	}
 
 	if err != nil {
@@ -177,7 +179,9 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 		return h, err
 	}
 
-	if s.File(path).Worktree == Unmodified {
+	fmt.Println(len(s))
+	fs := s.File(path)
+	if fs != nil && fs.Worktree == Unmodified {
 		return h, nil
 	}
 
