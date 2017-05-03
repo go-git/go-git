@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"io"
 
-	"fmt"
-
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
@@ -48,10 +46,13 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 		switch a {
 		case merkletrie.Delete:
 			s.File(ch.From.String()).Staging = Deleted
+			s.File(ch.From.String()).Worktree = Unmodified
 		case merkletrie.Insert:
 			s.File(ch.To.String()).Staging = Added
+			s.File(ch.To.String()).Worktree = Unmodified
 		case merkletrie.Modify:
 			s.File(ch.To.String()).Staging = Modified
+			s.File(ch.To.String()).Worktree = Unmodified
 		}
 	}
 
@@ -71,7 +72,6 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 			s.File(ch.From.String()).Worktree = Deleted
 		case merkletrie.Insert:
 			s.File(ch.To.String()).Worktree = Untracked
-			s.File(ch.To.String()).Staging = Untracked
 		case merkletrie.Modify:
 			s.File(ch.To.String()).Worktree = Modified
 		}
@@ -179,9 +179,7 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 		return h, err
 	}
 
-	fmt.Println(len(s))
-	fs := s.File(path)
-	if fs != nil && fs.Worktree == Unmodified {
+	if s.File(path).Worktree == Unmodified {
 		return h, nil
 	}
 

@@ -287,6 +287,7 @@ func (s *WorktreeSuite) TestStatus(c *C) {
 
 	status, err := w.Status()
 	c.Assert(err, IsNil)
+
 	c.Assert(status.IsClean(), Equals, false)
 	c.Assert(status, HasLen, 9)
 }
