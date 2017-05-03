@@ -43,16 +43,16 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 			return nil, err
 		}
 
+		fs := s.File(nameFromAction(&ch))
+		fs.Worktree = Unmodified
+
 		switch a {
 		case merkletrie.Delete:
 			s.File(ch.From.String()).Staging = Deleted
-			s.File(ch.From.String()).Worktree = Unmodified
 		case merkletrie.Insert:
 			s.File(ch.To.String()).Staging = Added
-			s.File(ch.To.String()).Worktree = Unmodified
 		case merkletrie.Modify:
 			s.File(ch.To.String()).Staging = Modified
-			s.File(ch.To.String()).Worktree = Unmodified
 		}
 	}
 
@@ -67,17 +67,32 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 			return nil, err
 		}
 
+		fs := s.File(nameFromAction(&ch))
+		if fs.Staging == Untracked {
+			fs.Staging = Unmodified
+		}
+
 		switch a {
 		case merkletrie.Delete:
-			s.File(ch.From.String()).Worktree = Deleted
+			fs.Worktree = Deleted
 		case merkletrie.Insert:
-			s.File(ch.To.String()).Worktree = Untracked
+			fs.Worktree = Untracked
+			fs.Staging = Untracked
 		case merkletrie.Modify:
-			s.File(ch.To.String()).Worktree = Modified
+			fs.Worktree = Modified
 		}
 	}
 
 	return s, nil
+}
+
+func nameFromAction(ch *merkletrie.Change) string {
+	name := ch.To.String()
+	if name == "" {
+		return ch.From.String()
+	}
+
+	return name
 }
 
 func (w *Worktree) diffStagingWithWorktree() (merkletrie.Changes, error) {

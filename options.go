@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
@@ -42,7 +43,7 @@ type CloneOptions struct {
 	// Limit fetching to the specified number of commits.
 	Depth int
 	// RecurseSubmodules after the clone is created, initialize all submodules
-	// within, using their default settings. This option is ignored if the
+	// within, using their defaut settings. This option is ignored if the
 	// cloned repository does not have a worktree.
 	RecurseSubmodules SubmoduleRescursivity
 	// Progress is where the human readable information sent by the server is
@@ -250,4 +251,48 @@ type LogOptions struct {
 	// reachable from it. If this option is not set, HEAD will be used as
 	// the default From.
 	From plumbing.Hash
+}
+
+var (
+	ErrMissingAuthor    = errors.New("author field is required")
+	ErrMissingCommitter = errors.New("committer field is required")
+)
+
+// CommitOptions describes how a commit operation should be performed.
+type CommitOptions struct {
+	// All automatically stage files that have been modified and deleted, but
+	// new files you have not told Git about are not affected.
+	All bool
+	// Author is the author's signature of the commit.
+	Author *object.Signature
+	// Committer is the committer's signature of the commit. If Committer is
+	// equal to nil the Author signature is used.
+	Committer *object.Signature
+	// Parents parents commits for the new commit, by default is the hash of
+	// HEAD reference.
+	Parents []plumbing.Hash
+}
+
+// Validate validates the fields and sets the default values.
+func (o *CommitOptions) Validate(r *Repository) error {
+	if o.Author == nil {
+		return ErrMissingAuthor
+	}
+
+	if o.Committer == nil {
+		o.Committer = o.Author
+	}
+
+	if len(o.Parents) == 0 {
+		head, err := r.Head()
+		if err != nil && err != plumbing.ErrReferenceNotFound {
+			return err
+		}
+
+		if head != nil {
+			o.Parents = []plumbing.Hash{head.Hash()}
+		}
+	}
+
+	return nil
 }
