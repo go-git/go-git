@@ -171,30 +171,39 @@ func (b *Commit) Encode(o plumbing.EncodedObject) error {
 	if err != nil {
 		return err
 	}
+
 	defer ioutil.CheckClose(w, &err)
+
 	if _, err = fmt.Fprintf(w, "tree %s\n", b.TreeHash.String()); err != nil {
 		return err
 	}
+
 	for _, parent := range b.ParentHashes {
 		if _, err = fmt.Fprintf(w, "parent %s\n", parent.String()); err != nil {
 			return err
 		}
 	}
+
 	if _, err = fmt.Fprint(w, "author "); err != nil {
 		return err
 	}
+
 	if err = b.Author.Encode(w); err != nil {
 		return err
 	}
+
 	if _, err = fmt.Fprint(w, "\ncommitter "); err != nil {
 		return err
 	}
+
 	if err = b.Committer.Encode(w); err != nil {
 		return err
 	}
+
 	if _, err = fmt.Fprintf(w, "\n\n%s", b.Message); err != nil {
 		return err
 	}
+
 	return err
 }
 

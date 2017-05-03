@@ -68,18 +68,23 @@ func (b *Blob) Decode(o plumbing.EncodedObject) error {
 
 // Encode transforms a Blob into a plumbing.EncodedObject.
 func (b *Blob) Encode(o plumbing.EncodedObject) error {
+	o.SetType(plumbing.BlobObject)
+
 	w, err := o.Writer()
 	if err != nil {
 		return err
 	}
+
 	defer ioutil.CheckClose(w, &err)
+
 	r, err := b.Reader()
 	if err != nil {
 		return err
 	}
+
 	defer ioutil.CheckClose(r, &err)
+
 	_, err = io.Copy(w, r)
-	o.SetType(plumbing.BlobObject)
 	return err
 }
 
