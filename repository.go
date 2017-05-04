@@ -3,8 +3,10 @@ package git
 import (
 	"errors"
 	"fmt"
+	stdioutil "io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/internal/revision"
@@ -13,6 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
 	"gopkg.in/src-d/go-billy.v2"
 	"gopkg.in/src-d/go-billy.v2/osfs"
@@ -193,18 +196,9 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 // repository is bare or a normal one. If the path doesn't contain a valid
 // repository ErrRepositoryNotExists is returned
 func PlainOpen(path string) (*Repository, error) {
-	var wt, dot billy.Filesystem
-
-	fs := osfs.New(path)
-	if _, err := fs.Stat(".git"); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		dot = fs
-	} else {
-		wt = fs
-		dot = fs.Dir(".git")
+	dot, wt, err := dotGitToFilesystems(path)
+	if err != nil {
+		return nil, err
 	}
 
 	s, err := filesystem.NewStorage(dot)
@@ -213,6 +207,58 @@ func PlainOpen(path string) (*Repository, error) {
 	}
 
 	return Open(s, wt)
+}
+
+func dotGitToFilesystems(path string) (dot, wt billy.Filesystem, err error) {
+	fs := osfs.New(path)
+	fi, err := fs.Stat(".git")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, nil, err
+		}
+
+		return fs, nil, nil
+	}
+
+	if fi.IsDir() {
+		return fs.Dir(".git"), fs, nil
+	}
+
+	dot, err = dotGitFileToFilesystem(fs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return dot, fs, nil
+}
+
+func dotGitFileToFilesystem(fs billy.Filesystem) (billy.Filesystem, error) {
+	var err error
+
+	f, err := fs.Open(".git")
+	if err != nil {
+		return nil, err
+	}
+	defer ioutil.CheckClose(f, &err)
+
+	b, err := stdioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+
+	line := string(b)
+	const prefix = "gitdir: "
+	if !strings.HasPrefix(line, prefix) {
+		return nil, fmt.Errorf(".git file has no %s prefix", prefix)
+	}
+
+	gitdir := line[len(prefix):]
+	gitdir = strings.TrimSpace(gitdir)
+	if filepath.IsAbs(gitdir) {
+		return osfs.New(gitdir), nil
+	}
+
+	return fs.Dir(gitdir), err
 }
 
 // PlainClone a repository into the path with the given options, isBare defines

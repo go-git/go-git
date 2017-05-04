@@ -233,38 +233,32 @@ func (w *Worktree) addOrUpdateFileToIndex(filename string, h plumbing.Hash) erro
 		return err
 	}
 
-	_, err = idx.Entry(filename)
+	e, err := idx.Entry(filename)
+	if err != nil && err != index.ErrEntryNotFound {
+		return err
+	}
+
 	if err == index.ErrEntryNotFound {
-		err = w.doAddFileToIndex(idx, filename)
+		if err := w.doAddFileToIndex(idx, filename, h); err != nil {
+			return err
+		}
+	} else {
+		if err := w.doUpdateFileToIndex(e, filename, h); err != nil {
+			return err
+		}
 	}
-
-	if err != nil {
-		return err
-	}
-
-	err = w.doUpdateFileToIndex(idx, filename, h)
-	if err != nil {
-		return err
-	}
-
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) doAddFileToIndex(idx *index.Index, filename string) error {
-	idx.Entries = append(idx.Entries, &index.Entry{
-		Name: filename,
-	})
+func (w *Worktree) doAddFileToIndex(idx *index.Index, filename string, h plumbing.Hash) error {
+	e := &index.Entry{Name: filename}
+	idx.Entries = append(idx.Entries, e)
 
-	return nil
+	return w.doUpdateFileToIndex(e, filename, h)
 }
 
-func (w *Worktree) doUpdateFileToIndex(idx *index.Index, filename string, h plumbing.Hash) error {
+func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbing.Hash) error {
 	info, err := w.fs.Stat(filename)
-	if err != nil {
-		return err
-	}
-
-	e, err := idx.Entry(filename)
 	if err != nil {
 		return err
 	}

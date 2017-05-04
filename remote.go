@@ -8,6 +8,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
@@ -56,9 +57,7 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 // remote was already up-to-date.
 func (r *Remote) Push(o *PushOptions) (err error) {
 	// TODO: Support deletes.
-	// TODO: Support pushing tags.
-	// TODO: Check if force update is given, otherwise reject non-fast forward.
-	// TODO: Sideband suppor
+	// TODO: Sideband support
 
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
@@ -196,12 +195,12 @@ func newSendPackSession(url string, auth transport.AuthMethod) (transport.Receiv
 func newClient(url string) (transport.Transport, transport.Endpoint, error) {
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
-		return nil, transport.Endpoint{}, err
+		return nil, nil, err
 	}
 
 	c, err := client.NewClient(ep)
 	if err != nil {
-		return nil, transport.Endpoint{}, err
+		return nil, nil, err
 	}
 
 	return c, ep, err
@@ -265,37 +264,35 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 		return nil
 	}
 
-	dstName := rs.Dst(localRef.Name())
-	oldHash := plumbing.ZeroHash
-	newHash := localRef.Hash()
+	cmd := &packp.Command{
+		Name: rs.Dst(localRef.Name()),
+		Old:  plumbing.ZeroHash,
+		New:  localRef.Hash(),
+	}
 
-	iter, err := remoteRefs.IterReferences()
-	if err != nil {
+	remoteRef, err := remoteRefs.Reference(cmd.Name)
+	if err == nil {
+		if remoteRef.Type() != plumbing.HashReference {
+			//TODO: check actual git behavior here
+			return nil
+		}
+
+		cmd.Old = remoteRef.Hash()
+	} else if err != plumbing.ErrReferenceNotFound {
 		return err
 	}
 
-	err = iter.ForEach(func(remoteRef *plumbing.Reference) error {
-		if remoteRef.Type() != plumbing.HashReference {
-			return nil
-		}
-
-		if dstName != remoteRef.Name() {
-			return nil
-		}
-
-		oldHash = remoteRef.Hash()
-		return nil
-	})
-
-	if oldHash == newHash {
+	if cmd.Old == cmd.New {
 		return nil
 	}
 
-	req.Commands = append(req.Commands, &packp.Command{
-		Name: dstName,
-		Old:  oldHash,
-		New:  newHash,
-	})
+	if !rs.IsForceUpdate() {
+		if err := checkFastForwardUpdate(r.s, remoteRefs, cmd); err != nil {
+			return err
+		}
+	}
+
+	req.Commands = append(req.Commands, cmd)
 	return nil
 }
 
@@ -388,6 +385,50 @@ func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
 	}
 
 	return true, err
+}
+
+func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.ReferenceStorer, cmd *packp.Command) error {
+	if cmd.Old == plumbing.ZeroHash {
+		_, err := remoteRefs.Reference(cmd.Name)
+		if err == plumbing.ErrReferenceNotFound {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("non-fast-forward update: %s", cmd.Name.String())
+	}
+
+	ff, err := isFastForward(s, cmd.Old, cmd.New)
+	if err != nil {
+		return err
+	}
+
+	if !ff {
+		return fmt.Errorf("non-fast-forward update: %s", cmd.Name.String())
+	}
+
+	return nil
+}
+
+func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash) (bool, error) {
+	c, err := object.GetCommit(s, new)
+	if err != nil {
+		return false, err
+	}
+
+	found := false
+	iter := object.NewCommitPreIterator(c)
+	return found, iter.ForEach(func(c *object.Commit) error {
+		if c.Hash != old {
+			return nil
+		}
+
+		found = true
+		return storer.ErrStop
+	})
 }
 
 func (r *Remote) newUploadPackRequest(o *FetchOptions,

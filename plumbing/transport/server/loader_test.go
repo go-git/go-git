@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"os/exec"
 	"path/filepath"
 
@@ -33,7 +32,7 @@ func (s *LoaderSuite) endpoint(c *C, url string) transport.Endpoint {
 }
 
 func (s *LoaderSuite) TestLoadNonExistent(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, "file:///does-not-exist"))
+	sto, err := DefaultLoader.Load(s.endpoint(c, "does-not-exist"))
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(sto, IsNil)
 }
@@ -45,13 +44,13 @@ func (s *LoaderSuite) TestLoadNonExistentIgnoreHost(c *C) {
 }
 
 func (s *LoaderSuite) TestLoad(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, fmt.Sprintf("file://%s", s.RepoPath)))
+	sto, err := DefaultLoader.Load(s.endpoint(c, s.RepoPath))
 	c.Assert(err, IsNil)
 	c.Assert(sto, NotNil)
 }
 
 func (s *LoaderSuite) TestLoadIgnoreHost(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, fmt.Sprintf("file://%s", s.RepoPath)))
+	sto, err := DefaultLoader.Load(s.endpoint(c, s.RepoPath))
 	c.Assert(err, IsNil)
 	c.Assert(sto, NotNil)
 }

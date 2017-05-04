@@ -2,7 +2,6 @@ package examples
 
 import (
 	"flag"
-	"fmt"
 	"go/build"
 	"io/ioutil"
 	"os"
@@ -96,7 +95,7 @@ func createBareRepository(dir string) string {
 
 func setEmptyRemote(dir string) string {
 	remote := createBareRepository(tempFolder())
-	setRemote(dir, fmt.Sprintf("file://%s", remote))
+	setRemote(dir, remote)
 	return dir
 }
 

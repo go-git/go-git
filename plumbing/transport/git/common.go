@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/format/pktline"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
@@ -15,6 +14,8 @@ import (
 
 // DefaultClient is the default git client.
 var DefaultClient = common.NewClient(&runner{})
+
+const DefaultPort = 9418
 
 type runner struct{}
 
@@ -62,12 +63,13 @@ func (c *command) connect() error {
 }
 
 func (c *command) getHostWithPort() string {
-	host := c.endpoint.Host
-	if strings.Index(c.endpoint.Host, ":") == -1 {
-		host += ":9418"
+	host := c.endpoint.Host()
+	port := c.endpoint.Port()
+	if port <= 0 {
+		port = DefaultPort
 	}
 
-	return host
+	return fmt.Sprintf("%s:%d", host, port)
 }
 
 // StderrPipe git protocol doesn't have any dedicated error channel
@@ -88,7 +90,7 @@ func (c *command) StdoutPipe() (io.Reader, error) {
 }
 
 func endpointToCommand(cmd string, ep transport.Endpoint) string {
-	return fmt.Sprintf("%s %s%chost=%s%c", cmd, ep.Path, 0, ep.Host, 0)
+	return fmt.Sprintf("%s %s%chost=%s%c", cmd, ep.Path(), 0, ep.Host(), 0)
 }
 
 // Wait no-op function, required by the interface

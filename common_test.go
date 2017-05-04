@@ -1,7 +1,6 @@
 package git
 
 import (
-	"fmt"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -95,8 +94,7 @@ func (s *BaseSuite) GetBasicLocalRepositoryURL() string {
 }
 
 func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
-	path := f.DotGit().Base()
-	return fmt.Sprintf("file://%s", path)
+	return f.DotGit().Base()
 }
 
 type SuiteCommon struct{}
