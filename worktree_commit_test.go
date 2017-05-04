@@ -13,6 +13,18 @@ import (
 	"gopkg.in/src-d/go-billy.v2/memfs"
 )
 
+func (s *WorktreeSuite) TestCommitInvalidOptions(c *C) {
+	r, err := Init(memory.NewStorage(), memfs.New())
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	hash, err := w.Commit("", &CommitOptions{})
+	c.Assert(err, Equals, ErrMissingAuthor)
+	c.Assert(hash.IsZero(), Equals, true)
+}
+
 func (s *WorktreeSuite) TestCommitInitial(c *C) {
 	expected := plumbing.NewHash("98c4ac7c29c913f7461eae06e024dc18e80d23a4")
 
@@ -74,6 +86,7 @@ func (s *WorktreeSuite) TestCommitAll(c *C) {
 	c.Assert(err, IsNil)
 
 	billy.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
+	billy.WriteFile(fs, "foo", []byte("foo"), 0644)
 
 	hash, err := w.Commit("foo\n", &CommitOptions{
 		All:    true,

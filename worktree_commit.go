@@ -22,7 +22,7 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		return plumbing.ZeroHash, err
 	}
 
-	if opts.All == true {
+	if opts.All {
 		if err := w.autoAddModifiedAndDeleted(); err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -103,7 +103,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 }
 
 // commitIndexHelper converts a given index.Index file into multiple git objects
-// reading the blogs from the given filesystem and creating the trees from the
+// reading the blobs from the given filesystem and creating the trees from the
 // index structure. The created objects are pushed to a given Storer.
 type commitIndexHelper struct {
 	fs billy.Filesystem

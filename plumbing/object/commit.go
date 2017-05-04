@@ -30,9 +30,9 @@ type Commit struct {
 	Committer Signature
 	// Message is the commit message, contains arbitrary text.
 	Message string
-	// TreeHash hash of the tree pointed by the commit.
+	// TreeHash is the hash of the root tree of the commit.
 	TreeHash plumbing.Hash
-	// ParentHashes hashes of the parent commits of the commit.
+	// ParentHashes are the hashes of the parent commits of the commit.
 	ParentHashes []plumbing.Hash
 
 	s storer.EncodedObjectStorer

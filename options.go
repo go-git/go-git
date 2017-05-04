@@ -43,7 +43,7 @@ type CloneOptions struct {
 	// Limit fetching to the specified number of commits.
 	Depth int
 	// RecurseSubmodules after the clone is created, initialize all submodules
-	// within, using their defaut settings. This option is ignored if the
+	// within, using their default settings. This option is ignored if the
 	// cloned repository does not have a worktree.
 	RecurseSubmodules SubmoduleRescursivity
 	// Progress is where the human readable information sent by the server is
@@ -73,7 +73,7 @@ func (o *CloneOptions) Validate() error {
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
-	// Remote branch to clone.  If empty, uses HEAD.
+	// Remote branch to clone. If empty, uses HEAD.
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
 	SingleBranch bool
@@ -254,8 +254,7 @@ type LogOptions struct {
 }
 
 var (
-	ErrMissingAuthor    = errors.New("author field is required")
-	ErrMissingCommitter = errors.New("committer field is required")
+	ErrMissingAuthor = errors.New("author field is required")
 )
 
 // CommitOptions describes how a commit operation should be performed.
@@ -266,10 +265,10 @@ type CommitOptions struct {
 	// Author is the author's signature of the commit.
 	Author *object.Signature
 	// Committer is the committer's signature of the commit. If Committer is
-	// equal to nil the Author signature is used.
+	// nil the Author signature is used.
 	Committer *object.Signature
-	// Parents parents commits for the new commit, by default is the hash of
-	// HEAD reference.
+	// Parents are the parents commits for the new commit, by default when
+	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
 }
 
