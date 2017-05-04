@@ -2,7 +2,6 @@ package examples
 
 import (
 	"flag"
-	"fmt"
 	"go/build"
 	"io/ioutil"
 	"os"
