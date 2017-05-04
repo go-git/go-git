@@ -1,4 +1,4 @@
-#go-git + aerospike: a git repository backed by a database
+# go-git + aerospike: a git repository backed by a database
 
 <img src="https://upload.wikimedia.org/wikipedia/en/2/2b/Aerospike_logo.png" align="right"/> This is an example of a [go-git](https://github.com/src-d/go-git) repository backed by [Aerospike](http://www.aerospike.com/). 
 
