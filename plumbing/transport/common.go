@@ -114,6 +114,10 @@ func NewEndpoint(endpoint string) (Endpoint, error) {
 		return e, nil
 	}
 
+	if e, ok := parseFile(endpoint); ok {
+		return e, nil
+	}
+
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, plumbing.NewPermanentError(err)
@@ -201,9 +205,21 @@ func (e *scpEndpoint) String() string {
 	return fmt.Sprintf("%s%s:%s", user, e.host, e.path)
 }
 
+type fileEndpoint struct {
+	path string
+}
+
+func (e *fileEndpoint) Protocol() string { return "file" }
+func (e *fileEndpoint) User() string     { return "" }
+func (e *fileEndpoint) Password() string { return "" }
+func (e *fileEndpoint) Host() string     { return "" }
+func (e *fileEndpoint) Port() int        { return 0 }
+func (e *fileEndpoint) Path() string     { return e.path }
+func (e *fileEndpoint) String() string   { return e.path }
+
 var (
-	isSchemeRegExp   = regexp.MustCompile("^[^:]+://")
-	scpLikeUrlRegExp = regexp.MustCompile("^(?:(?P<user>[^@]+)@)?(?P<host>[^:]+):/?(?P<path>.+)$")
+	isSchemeRegExp   = regexp.MustCompile(`^[^:]+://`)
+	scpLikeUrlRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?P<path>[^\\].*)$`)
 )
 
 func parseSCPLike(endpoint string) (Endpoint, bool) {
@@ -217,6 +233,15 @@ func parseSCPLike(endpoint string) (Endpoint, bool) {
 		host: m[2],
 		path: m[3],
 	}, true
+}
+
+func parseFile(endpoint string) (Endpoint, bool) {
+	if isSchemeRegExp.MatchString(endpoint) {
+		return nil, false
+	}
+
+	path := endpoint
+	return &fileEndpoint{path}, true
 }
 
 // UnsupportedCapabilities are the capabilities not supported by any client
