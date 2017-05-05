@@ -71,18 +71,18 @@ func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
 	c.Assert(err, IsNil)
 	commits := []*Commit{
 		{
-			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
-			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
-			Message:   "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
-			tree:      plumbing.NewHash("f000000000000000000000000000000000000001"),
-			parents:   []plumbing.Hash{plumbing.NewHash("f000000000000000000000000000000000000002")},
+			Author:       Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Committer:    Signature{Name: "Bar", Email: "bar@example.local", When: ts},
+			Message:      "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
+			TreeHash:     plumbing.NewHash("f000000000000000000000000000000000000001"),
+			ParentHashes: []plumbing.Hash{plumbing.NewHash("f000000000000000000000000000000000000002")},
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
 			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
 			Message:   "Message\n\nFoo\nBar\nWith no trailing blank lines",
-			tree:      plumbing.NewHash("0000000000000000000000000000000000000003"),
-			parents: []plumbing.Hash{
+			TreeHash:  plumbing.NewHash("0000000000000000000000000000000000000003"),
+			ParentHashes: []plumbing.Hash{
 				plumbing.NewHash("f000000000000000000000000000000000000004"),
 				plumbing.NewHash("f000000000000000000000000000000000000005"),
 				plumbing.NewHash("f000000000000000000000000000000000000006"),

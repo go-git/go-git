@@ -11,7 +11,7 @@ type Status map[string]*FileStatus
 // exists a new FileStatus is added to the map using the path as key.
 func (s Status) File(path string) *FileStatus {
 	if _, ok := (s)[path]; !ok {
-		s[path] = &FileStatus{Worktree: Unmodified, Staging: Unmodified}
+		s[path] = &FileStatus{Worktree: Untracked, Staging: Untracked}
 	}
 
 	return s[path]

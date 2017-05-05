@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
@@ -72,7 +73,7 @@ func (o *CloneOptions) Validate() error {
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
-	// Remote branch to clone.  If empty, uses HEAD.
+	// Remote branch to clone. If empty, uses HEAD.
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
 	SingleBranch bool
@@ -250,4 +251,47 @@ type LogOptions struct {
 	// reachable from it. If this option is not set, HEAD will be used as
 	// the default From.
 	From plumbing.Hash
+}
+
+var (
+	ErrMissingAuthor = errors.New("author field is required")
+)
+
+// CommitOptions describes how a commit operation should be performed.
+type CommitOptions struct {
+	// All automatically stage files that have been modified and deleted, but
+	// new files you have not told Git about are not affected.
+	All bool
+	// Author is the author's signature of the commit.
+	Author *object.Signature
+	// Committer is the committer's signature of the commit. If Committer is
+	// nil the Author signature is used.
+	Committer *object.Signature
+	// Parents are the parents commits for the new commit, by default when
+	// len(Parents) is zero, the hash of HEAD reference is used.
+	Parents []plumbing.Hash
+}
+
+// Validate validates the fields and sets the default values.
+func (o *CommitOptions) Validate(r *Repository) error {
+	if o.Author == nil {
+		return ErrMissingAuthor
+	}
+
+	if o.Committer == nil {
+		o.Committer = o.Author
+	}
+
+	if len(o.Parents) == 0 {
+		head, err := r.Head()
+		if err != nil && err != plumbing.ErrReferenceNotFound {
+			return err
+		}
+
+		if head != nil {
+			o.Parents = []plumbing.Hash{head.Hash()}
+		}
+	}
+
+	return nil
 }
