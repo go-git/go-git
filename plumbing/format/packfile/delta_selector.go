@@ -142,6 +142,11 @@ func (dw *deltaSelector) deltaSizeLimit(targetSize int64, baseDepth int,
 	d := int64(targetDepth)
 	n := targetSize
 
+	// If target depth is bigger than maxDepth, this delta is not suitable to be used.
+	if d >= maxDepth {
+		return 0
+	}
+
 	// If src is whole (depth=0) and base is near limit (depth=9/10)
 	// any delta using src can be 10x larger and still be better.
 	//
