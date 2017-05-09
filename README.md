@@ -111,6 +111,12 @@ Date:   Fri Nov 11 13:23:22 2016 +0100
 
 You can find this [example](_examples/log/main.go) and many other at the [examples](_examples) folder
 
+Comparison With Git
+-------------------
+
+In the [compatibility documentation](COMPATIBILITY.md) you can find a comparison
+table of git with go-git.
+
 Contribute
 ----------
 
