@@ -85,3 +85,27 @@ func (s *BinarySuite) TestReadHash(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(hash.String(), Equals, expected.String())
 }
+
+func (s *BinarySuite) TestIsBinary(c *C) {
+	buf := bytes.NewBuffer(nil)
+	buf.Write(bytes.Repeat([]byte{'A'}, sniffLen))
+	buf.Write([]byte{0})
+	ok, err := IsBinary(buf)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, false)
+
+	buf.Reset()
+
+	buf.Write(bytes.Repeat([]byte{'A'}, sniffLen-1))
+	buf.Write([]byte{0})
+	ok, err = IsBinary(buf)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	buf.Reset()
+
+	buf.Write(bytes.Repeat([]byte{'A'}, 10))
+	ok, err = IsBinary(buf)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, false)
+}
