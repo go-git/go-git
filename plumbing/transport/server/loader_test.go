@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -53,4 +54,19 @@ func (s *LoaderSuite) TestLoadIgnoreHost(c *C) {
 	sto, err := DefaultLoader.Load(s.endpoint(c, s.RepoPath))
 	c.Assert(err, IsNil)
 	c.Assert(sto, NotNil)
+}
+
+func (s *LoaderSuite) TestMapLoader(c *C) {
+	ep, err := transport.NewEndpoint("file://test")
+	sto := memory.NewStorage()
+	c.Assert(err, IsNil)
+
+	loader := MapLoader{ep.String(): sto}
+
+	ep, err = transport.NewEndpoint("file://test")
+	c.Assert(err, IsNil)
+
+	loaderSto, err := loader.Load(ep)
+	c.Assert(err, IsNil)
+	c.Assert(sto, Equals, loaderSto)
 }
