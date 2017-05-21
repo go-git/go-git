@@ -16,8 +16,8 @@ is supported by go-git.
 | status                                | ✔ |
 | commit                                | ✔ |
 | reset                                 | ✔ |
-| rm                                    | ✖ |
-| mv                                    | ✖ |
+| rm                                    | ✔ |
+| mv                                    | ✔ |
 | **branching and merging** |
 | branch                                | ✔ |
 | checkout                              | ✔ | Basic usages of checkout are supported. |
