@@ -2,7 +2,9 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"os"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
@@ -14,6 +16,10 @@ import (
 	mindex "gopkg.in/src-d/go-git.v4/utils/merkletrie/index"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 )
+
+// ErrDestinationExists in an Move operation means that the target exists on
+// the worktree.
+var ErrDestinationExists = errors.New("destination exists")
 
 // Status returns the working tree status.
 func (w *Worktree) Status() (Status, error) {
@@ -247,6 +253,7 @@ func (w *Worktree) addOrUpdateFileToIndex(filename string, h plumbing.Hash) erro
 			return err
 		}
 	}
+
 	return w.r.Storer.SetIndex(idx)
 }
 
@@ -266,10 +273,68 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 	e.Hash = h
 	e.ModifiedAt = info.ModTime()
 	e.Mode, err = filemode.NewFromOSFileMode(info.Mode())
+	e.Size = uint32(info.Size())
+
 	if err != nil {
 		return err
 	}
 
 	fillSystemInfo(e, info.Sys())
 	return nil
+}
+
+// Remove removes files from the working tree and from the index.
+func (w *Worktree) Remove(path string) (plumbing.Hash, error) {
+	hash, err := w.deleteFromIndex(path)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return hash, w.deleteFromFilesystem(path)
+}
+
+func (w *Worktree) deleteFromIndex(path string) (plumbing.Hash, error) {
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	e, err := idx.Remove(path)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return e.Hash, w.r.Storer.SetIndex(idx)
+}
+
+func (w *Worktree) deleteFromFilesystem(path string) error {
+	err := w.fs.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+
+	return err
+}
+
+// Move moves or rename a file in the worktree and the index, directories are
+// not supported.
+func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
+	if _, err := w.fs.Stat(from); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if _, err := w.fs.Stat(to); err == nil {
+		return plumbing.ZeroHash, ErrDestinationExists
+	}
+
+	hash, err := w.deleteFromIndex(from)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if err := w.fs.Rename(from, to); err != nil {
+		return hash, err
+	}
+
+	return hash, w.addOrUpdateFileToIndex(to, hash)
 }

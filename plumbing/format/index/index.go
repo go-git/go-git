@@ -62,6 +62,18 @@ func (i *Index) Entry(path string) (*Entry, error) {
 	return nil, ErrEntryNotFound
 }
 
+// Remove remove the entry that match the give path and returns deleted entry.
+func (i *Index) Remove(path string) (*Entry, error) {
+	for index, e := range i.Entries {
+		if e.Name == path {
+			i.Entries = append(i.Entries[:index], i.Entries[index+1:]...)
+			return e, nil
+		}
+	}
+
+	return nil, ErrEntryNotFound
+}
+
 // String is equivalent to `git ls-files --stage --debug`
 func (i *Index) String() string {
 	buf := bytes.NewBuffer(nil)

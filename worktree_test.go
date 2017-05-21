@@ -590,3 +590,113 @@ func (s *WorktreeSuite) TestAddUnmodified(c *C) {
 	c.Assert(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
 	c.Assert(err, IsNil)
 }
+
+func (s *WorktreeSuite) TestRemove(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Remove("LICENSE")
+	c.Assert(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+	c.Assert(status.File("LICENSE").Staging, Equals, Deleted)
+}
+
+func (s *WorktreeSuite) TestRemoveNotExistentEntry(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Remove("not-exists")
+	c.Assert(hash.IsZero(), Equals, true)
+	c.Assert(err, NotNil)
+}
+
+func (s *WorktreeSuite) TestRemoveDeletedFromWorktree(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	err = fs.Remove("LICENSE")
+	c.Assert(err, IsNil)
+
+	hash, err := w.Remove("LICENSE")
+	c.Assert(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+	c.Assert(status.File("LICENSE").Staging, Equals, Deleted)
+}
+
+func (s *WorktreeSuite) TestMove(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Move("LICENSE", "foo")
+	c.Check(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
+	c.Assert(status.File("LICENSE").Staging, Equals, Deleted)
+	c.Assert(status.File("foo").Staging, Equals, Added)
+
+}
+
+func (s *WorktreeSuite) TestMoveNotExistentEntry(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Move("not-exists", "foo")
+	c.Assert(hash.IsZero(), Equals, true)
+	c.Assert(err, NotNil)
+}
+
+func (s *WorktreeSuite) TestMoveToExistent(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Move(".gitignore", "LICENSE")
+	c.Assert(hash.IsZero(), Equals, true)
+	c.Assert(err, Equals, ErrDestinationExists)
+}
