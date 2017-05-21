@@ -201,6 +201,14 @@ func PlainOpen(path string) (*Repository, error) {
 		return nil, err
 	}
 
+	if _, err := dot.Stat(""); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrRepositoryNotExists
+		}
+
+		return nil, err
+	}
+
 	s, err := filesystem.NewStorage(dot)
 	if err != nil {
 		return nil, err
