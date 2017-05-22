@@ -23,6 +23,30 @@ type SuiteDotGit struct {
 
 var _ = Suite(&SuiteDotGit{})
 
+func (s *SuiteDotGit) TestInitialize(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := osfs.New(tmp)
+	dir := New(fs)
+
+	err = dir.Initialize()
+	c.Assert(err, IsNil)
+
+	_, err = fs.Stat(fs.Join("objects", "info"))
+	c.Assert(err, IsNil)
+
+	_, err = fs.Stat(fs.Join("objects", "pack"))
+	c.Assert(err, IsNil)
+
+	_, err = fs.Stat(fs.Join("refs", "heads"))
+	c.Assert(err, IsNil)
+
+	_, err = fs.Stat(fs.Join("refs", "tags"))
+	c.Assert(err, IsNil)
+}
+
 func (s *SuiteDotGit) TestSetRefs(c *C) {
 	tmp, err := ioutil.TempDir("", "dot-git")
 	c.Assert(err, IsNil)
@@ -95,6 +119,7 @@ func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
 	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
 }
+
 func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)

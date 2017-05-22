@@ -24,6 +24,10 @@ type Storage struct {
 // NewStorage returns a new Storage backed by a given `fs.Filesystem`
 func NewStorage(fs billy.Filesystem) (*Storage, error) {
 	dir := dotgit.New(fs)
+	if err := dir.Initialize(); err != nil {
+		return nil, err
+	}
+
 	o, err := newObjectStorage(dir)
 	if err != nil {
 		return nil, err

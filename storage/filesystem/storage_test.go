@@ -25,6 +25,16 @@ func (s *StorageSuite) SetUpTest(c *C) {
 	s.BaseStorageSuite = test.NewBaseStorageSuite(storage)
 }
 
+func (s *StorageSuite) TestNewStorage(c *C) {
+	fs := memfs.New()
+	storage, err := NewStorage(fs)
+	c.Assert(err, IsNil)
+	c.Assert(storage, NotNil)
+
+	_, err = fs.Stat("refs/tags")
+	c.Assert(err, IsNil)
+}
+
 func (s *StorageSuite) TestFilesystem(c *C) {
 	fs := memfs.New()
 	storage, err := NewStorage(fs)
