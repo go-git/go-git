@@ -1,6 +1,8 @@
 package packfile
 
 import (
+	"bytes"
+	"hash/adler32"
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -11,7 +13,8 @@ import (
 // for more info
 
 const (
-	maxCopyLen = 0xffff
+	// Standard chunk size used to generate fingerprints
+	s = 16
 )
 
 // GetDelta returns an EncodedObject of type OFSDeltaObject. Base and Target object,
@@ -51,52 +54,99 @@ func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, erro
 	return delta, nil
 }
 
-// DiffDelta returns the delta that transforms baseBuf into targetBuf.
-func DiffDelta(baseBuf []byte, targetBuf []byte) []byte {
-	var outBuff []byte
+// DiffDelta returns the delta that transforms src into tgt.
+func DiffDelta(src []byte, tgt []byte) []byte {
+	buf := bytes.NewBuffer(nil)
+	buf.Write(deltaEncodeSize(len(src)))
+	buf.Write(deltaEncodeSize(len(tgt)))
 
-	outBuff = append(outBuff, deltaEncodeSize(len(baseBuf))...)
-	outBuff = append(outBuff, deltaEncodeSize(len(targetBuf))...)
+	sindex := initMatch(src)
 
-	sm := newMatcher(baseBuf, targetBuf)
-	for _, op := range sm.GetOpCodes() {
-		switch {
-		case op.Tag == tagEqual:
-			copyStart := op.I1
-			copyLen := op.I2 - op.I1
-			for {
-				if copyLen <= 0 {
-					break
-				}
-				var toCopy int
-				if copyLen < maxCopyLen {
-					toCopy = copyLen
-				} else {
-					toCopy = maxCopyLen
-				}
+	ibuf := bytes.NewBuffer(nil)
+	for i := 0; i < len(tgt); i++ {
+		offset, l := findMatch(src, tgt, sindex, i)
 
-				outBuff = append(outBuff, encodeCopyOperation(copyStart, toCopy)...)
-				copyStart += toCopy
-				copyLen -= toCopy
-			}
-		case op.Tag == tagReplace || op.Tag == tagInsert:
-			s := op.J2 - op.J1
-			o := op.J1
-			for {
-				if s <= 127 {
-					break
-				}
-				outBuff = append(outBuff, byte(127))
-				outBuff = append(outBuff, targetBuf[o:o+127]...)
-				s -= 127
-				o += 127
-			}
-			outBuff = append(outBuff, byte(s))
-			outBuff = append(outBuff, targetBuf[o:o+s]...)
+		if l < s {
+			ibuf.WriteByte(tgt[i])
+		} else {
+			encodeInsertOperation(ibuf, buf)
+			buf.Write(encodeCopyOperation(offset, l))
+			i += l - 1
 		}
 	}
 
-	return outBuff
+	encodeInsertOperation(ibuf, buf)
+
+	return buf.Bytes()
+}
+
+func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
+	if ibuf.Len() == 0 {
+		return
+	}
+
+	b := ibuf.Bytes()
+	s := ibuf.Len()
+	o := 0
+	for {
+		if s <= 127 {
+			break
+		}
+		buf.WriteByte(byte(127))
+		buf.Write(b[o : o+127])
+		s -= 127
+		o += 127
+	}
+	buf.WriteByte(byte(s))
+	buf.Write(b[o : o+s])
+
+	ibuf.Reset()
+}
+
+func initMatch(src []byte) map[uint32]int {
+	i := 0
+	index := make(map[uint32]int)
+	for {
+		if i+s > len(src) {
+			break
+		}
+
+		ch := adler32.Checksum(src[i : i+s])
+		index[ch] = i
+		i += s
+	}
+
+	return index
+}
+
+func findMatch(src, tgt []byte, sindex map[uint32]int, tgtOffset int) (srcOffset, l int) {
+	if len(tgt) >= tgtOffset+s {
+		ch := adler32.Checksum(tgt[tgtOffset : tgtOffset+s])
+		var ok bool
+		srcOffset, ok = sindex[ch]
+		if !ok {
+			return
+		}
+
+		l = matchLength(src, tgt, tgtOffset, srcOffset)
+	}
+
+	return
+}
+
+func matchLength(src, tgt []byte, otgt, osrc int) int {
+	l := 0
+	for {
+		if (osrc >= len(src) || otgt >= len(tgt)) || src[osrc] != tgt[otgt] {
+			break
+		}
+
+		l++
+		osrc++
+		otgt++
+	}
+
+	return l
 }
 
 func deltaEncodeSize(size int) []byte {
