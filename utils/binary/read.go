@@ -3,6 +3,7 @@
 package binary
 
 import (
+	"bufio"
 	"encoding/binary"
 	"io"
 
@@ -121,4 +122,34 @@ func ReadHash(r io.Reader) (plumbing.Hash, error) {
 	}
 
 	return h, nil
+}
+
+const sniffLen = 8000
+
+// IsBinary detects if data is a binary value based on:
+// http://git.kernel.org/cgit/git/git.git/tree/xdiff-interface.c?id=HEAD#n198
+func IsBinary(r io.Reader) (bool, error) {
+	reader := bufio.NewReader(r)
+	c := 0
+	for {
+		if c == sniffLen {
+			break
+		}
+
+		b, err := reader.ReadByte()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false, err
+		}
+
+		if b == byte(0) {
+			return true, nil
+		}
+
+		c++
+	}
+
+	return false, nil
 }

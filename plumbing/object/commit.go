@@ -64,6 +64,21 @@ func (c *Commit) Tree() (*Tree, error) {
 	return GetTree(c.s, c.TreeHash)
 }
 
+// Patch returns the Patch between the actual commit and the provided one.
+func (c *Commit) Patch(to *Commit) (*Patch, error) {
+	fromTree, err := c.Tree()
+	if err != nil {
+		return nil, err
+	}
+
+	toTree, err := to.Tree()
+	if err != nil {
+		return nil, err
+	}
+
+	return fromTree.Patch(toTree)
+}
+
 // Parents return a CommitIter to the parent Commits.
 func (c *Commit) Parents() CommitIter {
 	return NewCommitIter(c.s,

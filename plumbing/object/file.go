@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
@@ -40,6 +41,17 @@ func (f *File) Contents() (content string, err error) {
 	}
 
 	return buf.String(), nil
+}
+
+// IsBinary returns if the file is binary or not
+func (f *File) IsBinary() (bool, error) {
+	reader, err := f.Reader()
+	if err != nil {
+		return false, err
+	}
+	defer ioutil.CheckClose(reader, &err)
+
+	return binary.IsBinary(reader)
 }
 
 // Lines returns a slice of lines from the contents of a file, stripping

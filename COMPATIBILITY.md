@@ -39,7 +39,7 @@ is supported by go-git.
 | **patching** |
 | apply                                 | ✖ |
 | cherry-pick                           | ✖ |
-| diff                                  | ✖ |
+| diff                                  | ✔ | Patch object with UnifiedDiff output representation |
 | rebase                                | ✖ |
 | revert                                | ✖ |
 | **debugging** |

@@ -270,6 +270,17 @@ func (from *Tree) Diff(to *Tree) (Changes, error) {
 	return DiffTree(from, to)
 }
 
+// Patch returns a slice of Patch objects with all the changes between trees
+// in chunks. This representation can be used to create several diff outputs.
+func (from *Tree) Patch(to *Tree) (*Patch, error) {
+	changes, err := DiffTree(from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	return changes.Patch()
+}
+
 // treeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
 type treeEntryIter struct {
 	t   *Tree

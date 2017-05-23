@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/diff"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
@@ -75,6 +76,12 @@ func (s *ChangeSuite) TestInsert(c *C) {
 	c.Assert(to.Name, Equals, name)
 	c.Assert(to.Blob.Hash, Equals, blob)
 
+	p, err := change.Patch()
+	c.Assert(err, IsNil)
+	c.Assert(len(p.FilePatches()), Equals, 1)
+	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
+	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Add)
+
 	str := change.String()
 	c.Assert(str, Equals, "<Action: Insert, Path: examples/clone/main.go>")
 }
@@ -120,6 +127,12 @@ func (s *ChangeSuite) TestDelete(c *C) {
 	c.Assert(to, IsNil)
 	c.Assert(from.Name, Equals, name)
 	c.Assert(from.Blob.Hash, Equals, blob)
+
+	p, err := change.Patch()
+	c.Assert(err, IsNil)
+	c.Assert(len(p.FilePatches()), Equals, 1)
+	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
+	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Delete)
 
 	str := change.String()
 	c.Assert(str, Equals, "<Action: Delete, Path: utils/difftree/difftree.go>")
@@ -180,6 +193,18 @@ func (s *ChangeSuite) TestModify(c *C) {
 	c.Assert(from.Blob.Hash, Equals, fromBlob)
 	c.Assert(to.Name, Equals, name)
 	c.Assert(to.Blob.Hash, Equals, toBlob)
+
+	p, err := change.Patch()
+	c.Assert(err, IsNil)
+	c.Assert(len(p.FilePatches()), Equals, 1)
+	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 7)
+	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Equal)
+	c.Assert(p.FilePatches()[0].Chunks()[1].Type(), Equals, diff.Delete)
+	c.Assert(p.FilePatches()[0].Chunks()[2].Type(), Equals, diff.Add)
+	c.Assert(p.FilePatches()[0].Chunks()[3].Type(), Equals, diff.Equal)
+	c.Assert(p.FilePatches()[0].Chunks()[4].Type(), Equals, diff.Delete)
+	c.Assert(p.FilePatches()[0].Chunks()[5].Type(), Equals, diff.Add)
+	c.Assert(p.FilePatches()[0].Chunks()[6].Type(), Equals, diff.Equal)
 
 	str := change.String()
 	c.Assert(str, Equals, "<Action: Modify, Path: utils/difftree/difftree.go>")

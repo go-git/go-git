@@ -78,6 +78,12 @@ func (c *Change) String() string {
 	return fmt.Sprintf("<Action: %s, Path: %s>", action, c.name())
 }
 
+// Patch returns a Patch with all the file changes in chunks. This
+// representation can be used to create several diff outputs.
+func (c *Change) Patch() (*Patch, error) {
+	return getPatch("", c)
+}
+
 func (c *Change) name() string {
 	if c.From != empty {
 		return c.From.Name
@@ -125,4 +131,10 @@ func (c Changes) String() string {
 	buffer.WriteString("]")
 
 	return buffer.String()
+}
+
+// Patch returns a Patch with all the changes in chunks. This
+// representation can be used to create several diff outputs.
+func (c Changes) Patch() (*Patch, error) {
+	return getPatch("", c...)
 }
