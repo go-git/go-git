@@ -3,24 +3,20 @@ package ssh
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"os"
 	"os/user"
 	"path/filepath"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 
+	"github.com/xanzy/ssh-agent"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const DefaultUsername = "git"
-
-var ErrEmptySSHAgentAddr = errors.New("SSH_AUTH_SOCK env variable is required")
 
 // AuthMethod is the interface all auth methods for the ssh client
 // must implement. The clientConfig method returns the ssh client
@@ -189,19 +185,14 @@ func NewSSHAgentAuth(u string) (AuthMethod, error) {
 		u = usr.Username
 	}
 
-	sshAgentAddr := os.Getenv("SSH_AUTH_SOCK")
-	if sshAgentAddr == "" {
-		return nil, ErrEmptySSHAgentAddr
-	}
-
-	pipe, err := net.Dial("unix", sshAgentAddr)
+	a, _, err := sshagent.New()
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to SSH agent: %q", err)
+		return nil, fmt.Errorf("error creating SSH agent: %q", err)
 	}
 
 	return &PublicKeysCallback{
 		User:     u,
-		Callback: agent.NewClient(pipe).Signers,
+		Callback: a.Signers,
 	}, nil
 }
 
