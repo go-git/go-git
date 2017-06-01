@@ -15,6 +15,10 @@ import (
 const (
 	// Standard chunk size used to generate fingerprints
 	s = 16
+
+	// https://github.com/git/git/blob/f7466e94375b3be27f229c78873f0acf8301c0a5/diff-delta.c#L428
+	// Max size of a copy operation (64KB)
+	maxCopySize = 64 * 1024
 )
 
 // GetDelta returns an EncodedObject of type OFSDeltaObject. Base and Target object,
@@ -70,7 +74,20 @@ func DiffDelta(src []byte, tgt []byte) []byte {
 			ibuf.WriteByte(tgt[i])
 		} else {
 			encodeInsertOperation(ibuf, buf)
-			buf.Write(encodeCopyOperation(offset, l))
+
+			rl := l
+			aOffset := offset
+			for {
+				if rl < maxCopySize {
+					buf.Write(encodeCopyOperation(aOffset, rl))
+					break
+				}
+
+				buf.Write(encodeCopyOperation(aOffset, maxCopySize))
+				rl -= maxCopySize
+				aOffset += maxCopySize
+			}
+
 			i += l - 1
 		}
 	}
