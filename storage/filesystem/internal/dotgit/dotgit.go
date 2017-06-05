@@ -231,7 +231,7 @@ func (d *DotGit) Objects() ([]plumbing.Hash, error) {
 	return objects, nil
 }
 
-// Object return a fs.File poiting the object file, if exists
+// Object return a fs.File pointing the object file, if exists
 func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
 	hash := h.String()
 	file := d.fs.Join(objectsPath, hash[0:2], hash[2:40])
