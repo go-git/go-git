@@ -263,6 +263,10 @@ func (s *session) ReceivePack(req *packp.ReferenceUpdateRequest) (*packp.ReportS
 		return nil, err
 	}
 
+	if err := s.Stdin.Close(); err != nil {
+		return nil, err
+	}
+
 	if !req.Capabilities.Supports(capability.ReportStatus) {
 		// If we have neither report-status or sideband, we can only
 		// check return value error.
@@ -302,7 +306,7 @@ func (s *session) finish() error {
 func (s *session) Close() error {
 	if err := s.finish(); err != nil {
 		_ = s.Command.Close()
-		return nil
+		return err
 	}
 
 	return s.Command.Close()

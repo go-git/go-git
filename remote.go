@@ -76,6 +76,8 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 		return err
 	}
 
+	defer ioutil.CheckClose(s, &err)
+
 	ar, err := s.AdvertisedReferences()
 	if err != nil {
 		return err
