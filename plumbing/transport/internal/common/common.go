@@ -337,6 +337,7 @@ var (
 	bitbucketRepoNotFoundErr = "conq: repository does not exist."
 	localRepoNotFoundErr     = "does not appear to be a git repository"
 	gitProtocolNotFoundErr   = "ERR \n  Repository not found."
+	gitProtocolNoSuchErr     = "ERR no such repository"
 )
 
 func isRepoNotFoundError(s string) bool {
@@ -353,6 +354,10 @@ func isRepoNotFoundError(s string) bool {
 	}
 
 	if strings.HasPrefix(s, gitProtocolNotFoundErr) {
+		return true
+	}
+
+	if strings.HasPrefix(s, gitProtocolNoSuchErr) {
 		return true
 	}
 
