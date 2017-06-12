@@ -333,11 +333,12 @@ func (s *session) checkNotFoundError() error {
 }
 
 var (
-	githubRepoNotFoundErr    = "ERROR: Repository not found."
-	bitbucketRepoNotFoundErr = "conq: repository does not exist."
-	localRepoNotFoundErr     = "does not appear to be a git repository"
-	gitProtocolNotFoundErr   = "ERR \n  Repository not found."
-	gitProtocolNoSuchErr     = "ERR no such repository"
+	githubRepoNotFoundErr      = "ERROR: Repository not found."
+	bitbucketRepoNotFoundErr   = "conq: repository does not exist."
+	localRepoNotFoundErr       = "does not appear to be a git repository"
+	gitProtocolNotFoundErr     = "ERR \n  Repository not found."
+	gitProtocolNoSuchErr       = "ERR no such repository"
+	gitProtocolAccessDeniedErr = "ERR access denied"
 )
 
 func isRepoNotFoundError(s string) bool {
@@ -358,6 +359,10 @@ func isRepoNotFoundError(s string) bool {
 	}
 
 	if strings.HasPrefix(s, gitProtocolNoSuchErr) {
+		return true
+	}
+
+	if strings.HasPrefix(s, gitProtocolAccessDeniedErr) {
 		return true
 	}
 
