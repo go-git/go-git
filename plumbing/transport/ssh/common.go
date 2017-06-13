@@ -11,7 +11,16 @@ import (
 )
 
 // DefaultClient is the default SSH client.
-var DefaultClient = common.NewClient(&runner{})
+var DefaultClient = NewClient()
+
+// NewClient creates a new SSH client with the given options.
+func NewClient(opts ...ClientOption) transport.Transport {
+	return common.NewClient(&runner{options: opts})
+}
+
+// ClientOption is a function that gets a standard ssh.ClientConfig and modifies
+// it.
+type ClientOption func(config *ssh.ClientConfig)
 
 // DefaultAuthBuilder is the function used to create a default AuthMethod, when
 // the user doesn't provide any.
@@ -21,10 +30,12 @@ var DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 
 const DefaultPort = 22
 
-type runner struct{}
+type runner struct {
+	options []ClientOption
+}
 
 func (r *runner) Command(cmd string, ep transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
-	c := &command{command: cmd, endpoint: ep}
+	c := &command{command: cmd, endpoint: ep, options: r.options}
 	if auth != nil {
 		c.setAuth(auth)
 	}
@@ -42,6 +53,7 @@ type command struct {
 	endpoint  transport.Endpoint
 	client    *ssh.Client
 	auth      AuthMethod
+	options   []ClientOption
 }
 
 func (c *command) setAuth(auth transport.AuthMethod) error {
@@ -93,6 +105,10 @@ func (c *command) connect() error {
 	config.HostKeyCallback, err = c.auth.hostKeyCallback()
 	if err != nil {
 		return err
+	}
+
+	for _, opt := range c.options {
+		opt(config)
 	}
 
 	c.client, err = ssh.Dial("tcp", c.getHostWithPort(), config)
