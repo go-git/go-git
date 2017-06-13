@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"testing"
 
-	. "gopkg.in/check.v1"
 	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
