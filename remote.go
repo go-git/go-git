@@ -420,7 +420,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash) (bool, 
 	}
 
 	found := false
-	iter := object.NewCommitPreIterator(c)
+	iter := object.NewCommitPreorderIter(c)
 	return found, iter.ForEach(func(c *object.Commit) error {
 		if c.Hash != old {
 			return nil
