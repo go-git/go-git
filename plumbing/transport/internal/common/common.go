@@ -59,14 +59,8 @@ type Command interface {
 	// Start starts the specified command. It does not wait for it to
 	// complete.
 	Start() error
-	// Wait waits for the command to exit. It must have been started by
-	// Start. The returned error is nil if the command runs, has no
-	// problems copying stdin, stdout, and stderr, and exits with a zero
-	// exit status.
-	Wait() error
 	// Close closes the command and releases any resources used by it. It
-	// can be called to forcibly finish the command without calling to Wait
-	// or to release resources after calling Wait.
+	// will block until the command exits.
 	Close() error
 }
 
@@ -178,6 +172,7 @@ func (s *session) handleAdvRefDecodeError(err error) error {
 	// If repository is not found, we get empty stdout and server writes an
 	// error to stderr.
 	if err == packp.ErrEmptyInput {
+		s.finished = true
 		if err := s.checkNotFoundError(); err != nil {
 			return err
 		}
@@ -246,9 +241,7 @@ func (s *session) UploadPack(req *packp.UploadPackRequest) (*packp.UploadPackRes
 		return nil, err
 	}
 
-	wc := &waitCloser{s.Command}
-	rc := ioutil.NewReadCloser(r, wc)
-
+	rc := ioutil.NewReadCloser(r, s.Command)
 	return DecodeUploadPackResponse(rc, req)
 }
 
@@ -263,10 +256,14 @@ func (s *session) ReceivePack(req *packp.ReferenceUpdateRequest) (*packp.ReportS
 		return nil, err
 	}
 
+	if err := s.Stdin.Close(); err != nil {
+		return nil, err
+	}
+
 	if !req.Capabilities.Supports(capability.ReportStatus) {
 		// If we have neither report-status or sideband, we can only
 		// check return value error.
-		return nil, s.Command.Wait()
+		return nil, s.Command.Close()
 	}
 
 	report := packp.NewReportStatus()
@@ -278,7 +275,7 @@ func (s *session) ReceivePack(req *packp.ReferenceUpdateRequest) (*packp.ReportS
 		return report, err
 	}
 
-	return report, s.Command.Wait()
+	return report, s.Command.Close()
 }
 
 func (s *session) finish() error {
@@ -302,7 +299,7 @@ func (s *session) finish() error {
 func (s *session) Close() error {
 	if err := s.finish(); err != nil {
 		_ = s.Command.Close()
-		return nil
+		return err
 	}
 
 	return s.Command.Close()
@@ -329,10 +326,12 @@ func (s *session) checkNotFoundError() error {
 }
 
 var (
-	githubRepoNotFoundErr    = "ERROR: Repository not found."
-	bitbucketRepoNotFoundErr = "conq: repository does not exist."
-	localRepoNotFoundErr     = "does not appear to be a git repository"
-	gitProtocolNotFoundErr   = "ERR \n  Repository not found."
+	githubRepoNotFoundErr      = "ERROR: Repository not found."
+	bitbucketRepoNotFoundErr   = "conq: repository does not exist."
+	localRepoNotFoundErr       = "does not appear to be a git repository"
+	gitProtocolNotFoundErr     = "ERR \n  Repository not found."
+	gitProtocolNoSuchErr       = "ERR no such repository"
+	gitProtocolAccessDeniedErr = "ERR access denied"
 )
 
 func isRepoNotFoundError(s string) bool {
@@ -349,6 +348,14 @@ func isRepoNotFoundError(s string) bool {
 	}
 
 	if strings.HasPrefix(s, gitProtocolNotFoundErr) {
+		return true
+	}
+
+	if strings.HasPrefix(s, gitProtocolNoSuchErr) {
+		return true
+	}
+
+	if strings.HasPrefix(s, gitProtocolAccessDeniedErr) {
 		return true
 	}
 
@@ -402,13 +409,4 @@ func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
 	}
 
 	return res, nil
-}
-
-type waitCloser struct {
-	Command Command
-}
-
-// Close waits until the command exits and returns error, if any.
-func (c *waitCloser) Close() error {
-	return c.Command.Wait()
 }

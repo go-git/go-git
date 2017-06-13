@@ -39,10 +39,10 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(ar, IsNil)
+	c.Assert(r.Close(), IsNil)
 
 	r, err = s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
@@ -54,6 +54,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	writer, err := r.ReceivePack(req)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(writer, IsNil)
+	c.Assert(r.Close(), IsNil)
 }
 
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice(c *C) {
@@ -270,7 +271,6 @@ func (s *ReceivePackSuite) TestSendPackAddDeleteReference(c *C) {
 func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
 
@@ -285,6 +285,8 @@ func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
 		req.Capabilities.Set(capability.ReportStatus)
 	}
 
+	c.Assert(r.Close(), IsNil)
+
 	s.receivePack(c, s.Endpoint, req, nil, false)
 	s.checkRemoteReference(c, s.Endpoint, "refs/heads/newbranch", fixture.Head)
 }
@@ -292,7 +294,6 @@ func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
 func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
 
@@ -306,6 +307,8 @@ func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
 	if ar.Capabilities.Supports(capability.ReportStatus) {
 		req.Capabilities.Set(capability.ReportStatus)
 	}
+
+	c.Assert(r.Close(), IsNil)
 
 	s.receivePack(c, s.Endpoint, req, nil, false)
 	s.checkRemoteReference(c, s.Endpoint, "refs/heads/newbranch", plumbing.ZeroHash)

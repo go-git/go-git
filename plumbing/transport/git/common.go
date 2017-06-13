@@ -90,12 +90,12 @@ func (c *command) StdoutPipe() (io.Reader, error) {
 }
 
 func endpointToCommand(cmd string, ep transport.Endpoint) string {
-	return fmt.Sprintf("%s %s%chost=%s%c", cmd, ep.Path(), 0, ep.Host(), 0)
-}
+	host := ep.Host()
+	if ep.Port() != DefaultPort {
+		host = fmt.Sprintf("%s:%d", ep.Host(), ep.Port())
+	}
 
-// Wait no-op function, required by the interface
-func (c *command) Wait() error {
-	return nil
+	return fmt.Sprintf("%s %s%chost=%s%c", cmd, ep.Path(), 0, host, 0)
 }
 
 // Close closes the TCP connection and connection.
