@@ -3,6 +3,7 @@ package file
 
 import (
 	"io"
+	"os"
 	"os/exec"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
@@ -71,10 +72,16 @@ func (c *command) Close() error {
 		return nil
 	}
 
-	return c.cmd.Process.Kill()
-}
-
-func (c *command) Wait() error {
 	defer func() { c.closed = true }()
-	return c.cmd.Wait()
+	err := c.cmd.Wait()
+	if _, ok := err.(*os.PathError); ok {
+		return nil
+	}
+
+	// When a repository does not exist, the command exits with code 128.
+	if _, ok := err.(*exec.ExitError); ok {
+		return nil
+	}
+
+	return err
 }

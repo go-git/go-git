@@ -98,11 +98,6 @@ func endpointToCommand(cmd string, ep transport.Endpoint) string {
 	return fmt.Sprintf("%s %s%chost=%s%c", cmd, ep.Path(), 0, host, 0)
 }
 
-// Wait no-op function, required by the interface
-func (c *command) Wait() error {
-	return nil
-}
-
 // Close closes the TCP connection and connection.
 func (c *command) Close() error {
 	if !c.connected {
