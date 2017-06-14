@@ -13,13 +13,13 @@ type commitPreIterator struct {
 	start *Commit
 }
 
-// NewCommitPreIterator returns a CommitIter that walks the commit history,
+// NewCommitPreorderIter returns a CommitIter that walks the commit history,
 // starting at the given commit and visiting its parents in pre-order.
 // The given callback will be called for each visited commit. Each commit will
 // be visited only once. If the callback returns an error, walking will stop
 // and will return the error. Other errors might be returned if the history
 // cannot be traversed (e.g. missing objects).
-func NewCommitPreIterator(c *Commit) CommitIter {
+func NewCommitPreorderIter(c *Commit) CommitIter {
 	return &commitPreIterator{
 		seen:  make(map[plumbing.Hash]bool),
 		stack: make([]CommitIter, 0),
@@ -94,12 +94,12 @@ type commitPostIterator struct {
 	seen  map[plumbing.Hash]bool
 }
 
-// NewCommitPostIterator returns a CommitIter that walks the commit
+// NewCommitPostorderIter returns a CommitIter that walks the commit
 // history like WalkCommitHistory but in post-order. This means that after
 // walking a merge commit, the merged commit will be walked before the base
 // it was merged on. This can be useful if you wish to see the history in
 // chronological order.
-func NewCommitPostIterator(c *Commit) CommitIter {
+func NewCommitPostorderIter(c *Commit) CommitIter {
 	return &commitPostIterator{
 		stack: []*Commit{c},
 		seen:  make(map[plumbing.Hash]bool),

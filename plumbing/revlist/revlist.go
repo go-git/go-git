@@ -82,7 +82,7 @@ func reachableObjects(
 	commit *object.Commit,
 	seen map[plumbing.Hash]bool,
 	cb func(h plumbing.Hash)) error {
-	return object.NewCommitPreIterator(commit).
+	return object.NewCommitPreorderIter(commit).
 		ForEach(func(commit *object.Commit) error {
 			if seen[commit.Hash] {
 				return nil

@@ -12,7 +12,7 @@ func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	wIter := NewCommitPreIterator(commit)
+	wIter := NewCommitPreorderIter(commit)
 	wIter.ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
@@ -39,7 +39,7 @@ func (s *CommitWalkerSuite) TestCommitPostIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	wIter := NewCommitPostIterator(commit)
+	wIter := NewCommitPostorderIter(commit)
 	wIter.ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
