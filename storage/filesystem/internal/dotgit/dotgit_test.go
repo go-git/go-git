@@ -445,7 +445,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 	file, err := dir.Object(hash)
 	c.Assert(err, IsNil)
 	c.Assert(strings.HasSuffix(
-		file.Filename(), "objects/03/db8e1fbe133a480f2867aac478fd866686d69e"),
+		file.Filename(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 		Equals, true,
 	)
 }
@@ -465,5 +465,5 @@ func (s *SuiteDotGit) TestSubmodules(c *C) {
 	dir := New(fs)
 
 	m := dir.Module("basic")
-	c.Assert(strings.HasSuffix(m.Base(), ".git/module/basic"), Equals, true)
+	c.Assert(strings.HasSuffix(m.Base(), m.Join(".git", "module", "basic")), Equals, true)
 }

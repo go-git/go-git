@@ -11,10 +11,9 @@ environment:
   GOPATH: c:\gopath
 
 install:
-  - set PATH=%GOPATH%\bin;c:\go\bin;%PATH%
+  - set PATH=%GOPATH%\bin;c:\go\bin;"C:\Program Files\Git\mingw64\bin";%PATH%
   - go version
   - go get -v -t ./...
-
   - git config --global user.email "travis@example.com"
   - git config --global user.name "Travis CI
 

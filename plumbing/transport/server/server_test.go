@@ -1,7 +1,6 @@
 package server_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/src-d/go-git-fixtures"
@@ -16,8 +15,6 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
-const inprocScheme = "inproc"
-
 type BaseSuite struct {
 	fixtures.Suite
 	loader       server.MapLoader
@@ -29,15 +26,15 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.loader = server.MapLoader{}
 	s.client = server.NewServer(s.loader)
-	s.clientBackup = client.Protocols[inprocScheme]
-	client.Protocols[inprocScheme] = s.client
+	s.clientBackup = client.Protocols["file"]
+	client.Protocols["file"] = s.client
 }
 
 func (s *BaseSuite) TearDownSuite(c *C) {
 	if s.clientBackup == nil {
-		delete(client.Protocols, inprocScheme)
+		delete(client.Protocols, "file")
 	} else {
-		client.Protocols[inprocScheme] = s.clientBackup
+		client.Protocols["file"] = s.clientBackup
 	}
 }
 
@@ -47,8 +44,7 @@ func (s *BaseSuite) prepareRepositories(c *C, basic *transport.Endpoint,
 	f := fixtures.Basic().One()
 	fs := f.DotGit()
 	path := fs.Base()
-	url := fmt.Sprintf("%s://%s", inprocScheme, path)
-	ep, err := transport.NewEndpoint(url)
+	ep, err := transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	*basic = ep
 	sto, err := filesystem.NewStorage(fs)
@@ -56,15 +52,13 @@ func (s *BaseSuite) prepareRepositories(c *C, basic *transport.Endpoint,
 	s.loader[ep.String()] = sto
 
 	path = "/empty.git"
-	url = fmt.Sprintf("%s://%s", inprocScheme, path)
-	ep, err = transport.NewEndpoint(url)
+	ep, err = transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	*empty = ep
 	s.loader[ep.String()] = memory.NewStorage()
 
 	path = "/non-existent.git"
-	url = fmt.Sprintf("%s://%s", inprocScheme, path)
-	ep, err = transport.NewEndpoint(url)
+	ep, err = transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	*nonExistent = ep
 }
