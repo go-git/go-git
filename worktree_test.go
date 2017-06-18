@@ -428,6 +428,56 @@ func (s *WorktreeSuite) TestStatusModified(c *C) {
 	c.Assert(status.File(".gitignore").Worktree, Equals, Modified)
 }
 
+func (s *WorktreeSuite) TestStatusIgnored(c *C) {
+	dir, _ := ioutil.TempDir("", "status")
+	defer os.RemoveAll(dir)
+
+	fs := osfs.New(filepath.Join(dir, "worktree"))
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	w.Checkout(&CheckoutOptions{})
+
+	fs.MkdirAll("another", os.ModePerm)
+	f, _ := fs.Create("another/file")
+	f.Close()
+	fs.MkdirAll("vendor/github.com", os.ModePerm)
+	f, _ = fs.Create("vendor/github.com/file")
+	f.Close()
+	fs.MkdirAll("vendor/gopkg.in", os.ModePerm)
+	f, _ = fs.Create("vendor/gopkg.in/file")
+	f.Close()
+
+	status, _ := w.Status()
+	c.Assert(len(status), Equals, 3)
+	_, ok := status["another/file"]
+	c.Assert(ok, Equals, true)
+	_, ok = status["vendor/github.com/file"]
+	c.Assert(ok, Equals, true)
+	_, ok = status["vendor/gopkg.in/file"]
+	c.Assert(ok, Equals, true)
+
+	f, _ = fs.Create(".gitignore")
+	f.Write([]byte("vendor/g*/"))
+	f.Close()
+	f, _ = fs.Create("vendor/.gitignore")
+	f.Write([]byte("!github.com/\n"))
+	f.Close()
+
+	status, _ = w.Status()
+	c.Assert(len(status), Equals, 4)
+	_, ok = status[".gitignore"]
+	c.Assert(ok, Equals, true)
+	_, ok = status["another/file"]
+	c.Assert(ok, Equals, true)
+	_, ok = status["vendor/.gitignore"]
+	c.Assert(ok, Equals, true)
+	_, ok = status["vendor/github.com/file"]
+	c.Assert(ok, Equals, true)
+}
+
 func (s *WorktreeSuite) TestStatusUntracked(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
