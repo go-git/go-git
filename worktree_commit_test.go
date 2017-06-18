@@ -9,8 +9,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v2"
-	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-billy.v3/memfs"
+	"gopkg.in/src-d/go-billy.v3/util"
 )
 
 func (s *WorktreeSuite) TestCommitInvalidOptions(c *C) {
@@ -37,7 +37,7 @@ func (s *WorktreeSuite) TestCommitInitial(c *C) {
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
-	billy.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
 
 	_, err = w.Add("foo")
 	c.Assert(err, IsNil)
@@ -61,7 +61,7 @@ func (s *WorktreeSuite) TestCommitParent(c *C) {
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
-	billy.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
 
 	_, err = w.Add("foo")
 	c.Assert(err, IsNil)
@@ -85,8 +85,8 @@ func (s *WorktreeSuite) TestCommitAll(c *C) {
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
-	billy.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
-	billy.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
 
 	hash, err := w.Commit("foo\n", &CommitOptions{
 		All:    true,

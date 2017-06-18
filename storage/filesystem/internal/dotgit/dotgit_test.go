@@ -12,7 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/src-d/go-billy.v3/osfs"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -157,7 +157,7 @@ func (s *SuiteDotGit) TestRemoveRefFromPackedRefs(c *C) {
 	err := dir.RemoveRef(name)
 	c.Assert(err, IsNil)
 
-	b, err := ioutil.ReadFile(filepath.Join(fs.Base(), packedRefsPath))
+	b, err := ioutil.ReadFile(filepath.Join(fs.Root(), packedRefsPath))
 	c.Assert(err, IsNil)
 
 	c.Assert(string(b), Equals, ""+
@@ -170,7 +170,7 @@ func (s *SuiteDotGit) TestRemoveRefNonExistent(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
-	packedRefs := filepath.Join(fs.Base(), packedRefsPath)
+	packedRefs := filepath.Join(fs.Root(), packedRefsPath)
 	before, err := ioutil.ReadFile(packedRefs)
 	c.Assert(err, IsNil)
 
@@ -188,7 +188,7 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
-	packedRefs := filepath.Join(fs.Base(), packedRefsPath)
+	packedRefs := filepath.Join(fs.Root(), packedRefsPath)
 	brokenContent := "BROKEN STUFF REALLY BROKEN"
 
 	err := ioutil.WriteFile(packedRefs, []byte(brokenContent), os.FileMode(0755))
@@ -198,7 +198,7 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs(c *C) {
 	err = dir.RemoveRef(name)
 	c.Assert(err, NotNil)
 
-	after, err := ioutil.ReadFile(filepath.Join(fs.Base(), packedRefsPath))
+	after, err := ioutil.ReadFile(filepath.Join(fs.Root(), packedRefsPath))
 	c.Assert(err, IsNil)
 
 	c.Assert(brokenContent, Equals, string(after))
@@ -208,7 +208,7 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
-	packedRefs := filepath.Join(fs.Base(), packedRefsPath)
+	packedRefs := filepath.Join(fs.Root(), packedRefsPath)
 	brokenContent := strings.Repeat("a", bufio.MaxScanTokenSize*2)
 
 	err := ioutil.WriteFile(packedRefs, []byte(brokenContent), os.FileMode(0755))
@@ -218,7 +218,7 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2(c *C) {
 	err = dir.RemoveRef(name)
 	c.Assert(err, NotNil)
 
-	after, err := ioutil.ReadFile(filepath.Join(fs.Base(), packedRefsPath))
+	after, err := ioutil.ReadFile(filepath.Join(fs.Root(), packedRefsPath))
 	c.Assert(err, IsNil)
 
 	c.Assert(brokenContent, Equals, string(after))
@@ -243,7 +243,7 @@ func (s *SuiteDotGit) TestConfig(c *C) {
 
 	file, err := dir.Config()
 	c.Assert(err, IsNil)
-	c.Assert(filepath.Base(file.Filename()), Equals, "config")
+	c.Assert(filepath.Base(file.Name()), Equals, "config")
 }
 
 func (s *SuiteDotGit) TestConfigWriteAndConfig(c *C) {
@@ -362,7 +362,7 @@ func (s *SuiteDotGit) TestObjectPack(c *C) {
 
 	pack, err := dir.ObjectPack(f.PackfileHash)
 	c.Assert(err, IsNil)
-	c.Assert(filepath.Ext(pack.Filename()), Equals, ".pack")
+	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
 }
 
 func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
@@ -372,7 +372,7 @@ func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
 
 	idx, err := dir.ObjectPackIdx(f.PackfileHash)
 	c.Assert(err, IsNil)
-	c.Assert(filepath.Ext(idx.Filename()), Equals, ".idx")
+	c.Assert(filepath.Ext(idx.Name()), Equals, ".idx")
 }
 
 func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
@@ -445,7 +445,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 	file, err := dir.Object(hash)
 	c.Assert(err, IsNil)
 	c.Assert(strings.HasSuffix(
-		file.Filename(), "objects/03/db8e1fbe133a480f2867aac478fd866686d69e"),
+		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 		Equals, true,
 	)
 }
@@ -464,6 +464,7 @@ func (s *SuiteDotGit) TestSubmodules(c *C) {
 	fs := fixtures.ByTag("submodule").One().DotGit()
 	dir := New(fs)
 
-	m := dir.Module("basic")
-	c.Assert(strings.HasSuffix(m.Base(), ".git/module/basic"), Equals, true)
+	m, err := dir.Module("basic")
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(m.Root(), m.Join(".git", "module", "basic")), Equals, true)
 }

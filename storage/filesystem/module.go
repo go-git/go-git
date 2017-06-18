@@ -10,5 +10,10 @@ type ModuleStorage struct {
 }
 
 func (s *ModuleStorage) Module(name string) (storage.Storer, error) {
-	return NewStorage(s.dir.Module(name))
+	fs, err := s.dir.Module(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewStorage(fs)
 }

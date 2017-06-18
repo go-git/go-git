@@ -20,7 +20,7 @@ type SubmoduleSuite struct {
 var _ = Suite(&SubmoduleSuite{})
 
 func (s *SubmoduleSuite) SetUpTest(c *C) {
-	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
 	dir, err := ioutil.TempDir("", "submodule")
 	c.Assert(err, IsNil)
@@ -127,7 +127,8 @@ func (s *SubmoduleSuite) TestUpdateWithRecursion(c *C) {
 
 	c.Assert(err, IsNil)
 
-	_, err = s.Worktree.fs.Stat("itself/basic/LICENSE")
+	fs := s.Worktree.fs
+	_, err = fs.Stat(fs.Join("itself", "basic", "LICENSE"))
 	c.Assert(err, IsNil)
 }
 

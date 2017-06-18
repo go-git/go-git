@@ -24,10 +24,10 @@ func (s *ServerSuite) SetUpSuite(c *C) {
 	s.RemoteName = "test"
 
 	fixture := fixtures.Basic().One()
-	s.SrcPath = fixture.DotGit().Base()
+	s.SrcPath = fixture.DotGit().Root()
 
 	fixture = fixtures.ByTag("empty").One()
-	s.DstPath = fixture.DotGit().Base()
+	s.DstPath = fixture.DotGit().Root()
 
 	cmd := exec.Command("git", "remote", "add", s.RemoteName, s.DstPath)
 	cmd.Dir = s.SrcPath

@@ -11,8 +11,8 @@ import (
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v2/memfs"
-	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/src-d/go-billy.v3/memfs"
+	"gopkg.in/src-d/go-billy.v3/osfs"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -42,7 +42,7 @@ func (s *BaseSuite) buildBasicRepository(c *C) {
 }
 
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	fs := osfs.New(f.DotGit().Base())
+	fs := osfs.New(f.DotGit().Root())
 	st, err := filesystem.NewStorage(fs)
 	if err != nil {
 		panic(err)
@@ -94,7 +94,7 @@ func (s *BaseSuite) GetBasicLocalRepositoryURL() string {
 }
 
 func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
-	return f.DotGit().Base()
+	return f.DotGit().Root()
 }
 
 type SuiteCommon struct{}

@@ -24,13 +24,13 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.UploadPackSuite.Client = DefaultClient
 
 	fixture := fixtures.Basic().One()
-	path := fixture.DotGit().Base()
+	path := fixture.DotGit().Root()
 	ep, err := transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	s.Endpoint = ep
 
 	fixture = fixtures.ByTag("empty").One()
-	path = fixture.DotGit().Base()
+	path = fixture.DotGit().Root()
 	ep, err = transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	s.EmptyEndpoint = ep
@@ -74,6 +74,7 @@ func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, ErrorMatches, ".*no such file or directory.*")
+	// Error message is OS-dependant, so do a broad check
+	c.Assert(err, ErrorMatches, ".*file.*")
 	c.Assert(session, IsNil)
 }

@@ -17,8 +17,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
-	"gopkg.in/src-d/go-billy.v2"
-	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/src-d/go-billy.v3"
+	"gopkg.in/src-d/go-billy.v3/osfs"
 )
 
 var (
@@ -92,11 +92,6 @@ func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error 
 		return nil
 	}
 
-	_, isOS := fs.Filesystem().(*osfs.OS)
-	if !isOS {
-		return nil
-	}
-
 	if err := createDotGitFile(worktree, fs.Filesystem()); err != nil {
 		return err
 	}
@@ -105,9 +100,9 @@ func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error 
 }
 
 func createDotGitFile(worktree, storage billy.Filesystem) error {
-	path, err := filepath.Rel(worktree.Base(), storage.Base())
+	path, err := filepath.Rel(worktree.Root(), storage.Root())
 	if err != nil {
-		path = storage.Base()
+		path = storage.Root()
 	}
 
 	if path == ".git" {
@@ -126,9 +121,9 @@ func createDotGitFile(worktree, storage billy.Filesystem) error {
 }
 
 func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error {
-	path, err := filepath.Rel(storage.Base(), worktree.Base())
+	path, err := filepath.Rel(storage.Root(), worktree.Root())
 	if err != nil {
-		path = worktree.Base()
+		path = worktree.Root()
 	}
 
 	if path == ".." {
@@ -194,7 +189,7 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 		dot = osfs.New(path)
 	} else {
 		wt = osfs.New(path)
-		dot = wt.Dir(".git")
+		dot, _ = wt.Chroot(".git")
 	}
 
 	s, err := filesystem.NewStorage(dot)
@@ -209,7 +204,7 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 // repository is bare or a normal one. If the path doesn't contain a valid
 // repository ErrRepositoryNotExists is returned
 func PlainOpen(path string) (*Repository, error) {
-	dot, wt, err := dotGitToFilesystems(path)
+	dot, wt, err := dotGitToOSFilesystems(path)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +225,7 @@ func PlainOpen(path string) (*Repository, error) {
 	return Open(s, wt)
 }
 
-func dotGitToFilesystems(path string) (dot, wt billy.Filesystem, err error) {
+func dotGitToOSFilesystems(path string) (dot, wt billy.Filesystem, err error) {
 	fs := osfs.New(path)
 	fi, err := fs.Stat(".git")
 	if err != nil {
@@ -242,10 +237,11 @@ func dotGitToFilesystems(path string) (dot, wt billy.Filesystem, err error) {
 	}
 
 	if fi.IsDir() {
-		return fs.Dir(".git"), fs, nil
+		dot, err = fs.Chroot(".git")
+		return dot, fs, err
 	}
 
-	dot, err = dotGitFileToFilesystem(fs)
+	dot, err = dotGitFileToOSFilesystem(path, fs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -253,7 +249,7 @@ func dotGitToFilesystems(path string) (dot, wt billy.Filesystem, err error) {
 	return dot, fs, nil
 }
 
-func dotGitFileToFilesystem(fs billy.Filesystem) (billy.Filesystem, error) {
+func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (billy.Filesystem, error) {
 	var err error
 
 	f, err := fs.Open(".git")
@@ -279,7 +275,7 @@ func dotGitFileToFilesystem(fs billy.Filesystem) (billy.Filesystem, error) {
 		return osfs.New(gitdir), nil
 	}
 
-	return fs.Dir(gitdir), err
+	return osfs.New(fs.Join(path, gitdir)), nil
 }
 
 // PlainClone a repository into the path with the given options, isBare defines

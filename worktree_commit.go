@@ -12,7 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
-	"gopkg.in/src-d/go-billy.v2"
+	"gopkg.in/src-d/go-billy.v3"
 )
 
 // Commit stores the current contents of the index in a new commit along with

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	billy "gopkg.in/src-d/go-billy.v3"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
@@ -107,8 +108,17 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
-	worktree := s.w.fs.Dir(s.c.Path)
+	var exists bool
 	if err == nil {
+		exists = true
+	}
+
+	var worktree billy.Filesystem
+	if worktree, err = s.w.fs.Chroot(s.c.Path); err != nil {
+		return nil, err
+	}
+
+	if exists {
 		return Open(storer, worktree)
 	}
 

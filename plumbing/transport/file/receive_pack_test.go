@@ -23,11 +23,11 @@ func (s *ReceivePackSuite) SetUpSuite(c *C) {
 
 func (s *ReceivePackSuite) SetUpTest(c *C) {
 	fixture := fixtures.Basic().One()
-	path := fixture.DotGit().Base()
+	path := fixture.DotGit().Root()
 	s.Endpoint = prepareRepo(c, path)
 
 	fixture = fixtures.ByTag("empty").One()
-	path = fixture.DotGit().Base()
+	path = fixture.DotGit().Root()
 	s.EmptyEndpoint = prepareRepo(c, path)
 
 	s.NonExistentEndpoint = prepareRepo(c, "/non-existent")

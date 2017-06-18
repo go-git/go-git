@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/src-d/go-billy.v2"
+	"gopkg.in/src-d/go-billy.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
@@ -106,7 +106,7 @@ func (n *node) calculateChildren() error {
 	return nil
 }
 
-func (n *node) newChildNode(file billy.FileInfo) (*node, error) {
+func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	path := filepath.Join(n.path, file.Name())
 
 	hash, err := n.calculateHash(path, file)
@@ -131,7 +131,7 @@ func (n *node) newChildNode(file billy.FileInfo) (*node, error) {
 	return node, nil
 }
 
-func (n *node) calculateHash(path string, file billy.FileInfo) ([]byte, error) {
+func (n *node) calculateHash(path string, file os.FileInfo) ([]byte, error) {
 	if file.IsDir() {
 		return make([]byte, 24), nil
 	}

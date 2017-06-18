@@ -43,7 +43,7 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 	err = os.MkdirAll(interpolatedBase, 0755)
 	c.Assert(err, IsNil)
 
-	dotgit := fixtures.Basic().One().DotGit().Base()
+	dotgit := fixtures.Basic().One().DotGit().Root()
 	prepareRepo(c, dotgit)
 	err = os.Rename(dotgit, filepath.Join(interpolatedBase, "basic.git"))
 	c.Assert(err, IsNil)
@@ -52,7 +52,7 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	s.ReceivePackSuite.Endpoint = ep
 
-	dotgit = fixtures.ByTag("empty").One().DotGit().Base()
+	dotgit = fixtures.ByTag("empty").One().DotGit().Root()
 	prepareRepo(c, dotgit)
 	err = os.Rename(dotgit, filepath.Join(interpolatedBase, "empty.git"))
 	c.Assert(err, IsNil)

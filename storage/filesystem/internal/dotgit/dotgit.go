@@ -12,7 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
-	"gopkg.in/src-d/go-billy.v2"
+	"gopkg.in/src-d/go-billy.v3"
 )
 
 const (
@@ -357,7 +357,7 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		return err
 	}
 
-	tmpPath := tmp.Filename()
+	tmpPath := tmp.Name()
 	defer ioutil.CheckClose(tmp, &err)
 	defer d.fs.Remove(tmpPath)
 
@@ -413,11 +413,11 @@ func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
 }
 
 func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference) error {
-	return d.walkReferencesTree(refs, refsPath)
+	return d.walkReferencesTree(refs, []string{refsPath})
 }
 
-func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string) error {
-	files, err := d.fs.ReadDir(relPath)
+func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string) error {
+	files, err := d.fs.ReadDir(d.fs.Join(relPath...))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -427,7 +427,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string)
 	}
 
 	for _, f := range files {
-		newRelPath := d.fs.Join(relPath, f.Name())
+		newRelPath := append(append([]string(nil), relPath...), f.Name())
 		if f.IsDir() {
 			if err = d.walkReferencesTree(refs, newRelPath); err != nil {
 				return err
@@ -436,7 +436,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath string)
 			continue
 		}
 
-		ref, err := d.readReferenceFile(".", newRelPath)
+		ref, err := d.readReferenceFile(".", strings.Join(newRelPath, "/"))
 		if err != nil {
 			return err
 		}
@@ -463,9 +463,8 @@ func (d *DotGit) addRefFromHEAD(refs *[]*plumbing.Reference) error {
 	return nil
 }
 
-func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Reference, err error) {
-	path := d.fs.Join(refsPath, refFile)
-
+func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, err error) {
+	path = d.fs.Join(path, d.fs.Join(strings.Split(name, "/")...))
 	f, err := d.fs.Open(path)
 	if err != nil {
 		return nil, err
@@ -478,12 +477,12 @@ func (d *DotGit) readReferenceFile(refsPath, refFile string) (ref *plumbing.Refe
 	}
 
 	line := strings.TrimSpace(string(b))
-	return plumbing.NewReferenceFromStrings(refFile, line), nil
+	return plumbing.NewReferenceFromStrings(name, line), nil
 }
 
 // Module return a billy.Filesystem poiting to the module folder
-func (d *DotGit) Module(name string) billy.Filesystem {
-	return d.fs.Dir(d.fs.Join(modulePath, name))
+func (d *DotGit) Module(name string) (billy.Filesystem, error) {
+	return d.fs.Chroot(d.fs.Join(modulePath, name))
 }
 
 func isHex(s string) bool {

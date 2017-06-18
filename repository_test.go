@@ -18,8 +18,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v2/memfs"
-	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/src-d/go-billy.v3/memfs"
+	"gopkg.in/src-d/go-billy.v3/osfs"
 )
 
 type RepositorySuite struct {
@@ -44,23 +44,25 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 	c.Assert(os.RemoveAll(dir), IsNil)
 
 	fs := osfs.New(dir)
-	storage, err := filesystem.NewStorage(fs.Dir("storage"))
+	dot, _ := fs.Chroot("storage")
+	storage, err := filesystem.NewStorage(dot)
 	c.Assert(err, IsNil)
 
-	r, err := Init(storage, fs.Dir("worktree"))
+	wt, _ := fs.Chroot("worktree")
+	r, err := Init(storage, wt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	f, err := fs.Open("worktree/.git")
+	f, err := fs.Open(fs.Join("worktree", ".git"))
 	c.Assert(err, IsNil)
 
 	all, err := ioutil.ReadAll(f)
 	c.Assert(err, IsNil)
-	c.Assert(string(all), Equals, "gitdir: ../storage\n")
+	c.Assert(string(all), Equals, fmt.Sprintf("gitdir: %s\n", filepath.Join("..", "storage")))
 
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
-	c.Assert(cfg.Core.Worktree, Equals, "../worktree")
+	c.Assert(cfg.Core.Worktree, Equals, filepath.Join("..", "worktree"))
 }
 
 func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
@@ -69,7 +71,8 @@ func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
 	c.Assert(os.RemoveAll(dir), IsNil)
 
 	fs := osfs.New(dir)
-	storage, err := filesystem.NewStorage(fs.Dir(".git"))
+	dot, _ := fs.Chroot(".git")
+	storage, err := filesystem.NewStorage(dot)
 	c.Assert(err, IsNil)
 
 	r, err := Init(storage, fs)
@@ -386,7 +389,7 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
-	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL:               path,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
@@ -669,7 +672,7 @@ func (s *RepositorySuite) TestPullProgress(c *C) {
 }
 
 func (s *RepositorySuite) TestPullProgressWithRecursion(c *C) {
-	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
 	dir, err := ioutil.TempDir("", "plain-clone-submodule")
 	c.Assert(err, IsNil)
@@ -691,7 +694,7 @@ func (s *RepositorySuite) TestPullProgressWithRecursion(c *C) {
 }
 
 func (s *RepositorySuite) TestPullAdd(c *C) {
-	path := fixtures.Basic().ByTag("worktree").One().Worktree().Base()
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
 	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
 		URL: filepath.Join(path, ".git"),
@@ -729,7 +732,7 @@ func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := dstFs.Base()
+	url := dstFs.Root()
 
 	r, err := Open(sto, srcFs)
 	c.Assert(err, IsNil)

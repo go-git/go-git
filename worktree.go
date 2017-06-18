@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"gopkg.in/src-d/go-billy.v3/util"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
@@ -15,7 +16,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
 
-	"gopkg.in/src-d/go-billy.v2"
+	"gopkg.in/src-d/go-billy.v3"
 )
 
 var (
@@ -486,7 +487,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 }
 
 func rmFileAndDirIfEmpty(fs billy.Filesystem, name string) error {
-	if err := billy.RemoveAll(fs, name); err != nil {
+	if err := util.RemoveAll(fs, name); err != nil {
 		return err
 	}
 

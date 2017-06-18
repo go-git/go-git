@@ -3,7 +3,7 @@ package packfile_test
 import (
 	"io"
 
-	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-billy.v3/memfs"
 
 	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"

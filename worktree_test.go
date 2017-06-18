@@ -13,9 +13,9 @@ import (
 
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v2"
-	"gopkg.in/src-d/go-billy.v2/memfs"
-	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/src-d/go-billy.v3/memfs"
+	"gopkg.in/src-d/go-billy.v3/osfs"
+	"gopkg.in/src-d/go-billy.v3/util"
 )
 
 type WorktreeSuite struct {
@@ -471,7 +471,7 @@ func (s *WorktreeSuite) TestStatusDeleted(c *C) {
 }
 
 func (s *WorktreeSuite) TestSubmodule(c *C) {
-	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainOpen(path)
 	c.Assert(err, IsNil)
 
@@ -485,7 +485,7 @@ func (s *WorktreeSuite) TestSubmodule(c *C) {
 }
 
 func (s *WorktreeSuite) TestSubmodules(c *C) {
-	path := fixtures.ByTag("submodule").One().Worktree().Base()
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainOpen(path)
 	c.Assert(err, IsNil)
 
@@ -512,7 +512,7 @@ func (s *WorktreeSuite) TestAddUntracked(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
 
-	err = billy.WriteFile(w.fs, "foo", []byte("FOO"), 0755)
+	err = util.WriteFile(w.fs, "foo", []byte("FOO"), 0755)
 	c.Assert(err, IsNil)
 
 	hash, err := w.Add("foo")
@@ -551,7 +551,7 @@ func (s *WorktreeSuite) TestAddModified(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
 
-	err = billy.WriteFile(w.fs, "LICENSE", []byte("FOO"), 0644)
+	err = util.WriteFile(w.fs, "LICENSE", []byte("FOO"), 0644)
 	c.Assert(err, IsNil)
 
 	hash, err := w.Add("LICENSE")

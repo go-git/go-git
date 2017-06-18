@@ -15,7 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/src-d/go-billy.v3/osfs"
 )
 
 type RemoteSuite struct {
@@ -214,7 +214,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := dstFs.Base()
+	url := dstFs.Root()
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -254,7 +254,7 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 	c.Assert(err, IsNil)
 
 	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := dstFs.Base()
+	url := dstFs.Root()
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -297,7 +297,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	f := fixtures.Basic().One()
 	sto, err := filesystem.NewStorage(f.DotGit())
 	c.Assert(err, IsNil)
-	url := f.DotGit().Base()
+	url := f.DotGit().Root()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -319,7 +319,7 @@ func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
 
-	url := dstFs.Base()
+	url := dstFs.Root()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -348,7 +348,7 @@ func (s *RemoteSuite) TestPushForce(c *C) {
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
 
-	url := dstFs.Base()
+	url := dstFs.Root()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -377,7 +377,7 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 	dstSto, err := filesystem.NewStorage(dstFs)
 	c.Assert(err, IsNil)
 
-	url := dstFs.Base()
+	url := dstFs.Root()
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
