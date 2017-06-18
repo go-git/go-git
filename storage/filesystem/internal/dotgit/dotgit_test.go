@@ -445,11 +445,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 	file, err := dir.Object(hash)
 	c.Assert(err, IsNil)
 	c.Assert(strings.HasSuffix(
-<<<<<<< HEAD
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
-=======
-		file.Filename(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
->>>>>>> 86f6ba1dea8972df7c017e01ddb2c097892bc220
 		Equals, true,
 	)
 }
