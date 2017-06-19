@@ -2,6 +2,7 @@ package git
 
 import (
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -186,9 +187,13 @@ func (h *commitIndexHelper) copyIndexEntryToStorage(e *index.Entry) error {
 }
 
 func (h *commitIndexHelper) doCopyIndexEntryToStorage(e *index.Entry) (err error) {
-	fi, err := h.fs.Stat(e.Name)
+	fi, err := h.fs.Lstat(e.Name)
 	if err != nil {
 		return err
+	}
+
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return h.doCopyIndexEntryFromSymlinkToStorage(e, fi)
 	}
 
 	obj := h.s.NewEncodedObject()
@@ -210,6 +215,31 @@ func (h *commitIndexHelper) doCopyIndexEntryToStorage(e *index.Entry) (err error
 	defer ioutil.CheckClose(writer, &err)
 
 	if _, err := io.Copy(writer, reader); err != nil {
+		return err
+	}
+
+	_, err = h.s.SetEncodedObject(obj)
+	return err
+}
+
+func (h *commitIndexHelper) doCopyIndexEntryFromSymlinkToStorage(e *index.Entry, fi os.FileInfo) error {
+	obj := h.s.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	obj.SetSize(fi.Size())
+
+	writer, err := obj.Writer()
+	if err != nil {
+		return err
+	}
+
+	defer ioutil.CheckClose(writer, &err)
+
+	target, err := h.fs.Readlink(e.Name)
+	if err != nil {
+		return err
+	}
+
+	if _, err := writer.Write([]byte(target)); err != nil {
 		return err
 	}
 

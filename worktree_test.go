@@ -56,6 +56,35 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	c.Assert(idx.Entries, HasLen, 9)
 }
 
+func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
+	dir, err := ioutil.TempDir("", "checkout")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	w.fs.Symlink("not-exists", "bar")
+	w.Add("bar")
+	w.Commit("foo", &CommitOptions{Author: defaultSignature()})
+
+	r.Storer.SetIndex(&index.Index{Version: 2})
+	w.fs = osfs.New(filepath.Join(dir, "worktree-empty"))
+
+	err = w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+
+	target, err := w.fs.Readlink("bar")
+	c.Assert(target, Equals, "not-exists")
+	c.Assert(err, IsNil)
+}
+
 func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
 	url := "https://github.com/git-fixtures/submodule.git"
 	w := &Worktree{
@@ -639,6 +668,28 @@ func (s *WorktreeSuite) TestAddUnmodified(c *C) {
 	hash, err := w.Add("LICENSE")
 	c.Assert(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
 	c.Assert(err, IsNil)
+}
+
+func (s *WorktreeSuite) TestAddSymlink(c *C) {
+	dir, err := ioutil.TempDir("", "checkout")
+	defer os.RemoveAll(dir)
+
+	r, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(r.wt, "foo", []byte("qux"), 0644)
+	c.Assert(err, IsNil)
+	err = r.wt.Symlink("foo", "bar")
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+	h, err := w.Add("foo")
+	c.Assert(err, IsNil)
+	c.Assert(h, Not(Equals), plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"))
+
+	h, err = w.Add("bar")
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"))
 }
 
 func (s *WorktreeSuite) TestRemove(c *C) {

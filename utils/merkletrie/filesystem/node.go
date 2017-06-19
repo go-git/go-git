@@ -136,15 +136,15 @@ func (n *node) calculateHash(path string, file os.FileInfo) ([]byte, error) {
 		return make([]byte, 24), nil
 	}
 
-	f, err := n.fs.Open(path)
-	if err != nil {
-		return nil, err
+	var hash plumbing.Hash
+	var err error
+	if file.Mode()&os.ModeSymlink != 0 {
+		hash, err = n.doCalculateHashForSymlink(path, file)
+	} else {
+		hash, err = n.doCalculateHashForRegular(path, file)
 	}
 
-	defer f.Close()
-
-	h := plumbing.NewHasher(plumbing.BlobObject, file.Size())
-	if _, err := io.Copy(h, f); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -153,8 +153,37 @@ func (n *node) calculateHash(path string, file os.FileInfo) ([]byte, error) {
 		return nil, err
 	}
 
-	hash := h.Sum()
 	return append(hash[:], mode.Bytes()...), nil
+}
+
+func (n *node) doCalculateHashForRegular(path string, file os.FileInfo) (plumbing.Hash, error) {
+	f, err := n.fs.Open(path)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	defer f.Close()
+
+	h := plumbing.NewHasher(plumbing.BlobObject, file.Size())
+	if _, err := io.Copy(h, f); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return h.Sum(), nil
+}
+
+func (n *node) doCalculateHashForSymlink(path string, file os.FileInfo) (plumbing.Hash, error) {
+	target, err := n.fs.Readlink(path)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	h := plumbing.NewHasher(plumbing.BlobObject, file.Size())
+	if _, err := h.Write([]byte(target)); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return h.Sum(), nil
 }
 
 func (n *node) String() string {

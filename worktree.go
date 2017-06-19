@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	stdioutil "io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -15,6 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
+	"gopkg.in/src-d/go-git/utils/ioutil"
 
 	"gopkg.in/src-d/go-billy.v3"
 )
@@ -327,29 +328,49 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 	return nil
 }
 
-func (w *Worktree) checkoutFile(f *object.File) error {
-	from, err := f.Reader()
-	if err != nil {
-		return err
-	}
-	defer from.Close()
-
+func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
-		return err
+		return
 	}
+
+	if mode&os.ModeSymlink != 0 {
+		return w.checkoutFileSymlink(f)
+	}
+
+	from, err := f.Reader()
+	if err != nil {
+		return
+	}
+
+	defer ioutil.CheckClose(from, &err)
 
 	to, err := w.fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
-		return err
-	}
-	defer to.Close()
-
-	if _, err := io.Copy(to, from); err != nil {
-		return err
+		return
 	}
 
-	return err
+	defer ioutil.CheckClose(to, &err)
+
+	_, err = io.Copy(to, from)
+	return
+}
+
+func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
+	from, err := f.Reader()
+	if err != nil {
+		return
+	}
+
+	defer ioutil.CheckClose(from, &err)
+
+	bytes, err := stdioutil.ReadAll(from)
+	if err != nil {
+		return
+	}
+
+	err = w.fs.Symlink(string(bytes), f.Name)
+	return
 }
 
 func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *index.Index) error {
@@ -363,7 +384,7 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 }
 
 func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *index.Index) error {
-	fi, err := w.fs.Stat(name)
+	fi, err := w.fs.Lstat(name)
 	if err != nil {
 		return err
 	}
@@ -477,7 +498,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 		return nil, err
 	}
 
-	input, err := ioutil.ReadAll(f)
+	input, err := stdioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
