@@ -212,9 +212,13 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 }
 
 func (w *Worktree) calculateBlobHash(filename string) (hash plumbing.Hash, err error) {
-	fi, err := w.fs.Stat(filename)
+	fi, err := w.fs.Lstat(filename)
 	if err != nil {
 		return plumbing.ZeroHash, err
+	}
+
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return w.calculateBlobHashFromSymlink(filename)
 	}
 
 	f, err := w.fs.Open(filename)
@@ -231,6 +235,21 @@ func (w *Worktree) calculateBlobHash(filename string) (hash plumbing.Hash, err e
 
 	hash = h.Sum()
 	return
+}
+
+func (w *Worktree) calculateBlobHashFromSymlink(link string) (plumbing.Hash, error) {
+	target, err := w.fs.Readlink(link)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	h := plumbing.NewHasher(plumbing.BlobObject, int64(len(target)))
+	_, err = h.Write([]byte(target))
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return h.Sum(), nil
 }
 
 func (w *Worktree) addOrUpdateFileToIndex(filename string, h plumbing.Hash) error {
@@ -265,7 +284,7 @@ func (w *Worktree) doAddFileToIndex(idx *index.Index, filename string, h plumbin
 }
 
 func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbing.Hash) error {
-	info, err := w.fs.Stat(filename)
+	info, err := w.fs.Lstat(filename)
 	if err != nil {
 		return err
 	}
@@ -273,10 +292,12 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 	e.Hash = h
 	e.ModifiedAt = info.ModTime()
 	e.Mode, err = filemode.NewFromOSFileMode(info.Mode())
-	e.Size = uint32(info.Size())
-
 	if err != nil {
 		return err
+	}
+
+	if e.Mode.IsRegular() {
+		e.Size = uint32(info.Size())
 	}
 
 	fillSystemInfo(e, info.Sys())
@@ -319,11 +340,11 @@ func (w *Worktree) deleteFromFilesystem(path string) error {
 // Move moves or rename a file in the worktree and the index, directories are
 // not supported.
 func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
-	if _, err := w.fs.Stat(from); err != nil {
+	if _, err := w.fs.Lstat(from); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	if _, err := w.fs.Stat(to); err == nil {
+	if _, err := w.fs.Lstat(to); err == nil {
 		return plumbing.ZeroHash, ErrDestinationExists
 	}
 
