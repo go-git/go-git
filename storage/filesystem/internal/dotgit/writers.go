@@ -190,14 +190,14 @@ func (s *syncedReader) Write(p []byte) (n int, err error) {
 func (s *syncedReader) Read(p []byte) (n int, err error) {
 	defer func() { atomic.AddUint64(&s.read, uint64(n)) }()
 
-	s.sleep()
-	n, err = s.r.Read(p)
-	if err == io.EOF && !s.isDone() {
-		if n == 0 {
-			return s.Read(p)
+	for {
+		s.sleep()
+		n, err = s.r.Read(p)
+		if err == io.EOF && !s.isDone() && n == 0 {
+			continue
 		}
 
-		return n, nil
+		break
 	}
 
 	return
