@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/gitignore"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
@@ -67,6 +68,8 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 		return nil, err
 	}
 
+	right = w.excludeIgnoredChanges(right)
+
 	for _, ch := range right {
 		a, err := ch.Action()
 		if err != nil {
@@ -115,6 +118,35 @@ func (w *Worktree) diffStagingWithWorktree() (merkletrie.Changes, error) {
 
 	to := filesystem.NewRootNode(w.fs, submodules)
 	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
+}
+
+func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes) merkletrie.Changes {
+	patterns, err := gitignore.ReadPatterns(w.fs, nil)
+	if err != nil || len(patterns) == 0 {
+		return changes
+	}
+	m := gitignore.NewMatcher(patterns)
+
+	var res merkletrie.Changes
+	for _, ch := range changes {
+		var path []string
+		for _, n := range ch.To {
+			path = append(path, n.Name())
+		}
+		if len(path) == 0 {
+			for _, n := range ch.From {
+				path = append(path, n.Name())
+			}
+		}
+		if len(path) != 0 {
+			isDir := (len(ch.To) > 0 && ch.To.IsDir()) || (len(ch.From) > 0 && ch.From.IsDir())
+			if m.Match(path, isDir) {
+				continue
+			}
+		}
+		res = append(res, ch)
+	}
+	return res
 }
 
 func (w *Worktree) getSubmodulesStatus() (map[string]plumbing.Hash, error) {
