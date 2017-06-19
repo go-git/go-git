@@ -104,7 +104,7 @@ is supported by go-git.
 | file://                               | ✔ |
 | custom                                | ✔ |
 | **other features** |
-| gitignore                             | ✖ |
+| gitignore                             | ✔ |
 | gitattributes                         | ✖ |
 | index version                         | |
 | packfile version                      | |

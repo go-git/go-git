@@ -2,40 +2,50 @@ package gitignore
 
 import (
 	"os"
-	"testing"
 
-	"gopkg.in/src-d/go-billy.v2"
-	"gopkg.in/src-d/go-billy.v2/memfs"
+	"gopkg.in/src-d/go-billy.v3"
+	"gopkg.in/src-d/go-billy.v3/memfs"
+
+	. "gopkg.in/check.v1"
 )
 
-func setupTestFS(subdirError bool) billy.Filesystem {
+type MatcherSuite struct {
+	FS billy.Filesystem
+}
+
+var _ = Suite(&MatcherSuite{})
+
+func (s *MatcherSuite) SetUpTest(c *C) {
 	fs := memfs.New()
-	f, _ := fs.Create(".gitignore")
-	f.Write([]byte("vendor/g*/\n"))
-	f.Close()
-	fs.MkdirAll("vendor", os.ModePerm)
-	f, _ = fs.Create("vendor/.gitignore")
-	f.Write([]byte("!github.com/\n"))
-	f.Close()
+	f, err := fs.Create(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("vendor/g*/\n"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	err = fs.MkdirAll("vendor", os.ModePerm)
+	c.Assert(err, IsNil)
+	f, err = fs.Create("vendor/.gitignore")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("!github.com/\n"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
 	fs.MkdirAll("another", os.ModePerm)
 	fs.MkdirAll("vendor/github.com", os.ModePerm)
 	fs.MkdirAll("vendor/gopkg.in", os.ModePerm)
-	return fs
+
+	s.FS = fs
 }
 
-func TestDir_ReadPatterns(t *testing.T) {
-	ps, err := ReadPatterns(setupTestFS(false), nil)
-	if err != nil {
-		t.Errorf("no error expected, found %v", err)
-	}
-	if len(ps) != 2 {
-		t.Errorf("expected 2 patterns, found %v", len(ps))
-	}
+func (s *MatcherSuite) TestDir_ReadPatterns(c *C) {
+	ps, err := ReadPatterns(s.FS, nil)
+	c.Assert(err, IsNil)
+	c.Assert(ps, HasLen, 2)
+
 	m := NewMatcher(ps)
-	if !m.Match([]string{"vendor", "gopkg.in"}, true) {
-		t.Error("expected a match")
-	}
-	if m.Match([]string{"vendor", "github.com"}, true) {
-		t.Error("expected no match")
-	}
+	c.Assert(m.Match([]string{"vendor", "gopkg.in"}, true), Equals, true)
+	c.Assert(m.Match([]string{"vendor", "github.com"}, true), Equals, false)
 }

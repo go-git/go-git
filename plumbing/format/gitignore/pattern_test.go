@@ -1,318 +1,283 @@
 package gitignore
 
-import "testing"
+import (
+	"testing"
 
-func TestPatternSimpleMatch_inclusion(t *testing.T) {
+	. "gopkg.in/check.v1"
+)
+
+func Test(t *testing.T) { TestingT(t) }
+
+type PatternSuite struct{}
+
+var _ = Suite(&PatternSuite{})
+
+func (s *PatternSuite) TestSimpleMatch_inclusion(c *C) {
 	p := ParsePattern("!vul?ano", nil)
-	if res := p.Match([]string{"value", "vulkano", "tail"}, false); res != Include {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "vulkano", "tail"}, false)
+	c.Assert(r, Equals, Include)
 }
 
-func TestPatternMatch_domainLonger_mismatch(t *testing.T) {
+func (s *PatternSuite) TestMatch_domainLonger_mismatch(c *C) {
 	p := ParsePattern("value", []string{"head", "middle", "tail"})
-	if res := p.Match([]string{"head", "middle"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "middle"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternMatch_domainSameLength_mismatch(t *testing.T) {
+func (s *PatternSuite) TestMatch_domainSameLength_mismatch(c *C) {
 	p := ParsePattern("value", []string{"head", "middle", "tail"})
-	if res := p.Match([]string{"head", "middle", "tail"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "middle", "tail"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternMatch_domainMismatch_mismatch(t *testing.T) {
+func (s *PatternSuite) TestMatch_domainMismatch_mismatch(c *C) {
 	p := ParsePattern("value", []string{"head", "middle", "tail"})
-	if res := p.Match([]string{"head", "middle", "_tail_", "value"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "middle", "_tail_", "value"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternSimpleMatch_withDomain(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_withDomain(c *C) {
 	p := ParsePattern("middle/", []string{"value", "volcano"})
-	if res := p.Match([]string{"value", "volcano", "middle", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano", "middle", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_onlyMatchInDomain_mismatch(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_onlyMatchInDomain_mismatch(c *C) {
 	p := ParsePattern("volcano/", []string{"value", "volcano"})
-	if res := p.Match([]string{"value", "volcano", "tail"}, true); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano", "tail"}, true)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternSimpleMatch_atStart(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_atStart(c *C) {
 	p := ParsePattern("value", nil)
-	if res := p.Match([]string{"value", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_inTheMiddle(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_inTheMiddle(c *C) {
 	p := ParsePattern("value", nil)
-	if res := p.Match([]string{"head", "value", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_atEnd(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_atEnd(c *C) {
 	p := ParsePattern("value", nil)
-	if res := p.Match([]string{"head", "value"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_atStart_dirWanted(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_atStart_dirWanted(c *C) {
 	p := ParsePattern("value/", nil)
-	if res := p.Match([]string{"value", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_inTheMiddle_dirWanted(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_inTheMiddle_dirWanted(c *C) {
 	p := ParsePattern("value/", nil)
-	if res := p.Match([]string{"head", "value", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_atEnd_dirWanted(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_atEnd_dirWanted(c *C) {
 	p := ParsePattern("value/", nil)
-	if res := p.Match([]string{"head", "value"}, true); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value"}, true)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_atEnd_dirWanted_notADir_mismatch(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_atEnd_dirWanted_notADir_mismatch(c *C) {
 	p := ParsePattern("value/", nil)
-	if res := p.Match([]string{"head", "value"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "value"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternSimpleMatch_mismatch(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_mismatch(c *C) {
 	p := ParsePattern("value", nil)
-	if res := p.Match([]string{"head", "val", "tail"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "val", "tail"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternSimpleMatch_valueLonger_mismatch(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_valueLonger_mismatch(c *C) {
 	p := ParsePattern("val", nil)
-	if res := p.Match([]string{"head", "value", "tail"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "tail"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternSimpleMatch_withAsterisk(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_withAsterisk(c *C) {
 	p := ParsePattern("v*o", nil)
-	if res := p.Match([]string{"value", "vulkano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "vulkano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_withQuestionMark(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_withQuestionMark(c *C) {
 	p := ParsePattern("vul?ano", nil)
-	if res := p.Match([]string{"value", "vulkano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "vulkano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_magicChars(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_magicChars(c *C) {
 	p := ParsePattern("v[ou]l[kc]ano", nil)
-	if res := p.Match([]string{"value", "volcano"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternSimpleMatch_wrongPattern_mismatch(t *testing.T) {
+func (s *PatternSuite) TestSimpleMatch_wrongPattern_mismatch(c *C) {
 	p := ParsePattern("v[ou]l[", nil)
-	if res := p.Match([]string{"value", "vol["}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "vol["}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_fromRootWithSlash(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_fromRootWithSlash(c *C) {
 	p := ParsePattern("/value/vul?ano", nil)
-	if res := p.Match([]string{"value", "vulkano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "vulkano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_withDomain(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_withDomain(c *C) {
 	p := ParsePattern("middle/tail/", []string{"value", "volcano"})
-	if res := p.Match([]string{"value", "volcano", "middle", "tail"}, true); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano", "middle", "tail"}, true)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_onlyMatchInDomain_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_onlyMatchInDomain_mismatch(c *C) {
 	p := ParsePattern("volcano/tail", []string{"value", "volcano"})
-	if res := p.Match([]string{"value", "volcano", "tail"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano", "tail"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_fromRootWithoutSlash(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_fromRootWithoutSlash(c *C) {
 	p := ParsePattern("value/vul?ano", nil)
-	if res := p.Match([]string{"value", "vulkano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "vulkano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_fromRoot_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_fromRoot_mismatch(c *C) {
 	p := ParsePattern("value/vulkano", nil)
-	if res := p.Match([]string{"value", "volcano"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_fromRoot_tooShort_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_fromRoot_tooShort_mismatch(c *C) {
 	p := ParsePattern("value/vul?ano", nil)
-	if res := p.Match([]string{"value"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_fromRoot_notAtRoot_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_fromRoot_notAtRoot_mismatch(c *C) {
 	p := ParsePattern("/value/volcano", nil)
-	if res := p.Match([]string{"value", "value", "volcano"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "value", "volcano"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_atStart(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_atStart(c *C) {
 	p := ParsePattern("**/*lue/vol?ano", nil)
-	if res := p.Match([]string{"value", "volcano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_notAtStart(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_notAtStart(c *C) {
 	p := ParsePattern("**/*lue/vol?ano", nil)
-	if res := p.Match([]string{"head", "value", "volcano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "volcano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_mismatch(c *C) {
 	p := ParsePattern("**/*lue/vol?ano", nil)
-	if res := p.Match([]string{"head", "value", "Volcano", "tail"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "Volcano", "tail"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_isDir(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_isDir(c *C) {
 	p := ParsePattern("**/*lue/vol?ano/", nil)
-	if res := p.Match([]string{"head", "value", "volcano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "volcano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_isDirAtEnd(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_isDirAtEnd(c *C) {
 	p := ParsePattern("**/*lue/vol?ano/", nil)
-	if res := p.Match([]string{"head", "value", "volcano"}, true); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "volcano"}, true)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_isDir_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_isDir_mismatch(c *C) {
 	p := ParsePattern("**/*lue/vol?ano/", nil)
-	if res := p.Match([]string{"head", "value", "Colcano"}, true); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "Colcano"}, true)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_leadingAsterisks_isDirNoDirAtEnd_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_leadingAsterisks_isDirNoDirAtEnd_mismatch(c *C) {
 	p := ParsePattern("**/*lue/vol?ano/", nil)
-	if res := p.Match([]string{"head", "value", "volcano"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"head", "value", "volcano"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_tailingAsterisks(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_tailingAsterisks(c *C) {
 	p := ParsePattern("/*lue/vol?ano/**", nil)
-	if res := p.Match([]string{"value", "volcano", "tail", "moretail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano", "tail", "moretail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_tailingAsterisks_exactMatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_tailingAsterisks_exactMatch(c *C) {
 	p := ParsePattern("/*lue/vol?ano/**", nil)
-	if res := p.Match([]string{"value", "volcano"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_middleAsterisks_emptyMatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_middleAsterisks_emptyMatch(c *C) {
 	p := ParsePattern("/*lue/**/vol?ano", nil)
-	if res := p.Match([]string{"value", "volcano"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "volcano"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_middleAsterisks_oneMatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_middleAsterisks_oneMatch(c *C) {
 	p := ParsePattern("/*lue/**/vol?ano", nil)
-	if res := p.Match([]string{"value", "middle", "volcano"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "middle", "volcano"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_middleAsterisks_multiMatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_middleAsterisks_multiMatch(c *C) {
 	p := ParsePattern("/*lue/**/vol?ano", nil)
-	if res := p.Match([]string{"value", "middle1", "middle2", "volcano"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "middle1", "middle2", "volcano"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_middleAsterisks_isDir_trailing(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_middleAsterisks_isDir_trailing(c *C) {
 	p := ParsePattern("/*lue/**/vol?ano/", nil)
-	if res := p.Match([]string{"value", "middle1", "middle2", "volcano"}, true); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "middle1", "middle2", "volcano"}, true)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_middleAsterisks_isDir_trailing_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_middleAsterisks_isDir_trailing_mismatch(c *C) {
 	p := ParsePattern("/*lue/**/vol?ano/", nil)
-	if res := p.Match([]string{"value", "middle1", "middle2", "volcano"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "middle1", "middle2", "volcano"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_middleAsterisks_isDir(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_middleAsterisks_isDir(c *C) {
 	p := ParsePattern("/*lue/**/vol?ano/", nil)
-	if res := p.Match([]string{"value", "middle1", "middle2", "volcano", "tail"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "middle1", "middle2", "volcano", "tail"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_wrongDoubleAsterisk_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_wrongDoubleAsterisk_mismatch(c *C) {
 	p := ParsePattern("/*lue/**foo/vol?ano", nil)
-	if res := p.Match([]string{"value", "foo", "volcano", "tail"}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "foo", "volcano", "tail"}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_magicChars(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_magicChars(c *C) {
 	p := ParsePattern("**/head/v[ou]l[kc]ano", nil)
-	if res := p.Match([]string{"value", "head", "volcano"}, false); res != Exclude {
-		t.Errorf("expected Exclude, found %v", res)
-	}
+	r := p.Match([]string{"value", "head", "volcano"}, false)
+	c.Assert(r, Equals, Exclude)
 }
 
-func TestPatternGlobMatch_wrongPattern_noTraversal_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_wrongPattern_noTraversal_mismatch(c *C) {
 	p := ParsePattern("**/head/v[ou]l[", nil)
-	if res := p.Match([]string{"value", "head", "vol["}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "head", "vol["}, false)
+	c.Assert(r, Equals, NoMatch)
 }
 
-func TestPatternGlobMatch_wrongPattern_onTraversal_mismatch(t *testing.T) {
+func (s *PatternSuite) TestGlobMatch_wrongPattern_onTraversal_mismatch(c *C) {
 	p := ParsePattern("/value/**/v[ou]l[", nil)
-	if res := p.Match([]string{"value", "head", "vol["}, false); res != NoMatch {
-		t.Errorf("expected NoMatch, found %v", res)
-	}
+	r := p.Match([]string{"value", "head", "vol["}, false)
+	c.Assert(r, Equals, NoMatch)
 }

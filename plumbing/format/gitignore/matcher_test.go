@@ -1,17 +1,16 @@
 package gitignore
 
-import "testing"
+import (
+	. "gopkg.in/check.v1"
+)
 
-func TestMatcher_Match(t *testing.T) {
+func (s *MatcherSuite) TestMatcher_Match(c *C) {
 	ps := []Pattern{
 		ParsePattern("**/middle/v[uo]l?ano", nil),
 		ParsePattern("!volcano", nil),
 	}
+
 	m := NewMatcher(ps)
-	if !m.Match([]string{"head", "middle", "vulkano"}, false) {
-		t.Errorf("expected a match, found mismatch")
-	}
-	if m.Match([]string{"head", "middle", "volcano"}, false) {
-		t.Errorf("expected a mismatch, found a match")
-	}
+	c.Assert(m.Match([]string{"head", "middle", "vulkano"}, false), Equals, true)
+	c.Assert(m.Match([]string{"head", "middle", "volcano"}, false), Equals, false)
 }
