@@ -3,12 +3,12 @@ package revlist
 import (
 	"testing"
 
-	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
+	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 )
 
@@ -60,6 +60,24 @@ func (s *RevListSuite) commit(c *C, h plumbing.Hash) *object.Commit {
 	commit, err := object.GetCommit(s.Storer, h)
 	c.Assert(err, IsNil)
 	return commit
+}
+
+func (s *RevListSuite) TestRevListObjects_Submodules(c *C) {
+	submodules := map[string]bool{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5": true,
+	}
+
+	sto, err := filesystem.NewStorage(fixtures.ByTag("submodule").One().DotGit())
+	c.Assert(err, IsNil)
+
+	ref, err := storer.ResolveReference(sto, plumbing.HEAD)
+	c.Assert(err, IsNil)
+
+	revList, err := Objects(sto, []plumbing.Hash{ref.Hash()}, nil)
+	c.Assert(err, IsNil)
+	for _, h := range revList {
+		c.Assert(submodules[h.String()], Equals, false)
+	}
 }
 
 // ---

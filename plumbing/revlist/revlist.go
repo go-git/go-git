@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
@@ -119,6 +120,10 @@ func iterateCommitTrees(
 		}
 		if err != nil {
 			return err
+		}
+
+		if e.Mode == filemode.Submodule {
+			continue
 		}
 
 		if seen[e.Hash] {
