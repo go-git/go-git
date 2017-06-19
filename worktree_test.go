@@ -614,6 +614,11 @@ func (s *WorktreeSuite) TestAddUntracked(c *C) {
 	file := status.File("foo")
 	c.Assert(file.Staging, Equals, Added)
 	c.Assert(file.Worktree, Equals, Unmodified)
+
+	obj, err := w.r.Storer.EncodedObject(plumbing.BlobObject, hash)
+	c.Assert(err, IsNil)
+	c.Assert(obj, NotNil)
+	c.Assert(obj.Size(), Equals, int64(3))
 }
 
 func (s *WorktreeSuite) TestAddModified(c *C) {
@@ -690,6 +695,12 @@ func (s *WorktreeSuite) TestAddSymlink(c *C) {
 	h, err = w.Add("bar")
 	c.Assert(err, IsNil)
 	c.Assert(h, Equals, plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"))
+
+	obj, err := w.r.Storer.EncodedObject(plumbing.BlobObject, h)
+	c.Assert(err, IsNil)
+	c.Assert(obj, NotNil)
+	c.Assert(obj.Size(), Equals, int64(3))
+
 }
 
 func (s *WorktreeSuite) TestRemove(c *C) {
