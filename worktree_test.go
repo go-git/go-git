@@ -307,6 +307,35 @@ func (s *WorktreeSuite) testCheckoutBisect(c *C, url string) {
 	})
 }
 
+func (s *WorktreeSuite) TestCheckoutWithGitignore(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:  s.Repository,
+		fs: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	f, _ := fs.Create("file")
+	f.Close()
+
+	err = w.Checkout(&CheckoutOptions{})
+	c.Assert(err.Error(), Equals, "worktree contains unstagged changes")
+
+	f, _ = fs.Create(".gitignore")
+	f.Write([]byte("file"))
+	f.Close()
+
+	err = w.Checkout(&CheckoutOptions{})
+	c.Assert(err.Error(), Equals, "worktree contains unstagged changes")
+
+	w.Add(".gitignore")
+
+	err = w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+}
+
 func (s *WorktreeSuite) TestStatus(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
@@ -458,10 +487,7 @@ func (s *WorktreeSuite) TestStatusModified(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatusIgnored(c *C) {
-	dir, _ := ioutil.TempDir("", "status")
-	defer os.RemoveAll(dir)
-
-	fs := osfs.New(filepath.Join(dir, "worktree"))
+	fs := memfs.New()
 	w := &Worktree{
 		r:  s.Repository,
 		fs: fs,
