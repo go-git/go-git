@@ -68,8 +68,6 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 		return nil, err
 	}
 
-	right = w.excludeIgnoredChanges(right)
-
 	for _, ch := range right {
 		a, err := ch.Action()
 		if err != nil {
@@ -117,7 +115,11 @@ func (w *Worktree) diffStagingWithWorktree() (merkletrie.Changes, error) {
 	}
 
 	to := filesystem.NewRootNode(w.fs, submodules)
-	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
+	res, err := merkletrie.DiffTree(from, to, diffTreeIsEquals)
+	if err == nil {
+		res = w.excludeIgnoredChanges(res)
+	}
+	return res, err
 }
 
 func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes) merkletrie.Changes {
