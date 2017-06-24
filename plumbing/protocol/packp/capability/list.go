@@ -8,8 +8,6 @@ import (
 )
 
 var (
-	// ErrUnknownCapability is returned if a unknown capability is given
-	ErrUnknownCapability = errors.New("unknown capability")
 	// ErrArgumentsRequired is returned if no arguments are giving with a
 	// capability that requires arguments
 	ErrArgumentsRequired = errors.New("arguments required")
@@ -119,10 +117,6 @@ func (l *List) Add(c Capability, values ...string) error {
 }
 
 func (l *List) validate(c Capability, values []string) error {
-	if _, ok := valid[c]; !ok {
-		return ErrUnknownCapability
-	}
-
 	if requiresArgument[c] && len(values) == 0 {
 		return ErrArgumentsRequired
 	}
