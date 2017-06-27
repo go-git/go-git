@@ -236,7 +236,7 @@ func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	p, err := s.r.Seek(offset, whence)
-	s.read = uint64(p)
+	atomic.StoreUint64(&s.read, uint64(p))
 
 	return p, err
 }
