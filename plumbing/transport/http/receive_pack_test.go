@@ -103,7 +103,9 @@ func freePort() (int, error) {
 const bareConfig = `[core]
 repositoryformatversion = 0
 filemode = true
-bare = true`
+bare = true
+[http]
+receivepack = true`
 
 func prepareRepo(c *C, path string) {
 	// git-receive-pack refuses to update refs/heads/master on non-bare repo

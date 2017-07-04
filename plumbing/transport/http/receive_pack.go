@@ -43,6 +43,10 @@ func (s *rpSession) ReceivePack(req *packp.ReferenceUpdateRequest) (
 	}
 
 	r, err := ioutil.NonEmptyReader(res.Body)
+	if err == ioutil.ErrEmptyReader {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
