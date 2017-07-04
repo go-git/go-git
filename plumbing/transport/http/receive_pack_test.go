@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cgi"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -43,7 +44,7 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 	err = os.MkdirAll(interpolatedBase, 0755)
 	c.Assert(err, IsNil)
 
-	dotgit := fixtures.Basic().One().DotGit().Base()
+	dotgit := fixtures.Basic().One().DotGit().Root()
 	prepareRepo(c, dotgit)
 	err = os.Rename(dotgit, filepath.Join(interpolatedBase, "basic.git"))
 	c.Assert(err, IsNil)
@@ -52,7 +53,7 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	s.ReceivePackSuite.Endpoint = ep
 
-	dotgit = fixtures.ByTag("empty").One().DotGit().Base()
+	dotgit = fixtures.ByTag("empty").One().DotGit().Root()
 	prepareRepo(c, dotgit)
 	err = os.Rename(dotgit, filepath.Join(interpolatedBase, "empty.git"))
 	c.Assert(err, IsNil)
@@ -61,17 +62,23 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	s.ReceivePackSuite.EmptyEndpoint = ep
 
-	ep, err = transport.NewEndpoint(fmt.Sprintf("git://localhost:%d/non-existent.git", port))
+	ep, err = transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/non-existent.git", port))
 	c.Assert(err, IsNil)
 	s.ReceivePackSuite.NonExistentEndpoint = ep
 
-	var h http.Handler = &cgi.Handler{
-		Path: "/usr/lib/git-core/git-http-backend",
+	cmd := exec.Command("git", "--exec-path")
+	out, err := cmd.CombinedOutput()
+	c.Assert(err, IsNil)
+	p := filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend")
 
-		Env: []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", base)},
+	h := &cgi.Handler{
+		Path: p,
+		Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", interpolatedBase)},
 	}
 
-	go func() { log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), h)) }()
+	go func() {
+		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), h))
+	}()
 }
 
 func (s *ReceivePackSuite) TearDownTest(c *C) {
