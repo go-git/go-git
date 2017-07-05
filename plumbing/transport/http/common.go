@@ -2,13 +2,68 @@
 package http
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
+
+// it requires a bytes.Buffer, because we need to know the length
+func applyHeadersToRequest(req *http.Request, content *bytes.Buffer, host string, requestType string) {
+	req.Header.Add("User-Agent", "git/1.0")
+	req.Header.Add("Host", host) // host:port
+
+	if content == nil {
+		req.Header.Add("Accept", "*/*")
+		return
+	}
+
+	req.Header.Add("Accept", fmt.Sprintf("application/x-%s-result", requestType))
+	req.Header.Add("Content-Type", fmt.Sprintf("application/x-%s-request", requestType))
+	req.Header.Add("Content-Length", strconv.Itoa(content.Len()))
+}
+
+func advertisedReferences(s *session, serviceName string) (*packp.AdvRefs, error) {
+	url := fmt.Sprintf(
+		"%s/info/refs?service=%s",
+		s.endpoint.String(), serviceName,
+	)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	s.applyAuthToRequest(req)
+	applyHeadersToRequest(req, nil, s.endpoint.Host(), serviceName)
+	res, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := NewErr(res); err != nil {
+		_ = res.Body.Close()
+		return nil, err
+	}
+
+	ar := packp.NewAdvRefs()
+	if err := ar.Decode(res.Body); err != nil {
+		if err == packp.ErrEmptyAdvRefs {
+			err = transport.ErrEmptyRemoteRepository
+		}
+
+		return nil, err
+	}
+
+	transport.FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advRefs = ar
+
+	return ar, nil
+}
 
 type client struct {
 	c *http.Client
@@ -52,6 +107,24 @@ type session struct {
 	client   *http.Client
 	endpoint transport.Endpoint
 	advRefs  *packp.AdvRefs
+}
+
+func newSession(c *http.Client, ep transport.Endpoint, auth transport.AuthMethod) (*session, error) {
+	s := &session{
+		auth:     basicAuthFromEndpoint(ep),
+		client:   c,
+		endpoint: ep,
+	}
+	if auth != nil {
+		a, ok := auth.(AuthMethod)
+		if !ok {
+			return nil, transport.ErrInvalidAuthMethod
+		}
+
+		s.auth = a
+	}
+
+	return s, nil
 }
 
 func (*session) Close() error {
