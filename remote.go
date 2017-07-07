@@ -238,22 +238,58 @@ func (r *Remote) addReferencesToUpdate(refspecs []config.RefSpec,
 	req *packp.ReferenceUpdateRequest) error {
 
 	for _, rs := range refspecs {
-		iter, err := r.s.IterReferences()
-		if err != nil {
-			return err
-		}
-
-		err = iter.ForEach(func(ref *plumbing.Reference) error {
-			return r.addReferenceIfRefSpecMatches(
-				rs, remoteRefs, ref, req,
-			)
-		})
-		if err != nil {
-			return err
+		if rs.IsDelete() {
+			if err := r.deleteReferences(rs, remoteRefs, req); err != nil {
+				return err
+			}
+		} else {
+			if err := r.addOrUpdateReferences(rs, remoteRefs, req); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+func (r *Remote) addOrUpdateReferences(rs config.RefSpec,
+	remoteRefs storer.ReferenceStorer, req *packp.ReferenceUpdateRequest) error {
+	iter, err := r.s.IterReferences()
+	if err != nil {
+		return err
+	}
+
+	return iter.ForEach(func(ref *plumbing.Reference) error {
+		return r.addReferenceIfRefSpecMatches(
+			rs, remoteRefs, ref, req,
+		)
+	})
+}
+
+func (r *Remote) deleteReferences(rs config.RefSpec,
+	remoteRefs storer.ReferenceStorer, req *packp.ReferenceUpdateRequest) error {
+	iter, err := remoteRefs.IterReferences()
+	if err != nil {
+		return err
+	}
+
+	return iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() != plumbing.HashReference {
+			return nil
+		}
+
+		if rs.Dst("") != ref.Name() {
+			return nil
+		}
+
+		cmd := &packp.Command{
+			Name: ref.Name(),
+			Old: ref.Hash(),
+			New: plumbing.ZeroHash,
+		}
+		req.Commands = append(req.Commands, cmd)
+		return nil
+	})
 }
 
 func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,

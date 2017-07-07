@@ -5,6 +5,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -334,6 +336,32 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
+func (s *RemoteSuite) TestPushDeleteReference(c *C) {
+	f := fixtures.Basic().One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+
+	dstFs := f.DotGit()
+	dstSto, err := filesystem.NewStorage(dstFs)
+	c.Assert(err, IsNil)
+	prepareRepo(c, dstFs.Root())
+
+	url := dstFs.Root()
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  url,
+	})
+
+	rs := config.RefSpec(":refs/heads/branch")
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{rs},
+	})
+	c.Assert(err, IsNil)
+
+	_, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+}
+
 func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	f := fixtures.Basic().One()
 	sto, err := filesystem.NewStorage(f.DotGit())
@@ -469,4 +497,23 @@ func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 		RemoteName: "other-remote",
 	})
 	c.Assert(err, ErrorMatches, ".*remote names don't match.*")
+}
+
+const bareConfig = `[core]
+repositoryformatversion = 0
+filemode = true
+bare = true`
+
+func prepareRepo(c *C, path string) {
+	// git-receive-pack refuses to update refs/heads/master on non-bare repo
+	// so we ensure bare repo config.
+	config := filepath.Join(path, "config")
+	if _, err := os.Stat(config); err == nil {
+		f, err := os.OpenFile(config, os.O_TRUNC|os.O_WRONLY, 0)
+		c.Assert(err, IsNil)
+		content := strings.NewReader(bareConfig)
+		_, err = io.Copy(f, content)
+		c.Assert(err, IsNil)
+		c.Assert(f.Close(), IsNil)
+	}
 }
