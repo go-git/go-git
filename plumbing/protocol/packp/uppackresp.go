@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 
+	"bufio"
+
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
@@ -51,18 +53,20 @@ func NewUploadPackResponseWithPackfile(req *UploadPackRequest,
 // Decode decodes all the responses sent by upload-pack service into the struct
 // and prepares it to read the packfile using the Read method
 func (r *UploadPackResponse) Decode(reader io.ReadCloser) error {
+	buf := bufio.NewReader(reader)
+
 	if r.isShallow {
-		if err := r.ShallowUpdate.Decode(reader); err != nil {
+		if err := r.ShallowUpdate.Decode(buf); err != nil {
 			return err
 		}
 	}
 
-	if err := r.ServerResponse.Decode(reader, r.isMultiACK); err != nil {
+	if err := r.ServerResponse.Decode(buf, r.isMultiACK); err != nil {
 		return err
 	}
 
 	// now the reader is ready to read the packfile content
-	r.r = reader
+	r.r = ioutil.NewReadCloser(buf, reader)
 
 	return nil
 }
