@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	stdioutil "io/ioutil"
 	"strings"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 
 const (
 	readErrorSecondsTimeout = 10
-	errLinesBuffer          = 1000
 )
 
 var (
@@ -96,7 +96,7 @@ type session struct {
 	advRefs       *packp.AdvRefs
 	packRun       bool
 	finished      bool
-	errLines      chan string
+	firstErrLine  chan string
 }
 
 func (c *client) newSession(s string, ep transport.Endpoint, auth transport.AuthMethod) (*session, error) {
@@ -128,26 +128,29 @@ func (c *client) newSession(s string, ep transport.Endpoint, auth transport.Auth
 		Stdin:         stdin,
 		Stdout:        stdout,
 		Command:       cmd,
-		errLines:      c.listenErrors(stderr),
+		firstErrLine:  c.listenFirstError(stderr),
 		isReceivePack: s == transport.ReceivePackServiceName,
 	}, nil
 }
 
-func (c *client) listenErrors(r io.Reader) chan string {
+func (c *client) listenFirstError(r io.Reader) chan string {
 	if r == nil {
 		return nil
 	}
 
-	errLines := make(chan string, errLinesBuffer)
+	errLine := make(chan string, 1)
 	go func() {
 		s := bufio.NewScanner(r)
-		for s.Scan() {
-			line := string(s.Bytes())
-			errLines <- line
+		if s.Scan() {
+			errLine <- s.Text()
+		} else {
+			close(errLine)
 		}
+
+		_, _ = io.Copy(stdioutil.Discard, r)
 	}()
 
-	return errLines
+	return errLine
 }
 
 // AdvertisedReferences retrieves the advertised references from the server.
@@ -296,13 +299,10 @@ func (s *session) finish() error {
 	return nil
 }
 
-func (s *session) Close() error {
-	if err := s.finish(); err != nil {
-		_ = s.Command.Close()
-		return err
-	}
-
-	return s.Command.Close()
+func (s *session) Close() (err error) {
+	defer ioutil.CheckClose(s.Command, &err)
+	err = s.finish()
+	return
 }
 
 func (s *session) checkNotFoundError() error {
@@ -312,7 +312,7 @@ func (s *session) checkNotFoundError() error {
 	select {
 	case <-t.C:
 		return ErrTimeoutExceeded
-	case line, ok := <-s.errLines:
+	case line, ok := <-s.firstErrLine:
 		if !ok {
 			return nil
 		}
