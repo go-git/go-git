@@ -27,11 +27,6 @@ func (s *ReceivePackSuite) TearDownTest(c *C) {
 	s.Suite.TearDownSuite(c)
 }
 
-// TODO
-func (s *ReceivePackSuite) TestSendPackAddDeleteReference(c *C) {
-	c.Skip("delete reference not supported yet")
-}
-
 // Overwritten, server returns error earlier.
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
