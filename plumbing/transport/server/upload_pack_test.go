@@ -38,3 +38,20 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(r, IsNil)
 }
+
+// Tests server with `asClient = true`. This is recommended when using a server
+// registered directly with `client.InstallProtocol`.
+type ClientLikeUploadPackSuite struct {
+	UploadPackSuite
+}
+
+var _ = Suite(&ClientLikeUploadPackSuite{})
+
+func (s *ClientLikeUploadPackSuite) SetUpSuite(c *C) {
+	s.asClient = true
+	s.UploadPackSuite.SetUpSuite(c)
+}
+
+func (s *ClientLikeUploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
+	s.UploadPackSuite.UploadPackSuite.TestAdvertisedReferencesEmpty(c)
+}
