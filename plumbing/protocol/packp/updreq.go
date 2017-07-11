@@ -42,6 +42,7 @@ func NewReferenceUpdateRequest() *ReferenceUpdateRequest {
 //   - report-status
 //   - ofs-delta
 //   - ref-delta
+//   - delete-refs
 // It leaves up to the user to add the following capabilities later:
 //   - atomic
 //   - ofs-delta

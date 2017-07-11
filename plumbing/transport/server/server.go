@@ -225,31 +225,11 @@ func (s *rpSession) ReceivePack(req *packp.ReferenceUpdateRequest) (*packp.Repor
 		return s.reportStatus(), err
 	}
 
-	updatedRefs := s.updatedReferences(req)
-
-	if s.caps.Supports(capability.Atomic) && s.firstErr != nil {
-		//TODO: add support for 'atomic' once we have reference
-		//      transactions, currently we do not announce it.
-		rs := s.reportStatus()
-		for _, cs := range rs.CommandStatuses {
-			if cs.Error() == nil {
-				cs.Status = ""
-			}
-		}
-	}
-
-	for name, ref := range updatedRefs {
-		//TODO: add support for 'delete-refs' once we can delete
-		//      references, currently we do not announce it.
-		err := s.storer.SetReference(ref)
-		s.setStatus(name, err)
-	}
-
+	s.updateReferences(req)
 	return s.reportStatus(), s.firstErr
 }
 
-func (s *rpSession) updatedReferences(req *packp.ReferenceUpdateRequest) map[plumbing.ReferenceName]*plumbing.Reference {
-	refs := map[plumbing.ReferenceName]*plumbing.Reference{}
+func (s *rpSession) updateReferences(req *packp.ReferenceUpdateRequest) {
 	for _, cmd := range req.Commands {
 		exists, err := referenceExists(s.storer, cmd.Name)
 		if err != nil {
@@ -265,19 +245,16 @@ func (s *rpSession) updatedReferences(req *packp.ReferenceUpdateRequest) map[plu
 			}
 
 			ref := plumbing.NewHashReference(cmd.Name, cmd.New)
-			refs[ref.Name()] = ref
+			err := s.storer.SetReference(ref)
+			s.setStatus(cmd.Name, err)
 		case packp.Delete:
 			if !exists {
 				s.setStatus(cmd.Name, ErrUpdateReference)
 				continue
 			}
 
-			if !s.caps.Supports(capability.DeleteRefs) {
-				s.setStatus(cmd.Name, fmt.Errorf("delete not supported"))
-				continue
-			}
-
-			refs[cmd.Name] = nil
+			err := s.storer.RemoveReference(cmd.Name)
+			s.setStatus(cmd.Name, err)
 		case packp.Update:
 			if !exists {
 				s.setStatus(cmd.Name, ErrUpdateReference)
@@ -290,11 +267,10 @@ func (s *rpSession) updatedReferences(req *packp.ReferenceUpdateRequest) map[plu
 			}
 
 			ref := plumbing.NewHashReference(cmd.Name, cmd.New)
-			refs[ref.Name()] = ref
+			err := s.storer.SetReference(ref)
+			s.setStatus(cmd.Name, err)
 		}
 	}
-
-	return refs
 }
 
 func (s *rpSession) failAtomicUpdate() (*packp.ReportStatus, error) {
@@ -365,6 +341,10 @@ func (*rpSession) setSupportedCapabilities(c *capability.List) error {
 	}
 
 	if err := c.Set(capability.OFSDelta); err != nil {
+		return err
+	}
+
+	if err := c.Set(capability.DeleteRefs); err != nil {
 		return err
 	}
 

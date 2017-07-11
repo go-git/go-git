@@ -21,7 +21,10 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
-var NoErrAlreadyUpToDate = errors.New("already up-to-date")
+var (
+	NoErrAlreadyUpToDate     = errors.New("already up-to-date")
+	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
+)
 
 // Remote represents a connection to a remote repository.
 type Remote struct {
@@ -56,7 +59,6 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
 // remote was already up-to-date.
 func (r *Remote) Push(o *PushOptions) (err error) {
-	// TODO: Support deletes.
 	// TODO: Sideband support
 
 	if o.RemoteName == "" {
@@ -86,6 +88,18 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 	remoteRefs, err := ar.AllReferences()
 	if err != nil {
 		return err
+	}
+
+	isDelete := false
+	for _, rs := range o.RefSpecs {
+		if rs.IsDelete() {
+			isDelete = true
+			break
+		}
+	}
+
+	if isDelete && !ar.Capabilities.Supports(capability.DeleteRefs) {
+		return ErrDeleteRefNotSupported
 	}
 
 	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
@@ -284,8 +298,8 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 
 		cmd := &packp.Command{
 			Name: ref.Name(),
-			Old: ref.Hash(),
-			New: plumbing.ZeroHash,
+			Old:  ref.Hash(),
+			New:  plumbing.ZeroHash,
 		}
 		req.Commands = append(req.Commands, cmd)
 		return nil

@@ -308,6 +308,10 @@ func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
 		req.Capabilities.Set(capability.ReportStatus)
 	}
 
+	if !ar.Capabilities.Supports(capability.DeleteRefs) {
+		c.Fatal("capability delete-refs not supported")
+	}
+
 	c.Assert(r.Close(), IsNil)
 
 	s.receivePack(c, s.Endpoint, req, nil, false)
