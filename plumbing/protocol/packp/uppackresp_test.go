@@ -15,7 +15,7 @@ type UploadPackResponseSuite struct{}
 var _ = Suite(&UploadPackResponseSuite{})
 
 func (s *UploadPackResponseSuite) TestDecodeNAK(c *C) {
-	raw := "0008NAK\n[PACK]"
+	raw := "0008NAK\nPACK"
 
 	req := NewUploadPackRequest()
 	res := NewUploadPackResponse(req)
@@ -26,11 +26,11 @@ func (s *UploadPackResponseSuite) TestDecodeNAK(c *C) {
 
 	pack, err := ioutil.ReadAll(res)
 	c.Assert(err, IsNil)
-	c.Assert(pack, DeepEquals, []byte("[PACK]"))
+	c.Assert(pack, DeepEquals, []byte("PACK"))
 }
 
 func (s *UploadPackResponseSuite) TestDecodeDepth(c *C) {
-	raw := "00000008NAK\n[PACK]"
+	raw := "00000008NAK\nPACK"
 
 	req := NewUploadPackRequest()
 	req.Depth = DepthCommits(1)
@@ -43,11 +43,11 @@ func (s *UploadPackResponseSuite) TestDecodeDepth(c *C) {
 
 	pack, err := ioutil.ReadAll(res)
 	c.Assert(err, IsNil)
-	c.Assert(pack, DeepEquals, []byte("[PACK]"))
+	c.Assert(pack, DeepEquals, []byte("PACK"))
 }
 
 func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
-	raw := "00000008ACK\n[PACK]"
+	raw := "00000008ACK\nPACK"
 
 	req := NewUploadPackRequest()
 	req.Depth = DepthCommits(1)
@@ -96,7 +96,7 @@ func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
 }
 
 func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
-	pf := ioutil.NopCloser(bytes.NewBuffer([]byte("[PACK]")))
+	pf := ioutil.NopCloser(bytes.NewBuffer([]byte("PACK")))
 	req := NewUploadPackRequest()
 	req.Depth = DepthCommits(1)
 
@@ -106,7 +106,7 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
 
-	expected := "00000008NAK\n[PACK]"
+	expected := "00000008NAK\nPACK"
 	c.Assert(string(b.Bytes()), Equals, expected)
 }
 
