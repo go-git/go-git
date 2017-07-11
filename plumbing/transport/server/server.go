@@ -26,7 +26,19 @@ type server struct {
 // NewServer returns a transport.Transport implementing a git server,
 // independent of transport. Each transport must wrap this.
 func NewServer(loader Loader) transport.Transport {
-	return &server{loader, &handler{}}
+	return &server{
+		loader,
+		&handler{asClient: false},
+	}
+}
+
+// NewClient returns a transport.Transport implementing a client with an
+// embedded server.
+func NewClient(loader Loader) transport.Transport {
+	return &server{
+		loader,
+		&handler{asClient: true},
+	}
 }
 
 func (s *server) NewUploadPackSession(ep transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
@@ -47,24 +59,27 @@ func (s *server) NewReceivePackSession(ep transport.Endpoint, auth transport.Aut
 	return s.handler.NewReceivePackSession(sto)
 }
 
-type handler struct{}
+type handler struct {
+	asClient bool
+}
 
 func (h *handler) NewUploadPackSession(s storer.Storer) (transport.UploadPackSession, error) {
 	return &upSession{
-		session: session{storer: s},
+		session: session{storer: s, asClient: h.asClient},
 	}, nil
 }
 
 func (h *handler) NewReceivePackSession(s storer.Storer) (transport.ReceivePackSession, error) {
 	return &rpSession{
-		session:   session{storer: s},
+		session:   session{storer: s, asClient: h.asClient},
 		cmdStatus: map[plumbing.ReferenceName]error{},
 	}, nil
 }
 
 type session struct {
-	storer storer.Storer
-	caps   *capability.List
+	storer   storer.Storer
+	caps     *capability.List
+	asClient bool
 }
 
 func (s *session) Close() error {
@@ -105,6 +120,10 @@ func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 
 	if err := setHEAD(s.storer, ar); err != nil {
 		return nil, err
+	}
+
+	if s.asClient && len(ar.References) == 0 {
+		return nil, transport.ErrEmptyRemoteRepository
 	}
 
 	return ar, nil

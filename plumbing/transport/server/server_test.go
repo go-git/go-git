@@ -20,12 +20,18 @@ type BaseSuite struct {
 	loader       server.MapLoader
 	client       transport.Transport
 	clientBackup transport.Transport
+	asClient     bool
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.loader = server.MapLoader{}
-	s.client = server.NewServer(s.loader)
+	if s.asClient {
+		s.client = server.NewClient(s.loader)
+	} else {
+		s.client = server.NewServer(s.loader)
+	}
+
 	s.clientBackup = client.Protocols["file"]
 	client.Protocols["file"] = s.client
 }
