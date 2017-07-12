@@ -38,12 +38,12 @@ func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 		// we need to detect when the end of a response header and the begining
 		// of a packfile header happend, some requests to the git daemon
 		// produces a duplicate ACK header even when multi_ack is not supported.
-		isEnd, err := r.endReached(reader)
+		stop, err := r.stopReading(reader)
 		if err != nil {
 			return err
 		}
 
-		if isEnd {
+		if stop {
 			break
 		}
 	}
@@ -51,38 +51,38 @@ func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 	return s.Err()
 }
 
-func (r *ServerResponse) endReached(reader *bufio.Reader) (bool, error) {
-	isPack, err := r.isPACKHeader(reader)
+// stopReading detects when a valid command such as ACK or NAK is found to be
+// read in the buffer without moving the read pointer.
+func (r *ServerResponse) stopReading(reader *bufio.Reader) (bool, error) {
+	ahead, err := reader.Peek(7)
 	if err == io.EOF {
 		return true, nil
 	}
 
-	return isPack, err
-
-}
-
-// isPACKHeader detects when a header of a packfile is found, with this goal
-// the function is reading from the reader without moving the read pointer.
-func (r *ServerResponse) isPACKHeader(reader *bufio.Reader) (bool, error) {
-	ahead, err := reader.Peek(9)
 	if err != nil {
 		return false, err
 	}
 
-	if len(ahead) == 0 {
-		return true, nil
+	if len(ahead) > 4 && r.isValidCommand(ahead[0:3]) {
+		return false, nil
 	}
 
-	if len(ahead) > 4 && string(ahead[0:4]) == "PACK" {
-		return true, nil
-	}
-
-	if len(ahead) == 9 && string(ahead[5:]) == "PACK" {
-		return true, nil
+	if len(ahead) == 7 && r.isValidCommand(ahead[4:]) {
+		return false, nil
 	}
 
 	return true, nil
+}
 
+func (r *ServerResponse) isValidCommand(b []byte) bool {
+	commands := [][]byte{ack, nak}
+	for _, c := range commands {
+		if bytes.Compare(b, c) == 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r *ServerResponse) decodeLine(line []byte) error {
