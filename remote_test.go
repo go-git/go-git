@@ -499,6 +499,25 @@ func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 	c.Assert(err, ErrorMatches, ".*remote names don't match.*")
 }
 
+func (s *RemoteSuite) TestGetHaves(c *C) {
+	st := memory.NewStorage()
+	st.SetReference(plumbing.NewReferenceFromStrings(
+		"foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+	))
+
+	st.SetReference(plumbing.NewReferenceFromStrings(
+		"bar", "fe6cb94756faa81e5ed9240f9191b833db5f40ae",
+	))
+
+	st.SetReference(plumbing.NewReferenceFromStrings(
+		"qux", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+	))
+
+	l, err := getHaves(st)
+	c.Assert(err, IsNil)
+	c.Assert(l, HasLen, 2)
+}
+
 const bareConfig = `[core]
 repositoryformatversion = 0
 filemode = true
