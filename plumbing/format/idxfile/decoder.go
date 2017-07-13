@@ -1,6 +1,7 @@
 package idxfile
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -19,12 +20,12 @@ var (
 
 // Decoder reads and decodes idx files from an input stream.
 type Decoder struct {
-	io.Reader
+	*bufio.Reader
 }
 
 // NewDecoder builds a new idx stream decoder, that reads from r.
 func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{r}
+	return &Decoder{bufio.NewReader(r)}
 }
 
 // Decode reads from the stream and decode the content into the Idxfile struct.
