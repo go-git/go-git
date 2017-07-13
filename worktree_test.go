@@ -25,9 +25,8 @@ type WorktreeSuite struct {
 var _ = Suite(&WorktreeSuite{})
 
 func (s *WorktreeSuite) SetUpTest(c *C) {
-	s.buildBasicRepository(c)
-	// the index is removed if not the Repository will be not clean
-	c.Assert(s.Repository.Storer.SetIndex(&index.Index{Version: 2}), IsNil)
+	f := fixtures.Basic().One()
+	s.Repository = s.NewRepositoryWithEmptyWorktree(f)
 }
 
 func (s *WorktreeSuite) TestCheckout(c *C) {
@@ -87,13 +86,9 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
 	url := "https://github.com/git-fixtures/submodule.git"
-	w := &Worktree{
-		r:  s.NewRepository(fixtures.ByURL(url).One()),
-		fs: memfs.New(),
-	}
+	r := s.NewRepositoryWithEmptyWorktree(fixtures.ByURL(url).One())
 
-	// we delete the index, since the fixture comes with a real index
-	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
+	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
 	err = w.Checkout(&CheckoutOptions{})
@@ -106,16 +101,11 @@ func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutSubmoduleInitialized(c *C) {
 	url := "https://github.com/git-fixtures/submodule.git"
-	w := &Worktree{
-		r:  s.NewRepository(fixtures.ByURL(url).One()),
-		fs: memfs.New(),
-	}
+	r := s.NewRepository(fixtures.ByURL(url).One())
 
-	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
+	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
-	err = w.Checkout(&CheckoutOptions{})
-	c.Assert(err, IsNil)
 	sub, err := w.Submodules()
 	c.Assert(err, IsNil)
 
@@ -228,15 +218,8 @@ func (s *WorktreeSuite) TestCheckoutChange(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	f := fixtures.ByTag("tags").One()
-
-	fs := memfs.New()
-	w := &Worktree{
-		r:  s.NewRepository(f),
-		fs: fs,
-	}
-
-	// we delete the index, since the fixture comes with a real index
-	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
+	r := s.NewRepositoryWithEmptyWorktree(f)
+	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
 	err = w.Checkout(&CheckoutOptions{})
@@ -282,14 +265,9 @@ func (s *WorktreeSuite) TestCheckoutBisectSubmodules(c *C) {
 // checking every commit over the previous commit
 func (s *WorktreeSuite) testCheckoutBisect(c *C, url string) {
 	f := fixtures.ByURL(url).One()
+	r := s.NewRepositoryWithEmptyWorktree(f)
 
-	w := &Worktree{
-		r:  s.NewRepository(f),
-		fs: memfs.New(),
-	}
-
-	// we delete the index, since the fixture comes with a real index
-	err := w.r.Storer.SetIndex(&index.Index{Version: 2})
+	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
 	iter, err := w.r.Log(&LogOptions{})
