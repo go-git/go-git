@@ -3,6 +3,7 @@ package git
 import (
 	"testing"
 
+	billy "gopkg.in/src-d/go-billy.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
@@ -12,7 +13,7 @@ import (
 	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v3/memfs"
-	"gopkg.in/src-d/go-billy.v3/osfs"
+	"gopkg.in/src-d/go-billy.v3/util"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -41,19 +42,65 @@ func (s *BaseSuite) buildBasicRepository(c *C) {
 	s.Repository = s.NewRepository(f)
 }
 
+// NewRepository returns a new repository using the .git folder, if the fixture
+// is tagged as worktree the filesystem from fixture is used, otherwise a new
+// memfs filesystem is used as worktree.
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	fs := osfs.New(f.DotGit().Root())
-	st, err := filesystem.NewStorage(fs)
+	var worktree, dotgit billy.Filesystem
+	if f.Is("worktree") {
+		r, err := PlainOpen(f.Worktree().Root())
+		if err != nil {
+			panic(err)
+		}
+
+		return r
+	}
+
+	dotgit = f.DotGit()
+	worktree = memfs.New()
+
+	st, err := filesystem.NewStorage(dotgit)
 	if err != nil {
 		panic(err)
 	}
 
-	r, err := Open(st, fs)
+	r, err := Open(st, worktree)
 	if err != nil {
 		panic(err)
 	}
 
 	return r
+}
+
+// NewRepositoryWithEmptyWorktree returns a new repository using the .git folder
+// from the fixture but without a empty memfs worktree, the index and the
+// modules are deleted from the .git folder.
+func (s *BaseSuite) NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
+	dotgit := f.DotGit()
+	err := dotgit.Remove("index")
+	if err != nil {
+		panic(err)
+	}
+
+	err = util.RemoveAll(dotgit, "modules")
+	if err != nil {
+		panic(err)
+	}
+
+	worktree := memfs.New()
+
+	st, err := filesystem.NewStorage(dotgit)
+	if err != nil {
+		panic(err)
+	}
+
+	r, err := Open(st, worktree)
+	if err != nil {
+		panic(err)
+	}
+
+	return r
+
 }
 
 func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
