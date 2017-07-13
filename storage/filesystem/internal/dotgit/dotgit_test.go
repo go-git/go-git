@@ -466,5 +466,5 @@ func (s *SuiteDotGit) TestSubmodules(c *C) {
 
 	m, err := dir.Module("basic")
 	c.Assert(err, IsNil)
-	c.Assert(strings.HasSuffix(m.Root(), m.Join(".git", "module", "basic")), Equals, true)
+	c.Assert(strings.HasSuffix(m.Root(), m.Join(".git", "modules", "basic")), Equals, true)
 }

@@ -21,7 +21,7 @@ const (
 	configPath     = "config"
 	indexPath      = "index"
 	shallowPath    = "shallow"
-	modulePath     = "module"
+	modulePath     = "modules"
 	objectsPath    = "objects"
 	packPath       = "pack"
 	refsPath       = "refs"
