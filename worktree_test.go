@@ -344,6 +344,25 @@ func (s *WorktreeSuite) TestStatusEmpty(c *C) {
 	c.Assert(status, NotNil)
 }
 
+func (s *WorktreeSuite) TestStatusEmptyDirty(c *C) {
+	fs := memfs.New()
+	err := util.WriteFile(fs, "foo", []byte("foo"), 0755)
+	c.Assert(err, IsNil)
+
+	storage := memory.NewStorage()
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+	c.Assert(status, HasLen, 1)
+}
+
 func (s *WorktreeSuite) TestReset(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
