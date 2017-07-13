@@ -22,7 +22,6 @@ import (
 )
 
 var (
-	ErrObjectNotFound          = errors.New("object not found")
 	ErrInvalidReference        = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNotExists     = errors.New("repository not exists")
 	ErrRepositoryAlreadyExists = errors.New("repository already exists")
@@ -804,10 +803,6 @@ func (r *Repository) TagObjects() (*object.TagIter, error) {
 func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Object, error) {
 	obj, err := r.Storer.EncodedObject(t, h)
 	if err != nil {
-		if err == plumbing.ErrObjectNotFound {
-			return nil, ErrObjectNotFound
-		}
-
 		return nil, err
 	}
 
