@@ -103,6 +103,18 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
+type TagFetchMode int
+
+var (
+	// TagFollowing any tag that points into the histories being fetched is also
+	// fetched. TagFollowing requires a server with `include-tag` capability
+	// in order to fetch the annotated tags objects.
+	TagFollowing TagFetchMode = 0
+	// AllTags fetch all tags from the remote (i.e., fetch remote tags
+	// refs/tags/* into local tags with the same name)
+	AllTags TagFetchMode = 1
+)
+
 // FetchOptions describes how a fetch should be performed
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
@@ -117,6 +129,9 @@ type FetchOptions struct {
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
 	Progress sideband.Progress
+	// Tags describe how the tags will be fetched from the remote repository,
+	// by default is TagFollowing.
+	Tags TagFetchMode
 }
 
 // Validate validates the fields and sets the default values.
