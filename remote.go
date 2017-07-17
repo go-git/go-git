@@ -356,20 +356,30 @@ func getHaves(localRefs storer.ReferenceStorer) ([]plumbing.Hash, error) {
 		return nil, err
 	}
 
-	var haves []plumbing.Hash
+	haves := map[plumbing.Hash]bool{}
 	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if haves[ref.Hash()] == true {
+			return nil
+		}
+
 		if ref.Type() != plumbing.HashReference {
 			return nil
 		}
 
-		haves = append(haves, ref.Hash())
+		haves[ref.Hash()] = true
 		return nil
 	})
+
 	if err != nil {
 		return nil, err
 	}
 
-	return haves, nil
+	var result []plumbing.Hash
+	for h := range haves {
+		result = append(result, h)
+	}
+
+	return result, nil
 }
 
 func getWants(
