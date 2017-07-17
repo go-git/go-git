@@ -51,61 +51,109 @@ func (s *RemoteSuite) TestFetchInvalidFetchOptions(c *C) {
 	c.Assert(err, Equals, config.ErrRefSpecMalformedSeparator)
 }
 
-func (s *RemoteSuite) TestFetch(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
-
-	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
+func (s *RemoteSuite) TestFetchWildcard(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(sto.Objects, HasLen, 31)
-
-	expectedRefs := []*plumbing.Reference{
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
-	}
-
-	for _, exp := range expectedRefs {
-		r, _ := sto.Reference(exp.Name())
-		c.Assert(exp.String(), Equals, r.String())
-	}
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
 }
 
-func (s *RemoteSuite) TestFetchDepth(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
-	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
-
-	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
-		Depth:    1,
+func (s *RemoteSuite) TestFetchWildcardTags(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(sto.Objects, HasLen, 18)
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
+		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+}
 
-	expectedRefs := []*plumbing.Reference{
+func (s *RemoteSuite) TestFetch(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchWithAllTags(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Tags: AllTags,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
+		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchWithDepth(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Depth: 1,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
-	}
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
 
-	for _, exp := range expectedRefs {
-		r, _ := sto.Reference(exp.Name())
+	c.Assert(r.s.(*memory.Storage).Objects, HasLen, 18)
+}
+
+func (s *RemoteSuite) testFetch(c *C, r *Remote, o *FetchOptions, expected []*plumbing.Reference) {
+	err := r.Fetch(o)
+	c.Assert(err, IsNil)
+
+	var refs int
+	l, err := r.s.IterReferences()
+	l.ForEach(func(r *plumbing.Reference) error { refs++; return nil })
+
+	c.Assert(refs, Equals, len(expected))
+
+	for _, exp := range expected {
+		r, err := r.s.Reference(exp.Name())
+		c.Assert(err, IsNil)
 		c.Assert(exp.String(), Equals, r.String())
 	}
-
-	h, err := sto.Shallow()
-	c.Assert(err, IsNil)
-	c.Assert(h, HasLen, 2)
-	c.Assert(h, DeepEquals, []plumbing.Hash{
-		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
-		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-	})
 }
 
 func (s *RemoteSuite) TestFetchWithProgress(c *C) {
@@ -177,26 +225,33 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 }
 
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateButStillUpdateLocalRemoteRefs(c *C) {
-	url := s.GetBasicLocalRepositoryURL()
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
 
-	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
-
-	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	o := &FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
 	}
 
 	err := r.Fetch(o)
 	c.Assert(err, IsNil)
 
 	// Simulate an out of date remote ref even though we have the new commit locally
-	sto.SetReference(plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	r.s.SetReference(plumbing.NewReferenceFromStrings(
+		"refs/remotes/origin/master", "918c48b83bd081e863dbe1b80f8998f058cd8294",
+	))
 
 	err = r.Fetch(o)
 	c.Assert(err, IsNil)
-	exp := plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	ref, _ := sto.Reference("refs/remotes/origin/master")
+
+	exp := plumbing.NewReferenceFromStrings(
+		"refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	)
+
+	ref, err := r.s.Reference("refs/remotes/origin/master")
+	c.Assert(err, IsNil)
 	c.Assert(exp.String(), Equals, ref.String())
 }
 
@@ -207,13 +262,12 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateWithNonCommitObjects(c *C) {
 }
 
 func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(c *C, url string) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{URL: url})
 
-	sto := memory.NewStorage()
-	r := newRemote(sto, &config.RemoteConfig{Name: "foo", URL: url})
-
-	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	o := &FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
 	}
 
 	err := r.Fetch(o)
