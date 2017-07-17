@@ -23,6 +23,7 @@ var args = map[string][]string{
 	"progress":    []string{defaultURL, tempFolder()},
 	"push":        []string{setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
 	"showcase":    []string{defaultURL, tempFolder()},
+	"tag":         []string{cloneRepository(defaultURL, tempFolder())},
 }
 
 var ignored = map[string]bool{}
