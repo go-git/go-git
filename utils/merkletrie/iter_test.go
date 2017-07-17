@@ -19,13 +19,13 @@ var _ = Suite(&IterSuite{})
 // A test is a list of operations we want to perform on an iterator and
 // their expected results.
 //
-// The operations are expresed as a sequence of `n` and `s`,
+// The operations are expressed as a sequence of `n` and `s`,
 // representing the amount of next and step operations we want to call
 // on the iterator and their order.  For example, an operations value of
 // "nns" means: call a `n`ext, then another `n`ext and finish with a
 // `s`tep.
 //
-// The expeced is the full path of the noders returned by the
+// The expected is the full path of the noders returned by the
 // operations, separated by spaces.
 //
 // For instance:
@@ -444,6 +444,13 @@ type errorNoder struct{ noder.Noder }
 
 func (e *errorNoder) Children() ([]noder.Noder, error) {
 	return nil, fmt.Errorf("mock error")
+}
+
+func (s *IterSuite) TestNewIterNil(c *C) {
+	i, err := merkletrie.NewIter(nil)
+	c.Assert(err, IsNil)
+	_, err = i.Next()
+	c.Assert(err, Equals, io.EOF)
 }
 
 func (s *IterSuite) TestNewIterFailsOnChildrenErrors(c *C) {

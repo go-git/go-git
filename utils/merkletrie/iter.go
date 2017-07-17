@@ -83,6 +83,10 @@ func newIter(root noder.Noder, base noder.Path) (*Iter, error) {
 		base: base,
 	}
 
+	if root == nil {
+		return ret, nil
+	}
+
 	frame, err := frame.New(root)
 	if err != nil {
 		return nil, err
