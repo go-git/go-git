@@ -1,6 +1,7 @@
 package object
 
 import . "gopkg.in/check.v1"
+import "gopkg.in/src-d/go-git.v4/plumbing"
 
 type CommitWalkerSuite struct {
 	BaseObjectsSuite
@@ -12,8 +13,7 @@ func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	wIter := NewCommitPreorderIter(commit)
-	wIter.ForEach(func(c *Commit) error {
+	NewCommitPreorderIter(commit, nil).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -35,12 +35,54 @@ func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
 	}
 }
 
+func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
+	commit := s.commit(c, s.Fixture.Head)
+
+	var commits []*Commit
+	NewCommitPreorderIter(commit, []plumbing.Hash{
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+	}).ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	c.Assert(commits, HasLen, 2)
+
+	expected := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+	}
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
+func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnoreFirst(c *C) {
+	commit := s.commit(c, s.Fixture.Head)
+
+	var commits []*Commit
+	NewCommitPreorderIter(commit, []plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	}).ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	c.Assert(commits, HasLen, 2)
+
+	expected := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	}
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
 func (s *CommitWalkerSuite) TestCommitPostIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	wIter := NewCommitPostorderIter(commit)
-	wIter.ForEach(func(c *Commit) error {
+	NewCommitPostorderIter(commit, nil).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -56,6 +98,29 @@ func (s *CommitWalkerSuite) TestCommitPostIterator(c *C) {
 		"b8e471f58bcbca63b07bda20e428190409c2db47",
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 		"35e85108805c84807bc66a02d91535e1e24b38b9",
+	}
+
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
+func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore(c *C) {
+	commit := s.commit(c, s.Fixture.Head)
+
+	var commits []*Commit
+	NewCommitPostorderIter(commit, []plumbing.Hash{
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+	}).ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	c.Assert(commits, HasLen, 2)
+
+	expected := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}
 	for i, commit := range commits {
 		c.Assert(commit.Hash.String(), Equals, expected[i])
