@@ -26,6 +26,7 @@ func (s *StorageSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 
 	s.BaseStorageSuite = test.NewBaseStorageSuite(storage)
+	s.BaseStorageSuite.SetUpTest(c)
 }
 
 func (s *StorageSuite) TestFilesystem(c *C) {

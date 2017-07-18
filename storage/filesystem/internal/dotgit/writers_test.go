@@ -12,6 +12,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v3/osfs"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 )
 
 func (s *SuiteDotGit) TestNewObjectPack(c *C) {
@@ -35,13 +36,30 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 
 	c.Assert(w.Close(), IsNil)
 
-	stat, err := fs.Stat(fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash))
+	pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
+	idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
+
+	stat, err := fs.Stat(pfPath)
 	c.Assert(err, IsNil)
 	c.Assert(stat.Size(), Equals, int64(84794))
 
-	stat, err = fs.Stat(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash))
+	stat, err = fs.Stat(idxPath)
 	c.Assert(err, IsNil)
 	c.Assert(stat.Size(), Equals, int64(1940))
+
+	pf, err := fs.Open(pfPath)
+	c.Assert(err, IsNil)
+	pfs := packfile.NewScanner(pf)
+	_, objects, err := pfs.Header()
+	c.Assert(err, IsNil)
+	for i := uint32(0); i < objects; i++ {
+		_, err := pfs.NextObjectHeader()
+		if err != nil {
+			c.Assert(err, IsNil)
+			break
+		}
+	}
+	c.Assert(pfs.Close(), IsNil)
 }
 
 func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
@@ -63,6 +81,12 @@ func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
 	info, err := fs.ReadDir("objects/pack")
 	c.Assert(err, IsNil)
 	c.Assert(info, HasLen, 0)
+
+	// check clean up of temporary files
+	info, err = fs.ReadDir("")
+	for _, fi := range info {
+		c.Assert(fi.IsDir(), Equals, true)
+	}
 }
 
 func (s *SuiteDotGit) TestSyncedReader(c *C) {

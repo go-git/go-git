@@ -13,6 +13,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
 
+	"github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
 )
 
@@ -62,6 +63,14 @@ func NewBaseStorageSuite(s Storer) BaseStorageSuite {
 			plumbing.BlobObject:   {blob, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", plumbing.BlobObject},
 			plumbing.TagObject:    {tag, "d994c6bb648123a17e8f70a966857c546b2a6f94", plumbing.TagObject},
 		}}
+}
+
+func (s *BaseStorageSuite) SetUpTest(c *C) {
+	c.Assert(fixtures.Init(), IsNil)
+}
+
+func (s *BaseStorageSuite) TearDownTest(c *C) {
+	c.Assert(fixtures.Clean(), IsNil)
 }
 
 func (s *BaseStorageSuite) TestSetEncodedObjectAndEncodedObject(c *C) {
@@ -141,6 +150,33 @@ func (s *BaseStorageSuite) TestIterEncodedObjects(c *C) {
 		}
 		c.Assert(found, Equals, true, Commentf("Object of type %s not found", to.Type.String()))
 	}
+}
+
+func (s *BaseStorageSuite) TestPackfileWriter(c *C) {
+	pwr, ok := s.Storer.(storer.PackfileWriter)
+	if !ok {
+		c.Skip("not a storer.PackWriter")
+	}
+
+	pw, err := pwr.PackfileWriter()
+	c.Assert(err, IsNil)
+
+	f := fixtures.Basic().One()
+	_, err = io.Copy(pw, f.Packfile())
+	c.Assert(err, IsNil)
+
+	err = pw.Close()
+	c.Assert(err, IsNil)
+
+	iter, err := s.Storer.IterEncodedObjects(plumbing.AnyObject)
+	c.Assert(err, IsNil)
+	objects := 0
+	err = iter.ForEach(func(plumbing.EncodedObject) error {
+		objects++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(objects, Equals, 31)
 }
 
 func (s *BaseStorageSuite) TestObjectStorerTxSetEncodedObjectAndCommit(c *C) {
