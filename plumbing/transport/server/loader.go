@@ -5,12 +5,14 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
+	"fmt"
+
 	"gopkg.in/src-d/go-billy.v3"
 	"gopkg.in/src-d/go-billy.v3/osfs"
 )
 
 // DefaultLoader is a filesystem loader ignoring host and resolving paths to /.
-var DefaultLoader = NewFilesystemLoader(osfs.New("/"))
+var DefaultLoader = NewFilesystemLoader(osfs.New(""))
 
 // Loader loads repository's storer.Storer based on an optional host and a path.
 type Loader interface {
@@ -40,6 +42,7 @@ func (l *fsLoader) Load(ep transport.Endpoint) (storer.Storer, error) {
 	}
 
 	if _, err := fs.Stat("config"); err != nil {
+		fmt.Println(ep.Path(), err)
 		return nil, transport.ErrRepositoryNotFound
 	}
 
