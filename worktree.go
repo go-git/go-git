@@ -498,6 +498,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 		return nil, err
 	}
 
+	defer f.Close()
 	input, err := stdioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
