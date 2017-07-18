@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -134,7 +134,7 @@ func (s *NoderSuite) TestDiffChangeModeNotRelevant(c *C) {
 }
 
 func (s *NoderSuite) TestDiffDirectory(c *C) {
-	dir := filepath.Join("qux", "bar")
+	dir := path.Join("qux", "bar")
 	fsA := memfs.New()
 	fsA.MkdirAll(dir, 0644)
 
