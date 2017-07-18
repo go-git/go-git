@@ -194,13 +194,20 @@ type SubmoduleUpdateOptions struct {
 	RecurseSubmodules SubmoduleRescursivity
 }
 
+var (
+	ErrBranchHashExclusive  = errors.New("Branch and Hash are mutually exclusive")
+	ErrCreateRequiresBranch = errors.New("Branch is mandatory when Create is used")
+)
+
 // CheckoutOptions describes how a checkout 31operation should be performed.
 type CheckoutOptions struct {
 	// Hash to be checked out, if used HEAD will in detached mode. Branch and
-	// Hash are mutual exclusive.
+	// Hash are mutually exclusive, if Create is not used.
 	Hash plumbing.Hash
 	// Branch to be checked out, if Branch and Hash are empty is set to `master`.
 	Branch plumbing.ReferenceName
+	// Create a new branch named Branch and start it at Hash.
+	Create bool
 	// Force, if true when switching branches, proceed even if the index or the
 	// working tree differs from HEAD. This is used to throw away local changes
 	Force bool
@@ -208,6 +215,14 @@ type CheckoutOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *CheckoutOptions) Validate() error {
+	if !o.Create && !o.Hash.IsZero() && o.Branch != "" {
+		return ErrBranchHashExclusive
+	}
+
+	if o.Create && o.Branch == "" {
+		return ErrCreateRequiresBranch
+	}
+
 	if o.Branch == "" {
 		o.Branch = plumbing.Master
 	}

@@ -38,8 +38,14 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		return err
 	}
 
+	if opts.Create {
+		if err := w.createBranch(opts); err != nil {
+			return err
+		}
+	}
+
 	if !opts.Force {
-		unstaged, err := w.cointainsUnstagedChanges()
+		unstaged, err := w.containsUnstagedChanges()
 		if err != nil {
 			return err
 		}
@@ -59,7 +65,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = HardReset
 	}
 
-	if !opts.Hash.IsZero() {
+	if !opts.Hash.IsZero() && !opts.Create {
 		err = w.setHEADToCommit(opts.Hash)
 	} else {
 		err = w.setHEADToBranch(opts.Branch, c)
@@ -70,6 +76,29 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	}
 
 	return w.Reset(ro)
+}
+func (w *Worktree) createBranch(opts *CheckoutOptions) error {
+	_, err := w.r.Storer.Reference(opts.Branch)
+	if err == nil {
+		return fmt.Errorf("a branch named %q already exists", opts.Branch)
+	}
+
+	if err != plumbing.ErrReferenceNotFound {
+		return err
+	}
+
+	if opts.Hash.IsZero() {
+		ref, err := w.r.Head()
+		if err != nil {
+			return err
+		}
+
+		opts.Hash = ref.Hash()
+	}
+
+	return w.r.Storer.SetReference(
+		plumbing.NewHashReference(opts.Branch, opts.Hash),
+	)
 }
 
 func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing.Hash, error) {
@@ -133,7 +162,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == MergeReset {
-		unstaged, err := w.cointainsUnstagedChanges()
+		unstaged, err := w.containsUnstagedChanges()
 		if err != nil {
 			return err
 		}
@@ -171,7 +200,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	return w.setHEADCommit(opts.Commit)
 }
 
-func (w *Worktree) cointainsUnstagedChanges() (bool, error) {
+func (w *Worktree) containsUnstagedChanges() (bool, error) {
 	ch, err := w.diffStagingWithWorktree()
 	if err != nil {
 		return false, err

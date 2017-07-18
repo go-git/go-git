@@ -173,47 +173,96 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 	c.Assert(idx.Entries[0].GID, Not(Equals), uint32(0))
 }
 
-func (s *WorktreeSuite) TestCheckoutChange(c *C) {
-	fs := memfs.New()
+func (s *WorktreeSuite) TestCheckoutBranch(c *C) {
 	w := &Worktree{
 		r:  s.Repository,
-		fs: fs,
+		fs: memfs.New(),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
-	c.Assert(err, IsNil)
-
-	head, err := w.r.Head()
-	c.Assert(err, IsNil)
-	c.Assert(head.Name().String(), Equals, "refs/heads/master")
-
-	status, err := w.Status()
-	c.Assert(err, IsNil)
-	c.Assert(status.IsClean(), Equals, true)
-
-	_, err = fs.Stat("README")
-	c.Assert(err, Equals, os.ErrNotExist)
-	_, err = fs.Stat("vendor")
-	c.Assert(err, Equals, nil)
-
-	err = w.Checkout(&CheckoutOptions{
+	err := w.Checkout(&CheckoutOptions{
 		Branch: "refs/heads/branch",
 	})
 	c.Assert(err, IsNil)
 
-	status, err = w.Status()
-	c.Assert(err, IsNil)
-	c.Assert(status.IsClean(), Equals, true)
-
-	_, err = fs.Stat("README")
-	c.Assert(err, Equals, nil)
-
-	_, err = fs.Stat("vendor")
-	c.Assert(err, Equals, os.ErrNotExist)
-
-	head, err = w.r.Head()
+	head, err := w.r.Head()
 	c.Assert(err, IsNil)
 	c.Assert(head.Name().String(), Equals, "refs/heads/branch")
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *WorktreeSuite) TestCheckoutCreateWithHash(c *C) {
+	w := &Worktree{
+		r:  s.Repository,
+		fs: memfs.New(),
+	}
+
+	err := w.Checkout(&CheckoutOptions{
+		Create: true,
+		Branch: "refs/heads/foo",
+		Hash:   plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+	c.Assert(err, IsNil)
+
+	head, err := w.r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(head.Name().String(), Equals, "refs/heads/foo")
+	c.Assert(head.Hash(), Equals, plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *WorktreeSuite) TestCheckoutCreate(c *C) {
+	w := &Worktree{
+		r:  s.Repository,
+		fs: memfs.New(),
+	}
+
+	err := w.Checkout(&CheckoutOptions{
+		Create: true,
+		Branch: "refs/heads/foo",
+	})
+	c.Assert(err, IsNil)
+
+	head, err := w.r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(head.Name().String(), Equals, "refs/heads/foo")
+	c.Assert(head.Hash(), Equals, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *WorktreeSuite) TestCheckoutBranchAndHash(c *C) {
+	w := &Worktree{
+		r:  s.Repository,
+		fs: memfs.New(),
+	}
+
+	err := w.Checkout(&CheckoutOptions{
+		Branch: "refs/heads/foo",
+		Hash:   plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+
+	c.Assert(err, Equals, ErrBranchHashExclusive)
+}
+
+func (s *WorktreeSuite) TestCheckoutCreateMissingBranch(c *C) {
+	w := &Worktree{
+		r:  s.Repository,
+		fs: memfs.New(),
+	}
+
+	err := w.Checkout(&CheckoutOptions{
+		Create: true,
+	})
+
+	c.Assert(err, Equals, ErrCreateRequiresBranch)
 }
 
 func (s *WorktreeSuite) TestCheckoutTag(c *C) {
