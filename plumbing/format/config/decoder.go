@@ -2,7 +2,6 @@ package config
 
 import (
 	"io"
-	"os"
 
 	"github.com/src-d/gcfg"
 )
@@ -34,6 +33,5 @@ func (d *Decoder) Decode(config *Config) error {
 		config.AddOption(s, ss, k, v)
 		return nil
 	}
-
-	return gcfg.ReadWithCallback(io.TeeReader(d, os.Stdout), cb)
+	return gcfg.ReadWithCallback(d, cb)
 }
