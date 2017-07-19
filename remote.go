@@ -104,6 +104,7 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 
 	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
 	if err := r.addReferencesToUpdate(o.RefSpecs, remoteRefs, req); err != nil {
+
 		return err
 	}
 
@@ -120,6 +121,15 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 	if err != nil {
 		return err
 	}
+
+	stop, err := r.s.Shallow()
+	if err != nil {
+		return err
+	}
+
+	// if we have shallow we should include this as part of the objects that
+	// we are aware.
+	haves = append(haves, stop...)
 
 	hashesToPush, err := revlist.Objects(r.s, objects, haves)
 	if err != nil {
@@ -486,7 +496,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash) (bool, 
 	}
 
 	found := false
-	iter := object.NewCommitPreorderIter(c)
+	iter := object.NewCommitPreorderIter(c, nil)
 	return found, iter.ForEach(func(c *object.Commit) error {
 		if c.Hash != old {
 			return nil

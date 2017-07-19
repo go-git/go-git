@@ -16,11 +16,7 @@ import (
 // the reachable objects from the given objects. Ignore param are object hashes
 // that we want to ignore on the result. All that objects must be accessible
 // from the object storer.
-func Objects(
-	s storer.EncodedObjectStorer,
-	objects []plumbing.Hash,
-	ignore []plumbing.Hash) ([]plumbing.Hash, error) {
-
+func Objects(s storer.EncodedObjectStorer, objects, ignore []plumbing.Hash) ([]plumbing.Hash, error) {
 	seen := hashListToSet(ignore)
 	result := make(map[plumbing.Hash]bool)
 
@@ -32,7 +28,7 @@ func Objects(
 	}
 
 	for _, h := range objects {
-		if err := processObject(s, h, seen, walkerFunc); err != nil {
+		if err := processObject(s, h, seen, ignore, walkerFunc); err != nil {
 			return nil, err
 		}
 	}
@@ -45,6 +41,7 @@ func processObject(
 	s storer.EncodedObjectStorer,
 	h plumbing.Hash,
 	seen map[plumbing.Hash]bool,
+	ignore []plumbing.Hash,
 	walkerFunc func(h plumbing.Hash),
 ) error {
 	o, err := s.EncodedObject(plumbing.AnyObject, h)
@@ -59,12 +56,12 @@ func processObject(
 
 	switch do := do.(type) {
 	case *object.Commit:
-		return reachableObjects(do, seen, walkerFunc)
+		return reachableObjects(do, seen, ignore, walkerFunc)
 	case *object.Tree:
 		return iterateCommitTrees(seen, do, walkerFunc)
 	case *object.Tag:
 		walkerFunc(do.Hash)
-		return processObject(s, do.Target, seen, walkerFunc)
+		return processObject(s, do.Target, seen, ignore, walkerFunc)
 	case *object.Blob:
 		walkerFunc(do.Hash)
 	default:
@@ -82,22 +79,24 @@ func processObject(
 func reachableObjects(
 	commit *object.Commit,
 	seen map[plumbing.Hash]bool,
+	ignore []plumbing.Hash,
 	cb func(h plumbing.Hash)) error {
-	return object.NewCommitPreorderIter(commit).
-		ForEach(func(commit *object.Commit) error {
-			if seen[commit.Hash] {
-				return nil
-			}
 
-			cb(commit.Hash)
+	i := object.NewCommitPreorderIter(commit, ignore)
+	return i.ForEach(func(commit *object.Commit) error {
+		if seen[commit.Hash] {
+			return nil
+		}
 
-			tree, err := commit.Tree()
-			if err != nil {
-				return err
-			}
+		cb(commit.Hash)
 
-			return iterateCommitTrees(seen, tree, cb)
-		})
+		tree, err := commit.Tree()
+		if err != nil {
+			return err
+		}
+
+		return iterateCommitTrees(seen, tree, cb)
+	})
 }
 
 // iterateCommitTrees iterate all reachable trees from the given commit

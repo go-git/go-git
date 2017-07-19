@@ -1,7 +1,10 @@
 package object
 
-import . "gopkg.in/check.v1"
-import "gopkg.in/src-d/go-git.v4/plumbing"
+import (
+	"gopkg.in/src-d/go-git.v4/plumbing"
+
+	. "gopkg.in/check.v1"
+)
 
 type CommitWalkerSuite struct {
 	BaseObjectsSuite
@@ -51,27 +54,6 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
-	}
-	for i, commit := range commits {
-		c.Assert(commit.Hash.String(), Equals, expected[i])
-	}
-}
-
-func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnoreFirst(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
-
-	var commits []*Commit
-	NewCommitPreorderIter(commit, []plumbing.Hash{
-		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-	}).ForEach(func(c *Commit) error {
-		commits = append(commits, c)
-		return nil
-	})
-
-	c.Assert(commits, HasLen, 2)
-
-	expected := []string{
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	}
 	for i, commit := range commits {
 		c.Assert(commit.Hash.String(), Equals, expected[i])

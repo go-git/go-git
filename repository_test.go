@@ -20,6 +20,7 @@ import (
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v3/memfs"
 	"gopkg.in/src-d/go-billy.v3/osfs"
+	"gopkg.in/src-d/go-billy.v3/util"
 )
 
 type RepositorySuite struct {
@@ -765,6 +766,50 @@ func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
 		return nil
 	})
 	c.Assert(err, IsNil)
+}
+
+func (s *RepositorySuite) TestPushDepth(c *C) {
+	dir, err := ioutil.TempDir("", "push-depth")
+	defer os.RemoveAll(dir)
+
+	origin, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: fixtures.Basic().One().DotGit().Root(),
+	})
+
+	c.Assert(err, IsNil)
+	fs := origin.Storer.(*filesystem.Storage).Filesystem()
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL:   fs.Root(),
+		Depth: 1,
+	})
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(r.wt, "foo", nil, 0755)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	hash, err := w.Commit("foo", &CommitOptions{
+		Author:    defaultSignature(),
+		Committer: defaultSignature(),
+	})
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{})
+	c.Assert(err, IsNil)
+
+	remote, err := origin.Head()
+	c.Assert(err, IsNil)
+	c.Assert(remote.Hash(), Equals, hash)
+
+	local, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(local.Hash(), Equals, remote.Hash())
 }
 
 func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
