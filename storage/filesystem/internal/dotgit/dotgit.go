@@ -253,10 +253,10 @@ func (d *DotGit) SetRef(r *plumbing.Reference) error {
 		return err
 	}
 
-	if _, err := f.Write([]byte(content)); err != nil {
-		return err
-	}
-	return f.Close()
+	defer ioutil.CheckClose(f, &err)
+
+	_, err = f.Write([]byte(content))
+	return err
 }
 
 // Refs scans the git directory collecting references, which it returns.
