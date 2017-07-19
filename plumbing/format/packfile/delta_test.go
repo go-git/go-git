@@ -1,7 +1,6 @@
 package packfile
 
 import (
-	"fmt"
 	"math/rand"
 
 	. "gopkg.in/check.v1"
@@ -86,9 +85,28 @@ func (s *DeltaSuite) TestAddDelta(c *C) {
 		baseBuf := genBytes(t.base)
 		targetBuf := genBytes(t.target)
 		delta := DiffDelta(baseBuf, targetBuf)
-		result := PatchDelta(baseBuf, delta)
+		result, err := PatchDelta(baseBuf, delta)
 
-		c.Log(fmt.Printf("Executing test case: %s\n", t.description))
+		c.Log("Executing test case:", t.description)
+		c.Assert(err, IsNil)
 		c.Assert(result, DeepEquals, targetBuf)
 	}
+}
+
+func (s *DeltaSuite) TestIncompleteDelta(c *C) {
+	for _, t := range s.testCases {
+		c.Log("Incomplete delta on:", t.description)
+		baseBuf := genBytes(t.base)
+		targetBuf := genBytes(t.target)
+		delta := DiffDelta(baseBuf, targetBuf)
+		delta = delta[:len(delta)-2]
+		result, err := PatchDelta(baseBuf, delta)
+		c.Assert(err, NotNil)
+		c.Assert(result, IsNil)
+	}
+
+	// check nil input too
+	result, err := PatchDelta(nil, nil)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
 }
