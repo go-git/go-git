@@ -373,6 +373,7 @@ func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
 	idx, err := dir.ObjectPackIdx(f.PackfileHash)
 	c.Assert(err, IsNil)
 	c.Assert(filepath.Ext(idx.Name()), Equals, ".idx")
+	c.Assert(idx.Close(), IsNil)
 }
 
 func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {

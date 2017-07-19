@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -43,15 +44,17 @@ func (s *NoderSuite) TestDiff(c *C) {
 
 func (s *NoderSuite) TestDiffChange(c *C) {
 	indexA := &index.Index{
-		Entries: []*index.Entry{
-			{Name: "bar/baz/bar", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
-		},
+		Entries: []*index.Entry{{
+			Name: filepath.Join("bar", "baz", "bar"),
+			Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+		}},
 	}
 
 	indexB := &index.Index{
-		Entries: []*index.Entry{
-			{Name: "bar/baz/foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
-		},
+		Entries: []*index.Entry{{
+			Name: filepath.Join("bar", "baz", "foo"),
+			Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+		}},
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
@@ -61,15 +64,17 @@ func (s *NoderSuite) TestDiffChange(c *C) {
 
 func (s *NoderSuite) TestDiffDir(c *C) {
 	indexA := &index.Index{
-		Entries: []*index.Entry{
-			{Name: "foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
-		},
+		Entries: []*index.Entry{{
+			Name: "foo",
+			Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+		}},
 	}
 
 	indexB := &index.Index{
-		Entries: []*index.Entry{
-			{Name: "foo/bar", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
-		},
+		Entries: []*index.Entry{{
+			Name: filepath.Join("foo", "bar"),
+			Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+		}},
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)

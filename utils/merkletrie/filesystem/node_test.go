@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -133,18 +134,19 @@ func (s *NoderSuite) TestDiffChangeModeNotRelevant(c *C) {
 }
 
 func (s *NoderSuite) TestDiffDirectory(c *C) {
+	dir := path.Join("qux", "bar")
 	fsA := memfs.New()
-	fsA.MkdirAll("qux/bar", 0644)
+	fsA.MkdirAll(dir, 0644)
 
 	fsB := memfs.New()
-	fsB.MkdirAll("qux/bar", 0644)
+	fsB.MkdirAll(dir, 0644)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, map[string]plumbing.Hash{
-			"qux/bar": plumbing.NewHash("aa102815663d23f8b75a47e7a01965dcdc96468c"),
+			dir: plumbing.NewHash("aa102815663d23f8b75a47e7a01965dcdc96468c"),
 		}),
 		NewRootNode(fsB, map[string]plumbing.Hash{
-			"qux/bar": plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"),
+			dir: plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"),
 		}),
 		IsEquals,
 	)

@@ -99,9 +99,11 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 }
 
 func (s *ReceivePackSuite) TearDownTest(c *C) {
-	err := s.daemon.Process.Signal(os.Interrupt)
+	err := s.daemon.Process.Signal(os.Kill)
 	c.Assert(err, IsNil)
+
 	_ = s.daemon.Wait()
+
 	err = os.RemoveAll(s.base)
 	c.Assert(err, IsNil)
 }

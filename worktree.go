@@ -496,6 +496,10 @@ func (w *Worktree) Submodules() (Submodules, error) {
 	}
 
 	c, err := w.r.Config()
+	if err != nil {
+		return nil, err
+	}
+
 	for _, s := range m.Submodules {
 		l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
 	}
@@ -527,6 +531,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 		return nil, err
 	}
 
+	defer f.Close()
 	input, err := stdioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
