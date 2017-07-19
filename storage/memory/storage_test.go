@@ -17,4 +17,5 @@ var _ = Suite(&StorageSuite{})
 
 func (s *StorageSuite) SetUpTest(c *C) {
 	s.BaseStorageSuite = test.NewBaseStorageSuite(NewStorage())
+	s.BaseStorageSuite.SetUpTest(c)
 }

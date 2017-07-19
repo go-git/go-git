@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/internal/dotgit"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
 	"gopkg.in/src-d/go-billy.v3"
 )
@@ -53,10 +54,11 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
 	if err != nil {
 		return err
 	}
-	defer idxfile.Close()
 
+	defer ioutil.CheckClose(idxfile, &err)
 	s.index[h] = make(idx)
-	return s.index[h].Decode(idxfile)
+	err = s.index[h].Decode(idxfile)
+	return err
 }
 
 func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
@@ -94,14 +96,14 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (plumbing.Has
 		return plumbing.ZeroHash, err
 	}
 
-	defer ow.Close()
+	defer ioutil.CheckClose(ow, &err)
 
 	or, err := o.Reader()
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	defer or.Close()
+	defer ioutil.CheckClose(or, &err)
 
 	if err := ow.WriteHeader(o.Type(), o.Size()); err != nil {
 		return plumbing.ZeroHash, err
@@ -111,7 +113,7 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (plumbing.Has
 		return plumbing.ZeroHash, err
 	}
 
-	return o.Hash(), nil
+	return o.Hash(), err
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -143,7 +145,7 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 		return nil, err
 	}
 
-	defer f.Close()
+	defer ioutil.CheckClose(f, &err)
 
 	obj = s.NewEncodedObject()
 	r, err := objfile.NewReader(f)
@@ -151,7 +153,7 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 		return nil, err
 	}
 
-	defer r.Close()
+	defer ioutil.CheckClose(r, &err)
 
 	t, size, err := r.Header()
 	if err != nil {
@@ -186,7 +188,7 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.EncodedObject
 		return nil, err
 	}
 
-	defer f.Close()
+	defer ioutil.CheckClose(f, &err)
 
 	p := packfile.NewScanner(f)
 	d, err := packfile.NewDecoder(p, memory.NewStorage())
@@ -195,7 +197,8 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.EncodedObject
 	}
 
 	d.SetOffsets(s.index[pack])
-	return d.DecodeObjectAt(offset)
+	obj, err := d.DecodeObjectAt(offset)
+	return obj, err
 }
 
 func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, int64) {
