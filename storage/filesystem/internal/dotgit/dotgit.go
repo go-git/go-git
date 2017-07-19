@@ -384,6 +384,7 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 	}
 
 	if err := f.Close(); err != nil {
+		ioutil.CheckClose(tmp, &err)
 		return err
 	}
 
