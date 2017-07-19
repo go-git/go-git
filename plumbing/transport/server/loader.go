@@ -5,8 +5,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
-	"fmt"
-
 	"gopkg.in/src-d/go-billy.v3"
 	"gopkg.in/src-d/go-billy.v3/osfs"
 )
@@ -42,7 +40,6 @@ func (l *fsLoader) Load(ep transport.Endpoint) (storer.Storer, error) {
 	}
 
 	if _, err := fs.Stat("config"); err != nil {
-		fmt.Println(ep.Path(), err)
 		return nil, transport.ErrRepositoryNotFound
 	}
 
