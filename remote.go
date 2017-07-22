@@ -48,23 +48,10 @@ func (r *Remote) String() string {
 	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
 }
 
-// Fetch fetches references from the remote to the local repository.
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
-// no changes to be fetched and no local references to update, or an error.
-func (r *Remote) Fetch(o *FetchOptions) error {
-	_, err := r.fetch(o)
-	return err
-}
-
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
 // remote was already up-to-date.
-func (r *Remote) Push(o *PushOptions) (err error) {
+func (r *Remote) Push(o *PushOptions) error {
 	// TODO: Sideband support
-
-	if o.RemoteName == "" {
-		o.RemoteName = r.c.Name
-	}
-
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -141,7 +128,47 @@ func (r *Remote) Push(o *PushOptions) (err error) {
 		return err
 	}
 
-	return rs.Error()
+	if err = rs.Error(); err != nil {
+		return err
+	}
+
+	return r.updateRemoteReferenceStorage(req, rs)
+}
+
+func (r *Remote) updateRemoteReferenceStorage(
+	req *packp.ReferenceUpdateRequest,
+	result *packp.ReportStatus,
+) error {
+
+	for _, spec := range r.c.Fetch {
+		for _, c := range req.Commands {
+			if !spec.Match(c.Name) {
+				continue
+			}
+
+			local := spec.Dst(c.Name)
+			ref := plumbing.NewHashReference(local, c.New)
+			switch c.Action() {
+			case packp.Create, packp.Update:
+				if err := r.s.SetReference(ref); err != nil {
+					return err
+				}
+			case packp.Delete:
+				if err := r.s.RemoveReference(local); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// Fetch fetches references from the remote to the local repository.
+// no changes to be fetched and no local references to update, or an error.
+func (r *Remote) Fetch(o *FetchOptions) error {
+	_, err := r.fetch(o)
+	return err
 }
 
 func (r *Remote) fetch(o *FetchOptions) (storer.ReferenceStorer, error) {
