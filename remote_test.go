@@ -120,6 +120,22 @@ func (s *RemoteSuite) TestFetchWithAllTags(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestFetchWithNoTags(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Tags: NoTags,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+
+}
+
 func (s *RemoteSuite) TestFetchWithDepth(c *C) {
 	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
 		URL: s.GetBasicLocalRepositoryURL(),

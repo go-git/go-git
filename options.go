@@ -113,6 +113,8 @@ var (
 	// AllTags fetch all tags from the remote (i.e., fetch remote tags
 	// refs/tags/* into local tags with the same name)
 	AllTags TagFetchMode = 1
+	//NoTags fetch no tags from the remote at all
+	NoTags TagFetchMode = 2
 )
 
 // FetchOptions describes how a fetch should be performed
