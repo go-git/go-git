@@ -727,60 +727,43 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
-func (s *RepositorySuite) TestPushToEmptyRepository(c *C) {
-	srcFs := fixtures.Basic().One().DotGit()
-	sto, err := filesystem.NewStorage(srcFs)
+func (s *RepositorySuite) TestPush(c *C) {
+	url := c.MkDir()
+	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
-	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := dstFs.Root()
-
-	r, err := Open(sto, srcFs)
-	c.Assert(err, IsNil)
-
-	_, err = r.CreateRemote(&config.RemoteConfig{
-		Name: "myremote",
+	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+		Name: "test",
 		URL:  url,
 	})
 	c.Assert(err, IsNil)
 
-	err = r.Push(&PushOptions{RemoteName: "myremote"})
-	c.Assert(err, IsNil)
-
-	sto, err = filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
-	dstRepo, err := Open(sto, nil)
-	c.Assert(err, IsNil)
-
-	iter, err := sto.IterReferences()
-	c.Assert(err, IsNil)
-	err = iter.ForEach(func(ref *plumbing.Reference) error {
-		if !ref.IsBranch() {
-			return nil
-		}
-
-		dstRef, err := dstRepo.Reference(ref.Name(), true)
-		c.Assert(err, IsNil)
-		c.Assert(dstRef, DeepEquals, ref)
-
-		return nil
+	err = s.Repository.Push(&PushOptions{
+		RemoteName: "test",
 	})
 	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"refs/heads/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	})
+
+	AssertReferences(c, s.Repository, map[string]string{
+		"refs/remotes/test/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"refs/remotes/test/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	})
 }
 
 func (s *RepositorySuite) TestPushDepth(c *C) {
-	dir, err := ioutil.TempDir("", "push-depth")
-	defer os.RemoveAll(dir)
-
-	origin, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	url := c.MkDir()
+	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fixtures.Basic().One().DotGit().Root(),
 	})
 
 	c.Assert(err, IsNil)
-	fs := origin.Storer.(*filesystem.Storage).Filesystem()
 
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
-		URL:   fs.Root(),
+		URL:   url,
 		Depth: 1,
 	})
 	c.Assert(err, IsNil)
@@ -803,13 +786,13 @@ func (s *RepositorySuite) TestPushDepth(c *C) {
 	err = r.Push(&PushOptions{})
 	c.Assert(err, IsNil)
 
-	remote, err := origin.Head()
-	c.Assert(err, IsNil)
-	c.Assert(remote.Hash(), Equals, hash)
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/master": hash.String(),
+	})
 
-	local, err := r.Head()
-	c.Assert(err, IsNil)
-	c.Assert(local.Hash(), Equals, remote.Hash())
+	AssertReferences(c, r, map[string]string{
+		"refs/remotes/origin/master": hash.String(),
+	})
 }
 
 func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {

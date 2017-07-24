@@ -5,8 +5,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -305,13 +303,14 @@ func (s *RemoteSuite) TestString(c *C) {
 }
 
 func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
+	url := c.MkDir()
+	server, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
 	srcFs := fixtures.Basic().One().DotGit()
 	sto, err := filesystem.NewStorage(srcFs)
 	c.Assert(err, IsNil)
 
-	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := dstFs.Root()
-
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
@@ -323,140 +322,117 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	dstSto, err := filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
-	dstRepo, err := Open(dstSto, nil)
+	iter, err := r.s.IterReferences()
 	c.Assert(err, IsNil)
 
-	iter, err := sto.IterReferences()
-	c.Assert(err, IsNil)
-	err = iter.ForEach(func(ref *plumbing.Reference) error {
+	expected := make(map[string]string)
+	iter.ForEach(func(ref *plumbing.Reference) error {
 		if !ref.IsBranch() {
 			return nil
 		}
 
-		dstRef, err := dstRepo.Reference(ref.Name(), true)
-		c.Assert(err, IsNil, Commentf("ref: %s", ref.String()))
-		c.Assert(dstRef, DeepEquals, ref)
-
+		expected[ref.Name().String()] = ref.Hash().String()
 		return nil
 	})
 	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, expected)
+
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
-	srcFs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
-	sto, err := filesystem.NewStorage(srcFs)
+	url := c.MkDir()
+	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
-	dstFs := fixtures.ByTag("empty").One().DotGit()
-	url := dstFs.Root()
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto, err := filesystem.NewStorage(fs)
+	c.Assert(err, IsNil)
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URL:  url,
 	})
 
-	rs := config.RefSpec("refs/tags/*:refs/tags/*")
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
+		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	c.Assert(err, IsNil)
 
-	dstSto, err := filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
-	dstRepo, err := Open(dstSto, nil)
-	c.Assert(err, IsNil)
-
-	ref, err := dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/lightweight-tag"))
-	c.Assert(err, IsNil)
-	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"))
-
-	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/annotated-tag"))
-	c.Assert(err, IsNil)
-	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
-
-	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/commit-tag"))
-	c.Assert(err, IsNil)
-	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
-
-	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/blob-tag"))
-	c.Assert(err, IsNil)
-	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
-
-	ref, err = dstRepo.Storer.Reference(plumbing.ReferenceName("refs/tags/tree-tag"))
-	c.Assert(err, IsNil)
-	c.Assert(ref, DeepEquals, plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"))
+	AssertReferences(c, server, map[string]string{
+		"refs/tags/lightweight-tag": "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+		"refs/tags/annotated-tag":   "b742a2a9fa0afcfa9a6fad080980fbc26b007c69",
+		"refs/tags/commit-tag":      "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc",
+		"refs/tags/blob-tag":        "fe6cb94756faa81e5ed9240f9191b833db5f40ae",
+		"refs/tags/tree-tag":        "152175bf7e5580299fa1f0ba41ef6474cc043b70",
+	})
 }
 
 func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
-	f := fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(f.DotGit())
+	fs := fixtures.Basic().One().DotGit()
+	sto, err := filesystem.NewStorage(fs)
 	c.Assert(err, IsNil)
-	url := f.DotGit().Root()
+
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  url,
+		URL:  fs.Root(),
 	})
 
-	rs := config.RefSpec("refs/heads/*:refs/heads/*")
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
+		RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"},
 	})
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
 func (s *RemoteSuite) TestPushDeleteReference(c *C) {
-	f := fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(f.DotGit())
+	fs := fixtures.Basic().One().DotGit()
+	sto, err := filesystem.NewStorage(fs)
 	c.Assert(err, IsNil)
 
-	dstFs := f.DotGit()
-	dstSto, err := filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
-	prepareRepo(c, dstFs.Root())
-
-	url := dstFs.Root()
-	r := newRemote(sto, &config.RemoteConfig{
-		Name: DefaultRemoteName,
-		URL:  url,
-	})
-
-	rs := config.RefSpec(":refs/heads/branch")
-	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
+	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	_, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{":refs/heads/branch"},
+	})
+	c.Assert(err, IsNil)
+
+	_, err = sto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+
+	_, err = r.Storer.Reference(plumbing.ReferenceName("refs/heads/branch"))
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 }
 
 func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
-	f := fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(f.DotGit())
+	fs := fixtures.Basic().One().DotGit()
+	server, err := filesystem.NewStorage(fs)
 	c.Assert(err, IsNil)
 
-	dstFs := f.DotGit()
-	dstSto, err := filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
-
-	url := dstFs.Root()
-	r := newRemote(sto, &config.RemoteConfig{
-		Name: DefaultRemoteName,
-		URL:  url,
+	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: fs.Root(),
 	})
+	c.Assert(err, IsNil)
 
-	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	branch := plumbing.ReferenceName("refs/heads/branch")
+	oldRef, err := server.Reference(branch)
 	c.Assert(err, IsNil)
 	c.Assert(oldRef, NotNil)
 
-	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
-		config.RefSpec("refs/heads/master:refs/heads/branch"),
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/heads/master:refs/heads/branch",
 	}})
 	c.Assert(err, ErrorMatches, "non-fast-forward update: refs/heads/branch")
 
-	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	newRef, err := server.Reference(branch)
 	c.Assert(err, IsNil)
 	c.Assert(newRef, DeepEquals, oldRef)
 }
@@ -491,32 +467,35 @@ func (s *RemoteSuite) TestPushForce(c *C) {
 }
 
 func (s *RemoteSuite) TestPushNewReference(c *C) {
-	f := fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
-
-	dstFs := f.DotGit()
-	dstSto, err := filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
-
-	url := dstFs.Root()
-	r := newRemote(sto, &config.RemoteConfig{
-		Name: DefaultRemoteName,
-		URL:  url,
+	fs := fixtures.Basic().One().DotGit()
+	url := c.MkDir()
+	server, err := PlainClone(url, true, &CloneOptions{
+		URL: fs.Root(),
 	})
 
-	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: url,
+	})
 	c.Assert(err, IsNil)
-	c.Assert(oldRef, NotNil)
 
-	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
-		config.RefSpec("refs/heads/branch:refs/heads/branch2"),
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/heads/master:refs/heads/branch2",
 	}})
 	c.Assert(err, IsNil)
 
-	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch2"))
-	c.Assert(err, IsNil)
-	c.Assert(newRef.Hash(), Equals, oldRef.Hash())
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/branch2": ref.Hash().String(),
+	})
+
+	AssertReferences(c, r, map[string]string{
+		"refs/remotes/origin/branch2": ref.Hash().String(),
+	})
 }
 
 func (s *RemoteSuite) TestPushInvalidEndpoint(c *C) {
@@ -532,7 +511,7 @@ func (s *RemoteSuite) TestPushNonExistentEndpoint(c *C) {
 }
 
 func (s *RemoteSuite) TestPushInvalidSchemaEndpoint(c *C) {
-	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URL: "qux://foo"})
+	r := newRemote(nil, &config.RemoteConfig{Name: "origin", URL: "qux://foo"})
 	err := r.Push(&PushOptions{})
 	c.Assert(err, ErrorMatches, ".*unsupported scheme.*")
 }
@@ -586,23 +565,4 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 	l, err := getHaves(st)
 	c.Assert(err, IsNil)
 	c.Assert(l, HasLen, 2)
-}
-
-const bareConfig = `[core]
-repositoryformatversion = 0
-filemode = true
-bare = true`
-
-func prepareRepo(c *C, path string) {
-	// git-receive-pack refuses to update refs/heads/master on non-bare repo
-	// so we ensure bare repo config.
-	config := filepath.Join(path, "config")
-	if _, err := os.Stat(config); err == nil {
-		f, err := os.OpenFile(config, os.O_TRUNC|os.O_WRONLY, 0)
-		c.Assert(err, IsNil)
-		content := strings.NewReader(bareConfig)
-		_, err = io.Copy(f, content)
-		c.Assert(err, IsNil)
-		c.Assert(f.Close(), IsNil)
-	}
 }

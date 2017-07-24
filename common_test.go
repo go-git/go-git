@@ -169,3 +169,14 @@ func (s *SuiteCommon) TestCountLines(c *C) {
 		c.Assert(o, Equals, t.e, Commentf("subtest %d, input=%q", i, t.i))
 	}
 }
+
+func AssertReferences(c *C, r *Repository, expected map[string]string) {
+	for name, target := range expected {
+		expected := plumbing.NewReferenceFromStrings(name, target)
+
+		obtained, err := r.Reference(expected.Name(), true)
+		c.Assert(err, IsNil)
+
+		c.Assert(obtained, DeepEquals, expected)
+	}
+}
