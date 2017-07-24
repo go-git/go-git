@@ -181,7 +181,7 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
-		URL:  "http://foo/foo.git",
+		URLs: []string{"http://foo/foo.git"},
 	})
 
 	c.Assert(err, IsNil)
@@ -205,7 +205,7 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
-		URL:  "http://foo/foo.git",
+		URLs: []string{"http://foo/foo.git"},
 	})
 
 	c.Assert(err, IsNil)
@@ -426,7 +426,7 @@ func (s *RepositorySuite) TestFetch(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  s.GetBasicLocalRepositoryURL(),
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 	c.Assert(err, IsNil)
 	c.Assert(r.Fetch(&FetchOptions{}), IsNil)
@@ -449,7 +449,7 @@ func (s *RepositorySuite) TestFetchContext(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  s.GetBasicLocalRepositoryURL(),
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 	c.Assert(err, IsNil)
 
@@ -531,7 +531,7 @@ func (s *RepositorySuite) TestCloneConfig(c *C) {
 	c.Assert(cfg.Core.IsBare, Equals, true)
 	c.Assert(cfg.Remotes, HasLen, 1)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
-	c.Assert(cfg.Remotes["origin"].URL, Not(Equals), "")
+	c.Assert(cfg.Remotes["origin"].URLs, HasLen, 1)
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
@@ -629,7 +629,7 @@ func (s *RepositorySuite) TestPush(c *C) {
 
 	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
 		Name: "test",
-		URL:  url,
+		URLs: []string{url},
 	})
 	c.Assert(err, IsNil)
 
@@ -657,7 +657,7 @@ func (s *RepositorySuite) TestPushContext(c *C) {
 
 	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
-		URL:  url,
+		URLs: []string{url},
 	})
 	c.Assert(err, IsNil)
 

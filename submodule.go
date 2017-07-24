@@ -130,7 +130,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  s.c.URL,
+		URLs: []string{s.c.URL},
 	})
 
 	return r, err

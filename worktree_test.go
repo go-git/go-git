@@ -37,7 +37,7 @@ func (s *WorktreeSuite) TestPullCheckout(c *C) {
 	r, _ := Init(memory.NewStorage(), fs)
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  s.GetBasicLocalRepositoryURL(),
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
 	w, err := r.Worktree()
@@ -115,7 +115,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  s.GetBasicLocalRepositoryURL(),
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
 	err := r.Fetch(&FetchOptions{})
@@ -173,7 +173,7 @@ func (s *WorktreeSuite) TestPullProgress(c *C) {
 
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  s.GetBasicLocalRepositoryURL(),
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
 	w, err := r.Worktree()
@@ -198,7 +198,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
 	r, _ := PlainInit(dir, false)
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URL:  path,
+		URLs: []string{path},
 	})
 
 	w, err := r.Worktree()

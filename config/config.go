@@ -187,8 +187,9 @@ func (c *Config) marshalSubmodules() {
 type RemoteConfig struct {
 	// Name of the remote
 	Name string
-	// URL the URL of a remote repository
-	URL string
+	// URLs the URLs of a remote repository. It must be non-empty. Fetch will
+	// always use the first URL, while push will use all of them.
+	URLs []string
 	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
 
@@ -203,7 +204,7 @@ func (c *RemoteConfig) Validate() error {
 		return ErrRemoteConfigEmptyName
 	}
 
-	if c.URL == "" {
+	if len(c.URLs) == 0 {
 		return ErrRemoteConfigEmptyURL
 	}
 
@@ -233,8 +234,13 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 		fetch = append(fetch, rs)
 	}
 
+	var urls []string
+	for _, f := range c.raw.Options.GetAll(urlKey) {
+		urls = append(urls, f)
+	}
+
 	c.Name = c.raw.Name
-	c.URL = c.raw.Option(urlKey)
+	c.URLs = urls
 	c.Fetch = fetch
 
 	return nil
@@ -246,9 +252,14 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	}
 
 	c.raw.Name = c.Name
-	c.raw.SetOption(urlKey, c.URL)
+	c.raw.RemoveOption(urlKey)
+	for _, url := range c.URLs {
+		c.raw.AddOption(urlKey, url)
+	}
+
+	c.raw.RemoveOption(fetchKey)
 	for _, rs := range c.Fetch {
-		c.raw.SetOption(fetchKey, rs.String())
+		c.raw.AddOption(fetchKey, rs.String())
 	}
 
 	return c.raw

@@ -27,7 +27,7 @@ func main() {
 	Info("git remote add example https://github.com/git-fixtures/basic.git")
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "example",
-		URL:  "https://github.com/git-fixtures/basic.git",
+		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
 
 	CheckIfError(err)
