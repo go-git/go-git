@@ -32,6 +32,47 @@ type Worktree struct {
 	fs billy.Filesystem
 }
 
+// Pull incorporates changes from a remote repository into the current branch.
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
+func (w *Worktree) Pull(o *PullOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	head, err := w.r.fetchAndUpdateReferences(&FetchOptions{
+		RemoteName: o.RemoteName,
+		Depth:      o.Depth,
+		Auth:       o.Auth,
+		Progress:   o.Progress,
+	}, o.ReferenceName)
+	if err != nil {
+		return err
+	}
+
+	if err := w.Reset(&ResetOptions{Commit: head.Hash()}); err != nil {
+		return err
+	}
+
+	if o.RecurseSubmodules != NoRecurseSubmodules {
+		return w.updateSubmodules(o.RecurseSubmodules)
+	}
+
+	return nil
+}
+
+func (w *Worktree) updateSubmodules(recursion SubmoduleRescursivity) error {
+	s, err := w.Submodules()
+	if err != nil {
+		return err
+	}
+
+	return s.Update(&SubmoduleUpdateOptions{
+		Init:              true,
+		RecurseSubmodules: recursion,
+	})
+}
+
 // Checkout switch branches or restore working tree files.
 func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	if err := opts.Validate(); err != nil {

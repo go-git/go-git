@@ -26,7 +26,7 @@ var (
 	ErrRepositoryNotExists     = errors.New("repository not exists")
 	ErrRepositoryAlreadyExists = errors.New("repository already exists")
 	ErrRemoteNotFound          = errors.New("remote not found")
-	ErrRemoteExists            = errors.New("remote already exists")
+	ErrRemoteExists            = errors.New("remote already exists	")
 	ErrWorktreeNotProvided     = errors.New("worktree should be provided")
 	ErrIsBareRepository        = errors.New("worktree not available in a bare repository")
 )
@@ -382,58 +382,38 @@ func (r *Repository) clone(o *CloneOptions) error {
 		URL:  o.URL,
 	}
 
-	remote, err := r.CreateRemote(c)
-	if err != nil {
+	if _, err := r.CreateRemote(c); err != nil {
 		return err
 	}
 
-	remoteRefs, err := remote.fetch(&FetchOptions{
+	head, err := r.fetchAndUpdateReferences(&FetchOptions{
 		RefSpecs: r.cloneRefSpec(o, c),
 		Depth:    o.Depth,
 		Auth:     o.Auth,
 		Progress: o.Progress,
-	})
+	}, o.ReferenceName)
 	if err != nil {
 		return err
 	}
 
-	head, err := storer.ResolveReference(remoteRefs, o.ReferenceName)
-	if err != nil {
-		return err
-	}
-
-	if _, err := r.updateReferences(c.Fetch, head); err != nil {
-		return err
-	}
-
-	if err := r.updateWorktree(head.Name()); err != nil {
-		return err
-	}
-
-	if o.RecurseSubmodules != NoRecurseSubmodules && r.wt != nil {
-		if err := r.updateSubmodules(o.RecurseSubmodules); err != nil {
+	if r.wt != nil {
+		w, err := r.Worktree()
+		if err != nil {
 			return err
+		}
+
+		if err := w.Reset(&ResetOptions{Commit: head.Hash()}); err != nil {
+			return err
+		}
+
+		if o.RecurseSubmodules != NoRecurseSubmodules {
+			if err := w.updateSubmodules(o.RecurseSubmodules); err != nil {
+				return err
+			}
 		}
 	}
 
-	return r.updateRemoteConfig(remote, o, c, head)
-}
-
-func (r *Repository) updateSubmodules(recursion SubmoduleRescursivity) error {
-	w, err := r.Worktree()
-	if err != nil {
-		return err
-	}
-
-	s, err := w.Submodules()
-	if err != nil {
-		return err
-	}
-
-	return s.Update(&SubmoduleUpdateOptions{
-		Init:              true,
-		RecurseSubmodules: recursion,
-	})
+	return r.updateRemoteConfigIfNeeded(o, c, head)
 }
 
 func (r *Repository) cloneRefSpec(o *CloneOptions,
@@ -470,9 +450,7 @@ const (
 	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
 )
 
-func (r *Repository) updateRemoteConfig(remote *Remote, o *CloneOptions,
-	c *config.RemoteConfig, head *plumbing.Reference) error {
-
+func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.RemoteConfig, head *plumbing.Reference) error {
 	if !o.SingleBranch {
 		return nil
 	}
@@ -488,6 +466,44 @@ func (r *Repository) updateRemoteConfig(remote *Remote, o *CloneOptions,
 
 	cfg.Remotes[c.Name] = c
 	return r.Storer.SetConfig(cfg)
+}
+
+func (r *Repository) fetchAndUpdateReferences(
+	o *FetchOptions, ref plumbing.ReferenceName,
+) (*plumbing.Reference, error) {
+
+	if err := o.Validate(); err != nil {
+		return nil, err
+	}
+
+	remote, err := r.Remote(o.RemoteName)
+	if err != nil {
+		return nil, err
+	}
+
+	objsUpdated := true
+	remoteRefs, err := remote.fetch(o)
+	if err == NoErrAlreadyUpToDate {
+		objsUpdated = false
+	} else if err != nil {
+		return nil, err
+	}
+
+	head, err := storer.ResolveReference(remoteRefs, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	refsUpdated, err := r.updateReferences(remote.c.Fetch, head)
+	if err != nil {
+		return nil, err
+	}
+
+	if !objsUpdated && !refsUpdated {
+		return nil, NoErrAlreadyUpToDate
+	}
+
+	return head, nil
 }
 
 func (r *Repository) updateReferences(spec []config.RefSpec,
@@ -563,83 +579,6 @@ func updateReferenceStorerIfNeeded(
 	}
 
 	return false, nil
-}
-
-// Pull incorporates changes from a remote repository into the current branch.
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
-// no changes to be fetched, or an error.
-func (r *Repository) Pull(o *PullOptions) error {
-	if err := o.Validate(); err != nil {
-		return err
-	}
-
-	remote, err := r.Remote(o.RemoteName)
-	if err != nil {
-		return err
-	}
-
-	remoteRefs, err := remote.fetch(&FetchOptions{
-		Depth:    o.Depth,
-		Auth:     o.Auth,
-		Progress: o.Progress,
-	})
-
-	updated := true
-	if err == NoErrAlreadyUpToDate {
-		updated = false
-	} else if err != nil {
-		return err
-	}
-
-	head, err := storer.ResolveReference(remoteRefs, o.ReferenceName)
-	if err != nil {
-		return err
-	}
-
-	refsUpdated, err := r.updateReferences(remote.c.Fetch, head)
-	if err != nil {
-		return err
-	}
-
-	if refsUpdated {
-		updated = refsUpdated
-	}
-
-	if !updated {
-		return NoErrAlreadyUpToDate
-	}
-
-	if err := r.updateWorktree(head.Name()); err != nil {
-		return err
-	}
-
-	if o.RecurseSubmodules != NoRecurseSubmodules && r.wt != nil {
-		if err := r.updateSubmodules(o.RecurseSubmodules); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *Repository) updateWorktree(branch plumbing.ReferenceName) error {
-	if r.wt == nil {
-		return nil
-	}
-
-	b, err := r.Reference(branch, true)
-	if err != nil {
-		return err
-	}
-
-	w, err := r.Worktree()
-	if err != nil {
-		return err
-	}
-
-	return w.Reset(&ResetOptions{
-		Commit: b.Hash(),
-	})
 }
 
 // Fetch fetches changes from a remote repository.
