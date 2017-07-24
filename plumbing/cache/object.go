@@ -1,6 +1,8 @@
 package cache
 
-import "gopkg.in/src-d/go-git.v4/plumbing"
+import (
+	"gopkg.in/src-d/go-git.v4/plumbing"
+)
 
 const (
 	initialQueueSize = 20
@@ -25,12 +27,14 @@ func NewObjectFIFO(size FileSize) *ObjectFIFO {
 	}
 }
 
-// Add adds a new object to the cache. If the object size is greater than the
+// Put puts a new object to the cache. If the object size is greater than the
 // cache size, the object is not added.
-func (c *ObjectFIFO) Add(o plumbing.EncodedObject) {
+func (c *ObjectFIFO) Put(o plumbing.EncodedObject) {
+	objSize := FileSize(o.Size())
+
 	// if the size of the object is bigger or equal than the cache size,
 	// skip it
-	if FileSize(o.Size()) >= c.maxSize {
+	if objSize >= c.maxSize {
 		return
 	}
 
@@ -56,8 +60,9 @@ func (c *ObjectFIFO) Add(o plumbing.EncodedObject) {
 
 // Get returns an object by his hash. If the object is not found in the cache, it
 // returns nil
-func (c *ObjectFIFO) Get(k plumbing.Hash) plumbing.EncodedObject {
-	return c.objects[k]
+func (c *ObjectFIFO) Get(k plumbing.Hash) (plumbing.EncodedObject, bool) {
+	obj, ok := c.objects[k]
+	return obj, ok
 }
 
 // Clear the content of this object cache

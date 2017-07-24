@@ -31,14 +31,14 @@ func (s *ObjectSuite) SetUpTest(c *C) {
 }
 
 func (s *ObjectSuite) TestAdd_SameObject(c *C) {
-	s.c.Add(s.aObject)
+	s.c.Put(s.aObject)
 	c.Assert(s.c.actualSize, Equals, 1*Byte)
-	s.c.Add(s.aObject)
+	s.c.Put(s.aObject)
 	c.Assert(s.c.actualSize, Equals, 1*Byte)
 }
 
 func (s *ObjectSuite) TestAdd_BigObject(c *C) {
-	s.c.Add(s.bObject)
+	s.c.Put(s.bObject)
 	c.Assert(s.c.actualSize, Equals, 0*Byte)
 	c.Assert(s.c.actualSize, Equals, 0*KiByte)
 	c.Assert(s.c.actualSize, Equals, 0*MiByte)
@@ -47,24 +47,32 @@ func (s *ObjectSuite) TestAdd_BigObject(c *C) {
 }
 
 func (s *ObjectSuite) TestAdd_CacheOverflow(c *C) {
-	s.c.Add(s.aObject)
+	s.c.Put(s.aObject)
 	c.Assert(s.c.actualSize, Equals, 1*Byte)
-	s.c.Add(s.cObject)
+	s.c.Put(s.cObject)
 	c.Assert(len(s.c.objects), Equals, 2)
-	s.c.Add(s.dObject)
+	s.c.Put(s.dObject)
 	c.Assert(len(s.c.objects), Equals, 2)
 
-	c.Assert(s.c.Get(s.aObject.Hash()), IsNil)
-	c.Assert(s.c.Get(s.cObject.Hash()), NotNil)
-	c.Assert(s.c.Get(s.dObject.Hash()), NotNil)
+	obj, ok := s.c.Get(s.aObject.Hash())
+	c.Assert(ok, Equals, false)
+	c.Assert(obj, IsNil)
+	obj, ok = s.c.Get(s.cObject.Hash())
+	c.Assert(ok, Equals, true)
+	c.Assert(obj, NotNil)
+	obj, ok = s.c.Get(s.dObject.Hash())
+	c.Assert(ok, Equals, true)
+	c.Assert(obj, NotNil)
 }
 
 func (s *ObjectSuite) TestClear(c *C) {
-	s.c.Add(s.aObject)
+	s.c.Put(s.aObject)
 	c.Assert(s.c.actualSize, Equals, 1*Byte)
 	s.c.Clear()
 	c.Assert(s.c.actualSize, Equals, 0*Byte)
-	c.Assert(s.c.Get(s.aObject.Hash()), IsNil)
+	obj, ok := s.c.Get(s.aObject.Hash())
+	c.Assert(ok, Equals, false)
+	c.Assert(obj, IsNil)
 }
 
 type dummyObject struct {

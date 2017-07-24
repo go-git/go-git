@@ -355,9 +355,8 @@ func (d *Decoder) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plum
 		return 0, err
 	}
 
-	base := d.cache.Get(ref)
-
-	if base == nil {
+	base, ok := d.cache.Get(ref)
+	if !ok {
 		base, err = d.recallByHash(ref)
 		if err != nil {
 			return 0, err
@@ -366,7 +365,7 @@ func (d *Decoder) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plum
 
 	obj.SetType(base.Type())
 	err = ApplyDelta(obj, base, buf.Bytes())
-	d.cache.Add(obj)
+	d.cache.Put(obj)
 
 	return crc, err
 }
@@ -381,10 +380,10 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 	e, ok := d.idx.LookupOffset(uint64(offset))
 	var base plumbing.EncodedObject
 	if ok {
-		base = d.cache.Get(e.Hash)
+		base, ok = d.cache.Get(e.Hash)
 	}
 
-	if base == nil {
+	if !ok {
 		base, err = d.recallByOffset(offset)
 		if err != nil {
 			return 0, err
@@ -393,7 +392,7 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 
 	obj.SetType(base.Type())
 	err = ApplyDelta(obj, base, buf.Bytes())
-	d.cache.Add(obj)
+	d.cache.Put(obj)
 
 	return crc, err
 }
