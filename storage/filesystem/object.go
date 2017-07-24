@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/objfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -16,14 +17,20 @@ import (
 	"gopkg.in/src-d/go-billy.v3"
 )
 
+const DefaultMaxDeltaBaseCacheSize = 92 * cache.MiByte
+
 type ObjectStorage struct {
+	// DeltaBaseCache is an object cache uses to cache delta's bases when
+	DeltaBaseCache cache.Object
+
 	dir   *dotgit.DotGit
 	index map[plumbing.Hash]*packfile.Index
 }
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
-		dir: dir,
+		DeltaBaseCache: cache.NewObjectFIFO(DefaultMaxDeltaBaseCacheSize),
+		dir:            dir,
 	}
 
 	return s, nil
@@ -198,6 +205,7 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.EncodedObject
 		return nil, err
 	}
 
+	d.DeltaBaseCache = s.DeltaBaseCache
 	d.SetIndex(s.index[pack])
 	obj, err := d.DecodeObjectAt(offset)
 	return obj, err

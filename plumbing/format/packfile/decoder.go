@@ -52,6 +52,8 @@ var (
 // is destroyed. The Offsets and CRCs are calculated whether an
 // ObjectStorer was provided or not.
 type Decoder struct {
+	DeltaBaseCache cache.Object
+
 	s  *Scanner
 	o  storer.EncodedObjectStorer
 	tx storer.Transaction
@@ -65,8 +67,6 @@ type Decoder struct {
 
 	offsetToType map[int64]plumbing.ObjectType
 	decoderType  plumbing.ObjectType
-
-	cache cache.Object
 }
 
 // NewDecoder returns a new Decoder that decodes a Packfile using the given
@@ -107,8 +107,6 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 		idx:          NewIndex(0),
 		offsetToType: make(map[int64]plumbing.ObjectType, 0),
 		decoderType:  t,
-
-		cache: cache.NewObjectFIFO(cache.MaxSize),
 	}, nil
 }
 
@@ -355,7 +353,7 @@ func (d *Decoder) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plum
 		return 0, err
 	}
 
-	base, ok := d.cache.Get(ref)
+	base, ok := d.cacheGet(ref)
 	if !ok {
 		base, err = d.recallByHash(ref)
 		if err != nil {
@@ -365,7 +363,7 @@ func (d *Decoder) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plum
 
 	obj.SetType(base.Type())
 	err = ApplyDelta(obj, base, buf.Bytes())
-	d.cache.Put(obj)
+	d.cachePut(obj)
 
 	return crc, err
 }
@@ -380,7 +378,7 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 	e, ok := d.idx.LookupOffset(uint64(offset))
 	var base plumbing.EncodedObject
 	if ok {
-		base, ok = d.cache.Get(e.Hash)
+		base, ok = d.cacheGet(e.Hash)
 	}
 
 	if !ok {
@@ -392,9 +390,25 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 
 	obj.SetType(base.Type())
 	err = ApplyDelta(obj, base, buf.Bytes())
-	d.cache.Put(obj)
+	d.cachePut(obj)
 
 	return crc, err
+}
+
+func (d *Decoder) cacheGet(h plumbing.Hash) (plumbing.EncodedObject, bool) {
+	if d.DeltaBaseCache == nil {
+		return nil, false
+	}
+
+	return d.DeltaBaseCache.Get(h)
+}
+
+func (d *Decoder) cachePut(obj plumbing.EncodedObject) {
+	if d.DeltaBaseCache == nil {
+		return
+	}
+
+	d.DeltaBaseCache.Put(obj)
 }
 
 func (d *Decoder) recallByOffset(o int64) (plumbing.EncodedObject, error) {
@@ -454,7 +468,5 @@ func (d *Decoder) Index() *Index {
 // Close closes the Scanner. usually this mean that the whole reader is read and
 // discarded
 func (d *Decoder) Close() error {
-	d.cache.Clear()
-
 	return d.s.Close()
 }
