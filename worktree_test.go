@@ -1,10 +1,12 @@
 package git
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
@@ -27,6 +29,163 @@ var _ = Suite(&WorktreeSuite{})
 func (s *WorktreeSuite) SetUpTest(c *C) {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepositoryWithEmptyWorktree(f)
+}
+
+func (s *WorktreeSuite) TestPullCheckout(c *C) {
+	fs := memfs.New()
+	r, _ := Init(memory.NewStorage(), fs)
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, IsNil)
+
+	fi, err := fs.ReadDir("")
+	c.Assert(err, IsNil)
+	c.Assert(fi, HasLen, 8)
+}
+
+func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+
+	err := r.Fetch(&FetchOptions{})
+	c.Assert(err, IsNil)
+
+	_, err = r.Reference("refs/heads/master", false)
+	c.Assert(err, NotNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, IsNil)
+
+	head, err := r.Reference(plumbing.HEAD, true)
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err := r.Reference("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+}
+
+func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	err := r.clone(&CloneOptions{
+		URL:          s.GetBasicLocalRepositoryURL(),
+		SingleBranch: true,
+	})
+
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+
+	branch, err := r.Reference("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	branch, err = r.Reference("refs/remotes/foo/branch", false)
+	c.Assert(err, NotNil)
+
+	storage := r.Storer.(*memory.Storage)
+	c.Assert(storage.Objects, HasLen, 28)
+}
+
+func (s *WorktreeSuite) TestPullProgress(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	buf := bytes.NewBuffer(nil)
+	err = w.Pull(&PullOptions{
+		Progress: buf,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(buf.Len(), Not(Equals), 0)
+}
+
+func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
+
+	dir, err := ioutil.TempDir("", "plain-clone-submodule")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	r, _ := PlainInit(dir, false)
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  path,
+	})
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{
+		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+	})
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(cfg.Submodules, HasLen, 2)
+}
+
+func (s *RepositorySuite) TestPullAdd(c *C) {
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL: filepath.Join(path, ".git"),
+	})
+
+	c.Assert(err, IsNil)
+
+	storage := r.Storer.(*memory.Storage)
+	c.Assert(storage.Objects, HasLen, 28)
+
+	branch, err := r.Reference("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	ExecuteOnPath(c, path,
+		"touch foo",
+		"git add foo",
+		"git commit -m foo foo",
+	)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{RemoteName: "origin"})
+	c.Assert(err, IsNil)
+
+	// the commit command has introduced a new commit, tree and blob
+	c.Assert(storage.Objects, HasLen, 31)
+
+	branch, err = r.Reference("refs/heads/master", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
 func (s *WorktreeSuite) TestCheckout(c *C) {
