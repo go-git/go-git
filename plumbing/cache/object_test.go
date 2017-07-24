@@ -12,7 +12,7 @@ import (
 func Test(t *testing.T) { TestingT(t) }
 
 type ObjectSuite struct {
-	c       *ObjectFIFO
+	c       Object
 	aObject plumbing.EncodedObject
 	bObject plumbing.EncodedObject
 	cObject plumbing.EncodedObject
@@ -27,32 +27,26 @@ func (s *ObjectSuite) SetUpTest(c *C) {
 	s.cObject = newObject("cccccccccccccccccccccccccccccccccccccccc", 1*Byte)
 	s.dObject = newObject("dddddddddddddddddddddddddddddddddddddddd", 1*Byte)
 
-	s.c = NewObjectFIFO(2 * Byte)
+	s.c = NewObjectLRU(2 * Byte)
 }
 
-func (s *ObjectSuite) TestAdd_SameObject(c *C) {
+func (s *ObjectSuite) TestPutSameObject(c *C) {
 	s.c.Put(s.aObject)
-	c.Assert(s.c.actualSize, Equals, 1*Byte)
 	s.c.Put(s.aObject)
-	c.Assert(s.c.actualSize, Equals, 1*Byte)
+	_, ok := s.c.Get(s.aObject.Hash())
+	c.Assert(ok, Equals, true)
 }
 
-func (s *ObjectSuite) TestAdd_BigObject(c *C) {
+func (s *ObjectSuite) TestPutBigObject(c *C) {
 	s.c.Put(s.bObject)
-	c.Assert(s.c.actualSize, Equals, 0*Byte)
-	c.Assert(s.c.actualSize, Equals, 0*KiByte)
-	c.Assert(s.c.actualSize, Equals, 0*MiByte)
-	c.Assert(s.c.actualSize, Equals, 0*GiByte)
-	c.Assert(len(s.c.objects), Equals, 0)
+	_, ok := s.c.Get(s.aObject.Hash())
+	c.Assert(ok, Equals, false)
 }
 
-func (s *ObjectSuite) TestAdd_CacheOverflow(c *C) {
+func (s *ObjectSuite) TestPutCacheOverflow(c *C) {
 	s.c.Put(s.aObject)
-	c.Assert(s.c.actualSize, Equals, 1*Byte)
 	s.c.Put(s.cObject)
-	c.Assert(len(s.c.objects), Equals, 2)
 	s.c.Put(s.dObject)
-	c.Assert(len(s.c.objects), Equals, 2)
 
 	obj, ok := s.c.Get(s.aObject.Hash())
 	c.Assert(ok, Equals, false)
@@ -67,9 +61,7 @@ func (s *ObjectSuite) TestAdd_CacheOverflow(c *C) {
 
 func (s *ObjectSuite) TestClear(c *C) {
 	s.c.Put(s.aObject)
-	c.Assert(s.c.actualSize, Equals, 1*Byte)
 	s.c.Clear()
-	c.Assert(s.c.actualSize, Equals, 0*Byte)
 	obj, ok := s.c.Get(s.aObject.Hash())
 	c.Assert(ok, Equals, false)
 	c.Assert(obj, IsNil)

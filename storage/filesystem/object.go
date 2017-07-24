@@ -29,7 +29,7 @@ type ObjectStorage struct {
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
-		DeltaBaseCache: cache.NewObjectFIFO(DefaultMaxDeltaBaseCacheSize),
+		DeltaBaseCache: cache.NewObjectLRU(DefaultMaxDeltaBaseCacheSize),
 		dir:            dir,
 	}
 
