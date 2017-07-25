@@ -39,6 +39,10 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	c.Assert(r, IsNil)
 }
 
+func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
+	c.Skip("UploadPack cannot be canceled on server")
+}
+
 // Tests server with `asClient = true`. This is recommended when using a server
 // registered directly with `client.InstallProtocol`.
 type ClientLikeUploadPackSuite struct {
