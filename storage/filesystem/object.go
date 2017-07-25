@@ -130,7 +130,27 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (plumbing.Has
 func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	obj, err := s.getFromUnpacked(h)
 	if err == plumbing.ErrObjectNotFound {
-		obj, err = s.getFromPackfile(h)
+		obj, err = s.getFromPackfile(h, false)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if plumbing.AnyObject != t && obj.Type() != t {
+		return nil, plumbing.ErrObjectNotFound
+	}
+
+	return obj, nil
+}
+
+// DeltaObject returns the object with the given hash, by searching for
+// it in the packfile and the git object directories.
+func (s *ObjectStorage) DeltaObject(t plumbing.ObjectType,
+	h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := s.getFromUnpacked(h)
+	if err == plumbing.ErrObjectNotFound {
+		obj, err = s.getFromPackfile(h, true)
 	}
 
 	if err != nil {
@@ -182,12 +202,14 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 
 // Get returns the object with the given hash, by searching for it in
 // the packfile.
-func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.EncodedObject, error) {
+func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (
+	plumbing.EncodedObject, error) {
+
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
 
-	pack, offset := s.findObjectInPackfile(h)
+	pack, hash, offset := s.findObjectInPackfile(h)
 	if offset == -1 {
 		return nil, plumbing.ErrObjectNotFound
 	}
@@ -199,26 +221,94 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.EncodedObject
 
 	defer ioutil.CheckClose(f, &err)
 
+	idx := s.index[pack]
+	if canBeDelta {
+		return s.decodeDeltaObjectAt(f, idx, offset, hash)
+	}
+
+	return s.decodeObjectAt(f, idx, offset)
+}
+
+func (s *ObjectStorage) decodeObjectAt(
+	f billy.File,
+	idx *packfile.Index,
+	offset int64) (plumbing.EncodedObject, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
 	p := packfile.NewScanner(f)
+
 	d, err := packfile.NewDecoder(p, memory.NewStorage())
 	if err != nil {
 		return nil, err
 	}
 
+	d.SetIndex(idx)
 	d.DeltaBaseCache = s.DeltaBaseCache
-	d.SetIndex(s.index[pack])
 	obj, err := d.DecodeObjectAt(offset)
 	return obj, err
 }
 
-func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, int64) {
+func (s *ObjectStorage) decodeDeltaObjectAt(
+	f billy.File,
+	idx *packfile.Index,
+	offset int64,
+	hash plumbing.Hash) (plumbing.EncodedObject, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	p := packfile.NewScanner(f)
+	if _, err := p.SeekFromStart(offset); err != nil {
+		return nil, err
+	}
+
+	header, err := p.NextObjectHeader()
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		base plumbing.Hash
+	)
+
+	switch header.Type {
+	case plumbing.REFDeltaObject:
+		base = header.Reference
+	case plumbing.OFSDeltaObject:
+		e, ok := idx.LookupOffset(uint64(header.OffsetReference))
+		if !ok {
+			return nil, plumbing.ErrObjectNotFound
+		}
+
+		base = e.Hash
+	default:
+		return s.decodeObjectAt(f, idx, offset)
+	}
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(header.Type)
+	w, err := obj.Writer()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, _, err := p.NextObject(w); err != nil {
+		return nil, err
+	}
+
+	return newDeltaObject(obj, hash, base, header.Length), nil
+}
+
+func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, plumbing.Hash, int64) {
 	for packfile, index := range s.index {
 		if e, ok := index.LookupHash(h); ok {
-			return packfile, int64(e.Offset)
+			return packfile, e.Hash, int64(e.Offset)
 		}
 	}
 
-	return plumbing.ZeroHash, -1
+	return plumbing.ZeroHash, plumbing.ZeroHash, -1
 }
 
 // IterEncodedObjects returns an iterator for all the objects in the packfile

@@ -23,6 +23,17 @@ type EncodedObject interface {
 	Writer() (io.WriteCloser, error)
 }
 
+// DeltaObject is an EncodedObject representing a delta.
+type DeltaObject interface {
+	EncodedObject
+	// BaseHash returns the hash of the object used as base for this delta.
+	BaseHash() Hash
+	// ActualHash returns the hash of the object after applying the delta.
+	ActualHash() Hash
+	// Size returns the size of the object after applying the delta.
+	ActualSize() int64
+}
+
 // ObjectType internal object type
 // Integer values from 0 to 7 map to those exposed by git.
 // AnyObject is used to represent any from 0 to 7.
