@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -270,7 +271,7 @@ func newClient(url string) (transport.Transport, transport.Endpoint, error) {
 func (r *Remote) fetchPack(o *FetchOptions, s transport.UploadPackSession,
 	req *packp.UploadPackRequest) (err error) {
 
-	reader, err := s.UploadPack(req)
+	reader, err := s.UploadPack(context.TODO(), req)
 	if err != nil {
 		return err
 	}
@@ -713,7 +714,7 @@ func pushHashes(sess transport.ReceivePackSession, sto storer.EncodedObjectStore
 		done <- wr.Close()
 	}()
 
-	rs, err := sess.ReceivePack(req)
+	rs, err := sess.ReceivePack(context.TODO(), req)
 	if err != nil {
 		return nil, err
 	}

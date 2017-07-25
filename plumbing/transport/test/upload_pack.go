@@ -5,8 +5,10 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/ioutil"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -45,7 +47,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	c.Assert(err, IsNil)
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	reader, err := r.UploadPack(req)
+	reader, err := r.UploadPack(context.Background(), req)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(reader, IsNil)
 }
@@ -93,7 +95,24 @@ func (s *UploadPackSuite) TestCapabilities(c *C) {
 	c.Assert(info.Capabilities.Get(capability.Agent), HasLen, 1)
 }
 
-func (s *UploadPackSuite) TestFullUploadPack(c *C) {
+func (s *UploadPackSuite) TestUploadPack(c *C) {
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	req := packp.NewUploadPackRequest()
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	reader, err := r.UploadPack(context.Background(), req)
+	c.Assert(err, IsNil)
+
+	s.checkObjectNumber(c, reader, 28)
+}
+
+func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
@@ -105,21 +124,52 @@ func (s *UploadPackSuite) TestFullUploadPack(c *C) {
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	reader, err := r.UploadPack(req)
-	c.Assert(err, IsNil)
-
-	s.checkObjectNumber(c, reader, 28)
+	reader, err := r.UploadPack(ctx, req)
+	c.Assert(err, NotNil)
+	c.Assert(reader, IsNil)
 }
 
-func (s *UploadPackSuite) TestUploadPack(c *C) {
+func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	info, err := r.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	reader, err := r.UploadPack(req)
+	reader, err := r.UploadPack(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(reader, NotNil)
+
+	cancel()
+
+	_, err = io.Copy(ioutil.Discard, reader)
+	c.Assert(err, NotNil)
+
+	err = reader.Close()
+	c.Assert(err, IsNil)
+	err = r.Close()
+	c.Assert(err, IsNil)
+}
+
+func (s *UploadPackSuite) TestUploadPackFull(c *C) {
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	info, err := r.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
+
+	req := packp.NewUploadPackRequest()
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	reader, err := r.UploadPack(context.Background(), req)
 	c.Assert(err, IsNil)
 
 	s.checkObjectNumber(c, reader, 28)
@@ -135,7 +185,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
 	req.Capabilities.Set(capability.Sideband)
 	req.Capabilities.Set(capability.Sideband64k)
 
-	_, err = r.UploadPack(req)
+	_, err = r.UploadPack(context.Background(), req)
 	c.Assert(err, NotNil)
 }
 
@@ -148,7 +198,7 @@ func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	reader, err := r.UploadPack(req)
+	reader, err := r.UploadPack(context.Background(), req)
 	c.Assert(err, Equals, transport.ErrEmptyUploadPackRequest)
 	c.Assert(reader, IsNil)
 }
@@ -162,7 +212,7 @@ func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 
-	reader, err := r.UploadPack(req)
+	reader, err := r.UploadPack(context.Background(), req)
 	c.Assert(err, IsNil)
 
 	s.checkObjectNumber(c, reader, 31)
@@ -177,7 +227,7 @@ func (s *UploadPackSuite) TestUploadPackPartial(c *C) {
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 
-	reader, err := r.UploadPack(req)
+	reader, err := r.UploadPack(context.Background(), req)
 	c.Assert(err, IsNil)
 
 	s.checkObjectNumber(c, reader, 4)
@@ -190,7 +240,7 @@ func (s *UploadPackSuite) TestFetchError(c *C) {
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
-	reader, err := r.UploadPack(req)
+	reader, err := r.UploadPack(context.Background(), req)
 	c.Assert(err, NotNil)
 	c.Assert(reader, IsNil)
 

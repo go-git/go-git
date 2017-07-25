@@ -78,3 +78,9 @@ func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
 	c.Assert(err, ErrorMatches, ".*file.*")
 	c.Assert(session, IsNil)
 }
+
+func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
+	// TODO: Fix race condition when Session.Close and the read failed due to a
+	// canceled context when the packfile is being read.
+	c.Skip("UploadPack has a race condition when we Close the session")
+}

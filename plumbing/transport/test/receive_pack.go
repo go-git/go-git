@@ -5,6 +5,7 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/ioutil"
 
@@ -31,6 +32,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()
+
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
 	c.Assert(ar.Head, IsNil)
@@ -51,7 +53,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 		{"master", plumbing.ZeroHash, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
 	}
 
-	writer, err := r.ReceivePack(req)
+	writer, err := r.ReceivePack(context.Background(), req)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(writer, IsNil)
 	c.Assert(r.Close(), IsNil)
@@ -100,6 +102,30 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty(c *C) {
 	}
 	s.receivePack(c, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
+}
+
+func (s *ReceivePackSuite) TestSendPackWithContext(c *C) {
+	fixture := fixtures.Basic().ByTag("packfile").One()
+	req := packp.NewReferenceUpdateRequest()
+	req.Packfile = fixture.Packfile()
+	req.Commands = []*packp.Command{
+		{"refs/heads/master", plumbing.ZeroHash, fixture.Head},
+	}
+
+	r, err := s.Client.NewReceivePackSession(s.EmptyEndpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
+	info, err := r.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
+
+	ctx, close := context.WithCancel(context.TODO())
+	close()
+
+	report, err := r.ReceivePack(ctx, req)
+	c.Assert(err, NotNil)
+	c.Assert(report, IsNil)
 }
 
 func (s *ReceivePackSuite) TestSendPackOnEmpty(c *C) {
@@ -215,7 +241,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep transport.Endpoint,
 		req.Packfile = s.emptyPackfile()
 	}
 
-	return r.ReceivePack(req)
+	return r.ReceivePack(context.Background(), req)
 }
 
 func (s *ReceivePackSuite) receivePack(c *C, ep transport.Endpoint,
