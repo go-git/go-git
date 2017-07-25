@@ -124,7 +124,7 @@ func (e *Encoder) encodeChecksums(idx *Idxfile) (int, error) {
 }
 
 // EntryList implements sort.Interface allowing sorting in increasing order.
-type EntryList []Entry
+type EntryList []*Entry
 
 func (p EntryList) Len() int           { return len(p) }
 func (p EntryList) Less(i, j int) bool { return p[i].Hash.String() < p[j].Hash.String() }

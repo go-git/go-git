@@ -1,4 +1,4 @@
-package idxfile
+package idxfile_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	. "gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 
 	. "gopkg.in/check.v1"
 )

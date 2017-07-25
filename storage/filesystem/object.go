@@ -18,7 +18,7 @@ import (
 
 type ObjectStorage struct {
 	dir   *dotgit.DotGit
-	index map[plumbing.Hash]idx
+	index map[plumbing.Hash]*packfile.Index
 }
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
@@ -34,7 +34,7 @@ func (s *ObjectStorage) requireIndex() error {
 		return nil
 	}
 
-	s.index = make(map[plumbing.Hash]idx, 0)
+	s.index = make(map[plumbing.Hash]*packfile.Index, 0)
 	packs, err := s.dir.ObjectPacks()
 	if err != nil {
 		return err
@@ -50,14 +50,19 @@ func (s *ObjectStorage) requireIndex() error {
 }
 
 func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
-	idxfile, err := s.dir.ObjectPackIdx(h)
+	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
 	}
 
-	defer ioutil.CheckClose(idxfile, &err)
-	s.index[h] = make(idx)
-	err = s.index[h].Decode(idxfile)
+	defer ioutil.CheckClose(f, &err)
+	idxf := idxfile.NewIdxfile()
+	d := idxfile.NewDecoder(f)
+	if err = d.Decode(idxf); err != nil {
+		return err
+	}
+
+	s.index[h] = packfile.NewIndexFromIdxFile(idxf)
 	return err
 }
 
@@ -75,11 +80,8 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 		return nil, err
 	}
 
-	w.Notify = func(h plumbing.Hash, idxfile idxfile.Idxfile) {
-		s.index[h] = make(idx)
-		for _, e := range idxfile.Entries {
-			s.index[h][e.Hash] = int64(e.Offset)
-		}
+	w.Notify = func(h plumbing.Hash, idx *packfile.Index) {
+		s.index[h] = idx
 	}
 
 	return w, nil
@@ -196,15 +198,15 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash) (plumbing.EncodedObject
 		return nil, err
 	}
 
-	d.SetOffsets(s.index[pack])
+	d.SetIndex(s.index[pack])
 	obj, err := d.DecodeObjectAt(offset)
 	return obj, err
 }
 
 func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, int64) {
 	for packfile, index := range s.index {
-		if offset, ok := index[h]; ok {
-			return packfile, offset
+		if e, ok := index.LookupHash(h); ok {
+			return packfile, int64(e.Offset)
 		}
 	}
 
@@ -263,23 +265,6 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 	return iters, nil
 }
 
-type idx map[plumbing.Hash]int64
-
-func (i idx) Decode(r io.Reader) error {
-	idx := &idxfile.Idxfile{}
-
-	d := idxfile.NewDecoder(r)
-	if err := d.Decode(idx); err != nil {
-		return err
-	}
-
-	for _, e := range idx.Entries {
-		i[e.Hash] = int64(e.Offset)
-	}
-
-	return nil
-}
-
 type packfileIter struct {
 	f billy.File
 	d *packfile.Decoder
@@ -295,7 +280,7 @@ func NewPackfileIter(f billy.File, t plumbing.ObjectType) (storer.EncodedObjectI
 }
 
 func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool,
-	index idx) (storer.EncodedObjectIter, error) {
+	index *packfile.Index) (storer.EncodedObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
 	if err != nil {
@@ -307,7 +292,7 @@ func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash
 		return nil, err
 	}
 
-	d.SetOffsets(index)
+	d.SetIndex(index)
 
 	return &packfileIter{
 		f: f,

@@ -55,14 +55,8 @@ func (s *ReaderSuite) TestDecodeByTypeRefDelta(c *C) {
 	d, err := packfile.NewDecoderForType(scanner, storage, plumbing.CommitObject)
 	c.Assert(err, IsNil)
 
-	// Specific offset elements needed to decode correctly the ref-delta
-	offsets := map[plumbing.Hash]int64{
-		plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"): 84880,
-		plumbing.NewHash("fb72698cab7617ac416264415f13224dfd7a165e"): 85141,
-		plumbing.NewHash("eba74343e2f15d62adedfd8c883ee0262b5c8021"): 85300,
-	}
-
-	d.SetOffsets(offsets)
+	// Index required to decode by ref-delta.
+	d.SetIndex(getIndexFromIdxFile(f.Idx()))
 
 	defer d.Close()
 
@@ -123,7 +117,7 @@ func (s *ReaderSuite) TestDecodeByType(c *C) {
 
 			// when the packfile is ref-delta based, the offsets are required
 			if f.Is("ref-delta") {
-				d.SetOffsets(getOffsetsFromIdx(f.Idx()))
+				d.SetIndex(getIndexFromIdxFile(f.Idx()))
 			}
 
 			defer d.Close()
@@ -291,8 +285,9 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 	c.Assert(err, IsNil)
 
 	var sum uint64
-	for _, crc := range d.CRCs() {
-		sum += uint64(crc)
+	idx := d.Index().ToIdxFile()
+	for _, e := range idx.Entries {
+		sum += uint64(e.CRC32)
 	}
 
 	c.Assert(int(sum), Equals, 78022211966)
@@ -306,8 +301,7 @@ func (s *ReaderSuite) TestReadObjectAt(c *C) {
 
 	// when the packfile is ref-delta based, the offsets are required
 	if f.Is("ref-delta") {
-		offsets := getOffsetsFromIdx(f.Idx())
-		d.SetOffsets(offsets)
+		d.SetIndex(getIndexFromIdxFile(f.Idx()))
 	}
 
 	// the objects at reference 186, is a delta, so should be recall,
@@ -317,32 +311,34 @@ func (s *ReaderSuite) TestReadObjectAt(c *C) {
 	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
-func (s *ReaderSuite) TestOffsets(c *C) {
+func (s *ReaderSuite) TestIndex(c *C) {
 	f := fixtures.Basic().One()
 	scanner := packfile.NewScanner(f.Packfile())
 	d, err := packfile.NewDecoder(scanner, nil)
 	c.Assert(err, IsNil)
 
-	c.Assert(d.Offsets(), HasLen, 0)
+	c.Assert(d.Index().ToIdxFile().Entries, HasLen, 0)
 
 	_, err = d.Decode()
 	c.Assert(err, IsNil)
 
-	c.Assert(d.Offsets(), HasLen, 31)
+	c.Assert(len(d.Index().ToIdxFile().Entries), Equals, 31)
 }
 
-func (s *ReaderSuite) TestSetOffsets(c *C) {
+func (s *ReaderSuite) TestSetIndex(c *C) {
 	f := fixtures.Basic().One()
 	scanner := packfile.NewScanner(f.Packfile())
 	d, err := packfile.NewDecoder(scanner, nil)
 	c.Assert(err, IsNil)
 
+	idx := packfile.NewIndex(1)
 	h := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	d.SetOffsets(map[plumbing.Hash]int64{h: 42})
+	idx.Add(h, uint64(42), 0)
+	d.SetIndex(idx)
 
-	o := d.Offsets()
-	c.Assert(o, HasLen, 1)
-	c.Assert(o[h], Equals, int64(42))
+	idxf := d.Index().ToIdxFile()
+	c.Assert(idxf.Entries, HasLen, 1)
+	c.Assert(idxf.Entries[0].Offset, Equals, uint64(42))
 }
 
 func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
@@ -362,17 +358,12 @@ func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
 	}
 }
 
-func getOffsetsFromIdx(r io.Reader) map[plumbing.Hash]int64 {
-	idx := &idxfile.Idxfile{}
-	err := idxfile.NewDecoder(r).Decode(idx)
-	if err != nil {
+func getIndexFromIdxFile(r io.Reader) *packfile.Index {
+	idxf := idxfile.NewIdxfile()
+	d := idxfile.NewDecoder(r)
+	if err := d.Decode(idxf); err != nil {
 		panic(err)
 	}
 
-	offsets := make(map[plumbing.Hash]int64)
-	for _, e := range idx.Entries {
-		offsets[e.Hash] = int64(e.Offset)
-	}
-
-	return offsets
+	return packfile.NewIndexFromIdxFile(idxf)
 }
