@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	stdioutil "io/ioutil"
@@ -168,19 +169,36 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 
 // Clone a repository into the given Storer and worktree Filesystem with the
 // given options, if worktree is nil a bare repository is created. If the given
-// storer is not empty ErrRepositoryAlreadyExists is returned
+// storer is not empty ErrRepositoryAlreadyExists is returned.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
 func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
+	return CloneContext(context.Background(), s, worktree, o)
+}
+
+// CloneContext a repository into the given Storer and worktree Filesystem with
+// the given options, if worktree is nil a bare repository is created. If the
+// given storer is not empty ErrRepositoryAlreadyExists is returned.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func CloneContext(
+	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
+) (*Repository, error) {
 	r, err := Init(s, worktree)
 	if err != nil {
 		return nil, err
 	}
 
-	return r, r.clone(o)
+	return r, r.clone(ctx, o)
 }
 
 // PlainInit create an empty git repository at the given path. isBare defines
 // if the repository will have worktree (non-bare) or not (bare), if the path
-// is not empty ErrRepositoryAlreadyExists is returned
+// is not empty ErrRepositoryAlreadyExists is returned.
 func PlainInit(path string, isBare bool) (*Repository, error) {
 	var wt, dot billy.Filesystem
 
@@ -279,14 +297,25 @@ func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (billy.Filesyste
 
 // PlainClone a repository into the path with the given options, isBare defines
 // if the new repository will be bare or normal. If the path is not empty
-// ErrRepositoryAlreadyExists is returned
+// ErrRepositoryAlreadyExists is returned.
 func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) {
+	return PlainCloneContext(context.Background(), path, isBare, o)
+}
+
+// PlainCloneContext a repository into the path with the given options, isBare
+// defines if the new repository will be bare or normal. If the path is not empty
+// ErrRepositoryAlreadyExists is returned.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
 	r, err := PlainInit(path, isBare)
 	if err != nil {
 		return nil, err
 	}
 
-	return r, r.clone(o)
+	return r, r.clone(ctx, o)
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
@@ -372,7 +401,7 @@ func (r *Repository) DeleteRemote(name string) error {
 }
 
 // Clone clones a remote repository
-func (r *Repository) clone(o *CloneOptions) error {
+func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -386,7 +415,7 @@ func (r *Repository) clone(o *CloneOptions) error {
 		return err
 	}
 
-	head, err := r.fetchAndUpdateReferences(&FetchOptions{
+	head, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
 		RefSpecs: r.cloneRefSpec(o, c),
 		Depth:    o.Depth,
 		Auth:     o.Auth,
@@ -469,7 +498,7 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 }
 
 func (r *Repository) fetchAndUpdateReferences(
-	o *FetchOptions, ref plumbing.ReferenceName,
+	ctx context.Context, o *FetchOptions, ref plumbing.ReferenceName,
 ) (*plumbing.Reference, error) {
 
 	if err := o.Validate(); err != nil {
@@ -482,7 +511,7 @@ func (r *Repository) fetchAndUpdateReferences(
 	}
 
 	objsUpdated := true
-	remoteRefs, err := remote.fetch(o)
+	remoteRefs, err := remote.fetch(ctx, o)
 	if err == NoErrAlreadyUpToDate {
 		objsUpdated = false
 	} else if err != nil {
@@ -581,24 +610,25 @@ func updateReferenceStorerIfNeeded(
 	return false, nil
 }
 
-// Fetch fetches changes from a remote repository.
+// Fetch fetches references along with the objects necessary to complete
+// their histories, from the remote named as FetchOptions.RemoteName.
+//
 // Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 func (r *Repository) Fetch(o *FetchOptions) error {
-	if err := o.Validate(); err != nil {
-		return err
-	}
-
-	remote, err := r.Remote(o.RemoteName)
-	if err != nil {
-		return err
-	}
-
-	return remote.Fetch(o)
+	return r.FetchContext(context.Background(), o)
 }
 
-// Push pushes changes to a remote.
-func (r *Repository) Push(o *PushOptions) error {
+// FetchContext fetches references along with the objects necessary to complete
+// their histories, from the remote named as FetchOptions.RemoteName.
+//
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func (r *Repository) FetchContext(ctx context.Context, o *FetchOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -608,7 +638,34 @@ func (r *Repository) Push(o *PushOptions) error {
 		return err
 	}
 
-	return remote.Push(o)
+	return remote.FetchContext(ctx, o)
+}
+
+// Push performs a push to the remote. Returns NoErrAlreadyUpToDate if
+// the remote was already up-to-date, from the remote named as
+// FetchOptions.RemoteName.
+func (r *Repository) Push(o *PushOptions) error {
+	return r.PushContext(context.Background(), o)
+}
+
+// PushContext performs a push to the remote. Returns NoErrAlreadyUpToDate if
+// the remote was already up-to-date, from the remote named as
+// FetchOptions.RemoteName.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	remote, err := r.Remote(o.RemoteName)
+	if err != nil {
+		return err
+	}
+
+	return remote.PushContext(ctx, o)
 }
 
 // Log returns the commit history from the given LogOptions.

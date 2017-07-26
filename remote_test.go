@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/ioutil"
 	"os"
@@ -96,6 +97,23 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	})
+}
+
+func (s *RemoteSuite) TestFetchContext(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URL: s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := r.FetchContext(ctx, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+	})
+	c.Assert(err, NotNil)
+
 }
 
 func (s *RemoteSuite) TestFetchWithAllTags(c *C) {
@@ -338,6 +356,29 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 
 	AssertReferences(c, server, expected)
 
+}
+
+func (s *RemoteSuite) TestPushContext(c *C) {
+	url := c.MkDir()
+	_, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto, err := filesystem.NewStorage(fs)
+	c.Assert(err, IsNil)
+
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  url,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = r.PushContext(ctx, &PushOptions{
+		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
+	})
+	c.Assert(err, NotNil)
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {

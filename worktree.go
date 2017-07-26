@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -36,11 +37,22 @@ type Worktree struct {
 // Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 func (w *Worktree) Pull(o *PullOptions) error {
+	return w.PullContext(context.Background(), o)
+}
+
+// PullContext incorporates changes from a remote repository into the current
+// branch. Returns nil if the operation is successful, NoErrAlreadyUpToDate if
+// there are no changes to be fetched, or an error.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
 
-	head, err := w.r.fetchAndUpdateReferences(&FetchOptions{
+	head, err := w.r.fetchAndUpdateReferences(ctx, &FetchOptions{
 		RemoteName: o.RemoteName,
 		Depth:      o.Depth,
 		Auth:       o.Auth,
@@ -334,7 +346,9 @@ func (w *Worktree) checkoutChangeSubmodule(name string,
 			return err
 		}
 
-		return sub.update(&SubmoduleUpdateOptions{}, e.Hash)
+		// TODO: the submodule update should be reviewed as reported at:
+		// https://github.com/src-d/go-git/issues/415
+		return sub.update(context.TODO(), &SubmoduleUpdateOptions{}, e.Hash)
 	case merkletrie.Insert:
 		mode, err := e.Mode.ToOSFileMode()
 		if err != nil {

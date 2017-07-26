@@ -52,6 +52,16 @@ func (r *Remote) String() string {
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
 // remote was already up-to-date.
 func (r *Remote) Push(o *PushOptions) error {
+	return r.PushContext(context.Background(), o)
+}
+
+// PushContext performs a push to the remote. Returns NoErrAlreadyUpToDate if
+// the remote was already up-to-date.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
 	// TODO: Sideband support
 	if err := o.Validate(); err != nil {
 		return err
@@ -124,7 +134,7 @@ func (r *Remote) Push(o *PushOptions) error {
 		return err
 	}
 
-	rs, err := pushHashes(s, r.s, req, hashesToPush)
+	rs, err := pushHashes(ctx, s, r.s, req, hashesToPush)
 	if err != nil {
 		return err
 	}
@@ -165,14 +175,30 @@ func (r *Remote) updateRemoteReferenceStorage(
 	return nil
 }
 
-// Fetch fetches references from the remote to the local repository.
-// no changes to be fetched and no local references to update, or an error.
-func (r *Remote) Fetch(o *FetchOptions) error {
-	_, err := r.fetch(o)
+// FetchContext fetches references along with the objects necessary to complete
+// their histories.
+//
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
+//
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func (r *Remote) FetchContext(ctx context.Context, o *FetchOptions) error {
+	_, err := r.fetch(ctx, o)
 	return err
 }
 
-func (r *Remote) fetch(o *FetchOptions) (storer.ReferenceStorer, error) {
+// Fetch fetches references along with the objects necessary to complete their
+// histories.
+//
+// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// no changes to be fetched, or an error.
+func (r *Remote) Fetch(o *FetchOptions) error {
+	return r.FetchContext(context.Background(), o)
+}
+
+func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (storer.ReferenceStorer, error) {
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
 	}
@@ -219,7 +245,7 @@ func (r *Remote) fetch(o *FetchOptions) (storer.ReferenceStorer, error) {
 			return nil, err
 		}
 
-		if err := r.fetchPack(o, s, req); err != nil {
+		if err := r.fetchPack(ctx, o, s, req); err != nil {
 			return nil, err
 		}
 	}
@@ -268,10 +294,10 @@ func newClient(url string) (transport.Transport, transport.Endpoint, error) {
 	return c, ep, err
 }
 
-func (r *Remote) fetchPack(o *FetchOptions, s transport.UploadPackSession,
+func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.UploadPackSession,
 	req *packp.UploadPackRequest) (err error) {
 
-	reader, err := s.UploadPack(context.TODO(), req)
+	reader, err := s.UploadPack(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -698,8 +724,13 @@ func referencesToHashes(refs storer.ReferenceStorer) ([]plumbing.Hash, error) {
 	return hs, nil
 }
 
-func pushHashes(sess transport.ReceivePackSession, sto storer.EncodedObjectStorer,
-	req *packp.ReferenceUpdateRequest, hs []plumbing.Hash) (*packp.ReportStatus, error) {
+func pushHashes(
+	ctx context.Context,
+	sess transport.ReceivePackSession,
+	sto storer.EncodedObjectStorer,
+	req *packp.ReferenceUpdateRequest,
+	hs []plumbing.Hash,
+) (*packp.ReportStatus, error) {
 
 	rd, wr := io.Pipe()
 	req.Packfile = rd
@@ -714,7 +745,7 @@ func pushHashes(sess transport.ReceivePackSession, sto storer.EncodedObjectStore
 		done <- wr.Close()
 	}()
 
-	rs, err := sess.ReceivePack(context.TODO(), req)
+	rs, err := sess.ReceivePack(ctx, req)
 	if err != nil {
 		return nil, err
 	}
