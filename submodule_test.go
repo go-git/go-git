@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -189,4 +190,15 @@ func (s *SubmoduleSuite) TestSubmodulesStatus(c *C) {
 	status, err := sm.Status()
 	c.Assert(err, IsNil)
 	c.Assert(status, HasLen, 2)
+}
+
+func (s *SubmoduleSuite) TestSubmodulesUpdateContext(c *C) {
+	sm, err := s.Worktree.Submodules()
+	c.Assert(err, IsNil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = sm.UpdateContext(ctx, &SubmoduleUpdateOptions{Init: true})
+	c.Assert(err, NotNil)
 }

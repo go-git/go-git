@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -83,7 +84,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 
 func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})

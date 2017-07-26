@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -163,6 +164,17 @@ func (s *RepositorySuite) TestClone(c *C) {
 	remotes, err := r.Remotes()
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
+}
+
+func (s *RepositorySuite) TestCloneContext(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := CloneContext(ctx, memory.NewStorage(), nil, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
@@ -370,11 +382,7 @@ func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainClone(c *C) {
-	dir, err := ioutil.TempDir("", "plain-clone")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
-
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -383,6 +391,17 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	remotes, err := r.Remotes()
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
+}
+
+func (s *RepositorySuite) TestPlainCloneContext(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := PlainCloneContext(ctx, c.MkDir(), false, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
@@ -426,6 +445,20 @@ func (s *RepositorySuite) TestFetch(c *C) {
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestFetchContext(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URL:  s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c.Assert(r.FetchContext(ctx, &FetchOptions{}), NotNil)
+}
+
 func (s *RepositorySuite) TestCloneWithProgress(c *C) {
 	fs := memfs.New()
 
@@ -447,7 +480,7 @@ func (s *RepositorySuite) TestCloneDeep(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.clone(&CloneOptions{
+	err = r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -486,7 +519,7 @@ func (s *RepositorySuite) TestCloneConfig(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.clone(&CloneOptions{
+	err = r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -508,7 +541,7 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.clone(&CloneOptions{
+	err = r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/heads/branch"),
 		SingleBranch:  true,
@@ -545,7 +578,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(head, IsNil)
 
-	err = r.clone(&CloneOptions{
+	err = r.clone(context.Background(), &CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})
@@ -576,7 +609,7 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
 	})
@@ -590,6 +623,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 
 func (s *RepositorySuite) TestPush(c *C) {
 	url := c.MkDir()
+	fmt.Println(url)
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -613,6 +647,27 @@ func (s *RepositorySuite) TestPush(c *C) {
 		"refs/remotes/test/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"refs/remotes/test/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	})
+}
+
+func (s *RepositorySuite) TestPushContext(c *C) {
+	url := c.MkDir()
+	fmt.Println(url)
+	_, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+		Name: "foo",
+		URL:  url,
+	})
+	c.Assert(err, IsNil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = s.Repository.PushContext(ctx, &PushOptions{
+		RemoteName: "foo",
+	})
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestPushDepth(c *C) {
@@ -670,7 +725,7 @@ func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
 
 func (s *RepositorySuite) TestLog(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -698,7 +753,7 @@ func (s *RepositorySuite) TestLog(c *C) {
 
 func (s *RepositorySuite) TestLogHead(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -730,7 +785,7 @@ func (s *RepositorySuite) TestLogHead(c *C) {
 
 func (s *RepositorySuite) TestLogError(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -744,7 +799,7 @@ func (s *RepositorySuite) TestLogError(c *C) {
 
 func (s *RepositorySuite) TestCommit(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -768,7 +823,7 @@ func (s *RepositorySuite) TestCommit(c *C) {
 
 func (s *RepositorySuite) TestCommits(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -791,7 +846,7 @@ func (s *RepositorySuite) TestCommits(c *C) {
 
 func (s *RepositorySuite) TestBlob(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -813,7 +868,7 @@ func (s *RepositorySuite) TestBlob(c *C) {
 
 func (s *RepositorySuite) TestBlobs(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -840,7 +895,7 @@ func (s *RepositorySuite) TestTagObject(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")
@@ -858,7 +913,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -903,7 +958,7 @@ func (s *RepositorySuite) TestNotes(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -922,7 +977,7 @@ func (s *RepositorySuite) TestNotes(c *C) {
 
 func (s *RepositorySuite) TestTree(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{
+	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	c.Assert(err, IsNil)
@@ -945,7 +1000,7 @@ func (s *RepositorySuite) TestTree(c *C) {
 
 func (s *RepositorySuite) TestTrees(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -973,7 +1028,7 @@ func (s *RepositorySuite) TestTagObjects(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -998,7 +1053,7 @@ func (s *RepositorySuite) TestTagObjects(c *C) {
 
 func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	commits, err := r.CommitObjects()
@@ -1008,7 +1063,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic(c *C) {
 
 func (s *RepositorySuite) TestRef(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	ref, err := r.Reference(plumbing.HEAD, false)
@@ -1022,7 +1077,7 @@ func (s *RepositorySuite) TestRef(c *C) {
 
 func (s *RepositorySuite) TestRefs(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	c.Assert(err, IsNil)
@@ -1034,7 +1089,7 @@ func (s *RepositorySuite) TestRefs(c *C) {
 
 func (s *RepositorySuite) TestObject(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -1047,7 +1102,7 @@ func (s *RepositorySuite) TestObject(c *C) {
 
 func (s *RepositorySuite) TestObjects(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	count := 0
@@ -1069,7 +1124,7 @@ func (s *RepositorySuite) TestObjects(c *C) {
 
 func (s *RepositorySuite) TestObjectNotFound(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	c.Assert(err, IsNil)
 
 	hash := plumbing.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
@@ -1099,7 +1154,7 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
@@ -1128,7 +1183,7 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	)
 
 	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(&CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
