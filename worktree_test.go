@@ -51,6 +51,66 @@ func (s *WorktreeSuite) TestPullCheckout(c *C) {
 	c.Assert(fi, HasLen, 8)
 }
 
+func (s *WorktreeSuite) TestPullFastForward(c *C) {
+	url := c.MkDir()
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	server, err := PlainClone(url, false, &CloneOptions{
+		URL: path,
+	})
+
+	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+		URL: url,
+	})
+
+	w, err := server.Worktree()
+	c.Assert(err, IsNil)
+	err = ioutil.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	c.Assert(err, IsNil)
+	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	w, err = r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, IsNil)
+
+	head, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, hash)
+}
+
+func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
+	url := c.MkDir()
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	server, err := PlainClone(url, false, &CloneOptions{
+		URL: path,
+	})
+
+	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+		URL: url,
+	})
+
+	w, err := server.Worktree()
+	c.Assert(err, IsNil)
+	err = ioutil.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Commit("foo", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	w, err = r.Worktree()
+	c.Assert(err, IsNil)
+	err = ioutil.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, ErrorMatches, "non-fast-forward update")
+}
+
 func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	r.CreateRemote(&config.RemoteConfig{

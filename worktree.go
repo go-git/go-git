@@ -15,6 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
 
@@ -36,6 +37,8 @@ type Worktree struct {
 // Pull incorporates changes from a remote repository into the current branch.
 // Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
+//
+// Pull only supports merges where the can be resolved as a fast-forward.
 func (w *Worktree) Pull(o *PullOptions) error {
 	return w.PullContext(context.Background(), o)
 }
@@ -43,6 +46,8 @@ func (w *Worktree) Pull(o *PullOptions) error {
 // PullContext incorporates changes from a remote repository into the current
 // branch. Returns nil if the operation is successful, NoErrAlreadyUpToDate if
 // there are no changes to be fetched, or an error.
+//
+// Pull only supports merges where the can be resolved as a fast-forward.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects to the
@@ -52,17 +57,55 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	head, err := w.r.fetchAndUpdateReferences(ctx, &FetchOptions{
-		RemoteName: o.RemoteName,
-		Depth:      o.Depth,
-		Auth:       o.Auth,
-		Progress:   o.Progress,
-	}, o.ReferenceName)
+	remote, err := w.r.Remote(o.RemoteName)
 	if err != nil {
 		return err
 	}
 
-	if err := w.Reset(&ResetOptions{Commit: head.Hash()}); err != nil {
+	fetchHead, err := remote.fetch(ctx, &FetchOptions{
+		RemoteName: o.RemoteName,
+		Depth:      o.Depth,
+		Auth:       o.Auth,
+		Progress:   o.Progress,
+	})
+
+	updated := true
+	if err == NoErrAlreadyUpToDate {
+		updated = false
+	} else if err != nil {
+		return err
+	}
+
+	ref, err := storer.ResolveReference(fetchHead, o.ReferenceName)
+	if err != nil {
+		return err
+	}
+
+	head, err := w.r.Head()
+	if err == nil {
+		if !updated && head.Hash() == ref.Hash() {
+			return NoErrAlreadyUpToDate
+		}
+
+		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash())
+		if err != nil {
+			return err
+		}
+
+		if !ff {
+			return fmt.Errorf("non-fast-forward update")
+		}
+	}
+
+	if err != nil && err != plumbing.ErrReferenceNotFound {
+		return err
+	}
+
+	if err := w.updateHEAD(ref.Hash()); err != nil {
+		return err
+	}
+
+	if err := w.Reset(&ResetOptions{Commit: ref.Hash()}); err != nil {
 		return err
 	}
 
