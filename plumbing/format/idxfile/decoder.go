@@ -104,7 +104,7 @@ func readObjectNames(idx *Idxfile, r io.Reader) error {
 			return err
 		}
 
-		idx.Entries = append(idx.Entries, Entry{Hash: ref})
+		idx.Entries = append(idx.Entries, &Entry{Hash: ref})
 	}
 
 	return nil

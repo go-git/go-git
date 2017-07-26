@@ -20,13 +20,13 @@ import (
 // is renamed/moved (depends on the Filesystem implementation) to the final
 // location, if the PackWriter is not used, nothing is written
 type PackWriter struct {
-	Notify func(h plumbing.Hash, i idxfile.Idxfile)
+	Notify func(plumbing.Hash, *packfile.Index)
 
 	fs       billy.Filesystem
 	fr, fw   billy.File
 	synced   *syncedReader
 	checksum plumbing.Hash
-	index    idxfile.Idxfile
+	index    *packfile.Index
 	result   chan error
 }
 
@@ -68,14 +68,7 @@ func (w *PackWriter) buildIndex() {
 	}
 
 	w.checksum = checksum
-	w.index.PackfileChecksum = checksum
-	w.index.Version = idxfile.VersionSupported
-
-	offsets := d.Offsets()
-	for h, crc := range d.CRCs() {
-		w.index.Add(h, uint64(offsets[h]), crc)
-	}
-
+	w.index = d.Index()
 	w.result <- err
 }
 
@@ -122,7 +115,7 @@ func (w *PackWriter) Close() error {
 		return err
 	}
 
-	if len(w.index.Entries) == 0 {
+	if w.index == nil || w.index.Size() == 0 {
 		return w.clean()
 	}
 
@@ -152,8 +145,11 @@ func (w *PackWriter) save() error {
 }
 
 func (w *PackWriter) encodeIdx(writer io.Writer) error {
+	idx := w.index.ToIdxFile()
+	idx.PackfileChecksum = w.checksum
+	idx.Version = idxfile.VersionSupported
 	e := idxfile.NewEncoder(writer)
-	_, err := e.Encode(&w.index)
+	_, err := e.Encode(idx)
 	return err
 }
 

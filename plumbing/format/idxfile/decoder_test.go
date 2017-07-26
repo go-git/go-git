@@ -1,4 +1,4 @@
-package idxfile
+package idxfile_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/src-d/go-git-fixtures"
+	. "gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
@@ -48,12 +49,8 @@ func (s *IdxfileSuite) TestDecodeCRCs(c *C) {
 	_, err = pd.Decode()
 	c.Assert(err, IsNil)
 
-	i := &Idxfile{Version: VersionSupported}
-
-	offsets := pd.Offsets()
-	for h, crc := range pd.CRCs() {
-		i.Add(h, uint64(offsets[h]), crc)
-	}
+	i := pd.Index().ToIdxFile()
+	i.Version = VersionSupported
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf)
