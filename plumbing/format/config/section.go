@@ -1,6 +1,9 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Section is the representation of a section inside git configuration files.
 // Each Section contains Options that are used by both the Git plumbing
@@ -36,7 +39,25 @@ type Subsection struct {
 
 type Sections []*Section
 
+func (s Sections) GoString() string {
+	var strs []string
+	for _, ss := range s {
+		strs = append(strs, fmt.Sprintf("%#v", ss))
+	}
+
+	return strings.Join(strs, ", ")
+}
+
 type Subsections []*Subsection
+
+func (s Subsections) GoString() string {
+	var strs []string
+	for _, ss := range s {
+		strs = append(strs, fmt.Sprintf("%#v", ss))
+	}
+
+	return strings.Join(strs, ", ")
+}
 
 // IsName checks if the name provided is equals to the Section name, case insensitive.
 func (s *Section) IsName(name string) bool {

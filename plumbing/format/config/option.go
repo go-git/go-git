@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -19,6 +20,15 @@ type Options []*Option
 // this option's key in a case-insensitive comparison.
 func (o *Option) IsKey(key string) bool {
 	return strings.ToLower(o.Key) == strings.ToLower(key)
+}
+
+func (opts Options) GoString() string {
+	var strs []string
+	for _, opt := range opts {
+		strs = append(strs, fmt.Sprintf("%#v", opt))
+	}
+
+	return strings.Join(strs, ", ")
 }
 
 // Get gets the value for the given key if set,
