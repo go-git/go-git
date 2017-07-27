@@ -844,7 +844,7 @@ func (r *Repository) Worktree() (*Worktree, error) {
 		return nil, ErrIsBareRepository
 	}
 
-	return &Worktree{r: r, fs: r.wt}, nil
+	return &Worktree{r: r, Filesystem: r.wt}, nil
 }
 
 // ResolveRevision resolves revision to corresponding hash.

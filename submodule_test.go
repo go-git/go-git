@@ -128,7 +128,7 @@ func (s *SubmoduleSuite) TestUpdateWithRecursion(c *C) {
 
 	c.Assert(err, IsNil)
 
-	fs := s.Worktree.fs
+	fs := s.Worktree.Filesystem
 	_, err = fs.Stat(fs.Join("itself", "basic", "LICENSE"))
 	c.Assert(err, IsNil)
 }

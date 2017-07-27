@@ -30,8 +30,10 @@ var (
 
 // Worktree represents a git worktree.
 type Worktree struct {
-	r  *Repository
-	fs billy.Filesystem
+	// Filesystem underlying filesystem.
+	Filesystem billy.Filesystem
+
+	r *Repository
 }
 
 // Pull incorporates changes from a remote repository into the current branch.
@@ -398,13 +400,13 @@ func (w *Worktree) checkoutChangeSubmodule(name string,
 			return err
 		}
 
-		if err := w.fs.MkdirAll(name, mode); err != nil {
+		if err := w.Filesystem.MkdirAll(name, mode); err != nil {
 			return err
 		}
 
 		return w.addIndexFromTreeEntry(name, e, idx)
 	case merkletrie.Delete:
-		if err := rmFileAndDirIfEmpty(w.fs, name); err != nil {
+		if err := rmFileAndDirIfEmpty(w.Filesystem, name); err != nil {
 			return err
 		}
 
@@ -428,7 +430,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 
 		// to apply perm changes the file is deleted, billy doesn't implement
 		// chmod
-		if err := w.fs.Remove(name); err != nil {
+		if err := w.Filesystem.Remove(name); err != nil {
 			return err
 		}
 
@@ -445,7 +447,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 
 		return w.addIndexFromFile(name, e.Hash, idx)
 	case merkletrie.Delete:
-		if err := rmFileAndDirIfEmpty(w.fs, name); err != nil {
+		if err := rmFileAndDirIfEmpty(w.Filesystem, name); err != nil {
 			return err
 		}
 
@@ -472,7 +474,7 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 
 	defer ioutil.CheckClose(from, &err)
 
-	to, err := w.fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
+	to, err := w.Filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return
 	}
@@ -496,7 +498,7 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 		return
 	}
 
-	err = w.fs.Symlink(string(bytes), f.Name)
+	err = w.Filesystem.Symlink(string(bytes), f.Name)
 	return
 }
 
@@ -511,7 +513,7 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 }
 
 func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *index.Index) error {
-	fi, err := w.fs.Lstat(name)
+	fi, err := w.Filesystem.Lstat(name)
 	if err != nil {
 		return err
 	}
@@ -620,7 +622,7 @@ func (w *Worktree) newSubmodule(fromModules, fromConfig *config.Submodule) *Subm
 }
 
 func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
-	f, err := w.fs.Open(gitmodulesFile)
+	f, err := w.Filesystem.Open(gitmodulesFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

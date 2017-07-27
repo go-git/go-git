@@ -54,8 +54,8 @@ func (s *WorktreeSuite) TestCommitParent(c *C) {
 
 	fs := memfs.New()
 	w := &Worktree{
-		r:  s.Repository,
-		fs: fs,
+		r:          s.Repository,
+		Filesystem: fs,
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -78,8 +78,8 @@ func (s *WorktreeSuite) TestCommitAll(c *C) {
 
 	fs := memfs.New()
 	w := &Worktree{
-		r:  s.Repository,
-		fs: fs,
+		r:          s.Repository,
+		Filesystem: fs,
 	}
 
 	err := w.Checkout(&CheckoutOptions{})

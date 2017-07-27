@@ -32,7 +32,7 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 	}
 
 	h := &buildTreeHelper{
-		fs: w.fs,
+		fs: w.Filesystem,
 		s:  w.r.Storer,
 	}
 
