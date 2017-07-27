@@ -5,6 +5,8 @@ import "gopkg.in/src-d/go-git.v4/plumbing"
 const (
 	// VersionSupported is the only idx version supported.
 	VersionSupported = 2
+
+	offsetLimit = 0x7fffffff
 )
 
 var (

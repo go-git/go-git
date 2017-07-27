@@ -98,13 +98,28 @@ func (e *Encoder) encodeCRC32(idx *Idxfile) (int, error) {
 
 func (e *Encoder) encodeOffsets(idx *Idxfile) (int, error) {
 	sz := 0
+
+	var o64bits []uint64
 	for _, ent := range idx.Entries {
-		if err := binary.WriteUint32(e, uint32(ent.Offset)); err != nil {
+		o := ent.Offset
+		if o > offsetLimit {
+			o64bits = append(o64bits, o)
+			o = offsetLimit + uint64(len(o64bits))
+		}
+
+		if err := binary.WriteUint32(e, uint32(o)); err != nil {
 			return sz, err
 		}
 
 		sz += 4
+	}
 
+	for _, o := range o64bits {
+		if err := binary.WriteUint64(e, o); err != nil {
+			return sz, err
+		}
+
+		sz += 8
 	}
 
 	return sz, nil
