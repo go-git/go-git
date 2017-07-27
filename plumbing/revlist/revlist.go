@@ -16,7 +16,26 @@ import (
 // the reachable objects from the given objects. Ignore param are object hashes
 // that we want to ignore on the result. All that objects must be accessible
 // from the object storer.
-func Objects(s storer.EncodedObjectStorer, objects, ignore []plumbing.Hash) ([]plumbing.Hash, error) {
+func Objects(
+	s storer.EncodedObjectStorer,
+	objs,
+	ignore []plumbing.Hash,
+) ([]plumbing.Hash, error) {
+	ignore, err := objects(s, ignore, nil, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return objects(s, objs, ignore, false)
+}
+
+func objects(
+	s storer.EncodedObjectStorer,
+	objects,
+	ignore []plumbing.Hash,
+	allowMissingObjects bool,
+) ([]plumbing.Hash, error) {
+
 	seen := hashListToSet(ignore)
 	result := make(map[plumbing.Hash]bool)
 
@@ -29,6 +48,10 @@ func Objects(s storer.EncodedObjectStorer, objects, ignore []plumbing.Hash) ([]p
 
 	for _, h := range objects {
 		if err := processObject(s, h, seen, ignore, walkerFunc); err != nil {
+			if allowMissingObjects && err == plumbing.ErrObjectNotFound {
+				continue
+			}
+
 			return nil, err
 		}
 	}
@@ -44,6 +67,10 @@ func processObject(
 	ignore []plumbing.Hash,
 	walkerFunc func(h plumbing.Hash),
 ) error {
+	if seen[h] {
+		return nil
+	}
+
 	o, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
 		return err
