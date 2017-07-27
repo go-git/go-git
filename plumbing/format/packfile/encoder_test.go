@@ -2,9 +2,11 @@ package packfile
 
 import (
 	"bytes"
+	"io"
 
 	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
@@ -88,64 +90,76 @@ func (s *EncoderSuite) TestHashNotFound(c *C) {
 
 func (s *EncoderSuite) TestDecodeEncodeDecode(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
-		scanner := NewScanner(f.Packfile())
+		pf := f.Packfile()
+		ph := f.PackfileHash
 		storage := memory.NewStorage()
-
-		d, err := NewDecoder(scanner, storage)
-		c.Assert(err, IsNil)
-
-		ch, err := d.Decode()
-		c.Assert(err, IsNil)
-		c.Assert(ch, Equals, f.PackfileHash)
-
-		objIter, err := d.o.IterEncodedObjects(plumbing.AnyObject)
-		c.Assert(err, IsNil)
-
-		objects := []plumbing.EncodedObject{}
-		hashes := []plumbing.Hash{}
-		err = objIter.ForEach(func(o plumbing.EncodedObject) error {
-			objects = append(objects, o)
-			hash, err := s.store.SetEncodedObject(o)
-			c.Assert(err, IsNil)
-
-			hashes = append(hashes, hash)
-
-			return err
-
-		})
-		c.Assert(err, IsNil)
-		_, err = s.enc.Encode(hashes)
-		c.Assert(err, IsNil)
-
-		scanner = NewScanner(s.buf)
-		storage = memory.NewStorage()
-		d, err = NewDecoder(scanner, storage)
-		c.Assert(err, IsNil)
-		_, err = d.Decode()
-		c.Assert(err, IsNil)
-
-		objIter, err = d.o.IterEncodedObjects(plumbing.AnyObject)
-		c.Assert(err, IsNil)
-		obtainedObjects := []plumbing.EncodedObject{}
-		err = objIter.ForEach(func(o plumbing.EncodedObject) error {
-			obtainedObjects = append(obtainedObjects, o)
-
-			return nil
-		})
-		c.Assert(err, IsNil)
-		c.Assert(len(obtainedObjects), Equals, len(objects))
-
-		equals := 0
-		for _, oo := range obtainedObjects {
-			for _, o := range objects {
-				if o.Hash() == oo.Hash() {
-					equals++
-				}
-			}
-		}
-
-		c.Assert(len(obtainedObjects), Equals, equals)
+		s.testDecodeEncodeDecode(c, pf, ph, storage)
 	})
+}
+
+func (s *EncoderSuite) testDecodeEncodeDecode(c *C,
+	pf io.ReadCloser,
+	ph plumbing.Hash,
+	storage storer.Storer) {
+
+	defer func() {
+		c.Assert(pf.Close(), IsNil)
+	}()
+
+	scanner := NewScanner(pf)
+
+	d, err := NewDecoder(scanner, storage)
+	c.Assert(err, IsNil)
+
+	ch, err := d.Decode()
+	c.Assert(err, IsNil)
+	c.Assert(ch, Equals, ph)
+
+	objIter, err := storage.IterEncodedObjects(plumbing.AnyObject)
+	c.Assert(err, IsNil)
+
+	expectedObjects := map[plumbing.Hash]bool{}
+	var hashes []plumbing.Hash
+	err = objIter.ForEach(func(o plumbing.EncodedObject) error {
+		expectedObjects[o.Hash()] = true
+		hashes = append(hashes, o.Hash())
+		return err
+
+	})
+	c.Assert(err, IsNil)
+
+	enc := NewEncoder(s.buf, storage, false)
+	_, err = enc.Encode(hashes)
+	c.Assert(err, IsNil)
+
+	scanner = NewScanner(s.buf)
+	storage = memory.NewStorage()
+	d, err = NewDecoder(scanner, storage)
+	c.Assert(err, IsNil)
+	_, err = d.Decode()
+	c.Assert(err, IsNil)
+
+	objIter, err = storage.IterEncodedObjects(plumbing.AnyObject)
+	c.Assert(err, IsNil)
+	obtainedObjects := map[plumbing.Hash]bool{}
+	err = objIter.ForEach(func(o plumbing.EncodedObject) error {
+		obtainedObjects[o.Hash()] = true
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(obtainedObjects, DeepEquals, expectedObjects)
+
+	for h := range obtainedObjects {
+		if !expectedObjects[h] {
+			c.Errorf("obtained unexpected object: %s", h)
+		}
+	}
+
+	for h := range expectedObjects {
+		if !obtainedObjects[h] {
+			c.Errorf("missing object: %s", h)
+		}
+	}
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeREF(c *C) {
