@@ -82,6 +82,12 @@ func (t ObjectType) Valid() bool {
 	return t >= CommitObject && t <= REFDeltaObject
 }
 
+// IsDelta returns true for any ObjectTyoe that represents a delta (i.e.
+// REFDeltaObject or OFSDeltaObject).
+func (t ObjectType) IsDelta() bool {
+	return t == REFDeltaObject || t == OFSDeltaObject
+}
+
 // ParseObjectType parses a string representation of ObjectType. It returns an
 // error on parse failure.
 func ParseObjectType(value string) (typ ObjectType, err error) {

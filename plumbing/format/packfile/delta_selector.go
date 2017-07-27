@@ -96,9 +96,7 @@ func (dw *deltaSelector) fixAndBreakChains(objectsToPack []*ObjectToPack) error 
 }
 
 func (dw *deltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*ObjectToPack, otp *ObjectToPack) error {
-	isDelta := otp.Object.Type() == plumbing.OFSDeltaObject ||
-		otp.Object.Type() == plumbing.REFDeltaObject
-	if !isDelta {
+	if !otp.Object.Type().IsDelta() {
 		return nil
 	}
 
@@ -141,9 +139,7 @@ func (dw *deltaSelector) restoreOriginal(otp *ObjectToPack) error {
 		return nil
 	}
 
-	isDelta := otp.Object.Type() == plumbing.OFSDeltaObject ||
-		otp.Object.Type() == plumbing.REFDeltaObject
-	if !isDelta {
+	if !otp.Object.Type().IsDelta() {
 		return nil
 	}
 
