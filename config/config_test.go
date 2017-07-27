@@ -107,7 +107,7 @@ func (s *ConfigSuite) TestUnmarshallMarshall(c *C) {
 
 	output, err := cfg.Marshal()
 	c.Assert(err, IsNil)
-	c.Assert(output, DeepEquals, input)
+	c.Assert(string(output), DeepEquals, string(input))
 }
 
 func (s *ConfigSuite) TestValidateInvalidRemote(c *C) {

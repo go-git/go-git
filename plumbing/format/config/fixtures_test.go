@@ -87,4 +87,18 @@ var fixtures = []*Fixture{
 			AddOption("sect1", "subsect1", "opt2", "value2b").
 			AddOption("sect1", "subsect2", "opt2", "value2"),
 	},
+	{
+		Raw: `
+			[sect1]
+			opt1 = value1
+			opt1 = value2
+			`,
+		Text: `[sect1]
+	opt1 = value1
+	opt1 = value2
+`,
+		Config: New().
+			AddOption("sect1", "", "opt1", "value1").
+			AddOption("sect1", "", "opt1", "value2"),
+	},
 }

@@ -159,13 +159,22 @@ func (c *Config) marshalCore() {
 
 func (c *Config) marshalRemotes() {
 	s := c.Raw.Section(remoteSection)
-	s.Subsections = make(format.Subsections, len(c.Remotes))
-
-	var i int
-	for _, r := range c.Remotes {
-		s.Subsections[i] = r.marshal()
-		i++
+	newSubsections := make(format.Subsections, 0, len(c.Remotes))
+	added := make(map[string]bool)
+	for _, subsection := range s.Subsections {
+		if remote, ok := c.Remotes[subsection.Name]; ok {
+			newSubsections = append(newSubsections, remote.marshal())
+			added[subsection.Name] = true
+		}
 	}
+
+	for name, remote := range c.Remotes {
+		if !added[name] {
+			newSubsections = append(newSubsections, remote.marshal())
+		}
+	}
+
+	s.Subsections = newSubsections
 }
 
 func (c *Config) marshalSubmodules() {
@@ -252,14 +261,21 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	}
 
 	c.raw.Name = c.Name
-	c.raw.RemoveOption(urlKey)
-	for _, url := range c.URLs {
-		c.raw.AddOption(urlKey, url)
+	if len(c.URLs) == 0 {
+		c.raw.RemoveOption(urlKey)
+	} else {
+		c.raw.SetOption(urlKey, c.URLs...)
 	}
 
-	c.raw.RemoveOption(fetchKey)
-	for _, rs := range c.Fetch {
-		c.raw.AddOption(fetchKey, rs.String())
+	if len(c.Fetch) == 0 {
+		c.raw.RemoveOption(fetchKey)
+	} else {
+		var values []string
+		for _, rs := range c.Fetch {
+			values = append(values, rs.String())
+		}
+
+		c.raw.SetOption(fetchKey, values...)
 	}
 
 	return c.raw

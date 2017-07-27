@@ -79,16 +79,39 @@ func (opts Options) withAddedOption(key string, value string) Options {
 	return append(opts, &Option{key, value})
 }
 
-func (opts Options) withSettedOption(key string, value string) Options {
-	for i := len(opts) - 1; i >= 0; i-- {
-		o := opts[i]
-		if o.IsKey(key) {
-			result := make(Options, len(opts))
-			copy(result, opts)
-			result[i] = &Option{key, value}
-			return result
+func (opts Options) withSettedOption(key string, values ...string) Options {
+	var result Options
+	var added []string
+	for _, o := range opts {
+		if !o.IsKey(key) {
+			result = append(result, o)
+			continue
+		}
+
+		if contains(values, o.Value) {
+			added = append(added, o.Value)
+			result = append(result, o)
+			continue
 		}
 	}
 
-	return opts.withAddedOption(key, value)
+	for _, value := range values {
+		if contains(added, value) {
+			continue
+		}
+
+		result = result.withAddedOption(key, value)
+	}
+
+	return result
+}
+
+func contains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+
+	return false
 }

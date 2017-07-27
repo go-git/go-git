@@ -134,8 +134,8 @@ func (s *Subsection) AddOption(key string, value string) *Subsection {
 
 // SetOption adds a new Option to the Subsection. If the option already exists, is replaced.
 // The updated Subsection is returned.
-func (s *Subsection) SetOption(key string, value string) *Subsection {
-	s.Options = s.Options.withSettedOption(key, value)
+func (s *Subsection) SetOption(key string, value ...string) *Subsection {
+	s.Options = s.Options.withSettedOption(key, value...)
 	return s
 }
 
