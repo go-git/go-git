@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/test"
 
 	. "gopkg.in/check.v1"
@@ -24,6 +25,14 @@ func (s *StorageSuite) SetUpTest(c *C) {
 	s.dir = c.MkDir()
 	storage, err := NewStorage(osfs.New(s.dir))
 	c.Assert(err, IsNil)
+
+	// ensure that right interfaces are implemented
+	var _ storer.EncodedObjectStorer = storage
+	var _ storer.IndexStorer = storage
+	var _ storer.ReferenceStorer = storage
+	var _ storer.ShallowStorer = storage
+	var _ storer.DeltaObjectStorer = storage
+	var _ storer.PackfileWriter = storage
 
 	s.BaseStorageSuite = test.NewBaseStorageSuite(storage)
 	s.BaseStorageSuite.SetUpTest(c)

@@ -86,68 +86,6 @@ func (s *EncoderSuite) TestHashNotFound(c *C) {
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 }
 
-func (s *EncoderSuite) TestDecodeEncodeDecode(c *C) {
-	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
-		scanner := NewScanner(f.Packfile())
-		storage := memory.NewStorage()
-
-		d, err := NewDecoder(scanner, storage)
-		c.Assert(err, IsNil)
-
-		ch, err := d.Decode()
-		c.Assert(err, IsNil)
-		c.Assert(ch, Equals, f.PackfileHash)
-
-		objIter, err := d.o.IterEncodedObjects(plumbing.AnyObject)
-		c.Assert(err, IsNil)
-
-		objects := []plumbing.EncodedObject{}
-		hashes := []plumbing.Hash{}
-		err = objIter.ForEach(func(o plumbing.EncodedObject) error {
-			objects = append(objects, o)
-			hash, err := s.store.SetEncodedObject(o)
-			c.Assert(err, IsNil)
-
-			hashes = append(hashes, hash)
-
-			return err
-
-		})
-		c.Assert(err, IsNil)
-		_, err = s.enc.Encode(hashes)
-		c.Assert(err, IsNil)
-
-		scanner = NewScanner(s.buf)
-		storage = memory.NewStorage()
-		d, err = NewDecoder(scanner, storage)
-		c.Assert(err, IsNil)
-		_, err = d.Decode()
-		c.Assert(err, IsNil)
-
-		objIter, err = d.o.IterEncodedObjects(plumbing.AnyObject)
-		c.Assert(err, IsNil)
-		obtainedObjects := []plumbing.EncodedObject{}
-		err = objIter.ForEach(func(o plumbing.EncodedObject) error {
-			obtainedObjects = append(obtainedObjects, o)
-
-			return nil
-		})
-		c.Assert(err, IsNil)
-		c.Assert(len(obtainedObjects), Equals, len(objects))
-
-		equals := 0
-		for _, oo := range obtainedObjects {
-			for _, o := range objects {
-				if o.Hash() == oo.Hash() {
-					equals++
-				}
-			}
-		}
-
-		c.Assert(len(obtainedObjects), Equals, equals)
-	})
-}
-
 func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeREF(c *C) {
 	s.enc = NewEncoder(s.buf, s.store, true)
 	s.simpleDeltaTest(c)

@@ -403,6 +403,40 @@ func (s *BaseStorageSuite) TestModule(c *C) {
 	c.Assert(storer, NotNil)
 }
 
+func (s *BaseStorageSuite) TestDeltaObjectStorer(c *C) {
+	dos, ok := s.Storer.(storer.DeltaObjectStorer)
+	if !ok {
+		c.Skip("not an DeltaObjectStorer")
+	}
+
+	pwr, ok := s.Storer.(storer.PackfileWriter)
+	if !ok {
+		c.Skip("not a storer.PackWriter")
+	}
+
+	pw, err := pwr.PackfileWriter()
+	c.Assert(err, IsNil)
+
+	f := fixtures.Basic().One()
+	_, err = io.Copy(pw, f.Packfile())
+	c.Assert(err, IsNil)
+
+	err = pw.Close()
+	c.Assert(err, IsNil)
+
+	h := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+	obj, err := dos.DeltaObject(plumbing.AnyObject, h)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Type(), Equals, plumbing.BlobObject)
+
+	h = plumbing.NewHash("aa9b383c260e1d05fbbf6b30a02914555e20c725")
+	obj, err = dos.DeltaObject(plumbing.AnyObject, h)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Type(), Equals, plumbing.OFSDeltaObject)
+	_, ok = obj.(plumbing.DeltaObject)
+	c.Assert(ok, Equals, true)
+}
+
 func objectEquals(a plumbing.EncodedObject, b plumbing.EncodedObject) error {
 	ha := a.Hash()
 	hb := b.Hash()

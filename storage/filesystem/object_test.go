@@ -52,12 +52,12 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 	c.Assert(err, IsNil)
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
-	obj, err := o.getFromPackfile(expected)
+	obj, err := o.getFromPackfile(expected, false)
 	c.Assert(err, IsNil)
 	c.Assert(obj.Hash(), Equals, expected)
 
 	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
-	obj, err = o.getFromPackfile(expected)
+	obj, err = o.getFromPackfile(expected, false)
 	c.Assert(err, IsNil)
 	c.Assert(obj.Hash(), Equals, expected)
 }
