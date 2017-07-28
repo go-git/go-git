@@ -194,6 +194,8 @@ type SubmoduleUpdateOptions struct {
 	// the current repository but also in any nested submodules inside those
 	// submodules (and so on). Until the SubmoduleRescursivity is reached.
 	RecurseSubmodules SubmoduleRescursivity
+	// Auth credentials, if required, to use with the remote repository.
+	Auth transport.AuthMethod
 }
 
 var (

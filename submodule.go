@@ -218,7 +218,7 @@ func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
 	if !o.NoFetch {
-		err := r.FetchContext(ctx, &FetchOptions{})
+		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth})
 		if err != nil && err != NoErrAlreadyUpToDate {
 			return err
 		}
