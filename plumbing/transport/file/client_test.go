@@ -14,6 +14,28 @@ import (
 
 func Test(t *testing.T) { TestingT(t) }
 
+type ClientSuite struct {
+	CommonSuite
+}
+
+var _ = Suite(&ClientSuite{})
+
+func (s *ClientSuite) TestCommand(c *C) {
+	runner := &runner{
+		UploadPackBin:  transport.UploadPackServiceName,
+		ReceivePackBin: transport.ReceivePackServiceName,
+	}
+	ep, err := transport.NewEndpoint(filepath.Join("fake", "repo"))
+	c.Assert(err, IsNil)
+	var emptyAuth transport.AuthMethod
+	_, err = runner.Command("git-receive-pack", ep, emptyAuth)
+	c.Assert(err, IsNil)
+
+	// Make sure we get an error for one that doesn't exist.
+	_, err = runner.Command("git-fake-command", ep, emptyAuth)
+	c.Assert(os.IsNotExist(err), Equals, true)
+}
+
 const bareConfig = `[core]
 repositoryformatversion = 0
 filemode = true
