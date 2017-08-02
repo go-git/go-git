@@ -1,6 +1,9 @@
 package noder
 
-import . "gopkg.in/check.v1"
+import (
+	"golang.org/x/text/unicode/norm"
+	. "gopkg.in/check.v1"
+)
 
 type PathSuite struct{}
 
@@ -148,4 +151,11 @@ func (s *PathSuite) TestCompareMixedDepths(c *C) {
 	})
 	c.Assert(p1.Compare(p2), Equals, 1)
 	c.Assert(p2.Compare(p1), Equals, -1)
+}
+
+func (s *PathSuite) TestCompareNormalization(c *C) {
+	p1 := Path([]Noder{&noderMock{name: norm.Form(norm.NFKC).String("페")}})
+	p2 := Path([]Noder{&noderMock{name: norm.Form(norm.NFKD).String("페")}})
+	c.Assert(p1.Compare(p2), Equals, 0)
+	c.Assert(p2.Compare(p1), Equals, 0)
 }
