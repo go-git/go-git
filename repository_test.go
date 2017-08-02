@@ -613,12 +613,42 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
 	})
+	c.Assert(err, IsNil)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
 	c.Assert(head.Type(), Equals, plumbing.HashReference)
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	count := 0
+	objects, err := r.Objects()
+	c.Assert(err, IsNil)
+	objects.ForEach(func(object.Object) error { count++; return nil })
+	c.Assert(count, Equals, 31)
+}
+
+func (s *RepositorySuite) TestCloneDetachedHEADAndShallow(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:           s.GetBasicLocalRepositoryURL(),
+		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
+		Depth:         1,
+	})
+
+	c.Assert(err, IsNil)
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	c.Assert(err, IsNil)
+	c.Assert(head, NotNil)
+	c.Assert(head.Type(), Equals, plumbing.HashReference)
+	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	count := 0
+	objects, err := r.Objects()
+	c.Assert(err, IsNil)
+	objects.ForEach(func(object.Object) error { count++; return nil })
+	c.Assert(count, Equals, 15)
 }
 
 func (s *RepositorySuite) TestPush(c *C) {
