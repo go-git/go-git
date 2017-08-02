@@ -541,7 +541,7 @@ func (r *Repository) fetchAndUpdateReferences(
 func (r *Repository) updateReferences(spec []config.RefSpec,
 	resolvedHead *plumbing.Reference) (updated bool, err error) {
 
-	if !resolvedHead.IsBranch() {
+	if !resolvedHead.Name().IsBranch() {
 		// Detached HEAD mode
 		head := plumbing.NewHashReference(plumbing.HEAD, resolvedHead.Hash())
 		return updateReferenceStorerIfNeeded(r.Storer, head)
@@ -701,7 +701,7 @@ func (r *Repository) Tags() (storer.ReferenceIter, error) {
 
 	return storer.NewReferenceFilteredIter(
 		func(r *plumbing.Reference) bool {
-			return r.IsTag()
+			return r.Name().IsTag()
 		}, refIter), nil
 }
 
@@ -714,7 +714,7 @@ func (r *Repository) Branches() (storer.ReferenceIter, error) {
 
 	return storer.NewReferenceFilteredIter(
 		func(r *plumbing.Reference) bool {
-			return r.IsBranch()
+			return r.Name().IsBranch()
 		}, refIter), nil
 }
 
@@ -727,7 +727,7 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 
 	return storer.NewReferenceFilteredIter(
 		func(r *plumbing.Reference) bool {
-			return r.IsNote()
+			return r.Name().IsNote()
 		}, refIter), nil
 }
 

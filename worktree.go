@@ -209,7 +209,7 @@ func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing
 		return plumbing.ZeroHash, err
 	}
 
-	if !b.IsTag() {
+	if !b.Name().IsTag() {
 		return b.Hash(), nil
 	}
 
@@ -244,7 +244,7 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	}
 
 	var head *plumbing.Reference
-	if target.IsBranch() {
+	if target.Name().IsBranch() {
 		head = plumbing.NewSymbolicReference(plumbing.HEAD, target.Name())
 	} else {
 		head = plumbing.NewHashReference(plumbing.HEAD, commit)
@@ -323,7 +323,7 @@ func (w *Worktree) setHEADCommit(commit plumbing.Hash) error {
 		return err
 	}
 
-	if !branch.IsBranch() {
+	if !branch.Name().IsBranch() {
 		return fmt.Errorf("invalid HEAD target should be a branch, found %s", branch.Type())
 	}
 

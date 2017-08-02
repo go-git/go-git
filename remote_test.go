@@ -344,7 +344,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 
 	expected := make(map[string]string)
 	iter.ForEach(func(ref *plumbing.Reference) error {
-		if !ref.IsBranch() {
+		if !ref.Name().IsBranch() {
 			return nil
 		}
 
