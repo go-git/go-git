@@ -448,20 +448,24 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	return r.updateRemoteConfigIfNeeded(o, c, head)
 }
 
-func (r *Repository) cloneRefSpec(o *CloneOptions,
-	c *config.RemoteConfig) []config.RefSpec {
+const (
+	refspecTagWithDepth     = "+refs/tags/%s:refs/tags/%[1]s"
+	refspecSingleBranch     = "+refs/heads/%s:refs/remotes/%s/%[1]s"
+	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
+)
 
-	if !o.SingleBranch {
-		return c.Fetch
-	}
-
+func (r *Repository) cloneRefSpec(o *CloneOptions, c *config.RemoteConfig) []config.RefSpec {
 	var rs string
 
-	if o.ReferenceName == plumbing.HEAD {
+	switch {
+	case o.ReferenceName.IsTag() && o.Depth > 0:
+		rs = fmt.Sprintf(refspecTagWithDepth, o.ReferenceName.Short())
+	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
 		rs = fmt.Sprintf(refspecSingleBranchHEAD, c.Name)
-	} else {
-		rs = fmt.Sprintf(refspecSingleBranch,
-			o.ReferenceName.Short(), c.Name)
+	case o.SingleBranch:
+		rs = fmt.Sprintf(refspecSingleBranch, o.ReferenceName.Short(), c.Name)
+	default:
+		return c.Fetch
 	}
 
 	return []config.RefSpec{config.RefSpec(rs)}
@@ -476,11 +480,6 @@ func (r *Repository) setIsBare(isBare bool) error {
 	cfg.Core.IsBare = isBare
 	return r.Storer.SetConfig(cfg)
 }
-
-const (
-	refspecSingleBranch     = "+refs/heads/%s:refs/remotes/%s/%[1]s"
-	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
-)
 
 func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.RemoteConfig, head *plumbing.Reference) error {
 	if !o.SingleBranch {
