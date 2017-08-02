@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/text/unicode/norm"
+
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
@@ -302,6 +304,47 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 	target, err := w.Filesystem.Readlink("bar")
 	c.Assert(target, Equals, "not-exists")
 	c.Assert(err, IsNil)
+}
+
+func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
+	url := c.MkDir()
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	server, err := PlainClone(url, false, &CloneOptions{
+		URL: path,
+	})
+
+	filename := "페"
+
+	w, err := server.Worktree()
+	c.Assert(err, IsNil)
+	util.WriteFile(w.Filesystem, filename, []byte("foo"), 0755)
+	_, err = w.Add(filename)
+	c.Assert(err, IsNil)
+	_, err = w.Commit("foo", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL: url,
+	})
+
+	w, err = r.Worktree()
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+
+	err = w.Filesystem.Remove(filename)
+	c.Assert(err, IsNil)
+
+	modFilename := norm.Form(norm.NFKD).String(filename)
+	util.WriteFile(w.Filesystem, modFilename, []byte("foo"), 0755)
+	_, err = w.Add(filename)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
 }
 
 func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
