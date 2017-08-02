@@ -91,7 +91,7 @@ func ExampleRepository_CreateRemote() {
 	// Add a new remote, with the default fetch refspec
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "example",
-		URL:  "https://github.com/git-fixtures/basic.git",
+		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
 
 	if err != nil {

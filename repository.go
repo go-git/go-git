@@ -408,7 +408,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 
 	c := &config.RemoteConfig{
 		Name: o.RemoteName,
-		URL:  o.URL,
+		URLs: []string{o.URL},
 	}
 
 	if _, err := r.CreateRemote(c); err != nil {

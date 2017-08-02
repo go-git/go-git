@@ -351,7 +351,7 @@ func (s *BaseStorageSuite) TestSetConfigAndConfig(c *C) {
 	expected.Core.IsBare = true
 	expected.Remotes["foo"] = &config.RemoteConfig{
 		Name: "foo",
-		URL:  "http://foo/bar.git",
+		URLs: []string{"http://foo/bar.git"},
 	}
 
 	err := s.Storer.SetConfig(expected)

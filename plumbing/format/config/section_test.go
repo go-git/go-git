@@ -69,3 +69,22 @@ func (s *SectionSuite) TestSubsection_RemoveOption(c *C) {
 	}
 	c.Assert(sect.RemoveOption("key1"), DeepEquals, expected)
 }
+
+func (s *SectionSuite) TestSubsection_SetOption(c *C) {
+	sect := &Subsection{
+		Options: []*Option{
+			{Key: "key1", Value: "value1"},
+			{Key: "key2", Value: "value2"},
+			{Key: "key1", Value: "value3"},
+		},
+	}
+
+	expected := &Subsection{
+		Options: []*Option{
+			{Key: "key1", Value: "value1"},
+			{Key: "key2", Value: "value2"},
+			{Key: "key1", Value: "value4"},
+		},
+	}
+	c.Assert(sect.SetOption("key1", "value1", "value4"), DeepEquals, expected)
+}
