@@ -464,7 +464,7 @@ func calculateRefs(spec []config.RefSpec,
 	refs := make(memory.ReferenceStorage, 0)
 	return refs, iter.ForEach(func(ref *plumbing.Reference) error {
 		if !config.MatchAny(spec, ref.Name()) {
-			if !ref.IsTag() || tags != AllTags {
+			if !ref.Name().IsTag() || tags != AllTags {
 				return nil
 			}
 		}
@@ -663,7 +663,7 @@ func (r *Remote) updateLocalReferenceStorage(
 
 func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, err error) {
 	for _, ref := range refs {
-		if !ref.IsTag() {
+		if !ref.Name().IsTag() {
 			continue
 		}
 

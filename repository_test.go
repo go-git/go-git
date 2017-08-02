@@ -623,7 +623,6 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 
 func (s *RepositorySuite) TestPush(c *C) {
 	url := c.MkDir()
-	fmt.Println(url)
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -651,7 +650,6 @@ func (s *RepositorySuite) TestPush(c *C) {
 
 func (s *RepositorySuite) TestPushContext(c *C) {
 	url := c.MkDir()
-	fmt.Println(url)
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -923,7 +921,7 @@ func (s *RepositorySuite) TestTags(c *C) {
 	tags.ForEach(func(tag *plumbing.Reference) error {
 		count++
 		c.Assert(tag.Hash().IsZero(), Equals, false)
-		c.Assert(tag.IsTag(), Equals, true)
+		c.Assert(tag.Name().IsTag(), Equals, true)
 		return nil
 	})
 
@@ -944,7 +942,7 @@ func (s *RepositorySuite) TestBranches(c *C) {
 	branches.ForEach(func(branch *plumbing.Reference) error {
 		count++
 		c.Assert(branch.Hash().IsZero(), Equals, false)
-		c.Assert(branch.IsBranch(), Equals, true)
+		c.Assert(branch.Name().IsBranch(), Equals, true)
 		return nil
 	})
 
@@ -968,7 +966,7 @@ func (s *RepositorySuite) TestNotes(c *C) {
 	notes.ForEach(func(note *plumbing.Reference) error {
 		count++
 		c.Assert(note.Hash().IsZero(), Equals, false)
-		c.Assert(note.IsNote(), Equals, true)
+		c.Assert(note.Name().IsNote(), Equals, true)
 		return nil
 	})
 
