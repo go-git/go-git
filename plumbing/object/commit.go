@@ -3,6 +3,7 @@ package object
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -89,6 +90,16 @@ func (c *Commit) Parents() CommitIter {
 // NumParents returns the number of parents in a commit.
 func (c *Commit) NumParents() int {
 	return len(c.ParentHashes)
+}
+
+var ErrNoParents = errors.New("commit has no parents")
+
+// FirstParent returns the first parent of c.
+func (c *Commit) FirstParent() (*Commit, error) {
+	if len(c.ParentHashes) == 0 {
+		return nil, ErrNoParents
+	}
+	return GetCommit(c.s, c.ParentHashes[0])
 }
 
 // File returns the file with the specified "path" in the commit and a
