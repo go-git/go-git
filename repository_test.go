@@ -348,7 +348,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *
 
 	altDir, err := ioutil.TempDir("", "plain-open")
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(fmt.Sprintf("gitdir: %s\nTRAILING", dir)), 0644)
+	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(fmt.Sprintf("gitdir: %s\nTRAILING", altDir)), 0644)
 	c.Assert(err, IsNil)
 
 	r, err = PlainOpen(altDir)

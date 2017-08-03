@@ -286,7 +286,7 @@ func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (billy.Filesyste
 		return nil, fmt.Errorf(".git file has no %s prefix", prefix)
 	}
 
-	gitdir := line[len(prefix):]
+	gitdir := strings.Split(line[len(prefix):], "\n")[0]
 	gitdir = strings.TrimSpace(gitdir)
 	if filepath.IsAbs(gitdir) {
 		return osfs.New(gitdir), nil

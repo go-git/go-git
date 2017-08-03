@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"golang.org/x/text/unicode/norm"
 
@@ -278,6 +279,10 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 }
 
 func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
+	if runtime.GOOS == "windows" {
+		c.Skip("git doesn't support symlinks by default in windows")
+	}
+
 	dir, err := ioutil.TempDir("", "checkout")
 	defer os.RemoveAll(dir)
 
@@ -430,10 +435,12 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 	c.Assert(idx.Entries[0].Size, Equals, uint32(189))
 
 	c.Assert(idx.Entries[0].CreatedAt.IsZero(), Equals, false)
-	c.Assert(idx.Entries[0].Dev, Not(Equals), uint32(0))
-	c.Assert(idx.Entries[0].Inode, Not(Equals), uint32(0))
-	c.Assert(idx.Entries[0].UID, Not(Equals), uint32(0))
-	c.Assert(idx.Entries[0].GID, Not(Equals), uint32(0))
+	if runtime.GOOS != "windows" {
+		c.Assert(idx.Entries[0].Dev, Not(Equals), uint32(0))
+		c.Assert(idx.Entries[0].Inode, Not(Equals), uint32(0))
+		c.Assert(idx.Entries[0].UID, Not(Equals), uint32(0))
+		c.Assert(idx.Entries[0].GID, Not(Equals), uint32(0))
+	}
 }
 
 func (s *WorktreeSuite) TestCheckoutBranch(c *C) {

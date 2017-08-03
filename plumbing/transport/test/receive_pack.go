@@ -61,6 +61,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	defer func() { c.Assert(r.Close(), IsNil) }()
 	c.Assert(err, IsNil)
 	ar1, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)

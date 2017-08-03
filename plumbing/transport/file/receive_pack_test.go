@@ -70,6 +70,6 @@ func (s *ReceivePackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
 	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, ErrorMatches, ".*no such file or directory.*")
+	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
 	c.Assert(session, IsNil)
 }
