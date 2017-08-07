@@ -312,6 +312,10 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 }
 
 func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
+	if runtime.GOOS == "windows" {
+		c.Skip("windows paths may contain non utf-8 sequences")
+	}
+
 	url := c.MkDir()
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 

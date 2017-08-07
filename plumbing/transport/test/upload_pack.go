@@ -31,6 +31,8 @@ type UploadPackSuite struct {
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
 	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrEmptyRemoteRepository)
 	c.Assert(ar, IsNil)
@@ -39,6 +41,8 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(ar, IsNil)
@@ -55,6 +59,8 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(r.Close(), IsNil) }()
+
 	ar1, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
 	c.Assert(ar1, NotNil)

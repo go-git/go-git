@@ -21,6 +21,7 @@ var _ = Suite(&IndexSuite{})
 func (s *IndexSuite) TestDecode(c *C) {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
@@ -34,6 +35,7 @@ func (s *IndexSuite) TestDecode(c *C) {
 func (s *IndexSuite) TestDecodeEntries(c *C) {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
@@ -64,6 +66,7 @@ func (s *IndexSuite) TestDecodeEntries(c *C) {
 func (s *IndexSuite) TestDecodeCacheTree(c *C) {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
@@ -93,6 +96,7 @@ var expectedEntries = []TreeEntry{
 func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
 	f, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
@@ -130,6 +134,7 @@ func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
 func (s *IndexSuite) TestDecodeExtendedV3(c *C) {
 	f, err := fixtures.Basic().ByTag("intent-to-add").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
@@ -147,6 +152,7 @@ func (s *IndexSuite) TestDecodeExtendedV3(c *C) {
 func (s *IndexSuite) TestDecodeResolveUndo(c *C) {
 	f, err := fixtures.Basic().ByTag("resolve-undo").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
@@ -172,6 +178,7 @@ func (s *IndexSuite) TestDecodeResolveUndo(c *C) {
 func (s *IndexSuite) TestDecodeV4(c *C) {
 	f, err := fixtures.Basic().ByTag("index-v4").One().DotGit().Open("index")
 	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
