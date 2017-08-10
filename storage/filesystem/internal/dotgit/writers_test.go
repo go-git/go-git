@@ -12,6 +12,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v3/osfs"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 )
 
@@ -131,4 +132,24 @@ func (s *SuiteDotGit) TestSyncedReader(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 3)
 	c.Assert(string(head), Equals, "280")
+}
+
+func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
+	dir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		c.Assert(err, IsNil)
+	}
+
+	defer os.RemoveAll(dir)
+
+	fs := osfs.New(dir)
+
+	w, err := newPackWrite(fs)
+	c.Assert(err, IsNil)
+
+	w.Notify = func(h plumbing.Hash, idx *packfile.Index) {
+		c.Fatal("unexpected call to PackWriter.Notify")
+	}
+
+	c.Assert(w.Close(), IsNil)
 }
