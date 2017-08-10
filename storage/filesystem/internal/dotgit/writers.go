@@ -92,7 +92,7 @@ func (w *PackWriter) Write(p []byte) (int, error) {
 // was written, the tempfiles are deleted without writing a packfile.
 func (w *PackWriter) Close() error {
 	defer func() {
-		if w.Notify != nil {
+		if w.Notify != nil && w.index != nil && w.index.Size() > 0 {
 			w.Notify(w.checksum, w.index)
 		}
 
