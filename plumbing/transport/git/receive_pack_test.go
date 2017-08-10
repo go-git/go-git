@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,6 +30,11 @@ type ReceivePackSuite struct {
 var _ = Suite(&ReceivePackSuite{})
 
 func (s *ReceivePackSuite) SetUpTest(c *C) {
+	if runtime.GOOS == "windows" {
+		c.Skip(`git for windows has issues with write operations through git:// protocol.
+		See https://github.com/git-for-windows/git/issues/907`)
+	}
+
 	s.ReceivePackSuite.Client = DefaultClient
 
 	port, err := freePort()
