@@ -51,13 +51,13 @@ func (s *ConfigSuite) TestMarshall(c *C) {
 	output := []byte(`[core]
 	bare = true
 	worktree = bar
-[remote "origin"]
-	url = git@github.com:mcuadros/go-git.git
 [remote "alt"]
 	url = git@github.com:mcuadros/go-git.git
 	url = git@github.com:src-d/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 	fetch = +refs/pull/*:refs/remotes/origin/pull/*
+[remote "origin"]
+	url = git@github.com:mcuadros/go-git.git
 [submodule "qux"]
 	url = https://github.com/foo/qux.git
 `)

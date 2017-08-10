@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 
 	format "gopkg.in/src-d/go-git.v4/plumbing/format/config"
 )
@@ -168,9 +169,16 @@ func (c *Config) marshalRemotes() {
 		}
 	}
 
-	for name, remote := range c.Remotes {
+	remoteNames := make([]string, 0, len(c.Remotes))
+	for name := range c.Remotes {
+		remoteNames = append(remoteNames, name)
+	}
+
+	sort.Strings(remoteNames)
+
+	for _, name := range remoteNames {
 		if !added[name] {
-			newSubsections = append(newSubsections, remote.marshal())
+			newSubsections = append(newSubsections, c.Remotes[name].marshal())
 		}
 	}
 
