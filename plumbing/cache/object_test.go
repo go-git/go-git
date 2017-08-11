@@ -1,7 +1,9 @@
 package cache
 
 import (
+	"fmt"
 	"io"
+	"sync"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -65,6 +67,32 @@ func (s *ObjectSuite) TestClear(c *C) {
 	obj, ok := s.c.Get(s.aObject.Hash())
 	c.Assert(ok, Equals, false)
 	c.Assert(obj, IsNil)
+}
+
+func (s *ObjectSuite) TestConcurrentAccess(c *C) {
+	var wg sync.WaitGroup
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(3)
+		go func(i int) {
+			s.c.Put(newObject(fmt.Sprint(i), FileSize(i)))
+			wg.Done()
+		}(i)
+
+		go func(i int) {
+			if i%30 == 0 {
+				s.c.Clear()
+			}
+			wg.Done()
+		}(i)
+
+		go func(i int) {
+			s.c.Get(plumbing.NewHash(fmt.Sprint(i)))
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
 }
 
 type dummyObject struct {
