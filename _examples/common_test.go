@@ -24,6 +24,7 @@ var args = map[string][]string{
 	"push":        []string{setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
 	"showcase":    []string{defaultURL, tempFolder()},
 	"tag":         []string{cloneRepository(defaultURL, tempFolder())},
+	"pull":        []string{createRepositoryWithRemote(tempFolder(), defaultURL)},
 }
 
 var ignored = map[string]bool{}
@@ -88,11 +89,26 @@ func cloneRepository(url, folder string) string {
 }
 
 func createBareRepository(dir string) string {
-	cmd := exec.Command("git", "init", "--bare", dir)
+	return createRepository(dir, true)
+}
+
+func createRepository(dir string, isBare bool) string {
+	var cmd *exec.Cmd
+	if isBare {
+		cmd = exec.Command("git", "init", "--bare", dir)
+	} else {
+		cmd = exec.Command("git", "init", dir)
+	}
 	err := cmd.Run()
 	CheckIfError(err)
 
 	return dir
+}
+
+func createRepositoryWithRemote(local, remote string) string {
+	createRepository(local, false)
+	addRemote(local, remote)
+	return local
 }
 
 func setEmptyRemote(dir string) string {
@@ -103,6 +119,13 @@ func setEmptyRemote(dir string) string {
 
 func setRemote(local, remote string) {
 	cmd := exec.Command("git", "remote", "set-url", "origin", remote)
+	cmd.Dir = local
+	err := cmd.Run()
+	CheckIfError(err)
+}
+
+func addRemote(local, remote string) {
+	cmd := exec.Command("git", "remote", "add", "origin", remote)
 	cmd.Dir = local
 	err := cmd.Run()
 	CheckIfError(err)
