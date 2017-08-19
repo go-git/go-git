@@ -99,8 +99,7 @@ func (s *AdvRefsEncodeSuite) TestRefs(c *C) {
 	}
 
 	expected := pktlines(c,
-		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\x00\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 		"1111111111111111111111111111111111111111 refs/tags/v2.6.12-tree\n",
 		"2222222222222222222222222222222222222222 refs/tags/v2.6.13-tree\n",
@@ -129,8 +128,7 @@ func (s *AdvRefsEncodeSuite) TestPeeled(c *C) {
 	}
 
 	expected := pktlines(c,
-		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\x00\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 		"1111111111111111111111111111111111111111 refs/tags/v2.6.12-tree\n",
 		"5555555555555555555555555555555555555555 refs/tags/v2.6.12-tree^{}\n",
