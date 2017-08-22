@@ -66,7 +66,7 @@ func prefixExecPath(cmd string) (string, error) {
 	cmd = filepath.Join(execPath, cmd)
 
 	// Make sure it actually exists.
-	_, err = os.Stat(cmd)
+	_, err = exec.LookPath(cmd)
 	if err != nil {
 		return "", err
 	}
