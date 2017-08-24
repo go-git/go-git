@@ -160,6 +160,9 @@ type PushOptions struct {
 	RefSpecs []config.RefSpec
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
+	// Progress is where the human readable information sent by the server is
+	// stored, if nil nothing is stored.
+	Progress sideband.Progress
 }
 
 // Validate validates the fields and sets the default values.

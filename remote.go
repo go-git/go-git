@@ -65,7 +65,6 @@ func (r *Remote) Push(o *PushOptions) error {
 // operation is complete, an error is returned. The context only affects to the
 // transport operations.
 func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
-	// TODO: Sideband support
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -108,9 +107,8 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
 		return ErrDeleteRefNotSupported
 	}
 
-	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
-	if err := r.addReferencesToUpdate(o.RefSpecs, remoteRefs, req); err != nil {
-
+	req, err := r.newReferenceUpdateRequest(o, remoteRefs, ar)
+	if err != nil {
 		return err
 	}
 
@@ -156,6 +154,25 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
 	}
 
 	return r.updateRemoteReferenceStorage(req, rs)
+}
+
+func (r *Remote) newReferenceUpdateRequest(o *PushOptions, remoteRefs storer.ReferenceStorer, ar *packp.AdvRefs) (*packp.ReferenceUpdateRequest, error) {
+	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
+
+	if o.Progress != nil {
+		req.Progress = o.Progress
+		if ar.Capabilities.Supports(capability.Sideband64k) {
+			req.Capabilities.Set(capability.Sideband64k)
+		} else if ar.Capabilities.Supports(capability.Sideband) {
+			req.Capabilities.Set(capability.Sideband)
+		}
+	}
+
+	if err := r.addReferencesToUpdate(o.RefSpecs, remoteRefs, req); err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 func (r *Remote) updateRemoteReferenceStorage(
