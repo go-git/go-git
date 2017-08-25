@@ -8,6 +8,9 @@ import (
 )
 
 const (
+	// How far back in the sorted list to search for deltas.  10 is
+	// the default in command line git.
+	deltaWindowSize = 10
 	// deltas based on deltas, how many steps we can do.
 	// 50 is the default value used in JGit
 	maxDepth = int64(50)
@@ -184,7 +187,7 @@ func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
 			continue
 		}
 
-		for j := i - 1; j >= 0; j-- {
+		for j := i - 1; j >= 0 && i-j < deltaWindowSize; j-- {
 			base := objectsToPack[j]
 			// Objects must use only the same type as their delta base.
 			// Since objectsToPack is sorted by type and size, once we find
