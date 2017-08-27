@@ -134,6 +134,24 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 
 }
 
+func BenchmarkRefMultipleTimes(b *testing.B) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	refname := plumbing.ReferenceName("refs/remotes/origin/branch")
+
+	dir := New(fs)
+	_, err := dir.Ref(refname)
+	if err != nil {
+		b.Fatalf("unexpected error: %s", err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, err := dir.Ref(refname)
+		if err != nil {
+			b.Fatalf("unexpected error: %s", err)
+		}
+	}
+}
+
 func (s *SuiteDotGit) TestRemoveRefFromReferenceFile(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
