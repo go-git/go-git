@@ -538,6 +538,42 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+	url := c.MkDir()
+	server, err := PlainClone(url, true, &CloneOptions{
+		URL: fs.Root(),
+	})
+
+	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/heads/master:refs/heads/branch2",
+		":refs/heads/branch",
+	}})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/branch2": ref.Hash().String(),
+	})
+
+	AssertReferences(c, r, map[string]string{
+		"refs/remotes/origin/branch2": ref.Hash().String(),
+	})
+
+	_, err = server.Storer.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+}
+
 func (s *RemoteSuite) TestPushInvalidEndpoint(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
 	err := r.Push(&PushOptions{RemoteName: "foo"})
