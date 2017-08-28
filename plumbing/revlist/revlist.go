@@ -137,7 +137,7 @@ func iterateCommitTrees(
 
 	cb(tree.Hash)
 
-	treeWalker := object.NewTreeWalker(tree, true)
+	treeWalker := object.NewTreeWalker(tree, true, seen)
 
 	for {
 		_, e, err := treeWalker.Next()

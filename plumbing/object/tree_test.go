@@ -228,8 +228,34 @@ func (s *TreeSuite) TestTreeWalkerNext(c *C) {
 	tree, err := commit.Tree()
 	c.Assert(err, IsNil)
 
-	walker := NewTreeWalker(tree, true)
+	walker := NewTreeWalker(tree, true, nil)
 	for _, e := range treeWalkerExpects {
+		name, entry, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(name, Equals, e.Path)
+		c.Assert(entry.Name, Equals, e.Name)
+		c.Assert(entry.Mode, Equals, e.Mode)
+		c.Assert(entry.Hash.String(), Equals, e.Hash)
+
+		c.Assert(walker.Tree().ID().String(), Equals, e.Tree)
+	}
+}
+
+func (s *TreeSuite) TestTreeWalkerNextSkipSeen(c *C) {
+	commit, err := GetCommit(s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(err, IsNil)
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	seen := map[plumbing.Hash]bool{
+		plumbing.NewHash(treeWalkerExpects[0].Hash): true,
+	}
+	walker := NewTreeWalker(tree, true, seen)
+	for _, e := range treeWalkerExpects[1:] {
 		name, entry, err := walker.Next()
 		if err == io.EOF {
 			break
@@ -251,7 +277,7 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
 	c.Assert(err, IsNil)
 
 	var count int
-	walker := NewTreeWalker(tree, false)
+	walker := NewTreeWalker(tree, false, nil)
 	for {
 		name, entry, err := walker.Next()
 		if err == io.EOF {
@@ -290,7 +316,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 	}
 
 	var count int
-	walker := NewTreeWalker(tree, true)
+	walker := NewTreeWalker(tree, true, nil)
 	defer walker.Close()
 
 	for {
