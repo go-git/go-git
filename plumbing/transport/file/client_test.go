@@ -33,7 +33,7 @@ func (s *ClientSuite) TestCommand(c *C) {
 
 	// Make sure we get an error for one that doesn't exist.
 	_, err = runner.Command("git-fake-command", ep, emptyAuth)
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(err, NotNil)
 }
 
 const bareConfig = `[core]
