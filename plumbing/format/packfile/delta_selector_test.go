@@ -196,6 +196,25 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 	c.Assert(otp[2].Original, Equals, s.store.Objects[s.hashes["o3"]])
 	c.Assert(otp[2].IsDelta(), Equals, true)
 	c.Assert(otp[2].Depth, Equals, 2)
+
+	// Check that objects outside of the sliding window don't produce
+	// a delta.
+	hashes = make([]plumbing.Hash, 0, deltaWindowSize+2)
+	hashes = append(hashes, s.hashes["base"])
+	for i := 0; i < deltaWindowSize; i++ {
+		hashes = append(hashes, s.hashes["smallTarget"])
+	}
+	hashes = append(hashes, s.hashes["target"])
+
+	// Don't sort so we can easily check the sliding window without
+	// creating a bunch of new objects.
+	otp, err = s.ds.objectsToPack(hashes)
+	c.Assert(err, IsNil)
+	err = s.ds.walk(otp)
+	c.Assert(err, IsNil)
+	c.Assert(len(otp), Equals, deltaWindowSize+2)
+	targetIdx := len(otp) - 1
+	c.Assert(otp[targetIdx].IsDelta(), Equals, false)
 }
 
 func (s *DeltaSelectorSuite) TestMaxDepth(c *C) {
