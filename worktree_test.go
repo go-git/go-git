@@ -259,7 +259,9 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{
+		Force: true,
+	})
 	c.Assert(err, IsNil)
 
 	entries, err := fs.ReadDir("/")
@@ -276,6 +278,27 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	idx, err := s.Repository.Storer.Index()
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
+}
+
+func (s *WorktreeSuite) TestCheckoutForce(c *C) {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	w.Filesystem = memfs.New()
+
+	err = w.Checkout(&CheckoutOptions{
+		Force: true,
+	})
+	c.Assert(err, IsNil)
+
+	entries, err := w.Filesystem.ReadDir("/")
+	c.Assert(err, IsNil)
+	c.Assert(entries, HasLen, 8)
 }
 
 func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
@@ -608,35 +631,6 @@ func (s *WorktreeSuite) testCheckoutBisect(c *C, url string) {
 	})
 }
 
-func (s *WorktreeSuite) TestCheckoutWithGitignore(c *C) {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{})
-	c.Assert(err, IsNil)
-
-	f, _ := fs.Create("file")
-	f.Close()
-
-	err = w.Checkout(&CheckoutOptions{})
-	c.Assert(err.Error(), Equals, "worktree contains unstagged changes")
-
-	f, _ = fs.Create(".gitignore")
-	f.Write([]byte("file"))
-	f.Close()
-
-	err = w.Checkout(&CheckoutOptions{})
-	c.Assert(err.Error(), Equals, "worktree contains unstagged changes")
-
-	w.Add(".gitignore")
-
-	err = w.Checkout(&CheckoutOptions{})
-	c.Assert(err, IsNil)
-}
-
 func (s *WorktreeSuite) TestStatus(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
@@ -702,15 +696,19 @@ func (s *WorktreeSuite) TestReset(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash(), Not(Equals), commit)
 
-	err = w.Reset(&ResetOptions{Commit: commit})
+	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commit})
 	c.Assert(err, IsNil)
 
 	branch, err = w.r.Reference(plumbing.Master, false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash(), Equals, commit)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
 }
 
-func (s *WorktreeSuite) TestResetMerge(c *C) {
+func (s *WorktreeSuite) TestResetWithUntracked(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -722,6 +720,87 @@ func (s *WorktreeSuite) TestResetMerge(c *C) {
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
+	err = util.WriteFile(fs, "foo", nil, 0755)
+	c.Assert(err, IsNil)
+
+	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commit})
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *WorktreeSuite) TestResetSoft(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	err = w.Reset(&ResetOptions{Mode: SoftReset, Commit: commit})
+	c.Assert(err, IsNil)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Equals, commit)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+	c.Assert(status.File("CHANGELOG").Staging, Equals, Added)
+}
+
+func (s *WorktreeSuite) TestResetMixed(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	err = w.Reset(&ResetOptions{Mode: MixedReset, Commit: commit})
+	c.Assert(err, IsNil)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Equals, commit)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+	c.Assert(status.File("CHANGELOG").Staging, Equals, Untracked)
+}
+
+func (s *WorktreeSuite) TestResetMerge(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	commitA := plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294")
+	commitB := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commitA})
+	c.Assert(err, IsNil)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	c.Assert(err, IsNil)
+	c.Assert(branch.Hash(), Equals, commitA)
+
 	f, err := fs.Create(".gitignore")
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("foo"))
@@ -729,12 +808,12 @@ func (s *WorktreeSuite) TestResetMerge(c *C) {
 	err = f.Close()
 	c.Assert(err, IsNil)
 
-	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commit})
+	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commitB})
 	c.Assert(err, Equals, ErrUnstaggedChanges)
 
-	branch, err := w.r.Reference(plumbing.Master, false)
+	branch, err = w.r.Reference(plumbing.Master, false)
 	c.Assert(err, IsNil)
-	c.Assert(branch.Hash(), Not(Equals), commit)
+	c.Assert(branch.Hash(), Equals, commitA)
 }
 
 func (s *WorktreeSuite) TestResetHard(c *C) {
