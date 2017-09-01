@@ -456,7 +456,10 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 			return err
 		}
 
-		if err := w.Reset(&ResetOptions{Commit: head.Hash()}); err != nil {
+		if err := w.Reset(&ResetOptions{
+			Mode:   MergeReset,
+			Commit: head.Hash(),
+		}); err != nil {
 			return err
 		}
 

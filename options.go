@@ -238,13 +238,13 @@ func (o *CheckoutOptions) Validate() error {
 type ResetMode int8
 
 const (
-	// HardReset resets the index and working tree. Any changes to tracked files
-	// in the working tree are discarded.
-	HardReset ResetMode = iota
 	// MixedReset resets the index but not the working tree (i.e., the changed
 	// files are preserved but not marked for commit) and reports what has not
 	// been updated. This is the default action.
-	MixedReset
+	MixedReset ResetMode = iota
+	// HardReset resets the index and working tree. Any changes to tracked files
+	// in the working tree are discarded.
+	HardReset
 	// MergeReset resets the index and updates the files in the working tree
 	// that are different between Commit and HEAD, but keeps those which are
 	// different between the index and working tree (i.e. which have changes
@@ -253,6 +253,10 @@ const (
 	// If a file that is different between Commit and the index has unstaged
 	// changes, reset is aborted.
 	MergeReset
+	// SoftReset does not touch the index file or the working tree at all (but
+	// resets the head to <commit>, just like all modes do). This leaves all
+	// your changed files "Changes to be committed", as git status would put it.
+	SoftReset
 )
 
 // ResetOptions describes how a reset operation should be performed.
