@@ -719,6 +719,47 @@ func (s *RepositorySuite) TestPushContext(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// installPreReceiveHook installs a pre-receive hook in the .git
+// directory at path which prints message m before exiting
+// successfully.
+func installPreReceiveHook(c *C, path, m string) {
+	hooks := filepath.Join(path, "hooks")
+	err := os.MkdirAll(hooks, 0777)
+	c.Assert(err, IsNil)
+
+	err = ioutil.WriteFile(filepath.Join(hooks, "pre-receive"), preReceiveHook(m), 0777)
+	c.Assert(err, IsNil)
+}
+
+func (s *RepositorySuite) TestPushWithProgress(c *C) {
+	url := c.MkDir()
+	server, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	m := "Receiving..."
+	installPreReceiveHook(c, url, m)
+
+	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+		Name: "bar",
+		URLs: []string{url},
+	})
+	c.Assert(err, IsNil)
+
+	var p bytes.Buffer
+	err = s.Repository.Push(&PushOptions{
+		RemoteName: "bar",
+		Progress:   &p,
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"refs/heads/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	})
+
+	c.Assert((&p).Bytes(), DeepEquals, []byte(m))
+}
+
 func (s *RepositorySuite) TestPushDepth(c *C) {
 	url := c.MkDir()
 	server, err := PlainClone(url, true, &CloneOptions{
