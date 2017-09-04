@@ -143,7 +143,7 @@ func (s *RemoteSuite) TestFetchWithNoTags(c *C) {
 	s.testFetch(c, r, &FetchOptions{
 		Tags: NoTags,
 		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
