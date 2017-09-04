@@ -440,6 +440,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Depth:    o.Depth,
 		Auth:     o.Auth,
 		Progress: o.Progress,
+		Tags:     o.Tags,
 	}, o.ReferenceName)
 	if err != nil {
 		return err

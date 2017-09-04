@@ -50,6 +50,9 @@ type CloneOptions struct {
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
 	Progress sideband.Progress
+	// Tags describe how the tags will be fetched from the remote repository,
+	// by default is AllTags.
+	Tags TagMode
 }
 
 // Validate validates the fields and sets the default values.
@@ -64,6 +67,10 @@ func (o *CloneOptions) Validate() error {
 
 	if o.ReferenceName == "" {
 		o.ReferenceName = plumbing.HEAD
+	}
+
+	if o.Tags == InvalidTagMode {
+		o.Tags = AllTags
 	}
 
 	return nil
@@ -103,18 +110,19 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
-type TagFetchMode int
+type TagMode int
 
-var (
+const (
+	InvalidTagMode TagMode = iota
 	// TagFollowing any tag that points into the histories being fetched is also
 	// fetched. TagFollowing requires a server with `include-tag` capability
 	// in order to fetch the annotated tags objects.
-	TagFollowing TagFetchMode = 0
+	TagFollowing
 	// AllTags fetch all tags from the remote (i.e., fetch remote tags
 	// refs/tags/* into local tags with the same name)
-	AllTags TagFetchMode = 1
+	AllTags
 	//NoTags fetch no tags from the remote at all
-	NoTags TagFetchMode = 2
+	NoTags
 )
 
 // FetchOptions describes how a fetch should be performed
@@ -133,13 +141,17 @@ type FetchOptions struct {
 	Progress sideband.Progress
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is TagFollowing.
-	Tags TagFetchMode
+	Tags TagMode
 }
 
 // Validate validates the fields and sets the default values.
 func (o *FetchOptions) Validate() error {
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
+	}
+
+	if o.Tags == InvalidTagMode {
+		o.Tags = TagFollowing
 	}
 
 	for _, r := range o.RefSpecs {
