@@ -279,7 +279,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (storer.ReferenceSt
 		}
 	}
 
-	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs)
+	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, o.Tags)
 	if err != nil {
 		return nil, err
 	}
@@ -481,10 +481,17 @@ func getHaves(localRefs storer.ReferenceStorer) ([]plumbing.Hash, error) {
 	return result, nil
 }
 
-func calculateRefs(spec []config.RefSpec,
+const refspecTag = "+refs/tags/*:refs/tags/*"
+
+func calculateRefs(
+	spec []config.RefSpec,
 	remoteRefs storer.ReferenceStorer,
-	tags TagFetchMode,
+	tagMode TagMode,
 ) (memory.ReferenceStorage, error) {
+	if tagMode == AllTags {
+		spec = append(spec, refspecTag)
+	}
+
 	iter, err := remoteRefs.IterReferences()
 	if err != nil {
 		return nil, err
@@ -493,9 +500,7 @@ func calculateRefs(spec []config.RefSpec,
 	refs := make(memory.ReferenceStorage, 0)
 	return refs, iter.ForEach(func(ref *plumbing.Reference) error {
 		if !config.MatchAny(spec, ref.Name()) {
-			if !ref.Name().IsTag() || tags != AllTags {
-				return nil
-			}
+			return nil
 		}
 
 		if ref.Type() == plumbing.SymbolicReference {
@@ -645,6 +650,7 @@ func buildSidebandIfSupported(l *capability.List, reader io.Reader, p sideband.P
 func (r *Remote) updateLocalReferenceStorage(
 	specs []config.RefSpec,
 	fetchedRefs, remoteRefs memory.ReferenceStorage,
+	tagMode TagMode,
 ) (updated bool, err error) {
 	isWildcard := true
 	for _, spec := range specs {
@@ -672,6 +678,10 @@ func (r *Remote) updateLocalReferenceStorage(
 				updated = true
 			}
 		}
+	}
+
+	if tagMode == NoTags {
+		return updated, nil
 	}
 
 	tags := fetchedRefs

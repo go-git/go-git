@@ -177,6 +177,27 @@ func (s *RepositorySuite) TestCloneContext(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RepositorySuite) TestCloneWithTags(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: NoTags})
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+
+	i, err := r.References()
+	c.Assert(err, IsNil)
+
+	var count int
+	i.ForEach(func(r *plumbing.Reference) error { count++; return nil })
+
+	c.Assert(count, Equals, 3)
+}
+
 func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{
