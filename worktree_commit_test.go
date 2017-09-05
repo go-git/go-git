@@ -99,6 +99,42 @@ func (s *WorktreeSuite) TestCommitAll(c *C) {
 	assertStorageStatus(c, s.Repository, 13, 11, 10, expected)
 }
 
+func (s *WorktreeSuite) TestRemoveAndCommitAll(c *C) {
+	expected := plumbing.NewHash("907cd576c6ced2ecd3dab34a72bf9cf65944b9a9")
+
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	_, errFirst := w.Commit("Add in Repo\n", &CommitOptions{
+		Author: defaultSignature(),
+	})
+	c.Assert(errFirst, IsNil)
+
+	errRemove := fs.Remove("foo")
+	c.Assert(errRemove, IsNil)
+
+	hash, errSecond := w.Commit("Remove foo\n", &CommitOptions{
+		All:    true,
+		Author: defaultSignature(),
+	})
+	c.Assert(errSecond, IsNil)
+
+	c.Assert(hash, Equals, expected)
+	c.Assert(err, IsNil)
+
+	assertStorageStatus(c, s.Repository, 13, 11, 11, expected)
+}
+
 func assertStorageStatus(
 	c *C, r *Repository,
 	treesCount, blobCount, commitCount int, head plumbing.Hash,

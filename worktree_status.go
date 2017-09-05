@@ -252,6 +252,9 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 
 	h, err := w.copyFileToStorage(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			h, err = w.deleteFromIndex(path)
+		}
 		return h, err
 	}
 

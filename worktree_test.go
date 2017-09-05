@@ -372,7 +372,11 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 
 	modFilename := norm.Form(norm.NFKD).String(filename)
 	util.WriteFile(w.Filesystem, modFilename, []byte("foo"), 0755)
+
 	_, err = w.Add(filename)
+	c.Assert(err, IsNil)
+	_, err = w.Add(modFilename)
+	c.Assert(err, IsNil)
 
 	status, err = w.Status()
 	c.Assert(err, IsNil)
