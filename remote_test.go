@@ -625,20 +625,22 @@ func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 }
 
 func (s *RemoteSuite) TestGetHaves(c *C) {
-	st := memory.NewStorage()
-	st.SetReference(plumbing.NewReferenceFromStrings(
-		"foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
-	))
+	var localRefs = []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings(
+			"foo",
+			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+		),
+		plumbing.NewReferenceFromStrings(
+			"bar",
+			"fe6cb94756faa81e5ed9240f9191b833db5f40ae",
+		),
+		plumbing.NewReferenceFromStrings(
+			"qux",
+			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+		),
+	}
 
-	st.SetReference(plumbing.NewReferenceFromStrings(
-		"bar", "fe6cb94756faa81e5ed9240f9191b833db5f40ae",
-	))
-
-	st.SetReference(plumbing.NewReferenceFromStrings(
-		"qux", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
-	))
-
-	l, err := getHaves(st)
+	l, err := getHaves(localRefs)
 	c.Assert(err, IsNil)
 	c.Assert(l, HasLen, 2)
 }

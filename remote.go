@@ -107,7 +107,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
 		return ErrDeleteRefNotSupported
 	}
 
-	req, err := r.newReferenceUpdateRequest(o, remoteRefs, ar)
+	localRefs, err := r.references()
+	if err != nil {
+		return err
+	}
+
+	req, err := r.newReferenceUpdateRequest(o, localRefs, remoteRefs, ar)
 	if err != nil {
 		return err
 	}
@@ -156,7 +161,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
 	return r.updateRemoteReferenceStorage(req, rs)
 }
 
-func (r *Remote) newReferenceUpdateRequest(o *PushOptions, remoteRefs storer.ReferenceStorer, ar *packp.AdvRefs) (*packp.ReferenceUpdateRequest, error) {
+func (r *Remote) newReferenceUpdateRequest(
+	o *PushOptions,
+	localRefs []*plumbing.Reference,
+	remoteRefs storer.ReferenceStorer,
+	ar *packp.AdvRefs,
+) (*packp.ReferenceUpdateRequest, error) {
 	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
 
 	if o.Progress != nil {
@@ -168,7 +178,7 @@ func (r *Remote) newReferenceUpdateRequest(o *PushOptions, remoteRefs storer.Ref
 		}
 	}
 
-	if err := r.addReferencesToUpdate(o.RefSpecs, remoteRefs, req); err != nil {
+	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req); err != nil {
 		return nil, err
 	}
 
@@ -262,6 +272,11 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (storer.ReferenceSt
 		return nil, err
 	}
 
+	localRefs, err := r.references()
+	if err != nil {
+		return nil, err
+	}
+
 	refs, err := calculateRefs(o.RefSpecs, remoteRefs, o.Tags)
 	if err != nil {
 		return nil, err
@@ -269,7 +284,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (storer.ReferenceSt
 
 	req.Wants, err = getWants(r.s, refs)
 	if len(req.Wants) > 0 {
-		req.Haves, err = getHaves(r.s)
+		req.Haves, err = getHaves(localRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -346,17 +361,18 @@ func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.Upl
 	return err
 }
 
-func (r *Remote) addReferencesToUpdate(refspecs []config.RefSpec,
+func (r *Remote) addReferencesToUpdate(
+	refspecs []config.RefSpec,
+	localRefs []*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
 	req *packp.ReferenceUpdateRequest) error {
-
 	for _, rs := range refspecs {
 		if rs.IsDelete() {
 			if err := r.deleteReferences(rs, remoteRefs, req); err != nil {
 				return err
 			}
 		} else {
-			if err := r.addOrUpdateReferences(rs, remoteRefs, req); err != nil {
+			if err := r.addOrUpdateReferences(rs, localRefs, remoteRefs, req); err != nil {
 				return err
 			}
 		}
@@ -365,18 +381,20 @@ func (r *Remote) addReferencesToUpdate(refspecs []config.RefSpec,
 	return nil
 }
 
-func (r *Remote) addOrUpdateReferences(rs config.RefSpec,
-	remoteRefs storer.ReferenceStorer, req *packp.ReferenceUpdateRequest) error {
-	iter, err := r.s.IterReferences()
-	if err != nil {
-		return err
+func (r *Remote) addOrUpdateReferences(
+	rs config.RefSpec,
+	localRefs []*plumbing.Reference,
+	remoteRefs storer.ReferenceStorer,
+	req *packp.ReferenceUpdateRequest,
+) error {
+	for _, ref := range localRefs {
+		err := r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req)
+		if err != nil {
+			return err
+		}
 	}
 
-	return iter.ForEach(func(ref *plumbing.Reference) error {
-		return r.addReferenceIfRefSpecMatches(
-			rs, remoteRefs, ref, req,
-		)
-	})
+	return nil
 }
 
 func (r *Remote) deleteReferences(rs config.RefSpec,
@@ -449,28 +467,41 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 	return nil
 }
 
-func getHaves(localRefs storer.ReferenceStorer) ([]plumbing.Hash, error) {
-	iter, err := localRefs.IterReferences()
+func (r *Remote) references() ([]*plumbing.Reference, error) {
+	var localRefs []*plumbing.Reference
+	iter, err := r.s.IterReferences()
 	if err != nil {
 		return nil, err
 	}
 
+	for {
+		ref, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		localRefs = append(localRefs, ref)
+	}
+
+	return localRefs, nil
+}
+
+func getHaves(localRefs []*plumbing.Reference) ([]plumbing.Hash, error) {
 	haves := map[plumbing.Hash]bool{}
-	err = iter.ForEach(func(ref *plumbing.Reference) error {
+	for _, ref := range localRefs {
 		if haves[ref.Hash()] == true {
-			return nil
+			continue
 		}
 
 		if ref.Type() != plumbing.HashReference {
-			return nil
+			continue
 		}
 
 		haves[ref.Hash()] = true
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
 	}
 
 	var result []plumbing.Hash
