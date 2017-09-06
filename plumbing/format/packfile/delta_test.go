@@ -84,7 +84,7 @@ func (s *DeltaSuite) TestAddDelta(c *C) {
 	for _, t := range s.testCases {
 		baseBuf := genBytes(t.base)
 		targetBuf := genBytes(t.target)
-		delta := DiffDelta(make(deltaIndex), baseBuf, targetBuf)
+		delta := DiffDelta(baseBuf, targetBuf)
 		result, err := PatchDelta(baseBuf, delta)
 
 		c.Log("Executing test case:", t.description)
@@ -98,7 +98,7 @@ func (s *DeltaSuite) TestIncompleteDelta(c *C) {
 		c.Log("Incomplete delta on:", t.description)
 		baseBuf := genBytes(t.base)
 		targetBuf := genBytes(t.target)
-		delta := DiffDelta(make(deltaIndex), baseBuf, targetBuf)
+		delta := DiffDelta(baseBuf, targetBuf)
 		delta = delta[:len(delta)-2]
 		result, err := PatchDelta(baseBuf, delta)
 		c.Assert(err, NotNil)

@@ -2,7 +2,6 @@ package packfile
 
 import (
 	"bytes"
-	"hash/adler32"
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -49,7 +48,7 @@ func getDelta(index deltaIndex, base, target plumbing.EncodedObject) (plumbing.E
 		return nil, err
 	}
 
-	db := DiffDelta(index, bb, tb)
+	db := diffDelta(index, bb, tb)
 	delta := &plumbing.MemoryObject{}
 	_, err = delta.Write(db)
 	if err != nil {
@@ -63,7 +62,11 @@ func getDelta(index deltaIndex, base, target plumbing.EncodedObject) (plumbing.E
 }
 
 // DiffDelta returns the delta that transforms src into tgt.
-func DiffDelta(sindex deltaIndex, src []byte, tgt []byte) []byte {
+func DiffDelta(src, tgt []byte) []byte {
+	return diffDelta(make(deltaIndex), src, tgt)
+}
+
+func diffDelta(sindex deltaIndex, src []byte, tgt []byte) []byte {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	buf.Write(deltaEncodeSize(len(src)))
@@ -132,24 +135,42 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	ibuf.Reset()
 }
 
-func initMatch(index map[uint32]int, src []byte) map[uint32]int {
+func initMatch(index deltaIndex, src []byte) {
 	i := 0
 	for {
 		if i+s > len(src) {
 			break
 		}
 
-		ch := adler32.Checksum(src[i : i+s])
+		ch := hashBuf(src[i : i+s])
 		index[ch] = i
 		i += s
 	}
-
-	return index
 }
 
-func findMatch(src, tgt []byte, sindex map[uint32]int, tgtOffset int) (srcOffset, l int) {
+// https://lemire.me/blog/2015/10/22/faster-hashing-without-effort/
+func hashBuf(buf []byte) int64 {
+	var h int64
+	var i int
+	len := len(buf)
+	for ; i+3 < len; i += 4 {
+		h = 31*31*31*31*h +
+			31*31*31*int64(buf[i]) +
+			31*31*int64(buf[i+1]) +
+			31*int64(buf[i+2]) +
+			int64(buf[i+3])
+	}
+
+	for ; i < len; i++ {
+		h = 31*h + int64(buf[i])
+	}
+
+	return h
+}
+
+func findMatch(src, tgt []byte, sindex deltaIndex, tgtOffset int) (srcOffset, l int) {
 	if len(tgt) >= tgtOffset+s {
-		ch := adler32.Checksum(tgt[tgtOffset : tgtOffset+s])
+		ch := hashBuf(tgt[tgtOffset : tgtOffset+s])
 		var ok bool
 		srcOffset, ok = sindex[ch]
 		if !ok {
@@ -219,4 +240,4 @@ func encodeCopyOperation(offset, length int) []byte {
 	return append([]byte{byte(code)}, opcodes...)
 }
 
-type deltaIndex map[uint32]int
+type deltaIndex map[int64]int
