@@ -25,10 +25,10 @@ const (
 // To generate target again, you will need the obtained object and "base" one.
 // Error will be returned if base or target object cannot be read.
 func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
-	return getDelta(make(deltaIndex), base, target)
+	return getDelta(new(deltaIndex), base, target)
 }
 
-func getDelta(index deltaIndex, base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
+func getDelta(index *deltaIndex, base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	br, err := base.Reader()
 	if err != nil {
 		return nil, err
@@ -63,23 +63,23 @@ func getDelta(index deltaIndex, base, target plumbing.EncodedObject) (plumbing.E
 
 // DiffDelta returns the delta that transforms src into tgt.
 func DiffDelta(src, tgt []byte) []byte {
-	return diffDelta(make(deltaIndex), src, tgt)
+	return diffDelta(new(deltaIndex), src, tgt)
 }
 
-func diffDelta(sindex deltaIndex, src []byte, tgt []byte) []byte {
+func diffDelta(index *deltaIndex, src []byte, tgt []byte) []byte {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	buf.Write(deltaEncodeSize(len(src)))
 	buf.Write(deltaEncodeSize(len(tgt)))
 
-	if len(sindex) == 0 {
-		initMatch(sindex, src)
+	if len(index.entries) == 0 {
+		index.init(src)
 	}
 
 	ibuf := bufPool.Get().(*bytes.Buffer)
 	ibuf.Reset()
 	for i := 0; i < len(tgt); i++ {
-		offset, l := findMatch(src, tgt, sindex, i)
+		offset, l := index.findMatch(src, tgt, i)
 
 		if l < s {
 			ibuf.WriteByte(tgt[i])
@@ -135,19 +135,6 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	ibuf.Reset()
 }
 
-func initMatch(index deltaIndex, src []byte) {
-	i := 0
-	for {
-		if i+s > len(src) {
-			break
-		}
-
-		ch := hashBuf(src[i : i+s])
-		index[ch] = i
-		i += s
-	}
-}
-
 // https://lemire.me/blog/2015/10/22/faster-hashing-without-effort/
 func hashBuf(buf []byte) int64 {
 	var h int64
@@ -166,21 +153,6 @@ func hashBuf(buf []byte) int64 {
 	}
 
 	return h
-}
-
-func findMatch(src, tgt []byte, sindex deltaIndex, tgtOffset int) (srcOffset, l int) {
-	if len(tgt) >= tgtOffset+s {
-		ch := hashBuf(tgt[tgtOffset : tgtOffset+s])
-		var ok bool
-		srcOffset, ok = sindex[ch]
-		if !ok {
-			return
-		}
-
-		l = matchLength(src, tgt, tgtOffset, srcOffset)
-	}
-
-	return
 }
 
 func matchLength(src, tgt []byte, otgt, osrc int) int {
@@ -239,5 +211,3 @@ func encodeCopyOperation(offset, length int) []byte {
 
 	return append([]byte{byte(code)}, opcodes...)
 }
-
-type deltaIndex map[int64]int
