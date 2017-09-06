@@ -172,6 +172,7 @@ func (dw *deltaSelector) sort(objectsToPack []*ObjectToPack) {
 }
 
 func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
+	indexMap := make(map[plumbing.Hash]deltaIndex)
 	for i := 0; i < len(objectsToPack); i++ {
 		target := objectsToPack[i]
 
@@ -196,7 +197,7 @@ func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
 				break
 			}
 
-			if err := dw.tryToDeltify(base, target); err != nil {
+			if err := dw.tryToDeltify(indexMap, base, target); err != nil {
 				return err
 			}
 		}
@@ -205,7 +206,7 @@ func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
 	return nil
 }
 
-func (dw *deltaSelector) tryToDeltify(base, target *ObjectToPack) error {
+func (dw *deltaSelector) tryToDeltify(indexMap map[plumbing.Hash]deltaIndex, base, target *ObjectToPack) error {
 	// If the sizes are radically different, this is a bad pairing.
 	if target.Size() < base.Size()>>4 {
 		return nil
@@ -238,8 +239,12 @@ func (dw *deltaSelector) tryToDeltify(base, target *ObjectToPack) error {
 		return err
 	}
 
+	if _, ok := indexMap[base.Hash()]; !ok {
+		indexMap[base.Hash()] = make(deltaIndex)
+	}
+
 	// Now we can generate the delta using originals
-	delta, err := GetDelta(base.Original, target.Original)
+	delta, err := getDelta(indexMap[base.Hash()], base.Original, target.Original)
 	if err != nil {
 		return err
 	}

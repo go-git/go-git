@@ -26,6 +26,10 @@ const (
 // To generate target again, you will need the obtained object and "base" one.
 // Error will be returned if base or target object cannot be read.
 func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
+	return getDelta(make(deltaIndex), base, target)
+}
+
+func getDelta(index deltaIndex, base, target plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	br, err := base.Reader()
 	if err != nil {
 		return nil, err
@@ -45,7 +49,7 @@ func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, erro
 		return nil, err
 	}
 
-	db := DiffDelta(bb, tb)
+	db := DiffDelta(index, bb, tb)
 	delta := &plumbing.MemoryObject{}
 	_, err = delta.Write(db)
 	if err != nil {
@@ -59,13 +63,15 @@ func GetDelta(base, target plumbing.EncodedObject) (plumbing.EncodedObject, erro
 }
 
 // DiffDelta returns the delta that transforms src into tgt.
-func DiffDelta(src []byte, tgt []byte) []byte {
+func DiffDelta(sindex deltaIndex, src []byte, tgt []byte) []byte {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	buf.Write(deltaEncodeSize(len(src)))
 	buf.Write(deltaEncodeSize(len(tgt)))
 
-	sindex := initMatch(src)
+	if len(sindex) == 0 {
+		initMatch(sindex, src)
+	}
 
 	ibuf := bufPool.Get().(*bytes.Buffer)
 	ibuf.Reset()
@@ -126,9 +132,8 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	ibuf.Reset()
 }
 
-func initMatch(src []byte) map[uint32]int {
+func initMatch(index map[uint32]int, src []byte) map[uint32]int {
 	i := 0
-	index := make(map[uint32]int)
 	for {
 		if i+s > len(src) {
 			break
@@ -213,3 +218,5 @@ func encodeCopyOperation(offset, length int) []byte {
 
 	return append([]byte{byte(code)}, opcodes...)
 }
+
+type deltaIndex map[uint32]int
