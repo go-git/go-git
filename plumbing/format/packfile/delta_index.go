@@ -19,7 +19,19 @@ func (idx *deltaIndex) init(buf []byte) {
 	idx.copyEntries(scanner)
 }
 
+// findMatch returns the offset of src where the block starting at tgtOffset
+// is and the length of the match. A length of 0 means there was no match. A
+// length of -1 means the src length is lower than the blksz and whatever
+// other positive length is the length of the match in bytes.
 func (idx *deltaIndex) findMatch(src, tgt []byte, tgtOffset int) (srcOffset, l int) {
+	if len(tgt) < tgtOffset+s {
+		return 0, len(tgt) - tgtOffset
+	}
+
+	if len(src) < blksz {
+		return 0, -1
+	}
+
 	if len(tgt) >= tgtOffset+s && len(src) >= blksz {
 		h := hashBlock(tgt, tgtOffset)
 		tIdx := h & idx.mask
@@ -33,6 +45,17 @@ func (idx *deltaIndex) findMatch(src, tgt []byte, tgtOffset int) (srcOffset, l i
 		l = matchLength(src, tgt, tgtOffset, srcOffset)
 	}
 
+	return
+}
+
+func matchLength(src, tgt []byte, otgt, osrc int) (l int) {
+	lensrc := len(src)
+	lentgt := len(tgt)
+	for (osrc < lensrc && otgt < lentgt) && src[osrc] == tgt[otgt] {
+		l++
+		osrc++
+		otgt++
+	}
 	return
 }
 
