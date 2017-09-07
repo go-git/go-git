@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
@@ -46,7 +47,7 @@ func (s *IndexSuite) TestEncode(c *C) {
 	err = d.Decode(output)
 	c.Assert(err, IsNil)
 
-	c.Assert(idx, DeepEquals, output)
+	c.Assert(cmp.Equal(idx, output), Equals, true)
 
 	c.Assert(output.Entries[0].Name, Equals, strings.Repeat(" ", 20))
 	c.Assert(output.Entries[1].Name, Equals, "bar")
