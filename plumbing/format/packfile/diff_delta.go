@@ -135,26 +135,6 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	ibuf.Reset()
 }
 
-// https://lemire.me/blog/2015/10/22/faster-hashing-without-effort/
-func hashBuf(buf []byte) int64 {
-	var h int64
-	var i int
-	len := len(buf)
-	for ; i+3 < len; i += 4 {
-		h = 31*31*31*31*h +
-			31*31*31*int64(buf[i]) +
-			31*31*int64(buf[i+1]) +
-			31*int64(buf[i+2]) +
-			int64(buf[i+3])
-	}
-
-	for ; i < len; i++ {
-		h = 31*h + int64(buf[i])
-	}
-
-	return h
-}
-
 func matchLength(src, tgt []byte, otgt, osrc int) int {
 	l := 0
 	for {

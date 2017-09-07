@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"sort"
+	"sync"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -40,7 +41,36 @@ func (dw *deltaSelector) ObjectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack,
 
 	dw.sort(otp)
 
-	if err := dw.walk(otp); err != nil {
+	var objectGroups [][]*ObjectToPack
+	var prev *ObjectToPack
+	i := -1
+	for _, obj := range otp {
+		if prev == nil || prev.Type() != obj.Type() {
+			objectGroups = append(objectGroups, []*ObjectToPack{obj})
+			i++
+			prev = obj
+		} else {
+			objectGroups[i] = append(objectGroups[i], obj)
+		}
+	}
+
+	var wg sync.WaitGroup
+	var once sync.Once
+	for _, objs := range objectGroups {
+		objs := objs
+		wg.Add(1)
+		go func() {
+			if walkErr := dw.walk(objs); walkErr != nil {
+				once.Do(func() {
+					err = walkErr
+				})
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	if err != nil {
 		return nil, err
 	}
 
