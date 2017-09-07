@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"sort"
+	"sync"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -40,7 +41,36 @@ func (dw *deltaSelector) ObjectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack,
 
 	dw.sort(otp)
 
-	if err := dw.walk(otp); err != nil {
+	var objectGroups [][]*ObjectToPack
+	var prev *ObjectToPack
+	i := -1
+	for _, obj := range otp {
+		if prev == nil || prev.Type() != obj.Type() {
+			objectGroups = append(objectGroups, []*ObjectToPack{obj})
+			i++
+			prev = obj
+		} else {
+			objectGroups[i] = append(objectGroups[i], obj)
+		}
+	}
+
+	var wg sync.WaitGroup
+	var once sync.Once
+	for _, objs := range objectGroups {
+		objs := objs
+		wg.Add(1)
+		go func() {
+			if walkErr := dw.walk(objs); walkErr != nil {
+				once.Do(func() {
+					err = walkErr
+				})
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -172,6 +202,7 @@ func (dw *deltaSelector) sort(objectsToPack []*ObjectToPack) {
 }
 
 func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
+	indexMap := make(map[plumbing.Hash]*deltaIndex)
 	for i := 0; i < len(objectsToPack); i++ {
 		target := objectsToPack[i]
 
@@ -196,7 +227,7 @@ func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
 				break
 			}
 
-			if err := dw.tryToDeltify(base, target); err != nil {
+			if err := dw.tryToDeltify(indexMap, base, target); err != nil {
 				return err
 			}
 		}
@@ -205,7 +236,7 @@ func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
 	return nil
 }
 
-func (dw *deltaSelector) tryToDeltify(base, target *ObjectToPack) error {
+func (dw *deltaSelector) tryToDeltify(indexMap map[plumbing.Hash]*deltaIndex, base, target *ObjectToPack) error {
 	// If the sizes are radically different, this is a bad pairing.
 	if target.Size() < base.Size()>>4 {
 		return nil
@@ -238,8 +269,12 @@ func (dw *deltaSelector) tryToDeltify(base, target *ObjectToPack) error {
 		return err
 	}
 
+	if _, ok := indexMap[base.Hash()]; !ok {
+		indexMap[base.Hash()] = new(deltaIndex)
+	}
+
 	// Now we can generate the delta using originals
-	delta, err := GetDelta(base.Original, target.Original)
+	delta, err := getDelta(indexMap[base.Hash()], base.Original, target.Original)
 	if err != nil {
 		return err
 	}
