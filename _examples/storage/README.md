@@ -8,7 +8,7 @@
 ### and what this means ...
 *git* has as very well defined storage system, the `.git` directory, present on any repository. This is the place where `git` stores al the [`objects`](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects), [`references`](https://git-scm.com/book/es/v2/Git-Internals-Git-References) and [`configuration`](https://git-scm.com/docs/git-config#_configuration_file). This information is stored in plain files.
 
-Our original **go-git** version was designed to work in memory, some time after we added support to read the `.git`, and now we have added support for fully customized  [storages](https://godoc.org/github.com/src-d/go-git#Storer).
+Our original **go-git** version was designed to work in memory, some time after we added support to read the `.git`, and now we have added support for fully customized [storages](https://godoc.org/gopkg.in/src-d/go-git.v4/storage#Storer).
 
 This means that the internal database of any repository can be saved and accessed on any support, databases, distributed filesystems, etc. This functionality is pretty similar to the [libgit2 backends](http://blog.deveo.com/your-git-repository-in-a-database-pluggable-backends-in-libgit2/)
 
