@@ -797,17 +797,21 @@ func referencesToHashes(refs storer.ReferenceStorer) ([]plumbing.Hash, error) {
 func pushHashes(
 	ctx context.Context,
 	sess transport.ReceivePackSession,
-	sto storer.EncodedObjectStorer,
+	s storage.Storer,
 	req *packp.ReferenceUpdateRequest,
 	hs []plumbing.Hash,
 ) (*packp.ReportStatus, error) {
 
 	rd, wr := io.Pipe()
 	req.Packfile = rd
+	config, err := s.Config()
+	if err != nil {
+		return nil, err
+	}
 	done := make(chan error)
 	go func() {
-		e := packfile.NewEncoder(wr, sto, false)
-		if _, err := e.Encode(hs); err != nil {
+		e := packfile.NewEncoder(wr, s, false)
+		if _, err := e.Encode(hs, config.Pack.Window); err != nil {
 			done <- wr.CloseWithError(err)
 			return
 		}

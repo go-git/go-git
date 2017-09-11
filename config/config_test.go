@@ -10,6 +10,8 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 	input := []byte(`[core]
         bare = true
 		worktree = foo
+[pack]
+		window = 20
 [remote "origin"]
         url = git@github.com:mcuadros/go-git.git
         fetch = +refs/heads/*:refs/remotes/origin/*
@@ -33,6 +35,7 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 
 	c.Assert(cfg.Core.IsBare, Equals, true)
 	c.Assert(cfg.Core.Worktree, Equals, "foo")
+	c.Assert(cfg.Pack.Window, Equals, uint(20))
 	c.Assert(cfg.Remotes, HasLen, 2)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URLs, DeepEquals, []string{"git@github.com:mcuadros/go-git.git"})
@@ -51,6 +54,8 @@ func (s *ConfigSuite) TestMarshall(c *C) {
 	output := []byte(`[core]
 	bare = true
 	worktree = bar
+[pack]
+	window = 20
 [remote "alt"]
 	url = git@github.com:mcuadros/go-git.git
 	url = git@github.com:src-d/go-git.git
@@ -65,6 +70,7 @@ func (s *ConfigSuite) TestMarshall(c *C) {
 	cfg := NewConfig()
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
+	cfg.Pack.Window = 20
 	cfg.Remotes["origin"] = &RemoteConfig{
 		Name: "origin",
 		URLs: []string{"git@github.com:mcuadros/go-git.git"},
@@ -92,6 +98,8 @@ func (s *ConfigSuite) TestUnmarshallMarshall(c *C) {
 	bare = true
 	worktree = foo
 	custom = ignored
+[pack]
+	window = 20
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*

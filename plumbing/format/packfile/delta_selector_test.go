@@ -146,7 +146,8 @@ func (s *DeltaSelectorSuite) createTestObjects() {
 func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 	// Different type
 	hashes := []plumbing.Hash{s.hashes["base"], s.hashes["treeType"]}
-	otp, err := s.ds.ObjectsToPack(hashes)
+	deltaWindowSize := uint(10)
+	otp, err := s.ds.ObjectsToPack(hashes, deltaWindowSize)
 	c.Assert(err, IsNil)
 	c.Assert(len(otp), Equals, 2)
 	c.Assert(otp[0].Object, Equals, s.store.Objects[s.hashes["base"]])
@@ -154,7 +155,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 
 	// Size radically different
 	hashes = []plumbing.Hash{s.hashes["bigBase"], s.hashes["target"]}
-	otp, err = s.ds.ObjectsToPack(hashes)
+	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
 	c.Assert(err, IsNil)
 	c.Assert(len(otp), Equals, 2)
 	c.Assert(otp[0].Object, Equals, s.store.Objects[s.hashes["bigBase"]])
@@ -162,7 +163,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 
 	// Delta Size Limit with no best delta yet
 	hashes = []plumbing.Hash{s.hashes["smallBase"], s.hashes["smallTarget"]}
-	otp, err = s.ds.ObjectsToPack(hashes)
+	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
 	c.Assert(err, IsNil)
 	c.Assert(len(otp), Equals, 2)
 	c.Assert(otp[0].Object, Equals, s.store.Objects[s.hashes["smallBase"]])
@@ -170,7 +171,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 
 	// It will create the delta
 	hashes = []plumbing.Hash{s.hashes["base"], s.hashes["target"]}
-	otp, err = s.ds.ObjectsToPack(hashes)
+	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
 	c.Assert(err, IsNil)
 	c.Assert(len(otp), Equals, 2)
 	c.Assert(otp[0].Object, Equals, s.store.Objects[s.hashes["target"]])
@@ -185,7 +186,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 		s.hashes["o2"],
 		s.hashes["o3"],
 	}
-	otp, err = s.ds.ObjectsToPack(hashes)
+	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
 	c.Assert(err, IsNil)
 	c.Assert(len(otp), Equals, 3)
 	c.Assert(otp[0].Object, Equals, s.store.Objects[s.hashes["o1"]])
@@ -201,20 +202,32 @@ func (s *DeltaSelectorSuite) TestObjectsToPack(c *C) {
 	// a delta.
 	hashes = make([]plumbing.Hash, 0, deltaWindowSize+2)
 	hashes = append(hashes, s.hashes["base"])
-	for i := 0; i < deltaWindowSize; i++ {
+	for i := uint(0); i < deltaWindowSize; i++ {
 		hashes = append(hashes, s.hashes["smallTarget"])
 	}
 	hashes = append(hashes, s.hashes["target"])
 
 	// Don't sort so we can easily check the sliding window without
 	// creating a bunch of new objects.
-	otp, err = s.ds.objectsToPack(hashes)
+	otp, err = s.ds.objectsToPack(hashes, deltaWindowSize)
 	c.Assert(err, IsNil)
-	err = s.ds.walk(otp)
+	err = s.ds.walk(otp, deltaWindowSize)
 	c.Assert(err, IsNil)
-	c.Assert(len(otp), Equals, deltaWindowSize+2)
+	c.Assert(len(otp), Equals, int(deltaWindowSize)+2)
 	targetIdx := len(otp) - 1
 	c.Assert(otp[targetIdx].IsDelta(), Equals, false)
+
+	// Check that no deltas are created, and the objects are unsorted,
+	// if compression is off.
+	hashes = []plumbing.Hash{s.hashes["base"], s.hashes["target"]}
+	otp, err = s.ds.ObjectsToPack(hashes, 0)
+	c.Assert(err, IsNil)
+	c.Assert(len(otp), Equals, 2)
+	c.Assert(otp[0].Object, Equals, s.store.Objects[s.hashes["base"]])
+	c.Assert(otp[0].IsDelta(), Equals, false)
+	c.Assert(otp[1].Original, Equals, s.store.Objects[s.hashes["target"]])
+	c.Assert(otp[1].IsDelta(), Equals, false)
+	c.Assert(otp[1].Depth, Equals, 0)
 }
 
 func (s *DeltaSelectorSuite) TestMaxDepth(c *C) {
