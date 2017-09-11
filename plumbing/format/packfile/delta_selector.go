@@ -9,9 +9,6 @@ import (
 )
 
 const (
-	// How far back in the sorted list to search for deltas.  10 is
-	// the default in command line git.
-	deltaWindowSize = 10
 	// deltas based on deltas, how many steps we can do.
 	// 50 is the default value used in JGit
 	maxDepth = int64(50)
@@ -31,12 +28,22 @@ func newDeltaSelector(s storer.EncodedObjectStorer) *deltaSelector {
 	return &deltaSelector{s}
 }
 
-// ObjectsToPack creates a list of ObjectToPack from the hashes provided,
-// creating deltas if it's suitable, using an specific internal logic
-func (dw *deltaSelector) ObjectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack, error) {
-	otp, err := dw.objectsToPack(hashes)
+// ObjectsToPack creates a list of ObjectToPack from the hashes
+// provided, creating deltas if it's suitable, using an specific
+// internal logic.  `packWindow` specifies the size of the sliding
+// window used to compare objects for delta compression; 0 turns off
+// delta compression entirely.
+func (dw *deltaSelector) ObjectsToPack(
+	hashes []plumbing.Hash,
+	packWindow uint,
+) ([]*ObjectToPack, error) {
+	otp, err := dw.objectsToPack(hashes, packWindow)
 	if err != nil {
 		return nil, err
+	}
+
+	if packWindow == 0 {
+		return otp, nil
 	}
 
 	dw.sort(otp)
@@ -60,7 +67,7 @@ func (dw *deltaSelector) ObjectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack,
 		objs := objs
 		wg.Add(1)
 		go func() {
-			if walkErr := dw.walk(objs); walkErr != nil {
+			if walkErr := dw.walk(objs, packWindow); walkErr != nil {
 				once.Do(func() {
 					err = walkErr
 				})
@@ -77,10 +84,19 @@ func (dw *deltaSelector) ObjectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack,
 	return otp, nil
 }
 
-func (dw *deltaSelector) objectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack, error) {
+func (dw *deltaSelector) objectsToPack(
+	hashes []plumbing.Hash,
+	packWindow uint,
+) ([]*ObjectToPack, error) {
 	var objectsToPack []*ObjectToPack
 	for _, h := range hashes {
-		o, err := dw.encodedDeltaObject(h)
+		var o plumbing.EncodedObject
+		var err error
+		if packWindow == 0 {
+			o, err = dw.encodedObject(h)
+		} else {
+			o, err = dw.encodedDeltaObject(h)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -91,6 +107,10 @@ func (dw *deltaSelector) objectsToPack(hashes []plumbing.Hash) ([]*ObjectToPack,
 		}
 
 		objectsToPack = append(objectsToPack, otp)
+	}
+
+	if packWindow == 0 {
+		return objectsToPack, nil
 	}
 
 	if err := dw.fixAndBreakChains(objectsToPack); err != nil {
@@ -201,7 +221,10 @@ func (dw *deltaSelector) sort(objectsToPack []*ObjectToPack) {
 	sort.Sort(byTypeAndSize(objectsToPack))
 }
 
-func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
+func (dw *deltaSelector) walk(
+	objectsToPack []*ObjectToPack,
+	packWindow uint,
+) error {
 	indexMap := make(map[plumbing.Hash]*deltaIndex)
 	for i := 0; i < len(objectsToPack); i++ {
 		target := objectsToPack[i]
@@ -218,7 +241,7 @@ func (dw *deltaSelector) walk(objectsToPack []*ObjectToPack) error {
 			continue
 		}
 
-		for j := i - 1; j >= 0 && i-j < deltaWindowSize; j-- {
+		for j := i - 1; j >= 0 && i-j < int(packWindow); j-- {
 			base := objectsToPack[j]
 			// Objects must use only the same type as their delta base.
 			// Since objectsToPack is sorted by type and size, once we find

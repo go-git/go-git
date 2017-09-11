@@ -14,10 +14,10 @@ import (
 // Encoder gets the data from the storage and write it into the writer in PACK
 // format
 type Encoder struct {
-	selector     *deltaSelector
-	w            *offsetWriter
-	zw           *zlib.Writer
-	hasher       plumbing.Hasher
+	selector *deltaSelector
+	w        *offsetWriter
+	zw       *zlib.Writer
+	hasher   plumbing.Hasher
 	// offsets is a map of object hashes to corresponding offsets in the packfile.
 	// It is used to determine offset of the base of a delta when a OFS_DELTA is
 	// used.
@@ -45,10 +45,15 @@ func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *E
 	}
 }
 
-// Encode creates a packfile containing all the objects referenced in hashes
-// and writes it to the writer in the Encoder.
-func (e *Encoder) Encode(hashes []plumbing.Hash) (plumbing.Hash, error) {
-	objects, err := e.selector.ObjectsToPack(hashes)
+// Encode creates a packfile containing all the objects referenced in
+// hashes and writes it to the writer in the Encoder.  `packWindow`
+// specifies the size of the sliding window used to compare objects
+// for delta compression; 0 turns off delta compression entirely.
+func (e *Encoder) Encode(
+	hashes []plumbing.Hash,
+	packWindow uint,
+) (plumbing.Hash, error) {
+	objects, err := e.selector.ObjectsToPack(hashes, packWindow)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -137,7 +142,7 @@ func (e *Encoder) writeOfsDeltaHeader(deltaOffset int64, base plumbing.Hash) err
 
 	// for OFS_DELTA, offset of the base is interpreted as negative offset
 	// relative to the type-byte of the header of the ofs-delta entry.
-	relativeOffset := deltaOffset-baseOffset
+	relativeOffset := deltaOffset - baseOffset
 	if relativeOffset <= 0 {
 		return fmt.Errorf("bad offset for OFS_DELTA entry: %d", relativeOffset)
 	}
