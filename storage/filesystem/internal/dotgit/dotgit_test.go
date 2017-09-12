@@ -58,21 +58,21 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
-	))
+	), nil)
 
 	c.Assert(err, IsNil)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/symbolic",
 		"ref: refs/heads/foo",
-	))
+	), nil)
 
 	c.Assert(err, IsNil)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"bar",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
-	))
+	), nil)
 	c.Assert(err, IsNil)
 
 	refs, err := dir.Refs()
