@@ -217,3 +217,60 @@ func (s *RevListSuite) TestRevListObjectsNewBranch(c *C) {
 	}
 	c.Assert(len(remoteHist), Equals, len(revList))
 }
+
+// This tests will ensure that a5b8b09 and b8e471f will be visited even if
+// 35e8510 has already been visited and will not stop iterating until they
+// have been as well.
+//
+// * af2d6a6 some json
+// *   1669dce Merge branch 'master'
+// |\
+// | *   a5b8b09 Merge pull request #1
+// | |\
+// | | * b8e471f Creating changelog
+// | |/
+// * | 35e8510 binary file
+// |/
+// * b029517 Initial commit
+func (s *RevListSuite) TestReachableObjectsNoRevisit(c *C) {
+	obj, err := s.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"))
+	c.Assert(err, IsNil)
+
+	do, err := object.DecodeObject(s.Storer, obj)
+	c.Assert(err, IsNil)
+
+	commit, ok := do.(*object.Commit)
+	c.Assert(ok, Equals, true)
+
+	var visited []plumbing.Hash
+	err = reachableObjects(
+		commit,
+		map[plumbing.Hash]bool{
+			plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"): true,
+		},
+		map[plumbing.Hash]bool{
+			plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"): true,
+		},
+		nil,
+		func(h plumbing.Hash) {
+			obj, err := s.Storer.EncodedObject(plumbing.AnyObject, h)
+			c.Assert(err, IsNil)
+
+			do, err := object.DecodeObject(s.Storer, obj)
+			c.Assert(err, IsNil)
+
+			if _, ok := do.(*object.Commit); ok {
+				visited = append(visited, h)
+			}
+		},
+	)
+	c.Assert(err, IsNil)
+
+	c.Assert(visited, DeepEquals, []plumbing.Hash{
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+	})
+}
