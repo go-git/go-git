@@ -16,7 +16,7 @@ func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	NewCommitPreorderIter(commit, nil).ForEach(func(c *Commit) error {
+	NewCommitPreorderIter(commit, nil, nil).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -42,12 +42,36 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
 	commit := s.commit(c, s.Fixture.Head)
 
 	var commits []*Commit
-	NewCommitPreorderIter(commit, []plumbing.Hash{
+	NewCommitPreorderIter(commit, nil, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 	}).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
+
+	c.Assert(commits, HasLen, 2)
+
+	expected := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+	}
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
+func (s *CommitWalkerSuite) TestCommitPreIteratorWithSeenExternal(c *C) {
+	commit := s.commit(c, s.Fixture.Head)
+
+	var commits []*Commit
+	seenExternal := map[plumbing.Hash]bool{
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"): true,
+	}
+	NewCommitPreorderIter(commit, seenExternal, nil).
+		ForEach(func(c *Commit) error {
+			commits = append(commits, c)
+			return nil
+		})
 
 	c.Assert(commits, HasLen, 2)
 
