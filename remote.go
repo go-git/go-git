@@ -799,7 +799,7 @@ func (r *Remote) updateLocalReferenceStorage(
 
 			// If the ref exists locally as a branch and force is not specified,
 			// only update if the new ref is an ancestor of the old
-			if old != nil && old.Name().IsBranch() && !force {
+			if old != nil && old.Name().IsBranch() && !force && !spec.IsForceUpdate() {
 				ff, err := isFastForward(r.s, old.Hash(), new.Hash())
 				if err != nil {
 					return updated, err
