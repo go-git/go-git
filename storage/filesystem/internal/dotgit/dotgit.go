@@ -294,6 +294,10 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 
 	defer ioutil.CheckClose(f, &err)
 
+	// Lock is unlocked by the deferred Close above. This is because Unlock
+	// does not imply a fsync and thus there would be a race between
+	// Unlock+Close and other concurrent writers. Adding Sync to go-billy
+	// could work, but this is better (and avoids superfluous syncs).
 	err = f.Lock()
 	if err != nil {
 		return err
