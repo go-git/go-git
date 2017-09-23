@@ -115,6 +115,14 @@ func (o *ObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.H
 	return h, nil
 }
 
+func (o *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
+	_, ok := o.Objects[h]
+	if !ok {
+		return plumbing.ErrObjectNotFound
+	}
+	return nil
+}
+
 func (o *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	obj, ok := o.Objects[h]
 	if !ok || (plumbing.AnyObject != t && obj.Type() != t) {
