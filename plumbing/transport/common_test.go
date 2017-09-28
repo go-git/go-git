@@ -75,7 +75,7 @@ func (s *SuiteCommon) TestNewEndpointSCPLike(c *C) {
 }
 
 func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort(c *C) {
-	e, err := NewEndpoint("git@github.com:9999:user/repository.git")
+	e, err := NewEndpoint("git@github.com:9999/user/repository.git")
 	c.Assert(err, IsNil)
 	c.Assert(e.Protocol(), Equals, "ssh")
 	c.Assert(e.User(), Equals, "git")

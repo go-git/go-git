@@ -227,7 +227,7 @@ func (e *fileEndpoint) String() string   { return e.path }
 
 var (
 	isSchemeRegExp   = regexp.MustCompile(`^[^:]+://`)
-	scpLikeUrlRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]+):)?(?P<path>[^\\].*)$`)
+	scpLikeUrlRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5})/)?(?P<path>[^\\].*)$`)
 )
 
 func parseSCPLike(endpoint string) (Endpoint, bool) {
