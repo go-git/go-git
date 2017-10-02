@@ -728,6 +728,39 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 	return
 }
 
+// LSRemote performs ls-remote on the remote.
+func (r *Remote) LSRemote(auth transport.AuthMethod) ([]*plumbing.Reference, error) {
+	s, err := newUploadPackSession(r.c.URLs[0], auth)
+	if err != nil {
+		return nil, err
+	}
+
+	defer ioutil.CheckClose(s, &err)
+
+	ar, err := s.AdvertisedReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	allRefs, err := ar.AllReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	refs, err := allRefs.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	var resultRefs []*plumbing.Reference
+	refs.ForEach(func(ref *plumbing.Reference) error {
+		resultRefs = append(resultRefs, ref)
+		return nil
+	})
+
+	return resultRefs, nil
+}
+
 func objectsToPush(commands []*packp.Command) ([]plumbing.Hash, error) {
 	var objects []plumbing.Hash
 	for _, cmd := range commands {

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -641,4 +642,42 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 	l, err := getHaves(st)
 	c.Assert(err, IsNil)
 	c.Assert(l, HasLen, 2)
+}
+
+func (s *RemoteSuite) TestLSRemote(c *C) {
+	url := c.MkDir()
+	server, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	srcFs := fixtures.Basic().One().DotGit()
+	sto, err := filesystem.NewStorage(srcFs)
+	c.Assert(err, IsNil)
+
+	remote := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	err = remote.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{rs},
+	})
+	c.Assert(err, IsNil)
+
+	// Perform ls-remote.
+	var authMethod transport.AuthMethod
+	refs, err := remote.LSRemote(authMethod)
+	c.Assert(err, IsNil)
+
+	// Create a map of remote name and their hash.
+	refsMap := map[string]string{}
+	for _, rf := range refs {
+		// Skip the symbolically linked HEAD.
+		if string(rf.Name()) == "HEAD" {
+			continue
+		}
+		refsMap[string(rf.Name())] = rf.Hash().String()
+	}
+
+	AssertReferences(c, server, refsMap)
 }
