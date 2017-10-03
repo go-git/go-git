@@ -11,7 +11,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -644,7 +643,7 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 	c.Assert(l, HasLen, 2)
 }
 
-func (s *RemoteSuite) TestLSRemote(c *C) {
+func (s *RemoteSuite) TestList(c *C) {
 	url := c.MkDir()
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -664,9 +663,8 @@ func (s *RemoteSuite) TestLSRemote(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	// Perform ls-remote.
-	var authMethod transport.AuthMethod
-	refs, err := remote.LSRemote(authMethod)
+	listOptions := ListOptions{}
+	refs, err := remote.List(&listOptions)
 	c.Assert(err, IsNil)
 
 	// Create a map of remote name and their hash.

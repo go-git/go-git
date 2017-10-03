@@ -728,9 +728,9 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 	return
 }
 
-// LSRemote performs ls-remote on the remote.
-func (r *Remote) LSRemote(auth transport.AuthMethod) ([]*plumbing.Reference, error) {
-	s, err := newUploadPackSession(r.c.URLs[0], auth)
+// List the references on the remote repository.
+func (r *Remote) List(o *ListOptions) ([]*plumbing.Reference, error) {
+	s, err := newUploadPackSession(r.c.URLs[0], o.Auth)
 	if err != nil {
 		return nil, err
 	}
