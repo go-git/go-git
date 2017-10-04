@@ -644,3 +644,34 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(l, HasLen, 2)
 }
+
+func (s *RemoteSuite) TestList(c *C) {
+	repo := fixtures.Basic().One()
+	remote := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{repo.URL},
+	})
+
+	refs, err := remote.List(&ListOptions{})
+	c.Assert(err, IsNil)
+
+	expected := []*plumbing.Reference{
+		plumbing.NewSymbolicReference("HEAD", "refs/heads/master"),
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/heads/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewReferenceFromStrings("refs/pull/1/head", "b8e471f58bcbca63b07bda20e428190409c2db47"),
+		plumbing.NewReferenceFromStrings("refs/pull/2/head", "9632f02833b2f9613afb5e75682132b0b22e4a31"),
+		plumbing.NewReferenceFromStrings("refs/pull/2/merge", "c37f58a130ca555e42ff96a071cb9ccb3f437504"),
+	}
+	c.Assert(len(refs), Equals, len(expected))
+	for _, e := range expected {
+		found := false
+		for _, r := range refs {
+			if r.Name() == e.Name() {
+				found = true
+				c.Assert(r, DeepEquals, e)
+			}
+		}
+		c.Assert(found, Equals, true)
+	}
+}
