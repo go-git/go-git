@@ -644,38 +644,32 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 }
 
 func (s *RemoteSuite) TestList(c *C) {
-	url := c.MkDir()
-	server, err := PlainInit(url, true)
-	c.Assert(err, IsNil)
-
-	srcFs := fixtures.Basic().One().DotGit()
-	sto, err := filesystem.NewStorage(srcFs)
-	c.Assert(err, IsNil)
-
-	remote := newRemote(sto, &config.RemoteConfig{
+	repo := fixtures.Basic().One()
+	remote := newRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URLs: []string{url},
+		URLs: []string{repo.URL},
 	})
 
-	rs := config.RefSpec("refs/heads/*:refs/heads/*")
-	err = remote.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
-	})
+	refs, err := remote.List(&ListOptions{})
 	c.Assert(err, IsNil)
 
-	listOptions := ListOptions{}
-	refs, err := remote.List(&listOptions)
-	c.Assert(err, IsNil)
-
-	// Create a map of remote name and their hash.
-	refsMap := map[string]string{}
-	for _, rf := range refs {
-		// Skip the symbolically linked HEAD.
-		if string(rf.Name()) == "HEAD" {
-			continue
-		}
-		refsMap[string(rf.Name())] = rf.Hash().String()
+	expected := []*plumbing.Reference{
+		plumbing.NewSymbolicReference("HEAD", "refs/heads/master"),
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/heads/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewReferenceFromStrings("refs/pull/1/head", "b8e471f58bcbca63b07bda20e428190409c2db47"),
+		plumbing.NewReferenceFromStrings("refs/pull/2/head", "9632f02833b2f9613afb5e75682132b0b22e4a31"),
+		plumbing.NewReferenceFromStrings("refs/pull/2/merge", "c37f58a130ca555e42ff96a071cb9ccb3f437504"),
 	}
-
-	AssertReferences(c, server, refsMap)
+	c.Assert(len(refs), Equals, len(expected))
+	for _, e := range expected {
+		found := false
+		for _, r := range refs {
+			if r.Name() == e.Name() {
+				found = true
+				c.Assert(r, DeepEquals, e)
+			}
+		}
+		c.Assert(found, Equals, true)
+	}
 }
