@@ -258,3 +258,27 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 	c.Assert(err, IsNil)
 	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
 }
+
+func (s *SuiteCommit) TestStat(c *C) {
+	aCommit := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	fileStats, err := aCommit.Stats()
+	c.Assert(err, IsNil)
+
+	c.Assert(fileStats[0].Name, Equals, "vendor/foo.go")
+	c.Assert(fileStats[0].Addition, Equals, 7)
+	c.Assert(fileStats[0].Deletion, Equals, 0)
+	c.Assert(fileStats[0].String(), Equals, " vendor/foo.go | 7 +++++++")
+
+	// Stats for another commit.
+	aCommit = s.commit(c, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	fileStats, err = aCommit.Stats()
+	c.Assert(err, IsNil)
+
+	c.Assert(fileStats[0].Name, Equals, "go/example.go")
+	c.Assert(fileStats[0].Addition, Equals, 142)
+	c.Assert(fileStats[0].Deletion, Equals, 0)
+
+	c.Assert(fileStats[1].Name, Equals, "php/crappy.php")
+	c.Assert(fileStats[1].Addition, Equals, 259)
+	c.Assert(fileStats[1].Deletion, Equals, 0)
+}

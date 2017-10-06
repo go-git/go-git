@@ -265,6 +265,72 @@ func (b *Commit) Encode(o plumbing.EncodedObject) error {
 	return err
 }
 
+// FileStat stores the status of changes in content of a file.
+type FileStat struct {
+	Name     string
+	Addition int
+	Deletion int
+}
+
+func (fs FileStat) String() string {
+	totalChanges := fs.Addition + fs.Deletion
+	adds := strings.Repeat("+", fs.Addition)
+	dels := strings.Repeat("-", fs.Deletion)
+	return fmt.Sprintf(" %s | %d %s%s", fs.Name, totalChanges, adds, dels)
+}
+
+// FileStats is a collection of FileStat.
+type FileStats []FileStat
+
+// Stats shows the status
+func (c *Commit) Stats() (FileStats, error) {
+	var fileStats FileStats
+
+	// Get the previous commit.
+	ci := c.Parents()
+	parentCommit, err := ci.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	patch, err := parentCommit.Patch(c)
+	if err != nil {
+		return nil, err
+	}
+
+	filePatches := patch.FilePatches()
+	for _, fp := range filePatches {
+		cs := FileStat{}
+		from, to := fp.Files()
+		if from == nil {
+			// New File is created.
+			cs.Name = to.Path()
+		} else if to == nil {
+			// File is deleted.
+			cs.Name = from.Path()
+		} else if from.Path() != to.Path() {
+			// File is renamed.
+			cs.Name = fmt.Sprintf("%s => %s", from.Path(), to.Path())
+		} else {
+			// File is modified.
+			cs.Name = from.Path()
+		}
+
+		for _, chunk := range fp.Chunks() {
+			switch chunk.Type() {
+			case 1:
+				cs.Addition += strings.Count(chunk.Content(), "\n")
+			case 2:
+				cs.Deletion += strings.Count(chunk.Content(), "\n")
+			}
+		}
+
+		fileStats = append(fileStats, cs)
+	}
+
+	return fileStats, nil
+}
+
 func (c *Commit) String() string {
 	return fmt.Sprintf(
 		"%s %s\nAuthor: %s\nDate:   %s\n\n%s\n",
