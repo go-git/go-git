@@ -813,7 +813,7 @@ func (s *WorktreeSuite) TestResetMerge(c *C) {
 	c.Assert(err, IsNil)
 
 	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commitB})
-	c.Assert(err, Equals, ErrUnstaggedChanges)
+	c.Assert(err, Equals, ErrUnstagedChanges)
 
 	branch, err = w.r.Reference(plumbing.Master, false)
 	c.Assert(err, IsNil)
