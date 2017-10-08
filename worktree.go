@@ -25,7 +25,7 @@ import (
 var (
 	ErrWorktreeNotClean  = errors.New("worktree is not clean")
 	ErrSubmoduleNotFound = errors.New("submodule not found")
-	ErrUnstaggedChanges  = errors.New("worktree contains unstagged changes")
+	ErrUnstagedChanges   = errors.New("worktree contains unstaged changes")
 )
 
 // Worktree represents a git worktree.
@@ -152,7 +152,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		}
 
 		if unstaged {
-			return ErrUnstaggedChanges
+			return ErrUnstagedChanges
 		}
 	}
 
@@ -269,7 +269,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 
 		if unstaged {
-			return ErrUnstaggedChanges
+			return ErrUnstagedChanges
 		}
 	}
 
