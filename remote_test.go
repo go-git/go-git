@@ -625,6 +625,10 @@ func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 }
 
 func (s *RemoteSuite) TestGetHaves(c *C) {
+	f := fixtures.Basic().One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+
 	var localRefs = []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings(
 			"foo",
@@ -640,7 +644,7 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 		),
 	}
 
-	l, err := getHaves(localRefs)
+	l, err := getHaves(localRefs, memory.NewStorage(), sto)
 	c.Assert(err, IsNil)
 	c.Assert(l, HasLen, 2)
 }

@@ -27,6 +27,14 @@ var (
 	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
 )
 
+const (
+	// This describes the maximum number of commits to walk when
+	// computing the haves to send to a server, for each ref in the
+	// repo containing this remote, when not using the multi-ack
+	// protocol.  Setting this to 0 means there is no limit.
+	maxHavesToVisitPerRef = 100
+)
+
 // Remote represents a connection to a remote repository.
 type Remote struct {
 	c *config.RemoteConfig
@@ -284,7 +292,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (storer.ReferenceSt
 
 	req.Wants, err = getWants(r.s, refs)
 	if len(req.Wants) > 0 {
-		req.Haves, err = getHaves(localRefs)
+		req.Haves, err = getHaves(localRefs, remoteRefs, r.s)
 		if err != nil {
 			return nil, err
 		}
@@ -490,8 +498,86 @@ func (r *Remote) references() ([]*plumbing.Reference, error) {
 	return localRefs, nil
 }
 
-func getHaves(localRefs []*plumbing.Reference) ([]plumbing.Hash, error) {
+func getRemoteRefsFromStorer(remoteRefStorer storer.ReferenceStorer) (
+	map[plumbing.Hash]bool, error) {
+	remoteRefs := map[plumbing.Hash]bool{}
+	iter, err := remoteRefStorer.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() != plumbing.HashReference {
+			return nil
+		}
+		remoteRefs[ref.Hash()] = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return remoteRefs, nil
+}
+
+// getHavesFromRef populates the given `haves` map with the given
+// reference, and up to `maxHavesToVisitPerRef` ancestor commits.
+func getHavesFromRef(
+	ref *plumbing.Reference,
+	remoteRefs map[plumbing.Hash]bool,
+	s storage.Storer,
+	haves map[plumbing.Hash]bool,
+) error {
+	h := ref.Hash()
+	if haves[h] {
+		return nil
+	}
+
+	// No need to load the commit if we know the remote already
+	// has this hash.
+	if remoteRefs[h] {
+		haves[h] = true
+		return nil
+	}
+
+	commit, err := object.GetCommit(s, h)
+	if err != nil {
+		// Ignore the error if this isn't a commit.
+		haves[ref.Hash()] = true
+		return nil
+	}
+
+	// Until go-git supports proper commit negotiation during an
+	// upload pack request, include up to `maxHavesToVisitPerRef`
+	// commits from the history of each ref.
+	walker := object.NewCommitPreorderIter(commit, haves, nil)
+	toVisit := maxHavesToVisitPerRef
+	return walker.ForEach(func(c *object.Commit) error {
+		haves[c.Hash] = true
+		toVisit--
+		// If toVisit starts out at 0 (indicating there is no
+		// max), then it will be negative here and we won't stop
+		// early.
+		if toVisit == 0 || remoteRefs[c.Hash] {
+			return storer.ErrStop
+		}
+		return nil
+	})
+}
+
+func getHaves(
+	localRefs []*plumbing.Reference,
+	remoteRefStorer storer.ReferenceStorer,
+	s storage.Storer,
+) ([]plumbing.Hash, error) {
 	haves := map[plumbing.Hash]bool{}
+
+	// Build a map of all the remote references, to avoid loading too
+	// many parent commits for references we know don't need to be
+	// transferred.
+	remoteRefs, err := getRemoteRefsFromStorer(remoteRefStorer)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, ref := range localRefs {
 		if haves[ref.Hash()] == true {
 			continue
@@ -501,7 +587,10 @@ func getHaves(localRefs []*plumbing.Reference) ([]plumbing.Hash, error) {
 			continue
 		}
 
-		haves[ref.Hash()] = true
+		err = getHavesFromRef(ref, remoteRefs, s, haves)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var result []plumbing.Hash
