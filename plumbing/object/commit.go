@@ -12,6 +12,11 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
+const (
+	beginpgp string = "-----BEGIN PGP SIGNATURE-----"
+	endpgp   string = "-----END PGP SIGNATURE-----"
+)
+
 // Hash represents the hash of an object
 type Hash plumbing.Hash
 
@@ -28,6 +33,8 @@ type Commit struct {
 	// Committer is the one performing the commit, might be different from
 	// Author.
 	Committer Signature
+	// PGPSignature is the PGP signature of the commit.
+	PGPSignature string
 	// Message is the commit message, contains arbitrary text.
 	Message string
 	// TreeHash is the hash of the root tree of the commit.
@@ -145,10 +152,31 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	r := bufio.NewReader(reader)
 
 	var message bool
+	var pgpsig bool
 	for {
 		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
+		}
+
+		if pgpsig {
+			// Check if it's the end of a PGP signature.
+			if bytes.Contains(line, []byte(endpgp)) {
+				c.PGPSignature += endpgp + "\n"
+				pgpsig = false
+			} else {
+				// Trim the left padding.
+				line = bytes.TrimLeft(line, " ")
+				c.PGPSignature += string(line)
+			}
+			continue
+		}
+
+		// Check if it's the beginning of a PGP signature.
+		if bytes.Contains(line, []byte(beginpgp)) {
+			c.PGPSignature += beginpgp + "\n"
+			pgpsig = true
+			continue
 		}
 
 		if !message {
@@ -213,6 +241,21 @@ func (b *Commit) Encode(o plumbing.EncodedObject) error {
 
 	if err = b.Committer.Encode(w); err != nil {
 		return err
+	}
+
+	if b.PGPSignature != "" {
+		if _, err = fmt.Fprint(w, "pgpsig"); err != nil {
+			return err
+		}
+
+		// Split all the signature lines and write with a left padding and
+		// newline at the end.
+		lines := strings.Split(b.PGPSignature, "\n")
+		for _, line := range lines {
+			if _, err = fmt.Fprintf(w, " %s\n", line); err != nil {
+				return err
+			}
+		}
 	}
 
 	if _, err = fmt.Fprintf(w, "\n\n%s", b.Message); err != nil {
