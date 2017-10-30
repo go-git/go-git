@@ -227,6 +227,12 @@ func (dw *deltaSelector) walk(
 ) error {
 	indexMap := make(map[plumbing.Hash]*deltaIndex)
 	for i := 0; i < len(objectsToPack); i++ {
+		// Clean up the index map for anything outside our pack
+		// window, to save memory.
+		if i > int(packWindow) {
+			delete(indexMap, objectsToPack[i-int(packWindow)].Hash())
+		}
+
 		target := objectsToPack[i]
 
 		// If we already have a delta, we don't try to find a new one for this
