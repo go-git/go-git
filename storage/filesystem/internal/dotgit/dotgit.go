@@ -576,6 +576,121 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 	return d.readReferenceFrom(f, name)
 }
 
+func (d *DotGit) CountLooseRefs() (int, error) {
+	var refs []*plumbing.Reference
+	var seen = make(map[plumbing.ReferenceName]bool)
+	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
+		return 0, err
+	}
+
+	return len(refs), nil
+}
+
+// PackRefs packs all loose refs into the packed-refs file.
+//
+// This implementation only works under the assumption that the view
+// of the file system won't be updated during this operation, which is
+// true for kbfsgit after the Lock() operation is complete (and before
+// the Unlock()/Close() of the locked file).  If another process
+// concurrently updates one of the loose refs we delete, then KBFS
+// conflict resolution would just end up ignoring our delete.  Also
+// note that deleting a ref requires locking packed-refs, so a ref
+// deleted by the user shouldn't be revived by ref-packing.
+//
+// The strategy would not work on a general file system though,
+// without locking each loose reference and checking it again before
+// deleting the file, because otherwise an updated reference could
+// sneak in and then be deleted by the packed-refs process.
+// Alternatively, every ref update could also lock packed-refs, so
+// only one lock is required during ref-packing.  But that would
+// worsen performance in the common case.
+//
+// TODO: before trying to get this merged upstream, move it into a
+// custom kbfsgit Storer implementation, and rewrite this function to
+// work correctly on a general filesystem.
+func (d *DotGit) PackRefs() (err error) {
+	// Lock packed-refs, and create it if it doesn't exist yet.
+	f, err := d.fs.Open(packedRefsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			f, err = d.fs.Create(packedRefsPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	defer ioutil.CheckClose(f, &err)
+
+	err = f.Lock()
+	if err != nil {
+		return err
+	}
+
+	// Gather all refs using addRefsFromRefDir and addRefsFromPackedRefs.
+	var refs []*plumbing.Reference
+	var seen = make(map[plumbing.ReferenceName]bool)
+	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
+		return err
+	}
+	if len(refs) == 0 {
+		// Nothing to do!
+		return nil
+	}
+	numLooseRefs := len(refs)
+	if err := d.addRefsFromPackedRefs(&refs, seen); err != nil {
+		return err
+	}
+
+	// Write them all to a new temp packed-refs file.
+	tmp, err := d.fs.TempFile("", tmpPackedRefsPrefix)
+	if err != nil {
+		return err
+	}
+	doCloseTmp := true
+	defer func() {
+		if doCloseTmp {
+			ioutil.CheckClose(tmp, &err)
+		}
+	}()
+	for _, ref := range refs {
+		_, err := tmp.Write([]byte(ref.String() + "\n"))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Rename the temp packed-refs file.
+	doCloseTmp = false
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	err = d.fs.Rename(tmp.Name(), packedRefsPath)
+	if err != nil {
+		return err
+	}
+
+	// Delete all the loose refs, while still holding the packed-refs
+	// lock.
+	for _, ref := range refs[:numLooseRefs] {
+		path := d.fs.Join(".", ref.Name().String())
+		err = d.fs.Remove(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	// Update packed-refs cache.
+	d.cachedPackedRefs = make(refCache)
+	for _, ref := range refs {
+		d.cachedPackedRefs[ref.Name()] = ref
+	}
+	d.packedRefsLastMod = time.Now()
+
+	return nil
+}
+
 // Module return a billy.Filesystem poiting to the module folder
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	return d.fs.Chroot(d.fs.Join(modulePath, name))

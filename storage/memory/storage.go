@@ -236,6 +236,14 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	return storer.NewReferenceSliceIter(refs), nil
 }
 
+func (r ReferenceStorage) CountLooseRefs() (int, error) {
+	return len(r), nil
+}
+
+func (r ReferenceStorage) PackRefs() error {
+	return nil
+}
+
 func (r ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
 	delete(r, n)
 	return nil
