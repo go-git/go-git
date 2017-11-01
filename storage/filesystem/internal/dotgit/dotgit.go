@@ -597,6 +597,10 @@ func (d *DotGit) CountLooseRefs() (int, error) {
 // ref update could also lock packed-refs, so only one lock is
 // required during ref-packing.  But that would worsen performance in
 // the common case.
+//
+// TODO: add an "all" boolean like the `git pack-refs --all` flag.
+// When `all` is false, it would only pack refs that have already been
+// packed, plus all tags.
 func (d *DotGit) PackRefs() (err error) {
 	// Lock packed-refs, and create it if it doesn't exist yet.
 	f, err := d.fs.Open(packedRefsPath)
