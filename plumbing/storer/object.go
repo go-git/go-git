@@ -3,6 +3,7 @@ package storer
 import (
 	"errors"
 	"io"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
@@ -36,6 +37,19 @@ type EncodedObjectStorer interface {
 	//
 	// Valid plumbing.ObjectType values are CommitObject, BlobObject, TagObject,
 	IterEncodedObjects(plumbing.ObjectType) (EncodedObjectIter, error)
+	// HasEncodedObject returns ErrObjNotFound if the object doesn't
+	// exist.  If the object does exist, it returns nil.
+	HasEncodedObject(plumbing.Hash) error
+	// ForEachObjectHash iterates over all the (loose) object hashes
+	// in the repository without necessarily having to read those objects.
+	// Objects only inside pack files may be omitted.
+	ForEachObjectHash(func(plumbing.Hash) error) error
+	// LooseObjectTime looks up the (m)time associated with the
+	// loose object (that is not in a pack file). Implementations
+	// may
+	LooseObjectTime(plumbing.Hash) (time.Time, error)
+	// DeleteLooseObject deletes a loose object if it exists.
+	DeleteLooseObject(plumbing.Hash) error
 }
 
 // DeltaObjectStorer is an EncodedObjectStorer that can return delta
