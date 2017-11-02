@@ -421,17 +421,29 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 
 		return err
 	}
-	doCloseF := true
-	defer func() {
-		if doCloseF {
-			ioutil.CheckClose(f, &err)
-		}
-	}()
+	defer ioutil.CheckClose(f, &err)
 
 	err = f.Lock()
 	if err != nil {
 		return err
 	}
+
+	// Re-open the file after locking, since it could have been
+	// renamed over by a new file during the Lock process.
+	pr, err := d.fs.Open(packedRefsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return err
+	}
+	doClosePR := true
+	defer func() {
+		if doClosePR {
+			ioutil.CheckClose(pr, &err)
+		}
+	}()
 
 	// Creating the temp file in the same directory as the target file
 	// improves our chances for rename operation to be atomic.
@@ -446,7 +458,7 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		}
 	}()
 
-	s := bufio.NewScanner(f)
+	s := bufio.NewScanner(pr)
 	found := false
 	for s.Scan() {
 		line := s.Text()
@@ -479,8 +491,8 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		return d.fs.Remove(tmp.Name())
 	}
 
-	doCloseF = false
-	if err := f.Close(); err != nil {
+	doClosePR = false
+	if err := pr.Close(); err != nil {
 		return err
 	}
 
