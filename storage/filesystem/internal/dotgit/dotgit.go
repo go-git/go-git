@@ -615,16 +615,9 @@ func (d *DotGit) CountLooseRefs() (int, error) {
 // packed, plus all tags.
 func (d *DotGit) PackRefs() (err error) {
 	// Lock packed-refs, and create it if it doesn't exist yet.
-	f, err := d.fs.Open(packedRefsPath)
+	f, err := d.fs.OpenFile(packedRefsPath, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
-		if os.IsNotExist(err) {
-			f, err = d.fs.Create(packedRefsPath)
-			if err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
+		return err
 	}
 	defer ioutil.CheckClose(f, &err)
 
@@ -659,11 +652,16 @@ func (d *DotGit) PackRefs() (err error) {
 			ioutil.CheckClose(tmp, &err)
 		}
 	}()
+	w := bufio.NewWriter(tmp)
 	for _, ref := range refs {
-		_, err := tmp.Write([]byte(ref.String() + "\n"))
+		_, err := w.WriteString(ref.String() + "\n")
 		if err != nil {
 			return err
 		}
+	}
+	err = w.Flush()
+	if err != nil {
+		return err
 	}
 
 	// Rename the temp packed-refs file.
