@@ -43,10 +43,12 @@ type EncodedObjectStorer interface {
 	// ForEachObjectHash iterates over all the (loose) object hashes
 	// in the repository without necessarily having to read those objects.
 	// Objects only inside pack files may be omitted.
+	// If ErrStop is sent the iteration is stop but no error is returned.
 	ForEachObjectHash(func(plumbing.Hash) error) error
 	// LooseObjectTime looks up the (m)time associated with the
-	// loose object (that is not in a pack file). Implementations
-	// may
+	// loose object (that is not in a pack file). Some
+	// implementations (e.g. without loose objects)
+	// always return an error.
 	LooseObjectTime(plumbing.Hash) (time.Time, error)
 	// DeleteLooseObject deletes a loose object if it exists.
 	DeleteLooseObject(plumbing.Hash) error
