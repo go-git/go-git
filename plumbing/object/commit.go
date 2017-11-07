@@ -24,7 +24,7 @@ type Hash plumbing.Hash
 // at a certain point in time. It contains meta-information about that point
 // in time, such as a timestamp, the author of the changes since the last
 // commit, a pointer to the previous commit(s), etc.
-// http://schacon.github.io/gitbook/1_the_git_object_model.html
+// http://shafiulazam.com/gitbook/1_the_git_object_model.html
 type Commit struct {
 	// Hash of the commit object.
 	Hash plumbing.Hash
