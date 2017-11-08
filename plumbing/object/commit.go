@@ -265,6 +265,32 @@ func (b *Commit) Encode(o plumbing.EncodedObject) error {
 	return err
 }
 
+// Stats shows the status of commit.
+func (c *Commit) Stats() (FileStats, error) {
+	// Get the previous commit.
+	ci := c.Parents()
+	parentCommit, err := ci.Next()
+	if err != nil {
+		if err == io.EOF {
+			emptyNoder := treeNoder{}
+			parentCommit = &Commit{
+				Hash: emptyNoder.hash,
+				// TreeHash: emptyNoder.parent.Hash,
+				s: c.s,
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	patch, err := parentCommit.Patch(c)
+	if err != nil {
+		return nil, err
+	}
+
+	return getFileStatsFromFilePatches(patch.FilePatches()), nil
+}
+
 func (c *Commit) String() string {
 	return fmt.Sprintf(
 		"%s %s\nAuthor: %s\nDate:   %s\n\n%s\n",
