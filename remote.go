@@ -617,6 +617,7 @@ func (r *Remote) newUploadPackRequest(o *FetchOptions,
 	for _, s := range o.RefSpecs {
 		if !s.IsWildcard() {
 			isWildcard = false
+			break
 		}
 	}
 
