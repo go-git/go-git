@@ -161,3 +161,7 @@ func (o *MockObjectStorage) LooseObjectTime(plumbing.Hash) (time.Time, error) {
 func (o *MockObjectStorage) DeleteLooseObject(plumbing.Hash) error {
 	return plumbing.ErrObjectNotFound
 }
+
+func (o *MockObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
+	return nil, nil
+}

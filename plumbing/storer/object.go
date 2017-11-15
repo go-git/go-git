@@ -52,6 +52,11 @@ type EncodedObjectStorer interface {
 	LooseObjectTime(plumbing.Hash) (time.Time, error)
 	// DeleteLooseObject deletes a loose object if it exists.
 	DeleteLooseObject(plumbing.Hash) error
+	// ObjectPacks returns hashes of object packs if the underlying
+	// implementation has pack files.
+	ObjectPacks() ([]plumbing.Hash, error)
+	// DeleteObjectPackAndIndex deletes an object pack and the corresponding index file if they exist.
+	DeleteObjectPackAndIndex(plumbing.Hash) error
 }
 
 // DeltaObjectStorer is an EncodedObjectStorer that can return delta

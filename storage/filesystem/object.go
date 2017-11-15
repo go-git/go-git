@@ -503,3 +503,11 @@ func (s *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {
 func (s *ObjectStorage) DeleteLooseObject(hash plumbing.Hash) error {
 	return s.dir.ObjectDelete(hash)
 }
+
+func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
+	return s.dir.ObjectPacks()
+}
+
+func (s *ObjectStorage) DeleteObjectPackAndIndex(h plumbing.Hash) error {
+	return s.dir.DeleteObjectPackAndIndex(h)
+}

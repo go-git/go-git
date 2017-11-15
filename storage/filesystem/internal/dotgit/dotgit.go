@@ -166,11 +166,12 @@ func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
 	return packs, nil
 }
 
-// ObjectPack returns a fs.File of the given packfile
-func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
-	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.pack", hash.String()))
+func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
+	return d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.%s", hash.String(), extension))
+}
 
-	pack, err := d.fs.Open(file)
+func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
+	pack, err := d.fs.Open(d.objectPackPath(hash, extension))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrPackfileNotFound
@@ -182,19 +183,26 @@ func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	return pack, nil
 }
 
+// ObjectPack returns a fs.File of the given packfile
+func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
+	return d.objectPackOpen(hash, `pack`)
+}
+
 // ObjectPackIdx returns a fs.File of the index file for a given packfile
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
-	file := d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.idx", hash.String()))
-	idx, err := d.fs.Open(file)
+	return d.objectPackOpen(hash, `idx`)
+}
+
+func (d *DotGit) DeleteObjectPackAndIndex(hash plumbing.Hash) error {
+	err := d.fs.Remove(d.objectPackPath(hash, `pack`))
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrPackfileNotFound
-		}
-
-		return nil, err
+		return err
 	}
-
-	return idx, nil
+	err = d.fs.Remove(d.objectPackPath(hash, `idx`))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // NewObject return a writer for a new object file.

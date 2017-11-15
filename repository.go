@@ -12,6 +12,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/internal/revision"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
@@ -1010,4 +1011,65 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 	}
 
 	return &commit.Hash, nil
+}
+
+func (r *Repository) RepackObjects() (err error) {
+	// Get the existing object packs.
+	hs, err := r.Storer.ObjectPacks()
+	if err != nil {
+		return err
+	}
+
+	// Create a new pack.
+	nh, err := r.createNewObjectPack()
+	if err != nil {
+		return err
+	}
+
+	// Delete old packs.
+	for _, h := range hs {
+		// Skip if new hash is the same as an old one.
+		if h == nh {
+			continue
+		}
+		err = r.Storer.DeleteObjectPackAndIndex(h)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// createNewObjectPack is a helper for RepackObjects taking care
+// of creating a new pack. It is used so the the PackfileWriter
+// deferred close has the right scope.
+func (r *Repository) createNewObjectPack() (h plumbing.Hash, err error) {
+	pfw, ok := r.Storer.(storer.PackfileWriter)
+	if !ok {
+		return h, fmt.Errorf("Repository storer is not a storer.PackfileWriter")
+	}
+	wc, err := pfw.PackfileWriter(nil)
+	if err != nil {
+		return h, err
+	}
+	defer ioutil.CheckClose(wc, &err)
+	var objs []plumbing.Hash
+	iter, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		return h, err
+	}
+	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+		objs = append(objs, obj.Hash())
+		return nil
+	})
+	if err != nil {
+		return h, err
+	}
+	enc := packfile.NewEncoder(wc, r.Storer, false)
+	h, err = enc.Encode(objs, 10, nil)
+	if err != nil {
+		return h, err
+	}
+	return h, err
 }
