@@ -9,6 +9,7 @@ import (
 	stdioutil "io/ioutil"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
@@ -193,8 +194,19 @@ func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 	return d.objectPackOpen(hash, `idx`)
 }
 
-func (d *DotGit) DeleteObjectPackAndIndex(hash plumbing.Hash) error {
-	err := d.fs.Remove(d.objectPackPath(hash, `pack`))
+func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
+	path := d.objectPackPath(hash, `pack`)
+	if !t.IsZero() {
+		fi, err := d.fs.Stat(path)
+		if err != nil {
+			return err
+		}
+		// too new, skip deletion.
+		if !fi.ModTime().Before(t) {
+			return nil
+		}
+	}
+	err := d.fs.Remove(path)
 	if err != nil {
 		return err
 	}

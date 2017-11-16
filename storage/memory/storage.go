@@ -173,8 +173,8 @@ func (o *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 func (o *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 	return nil, nil
 }
-func (o *ObjectStorage) DeleteObjectPackAndIndex(plumbing.Hash) error {
-	return errNotSupported
+func (o *ObjectStorage) DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error {
+	return nil
 }
 
 var errNotSupported = fmt.Errorf("Not supported")

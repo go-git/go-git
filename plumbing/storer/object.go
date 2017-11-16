@@ -55,8 +55,9 @@ type EncodedObjectStorer interface {
 	// ObjectPacks returns hashes of object packs if the underlying
 	// implementation has pack files.
 	ObjectPacks() ([]plumbing.Hash, error)
-	// DeleteObjectPackAndIndex deletes an object pack and the corresponding index file if they exist.
-	DeleteObjectPackAndIndex(plumbing.Hash) error
+	// DeleteOldObjectPackAndIndex deletes an object pack and the corresponding index file if they exist.
+	// Deletion is only performed if the pack is older than the supplied time (or the time is zero).
+	DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error
 }
 
 // DeltaObjectStorer is an EncodedObjectStorer that can return delta

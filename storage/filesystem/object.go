@@ -508,6 +508,6 @@ func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 	return s.dir.ObjectPacks()
 }
 
-func (s *ObjectStorage) DeleteObjectPackAndIndex(h plumbing.Hash) error {
-	return s.dir.DeleteObjectPackAndIndex(h)
+func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
+	return s.dir.DeleteOldObjectPackAndIndex(h, t)
 }
