@@ -293,7 +293,7 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 	c.Assert(int(sum), Equals, 78022211966)
 }
 
-func (s *ReaderSuite) TestReadObjectAt(c *C) {
+func (s *ReaderSuite) TestDecodeObjectAt(c *C) {
 	f := fixtures.Basic().One()
 	scanner := packfile.NewScanner(f.Packfile())
 	d, err := packfile.NewDecoder(scanner, nil)
@@ -308,6 +308,25 @@ func (s *ReaderSuite) TestReadObjectAt(c *C) {
 	// without being read before.
 	obj, err := d.DecodeObjectAt(186)
 	c.Assert(err, IsNil)
+	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+}
+
+func (s *ReaderSuite) TestDecodeObjectAtForType(c *C) {
+	f := fixtures.Basic().One()
+	scanner := packfile.NewScanner(f.Packfile())
+	d, err := packfile.NewDecoderForType(scanner, nil, plumbing.TreeObject)
+	c.Assert(err, IsNil)
+
+	// when the packfile is ref-delta based, the offsets are required
+	if f.Is("ref-delta") {
+		d.SetIndex(getIndexFromIdxFile(f.Idx()))
+	}
+
+	// the objects at reference 186, is a delta, so should be recall,
+	// without being read before.
+	obj, err := d.DecodeObjectAt(186)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Type(), Equals, plumbing.CommitObject)
 	c.Assert(obj.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 

@@ -207,12 +207,16 @@ func (d *Decoder) decodeObjectsWithObjectStorerTx(count int) error {
 // constructor, if the object decoded is not equals to the specified one, nil will
 // be returned
 func (d *Decoder) DecodeObject() (plumbing.EncodedObject, error) {
+	return d.doDecodeObject(d.decoderType)
+}
+
+func (d *Decoder) doDecodeObject(t plumbing.ObjectType) (plumbing.EncodedObject, error) {
 	h, err := d.s.NextObjectHeader()
 	if err != nil {
 		return nil, err
 	}
 
-	if d.decoderType == plumbing.AnyObject {
+	if t == plumbing.AnyObject {
 		return d.decodeByHeader(h)
 	}
 
@@ -279,6 +283,7 @@ func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error
 	obj := d.newObject()
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
+
 	var crc uint32
 	var err error
 	switch h.Type {
@@ -315,7 +320,8 @@ func (d *Decoder) newObject() plumbing.EncodedObject {
 // returned is added into a internal index. This is intended to be able to regenerate
 // objects from deltas (offset deltas or reference deltas) without an package index
 // (.idx file). If Decode wasn't called previously objects offset should provided
-// using the SetOffsets method.
+// using the SetOffsets method. It decodes the object regardless of the Decoder
+// type.
 func (d *Decoder) DecodeObjectAt(offset int64) (plumbing.EncodedObject, error) {
 	if !d.s.IsSeekable {
 		return nil, ErrNonSeekable
@@ -333,7 +339,7 @@ func (d *Decoder) DecodeObjectAt(offset int64) (plumbing.EncodedObject, error) {
 		}
 	}()
 
-	return d.DecodeObject()
+	return d.doDecodeObject(plumbing.AnyObject)
 }
 
 func (d *Decoder) fillRegularObjectContent(obj plumbing.EncodedObject) (uint32, error) {
