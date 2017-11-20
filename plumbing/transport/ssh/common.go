@@ -154,9 +154,7 @@ func overrideConfig(overrides *ssh.ClientConfig, c *ssh.ClientConfig) {
 		f := t.Field(i)
 		vcf := vc.FieldByName(f.Name)
 		vof := vo.FieldByName(f.Name)
-		if isZeroValue(vcf) {
-			vcf.Set(vof)
-		}
+		vcf.Set(vof)
 	}
 
 	*c = vc.Interface().(ssh.ClientConfig)

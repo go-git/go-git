@@ -37,5 +37,5 @@ func (s *SuiteCommon) TestOverrideConfigKeep(c *C) {
 	}
 
 	overrideConfig(config, target)
-	c.Assert(target.User, Equals, "bar")
+	c.Assert(target.User, Equals, "foo")
 }
