@@ -1,7 +1,12 @@
 package http
 
 import (
+	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
+
+	fixtures "github.com/src-d/go-git-fixtures"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
@@ -13,24 +18,17 @@ import (
 
 type UploadPackSuite struct {
 	test.UploadPackSuite
+	BaseSuite
 }
 
 var _ = Suite(&UploadPackSuite{})
 
 func (s *UploadPackSuite) SetUpSuite(c *C) {
+	s.BaseSuite.SetUpTest(c)
 	s.UploadPackSuite.Client = DefaultClient
-
-	ep, err := transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
-	c.Assert(err, IsNil)
-	s.UploadPackSuite.Endpoint = ep
-
-	ep, err = transport.NewEndpoint("https://github.com/git-fixtures/empty.git")
-	c.Assert(err, IsNil)
-	s.UploadPackSuite.EmptyEndpoint = ep
-
-	ep, err = transport.NewEndpoint("https://github.com/git-fixtures/non-existent.git")
-	c.Assert(err, IsNil)
-	s.UploadPackSuite.NonExistentEndpoint = ep
+	s.UploadPackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
+	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 }
 
 // Overwritten, different behaviour for HTTP.
@@ -38,7 +36,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, Equals, transport.ErrAuthenticationRequired)
+	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(info, IsNil)
 }
 
@@ -57,4 +55,24 @@ func (s *UploadPackSuite) TestuploadPackRequestToReader(c *C) {
 			"0032have 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"+
 			"0009done\n",
 	)
+}
+
+func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) transport.Endpoint {
+	fs := f.DotGit()
+
+	err := fixtures.EnsureIsBare(fs)
+	c.Assert(err, IsNil)
+
+	path := filepath.Join(s.base, name)
+	err = os.Rename(fs.Root(), path)
+	c.Assert(err, IsNil)
+
+	return s.newEndpoint(c, name)
+}
+
+func (s *UploadPackSuite) newEndpoint(c *C, name string) transport.Endpoint {
+	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
+	c.Assert(err, IsNil)
+
+	return ep
 }

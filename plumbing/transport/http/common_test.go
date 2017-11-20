@@ -2,8 +2,19 @@ package http
 
 import (
 	"crypto/tls"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net"
 	"net/http"
+	"net/http/cgi"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	fixtures "github.com/src-d/go-git-fixtures"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 
@@ -94,4 +105,65 @@ func (*mockAuth) String() string { return "" }
 func (s *ClientSuite) TestSetAuthWrongType(c *C) {
 	_, err := DefaultClient.NewUploadPackSession(s.Endpoint, &mockAuth{})
 	c.Assert(err, Equals, transport.ErrInvalidAuthMethod)
+}
+
+type BaseSuite struct {
+	fixtures.Suite
+
+	base string
+	host string
+	port int
+}
+
+func (s *BaseSuite) SetUpTest(c *C) {
+	l, err := net.Listen("tcp", "localhost:0")
+	c.Assert(err, IsNil)
+
+	base, err := ioutil.TempDir(os.TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
+	c.Assert(err, IsNil)
+
+	s.port = l.Addr().(*net.TCPAddr).Port
+	s.base = filepath.Join(base, s.host)
+
+	err = os.MkdirAll(s.base, 0755)
+	c.Assert(err, IsNil)
+
+	cmd := exec.Command("git", "--exec-path")
+	out, err := cmd.CombinedOutput()
+	c.Assert(err, IsNil)
+
+	server := &http.Server{
+		Handler: &cgi.Handler{
+			Path: filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend"),
+			Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", s.base)},
+		},
+	}
+	go func() {
+		log.Fatal(server.Serve(l))
+	}()
+}
+
+func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) transport.Endpoint {
+	fs := f.DotGit()
+
+	err := fixtures.EnsureIsBare(fs)
+	c.Assert(err, IsNil)
+
+	path := filepath.Join(s.base, name)
+	err = os.Rename(fs.Root(), path)
+	c.Assert(err, IsNil)
+
+	return s.newEndpoint(c, name)
+}
+
+func (s *BaseSuite) newEndpoint(c *C, name string) transport.Endpoint {
+	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
+	c.Assert(err, IsNil)
+
+	return ep
+}
+
+func (s *BaseSuite) TearDownTest(c *C) {
+	err := os.RemoveAll(s.base)
+	c.Assert(err, IsNil)
 }
