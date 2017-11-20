@@ -92,14 +92,15 @@ func (c *Commit) NumParents() int {
 	return len(c.ParentHashes)
 }
 
-var ErrNoParents = errors.New("commit has no parents")
+var ErrParentNotFound = errors.New("commit parent not found")
 
-// FirstParent returns the first parent of c.
-func (c *Commit) FirstParent() (*Commit, error) {
-	if len(c.ParentHashes) == 0 {
-		return nil, ErrNoParents
+// Parent returns the ith parent of a commit.
+func (c *Commit) Parent(i int) (*Commit, error) {
+	if len(c.ParentHashes) == 0 || i > len(c.ParentHashes)-1 {
+		return nil, ErrParentNotFound
 	}
-	return GetCommit(c.s, c.ParentHashes[0])
+
+	return GetCommit(c.s, c.ParentHashes[i])
 }
 
 // File returns the file with the specified "path" in the commit and a

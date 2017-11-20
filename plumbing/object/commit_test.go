@@ -67,6 +67,18 @@ func (s *SuiteCommit) TestParents(c *C) {
 	i.Close()
 }
 
+func (s *SuiteCommit) TestParent(c *C) {
+	commit, err := s.Commit.Parent(1)
+	c.Assert(err, IsNil)
+	c.Assert(commit.Hash.String(), Equals, "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+}
+
+func (s *SuiteCommit) TestParentNotFound(c *C) {
+	commit, err := s.Commit.Parent(42)
+	c.Assert(err, Equals, ErrParentNotFound)
+	c.Assert(commit, IsNil)
+}
+
 func (s *SuiteCommit) TestPatch(c *C) {
 	from := s.commit(c, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 	to := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
