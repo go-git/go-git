@@ -9,7 +9,7 @@ import (
 	. "gopkg.in/src-d/go-git.v4/_examples"
 )
 
-// Gracefull cancellation example of a basic git operation such as Clone.
+// Graceful cancellation example of a basic git operation such as Clone.
 func main() {
 	CheckArgs("<url>", "<directory>")
 	url := os.Args[1]

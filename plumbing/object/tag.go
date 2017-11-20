@@ -252,7 +252,7 @@ func (iter *TagIter) Next() (*Tag, error) {
 }
 
 // ForEach call the cb function for each tag contained on this iter until
-// an error happends or the end of the iter is reached. If ErrStop is sent
+// an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *TagIter) ForEach(cb func(*Tag) error) error {
 	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
