@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -26,6 +27,11 @@ type BaseSuite struct {
 }
 
 func (s *BaseSuite) SetUpTest(c *C) {
+	if runtime.GOOS == "windows" {
+		c.Skip(`git for windows has issues with write operations through git:// protocol.
+		See https://github.com/git-for-windows/git/issues/907`)
+	}
+
 	var err error
 	s.port, err = freePort()
 	c.Assert(err, IsNil)
@@ -79,7 +85,7 @@ func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) tr
 }
 
 func (s *BaseSuite) TearDownTest(c *C) {
-	_ = s.daemon.Process.Signal(os.Interrupt)
+	_ = s.daemon.Process.Signal(os.Kill)
 	_ = s.daemon.Wait()
 
 	err := os.RemoveAll(s.base)
