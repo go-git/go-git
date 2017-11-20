@@ -77,6 +77,10 @@ func (n *node) NumChildren() (int, error) {
 }
 
 func (n *node) calculateChildren() error {
+	if !n.IsDir() {
+		return nil
+	}
+
 	if len(n.children) != 0 {
 		return nil
 	}

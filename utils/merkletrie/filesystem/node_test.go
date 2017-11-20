@@ -82,6 +82,42 @@ func (s *NoderSuite) TestDiffChangeContent(c *C) {
 	c.Assert(ch, HasLen, 1)
 }
 
+func (s *NoderSuite) TestDiffSymlinkDirOnA(c *C) {
+	fsA := memfs.New()
+	WriteFile(fsA, "qux/qux", []byte("foo"), 0644)
+
+	fsB := memfs.New()
+	fsB.Symlink("qux", "foo")
+	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
+
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
+	c.Assert(err, IsNil)
+	c.Assert(ch, HasLen, 1)
+}
+
+func (s *NoderSuite) TestDiffSymlinkDirOnB(c *C) {
+	fsA := memfs.New()
+	fsA.Symlink("qux", "foo")
+	WriteFile(fsA, "qux/qux", []byte("foo"), 0644)
+
+	fsB := memfs.New()
+	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
+
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNode(fsB, nil),
+		IsEquals,
+	)
+
+	c.Assert(err, IsNil)
+	c.Assert(ch, HasLen, 1)
+}
+
 func (s *NoderSuite) TestDiffChangeMissing(c *C) {
 	fsA := memfs.New()
 	WriteFile(fsA, "foo", []byte("foo"), 0644)
