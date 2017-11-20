@@ -12,13 +12,13 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
-// Basic example of how to commit changes to the current branch to an existant
+// Basic example of how to commit changes to the current branch to an existent
 // repository.
 func main() {
 	CheckArgs("<directory>")
 	directory := os.Args[1]
 
-	// Opens an already existant repository.
+	// Opens an already existent repository.
 	r, err := git.PlainOpen(directory)
 	CheckIfError(err)
 
