@@ -25,6 +25,8 @@ type ReceivePackSuite struct {
 	fixtures.Suite
 
 	base string
+	host string
+	port int
 }
 
 var _ = Suite(&ReceivePackSuite{})
@@ -32,52 +34,35 @@ var _ = Suite(&ReceivePackSuite{})
 func (s *ReceivePackSuite) SetUpTest(c *C) {
 	s.ReceivePackSuite.Client = DefaultClient
 
-	port, err := freePort()
+	l, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
 
 	base, err := ioutil.TempDir(os.TempDir(), "go-git-http-backend-test")
 	c.Assert(err, IsNil)
-	s.base = base
 
-	host := fmt.Sprintf("localhost_%d", port)
-	interpolatedBase := filepath.Join(base, host)
-	err = os.MkdirAll(interpolatedBase, 0755)
+	s.port = l.Addr().(*net.TCPAddr).Port
+	s.host = fmt.Sprintf("localhost_%d", s.port)
+	s.base = filepath.Join(base, s.host)
+
+	err = os.MkdirAll(s.base, 0755)
 	c.Assert(err, IsNil)
 
-	dotgit := fixtures.Basic().One().DotGit().Root()
-	prepareRepo(c, dotgit)
-	err = os.Rename(dotgit, filepath.Join(interpolatedBase, "basic.git"))
-	c.Assert(err, IsNil)
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/basic.git", port))
-	c.Assert(err, IsNil)
-	s.ReceivePackSuite.Endpoint = ep
-
-	dotgit = fixtures.ByTag("empty").One().DotGit().Root()
-	prepareRepo(c, dotgit)
-	err = os.Rename(dotgit, filepath.Join(interpolatedBase, "empty.git"))
-	c.Assert(err, IsNil)
-
-	ep, err = transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/empty.git", port))
-	c.Assert(err, IsNil)
-	s.ReceivePackSuite.EmptyEndpoint = ep
-
-	ep, err = transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/non-existent.git", port))
-	c.Assert(err, IsNil)
-	s.ReceivePackSuite.NonExistentEndpoint = ep
+	s.ReceivePackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	s.ReceivePackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
+	s.ReceivePackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 
 	cmd := exec.Command("git", "--exec-path")
 	out, err := cmd.CombinedOutput()
 	c.Assert(err, IsNil)
-	p := filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend")
 
-	h := &cgi.Handler{
-		Path: p,
-		Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", interpolatedBase)},
+	server := &http.Server{
+		Handler: &cgi.Handler{
+			Path: filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend"),
+			Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", s.base)},
+		},
 	}
-
 	go func() {
-		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), h))
+		log.Fatal(server.Serve(l))
 	}()
 }
 
@@ -86,37 +71,44 @@ func (s *ReceivePackSuite) TearDownTest(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func freePort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		return 0, err
-	}
+func (s *ReceivePackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) transport.Endpoint {
+	path := filepath.Join(s.base, name)
 
-	l, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		return 0, err
-	}
+	err := os.Rename(f.DotGit().Root(), path)
+	c.Assert(err, IsNil)
 
-	return l.Addr().(*net.TCPAddr).Port, l.Close()
+	s.setConfigToRepository(c, path)
+	return s.newEndpoint(c, name)
 }
 
-const bareConfig = `[core]
-repositoryformatversion = 0
-filemode = true
-bare = true
-[http]
-receivepack = true`
+// git-receive-pack refuses to update refs/heads/master on non-bare repo
+// so we ensure bare repo config.
+func (s *ReceivePackSuite) setConfigToRepository(c *C, path string) {
+	cfgPath := filepath.Join(path, "config")
+	_, err := os.Stat(cfgPath)
+	c.Assert(err, IsNil)
 
-func prepareRepo(c *C, path string) {
-	// git-receive-pack refuses to update refs/heads/master on non-bare repo
-	// so we ensure bare repo config.
-	config := filepath.Join(path, "config")
-	if _, err := os.Stat(config); err == nil {
-		f, err := os.OpenFile(config, os.O_TRUNC|os.O_WRONLY, 0)
-		c.Assert(err, IsNil)
-		content := strings.NewReader(bareConfig)
-		_, err = io.Copy(f, content)
-		c.Assert(err, IsNil)
-		c.Assert(f.Close(), IsNil)
-	}
+	cfg, err := os.OpenFile(cfgPath, os.O_TRUNC|os.O_WRONLY, 0)
+	c.Assert(err, IsNil)
+
+	content := strings.NewReader("" +
+		"[core]\n" +
+		"repositoryformatversion = 0\n" +
+		"filemode = true\n" +
+		"bare = true\n" +
+		"[http]\n" +
+		"receivepack = true\n",
+	)
+
+	_, err = io.Copy(cfg, content)
+	c.Assert(err, IsNil)
+
+	c.Assert(cfg.Close(), IsNil)
+}
+
+func (s *ReceivePackSuite) newEndpoint(c *C, name string) transport.Endpoint {
+	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
+	c.Assert(err, IsNil)
+
+	return ep
 }
