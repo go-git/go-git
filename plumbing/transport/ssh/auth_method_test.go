@@ -32,16 +32,16 @@ func (s *SuiteCommon) TestKeyboardInteractiveString(c *C) {
 
 func (s *SuiteCommon) TestPasswordName(c *C) {
 	a := &Password{
-		User: "test",
-		Pass: "",
+		User:     "test",
+		Password: "",
 	}
 	c.Assert(a.Name(), Equals, PasswordName)
 }
 
 func (s *SuiteCommon) TestPasswordString(c *C) {
 	a := &Password{
-		User: "test",
-		Pass: "",
+		User:     "test",
+		Password: "",
 	}
 	c.Assert(a.String(), Equals, fmt.Sprintf("user: test, name: %s", PasswordName))
 }
