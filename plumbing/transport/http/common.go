@@ -151,17 +151,12 @@ func basicAuthFromEndpoint(ep *transport.Endpoint) *BasicAuth {
 		return nil
 	}
 
-	return NewBasicAuth(u, ep.Password)
+	return &BasicAuth{u, ep.Password}
 }
 
 // BasicAuth represent a HTTP basic auth
 type BasicAuth struct {
-	username, password string
-}
-
-// NewBasicAuth returns a basicAuth base on the given user and password
-func NewBasicAuth(username, password string) *BasicAuth {
-	return &BasicAuth{username, password}
+	Username, Password string
 }
 
 func (a *BasicAuth) setAuth(r *http.Request) {
@@ -169,7 +164,7 @@ func (a *BasicAuth) setAuth(r *http.Request) {
 		return
 	}
 
-	r.SetBasicAuth(a.username, a.password)
+	r.SetBasicAuth(a.Username, a.Password)
 }
 
 // Name is name of the auth
@@ -179,11 +174,11 @@ func (a *BasicAuth) Name() string {
 
 func (a *BasicAuth) String() string {
 	masked := "*******"
-	if a.password == "" {
+	if a.Password == "" {
 		masked = "<empty>"
 	}
 
-	return fmt.Sprintf("%s - %s:%s", a.Name(), a.username, masked)
+	return fmt.Sprintf("%s - %s:%s", a.Name(), a.Username, masked)
 }
 
 // Err is a dedicated error to return errors based on status code

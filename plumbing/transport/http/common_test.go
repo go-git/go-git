@@ -49,7 +49,7 @@ func (s *UploadPackSuite) TestNewClient(c *C) {
 }
 
 func (s *ClientSuite) TestNewBasicAuth(c *C) {
-	a := NewBasicAuth("foo", "qux")
+	a := &BasicAuth{"foo", "qux"}
 
 	c.Assert(a.Name(), Equals, "http-basic-auth")
 	c.Assert(a.String(), Equals, "http-basic-auth - foo:*******")

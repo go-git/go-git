@@ -98,8 +98,7 @@ func (c *command) connect() error {
 	}
 
 	var err error
-	config := c.auth.clientConfig()
-	config.HostKeyCallback, err = c.auth.hostKeyCallback()
+	config, err := c.auth.ClientConfig()
 	if err != nil {
 		return err
 	}
@@ -158,8 +157,4 @@ func overrideConfig(overrides *ssh.ClientConfig, c *ssh.ClientConfig) {
 	}
 
 	*c = vc.Interface().(ssh.ClientConfig)
-}
-
-func isZeroValue(v reflect.Value) bool {
-	return reflect.DeepEqual(v.Interface(), reflect.Zero(v.Type()).Interface())
 }
