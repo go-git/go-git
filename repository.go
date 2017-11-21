@@ -1055,6 +1055,15 @@ func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 // of creating a new pack. It is used so the the PackfileWriter
 // deferred close has the right scope.
 func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, err error) {
+	ow := newObjectWalker(r.Storer)
+	err = ow.walkAllRefs()
+	if err != nil {
+		return h, err
+	}
+	objs := make([]plumbing.Hash, 0, len(ow.seen))
+	for h := range ow.seen {
+		objs = append(objs, h)
+	}
 	pfw, ok := r.Storer.(storer.PackfileWriter)
 	if !ok {
 		return h, fmt.Errorf("Repository storer is not a storer.PackfileWriter")
@@ -1064,18 +1073,6 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 		return h, err
 	}
 	defer ioutil.CheckClose(wc, &err)
-	var objs []plumbing.Hash
-	iter, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
-	if err != nil {
-		return h, err
-	}
-	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
-		objs = append(objs, obj.Hash())
-		return nil
-	})
-	if err != nil {
-		return h, err
-	}
 	scfg, err := r.Storer.Config()
 	if err != nil {
 		return h, err
