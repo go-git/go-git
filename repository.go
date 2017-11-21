@@ -1018,8 +1018,6 @@ type RepackConfig struct {
 	// UseRefDeltas configures whether packfile encoder will use reference deltas.
 	// By default OFSDeltaObject is used.
 	UseRefDeltas bool
-	// PackWindow for packing objects.
-	PackWindow uint
 	// OnlyDeletePacksOlderThan if set to non-zero value
 	// selects only objects older than the time provided.
 	OnlyDeletePacksOlderThan time.Time
@@ -1078,8 +1076,12 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	if err != nil {
 		return h, err
 	}
+	scfg, err := r.Storer.Config()
+	if err != nil {
+		return h, err
+	}
 	enc := packfile.NewEncoder(wc, r.Storer, cfg.UseRefDeltas)
-	h, err = enc.Encode(objs, cfg.PackWindow)
+	h, err = enc.Encode(objs, scfg.Pack.Window)
 	if err != nil {
 		return h, err
 	}
