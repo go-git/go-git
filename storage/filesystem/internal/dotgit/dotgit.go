@@ -8,7 +8,6 @@ import (
 	stdioutil "io/ioutil"
 	"os"
 	"strings"
-	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
@@ -57,16 +56,14 @@ var (
 // The DotGit type represents a local git repository on disk. This
 // type is not zero-value-safe, use the New function to initialize it.
 type DotGit struct {
-	fs                billy.Filesystem
-	cachedPackedRefs  refCache
-	packedRefsLastMod time.Time
+	fs billy.Filesystem
 }
 
 // New returns a DotGit value ready to be used. The path argument must
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return &DotGit{fs: fs, cachedPackedRefs: make(refCache)}
+	return &DotGit{fs: fs}
 }
 
 // Initialize creates all the folder scaffolding.
@@ -271,7 +268,7 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 		return nil, err
 	}
 
-	if err := d.addRefsFromPackedRefs(&refs, seen); err != nil {
+	if err := d.addRefsFromPackedRefs(&refs); err != nil {
 		return nil, err
 	}
 
@@ -292,54 +289,43 @@ func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	return d.packedRef(name)
 }
 
-func (d *DotGit) syncPackedRefs() error {
-	fi, err := d.fs.Stat(packedRefsPath)
-	if os.IsNotExist(err) {
-		return nil
-	}
-
+func (d *DotGit) findPackedRefs() ([]*plumbing.Reference, error) {
+	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
-		return err
-	}
-
-	if d.packedRefsLastMod.Before(fi.ModTime()) {
-		d.cachedPackedRefs = make(refCache)
-		f, err := d.fs.Open(packedRefsPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
-		defer ioutil.CheckClose(f, &err)
-
-		s := bufio.NewScanner(f)
-		for s.Scan() {
-			ref, err := d.processLine(s.Text())
-			if err != nil {
-				return err
-			}
-
-			if ref != nil {
-				d.cachedPackedRefs[ref.Name()] = ref
-			}
-		}
-
-		d.packedRefsLastMod = fi.ModTime()
-
-		return s.Err()
-	}
-
-	return nil
-}
-
-func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, error) {
-	if err := d.syncPackedRefs(); err != nil {
 		return nil, err
 	}
 
-	if ref, ok := d.cachedPackedRefs[name]; ok {
-		return ref, nil
+	defer ioutil.CheckClose(f, &err)
+
+	s := bufio.NewScanner(f)
+	var refs []*plumbing.Reference
+	for s.Scan() {
+		ref, err := d.processLine(s.Text())
+		if err != nil {
+			return nil, err
+		}
+
+		if ref != nil {
+			refs = append(refs, ref)
+		}
+	}
+
+	return refs, s.Err()
+}
+
+func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	refs, err := d.findPackedRefs()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ref := range refs {
+		if ref.Name() == name {
+			return ref, nil
+		}
 	}
 
 	return nil, plumbing.ErrReferenceNotFound
@@ -360,18 +346,13 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	return d.rewritePackedRefsWithoutRef(name)
 }
 
-func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) (err error) {
-	if err := d.syncPackedRefs(); err != nil {
+func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference) (err error) {
+	packedRefs, err := d.findPackedRefs()
+	if err != nil {
 		return err
 	}
 
-	for name, ref := range d.cachedPackedRefs {
-		if !seen[name] {
-			*refs = append(*refs, ref)
-			seen[name] = true
-		}
-	}
-
+	*refs = append(*refs, packedRefs...)
 	return nil
 }
 
