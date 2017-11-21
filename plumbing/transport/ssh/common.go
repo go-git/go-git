@@ -31,7 +31,7 @@ type runner struct {
 	config *ssh.ClientConfig
 }
 
-func (r *runner) Command(cmd string, ep transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
+func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
 	c := &command{command: cmd, endpoint: ep, config: r.config}
 	if auth != nil {
 		c.setAuth(auth)
@@ -47,7 +47,7 @@ type command struct {
 	*ssh.Session
 	connected bool
 	command   string
-	endpoint  transport.Endpoint
+	endpoint  *transport.Endpoint
 	client    *ssh.Client
 	auth      AuthMethod
 	config    *ssh.ClientConfig
@@ -122,8 +122,8 @@ func (c *command) connect() error {
 }
 
 func (c *command) getHostWithPort() string {
-	host := c.endpoint.Host()
-	port := c.endpoint.Port()
+	host := c.endpoint.Host
+	port := c.endpoint.Port
 	if port <= 0 {
 		port = DefaultPort
 	}
@@ -133,12 +133,12 @@ func (c *command) getHostWithPort() string {
 
 func (c *command) setAuthFromEndpoint() error {
 	var err error
-	c.auth, err = DefaultAuthBuilder(c.endpoint.User())
+	c.auth, err = DefaultAuthBuilder(c.endpoint.User)
 	return err
 }
 
-func endpointToCommand(cmd string, ep transport.Endpoint) string {
-	return fmt.Sprintf("%s '%s'", cmd, ep.Path())
+func endpointToCommand(cmd string, ep *transport.Endpoint) string {
+	return fmt.Sprintf("%s '%s'", cmd, ep.Path)
 }
 
 func overrideConfig(overrides *ssh.ClientConfig, c *ssh.ClientConfig) {

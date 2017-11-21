@@ -39,7 +39,7 @@ func advertisedReferences(s *session, serviceName string) (*packp.AdvRefs, error
 	}
 
 	s.applyAuthToRequest(req)
-	applyHeadersToRequest(req, nil, s.endpoint.Host(), serviceName)
+	applyHeadersToRequest(req, nil, s.endpoint.Host, serviceName)
 	res, err := s.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -90,13 +90,13 @@ func NewClient(c *http.Client) transport.Transport {
 	}
 }
 
-func (c *client) NewUploadPackSession(ep transport.Endpoint, auth transport.AuthMethod) (
+func (c *client) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
 	transport.UploadPackSession, error) {
 
 	return newUploadPackSession(c.c, ep, auth)
 }
 
-func (c *client) NewReceivePackSession(ep transport.Endpoint, auth transport.AuthMethod) (
+func (c *client) NewReceivePackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
 	transport.ReceivePackSession, error) {
 
 	return newReceivePackSession(c.c, ep, auth)
@@ -105,11 +105,11 @@ func (c *client) NewReceivePackSession(ep transport.Endpoint, auth transport.Aut
 type session struct {
 	auth     AuthMethod
 	client   *http.Client
-	endpoint transport.Endpoint
+	endpoint *transport.Endpoint
 	advRefs  *packp.AdvRefs
 }
 
-func newSession(c *http.Client, ep transport.Endpoint, auth transport.AuthMethod) (*session, error) {
+func newSession(c *http.Client, ep *transport.Endpoint, auth transport.AuthMethod) (*session, error) {
 	s := &session{
 		auth:     basicAuthFromEndpoint(ep),
 		client:   c,
@@ -145,13 +145,13 @@ type AuthMethod interface {
 	setAuth(r *http.Request)
 }
 
-func basicAuthFromEndpoint(ep transport.Endpoint) *BasicAuth {
-	u := ep.User()
+func basicAuthFromEndpoint(ep *transport.Endpoint) *BasicAuth {
+	u := ep.User
 	if u == "" {
 		return nil
 	}
 
-	return NewBasicAuth(u, ep.Password())
+	return NewBasicAuth(u, ep.Password)
 }
 
 // BasicAuth represent a HTTP basic auth

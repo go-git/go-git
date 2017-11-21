@@ -64,14 +64,14 @@ func (s *BaseSuite) StartDaemon(c *C) {
 	time.Sleep(time.Millisecond * 500)
 }
 
-func (s *BaseSuite) newEndpoint(c *C, name string) transport.Endpoint {
+func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf("git://localhost:%d/%s", s.port, name))
 	c.Assert(err, IsNil)
 
 	return ep
 }
 
-func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) transport.Endpoint {
+func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)

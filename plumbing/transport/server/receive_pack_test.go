@@ -2,14 +2,12 @@ package server_test
 
 import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
 
 	. "gopkg.in/check.v1"
 )
 
 type ReceivePackSuite struct {
 	BaseSuite
-	test.ReceivePackSuite
 }
 
 var _ = Suite(&ReceivePackSuite{})
@@ -20,7 +18,7 @@ func (s *ReceivePackSuite) SetUpSuite(c *C) {
 }
 
 func (s *ReceivePackSuite) SetUpTest(c *C) {
-	s.prepareRepositories(c, &s.Endpoint, &s.EmptyEndpoint, &s.NonExistentEndpoint)
+	s.prepareRepositories(c)
 }
 
 func (s *ReceivePackSuite) TearDownTest(c *C) {

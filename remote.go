@@ -332,7 +332,7 @@ func newSendPackSession(url string, auth transport.AuthMethod) (transport.Receiv
 	return c.NewReceivePackSession(ep, auth)
 }
 
-func newClient(url string) (transport.Transport, transport.Endpoint, error) {
+func newClient(url string) (transport.Transport, *transport.Endpoint, error) {
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
 		return nil, nil, err

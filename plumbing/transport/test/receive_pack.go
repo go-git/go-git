@@ -21,9 +21,9 @@ import (
 )
 
 type ReceivePackSuite struct {
-	Endpoint            transport.Endpoint
-	EmptyEndpoint       transport.Endpoint
-	NonExistentEndpoint transport.Endpoint
+	Endpoint            *transport.Endpoint
+	EmptyEndpoint       *transport.Endpoint
+	NonExistentEndpoint *transport.Endpoint
 	EmptyAuth           transport.AuthMethod
 	Client              transport.Transport
 }
@@ -213,7 +213,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C)
 	s.checkRemoteHead(c, endpoint, fixture.Head)
 }
 
-func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep transport.Endpoint,
+func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool) (*packp.ReportStatus, error) {
 	url := ""
@@ -245,7 +245,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep transport.Endpoint,
 	return r.ReceivePack(context.Background(), req)
 }
 
-func (s *ReceivePackSuite) receivePack(c *C, ep transport.Endpoint,
+func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool) {
 
@@ -269,11 +269,11 @@ func (s *ReceivePackSuite) receivePack(c *C, ep transport.Endpoint,
 	}
 }
 
-func (s *ReceivePackSuite) checkRemoteHead(c *C, ep transport.Endpoint, head plumbing.Hash) {
+func (s *ReceivePackSuite) checkRemoteHead(c *C, ep *transport.Endpoint, head plumbing.Hash) {
 	s.checkRemoteReference(c, ep, "refs/heads/master", head)
 }
 
-func (s *ReceivePackSuite) checkRemoteReference(c *C, ep transport.Endpoint,
+func (s *ReceivePackSuite) checkRemoteReference(c *C, ep *transport.Endpoint,
 	refName string, head plumbing.Hash) {
 
 	r, err := s.Client.NewUploadPackSession(ep, s.EmptyAuth)

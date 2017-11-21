@@ -26,7 +26,7 @@ func (s *LoaderSuite) SetUpSuite(c *C) {
 	c.Assert(exec.Command("git", "init", "--bare", s.RepoPath).Run(), IsNil)
 }
 
-func (s *LoaderSuite) endpoint(c *C, url string) transport.Endpoint {
+func (s *LoaderSuite) endpoint(c *C, url string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(url)
 	c.Assert(err, IsNil)
 	return ep
