@@ -21,9 +21,9 @@ import (
 )
 
 type UploadPackSuite struct {
-	Endpoint            transport.Endpoint
-	EmptyEndpoint       transport.Endpoint
-	NonExistentEndpoint transport.Endpoint
+	Endpoint            *transport.Endpoint
+	EmptyEndpoint       *transport.Endpoint
+	NonExistentEndpoint *transport.Endpoint
 	EmptyAuth           transport.AuthMethod
 	Client              transport.Transport
 }

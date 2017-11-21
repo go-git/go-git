@@ -58,7 +58,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	}()
 }
 
-func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) transport.Endpoint {
+func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
@@ -71,7 +71,7 @@ func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name stri
 	return s.newEndpoint(c, name)
 }
 
-func (s *UploadPackSuite) newEndpoint(c *C, name string) transport.Endpoint {
+func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf(
 		"ssh://git@localhost:%d/%s/%s", s.port, filepath.ToSlash(s.base), name,
 	))

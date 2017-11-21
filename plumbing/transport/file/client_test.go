@@ -41,7 +41,7 @@ repositoryformatversion = 0
 filemode = true
 bare = true`
 
-func prepareRepo(c *C, path string) transport.Endpoint {
+func prepareRepo(c *C, path string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 

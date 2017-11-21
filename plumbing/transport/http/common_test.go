@@ -24,7 +24,7 @@ import (
 func Test(t *testing.T) { TestingT(t) }
 
 type ClientSuite struct {
-	Endpoint  transport.Endpoint
+	Endpoint  *transport.Endpoint
 	EmptyAuth transport.AuthMethod
 }
 
@@ -143,7 +143,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	}()
 }
 
-func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) transport.Endpoint {
+func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
@@ -156,7 +156,7 @@ func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) tr
 	return s.newEndpoint(c, name)
 }
 
-func (s *BaseSuite) newEndpoint(c *C, name string) transport.Endpoint {
+func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
 	c.Assert(err, IsNil)
 
