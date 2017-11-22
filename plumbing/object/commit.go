@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 
+	"golang.org/x/crypto/openpgp"
+
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
@@ -309,6 +311,34 @@ func (c *Commit) String() string {
 		plumbing.CommitObject, c.Hash, c.Author.String(),
 		c.Author.When.Format(DateFormat), indent(c.Message),
 	)
+}
+
+// Verify performs PGP verification of the commit with a provided armored
+// keyring and returns openpgp.Entity associated with verifying key on success.
+func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
+	keyRingReader := strings.NewReader(armoredKeyRing)
+	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract signature.
+	signature := strings.NewReader(c.PGPSignature)
+
+	// Remove signature. Keep only the commit components.
+	c.PGPSignature = ""
+
+	// Encode commit and get a reader object.
+	encoded := &plumbing.MemoryObject{}
+	if err := c.Encode(encoded); err != nil {
+		return nil, err
+	}
+	er, err := encoded.Reader()
+	if err != nil {
+		return nil, err
+	}
+
+	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature)
 }
 
 func indent(t string) string {
