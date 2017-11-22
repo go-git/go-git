@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -111,6 +112,42 @@ func (s *TreeSuite) TestFindEntry(c *C) {
 	e, err := s.Tree.FindEntry("vendor/foo.go")
 	c.Assert(err, IsNil)
 	c.Assert(e.Name, Equals, "foo.go")
+}
+
+// Overrides returned plumbing.EncodedObject for given hash.
+// Otherwise, delegates to actual storer to get real object
+type fakeStorer struct {
+	storer.EncodedObjectStorer
+	hash plumbing.Hash
+	fake fakeEncodedObject
+}
+
+func (fs fakeStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	if fs.hash == h {
+		return fs.fake, nil
+	}
+	return fs.EncodedObjectStorer.EncodedObject(t, h)
+}
+
+// Overrides reader of plumbing.EncodedObject to simulate read error
+type fakeEncodedObject struct{ plumbing.EncodedObject }
+
+func (fe fakeEncodedObject) Reader() (io.ReadCloser, error) {
+	return nil, errors.New("Simulate encoded object can't be read")
+}
+
+func (s *TreeSuite) TestDir(c *C) {
+	vendor, err := s.Tree.dir("vendor")
+	c.Assert(err, IsNil)
+
+	t, err := GetTree(s.Tree.s, s.Tree.ID())
+	c.Assert(err, IsNil)
+	o, err := t.s.EncodedObject(plumbing.AnyObject, vendor.ID())
+	c.Assert(err, IsNil)
+
+	t.s = fakeStorer{t.s, vendor.ID(), fakeEncodedObject{o}}
+	_, err = t.dir("vendor")
+	c.Assert(err, NotNil)
 }
 
 // This plumbing.EncodedObject implementation has a reader that only returns 6
