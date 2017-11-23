@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"io/ioutil"
 
-	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	. "gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func (s *IdxfileSuite) TestEncode(c *C) {

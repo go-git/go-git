@@ -13,7 +13,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
 
-	"github.com/src-d/go-git-fixtures"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 	. "gopkg.in/check.v1"
 )
 

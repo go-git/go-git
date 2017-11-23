@@ -10,7 +10,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
 
-	"github.com/src-d/go-git-fixtures"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 	. "gopkg.in/check.v1"
 )
 

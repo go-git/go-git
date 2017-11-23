@@ -3,10 +3,9 @@ package gitignore
 import (
 	"os"
 
-	"gopkg.in/src-d/go-billy.v3"
-	"gopkg.in/src-d/go-billy.v3/memfs"
-
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-billy.v4"
+	"gopkg.in/src-d/go-billy.v4/memfs"
 )
 
 type MatcherSuite struct {

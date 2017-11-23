@@ -3,9 +3,6 @@ package packfile_test
 import (
 	"io"
 
-	"gopkg.in/src-d/go-billy.v3/memfs"
-
-	"github.com/src-d/go-git-fixtures"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -14,6 +11,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-billy.v4/memfs"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ReaderSuite struct {

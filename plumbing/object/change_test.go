@@ -10,8 +10,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie"
 
-	fixtures "github.com/src-d/go-git-fixtures"
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ChangeSuite struct {
