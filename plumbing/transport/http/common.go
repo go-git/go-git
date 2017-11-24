@@ -10,6 +10,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 )
 
 // it requires a bytes.Buffer, because we need to know the length
@@ -45,8 +46,9 @@ func advertisedReferences(s *session, serviceName string) (*packp.AdvRefs, error
 		return nil, err
 	}
 
+	defer ioutil.CheckClose(res.Body, &err)
+
 	if err := NewErr(res); err != nil {
-		_ = res.Body.Close()
 		return nil, err
 	}
 
