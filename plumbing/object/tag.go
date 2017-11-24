@@ -165,6 +165,10 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 
 // Encode transforms a Tag into a plumbing.EncodedObject.
 func (t *Tag) Encode(o plumbing.EncodedObject) error {
+	return t.encode(o, true)
+}
+
+func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) error {
 	o.SetType(plumbing.TagObject)
 	w, err := o.Writer()
 	if err != nil {
@@ -190,7 +194,7 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 		return err
 	}
 
-	if t.PGPSignature != "" {
+	if t.PGPSignature != "" && includeSig {
 		// Split all the signature lines and write with a newline at the end.
 		lines := strings.Split(t.PGPSignature, "\n")
 		for _, line := range lines {
@@ -281,11 +285,9 @@ func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	// Extract signature.
 	signature := strings.NewReader(t.PGPSignature)
 
-	// Remove signature. Keep only the tag components.
-	t.PGPSignature = ""
-
 	encoded := &plumbing.MemoryObject{}
-	if err := t.Encode(encoded); err != nil {
+	// Encode tag components, excluding signature and get a reader object.
+	if err := t.encode(encoded, false); err != nil {
 		return nil, err
 	}
 	er, err := encoded.Reader()
