@@ -14,7 +14,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
-	"gopkg.in/src-d/go-billy.v3"
+	"gopkg.in/src-d/go-billy.v4"
 )
 
 const DefaultMaxDeltaBaseCacheSize = 92 * cache.MiByte

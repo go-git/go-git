@@ -15,7 +15,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
 
 	"github.com/gliderlabs/ssh"
-	"github.com/src-d/go-git-fixtures"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 	stdssh "golang.org/x/crypto/ssh"
 	. "gopkg.in/check.v1"
 )

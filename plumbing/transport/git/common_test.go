@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/src-d/go-git-fixtures"
-	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
