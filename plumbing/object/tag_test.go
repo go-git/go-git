@@ -285,3 +285,29 @@ func (s *TagSuite) TestLongTagNameSerialization(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(decoded.Name, Equals, longName)
 }
+
+func (s *TagSuite) TestPGPSignatureSerialization(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Tag{}
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+
+	pgpsignature := `-----BEGIN PGP SIGNATURE-----
+
+iQEcBAABAgAGBQJTZbQlAAoJEF0+sviABDDrZbQH/09PfE51KPVPlanr6q1v4/Ut
+LQxfojUWiLQdg2ESJItkcuweYg+kc3HCyFejeDIBw9dpXt00rY26p05qrpnG+85b
+hM1/PswpPLuBSr+oCIDj5GMC2r2iEKsfv2fJbNW8iWAXVLoWZRF8B0MfqX/YTMbm
+ecorc4iXzQu7tupRihslbNkfvfciMnSDeSvzCpWAHl7h8Wj6hhqePmLm9lAYqnKp
+8S5B/1SSQuEAjRZgI4IexpZoeKGVDptPHxLLS38fozsyi0QyDyzEgJxcJQVMXxVi
+RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
+=EFTF
+-----END PGP SIGNATURE-----
+`
+	tag.PGPSignature = pgpsignature
+
+	err := tag.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
+}

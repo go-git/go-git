@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	stdioutil "io/ioutil"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -30,6 +31,8 @@ type Tag struct {
 	Tagger Signature
 	// Message is an arbitrary text message.
 	Message string
+	// PGPSignature is the PGP signature of the tag.
+	PGPSignature string
 	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
 	// Target is the hash of the target object.
@@ -124,7 +127,36 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	if err != nil {
 		return err
 	}
-	t.Message = string(data)
+
+	var pgpsig bool
+	// Check if data contains PGP signature.
+	if bytes.Contains(data, []byte(beginpgp)) {
+		// Split the lines at newline.
+		messageAndSig := bytes.Split(data, []byte("\n"))
+
+		for _, l := range messageAndSig {
+			if pgpsig {
+				if bytes.Contains(l, []byte(endpgp)) {
+					t.PGPSignature += endpgp + "\n"
+					pgpsig = false
+				} else {
+					t.PGPSignature += string(l) + "\n"
+				}
+				continue
+			}
+
+			// Check if it's the beginning of a PGP signature.
+			if bytes.Contains(l, []byte(beginpgp)) {
+				t.PGPSignature += beginpgp + "\n"
+				pgpsig = true
+				continue
+			}
+
+			t.Message += string(l) + "\n"
+		}
+	} else {
+		t.Message = string(data)
+	}
 
 	return nil
 }
@@ -154,6 +186,16 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 
 	if _, err = fmt.Fprint(w, t.Message); err != nil {
 		return err
+	}
+
+	if t.PGPSignature != "" {
+		// Split all the signature lines and write with a newline at the end.
+		lines := strings.Split(t.PGPSignature, "\n")
+		for _, line := range lines {
+			if _, err = fmt.Fprintf(w, "%s\n", line); err != nil {
+				return err
+			}
+		}
 	}
 
 	return err
