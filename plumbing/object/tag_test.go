@@ -285,3 +285,94 @@ func (s *TagSuite) TestLongTagNameSerialization(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(decoded.Name, Equals, longName)
 }
+
+func (s *TagSuite) TestPGPSignatureSerialization(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Tag{}
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+
+	pgpsignature := `-----BEGIN PGP SIGNATURE-----
+
+iQEcBAABAgAGBQJTZbQlAAoJEF0+sviABDDrZbQH/09PfE51KPVPlanr6q1v4/Ut
+LQxfojUWiLQdg2ESJItkcuweYg+kc3HCyFejeDIBw9dpXt00rY26p05qrpnG+85b
+hM1/PswpPLuBSr+oCIDj5GMC2r2iEKsfv2fJbNW8iWAXVLoWZRF8B0MfqX/YTMbm
+ecorc4iXzQu7tupRihslbNkfvfciMnSDeSvzCpWAHl7h8Wj6hhqePmLm9lAYqnKp
+8S5B/1SSQuEAjRZgI4IexpZoeKGVDptPHxLLS38fozsyi0QyDyzEgJxcJQVMXxVi
+RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
+=EFTF
+-----END PGP SIGNATURE-----
+`
+	tag.PGPSignature = pgpsignature
+
+	err := tag.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
+}
+
+func (s *TagSuite) TestVerify(c *C) {
+	ts := time.Unix(1511524851, 0)
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	tag := &Tag{
+		Name:   "v0.2",
+		Tagger: Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts.In(loc)},
+		Message: `This is a signed tag
+`,
+		TargetType: plumbing.CommitObject,
+		Target:     plumbing.NewHash("064f92fe00e70e6b64cb358a65039daa4b6ae8d2"),
+		PGPSignature: `
+-----BEGIN PGP SIGNATURE-----
+
+iQFHBAABCAAxFiEEoRt6IzxHaZkkUslhQyLeMqcmyU4FAloYCg8THG1lQGRhcmtv
+d2x6ei5zcGFjZQAKCRBDIt4ypybJTs0cCACjQZe2610t3gfbUPbgQiWDL9uvlCeb
+sNSeTC6hLAFSvHTMqLr/6RpiLlfQXyATD7TZUH0DUSLsERLheG82OgVxkOTzPCpy
+GL6iGKeZ4eZ1KiV+SBPjqizC9ShhGooPUw9oUSVdj4jsaHDdDHtY63Pjl0KvJmms
+OVi9SSxjeMbmaC81C8r0ZuOLTXJh/JRKh2BsehdcnK3736BK+16YRD7ugXLpkQ5d
+nsCFVbuYYoLMoJL5NmEun0pbUrpY+MI8VPK0f9HV5NeaC4NksC+ke/xYMT+P2lRL
+CN+9zcCIU+mXr2fCl1xOQcnQzwOElObDxpDcPcxVn0X+AhmPc+uj0mqD
+=l75D
+-----END PGP SIGNATURE-----
+`,
+	}
+
+	armoredKeyRing := `
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQENBFmtHgABCADnfThM7q8D4pgUub9jMppSpgFh3ev84g3Csc3yQUlszEOVgXmu
+YiSWP1oAiWFQ8ahCydh3LT8TnEB2QvoRNiExUI5XlXFwVfKW3cpDu8gdhtufs90Q
+NvpaHOgTqRf/texGEKwXi6fvS47fpyaQ9BKNdN52LeaaHzDDZkVsAFmroE+7MMvj
+P4Mq8qDn2WcWnX9zheQKYrX6Cs48Tx80eehHor4f/XnuaP8DLmPQx7URdJ0Igckh
+N+i91Qv2ujin8zxUwhkfus66EZS9lQ4qR9iVHs4WHOs3j7whsejd4VhajonilVHj
+uqTtqHmpN/4njbIKb8q8uQkS26VQYoSYm2UvABEBAAG0GlN1bm55IDxtZUBkYXJr
+b3dsenouc3BhY2U+iQFUBBMBCAA+FiEEoRt6IzxHaZkkUslhQyLeMqcmyU4FAlmt
+HgACGwMFCQPCZwAFCwkIBwIGFQgJCgsCBBYCAwECHgECF4AACgkQQyLeMqcmyU7V
+nAf+J5BYu26B2i+iwctOzDRFcPwCLka9cBwe5wcDvoF2qL8QRo8NPWBBH4zWHa/k
+BthtGo1b89a53I2hnTwTQ0NOtAUNV+Vvu6nOHJd9Segsx3E1nM43bd2bUfGJ1eeO
+jDOlOvtP4ozuV6Ej+0Ln2ouMOc87yAwbAzTfQ9axU6CKUbqy0/t2dW1jdKntGH+t
+VPeFxJHL2gXjP89skCSPYA7yKqqyJRPFvC+7rde1OLdCmZi4VwghUiNbh3s1+xM3
+gfr2ahsRDTN2SQzwuHu4y1EgZgPtuWfRxzHqduoRoSgfOfFr9H9Il3UMHf2Etleu
+rif40YZJhge6STwsIycGh4wOiLkBDQRZrR4AAQgArpUvPdGC/W9X4AuZXrXEShvx
+TqM4K2Jk9n0j+ABx87k9fm48qgtae7+TayMbb0i7kcbgnjltKbauTbyRbju/EJvN
+CdIw76IPpjy6jUM37wG2QGLFo6Ku3x8/ZpNGGOZ8KMU258/EBqDlJQ/4g4kJ8D+m
+9yOH0r6/Xpe/jOY2V8Jo9pdFTm+8eAsSyZF0Cl7drz603Pymq1IS2wrwQbdxQA/w
+B75pQ5es7X34Ac7/9UZCwCPmZDAldnjHyw5dZgZe8XLrG84BIfbG0Hj8PjrFdF1D
+Czt9bk+PbYAnLORW2oX1oedxVrNFo5UrbWgBSjA1ppbGFjwSDHFlyjuEuxqyFwAR
+AQABiQE8BBgBCAAmFiEEoRt6IzxHaZkkUslhQyLeMqcmyU4FAlmtHgACGwwFCQPC
+ZwAACgkQQyLeMqcmyU7ZBggArzc8UUVSjde987Vqnu/S5Cv8Qhz+UB7gAFyTW2iF
+VYvB86r30H/NnfjvjCVkBE6FHCNHoxWVyDWmuxKviB7nkReHuwqniQHPgdJDcTKC
+tBboeX2IYBLJbEvEJuz5NSvnvFuYkIpZHqySFaqdl/qu9XcmoPL5AmIzIFOeiNty
+qT0ldkf3ru6yQQDDqBDpkfz4AzkpFnLYL59z6IbJDK2Hz7aKeSEeVOGiZLCjIZZV
+uISZThYqh5zUkvF346OHLDqfDdgQ4RZriqd/DTtRJPlz2uL0QcEIjJuYCkG0UWgl
+sYyf9RfOnw/KUFAQbdtvLx3ikODQC+D3KBtuKI9ISHQfgw==
+=FPev
+-----END PGP PUBLIC KEY BLOCK-----
+`
+
+	e, err := tag.Verify(armoredKeyRing)
+	c.Assert(err, IsNil)
+
+	_, ok := e.Identities["Sunny <me@darkowlzz.space>"]
+	c.Assert(ok, Equals, true)
+}
