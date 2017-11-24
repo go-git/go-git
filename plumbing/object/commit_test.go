@@ -299,10 +299,11 @@ func (s *SuiteCommit) TestStat(c *C) {
 
 func (s *SuiteCommit) TestVerify(c *C) {
 	ts := time.Unix(1511197315, 0)
+	loc, _ := time.LoadLocation("Asia/Kolkata")
 	commit := &Commit{
 		Hash:      plumbing.NewHash("8a9cea36fe052711fbc42b86e1f99a4fa0065deb"),
-		Author:    Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts},
-		Committer: Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts},
+		Author:    Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts.In(loc)},
+		Committer: Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts.In(loc)},
 		Message: `status: simplify template command selection
 `,
 		TreeHash:     plumbing.NewHash("6572ba6df4f1fb323c8aaa24ce07bca0648b161e"),
