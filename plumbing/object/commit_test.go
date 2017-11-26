@@ -194,6 +194,7 @@ func (s *SuiteCommit) TestStringMultiLine(c *C) {
 
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
 	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
 
 	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
 	c.Assert(err, IsNil)

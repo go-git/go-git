@@ -418,6 +418,7 @@ func (s *SuiteDotGit) TestNewObject(c *C) {
 	c.Assert(err, IsNil)
 
 	err = w.WriteHeader(plumbing.BlobObject, 14)
+	c.Assert(err, IsNil)
 	n, err := w.Write([]byte("this is a test"))
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 14)

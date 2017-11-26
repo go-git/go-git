@@ -82,6 +82,7 @@ func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
 	c.Assert(r, NotNil)
 
 	l, err := fs.ReadDir(".git")
+	c.Assert(err, IsNil)
 	c.Assert(len(l) > 0, Equals, true)
 
 	cfg, err := r.Config()
@@ -439,6 +440,7 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 	c.Assert(err, IsNil)
 
 	cfg, err := r.Config()
+	c.Assert(err, IsNil)
 	c.Assert(cfg.Remotes, HasLen, 1)
 	c.Assert(cfg.Submodules, HasLen, 2)
 }
