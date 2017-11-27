@@ -176,6 +176,7 @@ func (s *RemoteSuite) testFetch(c *C, r *Remote, o *FetchOptions, expected []*pl
 
 	var refs int
 	l, err := r.s.IterReferences()
+	c.Assert(err, IsNil)
 	l.ForEach(func(r *plumbing.Reference) error { refs++; return nil })
 
 	c.Assert(refs, Equals, len(expected))
@@ -512,6 +513,7 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
+	c.Assert(err, IsNil)
 
 	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
 		URL: url,
@@ -544,6 +546,7 @@ func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch(c *C) {
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
+	c.Assert(err, IsNil)
 
 	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
 		URL: url,

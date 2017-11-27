@@ -85,6 +85,7 @@ func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
 
 	// check clean up of temporary files
 	info, err = fs.ReadDir("")
+	c.Assert(err, IsNil)
 	for _, fi := range info {
 		c.Assert(fi.IsDir(), Equals, true)
 	}

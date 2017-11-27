@@ -60,10 +60,12 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 	server, err := PlainClone(url, false, &CloneOptions{
 		URL: path,
 	})
+	c.Assert(err, IsNil)
 
 	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
 		URL: url,
 	})
+	c.Assert(err, IsNil)
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
@@ -90,10 +92,12 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 	server, err := PlainClone(url, false, &CloneOptions{
 		URL: path,
 	})
+	c.Assert(err, IsNil)
 
 	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
 		URL: url,
 	})
+	c.Assert(err, IsNil)
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
@@ -212,6 +216,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
 	c.Assert(err, IsNil)
 
 	cfg, err := r.Config()
+	c.Assert(err, IsNil)
 	c.Assert(cfg.Submodules, HasLen, 2)
 }
 
@@ -306,6 +311,7 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 	}
 
 	dir, err := ioutil.TempDir("", "checkout")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, false)
@@ -344,6 +350,7 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 	server, err := PlainClone(url, false, &CloneOptions{
 		URL: path,
 	})
+	c.Assert(err, IsNil)
 
 	filename := "페"
 
@@ -358,6 +365,7 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: url,
 	})
+	c.Assert(err, IsNil)
 
 	w, err = r.Worktree()
 	c.Assert(err, IsNil)
@@ -444,6 +452,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMem(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 	dir, err := ioutil.TempDir("", "checkout")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	fs := osfs.New(filepath.Join(dir, "worktree"))
@@ -864,6 +873,7 @@ func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 
 func (s *WorktreeSuite) TestStatusModified(c *C) {
 	dir, err := ioutil.TempDir("", "status")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	fs := osfs.New(filepath.Join(dir, "worktree"))
@@ -957,6 +967,7 @@ func (s *WorktreeSuite) TestStatusUntracked(c *C) {
 
 func (s *WorktreeSuite) TestStatusDeleted(c *C) {
 	dir, err := ioutil.TempDir("", "status")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	fs := osfs.New(filepath.Join(dir, "worktree"))
@@ -1105,6 +1116,7 @@ func (s *WorktreeSuite) TestAddUnmodified(c *C) {
 
 func (s *WorktreeSuite) TestAddSymlink(c *C) {
 	dir, err := ioutil.TempDir("", "checkout")
+	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, false)

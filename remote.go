@@ -705,7 +705,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash) (bool, 
 
 	found := false
 	iter := object.NewCommitPreorderIter(c, nil, nil)
-	return found, iter.ForEach(func(c *object.Commit) error {
+	err = iter.ForEach(func(c *object.Commit) error {
 		if c.Hash != old {
 			return nil
 		}
@@ -713,6 +713,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash) (bool, 
 		found = true
 		return storer.ErrStop
 	})
+	return found, err
 }
 
 func (r *Remote) newUploadPackRequest(o *FetchOptions,
