@@ -194,6 +194,17 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs(c *C) {
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	))
 
+	// Make sure it only appears once in the refs list.
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+	found := false
+	for _, ref := range refs {
+		if ref.Name() == "refs/remotes/origin/branch" {
+			c.Assert(found, Equals, false)
+			found = true
+		}
+	}
+
 	name := plumbing.ReferenceName("refs/remotes/origin/branch")
 	err = dir.RemoveRef(name)
 	c.Assert(err, IsNil)
@@ -206,7 +217,7 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs(c *C) {
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"+
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master\n")
 
-	refs, err := dir.Refs()
+	refs, err = dir.Refs()
 	c.Assert(err, IsNil)
 
 	ref := findReference(refs, string(name))

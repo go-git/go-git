@@ -268,7 +268,7 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 		return nil, err
 	}
 
-	if err := d.addRefsFromPackedRefs(&refs); err != nil {
+	if err := d.addRefsFromPackedRefs(&refs, seen); err != nil {
 		return nil, err
 	}
 
@@ -347,13 +347,18 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	return d.rewritePackedRefsWithoutRef(name)
 }
 
-func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference) (err error) {
+func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) (err error) {
 	packedRefs, err := d.findPackedRefs()
 	if err != nil {
 		return err
 	}
 
-	*refs = append(*refs, packedRefs...)
+	for _, ref := range packedRefs {
+		if !seen[ref.Name()] {
+			*refs = append(*refs, ref)
+			seen[ref.Name()] = true
+		}
+	}
 	return nil
 }
 
