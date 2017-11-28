@@ -308,8 +308,8 @@ func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(c *C, url string) {
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
-func (s *RemoteSuite) TestFetchFastForward(c *C) {
-	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+func (s *RemoteSuite) testFetchFastForward(c *C, sto storage.Storer) {
+	r := newRemote(sto, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -348,6 +348,23 @@ func (s *RemoteSuite) TestFetchFastForward(c *C) {
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
+}
+
+func (s *RemoteSuite) TestFetchFastForwardMem(c *C) {
+	s.testFetchFastForward(c, memory.NewStorage())
+}
+
+func (s *RemoteSuite) TestFetchFastForwardFS(c *C) {
+	dir, err := ioutil.TempDir("", "fetch")
+	c.Assert(err, IsNil)
+
+	defer os.RemoveAll(dir) // clean up
+
+	fss, err := filesystem.NewStorage(osfs.New(dir))
+	c.Assert(err, IsNil)
+
+	// This exercises `storage.filesystem.Storage.CheckAndSetReference()`.
+	s.testFetchFastForward(c, fss)
 }
 
 func (s *RemoteSuite) TestString(c *C) {

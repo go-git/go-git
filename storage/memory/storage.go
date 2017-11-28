@@ -204,16 +204,17 @@ func (r ReferenceStorage) SetReference(ref *plumbing.Reference) error {
 }
 
 func (r ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
-	if ref != nil {
-		if old != nil {
-			tmp := r[ref.Name()]
-			if tmp != nil && tmp.Hash() != old.Hash() {
-				return ErrRefHasChanged
-			}
-		}
-		r[ref.Name()] = ref
+	if ref == nil {
+		return nil
 	}
 
+	if old != nil {
+		tmp := r[ref.Name()]
+		if tmp != nil && tmp.Hash() != old.Hash() {
+			return ErrRefHasChanged
+		}
+	}
+	r[ref.Name()] = ref
 	return nil
 }
 
