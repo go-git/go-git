@@ -92,7 +92,7 @@ func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
 	c.Assert(res.Encode(b), IsNil)
 
 	expected := "0008NAK\n[PACK]"
-	c.Assert(string(b.Bytes()), Equals, expected)
+	c.Assert(b.String(), Equals, expected)
 }
 
 func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
@@ -107,7 +107,7 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 	c.Assert(res.Encode(b), IsNil)
 
 	expected := "00000008NAK\nPACK"
-	c.Assert(string(b.Bytes()), Equals, expected)
+	c.Assert(b.String(), Equals, expected)
 }
 
 func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {

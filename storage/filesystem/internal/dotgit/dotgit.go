@@ -265,11 +265,7 @@ func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference
 	if err != nil {
 		return err
 	}
-	err = f.Truncate(0)
-	if err != nil {
-		return err
-	}
-	return nil
+	return f.Truncate(0)
 }
 
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {

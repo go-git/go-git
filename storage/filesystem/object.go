@@ -41,7 +41,7 @@ func (s *ObjectStorage) requireIndex() error {
 		return nil
 	}
 
-	s.index = make(map[plumbing.Hash]*packfile.Index, 0)
+	s.index = make(map[plumbing.Hash]*packfile.Index)
 	packs, err := s.dir.ObjectPacks()
 	if err != nil {
 		return err
@@ -319,7 +319,7 @@ func (s *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.Encode
 		return nil, err
 	}
 
-	seen := make(map[plumbing.Hash]bool, 0)
+	seen := make(map[plumbing.Hash]bool)
 	var iters []storer.EncodedObjectIter
 	if len(objects) != 0 {
 		iters = append(iters, &objectsIter{s: s, t: t, h: objects})

@@ -30,7 +30,7 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.buildBasicRepository(c)
 
-	s.cache = make(map[string]*Repository, 0)
+	s.cache = make(map[string]*Repository)
 }
 
 func (s *BaseSuite) TearDownSuite(c *C) {

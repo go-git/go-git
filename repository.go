@@ -323,7 +323,7 @@ func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 	return &Repository{
 		Storer: s,
 		wt:     worktree,
-		r:      make(map[string]*Remote, 0),
+		r:      make(map[string]*Remote),
 	}
 }
 
