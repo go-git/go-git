@@ -3,7 +3,6 @@ package storer
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -157,24 +156,4 @@ func (o *MockObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (EncodedOb
 
 func (o *MockObjectStorage) Begin() Transaction {
 	return nil
-}
-
-func (o *MockObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
-	return nil
-}
-
-func (o *MockObjectStorage) LooseObjectTime(plumbing.Hash) (time.Time, error) {
-	return time.Time{}, plumbing.ErrObjectNotFound
-}
-
-func (o *MockObjectStorage) DeleteLooseObject(plumbing.Hash) error {
-	return plumbing.ErrObjectNotFound
-}
-
-func (o *MockObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
-	return nil, nil
-}
-
-func (o *MockObjectStorage) DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error {
-	return plumbing.ErrObjectNotFound
 }
