@@ -308,6 +308,65 @@ func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(c *C, url string) {
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
+func (s *RemoteSuite) testFetchFastForward(c *C, sto storage.Storer) {
+	r := newRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/heads/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+
+	// First make sure that we error correctly when a force is required.
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/heads/branch:refs/heads/master"),
+		},
+	})
+	c.Assert(err, Equals, ErrForceNeeded)
+
+	// And that forcing it fixes the problem.
+	err = r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/branch:refs/heads/master"),
+		},
+	})
+	c.Assert(err, IsNil)
+
+	// Now test that a fast-forward, non-force fetch works.
+	r.s.SetReference(plumbing.NewReferenceFromStrings(
+		"refs/heads/master", "918c48b83bd081e863dbe1b80f8998f058cd8294",
+	))
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/heads/master:refs/heads/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchFastForwardMem(c *C) {
+	s.testFetchFastForward(c, memory.NewStorage())
+}
+
+func (s *RemoteSuite) TestFetchFastForwardFS(c *C) {
+	dir, err := ioutil.TempDir("", "fetch")
+	c.Assert(err, IsNil)
+
+	defer os.RemoveAll(dir) // clean up
+
+	fss, err := filesystem.NewStorage(osfs.New(dir))
+	c.Assert(err, IsNil)
+
+	// This exercises `storage.filesystem.Storage.CheckAndSetReference()`.
+	s.testFetchFastForward(c, fss)
+}
+
 func (s *RemoteSuite) TestString(c *C) {
 	r := newRemote(nil, &config.RemoteConfig{
 		Name: "foo",

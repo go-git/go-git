@@ -55,24 +55,25 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	fs := osfs.New(tmp)
 	dir := New(fs)
 
-	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+	firstFoo := plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
-	))
+	)
+	err = dir.SetRef(firstFoo, nil)
 
 	c.Assert(err, IsNil)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/symbolic",
 		"ref: refs/heads/foo",
-	))
+	), nil)
 
 	c.Assert(err, IsNil)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"bar",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
-	))
+	), nil)
 	c.Assert(err, IsNil)
 
 	refs, err := dir.Refs()
@@ -105,6 +106,20 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	c.Assert(ref, NotNil)
 	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
+	// Check that SetRef with a non-nil `old` works.
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	), firstFoo)
+	c.Assert(err, IsNil)
+
+	// `firstFoo` is no longer the right `old` reference, so this
+	// should fail.
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	), firstFoo)
+	c.Assert(err, NotNil)
 }
 
 func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
@@ -192,7 +207,7 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs(c *C) {
 	err := dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/remotes/origin/branch",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
-	))
+	), nil)
 
 	// Make sure it only appears once in the refs list.
 	refs, err := dir.Refs()
