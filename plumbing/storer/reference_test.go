@@ -97,11 +97,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterNext(c *C) {
 	}
 
 	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
-		if r.Name() == "bar" {
-			return true
-		}
-
-		return false
+		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
 	foo, err := i.Next()
 	c.Assert(err, IsNil)
@@ -120,11 +116,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEach(c *C) {
 	}
 
 	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
-		if r.Name() == "bar" {
-			return true
-		}
-
-		return false
+		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
 	var count int
 	i.ForEach(func(r *plumbing.Reference) error {
@@ -143,11 +135,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterError(c *C) {
 	}
 
 	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
-		if r.Name() == "bar" {
-			return true
-		}
-
-		return false
+		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
 	var count int
 	exampleErr := errors.New("SOME ERROR")
@@ -172,11 +160,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop(c *C) {
 	}
 
 	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
-		if r.Name() == "bar" {
-			return true
-		}
-
-		return false
+		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
 
 	var count int
