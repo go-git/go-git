@@ -1088,5 +1088,22 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	if err != nil {
 		return h, err
 	}
+
+	// Delete the packed, loose objects.
+	if los, ok := r.Storer.(storer.LooseObjectStorer); ok {
+		err = los.ForEachObjectHash(func(hash plumbing.Hash) error {
+			if ow.isSeen(hash) {
+				err := los.DeleteLooseObject(hash)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return h, err
+		}
+	}
+
 	return h, err
 }

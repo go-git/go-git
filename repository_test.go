@@ -10,10 +10,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
@@ -1311,6 +1314,64 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 
 		c.Assert(err.Error(), Equals, rerr)
 	}
+}
+
+func (s *RepositorySuite) testRepackObjects(
+	c *C, deleteTime time.Time, expectedPacks int) {
+	srcFs := fixtures.ByTag("unpacked").One().DotGit()
+	var sto storage.Storer
+	var err error
+	sto, err = filesystem.NewStorage(srcFs)
+	c.Assert(err, IsNil)
+
+	los := sto.(storer.LooseObjectStorer)
+	c.Assert(los, NotNil)
+
+	numLooseStart := 0
+	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
+		numLooseStart++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(numLooseStart > 0, Equals, true)
+
+	pos := sto.(storer.PackedObjectStorer)
+	c.Assert(los, NotNil)
+
+	packs, err := pos.ObjectPacks()
+	c.Assert(err, IsNil)
+	numPacksStart := len(packs)
+	c.Assert(numPacksStart > 1, Equals, true)
+
+	r, err := Open(sto, srcFs)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	err = r.RepackObjects(&RepackConfig{
+		OnlyDeletePacksOlderThan: deleteTime,
+	})
+	c.Assert(err, IsNil)
+
+	numLooseEnd := 0
+	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
+		numLooseEnd++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(numLooseEnd, Equals, 0)
+
+	packs, err = pos.ObjectPacks()
+	c.Assert(err, IsNil)
+	numPacksEnd := len(packs)
+	c.Assert(numPacksEnd, Equals, expectedPacks)
+}
+
+func (s *RepositorySuite) TestRepackObjects(c *C) {
+	s.testRepackObjects(c, time.Time{}, 1)
+}
+
+func (s *RepositorySuite) TestRepackObjectsWithNoDelete(c *C) {
+	s.testRepackObjects(c, time.Unix(0, 1), 3)
 }
 
 func ExecuteOnPath(c *C, path string, cmds ...string) error {
