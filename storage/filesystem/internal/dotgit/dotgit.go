@@ -589,25 +589,14 @@ func (d *DotGit) CountLooseRefs() (int, error) {
 // PackRefs packs all loose refs into the packed-refs file.
 //
 // This implementation only works under the assumption that the view
-// of the file system won't be updated during this operation, which is
-// true for kbfsgit after the Lock() operation is complete (and before
-// the Unlock()/Close() of the locked file).  If another process
-// concurrently updates one of the loose refs we delete, then KBFS
-// conflict resolution would just end up ignoring our delete.  Also
-// note that deleting a ref requires locking packed-refs, so a ref
-// deleted by the user shouldn't be revived by ref-packing.
-//
-// The strategy would not work on a general file system though,
-// without locking each loose reference and checking it again before
-// deleting the file, because otherwise an updated reference could
-// sneak in and then be deleted by the packed-refs process.
-// Alternatively, every ref update could also lock packed-refs, so
-// only one lock is required during ref-packing.  But that would
-// worsen performance in the common case.
-//
-// TODO: before trying to get this merged upstream, move it into a
-// custom kbfsgit Storer implementation, and rewrite this function to
-// work correctly on a general filesystem.
+// of the file system won't be updated during this operation.  This
+// strategy would not work on a general file system though, without
+// locking each loose reference and checking it again before deleting
+// the file, because otherwise an updated reference could sneak in and
+// then be deleted by the packed-refs process.  Alternatively, every
+// ref update could also lock packed-refs, so only one lock is
+// required during ref-packing.  But that would worsen performance in
+// the common case.
 func (d *DotGit) PackRefs() (err error) {
 	// Lock packed-refs, and create it if it doesn't exist yet.
 	f, err := d.fs.Open(packedRefsPath)
@@ -680,13 +669,6 @@ func (d *DotGit) PackRefs() (err error) {
 			return err
 		}
 	}
-
-	// Update packed-refs cache.
-	d.cachedPackedRefs = make(refCache)
-	for _, ref := range refs {
-		d.cachedPackedRefs[ref.Name()] = ref
-	}
-	d.packedRefsLastMod = time.Now()
 
 	return nil
 }
