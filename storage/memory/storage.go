@@ -116,8 +116,7 @@ func (o *ObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.H
 }
 
 func (o *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
-	_, ok := o.Objects[h]
-	if !ok {
+	if _, ok := o.Objects[h]; !ok {
 		return plumbing.ErrObjectNotFound
 	}
 	return nil

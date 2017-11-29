@@ -509,13 +509,10 @@ func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]bool {
 
 func (s *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 	err := s.dir.ForEachObjectHash(fun)
-	if err != nil {
-		if err == storer.ErrStop {
-			return nil
-		}
-		return err
+	if err == storer.ErrStop {
+		return nil
 	}
-	return nil
+	return err
 }
 
 func (s *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {

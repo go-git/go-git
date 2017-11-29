@@ -28,7 +28,7 @@ func (r *Repository) Prune(opt PruneOptions) error {
 		return err
 	}
 	// Now walk all (loose) objects in storage.
-	err = r.Storer.ForEachObjectHash(func(hash plumbing.Hash) error {
+	return r.Storer.ForEachObjectHash(func(hash plumbing.Hash) error {
 		// Get out if we have seen this object.
 		if pw.isSeen(hash) {
 			return nil
@@ -49,8 +49,4 @@ func (r *Repository) Prune(opt PruneOptions) error {
 		}
 		return opt.Handler(hash)
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
