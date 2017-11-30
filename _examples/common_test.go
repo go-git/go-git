@@ -15,17 +15,17 @@ var examplesTest = flag.Bool("examples", false, "run the examples tests")
 var defaultURL = "https://github.com/git-fixtures/basic.git"
 
 var args = map[string][]string{
-	"checkout":    []string{defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
-	"clone":       []string{defaultURL, tempFolder()},
-	"context":     []string{defaultURL, tempFolder()},
-	"commit":      []string{cloneRepository(defaultURL, tempFolder())},
-	"custom_http": []string{defaultURL},
-	"open":        []string{cloneRepository(defaultURL, tempFolder())},
-	"progress":    []string{defaultURL, tempFolder()},
-	"push":        []string{setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
-	"showcase":    []string{defaultURL, tempFolder()},
-	"tag":         []string{cloneRepository(defaultURL, tempFolder())},
-	"pull":        []string{createRepositoryWithRemote(tempFolder(), defaultURL)},
+	"checkout":    {defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
+	"clone":       {defaultURL, tempFolder()},
+	"context":     {defaultURL, tempFolder()},
+	"commit":      {cloneRepository(defaultURL, tempFolder())},
+	"custom_http": {defaultURL},
+	"open":        {cloneRepository(defaultURL, tempFolder())},
+	"progress":    {defaultURL, tempFolder()},
+	"push":        {setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
+	"showcase":    {defaultURL, tempFolder()},
+	"tag":         {cloneRepository(defaultURL, tempFolder())},
+	"pull":        {createRepositoryWithRemote(tempFolder(), defaultURL)},
 }
 
 var ignored = map[string]bool{}
