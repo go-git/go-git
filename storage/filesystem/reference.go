@@ -34,3 +34,11 @@ func (r *ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 func (r *ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
 	return r.dir.RemoveRef(n)
 }
+
+func (r *ReferenceStorage) CountLooseRefs() (int, error) {
+	return r.dir.CountLooseRefs()
+}
+
+func (r *ReferenceStorage) PackRefs() error {
+	return r.dir.PackRefs()
+}

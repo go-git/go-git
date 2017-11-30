@@ -132,6 +132,15 @@ func (o *MockObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbi
 	return plumbing.ZeroHash, nil
 }
 
+func (o *MockObjectStorage) HasEncodedObject(h plumbing.Hash) error {
+	for _, o := range o.db {
+		if o.Hash() == h {
+			return nil
+		}
+	}
+	return plumbing.ErrObjectNotFound
+}
+
 func (o *MockObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	for _, o := range o.db {
 		if o.Hash() == h {

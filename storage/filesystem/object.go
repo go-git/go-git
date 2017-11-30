@@ -3,6 +3,7 @@ package filesystem
 import (
 	"io"
 	"os"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
@@ -123,6 +124,32 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (plumbing.Has
 	}
 
 	return o.Hash(), err
+}
+
+// HasEncodedObject returns nil if the object exists, without actually
+// reading the object data from storage.
+func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
+	// Check unpacked objects
+	f, err := s.dir.Object(h)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		// Fall through to check packed objects.
+	} else {
+		defer ioutil.CheckClose(f, &err)
+		return nil
+	}
+
+	// Check packed objects.
+	if err := s.requireIndex(); err != nil {
+		return err
+	}
+	_, _, offset := s.findObjectInPackfile(h)
+	if offset == -1 {
+		return plumbing.ErrObjectNotFound
+	}
+	return nil
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -478,4 +505,32 @@ func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]bool {
 	}
 
 	return m
+}
+
+func (s *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
+	err := s.dir.ForEachObjectHash(fun)
+	if err == storer.ErrStop {
+		return nil
+	}
+	return err
+}
+
+func (s *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {
+	fi, err := s.dir.ObjectStat(hash)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return fi.ModTime(), nil
+}
+
+func (s *ObjectStorage) DeleteLooseObject(hash plumbing.Hash) error {
+	return s.dir.ObjectDelete(hash)
+}
+
+func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
+	return s.dir.ObjectPacks()
+}
+
+func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
+	return s.dir.DeleteOldObjectPackAndIndex(h, t)
 }

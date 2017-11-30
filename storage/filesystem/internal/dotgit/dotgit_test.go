@@ -543,3 +543,75 @@ func (s *SuiteDotGit) TestSubmodules(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(strings.HasSuffix(m.Root(), m.Join(".git", "modules", "basic")), Equals, true)
 }
+
+func (s *SuiteDotGit) TestPackRefs(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := osfs.New(tmp)
+	dir := New(fs)
+
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/bar",
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 2)
+	looseCount, err := dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 2)
+
+	err = dir.PackRefs()
+	c.Assert(err, IsNil)
+
+	// Make sure the refs are still there, but no longer loose.
+	refs, err = dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 2)
+	looseCount, err = dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 0)
+
+	ref, err := dir.Ref("refs/heads/foo")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	ref, err = dir.Ref("refs/heads/bar")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "a8d3ffab552895c19b9fcf7aa264d277cde33881")
+
+	// Now update one of them, re-pack, and check again.
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"b8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+	looseCount, err = dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 1)
+	err = dir.PackRefs()
+	c.Assert(err, IsNil)
+
+	// Make sure the refs are still there, but no longer loose.
+	refs, err = dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 2)
+	looseCount, err = dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 0)
+
+	ref, err = dir.Ref("refs/heads/foo")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "b8d3ffab552895c19b9fcf7aa264d277cde33881")
+}

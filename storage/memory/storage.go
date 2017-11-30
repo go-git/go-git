@@ -3,6 +3,7 @@ package memory
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -114,6 +115,13 @@ func (o *ObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.H
 	return h, nil
 }
 
+func (o *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
+	if _, ok := o.Objects[h]; !ok {
+		return plumbing.ErrObjectNotFound
+	}
+	return nil
+}
+
 func (o *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	obj, ok := o.Objects[h]
 	if !ok || (plumbing.AnyObject != t && obj.Type() != t) {
@@ -154,6 +162,35 @@ func (o *ObjectStorage) Begin() storer.Transaction {
 		Storage: o,
 		Objects: make(map[plumbing.Hash]plumbing.EncodedObject),
 	}
+}
+
+func (o *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
+	for h, _ := range o.Objects {
+		err := fun(h)
+		if err != nil {
+			if err == storer.ErrStop {
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (o *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
+	return nil, nil
+}
+func (o *ObjectStorage) DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error {
+	return nil
+}
+
+var errNotSupported = fmt.Errorf("Not supported")
+
+func (s *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {
+	return time.Time{}, errNotSupported
+}
+func (s *ObjectStorage) DeleteLooseObject(plumbing.Hash) error {
+	return errNotSupported
 }
 
 type TxObjectStorage struct {
@@ -234,6 +271,14 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil
+}
+
+func (r ReferenceStorage) CountLooseRefs() (int, error) {
+	return len(r), nil
+}
+
+func (r ReferenceStorage) PackRefs() error {
+	return nil
 }
 
 func (r ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
