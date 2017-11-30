@@ -18,7 +18,7 @@ type PruneSuite struct {
 
 var _ = Suite(&PruneSuite{})
 
-func (s *PruneSuite) TestPrune(c *C, deleteTime time.Time) {
+func (s *PruneSuite) testPrune(c *C, deleteTime time.Time) {
 	srcFs := fixtures.ByTag("unpacked").One().DotGit()
 	var sto storage.Storer
 	var err error
@@ -46,7 +46,8 @@ func (s *PruneSuite) TestPrune(c *C, deleteTime time.Time) {
 	c.Assert(err, IsNil)
 
 	err = r.Prune(PruneOptions{
-		Handler: r.DeleteObject,
+		OnlyObjectsOlderThan: deleteTime,
+		Handler:              r.DeleteObject,
 	})
 	c.Assert(err, IsNil)
 
