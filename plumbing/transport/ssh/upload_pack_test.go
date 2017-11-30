@@ -15,9 +15,9 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
 
 	"github.com/gliderlabs/ssh"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 	stdssh "golang.org/x/crypto/ssh"
 	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type UploadPackSuite struct {
