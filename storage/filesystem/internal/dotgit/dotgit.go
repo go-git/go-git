@@ -460,31 +460,59 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plu
 	return nil
 }
 
+func (d *DotGit) openAndLockPackedRefs() (pr billy.File, err error) {
+	var f billy.File
+	defer func() {
+		if err != nil && f != nil {
+			ioutil.CheckClose(f, &err)
+		}
+	}()
+
+	// Keep trying to open and lock the file until we're sure the file
+	// didn't change between the open and the lock.
+	for {
+		f, err = d.fs.Open(packedRefsPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, nil
+			}
+
+			return nil, err
+		}
+		fi, err := d.fs.Stat(packedRefsPath)
+		if err != nil {
+			return nil, err
+		}
+		mtime := fi.ModTime()
+
+		err = f.Lock()
+		if err != nil {
+			return nil, err
+		}
+
+		fi, err = d.fs.Stat(packedRefsPath)
+		if err != nil {
+			return nil, err
+		}
+		if mtime == fi.ModTime() {
+			break
+		}
+		// The file has changed since we opened it.  Close and retry.
+		err = f.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
 func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err error) {
-	f, err := d.fs.Open(packedRefsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return err
-	}
-	defer ioutil.CheckClose(f, &err)
-
-	err = f.Lock()
+	pr, err := d.openAndLockPackedRefs()
 	if err != nil {
 		return err
 	}
-
-	// Re-open the file after locking, since it could have been
-	// renamed over by a new file during the Lock process.
-	pr, err := d.fs.Open(packedRefsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return err
+	if pr == nil {
+		return nil
 	}
 	doClosePR := true
 	defer func() {
