@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// CheckArgs should be used to esnure the right command line arguments are
+// CheckArgs should be used to ensure the right command line arguments are
 // passed before executing an example.
 func CheckArgs(arg ...string) {
 	if len(os.Args) < len(arg)+1 {

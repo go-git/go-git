@@ -891,6 +891,9 @@ func (r *Repository) Worktree() (*Worktree, error) {
 }
 
 // ResolveRevision resolves revision to corresponding hash.
+//
+// Implemented resolvers : HEAD, branch, tag, heads/branch, refs/heads/branch,
+// refs/tags/tag, refs/remotes/origin/branch, refs/remotes/origin/HEAD, tilde and caret (HEAD~1, master~^, tag~2, ref/heads/master~1, ...), selection by text (HEAD^{/fix nasty bug})
 func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, error) {
 	p := revision.NewParserFromString(string(rev))
 
@@ -905,15 +908,22 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 	for _, item := range items {
 		switch item.(type) {
 		case revision.Ref:
-			ref, err := storer.ResolveReference(r.Storer, plumbing.ReferenceName(item.(revision.Ref)))
+			revisionRef := item.(revision.Ref)
+			var ref *plumbing.Reference
 
-			if err != nil {
-				return &plumbing.ZeroHash, err
+			for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
+				ref, err = storer.ResolveReference(r.Storer, plumbing.ReferenceName(fmt.Sprintf(rule, revisionRef)))
+
+				if err == nil {
+					break
+				}
 			}
 
-			h := ref.Hash()
+			if ref == nil {
+				return &plumbing.ZeroHash, plumbing.ErrReferenceNotFound
+			}
 
-			commit, err = r.CommitObject(h)
+			commit, err = r.CommitObject(ref.Hash())
 
 			if err != nil {
 				return &plumbing.ZeroHash, err
@@ -983,29 +993,6 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 
 			if c == nil {
 				return &plumbing.ZeroHash, fmt.Errorf(`No commit message match regexp : "%s"`, re.String())
-			}
-
-			commit = c
-		case revision.AtDate:
-			history := object.NewCommitPreorderIter(commit, nil, nil)
-
-			date := item.(revision.AtDate).Date
-
-			var c *object.Commit
-			err := history.ForEach(func(hc *object.Commit) error {
-				if date.Equal(hc.Committer.When.UTC()) || hc.Committer.When.UTC().Before(date) {
-					c = hc
-					return storer.ErrStop
-				}
-
-				return nil
-			})
-			if err != nil {
-				return &plumbing.ZeroHash, err
-			}
-
-			if c == nil {
-				return &plumbing.ZeroHash, fmt.Errorf(`No commit exists prior to date "%s"`, date.String())
 			}
 
 			commit = c

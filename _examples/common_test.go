@@ -23,6 +23,7 @@ var args = map[string][]string{
 	"open":        {cloneRepository(defaultURL, tempFolder())},
 	"progress":    {defaultURL, tempFolder()},
 	"push":        {setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
+	"revision":    {cloneRepository(defaultURL, tempFolder()), "master~2^"},
 	"showcase":    {defaultURL, tempFolder()},
 	"tag":         {cloneRepository(defaultURL, tempFolder())},
 	"pull":        {createRepositoryWithRemote(tempFolder(), defaultURL)},
