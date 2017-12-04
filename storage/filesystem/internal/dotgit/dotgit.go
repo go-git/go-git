@@ -518,7 +518,7 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		if err != nil {
 			return nil, err
 		}
-		if mtime == fi.ModTime() {
+		if mtime.Equal(fi.ModTime()) {
 			break
 		}
 		// The file has changed since we opened it.  Close and retry.
