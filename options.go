@@ -360,3 +360,8 @@ type ListOptions struct {
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 }
+
+// CleanOptions describes how a clean should be performed.
+type CleanOptions struct {
+	Dir bool
+}

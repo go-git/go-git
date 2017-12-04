@@ -684,6 +684,33 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 	return m, m.Unmarshal(input)
 }
 
+// Clean the worktree by removing untracked files.
+func (w *Worktree) Clean(opts *CleanOptions) error {
+	s, err := w.Status()
+	if err != nil {
+		return err
+	}
+
+	// Check Worktree status to be Untracked, obtain absolute path and delete.
+	for relativePath, status := range s {
+		// Check if the path contains a directory and if Dir options is false,
+		// skip the path.
+		if relativePath != filepath.Base(relativePath) && !opts.Dir {
+			continue
+		}
+
+		// Remove the file only if it's an untracked file.
+		if status.Worktree == Untracked {
+			absPath := filepath.Join(w.Filesystem.Root(), relativePath)
+			if err := os.Remove(absPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func rmFileAndDirIfEmpty(fs billy.Filesystem, name string) error {
 	if err := util.RemoveAll(fs, name); err != nil {
 		return err
