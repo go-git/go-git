@@ -271,6 +271,11 @@ func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
 	var fileStats FileStats
 
 	for _, fp := range filePatches {
+		// ignore empty patches (binary files, submodule refs updates)
+		if len(fp.Chunks()) == 0 {
+			continue
+		}
+
 		cs := FileStat{}
 		from, to := fp.Files()
 		if from == nil {
