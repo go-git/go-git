@@ -1252,3 +1252,38 @@ func (s *WorktreeSuite) TestMoveToExistent(c *C) {
 	c.Assert(hash.IsZero(), Equals, true)
 	c.Assert(err, Equals, ErrDestinationExists)
 }
+
+func (s *WorktreeSuite) TestClean(c *C) {
+	fs := fixtures.ByTag("dirty").One().Worktree()
+
+	// Open the repo.
+	fs, err := fs.Chroot("repo")
+	c.Assert(err, IsNil)
+	r, err := PlainOpen(fs.Root())
+	c.Assert(err, IsNil)
+
+	wt, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	// Status before cleaning.
+	status, err := wt.Status()
+	c.Assert(len(status), Equals, 2)
+
+	err = wt.Clean(&CleanOptions{})
+	c.Assert(err, IsNil)
+
+	// Status after cleaning.
+	status, err = wt.Status()
+	c.Assert(err, IsNil)
+
+	c.Assert(len(status), Equals, 1)
+
+	// Clean with Dir: true.
+	err = wt.Clean(&CleanOptions{Dir: true})
+	c.Assert(err, IsNil)
+
+	status, err = wt.Status()
+	c.Assert(err, IsNil)
+
+	c.Assert(len(status), Equals, 0)
+}
