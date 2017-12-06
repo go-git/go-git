@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -614,4 +615,56 @@ func (s *SuiteDotGit) TestPackRefs(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ref, NotNil)
 	c.Assert(ref.Hash().String(), Equals, "b8d3ffab552895c19b9fcf7aa264d277cde33881")
+}
+
+func (s *SuiteDotGit) TestAlternates(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	// Create a new billy fs.
+	fs := osfs.New(tmp)
+
+	// Create a new dotgit object and initialize.
+	dir := New(fs)
+	err = dir.Initialize()
+	c.Assert(err, IsNil)
+
+	// Create alternates file.
+	altpath := filepath.Join("objects", "info", "alternates")
+	f, err := fs.Create(altpath)
+	c.Assert(err, IsNil)
+
+	// Multiple alternates.
+	var strContent string
+	if runtime.GOOS == "windows" {
+		strContent = "C:\\Users\\username\\repo1\\.git\\objects\r\n..\\..\\..\\rep2\\.git\\objects"
+	} else {
+		strContent = "/Users/username/rep1//.git/objects\n../../../rep2//.git/objects"
+	}
+	content := []byte(strContent)
+	f.Write(content)
+	f.Close()
+
+	dotgits, err := dir.Alternates()
+	c.Assert(err, IsNil)
+	if runtime.GOOS == "windows" {
+		c.Assert(dotgits[0].fs.Root(), Equals, "C:\\Users\\username\\repo1\\.git")
+	} else {
+		c.Assert(dotgits[0].fs.Root(), Equals, "/Users/username/rep1/.git")
+	}
+
+	// For relative path:
+	// /some/absolute/path/to/dot-git -> /some/absolute/path
+	pathx := strings.Split(tmp, string(filepath.Separator))
+	pathx = pathx[:len(pathx)-2]
+	// Use string.Join() to avoid malformed absolutepath on windows
+	// C:Users\\User\\... instead of C:\\Users\\appveyor\\... .
+	resolvedPath := strings.Join(pathx, string(filepath.Separator))
+	// Append the alternate path to the resolvedPath
+	expectedPath := filepath.Join(string(filepath.Separator), resolvedPath, "rep2", ".git")
+	if runtime.GOOS == "windows" {
+		expectedPath = filepath.Join(resolvedPath, "rep2", ".git")
+	}
+	c.Assert(dotgits[1].fs.Root(), Equals, expectedPath)
 }

@@ -1287,3 +1287,33 @@ func (s *WorktreeSuite) TestClean(c *C) {
 
 	c.Assert(len(status), Equals, 0)
 }
+
+func (s *WorktreeSuite) TestAlternatesRepo(c *C) {
+	fs := fixtures.ByTag("alternates").One().Worktree()
+
+	// Open 1st repo.
+	rep1fs, err := fs.Chroot("rep1")
+	c.Assert(err, IsNil)
+	rep1, err := PlainOpen(rep1fs.Root())
+	c.Assert(err, IsNil)
+
+	// Open 2nd repo.
+	rep2fs, err := fs.Chroot("rep2")
+	c.Assert(err, IsNil)
+	rep2, err := PlainOpen(rep2fs.Root())
+	c.Assert(err, IsNil)
+
+	// Get the HEAD commit from the main repo.
+	h, err := rep1.Head()
+	c.Assert(err, IsNil)
+	commit1, err := rep1.CommitObject(h.Hash())
+	c.Assert(err, IsNil)
+
+	// Get the HEAD commit from the shared repo.
+	h, err = rep2.Head()
+	c.Assert(err, IsNil)
+	commit2, err := rep2.CommitObject(h.Hash())
+	c.Assert(err, IsNil)
+
+	c.Assert(commit1.String(), Equals, commit2.String())
+}

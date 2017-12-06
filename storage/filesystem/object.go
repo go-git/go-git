@@ -160,6 +160,27 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 		obj, err = s.getFromPackfile(h, false)
 	}
 
+	// If the error is still object not found, check if it's a shared object
+	// repository.
+	if err == plumbing.ErrObjectNotFound {
+		dotgits, e := s.dir.Alternates()
+		if e == nil {
+			// Create a new object storage with the DotGit(s) and check for the
+			// required hash object. Skip when not found.
+			for _, dg := range dotgits {
+				o, oe := newObjectStorage(dg)
+				if oe != nil {
+					continue
+				}
+				enobj, enerr := o.EncodedObject(t, h)
+				if enerr != nil {
+					continue
+				}
+				return enobj, nil
+			}
+		}
+	}
+
 	if err != nil {
 		return nil, err
 	}
