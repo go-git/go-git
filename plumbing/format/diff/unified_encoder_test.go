@@ -20,7 +20,7 @@ func (s *UnifiedEncoderTestSuite) TestBothFilesEmpty(c *C) {
 	buffer := bytes.NewBuffer(nil)
 	e := NewUnifiedEncoder(buffer, 1)
 	err := e.Encode(testPatch{filePatches: []testFilePatch{{}}})
-	c.Assert(err, Equals, ErrBothFilesEmpty)
+	c.Assert(err, IsNil)
 }
 
 func (s *UnifiedEncoderTestSuite) TestBinaryFile(c *C) {
