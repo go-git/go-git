@@ -4,11 +4,13 @@ package ssh
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common"
 
 	"golang.org/x/crypto/ssh"
+	"github.com/kevinburke/ssh_config"
 )
 
 // DefaultClient is the default SSH client.
@@ -122,7 +124,20 @@ func (c *command) connect() error {
 
 func (c *command) getHostWithPort() string {
 	host := c.endpoint.Host
+
+	configHost := ssh_config.Get(host, "Hostname")
+	if (configHost != "") {
+		host = configHost
+	}
+
 	port := c.endpoint.Port
+	configPort := ssh_config.Get(host, "Port")
+	if (configPort != "") {
+		i, err := strconv.Atoi(configPort)
+		if err != nil {
+			port = i
+		}
+	}
 	if port <= 0 {
 		port = DefaultPort
 	}
