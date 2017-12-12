@@ -8,6 +8,7 @@ import (
 	stdioutil "io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -709,6 +710,105 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 	}
 
 	return nil
+}
+
+// GrepResult is structure of a grep result.
+type GrepResult struct {
+	// FileName is the name of file which contains match.
+	FileName string
+	// LineNumber is the line number of a file at which a match was found.
+	LineNumber int
+	// Content is the content of the file at the matching line.
+	Content string
+	// TreeName is the name of the tree (reference name/commit hash) at
+	// which the match was performed.
+	TreeName string
+}
+
+func (gr GrepResult) String() string {
+	return fmt.Sprintf("%s:%s:%d:%s", gr.TreeName, gr.FileName, gr.LineNumber, gr.Content)
+}
+
+// Grep performs grep on a worktree.
+func (w *Worktree) Grep(opts *GrepOptions) ([]GrepResult, error) {
+	if err := opts.Validate(w); err != nil {
+		return nil, err
+	}
+
+	// Obtain commit hash from options (CommitHash or ReferenceName).
+	var commitHash plumbing.Hash
+	// treeName contains the value of TreeName in GrepResult.
+	var treeName string
+
+	if opts.ReferenceName != "" {
+		ref, err := w.r.Reference(opts.ReferenceName, true)
+		if err != nil {
+			return nil, err
+		}
+		commitHash = ref.Hash()
+		treeName = opts.ReferenceName.String()
+	} else if !opts.CommitHash.IsZero() {
+		commitHash = opts.CommitHash
+		treeName = opts.CommitHash.String()
+	}
+
+	// Obtain a tree from the commit hash and get a tracked files iterator from
+	// the tree.
+	tree, err := w.getTreeFromCommitHash(commitHash)
+	if err != nil {
+		return nil, err
+	}
+	fileiter := tree.Files()
+
+	return findMatchInFiles(fileiter, treeName, opts)
+}
+
+// findMatchInFiles takes a FileIter, worktree name and GrepOptions, and
+// returns a slice of GrepResult containing the result of regex pattern matching
+// in the file content.
+func findMatchInFiles(fileiter *object.FileIter, treeName string, opts *GrepOptions) ([]GrepResult, error) {
+	var results []GrepResult
+
+	// Iterate through the files and look for any matches.
+	err := fileiter.ForEach(func(file *object.File) error {
+		// Check if the file name matches with the pathspec.
+		if opts.PathSpec != nil && !opts.PathSpec.MatchString(file.Name) {
+			return nil
+		}
+
+		content, err := file.Contents()
+		if err != nil {
+			return err
+		}
+
+		// Split the content and make parseable line-by-line.
+		contentByLine := strings.Split(content, "\n")
+		for lineNum, cnt := range contentByLine {
+			addToResult := false
+			// Match the pattern and content.
+			if opts.Pattern != nil && opts.Pattern.MatchString(cnt) {
+				// Add to result only if invert match is not enabled.
+				if !opts.InvertMatch {
+					addToResult = true
+				}
+			} else if opts.InvertMatch {
+				// If matching fails, and invert match is enabled, add to results.
+				addToResult = true
+			}
+
+			if addToResult {
+				results = append(results, GrepResult{
+					FileName:   file.Name,
+					LineNumber: lineNum + 1,
+					Content:    cnt,
+					TreeName:   treeName,
+				})
+			}
+		}
+		return nil
+	})
+
+	return results, err
 }
 
 func rmFileAndDirIfEmpty(fs billy.Filesystem, name string) error {

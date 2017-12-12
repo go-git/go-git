@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 
 	"gopkg.in/src-d/go-git.v4/config"
@@ -1316,4 +1317,188 @@ func (s *WorktreeSuite) TestAlternatesRepo(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(commit1.String(), Equals, commit2.String())
+}
+
+func (s *WorktreeSuite) TestGrep(c *C) {
+	cases := []struct {
+		name           string
+		options        GrepOptions
+		wantResult     []GrepResult
+		dontWantResult []GrepResult
+		wantError      error
+	}{
+		{
+			name: "basic word match",
+			options: GrepOptions{
+				Pattern: regexp.MustCompile("import"),
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "case insensitive match",
+			options: GrepOptions{
+				Pattern: regexp.MustCompile(`(?i)IMport`),
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "invert match",
+			options: GrepOptions{
+				Pattern:     regexp.MustCompile("import"),
+				InvertMatch: true,
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "match at a given commit hash",
+			options: GrepOptions{
+				Pattern:    regexp.MustCompile("The MIT License"),
+				CommitHash: plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "LICENSE",
+					LineNumber: 1,
+					Content:    "The MIT License (MIT)",
+					TreeName:   "b029517f6300c2da0f4b651b8642506cd6aaf45d",
+				},
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "match for a given pathspec",
+			options: GrepOptions{
+				Pattern:  regexp.MustCompile("import"),
+				PathSpec: regexp.MustCompile("go/"),
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "match at a given reference name",
+			options: GrepOptions{
+				Pattern:       regexp.MustCompile("import"),
+				ReferenceName: "refs/heads/master",
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "refs/heads/master",
+				},
+			},
+		}, {
+			name: "ambiguous options",
+			options: GrepOptions{
+				Pattern:       regexp.MustCompile("import"),
+				CommitHash:    plumbing.NewHash("2d55a722f3c3ecc36da919dfd8b6de38352f3507"),
+				ReferenceName: "somereferencename",
+			},
+			wantError: ErrHashOrReference,
+		},
+	}
+
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+	server, err := PlainClone(c.MkDir(), false, &CloneOptions{
+		URL: path,
+	})
+	c.Assert(err, IsNil)
+
+	w, err := server.Worktree()
+	c.Assert(err, IsNil)
+
+	for _, tc := range cases {
+		gr, err := w.Grep(&tc.options)
+		if tc.wantError != nil {
+			c.Assert(err, Equals, tc.wantError)
+		} else {
+			c.Assert(err, IsNil)
+		}
+
+		// Iterate through the results and check if the wanted result is present
+		// in the got result.
+		for _, wantResult := range tc.wantResult {
+			found := false
+			for _, gotResult := range gr {
+				if wantResult == gotResult {
+					found = true
+					break
+				}
+			}
+			if found != true {
+				c.Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
+			}
+		}
+
+		// Iterate through the results and check if the not wanted result is
+		// present in the got result.
+		for _, dontWantResult := range tc.dontWantResult {
+			found := false
+			for _, gotResult := range gr {
+				if dontWantResult == gotResult {
+					found = true
+					break
+				}
+			}
+			if found != false {
+				c.Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
+			}
+		}
+	}
 }

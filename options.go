@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"regexp"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -364,4 +365,41 @@ type ListOptions struct {
 // CleanOptions describes how a clean should be performed.
 type CleanOptions struct {
 	Dir bool
+}
+
+// GrepOptions describes how a grep should be performed.
+type GrepOptions struct {
+	// Pattern is a compiled Regexp object to be matched.
+	Pattern *regexp.Regexp
+	// InvertMatch selects non-matching lines.
+	InvertMatch bool
+	// CommitHash is the hash of the commit from which worktree should be derived.
+	CommitHash plumbing.Hash
+	// ReferenceName is the branch or tag name from which worktree should be derived.
+	ReferenceName plumbing.ReferenceName
+	// PathSpec is a compiled Regexp object of pathspec to use in the matching.
+	PathSpec *regexp.Regexp
+}
+
+var (
+	ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
+)
+
+// Validate validates the fields and sets the default values.
+func (o *GrepOptions) Validate(w *Worktree) error {
+	if !o.CommitHash.IsZero() && o.ReferenceName != "" {
+		return ErrHashOrReference
+	}
+
+	// If none of CommitHash and ReferenceName are provided, set commit hash of
+	// the repository's head.
+	if o.CommitHash.IsZero() && o.ReferenceName == "" {
+		ref, err := w.r.Head()
+		if err != nil {
+			return err
+		}
+		o.CommitHash = ref.Hash()
+	}
+
+	return nil
 }

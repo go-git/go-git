@@ -45,7 +45,7 @@ is supported by go-git.
 | **debugging** |
 | bisect                                | ✖ |
 | blame                                 | ✔ |
-| grep                                  | ✖ |
+| grep                                  | ✔ |
 | **email** ||
 | am                                    | ✖ |
 | apply                                 | ✖ |
