@@ -369,16 +369,16 @@ type CleanOptions struct {
 
 // GrepOptions describes how a grep should be performed.
 type GrepOptions struct {
-	// Pattern is a compiled Regexp object to be matched.
-	Pattern *regexp.Regexp
+	// Patterns are compiled Regexp objects to be matched.
+	Patterns []*regexp.Regexp
 	// InvertMatch selects non-matching lines.
 	InvertMatch bool
 	// CommitHash is the hash of the commit from which worktree should be derived.
 	CommitHash plumbing.Hash
 	// ReferenceName is the branch or tag name from which worktree should be derived.
 	ReferenceName plumbing.ReferenceName
-	// PathSpec is a compiled Regexp object of pathspec to use in the matching.
-	PathSpec *regexp.Regexp
+	// PathSpecs are compiled Regexp objects of pathspec to use in the matching.
+	PathSpecs []*regexp.Regexp
 }
 
 var (

@@ -765,50 +765,88 @@ func (w *Worktree) Grep(opts *GrepOptions) ([]GrepResult, error) {
 
 // findMatchInFiles takes a FileIter, worktree name and GrepOptions, and
 // returns a slice of GrepResult containing the result of regex pattern matching
-// in the file content.
+// in content of all the files.
 func findMatchInFiles(fileiter *object.FileIter, treeName string, opts *GrepOptions) ([]GrepResult, error) {
 	var results []GrepResult
 
-	// Iterate through the files and look for any matches.
 	err := fileiter.ForEach(func(file *object.File) error {
-		// Check if the file name matches with the pathspec.
-		if opts.PathSpec != nil && !opts.PathSpec.MatchString(file.Name) {
+		var fileInPathSpec bool
+
+		// When no pathspecs are provided, search all the files.
+		if len(opts.PathSpecs) == 0 {
+			fileInPathSpec = true
+		}
+
+		// Check if the file name matches with the pathspec. Break out of the
+		// loop once a match is found.
+		for _, pathSpec := range opts.PathSpecs {
+			if pathSpec != nil && pathSpec.MatchString(file.Name) {
+				fileInPathSpec = true
+				break
+			}
+		}
+
+		// If the file does not match with any of the pathspec, skip it.
+		if !fileInPathSpec {
 			return nil
 		}
 
-		content, err := file.Contents()
+		grepResults, err := findMatchInFile(file, treeName, opts)
 		if err != nil {
 			return err
 		}
+		results = append(results, grepResults...)
 
-		// Split the content and make parseable line-by-line.
-		contentByLine := strings.Split(content, "\n")
-		for lineNum, cnt := range contentByLine {
-			addToResult := false
-			// Match the pattern and content.
-			if opts.Pattern != nil && opts.Pattern.MatchString(cnt) {
-				// Add to result only if invert match is not enabled.
-				if !opts.InvertMatch {
-					addToResult = true
-				}
-			} else if opts.InvertMatch {
-				// If matching fails, and invert match is enabled, add to results.
-				addToResult = true
-			}
-
-			if addToResult {
-				results = append(results, GrepResult{
-					FileName:   file.Name,
-					LineNumber: lineNum + 1,
-					Content:    cnt,
-					TreeName:   treeName,
-				})
-			}
-		}
 		return nil
 	})
 
 	return results, err
+}
+
+// findMatchInFile takes a single File, worktree name and GrepOptions,
+// and returns a slice of GrepResult containing the result of regex pattern
+// matching in the given file.
+func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]GrepResult, error) {
+	var grepResults []GrepResult
+
+	content, err := file.Contents()
+	if err != nil {
+		return grepResults, err
+	}
+
+	// Split the file content and parse line-by-line.
+	contentByLine := strings.Split(content, "\n")
+	for lineNum, cnt := range contentByLine {
+		addToResult := false
+
+		// Match the patterns and content. Break out of the loop once a
+		// match is found.
+		for _, pattern := range opts.Patterns {
+			if pattern != nil && pattern.MatchString(cnt) {
+				// Add to result only if invert match is not enabled.
+				if !opts.InvertMatch {
+					addToResult = true
+					break
+				}
+			} else if opts.InvertMatch {
+				// If matching fails, and invert match is enabled, add to
+				// results.
+				addToResult = true
+				break
+			}
+		}
+
+		if addToResult {
+			grepResults = append(grepResults, GrepResult{
+				FileName:   file.Name,
+				LineNumber: lineNum + 1,
+				Content:    cnt,
+				TreeName:   treeName,
+			})
+		}
+	}
+
+	return grepResults, nil
 }
 
 func rmFileAndDirIfEmpty(fs billy.Filesystem, name string) error {
