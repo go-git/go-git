@@ -212,11 +212,7 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 	if err != nil {
 		return err
 	}
-	err = d.fs.Remove(d.objectPackPath(hash, `idx`))
-	if err != nil {
-		return err
-	}
-	return nil
+	return d.fs.Remove(d.objectPackPath(hash, `idx`))
 }
 
 // NewObject return a writer for a new object file.

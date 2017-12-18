@@ -1481,7 +1481,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 					break
 				}
 			}
-			if found != true {
+			if !found {
 				c.Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -1496,7 +1496,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 					break
 				}
 			}
-			if found != false {
+			if found {
 				c.Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}

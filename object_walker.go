@@ -36,10 +36,7 @@ func (p *objectWalker) walkAllRefs() error {
 		}
 		return p.walkObjectTree(ref.Hash())
 	})
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (p *objectWalker) isSeen(hash plumbing.Hash) bool {
