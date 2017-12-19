@@ -1330,7 +1330,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		{
 			name: "basic word match",
 			options: GrepOptions{
-				Pattern: regexp.MustCompile("import"),
+				Patterns: []*regexp.Regexp{regexp.MustCompile("import")},
 			},
 			wantResult: []GrepResult{
 				{
@@ -1349,7 +1349,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		}, {
 			name: "case insensitive match",
 			options: GrepOptions{
-				Pattern: regexp.MustCompile(`(?i)IMport`),
+				Patterns: []*regexp.Regexp{regexp.MustCompile(`(?i)IMport`)},
 			},
 			wantResult: []GrepResult{
 				{
@@ -1368,7 +1368,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		}, {
 			name: "invert match",
 			options: GrepOptions{
-				Pattern:     regexp.MustCompile("import"),
+				Patterns:    []*regexp.Regexp{regexp.MustCompile("import")},
 				InvertMatch: true,
 			},
 			dontWantResult: []GrepResult{
@@ -1388,7 +1388,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		}, {
 			name: "match at a given commit hash",
 			options: GrepOptions{
-				Pattern:    regexp.MustCompile("The MIT License"),
+				Patterns:   []*regexp.Regexp{regexp.MustCompile("The MIT License")},
 				CommitHash: plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
 			},
 			wantResult: []GrepResult{
@@ -1410,8 +1410,8 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		}, {
 			name: "match for a given pathspec",
 			options: GrepOptions{
-				Pattern:  regexp.MustCompile("import"),
-				PathSpec: regexp.MustCompile("go/"),
+				Patterns:  []*regexp.Regexp{regexp.MustCompile("import")},
+				PathSpecs: []*regexp.Regexp{regexp.MustCompile("go/")},
 			},
 			wantResult: []GrepResult{
 				{
@@ -1432,7 +1432,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		}, {
 			name: "match at a given reference name",
 			options: GrepOptions{
-				Pattern:       regexp.MustCompile("import"),
+				Patterns:      []*regexp.Regexp{regexp.MustCompile("import")},
 				ReferenceName: "refs/heads/master",
 			},
 			wantResult: []GrepResult{
@@ -1446,11 +1446,62 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 		}, {
 			name: "ambiguous options",
 			options: GrepOptions{
-				Pattern:       regexp.MustCompile("import"),
+				Patterns:      []*regexp.Regexp{regexp.MustCompile("import")},
 				CommitHash:    plumbing.NewHash("2d55a722f3c3ecc36da919dfd8b6de38352f3507"),
 				ReferenceName: "somereferencename",
 			},
 			wantError: ErrHashOrReference,
+		}, {
+			name: "multiple patterns",
+			options: GrepOptions{
+				Patterns: []*regexp.Regexp{
+					regexp.MustCompile("import"),
+					regexp.MustCompile("License"),
+				},
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "LICENSE",
+					LineNumber: 1,
+					Content:    "The MIT License (MIT)",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "multiple pathspecs",
+			options: GrepOptions{
+				Patterns: []*regexp.Regexp{regexp.MustCompile("import")},
+				PathSpecs: []*regexp.Regexp{
+					regexp.MustCompile("go/"),
+					regexp.MustCompile("vendor/"),
+				},
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
 		},
 	}
 
