@@ -14,7 +14,7 @@ import (
 func Test(t *testing.T) { TestingT(t) }
 
 type ObjectSuite struct {
-	c       Object
+	c       map[string]Object
 	aObject plumbing.EncodedObject
 	bObject plumbing.EncodedObject
 	cObject plumbing.EncodedObject
@@ -29,70 +29,89 @@ func (s *ObjectSuite) SetUpTest(c *C) {
 	s.cObject = newObject("cccccccccccccccccccccccccccccccccccccccc", 1*Byte)
 	s.dObject = newObject("dddddddddddddddddddddddddddddddddddddddd", 1*Byte)
 
-	s.c = NewObjectLRU(2 * Byte)
+	s.c = make(map[string]Object)
+	s.c["two_bytes"] = NewObjectLRU(2 * Byte)
+	s.c["default_lru"] = NewObjectLRUDefault()
 }
 
 func (s *ObjectSuite) TestPutSameObject(c *C) {
-	s.c.Put(s.aObject)
-	s.c.Put(s.aObject)
-	_, ok := s.c.Get(s.aObject.Hash())
-	c.Assert(ok, Equals, true)
+	for _, o := range s.c {
+		o.Put(s.aObject)
+		o.Put(s.aObject)
+		_, ok := o.Get(s.aObject.Hash())
+		c.Assert(ok, Equals, true)
+	}
 }
 
 func (s *ObjectSuite) TestPutBigObject(c *C) {
-	s.c.Put(s.bObject)
-	_, ok := s.c.Get(s.aObject.Hash())
-	c.Assert(ok, Equals, false)
+	for _, o := range s.c {
+		o.Put(s.bObject)
+		_, ok := o.Get(s.aObject.Hash())
+		c.Assert(ok, Equals, false)
+	}
 }
 
 func (s *ObjectSuite) TestPutCacheOverflow(c *C) {
-	s.c.Put(s.aObject)
-	s.c.Put(s.cObject)
-	s.c.Put(s.dObject)
+	// this test only works with an specific size
+	o := s.c["two_bytes"]
 
-	obj, ok := s.c.Get(s.aObject.Hash())
+	o.Put(s.aObject)
+	o.Put(s.cObject)
+	o.Put(s.dObject)
+
+	obj, ok := o.Get(s.aObject.Hash())
 	c.Assert(ok, Equals, false)
 	c.Assert(obj, IsNil)
-	obj, ok = s.c.Get(s.cObject.Hash())
+	obj, ok = o.Get(s.cObject.Hash())
 	c.Assert(ok, Equals, true)
 	c.Assert(obj, NotNil)
-	obj, ok = s.c.Get(s.dObject.Hash())
+	obj, ok = o.Get(s.dObject.Hash())
 	c.Assert(ok, Equals, true)
 	c.Assert(obj, NotNil)
 }
 
 func (s *ObjectSuite) TestClear(c *C) {
-	s.c.Put(s.aObject)
-	s.c.Clear()
-	obj, ok := s.c.Get(s.aObject.Hash())
-	c.Assert(ok, Equals, false)
-	c.Assert(obj, IsNil)
+	for _, o := range s.c {
+		o.Put(s.aObject)
+		o.Clear()
+		obj, ok := o.Get(s.aObject.Hash())
+		c.Assert(ok, Equals, false)
+		c.Assert(obj, IsNil)
+	}
 }
 
 func (s *ObjectSuite) TestConcurrentAccess(c *C) {
-	var wg sync.WaitGroup
+	for _, o := range s.c {
+		var wg sync.WaitGroup
 
-	for i := 0; i < 1000; i++ {
-		wg.Add(3)
-		go func(i int) {
-			s.c.Put(newObject(fmt.Sprint(i), FileSize(i)))
-			wg.Done()
-		}(i)
+		for i := 0; i < 1000; i++ {
+			wg.Add(3)
+			go func(i int) {
+				o.Put(newObject(fmt.Sprint(i), FileSize(i)))
+				wg.Done()
+			}(i)
 
-		go func(i int) {
-			if i%30 == 0 {
-				s.c.Clear()
-			}
-			wg.Done()
-		}(i)
+			go func(i int) {
+				if i%30 == 0 {
+					o.Clear()
+				}
+				wg.Done()
+			}(i)
 
-		go func(i int) {
-			s.c.Get(plumbing.NewHash(fmt.Sprint(i)))
-			wg.Done()
-		}(i)
+			go func(i int) {
+				o.Get(plumbing.NewHash(fmt.Sprint(i)))
+				wg.Done()
+			}(i)
+		}
+
+		wg.Wait()
 	}
+}
 
-	wg.Wait()
+func (s *ObjectSuite) TestDefaultLRU(c *C) {
+	defaultLRU := s.c["default_lru"].(*ObjectLRU)
+
+	c.Assert(defaultLRU.MaxSize, Equals, DefaultMaxSize)
 }
 
 type dummyObject struct {

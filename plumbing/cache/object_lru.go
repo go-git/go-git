@@ -24,6 +24,11 @@ func NewObjectLRU(maxSize FileSize) *ObjectLRU {
 	return &ObjectLRU{MaxSize: maxSize}
 }
 
+// NewObjectLRUDefault creates a new ObjectLRU with the default cache size.
+func NewObjectLRUDefault() *ObjectLRU {
+	return &ObjectLRU{MaxSize: DefaultMaxSize}
+}
+
 // Put puts an object into the cache. If the object is already in the cache, it
 // will be marked as used. Otherwise, it will be inserted. A single object might
 // be evicted to make room for the new object.

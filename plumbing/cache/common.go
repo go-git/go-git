@@ -11,6 +11,8 @@ const (
 
 type FileSize int64
 
+const DefaultMaxSize FileSize = 96 * MiByte
+
 // Object is an interface to a object cache.
 type Object interface {
 	// Put puts the given object into the cache. Whether this object will
