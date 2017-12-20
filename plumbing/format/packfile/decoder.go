@@ -80,15 +80,20 @@ type Decoder struct {
 // If the ObjectStorer implements storer.Transactioner, a transaction is created
 // during the Decode execution. If anything fails, Rollback is called
 func NewDecoder(s *Scanner, o storer.EncodedObjectStorer) (*Decoder, error) {
-	return NewDecoderForType(s, o, plumbing.AnyObject)
+	return NewDecoderForType(s, o, plumbing.AnyObject,
+		cache.NewObjectLRUDefault())
 }
 
 // NewDecoderForType returns a new Decoder but in this case for a specific object type.
 // When an object is read using this Decoder instance and it is not of the same type of
 // the specified one, nil will be returned. This is intended to avoid the content
-// deserialization of all the objects
+// deserialization of all the objects.
+//
+// cacheObject is an ObjectLRU that is used to speed up the process. If cache
+// is not needed you can pass nil. To create a cache object with the default
+// size you an use the helper cache.ObjectLRUDefault().
 func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
-	t plumbing.ObjectType) (*Decoder, error) {
+	t plumbing.ObjectType, cacheObject cache.Object) (*Decoder, error) {
 
 	if t == plumbing.OFSDeltaObject ||
 		t == plumbing.REFDeltaObject ||
@@ -101,8 +106,9 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 	}
 
 	return &Decoder{
-		s: s,
-		o: o,
+		s:              s,
+		o:              o,
+		DeltaBaseCache: cacheObject,
 
 		idx:          NewIndex(0),
 		offsetToType: make(map[int64]plumbing.ObjectType),

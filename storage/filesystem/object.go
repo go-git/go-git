@@ -18,8 +18,6 @@ import (
 	"gopkg.in/src-d/go-billy.v4"
 )
 
-const DefaultMaxDeltaBaseCacheSize = 92 * cache.MiByte
-
 type ObjectStorage struct {
 	// DeltaBaseCache is an object cache uses to cache delta's bases when
 	DeltaBaseCache cache.Object
@@ -30,7 +28,7 @@ type ObjectStorage struct {
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
-		DeltaBaseCache: cache.NewObjectLRU(DefaultMaxDeltaBaseCacheSize),
+		DeltaBaseCache: cache.NewObjectLRUDefault(),
 		dir:            dir,
 	}
 
@@ -433,13 +431,12 @@ func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash
 		return nil, err
 	}
 
-	d, err := packfile.NewDecoderForType(s, memory.NewStorage(), t)
+	d, err := packfile.NewDecoderForType(s, memory.NewStorage(), t, cache)
 	if err != nil {
 		return nil, err
 	}
 
 	d.SetIndex(index)
-	d.DeltaBaseCache = cache
 
 	return &packfileIter{
 		f: f,

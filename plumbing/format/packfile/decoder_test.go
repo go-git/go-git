@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -51,7 +52,8 @@ func (s *ReaderSuite) TestDecodeByTypeRefDelta(c *C) {
 
 	storage := memory.NewStorage()
 	scanner := packfile.NewScanner(f.Packfile())
-	d, err := packfile.NewDecoderForType(scanner, storage, plumbing.CommitObject)
+	d, err := packfile.NewDecoderForType(scanner, storage, plumbing.CommitObject,
+		cache.NewObjectLRUDefault())
 	c.Assert(err, IsNil)
 
 	// Index required to decode by ref-delta.
@@ -77,7 +79,8 @@ func (s *ReaderSuite) TestDecodeByTypeRefDeltaError(c *C) {
 	fixtures.Basic().ByTag("ref-delta").Test(c, func(f *fixtures.Fixture) {
 		storage := memory.NewStorage()
 		scanner := packfile.NewScanner(f.Packfile())
-		d, err := packfile.NewDecoderForType(scanner, storage, plumbing.CommitObject)
+		d, err := packfile.NewDecoderForType(scanner, storage,
+			plumbing.CommitObject, cache.NewObjectLRUDefault())
 		c.Assert(err, IsNil)
 
 		defer d.Close()
@@ -111,7 +114,8 @@ func (s *ReaderSuite) TestDecodeByType(c *C) {
 		for _, t := range ts {
 			storage := memory.NewStorage()
 			scanner := packfile.NewScanner(f.Packfile())
-			d, err := packfile.NewDecoderForType(scanner, storage, t)
+			d, err := packfile.NewDecoderForType(scanner, storage, t,
+				cache.NewObjectLRUDefault())
 			c.Assert(err, IsNil)
 
 			// when the packfile is ref-delta based, the offsets are required
@@ -141,13 +145,17 @@ func (s *ReaderSuite) TestDecodeByTypeConstructor(c *C) {
 	storage := memory.NewStorage()
 	scanner := packfile.NewScanner(f.Packfile())
 
-	_, err := packfile.NewDecoderForType(scanner, storage, plumbing.OFSDeltaObject)
+	_, err := packfile.NewDecoderForType(scanner, storage,
+		plumbing.OFSDeltaObject, cache.NewObjectLRUDefault())
 	c.Assert(err, Equals, plumbing.ErrInvalidType)
 
-	_, err = packfile.NewDecoderForType(scanner, storage, plumbing.REFDeltaObject)
+	_, err = packfile.NewDecoderForType(scanner, storage,
+		plumbing.REFDeltaObject, cache.NewObjectLRUDefault())
+
 	c.Assert(err, Equals, plumbing.ErrInvalidType)
 
-	_, err = packfile.NewDecoderForType(scanner, storage, plumbing.InvalidObject)
+	_, err = packfile.NewDecoderForType(scanner, storage, plumbing.InvalidObject,
+		cache.NewObjectLRUDefault())
 	c.Assert(err, Equals, plumbing.ErrInvalidType)
 }
 
@@ -313,7 +321,8 @@ func (s *ReaderSuite) TestDecodeObjectAt(c *C) {
 func (s *ReaderSuite) TestDecodeObjectAtForType(c *C) {
 	f := fixtures.Basic().One()
 	scanner := packfile.NewScanner(f.Packfile())
-	d, err := packfile.NewDecoderForType(scanner, nil, plumbing.TreeObject)
+	d, err := packfile.NewDecoderForType(scanner, nil, plumbing.TreeObject,
+		cache.NewObjectLRUDefault())
 	c.Assert(err, IsNil)
 
 	// when the packfile is ref-delta based, the offsets are required
