@@ -174,11 +174,6 @@ func (dw *deltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*O
 		return dw.undeltify(otp)
 	}
 
-	if base.Size() <= otp.Size() {
-		// Bases should be bigger
-		return dw.undeltify(otp)
-	}
-
 	if err := dw.fixAndBreakChainsOne(objectsToPack, base); err != nil {
 		return err
 	}

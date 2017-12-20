@@ -106,6 +106,16 @@ func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeOFS(c *C) {
 	s.deltaOverDeltaTest(c)
 }
 
+func (s *EncoderSuite) TestDecodeEncodeWithCycleREF(c *C) {
+	s.enc = NewEncoder(s.buf, s.store, true)
+	s.deltaOverDeltaCyclicTest(c)
+}
+
+func (s *EncoderSuite) TestDecodeEncodeWithCycleOFS(c *C) {
+	s.enc = NewEncoder(s.buf, s.store, false)
+	s.deltaOverDeltaCyclicTest(c)
+}
+
 func (s *EncoderSuite) simpleDeltaTest(c *C) {
 	srcObject := newObject(plumbing.BlobObject, []byte("0"))
 	targetObject := newObject(plumbing.BlobObject, []byte("01"))
@@ -114,7 +124,7 @@ func (s *EncoderSuite) simpleDeltaTest(c *C) {
 	c.Assert(err, IsNil)
 
 	srcToPack := newObjectToPack(srcObject)
-	_, err = s.enc.encode([]*ObjectToPack{
+	encHash, err := s.enc.encode([]*ObjectToPack{
 		srcToPack,
 		newDeltaObjectToPack(srcToPack, targetObject, deltaObject),
 	})
@@ -126,8 +136,10 @@ func (s *EncoderSuite) simpleDeltaTest(c *C) {
 	d, err := NewDecoder(scanner, storage)
 	c.Assert(err, IsNil)
 
-	_, err = d.Decode()
+	decHash, err := d.Decode()
 	c.Assert(err, IsNil)
+
+	c.Assert(encHash, Equals, decHash)
 
 	decSrc, err := storage.EncodedObject(srcObject.Type(), srcObject.Hash())
 	c.Assert(err, IsNil)
@@ -153,7 +165,8 @@ func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
 
 	srcToPack := newObjectToPack(srcObject)
 	targetToPack := newObjectToPack(targetObject)
-	_, err = s.enc.encode([]*ObjectToPack{
+	encHash, err := s.enc.encode([]*ObjectToPack{
+		targetToPack,
 		srcToPack,
 		newDeltaObjectToPack(srcToPack, targetObject, deltaObject),
 		newDeltaObjectToPack(targetToPack, otherTargetObject, otherDeltaObject),
@@ -165,8 +178,10 @@ func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
 	d, err := NewDecoder(scanner, storage)
 	c.Assert(err, IsNil)
 
-	_, err = d.Decode()
+	decHash, err := d.Decode()
 	c.Assert(err, IsNil)
+
+	c.Assert(encHash, Equals, decHash)
 
 	decSrc, err := storage.EncodedObject(srcObject.Type(), srcObject.Hash())
 	c.Assert(err, IsNil)
@@ -179,4 +194,62 @@ func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
 	decOtherTarget, err := storage.EncodedObject(otherTargetObject.Type(), otherTargetObject.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(decOtherTarget, DeepEquals, otherTargetObject)
+}
+
+func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
+	o1 := newObject(plumbing.BlobObject, []byte("0"))
+	o2 := newObject(plumbing.BlobObject, []byte("01"))
+	o3 := newObject(plumbing.BlobObject, []byte("011111"))
+	o4 := newObject(plumbing.BlobObject, []byte("01111100000"))
+
+	d2, err := GetDelta(o1, o2)
+	c.Assert(err, IsNil)
+
+	d3, err := GetDelta(o4, o3)
+	c.Assert(err, IsNil)
+
+	d4, err := GetDelta(o3, o4)
+	c.Assert(err, IsNil)
+
+	po1 := newObjectToPack(o1)
+	pd2 := newDeltaObjectToPack(po1, o2, d2)
+	pd3 := newObjectToPack(o3)
+	pd4 := newObjectToPack(o4)
+
+	pd3.SetDelta(pd4, d3)
+	pd4.SetDelta(pd3, d4)
+
+	encHash, err := s.enc.encode([]*ObjectToPack{
+		po1,
+		pd2,
+		pd3,
+		pd4,
+	})
+	c.Assert(err, IsNil)
+
+	scanner := NewScanner(s.buf)
+	storage := memory.NewStorage()
+	d, err := NewDecoder(scanner, storage)
+	c.Assert(err, IsNil)
+
+	decHash, err := d.Decode()
+	c.Assert(err, IsNil)
+
+	c.Assert(encHash, Equals, decHash)
+
+	decSrc, err := storage.EncodedObject(o1.Type(), o1.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(decSrc, DeepEquals, o1)
+
+	decTarget, err := storage.EncodedObject(o2.Type(), o2.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(decTarget, DeepEquals, o2)
+
+	decOtherTarget, err := storage.EncodedObject(o3.Type(), o3.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(decOtherTarget, DeepEquals, o3)
+
+	decAnotherTarget, err := storage.EncodedObject(o4.Type(), o4.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(decAnotherTarget, DeepEquals, o4)
 }
