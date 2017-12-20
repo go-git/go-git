@@ -19,8 +19,8 @@ import (
 )
 
 type ObjectStorage struct {
-	// DeltaBaseCache is an object cache uses to cache delta's bases when
-	DeltaBaseCache cache.Object
+	// deltaBaseCache is an object cache uses to cache delta's bases when
+	deltaBaseCache cache.Object
 
 	dir   *dotgit.DotGit
 	index map[plumbing.Hash]*packfile.Index
@@ -28,7 +28,7 @@ type ObjectStorage struct {
 
 func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
-		DeltaBaseCache: cache.NewObjectLRUDefault(),
+		deltaBaseCache: cache.NewObjectLRUDefault(),
 		dir:            dir,
 	}
 
@@ -285,13 +285,13 @@ func (s *ObjectStorage) decodeObjectAt(
 
 	p := packfile.NewScanner(f)
 
-	d, err := packfile.NewDecoder(p, memory.NewStorage())
+	d, err := packfile.NewDecoderWithCache(p, memory.NewStorage(),
+		s.deltaBaseCache)
 	if err != nil {
 		return nil, err
 	}
 
 	d.SetIndex(idx)
-	d.DeltaBaseCache = s.DeltaBaseCache
 	obj, err := d.DecodeObjectAt(offset)
 	return obj, err
 }
@@ -398,7 +398,7 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 			return nil, err
 		}
 
-		iter, err := newPackfileIter(pack, t, seen, s.index[h], s.DeltaBaseCache)
+		iter, err := newPackfileIter(pack, t, seen, s.index[h], s.deltaBaseCache)
 		if err != nil {
 			return nil, err
 		}

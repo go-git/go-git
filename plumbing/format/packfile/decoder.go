@@ -52,7 +52,7 @@ var (
 // is destroyed. The Offsets and CRCs are calculated whether an
 // ObjectStorer was provided or not.
 type Decoder struct {
-	DeltaBaseCache cache.Object
+	deltaBaseCache cache.Object
 
 	s  *Scanner
 	o  storer.EncodedObjectStorer
@@ -84,6 +84,13 @@ func NewDecoder(s *Scanner, o storer.EncodedObjectStorer) (*Decoder, error) {
 		cache.NewObjectLRUDefault())
 }
 
+// NewDecoderWithCache is a version of NewDecoder where cache can be specified.
+func NewDecoderWithCache(s *Scanner, o storer.EncodedObjectStorer,
+	cacheObject cache.Object) (*Decoder, error) {
+
+	return NewDecoderForType(s, o, plumbing.AnyObject, cacheObject)
+}
+
 // NewDecoderForType returns a new Decoder but in this case for a specific object type.
 // When an object is read using this Decoder instance and it is not of the same type of
 // the specified one, nil will be returned. This is intended to avoid the content
@@ -108,7 +115,7 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 	return &Decoder{
 		s:              s,
 		o:              o,
-		DeltaBaseCache: cacheObject,
+		deltaBaseCache: cacheObject,
 
 		idx:          NewIndex(0),
 		offsetToType: make(map[int64]plumbing.ObjectType),
@@ -410,19 +417,19 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 }
 
 func (d *Decoder) cacheGet(h plumbing.Hash) (plumbing.EncodedObject, bool) {
-	if d.DeltaBaseCache == nil {
+	if d.deltaBaseCache == nil {
 		return nil, false
 	}
 
-	return d.DeltaBaseCache.Get(h)
+	return d.deltaBaseCache.Get(h)
 }
 
 func (d *Decoder) cachePut(obj plumbing.EncodedObject) {
-	if d.DeltaBaseCache == nil {
+	if d.deltaBaseCache == nil {
 		return
 	}
 
-	d.DeltaBaseCache.Put(obj)
+	d.deltaBaseCache.Put(obj)
 }
 
 func (d *Decoder) recallByOffset(o int64) (plumbing.EncodedObject, error) {
