@@ -89,9 +89,9 @@ func NewDecoder(s *Scanner, o storer.EncodedObjectStorer) (*Decoder, error) {
 // the specified one, nil will be returned. This is intended to avoid the content
 // deserialization of all the objects.
 //
-// cacheObject is an ObjectLRU that is used to speed up the process. If cache
-// is not needed you can pass nil. To create a cache object with the default
-// size you an use the helper cache.ObjectLRUDefault().
+// cacheObject is a cache.Object implementation that is used to speed up the
+// process. If cache is not needed you can pass nil. To create an LRU cache
+// object with the default size you can use the helper cache.ObjectLRUDefault().
 func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 	t plumbing.ObjectType, cacheObject cache.Object) (*Decoder, error) {
 
