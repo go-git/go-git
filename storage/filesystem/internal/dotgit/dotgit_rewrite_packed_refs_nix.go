@@ -1,8 +1,14 @@
-// +build !windows
+// +build !windows,!norwfs
 
 package dotgit
 
-import "gopkg.in/src-d/go-billy.v4"
+import (
+	"os"
+
+	"gopkg.in/src-d/go-billy.v4"
+)
+
+const openAndLockPackedRefsMode = os.O_RDWR
 
 func (d *DotGit) rewritePackedRefsWhileLocked(
 	tmp billy.File, pr billy.File) error {

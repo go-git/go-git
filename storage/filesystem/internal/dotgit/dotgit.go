@@ -323,36 +323,9 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 		content = fmt.Sprintln(r.Hash().String())
 	}
 
-	// If we are not checking an old ref, just truncate the file.
-	mode := os.O_RDWR | os.O_CREATE
-	if old == nil {
-		mode |= os.O_TRUNC
-	}
+	fileName := r.Name().String()
 
-	f, err := d.fs.OpenFile(r.Name().String(), mode, 0666)
-	if err != nil {
-		return err
-	}
-
-	defer ioutil.CheckClose(f, &err)
-
-	// Lock is unlocked by the deferred Close above. This is because Unlock
-	// does not imply a fsync and thus there would be a race between
-	// Unlock+Close and other concurrent writers. Adding Sync to go-billy
-	// could work, but this is better (and avoids superfluous syncs).
-	err = f.Lock()
-	if err != nil {
-		return err
-	}
-
-	// this is a no-op to call even when old is nil.
-	err = d.checkReferenceAndTruncate(f, old)
-	if err != nil {
-		return err
-	}
-
-	_, err = f.Write([]byte(content))
-	return err
+	return d.setRef(fileName, content, old)
 }
 
 // Refs scans the git directory collecting references, which it returns.
@@ -485,7 +458,10 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		}
 	}()
 
-	openFlags := os.O_RDWR
+	// File mode is retrieved from a constant defined in the target specific
+	// files (dotgit_rewrite_packed_refs_*). Some modes are not available
+	// in all filesystems.
+	openFlags := openAndLockPackedRefsMode
 	if doCreate {
 		openFlags |= os.O_CREATE
 	}
