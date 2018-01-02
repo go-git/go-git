@@ -1494,6 +1494,7 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 		"branch~1":                   "918c48b83bd081e863dbe1b80f8998f058cd8294",
 		"v1.0.0~1":                   "918c48b83bd081e863dbe1b80f8998f058cd8294",
 		"master~1":                   "918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294": "918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}
 
 	for rev, hash := range datas {
@@ -1513,10 +1514,19 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
+	headRef, err := r.Head()
+	c.Assert(err, IsNil)
+
+	ref := plumbing.NewHashReference("refs/heads/918c48b83bd081e863dbe1b80f8998f058cd8294", headRef.Hash())
+	err = r.Storer.SetReference(ref)
+	c.Assert(err, IsNil)
+
 	datas := map[string]string{
-		"efs/heads/master~": "reference not found",
-		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
+		"efs/heads/master~":                        "reference not found",
+		"HEAD^3":                                   `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":                         `No commit message match regexp : "whatever"`,
+		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294": `refname "918c48b83bd081e863dbe1b80f8998f058cd8294" is ambiguous`,
 	}
 
 	for rev, rerr := range datas {

@@ -1021,6 +1021,8 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 		case revision.Ref:
 			revisionRef := item.(revision.Ref)
 			var ref *plumbing.Reference
+			var hashCommit, refCommit *object.Commit
+			var rErr, hErr error
 
 			for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
 				ref, err = storer.ResolveReference(r.Storer, plumbing.ReferenceName(fmt.Sprintf(rule, revisionRef)))
@@ -1030,14 +1032,27 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 				}
 			}
 
-			if ref == nil {
-				return &plumbing.ZeroHash, plumbing.ErrReferenceNotFound
+			if ref != nil {
+				refCommit, rErr = r.CommitObject(ref.Hash())
+			} else {
+				rErr = plumbing.ErrReferenceNotFound
 			}
 
-			commit, err = r.CommitObject(ref.Hash())
+			isHash := plumbing.NewHash(string(revisionRef)).String() == string(revisionRef)
 
-			if err != nil {
-				return &plumbing.ZeroHash, err
+			if isHash {
+				hashCommit, hErr = r.CommitObject(plumbing.NewHash(string(revisionRef)))
+			}
+
+			switch {
+			case rErr == nil && !isHash:
+				commit = refCommit
+			case rErr != nil && isHash && hErr == nil:
+				commit = hashCommit
+			case rErr == nil && isHash && hErr == nil:
+				return &plumbing.ZeroHash, fmt.Errorf(`refname "%s" is ambiguous`, revisionRef)
+			default:
+				return &plumbing.ZeroHash, plumbing.ErrReferenceNotFound
 			}
 		case revision.CaretPath:
 			depth := item.(revision.CaretPath).Depth
