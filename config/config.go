@@ -64,11 +64,15 @@ type Config struct {
 
 // NewConfig returns a new empty Config.
 func NewConfig() *Config {
-	return &Config{
+	config := &Config{
 		Remotes:    make(map[string]*RemoteConfig),
 		Submodules: make(map[string]*Submodule),
 		Raw:        format.New(),
 	}
+
+	config.Pack.Window = defaultPackWindow
+
+	return config
 }
 
 // Validate validates the fields and sets the default values.
