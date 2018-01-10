@@ -156,3 +156,12 @@ func (s *ConfigSuite) TestRemoteConfigValidateDefault(c *C) {
 	c.Assert(fetch, HasLen, 1)
 	c.Assert(fetch[0].String(), Equals, "+refs/heads/*:refs/remotes/foo/*")
 }
+
+func (s *ConfigSuite) TestRemoteConfigDefaultValues(c *C) {
+	config := NewConfig()
+
+	c.Assert(config.Remotes, HasLen, 0)
+	c.Assert(config.Submodules, HasLen, 0)
+	c.Assert(config.Raw, NotNil)
+	c.Assert(config.Pack.Window, Equals, defaultPackWindow)
+}
