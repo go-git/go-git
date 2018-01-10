@@ -163,5 +163,5 @@ func (s *ConfigSuite) TestRemoteConfigDefaultValues(c *C) {
 	c.Assert(config.Remotes, HasLen, 0)
 	c.Assert(config.Submodules, HasLen, 0)
 	c.Assert(config.Raw, NotNil)
-	c.Assert(config.Pack.Window, Equals, defaultPackWindow)
+	c.Assert(config.Pack.Window, Equals, DefaultPackWindow)
 }
