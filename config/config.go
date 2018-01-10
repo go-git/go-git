@@ -64,11 +64,15 @@ type Config struct {
 
 // NewConfig returns a new empty Config.
 func NewConfig() *Config {
-	return &Config{
+	config := &Config{
 		Remotes:    make(map[string]*RemoteConfig),
 		Submodules: make(map[string]*Submodule),
 		Raw:        format.New(),
 	}
+
+	config.Pack.Window = DefaultPackWindow
+
+	return config
 }
 
 // Validate validates the fields and sets the default values.
@@ -97,7 +101,9 @@ const (
 	worktreeKey      = "worktree"
 	windowKey        = "window"
 
-	defaultPackWindow = uint(10)
+	// DefaultPackWindow holds the number of previous objects used to
+	// generate deltas. The value 10 is the same used by git command.
+	DefaultPackWindow = uint(10)
 )
 
 // Unmarshal parses a git-config file and stores it.
@@ -131,7 +137,7 @@ func (c *Config) unmarshalPack() error {
 	s := c.Raw.Section(packSection)
 	window := s.Options.Get(windowKey)
 	if window == "" {
-		c.Pack.Window = defaultPackWindow
+		c.Pack.Window = DefaultPackWindow
 	} else {
 		winUint, err := strconv.ParseUint(window, 10, 32)
 		if err != nil {
@@ -192,7 +198,7 @@ func (c *Config) marshalCore() {
 
 func (c *Config) marshalPack() {
 	s := c.Raw.Section(packSection)
-	if c.Pack.Window != defaultPackWindow {
+	if c.Pack.Window != DefaultPackWindow {
 		s.SetOption(windowKey, fmt.Sprintf("%d", c.Pack.Window))
 	}
 }
