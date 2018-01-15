@@ -449,7 +449,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		return err
 	}
 
-	if r.wt != nil {
+	if r.wt != nil && !o.NoCheckout {
 		w, err := r.Worktree()
 		if err != nil {
 			return err
