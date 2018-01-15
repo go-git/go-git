@@ -222,10 +222,16 @@ func (dw *deltaSelector) walk(
 ) error {
 	indexMap := make(map[plumbing.Hash]*deltaIndex)
 	for i := 0; i < len(objectsToPack); i++ {
-		// Clean up the index map for anything outside our pack
-		// window, to save memory.
+		// Clean up the index map and reconstructed delta objects for anything
+		// outside our pack window, to save memory.
 		if i > int(packWindow) {
-			delete(indexMap, objectsToPack[i-int(packWindow)].Hash())
+			obj := objectsToPack[i-int(packWindow)]
+
+			delete(indexMap, obj.Hash())
+
+			if obj.IsDelta() {
+				obj.Original = nil
+			}
 		}
 
 		target := objectsToPack[i]
@@ -261,6 +267,16 @@ func (dw *deltaSelector) walk(
 }
 
 func (dw *deltaSelector) tryToDeltify(indexMap map[plumbing.Hash]*deltaIndex, base, target *ObjectToPack) error {
+	// Original object might not be present if we're reusing a delta, so we
+	// ensure it is restored.
+	if err := dw.restoreOriginal(target); err != nil {
+		return err
+	}
+
+	if err := dw.restoreOriginal(base); err != nil {
+		return err
+	}
+
 	// If the sizes are radically different, this is a bad pairing.
 	if target.Size() < base.Size()>>4 {
 		return nil
@@ -281,16 +297,6 @@ func (dw *deltaSelector) tryToDeltify(indexMap map[plumbing.Hash]*deltaIndex, ba
 	// If we have to insert a lot to make this work, find another.
 	if base.Size()-target.Size() > msz {
 		return nil
-	}
-
-	// Original object might not be present if we're reusing a delta, so we
-	// ensure it is restored.
-	if err := dw.restoreOriginal(target); err != nil {
-		return err
-	}
-
-	if err := dw.restoreOriginal(base); err != nil {
-		return err
 	}
 
 	if _, ok := indexMap[base.Hash()]; !ok {
