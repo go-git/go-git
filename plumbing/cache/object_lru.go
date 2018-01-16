@@ -51,7 +51,7 @@ func (c *ObjectLRU) Put(obj plumbing.EncodedObject) {
 
 	objSize := FileSize(obj.Size())
 
-	if objSize >= c.MaxSize {
+	if objSize > c.MaxSize {
 		return
 	}
 
