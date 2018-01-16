@@ -51,11 +51,11 @@ func (c *ObjectLRU) Put(obj plumbing.EncodedObject) {
 
 	objSize := FileSize(obj.Size())
 
-	if objSize >= c.MaxSize {
+	if objSize > c.MaxSize {
 		return
 	}
 
-	if c.actualSize+objSize > c.MaxSize {
+	for c.actualSize+objSize > c.MaxSize {
 		last := c.ll.Back()
 		lastObj := last.Value.(plumbing.EncodedObject)
 		lastSize := FileSize(lastObj.Size())
@@ -63,10 +63,6 @@ func (c *ObjectLRU) Put(obj plumbing.EncodedObject) {
 		c.ll.Remove(last)
 		delete(c.cache, lastObj.Hash())
 		c.actualSize -= lastSize
-
-		if c.actualSize+objSize > c.MaxSize {
-			return
-		}
 	}
 
 	ee := c.ll.PushFront(obj)

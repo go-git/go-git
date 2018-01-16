@@ -19,6 +19,7 @@ type ObjectSuite struct {
 	bObject plumbing.EncodedObject
 	cObject plumbing.EncodedObject
 	dObject plumbing.EncodedObject
+	eObject plumbing.EncodedObject
 }
 
 var _ = Suite(&ObjectSuite{})
@@ -28,6 +29,7 @@ func (s *ObjectSuite) SetUpTest(c *C) {
 	s.bObject = newObject("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", 3*Byte)
 	s.cObject = newObject("cccccccccccccccccccccccccccccccccccccccc", 1*Byte)
 	s.dObject = newObject("dddddddddddddddddddddddddddddddddddddddd", 1*Byte)
+	s.eObject = newObject("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 2*Byte)
 
 	s.c = make(map[string]Object)
 	s.c["two_bytes"] = NewObjectLRU(2 * Byte)
@@ -66,6 +68,24 @@ func (s *ObjectSuite) TestPutCacheOverflow(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(obj, NotNil)
 	obj, ok = o.Get(s.dObject.Hash())
+	c.Assert(ok, Equals, true)
+	c.Assert(obj, NotNil)
+}
+
+func (s *ObjectSuite) TestEvictMultipleObjects(c *C) {
+	o := s.c["two_bytes"]
+
+	o.Put(s.cObject)
+	o.Put(s.dObject) // now cache is full with two objects
+	o.Put(s.eObject) // this put should evict all previous objects
+
+	obj, ok := o.Get(s.cObject.Hash())
+	c.Assert(ok, Equals, false)
+	c.Assert(obj, IsNil)
+	obj, ok = o.Get(s.dObject.Hash())
+	c.Assert(ok, Equals, false)
+	c.Assert(obj, IsNil)
+	obj, ok = o.Get(s.eObject.Hash())
 	c.Assert(ok, Equals, true)
 	c.Assert(obj, NotNil)
 }

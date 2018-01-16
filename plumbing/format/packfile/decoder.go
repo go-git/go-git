@@ -407,6 +407,8 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 		if err != nil {
 			return 0, err
 		}
+
+		d.cachePut(base)
 	}
 
 	obj.SetType(base.Type())
