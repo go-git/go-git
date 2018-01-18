@@ -41,6 +41,8 @@ type CloneOptions struct {
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
 	SingleBranch bool
+	// No checkout of HEAD after clone if true.
+	NoCheckout bool
 	// Limit fetching to the specified number of commits.
 	Depth int
 	// RecurseSubmodules after the clone is created, initialize all submodules
