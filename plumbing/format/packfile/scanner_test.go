@@ -41,14 +41,16 @@ func (s *ScannerSuite) TestNextObjectHeaderWithoutHeader(c *C) {
 }
 
 func (s *ScannerSuite) TestNextObjectHeaderREFDelta(c *C) {
-	s.testNextObjectHeader(c, "ref-delta", expectedHeadersREF)
+	s.testNextObjectHeader(c, "ref-delta", expectedHeadersREF, expectedCRCREF)
 }
 
 func (s *ScannerSuite) TestNextObjectHeaderOFSDelta(c *C) {
-	s.testNextObjectHeader(c, "ofs-delta", expectedHeadersOFS)
+	s.testNextObjectHeader(c, "ofs-delta", expectedHeadersOFS, expectedCRCOFS)
 }
 
-func (s *ScannerSuite) testNextObjectHeader(c *C, tag string, expected []ObjectHeader) {
+func (s *ScannerSuite) testNextObjectHeader(c *C, tag string,
+	expected []ObjectHeader, expectedCRC []uint32) {
+
 	r := fixtures.Basic().ByTag(tag).One().Packfile()
 	p := NewScanner(r)
 
@@ -61,9 +63,10 @@ func (s *ScannerSuite) testNextObjectHeader(c *C, tag string, expected []ObjectH
 		c.Assert(*h, DeepEquals, expected[i])
 
 		buf := bytes.NewBuffer(nil)
-		n, _, err := p.NextObject(buf)
+		n, crcFromScanner, err := p.NextObject(buf)
 		c.Assert(err, IsNil)
 		c.Assert(n, Equals, h.Length)
+		c.Assert(crcFromScanner, Equals, expectedCRC[i])
 	}
 
 	n, err := p.Checksum()
@@ -149,6 +152,40 @@ var expectedHeadersOFS = []ObjectHeader{
 	{Type: plumbing.OFSDeltaObject, Offset: 84760, Length: 4, OffsetReference: 84741},
 }
 
+var expectedCRCOFS = []uint32{
+	0xaa07ba4b,
+	0xf706df58,
+	0x12438846,
+	0x2905a38c,
+	0xd9429436,
+	0xbecfde4e,
+	0x780e4b3e,
+	0xdc18344f,
+	0xcf4e4280,
+	0x1f08118a,
+	0xafded7b8,
+	0xcc1428ed,
+	0x1631d22f,
+	0xbfff5850,
+	0xd108e1d8,
+	0x8e97ba25,
+	0x7316ff70,
+	0xdb4fce56,
+	0x901cce2c,
+	0xec4552b0,
+	0x847905bf,
+	0x3689459a,
+	0xe67af94a,
+	0xc2314a2e,
+	0xcd987848,
+	0x8a853a6d,
+	0x70c6518,
+	0x4f4108e2,
+	0xd6fe09e9,
+	0xf07a2804,
+	0x1d75d6be,
+}
+
 var expectedHeadersREF = []ObjectHeader{
 	{Type: plumbing.CommitObject, Offset: 12, Length: 254},
 	{Type: plumbing.REFDeltaObject, Offset: 186, Length: 93,
@@ -187,4 +224,38 @@ var expectedHeadersREF = []ObjectHeader{
 	{Type: plumbing.REFDeltaObject, Offset: 85448, Length: 8,
 		Reference: plumbing.NewHash("eba74343e2f15d62adedfd8c883ee0262b5c8021")},
 	{Type: plumbing.TreeObject, Offset: 85485, Length: 73},
+}
+
+var expectedCRCREF = []uint32{
+	0xaa07ba4b,
+	0xfb4725a4,
+	0x12438846,
+	0x2905a38c,
+	0xd9429436,
+	0xbecfde4e,
+	0xdc18344f,
+	0x780e4b3e,
+	0xcf4e4280,
+	0x1f08118a,
+	0xafded7b8,
+	0xcc1428ed,
+	0x1631d22f,
+	0x847905bf,
+	0x3e20f31d,
+	0x3689459a,
+	0xd108e1d8,
+	0x71143d4a,
+	0xe67af94a,
+	0x739fb89f,
+	0xc2314a2e,
+	0x87864926,
+	0x415d752f,
+	0xf72fb182,
+	0x3ffa37d4,
+	0xcd987848,
+	0x2f20ac8f,
+	0xf2f0575,
+	0x7d8726e1,
+	0x740bf39,
+	0x26af4735,
 }
