@@ -196,7 +196,8 @@ func (dw *deltaSelector) restoreOriginal(otp *ObjectToPack) error {
 		return err
 	}
 
-	otp.Original = obj
+	otp.SetOriginal(obj)
+
 	return nil
 }
 

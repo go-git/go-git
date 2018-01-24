@@ -202,6 +202,15 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
 	o3 := newObject(plumbing.BlobObject, []byte("011111"))
 	o4 := newObject(plumbing.BlobObject, []byte("01111100000"))
 
+	_, err := s.store.SetEncodedObject(o1)
+	c.Assert(err, IsNil)
+	_, err = s.store.SetEncodedObject(o2)
+	c.Assert(err, IsNil)
+	_, err = s.store.SetEncodedObject(o3)
+	c.Assert(err, IsNil)
+	_, err = s.store.SetEncodedObject(o4)
+	c.Assert(err, IsNil)
+
 	d2, err := GetDelta(o1, o2)
 	c.Assert(err, IsNil)
 
@@ -218,6 +227,18 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
 
 	pd3.SetDelta(pd4, d3)
 	pd4.SetDelta(pd3, d4)
+
+	// SetOriginal is used by delta selector when generating ObjectToPack.
+	// It also fills type, hash and size values to be used when Original
+	// is nil.
+	po1.SetOriginal(po1.Original)
+	pd2.SetOriginal(pd2.Original)
+	pd2.Original = nil
+
+	pd3.SetOriginal(pd3.Original)
+	pd3.Original = nil
+
+	pd4.SetOriginal(pd4.Original)
 
 	encHash, err := s.enc.encode([]*ObjectToPack{
 		po1,
