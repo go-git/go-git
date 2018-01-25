@@ -53,7 +53,7 @@ func newDeltaObjectToPack(base *ObjectToPack, original, delta plumbing.EncodedOb
 
 // BackToOriginal converts that ObjectToPack to a non-deltified object if it was one
 func (o *ObjectToPack) BackToOriginal() {
-	if o.IsDelta() {
+	if o.IsDelta() && o.Original != nil {
 		o.Object = o.Original
 		o.Base = nil
 		o.Depth = 0
@@ -77,13 +77,17 @@ func (o *ObjectToPack) WantWrite() bool {
 	return o.Offset == 1
 }
 
-// SetOriginal sets both Original and saves size, type and hash
+// SetOriginal sets both Original and saves size, type and hash. If object
+// is nil Original is set but previous resolved values are kept
 func (o *ObjectToPack) SetOriginal(obj plumbing.EncodedObject) {
 	o.Original = obj
-	o.originalSize = obj.Size()
-	o.originalType = obj.Type()
-	o.originalHash = obj.Hash()
-	o.resolvedOriginal = true
+
+	if obj != nil {
+		o.originalSize = obj.Size()
+		o.originalType = obj.Type()
+		o.originalHash = obj.Hash()
+		o.resolvedOriginal = true
+	}
 }
 
 func (o *ObjectToPack) Type() plumbing.ObjectType {
