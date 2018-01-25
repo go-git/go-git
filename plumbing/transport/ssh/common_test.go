@@ -49,7 +49,7 @@ func (s *SuiteCommon) TestDefaultSSHConfig(c *C) {
 	}()
 
 	DefaultSSHConfig = &mockSSHConfig{map[string]map[string]string{
-		"github.com": map[string]string{
+		"github.com": {
 			"Hostname": "foo.local",
 			"Port":     "42",
 		},
@@ -82,7 +82,7 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard(c *C) {
 	}()
 
 	DefaultSSHConfig = &mockSSHConfig{Values: map[string]map[string]string{
-		"*": map[string]string{
+		"*": {
 			"Port": "42",
 		},
 	}}
