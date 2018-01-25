@@ -23,6 +23,12 @@ type ObjectToPack struct {
 	// offset in pack when object has been already written, or 0 if it
 	// has not been written yet
 	Offset int64
+
+	// Information from the original object
+	resolvedOriginal bool
+	originalType     plumbing.ObjectType
+	originalSize     int64
+	originalHash     plumbing.Hash
 }
 
 // newObjectToPack creates a correct ObjectToPack based on a non-delta object
@@ -47,7 +53,7 @@ func newDeltaObjectToPack(base *ObjectToPack, original, delta plumbing.EncodedOb
 
 // BackToOriginal converts that ObjectToPack to a non-deltified object if it was one
 func (o *ObjectToPack) BackToOriginal() {
-	if o.IsDelta() {
+	if o.IsDelta() && o.Original != nil {
 		o.Object = o.Original
 		o.Base = nil
 		o.Depth = 0
@@ -71,9 +77,26 @@ func (o *ObjectToPack) WantWrite() bool {
 	return o.Offset == 1
 }
 
+// SetOriginal sets both Original and saves size, type and hash. If object
+// is nil Original is set but previous resolved values are kept
+func (o *ObjectToPack) SetOriginal(obj plumbing.EncodedObject) {
+	o.Original = obj
+
+	if obj != nil {
+		o.originalSize = obj.Size()
+		o.originalType = obj.Type()
+		o.originalHash = obj.Hash()
+		o.resolvedOriginal = true
+	}
+}
+
 func (o *ObjectToPack) Type() plumbing.ObjectType {
 	if o.Original != nil {
 		return o.Original.Type()
+	}
+
+	if o.resolvedOriginal {
+		return o.originalType
 	}
 
 	if o.Base != nil {
@@ -92,6 +115,10 @@ func (o *ObjectToPack) Hash() plumbing.Hash {
 		return o.Original.Hash()
 	}
 
+	if o.resolvedOriginal {
+		return o.originalHash
+	}
+
 	do, ok := o.Object.(plumbing.DeltaObject)
 	if ok {
 		return do.ActualHash()
@@ -103,6 +130,10 @@ func (o *ObjectToPack) Hash() plumbing.Hash {
 func (o *ObjectToPack) Size() int64 {
 	if o.Original != nil {
 		return o.Original.Size()
+	}
+
+	if o.resolvedOriginal {
+		return o.originalSize
 	}
 
 	do, ok := o.Object.(plumbing.DeltaObject)
