@@ -26,7 +26,7 @@ func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
 
 	defer ioutil.CheckClose(f, &err)
 	for _, h := range commits {
-		if _, err := fmt.Fprintf(f, "%s\n", h); err != err {
+		if _, err := fmt.Fprintf(f, "%s\n", h); err != nil {
 			return err
 		}
 	}
