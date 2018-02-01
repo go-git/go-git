@@ -1115,6 +1115,40 @@ func (s *WorktreeSuite) TestAddUnmodified(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *WorktreeSuite) TestAddRemoved(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = w.Filesystem.Remove("LICENSE")
+	c.Assert(err, IsNil)
+
+	hash, err := w.Add("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(hash.String(), Equals, "c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+
+	e, err := idx.Entry("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash, Equals, hash)
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+
+	file := status.File("LICENSE")
+	c.Assert(file.Staging, Equals, Deleted)
+}
+
 func (s *WorktreeSuite) TestAddSymlink(c *C) {
 	dir, err := ioutil.TempDir("", "checkout")
 	c.Assert(err, IsNil)
@@ -1141,7 +1175,133 @@ func (s *WorktreeSuite) TestAddSymlink(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(obj, NotNil)
 	c.Assert(obj.Size(), Equals, int64(3))
+}
 
+func (s *WorktreeSuite) TestAddDirectory(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(w.Filesystem, "qux/foo", []byte("FOO"), 0755)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(w.Filesystem, "qux/baz/bar", []byte("BAR"), 0755)
+	c.Assert(err, IsNil)
+
+	err = w.AddDirectory("qux")
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 11)
+
+	e, err := idx.Entry("qux/foo")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	e, err = idx.Entry("qux/baz/bar")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
+
+	file := status.File("qux/foo")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+
+	file = status.File("qux/baz/bar")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+}
+
+func (s *WorktreeSuite) TestAddDirectoryErrorNotDirectory(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	w, _ := r.Worktree()
+
+	err := util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0755)
+	c.Assert(err, IsNil)
+
+	err = w.AddDirectory("foo")
+	c.Assert(err, Equals, ErrNotDirectory)
+}
+
+func (s *WorktreeSuite) TestAddDirectoryErrorNotFound(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	w, _ := r.Worktree()
+
+	err := w.AddDirectory("foo")
+	c.Assert(err, NotNil)
+}
+
+func (s *WorktreeSuite) TestAddGlob(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(w.Filesystem, "qux/qux", []byte("QUX"), 0755)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(w.Filesystem, "qux/baz", []byte("BAZ"), 0755)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(w.Filesystem, "qux/bar/baz", []byte("BAZ"), 0755)
+	c.Assert(err, IsNil)
+
+	err = w.AddGlob("qux/b*")
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 11)
+
+	e, err := idx.Entry("qux/baz")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	e, err = idx.Entry("qux/bar/baz")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 3)
+
+	file := status.File("qux/qux")
+	c.Assert(file.Staging, Equals, Untracked)
+	c.Assert(file.Worktree, Equals, Untracked)
+
+	file = status.File("qux/baz")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+
+	file = status.File("qux/bar/baz")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+}
+
+func (s *WorktreeSuite) TestAddGlobErrorNoMatches(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	w, _ := r.Worktree()
+
+	err := w.AddGlob("foo")
+	c.Assert(err, Equals, ErrGlobNoMatches)
 }
 
 func (s *WorktreeSuite) TestRemove(c *C) {

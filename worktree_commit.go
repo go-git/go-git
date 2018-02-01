@@ -63,7 +63,6 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 		if _, err := w.Add(path); err != nil {
 			return err
 		}
-
 	}
 
 	return nil
