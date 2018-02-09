@@ -231,7 +231,7 @@ func (dw *deltaSelector) walk(
 			delete(indexMap, obj.Hash())
 
 			if obj.IsDelta() {
-				obj.SetOriginal(obj.Original)
+				obj.SaveOriginalMetadata()
 				obj.CleanOriginal()
 			}
 		}
