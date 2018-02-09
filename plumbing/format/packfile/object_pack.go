@@ -90,6 +90,11 @@ func (o *ObjectToPack) SetOriginal(obj plumbing.EncodedObject) {
 	}
 }
 
+// CleanOriginal sets Original to nil
+func (o *ObjectToPack) CleanOriginal() {
+	o.Original = nil
+}
+
 func (o *ObjectToPack) Type() plumbing.ObjectType {
 	if o.Original != nil {
 		return o.Original.Type()
