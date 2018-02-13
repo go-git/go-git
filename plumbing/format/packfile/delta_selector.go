@@ -103,7 +103,7 @@ func (dw *deltaSelector) objectsToPack(
 
 		otp := newObjectToPack(o)
 		if _, ok := o.(plumbing.DeltaObject); ok {
-			otp.Original = nil
+			otp.CleanOriginal()
 		}
 
 		objectsToPack = append(objectsToPack, otp)
@@ -231,7 +231,8 @@ func (dw *deltaSelector) walk(
 			delete(indexMap, obj.Hash())
 
 			if obj.IsDelta() {
-				obj.Original = nil
+				obj.SaveOriginalMetadata()
+				obj.CleanOriginal()
 			}
 		}
 

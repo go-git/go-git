@@ -81,13 +81,22 @@ func (o *ObjectToPack) WantWrite() bool {
 // is nil Original is set but previous resolved values are kept
 func (o *ObjectToPack) SetOriginal(obj plumbing.EncodedObject) {
 	o.Original = obj
+	o.SaveOriginalMetadata()
+}
 
-	if obj != nil {
-		o.originalSize = obj.Size()
-		o.originalType = obj.Type()
-		o.originalHash = obj.Hash()
+// SaveOriginalMetadata saves size, type and hash of Original object
+func (o *ObjectToPack) SaveOriginalMetadata() {
+	if o.Original != nil {
+		o.originalSize = o.Original.Size()
+		o.originalType = o.Original.Type()
+		o.originalHash = o.Original.Hash()
 		o.resolvedOriginal = true
 	}
+}
+
+// CleanOriginal sets Original to nil
+func (o *ObjectToPack) CleanOriginal() {
+	o.Original = nil
 }
 
 func (o *ObjectToPack) Type() plumbing.ObjectType {

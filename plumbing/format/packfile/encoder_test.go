@@ -233,10 +233,10 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
 	// is nil.
 	po1.SetOriginal(po1.Original)
 	pd2.SetOriginal(pd2.Original)
-	pd2.SetOriginal(nil)
+	pd2.CleanOriginal()
 
 	pd3.SetOriginal(pd3.Original)
-	pd3.SetOriginal(nil)
+	pd3.CleanOriginal()
 
 	pd4.SetOriginal(pd4.Original)
 
