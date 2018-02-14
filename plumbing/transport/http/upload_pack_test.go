@@ -75,3 +75,31 @@ func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 
 	return ep
 }
+
+func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath(c *C) {
+	endpoint, _ := transport.NewEndpoint("https://gitlab.com/gitlab-org/gitter/webapp")
+
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	info, err := session.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
+
+	url := session.(*upSession).endpoint.String()
+	c.Assert(url, Equals, "https://gitlab.com/gitlab-org/gitter/webapp.git")
+}
+
+func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema(c *C) {
+	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
+
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	info, err := session.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
+
+	url := session.(*upSession).endpoint.String()
+	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
+}
