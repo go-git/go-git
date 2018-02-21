@@ -53,6 +53,7 @@ func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *BlameRe
 		l := &Line{
 			Author: commit.Author.Email,
 			Text:   lines[i],
+			Date:   commit.Author.When,
 		}
 		blamedLines = append(blamedLines, l)
 	}
