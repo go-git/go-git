@@ -143,3 +143,9 @@ func (*SuiteCommon) TestNewPublicKeysFromFile(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 }
+
+func (*SuiteCommon) TestNewPublicKeysWithInvalidPEM(c *C) {
+	auth, err := NewPublicKeys("foo", []byte("bar"), "")
+	c.Assert(err, NotNil)
+	c.Assert(auth, IsNil)
+}

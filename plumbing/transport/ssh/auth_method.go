@@ -124,6 +124,9 @@ type PublicKeys struct {
 // (PKCS#1), DSA (OpenSSL), and ECDSA private keys.
 func NewPublicKeys(user string, pemBytes []byte, password string) (*PublicKeys, error) {
 	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.New("invalid PEM data")
+	}
 	if x509.IsEncryptedPEMBlock(block) {
 		key, err := x509.DecryptPEMBlock(block, []byte(password))
 		if err != nil {
