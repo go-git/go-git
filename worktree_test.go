@@ -1196,8 +1196,9 @@ func (s *WorktreeSuite) TestAddDirectory(c *C) {
 	err = util.WriteFile(w.Filesystem, "qux/baz/bar", []byte("BAR"), 0755)
 	c.Assert(err, IsNil)
 
-	err = w.AddDirectory("qux")
+	h, err := w.Add("qux")
 	c.Assert(err, IsNil)
+	c.Assert(h.IsZero(), Equals, true)
 
 	idx, err = w.r.Storer.Index()
 	c.Assert(err, IsNil)
@@ -1224,23 +1225,13 @@ func (s *WorktreeSuite) TestAddDirectory(c *C) {
 	c.Assert(file.Worktree, Equals, Unmodified)
 }
 
-func (s *WorktreeSuite) TestAddDirectoryErrorNotDirectory(c *C) {
-	r, _ := Init(memory.NewStorage(), memfs.New())
-	w, _ := r.Worktree()
-
-	err := util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0755)
-	c.Assert(err, IsNil)
-
-	err = w.AddDirectory("foo")
-	c.Assert(err, Equals, ErrNotDirectory)
-}
-
 func (s *WorktreeSuite) TestAddDirectoryErrorNotFound(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	w, _ := r.Worktree()
 
-	err := w.AddDirectory("foo")
+	h, err := w.Add("foo")
 	c.Assert(err, NotNil)
+	c.Assert(h.IsZero(), Equals, true)
 }
 
 func (s *WorktreeSuite) TestAddGlob(c *C) {
@@ -1264,7 +1255,7 @@ func (s *WorktreeSuite) TestAddGlob(c *C) {
 	err = util.WriteFile(w.Filesystem, "qux/bar/baz", []byte("BAZ"), 0755)
 	c.Assert(err, IsNil)
 
-	err = w.AddGlob("qux/b*")
+	err = w.AddGlob(w.Filesystem.Join("qux", "b*"))
 	c.Assert(err, IsNil)
 
 	idx, err = w.r.Storer.Index()
@@ -1339,6 +1330,58 @@ func (s *WorktreeSuite) TestRemoveNotExistentEntry(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *WorktreeSuite) TestRemoveDirectory(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Remove("json")
+	c.Assert(hash.IsZero(), Equals, true)
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
+	c.Assert(status.File("json/long.json").Staging, Equals, Deleted)
+	c.Assert(status.File("json/short.json").Staging, Equals, Deleted)
+
+	_, err = w.Filesystem.Stat("json")
+	c.Assert(os.IsNotExist(err), Equals, true)
+}
+
+func (s *WorktreeSuite) TestRemoveDirectoryUntracked(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(w.Filesystem, "json/foo", []byte("FOO"), 0755)
+	c.Assert(err, IsNil)
+
+	hash, err := w.Remove("json")
+	c.Assert(hash.IsZero(), Equals, true)
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 3)
+	c.Assert(status.File("json/long.json").Staging, Equals, Deleted)
+	c.Assert(status.File("json/short.json").Staging, Equals, Deleted)
+	c.Assert(status.File("json/foo").Staging, Equals, Untracked)
+
+	_, err = w.Filesystem.Stat("json")
+	c.Assert(err, IsNil)
+}
+
 func (s *WorktreeSuite) TestRemoveDeletedFromWorktree(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
@@ -1360,6 +1403,74 @@ func (s *WorktreeSuite) TestRemoveDeletedFromWorktree(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(status, HasLen, 1)
 	c.Assert(status.File("LICENSE").Staging, Equals, Deleted)
+}
+
+func (s *WorktreeSuite) TestRemoveGlob(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	err = w.RemoveGlob(w.Filesystem.Join("json", "l*"))
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+	c.Assert(status.File("json/long.json").Staging, Equals, Deleted)
+}
+
+func (s *WorktreeSuite) TestRemoveGlobDirectory(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	err = w.RemoveGlob("js*")
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
+	c.Assert(status.File("json/short.json").Staging, Equals, Deleted)
+	c.Assert(status.File("json/long.json").Staging, Equals, Deleted)
+
+	_, err = w.Filesystem.Stat("json")
+	c.Assert(os.IsNotExist(err), Equals, true)
+}
+
+func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	err = fs.Remove("json/short.json")
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(w.Filesystem, "json/foo", []byte("FOO"), 0755)
+	c.Assert(err, IsNil)
+
+	err = w.RemoveGlob("js*")
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 3)
+	c.Assert(status.File("json/short.json").Staging, Equals, Deleted)
+	c.Assert(status.File("json/long.json").Staging, Equals, Deleted)
 }
 
 func (s *WorktreeSuite) TestMove(c *C) {

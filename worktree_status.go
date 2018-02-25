@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
+	"path/filepath"
 
 	"gopkg.in/src-d/go-billy.v4/util"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -24,10 +26,8 @@ var (
 	// the worktree.
 	ErrDestinationExists = errors.New("destination exists")
 	// ErrGlobNoMatches in an AddGlob if the glob pattern does not match any
-	// file in the worktree.ErrNotDirectory
+	// files in the worktree.
 	ErrGlobNoMatches = errors.New("glob pattern did not match any files")
-	// ErrNotDirectory  in an AddDirectory if the path is not a directory.
-	ErrNotDirectory = errors.New("path is not a directory")
 )
 
 // Status returns the working tree status.
@@ -252,8 +252,12 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 
 // Add adds the file contents of a file in the worktree to the index. if the
 // file is already staged in the index no error is returned. If a file deleted
-// from the Workspace is given, the file is removed from the index.
+// from the Workspace is given, the file is removed from the index. If a
+// directory given, adds the files and all his sub-directories recursively in
+// the worktree to the index. If any of the files is already staged in the index
+// no error is returned. When path is a file, the blob.Hash is returned.
 func (w *Worktree) Add(path string) (plumbing.Hash, error) {
+	// TODO(mcuadros): remove plumbing.Hash from signature at v5.
 	s, err := w.Status()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -264,7 +268,16 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, err
 	}
 
-	added, h, err := w.doAdd(idx, s, path)
+	var h plumbing.Hash
+	var added bool
+
+	fi, err := w.Filesystem.Lstat(path)
+	if err != nil || !fi.IsDir() {
+		added, h, err = w.doAddFile(idx, s, path)
+	} else {
+		added, err = w.doAddDirectory(idx, s, path)
+	}
+
 	if err != nil {
 		return h, err
 	}
@@ -276,55 +289,20 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 	return h, w.r.Storer.SetIndex(idx)
 }
 
-// AddDirectory adds the files contents of a directory and all his
-// sub-directories recursively in the worktree to the index. If any of the
-// file is already staged in the index no error is returned.
-func (w *Worktree) AddDirectory(path string) error {
-	fi, err := w.Filesystem.Lstat(path)
-	if err != nil {
-		return err
-	}
-
-	if !fi.IsDir() {
-		return ErrNotDirectory
-	}
-
-	s, err := w.Status()
-	if err != nil {
-		return err
-	}
-
-	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return err
-	}
-
-	added, err := w.doAddDirectory(idx, s, path)
-	if err != nil {
-		return err
-	}
-
-	if !added {
-		return nil
-	}
-
-	return w.r.Storer.SetIndex(idx)
-}
-
-func (w *Worktree) doAddDirectory(idx *index.Index, s Status, path string) (added bool, err error) {
-	files, err := w.Filesystem.ReadDir(path)
+func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string) (added bool, err error) {
+	files, err := w.Filesystem.ReadDir(directory)
 	if err != nil {
 		return false, err
 	}
 
 	for _, file := range files {
-		name := w.Filesystem.Join(path, file.Name())
+		name := path.Join(directory, file.Name())
 
 		var a bool
 		if file.IsDir() {
 			a, err = w.doAddDirectory(idx, s, name)
 		} else {
-			a, _, err = w.doAdd(idx, s, name)
+			a, _, err = w.doAddFile(idx, s, name)
 		}
 
 		if err != nil {
@@ -337,12 +315,11 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, path string) (adde
 	}
 
 	return
-
 }
 
-// AddGlob given a glob pattern adds all the matching files content and all his
-// sub-directories recursively in the worktree to the index. If any of the
-// file is already staged in the index no error is returned.
+// AddGlob adds all paths, matching pattern, to the index. If pattern matches a
+// directory path, all directory contents are added to the index recursively. No
+// error is returned if all matching paths are already staged in index.
 func (w *Worktree) AddGlob(pattern string) error {
 	files, err := util.Glob(w.Filesystem, pattern)
 	if err != nil {
@@ -374,7 +351,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 		if fi.IsDir() {
 			added, err = w.doAddDirectory(idx, s, file)
 		} else {
-			added, _, err = w.doAdd(idx, s, file)
+			added, _, err = w.doAddFile(idx, s, file)
 		}
 
 		if err != nil {
@@ -393,9 +370,13 @@ func (w *Worktree) AddGlob(pattern string) error {
 	return nil
 }
 
-// doAdd create a new blob from path and update the index, added is true if
+// doAddFile create a new blob from path and update the index, added is true if
 // the file added is different from the index.
-func (w *Worktree) doAdd(idx *index.Index, s Status, path string) (added bool, h plumbing.Hash, err error) {
+func (w *Worktree) doAddFile(idx *index.Index, s Status, path string) (added bool, h plumbing.Hash, err error) {
+	if s.File(path).Worktree == Unmodified {
+		return false, h, nil
+	}
+
 	h, err = w.copyFileToStorage(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -404,10 +385,6 @@ func (w *Worktree) doAdd(idx *index.Index, s Status, path string) (added bool, h
 		}
 
 		return
-	}
-
-	if s.File(path).Worktree == Unmodified {
-		return false, h, nil
 	}
 
 	if err := w.addOrUpdateFileToIndex(idx, path, h); err != nil {
@@ -486,10 +463,7 @@ func (w *Worktree) addOrUpdateFileToIndex(idx *index.Index, filename string, h p
 }
 
 func (w *Worktree) doAddFileToIndex(idx *index.Index, filename string, h plumbing.Hash) error {
-	e := &index.Entry{Name: filename}
-	idx.Entries = append(idx.Entries, e)
-
-	return w.doUpdateFileToIndex(e, filename, h)
+	return w.doUpdateFileToIndex(idx.Add(filename), filename, h)
 }
 
 func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbing.Hash) error {
@@ -515,21 +489,79 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 
 // Remove removes files from the working tree and from the index.
 func (w *Worktree) Remove(path string) (plumbing.Hash, error) {
+	// TODO(mcuadros): remove plumbing.Hash from signature at v5.
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
+	var h plumbing.Hash
+
+	fi, err := w.Filesystem.Lstat(path)
+	if err != nil || !fi.IsDir() {
+		h, err = w.doRemoveFile(idx, path)
+	} else {
+		_, err = w.doRemoveDirectory(idx, path)
+	}
+	if err != nil {
+		return h, err
+	}
+
+	return h, w.r.Storer.SetIndex(idx)
+}
+
+func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (removed bool, err error) {
+	files, err := w.Filesystem.ReadDir(directory)
+	if err != nil {
+		return false, err
+	}
+
+	for _, file := range files {
+		name := path.Join(directory, file.Name())
+
+		var r bool
+		if file.IsDir() {
+			r, err = w.doRemoveDirectory(idx, name)
+		} else {
+			_, err = w.doRemoveFile(idx, name)
+			if err == index.ErrEntryNotFound {
+				err = nil
+			}
+		}
+
+		if err != nil {
+			return
+		}
+
+		if !removed && r {
+			removed = true
+		}
+	}
+
+	err = w.removeEmptyDirectory(directory)
+	return
+}
+
+func (w *Worktree) removeEmptyDirectory(path string) error {
+	files, err := w.Filesystem.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	if len(files) != 0 {
+		return nil
+	}
+
+	return w.Filesystem.Remove(path)
+}
+
+func (w *Worktree) doRemoveFile(idx *index.Index, path string) (plumbing.Hash, error) {
 	hash, err := w.deleteFromIndex(idx, path)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	if err := w.deleteFromFilesystem(path); err != nil {
-		return hash, err
-	}
-
-	return hash, w.r.Storer.SetIndex(idx)
+	return hash, w.deleteFromFilesystem(path)
 }
 
 func (w *Worktree) deleteFromIndex(idx *index.Index, path string) (plumbing.Hash, error) {
@@ -550,9 +582,43 @@ func (w *Worktree) deleteFromFilesystem(path string) error {
 	return err
 }
 
+// RemoveGlob removes all paths, matching pattern, from the index. If pattern
+// matches a directory path, all directory contents are removed from the index
+// recursively.
+func (w *Worktree) RemoveGlob(pattern string) error {
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+
+	entries, err := idx.Glob(pattern)
+	if err != nil {
+		return err
+	}
+
+	for _, e := range entries {
+		file := filepath.FromSlash(e.Name)
+		if _, err := w.Filesystem.Lstat(file); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+
+		if _, err := w.doRemoveFile(idx, file); err != nil {
+			return err
+		}
+
+		dir, _ := filepath.Split(file)
+		if err := w.removeEmptyDirectory(dir); err != nil {
+			return err
+		}
+	}
+
+	return w.r.Storer.SetIndex(idx)
+}
+
 // Move moves or rename a file in the worktree and the index, directories are
 // not supported.
 func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
+	// TODO(mcuadros): support directories and/or implement support for glob
 	if _, err := w.Filesystem.Lstat(from); err != nil {
 		return plumbing.ZeroHash, err
 	}
