@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"net/url"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
@@ -151,6 +152,15 @@ func (s *SuiteCommon) TestNewEndpointFileURL(c *C) {
 	c.Assert(e.Port, Equals, 0)
 	c.Assert(e.Path, Equals, "/foo.git")
 	c.Assert(e.String(), Equals, "file:///foo.git")
+}
+
+func (s *SuiteCommon) TestValidEndpoint(c *C) {
+	e, err := NewEndpoint("http://github.com/user/repository.git")
+	e.User = "person@mail.com"
+	e.Password = " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+	url, err := url.Parse(e.String())
+	c.Assert(err, IsNil)
+	c.Assert(url, NotNil)
 }
 
 func (s *SuiteCommon) TestNewEndpointInvalidURL(c *C) {
