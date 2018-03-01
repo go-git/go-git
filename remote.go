@@ -130,10 +130,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) error {
 		return NoErrAlreadyUpToDate
 	}
 
-	objects, err := objectsToPush(req.Commands)
-	if err != nil {
-		return err
-	}
+	objects := objectsToPush(req.Commands)
 
 	haves, err := referencesToHashes(remoteRefs)
 	if err != nil {
@@ -907,7 +904,7 @@ func (r *Remote) List(o *ListOptions) ([]*plumbing.Reference, error) {
 	return resultRefs, nil
 }
 
-func objectsToPush(commands []*packp.Command) ([]plumbing.Hash, error) {
+func objectsToPush(commands []*packp.Command) []plumbing.Hash {
 	var objects []plumbing.Hash
 	for _, cmd := range commands {
 		if cmd.New == plumbing.ZeroHash {
@@ -916,8 +913,7 @@ func objectsToPush(commands []*packp.Command) ([]plumbing.Hash, error) {
 
 		objects = append(objects, cmd.New)
 	}
-
-	return objects, nil
+	return objects
 }
 
 func referencesToHashes(refs storer.ReferenceStorer) ([]plumbing.Hash, error) {
