@@ -607,10 +607,6 @@ func (w *Worktree) getTreeFromCommitHash(commit plumbing.Hash) (*object.Tree, er
 	return c.Tree()
 }
 
-func (w *Worktree) initializeIndex() error {
-	return w.r.Storer.SetIndex(&index.Index{Version: 2})
-}
-
 var fillSystemInfo func(e *index.Entry, sys interface{})
 
 const gitmodulesFile = ".gitmodules"

@@ -798,5 +798,3 @@ func isNum(b byte) bool {
 func isHexAlpha(b byte) bool {
 	return b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
 }
-
-type refCache map[plumbing.ReferenceName]*plumbing.Reference
