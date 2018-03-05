@@ -365,7 +365,7 @@ func (s *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.Encode
 		return nil, err
 	}
 
-	seen := make(map[plumbing.Hash]bool)
+	seen := make(map[plumbing.Hash]struct{})
 	var iters []storer.EncodedObjectIter
 	if len(objects) != 0 {
 		iters = append(iters, &objectsIter{s: s, t: t, h: objects})
@@ -377,11 +377,11 @@ func (s *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.Encode
 		return nil, err
 	}
 
-	iters = append(iters, packi...)
+	iters = append(iters, packi)
 	return storer.NewMultiEncodedObjectIter(iters), nil
 }
 
-func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumbing.Hash]bool) ([]storer.EncodedObjectIter, error) {
+func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumbing.Hash]struct{}) (storer.EncodedObjectIter, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
@@ -390,23 +390,63 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 	if err != nil {
 		return nil, err
 	}
+	return &lazyPackfilesIter{
+		hashes: packs,
+		open: func(h plumbing.Hash) (storer.EncodedObjectIter, error) {
+			pack, err := s.dir.ObjectPack(h)
+			if err != nil {
+				return nil, err
+			}
+			return newPackfileIter(pack, t, seen, s.index[h], s.deltaBaseCache)
+		},
+	}, nil
+}
 
-	var iters []storer.EncodedObjectIter
-	for _, h := range packs {
-		pack, err := s.dir.ObjectPack(h)
-		if err != nil {
+type lazyPackfilesIter struct {
+	hashes []plumbing.Hash
+	open   func(h plumbing.Hash) (storer.EncodedObjectIter, error)
+	cur    storer.EncodedObjectIter
+}
+
+func (it *lazyPackfilesIter) Next() (plumbing.EncodedObject, error) {
+	for {
+		if it.cur == nil {
+			if len(it.hashes) == 0 {
+				return nil, io.EOF
+			}
+			h := it.hashes[0]
+			it.hashes = it.hashes[1:]
+
+			sub, err := it.open(h)
+			if err == io.EOF {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			it.cur = sub
+		}
+		ob, err := it.cur.Next()
+		if err == io.EOF {
+			it.cur.Close()
+			it.cur = nil
+			continue
+		} else if err != nil {
 			return nil, err
 		}
-
-		iter, err := newPackfileIter(pack, t, seen, s.index[h], s.deltaBaseCache)
-		if err != nil {
-			return nil, err
-		}
-
-		iters = append(iters, iter)
+		return ob, nil
 	}
+}
 
-	return iters, nil
+func (it *lazyPackfilesIter) ForEach(cb func(plumbing.EncodedObject) error) error {
+	return storer.ForEachIterator(it, cb)
+}
+
+func (it *lazyPackfilesIter) Close() {
+	if it.cur != nil {
+		it.cur.Close()
+		it.cur = nil
+	}
+	it.hashes = nil
 }
 
 type packfileIter struct {
@@ -414,16 +454,16 @@ type packfileIter struct {
 	d *packfile.Decoder
 	t plumbing.ObjectType
 
-	seen     map[plumbing.Hash]bool
+	seen     map[plumbing.Hash]struct{}
 	position uint32
 	total    uint32
 }
 
 func NewPackfileIter(f billy.File, t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
-	return newPackfileIter(f, t, make(map[plumbing.Hash]bool), nil, nil)
+	return newPackfileIter(f, t, make(map[plumbing.Hash]struct{}), nil, nil)
 }
 
-func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]bool,
+func newPackfileIter(f billy.File, t plumbing.ObjectType, seen map[plumbing.Hash]struct{},
 	index *packfile.Index, cache cache.Object) (storer.EncodedObjectIter, error) {
 	s := packfile.NewScanner(f)
 	_, total, err := s.Header()
@@ -464,7 +504,7 @@ func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
 			continue
 		}
 
-		if iter.seen[obj.Hash()] {
+		if _, ok := iter.seen[obj.Hash()]; ok {
 			return iter.Next()
 		}
 
@@ -516,12 +556,11 @@ func (iter *objectsIter) Close() {
 	iter.h = []plumbing.Hash{}
 }
 
-func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]bool {
-	m := make(map[plumbing.Hash]bool, len(l))
+func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]struct{} {
+	m := make(map[plumbing.Hash]struct{}, len(l))
 	for _, h := range l {
-		m[h] = true
+		m[h] = struct{}{}
 	}
-
 	return m
 }
 
