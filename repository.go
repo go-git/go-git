@@ -728,7 +728,19 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		return nil, err
 	}
 
-	return object.NewCommitPreorderIter(commit, nil, nil), nil
+	switch o.Order {
+	case LogOrderDefault:
+		return object.NewCommitPreorderIter(commit, nil, nil), nil
+	case LogOrderDFS:
+		return object.NewCommitPreorderIter(commit, nil, nil), nil
+	case LogOrderDFSPost:
+		return object.NewCommitPostorderIter(commit, nil), nil
+	case LogOrderBSF:
+		return object.NewCommitIterBSF(commit, nil, nil), nil
+	case LogOrderCommitterTime:
+		return object.NewCommitIterCTime(commit, nil, nil), nil
+	}
+	return nil, fmt.Errorf("invalid Order=%v", o.Order)
 }
 
 // Tags returns all the References from Tags. This method returns all the tag

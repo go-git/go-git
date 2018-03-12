@@ -870,7 +870,7 @@ func (s *RepositorySuite) TestLog(c *C) {
 	c.Assert(err, IsNil)
 
 	cIter, err := r.Log(&LogOptions{
-		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+		From: plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
 	})
 
 	c.Assert(err, IsNil)
@@ -930,7 +930,7 @@ func (s *RepositorySuite) TestLogError(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = r.Log(&LogOptions{
-		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		From: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 	})
 	c.Assert(err, NotNil)
 }
