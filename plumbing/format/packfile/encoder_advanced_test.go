@@ -3,6 +3,7 @@ package packfile_test
 import (
 	"bytes"
 	"math/rand"
+	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	. "gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -21,6 +22,10 @@ type EncoderAdvancedSuite struct {
 var _ = Suite(&EncoderAdvancedSuite{})
 
 func (s *EncoderAdvancedSuite) TestEncodeDecode(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	fixs := fixtures.Basic().ByTag("packfile").ByTag(".git")
 	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag("packfile").ByTag(".git").One())
@@ -33,6 +38,10 @@ func (s *EncoderAdvancedSuite) TestEncodeDecode(c *C) {
 }
 
 func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	fixs := fixtures.Basic().ByTag("packfile").ByTag(".git")
 	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag("packfile").ByTag(".git").One())

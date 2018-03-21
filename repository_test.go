@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"testing"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/config"
@@ -430,6 +431,10 @@ func (s *RepositorySuite) TestPlainCloneContext(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	dir, err := ioutil.TempDir("", "plain-clone-submodule")
 	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
@@ -1396,10 +1401,18 @@ func (s *RepositorySuite) testRepackObjects(
 }
 
 func (s *RepositorySuite) TestRepackObjects(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	s.testRepackObjects(c, time.Time{}, 1)
 }
 
 func (s *RepositorySuite) TestRepackObjectsWithNoDelete(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	s.testRepackObjects(c, time.Unix(0, 1), 3)
 }
 
