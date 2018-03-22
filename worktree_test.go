@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"testing"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -196,6 +197,10 @@ func (s *WorktreeSuite) TestPullProgress(c *C) {
 }
 
 func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
 	dir, err := ioutil.TempDir("", "plain-clone-submodule")
@@ -613,6 +618,10 @@ func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 }
 
 func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
 	s.testCheckoutBisect(c, "https://github.com/src-d/go-git.git")
 }
 
