@@ -270,9 +270,7 @@ func dotGitToOSFilesystems(path string) (dot, wt billy.Filesystem, err error) {
 	return dot, fs, nil
 }
 
-func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (billy.Filesystem, error) {
-	var err error
-
+func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Filesystem, err error) {
 	f, err := fs.Open(".git")
 	if err != nil {
 		return nil, err
@@ -1092,7 +1090,7 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	if los, ok := r.Storer.(storer.LooseObjectStorer); ok {
 		err = los.ForEachObjectHash(func(hash plumbing.Hash) error {
 			if ow.isSeen(hash) {
-				err := los.DeleteLooseObject(hash)
+				err = los.DeleteLooseObject(hash)
 				if err != nil {
 					return err
 				}
