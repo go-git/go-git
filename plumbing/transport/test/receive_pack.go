@@ -8,6 +8,8 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -224,6 +226,25 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 		"failed with ep=%s fixture=%s callAdvertisedReferences=%s",
 		ep.String(), url, callAdvertisedReferences,
 	)
+
+	// Set write permissions to endpoint directory files. By default
+	// fixtures are generated with read only permissions, this casuses
+	// errors deleting or modifying files.
+	rootPath := ep.Path
+	println("STAT", rootPath)
+	stat, err := os.Stat(ep.Path)
+
+	if rootPath != "" && err == nil && stat.IsDir() {
+		objectPath := filepath.Join(rootPath, "objects/pack")
+		files, err := ioutil.ReadDir(objectPath)
+		c.Assert(err, IsNil)
+
+		for _, file := range files {
+			path := filepath.Join(objectPath, file.Name())
+			err = os.Chmod(path, 0644)
+			c.Assert(err, IsNil)
+		}
+	}
 
 	r, err := s.Client.NewReceivePackSession(ep, s.EmptyAuth)
 	c.Assert(err, IsNil, comment)
