@@ -375,7 +375,7 @@ func (d *DotGit) findPackedRefsInFile(f billy.File) ([]*plumbing.Reference, erro
 	return refs, s.Err()
 }
 
-func (d *DotGit) findPackedRefs() (r []*plumbing.Reference, error error) {
+func (d *DotGit) findPackedRefs() (r []*plumbing.Reference, err error) {
 	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
