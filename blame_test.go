@@ -32,6 +32,10 @@ func (s *BlameSuite) TestBlame(c *C) {
 		obt, err := Blame(commit, t.path)
 		c.Assert(err, IsNil)
 		c.Assert(obt, DeepEquals, exp)
+
+		for i, l := range obt.Lines {
+			c.Assert(l.Hash.String(), Equals, t.blames[i])
+		}
 	}
 }
 
@@ -54,6 +58,7 @@ func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *BlameRe
 			Author: commit.Author.Email,
 			Text:   lines[i],
 			Date:   commit.Author.When,
+			Hash:   commit.Hash,
 		}
 		blamedLines = append(blamedLines, l)
 	}
