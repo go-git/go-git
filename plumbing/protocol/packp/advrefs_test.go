@@ -79,6 +79,79 @@ func (s *AdvRefSuite) TestAllReferencesBadSymref(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToMaster(c *C) {
+	a := NewAdvRefs()
+	headHash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+	a.Head = &headHash
+	ref := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+
+	err := a.AddReference(ref)
+	c.Assert(err, IsNil)
+
+	storage, err := a.AllReferences()
+	c.Assert(err, IsNil)
+
+	head, err := storage.Reference(plumbing.HEAD)
+	c.Assert(err, IsNil)
+	c.Assert(head.Target(), Equals, ref.Name())
+}
+
+func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToOtherThanMaster(c *C) {
+	a := NewAdvRefs()
+	headHash := plumbing.NewHash("0000000000000000000000000000000000000000")
+	a.Head = &headHash
+	ref1 := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+	ref2 := plumbing.NewHashReference("other/ref", plumbing.NewHash("0000000000000000000000000000000000000000"))
+
+	err := a.AddReference(ref1)
+	c.Assert(err, IsNil)
+	err = a.AddReference(ref2)
+	c.Assert(err, IsNil)
+
+	storage, err := a.AllReferences()
+	c.Assert(err, IsNil)
+
+	head, err := storage.Reference(plumbing.HEAD)
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, ref2.Hash())
+}
+
+func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoRef(c *C) {
+	a := NewAdvRefs()
+	headHash := plumbing.NewHash("0000000000000000000000000000000000000000")
+	a.Head = &headHash
+	ref := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+
+	err := a.AddReference(ref)
+	c.Assert(err, IsNil)
+
+	_, err = a.AllReferences()
+	c.Assert(err, NotNil)
+}
+
+func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoMasterAlphabeticallyOrdered(c *C) {
+	a := NewAdvRefs()
+	headHash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+	a.Head = &headHash
+	ref1 := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("0000000000000000000000000000000000000000"))
+	ref2 := plumbing.NewHashReference("aaaaaaaaaaaaaaa", plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+	ref3 := plumbing.NewHashReference("bbbbbbbbbbbbbbb", plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+
+	err := a.AddReference(ref1)
+	c.Assert(err, IsNil)
+	err = a.AddReference(ref3)
+	c.Assert(err, IsNil)
+	err = a.AddReference(ref2)
+	c.Assert(err, IsNil)
+
+	storage, err := a.AllReferences()
+	c.Assert(err, IsNil)
+
+	head, err := storage.Reference(plumbing.HEAD)
+	c.Assert(err, IsNil)
+	c.Assert(head.Target(), Equals, ref2.Name())
+}
+
 type AdvRefsDecodeEncodeSuite struct{}
 
 var _ = Suite(&AdvRefsDecodeEncodeSuite{})
