@@ -20,7 +20,7 @@ func (s *SuiteScanner) TestInvalid(c *C) {
 	for _, test := range [...]string{
 		"0001", "0002", "0003", "0004",
 		"0001asdfsadf", "0004foo",
-		"fff1", "fff2",
+		"fff5", "ffff",
 		"gorka",
 		"0", "003",
 		"   5a", "5   a", "5   \n",
@@ -31,6 +31,20 @@ func (s *SuiteScanner) TestInvalid(c *C) {
 		_ = sc.Scan()
 		c.Assert(sc.Err(), ErrorMatches, pktline.ErrInvalidPktLen.Error(),
 			Commentf("data = %q", test))
+	}
+}
+
+func (s *SuiteScanner) TestDecodeOversizePktLines(c *C) {
+	for _, test := range [...]string{
+		"fff1" + strings.Repeat("a", 0xfff1),
+		"fff2" + strings.Repeat("a", 0xfff2),
+		"fff3" + strings.Repeat("a", 0xfff3),
+		"fff4" + strings.Repeat("a", 0xfff4),
+	} {
+		r := strings.NewReader(test)
+		sc := pktline.NewScanner(r)
+		_ = sc.Scan()
+		c.Assert(sc.Err(), IsNil)
 	}
 }
 
