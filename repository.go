@@ -225,7 +225,14 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 // repository is bare or a normal one. If the path doesn't contain a valid
 // repository ErrRepositoryNotExists is returned
 func PlainOpen(path string) (*Repository, error) {
-	dot, wt, err := dotGitToOSFilesystems(path)
+	return PlainOpenWithOptions(path, &PlainOpenOptions{})
+}
+
+// PlainOpen opens a git repository from the given path. It detects if the
+// repository is bare or a normal one. If the path doesn't contain a valid
+// repository ErrRepositoryNotExists is returned
+func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error) {
+	dot, wt, err := dotGitToOSFilesystems(path, o.DetectDotGit)
 	if err != nil {
 		return nil, err
 	}
@@ -246,14 +253,33 @@ func PlainOpen(path string) (*Repository, error) {
 	return Open(s, wt)
 }
 
-func dotGitToOSFilesystems(path string) (dot, wt billy.Filesystem, err error) {
-	fs := osfs.New(path)
-	fi, err := fs.Stat(".git")
-	if err != nil {
+func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
+	if path, err = filepath.Abs(path); err != nil {
+		return nil, nil, err
+	}
+	var fs billy.Filesystem
+	var fi os.FileInfo
+	for {
+		fs = osfs.New(path)
+		fi, err = fs.Stat(".git")
+		if err == nil {
+			// no error; stop
+			break
+		}
 		if !os.IsNotExist(err) {
+			// unknown error; stop
 			return nil, nil, err
 		}
-
+		if detect {
+			// try its parent as long as we haven't reached
+			// the root dir
+			if dir := filepath.Dir(path); dir != path {
+				path = dir
+				continue
+			}
+		}
+		// not detecting via parent dirs and the dir does not exist;
+		// stop
 		return fs, nil, nil
 	}
 

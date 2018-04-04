@@ -407,6 +407,36 @@ func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
 	c.Assert(r, IsNil)
 }
 
+func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	subdir := filepath.Join(dir, "a", "b")
+	err = os.MkdirAll(subdir, 0755)
+	c.Assert(err, IsNil)
+
+	r, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	opt := &PlainOpenOptions{DetectDotGit: true}
+	r, err = PlainOpenWithOptions(subdir, opt)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {
+	dir, err := ioutil.TempDir("", "plain-open")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	opt := &PlainOpenOptions{DetectDotGit: true}
+	r, err := PlainOpenWithOptions(dir, opt)
+	c.Assert(err, Equals, ErrRepositoryNotExists)
+	c.Assert(r, IsNil)
+}
+
 func (s *RepositorySuite) TestPlainClone(c *C) {
 	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
