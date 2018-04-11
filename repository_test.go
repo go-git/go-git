@@ -244,6 +244,119 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	c.Assert(alt, IsNil)
 }
 
+func (s *RepositorySuite) TestCreateBranchAndBranch(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	testBranch := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err := r.CreateBranch(testBranch)
+
+	c.Assert(err, IsNil)
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(len(cfg.Branches), Equals, 1)
+	branch := cfg.Branches["foo"]
+	c.Assert(branch.Name, Equals, testBranch.Name)
+	c.Assert(branch.Remote, Equals, testBranch.Remote)
+	c.Assert(branch.Merge, Equals, testBranch.Merge)
+
+	branch, err = r.Branch("foo")
+	c.Assert(err, IsNil)
+	c.Assert(branch.Name, Equals, testBranch.Name)
+	c.Assert(branch.Remote, Equals, testBranch.Remote)
+	c.Assert(branch.Merge, Equals, testBranch.Merge)
+}
+
+func (s *RepositorySuite) TestCreateBranchUnmarshal(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+
+	expected := []byte(`[core]
+	bare = true
+[remote "foo"]
+	url = http://foo/foo.git
+	fetch = +refs/heads/*:refs/remotes/foo/*
+[branch "foo"]
+	remote = origin
+	merge = refs/heads/foo
+[branch "master"]
+	remote = origin
+	merge = refs/heads/master
+`)
+
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: "foo",
+		URLs: []string{"http://foo/foo.git"},
+	})
+	c.Assert(err, IsNil)
+	testBranch1 := &config.Branch{
+		Name:   "master",
+		Remote: "origin",
+		Merge:  "refs/heads/master",
+	}
+	testBranch2 := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err = r.CreateBranch(testBranch1)
+	err = r.CreateBranch(testBranch2)
+
+	c.Assert(err, IsNil)
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	marshaled, err := cfg.Marshal()
+	c.Assert(string(expected), Equals, string(marshaled))
+}
+
+func (s *RepositorySuite) TestBranchInvalid(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	branch, err := r.Branch("foo")
+
+	c.Assert(err, NotNil)
+	c.Assert(branch, IsNil)
+}
+
+func (s *RepositorySuite) TestCreateBranchInvalid(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.CreateBranch(&config.Branch{})
+
+	c.Assert(err, NotNil)
+
+	testBranch := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err = r.CreateBranch(testBranch)
+	c.Assert(err, IsNil)
+	err = r.CreateBranch(testBranch)
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestDeleteBranch(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	testBranch := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err := r.CreateBranch(testBranch)
+
+	c.Assert(err, IsNil)
+
+	err = r.DeleteBranch("foo")
+	c.Assert(err, IsNil)
+
+	b, err := r.Branch("foo")
+	c.Assert(err, Equals, ErrBranchNotFound)
+	c.Assert(b, IsNil)
+
+	err = r.DeleteBranch("foo")
+	c.Assert(err, Equals, ErrBranchNotFound)
+}
+
 func (s *RepositorySuite) TestPlainInit(c *C) {
 	dir, err := ioutil.TempDir("", "plain-init")
 	c.Assert(err, IsNil)
@@ -447,6 +560,10 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	remotes, err := r.Remotes()
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["master"].Name, Equals, "master")
 }
 
 func (s *RepositorySuite) TestPlainCloneContext(c *C) {
@@ -480,6 +597,7 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Remotes, HasLen, 1)
+	c.Assert(cfg.Branches, HasLen, 1)
 	c.Assert(cfg.Submodules, HasLen, 2)
 }
 
@@ -615,6 +733,8 @@ func (s *RepositorySuite) TestCloneConfig(c *C) {
 	c.Assert(cfg.Remotes, HasLen, 1)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URLs, HasLen, 1)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["master"].Name, Equals, "master")
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
@@ -635,6 +755,13 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 	remotes, err := r.Remotes()
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["branch"].Name, Equals, "branch")
+	c.Assert(cfg.Branches["branch"].Remote, Equals, "origin")
+	c.Assert(cfg.Branches["branch"].Merge, Equals, plumbing.ReferenceName("refs/heads/branch"))
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
@@ -672,6 +799,13 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(remotes, HasLen, 1)
 
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["master"].Name, Equals, "master")
+	c.Assert(cfg.Branches["master"].Remote, Equals, "origin")
+	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
+
 	head, err = r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
@@ -698,6 +832,10 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	})
 	c.Assert(err, IsNil)
 
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 0)
+
 	head, err := r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
@@ -721,6 +859,10 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow(c *C) {
 
 	c.Assert(err, IsNil)
 
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 0)
+
 	head, err := r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
 	c.Assert(head, NotNil)
@@ -741,6 +883,10 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag(c *C) {
 		ReferenceName: plumbing.ReferenceName("refs/tags/annotated-tag"),
 	})
 	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	c.Assert(err, IsNil)
