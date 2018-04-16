@@ -1615,3 +1615,66 @@ func executeOnPath(path, cmd string) error {
 
 	return c.Run()
 }
+
+func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+	c.Assert(err, IsNil)
+
+	c.Assert(r.Fetch(&FetchOptions{
+		Depth:    2,
+		RefSpecs: []config.RefSpec{config.RefSpec("refs/heads/master:refs/heads/master")},
+	}), IsNil)
+
+	shallows, err := r.Storer.Shallow()
+	c.Assert(err, IsNil)
+	c.Assert(len(shallows), Equals, 1)
+
+	ref, err := r.Reference("refs/heads/master", true)
+	c.Assert(err, IsNil)
+	cobj, err := r.CommitObject(ref.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(cobj, NotNil)
+	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
+		for _, ph := range c.ParentHashes {
+			for _, h := range shallows {
+				if ph == h {
+					return storer.ErrStop
+				}
+			}
+		}
+
+		return nil
+	})
+	c.Assert(err, IsNil)
+
+	c.Assert(r.Fetch(&FetchOptions{
+		Depth:    5,
+		RefSpecs: []config.RefSpec{config.RefSpec("refs/heads/*:refs/heads/*")},
+	}), IsNil)
+
+	shallows, err = r.Storer.Shallow()
+	c.Assert(err, IsNil)
+	c.Assert(len(shallows), Equals, 3)
+
+	ref, err = r.Reference("refs/heads/master", true)
+	c.Assert(err, IsNil)
+	cobj, err = r.CommitObject(ref.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(cobj, NotNil)
+	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
+		for _, ph := range c.ParentHashes {
+			for _, h := range shallows {
+				if ph == h {
+					return storer.ErrStop
+				}
+			}
+		}
+
+		return nil
+	})
+	c.Assert(err, IsNil)
+}
