@@ -151,6 +151,7 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 }
 
 func BenchmarkRefMultipleTimes(b *testing.B) {
+	fixtures.Init()
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	refname := plumbing.ReferenceName("refs/remotes/origin/branch")
 
