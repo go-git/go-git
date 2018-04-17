@@ -419,7 +419,7 @@ func findReference(refs []*plumbing.Reference, name string) *plumbing.Reference 
 	return nil
 }
 
-func (s *SuiteDotGit) TestObjectsPack(c *C) {
+func (s *SuiteDotGit) TestObjectPacks(c *C) {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
@@ -428,6 +428,18 @@ func (s *SuiteDotGit) TestObjectsPack(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(hashes, HasLen, 1)
 	c.Assert(hashes[0], Equals, f.PackfileHash)
+
+	// Make sure that a random file in the pack directory doesn't
+	// break everything.
+	badFile, err := fs.Create("objects/pack/OOPS_THIS_IS_NOT_RIGHT.pack")
+	c.Assert(err, IsNil)
+	err = badFile.Close()
+	c.Assert(err, IsNil)
+
+	hashes2, err := dir.ObjectPacks()
+	c.Assert(err, IsNil)
+	c.Assert(hashes2, HasLen, 1)
+	c.Assert(hashes[0], Equals, hashes2[0])
 }
 
 func (s *SuiteDotGit) TestObjectPack(c *C) {
