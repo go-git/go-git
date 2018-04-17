@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
@@ -739,5 +740,56 @@ func (s *RemoteSuite) TestList(c *C) {
 			}
 		}
 		c.Assert(found, Equals, true)
+	}
+}
+
+func (s *RemoteSuite) TestUpdateShallows(c *C) {
+	hashes := []plumbing.Hash{
+		plumbing.NewHash("0000000000000000000000000000000000000001"),
+		plumbing.NewHash("0000000000000000000000000000000000000002"),
+		plumbing.NewHash("0000000000000000000000000000000000000003"),
+		plumbing.NewHash("0000000000000000000000000000000000000004"),
+		plumbing.NewHash("0000000000000000000000000000000000000005"),
+		plumbing.NewHash("0000000000000000000000000000000000000006"),
+	}
+
+	tests := []struct {
+		hashes []plumbing.Hash
+		result []plumbing.Hash
+	}{
+		// add to empty shallows
+		{hashes[0:2], hashes[0:2]},
+		// add new hashes
+		{hashes[2:4], hashes[0:4]},
+		// add some hashes already in shallow list
+		{hashes[2:6], hashes[0:6]},
+		// add all hashes
+		{hashes[0:6], hashes[0:6]},
+		// add empty list
+		{nil, hashes[0:6]},
+	}
+
+	remote := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+	})
+
+	shallows, err := remote.s.Shallow()
+	c.Assert(err, IsNil)
+	c.Assert(len(shallows), Equals, 0)
+
+	resp := new(packp.UploadPackResponse)
+	o := &FetchOptions{
+		Depth: 1,
+	}
+
+	for _, t := range tests {
+		resp.Shallows = t.hashes
+		err = remote.updateShallow(o, resp)
+		c.Assert(err, IsNil)
+
+		shallow, err := remote.s.Shallow()
+		c.Assert(err, IsNil)
+		c.Assert(len(shallow), Equals, len(t.result))
+		c.Assert(shallow, DeepEquals, t.result)
 	}
 }
