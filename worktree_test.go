@@ -3,12 +3,14 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"testing"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -1832,4 +1834,40 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 			}
 		}
 	}
+}
+
+func (s *WorktreeSuite) TestAddAndCommit(c *C) {
+	dir, err := ioutil.TempDir("", "plain-repo")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	repo, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
+		Name:  "foo",
+		Email: "foo@foo.foo",
+		When:  time.Now(),
+	}})
+
+	iter, err := w.r.Log(&LogOptions{})
+	c.Assert(err, IsNil)
+	err = iter.ForEach(func(c *object.Commit) error {
+		files, err := c.Files()
+		if err != nil {
+			return err
+		}
+
+		err = files.ForEach(func(f *object.File) error {
+			return errors.New("Expected no files, got at least 1")
+		})
+		return err
+	})
+	c.Assert(err, IsNil)
 }

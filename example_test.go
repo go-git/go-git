@@ -24,12 +24,18 @@ func ExampleClone() {
 
 	// Clones the repository into the worktree (fs) and storer all the .git
 	// content into the storer
-	_, _ = git.Clone(storer, fs, &git.CloneOptions{
+	_, err := git.Clone(storer, fs, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Prints the content of the CHANGELOG file from the cloned repository
-	changelog, _ := fs.Open("CHANGELOG")
+	changelog, err := fs.Open("CHANGELOG")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	io.Copy(os.Stdout, changelog)
 	// Output: Initial changelog
