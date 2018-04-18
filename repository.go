@@ -24,6 +24,9 @@ import (
 	"gopkg.in/src-d/go-billy.v4/osfs"
 )
 
+// GitDirName this is a special folder where all the git stuff is.
+const GitDirName = ".git"
+
 var (
 	// ErrBranchExists an error stating the specified branch already exists
 	ErrBranchExists = errors.New("branch already exists")
@@ -113,12 +116,12 @@ func createDotGitFile(worktree, storage billy.Filesystem) error {
 		path = storage.Root()
 	}
 
-	if path == ".git" {
+	if path == GitDirName {
 		// not needed, since the folder is the default place
 		return nil
 	}
 
-	f, err := worktree.Create(".git")
+	f, err := worktree.Create(GitDirName)
 	if err != nil {
 		return err
 	}
@@ -214,7 +217,7 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 		dot = osfs.New(path)
 	} else {
 		wt = osfs.New(path)
-		dot, _ = wt.Chroot(".git")
+		dot, _ = wt.Chroot(GitDirName)
 	}
 
 	s, err := filesystem.NewStorage(dot)
@@ -265,7 +268,7 @@ func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, 
 	var fi os.FileInfo
 	for {
 		fs = osfs.New(path)
-		fi, err = fs.Stat(".git")
+		fi, err = fs.Stat(GitDirName)
 		if err == nil {
 			// no error; stop
 			break
@@ -288,7 +291,7 @@ func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, 
 	}
 
 	if fi.IsDir() {
-		dot, err = fs.Chroot(".git")
+		dot, err = fs.Chroot(GitDirName)
 		return dot, fs, err
 	}
 
@@ -301,7 +304,7 @@ func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, 
 }
 
 func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Filesystem, err error) {
-	f, err := fs.Open(".git")
+	f, err := fs.Open(GitDirName)
 	if err != nil {
 		return nil, err
 	}
