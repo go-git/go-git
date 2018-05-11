@@ -1501,7 +1501,7 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 		h, err := r.ResolveRevision(plumbing.Revision(rev))
 
 		c.Assert(err, IsNil)
-		c.Assert(h.String(), Equals, hash)
+		c.Check(h.String(), Equals, hash, Commentf("while checking %s", rev))
 	}
 }
 
