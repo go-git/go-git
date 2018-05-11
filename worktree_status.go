@@ -145,6 +145,9 @@ func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes) merkletrie.
 	if err != nil || len(patterns) == 0 {
 		return changes
 	}
+
+	patterns = append(patterns, w.Excludes...)
+
 	m := gitignore.NewMatcher(patterns)
 
 	var res merkletrie.Changes
