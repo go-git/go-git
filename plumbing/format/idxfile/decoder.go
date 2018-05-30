@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
@@ -98,13 +97,14 @@ func readFanout(idx *Idxfile, r io.Reader) error {
 
 func readObjectNames(idx *Idxfile, r io.Reader) error {
 	c := int(idx.ObjectCount)
+	new := make([]Entry, c)
 	for i := 0; i < c; i++ {
-		var ref plumbing.Hash
-		if _, err := io.ReadFull(r, ref[:]); err != nil {
+		e := &new[i]
+		if _, err := io.ReadFull(r, e.Hash[:]); err != nil {
 			return err
 		}
 
-		idx.Entries = append(idx.Entries, &Entry{Hash: ref})
+		idx.Entries = append(idx.Entries, e)
 	}
 
 	return nil
