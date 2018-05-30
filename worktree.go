@@ -28,6 +28,7 @@ var (
 	ErrWorktreeNotClean  = errors.New("worktree is not clean")
 	ErrSubmoduleNotFound = errors.New("submodule not found")
 	ErrUnstagedChanges   = errors.New("worktree contains unstaged changes")
+	ErrGitModulesSymlink = errors.New(gitmodulesFile + " is a symlink")
 )
 
 // Worktree represents a git worktree.
@@ -680,7 +681,18 @@ func (w *Worktree) newSubmodule(fromModules, fromConfig *config.Submodule) *Subm
 	return m
 }
 
+func (w *Worktree) isSymlink(path string) bool {
+	if s, err := w.Filesystem.Lstat(path); err == nil {
+		return s.Mode()&os.ModeSymlink != 0
+	}
+	return false
+}
+
 func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
+	if w.isSymlink(gitmodulesFile) {
+		return nil, ErrGitModulesSymlink
+	}
+
 	f, err := w.Filesystem.Open(gitmodulesFile)
 	if err != nil {
 		if os.IsNotExist(err) {
