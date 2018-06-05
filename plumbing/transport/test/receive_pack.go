@@ -231,7 +231,6 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 	// fixtures are generated with read only permissions, this casuses
 	// errors deleting or modifying files.
 	rootPath := ep.Path
-	println("STAT", rootPath)
 	stat, err := os.Stat(ep.Path)
 
 	if rootPath != "" && err == nil && stat.IsDir() {
