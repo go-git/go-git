@@ -135,7 +135,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
-	c.unmarshalSubmodules()
+	unmarshalSubmodules(c.Raw, c.Submodules)
 
 	if err := c.unmarshalBranches(); err != nil {
 		return err
@@ -182,13 +182,17 @@ func (c *Config) unmarshalRemotes() error {
 	return nil
 }
 
-func (c *Config) unmarshalSubmodules() {
-	s := c.Raw.Section(submoduleSection)
+func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
+	s := fc.Section(submoduleSection)
 	for _, sub := range s.Subsections {
 		m := &Submodule{}
 		m.unmarshal(sub)
 
-		c.Submodules[m.Name] = m
+		if m.Validate() == ErrModuleBadPath {
+			continue
+		}
+
+		submodules[m.Name] = m
 	}
 }
 

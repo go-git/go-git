@@ -11,6 +11,29 @@ func (s *ModulesSuite) TestValidateMissingURL(c *C) {
 	c.Assert(m.Validate(), Equals, ErrModuleEmptyURL)
 }
 
+func (s *ModulesSuite) TestValidateBadPath(c *C) {
+	input := []string{
+		`..`,
+		`../`,
+		`../bar`,
+
+		`/..`,
+		`/../bar`,
+
+		`foo/..`,
+		`foo/../`,
+		`foo/../bar`,
+	}
+
+	for _, p := range input {
+		m := &Submodule{
+			Path: p,
+			URL:  "https://example.com/",
+		}
+		c.Assert(m.Validate(), Equals, ErrModuleBadPath)
+	}
+}
+
 func (s *ModulesSuite) TestValidateMissingName(c *C) {
 	m := &Submodule{URL: "bar"}
 	c.Assert(m.Validate(), Equals, ErrModuleEmptyPath)
@@ -39,6 +62,9 @@ func (s *ModulesSuite) TestUnmarshall(c *C) {
         path = foo/bar
         url = https://github.com/foo/bar.git
 		branch = dev
+[submodule "suspicious"]
+        path = ../../foo/bar
+        url = https://github.com/foo/bar.git
 `)
 
 	cfg := NewModules()
