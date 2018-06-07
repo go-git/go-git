@@ -62,7 +62,7 @@ func (s *DeltaSuite) SetUpSuite(c *C) {
 		target: []piece{{"1", 30}, {"2", 20}, {"7", 40}, {"4", 400},
 			{"5", 10}},
 	}, {
-		description: "A copy operation bigger tan 64kb",
+		description: "A copy operation bigger than 64kb",
 		base:        []piece{{bigRandStr, 1}, {"1", 200}},
 		target:      []piece{{bigRandStr, 1}},
 	}}
@@ -72,12 +72,16 @@ var bigRandStr = randStringBytes(100 * 1024)
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-func randStringBytes(n int) string {
+func randBytes(n int) []byte {
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = letterBytes[rand.Intn(len(letterBytes))]
 	}
-	return string(b)
+	return b
+}
+
+func randStringBytes(n int) string {
+	return string(randBytes(n))
 }
 
 func (s *DeltaSuite) TestAddDelta(c *C) {
@@ -109,4 +113,15 @@ func (s *DeltaSuite) TestIncompleteDelta(c *C) {
 	result, err := PatchDelta(nil, nil)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+}
+
+func (s *DeltaSuite) TestMaxCopySizeDelta(c *C) {
+	baseBuf := randBytes(maxCopySize)
+	targetBuf := baseBuf[0:]
+	targetBuf = append(targetBuf, byte(1))
+
+	delta := DiffDelta(baseBuf, targetBuf)
+	result, err := PatchDelta(baseBuf, delta)
+	c.Assert(err, IsNil)
+	c.Assert(result, DeepEquals, targetBuf)
 }
