@@ -24,7 +24,7 @@ var _ = Suite(&FsSuite{
 
 func (s *FsSuite) TestGetFromObjectFile(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
-	o, err := newObjectStorage(dotgit.New(fs))
+	o, err := NewObjectStorage(dotgit.New(fs))
 	c.Assert(err, IsNil)
 
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
@@ -36,7 +36,7 @@ func (s *FsSuite) TestGetFromObjectFile(c *C) {
 func (s *FsSuite) TestGetFromPackfile(c *C) {
 	fixtures.Basic().ByTag(".git").Test(c, func(f *fixtures.Fixture) {
 		fs := f.DotGit()
-		o, err := newObjectStorage(dotgit.New(fs))
+		o, err := NewObjectStorage(dotgit.New(fs))
 		c.Assert(err, IsNil)
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -48,7 +48,7 @@ func (s *FsSuite) TestGetFromPackfile(c *C) {
 
 func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
-	o, err := newObjectStorage(dotgit.New(fs))
+	o, err := NewObjectStorage(dotgit.New(fs))
 	c.Assert(err, IsNil)
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
@@ -65,7 +65,7 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 func (s *FsSuite) TestIter(c *C) {
 	fixtures.ByTag(".git").ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		fs := f.DotGit()
-		o, err := newObjectStorage(dotgit.New(fs))
+		o, err := NewObjectStorage(dotgit.New(fs))
 		c.Assert(err, IsNil)
 
 		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
@@ -86,7 +86,7 @@ func (s *FsSuite) TestIterWithType(c *C) {
 	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
 		for _, t := range s.Types {
 			fs := f.DotGit()
-			o, err := newObjectStorage(dotgit.New(fs))
+			o, err := NewObjectStorage(dotgit.New(fs))
 			c.Assert(err, IsNil)
 
 			iter, err := o.IterEncodedObjects(t)
