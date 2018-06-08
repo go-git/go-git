@@ -54,6 +54,19 @@ func (s *ClientSuite) TestNewBasicAuth(c *C) {
 	c.Assert(a.String(), Equals, "http-basic-auth - foo:*******")
 }
 
+func (s *ClientSuite) TestNewTokenAuth(c *C) {
+	a := &TokenAuth{"OAUTH-TOKEN-TEXT"}
+
+	c.Assert(a.Name(), Equals, "http-token-auth")
+	c.Assert(a.String(), Equals, "http-token-auth - *******")
+
+	// Check header is set correctly
+	req, err := http.NewRequest("GET", "https://github.com/git-fixtures/basic", nil)
+	c.Assert(err, Equals, nil)
+	a.setAuth(req)
+	c.Assert(req.Header.Get("Authorization"), Equals, "Bearer OAUTH-TOKEN-TEXT")
+}
+
 func (s *ClientSuite) TestNewErrOK(c *C) {
 	res := &http.Response{StatusCode: http.StatusOK}
 	err := NewErr(res)
