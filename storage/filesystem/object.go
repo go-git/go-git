@@ -26,7 +26,8 @@ type ObjectStorage struct {
 	index map[plumbing.Hash]*packfile.Index
 }
 
-func newObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
+// NewObjectStorage creates a new ObjectStorage with the given .git directory.
+func NewObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
 	s := ObjectStorage{
 		deltaBaseCache: cache.NewObjectLRUDefault(),
 		dir:            dir,
@@ -166,7 +167,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 			// Create a new object storage with the DotGit(s) and check for the
 			// required hash object. Skip when not found.
 			for _, dg := range dotgits {
-				o, oe := newObjectStorage(dg)
+				o, oe := NewObjectStorage(dg)
 				if oe != nil {
 					continue
 				}
