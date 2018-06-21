@@ -100,6 +100,20 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestFetchNonExistantReference(c *C) {
+	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/foo:refs/remotes/origin/foo"),
+		},
+	})
+
+	c.Assert(err, ErrorMatches, "couldn't find remote ref.*")
+}
+
 func (s *RemoteSuite) TestFetchContext(c *C) {
 	r := newRemote(memory.NewStorage(), &config.RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
