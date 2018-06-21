@@ -31,10 +31,20 @@ func NewIndexFromIdxFile(idxf *idxfile.Idxfile) *Index {
 		byHash:   make(map[plumbing.Hash]*idxfile.Entry, idxf.ObjectCount),
 		byOffset: make([]*idxfile.Entry, 0, idxf.ObjectCount),
 	}
-	for _, e := range idxf.Entries {
+	sorted := true
+	for i, e := range idxf.Entries {
 		idx.addUnsorted(e)
+		if i > 0 && idx.byOffset[i-1].Offset >= e.Offset {
+			sorted = false
+		}
 	}
-	sort.Sort(orderByOffset(idx.byOffset))
+
+	// If the idxfile was loaded from a regular packfile index
+	// then it will already be in offset order, in which case we
+	// can avoid doing a relatively expensive idempotent sort.
+	if !sorted {
+		sort.Sort(orderByOffset(idx.byOffset))
+	}
 
 	return idx
 }
