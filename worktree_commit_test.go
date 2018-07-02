@@ -8,9 +8,15 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
+	"bytes"
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/memfs"
+	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-billy.v4/util"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"io/ioutil"
+	"os"
+	"os/exec"
 )
 
 func (s *WorktreeSuite) TestCommitInvalidOptions(c *C) {
@@ -133,6 +139,54 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll(c *C) {
 	c.Assert(err, IsNil)
 
 	assertStorageStatus(c, s.Repository, 13, 11, 11, expected)
+}
+
+func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
+	path, err := ioutil.TempDir(os.TempDir(), "test-commit-tree-sort")
+	c.Assert(err, IsNil)
+	fs := osfs.New(path)
+	st, err := filesystem.NewStorage(fs)
+	c.Assert(err, IsNil)
+	r, err := Init(st, nil)
+	c.Assert(err, IsNil)
+
+	r, err = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL: path,
+	})
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	mfs := w.Filesystem
+
+	err = mfs.MkdirAll("delta", 0755)
+	c.Assert(err, IsNil)
+
+	for _, p := range []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"} {
+		util.WriteFile(mfs, p, []byte("foo"), 0644)
+		_, err = w.Add(p)
+		c.Assert(err, IsNil)
+	}
+
+	_, err = w.Commit("foo\n", &CommitOptions{
+		All:    true,
+		Author: defaultSignature(),
+	})
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{})
+	c.Assert(err, IsNil)
+
+	cmd := exec.Command("git", "fsck")
+	cmd.Dir = path
+	cmd.Env = os.Environ()
+	buf := &bytes.Buffer{}
+	cmd.Stderr = buf
+	cmd.Stdout = buf
+
+	err = cmd.Run()
+
+	c.Assert(err, IsNil, Commentf("%s", buf.Bytes()))
 }
 
 func assertStorageStatus(
