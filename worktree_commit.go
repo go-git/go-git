@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage"
 
 	"gopkg.in/src-d/go-billy.v4"
+	"sort"
 )
 
 // Commit stores the current contents of the index in a new commit along with
@@ -162,7 +163,20 @@ func (h *buildTreeHelper) doBuildTree(e *index.Entry, parent, fullpath string) {
 	h.trees[parent].Entries = append(h.trees[parent].Entries, te)
 }
 
+type sortableEntries []object.TreeEntry
+
+func (sortableEntries) sortName(te object.TreeEntry) string {
+	if te.Mode == filemode.Dir {
+		return te.Name + "/"
+	}
+	return te.Name
+}
+func (se sortableEntries) Len() int               { return len(se) }
+func (se sortableEntries) Less(i int, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
+func (se sortableEntries) Swap(i int, j int)      { se[i], se[j] = se[j], se[i] }
+
 func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
+	sort.Sort(sortableEntries(t.Entries))
 	for i, e := range t.Entries {
 		if e.Mode != filemode.Dir && !e.Hash.IsZero() {
 			continue
