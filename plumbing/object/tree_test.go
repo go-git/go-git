@@ -114,6 +114,12 @@ func (s *TreeSuite) TestFindEntry(c *C) {
 	c.Assert(e.Name, Equals, "foo.go")
 }
 
+func (s *TreeSuite) TestFindEntryNotFound(c *C) {
+	e, err := s.Tree.FindEntry("not-found")
+	c.Assert(e, IsNil)
+	c.Assert(err, Equals, ErrEntryNotFound)
+}
+
 // Overrides returned plumbing.EncodedObject for given hash.
 // Otherwise, delegates to actual storer to get real object
 type fakeStorer struct {
