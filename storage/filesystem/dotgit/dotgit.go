@@ -469,7 +469,7 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 	// File mode is retrieved from a constant defined in the target specific
 	// files (dotgit_rewrite_packed_refs_*). Some modes are not available
 	// in all filesystems.
-	openFlags := openAndLockPackedRefsMode
+	openFlags := d.openAndLockPackedRefsMode()
 	if doCreate {
 		openFlags |= os.O_CREATE
 	}
