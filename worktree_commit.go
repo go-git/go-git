@@ -2,6 +2,7 @@ package git
 
 import (
 	"path"
+	"sort"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -11,7 +12,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage"
 
 	"gopkg.in/src-d/go-billy.v4"
-	"sort"
 )
 
 // Commit stores the current contents of the index in a new commit along with

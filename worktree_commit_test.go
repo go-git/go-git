@@ -1,22 +1,22 @@
 package git
 
 import (
+	"bytes"
+	"io/ioutil"
+	"os"
+	"os/exec"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 
-	"bytes"
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-billy.v4/util"
-	"gopkg.in/src-d/go-git.v4/storage/filesystem"
-	"io/ioutil"
-	"os"
-	"os/exec"
 )
 
 func (s *WorktreeSuite) TestCommitInvalidOptions(c *C) {
