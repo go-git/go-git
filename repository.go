@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	stdioutil "io/ioutil"
 	"os"
 	"path"
@@ -50,6 +51,7 @@ var (
 	ErrIsBareRepository          = errors.New("worktree not available in a bare repository")
 	ErrUnableToResolveCommit     = errors.New("unable to resolve commit")
 	ErrPackedObjectsNotSupported = errors.New("Packed objects not supported")
+	ErrDirNotEmpty               = errors.New("directory is not empty")
 )
 
 // Repository represents a git repository
@@ -342,12 +344,68 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 //
 // TODO(mcuadros): move isBare to CloneOptions in v5
 func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
+	dirEmpty := false
+	dirExist := false
+
+	file, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if !os.IsNotExist(err) {
+		dirExist = file.IsDir()
+	}
+
+	if dirExist {
+		fh, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer fh.Close()
+
+		names, err := fh.Readdirnames(1)
+		if err != io.EOF && err != nil {
+			return nil, err
+		}
+		if len(names) == 0 {
+			dirEmpty = true
+		} else {
+			return nil, ErrDirNotEmpty
+		}
+	}
+
 	r, err := PlainInit(path, isBare)
 	if err != nil {
 		return nil, err
 	}
 
-	return r, r.clone(ctx, o)
+	err = r.clone(ctx, o)
+	if err != nil && err != ErrRepositoryAlreadyExists {
+		if dirEmpty {
+			fh, err := os.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			defer fh.Close()
+
+			names, err := fh.Readdirnames(-1)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+
+			for _, name := range names {
+				err = os.RemoveAll(filepath.Join(path, name))
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else if !dirExist {
+			os.RemoveAll(path)
+			return nil, err
+		}
+	}
+
+	return r, err
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {

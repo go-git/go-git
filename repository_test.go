@@ -581,15 +581,53 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 	c.Assert(remote, NotNil)
 }
 
-func (s *RepositorySuite) TestPlainCloneContext(c *C) {
+func (s *RepositorySuite) TestPlainCloneContextWithProperParameters(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := PlainCloneContext(ctx, c.MkDir(), false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, c.MkDir(), false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
+	c.Assert(r, NotNil)
 	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextWithIncorrectRepo(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDir := filepath.Join(tmpDir, "repoDir")
+	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, IsNil)
+	c.Assert(err, NotNil)
+
+	_, err = os.Stat(repoDir)
+	dirNotExist := os.IsNotExist(err)
+	c.Assert(dirNotExist, Equals, true)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextWithNotEmptyDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDirPath := filepath.Join(tmpDir, "repoDir")
+	err := os.Mkdir(repoDirPath, 0777)
+	c.Assert(err, IsNil)
+
+	dummyFile := filepath.Join(repoDirPath, "dummyFile")
+	err = ioutil.WriteFile(dummyFile, []byte(fmt.Sprint("dummyContent")), 0644)
+	c.Assert(err, IsNil)
+
+	r, err := PlainCloneContext(ctx, repoDirPath, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, IsNil)
+	c.Assert(err, Equals, ErrDirNotEmpty)
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
@@ -2104,9 +2142,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
-		"efs/heads/master~":                        "reference not found",
-		"HEAD^3":                                   `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":                         `No commit message match regexp : "whatever"`,
+		"efs/heads/master~": "reference not found",
+		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294": `refname "918c48b83bd081e863dbe1b80f8998f058cd8294" is ambiguous`,
 	}
