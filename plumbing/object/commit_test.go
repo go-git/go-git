@@ -324,6 +324,38 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 	err = decoded.Decode(encoded)
 	c.Assert(err, IsNil)
 	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
+
+	// signature in author name
+
+	commit.PGPSignature = ""
+	commit.Author.Name = beginpgp
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, "")
+	c.Assert(decoded.Author.Name, Equals, beginpgp)
+
+	// broken signature
+
+	commit.PGPSignature = beginpgp + "\n" +
+		"some\n" +
+		"trash\n" +
+		endpgp +
+		"text\n"
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, commit.PGPSignature)
 }
 
 func (s *SuiteCommit) TestStat(c *C) {
