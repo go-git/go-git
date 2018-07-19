@@ -63,7 +63,7 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 	}
 
 	defer ioutil.CheckClose(f, &err)
-	idxf := idxfile.NewIdxfile()
+	idxf := idxfile.NewMemoryIndex()
 	d := idxfile.NewDecoder(f)
 	if err = d.Decode(idxf); err != nil {
 		return err

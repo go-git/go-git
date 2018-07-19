@@ -1,30 +1,217 @@
 package idxfile
 
-import "gopkg.in/src-d/go-git.v4/plumbing"
+import (
+	"bytes"
+	"io"
+
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/utils/binary"
+)
 
 const (
 	// VersionSupported is the only idx version supported.
 	VersionSupported = 2
 
-	offsetLimit = 0x7fffffff
+	noMapping = -1
 )
 
 var (
 	idxHeader = []byte{255, 't', 'O', 'c'}
 )
 
-// Idxfile is the in memory representation of an idx file.
-type Idxfile struct {
-	Version          uint32
-	Fanout           [255]uint32
-	ObjectCount      uint32
-	Entries          EntryList
+// Index represents an index of a packfile.
+type Index interface {
+	// Contains checks whether the given hash is in the index.
+	Contains(h plumbing.Hash) (bool, error)
+	// FindOffset finds the offset in the packfile for the object with
+	// the given hash.
+	FindOffset(h plumbing.Hash) (int64, error)
+	// FindCRC32 finds the CRC32 of the object with the given hash.
+	FindCRC32(h plumbing.Hash) (uint32, error)
+	// Count returns the number of entries in the index.
+	Count() (int64, error)
+	// Entries returns an iterator to retrieve all index entries.
+	Entries() (EntryIter, error)
+}
+
+// MemoryIndex is the in memory representation of an idx file.
+type MemoryIndex struct {
+	Version uint32
+	Fanout  [256]uint32
+	// FanoutMapping maps the position in the fanout table to the position
+	// in the Names, Offset32 and Crc32 slices. This improves the memory
+	// usage by not needing an array with unnecessary empty slots.
+	FanoutMapping    [256]int
+	Names            [][]byte
+	Offset32         [][]byte
+	Crc32            [][]byte
+	Offset64         []byte
 	PackfileChecksum [20]byte
 	IdxChecksum      [20]byte
 }
 
-func NewIdxfile() *Idxfile {
-	return &Idxfile{}
+var _ Index = (*MemoryIndex)(nil)
+
+// NewMemoryIndex returns an instance of a new MemoryIndex.
+func NewMemoryIndex() *MemoryIndex {
+	return &MemoryIndex{}
+}
+
+func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
+	k := idx.FanoutMapping[h[0]]
+	if k == noMapping {
+		return -1
+	}
+
+	data := idx.Names[k]
+	high := uint64(len(idx.Offset32[k])) >> 2
+	if high == 0 {
+		return -1
+	}
+
+	low := uint64(0)
+	for {
+		mid := (low + high) >> 1
+		offset := mid + (mid << 2)
+
+		cmp := bytes.Compare(h[:], data[offset:offset+objectIDLength])
+		if cmp < 0 {
+			high = mid
+		} else if cmp == 0 {
+			return int(mid)
+		} else {
+			low = mid + 1
+		}
+
+		if low < high {
+			break
+		}
+	}
+
+	return -1
+}
+
+// Contains implements the Index interface.
+func (idx *MemoryIndex) Contains(h plumbing.Hash) (bool, error) {
+	i := idx.findHashIndex(h)
+	return i >= 0, nil
+}
+
+// FindOffset implements the Index interface.
+func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
+	k := idx.FanoutMapping[h[0]]
+	i := idx.findHashIndex(h)
+	if i < 0 {
+		return 0, plumbing.ErrObjectNotFound
+	}
+
+	return idx.getOffset(k, i)
+}
+
+const isO64Mask = uint64(1) << 31
+
+func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) (int64, error) {
+	offset := secondLevel << 2
+	buf := bytes.NewBuffer(idx.Offset32[firstLevel][offset : offset+4])
+	ofs, err := binary.ReadUint32(buf)
+	if err != nil {
+		return -1, err
+	}
+
+	if (uint64(ofs) & isO64Mask) != 0 {
+		offset := 8 * (uint64(ofs) & ^isO64Mask)
+		buf := bytes.NewBuffer(idx.Offset64[offset : offset+8])
+		n, err := binary.ReadUint64(buf)
+		if err != nil {
+			return -1, err
+		}
+
+		return int64(n), nil
+	}
+
+	return int64(ofs), nil
+}
+
+// FindCRC32 implements the Index interface.
+func (idx *MemoryIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
+	k := idx.FanoutMapping[h[0]]
+	i := idx.findHashIndex(h)
+	if i < 0 {
+		return 0, plumbing.ErrObjectNotFound
+	}
+
+	return idx.getCrc32(k, i)
+}
+
+func (idx *MemoryIndex) getCrc32(firstLevel, secondLevel int) (uint32, error) {
+	offset := secondLevel << 2
+	buf := bytes.NewBuffer(idx.Crc32[firstLevel][offset : offset+4])
+	return binary.ReadUint32(buf)
+}
+
+// Count implements the Index interface.
+func (idx *MemoryIndex) Count() (int64, error) {
+	return int64(idx.Fanout[fanout-1]), nil
+}
+
+// Entries implements the Index interface.
+func (idx *MemoryIndex) Entries() (EntryIter, error) {
+	return &idxfileEntryIter{idx, 0, 0, 0}, nil
+}
+
+// EntryIter is an iterator that will return the entries in a packfile index.
+type EntryIter interface {
+	// Next returns the next entry in the packfile index.
+	Next() (*Entry, error)
+	// Close closes the iterator.
+	Close() error
+}
+
+type idxfileEntryIter struct {
+	idx                     *MemoryIndex
+	total                   int
+	firstLevel, secondLevel int
+}
+
+func (i *idxfileEntryIter) Next() (*Entry, error) {
+	for {
+		if i.firstLevel >= fanout {
+			return nil, io.EOF
+		}
+
+		if i.total >= int(i.idx.Fanout[i.firstLevel]) {
+			i.firstLevel++
+			i.secondLevel = 0
+			continue
+		}
+
+		entry := new(Entry)
+		ofs := i.secondLevel * objectIDLength
+		copy(entry.Hash[:], i.idx.Names[i.idx.FanoutMapping[i.firstLevel]][ofs:])
+
+		pos := i.idx.FanoutMapping[entry.Hash[0]]
+
+		offset, err := i.idx.getOffset(pos, i.secondLevel)
+		if err != nil {
+			return nil, err
+		}
+		entry.Offset = uint64(offset)
+
+		entry.CRC32, err = i.idx.getCrc32(pos, i.secondLevel)
+		if err != nil {
+			return nil, err
+		}
+
+		i.secondLevel++
+		i.total++
+
+		return entry, nil
+	}
+}
+
+func (i *idxfileEntryIter) Close() error {
+	i.firstLevel = fanout
+	return nil
 }
 
 // Entry is the in memory representation of an object entry in the idx file.
@@ -32,37 +219,4 @@ type Entry struct {
 	Hash   plumbing.Hash
 	CRC32  uint32
 	Offset uint64
-}
-
-// Add adds a new Entry with the given values to the Idxfile.
-func (idx *Idxfile) Add(h plumbing.Hash, offset uint64, crc32 uint32) {
-	idx.Entries = append(idx.Entries, &Entry{
-		Hash:   h,
-		Offset: offset,
-		CRC32:  crc32,
-	})
-}
-
-func (idx *Idxfile) isValid() bool {
-	fanout := idx.calculateFanout()
-	for k, c := range idx.Fanout {
-		if fanout[k] != c {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (idx *Idxfile) calculateFanout() [256]uint32 {
-	fanout := [256]uint32{}
-	for _, e := range idx.Entries {
-		fanout[e.Hash[0]]++
-	}
-
-	for i := 1; i < 256; i++ {
-		fanout[i] += fanout[i-1]
-	}
-
-	return fanout
 }
