@@ -403,12 +403,13 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 		return 0, err
 	}
 
-	e, ok := d.idx.LookupOffset(uint64(offset))
-	var base plumbing.EncodedObject
-	if ok {
-		base, ok = d.cacheGet(e.Hash)
-	}
+	// e, ok := d.idx.LookupOffset(uint64(offset))
+	// if ok {
+	// 	base, ok = d.cacheGet(e.Hash)
+	// }
 
+	var base plumbing.EncodedObject
+	ok := false
 	if !ok {
 		base, err = d.recallByOffset(offset)
 		if err != nil {
@@ -446,9 +447,9 @@ func (d *Decoder) recallByOffset(o int64) (plumbing.EncodedObject, error) {
 		return d.DecodeObjectAt(o)
 	}
 
-	if e, ok := d.idx.LookupOffset(uint64(o)); ok {
-		return d.recallByHashNonSeekable(e.Hash)
-	}
+	// if e, ok := d.idx.LookupOffset(uint64(o)); ok {
+	// 	return d.recallByHashNonSeekable(e.Hash)
+	// }
 
 	return nil, plumbing.ErrObjectNotFound
 }
