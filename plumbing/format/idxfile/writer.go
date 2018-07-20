@@ -9,13 +9,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
-type object struct {
-	hash   plumbing.Hash
-	offset int64
-	crc    uint32
-}
-
-type objects []object
+// objects implements sort.Interface and uses hash as sorting key.
+type objects []Entry
 
 // Writer implements a packfile Observer interface and is used to generate
 // indexes.
@@ -41,7 +36,7 @@ func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 	last := -1
 	bucket := -1
 	for i, o := range w.objects {
-		fan := o.hash[0]
+		fan := o.Hash[0]
 
 		// fill the gaps between fans
 		for j := last + 1; j < int(fan); j++ {
@@ -63,19 +58,19 @@ func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 			idx.Crc32 = append(idx.Crc32, make([]byte, 0))
 		}
 
-		idx.Names[bucket] = append(idx.Names[bucket], o.hash[:]...)
+		idx.Names[bucket] = append(idx.Names[bucket], o.Hash[:]...)
 
 		// TODO: implement 64 bit offsets
-		if o.offset > math.MaxInt32 {
+		if o.Offset > math.MaxInt32 {
 			panic("64 bit offsets not implemented")
 		}
 
 		buf.Truncate(0)
-		binary.WriteUint32(buf, uint32(o.offset))
+		binary.WriteUint32(buf, uint32(o.Offset))
 		idx.Offset32[bucket] = append(idx.Offset32[bucket], buf.Bytes()...)
 
 		buf.Truncate(0)
-		binary.WriteUint32(buf, uint32(o.crc))
+		binary.WriteUint32(buf, uint32(o.CRC32))
 		idx.Crc32[bucket] = append(idx.Crc32[bucket], buf.Bytes()...)
 	}
 
@@ -90,8 +85,8 @@ func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 }
 
 // Add appends new object data.
-func (w *Writer) Add(h plumbing.Hash, pos int64, crc uint32) {
-	w.objects = append(w.objects, object{h, pos, crc})
+func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
+	w.objects = append(w.objects, Entry{h, crc, pos})
 }
 
 // OnHeader implements packfile.Observer interface.
@@ -108,7 +103,7 @@ func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, po
 
 // OnInflatedObjectContent implements packfile.Observer interface.
 func (w *Writer) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32) error {
-	w.Add(h, pos, crc)
+	w.Add(h, uint64(pos), crc)
 	return nil
 }
 
@@ -123,7 +118,7 @@ func (o objects) Len() int {
 }
 
 func (o objects) Less(i int, j int) bool {
-	cmp := bytes.Compare(o[i].hash[:], o[j].hash[:])
+	cmp := bytes.Compare(o[i].Hash[:], o[j].Hash[:])
 	return cmp < 0
 }
 
