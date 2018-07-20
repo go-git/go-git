@@ -18,12 +18,16 @@ type Writer struct {
 	count    uint32
 	checksum plumbing.Hash
 	objects  objects
+	offset64 uint32
+	idx      *MemoryIndex
 }
 
 // Create index returns a filled MemoryIndex with the information filled by
 // the observer callbacks.
 func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 	idx := new(MemoryIndex)
+	w.idx = idx
+
 	sort.Sort(w.objects)
 
 	// unmap all fans by default
@@ -60,13 +64,13 @@ func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 
 		idx.Names[bucket] = append(idx.Names[bucket], o.Hash[:]...)
 
-		// TODO: implement 64 bit offsets
-		if o.Offset > math.MaxInt32 {
-			panic("64 bit offsets not implemented")
+		offset := o.Offset
+		if offset > math.MaxInt32 {
+			offset = w.addOffset64(offset)
 		}
 
 		buf.Truncate(0)
-		binary.WriteUint32(buf, uint32(o.Offset))
+		binary.WriteUint32(buf, uint32(offset))
 		idx.Offset32[bucket] = append(idx.Offset32[bucket], buf.Bytes()...)
 
 		buf.Truncate(0)
@@ -78,10 +82,21 @@ func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 		idx.Fanout[j] = uint32(len(w.objects))
 	}
 
+	idx.Version = VersionSupported
 	idx.PackfileChecksum = w.checksum
-	// TODO: fill IdxChecksum
 
 	return idx, nil
+}
+
+func (w *Writer) addOffset64(pos uint64) uint64 {
+	buf := new(bytes.Buffer)
+	binary.WriteUint64(buf, pos)
+	w.idx.Offset64 = append(w.idx.Offset64, buf.Bytes()...)
+
+	index := uint64(w.offset64 | (1 << 31))
+	w.offset64++
+
+	return index
 }
 
 // Add appends new object data.
