@@ -2,6 +2,9 @@
 package filesystem
 
 import (
+	"fmt"
+
+	"gopkg.in/src-d/go-git.v4/plumbing/format/index"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/dotgit"
 
 	"gopkg.in/src-d/go-billy.v4"
@@ -50,4 +53,16 @@ func (s *Storage) Filesystem() billy.Filesystem {
 
 func (s *Storage) Init() error {
 	return s.dir.Initialize()
+}
+
+type IndexStorage struct {
+	dir *dotgit.DotGit
+}
+
+func (IndexStorage) SetIndex(*index.Index) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (IndexStorage) Index() (*index.Index, error) {
+	return nil, fmt.Errorf("not implemented")
 }
