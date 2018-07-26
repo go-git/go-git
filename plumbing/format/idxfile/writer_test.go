@@ -27,7 +27,7 @@ func (s *IndexSuite) TestIndexWriter(c *C) {
 	_, err := parser.Parse()
 	c.Assert(err, IsNil)
 
-	idx, err := obs.CreateIndex()
+	idx, err := obs.Index()
 	c.Assert(err, IsNil)
 
 	idxFile := f.Idx()

@@ -2,8 +2,10 @@ package idxfile
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"sort"
+	"sync"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/binary"
@@ -15,18 +17,80 @@ type objects []Entry
 // Writer implements a packfile Observer interface and is used to generate
 // indexes.
 type Writer struct {
+	m sync.Mutex
+
 	count    uint32
 	checksum plumbing.Hash
 	objects  objects
 	offset64 uint32
-	idx      *MemoryIndex
+	finished bool
+	index    *MemoryIndex
 }
 
-// Create index returns a filled MemoryIndex with the information filled by
+// Index returns a previously created MemoryIndex or creates a new one if
+// needed.
+func (w *Writer) Index() (*MemoryIndex, error) {
+	w.m.Lock()
+	defer w.m.Unlock()
+
+	if w.index == nil {
+		return w.createIndex()
+	}
+
+	return w.index, nil
+}
+
+// Add appends new object data.
+func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
+	w.m.Lock()
+	defer w.m.Unlock()
+
+	w.objects = append(w.objects, Entry{h, crc, pos})
+}
+
+func (w *Writer) Finished() bool {
+	return w.finished
+}
+
+// OnHeader implements packfile.Observer interface.
+func (w *Writer) OnHeader(count uint32) error {
+	w.count = count
+	w.objects = make(objects, 0, count)
+	return nil
+}
+
+// OnInflatedObjectHeader implements packfile.Observer interface.
+func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, pos int64) error {
+	return nil
+}
+
+// OnInflatedObjectContent implements packfile.Observer interface.
+func (w *Writer) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32) error {
+	w.Add(h, uint64(pos), crc)
+	return nil
+}
+
+// OnFooter implements packfile.Observer interface.
+func (w *Writer) OnFooter(h plumbing.Hash) error {
+	w.checksum = h
+	w.finished = true
+	_, err := w.createIndex()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// creatIndex returns a filled MemoryIndex with the information filled by
 // the observer callbacks.
-func (w *Writer) CreateIndex() (*MemoryIndex, error) {
+func (w *Writer) createIndex() (*MemoryIndex, error) {
+	if !w.finished {
+		return nil, fmt.Errorf("the index still hasn't finished building")
+	}
+
 	idx := new(MemoryIndex)
-	w.idx = idx
+	w.index = idx
 
 	sort.Sort(w.objects)
 
@@ -91,41 +155,12 @@ func (w *Writer) CreateIndex() (*MemoryIndex, error) {
 func (w *Writer) addOffset64(pos uint64) uint64 {
 	buf := new(bytes.Buffer)
 	binary.WriteUint64(buf, pos)
-	w.idx.Offset64 = append(w.idx.Offset64, buf.Bytes()...)
+	w.index.Offset64 = append(w.index.Offset64, buf.Bytes()...)
 
 	index := uint64(w.offset64 | (1 << 31))
 	w.offset64++
 
 	return index
-}
-
-// Add appends new object data.
-func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
-	w.objects = append(w.objects, Entry{h, crc, pos})
-}
-
-// OnHeader implements packfile.Observer interface.
-func (w *Writer) OnHeader(count uint32) error {
-	w.count = count
-	w.objects = make(objects, 0, count)
-	return nil
-}
-
-// OnInflatedObjectHeader implements packfile.Observer interface.
-func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, pos int64) error {
-	return nil
-}
-
-// OnInflatedObjectContent implements packfile.Observer interface.
-func (w *Writer) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32) error {
-	w.Add(h, uint64(pos), crc)
-	return nil
-}
-
-// OnFooter implements packfile.Observer interface.
-func (w *Writer) OnFooter(h plumbing.Hash) error {
-	w.checksum = h
-	return nil
 }
 
 func (o objects) Len() int {
