@@ -28,6 +28,8 @@ type Index interface {
 	FindOffset(h plumbing.Hash) (int64, error)
 	// FindCRC32 finds the CRC32 of the object with the given hash.
 	FindCRC32(h plumbing.Hash) (uint32, error)
+	// FindHash finds the hash for the object with the given offset.
+	FindHash(o int64) (plumbing.Hash, error)
 	// Count returns the number of entries in the index.
 	Count() (int64, error)
 	// Entries returns an iterator to retrieve all index entries.
@@ -48,6 +50,8 @@ type MemoryIndex struct {
 	Offset64         []byte
 	PackfileChecksum [20]byte
 	IdxChecksum      [20]byte
+
+	offsetHash map[int64]plumbing.Hash
 }
 
 var _ Index = (*MemoryIndex)(nil)
@@ -72,7 +76,7 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 	low := uint64(0)
 	for {
 		mid := (low + high) >> 1
-		offset := mid + (mid << 2)
+		offset := mid * objectIDLength
 
 		cmp := bytes.Compare(h[:], data[offset:offset+objectIDLength])
 		if cmp < 0 {
@@ -83,7 +87,7 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 			low = mid + 1
 		}
 
-		if low < high {
+		if low > high {
 			break
 		}
 	}
@@ -147,6 +151,53 @@ func (idx *MemoryIndex) getCrc32(firstLevel, secondLevel int) (uint32, error) {
 	offset := secondLevel << 2
 	buf := bytes.NewBuffer(idx.Crc32[firstLevel][offset : offset+4])
 	return binary.ReadUint32(buf)
+}
+
+// FindHash implements the Index interface.
+func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
+	// Lazily generate the reverse offset/hash map if required.
+	if idx.offsetHash == nil {
+		err := idx.genOffsetHash()
+		if err != nil {
+			return plumbing.ZeroHash, nil
+		}
+	}
+
+	hash, ok := idx.offsetHash[o]
+	if !ok {
+		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
+	}
+
+	return hash, nil
+}
+
+// genOffsetHash generates the offset/hash mapping for reverse search.
+func (idx *MemoryIndex) genOffsetHash() error {
+	count, err := idx.Count()
+	if err != nil {
+		return err
+	}
+
+	idx.offsetHash = make(map[int64]plumbing.Hash, count)
+
+	iter, err := idx.Entries()
+	if err != nil {
+		return err
+	}
+
+	var entry *Entry
+	for err != nil {
+		entry, err = iter.Next()
+		if err == nil {
+			idx.offsetHash[int64(entry.Offset)] = entry.Hash
+		}
+	}
+
+	if err == io.EOF {
+		return nil
+	}
+
+	return err
 }
 
 // Count implements the Index interface.
