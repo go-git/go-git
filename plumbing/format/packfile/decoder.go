@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
@@ -63,7 +64,7 @@ type Decoder struct {
 	// hasBuiltIndex indicates if the index is fully built or not. If it is not,
 	// will be built incrementally while decoding.
 	hasBuiltIndex bool
-	idx           *Index
+	idx           idxfile.Index
 
 	offsetToType map[int64]plumbing.ObjectType
 	decoderType  plumbing.ObjectType
@@ -117,7 +118,7 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 		o:              o,
 		deltaBaseCache: cacheObject,
 
-		idx:          NewIndex(0),
+		idx:          idxfile.NewMemoryIndex(),
 		offsetToType: make(map[int64]plumbing.ObjectType),
 		decoderType:  t,
 	}, nil
@@ -150,7 +151,8 @@ func (d *Decoder) doDecode() error {
 	}
 
 	if !d.hasBuiltIndex {
-		d.idx = NewIndex(int(count))
+		// TODO: MemoryIndex is not writable, change to something else
+		d.idx = idxfile.NewMemoryIndex()
 	}
 	defer func() { d.hasBuiltIndex = true }()
 
@@ -284,12 +286,12 @@ func (d *Decoder) ofsDeltaType(offset int64) (plumbing.ObjectType, error) {
 }
 
 func (d *Decoder) refDeltaType(ref plumbing.Hash) (plumbing.ObjectType, error) {
-	e, ok := d.idx.LookupHash(ref)
-	if !ok {
+	offset, err := d.idx.FindOffset(ref)
+	if err != nil {
 		return plumbing.InvalidObject, plumbing.ErrObjectNotFound
 	}
 
-	return d.ofsDeltaType(int64(e.Offset))
+	return d.ofsDeltaType(offset)
 }
 
 func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error) {
@@ -314,9 +316,14 @@ func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error
 		return obj, err
 	}
 
+	// TODO: remove this
+	_ = crc
+
+	/* Add is no longer available
 	if !d.hasBuiltIndex {
 		d.idx.Add(obj.Hash(), uint64(h.Offset), crc)
 	}
+	*/
 
 	return obj, nil
 }
@@ -448,8 +455,8 @@ func (d *Decoder) recallByOffset(o int64) (plumbing.EncodedObject, error) {
 
 func (d *Decoder) recallByHash(h plumbing.Hash) (plumbing.EncodedObject, error) {
 	if d.s.IsSeekable {
-		if e, ok := d.idx.LookupHash(h); ok {
-			return d.DecodeObjectAt(int64(e.Offset))
+		if offset, err := d.idx.FindOffset(h); err != nil {
+			return d.DecodeObjectAt(offset)
 		}
 	}
 
@@ -475,7 +482,7 @@ func (d *Decoder) recallByHashNonSeekable(h plumbing.Hash) (obj plumbing.Encoded
 // SetIndex sets an index for the packfile. It is recommended to set this.
 // The index might be read from a file or reused from a previous Decoder usage
 // (see Index function).
-func (d *Decoder) SetIndex(idx *Index) {
+func (d *Decoder) SetIndex(idx idxfile.Index) {
 	d.hasBuiltIndex = true
 	d.idx = idx
 }
@@ -484,7 +491,7 @@ func (d *Decoder) SetIndex(idx *Index) {
 // Index will return it. Otherwise, it will return an index that is built while
 // decoding. If neither SetIndex was called with a full index or Decode called
 // for the whole packfile, then the returned index will be incomplete.
-func (d *Decoder) Index() *Index {
+func (d *Decoder) Index() idxfile.Index {
 	return d.idx
 }
 
