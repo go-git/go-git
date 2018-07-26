@@ -311,11 +311,12 @@ func applyPatchBase(ota *objectInfo, data, base []byte) ([]byte, error) {
 type objectInfo struct {
 	plumbing.Hasher
 
-	Offset   int64
-	Length   int64
-	PackSize int64
-	Type     plumbing.ObjectType
-	DiskType plumbing.ObjectType
+	Offset       int64
+	Length       int64
+	HeaderLength int64
+	PackSize     int64
+	Type         plumbing.ObjectType
+	DiskType     plumbing.ObjectType
 
 	Crc32 uint32
 
