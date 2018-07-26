@@ -72,7 +72,7 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 	low := uint64(0)
 	for {
 		mid := (low + high) >> 1
-		offset := mid + (mid << 2)
+		offset := mid * objectIDLength
 
 		cmp := bytes.Compare(h[:], data[offset:offset+objectIDLength])
 		if cmp < 0 {
@@ -83,7 +83,7 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 			low = mid + 1
 		}
 
-		if low < high {
+		if low > high {
 			break
 		}
 	}
