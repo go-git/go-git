@@ -66,6 +66,7 @@ type Decoder struct {
 	// will be built incrementally while decoding.
 	hasBuiltIndex bool
 	idx           idxfile.Index
+	writer        *idxfile.Writer
 
 	offsetToType map[int64]plumbing.ObjectType
 	decoderType  plumbing.ObjectType
@@ -144,7 +145,17 @@ func (d *Decoder) Decode() (checksum plumbing.Hash, err error) {
 		return plumbing.ZeroHash, err
 	}
 
-	return d.s.Checksum()
+	checksum, err = d.s.Checksum()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if !d.hasBuiltIndex {
+		d.writer.OnFooter(checksum)
+		d.idx = d.Index()
+	}
+
+	return checksum, err
 }
 
 func (d *Decoder) fillOffsetsToHashes() error {
@@ -177,6 +188,8 @@ func (d *Decoder) doDecode() error {
 	if !d.hasBuiltIndex {
 		// TODO: MemoryIndex is not writable, change to something else
 		d.idx = idxfile.NewMemoryIndex()
+		d.writer = new(idxfile.Writer)
+		d.writer.OnHeader(count)
 	}
 	defer func() { d.hasBuiltIndex = true }()
 
@@ -329,20 +342,25 @@ func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
 
+	var crc uint32
 	var err error
 	switch h.Type {
 	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
-		_, err = d.fillRegularObjectContent(obj)
+		crc, err = d.fillRegularObjectContent(obj)
 	case plumbing.REFDeltaObject:
-		_, err = d.fillREFDeltaObjectContent(obj, h.Reference)
+		crc, err = d.fillREFDeltaObjectContent(obj, h.Reference)
 	case plumbing.OFSDeltaObject:
-		_, err = d.fillOFSDeltaObjectContent(obj, h.OffsetReference)
+		crc, err = d.fillOFSDeltaObjectContent(obj, h.OffsetReference)
 	default:
 		err = ErrInvalidObject.AddDetails("type %q", h.Type)
 	}
 
 	if err != nil {
 		return obj, err
+	}
+
+	if !d.hasBuiltIndex {
+		d.writer.Add(obj.Hash(), uint64(h.Offset), crc)
 	}
 
 	d.offsetToHash[h.Offset] = obj.Hash()
@@ -468,9 +486,9 @@ func (d *Decoder) recallByOffset(o int64) (plumbing.EncodedObject, error) {
 		return d.DecodeObjectAt(o)
 	}
 
-	hash, err := d.idx.FindHash(o)
-	if err != nil {
-		return nil, err
+	hash, ok := d.offsetToHash[o]
+	if !ok {
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	return d.recallByHashNonSeekable(hash)
