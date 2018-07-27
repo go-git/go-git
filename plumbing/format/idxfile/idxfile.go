@@ -157,9 +157,8 @@ func (idx *MemoryIndex) getCrc32(firstLevel, secondLevel int) (uint32, error) {
 func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
 	// Lazily generate the reverse offset/hash map if required.
 	if idx.offsetHash == nil {
-		err := idx.genOffsetHash()
-		if err != nil {
-			return plumbing.ZeroHash, nil
+		if err := idx.genOffsetHash(); err != nil {
+			return plumbing.ZeroHash, err
 		}
 	}
 
@@ -185,19 +184,17 @@ func (idx *MemoryIndex) genOffsetHash() error {
 		return err
 	}
 
-	var entry *Entry
-	for err != nil {
-		entry, err = iter.Next()
-		if err == nil {
-			idx.offsetHash[int64(entry.Offset)] = entry.Hash
+	for {
+		entry, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
 		}
-	}
 
-	if err == io.EOF {
-		return nil
+		idx.offsetHash[int64(entry.Offset)] = entry.Hash
 	}
-
-	return err
 }
 
 // Count implements the Index interface.

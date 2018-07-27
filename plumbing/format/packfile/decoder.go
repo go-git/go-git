@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"bytes"
+	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
@@ -68,6 +69,7 @@ type Decoder struct {
 
 	offsetToType map[int64]plumbing.ObjectType
 	decoderType  plumbing.ObjectType
+	offsetToHash map[int64]plumbing.Hash
 }
 
 // NewDecoder returns a new Decoder that decodes a Packfile using the given
@@ -120,6 +122,7 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 
 		idx:          idxfile.NewMemoryIndex(),
 		offsetToType: make(map[int64]plumbing.ObjectType),
+		offsetToHash: make(map[int64]plumbing.Hash),
 		decoderType:  t,
 	}, nil
 }
@@ -144,6 +147,27 @@ func (d *Decoder) Decode() (checksum plumbing.Hash, err error) {
 	return d.s.Checksum()
 }
 
+func (d *Decoder) fillOffsetsToHashes() error {
+	entries, err := d.idx.Entries()
+	if err != nil {
+		return err
+	}
+
+	for {
+		e, err := entries.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		d.offsetToHash[int64(e.Offset)] = e.Hash
+	}
+
+	return entries.Close()
+}
+
 func (d *Decoder) doDecode() error {
 	_, count, err := d.s.Header()
 	if err != nil {
@@ -155,6 +179,12 @@ func (d *Decoder) doDecode() error {
 		d.idx = idxfile.NewMemoryIndex()
 	}
 	defer func() { d.hasBuiltIndex = true }()
+
+	if d.hasBuiltIndex && !d.s.IsSeekable {
+		if err := d.fillOffsetsToHashes(); err != nil {
+			return err
+		}
+	}
 
 	_, isTxStorer := d.o.(storer.Transactioner)
 	switch {
@@ -299,15 +329,14 @@ func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
 
-	var crc uint32
 	var err error
 	switch h.Type {
 	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
-		crc, err = d.fillRegularObjectContent(obj)
+		_, err = d.fillRegularObjectContent(obj)
 	case plumbing.REFDeltaObject:
-		crc, err = d.fillREFDeltaObjectContent(obj, h.Reference)
+		_, err = d.fillREFDeltaObjectContent(obj, h.Reference)
 	case plumbing.OFSDeltaObject:
-		crc, err = d.fillOFSDeltaObjectContent(obj, h.OffsetReference)
+		_, err = d.fillOFSDeltaObjectContent(obj, h.OffsetReference)
 	default:
 		err = ErrInvalidObject.AddDetails("type %q", h.Type)
 	}
@@ -316,14 +345,7 @@ func (d *Decoder) decodeByHeader(h *ObjectHeader) (plumbing.EncodedObject, error
 		return obj, err
 	}
 
-	// TODO: remove this
-	_ = crc
-
-	/* Add is no longer available
-	if !d.hasBuiltIndex {
-		d.idx.Add(obj.Hash(), uint64(h.Offset), crc)
-	}
-	*/
+	d.offsetToHash[h.Offset] = obj.Hash()
 
 	return obj, nil
 }
@@ -403,13 +425,12 @@ func (d *Decoder) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset i
 		return 0, err
 	}
 
-	// e, ok := d.idx.LookupOffset(uint64(offset))
-	// if ok {
-	// 	base, ok = d.cacheGet(e.Hash)
-	// }
-
+	h, ok := d.offsetToHash[offset]
 	var base plumbing.EncodedObject
-	ok := false
+	if ok {
+		base, ok = d.cacheGet(h)
+	}
+
 	if !ok {
 		base, err = d.recallByOffset(offset)
 		if err != nil {

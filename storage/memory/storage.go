@@ -91,6 +91,16 @@ type ObjectStorage struct {
 	Tags    map[plumbing.Hash]plumbing.EncodedObject
 }
 
+func NewObjectStorage() *ObjectStorage {
+	return &ObjectStorage{
+		Objects: make(map[plumbing.Hash]plumbing.EncodedObject),
+		Commits: make(map[plumbing.Hash]plumbing.EncodedObject),
+		Trees:   make(map[plumbing.Hash]plumbing.EncodedObject),
+		Blobs:   make(map[plumbing.Hash]plumbing.EncodedObject),
+		Tags:    make(map[plumbing.Hash]plumbing.EncodedObject),
+	}
+}
+
 func (o *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 	return &plumbing.MemoryObject{}
 }
