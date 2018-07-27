@@ -3,15 +3,22 @@ package idxfile_test
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func BenchmarkFindOffset(b *testing.B) {
-	idx := fixtureIndex(b)
+	idx, err := fixtureIndex()
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
 
 	for i := 0; i < b.N; i++ {
 		for _, h := range fixtureHashes {
@@ -24,7 +31,10 @@ func BenchmarkFindOffset(b *testing.B) {
 }
 
 func BenchmarkFindCRC32(b *testing.B) {
-	idx := fixtureIndex(b)
+	idx, err := fixtureIndex()
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
 
 	for i := 0; i < b.N; i++ {
 		for _, h := range fixtureHashes {
@@ -37,7 +47,10 @@ func BenchmarkFindCRC32(b *testing.B) {
 }
 
 func BenchmarkContains(b *testing.B) {
-	idx := fixtureIndex(b)
+	idx, err := fixtureIndex()
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
 
 	for i := 0; i < b.N; i++ {
 		for _, h := range fixtureHashes {
@@ -54,7 +67,10 @@ func BenchmarkContains(b *testing.B) {
 }
 
 func BenchmarkEntries(b *testing.B) {
-	idx := fixtureIndex(b)
+	idx, err := fixtureIndex()
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
 
 	for i := 0; i < b.N; i++ {
 		iter, err := idx.Entries()
@@ -82,6 +98,23 @@ func BenchmarkEntries(b *testing.B) {
 	}
 }
 
+type IndexSuite struct {
+	fixtures.Suite
+}
+
+var _ = Suite(&IndexSuite{})
+
+func (s *IndexSuite) TestFindHash(c *C) {
+	idx, err := fixtureIndex()
+	c.Assert(err, IsNil)
+
+	for i, pos := range fixtureOffsets {
+		hash, err := idx.FindHash(pos)
+		c.Assert(err, IsNil)
+		c.Assert(hash, Equals, fixtureHashes[i])
+	}
+}
+
 var fixtureHashes = []plumbing.Hash{
 	plumbing.NewHash("303953e5aa461c203a324821bc1717f9b4fff895"),
 	plumbing.NewHash("5296768e3d9f661387ccbff18c4dea6c997fd78c"),
@@ -94,7 +127,19 @@ var fixtureHashes = []plumbing.Hash{
 	plumbing.NewHash("35858be9c6f5914cbe6768489c41eb6809a2bceb"),
 }
 
-func fixtureIndex(t testing.TB) *idxfile.MemoryIndex {
+var fixtureOffsets = []int64{
+	12,
+	142,
+	1601322837,
+	2646996529,
+	3452385606,
+	3707047470,
+	5323223332,
+	5894072943,
+	5924278919,
+}
+
+func fixtureIndex() (*idxfile.MemoryIndex, error) {
 	f := bytes.NewBufferString(fixtureLarge4GB)
 
 	idx := new(idxfile.MemoryIndex)
@@ -102,8 +147,8 @@ func fixtureIndex(t testing.TB) *idxfile.MemoryIndex {
 	d := idxfile.NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
 	err := d.Decode(idx)
 	if err != nil {
-		t.Fatalf("unexpected error decoding index: %s", err)
+		return nil, fmt.Errorf("unexpected error decoding index: %s", err)
 	}
 
-	return idx
+	return idx, nil
 }
