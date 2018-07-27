@@ -87,7 +87,7 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 			low = mid + 1
 		}
 
-		if low > high {
+		if low >= high {
 			break
 		}
 	}
