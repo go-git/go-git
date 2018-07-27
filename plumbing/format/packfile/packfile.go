@@ -17,7 +17,7 @@ type Packfile struct {
 	billy.File
 	s              *Scanner
 	deltaBaseCache cache.Object
-	offsetToHash   map[int64]plumbing.Hash
+	offsetToType   map[int64]plumbing.ObjectType
 }
 
 // NewPackfile returns a packfile representation for the given packfile file
@@ -30,7 +30,7 @@ func NewPackfile(index idxfile.Index, file billy.File) *Packfile {
 		file,
 		s,
 		cache.NewObjectLRUDefault(),
-		make(map[int64]plumbing.Hash),
+		make(map[int64]plumbing.ObjectType),
 	}
 }
 
@@ -47,8 +47,9 @@ func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 // GetByOffset retrieves the encoded object from the packfile with the given
 // offset.
 func (p *Packfile) GetByOffset(o int64) (plumbing.EncodedObject, error) {
-	if h, ok := p.offsetToHash[o]; ok {
-		if obj, ok := p.deltaBaseCache.Get(h); ok {
+	hash, err := p.FindHash(o)
+	if err == nil {
+		if obj, ok := p.deltaBaseCache.Get(hash); ok {
 			return obj, nil
 		}
 	}
@@ -60,13 +61,166 @@ func (p *Packfile) GetByOffset(o int64) (plumbing.EncodedObject, error) {
 	return p.nextObject()
 }
 
-func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
+func (p *Packfile) nextObjectHeader() (*ObjectHeader, error) {
 	h, err := p.s.NextObjectHeader()
+	p.s.pendingObject = nil
+	return h, err
+}
+
+func (p *Packfile) getObjectData(
+	h *ObjectHeader,
+) (typ plumbing.ObjectType, size int64, err error) {
+	switch h.Type {
+	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
+		typ = h.Type
+		size = h.Length
+	case plumbing.REFDeltaObject, plumbing.OFSDeltaObject:
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufPool.Put(buf)
+
+		_, _, err = p.s.NextObject(buf)
+		if err != nil {
+			return
+		}
+
+		delta := buf.Bytes()
+		_, delta = decodeLEB128(delta) // skip src size
+		sz, _ := decodeLEB128(delta)
+		size = int64(sz)
+
+		var offset int64
+		if h.Type == plumbing.REFDeltaObject {
+			offset, err = p.FindOffset(h.Reference)
+			if err != nil {
+				return
+			}
+		} else {
+			offset = h.OffsetReference
+		}
+
+		if baseType, ok := p.offsetToType[offset]; ok {
+			typ = baseType
+		} else {
+			if _, err = p.s.SeekFromStart(offset); err != nil {
+				return
+			}
+
+			h, err = p.nextObjectHeader()
+			if err != nil {
+				return
+			}
+
+			typ, _, err = p.getObjectData(h)
+			if err != nil {
+				return
+			}
+		}
+	default:
+		err = ErrInvalidObject.AddDetails("type %q", h.Type)
+	}
+
+	return
+}
+
+func (p *Packfile) getObjectSize(h *ObjectHeader) (int64, error) {
+	switch h.Type {
+	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
+		return h.Length, nil
+	case plumbing.REFDeltaObject, plumbing.OFSDeltaObject:
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufPool.Put(buf)
+
+		if _, _, err := p.s.NextObject(buf); err != nil {
+			return 0, err
+		}
+
+		delta := buf.Bytes()
+		_, delta = decodeLEB128(delta) // skip src size
+		sz, _ := decodeLEB128(delta)
+		return int64(sz), nil
+	default:
+		return 0, ErrInvalidObject.AddDetails("type %q", h.Type)
+	}
+}
+
+func (p *Packfile) getObjectType(h *ObjectHeader) (typ plumbing.ObjectType, err error) {
+	switch h.Type {
+	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
+		return h.Type, nil
+	case plumbing.REFDeltaObject, plumbing.OFSDeltaObject:
+		var offset int64
+		if h.Type == plumbing.REFDeltaObject {
+			offset, err = p.FindOffset(h.Reference)
+			if err != nil {
+				return
+			}
+		} else {
+			offset = h.OffsetReference
+		}
+
+		if baseType, ok := p.offsetToType[offset]; ok {
+			typ = baseType
+		} else {
+			if _, err = p.s.SeekFromStart(offset); err != nil {
+				return
+			}
+
+			h, err = p.nextObjectHeader()
+			if err != nil {
+				return
+			}
+
+			typ, err = p.getObjectType(h)
+			if err != nil {
+				return
+			}
+		}
+	default:
+		err = ErrInvalidObject.AddDetails("type %q", h.Type)
+	}
+
+	return
+}
+
+func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
+	h, err := p.nextObjectHeader()
 	if err != nil {
 		return nil, err
 	}
 
-	obj := new(plumbing.MemoryObject)
+	hash, err := p.FindHash(h.Offset)
+	if err != nil {
+		return nil, err
+	}
+
+	size, err := p.getObjectSize(h)
+	if err != nil {
+		return nil, err
+	}
+
+	typ, err := p.getObjectType(h)
+	if err != nil {
+		return nil, err
+	}
+
+	p.offsetToType[h.Offset] = typ
+
+	return NewDiskObject(hash, typ, h.Offset, size, p), nil
+}
+
+func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
+	if _, err := p.s.SeekFromStart(offset); err != nil {
+		return nil, err
+	}
+
+	h, err := p.nextObjectHeader()
+	if err != nil {
+		return nil, err
+	}
+
+	var obj = new(plumbing.MemoryObject)
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
 
@@ -82,12 +236,10 @@ func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
 	}
 
 	if err != nil {
-		return obj, err
+		return nil, err
 	}
 
-	p.offsetToHash[h.Offset] = obj.Hash()
-
-	return obj, nil
+	return obj.Reader()
 }
 
 func (p *Packfile) fillRegularObjectContent(obj plumbing.EncodedObject) error {
@@ -132,9 +284,10 @@ func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset 
 	}
 
 	var base plumbing.EncodedObject
-	h, ok := p.offsetToHash[offset]
-	if ok {
-		base, ok = p.cacheGet(h)
+	var ok bool
+	hash, err := p.FindHash(offset)
+	if err == nil {
+		base, ok = p.cacheGet(hash)
 	}
 
 	if !ok {
@@ -173,9 +326,7 @@ func (p *Packfile) cachePut(obj plumbing.EncodedObject) {
 // The iterator returned is not thread-safe, it should be used in the same
 // thread as the Packfile instance.
 func (p *Packfile) GetAll() (storer.EncodedObjectIter, error) {
-	s := NewScanner(p.File)
-
-	_, count, err := s.Header()
+	entries, err := p.Entries()
 	if err != nil {
 		return nil, err
 	}
@@ -185,8 +336,14 @@ func (p *Packfile) GetAll() (storer.EncodedObjectIter, error) {
 		// instance. To not mess with the seeks, it's a new instance with a
 		// different scanner but the same cache and offset to hash map for
 		// reusing as much cache as possible.
-		d:     &Packfile{p.Index, nil, s, p.deltaBaseCache, p.offsetToHash},
-		count: int(count),
+		p: &Packfile{
+			p.Index,
+			p.File,
+			NewScanner(p.File),
+			p.deltaBaseCache,
+			p.offsetToType,
+		},
+		iter: entries,
 	}, nil
 }
 
@@ -214,18 +371,17 @@ type objectDecoder interface {
 }
 
 type objectIter struct {
-	d     objectDecoder
-	count int
-	pos   int
+	p    *Packfile
+	iter idxfile.EntryIter
 }
 
 func (i *objectIter) Next() (plumbing.EncodedObject, error) {
-	if i.pos >= i.count {
-		return nil, io.EOF
+	e, err := i.iter.Next()
+	if err != nil {
+		return nil, err
 	}
 
-	i.pos++
-	return i.d.nextObject()
+	return i.p.GetByOffset(int64(e.Offset))
 }
 
 func (i *objectIter) ForEach(f func(plumbing.EncodedObject) error) error {
@@ -245,5 +401,5 @@ func (i *objectIter) ForEach(f func(plumbing.EncodedObject) error) error {
 }
 
 func (i *objectIter) Close() {
-	i.pos = i.count
+	i.iter.Close()
 }

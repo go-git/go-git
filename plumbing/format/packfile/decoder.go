@@ -478,7 +478,7 @@ func (d *Decoder) recallByOffset(o int64) (plumbing.EncodedObject, error) {
 
 func (d *Decoder) recallByHash(h plumbing.Hash) (plumbing.EncodedObject, error) {
 	if d.s.IsSeekable {
-		if offset, err := d.idx.FindOffset(h); err != nil {
+		if offset, err := d.idx.FindOffset(h); err == nil {
 			return d.DecodeObjectAt(offset)
 		}
 	}

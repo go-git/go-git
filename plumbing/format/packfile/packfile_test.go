@@ -1,14 +1,18 @@
 package packfile
 
 import (
+	"bytes"
 	"io"
 	"math"
+
+	"io/ioutil"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 type PackfileSuite struct {
@@ -102,6 +106,48 @@ var expectedEntries = map[plumbing.Hash]int64{
 	plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"): 12,
 	plumbing.NewHash("eba74343e2f15d62adedfd8c883ee0262b5c8021"): 84708,
 	plumbing.NewHash("fb72698cab7617ac416264415f13224dfd7a165e"): 84671,
+}
+
+func (s *PackfileSuite) TestContent(c *C) {
+	storer := memory.NewObjectStorage()
+	decoder, err := NewDecoder(NewScanner(s.f.Packfile()), storer)
+	c.Assert(err, IsNil)
+
+	_, err = decoder.Decode()
+	c.Assert(err, IsNil)
+
+	iter, err := s.p.GetAll()
+	c.Assert(err, IsNil)
+
+	for {
+		o, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		c.Assert(err, IsNil)
+
+		o2, err := storer.EncodedObject(plumbing.AnyObject, o.Hash())
+		c.Assert(err, IsNil)
+
+		c.Assert(o.Type(), Equals, o2.Type())
+		c.Assert(o.Size(), Equals, o2.Size())
+
+		r, err := o.Reader()
+		c.Assert(err, IsNil)
+
+		c1, err := ioutil.ReadAll(r)
+		c.Assert(err, IsNil)
+		c.Assert(r.Close(), IsNil)
+
+		r, err = o2.Reader()
+		c.Assert(err, IsNil)
+
+		c2, err := ioutil.ReadAll(r)
+		c.Assert(err, IsNil)
+		c.Assert(r.Close(), IsNil)
+
+		c.Assert(bytes.Compare(c1, c2), Equals, 0)
+	}
 }
 
 func (s *PackfileSuite) SetUpTest(c *C) {
