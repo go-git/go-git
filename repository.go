@@ -845,8 +845,9 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 	return nil, fmt.Errorf("invalid Order=%v", o.Order)
 }
 
-// Tags returns all the References from Tags. This method returns all the tag
-// types, lightweight, and annotated ones.
+// Tags returns all the References from Tags. This method returns only lightweight
+// tags. Note that not all the tags are lightweight ones. To return annotated tags
+// too, you need to call TagObjects() method.
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
 	refIter, err := r.Storer.IterReferences()
 	if err != nil {
