@@ -122,6 +122,7 @@ func NewDecoderForType(s *Scanner, o storer.EncodedObjectStorer,
 		deltaBaseCache: cacheObject,
 
 		idx:          idxfile.NewMemoryIndex(),
+		writer:       new(idxfile.Writer),
 		offsetToType: make(map[int64]plumbing.ObjectType),
 		offsetToHash: make(map[int64]plumbing.Hash),
 		decoderType:  t,
@@ -152,7 +153,12 @@ func (d *Decoder) Decode() (checksum plumbing.Hash, err error) {
 
 	if !d.hasBuiltIndex {
 		d.writer.OnFooter(checksum)
-		d.idx = d.Index()
+
+		idx, err := d.writer.Index()
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+		d.SetIndex(idx)
 	}
 
 	return checksum, err
@@ -186,12 +192,8 @@ func (d *Decoder) doDecode() error {
 	}
 
 	if !d.hasBuiltIndex {
-		// TODO: MemoryIndex is not writable, change to something else
-		d.idx = idxfile.NewMemoryIndex()
-		d.writer = new(idxfile.Writer)
 		d.writer.OnHeader(count)
 	}
-	defer func() { d.hasBuiltIndex = true }()
 
 	if d.hasBuiltIndex && !d.s.IsSeekable {
 		if err := d.fillOffsetsToHashes(); err != nil {
@@ -202,12 +204,18 @@ func (d *Decoder) doDecode() error {
 	_, isTxStorer := d.o.(storer.Transactioner)
 	switch {
 	case d.o == nil:
-		return d.decodeObjects(int(count))
+		err = d.decodeObjects(int(count))
 	case isTxStorer:
-		return d.decodeObjectsWithObjectStorerTx(int(count))
+		err = d.decodeObjectsWithObjectStorerTx(int(count))
 	default:
-		return d.decodeObjectsWithObjectStorer(int(count))
+		err = d.decodeObjectsWithObjectStorer(int(count))
 	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *Decoder) decodeObjects(count int) error {
@@ -509,8 +517,10 @@ func (d *Decoder) recallByHash(h plumbing.Hash) (plumbing.EncodedObject, error) 
 func (d *Decoder) recallByHashNonSeekable(h plumbing.Hash) (obj plumbing.EncodedObject, err error) {
 	if d.tx != nil {
 		obj, err = d.tx.EncodedObject(plumbing.AnyObject, h)
-	} else {
+	} else if d.o != nil {
 		obj, err = d.o.EncodedObject(plumbing.AnyObject, h)
+	} else {
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	if err != plumbing.ErrObjectNotFound {

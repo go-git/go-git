@@ -109,7 +109,7 @@ var expectedEntries = map[plumbing.Hash]int64{
 }
 
 func (s *PackfileSuite) TestContent(c *C) {
-	storer := memory.NewObjectStorage()
+	storer := memory.NewStorage()
 	decoder, err := NewDecoder(NewScanner(s.f.Packfile()), storer)
 	c.Assert(err, IsNil)
 

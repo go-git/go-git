@@ -67,6 +67,10 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 		return -1
 	}
 
+	if len(idx.Names) <= k {
+		return -1
+	}
+
 	data := idx.Names[k]
 	high := uint64(len(idx.Offset32[k])) >> 2
 	if high == 0 {
@@ -103,6 +107,10 @@ func (idx *MemoryIndex) Contains(h plumbing.Hash) (bool, error) {
 
 // FindOffset implements the Index interface.
 func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
+	if len(idx.FanoutMapping) <= int(h[0]) {
+		return 0, plumbing.ErrObjectNotFound
+	}
+
 	k := idx.FanoutMapping[h[0]]
 	i := idx.findHashIndex(h)
 	if i < 0 {

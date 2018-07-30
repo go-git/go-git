@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
@@ -46,7 +47,6 @@ func (s *ReaderSuite) TestDecode(c *C) {
 	})
 }
 
-/*
 func (s *ReaderSuite) TestDecodeByTypeRefDelta(c *C) {
 	f := fixtures.Basic().ByTag("ref-delta").One()
 
@@ -101,9 +101,7 @@ func (s *ReaderSuite) TestDecodeByTypeRefDeltaError(c *C) {
 	})
 
 }
-*/
 
-/*
 func (s *ReaderSuite) TestDecodeByType(c *C) {
 	ts := []plumbing.ObjectType{
 		plumbing.CommitObject,
@@ -142,7 +140,6 @@ func (s *ReaderSuite) TestDecodeByType(c *C) {
 		}
 	})
 }
-*/
 
 func (s *ReaderSuite) TestDecodeByTypeConstructor(c *C) {
 	f := fixtures.Basic().ByTag("packfile").One()
@@ -184,7 +181,7 @@ func (s *ReaderSuite) TestDecodeMultipleTimes(c *C) {
 func (s *ReaderSuite) TestDecodeInMemory(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		scanner := packfile.NewScanner(f.Packfile())
-		d, err := packfile.NewDecoder(scanner, nil)
+		d, err := packfile.NewDecoder(scanner, memory.NewStorage())
 		c.Assert(err, IsNil)
 
 		ch, err := d.Decode()
@@ -284,7 +281,6 @@ var expectedHashes = []string{
 	"7e59600739c96546163833214c36459e324bad0a",
 }
 
-/*
 func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 	f := fixtures.Basic().ByTag("ofs-delta").One()
 
@@ -297,8 +293,16 @@ func (s *ReaderSuite) TestDecodeCRCs(c *C) {
 	c.Assert(err, IsNil)
 
 	var sum uint64
-	idx := d.Index().ToIdxFile()
-	for _, e := range idx.Entries {
+	iter, err := d.Index().Entries()
+	c.Assert(err, IsNil)
+
+	for {
+		e, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
 		sum += uint64(e.CRC32)
 	}
 
@@ -349,12 +353,30 @@ func (s *ReaderSuite) TestIndex(c *C) {
 	d, err := packfile.NewDecoder(scanner, nil)
 	c.Assert(err, IsNil)
 
-	c.Assert(d.Index().ToIdxFile().Entries, HasLen, 0)
+	c.Assert(indexEntries(c, d), Equals, 0)
 
 	_, err = d.Decode()
 	c.Assert(err, IsNil)
 
-	c.Assert(len(d.Index().ToIdxFile().Entries), Equals, 31)
+	c.Assert(indexEntries(c, d), Equals, 31)
+}
+
+func indexEntries(c *C, d *packfile.Decoder) int {
+	var count int
+	entries, err := d.Index().Entries()
+	c.Assert(err, IsNil)
+
+	for {
+		_, err := entries.Next()
+		if err == io.EOF {
+			break
+		}
+
+		c.Assert(err, IsNil)
+		count++
+	}
+
+	return count
 }
 
 func (s *ReaderSuite) TestSetIndex(c *C) {
@@ -363,18 +385,25 @@ func (s *ReaderSuite) TestSetIndex(c *C) {
 	d, err := packfile.NewDecoder(scanner, nil)
 	c.Assert(err, IsNil)
 
-	idx := packfile.NewIndex(1)
+	w := new(idxfile.Writer)
 	h := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	idx.Add(h, uint64(42), 0)
+	w.Add(h, uint64(42), 0)
+	w.OnFooter(plumbing.ZeroHash)
+
+	var idx idxfile.Index
+	idx, err = w.Index()
+	c.Assert(err, IsNil)
 	d.SetIndex(idx)
 
-	idxf := d.Index().ToIdxFile()
-	c.Assert(idxf.Entries, HasLen, 1)
-	c.Assert(idxf.Entries[0].Offset, Equals, uint64(42))
-}*/
+	idx = d.Index()
+	c.Assert(indexEntries(c, d), Equals, 1)
+
+	offset, err := idx.FindOffset(h)
+	c.Assert(err, IsNil)
+	c.Assert(offset, Equals, int64(42))
+}
 
 func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
-
 	i, err := s.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
 
@@ -390,13 +419,12 @@ func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
 	}
 }
 
-/*
-func getIndexFromIdxFile(r io.Reader) *packfile.Index {
-	idxf := idxfile.NewIdxfile()
+func getIndexFromIdxFile(r io.Reader) idxfile.Index {
+	idxf := idxfile.NewMemoryIndex()
 	d := idxfile.NewDecoder(r)
 	if err := d.Decode(idxf); err != nil {
 		panic(err)
 	}
 
-	return packfile.NewIndexFromIdxFile(idxf)
-}*/
+	return idxf
+}
