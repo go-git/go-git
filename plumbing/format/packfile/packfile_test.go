@@ -45,7 +45,7 @@ func (s *PackfileSuite) TestGetByOffset(c *C) {
 	}
 
 	_, err := s.p.GetByOffset(math.MaxInt64)
-	c.Assert(err, Equals, io.EOF)
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 }
 
 func (s *PackfileSuite) TestID(c *C) {
@@ -109,7 +109,7 @@ var expectedEntries = map[plumbing.Hash]int64{
 }
 
 func (s *PackfileSuite) TestContent(c *C) {
-	storer := memory.NewObjectStorage()
+	storer := memory.NewStorage()
 	decoder, err := NewDecoder(NewScanner(s.f.Packfile()), storer)
 	c.Assert(err, IsNil)
 
@@ -153,7 +153,7 @@ func (s *PackfileSuite) TestContent(c *C) {
 func (s *PackfileSuite) SetUpTest(c *C) {
 	s.f = fixtures.Basic().One()
 
-	f, err := osfs.New("/").Open(s.f.Packfile().Name())
+	f, err := osfs.New("").Open(s.f.Packfile().Name())
 	c.Assert(err, IsNil)
 
 	s.idx = idxfile.NewMemoryIndex()

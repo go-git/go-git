@@ -3,6 +3,7 @@ package packfile
 import (
 	"bytes"
 	"io"
+	"os"
 
 	billy "gopkg.in/src-d/go-billy.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -55,6 +56,10 @@ func (p *Packfile) GetByOffset(o int64) (plumbing.EncodedObject, error) {
 	}
 
 	if _, err := p.s.SeekFromStart(o); err != nil {
+		if err == io.EOF || isInvalid(err) {
+			return nil, plumbing.ErrObjectNotFound
+		}
+
 		return nil, err
 	}
 
@@ -187,6 +192,9 @@ func (p *Packfile) getObjectType(h *ObjectHeader) (typ plumbing.ObjectType, err 
 func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
 	h, err := p.nextObjectHeader()
 	if err != nil {
+		if err == io.EOF || isInvalid(err) {
+			return nil, plumbing.ErrObjectNotFound
+		}
 		return nil, err
 	}
 
@@ -403,3 +411,21 @@ func (i *objectIter) ForEach(f func(plumbing.EncodedObject) error) error {
 func (i *objectIter) Close() {
 	i.iter.Close()
 }
+
+// isInvalid checks whether an error is an os.PathError with an os.ErrInvalid
+// error inside. It also checks for the windows error, which is different from
+// os.ErrInvalid.
+func isInvalid(err error) bool {
+	pe, ok := err.(*os.PathError)
+	if !ok {
+		return false
+	}
+
+	errstr := pe.Err.Error()
+	return errstr == errInvalidUnix || errstr == errInvalidWindows
+}
+
+// errInvalidWindows is the Windows equivalent to os.ErrInvalid
+const errInvalidWindows = "The parameter is incorrect."
+
+var errInvalidUnix = os.ErrInvalid.Error()

@@ -25,6 +25,7 @@ type Writer struct {
 	offset64 uint32
 	finished bool
 	index    *MemoryIndex
+	added    map[plumbing.Hash]struct{}
 }
 
 // Index returns a previously created MemoryIndex or creates a new one if
@@ -45,7 +46,15 @@ func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
 	w.m.Lock()
 	defer w.m.Unlock()
 
-	w.objects = append(w.objects, Entry{h, crc, pos})
+	if w.added == nil {
+		w.added = make(map[plumbing.Hash]struct{})
+	}
+
+	if _, ok := w.added[h]; !ok {
+		w.added[h] = struct{}{}
+		w.objects = append(w.objects, Entry{h, crc, pos})
+	}
+
 }
 
 func (w *Writer) Finished() bool {
