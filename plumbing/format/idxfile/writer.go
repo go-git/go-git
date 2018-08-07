@@ -74,7 +74,7 @@ func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, po
 }
 
 // OnInflatedObjectContent implements packfile.Observer interface.
-func (w *Writer) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32) error {
+func (w *Writer) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32, _ []byte) error {
 	w.Add(h, uint64(pos), crc)
 	return nil
 }

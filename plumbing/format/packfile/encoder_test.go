@@ -2,8 +2,12 @@ package packfile
 
 import (
 	"bytes"
+	"io"
+	stdioutil "io/ioutil"
 
+	"gopkg.in/src-d/go-billy.v3/memfs"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
@@ -130,24 +134,20 @@ func (s *EncoderSuite) simpleDeltaTest(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	scanner := NewScanner(s.buf)
-
-	storage := memory.NewStorage()
-	d, err := NewDecoder(scanner, storage)
-	c.Assert(err, IsNil)
-
-	decHash, err := d.Decode()
+	p, cleanup := packfileFromReader(c, s.buf)
+	defer cleanup()
+	decHash, err := p.ID()
 	c.Assert(err, IsNil)
 
 	c.Assert(encHash, Equals, decHash)
 
-	decSrc, err := storage.EncodedObject(srcObject.Type(), srcObject.Hash())
+	decSrc, err := p.Get(srcObject.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decSrc, DeepEquals, srcObject)
+	objectsEqual(c, decSrc, srcObject)
 
-	decTarget, err := storage.EncodedObject(targetObject.Type(), targetObject.Hash())
+	decTarget, err := p.Get(targetObject.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decTarget, DeepEquals, targetObject)
+	objectsEqual(c, decTarget, targetObject)
 }
 
 func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
@@ -173,27 +173,24 @@ func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	scanner := NewScanner(s.buf)
-	storage := memory.NewStorage()
-	d, err := NewDecoder(scanner, storage)
-	c.Assert(err, IsNil)
-
-	decHash, err := d.Decode()
+	p, cleanup := packfileFromReader(c, s.buf)
+	defer cleanup()
+	decHash, err := p.ID()
 	c.Assert(err, IsNil)
 
 	c.Assert(encHash, Equals, decHash)
 
-	decSrc, err := storage.EncodedObject(srcObject.Type(), srcObject.Hash())
+	decSrc, err := p.Get(srcObject.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decSrc, DeepEquals, srcObject)
+	objectsEqual(c, decSrc, srcObject)
 
-	decTarget, err := storage.EncodedObject(targetObject.Type(), targetObject.Hash())
+	decTarget, err := p.Get(targetObject.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decTarget, DeepEquals, targetObject)
+	objectsEqual(c, decTarget, targetObject)
 
-	decOtherTarget, err := storage.EncodedObject(otherTargetObject.Type(), otherTargetObject.Hash())
+	decOtherTarget, err := p.Get(otherTargetObject.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decOtherTarget, DeepEquals, otherTargetObject)
+	objectsEqual(c, decOtherTarget, otherTargetObject)
 }
 
 func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
@@ -248,29 +245,70 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	scanner := NewScanner(s.buf)
-	storage := memory.NewStorage()
-	d, err := NewDecoder(scanner, storage)
-	c.Assert(err, IsNil)
-
-	decHash, err := d.Decode()
+	p, cleanup := packfileFromReader(c, s.buf)
+	defer cleanup()
+	decHash, err := p.ID()
 	c.Assert(err, IsNil)
 
 	c.Assert(encHash, Equals, decHash)
 
-	decSrc, err := storage.EncodedObject(o1.Type(), o1.Hash())
+	decSrc, err := p.Get(o1.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decSrc, DeepEquals, o1)
+	objectsEqual(c, decSrc, o1)
 
-	decTarget, err := storage.EncodedObject(o2.Type(), o2.Hash())
+	decTarget, err := p.Get(o2.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decTarget, DeepEquals, o2)
+	objectsEqual(c, decTarget, o2)
 
-	decOtherTarget, err := storage.EncodedObject(o3.Type(), o3.Hash())
+	decOtherTarget, err := p.Get(o3.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decOtherTarget, DeepEquals, o3)
+	objectsEqual(c, decOtherTarget, o3)
 
-	decAnotherTarget, err := storage.EncodedObject(o4.Type(), o4.Hash())
+	decAnotherTarget, err := p.Get(o4.Hash())
 	c.Assert(err, IsNil)
-	c.Assert(decAnotherTarget, DeepEquals, o4)
+	objectsEqual(c, decAnotherTarget, o4)
+}
+
+func objectsEqual(c *C, o1, o2 plumbing.EncodedObject) {
+	c.Assert(o1.Type(), Equals, o2.Type())
+	c.Assert(o1.Hash(), Equals, o2.Hash())
+	c.Assert(o1.Size(), Equals, o2.Size())
+
+	r1, err := o1.Reader()
+	c.Assert(err, IsNil)
+
+	b1, err := stdioutil.ReadAll(r1)
+	c.Assert(err, IsNil)
+
+	r2, err := o2.Reader()
+	c.Assert(err, IsNil)
+
+	b2, err := stdioutil.ReadAll(r2)
+	c.Assert(err, IsNil)
+
+	c.Assert(bytes.Compare(b1, b2), Equals, 0)
+}
+
+func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
+	file, err := memfs.New().Create("packfile")
+	c.Assert(err, IsNil)
+
+	_, err = file.Write(buf.Bytes())
+	c.Assert(err, IsNil)
+
+	_, err = file.Seek(0, io.SeekStart)
+	c.Assert(err, IsNil)
+
+	scanner := NewScanner(file)
+
+	w := new(idxfile.Writer)
+	_, err = NewParser(scanner, w).Parse()
+	c.Assert(err, IsNil)
+
+	index, err := w.Index()
+	c.Assert(err, IsNil)
+
+	return NewPackfile(index, file), func() {
+		c.Assert(file.Close(), IsNil)
+	}
 }

@@ -1,23 +1,21 @@
-package packfile
+package packfile_test
 
 import (
-	"bytes"
 	"io"
 	"math"
-
-	"io/ioutil"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 type PackfileSuite struct {
 	fixtures.Suite
-	p   *Packfile
+	p   *packfile.Packfile
 	idx *idxfile.MemoryIndex
 	f   *fixtures.Fixture
 }
@@ -108,48 +106,6 @@ var expectedEntries = map[plumbing.Hash]int64{
 	plumbing.NewHash("fb72698cab7617ac416264415f13224dfd7a165e"): 84671,
 }
 
-func (s *PackfileSuite) TestContent(c *C) {
-	storer := memory.NewStorage()
-	decoder, err := NewDecoder(NewScanner(s.f.Packfile()), storer)
-	c.Assert(err, IsNil)
-
-	_, err = decoder.Decode()
-	c.Assert(err, IsNil)
-
-	iter, err := s.p.GetAll()
-	c.Assert(err, IsNil)
-
-	for {
-		o, err := iter.Next()
-		if err == io.EOF {
-			break
-		}
-		c.Assert(err, IsNil)
-
-		o2, err := storer.EncodedObject(plumbing.AnyObject, o.Hash())
-		c.Assert(err, IsNil)
-
-		c.Assert(o.Type(), Equals, o2.Type())
-		c.Assert(o.Size(), Equals, o2.Size())
-
-		r, err := o.Reader()
-		c.Assert(err, IsNil)
-
-		c1, err := ioutil.ReadAll(r)
-		c.Assert(err, IsNil)
-		c.Assert(r.Close(), IsNil)
-
-		r, err = o2.Reader()
-		c.Assert(err, IsNil)
-
-		c2, err := ioutil.ReadAll(r)
-		c.Assert(err, IsNil)
-		c.Assert(r.Close(), IsNil)
-
-		c.Assert(bytes.Compare(c1, c2), Equals, 0)
-	}
-}
-
 func (s *PackfileSuite) SetUpTest(c *C) {
 	s.f = fixtures.Basic().One()
 
@@ -159,9 +115,148 @@ func (s *PackfileSuite) SetUpTest(c *C) {
 	s.idx = idxfile.NewMemoryIndex()
 	c.Assert(idxfile.NewDecoder(s.f.Idx()).Decode(s.idx), IsNil)
 
-	s.p = NewPackfile(s.idx, f)
+	s.p = packfile.NewPackfile(s.idx, f)
 }
 
 func (s *PackfileSuite) TearDownTest(c *C) {
 	c.Assert(s.p.Close(), IsNil)
+}
+
+func (s *PackfileSuite) TestDecode(c *C) {
+	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
+		index := getIndexFromIdxFile(f.Idx())
+		p := packfile.NewPackfile(index, f.Packfile())
+		defer p.Close()
+
+		for _, h := range expectedHashes {
+			obj, err := p.Get(plumbing.NewHash(h))
+			c.Assert(err, IsNil)
+			c.Assert(obj.Hash().String(), Equals, h)
+		}
+	})
+}
+
+func (s *PackfileSuite) TestDecodeByTypeRefDelta(c *C) {
+	f := fixtures.Basic().ByTag("ref-delta").One()
+
+	index := getIndexFromIdxFile(f.Idx())
+	packfile := packfile.NewPackfile(index, f.Packfile())
+	defer packfile.Close()
+
+	iter, err := packfile.GetByType(plumbing.CommitObject)
+	c.Assert(err, IsNil)
+
+	var count int
+	for {
+		obj, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		count++
+		c.Assert(err, IsNil)
+		c.Assert(obj.Type(), Equals, plumbing.CommitObject)
+	}
+
+	c.Assert(count > 0, Equals, true)
+}
+
+func (s *PackfileSuite) TestDecodeByType(c *C) {
+	ts := []plumbing.ObjectType{
+		plumbing.CommitObject,
+		plumbing.TagObject,
+		plumbing.TreeObject,
+		plumbing.BlobObject,
+	}
+
+	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
+		for _, t := range ts {
+			index := getIndexFromIdxFile(f.Idx())
+			packfile := packfile.NewPackfile(index, f.Packfile())
+			defer packfile.Close()
+
+			iter, err := packfile.GetByType(t)
+			c.Assert(err, IsNil)
+
+			c.Assert(iter.ForEach(func(obj plumbing.EncodedObject) error {
+				c.Assert(obj.Type(), Equals, t)
+				return nil
+			}), IsNil)
+		}
+	})
+}
+
+func (s *PackfileSuite) TestDecodeByTypeConstructor(c *C) {
+	f := fixtures.Basic().ByTag("packfile").One()
+	index := getIndexFromIdxFile(f.Idx())
+	packfile := packfile.NewPackfile(index, f.Packfile())
+	defer packfile.Close()
+
+	_, err := packfile.GetByType(plumbing.OFSDeltaObject)
+	c.Assert(err, Equals, plumbing.ErrInvalidType)
+
+	_, err = packfile.GetByType(plumbing.REFDeltaObject)
+	c.Assert(err, Equals, plumbing.ErrInvalidType)
+
+	_, err = packfile.GetByType(plumbing.InvalidObject)
+	c.Assert(err, Equals, plumbing.ErrInvalidType)
+}
+
+var expectedHashes = []string{
+	"918c48b83bd081e863dbe1b80f8998f058cd8294",
+	"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+	"1669dce138d9b841a518c64b10914d88f5e488ea",
+	"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+	"b8e471f58bcbca63b07bda20e428190409c2db47",
+	"35e85108805c84807bc66a02d91535e1e24b38b9",
+	"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+	"32858aad3c383ed1ff0a0f9bdf231d54a00c9e88",
+	"d3ff53e0564a9f87d8e84b6e28e5060e517008aa",
+	"c192bd6a24ea1ab01d78686e417c8bdc7c3d197f",
+	"d5c0f4ab811897cadf03aec358ae60d21f91c50d",
+	"49c6bb89b17060d7b4deacb7b338fcc6ea2352a9",
+	"cf4aa3b38974fb7d81f367c0830f7d78d65ab86b",
+	"9dea2395f5403188298c1dabe8bdafe562c491e3",
+	"586af567d0bb5e771e49bdd9434f5e0fb76d25fa",
+	"9a48f23120e880dfbe41f7c9b7b708e9ee62a492",
+	"5a877e6a906a2743ad6e45d99c1793642aaf8eda",
+	"c8f1d8c61f9da76f4cb49fd86322b6e685dba956",
+	"a8d315b2b1c615d43042c3a62402b8a54288cf5c",
+	"a39771a7651f97faf5c72e08224d857fc35133db",
+	"880cd14280f4b9b6ed3986d6671f907d7cc2a198",
+	"fb72698cab7617ac416264415f13224dfd7a165e",
+	"4d081c50e250fa32ea8b1313cf8bb7c2ad7627fd",
+	"eba74343e2f15d62adedfd8c883ee0262b5c8021",
+	"c2d30fa8ef288618f65f6eed6e168e0d514886f4",
+	"8dcef98b1d52143e1e2dbc458ffe38f925786bf2",
+	"aa9b383c260e1d05fbbf6b30a02914555e20c725",
+	"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	"dbd3641b371024f44d0e469a9c8f5457b0660de1",
+	"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	"7e59600739c96546163833214c36459e324bad0a",
+}
+
+func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
+	i, err := s.IterEncodedObjects(plumbing.AnyObject)
+	c.Assert(err, IsNil)
+
+	var count int
+	err = i.ForEach(func(plumbing.EncodedObject) error { count++; return nil })
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, len(expects))
+
+	for _, exp := range expects {
+		obt, err := s.EncodedObject(plumbing.AnyObject, plumbing.NewHash(exp))
+		c.Assert(err, IsNil)
+		c.Assert(obt.Hash().String(), Equals, exp)
+	}
+}
+
+func getIndexFromIdxFile(r io.Reader) idxfile.Index {
+	idxf := idxfile.NewMemoryIndex()
+	d := idxfile.NewDecoder(r)
+	if err := d.Decode(idxf); err != nil {
+		panic(err)
+	}
+
+	return idxf
 }

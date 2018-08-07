@@ -52,7 +52,7 @@ func (s *WriterSuite) TestWriterLarge(c *C) {
 	c.Assert(err, IsNil)
 
 	for _, o := range fixture4GbEntries {
-		err = writer.OnInflatedObjectContent(plumbing.NewHash(o.hash), o.offset, o.crc)
+		err = writer.OnInflatedObjectContent(plumbing.NewHash(o.hash), o.offset, o.crc, nil)
 		c.Assert(err, IsNil)
 	}
 

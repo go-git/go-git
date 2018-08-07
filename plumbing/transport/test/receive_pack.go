@@ -262,13 +262,16 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 		req.Packfile = s.emptyPackfile()
 	}
 
-	return r.ReceivePack(context.Background(), req)
+	if s, err := r.ReceivePack(context.Background(), req); err != nil {
+		return s, err
+	} else {
+		return s, err
+	}
 }
 
 func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool) {
-
 	url := ""
 	if fixture != nil {
 		url = fixture.URL
@@ -279,7 +282,6 @@ func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
 		ep.String(), url, callAdvertisedReferences,
 	)
 	report, err := s.receivePackNoCheck(c, ep, req, fixture, callAdvertisedReferences)
-
 	c.Assert(err, IsNil, comment)
 	if req.Capabilities.Supports(capability.ReportStatus) {
 		c.Assert(report, NotNil, comment)

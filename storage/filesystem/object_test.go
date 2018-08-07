@@ -115,7 +115,11 @@ func (s *FsSuite) TestPackfileIter(c *C) {
 			for _, h := range ph {
 				f, err := dg.ObjectPack(h)
 				c.Assert(err, IsNil)
-				iter, err := NewPackfileIter(f, t)
+
+				idxf, err := dg.ObjectPackIdx(h)
+				c.Assert(err, IsNil)
+
+				iter, err := NewPackfileIter(f, idxf, t)
 				c.Assert(err, IsNil)
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
 					c.Assert(o.Type(), Equals, t)

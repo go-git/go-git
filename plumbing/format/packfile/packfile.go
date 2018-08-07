@@ -3,36 +3,53 @@ package packfile
 import (
 	"bytes"
 	"io"
+	stdioutil "io/ioutil"
 	"os"
 
-	billy "gopkg.in/src-d/go-billy.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
+var (
+	// ErrInvalidObject is returned by Decode when an invalid object is
+	// found in the packfile.
+	ErrInvalidObject = NewError("invalid git object")
+	// ErrZLib is returned by Decode when there was an error unzipping
+	// the packfile contents.
+	ErrZLib = NewError("zlib reading error")
+)
+
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
-	billy.File
+	file           io.ReadSeeker
 	s              *Scanner
 	deltaBaseCache cache.Object
 	offsetToType   map[int64]plumbing.ObjectType
 }
 
-// NewPackfile returns a packfile representation for the given packfile file
-// and packfile idx.
-func NewPackfile(index idxfile.Index, file billy.File) *Packfile {
+// NewPackfileWithCache creates a new Packfile with the given object cache.
+func NewPackfileWithCache(
+	index idxfile.Index,
+	file io.ReadSeeker,
+	cache cache.Object,
+) *Packfile {
 	s := NewScanner(file)
-
 	return &Packfile{
 		index,
 		file,
 		s,
-		cache.NewObjectLRUDefault(),
+		cache,
 		make(map[int64]plumbing.ObjectType),
 	}
+}
+
+// NewPackfile returns a packfile representation for the given packfile file
+// and packfile idx.
+func NewPackfile(index idxfile.Index, file io.ReadSeeker) *Packfile {
+	return NewPackfileWithCache(index, file, cache.NewObjectLRUDefault())
 }
 
 // Get retrieves the encoded object in the packfile with the given hash.
@@ -334,35 +351,49 @@ func (p *Packfile) cachePut(obj plumbing.EncodedObject) {
 // The iterator returned is not thread-safe, it should be used in the same
 // thread as the Packfile instance.
 func (p *Packfile) GetAll() (storer.EncodedObjectIter, error) {
-	entries, err := p.Entries()
-	if err != nil {
-		return nil, err
-	}
+	return p.GetByType(plumbing.AnyObject)
+}
 
-	return &objectIter{
-		// Easiest way to provide an object decoder is just to pass a Packfile
-		// instance. To not mess with the seeks, it's a new instance with a
-		// different scanner but the same cache and offset to hash map for
-		// reusing as much cache as possible.
-		p: &Packfile{
-			p.Index,
-			p.File,
-			NewScanner(p.File),
-			p.deltaBaseCache,
-			p.offsetToType,
-		},
-		iter: entries,
-	}, nil
+// GetByType returns all the objects of the given type.
+func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+	switch typ {
+	case plumbing.AnyObject,
+		plumbing.BlobObject,
+		plumbing.TreeObject,
+		plumbing.CommitObject,
+		plumbing.TagObject:
+		entries, err := p.Entries()
+		if err != nil {
+			return nil, err
+		}
+
+		return &objectIter{
+			// Easiest way to provide an object decoder is just to pass a Packfile
+			// instance. To not mess with the seeks, it's a new instance with a
+			// different scanner but the same cache and offset to hash map for
+			// reusing as much cache as possible.
+			p:    p,
+			iter: entries,
+			typ:  typ,
+		}, nil
+	default:
+		return nil, plumbing.ErrInvalidType
+	}
 }
 
 // ID returns the ID of the packfile, which is the checksum at the end of it.
 func (p *Packfile) ID() (plumbing.Hash, error) {
-	if _, err := p.File.Seek(-20, io.SeekEnd); err != nil {
+	prev, err := p.file.Seek(-20, io.SeekEnd)
+	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
 	var hash plumbing.Hash
-	if _, err := io.ReadFull(p.File, hash[:]); err != nil {
+	if _, err := io.ReadFull(p.file, hash[:]); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if _, err := p.file.Seek(prev, io.SeekStart); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
@@ -371,25 +402,59 @@ func (p *Packfile) ID() (plumbing.Hash, error) {
 
 // Close the packfile and its resources.
 func (p *Packfile) Close() error {
-	return p.File.Close()
+	closer, ok := p.file.(io.Closer)
+	if !ok {
+		return nil
+	}
+
+	return closer.Close()
 }
 
-type objectDecoder interface {
-	nextObject() (plumbing.EncodedObject, error)
-}
+// MemoryObjectFromDisk converts a DiskObject to a MemoryObject.
+func MemoryObjectFromDisk(obj plumbing.EncodedObject) (plumbing.EncodedObject, error) {
+	o2 := new(plumbing.MemoryObject)
+	o2.SetType(obj.Type())
+	o2.SetSize(obj.Size())
 
-type objectIter struct {
-	p    *Packfile
-	iter idxfile.EntryIter
-}
-
-func (i *objectIter) Next() (plumbing.EncodedObject, error) {
-	e, err := i.iter.Next()
+	r, err := obj.Reader()
 	if err != nil {
 		return nil, err
 	}
 
-	return i.p.GetByOffset(int64(e.Offset))
+	data, err := stdioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := o2.Write(data); err != nil {
+		return nil, err
+	}
+
+	return o2, nil
+}
+
+type objectIter struct {
+	p    *Packfile
+	typ  plumbing.ObjectType
+	iter idxfile.EntryIter
+}
+
+func (i *objectIter) Next() (plumbing.EncodedObject, error) {
+	for {
+		e, err := i.iter.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		obj, err := i.p.GetByOffset(int64(e.Offset))
+		if err != nil {
+			return nil, err
+		}
+
+		if i.typ == plumbing.AnyObject || obj.Type() == i.typ {
+			return obj, nil
+		}
+	}
 }
 
 func (i *objectIter) ForEach(f func(plumbing.EncodedObject) error) error {

@@ -9,6 +9,16 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 )
 
+var (
+	// ErrObjectContentAlreadyRead is returned when the content of the object
+	// was already read, since the content can only be read once.
+	ErrObjectContentAlreadyRead = errors.New("object content was already read")
+
+	// ErrReferenceDeltaNotFound is returned when the reference delta is not
+	// found.
+	ErrReferenceDeltaNotFound = errors.New("reference delta not found")
+)
+
 // Observer interface is implemented by index encoders.
 type Observer interface {
 	// OnHeader is called when a new packfile is opened.
@@ -16,7 +26,7 @@ type Observer interface {
 	// OnInflatedObjectHeader is called for each object header read.
 	OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, pos int64) error
 	// OnInflatedObjectContent is called for each decoded object.
-	OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32) error
+	OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32, content []byte) error
 	// OnFooter is called when decoding is done.
 	OnFooter(h plumbing.Hash) error
 }
@@ -32,41 +42,44 @@ type Parser struct {
 	hashOffset map[plumbing.Hash]int64
 	checksum   plumbing.Hash
 
-	cache *cache.ObjectLRU
+	cache        *cache.ObjectLRU
+	contentCache map[int64][]byte
 
 	ob []Observer
 }
 
 // NewParser creates a new Parser struct.
 func NewParser(scanner *Scanner, ob ...Observer) *Parser {
+	var contentCache map[int64][]byte
+	if !scanner.IsSeekable {
+		contentCache = make(map[int64][]byte)
+	}
+
 	return &Parser{
-		scanner: scanner,
-		ob:      ob,
-		count:   0,
-		cache:   cache.NewObjectLRUDefault(),
+		scanner:      scanner,
+		ob:           ob,
+		count:        0,
+		cache:        cache.NewObjectLRUDefault(),
+		contentCache: contentCache,
 	}
 }
 
 // Parse start decoding phase of the packfile.
 func (p *Parser) Parse() (plumbing.Hash, error) {
-	err := p.init()
-	if err != nil {
+	if err := p.init(); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	err = p.firstPass()
-	if err != nil {
+	if err := p.firstPass(); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	err = p.resolveDeltas()
-	if err != nil {
+	if err := p.resolveDeltas(); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
 	for _, o := range p.ob {
-		err := o.OnFooter(p.checksum)
-		if err != nil {
+		if err := o.OnFooter(p.checksum); err != nil {
 			return plumbing.ZeroHash, err
 		}
 	}
@@ -81,8 +94,7 @@ func (p *Parser) init() error {
 	}
 
 	for _, o := range p.ob {
-		err := o.OnHeader(c)
-		if err != nil {
+		if err := o.OnHeader(c); err != nil {
 			return err
 		}
 	}
@@ -99,7 +111,7 @@ func (p *Parser) firstPass() error {
 	buf := new(bytes.Buffer)
 
 	for i := uint32(0); i < p.count; i++ {
-		buf.Truncate(0)
+		buf.Reset()
 
 		oh, err := p.scanner.NextObjectHeader()
 		if err != nil {
@@ -122,8 +134,7 @@ func (p *Parser) firstPass() error {
 			}
 
 			if !ok {
-				// TODO improve error
-				return errors.New("Reference delta not found")
+				return ErrReferenceDeltaNotFound
 			}
 
 			ota = newDeltaObject(oh.Offset, oh.Length, t, parent)
@@ -143,35 +154,41 @@ func (p *Parser) firstPass() error {
 		ota.Length = oh.Length
 
 		if !delta {
-			ota.Write(buf.Bytes())
+			if _, err := ota.Write(buf.Bytes()); err != nil {
+				return err
+			}
 			ota.SHA1 = ota.Sum()
+			p.oiByHash[ota.SHA1] = ota
 		}
 
 		p.oiByOffset[oh.Offset] = ota
-		p.oiByHash[oh.Reference] = ota
 
 		p.oi[i] = ota
 	}
 
-	checksum, err := p.scanner.Checksum()
-	p.checksum = checksum
-
-	if err == io.EOF {
-		return nil
+	var err error
+	p.checksum, err = p.scanner.Checksum()
+	if err != nil && err != io.EOF {
+		return err
 	}
 
-	return err
+	return nil
 }
 
 func (p *Parser) resolveDeltas() error {
 	for _, obj := range p.oi {
+		content, err := obj.Content()
+		if err != nil {
+			return err
+		}
+
 		for _, o := range p.ob {
 			err := o.OnInflatedObjectHeader(obj.Type, obj.Length, obj.Offset)
 			if err != nil {
 				return err
 			}
 
-			err = o.OnInflatedObjectContent(obj.SHA1, obj.Offset, obj.Crc32)
+			err = o.OnInflatedObjectContent(obj.SHA1, obj.Offset, obj.Crc32, content)
 			if err != nil {
 				return err
 			}
@@ -185,8 +202,7 @@ func (p *Parser) resolveDeltas() error {
 			}
 
 			for _, child := range obj.Children {
-				_, err = p.resolveObject(child, base)
-				if err != nil {
+				if _, err := p.resolveObject(child, base); err != nil {
 					return err
 				}
 			}
@@ -205,8 +221,7 @@ func (p *Parser) get(o *objectInfo) ([]byte, error) {
 		}
 
 		buf := make([]byte, e.Size())
-		_, err = r.Read(buf)
-		if err != nil {
+		if _, err = r.Read(buf); err != nil {
 			return nil, err
 		}
 
@@ -254,8 +269,8 @@ func (p *Parser) get(o *objectInfo) ([]byte, error) {
 
 func (p *Parser) resolveObject(
 	o *objectInfo,
-	base []byte) ([]byte, error) {
-
+	base []byte,
+) ([]byte, error) {
 	if !o.DiskType.IsDelta() {
 		return nil, nil
 	}
@@ -278,16 +293,17 @@ func (p *Parser) readData(o *objectInfo) ([]byte, error) {
 
 	// TODO: skip header. Header size can be calculated with the offset of the
 	// next offset in the first pass.
-	p.scanner.SeekFromStart(o.Offset)
-	_, err := p.scanner.NextObjectHeader()
-	if err != nil {
+	if _, err := p.scanner.SeekFromStart(o.Offset); err != nil {
 		return nil, err
 	}
 
-	buf.Truncate(0)
+	if _, err := p.scanner.NextObjectHeader(); err != nil {
+		return nil, err
+	}
 
-	_, _, err = p.scanner.NextObject(buf)
-	if err != nil {
+	buf.Reset()
+
+	if _, _, err := p.scanner.NextObject(buf); err != nil {
 		return nil, err
 	}
 
@@ -301,9 +317,11 @@ func applyPatchBase(ota *objectInfo, data, base []byte) ([]byte, error) {
 	}
 
 	ota.Type = ota.Parent.Type
-	hash := plumbing.ComputeHash(ota.Type, patched)
-
-	ota.SHA1 = hash
+	ota.Hasher = plumbing.NewHasher(ota.Type, int64(len(patched)))
+	if _, err := ota.Write(patched); err != nil {
+		return nil, err
+	}
+	ota.SHA1 = ota.Sum()
 
 	return patched, nil
 }
@@ -323,6 +341,8 @@ type objectInfo struct {
 	Parent   *objectInfo
 	Children []*objectInfo
 	SHA1     plumbing.Hash
+
+	content *bytes.Buffer
 }
 
 func newBaseObject(offset, length int64, t plumbing.ObjectType) *objectInfo {
@@ -349,6 +369,30 @@ func newDeltaObject(
 	}
 
 	return obj
+}
+
+func (o *objectInfo) Write(bs []byte) (int, error) {
+	n, err := o.Hasher.Write(bs)
+	if err != nil {
+		return 0, err
+	}
+
+	o.content = bytes.NewBuffer(nil)
+
+	_, _ = o.content.Write(bs)
+	return n, nil
+}
+
+// Content returns the content of the object. This operation can only be done
+// once.
+func (o *objectInfo) Content() ([]byte, error) {
+	if o.content == nil {
+		return nil, ErrObjectContentAlreadyRead
+	}
+
+	r := o.content
+	o.content = nil
+	return r.Bytes(), nil
 }
 
 func (o *objectInfo) IsDelta() bool {

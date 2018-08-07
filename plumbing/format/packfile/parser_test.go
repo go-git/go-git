@@ -103,7 +103,7 @@ func (t *testObserver) OnInflatedObjectHeader(otype plumbing.ObjectType, objSize
 	return nil
 }
 
-func (t *testObserver) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32) error {
+func (t *testObserver) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32, _ []byte) error {
 	o := t.get(pos)
 	o.hash = h.String()
 	o.crc = crc
