@@ -846,7 +846,33 @@ func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	objects, err := r.Objects()
 	c.Assert(err, IsNil)
 	objects.ForEach(func(object.Object) error { count++; return nil })
-	c.Assert(count, Equals, 31)
+	c.Assert(count, Equals, 28)
+}
+
+func (s *RepositorySuite) TestCloneDetachedHEADAndSingle(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:           s.GetBasicLocalRepositoryURL(),
+		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
+		SingleBranch:  true,
+	})
+	c.Assert(err, IsNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 0)
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	c.Assert(err, IsNil)
+	c.Assert(head, NotNil)
+	c.Assert(head.Type(), Equals, plumbing.HashReference)
+	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	count := 0
+	objects, err := r.Objects()
+	c.Assert(err, IsNil)
+	objects.ForEach(func(object.Object) error { count++; return nil })
+	c.Assert(count, Equals, 28)
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEADAndShallow(c *C) {
