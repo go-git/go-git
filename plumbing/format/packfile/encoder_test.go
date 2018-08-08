@@ -302,7 +302,10 @@ func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
 	scanner := NewScanner(file)
 
 	w := new(idxfile.Writer)
-	_, err = NewParser(scanner, w).Parse()
+	p, err := NewParser(scanner, w)
+	c.Assert(err, IsNil)
+
+	_, err = p.Parse()
 	c.Assert(err, IsNil)
 
 	index, err := w.Index()

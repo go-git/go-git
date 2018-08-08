@@ -19,7 +19,8 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 	scanner := packfile.NewScanner(f.Packfile())
 
 	obs := new(testObserver)
-	parser := packfile.NewParser(scanner, obs)
+	parser, err := packfile.NewParser(scanner, obs)
+	c.Assert(err, IsNil)
 
 	ch, err := parser.Parse()
 	c.Assert(err, IsNil)
@@ -36,7 +37,7 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 
 	objs := []observerObject{
 		{"e8d3ffab552895c19b9fcf7aa264d277cde33881", commit, 254, 12, 0xaa07ba4b},
-		{"6ecf0ef2c2dffb796033e5a02219af86ec6584e5", commit, 93, 186, 0xf706df58},
+		{"6ecf0ef2c2dffb796033e5a02219af86ec6584e5", commit, 245, 186, 0xf706df58},
 		{"918c48b83bd081e863dbe1b80f8998f058cd8294", commit, 242, 286, 0x12438846},
 		{"af2d6a6954d532f8ffb47615169c8fdf9d383a1a", commit, 242, 449, 0x2905a38c},
 		{"1669dce138d9b841a518c64b10914d88f5e488ea", commit, 333, 615, 0xd9429436},
@@ -54,18 +55,18 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 		{"9a48f23120e880dfbe41f7c9b7b708e9ee62a492", blob, 11488, 80998, 0x7316ff70},
 		{"9dea2395f5403188298c1dabe8bdafe562c491e3", blob, 78, 84032, 0xdb4fce56},
 		{"dbd3641b371024f44d0e469a9c8f5457b0660de1", tree, 272, 84115, 0x901cce2c},
-		{"a8d315b2b1c615d43042c3a62402b8a54288cf5c", tree, 43, 84375, 0xec4552b0},
+		{"a8d315b2b1c615d43042c3a62402b8a54288cf5c", tree, 271, 84375, 0xec4552b0},
 		{"a39771a7651f97faf5c72e08224d857fc35133db", tree, 38, 84430, 0x847905bf},
 		{"5a877e6a906a2743ad6e45d99c1793642aaf8eda", tree, 75, 84479, 0x3689459a},
 		{"586af567d0bb5e771e49bdd9434f5e0fb76d25fa", tree, 38, 84559, 0xe67af94a},
 		{"cf4aa3b38974fb7d81f367c0830f7d78d65ab86b", tree, 34, 84608, 0xc2314a2e},
 		{"7e59600739c96546163833214c36459e324bad0a", blob, 9, 84653, 0xcd987848},
-		{"fb72698cab7617ac416264415f13224dfd7a165e", tree, 6, 84671, 0x8a853a6d},
-		{"4d081c50e250fa32ea8b1313cf8bb7c2ad7627fd", tree, 9, 84688, 0x70c6518},
-		{"eba74343e2f15d62adedfd8c883ee0262b5c8021", tree, 6, 84708, 0x4f4108e2},
-		{"c2d30fa8ef288618f65f6eed6e168e0d514886f4", tree, 5, 84725, 0xd6fe09e9},
-		{"8dcef98b1d52143e1e2dbc458ffe38f925786bf2", tree, 8, 84741, 0xf07a2804},
-		{"aa9b383c260e1d05fbbf6b30a02914555e20c725", tree, 4, 84760, 0x1d75d6be},
+		{"fb72698cab7617ac416264415f13224dfd7a165e", tree, 238, 84671, 0x8a853a6d},
+		{"4d081c50e250fa32ea8b1313cf8bb7c2ad7627fd", tree, 179, 84688, 0x70c6518},
+		{"eba74343e2f15d62adedfd8c883ee0262b5c8021", tree, 148, 84708, 0x4f4108e2},
+		{"c2d30fa8ef288618f65f6eed6e168e0d514886f4", tree, 110, 84725, 0xd6fe09e9},
+		{"8dcef98b1d52143e1e2dbc458ffe38f925786bf2", tree, 111, 84741, 0xf07a2804},
+		{"aa9b383c260e1d05fbbf6b30a02914555e20c725", tree, 73, 84760, 0x1d75d6be},
 	}
 
 	c.Assert(obs.objects, DeepEquals, objs)
