@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 
 	. "gopkg.in/check.v1"
 )
@@ -71,12 +70,6 @@ func (s *BlobsSuite) TestBlobIter(c *C) {
 
 	blobs := []*Blob{}
 	iter.ForEach(func(b *Blob) error {
-		var err error
-		b.obj, err = packfile.MemoryObjectFromDisk(b.obj)
-		if err != nil {
-			return err
-		}
-
 		blobs = append(blobs, b)
 		return nil
 	})

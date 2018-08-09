@@ -121,7 +121,7 @@ func (s *FsSuite) TestPackfileIter(c *C) {
 				idxf, err := dg.ObjectPackIdx(h)
 				c.Assert(err, IsNil)
 
-				iter, err := NewPackfileIter(f, idxf, t)
+				iter, err := NewPackfileIter(fs, f, idxf, t)
 				c.Assert(err, IsNil)
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
 					c.Assert(o.Type(), Equals, t)
@@ -169,7 +169,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(f, idxf, t)
+						iter, err := NewPackfileIter(fs, f, idxf, t)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -225,7 +225,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(f, idxf, t)
+						iter, err := NewPackfileIter(fs, f, idxf, t)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -251,6 +251,40 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkGetObjectFromPackfile(b *testing.B) {
+	if err := fixtures.Init(); err != nil {
+		b.Fatal(err)
+	}
+
+	defer func() {
+		if err := fixtures.Clean(); err != nil {
+			b.Fatal(err)
+		}
+	}()
+
+	for _, f := range fixtures.Basic() {
+		b.Run(f.URL, func(b *testing.B) {
+			fs := f.DotGit()
+			o, err := NewObjectStorage(dotgit.New(fs))
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			for i := 0; i < b.N; i++ {
+				expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+				obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if obj.Hash() != expected {
+					b.Errorf("expecting %s, got %s", expected, obj.Hash())
 				}
 			}
 		})

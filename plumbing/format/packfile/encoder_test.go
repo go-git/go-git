@@ -5,7 +5,7 @@ import (
 	"io"
 	stdioutil "io/ioutil"
 
-	"gopkg.in/src-d/go-billy.v3/memfs"
+	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -290,7 +290,8 @@ func objectsEqual(c *C, o1, o2 plumbing.EncodedObject) {
 }
 
 func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
-	file, err := memfs.New().Create("packfile")
+	fs := memfs.New()
+	file, err := fs.Create("packfile")
 	c.Assert(err, IsNil)
 
 	_, err = file.Write(buf.Bytes())
@@ -311,7 +312,7 @@ func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
 	index, err := w.Index()
 	c.Assert(err, IsNil)
 
-	return NewPackfile(index, file), func() {
+	return NewPackfile(index, fs, file), func() {
 		c.Assert(file.Close(), IsNil)
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"gopkg.in/src-d/go-billy.v3/memfs"
+	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	. "gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
@@ -84,7 +84,8 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	encodeHash, err := enc.Encode(hashes, packWindow)
 	c.Assert(err, IsNil)
 
-	f, err := memfs.New().Create("packfile")
+	fs := memfs.New()
+	f, err := fs.Create("packfile")
 	c.Assert(err, IsNil)
 
 	_, err = f.Write(buf.Bytes())
@@ -105,7 +106,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	_, err = f.Seek(0, io.SeekStart)
 	c.Assert(err, IsNil)
 
-	p := NewPackfile(index, f)
+	p := NewPackfile(index, fs, f)
 
 	decodeHash, err := p.ID()
 	c.Assert(err, IsNil)

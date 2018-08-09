@@ -109,13 +109,14 @@ var expectedEntries = map[plumbing.Hash]int64{
 func (s *PackfileSuite) SetUpTest(c *C) {
 	s.f = fixtures.Basic().One()
 
-	f, err := osfs.New("").Open(s.f.Packfile().Name())
+	fs := osfs.New("")
+	f, err := fs.Open(s.f.Packfile().Name())
 	c.Assert(err, IsNil)
 
 	s.idx = idxfile.NewMemoryIndex()
 	c.Assert(idxfile.NewDecoder(s.f.Idx()).Decode(s.idx), IsNil)
 
-	s.p = packfile.NewPackfile(s.idx, f)
+	s.p = packfile.NewPackfile(s.idx, fs, f)
 }
 
 func (s *PackfileSuite) TearDownTest(c *C) {
@@ -125,7 +126,11 @@ func (s *PackfileSuite) TearDownTest(c *C) {
 func (s *PackfileSuite) TestDecode(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		index := getIndexFromIdxFile(f.Idx())
-		p := packfile.NewPackfile(index, f.Packfile())
+		fs := osfs.New("")
+		pf, err := fs.Open(f.Packfile().Name())
+		c.Assert(err, IsNil)
+
+		p := packfile.NewPackfile(index, fs, pf)
 		defer p.Close()
 
 		for _, h := range expectedHashes {
@@ -140,7 +145,11 @@ func (s *PackfileSuite) TestDecodeByTypeRefDelta(c *C) {
 	f := fixtures.Basic().ByTag("ref-delta").One()
 
 	index := getIndexFromIdxFile(f.Idx())
-	packfile := packfile.NewPackfile(index, f.Packfile())
+	fs := osfs.New("")
+	pf, err := fs.Open(f.Packfile().Name())
+	c.Assert(err, IsNil)
+
+	packfile := packfile.NewPackfile(index, fs, pf)
 	defer packfile.Close()
 
 	iter, err := packfile.GetByType(plumbing.CommitObject)
@@ -171,7 +180,11 @@ func (s *PackfileSuite) TestDecodeByType(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		for _, t := range ts {
 			index := getIndexFromIdxFile(f.Idx())
-			packfile := packfile.NewPackfile(index, f.Packfile())
+			fs := osfs.New("")
+			pf, err := fs.Open(f.Packfile().Name())
+			c.Assert(err, IsNil)
+
+			packfile := packfile.NewPackfile(index, fs, pf)
 			defer packfile.Close()
 
 			iter, err := packfile.GetByType(t)
@@ -188,10 +201,14 @@ func (s *PackfileSuite) TestDecodeByType(c *C) {
 func (s *PackfileSuite) TestDecodeByTypeConstructor(c *C) {
 	f := fixtures.Basic().ByTag("packfile").One()
 	index := getIndexFromIdxFile(f.Idx())
-	packfile := packfile.NewPackfile(index, f.Packfile())
+	fs := osfs.New("")
+	pf, err := fs.Open(f.Packfile().Name())
+	c.Assert(err, IsNil)
+
+	packfile := packfile.NewPackfile(index, fs, pf)
 	defer packfile.Close()
 
-	_, err := packfile.GetByType(plumbing.OFSDeltaObject)
+	_, err = packfile.GetByType(plumbing.OFSDeltaObject)
 	c.Assert(err, Equals, plumbing.ErrInvalidType)
 
 	_, err = packfile.GetByType(plumbing.REFDeltaObject)

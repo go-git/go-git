@@ -295,12 +295,7 @@ func (s *ObjectStorage) decodeObjectAt(
 		return nil, err
 	}
 
-	obj, err := packfile.NewPackfile(idx, f).GetByOffset(offset)
-	if err != nil {
-		return nil, err
-	}
-
-	return packfile.MemoryObjectFromDisk(obj)
+	return packfile.NewPackfile(idx, s.dir.Fs(), f).GetByOffset(offset)
 }
 
 func (s *ObjectStorage) decodeDeltaObjectAt(
@@ -404,7 +399,7 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 			if err != nil {
 				return nil, err
 			}
-			return newPackfileIter(pack, t, seen, s.index[h], s.deltaBaseCache)
+			return newPackfileIter(s.dir.Fs(), pack, t, seen, s.index[h], s.deltaBaseCache)
 		},
 	}, nil
 }
@@ -466,6 +461,7 @@ type packfileIter struct {
 // and object type. Packfile and index file will be closed after they're
 // used.
 func NewPackfileIter(
+	fs billy.Filesystem,
 	f billy.File,
 	idxFile billy.File,
 	t plumbing.ObjectType,
@@ -479,17 +475,18 @@ func NewPackfileIter(
 		return nil, err
 	}
 
-	return newPackfileIter(f, t, make(map[plumbing.Hash]struct{}), idx, nil)
+	return newPackfileIter(fs, f, t, make(map[plumbing.Hash]struct{}), idx, nil)
 }
 
 func newPackfileIter(
+	fs billy.Filesystem,
 	f billy.File,
 	t plumbing.ObjectType,
 	seen map[plumbing.Hash]struct{},
 	index idxfile.Index,
 	cache cache.Object,
 ) (storer.EncodedObjectIter, error) {
-	iter, err := packfile.NewPackfile(index, f).GetByType(t)
+	iter, err := packfile.NewPackfile(index, fs, f).GetByType(t)
 	if err != nil {
 		return nil, err
 	}

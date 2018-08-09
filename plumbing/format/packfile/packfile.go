@@ -3,9 +3,9 @@ package packfile
 import (
 	"bytes"
 	"io"
-	stdioutil "io/ioutil"
 	"os"
 
+	billy "gopkg.in/src-d/go-billy.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
@@ -24,21 +24,26 @@ var (
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
-	file           io.ReadSeeker
+	fs             billy.Filesystem
+	file           billy.File
 	s              *Scanner
 	deltaBaseCache cache.Object
 	offsetToType   map[int64]plumbing.ObjectType
 }
 
 // NewPackfileWithCache creates a new Packfile with the given object cache.
+// If the filesystem is provided, the packfile will return FSObjects, otherwise
+// it will return MemoryObjects.
 func NewPackfileWithCache(
 	index idxfile.Index,
-	file io.ReadSeeker,
+	fs billy.Filesystem,
+	file billy.File,
 	cache cache.Object,
 ) *Packfile {
 	s := NewScanner(file)
 	return &Packfile{
 		index,
+		fs,
 		file,
 		s,
 		cache,
@@ -48,8 +53,10 @@ func NewPackfileWithCache(
 
 // NewPackfile returns a packfile representation for the given packfile file
 // and packfile idx.
-func NewPackfile(index idxfile.Index, file io.ReadSeeker) *Packfile {
-	return NewPackfileWithCache(index, file, cache.NewObjectLRUDefault())
+// If the filesystem is provided, the packfile will return FSObjects, otherwise
+// it will return MemoryObjects.
+func NewPackfile(index idxfile.Index, fs billy.Filesystem, file billy.File) *Packfile {
+	return NewPackfileWithCache(index, fs, file, cache.NewObjectLRUDefault())
 }
 
 // Get retrieves the encoded object in the packfile with the given hash.
@@ -215,6 +222,12 @@ func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
 		return nil, err
 	}
 
+	// If we have no filesystem, we will return a MemoryObject instead
+	// of an FSObject.
+	if p.fs == nil {
+		return p.getNextObject(h)
+	}
+
 	hash, err := p.FindHash(h.Offset)
 	if err != nil {
 		return nil, err
@@ -232,7 +245,16 @@ func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
 
 	p.offsetToType[h.Offset] = typ
 
-	return NewFSObject(hash, typ, h.Offset, size, p), nil
+	return NewFSObject(
+		hash,
+		typ,
+		h.Offset,
+		size,
+		p.Index,
+		p.fs,
+		p.file.Name(),
+		p.deltaBaseCache,
+	), nil
 }
 
 func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
@@ -245,10 +267,20 @@ func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
 		return nil, err
 	}
 
+	obj, err := p.getNextObject(h)
+	if err != nil {
+		return nil, err
+	}
+
+	return obj.Reader()
+}
+
+func (p *Packfile) getNextObject(h *ObjectHeader) (plumbing.EncodedObject, error) {
 	var obj = new(plumbing.MemoryObject)
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
 
+	var err error
 	switch h.Type {
 	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
 		err = p.fillRegularObjectContent(obj)
@@ -264,7 +296,7 @@ func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	return obj.Reader()
+	return obj, nil
 }
 
 func (p *Packfile) fillRegularObjectContent(obj plumbing.EncodedObject) error {
@@ -408,29 +440,6 @@ func (p *Packfile) Close() error {
 	}
 
 	return closer.Close()
-}
-
-// MemoryObjectFromDisk converts a FSObject to a MemoryObject.
-func MemoryObjectFromDisk(obj plumbing.EncodedObject) (plumbing.EncodedObject, error) {
-	o2 := new(plumbing.MemoryObject)
-	o2.SetType(obj.Type())
-	o2.SetSize(obj.Size())
-
-	r, err := obj.Reader()
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := stdioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := o2.Write(data); err != nil {
-		return nil, err
-	}
-
-	return o2, nil
 }
 
 type objectIter struct {
