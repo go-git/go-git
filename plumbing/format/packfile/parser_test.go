@@ -168,3 +168,28 @@ func BenchmarkParse(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkParseBasic(b *testing.B) {
+	if err := fixtures.Init(); err != nil {
+		b.Fatal(err)
+	}
+
+	defer func() {
+		if err := fixtures.Clean(); err != nil {
+			b.Fatal(err)
+		}
+	}()
+
+	f := fixtures.Basic().One()
+	for i := 0; i < b.N; i++ {
+		parser, err := packfile.NewParser(packfile.NewScanner(f.Packfile()))
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_, err = parser.Parse()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

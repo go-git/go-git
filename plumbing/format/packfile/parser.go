@@ -280,14 +280,8 @@ func (p *Parser) resolveDeltas() error {
 		}
 
 		if !obj.IsDelta() && len(obj.Children) > 0 {
-			var err error
-			base, err := p.get(obj)
-			if err != nil {
-				return err
-			}
-
 			for _, child := range obj.Children {
-				if _, err := p.resolveObject(child, base); err != nil {
+				if _, err := p.resolveObject(child, content); err != nil {
 					return err
 				}
 			}
@@ -297,12 +291,18 @@ func (p *Parser) resolveDeltas() error {
 				delete(p.deltas, obj.Offset)
 			}
 		}
+
+		obj.Content = nil
 	}
 
 	return nil
 }
 
 func (p *Parser) get(o *objectInfo) ([]byte, error) {
+	if len(o.Content) > 0 {
+		return o.Content, nil
+	}
+
 	e, ok := p.cache.Get(o.SHA1)
 	// If it's not on the cache and is not a delta we can try to find it in the
 	// storage, if there's one.
@@ -460,6 +460,8 @@ type objectInfo struct {
 	Parent   *objectInfo
 	Children []*objectInfo
 	SHA1     plumbing.Hash
+
+	Content []byte
 }
 
 func newBaseObject(offset, length int64, t plumbing.ObjectType) *objectInfo {
@@ -486,6 +488,12 @@ func newDeltaObject(
 	}
 
 	return obj
+}
+
+func (o *objectInfo) Write(b []byte) (int, error) {
+	o.Content = make([]byte, len(b))
+	copy(o.Content, b)
+	return o.Hasher.Write(b)
 }
 
 func (o *objectInfo) IsDelta() bool {
