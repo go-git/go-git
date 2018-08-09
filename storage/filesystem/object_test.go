@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"io/ioutil"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -178,6 +179,72 @@ func BenchmarkPackfileIter(b *testing.B) {
 								b.Errorf("expecting %s, got %s", t, o.Type())
 							}
 							return nil
+						})
+
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkPackfileIterReadContent(b *testing.B) {
+	if err := fixtures.Init(); err != nil {
+		b.Fatal(err)
+	}
+
+	defer func() {
+		if err := fixtures.Clean(); err != nil {
+			b.Fatal(err)
+		}
+	}()
+
+	for _, f := range fixtures.ByTag(".git") {
+		b.Run(f.URL, func(b *testing.B) {
+			fs := f.DotGit()
+			dg := dotgit.New(fs)
+
+			for i := 0; i < b.N; i++ {
+				for _, t := range objectTypes {
+					ph, err := dg.ObjectPacks()
+					if err != nil {
+						b.Fatal(err)
+					}
+
+					for _, h := range ph {
+						f, err := dg.ObjectPack(h)
+						if err != nil {
+							b.Fatal(err)
+						}
+
+						idxf, err := dg.ObjectPackIdx(h)
+						if err != nil {
+							b.Fatal(err)
+						}
+
+						iter, err := NewPackfileIter(f, idxf, t)
+						if err != nil {
+							b.Fatal(err)
+						}
+
+						err = iter.ForEach(func(o plumbing.EncodedObject) error {
+							if o.Type() != t {
+								b.Errorf("expecting %s, got %s", t, o.Type())
+							}
+
+							r, err := o.Reader()
+							if err != nil {
+								b.Fatal(err)
+							}
+
+							if _, err := ioutil.ReadAll(r); err != nil {
+								b.Fatal(err)
+							}
+
+							return r.Close()
 						})
 
 						if err != nil {
