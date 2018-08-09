@@ -457,12 +457,14 @@ func (it *lazyPackfilesIter) Close() {
 }
 
 type packfileIter struct {
+	pack billy.File
 	iter storer.EncodedObjectIter
 	seen map[plumbing.Hash]struct{}
 }
 
 // NewPackfileIter returns a new EncodedObjectIter for the provided packfile
-// and object type.
+// and object type. Packfile and index file will be closed after they're
+// used.
 func NewPackfileIter(
 	f billy.File,
 	idxFile billy.File,
@@ -470,6 +472,10 @@ func NewPackfileIter(
 ) (storer.EncodedObjectIter, error) {
 	idx := idxfile.NewMemoryIndex()
 	if err := idxfile.NewDecoder(idxFile).Decode(idx); err != nil {
+		return nil, err
+	}
+
+	if err := idxFile.Close(); err != nil {
 		return nil, err
 	}
 
@@ -489,6 +495,7 @@ func newPackfileIter(
 	}
 
 	return &packfileIter{
+		pack: f,
 		iter: iter,
 		seen: seen,
 	}, nil
@@ -514,6 +521,7 @@ func (iter *packfileIter) ForEach(cb func(plumbing.EncodedObject) error) error {
 		o, err := iter.Next()
 		if err != nil {
 			if err == io.EOF {
+				iter.Close()
 				return nil
 			}
 			return err
@@ -527,6 +535,7 @@ func (iter *packfileIter) ForEach(cb func(plumbing.EncodedObject) error) error {
 
 func (iter *packfileIter) Close() {
 	iter.iter.Close()
+	_ = iter.pack.Close()
 }
 
 type objectsIter struct {
