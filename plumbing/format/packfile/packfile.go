@@ -232,7 +232,7 @@ func (p *Packfile) nextObject() (plumbing.EncodedObject, error) {
 
 	p.offsetToType[h.Offset] = typ
 
-	return NewDiskObject(hash, typ, h.Offset, size, p), nil
+	return NewFSObject(hash, typ, h.Offset, size, p), nil
 }
 
 func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
@@ -410,7 +410,7 @@ func (p *Packfile) Close() error {
 	return closer.Close()
 }
 
-// MemoryObjectFromDisk converts a DiskObject to a MemoryObject.
+// MemoryObjectFromDisk converts a FSObject to a MemoryObject.
 func MemoryObjectFromDisk(obj plumbing.EncodedObject) (plumbing.EncodedObject, error) {
 	o2 := new(plumbing.MemoryObject)
 	o2.SetType(obj.Type())
