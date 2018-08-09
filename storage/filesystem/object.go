@@ -509,9 +509,20 @@ func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
 	}
 }
 
-// ForEach is never called since is used inside of a MultiObjectIterator
 func (iter *packfileIter) ForEach(cb func(plumbing.EncodedObject) error) error {
-	return nil
+	for {
+		o, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		if err := cb(o); err != nil {
+			return err
+		}
+	}
 }
 
 func (iter *packfileIter) Close() {
@@ -543,9 +554,20 @@ func (iter *objectsIter) Next() (plumbing.EncodedObject, error) {
 	return obj, err
 }
 
-// ForEach is never called since is used inside of a MultiObjectIterator
 func (iter *objectsIter) ForEach(cb func(plumbing.EncodedObject) error) error {
-	return nil
+	for {
+		o, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		if err := cb(o); err != nil {
+			return err
+		}
+	}
 }
 
 func (iter *objectsIter) Close() {
