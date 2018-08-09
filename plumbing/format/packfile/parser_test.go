@@ -1,6 +1,8 @@
 package packfile_test
 
 import (
+	"testing"
+
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 
@@ -137,4 +139,32 @@ func (t *testObserver) put(pos int64, o observerObject) {
 
 	t.pos[pos] = len(t.objects)
 	t.objects = append(t.objects, o)
+}
+
+func BenchmarkParse(b *testing.B) {
+	if err := fixtures.Init(); err != nil {
+		b.Fatal(err)
+	}
+
+	defer func() {
+		if err := fixtures.Clean(); err != nil {
+			b.Fatal(err)
+		}
+	}()
+
+	for _, f := range fixtures.ByTag("packfile") {
+		b.Run(f.URL, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				parser, err := packfile.NewParser(packfile.NewScanner(f.Packfile()))
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				_, err = parser.Parse()
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
