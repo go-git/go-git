@@ -583,7 +583,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 }
 
 const (
-	refspecTagWithDepth     = "+refs/tags/%s:refs/tags/%[1]s"
+	refspecTag              = "+refs/tags/%s:refs/tags/%[1]s"
 	refspecSingleBranch     = "+refs/heads/%s:refs/remotes/%s/%[1]s"
 	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
 )
@@ -592,8 +592,8 @@ func (r *Repository) cloneRefSpec(o *CloneOptions, c *config.RemoteConfig) []con
 	var rs string
 
 	switch {
-	case o.ReferenceName.IsTag() && o.Depth > 0:
-		rs = fmt.Sprintf(refspecTagWithDepth, o.ReferenceName.Short())
+	case o.ReferenceName.IsTag():
+		rs = fmt.Sprintf(refspecTag, o.ReferenceName.Short())
 	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
 		rs = fmt.Sprintf(refspecSingleBranchHEAD, c.Name)
 	case o.SingleBranch:
