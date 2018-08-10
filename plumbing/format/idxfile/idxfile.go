@@ -41,12 +41,12 @@ type MemoryIndex struct {
 	Version uint32
 	Fanout  [256]uint32
 	// FanoutMapping maps the position in the fanout table to the position
-	// in the Names, Offset32 and Crc32 slices. This improves the memory
+	// in the Names, Offset32 and CRC32 slices. This improves the memory
 	// usage by not needing an array with unnecessary empty slots.
 	FanoutMapping    [256]int
 	Names            [][]byte
 	Offset32         [][]byte
-	Crc32            [][]byte
+	CRC32            [][]byte
 	Offset64         []byte
 	PackfileChecksum [20]byte
 	IdxChecksum      [20]byte
@@ -61,20 +61,20 @@ func NewMemoryIndex() *MemoryIndex {
 	return &MemoryIndex{}
 }
 
-func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
+func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
 	k := idx.FanoutMapping[h[0]]
 	if k == noMapping {
-		return -1
+		return 0, false
 	}
 
 	if len(idx.Names) <= k {
-		return -1
+		return 0, false
 	}
 
 	data := idx.Names[k]
 	high := uint64(len(idx.Offset32[k])) >> 2
 	if high == 0 {
-		return -1
+		return 0, false
 	}
 
 	low := uint64(0)
@@ -86,7 +86,7 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 		if cmp < 0 {
 			high = mid
 		} else if cmp == 0 {
-			return int(mid)
+			return int(mid), true
 		} else {
 			low = mid + 1
 		}
@@ -96,13 +96,13 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) int {
 		}
 	}
 
-	return -1
+	return 0, false
 }
 
 // Contains implements the Index interface.
 func (idx *MemoryIndex) Contains(h plumbing.Hash) (bool, error) {
-	i := idx.findHashIndex(h)
-	return i >= 0, nil
+	_, ok := idx.findHashIndex(h)
+	return ok, nil
 }
 
 // FindOffset implements the Index interface.
@@ -112,8 +112,8 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 	}
 
 	k := idx.FanoutMapping[h[0]]
-	i := idx.findHashIndex(h)
-	if i < 0 {
+	i, ok := idx.findHashIndex(h)
+	if !ok {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
@@ -147,17 +147,17 @@ func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) (int64, error) {
 // FindCRC32 implements the Index interface.
 func (idx *MemoryIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
 	k := idx.FanoutMapping[h[0]]
-	i := idx.findHashIndex(h)
-	if i < 0 {
+	i, ok := idx.findHashIndex(h)
+	if !ok {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	return idx.getCrc32(k, i)
+	return idx.getCRC32(k, i)
 }
 
-func (idx *MemoryIndex) getCrc32(firstLevel, secondLevel int) (uint32, error) {
+func (idx *MemoryIndex) getCRC32(firstLevel, secondLevel int) (uint32, error) {
 	offset := secondLevel << 2
-	buf := bytes.NewBuffer(idx.Crc32[firstLevel][offset : offset+4])
+	buf := bytes.NewBuffer(idx.CRC32[firstLevel][offset : offset+4])
 	return binary.ReadUint32(buf)
 }
 
@@ -253,7 +253,7 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 		}
 		entry.Offset = uint64(offset)
 
-		entry.CRC32, err = i.idx.getCrc32(pos, i.secondLevel)
+		entry.CRC32, err = i.idx.getCRC32(pos, i.secondLevel)
 		if err != nil {
 			return nil, err
 		}

@@ -89,7 +89,7 @@ func (e *Encoder) encodeCRC32(idx *MemoryIndex) (int, error) {
 			continue
 		}
 
-		n, err := e.Write(idx.Crc32[pos])
+		n, err := e.Write(idx.CRC32[pos])
 		if err != nil {
 			return size, err
 		}

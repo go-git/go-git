@@ -132,7 +132,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 
 			idx.Names = append(idx.Names, make([]byte, 0))
 			idx.Offset32 = append(idx.Offset32, make([]byte, 0))
-			idx.Crc32 = append(idx.Crc32, make([]byte, 0))
+			idx.CRC32 = append(idx.CRC32, make([]byte, 0))
 		}
 
 		idx.Names[bucket] = append(idx.Names[bucket], o.Hash[:]...)
@@ -148,7 +148,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 
 		buf.Truncate(0)
 		binary.WriteUint32(buf, uint32(o.CRC32))
-		idx.Crc32[bucket] = append(idx.Crc32[bucket], buf.Bytes()...)
+		idx.CRC32[bucket] = append(idx.CRC32[bucket], buf.Bytes()...)
 	}
 
 	for j := last + 1; j < 256; j++ {

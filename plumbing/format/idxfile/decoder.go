@@ -124,7 +124,7 @@ func readObjectNames(idx *MemoryIndex, r io.Reader) error {
 
 		idx.Names = append(idx.Names, bin)
 		idx.Offset32 = append(idx.Offset32, make([]byte, buckets*4))
-		idx.Crc32 = append(idx.Crc32, make([]byte, buckets*4))
+		idx.CRC32 = append(idx.CRC32, make([]byte, buckets*4))
 	}
 
 	return nil
@@ -133,7 +133,7 @@ func readObjectNames(idx *MemoryIndex, r io.Reader) error {
 func readCRC32(idx *MemoryIndex, r io.Reader) error {
 	for k := 0; k < fanout; k++ {
 		if pos := idx.FanoutMapping[k]; pos != noMapping {
-			if _, err := io.ReadFull(r, idx.Crc32[pos]); err != nil {
+			if _, err := io.ReadFull(r, idx.CRC32[pos]); err != nil {
 				return err
 			}
 		}
