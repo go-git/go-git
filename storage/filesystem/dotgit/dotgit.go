@@ -784,6 +784,11 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 	return alternates, nil
 }
 
+// Fs returns the underlying filesystem of the DotGit folder.
+func (d *DotGit) Fs() billy.Filesystem {
+	return d.fs
+}
+
 func isHex(s string) bool {
 	for _, b := range []byte(s) {
 		if isNum(b) {

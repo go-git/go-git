@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 
 	. "gopkg.in/check.v1"
@@ -148,7 +149,7 @@ func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
 	w, err := newPackWrite(fs)
 	c.Assert(err, IsNil)
 
-	w.Notify = func(h plumbing.Hash, idx *packfile.Index) {
+	w.Notify = func(h plumbing.Hash, idx *idxfile.Writer) {
 		c.Fatal("unexpected call to PackWriter.Notify")
 	}
 

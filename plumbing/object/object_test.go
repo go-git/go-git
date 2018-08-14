@@ -197,8 +197,9 @@ func (s *ObjectsSuite) TestObjectIter(c *C) {
 		}
 
 		c.Assert(err, IsNil)
-		c.Assert(o, DeepEquals, objects[i])
-		i += 1
+		c.Assert(o.ID(), Equals, objects[i].ID())
+		c.Assert(o.Type(), Equals, objects[i].Type())
+		i++
 	}
 
 	iter.Close()

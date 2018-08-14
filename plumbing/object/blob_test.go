@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bytes"
 	"io"
 	"io/ioutil"
 
@@ -88,8 +89,26 @@ func (s *BlobsSuite) TestBlobIter(c *C) {
 		}
 
 		c.Assert(err, IsNil)
-		c.Assert(b, DeepEquals, blobs[i])
-		i += 1
+		c.Assert(b.ID(), Equals, blobs[i].ID())
+		c.Assert(b.Size, Equals, blobs[i].Size)
+		c.Assert(b.Type(), Equals, blobs[i].Type())
+
+		r1, err := b.Reader()
+		c.Assert(err, IsNil)
+
+		b1, err := ioutil.ReadAll(r1)
+		c.Assert(err, IsNil)
+		c.Assert(r1.Close(), IsNil)
+
+		r2, err := blobs[i].Reader()
+		c.Assert(err, IsNil)
+
+		b2, err := ioutil.ReadAll(r2)
+		c.Assert(err, IsNil)
+		c.Assert(r2.Close(), IsNil)
+
+		c.Assert(bytes.Compare(b1, b2), Equals, 0)
+		i++
 	}
 
 	iter.Close()
