@@ -48,7 +48,7 @@ type Parser struct {
 	pendingRefDeltas map[plumbing.Hash][]*objectInfo
 	checksum         plumbing.Hash
 
-	cache *cache.ObjectLRU
+	cache *cache.BufferLRU
 	// delta content by offset, only used if source is not seekable
 	deltas map[int64][]byte
 
@@ -82,7 +82,7 @@ func NewParserWithStorage(
 		scanner:          scanner,
 		ob:               ob,
 		count:            0,
-		cache:            cache.NewObjectLRUDefault(),
+		cache:            cache.NewBufferLRUDefault(),
 		pendingRefDeltas: make(map[plumbing.Hash][]*objectInfo),
 		deltas:           deltas,
 	}, nil
@@ -303,29 +303,29 @@ func (p *Parser) get(o *objectInfo) ([]byte, error) {
 		return o.Content, nil
 	}
 
-	e, ok := p.cache.Get(o.SHA1)
+	b, ok := p.cache.Get(o.Offset)
 	// If it's not on the cache and is not a delta we can try to find it in the
 	// storage, if there's one.
 	if !ok && p.storage != nil && !o.Type.IsDelta() {
 		var err error
-		e, err = p.storage.EncodedObject(plumbing.AnyObject, o.SHA1)
+		e, err := p.storage.EncodedObject(plumbing.AnyObject, o.SHA1)
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	if e != nil {
 		r, err := e.Reader()
 		if err != nil {
 			return nil, err
 		}
 
-		buf := make([]byte, e.Size())
-		if _, err = r.Read(buf); err != nil {
+		b = make([]byte, e.Size())
+		if _, err = r.Read(b); err != nil {
 			return nil, err
 		}
+	}
 
-		return buf, nil
+	if b != nil {
+		return b, nil
 	}
 
 	var data []byte
@@ -348,11 +348,7 @@ func (p *Parser) get(o *objectInfo) ([]byte, error) {
 	}
 
 	if len(o.Children) > 0 {
-		m := &plumbing.MemoryObject{}
-		m.Write(data)
-		m.SetType(o.Type)
-		m.SetSize(o.Size())
-		p.cache.Put(m)
+		p.cache.Put(o.Offset, data)
 	}
 
 	return data, nil
