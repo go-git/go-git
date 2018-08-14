@@ -423,14 +423,16 @@ func applyPatchBase(ota *objectInfo, data, base []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	ota.Type = ota.Parent.Type
-	sha1, err := getSHA1(ota.Type, patched)
-	if err != nil {
-		return nil, err
-	}
+	if ota.SHA1 == plumbing.ZeroHash {
+		ota.Type = ota.Parent.Type
+		sha1, err := getSHA1(ota.Type, patched)
+		if err != nil {
+			return nil, err
+		}
 
-	ota.SHA1 = sha1
-	ota.Length = int64(len(patched))
+		ota.SHA1 = sha1
+		ota.Length = int64(len(patched))
+	}
 
 	return patched, nil
 }
