@@ -221,21 +221,22 @@ func (p *Parser) indexObjects() error {
 			ota = newBaseObject(oh.Offset, oh.Length, t)
 		}
 
-		size, crc, err := p.scanner.NextObject(buf)
+		_, crc, err := p.scanner.NextObject(buf)
 		if err != nil {
 			return err
 		}
 
 		ota.Crc32 = crc
-		ota.PackSize = size
 		ota.Length = oh.Length
 
 		data := buf.Bytes()
 		if !delta {
-			if _, err := ota.Write(data); err != nil {
+			sha1, err := getSHA1(ota.Type, data)
+			if err != nil {
 				return err
 			}
-			ota.SHA1 = ota.Sum()
+
+			ota.SHA1 = sha1
 			p.oiByHash[ota.SHA1] = ota
 		}
 
@@ -291,18 +292,12 @@ func (p *Parser) resolveDeltas() error {
 				delete(p.deltas, obj.Offset)
 			}
 		}
-
-		obj.Content = nil
 	}
 
 	return nil
 }
 
 func (p *Parser) get(o *objectInfo) ([]byte, error) {
-	if len(o.Content) > 0 {
-		return o.Content, nil
-	}
-
 	b, ok := p.cache.Get(o.Offset)
 	// If it's not on the cache and is not a delta we can try to find it in the
 	// storage, if there's one.
@@ -406,8 +401,6 @@ func (p *Parser) readData(o *objectInfo) ([]byte, error) {
 		return data, nil
 	}
 
-	// TODO: skip header. Header size can be calculated with the offset of the
-	// next offset in the first pass.
 	if _, err := p.scanner.SeekFromStart(o.Offset); err != nil {
 		return nil, err
 	}
@@ -431,33 +424,37 @@ func applyPatchBase(ota *objectInfo, data, base []byte) ([]byte, error) {
 	}
 
 	ota.Type = ota.Parent.Type
-	ota.Hasher = plumbing.NewHasher(ota.Type, int64(len(patched)))
-	if _, err := ota.Write(patched); err != nil {
+	sha1, err := getSHA1(ota.Type, patched)
+	if err != nil {
 		return nil, err
 	}
-	ota.SHA1 = ota.Sum()
+
+	ota.SHA1 = sha1
 	ota.Length = int64(len(patched))
 
 	return patched, nil
 }
 
-type objectInfo struct {
-	plumbing.Hasher
+func getSHA1(t plumbing.ObjectType, data []byte) (plumbing.Hash, error) {
+	hasher := plumbing.NewHasher(t, int64(len(data)))
+	if _, err := hasher.Write(data); err != nil {
+		return plumbing.ZeroHash, err
+	}
 
-	Offset       int64
-	Length       int64
-	HeaderLength int64
-	PackSize     int64
-	Type         plumbing.ObjectType
-	DiskType     plumbing.ObjectType
+	return hasher.Sum(), nil
+}
+
+type objectInfo struct {
+	Offset   int64
+	Length   int64
+	Type     plumbing.ObjectType
+	DiskType plumbing.ObjectType
 
 	Crc32 uint32
 
 	Parent   *objectInfo
 	Children []*objectInfo
 	SHA1     plumbing.Hash
-
-	Content []byte
 }
 
 func newBaseObject(offset, length int64, t plumbing.ObjectType) *objectInfo {
@@ -469,27 +466,16 @@ func newDeltaObject(
 	t plumbing.ObjectType,
 	parent *objectInfo,
 ) *objectInfo {
-	children := make([]*objectInfo, 0)
-
 	obj := &objectInfo{
-		Hasher:   plumbing.NewHasher(t, length),
 		Offset:   offset,
 		Length:   length,
-		PackSize: 0,
 		Type:     t,
 		DiskType: t,
 		Crc32:    0,
 		Parent:   parent,
-		Children: children,
 	}
 
 	return obj
-}
-
-func (o *objectInfo) Write(b []byte) (int, error) {
-	o.Content = make([]byte, len(b))
-	copy(o.Content, b)
-	return o.Hasher.Write(b)
 }
 
 func (o *objectInfo) IsDelta() bool {
