@@ -140,8 +140,6 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll(c *C) {
 }
 
 func (s *WorktreeSuite) TestCommitSign(c *C) {
-	// expectedHash := plumbing.NewHash("98c4ac7c29c913f7461eae06e024dc18e80d23a4")
-
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
@@ -158,10 +156,7 @@ func (s *WorktreeSuite) TestCommitSign(c *C) {
 
 	key := commitSignKey(c)
 	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), SignKey: key})
-	// c.Assert(hash, Equals, expectedHash)
 	c.Assert(err, IsNil)
-
-	// assertStorageStatus(c, r, 1, 1, 1, expectedHash)
 
 	// Verify the commit.
 	pks := new(bytes.Buffer)
