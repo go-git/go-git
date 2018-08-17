@@ -263,18 +263,18 @@ func (b *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	if b.PGPSignature != "" && includeSig {
-		if _, err = fmt.Fprint(w, "\n"+headerpgp); err != nil {
+		if _, err = fmt.Fprint(w, "\n"+headerpgp+" "); err != nil {
 			return err
 		}
 
-		// Split all the signature lines and write with a left padding and
-		// newline at the end.
+		// Split all the signature lines and re-write with a left padding and
+		// newline. Use join for this so it's clear that a newline should not be
+		// added after this section, as it will be added when the message is
+		// printed.
 		signature := strings.TrimSuffix(b.PGPSignature, "\n")
 		lines := strings.Split(signature, "\n")
-		for _, line := range lines {
-			if _, err = fmt.Fprintf(w, " %s\n", line); err != nil {
-				return err
-			}
+		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+			return err
 		}
 	}
 
