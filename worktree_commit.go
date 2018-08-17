@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"path"
 	"strings"
 
@@ -117,7 +118,7 @@ func (w *Worktree) buildCommitSignature(commit *object.Commit, signKey *openpgp.
 	if err != nil {
 		return "", err
 	}
-	var b strings.Builder
+	var b bytes.Buffer
 	if err := openpgp.ArmoredDetachSign(&b, signKey, r, nil); err != nil {
 		return "", err
 	}

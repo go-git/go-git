@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"strings"
 	"time"
 
@@ -163,7 +164,7 @@ func (s *WorktreeSuite) TestCommitSign(c *C) {
 	// assertStorageStatus(c, r, 1, 1, 1, expectedHash)
 
 	// Verify the commit.
-	pks := new(strings.Builder)
+	pks := new(bytes.Buffer)
 	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
 	c.Assert(err, IsNil)
 
