@@ -325,6 +325,22 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 	c.Assert(err, IsNil)
 	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
 
+	// signature with extra empty line, it caused "index out of range" when
+	// parsing it
+
+	pgpsignature2 := "\n" + pgpsignature
+
+	commit.PGPSignature = pgpsignature2
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, pgpsignature2)
+
 	// signature in author name
 
 	commit.PGPSignature = ""
@@ -460,4 +476,22 @@ func (s *SuiteCommit) TestPatchCancel(c *C) {
 	c.Assert(patch, IsNil)
 	c.Assert(err, ErrorMatches, "operation canceled")
 
+}
+
+func (s *SuiteCommit) TestMalformedHeader(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Commit{}
+	commit := *s.Commit
+
+	commit.PGPSignature = "\n"
+	commit.Author.Name = "\n"
+	commit.Author.Email = "\n"
+	commit.Committer.Name = "\n"
+	commit.Committer.Email = "\n"
+
+	err := commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
 }
