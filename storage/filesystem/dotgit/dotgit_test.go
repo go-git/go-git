@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/osfs"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -571,19 +571,23 @@ func (s *SuiteDotGit) TestObjectDelete(c *C) {
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	err := dir.ObjectDelete(hash)
 	c.Assert(err, IsNil)
-	//incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
-	//incomingDirPath := fs.Join("objects", "incoming-123456")
-	//incomingSubDirPath := fs.Join(incomingDirPath, incomingHash[0:2])
-	//incomingFilePath := fs.Join(incomingDirPath, incomingHash[2:40])
-	//err = fs.MkdirAll(incomingDirPath, os.FileMode(0755))
-	//c.Assert(err, IsNil)
-	//err = fs.MkdirAll(incomingSubDirPath, os.FileMode(0755))
-	//c.Assert(err, IsNil)
-	//_, err = fs.Create(incomingFilePath)
-	//c.Assert(err, IsNil)
 
-	//err = dir.ObjectDelete(plumbing.NewHash(incomingHash))
-	//c.Assert(err, IsNil)
+	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
+	incomingDirPath := fs.Join("objects", "incoming-123456")
+	incomingSubDirPath := fs.Join(incomingDirPath, incomingHash[0:2])
+	incomingFilePath := fs.Join(incomingSubDirPath, incomingHash[2:40])
+
+	err = fs.MkdirAll(incomingSubDirPath, os.FileMode(0755))
+	c.Assert(err, IsNil)
+
+	f, err := fs.Create(incomingFilePath)
+	c.Assert(err, IsNil)
+
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	err = dir.ObjectDelete(plumbing.NewHash(incomingHash))
+	c.Assert(err, IsNil)
 }
 
 func (s *SuiteDotGit) TestObjectNotFound(c *C) {
