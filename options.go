@@ -348,8 +348,9 @@ type CommitOptions struct {
 	// Parents are the parents commits for the new commit, by default when
 	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
-	// A key to sign the commit with. A nil value here means the commit will not
-	// be signed. The private key must be present and already decrypted.
+	// SignKey denotes a key to sign the commit with. A nil value here means the
+	// commit will not be signed. The private key must be present and already
+	// decrypted.
 	SignKey *openpgp.Entity
 }
 
@@ -372,6 +373,48 @@ func (o *CommitOptions) Validate(r *Repository) error {
 		if head != nil {
 			o.Parents = []plumbing.Hash{head.Hash()}
 		}
+	}
+
+	return nil
+}
+
+var (
+	ErrMissingName    = errors.New("name field is required")
+	ErrMissingTagger  = errors.New("tagger field is required")
+	ErrMissingMessage = errors.New("message field is required")
+	ErrBadObjectType  = errors.New("bad object type for tagging")
+)
+
+// TagObjectOptions describes how a tag object should be created.
+type TagObjectOptions struct {
+	// Tagger defines the signature of the tag creator.
+	Tagger *object.Signature
+	// Message defines the annotation of the tag.
+	Message string
+	// TargetType is the object type of the target. The object specified by
+	// Target must be of this type.
+	TargetType plumbing.ObjectType
+	// SignKey denotes a key to sign the tag with. A nil value here means the tag
+	// will not be signed. The private key must be present and already decrypted.
+	SignKey *openpgp.Entity
+}
+
+// Validate validates the fields and sets the default values.
+func (o *TagObjectOptions) Validate(r *Repository, hash plumbing.Hash) error {
+	if o.Tagger == nil {
+		return ErrMissingTagger
+	}
+
+	if o.Message == "" {
+		return ErrMissingMessage
+	}
+
+	if o.TargetType == plumbing.InvalidObject || o.TargetType == plumbing.AnyObject {
+		return ErrBadObjectType
+	}
+
+	if _, err := r.Object(o.TargetType, hash); err != nil {
+		return err
 	}
 
 	return nil

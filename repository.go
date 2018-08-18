@@ -1,15 +1,18 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	stdioutil "io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/openpgp"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/internal/revision"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -31,7 +34,12 @@ var (
 	// ErrBranchExists an error stating the specified branch already exists
 	ErrBranchExists = errors.New("branch already exists")
 	// ErrBranchNotFound an error stating the specified branch does not exist
-	ErrBranchNotFound            = errors.New("branch not found")
+	ErrBranchNotFound = errors.New("branch not found")
+	// ErrTagExists an error stating the specified tag already exists
+	ErrTagExists = errors.New("tag already exists")
+	// ErrTagNotFound an error stating the specified tag does not exist
+	ErrTagNotFound = errors.New("tag not found")
+
 	ErrInvalidReference          = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNotExists       = errors.New("repository does not exist")
 	ErrRepositoryAlreadyExists   = errors.New("repository already exists")
@@ -482,6 +490,130 @@ func (r *Repository) DeleteBranch(name string) error {
 
 	delete(cfg.Branches, name)
 	return r.Storer.SetConfig(cfg)
+}
+
+// CreateTag creates a tag. If opts is included, the tag is an annotated tag,
+// otherwise a lightweight tag is created.
+func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *TagObjectOptions) (*plumbing.Reference, error) {
+	rname := plumbing.ReferenceName(path.Join("refs", "tags", name))
+
+	_, err := r.Storer.Reference(rname)
+	switch err {
+	case nil:
+		// Tag exists, this is an error
+		return nil, ErrTagExists
+	case plumbing.ErrReferenceNotFound:
+		// Tag missing, available for creation, pass this
+	default:
+		// Some other error
+		return nil, err
+	}
+
+	var target plumbing.Hash
+	if opts != nil {
+		target, err = r.createTagObject(name, hash, opts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		target = hash
+	}
+
+	ref := plumbing.NewHashReference(rname, target)
+	if err = r.Storer.SetReference(ref); err != nil {
+		return nil, err
+	}
+
+	return ref, nil
+}
+
+func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *TagObjectOptions) (plumbing.Hash, error) {
+	if err := opts.Validate(r, hash); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	tag := &object.Tag{
+		Name:       name,
+		Tagger:     *opts.Tagger,
+		Message:    opts.Message,
+		TargetType: opts.TargetType,
+		Target:     hash,
+	}
+
+	if opts.SignKey != nil {
+		sig, err := r.buildTagSignature(tag, opts.SignKey)
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+
+		tag.PGPSignature = sig
+	}
+
+	obj := r.Storer.NewEncodedObject()
+	if err := tag.Encode(obj); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return r.Storer.SetEncodedObject(obj)
+}
+
+func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
+	encoded := &plumbing.MemoryObject{}
+	if err := tag.Encode(encoded); err != nil {
+		return "", err
+	}
+
+	rdr, err := encoded.Reader()
+	if err != nil {
+		return "", err
+	}
+
+	var b bytes.Buffer
+	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
+		return "", err
+	}
+
+	return b.String(), nil
+}
+
+// Tag fetches a tag from the repository. The tag is returned as a raw
+// reference. If the tag is annotated, a non-nil tag object is returned.
+func (r *Repository) Tag(name string) (*plumbing.Reference, *object.Tag, error) {
+	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
+	if err != nil {
+		if err == plumbing.ErrReferenceNotFound {
+			// Return a friendly error for this one, versus just ReferenceNotFound.
+			return nil, nil, ErrTagNotFound
+		}
+
+		return nil, nil, err
+	}
+
+	obj, err := r.TagObject(ref.Hash())
+	if err != nil && err != plumbing.ErrObjectNotFound {
+		return nil, nil, err
+	}
+
+	return ref, obj, nil
+}
+
+// DeleteTag deletes a tag from the repository.
+func (r *Repository) DeleteTag(name string) error {
+	_, obj, err := r.Tag(name)
+	if err != nil {
+		return err
+	}
+
+	if err = r.Storer.RemoveReference(plumbing.ReferenceName(path.Join("refs", "tags", name))); err != nil {
+		return err
+	}
+
+	// Delete the tag object if this was an annotated tag.
+	if obj != nil {
+		return r.DeleteObject(obj.Hash)
+	}
+
+	return nil
 }
 
 func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error) {
