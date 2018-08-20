@@ -281,3 +281,9 @@ func (s *PatternSuite) TestGlobMatch_wrongPattern_onTraversal_mismatch(c *C) {
 	r := p.Match([]string{"value", "head", "vol["}, false)
 	c.Assert(r, Equals, NoMatch)
 }
+
+func (s *PatternSuite) TestGlobMatch_issue_923(c *C) {
+	p := ParsePattern("**/android/**/GeneratedPluginRegistrant.java", nil)
+	r := p.Match([]string{"packages", "flutter_tools", "lib", "src", "android", "gradle.dart"}, false)
+	c.Assert(r, Equals, NoMatch)
+}
