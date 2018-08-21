@@ -3,6 +3,7 @@ package idxfile
 import (
 	"bytes"
 	"io"
+	"sort"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/utils/binary"
@@ -34,6 +35,9 @@ type Index interface {
 	Count() (int64, error)
 	// Entries returns an iterator to retrieve all index entries.
 	Entries() (EntryIter, error)
+	// EntriesByOffset returns an iterator to retrieve all index entries ordered
+	// by offset.
+	EntriesByOffset() (EntryIter, error)
 }
 
 // MemoryIndex is the in memory representation of an idx file.
@@ -215,6 +219,36 @@ func (idx *MemoryIndex) Entries() (EntryIter, error) {
 	return &idxfileEntryIter{idx, 0, 0, 0}, nil
 }
 
+// EntriesByOffset implements the Index interface.
+func (idx *MemoryIndex) EntriesByOffset() (EntryIter, error) {
+	count, err := idx.Count()
+	if err != nil {
+		return nil, err
+	}
+
+	iter := &idxfileEntryOffsetIter{
+		entries: make(entriesByOffset, count),
+	}
+
+	entries, err := idx.Entries()
+	if err != nil {
+		return nil, err
+	}
+
+	for pos := 0; int64(pos) < count; pos++ {
+		entry, err := entries.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		iter.entries[pos] = entry
+	}
+
+	sort.Sort(iter.entries)
+
+	return iter, nil
+}
+
 // EntryIter is an iterator that will return the entries in a packfile index.
 type EntryIter interface {
 	// Next returns the next entry in the packfile index.
@@ -275,4 +309,39 @@ type Entry struct {
 	Hash   plumbing.Hash
 	CRC32  uint32
 	Offset uint64
+}
+
+type idxfileEntryOffsetIter struct {
+	entries entriesByOffset
+	pos     int
+}
+
+func (i *idxfileEntryOffsetIter) Next() (*Entry, error) {
+	if i.pos >= len(i.entries) {
+		return nil, io.EOF
+	}
+
+	entry := i.entries[i.pos]
+	i.pos++
+
+	return entry, nil
+}
+
+func (i *idxfileEntryOffsetIter) Close() error {
+	i.pos = len(i.entries) + 1
+	return nil
+}
+
+type entriesByOffset []*Entry
+
+func (o entriesByOffset) Len() int {
+	return len(o)
+}
+
+func (o entriesByOffset) Less(i int, j int) bool {
+	return o[i].Offset < o[j].Offset
+}
+
+func (o entriesByOffset) Swap(i int, j int) {
+	o[i], o[j] = o[j], o[i]
 }

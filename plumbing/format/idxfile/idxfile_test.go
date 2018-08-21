@@ -115,6 +115,21 @@ func (s *IndexSuite) TestFindHash(c *C) {
 	}
 }
 
+func (s *IndexSuite) TestEntriesByOffset(c *C) {
+	idx, err := fixtureIndex()
+	c.Assert(err, IsNil)
+
+	entries, err := idx.EntriesByOffset()
+	c.Assert(err, IsNil)
+
+	for _, pos := range fixtureOffsets {
+		e, err := entries.Next()
+		c.Assert(err, IsNil)
+
+		c.Assert(e.Offset, Equals, uint64(pos))
+	}
+}
+
 var fixtureHashes = []plumbing.Hash{
 	plumbing.NewHash("303953e5aa461c203a324821bc1717f9b4fff895"),
 	plumbing.NewHash("5296768e3d9f661387ccbff18c4dea6c997fd78c"),
