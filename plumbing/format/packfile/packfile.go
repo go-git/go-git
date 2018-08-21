@@ -394,7 +394,7 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 		plumbing.TreeObject,
 		plumbing.CommitObject,
 		plumbing.TagObject:
-		entries, err := p.Entries()
+		entries, err := p.EntriesByOffset()
 		if err != nil {
 			return nil, err
 		}
