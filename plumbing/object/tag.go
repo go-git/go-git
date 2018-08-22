@@ -195,13 +195,9 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if t.PGPSignature != "" && includeSig {
-		// Split all the signature lines and write with a newline at the end.
-		lines := strings.Split(t.PGPSignature, "\n")
-		for _, line := range lines {
-			if _, err = fmt.Fprintf(w, "%s\n", line); err != nil {
-				return err
-			}
+	if includeSig {
+		if _, err = fmt.Fprint(w, "\n"+t.PGPSignature); err != nil {
+			return err
 		}
 	}
 
