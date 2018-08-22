@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"regexp"
+	"strings"
 
 	"golang.org/x/crypto/openpgp"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -389,7 +390,9 @@ var (
 type TagObjectOptions struct {
 	// Tagger defines the signature of the tag creator.
 	Tagger *object.Signature
-	// Message defines the annotation of the tag.
+	// Message defines the annotation of the tag. It is canonicalized during
+	// validation into the format expected by git - no leading whitespace and
+	// ending in a newline.
 	Message string
 	// TargetType is the object type of the target. The object specified by
 	// Target must be of this type.
@@ -408,6 +411,9 @@ func (o *TagObjectOptions) Validate(r *Repository, hash plumbing.Hash) error {
 	if o.Message == "" {
 		return ErrMissingMessage
 	}
+
+	// Canonicalize the message into the expected message format.
+	o.Message = strings.TrimSpace(o.Message) + "\n"
 
 	if o.TargetType == plumbing.InvalidObject || o.TargetType == plumbing.AnyObject {
 		return ErrBadObjectType

@@ -1455,6 +1455,49 @@ func (s *RepositorySuite) TestCreateTagSignedBadKey(c *C) {
 	c.Assert(err, Equals, openpgperr.InvalidArgumentError("signing key is encrypted"))
 }
 
+func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	h, err := r.Head()
+	c.Assert(err, IsNil)
+
+	key := commitSignKey(c, true)
+	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
+		Tagger:     defaultSignature(),
+		Message:    "\n\nfoo bar baz qux\n\nsome message here",
+		TargetType: plumbing.CommitObject,
+		SignKey:    key,
+	})
+	c.Assert(err, IsNil)
+
+	_, obj, err := r.Tag("foobar")
+	c.Assert(err, IsNil)
+	c.Assert(obj, NotNil)
+
+	// Assert the new canonicalized message.
+	c.Assert(obj.Message, Equals, "foo bar baz qux\n\nsome message here\n")
+
+	// Verify the tag.
+	pks := new(bytes.Buffer)
+	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
+	c.Assert(err, IsNil)
+
+	err = key.Serialize(pkw)
+	c.Assert(err, IsNil)
+	err = pkw.Close()
+	c.Assert(err, IsNil)
+
+	actual, err := obj.Verify(pks.String())
+	c.Assert(err, IsNil)
+	c.Assert(actual.PrimaryKey, DeepEquals, key.PrimaryKey)
+}
+
 func (s *RepositorySuite) TestTagLightweight(c *C) {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
