@@ -295,7 +295,14 @@ func (s *ObjectStorage) decodeObjectAt(
 		return nil, err
 	}
 
-	return packfile.NewPackfile(idx, s.dir.Fs(), f).GetByOffset(offset)
+	var p *packfile.Packfile
+	if s.deltaBaseCache != nil {
+		p = packfile.NewPackfileWithCache(idx, s.dir.Fs(), f, s.deltaBaseCache)
+	} else {
+		p = packfile.NewPackfile(idx, s.dir.Fs(), f)
+	}
+
+	return p.GetByOffset(offset)
 }
 
 func (s *ObjectStorage) decodeDeltaObjectAt(
@@ -486,7 +493,14 @@ func newPackfileIter(
 	index idxfile.Index,
 	cache cache.Object,
 ) (storer.EncodedObjectIter, error) {
-	iter, err := packfile.NewPackfile(index, fs, f).GetByType(t)
+	var p *packfile.Packfile
+	if cache != nil {
+		p = packfile.NewPackfileWithCache(index, fs, f, cache)
+	} else {
+		p = packfile.NewPackfile(index, fs, f)
+	}
+
+	iter, err := p.GetByType(t)
 	if err != nil {
 		return nil, err
 	}
