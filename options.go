@@ -383,7 +383,6 @@ var (
 	ErrMissingName    = errors.New("name field is required")
 	ErrMissingTagger  = errors.New("tagger field is required")
 	ErrMissingMessage = errors.New("message field is required")
-	ErrBadObjectType  = errors.New("bad object type for tagging")
 )
 
 // TagObjectOptions describes how a tag object should be created.
@@ -394,9 +393,6 @@ type TagObjectOptions struct {
 	// validation into the format expected by git - no leading whitespace and
 	// ending in a newline.
 	Message string
-	// TargetType is the object type of the target. The object specified by
-	// Target must be of this type.
-	TargetType plumbing.ObjectType
 	// SignKey denotes a key to sign the tag with. A nil value here means the tag
 	// will not be signed. The private key must be present and already decrypted.
 	SignKey *openpgp.Entity
@@ -414,14 +410,6 @@ func (o *TagObjectOptions) Validate(r *Repository, hash plumbing.Hash) error {
 
 	// Canonicalize the message into the expected message format.
 	o.Message = strings.TrimSpace(o.Message) + "\n"
-
-	if o.TargetType == plumbing.InvalidObject || o.TargetType == plumbing.AnyObject {
-		return ErrBadObjectType
-	}
-
-	if _, err := r.Object(o.TargetType, hash); err != nil {
-		return err
-	}
 
 	return nil
 }

@@ -532,11 +532,16 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *TagO
 		return plumbing.ZeroHash, err
 	}
 
+	rawobj, err := object.GetObject(r.Storer, hash)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
 	tag := &object.Tag{
 		Name:       name,
 		Tagger:     *opts.Tagger,
 		Message:    opts.Message,
-		TargetType: opts.TargetType,
+		TargetType: rawobj.Type(),
 		Target:     hash,
 	}
 

@@ -1333,9 +1333,8 @@ func (s *RepositorySuite) TestCreateTagAnnotated(c *C) {
 	expectedHash := h.Hash()
 
 	ref, err := r.CreateTag("foobar", expectedHash, &TagObjectOptions{
-		Tagger:     defaultSignature(),
-		Message:    "foo bar baz qux",
-		TargetType: plumbing.CommitObject,
+		Tagger:  defaultSignature(),
+		Message: "foo bar baz qux",
 	})
 	c.Assert(err, IsNil)
 
@@ -1364,30 +1363,30 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadOpts(c *C) {
 	expectedHash := h.Hash()
 
 	ref, err := r.CreateTag("foobar", expectedHash, &TagObjectOptions{
-		Message:    "foo bar baz qux",
-		TargetType: plumbing.CommitObject,
+		Message: "foo bar baz qux",
 	})
 	c.Assert(ref, IsNil)
 	c.Assert(err, Equals, ErrMissingTagger)
 
 	ref, err = r.CreateTag("foobar", expectedHash, &TagObjectOptions{
-		Tagger:     defaultSignature(),
-		TargetType: plumbing.CommitObject,
+		Tagger: defaultSignature(),
 	})
 	c.Assert(ref, IsNil)
 	c.Assert(err, Equals, ErrMissingMessage)
+}
 
-	ref, err = r.CreateTag("foobar", expectedHash, &TagObjectOptions{
+func (s *RepositorySuite) TestCreateTagAnnotatedBadHash(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	ref, err := r.CreateTag("foobar", plumbing.ZeroHash, &TagObjectOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
-	})
-	c.Assert(ref, IsNil)
-	c.Assert(err, Equals, ErrBadObjectType)
-
-	ref, err = r.CreateTag("foobar", expectedHash, &TagObjectOptions{
-		Tagger:     defaultSignature(),
-		Message:    "foo bar baz qux",
-		TargetType: plumbing.TagObject,
 	})
 	c.Assert(ref, IsNil)
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
@@ -1407,10 +1406,9 @@ func (s *RepositorySuite) TestCreateTagSigned(c *C) {
 
 	key := commitSignKey(c, true)
 	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
-		Tagger:     defaultSignature(),
-		Message:    "foo bar baz qux",
-		TargetType: plumbing.CommitObject,
-		SignKey:    key,
+		Tagger:  defaultSignature(),
+		Message: "foo bar baz qux",
+		SignKey: key,
 	})
 	c.Assert(err, IsNil)
 
@@ -1447,10 +1445,9 @@ func (s *RepositorySuite) TestCreateTagSignedBadKey(c *C) {
 
 	key := commitSignKey(c, false)
 	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
-		Tagger:     defaultSignature(),
-		Message:    "foo bar baz qux",
-		TargetType: plumbing.CommitObject,
-		SignKey:    key,
+		Tagger:  defaultSignature(),
+		Message: "foo bar baz qux",
+		SignKey: key,
 	})
 	c.Assert(err, Equals, openpgperr.InvalidArgumentError("signing key is encrypted"))
 }
@@ -1469,10 +1466,9 @@ func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
 
 	key := commitSignKey(c, true)
 	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
-		Tagger:     defaultSignature(),
-		Message:    "\n\nfoo bar baz qux\n\nsome message here",
-		TargetType: plumbing.CommitObject,
-		SignKey:    key,
+		Tagger:  defaultSignature(),
+		Message: "\n\nfoo bar baz qux\n\nsome message here",
+		SignKey: key,
 	})
 	c.Assert(err, IsNil)
 
