@@ -581,31 +581,49 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 	return b.String(), nil
 }
 
-// Tag fetches a tag from the repository. The tag is returned as a raw
-// reference. If the tag is annotated, a non-nil tag object is returned.
-func (r *Repository) Tag(name string) (*plumbing.Reference, *object.Tag, error) {
+// Tag fetches a tag from the repository.
+//
+// If you want to check to see if the tag is an annotated tag, you can call
+// TagObject on the hash of the reference in ForEach:
+//
+//   ref, err := r.Tag("v0.1.0")
+//   if err != nil {
+//     // Handle error
+//   }
+//
+//   obj, err := r.TagObject(ref.Hash())
+//   switch err {
+//   case nil:
+//     // Tag object present
+//   case plumbing.ErrObjectNotFound:
+//     // Not a tag object
+//   default:
+//     // Some other error
+//   }
+//
+func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
 	if err != nil {
 		if err == plumbing.ErrReferenceNotFound {
 			// Return a friendly error for this one, versus just ReferenceNotFound.
-			return nil, nil, ErrTagNotFound
+			return nil, ErrTagNotFound
 		}
 
-		return nil, nil, err
+		return nil, err
 	}
 
-	obj, err := r.TagObject(ref.Hash())
-	if err != nil && err != plumbing.ErrObjectNotFound {
-		return nil, nil, err
-	}
-
-	return ref, obj, nil
+	return ref, nil
 }
 
 // DeleteTag deletes a tag from the repository.
 func (r *Repository) DeleteTag(name string) error {
-	_, obj, err := r.Tag(name)
+	ref, err := r.Tag(name)
 	if err != nil {
+		return err
+	}
+
+	obj, err := r.TagObject(ref.Hash())
+	if err != nil && err != plumbing.ErrObjectNotFound {
 		return err
 	}
 
@@ -982,9 +1000,31 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 	return nil, fmt.Errorf("invalid Order=%v", o.Order)
 }
 
-// Tags returns all the References from Tags. This method returns only lightweight
-// tags. Note that not all the tags are lightweight ones. To return annotated tags
-// too, you need to call TagObjects() method.
+// Tags returns all the tag References in a repository.
+//
+// If you want to check to see if the tag is an annotated tag, you can call
+// TagObject on the hash Reference passed in through ForEach:
+//
+//   iter, err := r.Tags()
+//   if err != nil {
+//     // Handle error
+//   }
+//
+//   if err := iter.ForEach(func (ref *plumbing.Reference) error {
+//     obj, err := r.TagObject(ref.Hash())
+//     switch err {
+//     case nil:
+//       // Tag object present
+//     case plumbing.ErrObjectNotFound:
+//       // Not a tag object
+//     default:
+//       // Some other error
+//       return err
+//     }
+//   }); err != nil {
+//     // Handle outer iterator error
+//   }
+//
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
 	refIter, err := r.Storer.IterReferences()
 	if err != nil {

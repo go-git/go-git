@@ -1294,9 +1294,8 @@ func (s *RepositorySuite) TestCreateTagLightweight(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ref, NotNil)
 
-	actual, obj, err := r.Tag("foobar")
+	actual, err := r.Tag("foobar")
 	c.Assert(err, IsNil)
-	c.Assert(obj, IsNil)
 
 	c.Assert(expected.Hash(), Equals, actual.Hash())
 }
@@ -1338,9 +1337,11 @@ func (s *RepositorySuite) TestCreateTagAnnotated(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	tag, obj, err := r.Tag("foobar")
+	tag, err := r.Tag("foobar")
 	c.Assert(err, IsNil)
-	c.Assert(obj, NotNil)
+
+	obj, err := r.TagObject(tag.Hash())
+	c.Assert(err, IsNil)
 
 	c.Assert(ref, DeepEquals, tag)
 	c.Assert(obj.Hash, Equals, ref.Hash())
@@ -1412,9 +1413,11 @@ func (s *RepositorySuite) TestCreateTagSigned(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	_, obj, err := r.Tag("foobar")
+	tag, err := r.Tag("foobar")
 	c.Assert(err, IsNil)
-	c.Assert(obj, NotNil)
+
+	obj, err := r.TagObject(tag.Hash())
+	c.Assert(err, IsNil)
 
 	// Verify the tag.
 	pks := new(bytes.Buffer)
@@ -1472,9 +1475,11 @@ func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	_, obj, err := r.Tag("foobar")
+	tag, err := r.Tag("foobar")
 	c.Assert(err, IsNil)
-	c.Assert(obj, NotNil)
+
+	obj, err := r.TagObject(tag.Hash())
+	c.Assert(err, IsNil)
 
 	// Assert the new canonicalized message.
 	c.Assert(obj.Message, Equals, "foo bar baz qux\n\nsome message here\n")
@@ -1505,9 +1510,8 @@ func (s *RepositorySuite) TestTagLightweight(c *C) {
 
 	expected := plumbing.NewHash("f7b877701fbf855b44c0a9e86f3fdce2c298b07f")
 
-	tag, obj, err := r.Tag("lightweight-tag")
+	tag, err := r.Tag("lightweight-tag")
 	c.Assert(err, IsNil)
-	c.Assert(obj, IsNil)
 
 	actual := tag.Hash()
 	c.Assert(expected, Equals, actual)
@@ -1522,32 +1526,9 @@ func (s *RepositorySuite) TestTagLightweightMissingTag(c *C) {
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
-	tag, obj, err := r.Tag("lightweight-tag-tag")
+	tag, err := r.Tag("lightweight-tag-tag")
 	c.Assert(tag, IsNil)
-	c.Assert(obj, IsNil)
 	c.Assert(err, Equals, ErrTagNotFound)
-}
-
-func (s *RepositorySuite) TestTagAnnotated(c *C) {
-	url := s.GetLocalRepositoryURL(
-		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
-	)
-
-	r, _ := Init(memory.NewStorage(), nil)
-	err := r.clone(context.Background(), &CloneOptions{URL: url})
-	c.Assert(err, IsNil)
-
-	tag, obj, err := r.Tag("annotated-tag")
-	c.Assert(err, IsNil)
-	c.Assert(obj, NotNil)
-
-	expectedHash := plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69")
-	expectedTarget := plumbing.NewHash("f7b877701fbf855b44c0a9e86f3fdce2c298b07f")
-	actualHash := tag.Hash()
-	c.Assert(expectedHash, Equals, actualHash)
-	c.Assert(obj.Hash, Equals, expectedHash)
-	c.Assert(obj.Type(), Equals, plumbing.TagObject)
-	c.Assert(obj.Target, Equals, expectedTarget)
 }
 
 func (s *RepositorySuite) TestDeleteTag(c *C) {
@@ -1562,7 +1543,7 @@ func (s *RepositorySuite) TestDeleteTag(c *C) {
 	err = r.DeleteTag("lightweight-tag")
 	c.Assert(err, IsNil)
 
-	_, _, err = r.Tag("lightweight-tag")
+	_, err = r.Tag("lightweight-tag")
 	c.Assert(err, Equals, ErrTagNotFound)
 }
 
