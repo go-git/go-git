@@ -61,6 +61,10 @@ var (
 // type is not zero-value-safe, use the New function to initialize it.
 type DotGit struct {
 	fs billy.Filesystem
+
+	// incoming object directory information
+	incomingChecked bool
+	incomingDirName string
 }
 
 // New returns a DotGit value ready to be used. The path argument must
@@ -279,33 +283,47 @@ func (d *DotGit) objectPath(h plumbing.Hash) string {
 	return d.fs.Join(objectsPath, hash[0:2], hash[2:40])
 }
 
-//incomingObjectPath is intended to add support for a git pre-recieve hook to be written
-//it adds support for go-git to find objects in an "incoming" directory, so that the library
-//can be used to write a pre-recieve hook that deals with the incoming objects.
-//More on git hooks found here : https://git-scm.com/docs/githooks
-//More on 'quarantine'/incoming directory here : https://git-scm.com/docs/git-receive-pack
+// incomingObjectPath is intended to add support for a git pre-receive hook
+// to be written it adds support for go-git to find objects in an "incoming"
+// directory, so that the library can be used to write a pre-receive hook
+// that deals with the incoming objects.
+//
+// More on git hooks found here : https://git-scm.com/docs/githooks
+// More on 'quarantine'/incoming directory here:
+//     https://git-scm.com/docs/git-receive-pack
 func (d *DotGit) incomingObjectPath(h plumbing.Hash) string {
 	hString := h.String()
-	directoryContents, err := d.fs.ReadDir(objectsPath)
-	if err != nil {
+
+	if d.incomingDirName == "" {
 		return d.fs.Join(objectsPath, hString[0:2], hString[2:40])
 	}
-	var incomingDirName string
-	for _, file := range directoryContents {
-		if strings.Split(file.Name(), "-")[0] == "incoming" && file.IsDir() {
-			incomingDirName = file.Name()
+
+	return d.fs.Join(objectsPath, d.incomingDirName, hString[0:2], hString[2:40])
+}
+
+// hasIncomingObjects searches for an incoming directory and keeps its name
+// so it doesn't have to be found each time an object is accessed.
+func (d *DotGit) hasIncomingObjects() bool {
+	if !d.incomingChecked {
+		directoryContents, err := d.fs.ReadDir(objectsPath)
+		if err == nil {
+			for _, file := range directoryContents {
+				if strings.HasPrefix(file.Name(), "incoming-") && file.IsDir() {
+					d.incomingDirName = file.Name()
+				}
+			}
 		}
+
+		d.incomingChecked = true
 	}
-	if incomingDirName == "" {
-		return d.fs.Join(objectsPath, hString[0:2], hString[2:40])
-	}
-	return d.fs.Join(objectsPath, incomingDirName, hString[0:2], hString[2:40])
+
+	return d.incomingDirName != ""
 }
 
 // Object returns a fs.File pointing the object file, if exists
 func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
 	obj1, err1 := d.fs.Open(d.objectPath(h))
-	if os.IsNotExist(err1) {
+	if os.IsNotExist(err1) && d.hasIncomingObjects() {
 		obj2, err2 := d.fs.Open(d.incomingObjectPath(h))
 		if err2 != nil {
 			return obj1, err1
@@ -318,7 +336,7 @@ func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
 // ObjectStat returns a os.FileInfo pointing the object file, if exists
 func (d *DotGit) ObjectStat(h plumbing.Hash) (os.FileInfo, error) {
 	obj1, err1 := d.fs.Stat(d.objectPath(h))
-	if os.IsNotExist(err1) {
+	if os.IsNotExist(err1) && d.hasIncomingObjects() {
 		obj2, err2 := d.fs.Stat(d.incomingObjectPath(h))
 		if err2 != nil {
 			return obj1, err1
@@ -331,7 +349,7 @@ func (d *DotGit) ObjectStat(h plumbing.Hash) (os.FileInfo, error) {
 // ObjectDelete removes the object file, if exists
 func (d *DotGit) ObjectDelete(h plumbing.Hash) error {
 	err1 := d.fs.Remove(d.objectPath(h))
-	if os.IsNotExist(err1) {
+	if os.IsNotExist(err1) && d.hasIncomingObjects() {
 		err2 := d.fs.Remove(d.incomingObjectPath(h))
 		if err2 != nil {
 			return err1
