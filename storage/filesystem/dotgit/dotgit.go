@@ -283,11 +283,14 @@ func (d *DotGit) objectPath(h plumbing.Hash) string {
 	return d.fs.Join(objectsPath, hash[0:2], hash[2:40])
 }
 
-//incomingObjectPath is intended to add support for a git pre-recieve hook to be written
-//it adds support for go-git to find objects in an "incoming" directory, so that the library
-//can be used to write a pre-recieve hook that deals with the incoming objects.
-//More on git hooks found here : https://git-scm.com/docs/githooks
-//More on 'quarantine'/incoming directory here : https://git-scm.com/docs/git-receive-pack
+// incomingObjectPath is intended to add support for a git pre-receive hook
+// to be written it adds support for go-git to find objects in an "incoming"
+// directory, so that the library can be used to write a pre-receive hook
+// that deals with the incoming objects.
+//
+// More on git hooks found here : https://git-scm.com/docs/githooks
+// More on 'quarantine'/incoming directory here:
+//     https://git-scm.com/docs/git-receive-pack
 func (d *DotGit) incomingObjectPath(h plumbing.Hash) string {
 	hString := h.String()
 
@@ -305,7 +308,7 @@ func (d *DotGit) hasIncomingObjects() bool {
 		directoryContents, err := d.fs.ReadDir(objectsPath)
 		if err == nil {
 			for _, file := range directoryContents {
-				if strings.Split(file.Name(), "-")[0] == "incoming" && file.IsDir() {
+				if strings.HasPrefix(file.Name(), "incoming-") && file.IsDir() {
 					d.incomingDirName = file.Name()
 				}
 			}
