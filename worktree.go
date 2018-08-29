@@ -750,9 +750,7 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files 
 				return err
 			}
 		} else {
-			// check if file is 'Untracked'
-			s, ok := (status)[filepath.ToSlash(path)]
-			if ok && s.Worktree == Untracked {
+			if status.IsUntracked(path) {
 				if err := w.Filesystem.Remove(path); err != nil {
 					return err
 				}
