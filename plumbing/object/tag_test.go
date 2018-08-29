@@ -265,7 +265,7 @@ func (s *TagSuite) TestStringNonCommit(c *C) {
 	c.Assert(tag.String(), Equals,
 		"tag TAG TWO\n"+
 			"Tagger:  <>\n"+
-			"Date:   Mon Jan 01 00:00:00 0001 +0000\n"+
+			"Date:   Thu Jan 01 00:00:00 1970 +0000\n"+
 			"\n"+
 			"tag two\n")
 }
