@@ -300,7 +300,7 @@ func (d *DotGit) Objects() ([]plumbing.Hash, error) {
 }
 
 // ForEachObjectHash iterates over the hashes of objects found under the
-// .git/objects/ directory and executes the provided .
+// .git/objects/ directory and executes the provided function.
 func (d *DotGit) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 	if !d.Static {
 		return d.forEachObjectHash(fun)
