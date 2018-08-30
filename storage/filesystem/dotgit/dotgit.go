@@ -62,6 +62,9 @@ type Options struct {
 	// ExclusiveAccess means that the filesystem is not modified externally
 	// while the repo is open.
 	ExclusiveAccess bool
+	// KeepDescriptors makes the file descriptors to be reused but they will
+	// need to be manually closed calling Close().
+	KeepDescriptors bool
 }
 
 // The DotGit type represents a local git repository on disk. This
@@ -78,6 +81,8 @@ type DotGit struct {
 	objectMap  map[plumbing.Hash]struct{}
 	packList   []plumbing.Hash
 	packMap    map[plumbing.Hash]struct{}
+
+	files map[string]billy.File
 }
 
 // New returns a DotGit value ready to be used. The path argument must
@@ -118,6 +123,28 @@ func (d *DotGit) Initialize() error {
 		if err := d.fs.MkdirAll(path, os.ModeDir|os.ModePerm); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// Close closes all opened files.
+func (d *DotGit) Close() error {
+	var firstError error
+	if d.files != nil {
+		for _, f := range d.files {
+			err := f.Close()
+			if err != nil && firstError == nil {
+				firstError = err
+				continue
+			}
+		}
+
+		d.files = nil
+	}
+
+	if firstError != nil {
+		return firstError
 	}
 
 	return nil
@@ -217,18 +244,32 @@ func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
 }
 
 func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
+	if d.files == nil {
+		d.files = make(map[string]billy.File)
+	}
+
 	err := d.hasPack(hash)
 	if err != nil {
 		return nil, err
 	}
 
-	pack, err := d.fs.Open(d.objectPackPath(hash, extension))
+	path := d.objectPackPath(hash, extension)
+	f, ok := d.files[path]
+	if ok {
+		return f, nil
+	}
+
+	pack, err := d.fs.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrPackfileNotFound
 		}
 
 		return nil, err
+	}
+
+	if d.options.KeepDescriptors && extension == "pack" {
+		d.files[path] = pack
 	}
 
 	return pack, nil

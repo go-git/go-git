@@ -74,6 +74,7 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 	}
 
 	defer ioutil.CheckClose(f, &err)
+
 	idxf := idxfile.NewMemoryIndex()
 	d := idxfile.NewDecoder(f)
 	if err = d.Decode(idxf); err != nil {
@@ -280,7 +281,9 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (
 		return nil, err
 	}
 
-	defer ioutil.CheckClose(f, &err)
+	if !s.options.KeepDescriptors {
+		defer ioutil.CheckClose(f, &err)
+	}
 
 	idx := s.index[pack]
 	if canBeDelta {
@@ -421,6 +424,11 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 			return newPackfileIter(s.dir.Fs(), pack, t, seen, s.index[h], s.deltaBaseCache)
 		},
 	}, nil
+}
+
+// Close closes all opened files.
+func (s *ObjectStorage) Close() error {
+	return s.dir.Close()
 }
 
 type lazyPackfilesIter struct {

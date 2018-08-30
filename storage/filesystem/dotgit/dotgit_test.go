@@ -465,6 +465,34 @@ func (s *SuiteDotGit) TestObjectPack(c *C) {
 	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
 }
 
+func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
+	f := fixtures.Basic().ByTag(".git").One()
+	fs := f.DotGit()
+	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
+
+	pack, err := dir.ObjectPack(f.PackfileHash)
+	c.Assert(err, IsNil)
+	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
+
+	pack2, err := dir.ObjectPack(f.PackfileHash)
+	c.Assert(err, IsNil)
+	c.Assert(pack, Equals, pack2)
+
+	err = dir.Close()
+	c.Assert(err, IsNil)
+
+	pack2, err = dir.ObjectPack(f.PackfileHash)
+	c.Assert(err, IsNil)
+	c.Assert(pack, Not(Equals), pack2)
+
+	err = pack2.Close()
+	c.Assert(err, IsNil)
+
+	err = dir.Close()
+	c.Assert(err, NotNil)
+
+}
+
 func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()

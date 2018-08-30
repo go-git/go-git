@@ -183,6 +183,9 @@ func (o *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 func (o *ObjectStorage) DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error {
 	return nil
 }
+func (s *ObjectStorage) Close() error {
+	return nil
+}
 
 var errNotSupported = fmt.Errorf("Not supported")
 
