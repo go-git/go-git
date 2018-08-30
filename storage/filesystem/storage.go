@@ -2,6 +2,7 @@
 package filesystem
 
 import (
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem/dotgit"
 
 	"gopkg.in/src-d/go-billy.v4"
@@ -11,7 +12,7 @@ import (
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
-	StorageOptions
+	storer.Options
 
 	fs  billy.Filesystem
 	dir *dotgit.DotGit
@@ -24,36 +25,26 @@ type Storage struct {
 	ModuleStorage
 }
 
-// StorageOptions holds configuration for the storage.
-type StorageOptions struct {
-	// Static means that the filesystem is not modified while the repo is open.
-	Static bool
-}
-
 // NewStorage returns a new Storage backed by a given `fs.Filesystem`
 func NewStorage(fs billy.Filesystem) (*Storage, error) {
-	return NewStorageWithOptions(fs, StorageOptions{})
+	return NewStorageWithOptions(fs, storer.Options{})
 }
 
 // NewStorageWithOptions returns a new Storage backed by a given `fs.Filesystem`
 func NewStorageWithOptions(
 	fs billy.Filesystem,
-	ops StorageOptions,
+	ops storer.Options,
 ) (*Storage, error) {
-	dOps := dotgit.DotGitOptions{
-		Static: ops.Static,
-	}
-
-	dir := dotgit.NewWithOptions(fs, dOps)
+	dir := dotgit.NewWithOptions(fs, ops)
 	o, err := NewObjectStorage(dir)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Storage{
-		StorageOptions: ops,
-		fs:             fs,
-		dir:            dir,
+		Options: ops,
+		fs:      fs,
+		dir:     dir,
 
 		ObjectStorage:    o,
 		ReferenceStorage: ReferenceStorage{dir: dir},

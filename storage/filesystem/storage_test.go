@@ -64,7 +64,9 @@ var _ = Suite(&StorageStaticSuite{})
 
 func (s *StorageStaticSuite) SetUpTest(c *C) {
 	s.dir = c.MkDir()
-	storage, err := NewStorageWithOptions(osfs.New(s.dir), StorageOptions{Static: true})
+	storage, err := NewStorageWithOptions(
+		osfs.New(s.dir),
+		storer.Options{Static: true})
 	c.Assert(err, IsNil)
 
 	setUpTest(&s.StorageSuite, c, storage)

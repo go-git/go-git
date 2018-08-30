@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
 	"gopkg.in/src-d/go-billy.v4"
@@ -60,7 +61,7 @@ var (
 // The DotGit type represents a local git repository on disk. This
 // type is not zero-value-safe, use the New function to initialize it.
 type DotGit struct {
-	DotGitOptions
+	storer.Options
 	fs billy.Filesystem
 
 	// incoming object directory information
@@ -73,25 +74,19 @@ type DotGit struct {
 	packMap    map[plumbing.Hash]struct{}
 }
 
-// DotGitOptions holds configuration options for new DotGit objects.
-type DotGitOptions struct {
-	// Static means that the filesystem won't be changed while the repo is open.
-	Static bool
-}
-
 // New returns a DotGit value ready to be used. The path argument must
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return NewWithOptions(fs, DotGitOptions{})
+	return NewWithOptions(fs, storer.Options{})
 }
 
 // NewWithOptions creates a new DotGit and sets non default configuration
 // options. See New for complete help.
-func NewWithOptions(fs billy.Filesystem, o DotGitOptions) *DotGit {
+func NewWithOptions(fs billy.Filesystem, o storer.Options) *DotGit {
 	return &DotGit{
-		DotGitOptions: o,
-		fs:            fs,
+		Options: o,
+		fs:      fs,
 	}
 }
 

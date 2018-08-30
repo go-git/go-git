@@ -13,3 +13,9 @@ type Initializer interface {
 	// any.
 	Init() error
 }
+
+// Options holds configuration for the storage.
+type Options struct {
+	// Static means that the filesystem is not modified while the repo is open.
+	Static bool
+}

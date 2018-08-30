@@ -559,14 +559,17 @@ func (s *RepositorySuite) TestPlainOpenStatic(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	op := &PlainOpenOptions{Static: true}
+	op := &PlainOpenOptions{
+		Storage: storer.Options{Static: true},
+	}
+
 	r, err = PlainOpenWithOptions(dir, op)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
 	sto, ok := r.Storer.(*filesystem.Storage)
 	c.Assert(ok, Equals, true)
-	c.Assert(sto.StorageOptions.Static, Equals, true)
+	c.Assert(sto.Options.Static, Equals, true)
 }
 
 func (s *RepositorySuite) TestPlainClone(c *C) {

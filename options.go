@@ -9,6 +9,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 )
 
@@ -428,11 +429,12 @@ func (o *GrepOptions) Validate(w *Worktree) error {
 // PlainOpenOptions describes how opening a plain repository should be
 // performed.
 type PlainOpenOptions struct {
+	// Storage layer options.
+	Storage storer.Options
+
 	// DetectDotGit defines whether parent directories should be
 	// walked until a .git directory or file is found.
 	DetectDotGit bool
-	// Static means that the repository won't be modified while open.
-	Static bool
 }
 
 // Validate validates the fields and sets the default values.

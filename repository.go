@@ -251,11 +251,7 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		return nil, err
 	}
 
-	so := filesystem.StorageOptions{
-		Static: o.Static,
-	}
-
-	s, err := filesystem.NewStorageWithOptions(dot, so)
+	s, err := filesystem.NewStorageWithOptions(dot, o.Storage)
 	if err != nil {
 		return nil, err
 	}
