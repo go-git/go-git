@@ -431,6 +431,8 @@ type PlainOpenOptions struct {
 	// DetectDotGit defines whether parent directories should be
 	// walked until a .git directory or file is found.
 	DetectDotGit bool
+	// Static means that the repository won't be modified while open.
+	Static bool
 }
 
 // Validate validates the fields and sets the default values.

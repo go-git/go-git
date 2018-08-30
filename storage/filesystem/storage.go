@@ -11,6 +11,8 @@ import (
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
+	StorageOptions
+
 	fs  billy.Filesystem
 	dir *dotgit.DotGit
 
@@ -22,17 +24,36 @@ type Storage struct {
 	ModuleStorage
 }
 
+// StorageOptions holds configuration for the storage.
+type StorageOptions struct {
+	// Static means that the filesystem is not modified while the repo is open.
+	Static bool
+}
+
 // NewStorage returns a new Storage backed by a given `fs.Filesystem`
 func NewStorage(fs billy.Filesystem) (*Storage, error) {
-	dir := dotgit.New(fs)
+	return NewStorageWithOptions(fs, StorageOptions{})
+}
+
+// NewStorageWithOptions returns a new Storage backed by a given `fs.Filesystem`
+func NewStorageWithOptions(
+	fs billy.Filesystem,
+	ops StorageOptions,
+) (*Storage, error) {
+	dOps := dotgit.DotGitOptions{
+		Static: ops.Static,
+	}
+
+	dir := dotgit.NewWithOptions(fs, dOps)
 	o, err := NewObjectStorage(dir)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Storage{
-		fs:  fs,
-		dir: dir,
+		StorageOptions: ops,
+		fs:             fs,
+		dir:            dir,
 
 		ObjectStorage:    o,
 		ReferenceStorage: ReferenceStorage{dir: dir},
