@@ -16,6 +16,7 @@ type Initializer interface {
 
 // Options holds configuration for the storage.
 type Options struct {
-	// Static means that the filesystem is not modified while the repo is open.
-	Static bool
+	// ExclusiveAccess means that the filesystem is not modified externally
+	// while the repo is open.
+	ExclusiveAccess bool
 }

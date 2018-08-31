@@ -165,7 +165,7 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 
 // ObjectPacks returns the list of availables packfiles
 func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
-	if !d.Static {
+	if !d.ExclusiveAccess {
 		return d.objectPacks()
 	}
 
@@ -279,7 +279,7 @@ func (d *DotGit) NewObject() (*ObjectWriter, error) {
 // Objects returns a slice with the hashes of objects found under the
 // .git/objects/ directory.
 func (d *DotGit) Objects() ([]plumbing.Hash, error) {
-	if d.Static {
+	if d.ExclusiveAccess {
 		err := d.genObjectList()
 		if err != nil {
 			return nil, err
@@ -302,7 +302,7 @@ func (d *DotGit) Objects() ([]plumbing.Hash, error) {
 // ForEachObjectHash iterates over the hashes of objects found under the
 // .git/objects/ directory and executes the provided function.
 func (d *DotGit) ForEachObjectHash(fun func(plumbing.Hash) error) error {
-	if !d.Static {
+	if !d.ExclusiveAccess {
 		return d.forEachObjectHash(fun)
 	}
 
@@ -376,7 +376,7 @@ func (d *DotGit) genObjectList() error {
 }
 
 func (d *DotGit) hasObject(h plumbing.Hash) error {
-	if !d.Static {
+	if !d.ExclusiveAccess {
 		return nil
 	}
 
@@ -420,7 +420,7 @@ func (d *DotGit) genPackList() error {
 }
 
 func (d *DotGit) hasPack(h plumbing.Hash) error {
-	if !d.Static {
+	if !d.ExclusiveAccess {
 		return nil
 	}
 
