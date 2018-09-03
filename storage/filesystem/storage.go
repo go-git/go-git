@@ -12,7 +12,7 @@ import (
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
-	storer.Options
+	options storer.Options
 
 	fs  billy.Filesystem
 	dir *dotgit.DotGit
@@ -42,7 +42,7 @@ func NewStorageWithOptions(
 	}
 
 	return &Storage{
-		Options: ops,
+		options: ops,
 		fs:      fs,
 		dir:     dir,
 
