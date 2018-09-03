@@ -18,6 +18,8 @@ import (
 )
 
 type ObjectStorage struct {
+	options Options
+
 	// deltaBaseCache is an object cache uses to cache delta's bases when
 	deltaBaseCache cache.Object
 
@@ -27,7 +29,17 @@ type ObjectStorage struct {
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory.
 func NewObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
+	return NewObjectStorageWithOptions(dir, Options{})
+}
+
+// NewObjectStorageWithOptions creates a new ObjectStorage with the given .git
+// directory and sets its options.
+func NewObjectStorageWithOptions(
+	dir *dotgit.DotGit,
+	ops Options,
+) (ObjectStorage, error) {
 	s := ObjectStorage{
+		options:        ops,
 		deltaBaseCache: cache.NewObjectLRUDefault(),
 		dir:            dir,
 	}

@@ -14,7 +14,6 @@ import (
 
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/utils/ioutil"
 
 	"gopkg.in/src-d/go-billy.v4"
@@ -58,11 +57,18 @@ var (
 	ErrSymRefTargetNotFound = errors.New("symbolic reference target not found")
 )
 
+// Options holds configuration for the storage.
+type Options struct {
+	// ExclusiveAccess means that the filesystem is not modified externally
+	// while the repo is open.
+	ExclusiveAccess bool
+}
+
 // The DotGit type represents a local git repository on disk. This
 // type is not zero-value-safe, use the New function to initialize it.
 type DotGit struct {
-	storer.Options
-	fs billy.Filesystem
+	options Options
+	fs      billy.Filesystem
 
 	// incoming object directory information
 	incomingChecked bool
@@ -78,14 +84,14 @@ type DotGit struct {
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return NewWithOptions(fs, storer.Options{})
+	return NewWithOptions(fs, Options{})
 }
 
 // NewWithOptions creates a new DotGit and sets non default configuration
 // options. See New for complete help.
-func NewWithOptions(fs billy.Filesystem, o storer.Options) *DotGit {
+func NewWithOptions(fs billy.Filesystem, o Options) *DotGit {
 	return &DotGit{
-		Options: o,
+		options: o,
 		fs:      fs,
 	}
 }
@@ -165,7 +171,7 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 
 // ObjectPacks returns the list of availables packfiles
 func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
-	if !d.ExclusiveAccess {
+	if !d.options.ExclusiveAccess {
 		return d.objectPacks()
 	}
 
@@ -279,7 +285,7 @@ func (d *DotGit) NewObject() (*ObjectWriter, error) {
 // Objects returns a slice with the hashes of objects found under the
 // .git/objects/ directory.
 func (d *DotGit) Objects() ([]plumbing.Hash, error) {
-	if d.ExclusiveAccess {
+	if d.options.ExclusiveAccess {
 		err := d.genObjectList()
 		if err != nil {
 			return nil, err
@@ -302,7 +308,7 @@ func (d *DotGit) Objects() ([]plumbing.Hash, error) {
 // ForEachObjectHash iterates over the hashes of objects found under the
 // .git/objects/ directory and executes the provided function.
 func (d *DotGit) ForEachObjectHash(fun func(plumbing.Hash) error) error {
-	if !d.ExclusiveAccess {
+	if !d.options.ExclusiveAccess {
 		return d.forEachObjectHash(fun)
 	}
 
@@ -376,7 +382,7 @@ func (d *DotGit) genObjectList() error {
 }
 
 func (d *DotGit) hasObject(h plumbing.Hash) error {
-	if !d.ExclusiveAccess {
+	if !d.options.ExclusiveAccess {
 		return nil
 	}
 
@@ -420,7 +426,7 @@ func (d *DotGit) genPackList() error {
 }
 
 func (d *DotGit) hasPack(h plumbing.Hash) error {
-	if !d.ExclusiveAccess {
+	if !d.options.ExclusiveAccess {
 		return nil
 	}
 

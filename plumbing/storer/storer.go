@@ -13,10 +13,3 @@ type Initializer interface {
 	// any.
 	Init() error
 }
-
-// Options holds configuration for the storage.
-type Options struct {
-	// ExclusiveAccess means that the filesystem is not modified externally
-	// while the repo is open.
-	ExclusiveAccess bool
-}

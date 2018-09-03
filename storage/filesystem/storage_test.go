@@ -56,17 +56,17 @@ func (s *StorageSuite) TestNewStorageShouldNotAddAnyContentsToDir(c *C) {
 	c.Assert(fis, HasLen, 0)
 }
 
-type StorageStaticSuite struct {
+type StorageExclusiveSuite struct {
 	StorageSuite
 }
 
-var _ = Suite(&StorageStaticSuite{})
+var _ = Suite(&StorageExclusiveSuite{})
 
-func (s *StorageStaticSuite) SetUpTest(c *C) {
+func (s *StorageExclusiveSuite) SetUpTest(c *C) {
 	s.dir = c.MkDir()
 	storage, err := NewStorageWithOptions(
 		osfs.New(s.dir),
-		storer.Options{ExclusiveAccess: true})
+		Options{ExclusiveAccess: true})
 	c.Assert(err, IsNil)
 
 	setUpTest(&s.StorageSuite, c, storage)
