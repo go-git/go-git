@@ -235,9 +235,8 @@ func PlainOpen(path string) (*Repository, error) {
 	return PlainOpenWithOptions(path, &PlainOpenOptions{})
 }
 
-// PlainOpen opens a git repository from the given path. It detects if the
-// repository is bare or a normal one. If the path doesn't contain a valid
-// repository ErrRepositoryNotExists is returned
+// PlainOpenWithOptions opens a git repository from the given path with specific
+// options. See PlainOpen for more info.
 func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error) {
 	dot, wt, err := dotGitToOSFilesystems(path, o.DetectDotGit)
 	if err != nil {

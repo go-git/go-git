@@ -26,6 +26,10 @@ func (s *StorageSuite) SetUpTest(c *C) {
 	storage, err := NewStorage(osfs.New(s.dir))
 	c.Assert(err, IsNil)
 
+	setUpTest(s, c, storage)
+}
+
+func setUpTest(s *StorageSuite, c *C, storage *Storage) {
 	// ensure that right interfaces are implemented
 	var _ storer.EncodedObjectStorer = storage
 	var _ storer.IndexStorer = storage
@@ -50,4 +54,20 @@ func (s *StorageSuite) TestNewStorageShouldNotAddAnyContentsToDir(c *C) {
 	fis, err := ioutil.ReadDir(s.dir)
 	c.Assert(err, IsNil)
 	c.Assert(fis, HasLen, 0)
+}
+
+type StorageExclusiveSuite struct {
+	StorageSuite
+}
+
+var _ = Suite(&StorageExclusiveSuite{})
+
+func (s *StorageExclusiveSuite) SetUpTest(c *C) {
+	s.dir = c.MkDir()
+	storage, err := NewStorageWithOptions(
+		osfs.New(s.dir),
+		Options{ExclusiveAccess: true})
+	c.Assert(err, IsNil)
+
+	setUpTest(&s.StorageSuite, c, storage)
 }

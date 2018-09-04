@@ -57,21 +57,43 @@ var (
 	ErrSymRefTargetNotFound = errors.New("symbolic reference target not found")
 )
 
+// Options holds configuration for the storage.
+type Options struct {
+	// ExclusiveAccess means that the filesystem is not modified externally
+	// while the repo is open.
+	ExclusiveAccess bool
+}
+
 // The DotGit type represents a local git repository on disk. This
 // type is not zero-value-safe, use the New function to initialize it.
 type DotGit struct {
-	fs billy.Filesystem
+	options Options
+	fs      billy.Filesystem
 
 	// incoming object directory information
 	incomingChecked bool
 	incomingDirName string
+
+	objectList []plumbing.Hash
+	objectMap  map[plumbing.Hash]struct{}
+	packList   []plumbing.Hash
+	packMap    map[plumbing.Hash]struct{}
 }
 
 // New returns a DotGit value ready to be used. The path argument must
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return &DotGit{fs: fs}
+	return NewWithOptions(fs, Options{})
+}
+
+// NewWithOptions creates a new DotGit and sets non default configuration
+// options. See New for complete help.
+func NewWithOptions(fs billy.Filesystem, o Options) *DotGit {
+	return &DotGit{
+		options: o,
+		fs:      fs,
+	}
 }
 
 // Initialize creates all the folder scaffolding.
@@ -143,11 +165,25 @@ func (d *DotGit) Shallow() (billy.File, error) {
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
+	d.cleanPackList()
 	return newPackWrite(d.fs)
 }
 
 // ObjectPacks returns the list of availables packfiles
 func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
+	if !d.options.ExclusiveAccess {
+		return d.objectPacks()
+	}
+
+	err := d.genPackList()
+	if err != nil {
+		return nil, err
+	}
+
+	return d.packList, nil
+}
+
+func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 	packDir := d.fs.Join(objectsPath, packPath)
 	files, err := d.fs.ReadDir(packDir)
 	if err != nil {
@@ -181,6 +217,11 @@ func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
 }
 
 func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
+	err := d.hasPack(hash)
+	if err != nil {
+		return nil, err
+	}
+
 	pack, err := d.fs.Open(d.objectPackPath(hash, extension))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -195,15 +236,27 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 
 // ObjectPack returns a fs.File of the given packfile
 func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
+	err := d.hasPack(hash)
+	if err != nil {
+		return nil, err
+	}
+
 	return d.objectPackOpen(hash, `pack`)
 }
 
 // ObjectPackIdx returns a fs.File of the index file for a given packfile
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
+	err := d.hasPack(hash)
+	if err != nil {
+		return nil, err
+	}
+
 	return d.objectPackOpen(hash, `idx`)
 }
 
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
+	d.cleanPackList()
+
 	path := d.objectPackPath(hash, `pack`)
 	if !t.IsZero() {
 		fi, err := d.fs.Stat(path)
@@ -224,12 +277,23 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 
 // NewObject return a writer for a new object file.
 func (d *DotGit) NewObject() (*ObjectWriter, error) {
+	d.cleanObjectList()
+
 	return newObjectWriter(d.fs)
 }
 
 // Objects returns a slice with the hashes of objects found under the
 // .git/objects/ directory.
 func (d *DotGit) Objects() ([]plumbing.Hash, error) {
+	if d.options.ExclusiveAccess {
+		err := d.genObjectList()
+		if err != nil {
+			return nil, err
+		}
+
+		return d.objectList, nil
+	}
+
 	var objects []plumbing.Hash
 	err := d.ForEachObjectHash(func(hash plumbing.Hash) error {
 		objects = append(objects, hash)
@@ -241,9 +305,29 @@ func (d *DotGit) Objects() ([]plumbing.Hash, error) {
 	return objects, nil
 }
 
-// Objects returns a slice with the hashes of objects found under the
-// .git/objects/ directory.
+// ForEachObjectHash iterates over the hashes of objects found under the
+// .git/objects/ directory and executes the provided function.
 func (d *DotGit) ForEachObjectHash(fun func(plumbing.Hash) error) error {
+	if !d.options.ExclusiveAccess {
+		return d.forEachObjectHash(fun)
+	}
+
+	err := d.genObjectList()
+	if err != nil {
+		return err
+	}
+
+	for _, h := range d.objectList {
+		err := fun(h)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *DotGit) forEachObjectHash(fun func(plumbing.Hash) error) error {
 	files, err := d.fs.ReadDir(objectsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -273,6 +357,87 @@ func (d *DotGit) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 				}
 			}
 		}
+	}
+
+	return nil
+}
+
+func (d *DotGit) cleanObjectList() {
+	d.objectMap = nil
+	d.objectList = nil
+}
+
+func (d *DotGit) genObjectList() error {
+	if d.objectMap != nil {
+		return nil
+	}
+
+	d.objectMap = make(map[plumbing.Hash]struct{})
+	return d.forEachObjectHash(func(h plumbing.Hash) error {
+		d.objectList = append(d.objectList, h)
+		d.objectMap[h] = struct{}{}
+
+		return nil
+	})
+}
+
+func (d *DotGit) hasObject(h plumbing.Hash) error {
+	if !d.options.ExclusiveAccess {
+		return nil
+	}
+
+	err := d.genObjectList()
+	if err != nil {
+		return err
+	}
+
+	_, ok := d.objectMap[h]
+	if !ok {
+		return plumbing.ErrObjectNotFound
+	}
+
+	return nil
+}
+
+func (d *DotGit) cleanPackList() {
+	d.packMap = nil
+	d.packList = nil
+}
+
+func (d *DotGit) genPackList() error {
+	if d.packMap != nil {
+		return nil
+	}
+
+	op, err := d.objectPacks()
+	if err != nil {
+		return err
+	}
+
+	d.packMap = make(map[plumbing.Hash]struct{})
+	d.packList = nil
+
+	for _, h := range op {
+		d.packList = append(d.packList, h)
+		d.packMap[h] = struct{}{}
+	}
+
+	return nil
+}
+
+func (d *DotGit) hasPack(h plumbing.Hash) error {
+	if !d.options.ExclusiveAccess {
+		return nil
+	}
+
+	err := d.genPackList()
+	if err != nil {
+		return err
+	}
+
+	_, ok := d.packMap[h]
+	if !ok {
+		return ErrPackfileNotFound
 	}
 
 	return nil
@@ -322,6 +487,11 @@ func (d *DotGit) hasIncomingObjects() bool {
 
 // Object returns a fs.File pointing the object file, if exists
 func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
+	err := d.hasObject(h)
+	if err != nil {
+		return nil, err
+	}
+
 	obj1, err1 := d.fs.Open(d.objectPath(h))
 	if os.IsNotExist(err1) && d.hasIncomingObjects() {
 		obj2, err2 := d.fs.Open(d.incomingObjectPath(h))
@@ -335,6 +505,11 @@ func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
 
 // ObjectStat returns a os.FileInfo pointing the object file, if exists
 func (d *DotGit) ObjectStat(h plumbing.Hash) (os.FileInfo, error) {
+	err := d.hasObject(h)
+	if err != nil {
+		return nil, err
+	}
+
 	obj1, err1 := d.fs.Stat(d.objectPath(h))
 	if os.IsNotExist(err1) && d.hasIncomingObjects() {
 		obj2, err2 := d.fs.Stat(d.incomingObjectPath(h))
@@ -348,6 +523,8 @@ func (d *DotGit) ObjectStat(h plumbing.Hash) (os.FileInfo, error) {
 
 // ObjectDelete removes the object file, if exists
 func (d *DotGit) ObjectDelete(h plumbing.Hash) error {
+	d.cleanObjectList()
+
 	err1 := d.fs.Remove(d.objectPath(h))
 	if os.IsNotExist(err1) && d.hasIncomingObjects() {
 		err2 := d.fs.Remove(d.incomingObjectPath(h))

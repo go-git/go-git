@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/src-d/go-billy.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	. "gopkg.in/check.v1"
@@ -424,6 +425,18 @@ func (s *SuiteDotGit) TestObjectPacks(c *C) {
 	fs := f.DotGit()
 	dir := New(fs)
 
+	testObjectPacks(c, fs, dir, f)
+}
+
+func (s *SuiteDotGit) TestObjectPacksExclusive(c *C) {
+	f := fixtures.Basic().ByTag(".git").One()
+	fs := f.DotGit()
+	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
+
+	testObjectPacks(c, fs, dir, f)
+}
+
+func testObjectPacks(c *C, fs billy.Filesystem, dir *DotGit, f *fixtures.Fixture) {
 	hashes, err := dir.ObjectPacks()
 	c.Assert(err, IsNil)
 	c.Assert(hashes, HasLen, 1)
@@ -506,6 +519,17 @@ func (s *SuiteDotGit) TestObjects(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
+	testObjects(c, fs, dir)
+}
+
+func (s *SuiteDotGit) TestObjectsExclusive(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
+
+	testObjects(c, fs, dir)
+}
+
+func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
 	hashes, err := dir.Objects()
 	c.Assert(err, IsNil)
 	c.Assert(hashes, HasLen, 187)
