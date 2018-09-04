@@ -40,8 +40,6 @@ type EncodedObjectStorer interface {
 	// HasEncodedObject returns ErrObjNotFound if the object doesn't
 	// exist.  If the object does exist, it returns nil.
 	HasEncodedObject(plumbing.Hash) error
-	// Close any opened files.
-	Close() error
 }
 
 // DeltaObjectStorer is an EncodedObjectStorer that can return delta
