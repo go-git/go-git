@@ -48,6 +48,37 @@ func (s *FsSuite) TestGetFromPackfile(c *C) {
 	})
 }
 
+func (s *FsSuite) TestGetFromPackfileKeepDescriptors(c *C) {
+	fixtures.Basic().ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		dg := dotgit.NewWithOptions(fs, dotgit.Options{KeepDescriptors: true})
+		o, err := NewObjectStorageWithOptions(dg, Options{KeepDescriptors: true})
+		c.Assert(err, IsNil)
+
+		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+		c.Assert(err, IsNil)
+		c.Assert(obj.Hash(), Equals, expected)
+
+		packfiles, err := dg.ObjectPacks()
+		c.Assert(err, IsNil)
+
+		pack1, err := dg.ObjectPack(packfiles[0])
+		c.Assert(err, IsNil)
+
+		err = o.Close()
+		c.Assert(err, IsNil)
+
+		pack2, err := dg.ObjectPack(packfiles[0])
+		c.Assert(err, IsNil)
+		c.Assert(pack1, Not(Equals), pack2)
+
+		err = o.Close()
+		c.Assert(err, IsNil)
+
+	})
+}
+
 func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
 	o, err := NewObjectStorage(dotgit.New(fs))
