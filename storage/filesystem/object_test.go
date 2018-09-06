@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"io/ioutil"
+	"os"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -66,12 +67,17 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors(c *C) {
 		pack1, err := dg.ObjectPack(packfiles[0])
 		c.Assert(err, IsNil)
 
+		pack1.Seek(42, os.SEEK_SET)
+
 		err = o.Close()
 		c.Assert(err, IsNil)
 
 		pack2, err := dg.ObjectPack(packfiles[0])
 		c.Assert(err, IsNil)
-		c.Assert(pack1, Not(Equals), pack2)
+
+		offset, err := pack2.Seek(0, os.SEEK_CUR)
+		c.Assert(err, IsNil)
+		c.Assert(offset, Equals, int64(0))
 
 		err = o.Close()
 		c.Assert(err, IsNil)
