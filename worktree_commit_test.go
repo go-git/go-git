@@ -2,19 +2,24 @@ package git
 
 import (
 	"bytes"
+	"io/ioutil"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
+
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/openpgp/errors"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/object"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
-
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/memfs"
+	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-billy.v4/util"
 )
 
@@ -194,6 +199,54 @@ func (s *WorktreeSuite) TestCommitSignBadKey(c *C) {
 	key := commitSignKey(c, false)
 	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), SignKey: key})
 	c.Assert(err, Equals, errors.InvalidArgumentError("signing key is encrypted"))
+}
+
+func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
+	path, err := ioutil.TempDir(os.TempDir(), "test-commit-tree-sort")
+	c.Assert(err, IsNil)
+	fs := osfs.New(path)
+	st, err := filesystem.NewStorage(fs)
+	c.Assert(err, IsNil)
+	r, err := Init(st, nil)
+	c.Assert(err, IsNil)
+
+	r, err = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL: path,
+	})
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	mfs := w.Filesystem
+
+	err = mfs.MkdirAll("delta", 0755)
+	c.Assert(err, IsNil)
+
+	for _, p := range []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"} {
+		util.WriteFile(mfs, p, []byte("foo"), 0644)
+		_, err = w.Add(p)
+		c.Assert(err, IsNil)
+	}
+
+	_, err = w.Commit("foo\n", &CommitOptions{
+		All:    true,
+		Author: defaultSignature(),
+	})
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{})
+	c.Assert(err, IsNil)
+
+	cmd := exec.Command("git", "fsck")
+	cmd.Dir = path
+	cmd.Env = os.Environ()
+	buf := &bytes.Buffer{}
+	cmd.Stderr = buf
+	cmd.Stdout = buf
+
+	err = cmd.Run()
+
+	c.Assert(err, IsNil, Commentf("%s", buf.Bytes()))
 }
 
 func assertStorageStatus(
