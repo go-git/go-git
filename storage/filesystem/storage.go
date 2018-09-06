@@ -27,6 +27,9 @@ type Options struct {
 	// ExclusiveAccess means that the filesystem is not modified externally
 	// while the repo is open.
 	ExclusiveAccess bool
+	// KeepDescriptors makes the file descriptors to be reused but they will
+	// need to be manually closed calling Close().
+	KeepDescriptors bool
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem`
@@ -41,6 +44,7 @@ func NewStorageWithOptions(
 ) (*Storage, error) {
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
+		KeepDescriptors: ops.KeepDescriptors,
 	}
 
 	dir := dotgit.NewWithOptions(fs, dirOps)

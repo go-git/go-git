@@ -465,6 +465,45 @@ func (s *SuiteDotGit) TestObjectPack(c *C) {
 	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
 }
 
+func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
+	f := fixtures.Basic().ByTag(".git").One()
+	fs := f.DotGit()
+	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
+
+	pack, err := dir.ObjectPack(f.PackfileHash)
+	c.Assert(err, IsNil)
+	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
+
+	// Move to an specific offset
+	pack.Seek(42, os.SEEK_SET)
+
+	pack2, err := dir.ObjectPack(f.PackfileHash)
+	c.Assert(err, IsNil)
+
+	// If the file is the same the offset should be the same
+	offset, err := pack2.Seek(0, os.SEEK_CUR)
+	c.Assert(err, IsNil)
+	c.Assert(offset, Equals, int64(42))
+
+	err = dir.Close()
+	c.Assert(err, IsNil)
+
+	pack2, err = dir.ObjectPack(f.PackfileHash)
+	c.Assert(err, IsNil)
+
+	// If the file is opened again its offset should be 0
+	offset, err = pack2.Seek(0, os.SEEK_CUR)
+	c.Assert(err, IsNil)
+	c.Assert(offset, Equals, int64(0))
+
+	err = pack2.Close()
+	c.Assert(err, IsNil)
+
+	err = dir.Close()
+	c.Assert(err, NotNil)
+
+}
+
 func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()

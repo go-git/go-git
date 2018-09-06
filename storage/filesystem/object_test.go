@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"io/ioutil"
+	"os"
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -45,6 +46,42 @@ func (s *FsSuite) TestGetFromPackfile(c *C) {
 		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
 		c.Assert(err, IsNil)
 		c.Assert(obj.Hash(), Equals, expected)
+	})
+}
+
+func (s *FsSuite) TestGetFromPackfileKeepDescriptors(c *C) {
+	fixtures.Basic().ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		dg := dotgit.NewWithOptions(fs, dotgit.Options{KeepDescriptors: true})
+		o, err := NewObjectStorageWithOptions(dg, Options{KeepDescriptors: true})
+		c.Assert(err, IsNil)
+
+		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+		c.Assert(err, IsNil)
+		c.Assert(obj.Hash(), Equals, expected)
+
+		packfiles, err := dg.ObjectPacks()
+		c.Assert(err, IsNil)
+
+		pack1, err := dg.ObjectPack(packfiles[0])
+		c.Assert(err, IsNil)
+
+		pack1.Seek(42, os.SEEK_SET)
+
+		err = o.Close()
+		c.Assert(err, IsNil)
+
+		pack2, err := dg.ObjectPack(packfiles[0])
+		c.Assert(err, IsNil)
+
+		offset, err := pack2.Seek(0, os.SEEK_CUR)
+		c.Assert(err, IsNil)
+		c.Assert(offset, Equals, int64(0))
+
+		err = o.Close()
+		c.Assert(err, IsNil)
+
 	})
 }
 
