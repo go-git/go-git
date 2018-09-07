@@ -155,6 +155,43 @@ var fixtures []*fixture = []*fixture{{
 		filePatches: []testFilePatch{{
 			from: &testFile{
 				mode: filemode.Regular,
+				path: "README.md",
+				seed: "hello\nworld\n",
+			},
+			to: &testFile{
+				mode: filemode.Regular,
+				path: "README.md",
+				seed: "hello\nbug\n",
+			},
+			chunks: []testChunk{{
+				content: "hello",
+				op:      Equal,
+			}, {
+				content: "world",
+				op:      Delete,
+			}, {
+				content: "bug",
+				op:      Add,
+			}},
+		}},
+	},
+	desc:    "positive negative number",
+	context: 2,
+	diff: `diff --git a/README.md b/README.md
+index 94954abda49de8615a048f8d2e64b5de848e27a1..f3dad9514629b9ff9136283ae331ad1fc95748a8 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,2 @@
+ hello
+-world
++bug
+`,
+}, {
+	patch: testPatch{
+		message: "",
+		filePatches: []testFilePatch{{
+			from: &testFile{
+				mode: filemode.Regular,
 				path: "test.txt",
 				seed: "test",
 			},
