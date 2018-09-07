@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
@@ -205,8 +206,7 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	path, err := ioutil.TempDir(os.TempDir(), "test-commit-tree-sort")
 	c.Assert(err, IsNil)
 	fs := osfs.New(path)
-	st, err := filesystem.NewStorage(fs)
-	c.Assert(err, IsNil)
+	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	r, err := Init(st, nil)
 	c.Assert(err, IsNil)
 

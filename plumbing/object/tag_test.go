@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
@@ -22,9 +23,7 @@ var _ = Suite(&TagSuite{})
 
 func (s *TagSuite) SetUpSuite(c *C) {
 	s.BaseObjectsSuite.SetUpSuite(c)
-	storer, err := filesystem.NewStorage(
-		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit())
-	c.Assert(err, IsNil)
+	storer := filesystem.NewStorage(fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = storer
 }
 

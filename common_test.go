@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
@@ -59,10 +60,7 @@ func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
 	dotgit = f.DotGit()
 	worktree = memfs.New()
 
-	st, err := filesystem.NewStorage(dotgit)
-	if err != nil {
-		panic(err)
-	}
+	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	r, err := Open(st, worktree)
 	if err != nil {
@@ -89,10 +87,7 @@ func (s *BaseSuite) NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Reposit
 
 	worktree := memfs.New()
 
-	st, err := filesystem.NewStorage(dotgit)
-	if err != nil {
-		panic(err)
-	}
+	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	r, err := Open(st, worktree)
 	if err != nil {

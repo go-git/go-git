@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
@@ -238,7 +239,7 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	fss, err := filesystem.NewStorage(osfs.New(dir))
+	fss := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
 	c.Assert(err, IsNil)
 
 	mock := &mockPackfileWriter{Storer: fss}
@@ -375,8 +376,7 @@ func (s *RemoteSuite) TestFetchFastForwardFS(c *C) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	fss, err := filesystem.NewStorage(osfs.New(dir))
-	c.Assert(err, IsNil)
+	fss := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
 
 	// This exercises `storage.filesystem.Storage.CheckAndSetReference()`.
 	s.testFetchFastForward(c, fss)
@@ -400,8 +400,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	srcFs := fixtures.Basic().One().DotGit()
-	sto, err := filesystem.NewStorage(srcFs)
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -438,8 +437,7 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 	c.Assert(err, IsNil)
 
 	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
-	sto, err := filesystem.NewStorage(fs)
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -461,8 +459,7 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 	c.Assert(err, IsNil)
 
 	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
-	sto, err := filesystem.NewStorage(fs)
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -485,15 +482,14 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 
 func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	fs := fixtures.Basic().One().DotGit()
-	sto, err := filesystem.NewStorage(fs)
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r := newRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{fs.Root()},
 	})
 
-	err = r.Push(&PushOptions{
+	err := r.Push(&PushOptions{
 		RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"},
 	})
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
@@ -501,8 +497,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 
 func (s *RemoteSuite) TestPushDeleteReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
-	sto, err := filesystem.NewStorage(fs)
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
 		URL: fs.Root(),
@@ -526,8 +521,7 @@ func (s *RemoteSuite) TestPushDeleteReference(c *C) {
 
 func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	fs := fixtures.Basic().One().DotGit()
-	server, err := filesystem.NewStorage(fs)
-	c.Assert(err, IsNil)
+	server := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
 		URL: fs.Root(),
@@ -554,12 +548,10 @@ func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 
 func (s *RemoteSuite) TestPushForce(c *C) {
 	f := fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	dstFs := f.DotGit()
-	dstSto, err := filesystem.NewStorage(dstFs)
-	c.Assert(err, IsNil)
+	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 
 	url := dstFs.Root()
 	r := newRemote(sto, &config.RemoteConfig{
@@ -703,8 +695,7 @@ func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 
 func (s *RemoteSuite) TestGetHaves(c *C) {
 	f := fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	var localRefs = []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings(
