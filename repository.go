@@ -581,7 +581,7 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 	return b.String(), nil
 }
 
-// Tag fetches a tag from the repository.
+// Tag returns a tag from the repository.
 //
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash of the reference in ForEach:
