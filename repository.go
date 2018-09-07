@@ -617,26 +617,12 @@ func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 
 // DeleteTag deletes a tag from the repository.
 func (r *Repository) DeleteTag(name string) error {
-	ref, err := r.Tag(name)
+	_, err := r.Tag(name)
 	if err != nil {
 		return err
 	}
 
-	obj, err := r.TagObject(ref.Hash())
-	if err != nil && err != plumbing.ErrObjectNotFound {
-		return err
-	}
-
-	if err = r.Storer.RemoveReference(plumbing.ReferenceName(path.Join("refs", "tags", name))); err != nil {
-		return err
-	}
-
-	// Delete the tag object if this was an annotated tag.
-	if obj != nil {
-		return r.DeleteObject(obj.Hash)
-	}
-
-	return nil
+	return r.Storer.RemoveReference(plumbing.ReferenceName(path.Join("refs", "tags", name)))
 }
 
 func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error) {
