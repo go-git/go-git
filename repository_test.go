@@ -1560,6 +1560,113 @@ func (s *RepositorySuite) TestDeleteTagMissingTag(c *C) {
 	c.Assert(err, Equals, ErrTagNotFound)
 }
 
+func (s *RepositorySuite) TestDeleteTagAnnotated(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	dir, err := ioutil.TempDir("", "go-git-test-deletetag-annotated")
+	c.Assert(err, IsNil)
+
+	defer os.RemoveAll(dir) // clean up
+
+	fss, err := filesystem.NewStorage(osfs.New(dir))
+	c.Assert(err, IsNil)
+
+	r, _ := Init(fss, nil)
+	err = r.clone(context.Background(), &CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	ref, err := r.Tag("annotated-tag")
+	c.Assert(ref, NotNil)
+	c.Assert(err, IsNil)
+
+	obj, err := r.TagObject(ref.Hash())
+	c.Assert(obj, NotNil)
+	c.Assert(err, IsNil)
+
+	err = r.DeleteTag("annotated-tag")
+	c.Assert(err, IsNil)
+
+	_, err = r.Tag("annotated-tag")
+	c.Assert(err, Equals, ErrTagNotFound)
+
+	// Run a prune (and repack, to ensure that we are GCing everything regardless
+	// of the fixture in use) and try to get the tag object again.
+	//
+	// The repo needs to be re-opened after the repack.
+	err = r.Prune(PruneOptions{Handler: r.DeleteObject})
+	c.Assert(err, IsNil)
+
+	err = r.RepackObjects(&RepackConfig{})
+	c.Assert(err, IsNil)
+
+	r, err = PlainOpen(dir)
+	c.Assert(r, NotNil)
+	c.Assert(err, IsNil)
+
+	// Now check to see if the GC was effective in removing the tag object.
+	obj, err = r.TagObject(ref.Hash())
+	c.Assert(obj, IsNil)
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+}
+
+func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked(c *C) {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	dir, err := ioutil.TempDir("", "go-git-test-deletetag-annotated-unpacked")
+	c.Assert(err, IsNil)
+
+	defer os.RemoveAll(dir) // clean up
+
+	fss, err := filesystem.NewStorage(osfs.New(dir))
+	c.Assert(err, IsNil)
+
+	r, _ := Init(fss, nil)
+	err = r.clone(context.Background(), &CloneOptions{URL: url})
+	c.Assert(err, IsNil)
+
+	// Create a tag for the deletion test. This ensures that the ultimate loose
+	// object will be unpacked (as we aren't doing anything that should pack it),
+	// so that we can effectively test that a prune deletes it, without having to
+	// resort to a repack.
+	h, err := r.Head()
+	c.Assert(err, IsNil)
+
+	expectedHash := h.Hash()
+
+	ref, err := r.CreateTag("foobar", expectedHash, &TagObjectOptions{
+		Tagger:  defaultSignature(),
+		Message: "foo bar baz qux",
+	})
+	c.Assert(err, IsNil)
+
+	tag, err := r.Tag("foobar")
+	c.Assert(err, IsNil)
+
+	obj, err := r.TagObject(tag.Hash())
+	c.Assert(obj, NotNil)
+	c.Assert(err, IsNil)
+
+	err = r.DeleteTag("foobar")
+	c.Assert(err, IsNil)
+
+	_, err = r.Tag("foobar")
+	c.Assert(err, Equals, ErrTagNotFound)
+
+	// As mentioned, only run a prune. We are not testing for packed objects
+	// here.
+	err = r.Prune(PruneOptions{Handler: r.DeleteObject})
+	c.Assert(err, IsNil)
+
+	// Now check to see if the GC was effective in removing the tag object.
+	obj, err = r.TagObject(ref.Hash())
+	c.Assert(obj, IsNil)
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+}
+
 func (s *RepositorySuite) TestBranches(c *C) {
 	f := fixtures.ByURL("https://github.com/git-fixtures/root-references.git").One()
 	sto, err := filesystem.NewStorage(f.DotGit())
@@ -1833,9 +1940,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
-		"efs/heads/master~":                        "reference not found",
-		"HEAD^3":                                   `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":                         `No commit message match regexp : "whatever"`,
+		"efs/heads/master~": "reference not found",
+		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294": `refname "918c48b83bd081e863dbe1b80f8998f058cd8294" is ambiguous`,
 	}
