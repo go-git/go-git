@@ -1331,7 +1331,7 @@ func (s *RepositorySuite) TestCreateTagAnnotated(c *C) {
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &TagObjectOptions{
+	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 	})
@@ -1363,13 +1363,13 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadOpts(c *C) {
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &TagObjectOptions{
+	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{
 		Message: "foo bar baz qux",
 	})
 	c.Assert(ref, IsNil)
 	c.Assert(err, Equals, ErrMissingTagger)
 
-	ref, err = r.CreateTag("foobar", expectedHash, &TagObjectOptions{
+	ref, err = r.CreateTag("foobar", expectedHash, &CreateTagOptions{
 		Tagger: defaultSignature(),
 	})
 	c.Assert(ref, IsNil)
@@ -1385,7 +1385,7 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadHash(c *C) {
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
-	ref, err := r.CreateTag("foobar", plumbing.ZeroHash, &TagObjectOptions{
+	ref, err := r.CreateTag("foobar", plumbing.ZeroHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 	})
@@ -1406,7 +1406,7 @@ func (s *RepositorySuite) TestCreateTagSigned(c *C) {
 	c.Assert(err, IsNil)
 
 	key := commitSignKey(c, true)
-	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
+	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 		SignKey: key,
@@ -1447,7 +1447,7 @@ func (s *RepositorySuite) TestCreateTagSignedBadKey(c *C) {
 	c.Assert(err, IsNil)
 
 	key := commitSignKey(c, false)
-	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
+	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 		SignKey: key,
@@ -1468,7 +1468,7 @@ func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
 	c.Assert(err, IsNil)
 
 	key := commitSignKey(c, true)
-	_, err = r.CreateTag("foobar", h.Hash(), &TagObjectOptions{
+	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "\n\nfoo bar baz qux\n\nsome message here",
 		SignKey: key,
@@ -1637,7 +1637,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked(c *C) {
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &TagObjectOptions{
+	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 	})

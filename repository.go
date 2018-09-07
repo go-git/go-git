@@ -494,7 +494,7 @@ func (r *Repository) DeleteBranch(name string) error {
 
 // CreateTag creates a tag. If opts is included, the tag is an annotated tag,
 // otherwise a lightweight tag is created.
-func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *TagObjectOptions) (*plumbing.Reference, error) {
+func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
 	rname := plumbing.ReferenceName(path.Join("refs", "tags", name))
 
 	_, err := r.Storer.Reference(rname)
@@ -527,7 +527,7 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *TagObjectO
 	return ref, nil
 }
 
-func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *TagObjectOptions) (plumbing.Hash, error) {
+func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
 	if err := opts.Validate(r, hash); err != nil {
 		return plumbing.ZeroHash, err
 	}

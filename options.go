@@ -385,8 +385,8 @@ var (
 	ErrMissingMessage = errors.New("message field is required")
 )
 
-// TagObjectOptions describes how a tag object should be created.
-type TagObjectOptions struct {
+// CreateTagOptions describes how a tag object should be created.
+type CreateTagOptions struct {
 	// Tagger defines the signature of the tag creator.
 	Tagger *object.Signature
 	// Message defines the annotation of the tag. It is canonicalized during
@@ -399,7 +399,7 @@ type TagObjectOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *TagObjectOptions) Validate(r *Repository, hash plumbing.Hash) error {
+func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
 	if o.Tagger == nil {
 		return ErrMissingTagger
 	}
