@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
 	. "gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -32,8 +33,7 @@ func (s *EncoderAdvancedSuite) TestEncodeDecode(c *C) {
 	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag("packfile").ByTag(".git").One())
 	fixs.Test(c, func(f *fixtures.Fixture) {
-		storage, err := filesystem.NewStorage(f.DotGit())
-		c.Assert(err, IsNil)
+		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 		s.testEncodeDecode(c, storage, 10)
 	})
 }
@@ -47,8 +47,7 @@ func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression(c *C) {
 	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag("packfile").ByTag(".git").One())
 	fixs.Test(c, func(f *fixtures.Fixture) {
-		storage, err := filesystem.NewStorage(f.DotGit())
-		c.Assert(err, IsNil)
+		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 		s.testEncodeDecode(c, storage, 0)
 	})
 }

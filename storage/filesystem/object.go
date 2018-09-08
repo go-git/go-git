@@ -27,24 +27,18 @@ type ObjectStorage struct {
 	index map[plumbing.Hash]idxfile.Index
 }
 
-// NewObjectStorage creates a new ObjectStorage with the given .git directory.
-func NewObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
-	return NewObjectStorageWithOptions(dir, Options{})
+// NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
+func NewObjectStorage(dir *dotgit.DotGit, cache cache.Object) *ObjectStorage {
+	return NewObjectStorageWithOptions(dir, cache, Options{})
 }
 
-// NewObjectStorageWithOptions creates a new ObjectStorage with the given .git
-// directory and sets its options.
-func NewObjectStorageWithOptions(
-	dir *dotgit.DotGit,
-	ops Options,
-) (ObjectStorage, error) {
-	s := ObjectStorage{
+// NewObjectStorageWithOptions creates a new ObjectStorage with the given .git directory, cache and extra options
+func NewObjectStorageWithOptions(dir *dotgit.DotGit, cache cache.Object, ops Options) *ObjectStorage {
+	return &ObjectStorage{
 		options:        ops,
-		deltaBaseCache: cache.NewObjectLRUDefault(),
+		deltaBaseCache: cache,
 		dir:            dir,
 	}
-
-	return s, nil
 }
 
 func (s *ObjectStorage) requireIndex() error {
@@ -182,10 +176,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 			// Create a new object storage with the DotGit(s) and check for the
 			// required hash object. Skip when not found.
 			for _, dg := range dotgits {
-				o, oe := NewObjectStorage(dg)
-				if oe != nil {
-					continue
-				}
+				o := NewObjectStorage(dg, s.deltaBaseCache)
 				enobj, enerr := o.EncodedObject(t, h)
 				if enerr != nil {
 					continue

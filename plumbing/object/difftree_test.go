@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -25,8 +26,7 @@ type DiffTreeSuite struct {
 func (s *DiffTreeSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.Basic().One()
-	sto, err := filesystem.NewStorage(s.Fixture.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 	s.cache = make(map[string]storer.EncodedObjectStorer)
 }
