@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"regexp"
+	"strings"
 
 	"golang.org/x/crypto/openpgp"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -348,8 +349,9 @@ type CommitOptions struct {
 	// Parents are the parents commits for the new commit, by default when
 	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
-	// A key to sign the commit with. A nil value here means the commit will not
-	// be signed. The private key must be present and already decrypted.
+	// SignKey denotes a key to sign the commit with. A nil value here means the
+	// commit will not be signed. The private key must be present and already
+	// decrypted.
 	SignKey *openpgp.Entity
 }
 
@@ -373,6 +375,41 @@ func (o *CommitOptions) Validate(r *Repository) error {
 			o.Parents = []plumbing.Hash{head.Hash()}
 		}
 	}
+
+	return nil
+}
+
+var (
+	ErrMissingName    = errors.New("name field is required")
+	ErrMissingTagger  = errors.New("tagger field is required")
+	ErrMissingMessage = errors.New("message field is required")
+)
+
+// CreateTagOptions describes how a tag object should be created.
+type CreateTagOptions struct {
+	// Tagger defines the signature of the tag creator.
+	Tagger *object.Signature
+	// Message defines the annotation of the tag. It is canonicalized during
+	// validation into the format expected by git - no leading whitespace and
+	// ending in a newline.
+	Message string
+	// SignKey denotes a key to sign the tag with. A nil value here means the tag
+	// will not be signed. The private key must be present and already decrypted.
+	SignKey *openpgp.Entity
+}
+
+// Validate validates the fields and sets the default values.
+func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
+	if o.Tagger == nil {
+		return ErrMissingTagger
+	}
+
+	if o.Message == "" {
+		return ErrMissingMessage
+	}
+
+	// Canonicalize the message into the expected message format.
+	o.Message = strings.TrimSpace(o.Message) + "\n"
 
 	return nil
 }
