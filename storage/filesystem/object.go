@@ -18,6 +18,8 @@ import (
 )
 
 type ObjectStorage struct {
+	options Options
+
 	// deltaBaseCache is an object cache uses to cache delta's bases when
 	deltaBaseCache cache.Object
 
@@ -25,14 +27,18 @@ type ObjectStorage struct {
 	index map[plumbing.Hash]idxfile.Index
 }
 
-// NewObjectStorage creates a new ObjectStorage with the given .git directory.
-func NewObjectStorage(dir *dotgit.DotGit) (ObjectStorage, error) {
-	s := ObjectStorage{
-		deltaBaseCache: cache.NewObjectLRUDefault(),
+// NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
+func NewObjectStorage(dir *dotgit.DotGit, cache cache.Object) *ObjectStorage {
+	return NewObjectStorageWithOptions(dir, cache, Options{})
+}
+
+// NewObjectStorageWithOptions creates a new ObjectStorage with the given .git directory, cache and extra options
+func NewObjectStorageWithOptions(dir *dotgit.DotGit, cache cache.Object, ops Options) *ObjectStorage {
+	return &ObjectStorage{
+		options:        ops,
+		deltaBaseCache: cache,
 		dir:            dir,
 	}
-
-	return s, nil
 }
 
 func (s *ObjectStorage) requireIndex() error {
@@ -62,6 +68,7 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 	}
 
 	defer ioutil.CheckClose(f, &err)
+
 	idxf := idxfile.NewMemoryIndex()
 	d := idxfile.NewDecoder(f)
 	if err = d.Decode(idxf); err != nil {
@@ -169,10 +176,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 			// Create a new object storage with the DotGit(s) and check for the
 			// required hash object. Skip when not found.
 			for _, dg := range dotgits {
-				o, oe := NewObjectStorage(dg)
-				if oe != nil {
-					continue
-				}
+				o := NewObjectStorage(dg, s.deltaBaseCache)
 				enobj, enerr := o.EncodedObject(t, h)
 				if enerr != nil {
 					continue
@@ -268,7 +272,9 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (
 		return nil, err
 	}
 
-	defer ioutil.CheckClose(f, &err)
+	if !s.options.KeepDescriptors {
+		defer ioutil.CheckClose(f, &err)
+	}
 
 	idx := s.index[pack]
 	if canBeDelta {
@@ -295,7 +301,14 @@ func (s *ObjectStorage) decodeObjectAt(
 		return nil, err
 	}
 
-	return packfile.NewPackfile(idx, s.dir.Fs(), f).GetByOffset(offset)
+	var p *packfile.Packfile
+	if s.deltaBaseCache != nil {
+		p = packfile.NewPackfileWithCache(idx, s.dir.Fs(), f, s.deltaBaseCache)
+	} else {
+		p = packfile.NewPackfile(idx, s.dir.Fs(), f)
+	}
+
+	return p.GetByOffset(offset)
 }
 
 func (s *ObjectStorage) decodeDeltaObjectAt(
@@ -404,6 +417,11 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 	}, nil
 }
 
+// Close closes all opened files.
+func (s *ObjectStorage) Close() error {
+	return s.dir.Close()
+}
+
 type lazyPackfilesIter struct {
 	hashes []plumbing.Hash
 	open   func(h plumbing.Hash) (storer.EncodedObjectIter, error)
@@ -486,7 +504,14 @@ func newPackfileIter(
 	index idxfile.Index,
 	cache cache.Object,
 ) (storer.EncodedObjectIter, error) {
-	iter, err := packfile.NewPackfile(index, fs, f).GetByType(t)
+	var p *packfile.Packfile
+	if cache != nil {
+		p = packfile.NewPackfileWithCache(index, fs, f, cache)
+	} else {
+		p = packfile.NewPackfile(index, fs, f)
+	}
+
+	iter, err := p.GetByType(t)
 	if err != nil {
 		return nil, err
 	}

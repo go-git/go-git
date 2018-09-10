@@ -1,16 +1,30 @@
 package ssh
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
 
 	. "gopkg.in/check.v1"
 )
 
-type SuiteCommon struct{}
+type (
+	SuiteCommon struct{}
+
+	mockKnownHosts struct{}
+)
+
+func (mockKnownHosts) host() string { return "github.com" }
+func (mockKnownHosts) knownHosts() []byte {
+	return []byte(`github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==`)
+}
+func (mockKnownHosts) Network() string { return "tcp" }
+func (mockKnownHosts) String() string  { return "github.com:22" }
 
 var _ = Suite(&SuiteCommon{})
 
@@ -148,4 +162,50 @@ func (*SuiteCommon) TestNewPublicKeysWithInvalidPEM(c *C) {
 	auth, err := NewPublicKeys("foo", []byte("bar"), "")
 	c.Assert(err, NotNil)
 	c.Assert(auth, IsNil)
+}
+
+func (*SuiteCommon) TestNewKnownHostsCallback(c *C) {
+	var mock = mockKnownHosts{}
+
+	f, err := ioutil.TempFile("", "known-hosts")
+	c.Assert(err, IsNil)
+
+	_, err = f.Write(mock.knownHosts())
+	c.Assert(err, IsNil)
+
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	defer os.RemoveAll(f.Name())
+
+	f, err = os.Open(f.Name())
+	c.Assert(err, IsNil)
+
+	defer f.Close()
+
+	var hostKey ssh.PublicKey
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), " ")
+		if len(fields) != 3 {
+			continue
+		}
+		if strings.Contains(fields[0], mock.host()) {
+			var err error
+			hostKey, _, _, _, err = ssh.ParseAuthorizedKey(scanner.Bytes())
+			if err != nil {
+				c.Fatalf("error parsing %q: %v", fields[2], err)
+			}
+			break
+		}
+	}
+	if hostKey == nil {
+		c.Fatalf("no hostkey for %s", mock.host())
+	}
+
+	clb, err := NewKnownHostsCallback(f.Name())
+	c.Assert(err, IsNil)
+
+	err = clb(mock.String(), mock, hostKey)
+	c.Assert(err, IsNil)
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git-fixtures.v3"
@@ -247,8 +248,7 @@ func (s *SuiteCommit) TestStringMultiLine(c *C) {
 	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
 	c.Assert(err, IsNil)
@@ -324,6 +324,22 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 	err = decoded.Decode(encoded)
 	c.Assert(err, IsNil)
 	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
+
+	// signature with extra empty line, it caused "index out of range" when
+	// parsing it
+
+	pgpsignature2 := "\n" + pgpsignature
+
+	commit.PGPSignature = pgpsignature2
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, pgpsignature2)
 
 	// signature in author name
 
@@ -460,4 +476,22 @@ func (s *SuiteCommit) TestPatchCancel(c *C) {
 	c.Assert(patch, IsNil)
 	c.Assert(err, ErrorMatches, "operation canceled")
 
+}
+
+func (s *SuiteCommit) TestMalformedHeader(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Commit{}
+	commit := *s.Commit
+
+	commit.PGPSignature = "\n"
+	commit.Author.Name = "\n"
+	commit.Author.Email = "\n"
+	commit.Committer.Name = "\n"
+	commit.Committer.Email = "\n"
+
+	err := commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
 }

@@ -18,6 +18,7 @@ import (
 	openpgperr "golang.org/x/crypto/openpgp/errors"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
@@ -54,8 +55,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
-	storage, err := filesystem.NewStorage(dot)
-	c.Assert(err, IsNil)
+	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	wt, _ := fs.Chroot("worktree")
 	r, err := Init(storage, wt)
@@ -81,8 +81,7 @@ func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
-	storage, err := filesystem.NewStorage(dot)
-	c.Assert(err, IsNil)
+	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	r, err := Init(storage, fs)
 	c.Assert(err, IsNil)
@@ -1061,8 +1060,7 @@ func (s *RepositorySuite) TestPushDepth(c *C) {
 
 func (s *RepositorySuite) TestPushNonExistentRemote(c *C) {
 	srcFs := fixtures.Basic().One().DotGit()
-	sto, err := filesystem.NewStorage(srcFs)
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	r, err := Open(sto, srcFs)
 	c.Assert(err, IsNil)
@@ -1669,8 +1667,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked(c *C) {
 
 func (s *RepositorySuite) TestBranches(c *C) {
 	f := fixtures.ByURL("https://github.com/git-fixtures/root-references.git").One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	r, err := Open(sto, f.DotGit())
 	c.Assert(err, IsNil)
 
@@ -1887,8 +1884,7 @@ func (s *RepositorySuite) TestWorktreeBare(c *C) {
 
 func (s *RepositorySuite) TestResolveRevision(c *C) {
 	f := fixtures.ByURL("https://github.com/git-fixtures/basic.git").One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	r, err := Open(sto, f.DotGit())
 	c.Assert(err, IsNil)
 
@@ -1959,8 +1955,7 @@ func (s *RepositorySuite) testRepackObjects(
 	srcFs := fixtures.ByTag("unpacked").One().DotGit()
 	var sto storage.Storer
 	var err error
-	sto, err = filesystem.NewStorage(srcFs)
-	c.Assert(err, IsNil)
+	sto = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	los := sto.(storer.LooseObjectStorer)
 	c.Assert(los, NotNil)
@@ -2125,10 +2120,7 @@ func BenchmarkObjects(b *testing.B) {
 
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
-			storer, err := filesystem.NewStorage(fs)
-			if err != nil {
-				b.Fatal(err)
-			}
+			storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 			worktree, err := fs.Chroot(filepath.Dir(fs.Root()))
 			if err != nil {

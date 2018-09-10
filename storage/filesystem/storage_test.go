@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage/test"
 
@@ -23,9 +24,12 @@ var _ = Suite(&StorageSuite{})
 
 func (s *StorageSuite) SetUpTest(c *C) {
 	s.dir = c.MkDir()
-	storage, err := NewStorage(osfs.New(s.dir))
-	c.Assert(err, IsNil)
+	storage := NewStorage(osfs.New(s.dir), cache.NewObjectLRUDefault())
 
+	setUpTest(s, c, storage)
+}
+
+func setUpTest(s *StorageSuite, c *C, storage *Storage) {
 	// ensure that right interfaces are implemented
 	var _ storer.EncodedObjectStorer = storage
 	var _ storer.IndexStorer = storage
@@ -40,8 +44,7 @@ func (s *StorageSuite) SetUpTest(c *C) {
 
 func (s *StorageSuite) TestFilesystem(c *C) {
 	fs := memfs.New()
-	storage, err := NewStorage(fs)
-	c.Assert(err, IsNil)
+	storage := NewStorage(fs, cache.NewObjectLRUDefault())
 
 	c.Assert(storage.Filesystem(), Equals, fs)
 }
@@ -50,4 +53,20 @@ func (s *StorageSuite) TestNewStorageShouldNotAddAnyContentsToDir(c *C) {
 	fis, err := ioutil.ReadDir(s.dir)
 	c.Assert(err, IsNil)
 	c.Assert(fis, HasLen, 0)
+}
+
+type StorageExclusiveSuite struct {
+	StorageSuite
+}
+
+var _ = Suite(&StorageExclusiveSuite{})
+
+func (s *StorageExclusiveSuite) SetUpTest(c *C) {
+	s.dir = c.MkDir()
+	storage := NewStorageWithOptions(
+		osfs.New(s.dir),
+		cache.NewObjectLRUDefault(),
+		Options{ExclusiveAccess: true})
+
+	setUpTest(&s.StorageSuite, c, storage)
 }

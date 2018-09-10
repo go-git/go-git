@@ -13,6 +13,7 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 	input := []byte(`[core]
         bare = true
 		worktree = foo
+		commentchar = bar
 [pack]
 		window = 20
 [remote "origin"]
@@ -38,6 +39,7 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 
 	c.Assert(cfg.Core.IsBare, Equals, true)
 	c.Assert(cfg.Core.Worktree, Equals, "foo")
+	c.Assert(cfg.Core.CommentChar, Equals, "bar")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
 	c.Assert(cfg.Remotes, HasLen, 2)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")

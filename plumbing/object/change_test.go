@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/diff"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -25,8 +26,7 @@ func (s *ChangeSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag(".git").One()
-	sto, err := filesystem.NewStorage(s.Fixture.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
@@ -253,8 +253,7 @@ func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
 	s.Suite.SetUpSuite(c)
 	f := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One()
 
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)

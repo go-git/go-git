@@ -1591,6 +1591,10 @@ func (s *WorktreeSuite) TestClean(c *C) {
 
 	c.Assert(len(status), Equals, 1)
 
+	fi, err := fs.Lstat("pkgA")
+	c.Assert(err, IsNil)
+	c.Assert(fi.IsDir(), Equals, true)
+
 	// Clean with Dir: true.
 	err = wt.Clean(&CleanOptions{Dir: true})
 	c.Assert(err, IsNil)
@@ -1599,6 +1603,11 @@ func (s *WorktreeSuite) TestClean(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(len(status), Equals, 0)
+
+	// An empty dir should be deleted, as well.
+	_, err = fs.Lstat("pkgA")
+	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
+
 }
 
 func (s *WorktreeSuite) TestAlternatesRepo(c *C) {
