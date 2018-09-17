@@ -50,14 +50,12 @@ func (c *BufferLRU) Put(key int64, slice []byte) {
 		oldBuf := ee.Value.(buffer)
 		// in this case bufSize is a delta: new size - old size
 		bufSize -= FileSize(len(oldBuf.Slice))
-
 		c.ll.MoveToFront(ee)
 		ee.Value = buffer{key, slice}
 	} else {
 		if bufSize > c.MaxSize {
 			return
 		}
-
 		ee := c.ll.PushFront(buffer{key, slice})
 		c.cache[key] = ee
 	}

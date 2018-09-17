@@ -48,14 +48,12 @@ func (c *ObjectLRU) Put(obj plumbing.EncodedObject) {
 		oldObj := ee.Value.(plumbing.EncodedObject)
 		// in this case objSize is a delta: new size - old size
 		objSize -= FileSize(oldObj.Size())
-
 		c.ll.MoveToFront(ee)
 		ee.Value = obj
 	} else {
 		if objSize > c.MaxSize {
 			return
 		}
-
 		ee := c.ll.PushFront(obj)
 		c.cache[key] = ee
 	}
