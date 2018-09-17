@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"sync"
 
 	. "gopkg.in/check.v1"
@@ -36,6 +37,28 @@ func (s *BufferSuite) TestPutSameBuffer(c *C) {
 		_, ok := o.Get(1)
 		c.Assert(ok, Equals, true)
 	}
+}
+
+func (s *ObjectSuite) TestPutSameBufferWithDifferentSize(c *C) {
+	aBuffer := []byte("a")
+	bBuffer := []byte("bbb")
+	cBuffer := []byte("ccccc")
+	dBuffer := []byte("ddddddd")
+
+	cache := NewBufferLRU(7 * Byte)
+	cache.Put(1, aBuffer)
+	cache.Put(1, bBuffer)
+	cache.Put(1, cBuffer)
+	cache.Put(1, dBuffer)
+
+	c.Assert(cache.MaxSize, Equals, 7*Byte)
+	c.Assert(cache.actualSize, Equals, 7*Byte)
+	c.Assert(cache.ll.Len(), Equals, 1)
+
+	buf, ok := cache.Get(1)
+	c.Assert(bytes.Equal(buf, dBuffer), Equals, true)
+	c.Assert(FileSize(len(buf)), Equals, 7*Byte)
+	c.Assert(ok, Equals, true)
 }
 
 func (s *BufferSuite) TestPutBigBuffer(c *C) {
