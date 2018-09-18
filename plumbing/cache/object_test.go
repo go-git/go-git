@@ -45,6 +45,25 @@ func (s *ObjectSuite) TestPutSameObject(c *C) {
 	}
 }
 
+func (s *ObjectSuite) TestPutSameObjectWithDifferentSize(c *C) {
+	const hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	cache := NewObjectLRU(7 * Byte)
+	cache.Put(newObject(hash, 1*Byte))
+	cache.Put(newObject(hash, 3*Byte))
+	cache.Put(newObject(hash, 5*Byte))
+	cache.Put(newObject(hash, 7*Byte))
+
+	c.Assert(cache.MaxSize, Equals, 7*Byte)
+	c.Assert(cache.actualSize, Equals, 7*Byte)
+	c.Assert(cache.ll.Len(), Equals, 1)
+
+	obj, ok := cache.Get(plumbing.NewHash(hash))
+	c.Assert(obj.Hash(), Equals, plumbing.NewHash(hash))
+	c.Assert(FileSize(obj.Size()), Equals, 7*Byte)
+	c.Assert(ok, Equals, true)
+}
+
 func (s *ObjectSuite) TestPutBigObject(c *C) {
 	for _, o := range s.c {
 		o.Put(s.bObject)
