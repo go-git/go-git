@@ -396,7 +396,10 @@ func (s *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.Encode
 	return storer.NewMultiEncodedObjectIter(iters), nil
 }
 
-func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumbing.Hash]struct{}) (storer.EncodedObjectIter, error) {
+func (s *ObjectStorage) buildPackfileIters(
+	t plumbing.ObjectType,
+	seen map[plumbing.Hash]struct{},
+) (storer.EncodedObjectIter, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
@@ -412,7 +415,10 @@ func (s *ObjectStorage) buildPackfileIters(t plumbing.ObjectType, seen map[plumb
 			if err != nil {
 				return nil, err
 			}
-			return newPackfileIter(s.dir.Fs(), pack, t, seen, s.index[h], s.deltaBaseCache)
+			return newPackfileIter(
+				s.dir.Fs(), pack, t, seen, s.index[h],
+				s.deltaBaseCache, s.options.KeepDescriptors,
+			)
 		},
 	}, nil
 }
@@ -470,9 +476,10 @@ func (it *lazyPackfilesIter) Close() {
 }
 
 type packfileIter struct {
-	pack billy.File
-	iter storer.EncodedObjectIter
-	seen map[plumbing.Hash]struct{}
+	pack     billy.File
+	iter     storer.EncodedObjectIter
+	seen     map[plumbing.Hash]struct{}
+	keepPack bool
 }
 
 // NewPackfileIter returns a new EncodedObjectIter for the provided packfile
@@ -483,6 +490,7 @@ func NewPackfileIter(
 	f billy.File,
 	idxFile billy.File,
 	t plumbing.ObjectType,
+	keepPack bool,
 ) (storer.EncodedObjectIter, error) {
 	idx := idxfile.NewMemoryIndex()
 	if err := idxfile.NewDecoder(idxFile).Decode(idx); err != nil {
@@ -493,7 +501,8 @@ func NewPackfileIter(
 		return nil, err
 	}
 
-	return newPackfileIter(fs, f, t, make(map[plumbing.Hash]struct{}), idx, nil)
+	seen := make(map[plumbing.Hash]struct{})
+	return newPackfileIter(fs, f, t, seen, idx, nil, keepPack)
 }
 
 func newPackfileIter(
@@ -503,6 +512,7 @@ func newPackfileIter(
 	seen map[plumbing.Hash]struct{},
 	index idxfile.Index,
 	cache cache.Object,
+	keepPack bool,
 ) (storer.EncodedObjectIter, error) {
 	var p *packfile.Packfile
 	if cache != nil {
@@ -517,9 +527,10 @@ func newPackfileIter(
 	}
 
 	return &packfileIter{
-		pack: f,
-		iter: iter,
-		seen: seen,
+		pack:     f,
+		iter:     iter,
+		seen:     seen,
+		keepPack: keepPack,
 	}, nil
 }
 
@@ -557,7 +568,9 @@ func (iter *packfileIter) ForEach(cb func(plumbing.EncodedObject) error) error {
 
 func (iter *packfileIter) Close() {
 	iter.iter.Close()
-	_ = iter.pack.Close()
+	if !iter.keepPack {
+		_ = iter.pack.Close()
+	}
 }
 
 type objectsIter struct {
