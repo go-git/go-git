@@ -476,15 +476,18 @@ func (it *lazyPackfilesIter) Close() {
 }
 
 type packfileIter struct {
-	pack     billy.File
-	iter     storer.EncodedObjectIter
-	seen     map[plumbing.Hash]struct{}
+	pack billy.File
+	iter storer.EncodedObjectIter
+	seen map[plumbing.Hash]struct{}
+
+	// tells whether the pack file should be left open after iteration or not
 	keepPack bool
 }
 
 // NewPackfileIter returns a new EncodedObjectIter for the provided packfile
 // and object type. Packfile and index file will be closed after they're
-// used.
+// used. If keepPack is true the packfile won't be closed after the iteration
+// finished.
 func NewPackfileIter(
 	fs billy.Filesystem,
 	f billy.File,
