@@ -153,18 +153,54 @@ func (s *FsSuite) TestPackfileIter(c *C) {
 				idxf, err := dg.ObjectPackIdx(h)
 				c.Assert(err, IsNil)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t)
+				iter, err := NewPackfileIter(fs, f, idxf, t, false)
 				c.Assert(err, IsNil)
+
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
 					c.Assert(o.Type(), Equals, t)
 					return nil
 				})
-
 				c.Assert(err, IsNil)
 			}
 		}
 	})
+}
 
+func (s *FsSuite) TestPackfileIterKeepDescriptors(c *C) {
+	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		ops := dotgit.Options{KeepDescriptors: true}
+		dg := dotgit.NewWithOptions(fs, ops)
+
+		for _, t := range objectTypes {
+			ph, err := dg.ObjectPacks()
+			c.Assert(err, IsNil)
+
+			for _, h := range ph {
+				f, err := dg.ObjectPack(h)
+				c.Assert(err, IsNil)
+
+				idxf, err := dg.ObjectPackIdx(h)
+				c.Assert(err, IsNil)
+
+				iter, err := NewPackfileIter(fs, f, idxf, t, true)
+				c.Assert(err, IsNil)
+
+				err = iter.ForEach(func(o plumbing.EncodedObject) error {
+					c.Assert(o.Type(), Equals, t)
+					return nil
+				})
+				c.Assert(err, IsNil)
+
+				// test twice to check that packfiles are not closed
+				err = iter.ForEach(func(o plumbing.EncodedObject) error {
+					c.Assert(o.Type(), Equals, t)
+					return nil
+				})
+				c.Assert(err, IsNil)
+			}
+		}
+	})
 }
 
 func BenchmarkPackfileIter(b *testing.B) {
@@ -201,7 +237,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -257,7 +293,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false)
 						if err != nil {
 							b.Fatal(err)
 						}
