@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"fmt"
 	"net/url"
 	"testing"
 
@@ -155,12 +156,21 @@ func (s *SuiteCommon) TestNewEndpointFileURL(c *C) {
 }
 
 func (s *SuiteCommon) TestValidEndpoint(c *C) {
-	e, err := NewEndpoint("http://github.com/user/repository.git")
-	e.User = "person@mail.com"
-	e.Password = " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
-	url, err := url.Parse(e.String())
+	user := "person@mail.com"
+	pass := " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+	e, err := NewEndpoint(fmt.Sprintf(
+		"http://%s:%s@github.com/user/repository.git",
+		url.PathEscape(user),
+		url.PathEscape(pass),
+	))
 	c.Assert(err, IsNil)
-	c.Assert(url, NotNil)
+	c.Assert(e, NotNil)
+	c.Assert(e.User, Equals, user)
+	c.Assert(e.Password, Equals, pass)
+	c.Assert(e.Host, Equals, "github.com")
+	c.Assert(e.Path, Equals, "/user/repository.git")
+
+	c.Assert(e.String(), Equals, "http://person@mail.com:%20%21%22%23$%25&%27%28%29%2A+%2C-.%2F:%3B%3C=%3E%3F@%5B%5C%5D%5E_%60%7B%7C%7D~@github.com/user/repository.git")
 }
 
 func (s *SuiteCommon) TestNewEndpointInvalidURL(c *C) {
