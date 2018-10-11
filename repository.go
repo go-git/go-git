@@ -965,19 +965,26 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		return nil, err
 	}
 
+	var commitIter object.CommitIter
 	switch o.Order {
 	case LogOrderDefault:
-		return object.NewCommitPreorderIter(commit, nil, nil), nil
+		commitIter = object.NewCommitPreorderIter(commit, nil, nil)
 	case LogOrderDFS:
-		return object.NewCommitPreorderIter(commit, nil, nil), nil
+		commitIter = object.NewCommitPreorderIter(commit, nil, nil)
 	case LogOrderDFSPost:
-		return object.NewCommitPostorderIter(commit, nil), nil
+		commitIter = object.NewCommitPostorderIter(commit, nil)
 	case LogOrderBSF:
-		return object.NewCommitIterBSF(commit, nil, nil), nil
+		commitIter = object.NewCommitIterBSF(commit, nil, nil)
 	case LogOrderCommitterTime:
-		return object.NewCommitIterCTime(commit, nil, nil), nil
+		commitIter = object.NewCommitIterCTime(commit, nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid Order=%v", o.Order)
 	}
-	return nil, fmt.Errorf("invalid Order=%v", o.Order)
+
+	if o.FileName == nil {
+		return commitIter, nil
+	}
+	return object.NewCommitFileIterFromIter(*o.FileName, commitIter), nil
 }
 
 // Tags returns all the tag References in a repository.
