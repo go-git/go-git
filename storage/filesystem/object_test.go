@@ -83,6 +83,30 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors(c *C) {
 	})
 }
 
+func (s *FsSuite) TestGetSizeOfObjectFile(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+
+	// Get the size of `tree_walker.go`.
+	expected := plumbing.NewHash("cbd81c47be12341eb1185b379d1c82675aeded6a")
+	size, err := o.EncodedObjectSize(expected)
+	c.Assert(err, IsNil)
+	c.Assert(size, Equals, int64(2412))
+}
+
+func (s *FsSuite) TestGetSizeFromPackfile(c *C) {
+	fixtures.Basic().ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+
+		// Get the size of `binary.jpg`.
+		expected := plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d")
+		size, err := o.EncodedObjectSize(expected)
+		c.Assert(err, IsNil)
+		c.Assert(size, Equals, int64(76110))
+	})
+}
+
 func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
