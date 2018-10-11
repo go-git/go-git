@@ -98,6 +98,12 @@ func (s *TreeSuite) TestFileFailsWithExistingTrees(c *C) {
 	c.Assert(err, Equals, ErrFileNotFound)
 }
 
+func (s *TreeSuite) TestSize(c *C) {
+	size, err := s.Tree.Size("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(size, Equals, int64(1072))
+}
+
 func (s *TreeSuite) TestFiles(c *C) {
 	var count int
 	err := s.Tree.Files().ForEach(func(f *File) error {
