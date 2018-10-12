@@ -205,9 +205,7 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (
 		if ok {
 			return obj.Size(), nil
 		}
-	}
-
-	if err != nil && err != plumbing.ErrObjectNotFound {
+	} else if err != nil && err != plumbing.ErrObjectNotFound {
 		return 0, err
 	}
 
