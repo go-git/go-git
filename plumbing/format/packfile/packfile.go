@@ -90,6 +90,8 @@ func (p *Packfile) GetByOffset(o int64) (plumbing.EncodedObject, error) {
 	return p.nextObject()
 }
 
+// GetSizeByOffset retrieves the size of the encoded object from the
+// packfile with the given offset.
 func (p *Packfile) GetSizeByOffset(o int64) (size int64, err error) {
 	if _, err := p.s.SeekFromStart(o); err != nil {
 		if err == io.EOF || isInvalid(err) {
