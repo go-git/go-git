@@ -2071,8 +2071,7 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 
 func (s *RepositorySuite) TestResolveRevisionAnnotated(c *C) {
 	f := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	r, err := Open(sto, f.DotGit())
 	c.Assert(err, IsNil)
 
