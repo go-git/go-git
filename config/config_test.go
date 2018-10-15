@@ -13,6 +13,7 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 	input := []byte(`[core]
         bare = true
 		worktree = foo
+		commentchar = bar
 [pack]
 		window = 20
 [remote "origin"]
@@ -23,6 +24,8 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 		url = git@github.com:src-d/go-git.git
 		fetch = +refs/heads/*:refs/remotes/origin/*
 		fetch = +refs/pull/*:refs/remotes/origin/pull/*
+[remote "win-local"]
+		url = X:\\Git\\
 [submodule "qux"]
         path = qux
         url = https://github.com/foo/qux.git
@@ -38,14 +41,17 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 
 	c.Assert(cfg.Core.IsBare, Equals, true)
 	c.Assert(cfg.Core.Worktree, Equals, "foo")
+	c.Assert(cfg.Core.CommentChar, Equals, "bar")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
-	c.Assert(cfg.Remotes, HasLen, 2)
+	c.Assert(cfg.Remotes, HasLen, 3)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URLs, DeepEquals, []string{"git@github.com:mcuadros/go-git.git"})
 	c.Assert(cfg.Remotes["origin"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*"})
 	c.Assert(cfg.Remotes["alt"].Name, Equals, "alt")
 	c.Assert(cfg.Remotes["alt"].URLs, DeepEquals, []string{"git@github.com:mcuadros/go-git.git", "git@github.com:src-d/go-git.git"})
 	c.Assert(cfg.Remotes["alt"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"})
+	c.Assert(cfg.Remotes["win-local"].Name, Equals, "win-local")
+	c.Assert(cfg.Remotes["win-local"].URLs, DeepEquals, []string{"X:\\Git\\"})
 	c.Assert(cfg.Submodules, HasLen, 1)
 	c.Assert(cfg.Submodules["qux"].Name, Equals, "qux")
 	c.Assert(cfg.Submodules["qux"].URL, Equals, "https://github.com/foo/qux.git")
@@ -67,6 +73,8 @@ func (s *ConfigSuite) TestMarshall(c *C) {
 	fetch = +refs/pull/*:refs/remotes/origin/pull/*
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git
+[remote "win-local"]
+	url = "X:\\Git\\"
 [submodule "qux"]
 	url = https://github.com/foo/qux.git
 [branch "master"]
@@ -87,6 +95,11 @@ func (s *ConfigSuite) TestMarshall(c *C) {
 		Name:  "alt",
 		URLs:  []string{"git@github.com:mcuadros/go-git.git", "git@github.com:src-d/go-git.git"},
 		Fetch: []RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"},
+	}
+
+	cfg.Remotes["win-local"] = &RemoteConfig{
+		Name: "win-local",
+		URLs: []string{"X:\\Git\\"},
 	}
 
 	cfg.Submodules["qux"] = &Submodule{
@@ -117,6 +130,8 @@ func (s *ConfigSuite) TestUnmarshallMarshall(c *C) {
 	url = git@github.com:mcuadros/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 	mirror = true
+[remote "win-local"]
+	url = "X:\\Git\\"
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master

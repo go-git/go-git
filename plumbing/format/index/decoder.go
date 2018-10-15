@@ -21,7 +21,7 @@ var (
 	// ErrMalformedSignature is returned by Decode when the index header file is
 	// malformed
 	ErrMalformedSignature = errors.New("malformed index signature file")
-	// ErrInvalidChecksum is returned by Decode if the SHA1 hash missmatch with
+	// ErrInvalidChecksum is returned by Decode if the SHA1 hash mismatch with
 	// the read content
 	ErrInvalidChecksum = errors.New("invalid checksum")
 

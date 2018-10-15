@@ -28,7 +28,7 @@ func main() {
 
 	// Create a new plumbing.HashReference object with the name of the branch
 	// and the hash from the HEAD. The reference name should be a full reference
-	// name and now a abbreviated one, as is used on the git cli.
+	// name and not an abbreviated one, as is used on the git cli.
 	//
 	// For tags we should use `refs/tags/%s` instead of `refs/heads/%s` used
 	// for branches.

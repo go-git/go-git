@@ -201,6 +201,31 @@ func (a *BasicAuth) String() string {
 	return fmt.Sprintf("%s - %s:%s", a.Name(), a.Username, masked)
 }
 
+// TokenAuth implements the go-git http.AuthMethod and transport.AuthMethod interfaces
+type TokenAuth struct {
+	Token string
+}
+
+func (a *TokenAuth) setAuth(r *http.Request) {
+	if a == nil {
+		return
+	}
+	r.Header.Add("Authorization", fmt.Sprintf("Bearer %s", a.Token))
+}
+
+// Name is name of the auth
+func (a *TokenAuth) Name() string {
+	return "http-token-auth"
+}
+
+func (a *TokenAuth) String() string {
+	masked := "*******"
+	if a.Token == "" {
+		masked = "<empty>"
+	}
+	return fmt.Sprintf("%s - %s", a.Name(), masked)
+}
+
 // Err is a dedicated error to return errors based on status code
 type Err struct {
 	Response *http.Response

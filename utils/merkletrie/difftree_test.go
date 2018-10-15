@@ -2,6 +2,7 @@ package merkletrie_test
 
 import (
 	"bytes"
+	ctx "context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -61,9 +62,45 @@ func (t diffTreeTest) innerRun(c *C, context string, reverse bool) {
 	c.Assert(obtained, changesEquals, expected, comment)
 }
 
+func (t diffTreeTest) innerRunCtx(c *C, context string, reverse bool) {
+	comment := Commentf("\n%s", context)
+	if reverse {
+		comment = Commentf("%s [REVERSED]", comment.CheckCommentString())
+	}
+
+	a, err := fsnoder.New(t.from)
+	c.Assert(err, IsNil, comment)
+	comment = Commentf("%s\n\t    from = %s", comment.CheckCommentString(), a)
+
+	b, err := fsnoder.New(t.to)
+	c.Assert(err, IsNil, comment)
+	comment = Commentf("%s\n\t      to = %s", comment.CheckCommentString(), b)
+
+	expected, err := newChangesFromString(t.expected)
+	c.Assert(err, IsNil, comment)
+
+	if reverse {
+		a, b = b, a
+		expected = expected.reverse()
+	}
+	comment = Commentf("%s\n\texpected = %s", comment.CheckCommentString(), expected)
+
+	results, err := merkletrie.DiffTreeContext(ctx.Background(), a, b, fsnoder.HashEqual)
+	c.Assert(err, IsNil, comment)
+
+	obtained, err := newChanges(results)
+	c.Assert(err, IsNil, comment)
+
+	comment = Commentf("%s\n\tobtained = %s", comment.CheckCommentString(), obtained)
+
+	c.Assert(obtained, changesEquals, expected, comment)
+}
+
 func (t diffTreeTest) run(c *C, context string) {
 	t.innerRun(c, context, false)
 	t.innerRun(c, context, true)
+	t.innerRunCtx(c, context, false)
+	t.innerRunCtx(c, context, true)
 }
 
 type change struct {
@@ -436,4 +473,28 @@ func (s *DiffTreeSuite) TestIssue275(c *C) {
 			"+a/b/d.go",
 		},
 	})
+}
+
+func (s *DiffTreeSuite) TestCancel(c *C) {
+	t :=  diffTreeTest{"()", "(a<> b<1> c() d<> e<2> f())", "+a +b +d +e"}
+	comment := Commentf("\n%s", "test cancel:")
+
+	a, err := fsnoder.New(t.from)
+	c.Assert(err, IsNil, comment)
+	comment = Commentf("%s\n\t    from = %s", comment.CheckCommentString(), a)
+
+	b, err := fsnoder.New(t.to)
+	c.Assert(err, IsNil, comment)
+	comment = Commentf("%s\n\t      to = %s", comment.CheckCommentString(), b)
+
+	expected, err := newChangesFromString(t.expected)
+	c.Assert(err, IsNil, comment)
+
+	comment = Commentf("%s\n\texpected = %s", comment.CheckCommentString(), expected)
+	context, cancel := ctx.WithCancel(ctx.Background())
+	cancel()
+	results, err := merkletrie.DiffTreeContext(context, a, b, fsnoder.HashEqual)
+	c.Assert(results, IsNil, comment)
+	c.Assert(err, ErrorMatches, "operation canceled")
+
 }

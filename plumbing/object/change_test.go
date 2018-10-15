@@ -1,9 +1,11 @@
 package object
 
 import (
+	"context"
 	"sort"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/diff"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -24,8 +26,7 @@ func (s *ChangeSuite) SetUpSuite(c *C) {
 	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag(".git").One()
-	sto, err := filesystem.NewStorage(s.Fixture.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
@@ -82,6 +83,12 @@ func (s *ChangeSuite) TestInsert(c *C) {
 	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
 	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Add)
 
+	p, err = change.PatchContext(context.Background())
+	c.Assert(err, IsNil)
+	c.Assert(len(p.FilePatches()), Equals, 1)
+	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
+	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Add)
+
 	str := change.String()
 	c.Assert(str, Equals, "<Action: Insert, Path: examples/clone/main.go>")
 }
@@ -129,6 +136,12 @@ func (s *ChangeSuite) TestDelete(c *C) {
 	c.Assert(from.Blob.Hash, Equals, blob)
 
 	p, err := change.Patch()
+	c.Assert(err, IsNil)
+	c.Assert(len(p.FilePatches()), Equals, 1)
+	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
+	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Delete)
+
+	p, err = change.PatchContext(context.Background())
 	c.Assert(err, IsNil)
 	c.Assert(len(p.FilePatches()), Equals, 1)
 	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
@@ -206,6 +219,18 @@ func (s *ChangeSuite) TestModify(c *C) {
 	c.Assert(p.FilePatches()[0].Chunks()[5].Type(), Equals, diff.Add)
 	c.Assert(p.FilePatches()[0].Chunks()[6].Type(), Equals, diff.Equal)
 
+	p, err = change.PatchContext(context.Background())
+	c.Assert(err, IsNil)
+	c.Assert(len(p.FilePatches()), Equals, 1)
+	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 7)
+	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Equal)
+	c.Assert(p.FilePatches()[0].Chunks()[1].Type(), Equals, diff.Delete)
+	c.Assert(p.FilePatches()[0].Chunks()[2].Type(), Equals, diff.Add)
+	c.Assert(p.FilePatches()[0].Chunks()[3].Type(), Equals, diff.Equal)
+	c.Assert(p.FilePatches()[0].Chunks()[4].Type(), Equals, diff.Delete)
+	c.Assert(p.FilePatches()[0].Chunks()[5].Type(), Equals, diff.Add)
+	c.Assert(p.FilePatches()[0].Chunks()[6].Type(), Equals, diff.Equal)
+
 	str := change.String()
 	c.Assert(str, Equals, "<Action: Modify, Path: utils/difftree/difftree.go>")
 }
@@ -228,8 +253,7 @@ func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
 	s.Suite.SetUpSuite(c)
 	f := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One()
 
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
 	c.Assert(err, IsNil)
@@ -366,4 +390,40 @@ func (s *ChangeSuite) TestChangesSort(c *C) {
 
 	sort.Sort(changes)
 	c.Assert(changes.String(), Equals, expected)
+}
+
+func (s *ChangeSuite) TestCancel(c *C) {
+	// Commit a5078b19f08f63e7948abd0a5e2fb7d319d3a565 of the go-git
+	// fixture inserted "examples/clone/main.go".
+	//
+	// On that commit, the "examples/clone" tree is
+	//     6efca3ff41cab651332f9ebc0c96bb26be809615
+	//
+	// and the "examples/colone/main.go" is
+	//     f95dc8f7923add1a8b9f72ecb1e8db1402de601a
+
+	path := "examples/clone/main.go"
+	name := "main.go"
+	mode := filemode.Regular
+	blob := plumbing.NewHash("f95dc8f7923add1a8b9f72ecb1e8db1402de601a")
+	tree := plumbing.NewHash("6efca3ff41cab651332f9ebc0c96bb26be809615")
+
+	change := &Change{
+		From: empty,
+		To: ChangeEntry{
+			Name: path,
+			Tree: s.tree(c, tree),
+			TreeEntry: TreeEntry{
+				Name: name,
+				Mode: mode,
+				Hash: blob,
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p, err := change.PatchContext(ctx)
+	c.Assert(p, IsNil)
+	c.Assert(err, ErrorMatches, "operation canceled")
 }

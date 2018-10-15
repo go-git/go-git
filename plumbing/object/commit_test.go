@@ -2,11 +2,13 @@ package object
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git-fixtures.v3"
@@ -132,6 +134,59 @@ Binary files /dev/null and b/binary.jpg differ
 	c.Assert(buf.String(), Equals, patch.String())
 }
 
+func (s *SuiteCommit) TestPatchContext(c *C) {
+	from := s.commit(c, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	to := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	patch, err := from.PatchContext(context.Background(), to)
+	c.Assert(err, IsNil)
+
+	buf := bytes.NewBuffer(nil)
+	err = patch.Encode(buf)
+	c.Assert(err, IsNil)
+
+	c.Assert(buf.String(), Equals, `diff --git a/vendor/foo.go b/vendor/foo.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..9dea2395f5403188298c1dabe8bdafe562c491e3
+--- /dev/null
++++ b/vendor/foo.go
+@@ -0,0 +1,7 @@
++package main
++
++import "fmt"
++
++func main() {
++	fmt.Println("Hello, playground")
++}
+`)
+	c.Assert(buf.String(), Equals, patch.String())
+
+	from = s.commit(c, plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"))
+	to = s.commit(c, plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
+
+	patch, err = from.PatchContext(context.Background(), to)
+	c.Assert(err, IsNil)
+
+	buf.Reset()
+	err = patch.Encode(buf)
+	c.Assert(err, IsNil)
+
+	c.Assert(buf.String(), Equals, `diff --git a/CHANGELOG b/CHANGELOG
+deleted file mode 100644
+index d3ff53e0564a9f87d8e84b6e28e5060e517008aa..0000000000000000000000000000000000000000
+--- a/CHANGELOG
++++ /dev/null
+@@ -1 +0,0 @@
+-Initial changelog
+diff --git a/binary.jpg b/binary.jpg
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5c0f4ab811897cadf03aec358ae60d21f91c50d
+Binary files /dev/null and b/binary.jpg differ
+`)
+
+	c.Assert(buf.String(), Equals, patch.String())
+}
+
 func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
 	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
 	c.Assert(err, IsNil)
@@ -193,8 +248,7 @@ func (s *SuiteCommit) TestStringMultiLine(c *C) {
 	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
-	sto, err := filesystem.NewStorage(f.DotGit())
-	c.Assert(err, IsNil)
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
 	c.Assert(err, IsNil)
@@ -270,6 +324,54 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 	err = decoded.Decode(encoded)
 	c.Assert(err, IsNil)
 	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
+
+	// signature with extra empty line, it caused "index out of range" when
+	// parsing it
+
+	pgpsignature2 := "\n" + pgpsignature
+
+	commit.PGPSignature = pgpsignature2
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, pgpsignature2)
+
+	// signature in author name
+
+	commit.PGPSignature = ""
+	commit.Author.Name = beginpgp
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, "")
+	c.Assert(decoded.Author.Name, Equals, beginpgp)
+
+	// broken signature
+
+	commit.PGPSignature = beginpgp + "\n" +
+		"some\n" +
+		"trash\n" +
+		endpgp +
+		"text\n"
+	encoded = &plumbing.MemoryObject{}
+	decoded = &Commit{}
+
+	err = commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, commit.PGPSignature)
 }
 
 func (s *SuiteCommit) TestStat(c *C) {
@@ -362,4 +464,34 @@ sYyf9RfOnw/KUFAQbdtvLx3ikODQC+D3KBtuKI9ISHQfgw==
 
 	_, ok := e.Identities["Sunny <me@darkowlzz.space>"]
 	c.Assert(ok, Equals, true)
+}
+
+func (s *SuiteCommit) TestPatchCancel(c *C) {
+	from := s.commit(c, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	to := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	patch, err := from.PatchContext(ctx, to)
+	c.Assert(patch, IsNil)
+	c.Assert(err, ErrorMatches, "operation canceled")
+
+}
+
+func (s *SuiteCommit) TestMalformedHeader(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Commit{}
+	commit := *s.Commit
+
+	commit.PGPSignature = "\n"
+	commit.Author.Name = "\n"
+	commit.Author.Email = "\n"
+	commit.Committer.Name = "\n"
+	commit.Committer.Email = "\n"
+
+	err := commit.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
 }

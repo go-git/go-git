@@ -40,6 +40,9 @@ type Config struct {
 		IsBare bool
 		// Worktree is the path to the root of the working tree.
 		Worktree string
+		// CommentChar is the character indicating the start of a
+		// comment for commands like commit and tag
+		CommentChar string
 	}
 
 	Pack struct {
@@ -113,6 +116,7 @@ const (
 	urlKey           = "url"
 	bareKey          = "bare"
 	worktreeKey      = "worktree"
+	commentCharKey   = "commentChar"
 	windowKey        = "window"
 	mergeKey         = "merge"
 
@@ -135,7 +139,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
-	c.unmarshalSubmodules()
+	unmarshalSubmodules(c.Raw, c.Submodules)
 
 	if err := c.unmarshalBranches(); err != nil {
 		return err
@@ -151,6 +155,7 @@ func (c *Config) unmarshalCore() {
 	}
 
 	c.Core.Worktree = s.Options.Get(worktreeKey)
+	c.Core.CommentChar = s.Options.Get(commentCharKey)
 }
 
 func (c *Config) unmarshalPack() error {
@@ -182,13 +187,17 @@ func (c *Config) unmarshalRemotes() error {
 	return nil
 }
 
-func (c *Config) unmarshalSubmodules() {
-	s := c.Raw.Section(submoduleSection)
+func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
+	s := fc.Section(submoduleSection)
 	for _, sub := range s.Subsections {
 		m := &Submodule{}
 		m.unmarshal(sub)
 
-		c.Submodules[m.Name] = m
+		if m.Validate() == ErrModuleBadPath {
+			continue
+		}
+
+		submodules[m.Name] = m
 	}
 }
 

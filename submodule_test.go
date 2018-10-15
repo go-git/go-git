@@ -196,6 +196,21 @@ func (s *SubmoduleSuite) TestSubmodulesInit(c *C) {
 	}
 }
 
+func (s *SubmoduleSuite) TestGitSubmodulesSymlink(c *C) {
+	f, err := s.Worktree.Filesystem.Create("badfile")
+	c.Assert(err, IsNil)
+	defer f.Close()
+
+	err = s.Worktree.Filesystem.Remove(gitmodulesFile)
+	c.Assert(err, IsNil)
+
+	err = s.Worktree.Filesystem.Symlink("badfile", gitmodulesFile)
+	c.Assert(err, IsNil)
+
+	_, err = s.Worktree.Submodules()
+	c.Assert(err, Equals, ErrGitModulesSymlink)
+}
+
 func (s *SubmoduleSuite) TestSubmodulesStatus(c *C) {
 	sm, err := s.Worktree.Submodules()
 	c.Assert(err, IsNil)

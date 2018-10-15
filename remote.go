@@ -371,14 +371,22 @@ func (r *Remote) addReferencesToUpdate(
 	refspecs []config.RefSpec,
 	localRefs []*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
-	req *packp.ReferenceUpdateRequest) error {
+	req *packp.ReferenceUpdateRequest,
+) error {
+	// This references dictionary will be used to search references by name.
+	refsDict := make(map[string]*plumbing.Reference)
+	for _, ref := range localRefs {
+		refsDict[ref.Name().String()] = ref
+	}
+
 	for _, rs := range refspecs {
 		if rs.IsDelete() {
 			if err := r.deleteReferences(rs, remoteRefs, req); err != nil {
 				return err
 			}
 		} else {
-			if err := r.addOrUpdateReferences(rs, localRefs, remoteRefs, req); err != nil {
+			err := r.addOrUpdateReferences(rs, localRefs, refsDict, remoteRefs, req)
+			if err != nil {
 				return err
 			}
 		}
@@ -390,9 +398,21 @@ func (r *Remote) addReferencesToUpdate(
 func (r *Remote) addOrUpdateReferences(
 	rs config.RefSpec,
 	localRefs []*plumbing.Reference,
+	refsDict map[string]*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
 	req *packp.ReferenceUpdateRequest,
 ) error {
+	// If it is not a wilcard refspec we can directly search for the reference
+	// in the references dictionary.
+	if !rs.IsWildcard() {
+		ref, ok := refsDict[rs.Src()]
+		if !ok {
+			return nil
+		}
+
+		return r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req)
+	}
+
 	for _, ref := range localRefs {
 		err := r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req)
 		if err != nil {
@@ -599,7 +619,7 @@ func getHaves(
 	return result, nil
 }
 
-const refspecTag = "+refs/tags/*:refs/tags/*"
+const refspecAllTags = "+refs/tags/*:refs/tags/*"
 
 func calculateRefs(
 	spec []config.RefSpec,
@@ -607,17 +627,32 @@ func calculateRefs(
 	tagMode TagMode,
 ) (memory.ReferenceStorage, error) {
 	if tagMode == AllTags {
-		spec = append(spec, refspecTag)
-	}
-
-	iter, err := remoteRefs.IterReferences()
-	if err != nil {
-		return nil, err
+		spec = append(spec, refspecAllTags)
 	}
 
 	refs := make(memory.ReferenceStorage)
-	return refs, iter.ForEach(func(ref *plumbing.Reference) error {
-		if !config.MatchAny(spec, ref.Name()) {
+	for _, s := range spec {
+		if err := doCalculateRefs(s, remoteRefs, refs); err != nil {
+			return nil, err
+		}
+	}
+
+	return refs, nil
+}
+
+func doCalculateRefs(
+	s config.RefSpec,
+	remoteRefs storer.ReferenceStorer,
+	refs memory.ReferenceStorage,
+) error {
+	iter, err := remoteRefs.IterReferences()
+	if err != nil {
+		return err
+	}
+
+	var matched bool
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if !s.Match(ref.Name()) {
 			return nil
 		}
 
@@ -634,8 +669,23 @@ func calculateRefs(
 			return nil
 		}
 
-		return refs.SetReference(ref)
+		matched = true
+		if err := refs.SetReference(ref); err != nil {
+			return err
+		}
+
+		if !s.IsWildcard() {
+			return storer.ErrStop
+		}
+
+		return nil
 	})
+
+	if !matched && !s.IsWildcard() {
+		return fmt.Errorf("couldn't find remote ref %q", s.Src())
+	}
+
+	return err
 }
 
 func getWants(localStorer storage.Storer, refs memory.ReferenceStorage) ([]plumbing.Hash, error) {

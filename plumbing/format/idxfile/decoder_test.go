@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"testing"
 
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	. "gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git-fixtures.v3"
@@ -26,51 +27,34 @@ func (s *IdxfileSuite) TestDecode(c *C) {
 	f := fixtures.Basic().One()
 
 	d := NewDecoder(f.Idx())
-	idx := &Idxfile{}
+	idx := new(MemoryIndex)
 	err := d.Decode(idx)
 	c.Assert(err, IsNil)
 
-	c.Assert(idx.Entries, HasLen, 31)
-	c.Assert(idx.Entries[0].Hash.String(), Equals, "1669dce138d9b841a518c64b10914d88f5e488ea")
-	c.Assert(idx.Entries[0].Offset, Equals, uint64(615))
-	c.Assert(idx.Entries[0].CRC32, Equals, uint32(3645019190))
+	count, _ := idx.Count()
+	c.Assert(count, Equals, int64(31))
+
+	hash := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+	ok, err := idx.Contains(hash)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	offset, err := idx.FindOffset(hash)
+	c.Assert(err, IsNil)
+	c.Assert(offset, Equals, int64(615))
+
+	crc32, err := idx.FindCRC32(hash)
+	c.Assert(err, IsNil)
+	c.Assert(crc32, Equals, uint32(3645019190))
 
 	c.Assert(fmt.Sprintf("%x", idx.IdxChecksum), Equals, "fb794f1ec720b9bc8e43257451bd99c4be6fa1c9")
 	c.Assert(fmt.Sprintf("%x", idx.PackfileChecksum), Equals, f.PackfileHash.String())
 }
 
-func (s *IdxfileSuite) TestDecodeCRCs(c *C) {
-	f := fixtures.Basic().ByTag("ofs-delta").One()
-
-	scanner := packfile.NewScanner(f.Packfile())
-	storage := memory.NewStorage()
-
-	pd, err := packfile.NewDecoder(scanner, storage)
-	c.Assert(err, IsNil)
-	_, err = pd.Decode()
-	c.Assert(err, IsNil)
-
-	i := pd.Index().ToIdxFile()
-	i.Version = VersionSupported
-
-	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
-	_, err = e.Encode(i)
-	c.Assert(err, IsNil)
-
-	idx := &Idxfile{}
-
-	d := NewDecoder(buf)
-	err = d.Decode(idx)
-	c.Assert(err, IsNil)
-
-	c.Assert(idx.Entries, DeepEquals, i.Entries)
-}
-
 func (s *IdxfileSuite) TestDecode64bitsOffsets(c *C) {
 	f := bytes.NewBufferString(fixtureLarge4GB)
 
-	idx := &Idxfile{}
+	idx := new(MemoryIndex)
 
 	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
 	err := d.Decode(idx)
@@ -88,29 +72,22 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets(c *C) {
 		"35858be9c6f5914cbe6768489c41eb6809a2bceb": 5924278919,
 	}
 
-	for _, e := range idx.Entries {
+	iter, err := idx.Entries()
+	c.Assert(err, IsNil)
+
+	var entries int
+	for {
+		e, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		c.Assert(err, IsNil)
+		entries++
+
 		c.Assert(expected[e.Hash.String()], Equals, e.Offset)
 	}
-}
 
-func (s *IdxfileSuite) TestDecode64bitsOffsetsIdempotent(c *C) {
-	f := bytes.NewBufferString(fixtureLarge4GB)
-
-	expected := &Idxfile{}
-
-	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
-	err := d.Decode(expected)
-	c.Assert(err, IsNil)
-
-	buf := bytes.NewBuffer(nil)
-	_, err = NewEncoder(buf).Encode(expected)
-	c.Assert(err, IsNil)
-
-	idx := &Idxfile{}
-	err = NewDecoder(buf).Decode(idx)
-	c.Assert(err, IsNil)
-
-	c.Assert(idx.Entries, DeepEquals, expected.Entries)
+	c.Assert(entries, Equals, len(expected))
 }
 
 const fixtureLarge4GB = `/3RPYwAAAAIAAAAAAAAAAAAAAAAAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEA
@@ -139,3 +116,30 @@ AAAAAAAMgAAAAQAAAI6AAAACgAAAA4AAAASAAAAFAAAAAV9Qam8AAAABYR1ShwAAAACdxfYxAAAA
 ANz1Di4AAAABPUnxJAAAAADNxzlGr6vCJpIFz4XaG/fi/f9C9zgQ8ptKSQpfQ1NMJBGTDTxxYGGp
 ch2xUA==
 `
+
+func BenchmarkDecode(b *testing.B) {
+	if err := fixtures.Init(); err != nil {
+		b.Errorf("unexpected error initializing fixtures: %s", err)
+	}
+
+	f := fixtures.Basic().One()
+	fixture, err := ioutil.ReadAll(f.Idx())
+	if err != nil {
+		b.Errorf("unexpected error reading idx file: %s", err)
+	}
+
+	defer func() {
+		if err := fixtures.Clean(); err != nil {
+			b.Errorf("unexpected error cleaning fixtures: %s", err)
+		}
+	}()
+
+	for i := 0; i < b.N; i++ {
+		f := bytes.NewBuffer(fixture)
+		idx := new(MemoryIndex)
+		d := NewDecoder(f)
+		if err := d.Decode(idx); err != nil {
+			b.Errorf("unexpected error decoding: %s", err)
+		}
+	}
+}

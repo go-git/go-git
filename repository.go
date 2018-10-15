@@ -1,18 +1,22 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	stdioutil "io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/openpgp"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/internal/revision"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
@@ -31,7 +35,12 @@ var (
 	// ErrBranchExists an error stating the specified branch already exists
 	ErrBranchExists = errors.New("branch already exists")
 	// ErrBranchNotFound an error stating the specified branch does not exist
-	ErrBranchNotFound            = errors.New("branch not found")
+	ErrBranchNotFound = errors.New("branch not found")
+	// ErrTagExists an error stating the specified tag already exists
+	ErrTagExists = errors.New("tag already exists")
+	// ErrTagNotFound an error stating the specified tag does not exist
+	ErrTagNotFound = errors.New("tag not found")
+
 	ErrInvalidReference          = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNotExists       = errors.New("repository does not exist")
 	ErrRepositoryAlreadyExists   = errors.New("repository already exists")
@@ -220,10 +229,7 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 		dot, _ = wt.Chroot(GitDirName)
 	}
 
-	s, err := filesystem.NewStorage(dot)
-	if err != nil {
-		return nil, err
-	}
+	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	return Init(s, wt)
 }
@@ -235,9 +241,8 @@ func PlainOpen(path string) (*Repository, error) {
 	return PlainOpenWithOptions(path, &PlainOpenOptions{})
 }
 
-// PlainOpen opens a git repository from the given path. It detects if the
-// repository is bare or a normal one. If the path doesn't contain a valid
-// repository ErrRepositoryNotExists is returned
+// PlainOpenWithOptions opens a git repository from the given path with specific
+// options. See PlainOpen for more info.
 func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error) {
 	dot, wt, err := dotGitToOSFilesystems(path, o.DetectDotGit)
 	if err != nil {
@@ -252,10 +257,7 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		return nil, err
 	}
 
-	s, err := filesystem.NewStorage(dot)
-	if err != nil {
-		return nil, err
-	}
+	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	return Open(s, wt)
 }
@@ -484,6 +486,139 @@ func (r *Repository) DeleteBranch(name string) error {
 	return r.Storer.SetConfig(cfg)
 }
 
+// CreateTag creates a tag. If opts is included, the tag is an annotated tag,
+// otherwise a lightweight tag is created.
+func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
+	rname := plumbing.ReferenceName(path.Join("refs", "tags", name))
+
+	_, err := r.Storer.Reference(rname)
+	switch err {
+	case nil:
+		// Tag exists, this is an error
+		return nil, ErrTagExists
+	case plumbing.ErrReferenceNotFound:
+		// Tag missing, available for creation, pass this
+	default:
+		// Some other error
+		return nil, err
+	}
+
+	var target plumbing.Hash
+	if opts != nil {
+		target, err = r.createTagObject(name, hash, opts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		target = hash
+	}
+
+	ref := plumbing.NewHashReference(rname, target)
+	if err = r.Storer.SetReference(ref); err != nil {
+		return nil, err
+	}
+
+	return ref, nil
+}
+
+func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
+	if err := opts.Validate(r, hash); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	rawobj, err := object.GetObject(r.Storer, hash)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	tag := &object.Tag{
+		Name:       name,
+		Tagger:     *opts.Tagger,
+		Message:    opts.Message,
+		TargetType: rawobj.Type(),
+		Target:     hash,
+	}
+
+	if opts.SignKey != nil {
+		sig, err := r.buildTagSignature(tag, opts.SignKey)
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+
+		tag.PGPSignature = sig
+	}
+
+	obj := r.Storer.NewEncodedObject()
+	if err := tag.Encode(obj); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return r.Storer.SetEncodedObject(obj)
+}
+
+func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
+	encoded := &plumbing.MemoryObject{}
+	if err := tag.Encode(encoded); err != nil {
+		return "", err
+	}
+
+	rdr, err := encoded.Reader()
+	if err != nil {
+		return "", err
+	}
+
+	var b bytes.Buffer
+	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
+		return "", err
+	}
+
+	return b.String(), nil
+}
+
+// Tag returns a tag from the repository.
+//
+// If you want to check to see if the tag is an annotated tag, you can call
+// TagObject on the hash of the reference in ForEach:
+//
+//   ref, err := r.Tag("v0.1.0")
+//   if err != nil {
+//     // Handle error
+//   }
+//
+//   obj, err := r.TagObject(ref.Hash())
+//   switch err {
+//   case nil:
+//     // Tag object present
+//   case plumbing.ErrObjectNotFound:
+//     // Not a tag object
+//   default:
+//     // Some other error
+//   }
+//
+func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
+	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
+	if err != nil {
+		if err == plumbing.ErrReferenceNotFound {
+			// Return a friendly error for this one, versus just ReferenceNotFound.
+			return nil, ErrTagNotFound
+		}
+
+		return nil, err
+	}
+
+	return ref, nil
+}
+
+// DeleteTag deletes a tag from the repository.
+func (r *Repository) DeleteTag(name string) error {
+	_, err := r.Tag(name)
+	if err != nil {
+		return err
+	}
+
+	return r.Storer.RemoveReference(plumbing.ReferenceName(path.Join("refs", "tags", name)))
+}
+
 func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error) {
 	obj, err := r.Storer.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
@@ -519,11 +654,12 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
-		RefSpecs: r.cloneRefSpec(o, c),
-		Depth:    o.Depth,
-		Auth:     o.Auth,
-		Progress: o.Progress,
-		Tags:     o.Tags,
+		RefSpecs:   r.cloneRefSpec(o, c),
+		Depth:      o.Depth,
+		Auth:       o.Auth,
+		Progress:   o.Progress,
+		Tags:       o.Tags,
+		RemoteName: o.RemoteName,
 	}, o.ReferenceName)
 	if err != nil {
 		return err
@@ -583,7 +719,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 }
 
 const (
-	refspecTagWithDepth     = "+refs/tags/%s:refs/tags/%[1]s"
+	refspecTag              = "+refs/tags/%s:refs/tags/%[1]s"
 	refspecSingleBranch     = "+refs/heads/%s:refs/remotes/%s/%[1]s"
 	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
 )
@@ -592,8 +728,8 @@ func (r *Repository) cloneRefSpec(o *CloneOptions, c *config.RemoteConfig) []con
 	var rs string
 
 	switch {
-	case o.ReferenceName.IsTag() && o.Depth > 0:
-		rs = fmt.Sprintf(refspecTagWithDepth, o.ReferenceName.Short())
+	case o.ReferenceName.IsTag():
+		rs = fmt.Sprintf(refspecTag, o.ReferenceName.Short())
 	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
 		rs = fmt.Sprintf(refspecSingleBranchHEAD, c.Name)
 	case o.SingleBranch:
@@ -830,23 +966,53 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		return nil, err
 	}
 
+	var commitIter object.CommitIter
 	switch o.Order {
 	case LogOrderDefault:
-		return object.NewCommitPreorderIter(commit, nil, nil), nil
+		commitIter = object.NewCommitPreorderIter(commit, nil, nil)
 	case LogOrderDFS:
-		return object.NewCommitPreorderIter(commit, nil, nil), nil
+		commitIter = object.NewCommitPreorderIter(commit, nil, nil)
 	case LogOrderDFSPost:
-		return object.NewCommitPostorderIter(commit, nil), nil
+		commitIter = object.NewCommitPostorderIter(commit, nil)
 	case LogOrderBSF:
-		return object.NewCommitIterBSF(commit, nil, nil), nil
+		commitIter = object.NewCommitIterBSF(commit, nil, nil)
 	case LogOrderCommitterTime:
-		return object.NewCommitIterCTime(commit, nil, nil), nil
+		commitIter = object.NewCommitIterCTime(commit, nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid Order=%v", o.Order)
 	}
-	return nil, fmt.Errorf("invalid Order=%v", o.Order)
+
+	if o.FileName == nil {
+		return commitIter, nil
+	}
+	return object.NewCommitFileIterFromIter(*o.FileName, commitIter), nil
 }
 
-// Tags returns all the References from Tags. This method returns all the tag
-// types, lightweight, and annotated ones.
+// Tags returns all the tag References in a repository.
+//
+// If you want to check to see if the tag is an annotated tag, you can call
+// TagObject on the hash Reference passed in through ForEach:
+//
+//   iter, err := r.Tags()
+//   if err != nil {
+//     // Handle error
+//   }
+//
+//   if err := iter.ForEach(func (ref *plumbing.Reference) error {
+//     obj, err := r.TagObject(ref.Hash())
+//     switch err {
+//     case nil:
+//       // Tag object present
+//     case plumbing.ErrObjectNotFound:
+//       // Not a tag object
+//     default:
+//       // Some other error
+//       return err
+//     }
+//   }); err != nil {
+//     // Handle outer iterator error
+//   }
+//
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
 	refIter, err := r.Storer.IterReferences()
 	if err != nil {
@@ -872,7 +1038,8 @@ func (r *Repository) Branches() (storer.ReferenceIter, error) {
 		}, refIter), nil
 }
 
-// Notes returns all the References that are Branches.
+// Notes returns all the References that are notes. For more information:
+// https://git-scm.com/docs/git-notes
 func (r *Repository) Notes() (storer.ReferenceIter, error) {
 	refIter, err := r.Storer.IterReferences()
 	if err != nil {
