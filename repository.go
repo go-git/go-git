@@ -1171,7 +1171,18 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	return &Worktree{r: r, Filesystem: r.wt}, nil
 }
 
-// ResolveRevision resolves revision to corresponding hash.
+func countTrue(vals ...bool) int {
+	sum := 0
+	for _, v := range vals {
+		if v {
+			sum++
+		}
+	}
+	return sum
+}
+
+// ResolveRevision resolves revision to corresponding hash. It will always
+// resolve to a commit hash, not a tree or annotated tag.
 //
 // Implemented resolvers : HEAD, branch, tag, heads/branch, refs/heads/branch,
 // refs/tags/tag, refs/remotes/origin/branch, refs/remotes/origin/HEAD, tilde and caret (HEAD~1, master~^, tag~2, ref/heads/master~1, ...), selection by text (HEAD^{/fix nasty bug})
@@ -1191,8 +1202,8 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 		case revision.Ref:
 			revisionRef := item.(revision.Ref)
 			var ref *plumbing.Reference
-			var hashCommit, refCommit *object.Commit
-			var rErr, hErr error
+			var hashCommit, refCommit, tagCommit *object.Commit
+			var rErr, hErr, tErr error
 
 			for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
 				ref, err = storer.ResolveReference(r.Storer, plumbing.ReferenceName(fmt.Sprintf(rule, revisionRef)))
@@ -1203,24 +1214,38 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 			}
 
 			if ref != nil {
+				tag, tObjErr := r.TagObject(ref.Hash())
+				if tObjErr != nil {
+					tErr = tObjErr
+				} else {
+					tagCommit, tErr = tag.Commit()
+				}
 				refCommit, rErr = r.CommitObject(ref.Hash())
 			} else {
 				rErr = plumbing.ErrReferenceNotFound
+				tErr = plumbing.ErrReferenceNotFound
 			}
 
-			isHash := plumbing.NewHash(string(revisionRef)).String() == string(revisionRef)
-
-			if isHash {
+			maybeHash := plumbing.NewHash(string(revisionRef)).String() == string(revisionRef)
+			if maybeHash {
 				hashCommit, hErr = r.CommitObject(plumbing.NewHash(string(revisionRef)))
+			} else {
+				hErr = plumbing.ErrReferenceNotFound
 			}
+
+			isTag := tErr == nil
+			isCommit := rErr == nil
+			isHash := hErr == nil
 
 			switch {
-			case rErr == nil && !isHash:
-				commit = refCommit
-			case rErr != nil && isHash && hErr == nil:
-				commit = hashCommit
-			case rErr == nil && isHash && hErr == nil:
+			case countTrue(isTag, isCommit, isHash) > 1:
 				return &plumbing.ZeroHash, fmt.Errorf(`refname "%s" is ambiguous`, revisionRef)
+			case isTag:
+				commit = tagCommit
+			case isCommit:
+				commit = refCommit
+			case isHash:
+				commit = hashCommit
 			default:
 				return &plumbing.ZeroHash, plumbing.ErrReferenceNotFound
 			}
