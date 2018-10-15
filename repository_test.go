@@ -1505,6 +1505,25 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 	}
 }
 
+func (s *RepositorySuite) TestResolveRevisionAnnotated(c *C) {
+	f := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One()
+	sto, err := filesystem.NewStorage(f.DotGit())
+	c.Assert(err, IsNil)
+	r, err := Open(sto, f.DotGit())
+	c.Assert(err, IsNil)
+
+	datas := map[string]string{
+		"refs/tags/annotated-tag": "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+	}
+
+	for rev, hash := range datas {
+		h, err := r.ResolveRevision(plumbing.Revision(rev))
+
+		c.Assert(err, IsNil)
+		c.Check(h.String(), Equals, hash, Commentf("while checking %s", rev))
+	}
+}
+
 func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
