@@ -143,7 +143,7 @@ func (s *RepositorySuite) TestOpenBare(c *C) {
 	c.Assert(r, NotNil)
 }
 
-func (s *RepositorySuite) TestOpenMissingWorktree(c *C) {
+func (s *RepositorySuite) TestOpenBareMissingWorktree(c *C) {
 	st := memory.NewStorage()
 
 	r, err := Init(st, memfs.New())
@@ -151,8 +151,8 @@ func (s *RepositorySuite) TestOpenMissingWorktree(c *C) {
 	c.Assert(r, NotNil)
 
 	r, err = Open(st, nil)
-	c.Assert(err, Equals, ErrWorktreeNotProvided)
-	c.Assert(r, IsNil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
 }
 
 func (s *RepositorySuite) TestOpenNotExists(c *C) {
@@ -425,8 +425,8 @@ func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
 	c.Assert(r, NotNil)
 
 	r, err = PlainOpen(filepath.Join(dir, ".git"))
-	c.Assert(err, Equals, ErrWorktreeNotProvided)
-	c.Assert(r, IsNil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
 }
 
 func (s *RepositorySuite) testPlainOpenGitFile(c *C, f func(string, string) string) {

@@ -175,15 +175,6 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		return nil, err
 	}
 
-	cfg, err := s.Config()
-	if err != nil {
-		return nil, err
-	}
-
-	if !cfg.Core.IsBare && worktree == nil {
-		return nil, ErrWorktreeNotProvided
-	}
-
 	return newRepository(s, worktree), nil
 }
 
@@ -335,6 +326,8 @@ func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Files
 // PlainClone a repository into the path with the given options, isBare defines
 // if the new repository will be bare or normal. If the path is not empty
 // ErrRepositoryAlreadyExists is returned.
+//
+// TODO(mcuadros): move isBare to CloneOptions in v5
 func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) {
 	return PlainCloneContext(context.Background(), path, isBare, o)
 }
@@ -346,6 +339,8 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects to the
 // transport operations.
+//
+// TODO(mcuadros): move isBare to CloneOptions in v5
 func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
 	r, err := PlainInit(path, isBare)
 	if err != nil {
