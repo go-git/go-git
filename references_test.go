@@ -163,7 +163,19 @@ var referencesTests = [...]struct {
 		"1e14f94bcf82694fdc7e2dcbbfdbbed58db0f4d9",
 		"1e3d328a2cabda5d0aaddc5dec65271343e0dc37",
 	}},
-
+	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "README.adoc", []string{
+		"638f61b3331695f46f1a88095e26dea0f09f176b",
+		"bd42370d3fe8d410e78acb96f81cb3d838ad1c21",
+		"d6905eab6fec1841c7cf8e4484499f5c8d7d423e",
+		"c0a70a0f5aa494f0ae01c55ba191f2325556489a",
+		"811795c8a185e88f5d269195cb68b29c8d0fe170",
+		"d6e6fe0194447cc280f942d6a2e0521b68ea7796",
+		"174bdbf9edfb0ca88415dd4a673852d5b22e7036",
+		"9944d6cf72b8f82d622d85dad7434472bc8f397d",
+		"e805183c72f0426fb073728c01901c2fd2db1da6",
+		"8ef83dd443a05e9122681950399edaa58a38d466",
+		"d73f9cee49a5ad27a42a6e18af7c49a8f28ad8a8",
+	}},
 	// FAILS
 	/*
 		// this contains an empty move
