@@ -568,6 +568,19 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	c.Assert(cfg.Branches["master"].Name, Equals, "master")
 }
 
+func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
+	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+		URL:        s.GetBasicLocalRepositoryURL(),
+		RemoteName: "test",
+	})
+
+	c.Assert(err, IsNil)
+
+	remote, err := r.Remote("test")
+	c.Assert(err, IsNil)
+	c.Assert(remote, NotNil)
+}
+
 func (s *RepositorySuite) TestPlainCloneContext(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
