@@ -231,8 +231,9 @@ var (
 
 // CheckoutOptions describes how a checkout 31operation should be performed.
 type CheckoutOptions struct {
-	// Hash to be checked out, if used HEAD will in detached mode. Branch and
-	// Hash are mutually exclusive, if Create is not used.
+	// Hash is the hash of the commit to be checked out. If used, HEAD will be
+	// in detached mode. If Create is not used, Branch and Hash are mutually
+	// exclusive.
 	Hash plumbing.Hash
 	// Branch to be checked out, if Branch and Hash are empty is set to `master`.
 	Branch plumbing.ReferenceName
