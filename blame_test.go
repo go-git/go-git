@@ -2,6 +2,7 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git-fixtures.v3"
@@ -12,6 +13,31 @@ type BlameSuite struct {
 }
 
 var _ = Suite(&BlameSuite{})
+
+func (s *BlameSuite) TestNewLines(c *C) {
+	h := plumbing.NewHash("ce9f123d790717599aaeb76bc62510de437761be")
+	lines, err := newLines([]string{"foo"}, []*object.Commit{{
+		Hash:    h,
+		Message: "foo",
+	}})
+
+	c.Assert(err, IsNil)
+	c.Assert(lines, HasLen, 1)
+	c.Assert(lines[0].Text, Equals, "foo")
+	c.Assert(lines[0].Hash, Equals, h)
+}
+
+func (s *BlameSuite) TestNewLinesWithNewLine(c *C) {
+	lines, err := newLines([]string{"foo"}, []*object.Commit{
+		{Message: "foo"},
+		{Message: "bar"},
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(lines, HasLen, 2)
+	c.Assert(lines[0].Text, Equals, "foo")
+	c.Assert(lines[1].Text, Equals, "\n")
+}
 
 type blameTest struct {
 	repo   string
