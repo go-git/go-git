@@ -3,7 +3,7 @@
 
 *go-git* is a highly extensible git implementation library written in **pure Go**.
 
-It can be used to manipulate git repositories at low level *(plumbing)* or high level *(porcelain)*, through an idiomatic Go API. It also supports several type of storage, such as in-memory filesystems, or custom implementations thanks to the [`Storer`](https://godoc.org/gopkg.in/src-d/go-git.v4/plumbing/storer) interface.
+It can be used to manipulate git repositories at low level *(plumbing)* or high level *(porcelain)*, through an idiomatic Go API. It also supports several types of storage, such as in-memory filesystems, or custom implementations thanks to the [`Storer`](https://godoc.org/gopkg.in/src-d/go-git.v4/plumbing/storer) interface.
 
 It's being actively develop since 2015 and is being use extensively by [source{d}](https://sourced.tech/) and [Keybase](https://keybase.io/blog/encrypted-git-for-everyone), and by many other libraries and tools.
 
