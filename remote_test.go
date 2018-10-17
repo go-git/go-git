@@ -11,6 +11,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp"
+	"gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
@@ -797,4 +798,26 @@ func (s *RemoteSuite) TestUpdateShallows(c *C) {
 		c.Assert(len(shallow), Equals, len(t.result))
 		c.Assert(shallow, DeepEquals, t.result)
 	}
+}
+
+func (s *RemoteSuite) TestUseRefDeltas(c *C) {
+	url := c.MkDir()
+	_, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := newRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	ar := packp.NewAdvRefs()
+
+	ar.Capabilities.Add(capability.OFSDelta)
+	c.Assert(r.useRefDeltas(ar), Equals, false)
+
+	ar.Capabilities.Delete(capability.OFSDelta)
+	c.Assert(r.useRefDeltas(ar), Equals, true)
 }
