@@ -4,6 +4,7 @@ package http
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -150,6 +151,18 @@ func (s *session) ModifyEndpointIfRedirect(res *http.Response) {
 	if !strings.HasSuffix(r.URL.Path, infoRefsPath) {
 		return
 	}
+
+	h, p, err := net.SplitHostPort(r.URL.Host)
+	if err != nil {
+		h = r.URL.Host
+	}
+	if p != "" {
+		port, err := strconv.Atoi(p)
+		if err == nil {
+			s.endpoint.Port = port
+		}
+	}
+	s.endpoint.Host = h
 
 	s.endpoint.Protocol = r.URL.Scheme
 	s.endpoint.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
