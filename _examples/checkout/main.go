@@ -38,8 +38,8 @@ func main() {
 	})
 	CheckIfError(err)
 
-	// ... retrieving the commit being pointed by HEAD, it's shows that the
-	// repository is poiting to the giving commit in detached mode
+	// ... retrieving the commit being pointed by HEAD, it shows that the
+	// repository is pointing to the giving commit in detached mode
 	Info("git show-ref --head HEAD")
 	ref, err = r.Head()
 	CheckIfError(err)

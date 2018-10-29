@@ -16,7 +16,7 @@ import (
 // - Get the HEAD reference
 // - Using the HEAD reference, obtain the commit this reference is pointing to
 // - Print the commit content
-// - Using the commit, iterate all its files and print them
+// - Using the commit, iterate over all its files and print them
 // - Print all the commit history with commit messages, short hash and the
 // first line of the commit message
 func main() {
