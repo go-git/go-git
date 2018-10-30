@@ -581,14 +581,94 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 	c.Assert(remote, NotNil)
 }
 
-func (s *RepositorySuite) TestPlainCloneContext(c *C) {
+func (s *RepositorySuite) TestPlainCloneContextWithProperParameters(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := PlainCloneContext(ctx, c.MkDir(), false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, c.MkDir(), false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
+	c.Assert(r, NotNil)
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDir := tmpDir
+
+	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, NotNil)
+	c.Assert(err, NotNil)
+
+	_, err = os.Stat(repoDir)
+	c.Assert(os.IsNotExist(err), Equals, false)
+
+	names, err := ioutil.ReadDir(repoDir)
+	c.Assert(err, IsNil)
+	c.Assert(names, HasLen, 0)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDir := filepath.Join(tmpDir, "repoDir")
+
+	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, NotNil)
+	c.Assert(err, NotNil)
+
+	_, err = os.Stat(repoDir)
+	c.Assert(os.IsNotExist(err), Equals, true)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDir := filepath.Join(tmpDir, "repoDir")
+	f, err := os.Create(repoDir)
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, IsNil)
+	c.Assert(err, NotNil)
+
+	fi, err := os.Stat(repoDir)
+	c.Assert(err, IsNil)
+	c.Assert(fi.IsDir(), Equals, false)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDirPath := filepath.Join(tmpDir, "repoDir")
+	err := os.Mkdir(repoDirPath, 0777)
+	c.Assert(err, IsNil)
+
+	dummyFile := filepath.Join(repoDirPath, "dummyFile")
+	err = ioutil.WriteFile(dummyFile, []byte(fmt.Sprint("dummyContent")), 0644)
+	c.Assert(err, IsNil)
+
+	r, err := PlainCloneContext(ctx, repoDirPath, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, IsNil)
 	c.Assert(err, NotNil)
 }
 
@@ -2104,9 +2184,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
-		"efs/heads/master~":                        "reference not found",
-		"HEAD^3":                                   `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":                         `No commit message match regexp : "whatever"`,
+		"efs/heads/master~": "reference not found",
+		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294": `refname "918c48b83bd081e863dbe1b80f8998f058cd8294" is ambiguous`,
 	}
