@@ -593,24 +593,66 @@ func (s *RepositorySuite) TestPlainCloneContextWithProperParameters(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *RepositorySuite) TestPlainCloneContextWithIncorrectRepo(c *C) {
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDir := tmpDir
+
+	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, NotNil)
+	c.Assert(err, NotNil)
+
+	_, err = os.Stat(repoDir)
+	c.Assert(os.IsNotExist(err), Equals, false)
+
+	names, err := ioutil.ReadDir(repoDir)
+	c.Assert(err, IsNil)
+	c.Assert(names, HasLen, 0)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	tmpDir := c.MkDir()
 	repoDir := filepath.Join(tmpDir, "repoDir")
+
+	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	c.Assert(r, NotNil)
+	c.Assert(err, NotNil)
+
+	_, err = os.Stat(repoDir)
+	c.Assert(os.IsNotExist(err), Equals, true)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	repoDir := filepath.Join(tmpDir, "repoDir")
+	f, err := os.Create(repoDir)
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
 	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
 	c.Assert(err, NotNil)
 
-	_, err = os.Stat(repoDir)
-	dirNotExist := os.IsNotExist(err)
-	c.Assert(dirNotExist, Equals, true)
+	fi, err := os.Stat(repoDir)
+	c.Assert(err, IsNil)
+	c.Assert(fi.IsDir(), Equals, false)
 }
 
-func (s *RepositorySuite) TestPlainCloneContextWithNotEmptyDir(c *C) {
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -627,7 +669,7 @@ func (s *RepositorySuite) TestPlainCloneContextWithNotEmptyDir(c *C) {
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
-	c.Assert(err, Equals, ErrDirNotEmpty)
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
