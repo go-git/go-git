@@ -214,7 +214,14 @@ func (a *BasicAuth) String() string {
 	return fmt.Sprintf("%s - %s:%s", a.Name(), a.Username, masked)
 }
 
-// TokenAuth implements the go-git http.AuthMethod and transport.AuthMethod interfaces
+// TokenAuth implements an http.AuthMethod that can be used with http transport
+// to authenticate with HTTP token authentication (also known as bearer
+// authentication).
+//
+// IMPORTANT: If you are looking to use OAuth tokens with popular servers (e.g.
+// GitHub, Bitbucket, GitLab) you should use BasicAuth instead. These servers
+// use basic HTTP authentication, with the OAuth token as user or password.
+// Check the documentation of your git server for details.
 type TokenAuth struct {
 	Token string
 }
