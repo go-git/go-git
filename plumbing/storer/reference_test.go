@@ -172,3 +172,26 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop(c *C) {
 
 	c.Assert(count, Equals, 1)
 }
+
+func (s *ReferenceSuite) TestMultiReferenceIterForEach(c *C) {
+	i := NewMultiReferenceIter(
+		[]ReferenceIter{
+			NewReferenceSliceIter([]*plumbing.Reference{
+				plumbing.NewReferenceFromStrings("foo", "foo"),
+			}),
+			NewReferenceSliceIter([]*plumbing.Reference{
+				plumbing.NewReferenceFromStrings("bar", "bar"),
+			}),
+		},
+	)
+
+	var result []string
+	err := i.ForEach(func(r *plumbing.Reference) error {
+		result = append(result, r.Name().String())
+		return nil
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(result, HasLen, 2)
+	c.Assert(result, DeepEquals, []string{"foo", "bar"})
+}
