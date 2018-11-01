@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	stdioutil "io/ioutil"
 	"os"
 	"path"
@@ -342,12 +343,22 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 //
 // TODO(mcuadros): move isBare to CloneOptions in v5
 func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
+	dirExists, err := checkExistsAndIsEmptyDir(path)
+	if err != nil {
+		return nil, err
+	}
+
 	r, err := PlainInit(path, isBare)
 	if err != nil {
 		return nil, err
 	}
 
-	return r, r.clone(ctx, o)
+	err = r.clone(ctx, o)
+	if err != nil && err != ErrRepositoryAlreadyExists {
+		cleanUpDir(path, !dirExists)
+	}
+
+	return r, err
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
@@ -356,6 +367,65 @@ func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 		wt:     worktree,
 		r:      make(map[string]*Remote),
 	}
+}
+
+func checkExistsAndIsEmptyDir(path string) (exists bool, err error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	if !fi.IsDir() {
+		return false, fmt.Errorf("path is not a directory: %s", path)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+
+	defer ioutil.CheckClose(f, &err)
+
+	_, err = f.Readdirnames(1)
+	if err == io.EOF {
+		return true, nil
+	}
+
+	if err != nil {
+		return true, err
+	}
+
+	return true, fmt.Errorf("directory is not empty: %s", path)
+}
+
+func cleanUpDir(path string, all bool) error {
+	if all {
+		return os.RemoveAll(path)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+
+	defer ioutil.CheckClose(f, &err)
+
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range names {
+		if err := os.RemoveAll(filepath.Join(path, name)); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Config return the repository config

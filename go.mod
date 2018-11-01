@@ -16,7 +16,7 @@ require (
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sergi/go-diff v1.0.0
-	github.com/src-d/gcfg v1.3.0
+	github.com/src-d/gcfg v1.4.0
 	github.com/stretchr/testify v1.2.2 // indirect
 	github.com/xanzy/ssh-agent v0.2.0
 	golang.org/x/crypto v0.0.0-20180904163835-0709b304e793

@@ -13,7 +13,7 @@ func main() {
 	CheckArgs("<path>")
 	path := os.Args[1]
 
-	// We instance a new repository targeting the given path (the .git folder)
+	// We instance\iate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
 
