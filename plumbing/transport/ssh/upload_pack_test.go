@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/test"
@@ -97,13 +98,20 @@ func handlerSSH(s ssh.Session) {
 		io.Copy(stdin, s)
 	}()
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	go func() {
-		defer stderr.Close()
+		defer wg.Done()
 		io.Copy(s.Stderr(), stderr)
 	}()
 
-	defer stdout.Close()
-	io.Copy(s, stdout)
+	go func() {
+		defer wg.Done()
+		io.Copy(s, stdout)
+	}()
+
+	wg.Wait()
 
 	if err := cmd.Wait(); err != nil {
 		return
