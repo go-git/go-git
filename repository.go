@@ -710,8 +710,9 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	c := &config.RemoteConfig{
-		Name: o.RemoteName,
-		URLs: []string{o.URL},
+		Name:  o.RemoteName,
+		URLs:  []string{o.URL},
+		Fetch: r.cloneRefSpec(o),
 	}
 
 	if _, err := r.CreateRemote(c); err != nil {
@@ -719,7 +720,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
-		RefSpecs:   r.cloneRefSpec(o, c),
+		RefSpecs:   c.Fetch,
 		Depth:      o.Depth,
 		Auth:       o.Auth,
 		Progress:   o.Progress,
@@ -789,21 +790,26 @@ const (
 	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
 )
 
-func (r *Repository) cloneRefSpec(o *CloneOptions, c *config.RemoteConfig) []config.RefSpec {
-	var rs string
-
+func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
 	switch {
 	case o.ReferenceName.IsTag():
-		rs = fmt.Sprintf(refspecTag, o.ReferenceName.Short())
+		return []config.RefSpec{
+			config.RefSpec(fmt.Sprintf(refspecTag, o.ReferenceName.Short())),
+		}
 	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
-		rs = fmt.Sprintf(refspecSingleBranchHEAD, c.Name)
+		return []config.RefSpec{
+			config.RefSpec(fmt.Sprintf(refspecSingleBranchHEAD, o.RemoteName)),
+			config.RefSpec(fmt.Sprintf(refspecSingleBranch, plumbing.Master.Short(), o.RemoteName)),
+		}
 	case o.SingleBranch:
-		rs = fmt.Sprintf(refspecSingleBranch, o.ReferenceName.Short(), c.Name)
+		return []config.RefSpec{
+			config.RefSpec(fmt.Sprintf(refspecSingleBranch, o.ReferenceName.Short(), o.RemoteName)),
+		}
 	default:
-		return c.Fetch
+		return []config.RefSpec{
+			config.RefSpec(fmt.Sprintf(config.DefaultFetchRefSpec, o.RemoteName)),
+		}
 	}
-
-	return []config.RefSpec{config.RefSpec(rs)}
 }
 
 func (r *Repository) setIsBare(isBare bool) error {
@@ -821,9 +827,7 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 		return nil
 	}
 
-	c.Fetch = []config.RefSpec{config.RefSpec(fmt.Sprintf(
-		refspecSingleBranch, head.Name().Short(), c.Name,
-	))}
+	c.Fetch = r.cloneRefSpec(o)
 
 	cfg, err := r.Storer.Config()
 	if err != nil {

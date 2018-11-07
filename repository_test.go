@@ -919,6 +919,32 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *RepositorySuite) TestCloneSingleTag(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:           url,
+		SingleBranch:  true,
+		ReferenceName: plumbing.ReferenceName("refs/tags/commit-tag"),
+	})
+	c.Assert(err, IsNil)
+
+	branch, err := r.Reference("refs/tags/commit-tag", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+
+	conf, err := r.Config()
+	c.Assert(err, IsNil)
+	originRemote := conf.Remotes["origin"]
+	c.Assert(originRemote, NotNil)
+	c.Assert(originRemote.Fetch, HasLen, 1)
+	c.Assert(originRemote.Fetch[0].String(), Equals, "+refs/tags/commit-tag:refs/tags/commit-tag")
+}
+
 func (s *RepositorySuite) TestCloneDetachedHEAD(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{
