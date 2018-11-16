@@ -1,10 +1,13 @@
 package packfile_test
 
 import (
+	"io"
 	"testing"
 
+	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git-fixtures.v3"
@@ -72,6 +75,53 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 	}
 
 	c.Assert(obs.objects, DeepEquals, objs)
+}
+
+func (s *ParserSuite) TestThinPack(c *C) {
+
+	// Initialize an empty repository
+	fs, err := git.PlainInit(c.MkDir(), true)
+	c.Assert(err, IsNil)
+
+	// Try to parse a thin pack without having the required objects in the repo to
+	// see if the correct errors are returned
+	thinpack := fixtures.ByTag("thinpack").One()
+	scanner := packfile.NewScanner(thinpack.Packfile())
+	parser, err := packfile.NewParserWithStorage(scanner, fs.Storer) // ParserWithStorage writes to the storer all parsed objects!
+	c.Assert(err, IsNil)
+
+	_, err = parser.Parse()
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+
+	// start over with a clean repo
+	fs, err = git.PlainInit(c.MkDir(), true)
+	c.Assert(err, IsNil)
+
+	// Now unpack a base packfile into our empty repo:
+	f := fixtures.ByURL("https://github.com/spinnaker/spinnaker.git").One()
+	w, err := fs.Storer.(storer.PackfileWriter).PackfileWriter()
+	c.Assert(err, IsNil)
+	_, err = io.Copy(w, f.Packfile())
+	c.Assert(err, IsNil)
+	w.Close()
+
+	// Check that the test object that will come with our thin pack is *not* in the repo
+	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, thinpack.Head)
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+
+	// Now unpack the thin pack:
+	scanner = packfile.NewScanner(thinpack.Packfile())
+	parser, err = packfile.NewParserWithStorage(scanner, fs.Storer) // ParserWithStorage writes to the storer all parsed objects!
+	c.Assert(err, IsNil)
+
+	h, err := parser.Parse()
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, plumbing.NewHash("1288734cbe0b95892e663221d94b95de1f5d7be8"))
+
+	// Check that our test object is now accessible
+	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, thinpack.Head)
+	c.Assert(err, IsNil)
+
 }
 
 type observerObject struct {
