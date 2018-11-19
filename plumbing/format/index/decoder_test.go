@@ -202,3 +202,19 @@ func (s *IndexSuite) TestDecodeV4(c *C) {
 	c.Assert(idx.Entries[6].IntentToAdd, Equals, true)
 	c.Assert(idx.Entries[6].SkipWorktree, Equals, false)
 }
+
+func (s *IndexSuite) TestDecodeEndOfIndexEntry(c *C) {
+	f, err := fixtures.Basic().ByTag("end-of-index-entry").One().DotGit().Open("index")
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
+
+	idx := &Index{}
+	d := NewDecoder(f)
+	err = d.Decode(idx)
+	c.Assert(err, IsNil)
+
+	c.Assert(idx.Version, Equals, uint32(2))
+	c.Assert(idx.EndOfIndexEntry, NotNil)
+	c.Assert(idx.EndOfIndexEntry.Offset, Equals, uint32(716))
+	c.Assert(idx.EndOfIndexEntry.Hash.String(), Equals, "922e89d9ffd7cefce93a211615b2053c0f42bd78")
+}
