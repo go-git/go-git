@@ -61,6 +61,11 @@ func (s *ObjectStorage) requireIndex() error {
 	return nil
 }
 
+// Reindex indexes again all packfiles. Useful if git changed packfiles externally
+func (s *ObjectStorage) Reindex() {
+	s.index = nil
+}
+
 func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
