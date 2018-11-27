@@ -21,6 +21,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/storage"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -177,11 +178,12 @@ func (s *RepositorySuite) TestCloneContext(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := CloneContext(ctx, memory.NewStorage(), nil, &CloneOptions{
+	r, err := CloneContext(ctx, memory.NewStorage(), nil, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
-	c.Assert(err, NotNil)
+	c.Assert(r, NotNil)
+	c.Assert(err, ErrorMatches, ".* context canceled")
 }
 
 func (s *RepositorySuite) TestCloneWithTags(c *C) {
@@ -581,7 +583,20 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 	c.Assert(remote, NotNil)
 }
 
-func (s *RepositorySuite) TestPlainCloneContextWithProperParameters(c *C) {
+func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory(c *C) {
+	tmpDir := c.MkDir()
+	r, err := PlainInit(tmpDir, false)
+	c.Assert(r, NotNil)
+	c.Assert(err, IsNil)
+
+	r, err = PlainClone(tmpDir, false, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(r, IsNil)
+	c.Assert(err, Equals, ErrRepositoryAlreadyExists)
+}
+
+func (s *RepositorySuite) TestPlainCloneContextCancel(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -590,7 +605,7 @@ func (s *RepositorySuite) TestPlainCloneContextWithProperParameters(c *C) {
 	})
 
 	c.Assert(r, NotNil)
-	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".* context canceled")
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) {
@@ -604,7 +619,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
-	c.Assert(err, NotNil)
+	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
 	_, err = os.Stat(repoDir)
 	c.Assert(os.IsNotExist(err), Equals, false)
@@ -625,7 +640,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
-	c.Assert(err, NotNil)
+	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
 	_, err = os.Stat(repoDir)
 	c.Assert(os.IsNotExist(err), Equals, true)
@@ -645,7 +660,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
-	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".*not a directory.*")
 
 	fi, err := os.Stat(repoDir)
 	c.Assert(err, IsNil)
@@ -668,8 +683,28 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	r, err := PlainCloneContext(ctx, repoDirPath, false, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
+	c.Assert(r, NotNil)
+	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
+
+	_, err = os.Stat(dummyFile)
+	c.Assert(err, IsNil)
+
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirectory(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpDir := c.MkDir()
+	r, err := PlainInit(tmpDir, false)
+	c.Assert(r, NotNil)
+	c.Assert(err, IsNil)
+
+	r, err = PlainCloneContext(ctx, tmpDir, false, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
 	c.Assert(r, IsNil)
-	c.Assert(err, NotNil)
+	c.Assert(err, Equals, ErrRepositoryAlreadyExists)
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {

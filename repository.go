@@ -342,8 +342,9 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 // transport operations.
 //
 // TODO(mcuadros): move isBare to CloneOptions in v5
+// TODO(smola): refuse upfront to clone on a non-empty directory in v5, see #1027
 func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
-	dirExists, err := checkExistsAndIsEmptyDir(path)
+	cleanup, cleanupParent, err := checkIfCleanupIsNeeded(path)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +356,9 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 
 	err = r.clone(ctx, o)
 	if err != nil && err != ErrRepositoryAlreadyExists {
-		cleanUpDir(path, !dirExists)
+		if cleanup {
+			cleanUpDir(path, cleanupParent)
+		}
 	}
 
 	return r, err
@@ -369,37 +372,37 @@ func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 	}
 }
 
-func checkExistsAndIsEmptyDir(path string) (exists bool, err error) {
+func checkIfCleanupIsNeeded(path string) (cleanup bool, cleanParent bool, err error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return true, true, nil
 		}
 
-		return false, err
+		return false, false, err
 	}
 
 	if !fi.IsDir() {
-		return false, fmt.Errorf("path is not a directory: %s", path)
+		return false, false, fmt.Errorf("path is not a directory: %s", path)
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
 	defer ioutil.CheckClose(f, &err)
 
 	_, err = f.Readdirnames(1)
 	if err == io.EOF {
-		return true, nil
+		return true, false, nil
 	}
 
 	if err != nil {
-		return true, err
+		return false, false, err
 	}
 
-	return true, fmt.Errorf("directory is not empty: %s", path)
+	return false, false, nil
 }
 
 func cleanUpDir(path string, all bool) error {
@@ -425,7 +428,7 @@ func cleanUpDir(path string, all bool) error {
 		}
 	}
 
-	return nil
+	return err
 }
 
 // Config return the repository config
