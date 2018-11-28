@@ -118,6 +118,23 @@ func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObjectNonSeekable(c *C) {
 	c.Assert(n, Equals, f.PackfileHash)
 }
 
+func (s *ScannerSuite) TestSeekObjectHeader(c *C) {
+	r := fixtures.Basic().One().Packfile()
+	p := NewScanner(r)
+
+	h, err := p.SeekObjectHeader(expectedHeadersOFS[4].Offset)
+	c.Assert(err, IsNil)
+	c.Assert(h, DeepEquals, &expectedHeadersOFS[4])
+}
+
+func (s *ScannerSuite) TestSeekObjectHeaderNonSeekable(c *C) {
+	r := io.MultiReader(fixtures.Basic().One().Packfile())
+	p := NewScanner(r)
+
+	_, err := p.SeekObjectHeader(expectedHeadersOFS[4].Offset)
+	c.Assert(err, Equals, ErrSeekNotSupported)
+}
+
 var expectedHeadersOFS = []ObjectHeader{
 	{Type: plumbing.CommitObject, Offset: 12, Length: 254},
 	{Type: plumbing.OFSDeltaObject, Offset: 186, Length: 93, OffsetReference: 12},
