@@ -41,6 +41,8 @@ var (
 	ErrTagExists = errors.New("tag already exists")
 	// ErrTagNotFound an error stating the specified tag does not exist
 	ErrTagNotFound = errors.New("tag not found")
+	// ErrFetching is returned when the packfile could not be downloaded
+	ErrFetching = errors.New("unable to fetch packfile")
 
 	ErrInvalidReference          = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNotExists       = errors.New("repository does not exist")
@@ -858,6 +860,8 @@ func (r *Repository) fetchAndUpdateReferences(
 	remoteRefs, err := remote.fetch(ctx, o)
 	if err == NoErrAlreadyUpToDate {
 		objsUpdated = false
+	} else if err == packfile.ErrEmptyPackfile {
+		return nil, ErrFetching
 	} else if err != nil {
 		return nil, err
 	}
