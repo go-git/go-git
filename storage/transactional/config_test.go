@@ -1,20 +1,32 @@
 package transactional
 
 import (
-	"testing"
-
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
 var _ = Suite(&ConfigSuite{})
 
 type ConfigSuite struct{}
 
-func (s *ConfigSuite) TestSetConfig(c *C) {
+func (s *ConfigSuite) TestSetConfigBase(c *C) {
+	cfg := config.NewConfig()
+	cfg.Core.Worktree = "foo"
+
+	base := memory.NewStorage()
+	err := base.SetConfig(cfg)
+	c.Assert(err, IsNil)
+
+	temporal := memory.NewStorage()
+	cs := NewConfigStorage(base, temporal)
+
+	cfg, err = cs.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.Worktree, Equals, "foo")
+}
+
+func (s *ConfigSuite) TestSetConfigTemporal(c *C) {
 	cfg := config.NewConfig()
 	cfg.Core.Worktree = "foo"
 

@@ -159,8 +159,6 @@ func forEachReferenceIter(iter bareReferenceIterator, cb func(*plumbing.Referenc
 			return err
 		}
 	}
-
-	return nil
 }
 
 // Close releases any resources used by the iterator.

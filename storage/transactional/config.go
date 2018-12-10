@@ -22,6 +22,14 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
 	return nil
 }
 
+func (c *ConfigStorage) Config() (*config.Config, error) {
+	if !c.set {
+		return c.ConfigStorer.Config()
+	}
+
+	return c.temporal.Config()
+}
+
 func (c *ConfigStorage) Commit() error {
 	if !c.set {
 		return nil

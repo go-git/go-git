@@ -117,3 +117,37 @@ func (s *ObjectSuite) TestIterEncodedObjects(c *C) {
 	c.Assert(hashes[0], Equals, ch)
 	c.Assert(hashes[1], Equals, th)
 }
+
+func (s *ObjectSuite) TestCommit(c *C) {
+	base := memory.NewStorage()
+	temporal := memory.NewStorage()
+
+	os := NewObjectStorage(base, temporal)
+
+	commit := base.NewEncodedObject()
+	commit.SetType(plumbing.CommitObject)
+
+	_, err := os.SetEncodedObject(commit)
+	c.Assert(err, IsNil)
+
+	tree := base.NewEncodedObject()
+	tree.SetType(plumbing.TreeObject)
+
+	_, err = os.SetEncodedObject(tree)
+	c.Assert(err, IsNil)
+
+	err = os.Commit()
+	c.Assert(err, IsNil)
+
+	iter, err := base.IterEncodedObjects(plumbing.AnyObject)
+	c.Assert(err, IsNil)
+
+	var hashes []plumbing.Hash
+	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+		hashes = append(hashes, obj.Hash())
+		return nil
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, 2)
+}

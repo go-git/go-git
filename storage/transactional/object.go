@@ -61,3 +61,15 @@ func (o *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.Encode
 		temporalIter,
 	}), nil
 }
+
+func (o *ObjectStorage) Commit() error {
+	iter, err := o.temporal.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		return err
+	}
+
+	return iter.ForEach(func(obj plumbing.EncodedObject) error {
+		_, err := o.EncodedObjectStorer.SetEncodedObject(obj)
+		return err
+	})
+}
