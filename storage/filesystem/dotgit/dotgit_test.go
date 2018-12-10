@@ -57,11 +57,26 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 	fs := osfs.New(tmp)
 	dir := New(fs)
 
+	testSetRefs(c, dir)
+}
+
+func (s *SuiteDotGit) TestSetRefsNorwfs(c *C) {
+	tmp, err := ioutil.TempDir("", "dot-git")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	fs := osfs.New(tmp)
+	dir := New(&norwfs{fs})
+
+	testSetRefs(c, dir)
+}
+
+func testSetRefs(c *C, dir *DotGit) {
 	firstFoo := plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	)
-	err = dir.SetRef(firstFoo, nil)
+	err := dir.SetRef(firstFoo, nil)
 
 	c.Assert(err, IsNil)
 
@@ -794,4 +809,12 @@ func (s *SuiteDotGit) TestAlternates(c *C) {
 		expectedPath = filepath.Join(resolvedPath, "rep2", ".git")
 	}
 	c.Assert(dotgits[1].fs.Root(), Equals, expectedPath)
+}
+
+type norwfs struct {
+	billy.Filesystem
+}
+
+func (f *norwfs) Capabilities() billy.Capability {
+	return billy.Capabilities(f.Filesystem) &^ billy.ReadAndWriteCapability
 }
