@@ -262,11 +262,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 		req.Packfile = s.emptyPackfile()
 	}
 
-	if s, err := r.ReceivePack(context.Background(), req); err != nil {
-		return s, err
-	} else {
-		return s, err
-	}
+	return r.ReceivePack(context.Background(), req)
 }
 
 func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
