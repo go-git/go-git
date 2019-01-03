@@ -1027,41 +1027,64 @@ func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 
 // Log returns the commit history from the given LogOptions.
 func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
-	h := o.From
-	if o.From == plumbing.ZeroHash {
-		head, err := r.Head()
-		if err != nil {
-			return nil, err
-		}
-
-		h = head.Hash()
-	}
-
-	commit, err := r.CommitObject(h)
-	if err != nil {
-		return nil, err
-	}
-
-	var commitIter object.CommitIter
+	var (
+		err            error
+		commitIterFunc func(*object.Commit) object.CommitIter
+		commitIter     object.CommitIter
+	)
 	switch o.Order {
 	case LogOrderDefault:
-		commitIter = object.NewCommitPreorderIter(commit, nil, nil)
+		commitIterFunc = func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPreorderIter(c, nil, nil)
+		}
 	case LogOrderDFS:
-		commitIter = object.NewCommitPreorderIter(commit, nil, nil)
+		commitIterFunc = func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPreorderIter(c, nil, nil)
+		}
 	case LogOrderDFSPost:
-		commitIter = object.NewCommitPostorderIter(commit, nil)
+		commitIterFunc = func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPostorderIter(c, nil)
+		}
 	case LogOrderBSF:
-		commitIter = object.NewCommitIterBSF(commit, nil, nil)
+		commitIterFunc = func(c *object.Commit) object.CommitIter {
+			return object.NewCommitIterBSF(c, nil, nil)
+		}
 	case LogOrderCommitterTime:
-		commitIter = object.NewCommitIterCTime(commit, nil, nil)
+		commitIterFunc = func(c *object.Commit) object.CommitIter {
+			return object.NewCommitIterCTime(c, nil, nil)
+		}
 	default:
 		return nil, fmt.Errorf("invalid Order=%v", o.Order)
 	}
 
-	if o.FileName == nil {
-		return commitIter, nil
+	if o.All {
+		commitIter, err = object.NewCommitAllIter(r.Storer, commitIterFunc)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		h := o.From
+		if o.From == plumbing.ZeroHash {
+			head, err := r.Head()
+			if err != nil {
+				return nil, err
+			}
+
+			h = head.Hash()
+		}
+
+		commit, err := r.CommitObject(h)
+		if err != nil {
+			return nil, err
+		}
+		commitIter = commitIterFunc(commit)
 	}
-	return object.NewCommitFileIterFromIter(*o.FileName, commitIter), nil
+
+	if o.FileName != nil {
+		commitIter = object.NewCommitFileIterFromIter(*o.FileName, commitIter, o.All)
+	}
+
+	return commitIter, nil
 }
 
 // Tags returns all the tag References in a repository.

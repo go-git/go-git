@@ -1251,6 +1251,77 @@ func (s *RepositorySuite) TestLog(c *C) {
 	c.Assert(err, Equals, io.EOF)
 }
 
+func (s *RepositorySuite) TestLogAll(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cIter, err := r.Log(&LogOptions{
+		All: true,
+	})
+	c.Assert(err, IsNil)
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+	}
+
+	for _, o := range commitOrder {
+		commit, err := cIter.Next()
+		c.Assert(err, IsNil)
+		c.Assert(commit.Hash, Equals, o)
+	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+	cIter.Close()
+}
+
+func (s *RepositorySuite) TestLogAllOrderByTime(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cIter, err := r.Log(&LogOptions{
+		Order: LogOrderCommitterTime,
+		All:   true,
+	})
+	c.Assert(err, IsNil)
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+		plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+	}
+
+	for _, o := range commitOrder {
+		commit, err := cIter.Next()
+		c.Assert(err, IsNil)
+		c.Assert(commit.Hash, Equals, o)
+	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+	cIter.Close()
+}
+
 func (s *RepositorySuite) TestLogHead(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{
@@ -1333,8 +1404,8 @@ func (s *RepositorySuite) TestLogFileForEach(c *C) {
 
 	fileName := "php/crappy.php"
 	cIter, err := r.Log(&LogOptions{FileName: &fileName})
-
 	c.Assert(err, IsNil)
+	defer cIter.Close()
 
 	commitOrder := []plumbing.Hash{
 		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
@@ -1344,7 +1415,51 @@ func (s *RepositorySuite) TestLogFileForEach(c *C) {
 	cIter.ForEach(func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
-		expectedIndex += 1
+		expectedIndex++
+		return nil
+	})
+	c.Assert(expectedIndex, Equals, 1)
+}
+
+func (s *RepositorySuite) TestLogNonHeadFile(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	fileName := "README"
+	cIter, err := r.Log(&LogOptions{FileName: &fileName})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *RepositorySuite) TestLogAllFileForEach(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	fileName := "README"
+	cIter, err := r.Log(&LogOptions{FileName: &fileName, All: true})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+	}
+
+	expectedIndex := 0
+	cIter.ForEach(func(commit *object.Commit) error {
+		expectedCommitHash := commitOrder[expectedIndex]
+		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
+		expectedIndex++
 		return nil
 	})
 	c.Assert(expectedIndex, Equals, 1)
@@ -1362,6 +1477,7 @@ func (s *RepositorySuite) TestLogInvalidFile(c *C) {
 	cIter, err := r.Log(&LogOptions{FileName: &fileName})
 	// Not raising an error since `git log -- vendor/foo12.go` responds silently
 	c.Assert(err, IsNil)
+	defer cIter.Close()
 
 	_, err = cIter.Next()
 	c.Assert(err, Equals, io.EOF)
@@ -1379,8 +1495,8 @@ func (s *RepositorySuite) TestLogFileInitialCommit(c *C) {
 		Order:    LogOrderCommitterTime,
 		FileName: &fileName,
 	})
-
 	c.Assert(err, IsNil)
+	defer cIter.Close()
 
 	commitOrder := []plumbing.Hash{
 		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
@@ -1390,7 +1506,7 @@ func (s *RepositorySuite) TestLogFileInitialCommit(c *C) {
 	cIter.ForEach(func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
-		expectedIndex += 1
+		expectedIndex++
 		return nil
 	})
 	c.Assert(expectedIndex, Equals, 1)
@@ -1410,6 +1526,8 @@ func (s *RepositorySuite) TestLogFileWithOtherParamsFail(c *C) {
 		From:     plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
 	})
 	c.Assert(err, IsNil)
+	defer cIter.Close()
+
 	_, iterErr := cIter.Next()
 	c.Assert(iterErr, Equals, io.EOF)
 }
@@ -2342,8 +2460,6 @@ func executeOnPath(path, cmd string) error {
 	buf := bytes.NewBuffer(nil)
 	c.Stderr = buf
 	c.Stdout = buf
-
-	//defer func() { fmt.Println(buf.String()) }()
 
 	return c.Run()
 }

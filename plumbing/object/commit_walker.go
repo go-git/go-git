@@ -1,10 +1,12 @@
 package object
 
 import (
+	"container/list"
 	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage"
 )
 
 type commitPreIterator struct {
@@ -181,3 +183,127 @@ func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
 }
 
 func (w *commitPostIterator) Close() {}
+
+// commitAllIterator stands for commit iterator for all refs.
+type commitAllIterator struct {
+	// el points to the current commit.
+	el *list.Element
+}
+
+// NewCommitAllIter returns a new commit iterator for all refs.
+// s is a repo Storer used to get commits and references.
+// fn is a commit iterator function, used to iterate through ref commits in chosen order
+func NewCommitAllIter(s storage.Storer, fn func(*Commit) CommitIter) (CommitIter, error) {
+	l := list.New()
+	m := make(map[plumbing.Hash]*list.Element)
+
+	// ...along with the HEAD
+	head, err := storer.ResolveReference(s, plumbing.HEAD)
+	if err != nil {
+		return nil, err
+	}
+	headCommit, err := GetCommit(s, head.Hash())
+	if err != nil {
+		return nil, err
+	}
+	err = fn(headCommit).ForEach(func(c *Commit) error {
+		el := l.PushBack(c)
+		m[c.Hash] = el
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	refIter, err := s.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	defer refIter.Close()
+	err = refIter.ForEach(func(r *plumbing.Reference) error {
+		if r.Hash() == head.Hash() {
+			// we already have the HEAD
+			return nil
+		}
+		c, _ := GetCommit(s, r.Hash())
+		// if it's not a commit - skip it.
+		if c == nil {
+			return nil
+		}
+
+		el, ok := m[c.Hash]
+		if ok {
+			return nil
+		}
+
+		var refCommits []*Commit
+		cit := fn(c)
+		for c, e := cit.Next(); e == nil; {
+			el, ok = m[c.Hash]
+			if ok {
+				break
+			}
+			refCommits = append(refCommits, c)
+			c, e = cit.Next()
+		}
+		cit.Close()
+
+		if el == nil {
+			// push back all commits from this ref.
+			for _, c := range refCommits {
+				el = l.PushBack(c)
+				m[c.Hash] = el
+			}
+		} else {
+			// insert ref's commits into the list
+			for i := len(refCommits) - 1; i >= 0; i-- {
+				c := refCommits[i]
+				el = l.InsertBefore(c, el)
+				m[c.Hash] = el
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &commitAllIterator{l.Front()}, nil
+}
+
+func (it *commitAllIterator) Next() (*Commit, error) {
+	if it.el == nil {
+		return nil, io.EOF
+	}
+
+	c := it.el.Value.(*Commit)
+	it.el = it.el.Next()
+
+	return c, nil
+}
+
+func (it *commitAllIterator) ForEach(cb func(*Commit) error) error {
+	for {
+		c, err := it.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		err = cb(c)
+		if err == storer.ErrStop {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (it *commitAllIterator) Close() {
+	it.el = nil
+}

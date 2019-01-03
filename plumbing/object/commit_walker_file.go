@@ -1,23 +1,26 @@
 package object
 
 import (
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"io"
+
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 type commitFileIter struct {
 	fileName      string
 	sourceIter    CommitIter
 	currentCommit *Commit
+	all           bool
 }
 
 // NewCommitFileIterFromIter returns a commit iterator which performs diffTree between
 // successive trees returned from the commit iterator from the argument. The purpose of this is
 // to find the commits that explain how the files that match the path came to be.
-func NewCommitFileIterFromIter(fileName string, commitIter CommitIter) CommitIter {
+func NewCommitFileIterFromIter(fileName string, commitIter CommitIter, all bool) CommitIter {
 	iterator := new(commitFileIter)
 	iterator.sourceIter = commitIter
 	iterator.fileName = fileName
+	iterator.all = all
 	return iterator
 }
 
@@ -73,8 +76,24 @@ func (c *commitFileIter) getNextFileCommit() (*Commit, error) {
 
 		foundChangeForFile := false
 		for _, change := range changes {
-			if change.name() == c.fileName {
+			if change.name() != c.fileName {
+				continue
+			}
+
+			// filename matches, now check if source iterator contains all commits (from all refs)
+			if c.all {
+				// for `git log --all` also check if the next commit comes from the same parent
+				for _, h := range c.currentCommit.ParentHashes {
+					if h == parentCommit.Hash {
+						foundChangeForFile = true
+						break
+					}
+				}
+			} else {
 				foundChangeForFile = true
+			}
+
+			if foundChangeForFile {
 				break
 			}
 		}
