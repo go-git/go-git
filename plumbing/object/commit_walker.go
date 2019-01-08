@@ -225,18 +225,18 @@ func NewCommitAllIter(s storage.Storer, fn func(*Commit) CommitIter) (CommitIter
 			// we already have the HEAD
 			return nil
 		}
-		c, _ := GetCommit(s, r.Hash())
-		// if it's not a commit - skip it.
-		if c == nil {
-			return nil
-		}
 
-		el, ok := m[c.Hash]
+		el, ok := m[r.Hash()]
 		if ok {
 			return nil
 		}
 
 		var refCommits []*Commit
+		c, _ := GetCommit(s, r.Hash())
+		// if it's not a commit - skip it.
+		if c == nil {
+			return nil
+		}
 		cit := fn(c)
 		for c, e := cit.Next(); e == nil; {
 			el, ok = m[c.Hash]
