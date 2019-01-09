@@ -1027,64 +1027,83 @@ func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 
 // Log returns the commit history from the given LogOptions.
 func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
-	var (
-		err            error
-		commitIterFunc func(*object.Commit) object.CommitIter
-		commitIter     object.CommitIter
-	)
-	switch o.Order {
-	case LogOrderDefault:
-		commitIterFunc = func(c *object.Commit) object.CommitIter {
-			return object.NewCommitPreorderIter(c, nil, nil)
-		}
-	case LogOrderDFS:
-		commitIterFunc = func(c *object.Commit) object.CommitIter {
-			return object.NewCommitPreorderIter(c, nil, nil)
-		}
-	case LogOrderDFSPost:
-		commitIterFunc = func(c *object.Commit) object.CommitIter {
-			return object.NewCommitPostorderIter(c, nil)
-		}
-	case LogOrderBSF:
-		commitIterFunc = func(c *object.Commit) object.CommitIter {
-			return object.NewCommitIterBSF(c, nil, nil)
-		}
-	case LogOrderCommitterTime:
-		commitIterFunc = func(c *object.Commit) object.CommitIter {
-			return object.NewCommitIterCTime(c, nil, nil)
-		}
-	default:
+	fn := commitIterFunc(o.Order)
+	if fn == nil {
 		return nil, fmt.Errorf("invalid Order=%v", o.Order)
 	}
 
+	var (
+		it  object.CommitIter
+		err error
+	)
 	if o.All {
-		commitIter, err = object.NewCommitAllIter(r.Storer, commitIterFunc)
-		if err != nil {
-			return nil, err
-		}
+		it, err = r.logAll(fn)
 	} else {
-		h := o.From
-		if o.From == plumbing.ZeroHash {
-			head, err := r.Head()
-			if err != nil {
-				return nil, err
-			}
+		it, err = r.log(o.From, fn)
+	}
 
-			h = head.Hash()
-		}
-
-		commit, err := r.CommitObject(h)
-		if err != nil {
-			return nil, err
-		}
-		commitIter = commitIterFunc(commit)
+	if err != nil {
+		return nil, err
 	}
 
 	if o.FileName != nil {
-		commitIter = object.NewCommitFileIterFromIter(*o.FileName, commitIter, o.All)
+		// for `git log --all` also check parent (if the next commit comes from the real parent)
+		it = r.logWithFile(*o.FileName, it, o.All)
 	}
 
-	return commitIter, nil
+	return it, nil
+}
+
+func (r *Repository) log(from plumbing.Hash, commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
+	h := from
+	if from == plumbing.ZeroHash {
+		head, err := r.Head()
+		if err != nil {
+			return nil, err
+		}
+
+		h = head.Hash()
+	}
+
+	commit, err := r.CommitObject(h)
+	if err != nil {
+		return nil, err
+	}
+	return commitIterFunc(commit), nil
+}
+
+func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
+	return object.NewCommitAllIter(r.Storer, commitIterFunc)
+}
+
+func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {
+	return object.NewCommitFileIterFromIter(fileName, commitIter, checkParent)
+}
+
+func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
+	switch order {
+	case LogOrderDefault:
+		return func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPreorderIter(c, nil, nil)
+		}
+	case LogOrderDFS:
+		return func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPreorderIter(c, nil, nil)
+		}
+	case LogOrderDFSPost:
+		return func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPostorderIter(c, nil)
+		}
+	case LogOrderBSF:
+		return func(c *object.Commit) object.CommitIter {
+			return object.NewCommitIterBSF(c, nil, nil)
+		}
+	case LogOrderCommitterTime:
+		return func(c *object.Commit) object.CommitIter {
+			return object.NewCommitIterCTime(c, nil, nil)
+		}
+	}
+	return nil
 }
 
 // Tags returns all the tag References in a repository.
