@@ -307,10 +307,6 @@ func (s *ObjectStorage) DeltaObject(t plumbing.ObjectType,
 }
 
 func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedObject, err error) {
-	if cacheObj, found := s.objectCache.Get(h); found {
-		return cacheObj, nil
-	}
-
 	f, err := s.dir.Object(h)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -319,8 +315,11 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 
 		return nil, err
 	}
-
 	defer ioutil.CheckClose(f, &err)
+
+	if cacheObj, found := s.objectCache.Get(h); found {
+		return cacheObj, nil
+	}
 
 	obj = s.NewEncodedObject()
 	r, err := objfile.NewReader(f)
