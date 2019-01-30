@@ -297,6 +297,23 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors(c *C) {
 	})
 }
 
+func (s *FsSuite) TestGetFromObjectFileSharedCache(c *C) {
+	f1 := fixtures.ByTag("worktree").One().DotGit()
+	f2 := fixtures.ByTag("worktree").ByTag("submodule").One().DotGit()
+
+	ch := cache.NewObjectLRUDefault()
+	o1 := NewObjectStorage(dotgit.New(f1), ch)
+	o2 := NewObjectStorage(dotgit.New(f2), ch)
+
+	expected := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+	obj, err := o1.EncodedObject(plumbing.CommitObject, expected)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, expected)
+
+	obj, err = o2.EncodedObject(plumbing.CommitObject, expected)
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+}
+
 func BenchmarkPackfileIter(b *testing.B) {
 	if err := fixtures.Init(); err != nil {
 		b.Fatal(err)
