@@ -6,6 +6,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage"
 )
 
+// ReferenceStorage implements the storer.ReferenceStorage for the transactional package.
 type ReferenceStorage struct {
 	storer.ReferenceStorer
 	temporal storer.ReferenceStorer
@@ -19,20 +20,24 @@ type ReferenceStorage struct {
 	packRefs bool
 }
 
-func NewReferenceStorage(s, temporal storer.ReferenceStorer) *ReferenceStorage {
+// NewReferenceStorage returns a new ReferenceStorer based on a base storer and
+// a temporal storer.
+func NewReferenceStorage(base, temporal storer.ReferenceStorer) *ReferenceStorage {
 	return &ReferenceStorage{
-		ReferenceStorer: s,
+		ReferenceStorer: base,
 		temporal:        temporal,
 
 		deleted: make(map[plumbing.ReferenceName]struct{}, 0),
 	}
 }
 
+// SetReference honors the storer.ReferenceStorer interface.
 func (r *ReferenceStorage) SetReference(ref *plumbing.Reference) error {
 	delete(r.deleted, ref.Name())
 	return r.temporal.SetReference(ref)
 }
 
+// SetReference honors the storer.ReferenceStorer interface.
 func (r *ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
 	if old == nil {
 		return r.SetReference(ref)
@@ -54,6 +59,7 @@ func (r *ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) er
 	return r.SetReference(ref)
 }
 
+// Reference honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Reference, error) {
 	if _, deleted := r.deleted[n]; deleted {
 		return nil, plumbing.ErrReferenceNotFound
@@ -67,6 +73,7 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 	return ref, err
 }
 
+// IterReferences honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	baseIter, err := r.ReferenceStorer.IterReferences()
 	if err != nil {
@@ -84,6 +91,7 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	}), nil
 }
 
+// CountLooseRefs honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) CountLooseRefs() (int, error) {
 	tc, err := r.temporal.CountLooseRefs()
 	if err != nil {
@@ -98,16 +106,20 @@ func (r ReferenceStorage) CountLooseRefs() (int, error) {
 	return tc + bc, nil
 }
 
+// PackRefs honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) PackRefs() error {
 	r.packRefs = true
 	return nil
 }
 
+// RemoveReference honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
 	r.deleted[n] = struct{}{}
 	return r.temporal.RemoveReference(n)
 }
 
+// Commit it copies the reference information of the temporal storage into the
+// base storage.
 func (r ReferenceStorage) Commit() error {
 	for name := range r.deleted {
 		if err := r.ReferenceStorer.RemoveReference(name); err != nil {

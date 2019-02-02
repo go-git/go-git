@@ -5,6 +5,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
+// IndexStorage implements the storer.IndexStorage for the transactional package.
 type IndexStorage struct {
 	storer.IndexStorer
 	temporal storer.IndexStorer
@@ -12,6 +13,8 @@ type IndexStorage struct {
 	set bool
 }
 
+// NewIndexStorage returns a new IndexStorer based on a base storer and a
+// temporal storer.
 func NewIndexStorage(s, temporal storer.IndexStorer) *IndexStorage {
 	return &IndexStorage{
 		IndexStorer: s,
@@ -19,6 +22,7 @@ func NewIndexStorage(s, temporal storer.IndexStorer) *IndexStorage {
 	}
 }
 
+// SetIndex honors the storer.IndexStorer interface.
 func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 	if err := s.temporal.SetIndex(idx); err != nil {
 		return err
@@ -28,6 +32,7 @@ func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 	return nil
 }
 
+// Index honors the storer.IndexStorer interface.
 func (s *IndexStorage) Index() (*index.Index, error) {
 	if !s.set {
 		return s.IndexStorer.Index()
@@ -36,15 +41,16 @@ func (s *IndexStorage) Index() (*index.Index, error) {
 	return s.temporal.Index()
 }
 
-func (c *IndexStorage) Commit() error {
-	if !c.set {
+// Commit it copies the index from the temporal storage into the base storage.
+func (s *IndexStorage) Commit() error {
+	if !s.set {
 		return nil
 	}
 
-	idx, err := c.temporal.Index()
+	idx, err := s.temporal.Index()
 	if err != nil {
 		return err
 	}
 
-	return c.IndexStorer.SetIndex(idx)
+	return s.IndexStorer.SetIndex(idx)
 }
