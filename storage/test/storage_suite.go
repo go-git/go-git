@@ -280,6 +280,57 @@ func (s *BaseStorageSuite) TestSetReferenceAndGetReference(c *C) {
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
+func (s *BaseStorageSuite) TestCheckAndSetReference(c *C) {
+	err := s.Storer.SetReference(
+		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+	)
+	c.Assert(err, IsNil)
+
+	err = s.Storer.CheckAndSetReference(
+		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+	)
+	c.Assert(err, IsNil)
+
+	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+}
+
+func (s *BaseStorageSuite) TestCheckAndSetReferenceNil(c *C) {
+	err := s.Storer.SetReference(
+		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+	)
+	c.Assert(err, IsNil)
+
+	err = s.Storer.CheckAndSetReference(
+		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		nil,
+	)
+	c.Assert(err, IsNil)
+
+	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+}
+
+func (s *BaseStorageSuite) TestCheckAndSetReferenceError(c *C) {
+	err := s.Storer.SetReference(
+		plumbing.NewReferenceFromStrings("foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
+	)
+	c.Assert(err, IsNil)
+
+	err = s.Storer.CheckAndSetReference(
+		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+	)
+	c.Assert(err, Equals, storage.ErrReferenceHasChanged)
+
+	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash().String(), Equals, "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
+}
+
 func (s *BaseStorageSuite) TestRemoveReference(c *C) {
 	err := s.Storer.SetReference(
 		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
