@@ -277,3 +277,29 @@ func getIndexFromIdxFile(r io.Reader) idxfile.Index {
 
 	return idxf
 }
+
+func (s *PackfileSuite) TestSize(c *C) {
+	f := fixtures.Basic().ByTag("ref-delta").One()
+
+	index := getIndexFromIdxFile(f.Idx())
+	fs := osfs.New("")
+	pf, err := fs.Open(f.Packfile().Name())
+	c.Assert(err, IsNil)
+
+	packfile := packfile.NewPackfile(index, fs, pf)
+	defer packfile.Close()
+
+	// Get the size of binary.jpg, which is not delta-encoded.
+	offset, err := packfile.FindOffset(plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d"))
+	c.Assert(err, IsNil)
+	size, err := packfile.GetSizeByOffset(offset)
+	c.Assert(err, IsNil)
+	c.Assert(size, Equals, int64(76110))
+
+	// Get the size of the root commit, which is delta-encoded.
+	offset, err = packfile.FindOffset(f.Head)
+	c.Assert(err, IsNil)
+	size, err = packfile.GetSizeByOffset(offset)
+	c.Assert(err, IsNil)
+	c.Assert(size, Equals, int64(245))
+}
