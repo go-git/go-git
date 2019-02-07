@@ -119,7 +119,7 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 	c.Assert(err, IsNil)
 
 	err = w.Pull(&PullOptions{})
-	c.Assert(err, ErrorMatches, "non-fast-forward update")
+	c.Assert(err, Equals, ErrNonFastForwardUpdate)
 }
 
 func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
