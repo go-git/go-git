@@ -129,6 +129,32 @@ func (s *RevListSuite) TestRevListObjectsTagObject(c *C) {
 	c.Assert(len(hist), Equals, len(expected))
 }
 
+func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores(c *C) {
+	sto := filesystem.NewStorage(
+		fixtures.ByTag("merge-conflict").One().DotGit(),
+		cache.NewObjectLRUDefault())
+
+	// The "merge-conflict" repo has one extra commit in it, with a
+	// two files modified in two different subdirs.
+	expected := map[string]bool{
+		"1980fcf55330d9d94c34abee5ab734afecf96aba": true, // commit
+		"73d9cf44e9045254346c73f6646b08f9302c8570": true, // root dir
+		"e8435d512a98586bd2e4fcfcdf04101b0bb1b500": true, // go/
+		"257cc5642cb1a054f08cc83f2d943e56fd3ebe99": true, // haskal.hs
+		"d499a1a0b79b7d87a35155afd0c1cce78b37a91c": true, // example.go
+		"d108adc364fb6f21395d011ae2c8a11d96905b0d": true, // haskal/
+	}
+
+	hist, err := ObjectsWithStorageForIgnores(sto, s.Storer, []plumbing.Hash{plumbing.NewHash("1980fcf55330d9d94c34abee5ab734afecf96aba")}, []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")})
+	c.Assert(err, IsNil)
+
+	for _, h := range hist {
+		c.Assert(expected[h.String()], Equals, true)
+	}
+
+	c.Assert(len(hist), Equals, len(expected))
+}
+
 // ---
 // | |\
 // | | * b8e471f Creating changelog
