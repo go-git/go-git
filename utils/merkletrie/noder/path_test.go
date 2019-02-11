@@ -156,6 +156,10 @@ func (s *PathSuite) TestCompareMixedDepths(c *C) {
 func (s *PathSuite) TestCompareNormalization(c *C) {
 	p1 := Path([]Noder{&noderMock{name: norm.Form(norm.NFKC).String("페")}})
 	p2 := Path([]Noder{&noderMock{name: norm.Form(norm.NFKD).String("페")}})
-	c.Assert(p1.Compare(p2), Equals, 0)
-	c.Assert(p2.Compare(p1), Equals, 0)
+	c.Assert(p1.Compare(p2), Equals, 1)
+	c.Assert(p2.Compare(p1), Equals, -1)
+	p1 = Path([]Noder{&noderMock{name: "TestAppWithUnicodéPath"}})
+	p2 = Path([]Noder{&noderMock{name: "TestAppWithUnicodéPath"}})
+	c.Assert(p1.Compare(p2), Equals, -1)
+	c.Assert(p2.Compare(p1), Equals, 1)
 }

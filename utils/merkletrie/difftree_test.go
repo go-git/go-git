@@ -475,8 +475,29 @@ func (s *DiffTreeSuite) TestIssue275(c *C) {
 	})
 }
 
+func (s *DiffTreeSuite) TestIssue1057(c *C) {
+	p1 := "TestAppWithUnicodéPath"
+	p2 := "TestAppWithUnicodéPath"
+	c.Assert(p1 == p2, Equals, false)
+	do(c, []diffTreeTest{
+		{
+			fmt.Sprintf("(%s(x.go<1>))", p1),
+			fmt.Sprintf("(%s(x.go<1>) %s(x.go<1>))", p1, p2),
+			fmt.Sprintf("+%s/x.go", p2),
+		},
+	})
+	// swap p1 with p2
+	do(c, []diffTreeTest{
+		{
+			fmt.Sprintf("(%s(x.go<1>))", p2),
+			fmt.Sprintf("(%s(x.go<1>) %s(x.go<1>))", p1, p2),
+			fmt.Sprintf("+%s/x.go", p1),
+		},
+	})
+}
+
 func (s *DiffTreeSuite) TestCancel(c *C) {
-	t :=  diffTreeTest{"()", "(a<> b<1> c() d<> e<2> f())", "+a +b +d +e"}
+	t := diffTreeTest{"()", "(a<> b<1> c() d<> e<2> f())", "+a +b +d +e"}
 	comment := Commentf("\n%s", "test cancel:")
 
 	a, err := fsnoder.New(t.from)
