@@ -197,12 +197,12 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 	commitsPath := list.New()
 	commitsLookup := make(map[plumbing.Hash]*list.Element)
 	head, err := storer.ResolveReference(repoStorer, plumbing.HEAD)
+	if err == nil {
+		err = addReference(repoStorer, commitIterFunc, head, commitsPath, commitsLookup)
+	}
+
 	if err != nil && err != plumbing.ErrReferenceNotFound {
 		return nil, err
-	} else if err != plumbing.ErrReferenceNotFound {
-		if err = addReference(repoStorer, commitIterFunc, head, commitsPath, commitsLookup); err != nil {
-			return nil, err
-		}
 	}
 
 	// add all references along with the HEAD
