@@ -197,26 +197,38 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 	commitsPath := list.New()
 	commitsLookup := make(map[plumbing.Hash]*list.Element)
 	head, err := storer.ResolveReference(repoStorer, plumbing.HEAD)
-	if err != nil {
+	if err == nil {
+		err = addReference(repoStorer, commitIterFunc, head, commitsPath, commitsLookup)
+	}
+
+	if err != nil && err != plumbing.ErrReferenceNotFound {
 		return nil, err
 	}
 
 	// add all references along with the HEAD
-	if err = addReference(repoStorer, commitIterFunc, head, commitsPath, commitsLookup); err != nil {
-		return nil, err
-	}
 	refIter, err := repoStorer.IterReferences()
 	if err != nil {
 		return nil, err
 	}
 	defer refIter.Close()
-	err = refIter.ForEach(
-		func(ref *plumbing.Reference) error {
-			return addReference(repoStorer, commitIterFunc, ref, commitsPath, commitsLookup)
-		},
-	)
-	if err != nil {
-		return nil, err
+
+	for {
+		ref, err := refIter.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err == plumbing.ErrReferenceNotFound {
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		if err = addReference(repoStorer, commitIterFunc, ref, commitsPath, commitsLookup); err != nil {
+			return nil, err
+		}
 	}
 
 	return &commitAllIterator{commitsPath.Front()}, nil

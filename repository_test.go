@@ -1256,8 +1256,18 @@ func (s *RepositorySuite) TestLogAll(c *C) {
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
-
 	c.Assert(err, IsNil)
+
+	rIter, err := r.Storer.IterReferences()
+	c.Assert(err, IsNil)
+
+	refCount := 0
+	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+		refCount++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(refCount, Equals, 5)
 
 	cIter, err := r.Log(&LogOptions{
 		All: true,
@@ -1281,6 +1291,58 @@ func (s *RepositorySuite) TestLogAll(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(commit.Hash, Equals, o)
 	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+	cIter.Close()
+}
+
+func (s *RepositorySuite) TestLogAllMissingReferences(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+	err = r.Storer.RemoveReference(plumbing.HEAD)
+	c.Assert(err, IsNil)
+
+	rIter, err := r.Storer.IterReferences()
+	c.Assert(err, IsNil)
+
+	refCount := 0
+	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+		refCount++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(refCount, Equals, 4)
+
+	err = r.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("DUMMY"), plumbing.NewHash("DUMMY")))
+	c.Assert(err, IsNil)
+
+	rIter, err = r.Storer.IterReferences()
+	c.Assert(err, IsNil)
+
+	refCount = 0
+	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+		refCount++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(refCount, Equals, 5)
+
+	cIter, err := r.Log(&LogOptions{
+		All: true,
+	})
+	c.Assert(cIter, NotNil)
+	c.Assert(err, IsNil)
+
+	cCount := 0
+	cIter.ForEach(func(c *object.Commit) error {
+		cCount++
+		return nil
+	})
+	c.Assert(cCount, Equals, 9)
+
 	_, err = cIter.Next()
 	c.Assert(err, Equals, io.EOF)
 	cIter.Close()
