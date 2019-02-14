@@ -365,8 +365,14 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	util.WriteFile(w.Filesystem, filename, []byte("foo"), 0755)
-	_, err = w.Add(filename)
+
+	writeFile := func(path string) {
+		err := util.WriteFile(w.Filesystem, path, []byte("foo"), 0755)
+		c.Assert(err, IsNil)
+	}
+
+	writeFile(filename)
+	origHash, err := w.Add(filename)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -387,11 +393,32 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 	c.Assert(err, IsNil)
 
 	modFilename := norm.Form(norm.NFKD).String(filename)
-	util.WriteFile(w.Filesystem, modFilename, []byte("foo"), 0755)
+	writeFile(modFilename)
 
 	_, err = w.Add(filename)
 	c.Assert(err, IsNil)
-	_, err = w.Add(modFilename)
+	modHash, err := w.Add(modFilename)
+	c.Assert(err, IsNil)
+	// At this point we've got two files with the same content.
+	// Hence their hashes must be the same.
+	c.Assert(origHash == modHash, Equals, true)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	// However, their names are different and the work tree is still dirty.
+	c.Assert(status.IsClean(), Equals, false)
+
+	// Revert back the deletion of the first file.
+	writeFile(filename)
+	_, err = w.Add(filename)
+	c.Assert(err, IsNil)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	// Still dirty - the second file is added.
+	c.Assert(status.IsClean(), Equals, false)
+
+	_, err = w.Remove(modFilename)
 	c.Assert(err, IsNil)
 
 	status, err = w.Status()
