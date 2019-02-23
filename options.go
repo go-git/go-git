@@ -229,7 +229,7 @@ var (
 	ErrCreateRequiresBranch = errors.New("Branch is mandatory when Create is used")
 )
 
-// CheckoutOptions describes how a checkout 31operation should be performed.
+// CheckoutOptions describes how a checkout operation should be performed.
 type CheckoutOptions struct {
 	// Hash is the hash of the commit to be checked out. If used, HEAD will be
 	// in detached mode. If Create is not used, Branch and Hash are mutually
