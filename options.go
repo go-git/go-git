@@ -288,7 +288,7 @@ const (
 
 // ResetOptions describes how a reset operation should be performed.
 type ResetOptions struct {
-	// Commit, if commit is pressent set the current branch head (HEAD) to it.
+	// Commit, if commit is present set the current branch head (HEAD) to it.
 	Commit plumbing.Hash
 	// Mode, form resets the current branch head to Commit and possibly updates
 	// the index (resetting it to the tree of Commit) and the working tree
