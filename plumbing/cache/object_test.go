@@ -153,6 +153,19 @@ func (s *ObjectSuite) TestDefaultLRU(c *C) {
 	c.Assert(defaultLRU.MaxSize, Equals, DefaultMaxSize)
 }
 
+func (s *ObjectSuite) TestObjectUpdateOverflow(c *C) {
+	o := NewObjectLRU(9 * Byte)
+
+	a1 := newObject(s.aObject.Hash().String(), 9*Byte)
+	a2 := newObject(s.aObject.Hash().String(), 1*Byte)
+	b := newObject(s.bObject.Hash().String(), 1*Byte)
+
+	o.Put(a1)
+	a1.SetSize(-5)
+	o.Put(a2)
+	o.Put(b)
+}
+
 type dummyObject struct {
 	hash plumbing.Hash
 	size FileSize
@@ -169,6 +182,6 @@ func (d *dummyObject) Hash() plumbing.Hash           { return d.hash }
 func (*dummyObject) Type() plumbing.ObjectType       { return plumbing.InvalidObject }
 func (*dummyObject) SetType(plumbing.ObjectType)     {}
 func (d *dummyObject) Size() int64                   { return int64(d.size) }
-func (*dummyObject) SetSize(s int64)                 {}
+func (d *dummyObject) SetSize(s int64)               { d.size = FileSize(s) }
 func (*dummyObject) Reader() (io.ReadCloser, error)  { return nil, nil }
 func (*dummyObject) Writer() (io.WriteCloser, error) { return nil, nil }
