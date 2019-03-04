@@ -6,6 +6,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"runtime"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -448,10 +450,17 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	numGoroutines := runtime.NumGoroutine()
+
 	err = r.PushContext(ctx, &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	c.Assert(err, NotNil)
+
+	// let the goroutine from pushHashes finish and check that the number of
+	// goroutines is the same as before
+	time.Sleep(100 * time.Millisecond)
+	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
