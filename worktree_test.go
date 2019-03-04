@@ -1129,6 +1129,34 @@ func (s *WorktreeSuite) TestIgnored(c *C) {
 	c.Assert(file.Worktree, Equals, Untracked)
 }
 
+func (s *WorktreeSuite) TestExcludedNoGitignore(c *C) {
+	f := fixtures.ByTag("empty").One()
+	r := s.NewRepository(f)
+
+	fs := memfs.New()
+	w := &Worktree{
+		r:          r,
+		Filesystem: fs,
+	}
+
+	_, err := fs.Open(".gitignore")
+	c.Assert(err, Equals, os.ErrNotExist)
+
+	w.Excludes = make([]gitignore.Pattern, 0)
+	w.Excludes = append(w.Excludes, gitignore.ParsePattern("foo", nil))
+
+	err = util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0755)
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 0)
+
+	file := status.File("foo")
+	c.Assert(file.Staging, Equals, Untracked)
+	c.Assert(file.Worktree, Equals, Untracked)
+}
+
 func (s *WorktreeSuite) TestAddModified(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
