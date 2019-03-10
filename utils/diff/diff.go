@@ -8,6 +8,7 @@ package diff
 
 import (
 	"bytes"
+	"time"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -16,6 +17,7 @@ import (
 // string into the dst string.
 func Do(src, dst string) (diffs []diffmatchpatch.Diff) {
 	dmp := diffmatchpatch.New()
+	dmp.DiffTimeout = time.Hour  // the default is time.Second which may be too little under heavy load
 	wSrc, wDst, warray := dmp.DiffLinesToRunes(src, dst)
 	diffs = dmp.DiffMainRunes(wSrc, wDst, false)
 	diffs = dmp.DiffCharsToLines(diffs, warray)
