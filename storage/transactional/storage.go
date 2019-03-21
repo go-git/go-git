@@ -1,6 +1,9 @@
 package transactional
 
 import (
+	"io"
+
+	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 	"gopkg.in/src-d/go-git.v4/storage"
 )
 
@@ -10,7 +13,13 @@ import (
 //
 // The API and functionality of this package are considered EXPERIMENTAL and is
 // not considered stable nor production ready.
-type Storage struct {
+type Storage interface {
+	storage.Storer
+	Commit() error
+}
+
+// basic implements the Storage interface.
+type basic struct {
 	s, temporal storage.Storer
 
 	*ObjectStorage
@@ -20,11 +29,18 @@ type Storage struct {
 	*ConfigStorage
 }
 
+// packageWriter implements storer.PackfileWriter interface over
+// a Storage with a temporal storer that supports it.
+type packageWriter struct {
+	*basic
+	pw storer.PackfileWriter
+}
+
 // NewStorage returns a new Storage based on two repositories, base is the base
-// repository where the read operations are read and temportal is were all
+// repository where the read operations are read and temporal is were all
 // the write operations are stored.
-func NewStorage(base, temporal storage.Storer) *Storage {
-	return &Storage{
+func NewStorage(base, temporal storage.Storer) Storage {
+	st := &basic{
 		s:        base,
 		temporal: temporal,
 
@@ -34,10 +50,20 @@ func NewStorage(base, temporal storage.Storer) *Storage {
 		ShallowStorage:   NewShallowStorage(base, temporal),
 		ConfigStorage:    NewConfigStorage(base, temporal),
 	}
+
+	pw, ok := temporal.(storer.PackfileWriter)
+	if ok {
+		return &packageWriter{
+			basic: st,
+			pw:    pw,
+		}
+	}
+
+	return st
 }
 
 // Module it honors the storage.ModuleStorer interface.
-func (s *Storage) Module(name string) (storage.Storer, error) {
+func (s *basic) Module(name string) (storage.Storer, error) {
 	base, err := s.s.Module(name)
 	if err != nil {
 		return nil, err
@@ -52,7 +78,7 @@ func (s *Storage) Module(name string) (storage.Storer, error) {
 }
 
 // Commit it copies the content of the temporal storage into the base storage.
-func (s *Storage) Commit() error {
+func (s *basic) Commit() error {
 	for _, c := range []interface{ Commit() error }{
 		s.ObjectStorage,
 		s.ReferenceStorage,
@@ -66,4 +92,9 @@ func (s *Storage) Commit() error {
 	}
 
 	return nil
+}
+
+// PackfileWriter honors storage.PackfileWriter.
+func (s *packageWriter) PackfileWriter() (io.WriteCloser, error) {
+	return s.pw.PackfileWriter()
 }
