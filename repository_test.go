@@ -231,6 +231,36 @@ func (s *RepositorySuite) TestCreateRemoteInvalid(c *C) {
 	c.Assert(remote, IsNil)
 }
 
+func (s *RepositorySuite) TestCreateRemoteAnonymous(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
+		Name: "anonymous",
+		URLs: []string{"http://foo/foo.git"},
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(remote.Config().Name, Equals, "anonymous")
+}
+
+func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
+		Name: "not_anonymous",
+		URLs: []string{"http://foo/foo.git"},
+	})
+
+	c.Assert(err, Equals, ErrAnonymousRemoteName)
+	c.Assert(remote, IsNil)
+}
+
+func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{})
+
+	c.Assert(err, Equals, config.ErrRemoteConfigEmptyName)
+	c.Assert(remote, IsNil)
+}
+
 func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
