@@ -125,6 +125,9 @@ func (s *TreeSuite) TestFindEntryNotFound(c *C) {
 	e, err := s.Tree.FindEntry("not-found")
 	c.Assert(e, IsNil)
 	c.Assert(err, Equals, ErrEntryNotFound)
+	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
+	c.Assert(e, IsNil)
+	c.Assert(err, Equals, ErrDirectoryNotFound)
 }
 
 // Overrides returned plumbing.EncodedObject for given hash.
