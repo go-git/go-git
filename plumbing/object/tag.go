@@ -141,7 +141,7 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 			if pgpsig {
 				if bytes.Contains(l, []byte(endpgp)) {
 					t.PGPSignature += endpgp + "\n"
-					pgpsig = false
+					break
 				} else {
 					t.PGPSignature += string(l) + "\n"
 				}
