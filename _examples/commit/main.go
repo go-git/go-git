@@ -27,7 +27,7 @@ func main() {
 
 	// ... we need a file to commit so let's create a new file inside of the
 	// worktree of the project using the go standard library.
-	Info("echo \"hellow world!\" > example-git-file")
+	Info("echo \"hello world!\" > example-git-file")
 	filename := filepath.Join(directory, "example-git-file")
 	err = ioutil.WriteFile(filename, []byte("hello world!"), 0644)
 	CheckIfError(err)
