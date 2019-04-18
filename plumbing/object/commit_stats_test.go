@@ -1,6 +1,7 @@
 package object_test
 
 import (
+	"context"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4"
@@ -26,9 +27,25 @@ func (s *CommitStatsSuite) TestStats(c *C) {
 	aCommit, err := r.CommitObject(hash)
 	c.Assert(err, IsNil)
 
+	fileStats, err := aCommit.StatsContext(context.Background())
+	c.Assert(err, IsNil)
+
+	c.Assert(fileStats[0].Name, Equals, "foo")
+	c.Assert(fileStats[0].Addition, Equals, 1)
+	c.Assert(fileStats[0].Deletion, Equals, 0)
+	c.Assert(fileStats[0].String(), Equals, " foo | 1 +\n")
+}
+
+func (s *CommitStatsSuite) TestStats_RootCommit(c *C) {
+	r, hash := s.writeHisotry(c, []byte("foo\n"))
+
+	aCommit, err := r.CommitObject(hash)
+	c.Assert(err, IsNil)
+
 	fileStats, err := aCommit.Stats()
 	c.Assert(err, IsNil)
 
+	c.Assert(fileStats, HasLen, 1)
 	c.Assert(fileStats[0].Name, Equals, "foo")
 	c.Assert(fileStats[0].Addition, Equals, 1)
 	c.Assert(fileStats[0].Deletion, Equals, 0)
