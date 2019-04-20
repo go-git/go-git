@@ -375,3 +375,75 @@ sYyf9RfOnw/KUFAQbdtvLx3ikODQC+D3KBtuKI9ISHQfgw==
 	_, ok := e.Identities["Sunny <me@darkowlzz.space>"]
 	c.Assert(ok, Equals, true)
 }
+
+func (s *TagSuite) TestDecodeAndVerify(c *C) {
+	objectText := `object 7dba2f128d1298e385b28b56a7e1c579779eac82
+type commit
+tag v1.6
+tagger Filip Navara <filip.navara@gmail.com> 1555269936 +0200
+
+Hello
+
+world
+
+boo
+-----BEGIN PGP SIGNATURE-----
+
+iQEzBAABCAAdFiEEdRIEYXeoLk1t7PBDqeqoMkraaZ4FAlyziT4ACgkQqeqoMkra
+aZ502wgAxG4+69l8PYfq45u1R3CCf4x0m5WwcYwvaa4ang0S9mExh/C32NHnpM/V
+DbqMpAlFvBlixOsZ8FNWaM8VXnvRWyx64E6WnInxjx9+Wgv2fy5P1N5rtpvi+S2V
+iGc0RQJlIloqXr7qPYDrwcbgg6AFg9EPhgJxLyizglu9nYvNsH1InaPXMjzgGX8+
+3irnIYEMIrLcKPrCyHo4Q6gdBjEEBF8hFclPJ8OwXBPc6uNYjnDYx0me9TTQYqoG
+oGgO/rADU9fy4c/Q1ZQpocba/ca6abRJ9LAx9VXFOSlQrMKLgHCYfqU/MAZXKcZM
+6XXOL4+8Z3FJN6CapZKX7cdYB8LJnw==
+=t5Px
+-----END PGP SIGNATURE-----
+
+`
+
+	armoredKeyRing := `
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQENBFyzedYBCADN3lVNUNkrjn0kfwKAxGQOI8a1977UaIq9ktFg+Uv4Jyq2Y59L
+ZVx2WYk1iDaRhxhv203HV//CA/Hr4IoPjK53qAkg2bPyi8UuDbL+gU+4Z+IiSeXd
+18ZcAbcYt188PWoUq9/82ofO8EiaBbUEEZJjEegLDtX8gxBDG0aI3Yj4Txj73mno
+w6+E5HDkgPElmH3oNQcr8iK9U2Kuj+ZAHkzbWL++gDCPiLl2eWf0Cr1nlVsv6YLa
+Fsn5vjMGT3dMJFc78ZqCHOeyYK7KHjW1EjzgqeG2eJVay+ZQ5zEx4Fp/dL0RdUSV
+U7zslRiraaPxshdhYOjQ0o72RpSkP1G6+8OhABEBAAG0JUZpbGlwIE5hdmFyYSA8
+ZmlsaXAubmF2YXJhQGdtYWlsLmNvbT6JAVQEEwEIAD4WIQR1EgRhd6guTW3s8EOp
+6qgyStppngUCXLN51gIbAwUJA8JnAAULCQgHAgYVCgkICwIEFgIDAQIeAQIXgAAK
+CRCp6qgyStppnlzjB/sFu7HqJrTRsnHsoWo2+nDeicXnR0VAhiLvv7uRRw4i90FJ
+0zDwjAmIH+po6vPffWRMcWOFVvAwZCX7/XcvDNF9OupFj/aold334+VVN0ha47IQ
+g44bJZie9mvLagEsqUXggpKQjd414Tk08aUucfaN9RFJIOGCwF05j2eXOBGR2HTe
+FLq3obeObryEPf0c8N/nw4RQ8OOcq98gxiHx5Gk+nLCcJCTvOlc9ULqpJ2a6cZry
+kxgSOI9dd74ilRQdpfPvoEeEGSqkY+daf+dhgSMT2mII0UJ6qQeY0DpCZZNsL8dr
+PxR4SPRlzLBuJIpnHY21ebOqwOPOLjzR+J2RBufkuQENBFyzedYBCADTCglXrST6
+DRz7Uq3zrrrzdCchHH0/+LgYOEoGs82UvdFfigQYGTydmXz27bHKfWNfGIa9IlLF
+MhasFueCnKnmfVxnlINRdyAXv7Tmx4mSjuCEmGkvM1nPpdhxWXptnVMqhQMddiMO
+N55bElDK2ftPc2s4dBmTItXXbet2kFZiv7MZBZpA4eRAHj5DDSwl8pnQArU50RDZ
+q3qYKvAP/z2SLjekcOFtMhZ9BXMvwAW4FWV0ztpfP3LvUUb0T7fSo5cXlm/0eqwa
+MUrUlbbwJMDg1/wJ3pbKhZlP+xXNLj5UE86TtfqNqaohOcIBdCsdTUQgbkLVlibP
+JmZH7lGDhvi3ABEBAAGJATwEGAEIACYWIQR1EgRhd6guTW3s8EOp6qgyStppngUC
+XLN51gIbDAUJA8JnAAAKCRCp6qgyStppntq1B/9bmw4XjEm5KyXwWnlAVGr8skXY
+KIJr6drUOOwQzl7rxsJRjUsFdX0IjaZwx303G/23eQMIvVkoaWpHrT0Y7EsTQ55x
++GSuANhEzobks4spzQ66VW9FHRlRr5wg5PTwWnGtV/5QVSTY/zeC9R/AFUJFsDWe
+tgHlNrb6MWx5EtypZDpAkubAMvD/QoZHX0oPXYAA2CugD4uSdzjf6Ys3xUuwjKKG
+5hvimAg1/Hympq71Znb6Ec1m4ZM22Br7dcWHIX2GWfDPyRG+rYPu4Fk9KKAD4FRz
+HdzbB2ak/HxIeCqmHVlmUqa+WfTMUJcsgOm3/ZFPCSoL6l0bz9Z1XVbiyD03
+=+gC9
+-----END PGP PUBLIC KEY BLOCK-----
+`
+
+	tagEncodedObject := &plumbing.MemoryObject{}
+
+	_, err := tagEncodedObject.Write([]byte(objectText))
+	tagEncodedObject.SetType(plumbing.TagObject)
+	c.Assert(err, IsNil)
+
+	tag := &Tag{}
+	err = tag.Decode(tagEncodedObject)
+	c.Assert(err, IsNil)
+
+	_, err = tag.Verify(armoredKeyRing)
+	c.Assert(err, IsNil)
+}
