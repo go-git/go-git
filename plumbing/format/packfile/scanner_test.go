@@ -135,6 +135,55 @@ func (s *ScannerSuite) TestSeekObjectHeaderNonSeekable(c *C) {
 	c.Assert(err, Equals, ErrSeekNotSupported)
 }
 
+func (s *ScannerSuite) TestReaderReset(c *C) {
+	r := fixtures.Basic().One().Packfile()
+	p := NewScanner(r)
+
+	version, objects, err := p.Header()
+	c.Assert(version, Equals, VersionSupported)
+	c.Assert(objects, Equals, uint32(31))
+
+	h, err := p.SeekObjectHeader(expectedHeadersOFS[0].Offset)
+	c.Assert(err, IsNil)
+	c.Assert(h, DeepEquals, &expectedHeadersOFS[0])
+
+	p.Reset(r)
+	c.Assert(p.pendingObject, IsNil)
+	c.Assert(p.version, Equals, uint32(0))
+	c.Assert(p.objects, Equals, uint32(0))
+	c.Assert(p.r.reader, Equals, r)
+	c.Assert(p.r.offset > expectedHeadersOFS[0].Offset, Equals, true)
+
+	p.Reset(bytes.NewReader(nil))
+	c.Assert(p.r.offset, Equals, int64(0))
+}
+
+func (s *ScannerSuite) TestReaderResetSeeks(c *C) {
+	r := fixtures.Basic().One().Packfile()
+
+	// seekable
+	p := NewScanner(r)
+	c.Assert(p.IsSeekable, Equals, true)
+	h, err := p.SeekObjectHeader(expectedHeadersOFS[0].Offset)
+	c.Assert(err, IsNil)
+	c.Assert(h, DeepEquals, &expectedHeadersOFS[0])
+
+	// reset with seekable
+	p.Reset(r)
+	c.Assert(p.IsSeekable, Equals, true)
+	h, err = p.SeekObjectHeader(expectedHeadersOFS[1].Offset)
+	c.Assert(err, IsNil)
+	c.Assert(h, DeepEquals, &expectedHeadersOFS[1])
+
+	// reset with non-seekable
+	f := fixtures.Basic().ByTag("ref-delta").One()
+	p.Reset(io.MultiReader(f.Packfile()))
+	c.Assert(p.IsSeekable, Equals, false)
+
+	_, err = p.SeekObjectHeader(expectedHeadersOFS[4].Offset)
+	c.Assert(err, Equals, ErrSeekNotSupported)
+}
+
 var expectedHeadersOFS = []ObjectHeader{
 	{Type: plumbing.CommitObject, Offset: 12, Length: 254},
 	{Type: plumbing.OFSDeltaObject, Offset: 186, Length: 93, OffsetReference: 12},
