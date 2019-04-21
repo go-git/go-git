@@ -208,9 +208,9 @@ func (p *Packfile) objectAtOffset(offset int64, hash plumbing.Hash) (plumbing.En
 			return p.getNextObject(h)
 		}
 
-		// For delta objects we read the delta data and create a special object
-		// that will hold them in memory and resolve them lazily to the referenced
-		// object.
+		// For delta objects we read the delta data and apply the small object
+		// optimization only if the expanded version of the object still meets
+		// the small object threshold condition.
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 		if _, _, err := p.s.NextObject(buf); err != nil {
