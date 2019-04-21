@@ -25,6 +25,15 @@ func Read(r io.Reader, data ...interface{}) error {
 
 // ReadUntil reads from r untin delim is found
 func ReadUntil(r io.Reader, delim byte) ([]byte, error) {
+	if bufr, ok := r.(*bufio.Reader); ok {
+		value, err := bufr.ReadBytes(delim)
+		if err != nil || len(value) == 0 {
+			return nil, err
+		}
+
+		return value[:len(value)-1], nil
+	}
+
 	var buf [1]byte
 	value := make([]byte, 0, 16)
 	for {
