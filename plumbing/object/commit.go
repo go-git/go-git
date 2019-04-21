@@ -171,7 +171,9 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	r := bufio.NewReader(reader)
+	r := bufPool.Get().(*bufio.Reader)
+	defer bufPool.Put(r)
+	r.Reset(reader)
 
 	var message bool
 	var pgpsig bool

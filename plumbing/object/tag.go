@@ -93,7 +93,9 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	r := bufio.NewReader(reader)
+	r := bufPool.Get().(*bufio.Reader)
+	defer bufPool.Put(r)
+	r.Reset(reader)
 	for {
 		var line []byte
 		line, err = r.ReadBytes('\n')
