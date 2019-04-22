@@ -414,6 +414,11 @@ func (p *Packfile) ID() (plumbing.Hash, error) {
 	return hash, nil
 }
 
+// Scanner returns the packfile's Scanner
+func (p *Packfile) Scanner() *Scanner {
+	return p.s
+}
+
 // Close the packfile and its resources.
 func (p *Packfile) Close() error {
 	closer, ok := p.file.(io.Closer)
