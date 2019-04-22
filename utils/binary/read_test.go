@@ -1,6 +1,7 @@
 package binary
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"testing"
@@ -34,6 +35,15 @@ func (s *BinarySuite) TestReadUntil(c *C) {
 	buf := bytes.NewBuffer([]byte("foo bar"))
 
 	b, err := ReadUntil(buf, ' ')
+	c.Assert(err, IsNil)
+	c.Assert(b, HasLen, 3)
+	c.Assert(string(b), Equals, "foo")
+}
+
+func (s *BinarySuite) TestReadUntilFromBufioReader(c *C) {
+	buf := bufio.NewReader(bytes.NewBuffer([]byte("foo bar")))
+
+	b, err := ReadUntilFromBufioReader(buf, ' ')
 	c.Assert(err, IsNil)
 	c.Assert(b, HasLen, 3)
 	c.Assert(string(b), Equals, "foo")
