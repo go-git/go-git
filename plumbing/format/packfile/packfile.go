@@ -349,7 +349,7 @@ func (p *Packfile) fillREFDeltaObjectContentWithBuffer(obj plumbing.EncodedObjec
 }
 
 func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset int64) error {
-	buf := bytes.NewBuffer(nil)
+	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	_, _, err := p.s.NextObject(buf)
 	if err != nil {
