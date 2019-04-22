@@ -55,7 +55,8 @@ type MemoryIndex struct {
 	PackfileChecksum [20]byte
 	IdxChecksum      [20]byte
 
-	offsetHash map[int64]plumbing.Hash
+	offsetHash       map[int64]plumbing.Hash
+	offsetHashIsFull bool
 }
 
 var _ Index = (*MemoryIndex)(nil)
@@ -121,7 +122,17 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	return idx.getOffset(k, i)
+	offset, err := idx.getOffset(k, i)
+
+	if !idx.offsetHashIsFull {
+		// Save the offset for reverse lookup
+		if idx.offsetHash == nil {
+			idx.offsetHash = make(map[int64]plumbing.Hash)
+		}
+		idx.offsetHash[offset] = h
+	}
+
+	return offset, err
 }
 
 const isO64Mask = uint64(1) << 31
@@ -167,14 +178,24 @@ func (idx *MemoryIndex) getCRC32(firstLevel, secondLevel int) (uint32, error) {
 
 // FindHash implements the Index interface.
 func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
-	// Lazily generate the reverse offset/hash map if required.
-	if idx.offsetHash == nil {
-		if err := idx.genOffsetHash(); err != nil {
-			return plumbing.ZeroHash, err
+	var hash plumbing.Hash
+	var ok bool
+
+	if idx.offsetHash != nil {
+		if hash, ok = idx.offsetHash[o]; ok {
+			return hash, nil
 		}
 	}
 
-	hash, ok := idx.offsetHash[o]
+	// Lazily generate the reverse offset/hash map if required.
+	if !idx.offsetHashIsFull || idx.offsetHash == nil {
+		if err := idx.genOffsetHash(); err != nil {
+			return plumbing.ZeroHash, err
+		}
+
+		hash, ok = idx.offsetHash[o]
+	}
+
 	if !ok {
 		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 	}
@@ -190,6 +211,7 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	}
 
 	idx.offsetHash = make(map[int64]plumbing.Hash, count)
+	idx.offsetHashIsFull = true
 
 	iter, err := idx.Entries()
 	if err != nil {
