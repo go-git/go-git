@@ -75,14 +75,14 @@ func testDecodeHelper(c *C, path string) {
 }
 
 func (s *CommitgraphSuite) TestDecode(c *C) {
-	fixtures.ByTag("commitgraph").Test(c, func(f *fixtures.Fixture) {
+	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()		
 		testDecodeHelper(c, path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
 	})
 }
 
 func (s *CommitgraphSuite) TestReencode(c *C) {
-	fixtures.ByTag("commitgraph").Test(c, func(f *fixtures.Fixture) {
+	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()		
 
 		reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
@@ -105,7 +105,7 @@ func (s *CommitgraphSuite) TestReencode(c *C) {
 }
 
 func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
-	fixtures.ByTag("commitgraph").Test(c, func(f *fixtures.Fixture) {
+	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()		
 
 		reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
