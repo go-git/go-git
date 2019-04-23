@@ -107,7 +107,7 @@ func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint
 		}
 		offset += chunkSizes[i]
 	}
-	if _, err = e.Write([]byte{0, 0, 0, 0}); err == nil {
+	if _, err = e.Write(lastSignature); err == nil {
 		err = binary.WriteUint64(e, offset)
 	}
 	return

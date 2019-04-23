@@ -28,6 +28,7 @@ var (
 	oidLookupSignature     = []byte{'O', 'I', 'D', 'L'}
 	commitDataSignature    = []byte{'C', 'D', 'A', 'T'}
 	largeEdgeListSignature = []byte{'E', 'D', 'G', 'E'}
+	lastSignature          = []byte{0, 0, 0, 0}
 
 	parentNone        = uint32(0x70000000)
 	parentOctopusUsed = uint32(0x80000000)
@@ -38,6 +39,7 @@ var (
 type fileIndex struct {
 	reader              io.ReaderAt
 	fanout              [256]int
+	oidFanoutOffset     int64
 	oidLookupOffset     int64
 	commitDataOffset    int64
 	largeEdgeListOffset int64
@@ -46,74 +48,91 @@ type fileIndex struct {
 // OpenFileIndex opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.txt
 func OpenFileIndex(reader io.ReaderAt) (Index, error) {
-	// Verify file signature
-	var signature = make([]byte, 4)
-	if _, err := reader.ReadAt(signature, 0); err != nil {
+	fi := &fileIndex{reader: reader}
+
+	if err := fi.verifyFileHeader(); err != nil {
 		return nil, err
 	}
+	if err := fi.readChunkHeaders(); err != nil {
+		return nil, err
+	}
+	if err := fi.readFanout(); err != nil {
+		return nil, err
+	}
+
+	return fi, nil
+}
+
+func (fi *fileIndex) verifyFileHeader() error {
+	// Verify file signature
+	var signature = make([]byte, 4)
+	if _, err := fi.reader.ReadAt(signature, 0); err != nil {
+		return err
+	}
 	if !bytes.Equal(signature, commitFileSignature) {
-		return nil, ErrMalformedCommitGraphFile
+		return ErrMalformedCommitGraphFile
 	}
 
 	// Read and verify the file header
 	var header = make([]byte, 4)
-	if _, err := reader.ReadAt(header, 4); err != nil {
-		return nil, err
+	if _, err := fi.reader.ReadAt(header, 4); err != nil {
+		return err
 	}
 	if header[0] != 1 {
-		return nil, ErrUnsupportedVersion
+		return ErrUnsupportedVersion
 	}
 	if header[1] != 1 {
-		return nil, ErrUnsupportedHash
+		return ErrUnsupportedHash
 	}
 
-	// Read chunk headers
+	return nil
+}
+
+func (fi *fileIndex) readChunkHeaders() error {
 	var chunkID = make([]byte, 4)
-	var oidFanoutOffset int64
-	var oidLookupOffset int64
-	var commitDataOffset int64
-	var largeEdgeListOffset int64
-	chunkCount := int(header[2])
-	for i := 0; i < chunkCount; i++ {
-		chunkHeader := io.NewSectionReader(reader, 8+(int64(i)*12), 12)
+	for i := 0; ; i++ {
+		chunkHeader := io.NewSectionReader(fi.reader, 8+(int64(i)*12), 12)
 		if _, err := io.ReadAtLeast(chunkHeader, chunkID, 4); err != nil {
-			return nil, err
+			return err
 		}
 		chunkOffset, err := binary.ReadUint64(chunkHeader)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if bytes.Equal(chunkID, oidFanoutSignature) {
-			oidFanoutOffset = int64(chunkOffset)
+			fi.oidFanoutOffset = int64(chunkOffset)
 		} else if bytes.Equal(chunkID, oidLookupSignature) {
-			oidLookupOffset = int64(chunkOffset)
+			fi.oidLookupOffset = int64(chunkOffset)
 		} else if bytes.Equal(chunkID, commitDataSignature) {
-			commitDataOffset = int64(chunkOffset)
+			fi.commitDataOffset = int64(chunkOffset)
 		} else if bytes.Equal(chunkID, largeEdgeListSignature) {
-			largeEdgeListOffset = int64(chunkOffset)
+			fi.largeEdgeListOffset = int64(chunkOffset)
+		} else if bytes.Equal(chunkID, lastSignature) {
+			break
 		}
 	}
 
-	if oidFanoutOffset <= 0 || oidLookupOffset <= 0 || commitDataOffset <= 0 {
-		return nil, ErrMalformedCommitGraphFile
+	if fi.oidFanoutOffset <= 0 || fi.oidLookupOffset <= 0 || fi.commitDataOffset <= 0 {
+		return ErrMalformedCommitGraphFile
 	}
 
-	// Read fanout table and calculate the file offsets into the lookup table
-	fanoutReader := io.NewSectionReader(reader, oidFanoutOffset, 256*4)
-	var fanout [256]int
+	return nil
+}
+
+func (fi *fileIndex) readFanout() error {
+	fanoutReader := io.NewSectionReader(fi.reader, fi.oidFanoutOffset, 256*4)
 	for i := 0; i < 256; i++ {
 		fanoutValue, err := binary.ReadUint32(fanoutReader)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if fanoutValue > 0x7fffffff {
-			return nil, ErrMalformedCommitGraphFile
+			return ErrMalformedCommitGraphFile
 		}
-		fanout[i] = int(fanoutValue)
+		fi.fanout[i] = int(fanoutValue)
 	}
-
-	return &fileIndex{reader, fanout, oidLookupOffset, commitDataOffset, largeEdgeListOffset}, nil
+	return nil
 }
 
 func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (int, error) {
