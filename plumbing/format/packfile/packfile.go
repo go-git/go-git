@@ -196,16 +196,16 @@ func (p *Packfile) objectAtOffset(offset int64, hash plumbing.Hash) (plumbing.En
 		return nil, err
 	}
 
-	return p.getNextObjectLazy(h, hash)
+	return p.getNextObject(h, hash)
 }
 
-func (p *Packfile) getNextObjectLazy(h *ObjectHeader, hash plumbing.Hash) (plumbing.EncodedObject, error) {
+func (p *Packfile) getNextObject(h *ObjectHeader, hash plumbing.Hash) (plumbing.EncodedObject, error) {
 	var err error
 
 	// If we have no filesystem, we will return a MemoryObject instead
 	// of an FSObject.
 	if p.fs == nil {
-		return p.getNextObject(h)
+		return p.getNextMemoryObject(h)
 	}
 
 	// If the object is small enough then read it completely into memory now since
@@ -215,7 +215,7 @@ func (p *Packfile) getNextObjectLazy(h *ObjectHeader, hash plumbing.Hash) (plumb
 	var size int64
 	if h.Length <= smallObjectThreshold {
 		if h.Type != plumbing.OFSDeltaObject && h.Type != plumbing.REFDeltaObject {
-			return p.getNextObject(h)
+			return p.getNextMemoryObject(h)
 		}
 
 		// For delta objects we read the delta data and apply the small object
@@ -284,7 +284,9 @@ func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	obj, err := p.getNextObject(h)
+	// getObjectContent is called from FSObject, so we have to explicitly
+	// get memory object here to avoid recursive cycle
+	obj, err := p.getNextMemoryObject(h)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +294,7 @@ func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
 	return obj.Reader()
 }
 
-func (p *Packfile) getNextObject(h *ObjectHeader) (plumbing.EncodedObject, error) {
+func (p *Packfile) getNextMemoryObject(h *ObjectHeader) (plumbing.EncodedObject, error) {
 	var obj = new(plumbing.MemoryObject)
 	obj.SetSize(h.Length)
 	obj.SetType(h.Type)
@@ -498,7 +500,7 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 					continue
 				}
 
-				return i.p.getNextObjectLazy(h, e.Hash)
+				return i.p.getNextObject(h, e.Hash)
 			}
 		}
 
