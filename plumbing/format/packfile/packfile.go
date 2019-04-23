@@ -83,10 +83,8 @@ func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 // offset.
 func (p *Packfile) GetByOffset(o int64) (plumbing.EncodedObject, error) {
 	hash, err := p.FindHash(o)
-	if err == nil {
-		if obj, ok := p.deltaBaseCache.Get(hash); ok {
-			return obj, nil
-		}
+	if err != nil {
+		return nil, err
 	}
 
 	return p.objectAtOffset(o, hash)
@@ -180,10 +178,16 @@ func (p *Packfile) getObjectType(h *ObjectHeader) (typ plumbing.ObjectType, err 
 		err = ErrInvalidObject.AddDetails("type %q", h.Type)
 	}
 
+	p.offsetToType[h.Offset] = typ
+
 	return
 }
 
 func (p *Packfile) objectAtOffset(offset int64, hash plumbing.Hash) (plumbing.EncodedObject, error) {
+	if obj, ok := p.deltaBaseCache.Get(hash); ok {
+		return obj, nil
+	}
+
 	h, err := p.objectHeaderAtOffset(offset)
 	if err != nil {
 		if err == io.EOF || isInvalid(err) {
@@ -191,6 +195,12 @@ func (p *Packfile) objectAtOffset(offset int64, hash plumbing.Hash) (plumbing.En
 		}
 		return nil, err
 	}
+
+	return p.getNextObjectLazy(h, hash)
+}
+
+func (p *Packfile) getNextObjectLazy(h *ObjectHeader, hash plumbing.Hash) (plumbing.EncodedObject, error) {
+	var err error
 
 	// If we have no filesystem, we will return a MemoryObject instead
 	// of an FSObject.
@@ -303,6 +313,8 @@ func (p *Packfile) getNextObject(h *ObjectHeader) (plumbing.EncodedObject, error
 		return nil, err
 	}
 
+	p.offsetToType[h.Offset] = obj.Type()
+
 	return obj, nil
 }
 
@@ -361,19 +373,14 @@ func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset 
 }
 
 func (p *Packfile) fillOFSDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, offset int64, buf *bytes.Buffer) error {
-	var err error
-	var base plumbing.EncodedObject
-	var ok bool
 	hash, err := p.FindHash(offset)
-	if err == nil {
-		base, ok = p.cacheGet(hash)
+	if err != nil {
+		return err
 	}
 
-	if !ok {
-		base, err = p.objectAtOffset(offset, hash)
-		if err != nil {
-			return err
-		}
+	base, err := p.objectAtOffset(offset, hash)
+	if err != nil {
+		return err
 	}
 
 	obj.SetType(base.Type())
@@ -475,14 +482,32 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 			return nil, err
 		}
 
+		if i.typ != plumbing.AnyObject {
+			if typ, ok := i.p.offsetToType[int64(e.Offset)]; ok {
+				if typ != i.typ {
+					continue
+				}
+			} else {
+				h, err := i.p.objectHeaderAtOffset(int64(e.Offset))
+				if err != nil {
+					return nil, err
+				}
+
+				typ, err := i.p.getObjectType(h)
+				if err == nil && typ != i.typ {
+					continue
+				}
+
+				return i.p.getNextObjectLazy(h, e.Hash)
+			}
+		}
+
 		obj, err := i.p.GetByOffset(int64(e.Offset))
 		if err != nil {
 			return nil, err
 		}
 
-		if i.typ == plumbing.AnyObject || obj.Type() == i.typ {
-			return obj, nil
-		}
+		return obj, nil
 	}
 }
 
