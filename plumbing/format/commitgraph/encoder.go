@@ -80,7 +80,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	for i := 0; i < len(hashes); i++ {
 		v, _ := idx.GetNodeByIndex(i)
 		if len(v.ParentHashes) > 2 {
-			largeEdgesCount += uint32(len(v.ParentHashes) - 2)
+			largeEdgesCount += uint32(len(v.ParentHashes) - 1)
 			break
 		}
 	}

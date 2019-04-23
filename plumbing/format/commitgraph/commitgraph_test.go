@@ -1,7 +1,6 @@
 package commitgraph_test
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -95,7 +94,6 @@ func (s *CommitgraphSuite) TestReencode(c *C) {
 		writer, err := ioutil.TempFile(dotgit.Root(), "commit-graph")
 		c.Assert(err, IsNil)
 		tmpName := writer.Name()
-		fmt.Printf(tmpName)
 		defer os.Remove(tmpName)
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(index)
