@@ -489,14 +489,12 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 				if typ != i.typ {
 					continue
 				}
-			} else {
-				if obj, ok := i.p.cacheGet(e.Hash); ok {
-					if obj.Type() != i.typ {
-						continue
-					}
-					return obj, nil
+			} else if obj, ok := i.p.cacheGet(e.Hash); ok {
+				if obj.Type() != i.typ {
+					continue
 				}
-
+				return obj, nil
+			} else {
 				h, err := i.p.objectHeaderAtOffset(int64(e.Offset))
 				if err != nil {
 					return nil, err
