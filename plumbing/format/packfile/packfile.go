@@ -490,13 +490,23 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 					continue
 				}
 			} else {
+				if obj, ok := i.p.cacheGet(e.Hash); ok {
+					if obj.Type() != i.typ {
+						continue
+					}
+					return obj, nil
+				}
+
 				h, err := i.p.objectHeaderAtOffset(int64(e.Offset))
 				if err != nil {
 					return nil, err
 				}
 
 				typ, err := i.p.getObjectType(h)
-				if err == nil && typ != i.typ {
+				if err != nil {
+					return nil, err
+				}
+				if typ != i.typ {
 					continue
 				}
 
@@ -504,7 +514,7 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 			}
 		}
 
-		obj, err := i.p.GetByOffset(int64(e.Offset))
+		obj, err := i.p.objectAtOffset(int64(e.Offset), e.Hash)
 		if err != nil {
 			return nil, err
 		}
