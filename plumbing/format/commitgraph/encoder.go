@@ -25,81 +25,118 @@ func NewEncoder(w io.Writer) *Encoder {
 func (e *Encoder) Encode(idx Index) error {
 	var err error
 
-	// Get all the hashes in the memory index
+	// Get all the hashes in the input index
 	hashes := idx.Hashes()
 
-	// Sort the hashes and build our index
-	plumbing.HashesSort(hashes)
-	hashToIndex := make(map[plumbing.Hash]uint32)
-	hashFirstToCount := make(map[byte]uint32)
-	for i, hash := range hashes {
-		hashToIndex[hash] = uint32(i)
-		hashFirstToCount[hash[0]]++
-	}
+	// Sort the inout and prepare helper structures we'll need for encoding
+	hashToIndex, fanout, largeEdgesCount := e.prepare(idx, hashes)
 
-	// Find out if we will need large edge table
-	largeEdgesCount := 0
-	for i := 0; i < len(hashes); i++ {
-		v, _ := idx.GetNodeByIndex(i)
-		if len(v.ParentHashes) > 2 {
-			largeEdgesCount += len(v.ParentHashes) - 2
-			break
-		}
-	}
-
-	chunks := [][]byte{oidFanoutSignature, oidLookupSignature, commitDataSignature}
+	chunkSignatures := [][]byte{oidFanoutSignature, oidLookupSignature, commitDataSignature}
 	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * 20, uint64(len(hashes)) * 36}
 	if largeEdgesCount > 0 {
-		chunks = append(chunks, largeEdgeListSignature)
+		chunkSignatures = append(chunkSignatures, largeEdgeListSignature)
 		chunkSizes = append(chunkSizes, uint64(largeEdgesCount)*4)
 	}
 
-	// Write header
-	if _, err = e.Write(commitFileSignature); err == nil {
-		_, err = e.Write([]byte{1, 1, byte(len(chunks)), 0})
+	if err = e.encodeFileHeader(len(chunkSignatures)); err != nil {
+		return err
+	}
+	if err = e.encodeChunkHeaders(chunkSignatures, chunkSizes); err != nil {
+		return err
+	}
+	if err = e.encodeFanout(fanout); err != nil {
+		return err
+	}
+	if err = e.encodeOidLookup(hashes); err != nil {
+		return err
+	}
+	if largeEdges, err := e.encodeCommitData(hashes, hashToIndex, idx); err == nil {
+		if err = e.encodeLargeEdges(largeEdges); err != nil {
+			return err
+		}
 	}
 	if err != nil {
 		return err
 	}
+	return e.encodeChecksum()
+}
 
-	// Write chunk headers
-	offset := uint64(8 + len(chunks)*12 + 12)
-	for i, signature := range chunks {
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, largeEdgesCount uint32) {
+	// Sort the hashes and build our index
+	plumbing.HashesSort(hashes)
+	hashToIndex = make(map[plumbing.Hash]uint32)
+	fanout = make([]uint32, 256)
+	for i, hash := range hashes {
+		hashToIndex[hash] = uint32(i)
+		fanout[hash[0]]++
+	}
+
+	// Convert the fanout to cumulative values
+	for i := 1; i <= 0xff; i++ {
+		fanout[i] += fanout[i-1]
+	}
+
+	// Find out if we will need large edge table
+	for i := 0; i < len(hashes); i++ {
+		v, _ := idx.GetNodeByIndex(i)
+		if len(v.ParentHashes) > 2 {
+			largeEdgesCount += uint32(len(v.ParentHashes) - 2)
+			break
+		}
+	}
+
+	return
+}
+
+func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
+	if _, err = e.Write(commitFileSignature); err == nil {
+		_, err = e.Write([]byte{1, 1, byte(chunkCount), 0})
+	}
+	return
+}
+
+func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint64) (err error) {
+	// 8 bytes of file header, 12 bytes for each chunk header and 12 byte for terminator
+	offset := uint64(8 + len(chunkSignatures)*12 + 12)
+	for i, signature := range chunkSignatures {
 		if _, err = e.Write(signature); err == nil {
 			err = binary.WriteUint64(e, offset)
 		}
 		if err != nil {
-			return err
+			return
 		}
 		offset += chunkSizes[i]
 	}
-	if _, err = e.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}); err != nil {
-		return err
+	if _, err = e.Write([]byte{0, 0, 0, 0}); err == nil {
+		err = binary.WriteUint64(e, offset)
 	}
+	return
+}
 
-	// Write fanout
-	var cumulative uint32
+func (e *Encoder) encodeFanout(fanout []uint32) (err error) {
 	for i := 0; i <= 0xff; i++ {
-		if err = binary.WriteUint32(e, hashFirstToCount[byte(i)]+cumulative); err != nil {
-			return err
+		if err = binary.WriteUint32(e, fanout[i]); err != nil {
+			return
 		}
-		cumulative += hashFirstToCount[byte(i)]
 	}
+	return
+}
 
-	// Write OID lookup
+func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 	for _, hash := range hashes {
 		if _, err = e.Write(hash[:]); err != nil {
 			return err
 		}
 	}
+	return
+}
 
-	// Write commit data
-	var largeEdges []uint32
+func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (largeEdges []uint32, err error) {
 	for _, hash := range hashes {
 		origIndex, _ := idx.GetIndexByHash(hash)
 		commitData, _ := idx.GetNodeByIndex(origIndex)
-		if _, err := e.Write(commitData.TreeHash[:]); err != nil {
-			return err
+		if _, err = e.Write(commitData.TreeHash[:]); err != nil {
+			return
 		}
 
 		var parent1, parent2 uint32
@@ -125,27 +162,28 @@ func (e *Encoder) Encode(idx Index) error {
 			err = binary.WriteUint32(e, parent2)
 		}
 		if err != nil {
-			return err
+			return
 		}
 
 		unixTime := uint64(commitData.When.Unix())
 		unixTime |= uint64(commitData.Generation) << 34
 		if err = binary.WriteUint64(e, unixTime); err != nil {
-			return err
+			return
 		}
 	}
+	return
+}
 
-	// Write large edges if necessary
+func (e *Encoder) encodeLargeEdges(largeEdges []uint32) (err error) {
 	for _, parent := range largeEdges {
 		if err = binary.WriteUint32(e, parent); err != nil {
-			return err
+			return
 		}
 	}
+	return
+}
 
-	// Write checksum
-	if _, err := e.Write(e.hash.Sum(nil)[:20]); err != nil {
-		return err
-	}
-
-	return nil
+func (e *Encoder) encodeChecksum() error {
+	_, err := e.Write(e.hash.Sum(nil)[:20])
+	return err
 }

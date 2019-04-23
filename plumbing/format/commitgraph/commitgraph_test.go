@@ -1,10 +1,11 @@
 package commitgraph_test
 
 import (
-	"testing"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"testing"
 
 	"golang.org/x/exp/mmap"
 
@@ -64,36 +65,37 @@ func testDecodeHelper(c *C, path string) {
 	c.Assert(len(node.ParentIndexes), Equals, 3)
 	c.Assert(len(node.ParentHashes), Equals, 3)
 	c.Assert(node.ParentHashes[0].String(), Equals, "ce275064ad67d51e99f026084e20827901a8361c")
-	c.Assert(node.ParentHashes[1].String(), Equals, "bb13916df33ed23004c3ce9ed3b8487528e655c1")	
-	c.Assert(node.ParentHashes[2].String(), Equals, "a45273fe2d63300e1962a9e26a6b15c276cd7082")	
+	c.Assert(node.ParentHashes[1].String(), Equals, "bb13916df33ed23004c3ce9ed3b8487528e655c1")
+	c.Assert(node.ParentHashes[2].String(), Equals, "a45273fe2d63300e1962a9e26a6b15c276cd7082")
 
 	// Check all hashes
 	hashes := index.Hashes()
 	c.Assert(len(hashes), Equals, 11)
-	c.Assert(hashes[0].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")	
-	c.Assert(hashes[10].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")	
+	c.Assert(hashes[0].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")
+	c.Assert(hashes[10].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")
 }
 
 func (s *CommitgraphSuite) TestDecode(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
-		dotgit := f.DotGit()		
+		dotgit := f.DotGit()
 		testDecodeHelper(c, path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
 	})
 }
 
 func (s *CommitgraphSuite) TestReencode(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
-		dotgit := f.DotGit()		
+		dotgit := f.DotGit()
 
 		reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
 		c.Assert(err, IsNil)
 		defer reader.Close()
 		index, err := commitgraph.OpenFileIndex(reader)
-		c.Assert(err, IsNil)	
+		c.Assert(err, IsNil)
 
 		writer, err := ioutil.TempFile(dotgit.Root(), "commit-graph")
 		c.Assert(err, IsNil)
-		tmpName := writer.Name()	
+		tmpName := writer.Name()
+		fmt.Printf(tmpName)
 		defer os.Remove(tmpName)
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(index)
@@ -106,12 +108,12 @@ func (s *CommitgraphSuite) TestReencode(c *C) {
 
 func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
-		dotgit := f.DotGit()		
+		dotgit := f.DotGit()
 
 		reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
 		c.Assert(err, IsNil)
 		index, err := commitgraph.OpenFileIndex(reader)
-		c.Assert(err, IsNil)	
+		c.Assert(err, IsNil)
 		memoryIndex := commitgraph.NewMemoryIndex()
 		for i, hash := range index.Hashes() {
 			node, err := index.GetNodeByIndex(i)
@@ -123,7 +125,7 @@ func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 
 		writer, err := ioutil.TempFile(dotgit.Root(), "commit-graph")
 		c.Assert(err, IsNil)
-		tmpName := writer.Name()	
+		tmpName := writer.Name()
 		defer os.Remove(tmpName)
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(memoryIndex)
