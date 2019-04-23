@@ -184,7 +184,7 @@ func (p *Packfile) getObjectType(h *ObjectHeader) (typ plumbing.ObjectType, err 
 }
 
 func (p *Packfile) objectAtOffset(offset int64, hash plumbing.Hash) (plumbing.EncodedObject, error) {
-	if obj, ok := p.deltaBaseCache.Get(hash); ok {
+	if obj, ok := p.cacheGet(hash); ok {
 		return obj, nil
 	}
 
@@ -237,7 +237,7 @@ func (p *Packfile) getNextObject(h *ObjectHeader, hash plumbing.Hash) (plumbing.
 			} else {
 				err = p.fillOFSDeltaObjectContentWithBuffer(obj, h.OffsetReference, buf)
 			}
-			return obj, nil
+			return obj, err
 		}
 	} else {
 		size, err = p.getObjectSize(h)
