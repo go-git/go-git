@@ -3,7 +3,6 @@ package object
 import (
 	"path"
 
-	"golang.org/x/exp/mmap"
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -18,6 +17,14 @@ type CommitNodeSuite struct {
 }
 
 var _ = Suite(&CommitNodeSuite{})
+
+func unpackRepositry(f *fixtures.Fixture) *filesystem.Storage {
+	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	p := f.Packfile()
+	defer p.Close()
+	packfile.UpdateObjectStorage(storer, p)
+	return storer
+}
 
 func testWalker(c *C, nodeIndex CommitNodeIndex) {
 	head, err := nodeIndex.Get(plumbing.NewHash("b9d69064b190e7aedccf84731ca1d917871f8a1c"))
@@ -75,24 +82,31 @@ func testParents(c *C, nodeIndex CommitNodeIndex) {
 	}
 }
 
+func testCommitAndTree(c *C, nodeIndex CommitNodeIndex) {
+	merge3node, err := nodeIndex.Get(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
+	c.Assert(err, IsNil)
+	merge3commit, err := merge3node.Commit()
+	c.Assert(err, IsNil)
+	c.Assert(merge3node.ID().String(), Equals, merge3commit.ID().String())
+	tree, err := merge3node.Tree()
+	c.Assert(err, IsNil)
+	c.Assert(tree.ID().String(), Equals, merge3commit.TreeHash.String())
+}
+
 func (s *CommitNodeSuite) TestObjectGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	p := f.Packfile()
-	defer p.Close()
-	err := packfile.UpdateObjectStorage(storer, p)
-	c.Assert(err, IsNil)
+	storer := unpackRepositry(f)
 
 	nodeIndex := NewObjectCommitNodeIndex(storer)
 	testWalker(c, nodeIndex)
 	testParents(c, nodeIndex)
+	testCommitAndTree(c, nodeIndex)
 }
 
 func (s *CommitNodeSuite) TestCommitGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
-	dotgit := f.DotGit()
-	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
-	reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+	storer := unpackRepositry(f)
+	reader, err := storer.Filesystem().Open(path.Join("objects", "info", "commit-graph"))
 	c.Assert(err, IsNil)
 	defer reader.Close()
 	index, err := commitgraph.OpenFileIndex(reader)
@@ -101,20 +115,15 @@ func (s *CommitNodeSuite) TestCommitGraph(c *C) {
 	nodeIndex := NewGraphCommitNodeIndex(index, storer)
 	testWalker(c, nodeIndex)
 	testParents(c, nodeIndex)
+	testCommitAndTree(c, nodeIndex)
 }
 
 func (s *CommitNodeSuite) TestMixedGraph(c *C) {
-	// Unpack the original repository with pack file
 	f := fixtures.ByTag("commit-graph").One()
-	dotgit := f.DotGit()
-	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
-	p := f.Packfile()
-	defer p.Close()
-	err := packfile.UpdateObjectStorage(storer, p)
-	c.Assert(err, IsNil)
+	storer := unpackRepositry(f)
 
 	// Take the commit-graph file and copy it to memory index without the last commit
-	reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+	reader, err := storer.Filesystem().Open(path.Join("objects", "info", "commit-graph"))
 	c.Assert(err, IsNil)
 	defer reader.Close()
 	fileIndex, err := commitgraph.OpenFileIndex(reader)
@@ -131,4 +140,5 @@ func (s *CommitNodeSuite) TestMixedGraph(c *C) {
 	nodeIndex := NewGraphCommitNodeIndex(memoryIndex, storer)
 	testWalker(c, nodeIndex)
 	testParents(c, nodeIndex)
+	testCommitAndTree(c, nodeIndex)
 }
