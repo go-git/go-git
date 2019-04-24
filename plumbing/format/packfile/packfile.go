@@ -478,6 +478,7 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 				}
 			} else if obj, ok := i.p.cacheGet(e.Hash); ok {
 				if obj.Type() != i.typ {
+					i.p.offsetToType[int64(e.Offset)] = obj.Type()
 					continue
 				}
 				return obj, nil
@@ -493,12 +494,14 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 						return nil, err
 					}
 					if typ != i.typ {
+						i.p.offsetToType[int64(e.Offset)] = typ
 						continue
 					}
 					// getObjectType will seek in the file so we cannot use getNextObject safely
 					return i.p.objectAtOffset(int64(e.Offset), e.Hash)
 				} else {
 					if h.Type != i.typ {
+						i.p.offsetToType[int64(e.Offset)] = h.Type
 						continue
 					}
 					return i.p.getNextObject(h, e.Hash)
