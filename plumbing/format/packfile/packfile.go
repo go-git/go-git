@@ -488,18 +488,21 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 				}
 
 				if h.Type == plumbing.REFDeltaObject || h.Type == plumbing.OFSDeltaObject {
-					obj, err := i.p.getNextObject(h, e.Hash)
+					typ, err := i.p.getObjectType(h)
 					if err != nil {
 						return nil, err
 					}
-					if obj.Type() == i.typ {
-						return obj, nil
+					if typ != i.typ {
+						continue
 					}
-				} else if h.Type == i.typ {
+					// getObjectType will seek in the file so we cannot use getNextObject safely
+					return i.p.objectAtOffset(int64(e.Offset), e.Hash)
+				} else {
+					if h.Type != i.typ {
+						continue
+					}
 					return i.p.getNextObject(h, e.Hash)
 				}
-
-				continue
 			}
 		}
 
