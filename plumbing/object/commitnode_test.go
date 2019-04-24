@@ -102,3 +102,33 @@ func (s *CommitNodeSuite) TestCommitGraph(c *C) {
 	testWalker(c, nodeIndex)
 	testParents(c, nodeIndex)
 }
+
+func (s *CommitNodeSuite) TestMixedGraph(c *C) {
+	// Unpack the original repository with pack file
+	f := fixtures.ByTag("commit-graph").One()
+	dotgit := f.DotGit()
+	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	p := f.Packfile()
+	defer p.Close()
+	err := packfile.UpdateObjectStorage(storer, p)
+	c.Assert(err, IsNil)
+
+	// Take the commit-graph file and copy it to memory index without the last commit
+	reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+	c.Assert(err, IsNil)
+	defer reader.Close()
+	fileIndex, err := commitgraph.OpenFileIndex(reader)
+	c.Assert(err, IsNil)
+	memoryIndex := commitgraph.NewMemoryIndex()
+	for i, hash := range fileIndex.Hashes() {
+		if hash.String() != "b9d69064b190e7aedccf84731ca1d917871f8a1c" {
+			node, err := fileIndex.GetNodeByIndex(i)
+			c.Assert(err, IsNil)
+			memoryIndex.Add(hash, node)
+		}
+	}
+
+	nodeIndex := NewGraphCommitNodeIndex(memoryIndex, storer)
+	testWalker(c, nodeIndex)
+	testParents(c, nodeIndex)
+}
