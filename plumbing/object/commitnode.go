@@ -16,18 +16,17 @@ type CommitNode interface {
 	ID() plumbing.Hash
 	Tree() (*Tree, error)
 	CommitTime() time.Time
+	NumParents() int
+	ParentNodes() CommitNodeIter
+	ParentNode(i int) (CommitNode, error)
+	ParentHashes() []plumbing.Hash
 }
 
 // CommitNodeIndex is generic interface encapsulating an index of CommitNode objects
 // and accessor methods for walking it as a directed graph
 type CommitNodeIndex interface {
-	NumParents(node CommitNode) int
-	ParentNodes(node CommitNode) CommitNodeIter
-	ParentNode(node CommitNode, i int) (CommitNode, error)
-	ParentHashes(node CommitNode) []plumbing.Hash
-
+	// Get returns a commit node from a commit hash
 	Get(hash plumbing.Hash) (CommitNode, error)
-
 	// Commit returns the full commit object from the node
 	Commit(node CommitNode) (*Commit, error)
 }
@@ -67,7 +66,8 @@ type graphCommitNodeIndex struct {
 //
 // objectCommitNode implements the CommitNode interface.
 type objectCommitNode struct {
-	commit *Commit
+	nodeIndex CommitNodeIndex
+	commit    *Commit
 }
 
 // objectCommitNodeIndex is an index that can load CommitNode objects only from the
@@ -93,6 +93,40 @@ func (c *graphCommitNode) CommitTime() time.Time {
 	return c.node.When
 }
 
+// NumParents returns the number of parents in a commit.
+func (c *graphCommitNode) NumParents() int {
+	return len(c.node.ParentIndexes)
+}
+
+// ParentNodes return a CommitNodeIter for parents of specified node.
+func (c *graphCommitNode) ParentNodes() CommitNodeIter {
+	return newParentgraphCommitNodeIter(c)
+}
+
+// ParentNode returns the ith parent of a commit.
+func (c *graphCommitNode) ParentNode(i int) (CommitNode, error) {
+	if i < 0 || i >= len(c.node.ParentIndexes) {
+		return nil, ErrParentNotFound
+	}
+
+	parent, err := c.gci.commitGraph.GetNodeByIndex(c.node.ParentIndexes[i])
+	if err != nil {
+		return nil, err
+	}
+
+	return &graphCommitNode{
+		hash:  c.node.ParentHashes[i],
+		index: c.node.ParentIndexes[i],
+		node:  parent,
+		gci:   c.gci,
+	}, nil
+}
+
+// ParentHashes returns hashes of the parent commits for a specified node
+func (c *graphCommitNode) ParentHashes() []plumbing.Hash {
+	return c.node.ParentHashes
+}
+
 func (c *graphCommitNode) String() string {
 	return fmt.Sprintf(
 		"%s %s\nDate:   %s",
@@ -103,58 +137,6 @@ func (c *graphCommitNode) String() string {
 
 func NewGraphCommitNodeIndex(commitGraph commitgraph.Index, s storer.EncodedObjectStorer) CommitNodeIndex {
 	return &graphCommitNodeIndex{commitGraph, s}
-}
-
-// NumParents returns the number of parents in a commit.
-func (gci *graphCommitNodeIndex) NumParents(node CommitNode) int {
-	if cgn, ok := node.(*graphCommitNode); ok {
-		return len(cgn.node.ParentIndexes)
-	}
-	co := node.(*objectCommitNode)
-	return co.commit.NumParents()
-}
-
-// ParentNodes return a CommitNodeIter for parents of specified node.
-func (gci *graphCommitNodeIndex) ParentNodes(node CommitNode) CommitNodeIter {
-	return newParentgraphCommitNodeIter(gci, node)
-}
-
-// ParentNode returns the ith parent of a commit.
-func (gci *graphCommitNodeIndex) ParentNode(node CommitNode, i int) (CommitNode, error) {
-	if cgn, ok := node.(*graphCommitNode); ok {
-		if len(cgn.node.ParentIndexes) == 0 || i >= len(cgn.node.ParentIndexes) {
-			return nil, ErrParentNotFound
-		}
-
-		parent, err := gci.commitGraph.GetNodeByIndex(cgn.node.ParentIndexes[i])
-		if err != nil {
-			return nil, err
-		}
-
-		return &graphCommitNode{
-			hash:  cgn.node.ParentHashes[i],
-			index: cgn.node.ParentIndexes[i],
-			node:  parent,
-			gci:   gci,
-		}, nil
-	}
-
-	co := node.(*objectCommitNode)
-	if len(co.commit.ParentHashes) == 0 || i >= len(co.commit.ParentHashes) {
-		return nil, ErrParentNotFound
-	}
-
-	parentHash := co.commit.ParentHashes[i]
-	return gci.Get(parentHash)
-}
-
-// ParentHashes returns hashes of the parent commits for a specified node
-func (gci *graphCommitNodeIndex) ParentHashes(node CommitNode) []plumbing.Hash {
-	if cgn, ok := node.(*graphCommitNode); ok {
-		return cgn.node.ParentHashes
-	}
-	co := node.(*objectCommitNode)
-	return co.commit.ParentHashes
 }
 
 // NodeFromHash looks up a commit node by it's object hash
@@ -181,7 +163,10 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 		return nil, err
 	}
 
-	return &objectCommitNode{commit: commit}, nil
+	return &objectCommitNode{
+		nodeIndex: gci,
+		commit:    commit,
+	}, nil
 }
 
 // Commit returns the full Commit object representing the commit graph node.
@@ -194,8 +179,6 @@ func (gci *graphCommitNodeIndex) Commit(node CommitNode) (*Commit, error) {
 }
 
 // CommitTime returns the time when the commit was performed.
-//
-// CommitTime is present to fulfill the CommitNode interface.
 func (c *objectCommitNode) CommitTime() time.Time {
 	return c.commit.Committer.When
 }
@@ -210,35 +193,32 @@ func (c *objectCommitNode) Tree() (*Tree, error) {
 	return c.commit.Tree()
 }
 
-func NewObjectCommitNodeIndex(s storer.EncodedObjectStorer) CommitNodeIndex {
-	return &objectCommitNodeIndex{s}
-}
-
 // NumParents returns the number of parents in a commit.
-func (oci *objectCommitNodeIndex) NumParents(node CommitNode) int {
-	co := node.(*objectCommitNode)
-	return co.commit.NumParents()
+func (c *objectCommitNode) NumParents() int {
+	return c.commit.NumParents()
 }
 
 // ParentNodes return a CommitNodeIter for parents of specified node.
-func (oci *objectCommitNodeIndex) ParentNodes(node CommitNode) CommitNodeIter {
-	return newParentgraphCommitNodeIter(oci, node)
+func (c *objectCommitNode) ParentNodes() CommitNodeIter {
+	return newParentgraphCommitNodeIter(c)
 }
 
 // ParentNode returns the ith parent of a commit.
-func (oci *objectCommitNodeIndex) ParentNode(node CommitNode, i int) (CommitNode, error) {
-	co := node.(*objectCommitNode)
-	parent, err := co.commit.Parent(i)
-	if err != nil {
-		return nil, err
+func (c *objectCommitNode) ParentNode(i int) (CommitNode, error) {
+	if i < 0 || i >= len(c.commit.ParentHashes) {
+		return nil, ErrParentNotFound
 	}
-	return &objectCommitNode{commit: parent}, nil
+
+	return c.nodeIndex.Get(c.commit.ParentHashes[i])
 }
 
 // ParentHashes returns hashes of the parent commits for a specified node
-func (oci *objectCommitNodeIndex) ParentHashes(node CommitNode) []plumbing.Hash {
-	co := node.(*objectCommitNode)
-	return co.commit.ParentHashes
+func (c *objectCommitNode) ParentHashes() []plumbing.Hash {
+	return c.commit.ParentHashes
+}
+
+func NewObjectCommitNodeIndex(s storer.EncodedObjectStorer) CommitNodeIndex {
+	return &objectCommitNodeIndex{s}
 }
 
 // NodeFromHash looks up a commit node by it's object hash
@@ -248,7 +228,10 @@ func (oci *objectCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 		return nil, err
 	}
 
-	return &objectCommitNode{commit: commit}, nil
+	return &objectCommitNode{
+		nodeIndex: oci,
+		commit:    commit,
+	}, nil
 }
 
 // Commit returns the full Commit object representing the commit graph node.
@@ -259,19 +242,18 @@ func (oci *objectCommitNodeIndex) Commit(node CommitNode) (*Commit, error) {
 
 // parentCommitNodeIter provides an iterator for parent commits from associated CommitNodeIndex.
 type parentCommitNodeIter struct {
-	gci  CommitNodeIndex
 	node CommitNode
 	i    int
 }
 
-func newParentgraphCommitNodeIter(gci CommitNodeIndex, node CommitNode) CommitNodeIter {
-	return &parentCommitNodeIter{gci, node, 0}
+func newParentgraphCommitNodeIter(node CommitNode) CommitNodeIter {
+	return &parentCommitNodeIter{node, 0}
 }
 
 // Next moves the iterator to the next commit and returns a pointer to it. If
 // there are no more commits, it returns io.EOF.
 func (iter *parentCommitNodeIter) Next() (CommitNode, error) {
-	obj, err := iter.gci.ParentNode(iter.node, iter.i)
+	obj, err := iter.node.ParentNode(iter.i)
 	if err == ErrParentNotFound {
 		return nil, io.EOF
 	}

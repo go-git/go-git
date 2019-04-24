@@ -13,7 +13,6 @@ type commitNodeIteratorByCTime struct {
 	heap         *binaryheap.Heap
 	seenExternal map[plumbing.Hash]bool
 	seen         map[plumbing.Hash]bool
-	nodeIndex    CommitNodeIndex
 }
 
 // NewCommitNodeIterCTime returns a CommitNodeIter that walks the commit history,
@@ -26,7 +25,6 @@ type commitNodeIteratorByCTime struct {
 // commits from being iterated.
 func NewCommitNodeIterCTime(
 	c CommitNode,
-	nodeIndex CommitNodeIndex,
 	seenExternal map[plumbing.Hash]bool,
 	ignore []plumbing.Hash,
 ) CommitNodeIter {
@@ -48,7 +46,6 @@ func NewCommitNodeIterCTime(
 		heap:         heap,
 		seenExternal: seenExternal,
 		seen:         seen,
-		nodeIndex:    nodeIndex,
 	}
 }
 
@@ -68,11 +65,11 @@ func (w *commitNodeIteratorByCTime) Next() (CommitNode, error) {
 
 		w.seen[cID] = true
 
-		for i, h := range w.nodeIndex.ParentHashes(c) {
+		for i, h := range c.ParentHashes() {
 			if w.seen[h] || w.seenExternal[h] {
 				continue
 			}
-			pc, err := w.nodeIndex.ParentNode(c, i)
+			pc, err := c.ParentNode(i)
 			if err != nil {
 				return nil, err
 			}

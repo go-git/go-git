@@ -25,7 +25,6 @@ func testWalker(c *C, nodeIndex CommitNodeIndex) {
 
 	iter := NewCommitNodeIterCTime(
 		head,
-		nodeIndex,
 		nil,
 		nil,
 	)
