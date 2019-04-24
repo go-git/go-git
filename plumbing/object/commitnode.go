@@ -13,13 +13,22 @@ import (
 // CommitNode is generic interface encapsulating either Commit object or
 // graphCommitNode object
 type CommitNode interface {
+	// ID returns the Commit object id referenced by the commit graph node.
 	ID() plumbing.Hash
+	// Tree returns the Tree referenced by the commit graph node.
 	Tree() (*Tree, error)
+	// CommitTime returns the Commiter.When time of the Commit referenced by the commit graph node.
 	CommitTime() time.Time
+	// NumParents returns the number of parents in a commit.
 	NumParents() int
+	// ParentNodes return a CommitNodeIter for parents of specified node.
 	ParentNodes() CommitNodeIter
+	// ParentNode returns the ith parent of a commit.
 	ParentNode(i int) (CommitNode, error)
+	// ParentHashes returns hashes of the parent commits for a specified node
 	ParentHashes() []plumbing.Hash
+	// Commit returns the full commit object from the node
+	Commit() (*Commit, error)
 }
 
 // CommitNodeIndex is generic interface encapsulating an index of CommitNode objects
@@ -27,8 +36,6 @@ type CommitNode interface {
 type CommitNodeIndex interface {
 	// Get returns a commit node from a commit hash
 	Get(hash plumbing.Hash) (CommitNode, error)
-	// Commit returns the full commit object from the node
-	Commit(node CommitNode) (*Commit, error)
 }
 
 // CommitNodeIter is a generic closable interface for iterating over commit nodes.
@@ -127,6 +134,11 @@ func (c *graphCommitNode) ParentHashes() []plumbing.Hash {
 	return c.node.ParentHashes
 }
 
+// Commit returns the full Commit object representing the commit graph node.
+func (c *graphCommitNode) Commit() (*Commit, error) {
+	return GetCommit(c.gci.s, c.hash)
+}
+
 func (c *graphCommitNode) String() string {
 	return fmt.Sprintf(
 		"%s %s\nDate:   %s",
@@ -169,15 +181,6 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 	}, nil
 }
 
-// Commit returns the full Commit object representing the commit graph node.
-func (gci *graphCommitNodeIndex) Commit(node CommitNode) (*Commit, error) {
-	if cgn, ok := node.(*graphCommitNode); ok {
-		return GetCommit(gci.s, cgn.ID())
-	}
-	co := node.(*objectCommitNode)
-	return co.commit, nil
-}
-
 // CommitTime returns the time when the commit was performed.
 func (c *objectCommitNode) CommitTime() time.Time {
 	return c.commit.Committer.When
@@ -215,6 +218,11 @@ func (c *objectCommitNode) ParentNode(i int) (CommitNode, error) {
 // ParentHashes returns hashes of the parent commits for a specified node
 func (c *objectCommitNode) ParentHashes() []plumbing.Hash {
 	return c.commit.ParentHashes
+}
+
+// Commit returns the full Commit object representing the commit graph node.
+func (c *objectCommitNode) Commit() (*Commit, error) {
+	return c.commit, nil
 }
 
 func NewObjectCommitNodeIndex(s storer.EncodedObjectStorer) CommitNodeIndex {
