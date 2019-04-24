@@ -53,7 +53,29 @@ func testWalker(c *C, nodeIndex CommitNodeIndex) {
 	}
 }
 
-func (s *CommitNodeSuite) TestWalkObject(c *C) {
+func testParents(c *C, nodeIndex CommitNodeIndex) {
+	merge3, err := nodeIndex.Get(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
+	c.Assert(err, IsNil)
+
+	var parents []CommitNode
+	merge3.ParentNodes().ForEach(func(c CommitNode) error {
+		parents = append(parents, c)
+		return nil
+	})
+
+	c.Assert(parents, HasLen, 3)
+
+	expected := []string{
+		"ce275064ad67d51e99f026084e20827901a8361c",
+		"bb13916df33ed23004c3ce9ed3b8487528e655c1",
+		"a45273fe2d63300e1962a9e26a6b15c276cd7082",
+	}
+	for i, parent := range parents {
+		c.Assert(parent.ID().String(), Equals, expected[i])
+	}
+}
+
+func (s *CommitNodeSuite) TestObjectGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
 	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	p := f.Packfile()
@@ -63,9 +85,10 @@ func (s *CommitNodeSuite) TestWalkObject(c *C) {
 
 	nodeIndex := NewObjectCommitNodeIndex(storer)
 	testWalker(c, nodeIndex)
+	testParents(c, nodeIndex)
 }
 
-func (s *CommitNodeSuite) TestWalkCommitGraph(c *C) {
+func (s *CommitNodeSuite) TestCommitGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
 	dotgit := f.DotGit()
 	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
@@ -77,4 +100,5 @@ func (s *CommitNodeSuite) TestWalkCommitGraph(c *C) {
 
 	nodeIndex := NewGraphCommitNodeIndex(index, storer)
 	testWalker(c, nodeIndex)
+	testParents(c, nodeIndex)
 }
