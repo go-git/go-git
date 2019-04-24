@@ -266,19 +266,6 @@ func (p *Packfile) getNextObject(h *ObjectHeader, hash plumbing.Hash) (plumbing.
 }
 
 func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
-	ref, err := p.FindHash(offset)
-	if err == nil {
-		obj, ok := p.cacheGet(ref)
-		if ok {
-			reader, err := obj.Reader()
-			if err != nil {
-				return nil, err
-			}
-
-			return reader, nil
-		}
-	}
-
 	h, err := p.objectHeaderAtOffset(offset)
 	if err != nil {
 		return nil, err
