@@ -8,8 +8,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
-// CommitNode is generic interface encapsulating either Commit object or
-// graphCommitNode object
+// CommitNode is generic interface encapsulating a lightweight commit object retrieved
+// from CommitNodeIndex
 type CommitNode interface {
 	// ID returns the Commit object id referenced by the commit graph node.
 	ID() plumbing.Hash
@@ -30,7 +30,6 @@ type CommitNode interface {
 }
 
 // CommitNodeIndex is generic interface encapsulating an index of CommitNode objects
-// and accessor methods for walking it as a directed graph
 type CommitNodeIndex interface {
 	// Get returns a commit node from a commit hash
 	Get(hash plumbing.Hash) (CommitNode, error)

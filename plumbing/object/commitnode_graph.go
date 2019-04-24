@@ -33,6 +33,8 @@ type graphCommitNodeIndex struct {
 	s           storer.EncodedObjectStorer
 }
 
+// NewGraphCommitNodeIndex returns CommitNodeIndex implementation that uses commit-graph
+// files as backing storage and falls back to object storage when necessary
 func NewGraphCommitNodeIndex(commitGraph commitgraph.Index, s storer.EncodedObjectStorer) CommitNodeIndex {
 	return &graphCommitNodeIndex{commitGraph, s}
 }

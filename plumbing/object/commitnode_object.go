@@ -15,6 +15,8 @@ type objectCommitNode struct {
 	commit    *Commit
 }
 
+// NewObjectCommitNodeIndex returns CommitNodeIndex implementation that uses
+// only object storage to load the nodes
 func NewObjectCommitNodeIndex(s storer.EncodedObjectStorer) CommitNodeIndex {
 	return &objectCommitNodeIndex{s}
 }
