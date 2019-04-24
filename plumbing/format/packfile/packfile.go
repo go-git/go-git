@@ -500,15 +500,19 @@ func (i *objectIter) Next() (plumbing.EncodedObject, error) {
 					return nil, err
 				}
 
-				typ, err := i.p.getObjectType(h)
-				if err != nil {
-					return nil, err
-				}
-				if typ != i.typ {
-					continue
+				if h.Type == plumbing.REFDeltaObject || h.Type == plumbing.OFSDeltaObject {
+					obj, err := i.p.getNextObject(h, e.Hash)
+					if err != nil {
+						return nil, err
+					}
+					if obj.Type() == i.typ {
+						return obj, nil
+					}
+				} else if h.Type == i.typ {
+					return i.p.getNextObject(h, e.Hash)
 				}
 
-				return i.p.getNextObject(h, e.Hash)
+				continue
 			}
 		}
 
