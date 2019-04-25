@@ -116,8 +116,7 @@ func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 		for i, hash := range index.Hashes() {
 			node, err := index.GetNodeByIndex(i)
 			c.Assert(err, IsNil)
-			err = memoryIndex.Add(hash, node)
-			c.Assert(err, IsNil)
+			memoryIndex.Add(hash, node)
 		}
 		reader.Close()
 

@@ -60,12 +60,11 @@ func (mi *MemoryIndex) Hashes() []plumbing.Hash {
 }
 
 // Add adds new node to the memory index
-func (mi *MemoryIndex) Add(hash plumbing.Hash, node *Node) error {
+func (mi *MemoryIndex) Add(hash plumbing.Hash, node *Node) {
 	// The parent indexes are calculated lazily in GetNodeByIndex
 	// which allows adding nodes out of order as long as all parents
 	// are eventually resolved
 	node.ParentIndexes = nil
 	mi.indexMap[hash] = len(mi.commitData)
 	mi.commitData = append(mi.commitData, node)
-	return nil
 }
