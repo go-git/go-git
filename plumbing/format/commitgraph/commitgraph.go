@@ -6,9 +6,9 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
-// Node is a reduced representation of Commit as presented in the commit graph
+// CommitData is a reduced representation of Commit as presented in the commit graph
 // file. It is merely useful as an optimization for walking the commit graphs.
-type Node struct {
+type CommitData struct {
 	// TreeHash is the hash of the root tree of the commit.
 	TreeHash plumbing.Hash
 	// ParentIndexes are the indexes of the parent commits of the commit.
@@ -29,7 +29,7 @@ type Index interface {
 	GetIndexByHash(h plumbing.Hash) (int, error)
 	// GetNodeByIndex gets the commit node from the commit graph using index
 	// obtained from child node, if available
-	GetNodeByIndex(i int) (*Node, error)
+	GetCommitDataByIndex(i int) (*CommitData, error)
 	// Hashes returns all the hashes that are available in the index
 	Hashes() []plumbing.Hash
 }

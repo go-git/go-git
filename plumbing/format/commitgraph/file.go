@@ -27,7 +27,7 @@ var (
 	oidFanoutSignature     = []byte{'O', 'I', 'D', 'F'}
 	oidLookupSignature     = []byte{'O', 'I', 'D', 'L'}
 	commitDataSignature    = []byte{'C', 'D', 'A', 'T'}
-	largeEdgeListSignature = []byte{'E', 'D', 'G', 'E'}
+	extraEdgeListSignature = []byte{'E', 'D', 'G', 'E'}
 	lastSignature          = []byte{0, 0, 0, 0}
 
 	parentNone        = uint32(0x70000000)
@@ -42,7 +42,7 @@ type fileIndex struct {
 	oidFanoutOffset     int64
 	oidLookupOffset     int64
 	commitDataOffset    int64
-	largeEdgeListOffset int64
+	extraEdgeListOffset int64
 }
 
 // OpenFileIndex opens a serialized commit graph file in the format described at
@@ -106,8 +106,8 @@ func (fi *fileIndex) readChunkHeaders() error {
 			fi.oidLookupOffset = int64(chunkOffset)
 		} else if bytes.Equal(chunkID, commitDataSignature) {
 			fi.commitDataOffset = int64(chunkOffset)
-		} else if bytes.Equal(chunkID, largeEdgeListSignature) {
-			fi.largeEdgeListOffset = int64(chunkOffset)
+		} else if bytes.Equal(chunkID, extraEdgeListSignature) {
+			fi.extraEdgeListOffset = int64(chunkOffset)
 		} else if bytes.Equal(chunkID, lastSignature) {
 			break
 		}
@@ -165,7 +165,7 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (int, error) {
 	return 0, plumbing.ErrObjectNotFound
 }
 
-func (fi *fileIndex) GetNodeByIndex(idx int) (*Node, error) {
+func (fi *fileIndex) GetCommitDataByIndex(idx int) (*CommitData, error) {
 	if idx >= fi.fanout[0xff] {
 		return nil, plumbing.ErrObjectNotFound
 	}
@@ -194,7 +194,7 @@ func (fi *fileIndex) GetNodeByIndex(idx int) (*Node, error) {
 	if parent2&parentOctopusUsed == parentOctopusUsed {
 		// Octopus merge
 		parentIndexes = []int{int(parent1 & parentOctopusMask)}
-		offset := fi.largeEdgeListOffset + 4*int64(parent2&parentOctopusMask)
+		offset := fi.extraEdgeListOffset + 4*int64(parent2&parentOctopusMask)
 		buf := make([]byte, 4)
 		for {
 			_, err := fi.reader.ReadAt(buf, offset)
@@ -220,7 +220,7 @@ func (fi *fileIndex) GetNodeByIndex(idx int) (*Node, error) {
 		return nil, err
 	}
 
-	return &Node{
+	return &CommitData{
 		TreeHash:      treeHash,
 		ParentIndexes: parentIndexes,
 		ParentHashes:  parentHashes,

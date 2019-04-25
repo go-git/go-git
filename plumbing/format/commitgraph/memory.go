@@ -5,7 +5,7 @@ import (
 )
 
 type MemoryIndex struct {
-	commitData []*Node
+	commitData []*CommitData
 	indexMap   map[plumbing.Hash]int
 }
 
@@ -26,28 +26,28 @@ func (mi *MemoryIndex) GetIndexByHash(h plumbing.Hash) (int, error) {
 	return 0, plumbing.ErrObjectNotFound
 }
 
-// GetNodeByIndex gets the commit node from the commit graph using index
+// GetCommitDataByIndex gets the commit node from the commit graph using index
 // obtained from child node, if available
-func (mi *MemoryIndex) GetNodeByIndex(i int) (*Node, error) {
+func (mi *MemoryIndex) GetCommitDataByIndex(i int) (*CommitData, error) {
 	if int(i) >= len(mi.commitData) {
 		return nil, plumbing.ErrObjectNotFound
 	}
 
-	node := mi.commitData[i]
+	commitData := mi.commitData[i]
 
 	// Map parent hashes to parent indexes
-	if node.ParentIndexes == nil {
-		parentIndexes := make([]int, len(node.ParentHashes))
-		for i, parentHash := range node.ParentHashes {
+	if commitData.ParentIndexes == nil {
+		parentIndexes := make([]int, len(commitData.ParentHashes))
+		for i, parentHash := range commitData.ParentHashes {
 			var err error
 			if parentIndexes[i], err = mi.GetIndexByHash(parentHash); err != nil {
 				return nil, err
 			}
 		}
-		node.ParentIndexes = parentIndexes
+		commitData.ParentIndexes = parentIndexes
 	}
 
-	return node, nil
+	return commitData, nil
 }
 
 // Hashes returns all the hashes that are available in the index
@@ -60,11 +60,11 @@ func (mi *MemoryIndex) Hashes() []plumbing.Hash {
 }
 
 // Add adds new node to the memory index
-func (mi *MemoryIndex) Add(hash plumbing.Hash, node *Node) {
+func (mi *MemoryIndex) Add(hash plumbing.Hash, commitData *CommitData) {
 	// The parent indexes are calculated lazily in GetNodeByIndex
 	// which allows adding nodes out of order as long as all parents
 	// are eventually resolved
-	node.ParentIndexes = nil
+	commitData.ParentIndexes = nil
 	mi.indexMap[hash] = len(mi.commitData)
-	mi.commitData = append(mi.commitData, node)
+	mi.commitData = append(mi.commitData, commitData)
 }

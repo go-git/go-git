@@ -32,40 +32,40 @@ func testDecodeHelper(c *C, path string) {
 	// Root commit
 	nodeIndex, err := index.GetIndexByHash(plumbing.NewHash("347c91919944a68e9413581a1bc15519550a3afe"))
 	c.Assert(err, IsNil)
-	node, err := index.GetNodeByIndex(nodeIndex)
+	commitData, err := index.GetCommitDataByIndex(nodeIndex)
 	c.Assert(err, IsNil)
-	c.Assert(len(node.ParentIndexes), Equals, 0)
-	c.Assert(len(node.ParentHashes), Equals, 0)
+	c.Assert(len(commitData.ParentIndexes), Equals, 0)
+	c.Assert(len(commitData.ParentHashes), Equals, 0)
 
 	// Regular commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("e713b52d7e13807e87a002e812041f248db3f643"))
 	c.Assert(err, IsNil)
-	node, err = index.GetNodeByIndex(nodeIndex)
+	commitData, err = index.GetCommitDataByIndex(nodeIndex)
 	c.Assert(err, IsNil)
-	c.Assert(len(node.ParentIndexes), Equals, 1)
-	c.Assert(len(node.ParentHashes), Equals, 1)
-	c.Assert(node.ParentHashes[0].String(), Equals, "347c91919944a68e9413581a1bc15519550a3afe")
+	c.Assert(len(commitData.ParentIndexes), Equals, 1)
+	c.Assert(len(commitData.ParentHashes), Equals, 1)
+	c.Assert(commitData.ParentHashes[0].String(), Equals, "347c91919944a68e9413581a1bc15519550a3afe")
 
 	// Merge commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("b29328491a0682c259bcce28741eac71f3499f7d"))
 	c.Assert(err, IsNil)
-	node, err = index.GetNodeByIndex(nodeIndex)
+	commitData, err = index.GetCommitDataByIndex(nodeIndex)
 	c.Assert(err, IsNil)
-	c.Assert(len(node.ParentIndexes), Equals, 2)
-	c.Assert(len(node.ParentHashes), Equals, 2)
-	c.Assert(node.ParentHashes[0].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")
-	c.Assert(node.ParentHashes[1].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")
+	c.Assert(len(commitData.ParentIndexes), Equals, 2)
+	c.Assert(len(commitData.ParentHashes), Equals, 2)
+	c.Assert(commitData.ParentHashes[0].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")
+	c.Assert(commitData.ParentHashes[1].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")
 
 	// Octopus merge commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
 	c.Assert(err, IsNil)
-	node, err = index.GetNodeByIndex(nodeIndex)
+	commitData, err = index.GetCommitDataByIndex(nodeIndex)
 	c.Assert(err, IsNil)
-	c.Assert(len(node.ParentIndexes), Equals, 3)
-	c.Assert(len(node.ParentHashes), Equals, 3)
-	c.Assert(node.ParentHashes[0].String(), Equals, "ce275064ad67d51e99f026084e20827901a8361c")
-	c.Assert(node.ParentHashes[1].String(), Equals, "bb13916df33ed23004c3ce9ed3b8487528e655c1")
-	c.Assert(node.ParentHashes[2].String(), Equals, "a45273fe2d63300e1962a9e26a6b15c276cd7082")
+	c.Assert(len(commitData.ParentIndexes), Equals, 3)
+	c.Assert(len(commitData.ParentHashes), Equals, 3)
+	c.Assert(commitData.ParentHashes[0].String(), Equals, "ce275064ad67d51e99f026084e20827901a8361c")
+	c.Assert(commitData.ParentHashes[1].String(), Equals, "bb13916df33ed23004c3ce9ed3b8487528e655c1")
+	c.Assert(commitData.ParentHashes[2].String(), Equals, "a45273fe2d63300e1962a9e26a6b15c276cd7082")
 
 	// Check all hashes
 	hashes := index.Hashes()
@@ -114,9 +114,9 @@ func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 		c.Assert(err, IsNil)
 		memoryIndex := commitgraph.NewMemoryIndex()
 		for i, hash := range index.Hashes() {
-			node, err := index.GetNodeByIndex(i)
+			commitData, err := index.GetCommitDataByIndex(i)
 			c.Assert(err, IsNil)
-			memoryIndex.Add(hash, node)
+			memoryIndex.Add(hash, commitData)
 		}
 		reader.Close()
 

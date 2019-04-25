@@ -29,13 +29,13 @@ func (e *Encoder) Encode(idx Index) error {
 	hashes := idx.Hashes()
 
 	// Sort the inout and prepare helper structures we'll need for encoding
-	hashToIndex, fanout, largeEdgesCount := e.prepare(idx, hashes)
+	hashToIndex, fanout, extraEdgesCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{oidFanoutSignature, oidLookupSignature, commitDataSignature}
 	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * 20, uint64(len(hashes)) * 36}
-	if largeEdgesCount > 0 {
-		chunkSignatures = append(chunkSignatures, largeEdgeListSignature)
-		chunkSizes = append(chunkSizes, uint64(largeEdgesCount)*4)
+	if extraEdgesCount > 0 {
+		chunkSignatures = append(chunkSignatures, extraEdgeListSignature)
+		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*4)
 	}
 
 	if err = e.encodeFileHeader(len(chunkSignatures)); err != nil {
@@ -50,8 +50,8 @@ func (e *Encoder) Encode(idx Index) error {
 	if err = e.encodeOidLookup(hashes); err != nil {
 		return err
 	}
-	if largeEdges, err := e.encodeCommitData(hashes, hashToIndex, idx); err == nil {
-		if err = e.encodeLargeEdges(largeEdges); err != nil {
+	if extraEdges, err := e.encodeCommitData(hashes, hashToIndex, idx); err == nil {
+		if err = e.encodeExtraEdges(extraEdges); err != nil {
 			return err
 		}
 	}
@@ -61,7 +61,7 @@ func (e *Encoder) Encode(idx Index) error {
 	return e.encodeChecksum()
 }
 
-func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, largeEdgesCount uint32) {
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount uint32) {
 	// Sort the hashes and build our index
 	plumbing.HashesSort(hashes)
 	hashToIndex = make(map[plumbing.Hash]uint32)
@@ -76,11 +76,11 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		fanout[i] += fanout[i-1]
 	}
 
-	// Find out if we will need large edge table
+	// Find out if we will need extra edge table
 	for i := 0; i < len(hashes); i++ {
-		v, _ := idx.GetNodeByIndex(i)
+		v, _ := idx.GetCommitDataByIndex(i)
 		if len(v.ParentHashes) > 2 {
-			largeEdgesCount += uint32(len(v.ParentHashes) - 1)
+			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
 			break
 		}
 	}
@@ -131,10 +131,10 @@ func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 	return
 }
 
-func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (largeEdges []uint32, err error) {
+func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (extraEdges []uint32, err error) {
 	for _, hash := range hashes {
 		origIndex, _ := idx.GetIndexByHash(hash)
-		commitData, _ := idx.GetNodeByIndex(origIndex)
+		commitData, _ := idx.GetCommitDataByIndex(origIndex)
 		if _, err = e.Write(commitData.TreeHash[:]); err != nil {
 			return
 		}
@@ -151,11 +151,11 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 			parent2 = hashToIndex[commitData.ParentHashes[1]]
 		} else if len(commitData.ParentHashes) > 2 {
 			parent1 = hashToIndex[commitData.ParentHashes[0]]
-			parent2 = uint32(len(largeEdges)) | parentOctopusUsed
+			parent2 = uint32(len(extraEdges)) | parentOctopusUsed
 			for _, parentHash := range commitData.ParentHashes[1:] {
-				largeEdges = append(largeEdges, hashToIndex[parentHash])
+				extraEdges = append(extraEdges, hashToIndex[parentHash])
 			}
-			largeEdges[len(largeEdges)-1] |= parentLast
+			extraEdges[len(extraEdges)-1] |= parentLast
 		}
 
 		if err = binary.WriteUint32(e, parent1); err == nil {
@@ -174,8 +174,8 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 	return
 }
 
-func (e *Encoder) encodeLargeEdges(largeEdges []uint32) (err error) {
-	for _, parent := range largeEdges {
+func (e *Encoder) encodeExtraEdges(extraEdges []uint32) (err error) {
+	for _, parent := range extraEdges {
 		if err = binary.WriteUint32(e, parent); err != nil {
 			return
 		}
