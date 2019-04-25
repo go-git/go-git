@@ -5,8 +5,9 @@ import (
 	"io"
 	"sort"
 
+	encbin "encoding/binary"
+
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/utils/binary"
 )
 
 const (
@@ -122,41 +123,32 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	offset, err := idx.getOffset(k, i)
+	offset := idx.getOffset(k, i)
 
 	if !idx.offsetHashIsFull {
 		// Save the offset for reverse lookup
 		if idx.offsetHash == nil {
 			idx.offsetHash = make(map[int64]plumbing.Hash)
 		}
-		idx.offsetHash[offset] = h
+		idx.offsetHash[int64(offset)] = h
 	}
 
-	return offset, err
+	return int64(offset), nil
 }
 
 const isO64Mask = uint64(1) << 31
 
-func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) (int64, error) {
+func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) uint64 {
 	offset := secondLevel << 2
-	buf := bytes.NewBuffer(idx.Offset32[firstLevel][offset : offset+4])
-	ofs, err := binary.ReadUint32(buf)
-	if err != nil {
-		return -1, err
-	}
+	ofs := encbin.BigEndian.Uint32(idx.Offset32[firstLevel][offset : offset+4])
 
 	if (uint64(ofs) & isO64Mask) != 0 {
 		offset := 8 * (uint64(ofs) & ^isO64Mask)
-		buf := bytes.NewBuffer(idx.Offset64[offset : offset+8])
-		n, err := binary.ReadUint64(buf)
-		if err != nil {
-			return -1, err
-		}
-
-		return int64(n), nil
+		n := encbin.BigEndian.Uint64(idx.Offset64[offset : offset+8])
+		return n
 	}
 
-	return int64(ofs), nil
+	return uint64(ofs)
 }
 
 // FindCRC32 implements the Index interface.
@@ -167,13 +159,12 @@ func (idx *MemoryIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	return idx.getCRC32(k, i)
+	return idx.getCRC32(k, i), nil
 }
 
-func (idx *MemoryIndex) getCRC32(firstLevel, secondLevel int) (uint32, error) {
+func (idx *MemoryIndex) getCRC32(firstLevel, secondLevel int) uint32 {
 	offset := secondLevel << 2
-	buf := bytes.NewBuffer(idx.CRC32[firstLevel][offset : offset+4])
-	return binary.ReadUint32(buf)
+	return encbin.BigEndian.Uint32(idx.CRC32[firstLevel][offset : offset+4])
 }
 
 // FindHash implements the Index interface.
@@ -303,16 +294,8 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 
 		pos := i.idx.FanoutMapping[entry.Hash[0]]
 
-		offset, err := i.idx.getOffset(pos, i.secondLevel)
-		if err != nil {
-			return nil, err
-		}
-		entry.Offset = uint64(offset)
-
-		entry.CRC32, err = i.idx.getCRC32(pos, i.secondLevel)
-		if err != nil {
-			return nil, err
-		}
+		entry.Offset = i.idx.getOffset(pos, i.secondLevel)
+		entry.CRC32 = i.idx.getCRC32(pos, i.secondLevel)
 
 		i.secondLevel++
 		i.total++
