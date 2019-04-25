@@ -204,22 +204,19 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	idx.offsetHash = make(map[int64]plumbing.Hash, count)
 	idx.offsetHashIsFull = true
 
-	iter, err := idx.Entries()
-	if err != nil {
-		return err
-	}
-
-	for {
-		entry, err := iter.Next()
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
+	var hash plumbing.Hash
+	i := uint32(0)
+	for firstLevel, fanoutValue := range idx.Fanout {
+		pos := idx.FanoutMapping[firstLevel]
+		for secondLevel := uint32(0); i < fanoutValue; i++ {
+			copy(hash[:], idx.Names[pos][secondLevel*objectIDLength:])
+			offset := int64(idx.getOffset(pos, int(secondLevel)))
+			idx.offsetHash[offset] = hash
+			secondLevel++
 		}
-
-		idx.offsetHash[int64(entry.Offset)] = entry.Hash
 	}
+
+	return nil
 }
 
 // Count implements the Index interface.
