@@ -207,10 +207,10 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	var hash plumbing.Hash
 	i := uint32(0)
 	for firstLevel, fanoutValue := range idx.Fanout {
-		pos := idx.FanoutMapping[firstLevel]
+		mappedFirstLevel := idx.FanoutMapping[firstLevel]
 		for secondLevel := uint32(0); i < fanoutValue; i++ {
-			copy(hash[:], idx.Names[pos][secondLevel*objectIDLength:])
-			offset := int64(idx.getOffset(pos, int(secondLevel)))
+			copy(hash[:], idx.Names[mappedFirstLevel][secondLevel*objectIDLength:])
+			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
 			idx.offsetHash[offset] = hash
 			secondLevel++
 		}
@@ -285,14 +285,11 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 			continue
 		}
 
+		mappedFirstLevel := i.idx.FanoutMapping[i.firstLevel]
 		entry := new(Entry)
-		ofs := i.secondLevel * objectIDLength
-		copy(entry.Hash[:], i.idx.Names[i.idx.FanoutMapping[i.firstLevel]][ofs:])
-
-		pos := i.idx.FanoutMapping[entry.Hash[0]]
-
-		entry.Offset = i.idx.getOffset(pos, i.secondLevel)
-		entry.CRC32 = i.idx.getCRC32(pos, i.secondLevel)
+		copy(entry.Hash[:], i.idx.Names[mappedFirstLevel][i.secondLevel*objectIDLength:])
+		entry.Offset = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
+		entry.CRC32 = i.idx.getCRC32(mappedFirstLevel, i.secondLevel)
 
 		i.secondLevel++
 		i.total++
