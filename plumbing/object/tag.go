@@ -171,6 +171,11 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 	return t.encode(o, true)
 }
 
+// EncodeWithoutSignature export a Tag into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
+func (t *Tag) EncodeWithoutSignature(o plumbing.EncodedObject) error {
+	return t.encode(o, false)
+}
+
 func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	o.SetType(plumbing.TagObject)
 	w, err := o.Writer()
@@ -291,7 +296,7 @@ func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 
 	encoded := &plumbing.MemoryObject{}
 	// Encode tag components, excluding signature and get a reader object.
-	if err := t.encode(encoded, false); err != nil {
+	if err := t.EncodeWithoutSignature(encoded); err != nil {
 		return nil, err
 	}
 	er, err := encoded.Reader()

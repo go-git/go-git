@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/ioutil"
 	"strings"
 	"time"
 
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 )
 
@@ -494,4 +495,24 @@ func (s *SuiteCommit) TestMalformedHeader(c *C) {
 
 	err = decoded.Decode(encoded)
 	c.Assert(err, IsNil)
+}
+
+func (s *SuiteCommit) TestEncodeWithoutSignature(c *C) {
+	//Similar to TestString since no signature
+	encoded := &plumbing.MemoryObject{}
+	err := s.Commit.EncodeWithoutSignature(encoded)
+	c.Assert(err, IsNil)
+	er, err := encoded.Reader()
+	c.Assert(err, IsNil)
+	payload, err := ioutil.ReadAll(er)
+	c.Assert(err, IsNil)
+
+	c.Assert(string(payload), Equals, ""+
+		"tree eba74343e2f15d62adedfd8c883ee0262b5c8021\n"+
+		"parent 35e85108805c84807bc66a02d91535e1e24b38b9\n"+
+		"parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69\n"+
+		"author Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200\n"+
+		"committer Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200\n"+
+		"\n"+
+		"Merge branch 'master' of github.com:tyba/git-fixture\n")
 }

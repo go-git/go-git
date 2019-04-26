@@ -3,16 +3,17 @@ package object
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"strings"
 	"time"
 
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type TagSuite struct {
@@ -446,4 +447,25 @@ HdzbB2ak/HxIeCqmHVlmUqa+WfTMUJcsgOm3/ZFPCSoL6l0bz9Z1XVbiyD03
 
 	_, err = tag.Verify(armoredKeyRing)
 	c.Assert(err, IsNil)
+}
+
+func (s *TagSuite) TestEncodeWithoutSignature(c *C) {
+	//Similar to TestString since no signature
+	encoded := &plumbing.MemoryObject{}
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+	err := tag.EncodeWithoutSignature(encoded)
+	c.Assert(err, IsNil)
+	er, err := encoded.Reader()
+	c.Assert(err, IsNil)
+	payload, err := ioutil.ReadAll(er)
+	c.Assert(err, IsNil)
+
+	c.Assert(string(payload), Equals, ""+
+		"object f7b877701fbf855b44c0a9e86f3fdce2c298b07f\n"+
+		"type commit\n"+
+		"tag annotated-tag\n"+
+		"tagger Máximo Cuadros <mcuadros@gmail.com> 1474485215 +0200\n"+
+		"\n"+
+		"example annotated tag\n",
+	)
 }
