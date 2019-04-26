@@ -4,7 +4,7 @@ import (
 	"path"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/commitgraph"
@@ -131,7 +131,7 @@ func (s *CommitNodeSuite) TestMixedGraph(c *C) {
 	memoryIndex := commitgraph.NewMemoryIndex()
 	for i, hash := range fileIndex.Hashes() {
 		if hash.String() != "b9d69064b190e7aedccf84731ca1d917871f8a1c" {
-			node, err := fileIndex.GetNodeByIndex(i)
+			node, err := fileIndex.GetCommitDataByIndex(i)
 			c.Assert(err, IsNil)
 			memoryIndex.Add(hash, node)
 		}

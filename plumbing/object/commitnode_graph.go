@@ -20,8 +20,8 @@ type graphCommitNode struct {
 	// Index of the node in the commit graph file
 	index int
 
-	node *commitgraph.Node
-	gci  *graphCommitNodeIndex
+	commitData *commitgraph.CommitData
+	gci        *graphCommitNodeIndex
 }
 
 // graphCommitNodeIndex is an index that can load CommitNode objects from both the commit
@@ -43,16 +43,16 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 	// Check the commit graph first
 	parentIndex, err := gci.commitGraph.GetIndexByHash(hash)
 	if err == nil {
-		parent, err := gci.commitGraph.GetNodeByIndex(parentIndex)
+		parent, err := gci.commitGraph.GetCommitDataByIndex(parentIndex)
 		if err != nil {
 			return nil, err
 		}
 
 		return &graphCommitNode{
-			hash:  hash,
-			index: parentIndex,
-			node:  parent,
-			gci:   gci,
+			hash:       hash,
+			index:      parentIndex,
+			commitData: parent,
+			gci:        gci,
 		}, nil
 	}
 
@@ -73,15 +73,15 @@ func (c *graphCommitNode) ID() plumbing.Hash {
 }
 
 func (c *graphCommitNode) Tree() (*Tree, error) {
-	return GetTree(c.gci.s, c.node.TreeHash)
+	return GetTree(c.gci.s, c.commitData.TreeHash)
 }
 
 func (c *graphCommitNode) CommitTime() time.Time {
-	return c.node.When
+	return c.commitData.When
 }
 
 func (c *graphCommitNode) NumParents() int {
-	return len(c.node.ParentIndexes)
+	return len(c.commitData.ParentIndexes)
 }
 
 func (c *graphCommitNode) ParentNodes() CommitNodeIter {
@@ -89,25 +89,25 @@ func (c *graphCommitNode) ParentNodes() CommitNodeIter {
 }
 
 func (c *graphCommitNode) ParentNode(i int) (CommitNode, error) {
-	if i < 0 || i >= len(c.node.ParentIndexes) {
+	if i < 0 || i >= len(c.commitData.ParentIndexes) {
 		return nil, ErrParentNotFound
 	}
 
-	parent, err := c.gci.commitGraph.GetNodeByIndex(c.node.ParentIndexes[i])
+	parent, err := c.gci.commitGraph.GetCommitDataByIndex(c.commitData.ParentIndexes[i])
 	if err != nil {
 		return nil, err
 	}
 
 	return &graphCommitNode{
-		hash:  c.node.ParentHashes[i],
-		index: c.node.ParentIndexes[i],
-		node:  parent,
-		gci:   c.gci,
+		hash:       c.commitData.ParentHashes[i],
+		index:      c.commitData.ParentIndexes[i],
+		commitData: parent,
+		gci:        c.gci,
 	}, nil
 }
 
 func (c *graphCommitNode) ParentHashes() []plumbing.Hash {
-	return c.node.ParentHashes
+	return c.commitData.ParentHashes
 }
 
 func (c *graphCommitNode) Commit() (*Commit, error) {
