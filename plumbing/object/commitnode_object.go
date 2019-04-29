@@ -1,6 +1,7 @@
 package object
 
 import (
+	"math"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -74,6 +75,13 @@ func (c *objectCommitNode) ParentNode(i int) (CommitNode, error) {
 
 func (c *objectCommitNode) ParentHashes() []plumbing.Hash {
 	return c.commit.ParentHashes
+}
+
+func (c *objectCommitNode) Generation() uint64 {
+	// Commit nodes representing objects outside of the commit graph can never
+	// be reached by objects from the commit-graph thus we return the highest
+	// possible value.
+	return math.MaxUint64
 }
 
 func (c *objectCommitNode) Commit() (*Commit, error) {

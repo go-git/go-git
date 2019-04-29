@@ -110,6 +110,13 @@ func (c *graphCommitNode) ParentHashes() []plumbing.Hash {
 	return c.commitData.ParentHashes
 }
 
+func (c *graphCommitNode) Generation() uint64 {
+	// If the commit-graph file was generated with older Git version that
+	// set the generation to zero for every commit the generation assumption
+	// is still valid. It is just less useful.
+	return uint64(c.commitData.Generation)
+}
+
 func (c *graphCommitNode) Commit() (*Commit, error) {
 	return GetCommit(c.gci.s, c.hash)
 }

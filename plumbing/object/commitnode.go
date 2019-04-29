@@ -25,6 +25,9 @@ type CommitNode interface {
 	ParentNode(i int) (CommitNode, error)
 	// ParentHashes returns hashes of the parent commits for a specified node
 	ParentHashes() []plumbing.Hash
+	// Generation returns the generation of the commit for reachability analysis.
+	// Objects with newer generation are not reachable from objects of older generation.
+	Generation() uint64
 	// Commit returns the full commit object from the node
 	Commit() (*Commit, error)
 }
