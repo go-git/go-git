@@ -160,6 +160,8 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	ro := &ResetOptions{Commit: c, Mode: MergeReset}
 	if opts.Force {
 		ro.Mode = HardReset
+	} else if opts.Keep {
+		ro.Mode = SoftReset
 	}
 
 	if !opts.Hash.IsZero() && !opts.Create {
