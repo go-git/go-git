@@ -2,6 +2,7 @@ package commitgraph
 
 import (
 	"path"
+	"testing"
 
 	. "gopkg.in/check.v1"
 	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
@@ -11,6 +12,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
 	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 )
+
+func Test(t *testing.T) { TestingT(t) }
 
 type CommitNodeSuite struct {
 	fixtures.Suite
