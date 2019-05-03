@@ -1,10 +1,11 @@
-package object
+package commitgraph
 
 import (
 	"math"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
@@ -13,7 +14,7 @@ import (
 // objectCommitNode implements the CommitNode interface.
 type objectCommitNode struct {
 	nodeIndex CommitNodeIndex
-	commit    *Commit
+	commit    *object.Commit
 }
 
 // NewObjectCommitNodeIndex returns CommitNodeIndex implementation that uses
@@ -23,7 +24,7 @@ func NewObjectCommitNodeIndex(s storer.EncodedObjectStorer) CommitNodeIndex {
 }
 
 func (oci *objectCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
-	commit, err := GetCommit(oci.s, hash)
+	commit, err := object.GetCommit(oci.s, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +51,7 @@ func (c *objectCommitNode) ID() plumbing.Hash {
 	return c.commit.ID()
 }
 
-func (c *objectCommitNode) Tree() (*Tree, error) {
+func (c *objectCommitNode) Tree() (*object.Tree, error) {
 	return c.commit.Tree()
 }
 
@@ -64,7 +65,7 @@ func (c *objectCommitNode) ParentNodes() CommitNodeIter {
 
 func (c *objectCommitNode) ParentNode(i int) (CommitNode, error) {
 	if i < 0 || i >= len(c.commit.ParentHashes) {
-		return nil, ErrParentNotFound
+		return nil, object.ErrParentNotFound
 	}
 
 	// Note: It's necessary to go through CommitNodeIndex here to ensure
@@ -84,6 +85,6 @@ func (c *objectCommitNode) Generation() uint64 {
 	return math.MaxUint64
 }
 
-func (c *objectCommitNode) Commit() (*Commit, error) {
+func (c *objectCommitNode) Commit() (*object.Commit, error) {
 	return c.commit, nil
 }

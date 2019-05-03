@@ -1,10 +1,11 @@
-package object
+package commitgraph
 
 import (
 	"io"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
@@ -14,7 +15,7 @@ type CommitNode interface {
 	// ID returns the Commit object id referenced by the commit graph node.
 	ID() plumbing.Hash
 	// Tree returns the Tree referenced by the commit graph node.
-	Tree() (*Tree, error)
+	Tree() (*object.Tree, error)
 	// CommitTime returns the Commiter.When time of the Commit referenced by the commit graph node.
 	CommitTime() time.Time
 	// NumParents returns the number of parents in a commit.
@@ -29,7 +30,7 @@ type CommitNode interface {
 	// Objects with newer generation are not reachable from objects of older generation.
 	Generation() uint64
 	// Commit returns the full commit object from the node
-	Commit() (*Commit, error)
+	Commit() (*object.Commit, error)
 }
 
 // CommitNodeIndex is generic interface encapsulating an index of CommitNode objects
@@ -59,7 +60,7 @@ func newParentgraphCommitNodeIter(node CommitNode) CommitNodeIter {
 // there are no more commits, it returns io.EOF.
 func (iter *parentCommitNodeIter) Next() (CommitNode, error) {
 	obj, err := iter.node.ParentNode(iter.i)
-	if err == ErrParentNotFound {
+	if err == object.ErrParentNotFound {
 		return nil, io.EOF
 	}
 	if err == nil {

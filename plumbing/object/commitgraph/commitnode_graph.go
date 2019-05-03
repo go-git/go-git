@@ -1,4 +1,4 @@
-package object
+package commitgraph
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/commitgraph"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
@@ -57,7 +58,7 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 	}
 
 	// Fallback to loading full commit object
-	commit, err := GetCommit(gci.s, hash)
+	commit, err := object.GetCommit(gci.s, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +73,8 @@ func (c *graphCommitNode) ID() plumbing.Hash {
 	return c.hash
 }
 
-func (c *graphCommitNode) Tree() (*Tree, error) {
-	return GetTree(c.gci.s, c.commitData.TreeHash)
+func (c *graphCommitNode) Tree() (*object.Tree, error) {
+	return object.GetTree(c.gci.s, c.commitData.TreeHash)
 }
 
 func (c *graphCommitNode) CommitTime() time.Time {
@@ -90,7 +91,7 @@ func (c *graphCommitNode) ParentNodes() CommitNodeIter {
 
 func (c *graphCommitNode) ParentNode(i int) (CommitNode, error) {
 	if i < 0 || i >= len(c.commitData.ParentIndexes) {
-		return nil, ErrParentNotFound
+		return nil, object.ErrParentNotFound
 	}
 
 	parent, err := c.gci.commitGraph.GetCommitDataByIndex(c.commitData.ParentIndexes[i])
@@ -117,14 +118,14 @@ func (c *graphCommitNode) Generation() uint64 {
 	return uint64(c.commitData.Generation)
 }
 
-func (c *graphCommitNode) Commit() (*Commit, error) {
-	return GetCommit(c.gci.s, c.hash)
+func (c *graphCommitNode) Commit() (*object.Commit, error) {
+	return object.GetCommit(c.gci.s, c.hash)
 }
 
 func (c *graphCommitNode) String() string {
 	return fmt.Sprintf(
 		"%s %s\nDate:   %s",
 		plumbing.CommitObject, c.ID(),
-		c.CommitTime().Format(DateFormat),
+		c.CommitTime().Format(object.DateFormat),
 	)
 }

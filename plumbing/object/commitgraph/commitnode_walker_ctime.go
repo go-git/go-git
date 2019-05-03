@@ -1,4 +1,4 @@
-package object
+package commitgraph
 
 import (
 	"io"
