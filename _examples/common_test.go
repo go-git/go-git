@@ -28,6 +28,7 @@ var args = map[string][]string{
 	"showcase":    {defaultURL, tempFolder()},
 	"tag":         {cloneRepository(defaultURL, tempFolder())},
 	"pull":        {createRepositoryWithRemote(tempFolder(), defaultURL)},
+	"ls":          {cloneRepository(defaultURL, tempFolder()), "HEAD", "vendor"},
 }
 
 var ignored = map[string]bool{}
