@@ -31,9 +31,15 @@ func main() {
 
 	// We instantiate a new repository targeting the given path (the .git folder)
 	fs := osfs.New(path)
+	if _, err := fs.Stat(git.GitDirName); err == nil {
+		fs, err = fs.Chroot(git.GitDirName)
+		CheckIfError(err)
+	}
+
 	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{KeepDescriptors: true})
 	r, err := git.Open(s, fs)
 	CheckIfError(err)
+	defer s.Close()
 
 	// Resolve revision into a sha1 commit, only some revisions are resolved
 	// look at the doc to get more details
@@ -73,8 +79,6 @@ func main() {
 		line := strings.Split(rev.Message, "\n")
 		fmt.Println(path, hash[:7], line[0])
 	}
-
-	s.Close()
 }
 
 func getCommitNodeIndex(r *git.Repository, fs billy.Filesystem) (commitgraph.CommitNodeIndex, io.ReadCloser) {
