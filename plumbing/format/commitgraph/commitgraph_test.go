@@ -6,10 +6,8 @@ import (
 	"path"
 	"testing"
 
-	"golang.org/x/exp/mmap"
-
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/format/commitgraph"
 )
@@ -23,7 +21,7 @@ type CommitgraphSuite struct {
 var _ = Suite(&CommitgraphSuite{})
 
 func testDecodeHelper(c *C, path string) {
-	reader, err := mmap.Open(path)
+	reader, err := os.Open(path)
 	c.Assert(err, IsNil)
 	defer reader.Close()
 	index, err := commitgraph.OpenFileIndex(reader)
@@ -85,7 +83,7 @@ func (s *CommitgraphSuite) TestReencode(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()
 
-		reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+		reader, err := os.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
 		c.Assert(err, IsNil)
 		defer reader.Close()
 		index, err := commitgraph.OpenFileIndex(reader)
@@ -108,7 +106,7 @@ func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()
 
-		reader, err := mmap.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+		reader, err := os.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
 		c.Assert(err, IsNil)
 		index, err := commitgraph.OpenFileIndex(reader)
 		c.Assert(err, IsNil)

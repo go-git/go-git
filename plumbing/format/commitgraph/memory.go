@@ -4,6 +4,8 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
+// MemoryIndex provides a way to build the commit-graph in memory
+// for later encoding to file.
 type MemoryIndex struct {
 	commitData []*CommitData
 	indexMap   map[plumbing.Hash]int

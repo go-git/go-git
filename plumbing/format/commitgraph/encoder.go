@@ -22,6 +22,7 @@ func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{mw, h}
 }
 
+// Encode writes an index into the commit-graph file
 func (e *Encoder) Encode(idx Index) error {
 	var err error
 
