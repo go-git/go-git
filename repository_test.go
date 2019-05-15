@@ -2415,7 +2415,7 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 	for rev, hash := range datas {
 		h, err := r.ResolveRevision(plumbing.Revision(rev))
 
-		c.Assert(err, IsNil)
+		c.Assert(err, IsNil, Commentf("while checking %s", rev))
 		c.Check(h.String(), Equals, hash, Commentf("while checking %s", rev))
 	}
 }
@@ -2427,13 +2427,14 @@ func (s *RepositorySuite) TestResolveRevisionAnnotated(c *C) {
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
-		"refs/tags/annotated-tag": "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+		"refs/tags/annotated-tag":                  "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+		"b742a2a9fa0afcfa9a6fad080980fbc26b007c69": "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
 	}
 
 	for rev, hash := range datas {
 		h, err := r.ResolveRevision(plumbing.Revision(rev))
 
-		c.Assert(err, IsNil)
+		c.Assert(err, IsNil, Commentf("while checking %s", rev))
 		c.Check(h.String(), Equals, hash, Commentf("while checking %s", rev))
 	}
 }
@@ -2459,12 +2460,11 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
 		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
-		"918c48b83bd081e863dbe1b80f8998f058cd8294": `refname "918c48b83bd081e863dbe1b80f8998f058cd8294" is ambiguous`,
 	}
 
 	for rev, rerr := range datas {
 		_, err := r.ResolveRevision(plumbing.Revision(rev))
-
+		c.Assert(err, NotNil)
 		c.Assert(err.Error(), Equals, rerr)
 	}
 }
