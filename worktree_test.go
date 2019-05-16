@@ -314,6 +314,46 @@ func (s *WorktreeSuite) TestCheckoutForce(c *C) {
 	c.Assert(entries, HasLen, 8)
 }
 
+func (s *WorktreeSuite) TestCheckoutKeep(c *C) {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	err := w.Checkout(&CheckoutOptions{
+		Force: true,
+	})
+	c.Assert(err, IsNil)
+
+	// Create a new branch and create a new file.
+	err = w.Checkout(&CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName("new-branch"),
+		Create: true,
+	})
+	c.Assert(err, IsNil)
+
+	w.Filesystem = memfs.New()
+	f, err := w.Filesystem.Create("new-file.txt")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("DUMMY"))
+	c.Assert(err, IsNil)
+	c.Assert(f.Close(), IsNil)
+
+	// Add the file to staging.
+	_, err = w.Add("new-file.txt")
+	c.Assert(err, IsNil)
+
+	// Switch branch to master, and verify that the new file was kept in staging.
+	err = w.Checkout(&CheckoutOptions{
+		Keep: true,
+	})
+	c.Assert(err, IsNil)
+
+	fi, err := w.Filesystem.Stat("new-file.txt")
+	c.Assert(err, IsNil)
+	c.Assert(fi.Size(), Equals, int64(5))
+}
+
 func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 	if runtime.GOOS == "windows" {
 		c.Skip("git doesn't support symlinks by default in windows")
