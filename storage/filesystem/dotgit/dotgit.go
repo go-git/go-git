@@ -226,7 +226,7 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 	var packs []plumbing.Hash
 	for _, f := range files {
 		n := f.Name()
-		if !strings.HasPrefix(n, packPrefix) || !strings.HasSuffix(n, packExt) {
+		if !strings.HasSuffix(n, packExt) || !strings.HasPrefix(n, packPrefix) {
 			continue
 		}
 
