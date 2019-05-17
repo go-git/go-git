@@ -623,7 +623,11 @@ func getHaves(
 		}
 
 		err = getHavesFromRef(ref, remoteRefs, s, haves)
-		if err != nil {
+
+		// Take care of the edge case where iterating using Preorder over
+		// commits produces an `object not found` error, if using a shallow
+		// clone with incomplete history.
+		if err != nil && err != plumbing.ErrObjectNotFound {
 			return nil, err
 		}
 	}
