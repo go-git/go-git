@@ -33,8 +33,9 @@ const (
 
 	tmpPackedRefsPrefix = "._packed-refs"
 
-	packExt = ".pack"
-	idxExt  = ".idx"
+	packPrefix = "pack-"
+	packExt    = ".pack"
+	idxExt     = ".idx"
 )
 
 var (
@@ -224,11 +225,11 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 
 	var packs []plumbing.Hash
 	for _, f := range files {
-		if !strings.HasSuffix(f.Name(), packExt) {
+		n := f.Name()
+		if !strings.HasPrefix(n, packPrefix) || !strings.HasSuffix(n, packExt) {
 			continue
 		}
 
-		n := f.Name()
 		h := plumbing.NewHash(n[5 : len(n)-5]) //pack-(hash).pack
 		if h.IsZero() {
 			// Ignore files with badly-formatted names.
