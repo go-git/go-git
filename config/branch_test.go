@@ -44,6 +44,7 @@ func (b *BranchSuite) TestMarshall(c *C) {
 [branch "branch-tracking-on-clone"]
 	remote = fork
 	merge = refs/heads/branch-tracking-on-clone
+	rebase = interactive
 `)
 
 	cfg := NewConfig()
@@ -51,6 +52,7 @@ func (b *BranchSuite) TestMarshall(c *C) {
 		Name:   "branch-tracking-on-clone",
 		Remote: "fork",
 		Merge:  plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"),
+		Rebase: "interactive",
 	}
 
 	actual, err := cfg.Marshal()
@@ -64,6 +66,7 @@ func (b *BranchSuite) TestUnmarshall(c *C) {
 [branch "branch-tracking-on-clone"]
 	remote = fork
 	merge = refs/heads/branch-tracking-on-clone
+	rebase = interactive
 `)
 
 	cfg := NewConfig()
@@ -73,4 +76,5 @@ func (b *BranchSuite) TestUnmarshall(c *C) {
 	c.Assert(branch.Name, Equals, "branch-tracking-on-clone")
 	c.Assert(branch.Remote, Equals, "fork")
 	c.Assert(branch.Merge, Equals, plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"))
+	c.Assert(branch.Rebase, Equals, "interactive")
 }
