@@ -96,9 +96,38 @@ func (s *RefSpecSuite) TestRefSpecMatch(c *C) {
 }
 
 func (s *RefSpecSuite) TestRefSpecMatchGlob(c *C) {
-	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/tag/foo")), Equals, false)
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, true)
+	tests := map[string]map[string]bool{
+		"refs/heads/*:refs/remotes/origin/*": {
+			"refs/tag/foo":   false,
+			"refs/heads/foo": true,
+		},
+		"refs/heads/*bc:refs/remotes/origin/*bc": {
+			"refs/heads/abc": true,
+			"refs/heads/bc":  true,
+			"refs/heads/abx": false,
+		},
+		"refs/heads/a*c:refs/remotes/origin/a*c": {
+			"refs/heads/abc": true,
+			"refs/heads/ac":  true,
+			"refs/heads/abx": false,
+		},
+		"refs/heads/ab*:refs/remotes/origin/ab*": {
+			"refs/heads/abc": true,
+			"refs/heads/ab":  true,
+			"refs/heads/xbc": false,
+		},
+	}
+
+	for specStr, data := range tests {
+		spec := RefSpec(specStr)
+		for ref, matches := range data {
+			c.Assert(spec.Match(plumbing.ReferenceName(ref)),
+				Equals,
+				matches,
+				Commentf("while matching spec %q against ref %q", specStr, ref),
+			)
+		}
+	}
 }
 
 func (s *RefSpecSuite) TestRefSpecDst(c *C) {
@@ -110,11 +139,33 @@ func (s *RefSpecSuite) TestRefSpecDst(c *C) {
 }
 
 func (s *RefSpecSuite) TestRefSpecDstBlob(c *C) {
-	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(
-		spec.Dst(plumbing.ReferenceName("refs/heads/foo")).String(), Equals,
-		"refs/remotes/origin/foo",
-	)
+	ref := "refs/heads/abc"
+	tests := map[string]string{
+		"refs/heads/*:refs/remotes/origin/*":       "refs/remotes/origin/abc",
+		"refs/heads/*bc:refs/remotes/origin/*":     "refs/remotes/origin/a",
+		"refs/heads/*bc:refs/remotes/origin/*bc":   "refs/remotes/origin/abc",
+		"refs/heads/a*c:refs/remotes/origin/*":     "refs/remotes/origin/b",
+		"refs/heads/a*c:refs/remotes/origin/a*c":   "refs/remotes/origin/abc",
+		"refs/heads/ab*:refs/remotes/origin/*":     "refs/remotes/origin/c",
+		"refs/heads/ab*:refs/remotes/origin/ab*":   "refs/remotes/origin/abc",
+		"refs/heads/*abc:refs/remotes/origin/*abc": "refs/remotes/origin/abc",
+		"refs/heads/abc*:refs/remotes/origin/abc*": "refs/remotes/origin/abc",
+		// for these two cases, git specifically logs:
+		// error: * Ignoring funny ref 'refs/remotes/origin/' locally
+		// and ignores the ref; go-git does not currently do this validation,
+		// but probably should.
+		// "refs/heads/*abc:refs/remotes/origin/*": "",
+		// "refs/heads/abc*:refs/remotes/origin/*": "",
+	}
+
+	for specStr, dst := range tests {
+		spec := RefSpec(specStr)
+		c.Assert(spec.Dst(plumbing.ReferenceName(ref)).String(),
+			Equals,
+			dst,
+			Commentf("while getting dst from spec %q with ref %q", specStr, ref),
+		)
+	}
 }
 func (s *RefSpecSuite) TestMatchAny(c *C) {
 	specs := []RefSpec{
