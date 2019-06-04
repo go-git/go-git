@@ -133,8 +133,8 @@ func (p *Packfile) getObjectSize(h *ObjectHeader) (int64, error) {
 		return h.Length, nil
 	case plumbing.REFDeltaObject, plumbing.OFSDeltaObject:
 		buf := bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
 		defer bufPool.Put(buf)
+		buf.Reset()
 
 		if _, _, err := p.s.NextObject(buf); err != nil {
 			return 0, err
@@ -222,11 +222,11 @@ func (p *Packfile) getNextObject(h *ObjectHeader, hash plumbing.Hash) (plumbing.
 		// optimization only if the expanded version of the object still meets
 		// the small object threshold condition.
 		buf := bufPool.Get().(*bytes.Buffer)
+		defer bufPool.Put(buf)
 		buf.Reset()
 		if _, _, err := p.s.NextObject(buf); err != nil {
 			return nil, err
 		}
-		defer bufPool.Put(buf)
 
 		size = p.getDeltaObjectSize(buf)
 		if size <= smallObjectThreshold {
@@ -321,12 +321,12 @@ func (p *Packfile) fillRegularObjectContent(obj plumbing.EncodedObject) error {
 
 func (p *Packfile) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plumbing.Hash) error {
 	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
 	buf.Reset()
 	_, _, err := p.s.NextObject(buf)
 	if err != nil {
 		return err
 	}
-	defer bufPool.Put(buf)
 
 	return p.fillREFDeltaObjectContentWithBuffer(obj, ref, buf)
 }
@@ -351,12 +351,12 @@ func (p *Packfile) fillREFDeltaObjectContentWithBuffer(obj plumbing.EncodedObjec
 
 func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset int64) error {
 	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
 	buf.Reset()
 	_, _, err := p.s.NextObject(buf)
 	if err != nil {
 		return err
 	}
-	defer bufPool.Put(buf)
 
 	return p.fillOFSDeltaObjectContentWithBuffer(obj, offset, buf)
 }
