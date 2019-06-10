@@ -127,6 +127,13 @@ func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
 	return plumbing.ReferenceName(dst[0:wd] + match + dst[wd+1:])
 }
 
+func (s RefSpec) Reverse() RefSpec {
+	spec := string(s)
+	separator := strings.Index(spec, refSpecSeparator)
+
+	return RefSpec(spec[separator+1:] + refSpecSeparator + spec[:separator])
+}
+
 func (s RefSpec) String() string {
 	return string(s)
 }

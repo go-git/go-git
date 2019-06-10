@@ -21,7 +21,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/src-d/go-billy.v4/osfs"
-	"gopkg.in/src-d/go-git-fixtures.v3"
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type RemoteSuite struct {
@@ -581,6 +581,63 @@ func (s *RemoteSuite) TestPushForce(c *C) {
 	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
 	c.Assert(err, IsNil)
 	c.Assert(newRef, Not(DeepEquals), oldRef)
+}
+
+func (s *RemoteSuite) TestPushPrune(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+	url := c.MkDir()
+	server, err := PlainClone(url, true, &CloneOptions{
+		URL: fs.Root(),
+	})
+	c.Assert(err, IsNil)
+
+	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	tag, err := r.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
+	c.Assert(err, IsNil)
+
+	err = r.DeleteTag("v1.0.0")
+	c.Assert(err, IsNil)
+
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/heads/*:refs/heads/*"),
+		},
+		Prune: true,
+	})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/tags/v1.0.0": tag.Hash().String(),
+	})
+
+	err = remote.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("*:*"),
+		},
+		Prune: true,
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/remotes/origin/master": ref.Hash().String(),
+	})
+
+	AssertReferences(c, server, map[string]string{
+		"refs/remotes/origin/master": ref.Hash().String(),
+	})
+
+	ref, err = server.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 }
 
 func (s *RemoteSuite) TestPushNewReference(c *C) {

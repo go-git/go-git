@@ -201,7 +201,7 @@ func (r *Remote) newReferenceUpdateRequest(
 		}
 	}
 
-	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req); err != nil {
+	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune); err != nil {
 		return nil, err
 	}
 
@@ -389,6 +389,7 @@ func (r *Remote) addReferencesToUpdate(
 	localRefs []*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
 	req *packp.ReferenceUpdateRequest,
+	prune bool,
 ) error {
 	// This references dictionary will be used to search references by name.
 	refsDict := make(map[string]*plumbing.Reference)
@@ -398,13 +399,19 @@ func (r *Remote) addReferencesToUpdate(
 
 	for _, rs := range refspecs {
 		if rs.IsDelete() {
-			if err := r.deleteReferences(rs, remoteRefs, req); err != nil {
+			if err := r.deleteReferences(rs, remoteRefs, refsDict, req, false); err != nil {
 				return err
 			}
 		} else {
 			err := r.addOrUpdateReferences(rs, localRefs, refsDict, remoteRefs, req)
 			if err != nil {
 				return err
+			}
+
+			if prune {
+				if err := r.deleteReferences(rs, remoteRefs, refsDict, req, true); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -441,7 +448,10 @@ func (r *Remote) addOrUpdateReferences(
 }
 
 func (r *Remote) deleteReferences(rs config.RefSpec,
-	remoteRefs storer.ReferenceStorer, req *packp.ReferenceUpdateRequest) error {
+	remoteRefs storer.ReferenceStorer,
+	refsDict map[string]*plumbing.Reference,
+	req *packp.ReferenceUpdateRequest,
+	prune bool) error {
 	iter, err := remoteRefs.IterReferences()
 	if err != nil {
 		return err
@@ -452,8 +462,19 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 			return nil
 		}
 
-		if rs.Dst("") != ref.Name() {
-			return nil
+		if prune {
+			rs := rs.Reverse()
+			if !rs.Match(ref.Name()) {
+				return nil
+			}
+
+			if _, ok := refsDict[rs.Dst(ref.Name()).String()]; ok {
+				return nil
+			}
+		} else {
+			if rs.Dst("") != ref.Name() {
+				return nil
+			}
 		}
 
 		cmd := &packp.Command{
