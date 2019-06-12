@@ -722,7 +722,7 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 
 func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files []os.FileInfo) error {
 	for _, fi := range files {
-		if fi.Name() == ".git" {
+		if fi.Name() == GitDirName {
 			continue
 		}
 
