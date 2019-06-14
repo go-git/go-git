@@ -29,6 +29,7 @@ var args = map[string][]string{
 	"tag":         {cloneRepository(defaultURL, tempFolder())},
 	"pull":        {createRepositoryWithRemote(tempFolder(), defaultURL)},
 	"ls":          {cloneRepository(defaultURL, tempFolder()), "HEAD", "vendor"},
+	"merge_base":  {cloneRepository(defaultURL, tempFolder()), "--is-ancestor", "HEAD~3", "HEAD^"},
 }
 
 var ignored = map[string]bool{}
@@ -50,14 +51,15 @@ func TestExamples(t *testing.T) {
 	}
 
 	for _, example := range examples {
-		_, name := filepath.Split(filepath.Dir(example))
+		dir := filepath.Dir(example)
+		_, name := filepath.Split(dir)
 
 		if ignored[name] {
 			continue
 		}
 
 		t.Run(name, func(t *testing.T) {
-			testExample(t, name, example)
+			testExample(t, name, dir)
 		})
 	}
 }
@@ -135,10 +137,9 @@ func addRemote(local, remote string) {
 	CheckIfError(err)
 }
 
-func testExample(t *testing.T, name, example string) {
-	cmd := exec.Command("go", append([]string{
-		"run", filepath.Join(example),
-	}, args[name]...)...)
+func testExample(t *testing.T, name, dir string) {
+	arguments := append([]string{"run", dir}, args[name]...)
+	cmd := exec.Command("go", arguments...)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
