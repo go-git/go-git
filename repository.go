@@ -451,7 +451,7 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 		return nil, ErrRemoteNotFound
 	}
 
-	return newRemote(r.Storer, c), nil
+	return NewRemote(r.Storer, c), nil
 }
 
 // Remotes returns a list with all the remotes
@@ -465,7 +465,7 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 
 	var i int
 	for _, c := range cfg.Remotes {
-		remotes[i] = newRemote(r.Storer, c)
+		remotes[i] = NewRemote(r.Storer, c)
 		i++
 	}
 
@@ -478,7 +478,7 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 		return nil, err
 	}
 
-	remote := newRemote(r.Storer, c)
+	remote := NewRemote(r.Storer, c)
 
 	cfg, err := r.Storer.Config()
 	if err != nil {
@@ -504,7 +504,7 @@ func (r *Repository) CreateRemoteAnonymous(c *config.RemoteConfig) (*Remote, err
 		return nil, ErrAnonymousRemoteName
 	}
 
-	remote := newRemote(r.Storer, c)
+	remote := NewRemote(r.Storer, c)
 
 	return remote, nil
 }
