@@ -3,6 +3,7 @@ package packfile
 import (
 	"bytes"
 	"errors"
+	"io"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
@@ -35,14 +36,20 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) error {
 	}
 	src := buf.Bytes()
 
-	dst, err := PatchDelta(src, delta)
+	dst := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(dst)
+	dst.Reset()
+	err = patchDelta(dst, src, delta)
 	if err != nil {
 		return err
 	}
 
-	target.SetSize(int64(len(dst)))
 
-	_, err = w.Write(dst)
+	target.SetSize(int64(dst.Len()))
+
+	b := byteSlicePool.Get().([]byte)
+	_, err = io.CopyBuffer(w, dst, b)
+	byteSlicePool.Put(b)
 	return err
 }
 
@@ -55,23 +62,31 @@ var (
 // An error will be returned if delta is corrupted (ErrDeltaLen) or an action command
 // is not copy from source or copy from delta (ErrDeltaCmd).
 func PatchDelta(src, delta []byte) ([]byte, error) {
+	b := &bytes.Buffer{}
+	if err := patchDelta(b, src, delta); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 	if len(delta) < deltaSizeMin {
-		return nil, ErrInvalidDelta
+		return ErrInvalidDelta
 	}
 
 	srcSz, delta := decodeLEB128(delta)
 	if srcSz != uint(len(src)) {
-		return nil, ErrInvalidDelta
+		return ErrInvalidDelta
 	}
 
 	targetSz, delta := decodeLEB128(delta)
 	remainingTargetSz := targetSz
 
 	var cmd byte
-	dest := make([]byte, 0, targetSz)
+	dst.Grow(int(targetSz))
 	for {
 		if len(delta) == 0 {
-			return nil, ErrInvalidDelta
+			return ErrInvalidDelta
 		}
 
 		cmd = delta[0]
@@ -81,35 +96,35 @@ func PatchDelta(src, delta []byte) ([]byte, error) {
 			var err error
 			offset, delta, err = decodeOffset(cmd, delta)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			sz, delta, err = decodeSize(cmd, delta)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if invalidSize(sz, targetSz) ||
 				invalidOffsetSize(offset, sz, srcSz) {
 				break
 			}
-			dest = append(dest, src[offset:offset+sz]...)
+			dst.Write(src[offset:offset+sz])
 			remainingTargetSz -= sz
 		} else if isCopyFromDelta(cmd) {
 			sz := uint(cmd) // cmd is the size itself
 			if invalidSize(sz, targetSz) {
-				return nil, ErrInvalidDelta
+				return ErrInvalidDelta
 			}
 
 			if uint(len(delta)) < sz {
-				return nil, ErrInvalidDelta
+				return ErrInvalidDelta
 			}
 
-			dest = append(dest, delta[0:sz]...)
+			dst.Write(delta[0:sz])
 			remainingTargetSz -= sz
 			delta = delta[sz:]
 		} else {
-			return nil, ErrDeltaCmd
+			return ErrDeltaCmd
 		}
 
 		if remainingTargetSz <= 0 {
@@ -117,7 +132,7 @@ func PatchDelta(src, delta []byte) ([]byte, error) {
 		}
 	}
 
-	return dest, nil
+	return nil
 }
 
 // Decodes a number encoded as an unsigned LEB128 at the start of some
