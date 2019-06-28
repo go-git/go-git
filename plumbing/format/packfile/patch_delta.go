@@ -3,7 +3,6 @@ package packfile
 import (
 	"bytes"
 	"errors"
-	"sync"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
@@ -14,12 +13,6 @@ import (
 // for details about the delta format.
 
 const deltaSizeMin = 4
-
-var bytesBufferPool = sync.Pool{
-	New: func() interface{} {
-		return &bytes.Buffer{}
-	},
-}
 
 // ApplyDelta writes to target the result of applying the modification deltas in delta to base.
 func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) error {
@@ -33,11 +26,9 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) error {
 		return err
 	}
 
-	buf := bytesBufferPool.Get().(*bytes.Buffer)
-	defer func() {
-		buf.Reset()
-		bytesBufferPool.Put(buf)
-	} ()
+	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
+	buf.Reset()
 	_, err = buf.ReadFrom(r)
 	if err != nil {
 		return err
