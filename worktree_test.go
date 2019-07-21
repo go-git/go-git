@@ -1675,6 +1675,7 @@ func (s *WorktreeSuite) TestClean(c *C) {
 
 	// Status before cleaning.
 	status, err := wt.Status()
+	c.Assert(err, IsNil)
 	c.Assert(len(status), Equals, 2)
 
 	err = wt.Clean(&CleanOptions{})

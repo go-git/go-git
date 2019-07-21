@@ -19,6 +19,7 @@ func (s *PatchSuite) TestStatsWithSubmodules(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit(), cache.NewObjectLRUDefault())
 
 	commit, err := GetCommit(storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
+	c.Assert(err, IsNil)
 
 	tree, err := commit.Tree()
 	c.Assert(err, IsNil)

@@ -336,12 +336,14 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal(c *C) {
 		Merge:  "refs/heads/foo",
 	}
 	err = r.CreateBranch(testBranch1)
-	err = r.CreateBranch(testBranch2)
-
 	c.Assert(err, IsNil)
+	err = r.CreateBranch(testBranch2)
+	c.Assert(err, IsNil)
+
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	marshaled, err := cfg.Marshal()
+	c.Assert(err, IsNil)
 	c.Assert(string(expected), Equals, string(marshaled))
 }
 

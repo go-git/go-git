@@ -56,6 +56,8 @@ func (s *PruneSuite) testPrune(c *C, deleteTime time.Time) {
 		newCount++
 		return nil
 	})
+	c.Assert(err, IsNil)
+
 	if deleteTime.IsZero() {
 		c.Assert(newCount < count, Equals, true)
 	} else {
