@@ -937,7 +937,7 @@ func (r *Remote) updateLocalReferenceStorage(
 		updated = true
 	}
 
-	if err == nil && forceNeeded {
+	if forceNeeded {
 		err = ErrForceNeeded
 	}
 
