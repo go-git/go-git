@@ -29,9 +29,7 @@ func commitsFromIter(iter CommitIter) ([]*Commit, error) {
 func assertHashes(c *C, commits []*Commit, hashes []string) {
 	if len(commits) != len(hashes) {
 		var expected []string
-		for _, c := range hashes {
-			expected = append(expected, c)
-		}
+		expected = append(expected, hashes...)
 		fmt.Println("expected:", strings.Join(expected, ", "))
 		var got []string
 		for _, c := range commits {
@@ -48,11 +46,7 @@ func assertHashes(c *C, commits []*Commit, hashes []string) {
 
 func validIfCommit(ignored plumbing.Hash) CommitFilter {
 	return func(c *Commit) bool {
-		if c.Hash == ignored {
-			return true
-		}
-
-		return false
+		return c.Hash == ignored
 	}
 }
 
