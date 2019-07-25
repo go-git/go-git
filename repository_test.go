@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	openpgperr "golang.org/x/crypto/openpgp/errors"
+
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
@@ -2669,5 +2670,24 @@ func BenchmarkObjects(b *testing.B) {
 				iter.Close()
 			}
 		})
+	}
+}
+
+func BenchmarkPlainClone(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		t, err := ioutil.TempDir("", "")
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = PlainClone(t, false, &CloneOptions{
+			URL:   "https://github.com/knqyf263/vuln-list",
+			Depth: 1,
+		})
+		if err != nil {
+			b.Error(err)
+		}
+		b.StopTimer()
+		os.RemoveAll(t)
+		b.StartTimer()
 	}
 }
