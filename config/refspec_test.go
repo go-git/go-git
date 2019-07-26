@@ -167,6 +167,15 @@ func (s *RefSpecSuite) TestRefSpecDstBlob(c *C) {
 		)
 	}
 }
+
+func (s *RefSpecSuite) TestRefSpecReverse(c *C) {
+	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
+	c.Assert(
+		spec.Reverse(), Equals,
+		RefSpec("refs/remotes/origin/*:refs/heads/*"),
+	)
+}
+
 func (s *RefSpecSuite) TestMatchAny(c *C) {
 	specs := []RefSpec{
 		"refs/heads/bar:refs/remotes/origin/foo",
