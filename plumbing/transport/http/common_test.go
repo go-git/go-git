@@ -64,7 +64,7 @@ func (s *ClientSuite) TestNewTokenAuth(c *C) {
 	// Check header is set correctly
 	req, err := http.NewRequest("GET", "https://github.com/git-fixtures/basic", nil)
 	c.Assert(err, Equals, nil)
-	a.setAuth(req)
+	a.SetAuth(req)
 	c.Assert(req.Header.Get("Authorization"), Equals, "Bearer OAUTH-TOKEN-TEXT")
 }
 
