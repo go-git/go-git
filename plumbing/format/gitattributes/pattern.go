@@ -66,7 +66,7 @@ func (p *pattern) Match(path []string) bool {
 			doublestar = true
 		}
 
-		switch true {
+		switch {
 		case strings.Contains(pattern[0], "**"):
 			return false
 

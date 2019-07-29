@@ -226,6 +226,7 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs(c *C) {
 		"refs/remotes/origin/branch",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
+	c.Assert(err, IsNil)
 
 	// Make sure it only appears once in the refs list.
 	refs, err := dir.Refs()

@@ -210,7 +210,7 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	r, err := Init(st, nil)
 	c.Assert(err, IsNil)
 
-	r, err = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	r, _ = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: path,
 	})
 

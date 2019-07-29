@@ -140,6 +140,7 @@ func (s *ScannerSuite) TestReaderReset(c *C) {
 	p := NewScanner(r)
 
 	version, objects, err := p.Header()
+	c.Assert(err, IsNil)
 	c.Assert(version, Equals, VersionSupported)
 	c.Assert(objects, Equals, uint32(31))
 

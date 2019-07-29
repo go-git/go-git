@@ -177,7 +177,7 @@ func newChangesFromString(s string) (changes, error) {
 
 	for _, chunk := range strings.Split(s, " ") {
 		change := change{
-			path: string(chunk[1:]),
+			path: chunk[1:],
 		}
 
 		switch chunk[0] {

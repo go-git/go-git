@@ -432,7 +432,7 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 	err = w.Filesystem.Remove(filename)
 	c.Assert(err, IsNil)
 
-	modFilename := norm.Form(norm.NFKD).String(filename)
+	modFilename := norm.NFKD.String(filename)
 	writeFile(modFilename)
 
 	_, err = w.Add(filename)
@@ -1675,6 +1675,7 @@ func (s *WorktreeSuite) TestClean(c *C) {
 
 	// Status before cleaning.
 	status, err := wt.Status()
+	c.Assert(err, IsNil)
 	c.Assert(len(status), Equals, 2)
 
 	err = wt.Clean(&CleanOptions{})
