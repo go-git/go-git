@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -1651,6 +1651,28 @@ func (s *RepositorySuite) TestLogFileWithOtherParamsPass(c *C) {
 
 	_, iterErr = cIter.Next()
 	c.Assert(iterErr, Equals, io.EOF)
+}
+
+type mockErrCommitIter struct{}
+
+func (m *mockErrCommitIter) Next() (*object.Commit, error) {
+	return nil, errors.New("mock next error")
+}
+func (m *mockErrCommitIter) ForEach(func(*object.Commit) error) error {
+	return errors.New("mock foreach error")
+}
+
+func (m *mockErrCommitIter) Close() {}
+
+func (s *RepositorySuite) TestLogFileWithError(c *C) {
+	fileName := "README"
+	cIter := object.NewCommitFileIterFromIter(fileName, &mockErrCommitIter{}, false)
+	defer cIter.Close()
+
+	err := cIter.ForEach(func(commit *object.Commit) error {
+		return nil
+	})
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestCommit(c *C) {
