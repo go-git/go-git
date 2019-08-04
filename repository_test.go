@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -33,6 +32,7 @@ import (
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-billy.v4/util"
+	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type RepositorySuite struct {

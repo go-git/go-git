@@ -128,7 +128,9 @@ func isParentHash(hash plumbing.Hash, commit *Commit) bool {
 func (c *commitFileIter) ForEach(cb func(*Commit) error) error {
 	for {
 		commit, nextErr := c.Next()
-		if nextErr != nil {
+		if nextErr == io.EOF {
+			break
+		} else if nextErr != nil {
 			return nextErr
 		}
 		err := cb(commit)
@@ -138,6 +140,7 @@ func (c *commitFileIter) ForEach(cb func(*Commit) error) error {
 			return err
 		}
 	}
+	return nil
 }
 
 func (c *commitFileIter) Close() {
