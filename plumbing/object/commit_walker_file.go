@@ -130,7 +130,8 @@ func (c *commitFileIter) ForEach(cb func(*Commit) error) error {
 		commit, nextErr := c.Next()
 		if nextErr == io.EOF {
 			break
-		} else if nextErr != nil {
+		}
+		if nextErr != nil {
 			return nextErr
 		}
 		err := cb(commit)
