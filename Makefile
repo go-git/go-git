@@ -12,7 +12,6 @@ GIT_REPOSITORY = http://github.com/git/git.git
 
 # Coverage
 COVERAGE_REPORT = coverage.txt
-COVERAGE_PROFILE = profile.out
 COVERAGE_MODE = atomic
 
 ifneq ($(origin CI), undefined)
@@ -37,16 +36,7 @@ test:
 test-coverage:
 	@cd $(WORKDIR); \
 	echo "" > $(COVERAGE_REPORT); \
-	for dir in `find . -name "*.go" | grep -o '.*/' | sort | uniq`; do \
-		$(GOTEST) $$dir -coverprofile=$(COVERAGE_PROFILE) -covermode=$(COVERAGE_MODE); \
-		if [ $$? != 0 ]; then \
-			exit 2; \
-		fi; \
-		if [ -f $(COVERAGE_PROFILE) ]; then \
-			cat $(COVERAGE_PROFILE) >> $(COVERAGE_REPORT); \
-			rm $(COVERAGE_PROFILE); \
-		fi; \
-	done; \
+	$(GOTEST) -coverprofile=$(COVERAGE_REPORT) -coverpkg=./... -covermode=$(COVERAGE_MODE) ./...
 
 clean:
 	rm -rf $(GIT_DIST_PATH)
