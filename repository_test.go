@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
+
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	openpgperr "golang.org/x/crypto/openpgp/errors"
@@ -32,7 +34,6 @@ import (
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-billy.v4/util"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type RepositorySuite struct {
@@ -1673,6 +1674,135 @@ func (s *RepositorySuite) TestLogFileWithError(c *C) {
 		return nil
 	})
 	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestLogLimitNext(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	since := time.Date(2015, 4, 1, 0, 0, 0, 0, time.UTC)
+	cIter, err := r.Log(&LogOptions{Since: &since})
+
+	c.Assert(err, IsNil)
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	}
+
+	for _, o := range commitOrder {
+		commit, err := cIter.Next()
+		c.Assert(err, IsNil)
+		c.Assert(commit.Hash, Equals, o)
+	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+}
+
+func (s *RepositorySuite) TestLogLimitForEach(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	since := time.Date(2015, 3, 31, 11, 54, 0, 0, time.UTC)
+	until := time.Date(2015, 4, 1, 0, 0, 0, 0, time.UTC)
+	cIter, err := r.Log(&LogOptions{Since: &since, Until: &until})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+	}
+
+	expectedIndex := 0
+	err = cIter.ForEach(func(commit *object.Commit) error {
+		expectedCommitHash := commitOrder[expectedIndex]
+		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
+		expectedIndex++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(expectedIndex, Equals, 1)
+}
+
+func (s *RepositorySuite) TestLogAllLimitForEach(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	since := time.Date(2015, 3, 31, 11, 54, 0, 0, time.UTC)
+	until := time.Date(2015, 4, 1, 0, 0, 0, 0, time.UTC)
+	cIter, err := r.Log(&LogOptions{Since: &since, Until: &until, All: true})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	commitOrder := []plumbing.Hash{
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+	}
+
+	expectedIndex := 0
+	err = cIter.ForEach(func(commit *object.Commit) error {
+		expectedCommitHash := commitOrder[expectedIndex]
+		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
+		expectedIndex++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(expectedIndex, Equals, 2)
+}
+
+func (s *RepositorySuite) TestLogLimitWithOtherParamsFail(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	since := time.Date(2015, 3, 31, 11, 54, 0, 0, time.UTC)
+	cIter, err := r.Log(&LogOptions{
+		Order: LogOrderCommitterTime,
+		Since: &since,
+		From:  plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	_, iterErr := cIter.Next()
+	c.Assert(iterErr, Equals, io.EOF)
+}
+
+func (s *RepositorySuite) TestLogLimitWithOtherParamsPass(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	until := time.Date(2015, 3, 31, 11, 43, 0, 0, time.UTC)
+	cIter, err := r.Log(&LogOptions{
+		Order: LogOrderCommitterTime,
+		Until: &until,
+		From:  plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	commitVal, iterErr := cIter.Next()
+	c.Assert(iterErr, Equals, nil)
+	c.Assert(commitVal.Hash.String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
+
+	_, iterErr = cIter.Next()
+	c.Assert(iterErr, Equals, io.EOF)
 }
 
 func (s *RepositorySuite) TestCommit(c *C) {
