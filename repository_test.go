@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
+
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	openpgperr "golang.org/x/crypto/openpgp/errors"
@@ -31,7 +33,6 @@ import (
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-billy.v4/util"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type RepositorySuite struct {
@@ -1507,12 +1508,13 @@ func (s *RepositorySuite) TestLogFileForEach(c *C) {
 	}
 
 	expectedIndex := 0
-	cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
 		expectedIndex++
 		return nil
 	})
+	c.Assert(err, IsNil)
 	c.Assert(expectedIndex, Equals, 1)
 }
 
@@ -1551,12 +1553,13 @@ func (s *RepositorySuite) TestLogAllFileForEach(c *C) {
 	}
 
 	expectedIndex := 0
-	cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
 		expectedIndex++
 		return nil
 	})
+	c.Assert(err, IsNil)
 	c.Assert(expectedIndex, Equals, 1)
 }
 
@@ -1598,12 +1601,13 @@ func (s *RepositorySuite) TestLogFileInitialCommit(c *C) {
 	}
 
 	expectedIndex := 0
-	cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		c.Assert(commit.Hash.String(), Equals, expectedCommitHash.String())
 		expectedIndex++
 		return nil
 	})
+	c.Assert(err, IsNil)
 	c.Assert(expectedIndex, Equals, 1)
 }
 
