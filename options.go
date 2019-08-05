@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/openpgp"
 	"gopkg.in/src-d/go-git.v4/config"
@@ -348,6 +349,14 @@ type LogOptions struct {
 	// It is equivalent to running `git log --all`.
 	// If set on true, the From option will be ignored.
 	All bool
+
+	// Show commits more recent than a specific date.
+	// It is equivalent to running `git log --since <date>` or `git log --after <date>`.
+	Since *time.Time
+
+	// Show commits older than a specific date.
+	// It is equivalent to running `git log --until <date>` or `git log --before <date>`.
+	Until *time.Time
 }
 
 var (

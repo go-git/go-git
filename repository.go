@@ -1068,6 +1068,11 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		it = r.logWithFile(*o.FileName, it, o.All)
 	}
 
+	if o.Since != nil || o.Until != nil {
+		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until}
+		it = r.logWithLimit(it, limitOptions)
+	}
+
 	return it, nil
 }
 
@@ -1095,6 +1100,10 @@ func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIte
 
 func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {
 	return object.NewCommitFileIterFromIter(fileName, commitIter, checkParent)
+}
+
+func (*Repository) logWithLimit(commitIter object.CommitIter, limitOptions object.LogLimitOptions) object.CommitIter {
+	return object.NewCommitLimitIterFromIter(commitIter, limitOptions)
 }
 
 func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {

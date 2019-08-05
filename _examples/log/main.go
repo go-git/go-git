@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/src-d/go-git.v4"
 	. "gopkg.in/src-d/go-git.v4/_examples"
@@ -31,7 +32,9 @@ func main() {
 	CheckIfError(err)
 
 	// ... retrieves the commit history
-	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
+	since := time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2019, 7, 30, 0, 0, 0, 0, time.UTC)
+	cIter, err := r.Log(&git.LogOptions{From: ref.Hash(), Since: &since, Until: &until})
 	CheckIfError(err)
 
 	// ... just iterates over the commits, printing it
