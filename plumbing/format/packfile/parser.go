@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/cache"
@@ -263,11 +264,14 @@ func (p *Parser) indexObjects() error {
 }
 
 func (p *Parser) resolveDeltas() error {
+	buf := &bytes.Buffer{}
 	for _, obj := range p.oi {
-		content, err := p.get(obj)
+		buf.Reset()
+		err := p.get(obj, buf)
 		if err != nil {
 			return err
 		}
+		content := buf.Bytes()
 
 		if err := p.onInflatedObjectHeader(obj.Type, obj.Length, obj.Offset); err != nil {
 			return err
@@ -279,7 +283,7 @@ func (p *Parser) resolveDeltas() error {
 
 		if !obj.IsDelta() && len(obj.Children) > 0 {
 			for _, child := range obj.Children {
-				if _, err := p.resolveObject(child, content); err != nil {
+				if err := p.resolveObject(ioutil.Discard, child, content); err != nil {
 					return err
 				}
 			}
@@ -294,82 +298,87 @@ func (p *Parser) resolveDeltas() error {
 	return nil
 }
 
-func (p *Parser) get(o *objectInfo) (b []byte, err error) {
-	var ok bool
+func (p *Parser) get(o *objectInfo, buf *bytes.Buffer) error {
 	if !o.ExternalRef { // skip cache check for placeholder parents
-		b, ok = p.cache.Get(o.Offset)
+		b, ok := p.cache.Get(o.Offset)
+		if ok {
+			_, err := buf.Write(b)
+			return err
+		}
 	}
 
 	// If it's not on the cache and is not a delta we can try to find it in the
 	// storage, if there's one. External refs must enter here.
-	if !ok && p.storage != nil && !o.Type.IsDelta() {
+	if p.storage != nil && !o.Type.IsDelta() {
 		e, err := p.storage.EncodedObject(plumbing.AnyObject, o.SHA1)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		o.Type = e.Type()
 
 		r, err := e.Reader()
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		b = make([]byte, e.Size())
-		if _, err = r.Read(b); err != nil {
-			return nil, err
-		}
-	}
-
-	if b != nil {
-		return b, nil
+		_, err = buf.ReadFrom(io.LimitReader(r, e.Size()))
+		return err
 	}
 
 	if o.ExternalRef {
 		// we were not able to resolve a ref in a thin pack
-		return nil, ErrReferenceDeltaNotFound
+		return ErrReferenceDeltaNotFound
 	}
 
-	var data []byte
 	if o.DiskType.IsDelta() {
-		base, err := p.get(o.Parent)
+		b := bufPool.Get().(*bytes.Buffer)
+		defer bufPool.Put(b)
+		b.Reset()
+		err := p.get(o.Parent, b)
 		if err != nil {
-			return nil, err
+			return err
 		}
+		base := b.Bytes()
 
-		data, err = p.resolveObject(o, base)
+		err = p.resolveObject(buf, o, base)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else {
-		data, err = p.readData(o)
+		err := p.readData(buf, o)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	if len(o.Children) > 0 {
+		data := make([]byte, buf.Len())
+		copy(data, buf.Bytes())
 		p.cache.Put(o.Offset, data)
 	}
-
-	return data, nil
+	return nil
 }
 
 func (p *Parser) resolveObject(
+	w io.Writer,
 	o *objectInfo,
 	base []byte,
-) ([]byte, error) {
+) error {
 	if !o.DiskType.IsDelta() {
-		return nil, nil
+		return nil
 	}
-
-	data, err := p.readData(o)
+	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
+	buf.Reset()
+	err := p.readData(buf, o)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	data := buf.Bytes()
 
 	data, err = applyPatchBase(o, data, base)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if p.storage != nil {
@@ -377,37 +386,35 @@ func (p *Parser) resolveObject(
 		obj.SetSize(o.Size())
 		obj.SetType(o.Type)
 		if _, err := obj.Write(data); err != nil {
-			return nil, err
+			return err
 		}
 
 		if _, err := p.storage.SetEncodedObject(obj); err != nil {
-			return nil, err
+			return err
 		}
 	}
-
-	return data, nil
+	_, err = w.Write(data)
+	return err
 }
 
-func (p *Parser) readData(o *objectInfo) ([]byte, error) {
+func (p *Parser) readData(w io.Writer, o *objectInfo) error {
 	if !p.scanner.IsSeekable && o.DiskType.IsDelta() {
 		data, ok := p.deltas[o.Offset]
 		if !ok {
-			return nil, ErrDeltaNotCached
+			return ErrDeltaNotCached
 		}
-
-		return data, nil
+		_, err := w.Write(data)
+		return err
 	}
 
 	if _, err := p.scanner.SeekObjectHeader(o.Offset); err != nil {
-		return nil, err
+		return err
 	}
 
-	buf := new(bytes.Buffer)
-	if _, _, err := p.scanner.NextObject(buf); err != nil {
-		return nil, err
+	if _, _, err := p.scanner.NextObject(w); err != nil {
+		return err
 	}
-
-	return buf.Bytes(), nil
+	return nil
 }
 
 func applyPatchBase(ota *objectInfo, data, base []byte) ([]byte, error) {
