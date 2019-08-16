@@ -14,7 +14,7 @@ func main() {
 	CheckArgs("<path>")
 	path := os.Args[1]
 
-	// We instanciate a new repository targeting the given path (the .git folder)
+	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
 
