@@ -2,9 +2,17 @@ package url
 
 import (
 	"testing"
+
+	. "gopkg.in/check.v1"
 )
 
-func TestMatchesScpLike(t *testing.T) {
+func Test(t *testing.T) { TestingT(t) }
+
+type URLSuite struct{}
+
+var _ = Suite(&URLSuite{})
+
+func (s *URLSuite) TestMatchesScpLike(c *C) {
 	examples := []string{
 		"git@github.com:james/bond",
 		"git@github.com:007/bond",
@@ -13,38 +21,40 @@ func TestMatchesScpLike(t *testing.T) {
 	}
 
 	for _, url := range examples {
-		if !MatchesScpLike(url) {
-			t.Fatalf("repo url %q did not match ScpLike", url)
-		}
+		c.Check(MatchesScpLike(url), Equals, true)
 	}
 }
 
-func TestFindScpLikeComponents(t *testing.T) {
+func (s *URLSuite) TestFindScpLikeComponents(c *C) {
 	url := "git@github.com:james/bond"
 	user, host, port, path := FindScpLikeComponents(url)
 
-	if user != "git" || host != "github.com" || port != "" || path != "james/bond" {
-		t.Fatalf("repo url %q did not match properly", user)
-	}
+	c.Check(user, Equals, "git")
+	c.Check(host, Equals, "github.com")
+	c.Check(port, Equals, "")
+	c.Check(path, Equals, "james/bond")
 
 	url = "git@github.com:007/bond"
 	user, host, port, path = FindScpLikeComponents(url)
 
-	if user != "git" || host != "github.com" || port != "" || path != "007/bond" {
-		t.Fatalf("repo url %q did not match properly", user)
-	}
+	c.Check(user, Equals, "git")
+	c.Check(host, Equals, "github.com")
+	c.Check(port, Equals, "")
+	c.Check(path, Equals, "007/bond")
 
 	url = "git@github.com:22:james/bond"
 	user, host, port, path = FindScpLikeComponents(url)
 
-	if user != "git" || host != "github.com" || port != "22" || path != "james/bond" {
-		t.Fatalf("repo url %q did not match properly", user)
-	}
+	c.Check(user, Equals, "git")
+	c.Check(host, Equals, "github.com")
+	c.Check(port, Equals, "22")
+	c.Check(path, Equals, "james/bond")
 
 	url = "git@github.com:22:007/bond"
 	user, host, port, path = FindScpLikeComponents(url)
 
-	if user != "git" || host != "github.com" || port != "22" || path != "007/bond" {
-		t.Fatalf("repo url %q did not match properly", user)
-	}
+	c.Check(user, Equals, "git")
+	c.Check(host, Equals, "github.com")
+	c.Check(port, Equals, "22")
+	c.Check(path, Equals, "007/bond")
 }
