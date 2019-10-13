@@ -99,6 +99,37 @@ var doTests = [...]struct {
 			{Type: 1, Text: "111\nBCD\n"},
 		},
 	},
+	{
+		src: "A\nB\nC\nD\nE\nF\nG\nH\nI\nJ\nK\nL\nM\nN\nÑ\nO\nP\nQ\nR\nS\nT\nU\nV\nW\nX\nY\nZ",
+		dst: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\nZ",
+		exp: []diffmatchpatch.Diff{
+			{Type: -1, Text: "A\n"},
+			{Type: 0, Text: "B\nC\nD\nE\nF\nG\n"},
+			{Type: -1, Text: "H\n"},
+			{Type: 0, Text: "I\nJ\nK\nL\nM\nN\n"},
+			{Type: -1, Text: "Ñ\n"},
+			{Type: 0, Text: "O\nP\nQ\nR\nS\nT\n"},
+			{Type: -1, Text: "U\n"},
+			{Type: 0, Text: "V\nW\nX\nY\nZ"},
+		},
+	},
+	{
+		src: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\nZ",
+		dst: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\n",
+		exp: []diffmatchpatch.Diff{
+			{Type: 0, Text: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\n"},
+			{Type: -1, Text: "Z"},
+		},
+	},
+	{
+		src: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\nZ",
+		dst: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY",
+		exp: []diffmatchpatch.Diff{
+			{Type: 0, Text: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\n"},
+			{Type: -1, Text: "Y\nZ"},
+			{Type: 1, Text: "Y"},
+		},
+	},
 }
 
 func (s *suiteCommon) TestDo(c *C) {
