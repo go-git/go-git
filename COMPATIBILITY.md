@@ -12,7 +12,7 @@ is supported by go-git.
 | init                                  | ✔ | Plain init and `--bare` are supported. Flags `--template`, `--separate-git-dir` and `--shared` are not. |
 | clone                                 | ✔ | Plain clone and equivalents to `--progress`,  `--single-branch`, `--depth`, `--origin`, `--recurse-submodules` are supported. Others are not. |
 | **basic snapshotting** |
-| add                                   | ✔ | Plain add is supported. Any other flag aren't supported |
+| add                                   | ✔ | Plain add is supported. Any other flags aren't supported |
 | status                                | ✔ |
 | commit                                | ✔ |
 | reset                                 | ✔ |
