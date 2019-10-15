@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -25,9 +26,10 @@ const (
 	tPath  = "+++ %s\n"
 	binary = "Binary files %s and %s differ\n"
 
-	addLine    = "+%s\n"
-	deleteLine = "-%s\n"
-	equalLine  = " %s\n"
+	addLine    = "+%s%s"
+	deleteLine = "-%s%s"
+	equalLine  = " %s%s"
+	noNewLine  = "\n\\ No newline at end of file\n"
 
 	oldMode         = "old mode %o\n"
 	newMode         = "new mode %o\n"
@@ -216,7 +218,7 @@ func (c *hunksGenerator) processHunk(i int, op Operation) {
 		linesBefore = c.ctxLines
 	}
 
-	c.current = &hunk{ctxPrefix: ctxPrefix}
+	c.current = &hunk{ctxPrefix: strings.TrimSuffix(ctxPrefix, "\n")}
 	c.current.AddOp(Equal, c.beforeContext...)
 
 	switch op {
@@ -279,12 +281,13 @@ func (c *hunksGenerator) processEqualsLines(ls []string, i int) {
 	}
 }
 
+var splitLinesRE = regexp.MustCompile(`[^\n]*(\n|$)`)
+
 func splitLines(s string) []string {
-	out := strings.Split(s, "\n")
+	out := splitLinesRE.FindAllString(s, -1)
 	if out[len(out)-1] == "" {
 		out = out[:len(out)-1]
 	}
-
 	return out
 }
 
@@ -346,7 +349,7 @@ type op struct {
 }
 
 func (o *op) String() string {
-	var prefix string
+	var prefix, suffix string
 	switch o.t {
 	case Add:
 		prefix = addLine
@@ -355,6 +358,10 @@ func (o *op) String() string {
 	case Equal:
 		prefix = equalLine
 	}
+	n := len(o.text)
+	if n > 0 && o.text[n-1] != '\n' {
+		suffix = noNewLine
+	}
 
-	return fmt.Sprintf(prefix, o.text)
+	return fmt.Sprintf(prefix, o.text, suffix)
 }

@@ -83,7 +83,7 @@ var oneChunkPatch Patch = testPatch{
 			content: "A\n",
 			op:      Delete,
 		}, {
-			content: "B\nC\nD\nE\nF\nG",
+			content: "B\nC\nD\nE\nF\nG\n",
 			op:      Equal,
 		}, {
 			content: "H\n",
@@ -125,7 +125,7 @@ var oneChunkPatchInverted Patch = testPatch{
 			content: "A\n",
 			op:      Add,
 		}, {
-			content: "B\nC\nD\nE\nF\nG",
+			content: "B\nC\nD\nE\nF\nG\n",
 			op:      Equal,
 		}, {
 			content: "H\n",
@@ -164,13 +164,13 @@ var fixtures []*fixture = []*fixture{{
 				seed: "hello\nbug\n",
 			},
 			chunks: []testChunk{{
-				content: "hello",
+				content: "hello\n",
 				op:      Equal,
 			}, {
-				content: "world",
+				content: "world\n",
 				op:      Delete,
 			}, {
-				content: "bug",
+				content: "bug\n",
 				op:      Add,
 			}},
 		}},
@@ -239,18 +239,18 @@ rename to test1.txt
 			from: &testFile{
 				mode: filemode.Regular,
 				path: "test.txt",
-				seed: "test",
+				seed: "test\n",
 			},
 			to: &testFile{
 				mode: filemode.Regular,
 				path: "test1.txt",
-				seed: "test1",
+				seed: "test1\n",
 			},
 			chunks: []testChunk{{
-				content: "test",
+				content: "test\n",
 				op:      Delete,
 			}, {
-				content: "test1",
+				content: "test1\n",
 				op:      Add,
 			}},
 		}},
@@ -260,7 +260,7 @@ rename to test1.txt
 	diff: `diff --git a/test.txt b/test1.txt
 rename from test.txt
 rename to test1.txt
-index 30d74d258442c7c65512eafab474568dd706c430..f079749c42ffdcc5f52ed2d3a6f15b09307e975e 100644
+index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..a5bce3fd2565d8f458555a0c6f42d0504a848bd5 100644
 --- a/test.txt
 +++ b/test1.txt
 @@ -1 +1 @@
@@ -299,19 +299,19 @@ rename to test1.txt
 			from: &testFile{
 				mode: filemode.Regular,
 				path: "test.txt",
-				seed: "test",
+				seed: "test\n",
 			},
 			to: &testFile{
 				mode: filemode.Regular,
 				path: "test.txt",
-				seed: "test2",
+				seed: "test2\n",
 			},
 
 			chunks: []testChunk{{
-				content: "test",
+				content: "test\n",
 				op:      Delete,
 			}, {
-				content: "test2",
+				content: "test2\n",
 				op:      Add,
 			}},
 		}},
@@ -320,7 +320,7 @@ rename to test1.txt
 	desc:    "one line change",
 	context: 1,
 	diff: `diff --git a/test.txt b/test.txt
-index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d55b2ae9d 100644
+index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..180cf8328022becee9aaa2577a8f84ea2b9f3827 100644
 --- a/test.txt
 +++ b/test.txt
 @@ -1 +1 @@
@@ -334,19 +334,19 @@ index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d
 			from: &testFile{
 				mode: filemode.Regular,
 				path: "test.txt",
-				seed: "test",
+				seed: "test\n",
 			},
 			to: &testFile{
 				mode: filemode.Regular,
 				path: "test.txt",
-				seed: "test2",
+				seed: "test2\n",
 			},
 
 			chunks: []testChunk{{
-				content: "test",
+				content: "test\n",
 				op:      Delete,
 			}, {
-				content: "test2",
+				content: "test2\n",
 				op:      Add,
 			}},
 		}},
@@ -356,7 +356,7 @@ index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d
 	context: 1,
 	diff: `this is the message
 diff --git a/test.txt b/test.txt
-index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d55b2ae9d 100644
+index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..180cf8328022becee9aaa2577a8f84ea2b9f3827 100644
 --- a/test.txt
 +++ b/test.txt
 @@ -1 +1 @@
@@ -397,7 +397,9 @@ index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d
 +++ b/test.txt
 @@ -1 +1 @@
 -test
+\ No newline at end of file
 +test2
+\ No newline at end of file
 `,
 }, {
 	patch: testPatch{
@@ -407,7 +409,7 @@ index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d
 			to: &testFile{
 				mode: filemode.Regular,
 				path: "new.txt",
-				seed: "test\ntest2\test3",
+				seed: "test\ntest2\ntest3",
 			},
 
 			chunks: []testChunk{{
@@ -421,13 +423,14 @@ index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d
 	context: 1,
 	diff: `diff --git a/new.txt b/new.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..65c8dd02a42273038658a22b1cb29c8d9457ca12
+index 0000000000000000000000000000000000000000..3ceaab5442b64a0c2b33dd25fae67ccdb4fd1ea8
 --- /dev/null
 +++ b/new.txt
 @@ -0,0 +1,3 @@
 +test
 +test2
 +test3
+\ No newline at end of file
 `,
 }, {
 	patch: testPatch{
@@ -456,6 +459,7 @@ index 30d74d258442c7c65512eafab474568dd706c430..00000000000000000000000000000000
 +++ /dev/null
 @@ -1 +0,0 @@
 -test
+\ No newline at end of file
 `,
 }, {
 	patch:   oneChunkPatch,
@@ -548,6 +552,7 @@ index ab5eed5d4a2c33aeef67e0188ee79bed666bde6f..0adddcde4fd38042c354518351820eb0
  X
  Y
  Z
+\ No newline at end of file
 `,
 }, {
 	patch: oneChunkPatch,
@@ -813,6 +818,47 @@ index 0adddcde4fd38042c354518351820eb06c417c82..553ae669c7a9303cf848fcc749a25692
 +++ b/onechunk.txt
 @@ -23 +22,0 @@ Y
 -Z
+\ No newline at end of file
+`,
+}, {
+	patch: testPatch{
+		message: "",
+		filePatches: []testFilePatch{{
+			from: &testFile{
+				mode: filemode.Regular,
+				path: "onechunk.txt",
+				seed: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\nZ",
+			},
+			to: &testFile{
+				mode: filemode.Regular,
+				path: "onechunk.txt",
+				seed: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY",
+			},
+
+			chunks: []testChunk{{
+				content: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\n",
+				op:      Equal,
+			}, {
+				content: "Y\nZ",
+				op:      Delete,
+			}, {
+				content: "Y",
+				op:      Add,
+			}},
+		}},
+	},
+	desc:    "remove last letter and no newline at end of file",
+	context: 0,
+	diff: `diff --git a/onechunk.txt b/onechunk.txt
+index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f26c9218d 100644
+--- a/onechunk.txt
++++ b/onechunk.txt
+@@ -22,2 +21 @@ X
+-Y
+-Z
+\ No newline at end of file
++Y
+\ No newline at end of file
 `,
 }}
 
