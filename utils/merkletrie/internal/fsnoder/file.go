@@ -60,7 +60,7 @@ const (
 	fileEndMark   = '>'
 )
 
-// String returns a string formated as: name<contents>.
+// String returns a string formatted as: name<contents>.
 func (f *file) String() string {
 	var buf bytes.Buffer
 	buf.WriteString(f.name)

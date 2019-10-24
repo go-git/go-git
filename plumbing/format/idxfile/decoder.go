@@ -12,7 +12,7 @@ import (
 var (
 	// ErrUnsupportedVersion is returned by Decode when the idx file version
 	// is not supported.
-	ErrUnsupportedVersion = errors.New("Unsuported version")
+	ErrUnsupportedVersion = errors.New("Unsupported version")
 	// ErrMalformedIdxFile is returned by Decode when the idx file is corrupted.
 	ErrMalformedIdxFile = errors.New("Malformed IDX file")
 )

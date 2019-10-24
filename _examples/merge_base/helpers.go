@@ -13,7 +13,7 @@ func checkIfError(err error, code exitCode, mainReason string, v ...interface{})
 		return
 	}
 
-	printErr(wrappErr(err, mainReason, v...))
+	printErr(wrapErr(err, mainReason, v...))
 	os.Exit(int(code))
 }
 
@@ -52,7 +52,7 @@ func printCommits(commits []*object.Commit) {
 	}
 }
 
-func wrappErr(err error, s string, v ...interface{}) error {
+func wrapErr(err error, s string, v ...interface{}) error {
 	if err != nil {
 		return fmt.Errorf("%s\n  %s", fmt.Sprintf(s, v...), err)
 	}

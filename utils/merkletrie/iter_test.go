@@ -95,7 +95,7 @@ func (t test) run(c *C, iter *merkletrie.Iter,
 }
 
 // A testsCollection value represents a tree and a collection of tests
-// we want to perfrom on iterators of that tree.
+// we want to perform on iterators of that tree.
 //
 // Example:
 //

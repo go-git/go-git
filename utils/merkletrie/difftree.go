@@ -8,7 +8,7 @@ package merkletrie
 // type defined in this same package; we will iterate over both
 // trees at the same time, while comparing the current noders in
 // each iterator.  Depending on how they differ we will output the
-// corresponding chages and move the iterators further over both
+// corresponding changes and move the iterators further over both
 // trees.
 //
 // The table bellow show all the possible comparison results, along
@@ -69,7 +69,7 @@ package merkletrie
 //
 // ### C. To was created: 01, 02, 03, 04, 05, 06
 //   - check: `DifferentName() && ToBeforeFrom()`
-//   - action: inserRecursively(to)
+//   - action: insertRecursively(to)
 //   - advance: `ToNext()`
 //
 // ### D. From was deleted: 10, 20, 30, 40, 50, 60
@@ -131,13 +131,13 @@ package merkletrie
 //   - action: `DeleteDir(from); InsertFile(to)`
 //   - advance: `FromNext(); ToNext()`
 //
-// ### J. file with contents to dir with contetns: 25, 26, 35, 36
+// ### J. file with contents to dir with contents: 25, 26, 35, 36
 //   - check: `SameName() && DifferentHash() && FromIsFile() &&
 //             FromIsNotEmpty() && ToIsDir() && ToIsNotEmpty()`
 //   - action: `DeleteFile(from); InsertDirRecursively(to)`
 //   - advance: `FromNext(); ToNext()`
 //
-// ### J'. dir with contetns to file with contents: 52, 62, 53, 63
+// ### J'. dir with contents to file with contents: 52, 62, 53, 63
 //   - check: `SameName() && DifferentHash() && FromIsDir() &&
 //             FromIsNotEmpty() && ToIsFile() && ToIsNotEmpty()`
 //   - action: `DeleteDirRecursively(from); InsertFile(to)`
@@ -216,7 +216,7 @@ package merkletrie
 // 1 0 1 0 1 0 |    a() |  a<1>  | I' |  f  | delete(from); insert(to); NN
 // 1 0 1 0 1 1 |    a() |   a<>  | F' |  f  | delete(from); insert(to); NN
 // 1 0 1 1 0 0 | a(...) | a(;;;) | L  |  g  | nothing; SS
-// 1 0 1 1 0 1 | a(...) |    a() | K' |  h  | deleteChidren(from); NN
+// 1 0 1 1 0 1 | a(...) |    a() | K' |  h  | deleteChildren(from); NN
 // 1 0 1 1 1 0 |    a() | a(...) | K  |  i  | insertChildren(to); NN
 // 1 0 1 1 1 1 |  ----  |  ----  |    |     |
 // 1 1 0 0 0 0 |  a<1>  |  a<1>  | B  |  b  | nothing; NN

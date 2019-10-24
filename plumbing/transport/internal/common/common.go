@@ -66,7 +66,7 @@ type Command interface {
 	Close() error
 }
 
-// CommandKiller expands the Command interface, enableing it for being killed.
+// CommandKiller expands the Command interface, enabling it for being killed.
 type CommandKiller interface {
 	// Kill and close the session whatever the state it is. It will block until
 	// the command is terminated.

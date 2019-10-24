@@ -176,7 +176,7 @@ func (s *FSNoderSuite) TestEmptyDir(c *C) {
 	check(c, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithEmtpyFile(c *C) {
+func (s *FSNoderSuite) TestDirWithEmptyFile(c *C) {
 	input := "(A(a<>))"
 
 	a, err := newFile("a", "")
@@ -189,7 +189,7 @@ func (s *FSNoderSuite) TestDirWithEmtpyFile(c *C) {
 	check(c, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithEmtpyFileSameName(c *C) {
+func (s *FSNoderSuite) TestDirWithEmptyFileSameName(c *C) {
 	input := "(A(A<>))"
 
 	f, err := newFile("A", "")

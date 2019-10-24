@@ -126,7 +126,7 @@ func (s *ModeSuite) TestNewFromOsFileModeExclusive(c *C) {
 }
 
 func (s *ModeSuite) TestNewFromOsFileModeTemporary(c *C) {
-	// temporaty files are ignored
+	// temporary files are ignored
 	fixture{
 		input:    os.FileMode(0644) | os.ModeTemporary, // Trw-r--r--
 		expected: Empty, err: "no equivalent.*",

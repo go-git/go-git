@@ -141,7 +141,7 @@ func NewEncodedObjectLookupIter(
 // Next returns the next object from the iterator. If the iterator has reached
 // the end it will return io.EOF as an error. If the object can't be found in
 // the object storage, it will return plumbing.ErrObjectNotFound as an error.
-// If the object is retreieved successfully error will be nil.
+// If the object is retrieved successfully error will be nil.
 func (iter *EncodedObjectLookupIter) Next() (plumbing.EncodedObject, error) {
 	if iter.pos >= len(iter.series) {
 		return nil, io.EOF
@@ -187,7 +187,7 @@ func NewEncodedObjectSliceIter(series []plumbing.EncodedObject) *EncodedObjectSl
 }
 
 // Next returns the next object from the iterator. If the iterator has reached
-// the end it will return io.EOF as an error. If the object is retreieved
+// the end it will return io.EOF as an error. If the object is retrieved
 // successfully error will be nil.
 func (iter *EncodedObjectSliceIter) Next() (plumbing.EncodedObject, error) {
 	if len(iter.series) == 0 {

@@ -13,9 +13,9 @@ import (
 )
 
 var (
-	shallowLineLength      = len(shallow) + hashSize
-	minCommandLength       = hashSize*2 + 2 + 1
-	minCommandAndCapsLenth = minCommandLength + 1
+	shallowLineLength       = len(shallow) + hashSize
+	minCommandLength        = hashSize*2 + 2 + 1
+	minCommandAndCapsLength = minCommandLength + 1
 )
 
 var (
@@ -46,7 +46,7 @@ func errInvalidShallowLineLength(got int) error {
 func errInvalidCommandCapabilitiesLineLength(got int) error {
 	return errMalformedRequest(fmt.Sprintf(
 		"invalid command and capabilities line length: expected at least %d, got %d",
-		minCommandAndCapsLenth, got))
+		minCommandAndCapsLength, got))
 }
 
 func errInvalidCommandLineLength(got int) error {
@@ -174,7 +174,7 @@ func (d *updReqDecoder) decodeCommandAndCapabilities() error {
 		return errMissingCapabilitiesDelimiter
 	}
 
-	if len(b) < minCommandAndCapsLenth {
+	if len(b) < minCommandAndCapsLength {
 		return errInvalidCommandCapabilitiesLineLength(len(b))
 	}
 

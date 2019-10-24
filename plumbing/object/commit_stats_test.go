@@ -22,7 +22,7 @@ type CommitStatsSuite struct {
 var _ = Suite(&CommitStatsSuite{})
 
 func (s *CommitStatsSuite) TestStats(c *C) {
-	r, hash := s.writeHisotry(c, []byte("foo\n"), []byte("foo\nbar\n"))
+	r, hash := s.writeHistory(c, []byte("foo\n"), []byte("foo\nbar\n"))
 
 	aCommit, err := r.CommitObject(hash)
 	c.Assert(err, IsNil)
@@ -37,7 +37,7 @@ func (s *CommitStatsSuite) TestStats(c *C) {
 }
 
 func (s *CommitStatsSuite) TestStats_RootCommit(c *C) {
-	r, hash := s.writeHisotry(c, []byte("foo\n"))
+	r, hash := s.writeHistory(c, []byte("foo\n"))
 
 	aCommit, err := r.CommitObject(hash)
 	c.Assert(err, IsNil)
@@ -53,7 +53,7 @@ func (s *CommitStatsSuite) TestStats_RootCommit(c *C) {
 }
 
 func (s *CommitStatsSuite) TestStats_WithoutNewLine(c *C) {
-	r, hash := s.writeHisotry(c, []byte("foo\nbar"), []byte("foo\nbar\n"))
+	r, hash := s.writeHistory(c, []byte("foo\nbar"), []byte("foo\nbar\n"))
 
 	aCommit, err := r.CommitObject(hash)
 	c.Assert(err, IsNil)
@@ -67,7 +67,7 @@ func (s *CommitStatsSuite) TestStats_WithoutNewLine(c *C) {
 	c.Assert(fileStats[0].String(), Equals, " foo | 2 +-\n")
 }
 
-func (s *CommitStatsSuite) writeHisotry(c *C, files ...[]byte) (*git.Repository, plumbing.Hash) {
+func (s *CommitStatsSuite) writeHistory(c *C, files ...[]byte) (*git.Repository, plumbing.Hash) {
 	cm := &git.CommitOptions{
 		Author: &object.Signature{Name: "Foo", Email: "foo@example.local", When: time.Now()},
 	}

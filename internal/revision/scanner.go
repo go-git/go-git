@@ -10,7 +10,7 @@ import (
 // validates it belongs to a rune category
 type runeCategoryValidator func(r rune) bool
 
-// tokenizeExpression aggegates a series of runes matching check predicate into a single
+// tokenizeExpression aggregates a series of runes matching check predicate into a single
 // string and provides given tokenType as token type
 func tokenizeExpression(ch rune, tokenType token, check runeCategoryValidator, r *bufio.Reader) (token, string, error) {
 	var data []rune

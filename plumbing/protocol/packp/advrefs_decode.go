@@ -53,7 +53,7 @@ func (d *advRefsDecoder) Decode(v *AdvRefs) error {
 
 type decoderStateFn func(*advRefsDecoder) decoderStateFn
 
-// fills out the parser stiky error
+// fills out the parser sticky error
 func (d *advRefsDecoder) error(format string, a ...interface{}) {
 	msg := fmt.Sprintf(
 		"pkt-line %d: %s", d.nLine,
@@ -281,7 +281,7 @@ func decodeShallow(p *advRefsDecoder) decoderStateFn {
 	}
 
 	if len(p.line) == 0 {
-		return nil // succesfull parse of the advertised-refs message
+		return nil // successful parse of the advertised-refs message
 	}
 
 	return decodeShallow

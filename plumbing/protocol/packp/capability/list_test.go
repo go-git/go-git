@@ -176,7 +176,7 @@ func (s *SuiteCapabilities) TestAddErrArgumentsNotAllowed(c *check.C) {
 func (s *SuiteCapabilities) TestAddErrArguments(c *check.C) {
 	cap := NewList()
 	err := cap.Add(SymRef, "")
-	c.Assert(err, check.Equals, ErrEmtpyArgument)
+	c.Assert(err, check.Equals, ErrEmptyArgument)
 }
 
 func (s *SuiteCapabilities) TestAddErrMultipleArguments(c *check.C) {

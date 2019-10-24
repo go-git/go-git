@@ -64,10 +64,10 @@ func (e *ulReqEncoder) encodeFirstWant() stateFn {
 		return nil
 	}
 
-	return e.encodeAditionalWants
+	return e.encodeAdditionalWants
 }
 
-func (e *ulReqEncoder) encodeAditionalWants() stateFn {
+func (e *ulReqEncoder) encodeAdditionalWants() stateFn {
 	last := e.data.Wants[0]
 	for _, w := range e.data.Wants[1:] {
 		if bytes.Equal(last[:], w[:]) {

@@ -55,7 +55,7 @@ func (s *IndexSuite) TestEncode(c *C) {
 
 }
 
-func (s *IndexSuite) TestEncodeUnsuportedVersion(c *C) {
+func (s *IndexSuite) TestEncodeUnsupportedVersion(c *C) {
 	idx := &Index{Version: 3}
 
 	buf := bytes.NewBuffer(nil)
@@ -64,7 +64,7 @@ func (s *IndexSuite) TestEncodeUnsuportedVersion(c *C) {
 	c.Assert(err, Equals, ErrUnsupportedVersion)
 }
 
-func (s *IndexSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
+func (s *IndexSuite) TestEncodeWithIntentToAddUnsupportedVersion(c *C) {
 	idx := &Index{
 		Version: 2,
 		Entries: []*Entry{{IntentToAdd: true}},
@@ -76,7 +76,7 @@ func (s *IndexSuite) TestEncodeWithIntentToAddUnsuportedVersion(c *C) {
 	c.Assert(err, Equals, ErrUnsupportedVersion)
 }
 
-func (s *IndexSuite) TestEncodeWithSkipWorktreeUnsuportedVersion(c *C) {
+func (s *IndexSuite) TestEncodeWithSkipWorktreeUnsupportedVersion(c *C) {
 	idx := &Index{
 		Version: 2,
 		Entries: []*Entry{{SkipWorktree: true}},

@@ -27,8 +27,8 @@ func NewUploadPackRequest() *UploadPackRequest {
 }
 
 // NewUploadPackRequestFromCapabilities creates a new UploadPackRequest and
-// returns a pointer. The request capabilities are filled with the most optiomal
-// ones, based on the adv value (advertaised capabilities), the UploadPackRequest
+// returns a pointer. The request capabilities are filled with the most optimal
+// ones, based on the adv value (advertised capabilities), the UploadPackRequest
 // it has no wants, haves or shallows and an infinite depth
 func NewUploadPackRequestFromCapabilities(adv *capability.List) *UploadPackRequest {
 	ur := NewUploadRequestFromCapabilities(adv)

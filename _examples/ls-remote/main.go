@@ -19,7 +19,7 @@ func main() {
 
 	log.Print("Fetching tags...")
 
-	// We can then use every Remote functions to retrieve wanted informations
+	// We can then use every Remote functions to retrieve wanted information
 	refs, err := rem.List(&git.ListOptions{})
 	if err != nil {
 		log.Fatal(err)

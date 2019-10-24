@@ -15,7 +15,7 @@ import (
 var ErrUnsupportedObjectType = fmt.Errorf("unsupported object type")
 
 // Storage is an implementation of git.Storer that stores data on memory, being
-// ephemeral. The use of this storage should be done in controlled envoriments,
+// ephemeral. The use of this storage should be done in controlled environments,
 // since the representation in memory of some repository can fill the machine
 // memory. in the other hand this storage has the best performance.
 type Storage struct {

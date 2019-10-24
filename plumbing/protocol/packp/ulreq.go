@@ -68,8 +68,8 @@ func NewUploadRequest() *UploadRequest {
 }
 
 // NewUploadRequestFromCapabilities returns a pointer to a new UploadRequest
-// value, the request capabilities are filled with the most optiomal ones, based
-// on the adv value (advertaised capabilities), the UploadRequest generated it
+// value, the request capabilities are filled with the most optimal ones, based
+// on the adv value (advertised capabilities), the UploadRequest generated it
 // has no wants or shallows and an infinite depth.
 func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
 	r := NewUploadRequest()

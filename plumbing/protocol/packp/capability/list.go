@@ -14,8 +14,8 @@ var (
 	// ErrArguments is returned if arguments are given with a capabilities that
 	// not supports arguments
 	ErrArguments = errors.New("arguments not allowed")
-	// ErrEmtpyArgument is returned when an empty value is given
-	ErrEmtpyArgument = errors.New("empty argument")
+	// ErrEmptyArgument is returned when an empty value is given
+	ErrEmptyArgument = errors.New("empty argument")
 	// ErrMultipleArguments multiple argument given to a capabilities that not
 	// support it
 	ErrMultipleArguments = errors.New("multiple arguments not allowed")
@@ -119,7 +119,7 @@ func (l *List) Add(c Capability, values ...string) error {
 func (l *List) validateNoEmptyArgs(values []string) error {
 	for _, v := range values {
 		if v == "" {
-			return ErrEmtpyArgument
+			return ErrEmptyArgument
 		}
 	}
 	return nil
