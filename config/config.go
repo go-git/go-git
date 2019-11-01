@@ -33,7 +33,7 @@ var (
 )
 
 // Config contains the repository configuration
-// ftp://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
+// https://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
 type Config struct {
 	Core struct {
 		// IsBare if true this repository is assumed to be bare and has no
