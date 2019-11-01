@@ -48,8 +48,8 @@ candidates           result
  CD1, CD2, M, N       CD1, CD2    M and N are reachable from CD2, so they're not
  C, G, dev, M, N      C, G, dev   M and N are reachable from G, so they're not
  C, D, M, N           C, D        M and N are reachable from C, so they're not
- A, A^, A, N, N^      A, N        A^ and N^ are rechable from A and N
- A^^^, A^, A^^, A, N  A, N        A^^^, A^^ and A^ are rechable from A, so they're not
+ A, A^, A, N, N^      A, N        A^ and N^ are reachable from A and N
+ A^^^, A^, A^^, A, N  A, N        A^^^, A^^ and A^ are reachable from A, so they're not
 
 IsAncestor
 ----------------------------

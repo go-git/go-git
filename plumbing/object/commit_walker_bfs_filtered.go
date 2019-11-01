@@ -15,7 +15,7 @@ import (
 // If the commit history can not be traversed, or the Close() method is called,
 // the CommitIter won't return more commits.
 // If no isValid is passed, all ancestors of from commit will be valid.
-// If no isLimit is limmit, all ancestors of all commits will be visited.
+// If no isLimit is limit, all ancestors of all commits will be visited.
 func NewFilterCommitIter(
 	from *Commit,
 	isValid *CommitFilter,
@@ -50,7 +50,7 @@ func NewFilterCommitIter(
 // CommitFilter returns a boolean for the passed Commit
 type CommitFilter func(*Commit) bool
 
-// filterCommitIter implments CommitIter
+// filterCommitIter implements CommitIter
 type filterCommitIter struct {
 	isValid CommitFilter
 	isLimit CommitFilter

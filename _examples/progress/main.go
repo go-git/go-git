@@ -22,7 +22,7 @@ func main() {
 
 		// as git does, when you make a clone, pull or some other operations the
 		// server sends information via the sideband, this information can being
-		// collected provinding a io.Writer to the CloneOptions options
+		// collected providing a io.Writer to the CloneOptions options
 		Progress: os.Stdout,
 	})
 

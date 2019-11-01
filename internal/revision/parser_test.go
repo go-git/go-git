@@ -366,7 +366,7 @@ func (s *ParserSuite) TestParseRefWithValidName(c *C) {
 	}
 }
 
-func (s *ParserSuite) TestParseRefWithUnvalidName(c *C) {
+func (s *ParserSuite) TestParseRefWithInvalidName(c *C) {
 	datas := map[string]error{
 		".master":                     &ErrInvalidRevision{`must not start with "."`},
 		"/master":                     &ErrInvalidRevision{`must not start with "/"`},

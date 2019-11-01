@@ -115,7 +115,7 @@ func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
 		{TheirMode, "14f8e368114f561c38e134f6e68ea6fea12d77ed"},
 	}
 
-	// stagged files
+	// staged files
 	for i, e := range idx.Entries[4:7] {
 		c.Assert(e.Stage, Equals, expected[i].Stage)
 		c.Assert(e.CreatedAt.IsZero(), Equals, true)

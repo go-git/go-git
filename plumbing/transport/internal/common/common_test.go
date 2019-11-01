@@ -13,7 +13,7 @@ type CommonSuite struct{}
 
 var _ = Suite(&CommonSuite{})
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForUnknowSource(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForUnknownSource(c *C) {
 	msg := "unknown system is complaining of something very sad :("
 
 	isRepoNotFound := isRepoNotFoundError(msg)

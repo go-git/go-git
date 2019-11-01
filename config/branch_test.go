@@ -38,7 +38,7 @@ func (b *BranchSuite) TestValidateMerge(c *C) {
 	c.Assert(badBranch.Validate(), NotNil)
 }
 
-func (b *BranchSuite) TestMarshall(c *C) {
+func (b *BranchSuite) TestMarshal(c *C) {
 	expected := []byte(`[core]
 	bare = false
 [branch "branch-tracking-on-clone"]
@@ -60,7 +60,7 @@ func (b *BranchSuite) TestMarshall(c *C) {
 	c.Assert(string(actual), Equals, string(expected))
 }
 
-func (b *BranchSuite) TestUnmarshall(c *C) {
+func (b *BranchSuite) TestUnmarshal(c *C) {
 	input := []byte(`[core]
 	bare = false
 [branch "branch-tracking-on-clone"]

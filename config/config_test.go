@@ -9,7 +9,7 @@ type ConfigSuite struct{}
 
 var _ = Suite(&ConfigSuite{})
 
-func (s *ConfigSuite) TestUnmarshall(c *C) {
+func (s *ConfigSuite) TestUnmarshal(c *C) {
 	input := []byte(`[core]
         bare = true
 		worktree = foo
@@ -60,7 +60,7 @@ func (s *ConfigSuite) TestUnmarshall(c *C) {
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
 }
 
-func (s *ConfigSuite) TestMarshall(c *C) {
+func (s *ConfigSuite) TestMarshal(c *C) {
 	output := []byte(`[core]
 	bare = true
 	worktree = bar
@@ -119,7 +119,7 @@ func (s *ConfigSuite) TestMarshall(c *C) {
 	c.Assert(string(b), Equals, string(output))
 }
 
-func (s *ConfigSuite) TestUnmarshallMarshall(c *C) {
+func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	input := []byte(`[core]
 	bare = true
 	worktree = foo

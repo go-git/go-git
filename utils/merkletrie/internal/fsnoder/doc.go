@@ -30,7 +30,7 @@ Directories are expressed as:
 
 - its elements between parents, separated with spaces, in any order.
 
-- (optionally) the root directory can be unnamed, by skiping its name.
+- (optionally) the root directory can be unnamed, by skipping its name.
 
 Examples:
 

@@ -21,7 +21,7 @@ func newObjectWalker(s storage.Storer) *objectWalker {
 	return &objectWalker{s, map[plumbing.Hash]struct{}{}}
 }
 
-// walkAllRefs walks all (hash) refererences from the repo.
+// walkAllRefs walks all (hash) references from the repo.
 func (p *objectWalker) walkAllRefs() error {
 	// Walk over all the references in the repo.
 	it, err := p.Storer.IterReferences()

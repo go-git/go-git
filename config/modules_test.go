@@ -39,7 +39,7 @@ func (s *ModulesSuite) TestValidateMissingName(c *C) {
 	c.Assert(m.Validate(), Equals, ErrModuleEmptyPath)
 }
 
-func (s *ModulesSuite) TestMarshall(c *C) {
+func (s *ModulesSuite) TestMarshal(c *C) {
 	input := []byte(`[submodule "qux"]
 	path = qux
 	url = baz
@@ -54,7 +54,7 @@ func (s *ModulesSuite) TestMarshall(c *C) {
 	c.Assert(output, DeepEquals, input)
 }
 
-func (s *ModulesSuite) TestUnmarshall(c *C) {
+func (s *ModulesSuite) TestUnmarshal(c *C) {
 	input := []byte(`[submodule "qux"]
         path = qux
         url = https://github.com/foo/qux.git
@@ -79,7 +79,7 @@ func (s *ModulesSuite) TestUnmarshall(c *C) {
 	c.Assert(cfg.Submodules["foo/bar"].Branch, Equals, "dev")
 }
 
-func (s *ModulesSuite) TestUnmarshallMarshall(c *C) {
+func (s *ModulesSuite) TestUnmarshalMarshal(c *C) {
 	input := []byte(`[submodule "foo/bar"]
 	path = foo/bar
 	url = https://github.com/foo/bar.git

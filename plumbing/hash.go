@@ -9,7 +9,7 @@ import (
 	"strconv"
 )
 
-// Hash SHA1 hased content
+// Hash SHA1 hashed content
 type Hash [20]byte
 
 // ZeroHash is Hash with value zero

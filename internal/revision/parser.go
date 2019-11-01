@@ -1,5 +1,5 @@
 // Package revision extracts git revision from string
-// More informations about revision : https://www.kernel.org/pub/software/scm/git/docs/gitrevisions.html
+// More information about revision : https://www.kernel.org/pub/software/scm/git/docs/gitrevisions.html
 package revision
 
 import (

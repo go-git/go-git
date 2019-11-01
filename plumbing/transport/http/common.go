@@ -84,7 +84,7 @@ var DefaultClient = NewClient(nil)
 // Unless a properly initialized client is given, it will fall back into
 // `http.DefaultClient`.
 //
-// Note that for HTTP client cannot distinguist between private repositories and
+// Note that for HTTP client cannot distinguish between private repositories and
 // unexistent repositories on GitHub. So it returns `ErrAuthorizationRequired`
 // for both.
 func NewClient(c *http.Client) transport.Transport {

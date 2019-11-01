@@ -32,10 +32,10 @@ const (
 	Regular FileMode = 0100644
 	// Deprecated represent non-executable files with the group writable
 	// bit set.  This mode was supported by the first versions of git,
-	// but it has been deprecatred nowadays.  This library uses them
+	// but it has been deprecated nowadays.  This library uses them
 	// internally, so you can read old packfiles, but will treat them as
 	// Regulars when interfacing with the outside world.  This is the
-	// standard git behaviuor.
+	// standard git behaviour.
 	Deprecated FileMode = 0100664
 	// Executable represents executable files.
 	Executable FileMode = 0100755
@@ -152,7 +152,7 @@ func (m FileMode) IsRegular() bool {
 }
 
 // IsFile returns if the FileMode represents that of a file, this is,
-// Regular, Deprecated, Excutable or Link.
+// Regular, Deprecated, Executable or Link.
 func (m FileMode) IsFile() bool {
 	return m == Regular ||
 		m == Deprecated ||

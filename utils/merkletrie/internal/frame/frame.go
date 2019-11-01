@@ -38,7 +38,7 @@ func New(n noder.Noder) (*Frame, error) {
 }
 
 // String returns the quoted names of the noders in the frame sorted in
-// alphabeticall order by name, surrounded by square brackets and
+// alphabetical order by name, surrounded by square brackets and
 // separated by comas.
 //
 // Examples:
@@ -61,7 +61,7 @@ func (f *Frame) String() string {
 }
 
 // First returns, but dont extract, the noder with the alphabetically
-// smaller name in the frame and true if the frame was not empy.
+// smaller name in the frame and true if the frame was not empty.
 // Otherwise it returns nil and false.
 func (f *Frame) First() (noder.Noder, bool) {
 	if f.Len() == 0 {
