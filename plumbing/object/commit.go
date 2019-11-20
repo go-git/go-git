@@ -177,6 +177,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 
 	var message bool
 	var pgpsig bool
+	var msgbuf bytes.Buffer
 	for {
 		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
@@ -221,13 +222,15 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				pgpsig = true
 			}
 		} else {
-			c.Message += string(line)
+			msgbuf.Write(line)
 		}
 
 		if err == io.EOF {
-			return nil
+			break
 		}
 	}
+	c.Message = msgbuf.String()
+	return nil
 }
 
 // Encode transforms a Commit into a plumbing.EncodedObject.
