@@ -1668,6 +1668,17 @@ func (m *mockErrCommitIter) Close() {}
 
 func (s *RepositorySuite) TestLogFileWithError(c *C) {
 	fileName := "README"
+	cIter := object.NewCommitFileIterFromIter(fileName, &mockErrCommitIter{}, false)
+	defer cIter.Close()
+
+	err := cIter.ForEach(func(commit *object.Commit) error {
+		return nil
+	})
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestLogPathWithError(c *C) {
+	fileName := "README"
 	pathIter := func(path string) bool {
 		return path == fileName
 	}
