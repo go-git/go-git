@@ -1099,7 +1099,13 @@ func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIte
 }
 
 func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {
-	return object.NewCommitFileIterFromIter(fileName, commitIter, checkParent)
+	return object.NewCommitPathIterFromIter(
+		func(path string) bool {
+			return path == fileName
+		},
+		commitIter,
+		checkParent,
+	)
 }
 
 func (*Repository) logWithLimit(commitIter object.CommitIter, limitOptions object.LogLimitOptions) object.CommitIter {

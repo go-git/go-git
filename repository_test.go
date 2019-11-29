@@ -1667,7 +1667,10 @@ func (m *mockErrCommitIter) Close() {}
 
 func (s *RepositorySuite) TestLogFileWithError(c *C) {
 	fileName := "README"
-	cIter := object.NewCommitFileIterFromIter(fileName, &mockErrCommitIter{}, false)
+	pathIter := func(path string) bool {
+		return path == fileName
+	}
+	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
 	err := cIter.ForEach(func(commit *object.Commit) error {
@@ -2615,9 +2618,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
-		"efs/heads/master~": "reference not found",
-		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
+		"efs/heads/master~":                        "reference not found",
+		"HEAD^3":                                   `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":                         `No commit message match regexp : "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
 	}
 
