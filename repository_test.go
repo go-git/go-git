@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1669,6 +1670,20 @@ func (s *RepositorySuite) TestLogFileWithError(c *C) {
 	fileName := "README"
 	pathIter := func(path string) bool {
 		return path == fileName
+	}
+	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
+	defer cIter.Close()
+
+	err := cIter.ForEach(func(commit *object.Commit) error {
+		return nil
+	})
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestLogPathRegexpWithError(c *C) {
+	pathRE := regexp.MustCompile("R.*E")
+	pathIter := func(path string) bool {
+		return pathRE.MatchString(path)
 	}
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
