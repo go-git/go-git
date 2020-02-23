@@ -139,12 +139,9 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 	}
 
 	timezone := string(b[tzStart : tzStart+timeZoneLength])
-	tzhours, err := strconv.ParseInt(timezone[0:3], 10, 64)
-	if err != nil {
-		return
-	}
-	tzmins, err := strconv.ParseInt(timezone[3:], 10, 64)
-	if err != nil {
+	tzhours, err1 := strconv.ParseInt(timezone[0:3], 10, 64)
+	tzmins, err2 := strconv.ParseInt(timezone[3:], 10, 64)
+	if err1 != nil || err2 != nil {
 		return
 	}
 	if tzhours < 0 {
