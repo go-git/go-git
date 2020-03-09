@@ -1067,6 +1067,9 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		// for `git log --all` also check parent (if the next commit comes from the real parent)
 		it = r.logWithFile(*o.FileName, it, o.All)
 	}
+	if o.PathFilter != nil {
+		it = r.logWithPathFilter(o.PathFilter, it, o.All)
+	}
 
 	if o.Since != nil || o.Until != nil {
 		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until}
@@ -1099,7 +1102,21 @@ func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIte
 }
 
 func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {
-	return object.NewCommitFileIterFromIter(fileName, commitIter, checkParent)
+	return object.NewCommitPathIterFromIter(
+		func(path string) bool {
+			return path == fileName
+		},
+		commitIter,
+		checkParent,
+	)
+}
+
+func (*Repository) logWithPathFilter(pathFilter func(string) bool, commitIter object.CommitIter, checkParent bool) object.CommitIter {
+	return object.NewCommitPathIterFromIter(
+		pathFilter,
+		commitIter,
+		checkParent,
+	)
 }
 
 func (*Repository) logWithLimit(commitIter object.CommitIter, limitOptions object.LogLimitOptions) object.CommitIter {

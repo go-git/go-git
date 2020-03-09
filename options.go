@@ -343,7 +343,14 @@ type LogOptions struct {
 
 	// Show only those commits in which the specified file was inserted/updated.
 	// It is equivalent to running `git log -- <file-name>`.
+	// this field is kept for compatility, it can be replaced with PathFilter
 	FileName *string
+
+	// Filter commits based on the path of files that are updated
+	// takes file path as argument and should return true if the file is desired
+	// It can be used to implement `git log -- <path>`
+	// either <path> is a file path, or directory path, or a regexp of file/directory path
+	PathFilter func(string) bool
 
 	// Pretend as if all the refs in refs/, along with HEAD, are listed on the command line as <commit>.
 	// It is equivalent to running `git log --all`.

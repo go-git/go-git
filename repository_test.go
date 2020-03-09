@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1676,6 +1677,70 @@ func (s *RepositorySuite) TestLogFileWithError(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RepositorySuite) TestLogPathWithError(c *C) {
+	fileName := "README"
+	pathIter := func(path string) bool {
+		return path == fileName
+	}
+	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
+	defer cIter.Close()
+
+	err := cIter.ForEach(func(commit *object.Commit) error {
+		return nil
+	})
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestLogPathRegexpWithError(c *C) {
+	pathRE := regexp.MustCompile("R.*E")
+	pathIter := func(path string) bool {
+		return pathRE.MatchString(path)
+	}
+	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
+	defer cIter.Close()
+
+	err := cIter.ForEach(func(commit *object.Commit) error {
+		return nil
+	})
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestLogPathFilterRegexp(c *C) {
+	pathRE := regexp.MustCompile(".*\\.go")
+	pathIter := func(path string) bool {
+		return pathRE.MatchString(path)
+	}
+
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	expectedCommitIDs := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+	}
+	commitIDs := []string{}
+
+	cIter, err := r.Log(&LogOptions{
+		PathFilter: pathIter,
+		From:       plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+	c.Assert(err, IsNil)
+	defer cIter.Close()
+
+	cIter.ForEach(func(commit *object.Commit) error {
+		commitIDs = append(commitIDs, commit.ID().String())
+		return nil
+	})
+	c.Assert(
+		strings.Join(commitIDs, ", "),
+		Equals,
+		strings.Join(expectedCommitIDs, ", "),
+	)
+}
+
 func (s *RepositorySuite) TestLogLimitNext(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{
@@ -2615,9 +2680,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	c.Assert(err, IsNil)
 
 	datas := map[string]string{
-		"efs/heads/master~": "reference not found",
-		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
+		"efs/heads/master~":                        "reference not found",
+		"HEAD^3":                                   `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
+		"HEAD^{/whatever}":                         `No commit message match regexp : "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
 	}
 
