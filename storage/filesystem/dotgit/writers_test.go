@@ -8,12 +8,12 @@ import (
 	"os"
 	"strconv"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 

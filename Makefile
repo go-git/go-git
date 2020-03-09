@@ -15,7 +15,7 @@ COVERAGE_REPORT = coverage.txt
 COVERAGE_MODE = atomic
 
 ifneq ($(origin CI), undefined)
-	WORKDIR := $(GOPATH)/src/gopkg.in/src-d/go-git.v4
+	WORKDIR := $(GOPATH)/src/github.com/go-git/go-git/v5
 endif
 
 build-git:

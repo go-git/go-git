@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 // errIsReachable is thrown when first commit is an ancestor of the second

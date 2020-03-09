@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	"github.com/go-git/go-git/v5/plumbing"
 
 	. "gopkg.in/check.v1"
 )

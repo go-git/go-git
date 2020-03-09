@@ -5,12 +5,12 @@ import (
 	"io"
 	"sync/atomic"
 
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/idxfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/objfile"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v5/plumbing/format/objfile"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 
-	"gopkg.in/src-d/go-billy.v4"
+	"github.com/go-git/go-billy/v5"
 )
 
 // PackWriter is a io.Writer that generates the packfile index simultaneously,

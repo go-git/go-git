@@ -3,7 +3,7 @@ package diff_test
 import (
 	"testing"
 
-	"gopkg.in/src-d/go-git.v4/utils/diff"
+	"github.com/go-git/go-git/v5/utils/diff"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 	. "gopkg.in/check.v1"

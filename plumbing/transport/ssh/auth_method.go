@@ -10,7 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/xanzy/ssh-agent"
