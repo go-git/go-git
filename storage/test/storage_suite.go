@@ -13,8 +13,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type Storer interface {
@@ -63,10 +63,6 @@ func NewBaseStorageSuite(s Storer) BaseStorageSuite {
 			plumbing.BlobObject:   {blob, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", plumbing.BlobObject},
 			plumbing.TagObject:    {tag, "d994c6bb648123a17e8f70a966857c546b2a6f94", plumbing.TagObject},
 		}}
-}
-
-func (s *BaseStorageSuite) SetUpTest(c *C) {
-	c.Assert(fixtures.Init(), IsNil)
 }
 
 func (s *BaseStorageSuite) TearDownTest(c *C) {

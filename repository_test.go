@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -2844,10 +2844,6 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
 }
 
 func BenchmarkObjects(b *testing.B) {
-	if err := fixtures.Init(); err != nil {
-		b.Fatal(err)
-	}
-
 	defer func() {
 		if err := fixtures.Clean(); err != nil {
 			b.Fatal(err)
@@ -2855,7 +2851,7 @@ func BenchmarkObjects(b *testing.B) {
 	}()
 
 	for _, f := range fixtures.ByTag("packfile") {
-		if f.DotGitHash == plumbing.ZeroHash {
+		if f.DotGitHash == "" {
 			continue
 		}
 

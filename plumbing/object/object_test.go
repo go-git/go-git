@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -25,7 +25,6 @@ type BaseObjectsSuite struct {
 }
 
 func (s *BaseObjectsSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.Basic().One()
 	storer := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = storer

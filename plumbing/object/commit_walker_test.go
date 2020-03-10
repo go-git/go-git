@@ -13,7 +13,7 @@ type CommitWalkerSuite struct {
 var _ = Suite(&CommitWalkerSuite{})
 
 func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitPreorderIter(commit, nil, nil).ForEach(func(c *Commit) error {
@@ -39,7 +39,7 @@ func (s *CommitWalkerSuite) TestCommitPreIterator(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitPreorderIter(commit, nil, []plumbing.Hash{
@@ -61,7 +61,7 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitPreIteratorWithSeenExternal(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	seenExternal := map[plumbing.Hash]bool{
@@ -85,7 +85,7 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithSeenExternal(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitPostIterator(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitPostorderIter(commit, nil).ForEach(func(c *Commit) error {
@@ -112,7 +112,7 @@ func (s *CommitWalkerSuite) TestCommitPostIterator(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitPostorderIter(commit, []plumbing.Hash{
@@ -134,7 +134,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitCTimeIterator(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitIterCTime(commit, nil, nil).ForEach(func(c *Commit) error {
@@ -160,7 +160,7 @@ func (s *CommitWalkerSuite) TestCommitCTimeIterator(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitCTimeIteratorWithIgnore(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitIterCTime(commit, nil, []plumbing.Hash{
@@ -182,7 +182,7 @@ func (s *CommitWalkerSuite) TestCommitCTimeIteratorWithIgnore(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitBSFIterator(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitIterBSF(commit, nil, nil).ForEach(func(c *Commit) error {
@@ -208,7 +208,7 @@ func (s *CommitWalkerSuite) TestCommitBSFIterator(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitBSFIteratorWithIgnore(c *C) {
-	commit := s.commit(c, s.Fixture.Head)
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitIterBSF(commit, nil, []plumbing.Hash{

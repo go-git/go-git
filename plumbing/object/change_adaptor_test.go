@@ -11,8 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ChangeAdaptorSuite struct {
@@ -22,7 +22,6 @@ type ChangeAdaptorSuite struct {
 }
 
 func (s *ChangeAdaptorSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.Basic().One()
 	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto

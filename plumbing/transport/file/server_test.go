@@ -4,8 +4,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ServerSuite struct {

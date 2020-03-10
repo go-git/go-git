@@ -13,8 +13,8 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -28,7 +28,6 @@ type BaseSuite struct {
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
 	s.buildBasicRepository(c)
 
 	s.cache = make(map[string]*Repository)
@@ -99,7 +98,7 @@ func (s *BaseSuite) NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Reposit
 }
 
 func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
-	h := f.PackfileHash.String()
+	h := f.PackfileHash
 	if r, ok := s.cache[h]; ok {
 		return r
 	}
@@ -112,7 +111,7 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 		panic(err)
 	}
 
-	storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, f.Head))
+	storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head)))
 
 	r, err := Open(storer, memfs.New())
 	if err != nil {

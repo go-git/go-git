@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ChangeSuite struct {
@@ -23,7 +23,6 @@ type ChangeSuite struct {
 }
 
 func (s *ChangeSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag(".git").One()
 	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
@@ -250,7 +249,6 @@ func (s *ChangeSuite) TestEmptyChangeFails(c *C) {
 
 // test reproducing bug #317
 func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
-	s.Suite.SetUpSuite(c)
 	f := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One()
 
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())

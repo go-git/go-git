@@ -5,12 +5,12 @@ import (
 	"math"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	. "gopkg.in/check.v1"
-	fixtures "gopkg.in/src-d/go-git-fixtures.v3"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	. "gopkg.in/check.v1"
 )
 
 type PackfileSuite struct {
@@ -49,7 +49,7 @@ func (s *PackfileSuite) TestGetByOffset(c *C) {
 func (s *PackfileSuite) TestID(c *C) {
 	id, err := s.p.ID()
 	c.Assert(err, IsNil)
-	c.Assert(id, Equals, s.f.PackfileHash)
+	c.Assert(id.String(), Equals, s.f.PackfileHash)
 }
 
 func (s *PackfileSuite) TestGetAll(c *C) {
@@ -297,7 +297,7 @@ func (s *PackfileSuite) TestSize(c *C) {
 	c.Assert(size, Equals, int64(76110))
 
 	// Get the size of the root commit, which is delta-encoded.
-	offset, err = packfile.FindOffset(f.Head)
+	offset, err = packfile.FindOffset(plumbing.NewHash(f.Head))
 	c.Assert(err, IsNil)
 	size, err = packfile.GetSizeByOffset(offset)
 	c.Assert(err, IsNil)

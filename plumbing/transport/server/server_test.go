@@ -11,8 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -28,7 +28,6 @@ type BaseSuite struct {
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
 	s.loader = server.MapLoader{}
 	if s.asClient {
 		s.client = server.NewClient(s.loader)

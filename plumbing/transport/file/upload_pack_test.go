@@ -2,13 +2,12 @@ package file
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/test"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type UploadPackSuite struct {
@@ -35,8 +34,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 	s.EmptyEndpoint = ep
 
-	path = filepath.Join(fixtures.DataFolder, "non-existent")
-	ep, err = transport.NewEndpoint(path)
+	ep, err = transport.NewEndpoint("non-existent")
 	c.Assert(err, IsNil)
 	s.NonExistentEndpoint = ep
 }

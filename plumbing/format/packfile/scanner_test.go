@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"io"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ScannerSuite struct {
@@ -93,7 +93,7 @@ func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {
 
 	n, err := p.Checksum()
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, f.PackfileHash)
+	c.Assert(n.String(), Equals, f.PackfileHash)
 }
 
 func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObjectNonSeekable(c *C) {
@@ -115,7 +115,7 @@ func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObjectNonSeekable(c *C) {
 
 	n, err := p.Checksum()
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, f.PackfileHash)
+	c.Assert(n.String(), Equals, f.PackfileHash)
 }
 
 func (s *ScannerSuite) TestSeekObjectHeader(c *C) {

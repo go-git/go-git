@@ -13,8 +13,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/go-git/go-billy/v5/osfs"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -167,7 +167,6 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 }
 
 func BenchmarkRefMultipleTimes(b *testing.B) {
-	fixtures.Init()
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	refname := plumbing.ReferenceName("refs/remotes/origin/branch")
 
@@ -456,7 +455,7 @@ func testObjectPacks(c *C, fs billy.Filesystem, dir *DotGit, f *fixtures.Fixture
 	hashes, err := dir.ObjectPacks()
 	c.Assert(err, IsNil)
 	c.Assert(hashes, HasLen, 1)
-	c.Assert(hashes[0], Equals, f.PackfileHash)
+	c.Assert(hashes[0], Equals, plumbing.NewHash(f.PackfileHash))
 
 	// Make sure that a random file in the pack directory doesn't
 	// break everything.
@@ -481,7 +480,7 @@ func (s *SuiteDotGit) TestObjectPack(c *C) {
 	fs := f.DotGit()
 	dir := New(fs)
 
-	pack, err := dir.ObjectPack(f.PackfileHash)
+	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
 	c.Assert(err, IsNil)
 	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
 }
@@ -491,14 +490,14 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
 	fs := f.DotGit()
 	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
 
-	pack, err := dir.ObjectPack(f.PackfileHash)
+	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
 	c.Assert(err, IsNil)
 	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
 
 	// Move to an specific offset
 	pack.Seek(42, os.SEEK_SET)
 
-	pack2, err := dir.ObjectPack(f.PackfileHash)
+	pack2, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
 	c.Assert(err, IsNil)
 
 	// If the file is the same the offset should be the same
@@ -509,7 +508,7 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
 	err = dir.Close()
 	c.Assert(err, IsNil)
 
-	pack2, err = dir.ObjectPack(f.PackfileHash)
+	pack2, err = dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
 	c.Assert(err, IsNil)
 
 	// If the file is opened again its offset should be 0
@@ -530,7 +529,7 @@ func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
 	fs := f.DotGit()
 	dir := New(fs)
 
-	idx, err := dir.ObjectPackIdx(f.PackfileHash)
+	idx, err := dir.ObjectPackIdx(plumbing.NewHash(f.PackfileHash))
 	c.Assert(err, IsNil)
 	c.Assert(filepath.Ext(idx.Name()), Equals, ".idx")
 	c.Assert(idx.Close(), IsNil)

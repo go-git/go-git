@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type CommonSuite struct {
@@ -20,8 +20,6 @@ type CommonSuite struct {
 var _ = Suite(&CommonSuite{})
 
 func (s *CommonSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
-
 	if err := exec.Command("git", "--version").Run(); err != nil {
 		c.Skip("git command not found")
 	}

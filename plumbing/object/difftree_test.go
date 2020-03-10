@@ -3,6 +3,7 @@ package object
 import (
 	"sort"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type DiffTreeSuite struct {
@@ -24,7 +24,6 @@ type DiffTreeSuite struct {
 }
 
 func (s *DiffTreeSuite) SetUpSuite(c *C) {
-	s.Suite.SetUpSuite(c)
 	s.Fixture = fixtures.Basic().One()
 	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto

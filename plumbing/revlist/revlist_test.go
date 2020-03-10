@@ -9,8 +9,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -51,7 +51,6 @@ const (
 // * b029517 Initial commit
 
 func (s *RevListSuite) SetUpTest(c *C) {
-	s.Suite.SetUpSuite(c)
 	sto := filesystem.NewStorage(fixtures.Basic().One().DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 }

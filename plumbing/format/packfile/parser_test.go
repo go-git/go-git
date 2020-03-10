@@ -9,8 +9,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 type ParserSuite struct {
@@ -106,7 +106,7 @@ func (s *ParserSuite) TestThinPack(c *C) {
 	w.Close()
 
 	// Check that the test object that will come with our thin pack is *not* in the repo
-	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, thinpack.Head)
+	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 
 	// Now unpack the thin pack:
@@ -119,7 +119,7 @@ func (s *ParserSuite) TestThinPack(c *C) {
 	c.Assert(h, Equals, plumbing.NewHash("1288734cbe0b95892e663221d94b95de1f5d7be8"))
 
 	// Check that our test object is now accessible
-	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, thinpack.Head)
+	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	c.Assert(err, IsNil)
 
 }
@@ -192,10 +192,6 @@ func (t *testObserver) put(pos int64, o observerObject) {
 }
 
 func BenchmarkParse(b *testing.B) {
-	if err := fixtures.Init(); err != nil {
-		b.Fatal(err)
-	}
-
 	defer func() {
 		if err := fixtures.Clean(); err != nil {
 			b.Fatal(err)
@@ -220,10 +216,6 @@ func BenchmarkParse(b *testing.B) {
 }
 
 func BenchmarkParseBasic(b *testing.B) {
-	if err := fixtures.Init(); err != nil {
-		b.Fatal(err)
-	}
-
 	defer func() {
 		if err := fixtures.Clean(); err != nil {
 			b.Fatal(err)

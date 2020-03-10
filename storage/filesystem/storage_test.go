@@ -39,7 +39,6 @@ func setUpTest(s *StorageSuite, c *C, storage *Storage) {
 	var _ storer.PackfileWriter = storage
 
 	s.BaseStorageSuite = test.NewBaseStorageSuite(storage)
-	s.BaseStorageSuite.SetUpTest(c)
 }
 
 func (s *StorageSuite) TestFilesystem(c *C) {

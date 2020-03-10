@@ -11,8 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	. "github.com/go-git/go-git/v5/plumbing/format/idxfile"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"gopkg.in/src-d/go-git-fixtures.v3"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -48,7 +48,7 @@ func (s *IdxfileSuite) TestDecode(c *C) {
 	c.Assert(crc32, Equals, uint32(3645019190))
 
 	c.Assert(fmt.Sprintf("%x", idx.IdxChecksum), Equals, "fb794f1ec720b9bc8e43257451bd99c4be6fa1c9")
-	c.Assert(fmt.Sprintf("%x", idx.PackfileChecksum), Equals, f.PackfileHash.String())
+	c.Assert(fmt.Sprintf("%x", idx.PackfileChecksum), Equals, f.PackfileHash)
 }
 
 func (s *IdxfileSuite) TestDecode64bitsOffsets(c *C) {
@@ -118,10 +118,6 @@ ch2xUA==
 `
 
 func BenchmarkDecode(b *testing.B) {
-	if err := fixtures.Init(); err != nil {
-		b.Errorf("unexpected error initializing fixtures: %s", err)
-	}
-
 	f := fixtures.Basic().One()
 	fixture, err := ioutil.ReadAll(f.Idx())
 	if err != nil {

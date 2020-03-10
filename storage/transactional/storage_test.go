@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-git/go-git/v5/storage/test"
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -39,7 +39,6 @@ func (s *StorageSuite) SetUpTest(c *C) {
 	temporal := s.temporal()
 
 	s.BaseStorageSuite = test.NewBaseStorageSuite(NewStorage(base, temporal))
-	s.BaseStorageSuite.SetUpTest(c)
 }
 
 func (s *StorageSuite) TestCommit(c *C) {

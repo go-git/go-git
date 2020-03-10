@@ -82,7 +82,7 @@ func not(filter CommitFilter) CommitFilter {
 // history, but e8d3ffab552895c19b9fcf7aa264d277cde33881, that is not reachable
 // from HEAD
 func (s *filterCommitIterSuite) TestFilterCommitIter(c *C) {
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	commits, err := commitsFromIter(NewFilterCommitIter(from, nil, nil))
 	c.Assert(err, IsNil)
@@ -105,7 +105,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIter(c *C) {
 // that matches the passed isValid filter; in this testcase, it was filtered out
 // all commits but one from history
 func (s *filterCommitIterSuite) TestFilterCommitIterWithValid(c *C) {
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIf, nil))
@@ -121,7 +121,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithValid(c *C) {
 // that matches the passed isValid filter; in this testcase, it was filtered out
 // only one commit from history
 func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalid(c *C) {
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	validIfNot := not(validIf)
@@ -144,7 +144,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalid(c *C) {
 // TestFilterCommitIterWithNoValidCommits asserts that FilterCommitIter returns
 // no commits if the passed isValid filter does not allow any commit
 func (s *filterCommitIterSuite) TestFilterCommitIterWithNoValidCommits(c *C) {
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("THIS_COMMIT_DOES_NOT_EXIST"))
 	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIf, nil))
@@ -155,7 +155,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithNoValidCommits(c *C) {
 // TestFilterCommitIterWithStopAt asserts that FilterCommitIter returns only commits
 // are not beyond a isLimit filter
 func (s *filterCommitIterSuite) TestFilterCommitIterWithStopAt(c *C) {
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	stopAtRule := validIfCommit(plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"))
 	commits, err := commitsFromIter(NewFilterCommitIter(from, nil, &stopAtRule))
@@ -177,7 +177,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithStopAt(c *C) {
 // TestFilterCommitIterWithStopAt asserts that FilterCommitIter works properly
 // with isValid and isLimit filters
 func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt(c *C) {
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	stopAtRule := validIfCommit(plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"))
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
@@ -224,7 +224,7 @@ func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn(c *C) {
 		return nil
 	}
 
-	from := s.commit(c, s.Fixture.Head)
+	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 
 	iter := NewFilterCommitIter(from, nil, nil)
 	err := iter.ForEach(cb)
