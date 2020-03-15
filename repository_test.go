@@ -2844,11 +2844,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
 }
 
 func BenchmarkObjects(b *testing.B) {
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Fatal(err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag("packfile") {
 		if f.DotGitHash == "" {

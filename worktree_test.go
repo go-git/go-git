@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -25,7 +26,6 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	"golang.org/x/text/unicode/norm"
 	. "gopkg.in/check.v1"
-	"github.com/go-git/go-git-fixtures/v4"
 )
 
 type WorktreeSuite struct {
@@ -692,7 +692,7 @@ func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
 		c.Skip("skipping test in short mode.")
 	}
 
-	s.testCheckoutBisect(c, "https://github.com/src-d/go-git.git")
+	s.testCheckoutBisect(c, "https://github.com/go-git/go-git.git")
 }
 
 func (s *WorktreeSuite) TestCheckoutBisectSubmodules(c *C) {

@@ -333,11 +333,7 @@ func (s *FsSuite) TestGetFromObjectFileSharedCache(c *C) {
 }
 
 func BenchmarkPackfileIter(b *testing.B) {
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Fatal(err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag(".git") {
 		b.Run(f.URL, func(b *testing.B) {
@@ -385,11 +381,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 }
 
 func BenchmarkPackfileIterReadContent(b *testing.B) {
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Fatal(err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag(".git") {
 		b.Run(f.URL, func(b *testing.B) {
@@ -447,11 +439,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 }
 
 func BenchmarkGetObjectFromPackfile(b *testing.B) {
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Fatal(err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	for _, f := range fixtures.Basic() {
 		b.Run(f.URL, func(b *testing.B) {

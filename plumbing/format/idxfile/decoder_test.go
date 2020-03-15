@@ -124,11 +124,7 @@ func BenchmarkDecode(b *testing.B) {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
 
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Errorf("unexpected error cleaning fixtures: %s", err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	for i := 0; i < b.N; i++ {
 		f := bytes.NewBuffer(fixture)

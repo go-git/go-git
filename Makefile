@@ -3,7 +3,7 @@ WORKDIR = $(PWD)
 
 # Go parameters
 GOCMD = go
-GOTEST = $(GOCMD) test -v
+GOTEST = $(GOCMD) test 
 
 # Git config
 GIT_VERSION ?=
@@ -11,12 +11,8 @@ GIT_DIST_PATH ?= $(PWD)/.git-dist
 GIT_REPOSITORY = http://github.com/git/git.git
 
 # Coverage
-COVERAGE_REPORT = coverage.txt
-COVERAGE_MODE = atomic
-
-ifneq ($(origin CI), undefined)
-	WORKDIR := $(GOPATH)/src/github.com/go-git/go-git/v5
-endif
+COVERAGE_REPORT = coverage.out
+COVERAGE_MODE = count
 
 build-git:
 	@if [ -f $(GIT_DIST_PATH)/git ]; then \
@@ -30,11 +26,11 @@ build-git:
 	fi
 
 test:
-	@cd $(WORKDIR); \
+	@echo "running against `git version`"; \
 	$(GOTEST) ./...
 
 test-coverage:
-	@cd $(WORKDIR); \
+	@echo "running against `git version`"; \
 	echo "" > $(COVERAGE_REPORT); \
 	$(GOTEST) -coverprofile=$(COVERAGE_REPORT) -coverpkg=./... -covermode=$(COVERAGE_MODE) ./...
 

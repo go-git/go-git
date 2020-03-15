@@ -192,11 +192,7 @@ func (t *testObserver) put(pos int64, o observerObject) {
 }
 
 func BenchmarkParse(b *testing.B) {
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Fatal(err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag("packfile") {
 		b.Run(f.URL, func(b *testing.B) {
@@ -216,11 +212,7 @@ func BenchmarkParse(b *testing.B) {
 }
 
 func BenchmarkParseBasic(b *testing.B) {
-	defer func() {
-		if err := fixtures.Clean(); err != nil {
-			b.Fatal(err)
-		}
-	}()
+	defer fixtures.Clean()
 
 	f := fixtures.Basic().One()
 	for i := 0; i < b.N; i++ {

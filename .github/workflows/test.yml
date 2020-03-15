@@ -1,18 +1,85 @@
 on: [push, pull_request]
 name: Test
 jobs:
-  test:
+  version-matrix:
     strategy:
+      fail-fast: false
       matrix:
-        go-version: [1.12.x, 1.13.x, 1.14.x]
+        go-version: [1.13.x, 1.14.x]
         platform: [ubuntu-latest, macos-latest, windows-latest]
+    
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Install Go
       uses: actions/setup-go@v1
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version: ${{ matrix.go-version }}   
+
     - name: Checkout code
       uses: actions/checkout@v2
+  
+    - name: Configure known hosts
+      if: matrix.platform != 'ubuntu-latest'
+      run: |
+        mkdir -p  ~/.ssh
+        ssh-keyscan -H github.com > ~/.ssh/known_hosts
+
+    - name: Set Git config
+      run: |
+        git config --global user.email "gha@example.com"
+        git config --global user.name "GitHub Actions"
+
     - name: Test
-      run: go test -v ./...
+      run: make test-coverage
+
+    - name: Convert coverage to lcov
+      if: matrix.platform == 'ubuntu-latest' && matrix.go-version == '1.14.x' 
+      uses: jandelgado/gcov2lcov-action@v1.0.0
+      with:
+          infile: coverage.out
+          outfile: coverage.lcov
+
+    - name: Coveralls
+      if: matrix.platform == 'ubuntu-latest' && matrix.go-version == '1.14.x' 
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path-to-lcov: coverage.lcov
+
+  git-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        git: [[master, ubuntu-latest], [v2.11.0, ubuntu-latest]]
+    
+    runs-on: ${{ matrix.git[1] }}
+    env:
+        GIT_VERSION: ${{ matrix.git[0] }}
+        GIT_DIST_PATH: .git-dist/${{ matrix.git[0] }}
+
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.14.x
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+    
+    - name: Install build dependencies
+      run: sudo apt-get install gettext
+
+    - name: Git Build
+      run: make build-git
+
+    - name: Set Git config
+      run: |
+        git config --global user.email "gha@example.com"
+        git config --global user.name "GitHub Actions"
+        export PATH=$GIT_DIST_PATH:$PATH
+
+
+    - name: Test
+      env:
+        GIT_EXEC_PATH: ${{ env.GIT_DIST_PATH }}
+      run: make test-coverage

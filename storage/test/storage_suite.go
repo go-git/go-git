@@ -66,7 +66,7 @@ func NewBaseStorageSuite(s Storer) BaseStorageSuite {
 }
 
 func (s *BaseStorageSuite) TearDownTest(c *C) {
-	c.Assert(fixtures.Clean(), IsNil)
+	fixtures.Clean()
 }
 
 func (s *BaseStorageSuite) TestSetEncodedObjectAndEncodedObject(c *C) {
