@@ -46,10 +46,10 @@ A basic example that mimics the standard `git clone` command
 
 ```go
 // Clone the given repository to the given directory
-Info("git clone https://github.com/src-d/go-git")
+Info("git clone https://github.com/go-git/go-git")
 
 _, err := git.PlainClone("/tmp/foo", false, &git.CloneOptions{
-    URL:      "https://github.com/src-d/go-git",
+    URL:      "https://github.com/go-git/go-git",
     Progress: os.Stdout,
 })
 
@@ -71,10 +71,10 @@ Cloning a repository into memory and printing the history of HEAD, just like `gi
 ```go
 // Clones the given repository in memory, creating the remote, the local
 // branches and fetching the objects, exactly as:
-Info("git clone https://github.com/src-d/go-siva")
+Info("git clone https://github.com/go-git/go-billy")
 
 r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
-    URL: "https://github.com/src-d/go-siva",
+    URL: "https://github.com/go-git/go-billy",
 })
 
 CheckIfError(err)
@@ -123,7 +123,7 @@ You can find this [example](_examples/log/main.go) and many others in the [examp
 Contribute
 ----------
 
-[Contributions](https://github.com/src-d/go-git/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) are more than welcome, if you are interested please take a look to
+[Contributions](https://github.com/go-git/go-git/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) are more than welcome, if you are interested please take a look to
 our [Contributing Guidelines](CONTRIBUTING.md).
 
 License
