@@ -692,7 +692,7 @@ func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
 		c.Skip("skipping test in short mode.")
 	}
 
-	s.testCheckoutBisect(c, "https://github.com/go-git/go-git.git")
+	s.testCheckoutBisect(c, "https://github.com/src-d/go-git.git")
 }
 
 func (s *WorktreeSuite) TestCheckoutBisectSubmodules(c *C) {
