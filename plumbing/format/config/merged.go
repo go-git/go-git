@@ -55,6 +55,14 @@ func (m *Merged) SystemConfig() *Config {
 	return m.ScopedConfig(SystemScope)
 }
 
+func (m *Merged) SetLocalConfig(c *Config) {
+	m.scopedConfigs[LocalScope] = c
+}
+
+func (m *Merged) SetGlobalConfig(c *Config) {
+	m.scopedConfigs[GlobalScope] = c
+}
+
 // Config.Section creates the section if it doesn't exist, which is not
 // what we want in here.
 func (c *Config) hasSection(name string) bool {
