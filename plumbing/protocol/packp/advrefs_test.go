@@ -79,6 +79,11 @@ func (s *AdvRefSuite) TestAllReferencesBadSymref(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *AdvRefSuite) TestIsEmpty(c *C) {
+	a := NewAdvRefs()
+	c.Assert(a.IsEmpty(), Equals, true)
+}
+
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToMaster(c *C) {
 	a := NewAdvRefs()
 	headHash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
@@ -156,7 +161,7 @@ type AdvRefsDecodeEncodeSuite struct{}
 
 var _ = Suite(&AdvRefsDecodeEncodeSuite{})
 
-func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string) {
+func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty bool) {
 	var err error
 	var input io.Reader
 	{
@@ -181,6 +186,7 @@ func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string) {
 	{
 		ar := NewAdvRefs()
 		c.Assert(ar.Decode(input), IsNil)
+		c.Assert(ar.IsEmpty(), Equals, isEmpty)
 
 		var buf bytes.Buffer
 		c.Assert(ar.Encode(&buf), IsNil)
@@ -202,7 +208,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHead(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, true)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart(c *C) {
@@ -218,7 +224,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, true)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmartBug(c *C) {
@@ -236,7 +242,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmartBug(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, true)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestRefs(c *C) {
@@ -256,7 +262,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestRefs(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, false)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestPeeled(c *C) {
@@ -280,7 +286,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestPeeled(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, false)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
@@ -308,7 +314,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, false)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
@@ -340,7 +346,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, false)
 }
 
 func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
@@ -372,7 +378,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 		pktline.FlushString,
 	}
 
-	s.test(c, input, expected)
+	s.test(c, input, expected, false)
 }
 
 func ExampleAdvRefs_Decode() {
