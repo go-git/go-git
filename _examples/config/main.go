@@ -50,10 +50,10 @@ func main() {
 	// suffice for what you're trying to do.
 
 	// Set local custom config param
-	cfg.Merged.LocalConfig().AddOption("custom", format.NoSubsection, "name", "Local Name")
+	cfg.Merged.AddOption(format.LocalScope, "custom", format.NoSubsection, "name", "Local Name")
 
 	// Set global config param (~/.gitconfig)
-	cfg.Merged.GlobalConfig().AddOption("custom", format.NoSubsection, "name", "Global Name")
+	cfg.Merged.AddOption(format.GlobalScope, "custom", format.NoSubsection, "name", "Global Name")
 
 	// Get custom config param (merged in the same way git does: system -> global -> local)
 	Info("custom.name is %s", cfg.Merged.Section("custom").Option("name"))
