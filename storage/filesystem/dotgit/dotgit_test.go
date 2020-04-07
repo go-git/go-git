@@ -332,7 +332,7 @@ func (s *SuiteDotGit) TestConfig(c *C) {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
-	file, err := dir.Config()
+	file, err := dir.LocalConfig()
 	c.Assert(err, IsNil)
 	c.Assert(filepath.Base(file.Name()), Equals, "config")
 }
@@ -345,13 +345,13 @@ func (s *SuiteDotGit) TestConfigWriteAndConfig(c *C) {
 	fs := osfs.New(tmp)
 	dir := New(fs)
 
-	f, err := dir.ConfigWriter()
+	f, err := dir.LocalConfigWriter()
 	c.Assert(err, IsNil)
 
 	_, err = f.Write([]byte("foo"))
 	c.Assert(err, IsNil)
 
-	f, err = dir.Config()
+	f, err = dir.LocalConfig()
 	c.Assert(err, IsNil)
 
 	cnt, err := ioutil.ReadAll(f)
