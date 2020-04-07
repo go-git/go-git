@@ -111,6 +111,8 @@ func (s *ConfigSuite) TestMergedUnmarshal(c *C) {
 	c.Assert(cfg.Core.Worktree, Equals, "foo")
 	c.Assert(cfg.Core.CommentChar, Equals, "bar")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
+	c.Assert(cfg.User.Name.Value(), Equals, "Override")
+	c.Assert(cfg.User.Email.Value(), Equals, "soandso@example.com")
 	c.Assert(cfg.Remotes, HasLen, 3)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URLs, DeepEquals, []string{"git@github.com:mcuadros/go-git.git"})
@@ -191,9 +193,7 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 }
 
 func (s *ConfigSuite) TestMergedMarshal(c *C) {
-	localOutput := []byte(`[user]
-	name = Override
-[custom]
+	localOutput := []byte(`[custom]
 	key = value
 [core]
 	bare = true
@@ -214,15 +214,18 @@ func (s *ConfigSuite) TestMergedMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[user]
+	name = Override
 `)
 
-	globalOutput := []byte(`[user]
-	name = Soandso
-	email = soandso@example.com
-[core]
+	globalOutput := []byte(`[core]
 	editor = nvim
 [push]
 	default = simple
+[user]
+	name = Soandso
+	email = soandso@example.com
+	useConfigOnly = true
 `)
 
 	cfg := NewConfig()
@@ -230,6 +233,16 @@ func (s *ConfigSuite) TestMergedMarshal(c *C) {
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
 	cfg.Pack.Window = 20
+
+	cfg.User.Name.Set(format.GlobalScope, "Soandso")
+	cfg.User.Email.Set(format.GlobalScope, "soandso@example.com")
+
+	cfg.User.Name.Set(format.LocalScope, "Override")
+
+	uco := true
+	cfg.User.UseConfigOnly.Set(format.GlobalScope, uco)
+	uco = false // make sure that this doesn't change the value due to pointer shenanigans
+
 	cfg.Remotes["origin"] = &RemoteConfig{
 		Name: "origin",
 		URLs: []string{"git@github.com:mcuadros/go-git.git"},
@@ -257,17 +270,14 @@ func (s *ConfigSuite) TestMergedMarshal(c *C) {
 		Merge:  "refs/heads/master",
 	}
 
-	cfg.Merged.GlobalConfig().Section("user").SetOption("name", "Soandso")
-	cfg.Merged.LocalConfig().Section("user").SetOption("name", "Override")
-	cfg.Merged.GlobalConfig().Section("user").SetOption("email", "soandso@example.com")
 	cfg.Merged.GlobalConfig().Section("core").AddOption("editor", "nvim")
 	cfg.Merged.LocalConfig().Section("custom").SetOption("key", "value")
 	cfg.Merged.GlobalConfig().Section("push").AddOption("default", "simple")
 
-	c.Assert(cfg.Merged.Section("user").Option("name"), Equals, "Override")
 
 	localBytes, err := cfg.Marshal()
 	c.Assert(err, IsNil)
+	c.Assert(cfg.Merged.Section("user").Option("name"), Equals, "Override")
 	c.Assert(string(localBytes), Equals, string(localOutput))
 
 	globalBytes, err := cfg.MarshalScope(format.GlobalScope)

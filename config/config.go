@@ -32,6 +32,57 @@ var (
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
 )
 
+// ScopedString stores strings indexed by scope for two purposes:
+// 1. So we know which config file to write it back out to if requested.
+// 2. So we know which value takes precedence when reading.
+// Use the Value method to read its effective value (i.e. the value git would use).
+// Use the Set method to set scoped values.
+type ScopedString []string
+
+func NewScopedString() ScopedString {
+	return make(ScopedString, format.NumScopes)
+}
+
+func (ss ScopedString) Value() string {
+	for s := format.LocalScope; s >= format.SystemScope; s-- {
+		if ss[s] != "" {
+			return ss[s]
+		}
+	}
+
+	return ""
+}
+
+func (ss ScopedString) Set(scope format.Scope, s string) {
+	ss[scope] = s
+}
+
+// ScopedBool stores bools indexed by scope for two purposes:
+// 1. So we know which config file to write it back out to if requested.
+// 2. So we know which value takes precedence when reading.
+// Use the Value method to read its effective value (i.e. the value git would use).
+// Use the Set method to set scoped values.
+type ScopedBool []*bool
+
+func NewScopedBool() ScopedBool {
+	return make(ScopedBool, format.NumScopes)
+}
+
+func (sb ScopedBool) Value() bool {
+	for s := format.LocalScope; s >= format.SystemScope; s-- {
+		if sb[s] != nil {
+			return *sb[s]
+		}
+	}
+
+	return false
+}
+
+func (sb ScopedBool) Set(scope format.Scope, b bool) {
+	bPrime := b // make a copy so this doesn't change out from under us
+	sb[scope] = &bPrime
+}
+
 // Config contains the repository configuration
 // https://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
 type Config struct {
@@ -51,6 +102,29 @@ type Config struct {
 		// compression.  The default is 10.  A value of 0 turns off
 		// delta compression entirely.
 		Window uint
+	}
+
+	User struct {
+		Name  ScopedString
+		Email ScopedString
+		// UseConfigOnly instructs git to avoid trying to guess defaults for
+		// user.email and user.name. Note that go-git currently does not do
+		// anything with this value.
+		UseConfigOnly ScopedBool
+		// SigningKey is for overriding the default GPG key selection used for
+		// signing tags and/or commits. Note that go-git currently does not do
+		// anything with this value.
+		SigningKey ScopedString
+	}
+
+	Author struct {
+		Name  ScopedString
+		Email ScopedString
+	}
+
+	Committer struct {
+		Name  ScopedString
+		Email ScopedString
 	}
 
 	// Remotes list of repository remotes, the key of the map is the name
@@ -83,6 +157,17 @@ func NewConfig() *Config {
 	config.Raw = config.Merged.LocalConfig()
 
 	config.Pack.Window = DefaultPackWindow
+
+	config.User.Name = NewScopedString()
+	config.User.Email = NewScopedString()
+	config.User.UseConfigOnly = NewScopedBool()
+	config.User.SigningKey = NewScopedString()
+
+	config.Author.Name = NewScopedString()
+	config.Author.Email = NewScopedString()
+
+	config.Committer.Name = NewScopedString()
+	config.Committer.Email = NewScopedString()
 
 	return config
 }
@@ -118,6 +203,9 @@ const (
 	branchSection    = "branch"
 	coreSection      = "core"
 	packSection      = "pack"
+	userSection      = "user"
+	authorSection    = "author"
+	committerSection = "committer"
 	fetchKey         = "fetch"
 	urlKey           = "url"
 	bareKey          = "bare"
@@ -126,6 +214,10 @@ const (
 	windowKey        = "window"
 	mergeKey         = "merge"
 	rebaseKey        = "rebase"
+	nameKey          = "name"
+	emailKey         = "email"
+	useConfigOnlyKey = "useConfigOnly"
+	signingKeyKey    = "signingKey"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -143,9 +235,13 @@ func (c *Config) UnmarshalScoped(scope format.Scope, b []byte) error {
 
 	c.Merged.ResetScopedConfig(scope)
 
-	if err := d.Decode(c.Merged.ScopedConfig(scope)); err != nil {
+	scopedConfig := c.Merged.ScopedConfig(scope)
+
+	if err := d.Decode(scopedConfig); err != nil {
 		return err
 	}
+
+	c.unmarshalUser(scope)
 
 	if scope == format.LocalScope {
 		c.Raw = c.Merged.LocalConfig()
@@ -166,6 +262,59 @@ func (c *Config) UnmarshalScoped(scope format.Scope, b []byte) error {
 	}
 
 	return nil
+}
+
+func (c *Config) unmarshalUser(scope format.Scope) {
+	cfg := c.Merged.ScopedConfig(scope)
+	s := cfg.Section(userSection)
+
+	name := s.Option(nameKey)
+	if name != "" {
+		c.User.Name[scope] = name
+	}
+
+	email := s.Option(emailKey)
+	if email != "" {
+		c.User.Email[scope] = email
+	}
+
+	useConfigOnly := s.Option(useConfigOnlyKey)
+	if useConfigOnly != "" {
+		var newVal bool
+		if useConfigOnly == "true" {
+			newVal = true
+		}
+		c.User.UseConfigOnly[scope] = &newVal
+	}
+
+	signingKey := s.Option(signingKeyKey)
+	if signingKey != "" {
+		c.User.SigningKey[scope] = signingKey
+	}
+
+	s = cfg.Section(authorSection)
+
+	name = s.Option(nameKey)
+	if name != "" {
+		c.Author.Name[scope] = name
+	}
+
+	email = s.Option(emailKey)
+	if email != "" {
+		c.Author.Email[scope] = email
+	}
+
+	s = cfg.Section(committerSection)
+
+	name = s.Option(nameKey)
+	if name != "" {
+		c.Committer.Name[scope] = name
+	}
+
+	email = s.Option(emailKey)
+	if email != "" {
+		c.Committer.Email[scope] = email
+	}
 }
 
 func (c *Config) unmarshalCore() {
@@ -242,6 +391,7 @@ func (c *Config) MarshalScope(scope format.Scope) ([]byte, error) {
 	c.marshalRemotes()
 	c.marshalSubmodules()
 	c.marshalBranches()
+	c.marshalUser(scope)
 
 	buf := bytes.NewBuffer(nil)
 	cfg := c.Merged.ScopedConfig(scope)
@@ -339,6 +489,51 @@ func (c *Config) marshalBranches() {
 	}
 
 	s.Subsections = newSubsections
+}
+
+func (c *Config) marshalUser(scope format.Scope) {
+	cfg := c.Merged.ScopedConfig(scope)
+	s := cfg.Section(userSection)
+
+	if n := c.User.Name[scope]; n != "" {
+		s.SetOption(nameKey, n)
+	}
+
+	if e := c.User.Email[scope]; e != "" {
+		s.SetOption(emailKey, e)
+	}
+
+	if uco := c.User.UseConfigOnly[scope]; uco != nil {
+		if *uco {
+			s.SetOption(useConfigOnlyKey, "true")
+		} else {
+			s.SetOption(useConfigOnlyKey, "false")
+		}
+	}
+
+	if sk := c.User.SigningKey[scope]; sk != "" {
+		s.SetOption(signingKeyKey, sk)
+	}
+
+	s = cfg.Section(authorSection)
+
+	if n := c.Author.Name[scope]; n != "" {
+		s.SetOption(nameKey, n)
+	}
+
+	if e := c.Author.Email[scope]; e != "" {
+		s.SetOption(emailKey, e)
+	}
+
+	s = cfg.Section(committerSection)
+
+	if n := c.Committer.Name[scope]; n != "" {
+		s.SetOption(nameKey, n)
+	}
+
+	if e := c.Committer.Email[scope]; e != "" {
+		s.SetOption(emailKey, e)
+	}
 }
 
 // RemoteConfig contains the configuration for a given remote repository.

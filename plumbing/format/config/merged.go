@@ -9,9 +9,10 @@ package config
 // resides in the /etc/gitconfig file.
 type Scope int
 const (
-	LocalScope Scope = iota
+	SystemScope Scope = iota
 	GlobalScope
-	SystemScope
+	LocalScope
+	NumScopes
 )
 
 type ScopedConfigs map[Scope]*Config
@@ -42,7 +43,7 @@ func NewMerged() *Merged {
 	cfg := &Merged{
 		scopedConfigs: make(ScopedConfigs),
 	}
-	for s := LocalScope; s <= SystemScope; s++ {
+	for s := SystemScope; s <= LocalScope; s++ {
 		cfg.scopedConfigs[s] = New()
 	}
 
@@ -112,7 +113,7 @@ func (c *Config) hasSection(name string) bool {
 func (m *Merged) Section(name string) *MergedSection {
 	var mergedSection *MergedSection
 
-	for s := SystemScope; s >= LocalScope; s-- {
+	for s := SystemScope; s <= LocalScope; s++ {
 		if m.scopedConfigs[s].hasSection(name) {
 			sec := m.scopedConfigs[s].Section(name)
 			if mergedSection == nil {
