@@ -1,12 +1,12 @@
 on: [push, pull_request]
-name: Git Compatibility 
+name: Git Compatibility
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
         git: [[master, ubuntu-latest], [v2.11.0, ubuntu-latest]]
-    
+
     runs-on: ${{ matrix.git[1] }}
     env:
         GIT_VERSION: ${{ matrix.git[0] }}
@@ -20,7 +20,7 @@ jobs:
 
     - name: Checkout code
       uses: actions/checkout@v2
-    
+
     - name: Install build dependencies
       run: sudo apt-get install gettext
 
@@ -33,8 +33,7 @@ jobs:
         git config --global user.name "GitHub Actions"
         export PATH=$GIT_DIST_PATH:$PATH
 
-
     - name: Test
       env:
-        GIT_EXEC_PATH: ${{ env.GIT_DIST_PATH }}
+        GIT_EXEC_PATH: ${{ github.workspace }}/${{ env.GIT_DIST_PATH }}
       run: make test-coverage
