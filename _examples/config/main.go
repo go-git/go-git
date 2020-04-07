@@ -45,6 +45,10 @@ func main() {
 
 	Info("origin remote: %+v", cfg.Remotes["origin"])
 
+	// NOTE: The examples below show advanced usage of the config.Merged system, which should
+	// only be used as a last resort if the basic data defined on the Config struct don't
+	// suffice for what you're trying to do.
+
 	// Set local custom config param
 	cfg.Merged.LocalConfig().AddOption("custom", format.NoSubsection, "name", "Local Name")
 
