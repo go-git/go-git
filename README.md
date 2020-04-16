@@ -37,7 +37,7 @@ import "github.com/go-git/go-git" // with go modules disabled
 Examples
 --------
 
-> Please note that the `CheckIfError` and `Info` functions  used in the examples are from the [examples package](https://github.com/src-d/go-git/blob/master/_examples/common.go#L17) just to be used in the examples.
+> Please note that the `CheckIfError` and `Info` functions  used in the examples are from the [examples package](https://github.com/go-git/go-git/blob/master/_examples/common.go#L19) just to be used in the examples.
 
 
 ### Basic example
