@@ -93,9 +93,15 @@ func testSetRefs(c *C, dir *DotGit) {
 	), nil)
 	c.Assert(err, IsNil)
 
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/feature/baz",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+
 	refs, err := dir.Refs()
 	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	c.Assert(refs, HasLen, 3)
 
 	ref := findReference(refs, "refs/heads/foo")
 	c.Assert(ref, NotNil)
@@ -107,6 +113,12 @@ func testSetRefs(c *C, dir *DotGit) {
 
 	ref = findReference(refs, "bar")
 	c.Assert(ref, IsNil)
+
+	_, err = dir.readReferenceFile(".", "refs/heads/feature/baz")
+	c.Assert(err, IsNil)
+
+	_, err = dir.readReferenceFile(".", "refs/heads/feature")
+	c.Assert(err, NotNil)
 
 	ref, err = dir.Ref("refs/heads/foo")
 	c.Assert(err, IsNil)
