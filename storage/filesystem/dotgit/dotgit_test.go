@@ -118,7 +118,7 @@ func testSetRefs(c *C, dir *DotGit) {
 	c.Assert(err, IsNil)
 
 	_, err = dir.readReferenceFile(".", "refs/heads/feature")
-	c.Assert(err, NotNil)
+	c.Assert(err, Equals, ErrIsDir)
 
 	ref, err = dir.Ref("refs/heads/foo")
 	c.Assert(err, IsNil)
