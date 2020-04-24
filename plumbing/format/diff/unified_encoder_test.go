@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/go-git/go-git/v5/internal/color"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 
@@ -56,7 +57,7 @@ func (s *UnifiedEncoderTestSuite) TestEncode(c *C) {
 		c.Log("executing: ", f.desc)
 
 		buffer := bytes.NewBuffer(nil)
-		e := NewUnifiedEncoder(buffer, f.context)
+		e := NewUnifiedEncoder(buffer, f.context).SetColor(f.color)
 
 		err := e.Encode(f.patch)
 		c.Assert(err, IsNil)
@@ -860,6 +861,82 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 +Y
 \ No newline at end of file
 `,
+}, {
+	patch: testPatch{
+		message: "",
+		filePatches: []testFilePatch{{
+			from: &testFile{
+				mode: filemode.Regular,
+				path: "README.md",
+				seed: "hello\nworld\n",
+			},
+			to: &testFile{
+				mode: filemode.Regular,
+				path: "README.md",
+				seed: "hello\nbug\n",
+			},
+			chunks: []testChunk{{
+				content: "hello\n",
+				op:      Equal,
+			}, {
+				content: "world\n",
+				op:      Delete,
+			}, {
+				content: "bug\n",
+				op:      Add,
+			}},
+		}},
+	},
+	desc:    "positive negative number with color",
+	context: 2,
+	color:   NewColorConfig(),
+	diff: "" +
+		color.Bold + "diff --git a/README.md b/README.md\n" +
+		"index 94954abda49de8615a048f8d2e64b5de848e27a1..f3dad9514629b9ff9136283ae331ad1fc95748a8 100644\n" +
+		"--- a/README.md\n" +
+		"+++ b/README.md\n" +
+		color.Reset + color.Cyan + "@@ -1,2 +1,2 @@\n" +
+		color.Normal + color.Reset + " hello\n" +
+		color.Reset + color.Red + "-world\n" +
+		color.Reset + color.Green + "+bug\n" +
+		color.Reset,
+}, {
+	patch: testPatch{
+		message: "",
+		filePatches: []testFilePatch{{
+			from: &testFile{
+				mode: filemode.Regular,
+				path: "test.txt",
+				seed: "test\n",
+			},
+			to: &testFile{
+				mode: filemode.Regular,
+				path: "test.txt",
+				seed: "test2\n",
+			},
+
+			chunks: []testChunk{{
+				content: "test\n",
+				op:      Delete,
+			}, {
+				content: "test2\n",
+				op:      Add,
+			}},
+		}},
+	},
+
+	desc:    "one line change with color",
+	context: 1,
+	color:   NewColorConfig(),
+	diff: "" +
+		color.Bold + "diff --git a/test.txt b/test.txt\n" +
+		"index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..180cf8328022becee9aaa2577a8f84ea2b9f3827 100644\n" +
+		"--- a/test.txt\n" +
+		"+++ b/test.txt\n" +
+		color.Reset + color.Cyan + "@@ -1 +1 @@\n" +
+		color.Reset + color.Red + "-test\n" +
+		color.Reset + color.Green + "+test2\n" +
+		color.Reset,
 }}
 
 type testPatch struct {
@@ -944,6 +1021,7 @@ func (t testChunk) Type() Operation {
 type fixture struct {
 	desc    string
 	context int
+	color   ColorConfig
 	diff    string
 	patch   Patch
 }

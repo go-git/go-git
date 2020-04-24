@@ -26,9 +26,9 @@ const (
 	tPath  = "+++ %s\n"
 	binary = "Binary files %s and %s differ\n"
 
-	addLine    = "+%s%s"
-	deleteLine = "-%s%s"
-	equalLine  = " %s%s"
+	addLine    = "%s+%s%s%s"
+	deleteLine = "%s-%s%s%s"
+	equalLine  = "%s %s%s%s"
 	noNewLine  = "\n\\ No newline at end of file\n"
 
 	oldMode         = "old mode %o\n"
@@ -57,11 +57,20 @@ type UnifiedEncoder struct {
 	// surrounding a change.
 	ctxLines int
 
+	// colorConfig is the color configuration. The default is no color.
+	color ColorConfig
+
 	buf bytes.Buffer
 }
 
 func NewUnifiedEncoder(w io.Writer, ctxLines int) *UnifiedEncoder {
 	return &UnifiedEncoder{ctxLines: ctxLines, Writer: w}
+}
+
+// SetColor sets e's color configuration and returns e.
+func (e *UnifiedEncoder) SetColor(colorConfig ColorConfig) *UnifiedEncoder {
+	e.color = colorConfig
+	return e
 }
 
 func (e *UnifiedEncoder) Encode(patch Patch) error {
@@ -85,7 +94,7 @@ func (e *UnifiedEncoder) encodeFilePatch(filePatches []FilePatch) error {
 
 		g := newHunksGenerator(p.Chunks(), e.ctxLines)
 		for _, c := range g.Generate() {
-			c.WriteTo(&e.buf)
+			c.WriteTo(&e.buf, e.color)
 		}
 	}
 
@@ -107,6 +116,8 @@ func (e *UnifiedEncoder) header(from, to File, isBinary bool) error {
 	case from == nil && to == nil:
 		return nil
 	case from != nil && to != nil:
+		e.buf.WriteString(e.color[Meta])
+
 		hashEquals := from.Hash() == to.Hash()
 
 		fmt.Fprintf(&e.buf, diffInit, from.Path(), to.Path())
@@ -130,16 +141,22 @@ func (e *UnifiedEncoder) header(from, to File, isBinary bool) error {
 		if !hashEquals {
 			e.pathLines(isBinary, aDir+from.Path(), bDir+to.Path())
 		}
+
+		e.buf.WriteString(e.color.Reset())
 	case from == nil:
+		e.buf.WriteString(e.color[Meta])
 		fmt.Fprintf(&e.buf, diffInit, to.Path(), to.Path())
 		fmt.Fprintf(&e.buf, newFileMode, to.Mode())
 		fmt.Fprintf(&e.buf, indexNoMode, plumbing.ZeroHash, to.Hash())
 		e.pathLines(isBinary, noFilePath, bDir+to.Path())
+		e.buf.WriteString(e.color.Reset())
 	case to == nil:
+		e.buf.WriteString(e.color[Meta])
 		fmt.Fprintf(&e.buf, diffInit, from.Path(), from.Path())
 		fmt.Fprintf(&e.buf, deletedFileMode, from.Mode())
 		fmt.Fprintf(&e.buf, indexNoMode, from.Hash(), plumbing.ZeroHash)
 		e.pathLines(isBinary, aDir+from.Path(), noFilePath)
+		e.buf.WriteString(e.color.Reset())
 	}
 
 	return nil
@@ -302,7 +319,8 @@ type hunk struct {
 	ops       []*op
 }
 
-func (c *hunk) WriteTo(buf *bytes.Buffer) {
+func (c *hunk) WriteTo(buf *bytes.Buffer, color ColorConfig) {
+	buf.WriteString(color[Frag])
 	buf.WriteString(chunkStart)
 
 	if c.fromCount == 1 {
@@ -320,9 +338,10 @@ func (c *hunk) WriteTo(buf *bytes.Buffer) {
 	}
 
 	fmt.Fprintf(buf, chunkEnd, c.ctxPrefix)
+	buf.WriteString(color.Reset())
 
 	for _, d := range c.ops {
-		buf.WriteString(d.String())
+		buf.WriteString(d.String(color))
 	}
 }
 
@@ -348,20 +367,23 @@ type op struct {
 	t    Operation
 }
 
-func (o *op) String() string {
-	var prefix, suffix string
+func (o *op) String(color ColorConfig) string {
+	var setColor, prefix, suffix string
 	switch o.t {
 	case Add:
 		prefix = addLine
+		setColor = color[New]
 	case Delete:
 		prefix = deleteLine
+		setColor = color[Old]
 	case Equal:
 		prefix = equalLine
+		setColor = color[Context]
 	}
 	n := len(o.text)
 	if n > 0 && o.text[n-1] != '\n' {
 		suffix = noNewLine
 	}
 
-	return fmt.Sprintf(prefix, o.text, suffix)
+	return fmt.Sprintf(prefix, setColor, o.text, color.Reset(), suffix)
 }
