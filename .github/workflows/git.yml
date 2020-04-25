@@ -29,11 +29,12 @@ jobs:
 
     - name: Set Git config
       run: |
+        export GIT_DIST_PATH=.git-dist/${{ matrix.git[0] }}
+        export GIT_EXEC_PATH=${{ github.workspace }}/$GIT_DIST_PATH
+        export PATH=$GIT_EXEC_PATH:$PATH
+        git --exec-path
         git config --global user.email "gha@example.com"
         git config --global user.name "GitHub Actions"
-        export PATH=$GIT_DIST_PATH:$PATH
-
+ 
     - name: Test
-      env:
-        GIT_EXEC_PATH: ${{ github.workspace }}/${{ env.GIT_DIST_PATH }}
       run: make test-coverage
