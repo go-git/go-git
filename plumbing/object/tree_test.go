@@ -1,9 +1,11 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -11,7 +13,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	. "gopkg.in/check.v1"
-	"github.com/go-git/go-git-fixtures/v4"
 )
 
 type TreeSuite struct {
@@ -238,6 +239,33 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 		tree.Hash = obj.Hash()
 		c.Assert(newTree, DeepEquals, tree)
 	}
+}
+
+func (s *TreeSuite) TestTreeDiff(c *C) {
+	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
+	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	commit, err := GetCommit(storer, plumbing.NewHash("89f8bda31d29767a6d6ba8f9d0dfb941d598e843"))
+	c.Assert(err, IsNil)
+
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	parentCommit, err := commit.Parent(0)
+	c.Assert(err, IsNil)
+
+	parentTree, err := parentCommit.Tree()
+	c.Assert(err, IsNil)
+
+	ch, err := parentTree.Diff(tree)
+	c.Assert(err, IsNil)
+
+	c.Assert(ch, HasLen, 3)
+	c.Assert(ch[0].From.Name, Equals, "examples/object_storage/main.go")
+	c.Assert(ch[0].To.Name, Equals, "examples/storage/main.go")
+
+	ch, err = parentTree.DiffContext(context.Background(), tree)
+	c.Assert(err, IsNil)
+	c.Assert(ch, HasLen, 3)
 }
 
 func (s *TreeSuite) TestTreeIter(c *C) {
