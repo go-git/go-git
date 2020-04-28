@@ -397,7 +397,7 @@ func (s *ChangeSuite) TestCancel(c *C) {
 	// On that commit, the "examples/clone" tree is
 	//     6efca3ff41cab651332f9ebc0c96bb26be809615
 	//
-	// and the "examples/colone/main.go" is
+	// and the "examples/clone/main.go" is
 	//     f95dc8f7923add1a8b9f72ecb1e8db1402de601a
 
 	path := "examples/clone/main.go"
