@@ -142,21 +142,21 @@ func (e *UnifiedEncoder) header(from, to File, isBinary bool) error {
 			e.pathLines(isBinary, aDir+from.Path(), bDir+to.Path())
 		}
 
-		e.buf.WriteString(e.color.Reset())
+		e.buf.WriteString(e.color.Reset(Meta))
 	case from == nil:
 		e.buf.WriteString(e.color[Meta])
 		fmt.Fprintf(&e.buf, diffInit, to.Path(), to.Path())
 		fmt.Fprintf(&e.buf, newFileMode, to.Mode())
 		fmt.Fprintf(&e.buf, indexNoMode, plumbing.ZeroHash, to.Hash())
 		e.pathLines(isBinary, noFilePath, bDir+to.Path())
-		e.buf.WriteString(e.color.Reset())
+		e.buf.WriteString(e.color.Reset(Meta))
 	case to == nil:
 		e.buf.WriteString(e.color[Meta])
 		fmt.Fprintf(&e.buf, diffInit, from.Path(), from.Path())
 		fmt.Fprintf(&e.buf, deletedFileMode, from.Mode())
 		fmt.Fprintf(&e.buf, indexNoMode, from.Hash(), plumbing.ZeroHash)
 		e.pathLines(isBinary, aDir+from.Path(), noFilePath)
-		e.buf.WriteString(e.color.Reset())
+		e.buf.WriteString(e.color.Reset(Meta))
 	}
 
 	return nil
@@ -338,13 +338,13 @@ func (c *hunk) WriteTo(buf *bytes.Buffer, color ColorConfig) {
 	}
 
 	buf.WriteString(chunkEnd)
-	buf.WriteString(color.Reset())
+	buf.WriteString(color.Reset(Frag))
 
 	if c.ctxPrefix != "" {
 		buf.WriteByte(' ')
 		buf.WriteString(color[Func])
 		buf.WriteString(c.ctxPrefix)
-		buf.WriteString(color.Reset())
+		buf.WriteString(color.Reset(Func))
 	}
 
 	buf.WriteByte('\n')
@@ -377,22 +377,23 @@ type op struct {
 }
 
 func (o *op) String(color ColorConfig) string {
-	var setColor, prefix, suffix string
+	var prefix, suffix string
+	var colorKey ColorKey
 	switch o.t {
 	case Add:
 		prefix = addLine
-		setColor = color[New]
+		colorKey = New
 	case Delete:
 		prefix = deleteLine
-		setColor = color[Old]
+		colorKey = Old
 	case Equal:
 		prefix = equalLine
-		setColor = color[Context]
+		colorKey = Context
 	}
 	n := len(o.text)
 	if n > 0 && o.text[n-1] != '\n' {
 		suffix = noNewLine
 	}
 
-	return fmt.Sprintf(prefix, setColor, o.text, color.Reset(), suffix)
+	return fmt.Sprintf(prefix, color[colorKey], o.text, color.Reset(colorKey), suffix)
 }

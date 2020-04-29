@@ -896,7 +896,7 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 		"--- a/README.md\n" +
 		"+++ b/README.md\n" + color.Reset +
 		color.Cyan + "@@ -1,2 +1,2 @@" + color.Reset + "\n" +
-		color.Normal + " hello\n" + color.Reset +
+		" hello\n" +
 		color.Red + "-world\n" + color.Reset +
 		color.Green + "+bug\n" + color.Reset,
 }, {
@@ -951,19 +951,19 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 		"+++ b/onechunk.txt\n" + color.Reset +
 		color.Cyan + "@@ -1,2 +1 @@" + color.Reset + "\n" +
 		color.Red + "-A\n" + color.Reset +
-		color.Normal + " B\n" + color.Reset +
+		" B\n" +
 		color.Cyan + "@@ -7,3 +6,2 @@" + color.Reset + " " + color.Reverse + "F" + color.Reset + "\n" +
-		color.Normal + " G\n" + color.Reset +
+		" G\n" +
 		color.Red + "-H\n" + color.Reset +
-		color.Normal + " I\n" + color.Reset +
+		" I\n" +
 		color.Cyan + "@@ -14,3 +12,2 @@" + color.Reset + " " + color.Reverse + "M" + color.Reset + "\n" +
-		color.Normal + " N\n" + color.Reset +
+		" N\n" +
 		color.Red + "-Ñ\n" + color.Reset +
-		color.Normal + " O\n" + color.Reset +
+		" O\n" +
 		color.Cyan + "@@ -21,3 +18,2 @@" + color.Reset + " " + color.Reverse + "S" + color.Reset + "\n" +
-		color.Normal + " T\n" + color.Reset +
+		" T\n" +
 		color.Red + "-U\n" + color.Reset +
-		color.Normal + " V\n" + color.Reset,
+		" V\n",
 }}
 
 type testPatch struct {

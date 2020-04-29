@@ -86,10 +86,11 @@ func NewColorConfig(options ...ColorConfigOption) ColorConfig {
 	return cc
 }
 
-// Reset returns the ANSI escape sequence to reset a color set from cc. If cc is
-// nil or empty then no reset is needed so it returns the empty string.
-func (cc ColorConfig) Reset() string {
-	if len(cc) == 0 {
+// Reset returns the ANSI escape sequence to reset the color with key set from
+// cc. If no color was set then no reset is needed so it returns the empty
+// string.
+func (cc ColorConfig) Reset(key ColorKey) string {
+	if cc[key] == "" {
 		return ""
 	}
 	return color.Reset
