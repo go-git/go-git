@@ -15,7 +15,7 @@ const (
 
 	chunkStart  = "@@ -"
 	chunkMiddle = " +"
-	chunkEnd    = " @@%s\n"
+	chunkEnd    = " @@"
 	chunkCount  = "%d,%d"
 
 	noFilePath = "/dev/null"
@@ -230,7 +230,7 @@ func (c *hunksGenerator) processHunk(i int, op Operation) {
 	var ctxPrefix string
 	linesBefore := len(c.beforeContext)
 	if linesBefore > c.ctxLines {
-		ctxPrefix = " " + c.beforeContext[linesBefore-c.ctxLines-1]
+		ctxPrefix = c.beforeContext[linesBefore-c.ctxLines-1]
 		c.beforeContext = c.beforeContext[linesBefore-c.ctxLines:]
 		linesBefore = c.ctxLines
 	}
@@ -337,8 +337,17 @@ func (c *hunk) WriteTo(buf *bytes.Buffer, color ColorConfig) {
 		fmt.Fprintf(buf, chunkCount, c.toLine, c.toCount)
 	}
 
-	fmt.Fprintf(buf, chunkEnd, c.ctxPrefix)
+	buf.WriteString(chunkEnd)
 	buf.WriteString(color.Reset())
+
+	if c.ctxPrefix != "" {
+		buf.WriteByte(' ')
+		buf.WriteString(color[Func])
+		buf.WriteString(c.ctxPrefix)
+		buf.WriteString(color.Reset())
+	}
+
+	buf.WriteByte('\n')
 
 	for _, d := range c.ops {
 		buf.WriteString(d.String(color))
