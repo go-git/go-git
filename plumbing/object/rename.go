@@ -713,7 +713,7 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 }
 
 func (i *similarityIndex) add(key int, cnt uint64) error {
-	key = int(uint32(key*0x9e370001) >> 1)
+	key = int(uint32(key)*0x9e370001 >> 1)
 
 	j := i.slot(key)
 	for {
