@@ -271,6 +271,32 @@ func (s *RenameSuite) TestRenameLimit(c *C) {
 	}
 }
 
+func (s *RenameSuite) TestRenameExactManyAddsManyDeletesNoGaps(c *C) {
+	content := "a"
+	detector := &renameDetector{
+		added: []*Change{
+			makeAdd(c, makeFile(c, pathA, filemode.Regular, content)),
+			makeAdd(c, makeFile(c, pathQ, filemode.Regular, content)),
+			makeAdd(c, makeFile(c, "something", filemode.Regular, content)),
+		},
+		deleted: []*Change{
+			makeDelete(c, makeFile(c, pathA, filemode.Regular, content)),
+			makeDelete(c, makeFile(c, pathB, filemode.Regular, content)),
+			makeDelete(c, makeFile(c, "foo/bar/other", filemode.Regular, content)),
+		},
+	}
+
+	detector.detectExactRenames()
+
+	for _, added := range detector.added {
+		c.Assert(added, NotNil)
+	}
+
+	for _, deleted := range detector.deleted {
+		c.Assert(deleted, NotNil)
+	}
+}
+
 func detectRenames(c *C, changes Changes, opts *DiffTreeOptions, expectedResults int) Changes {
 	result, err := DetectRenames(changes, opts)
 	c.Assert(err, IsNil)
