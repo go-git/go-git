@@ -177,14 +177,14 @@ func (d *renameDetector) detectExactRenames() {
 			}
 
 			for _, c := range added {
-				if _, ok := usedAdds[c]; !ok {
+				if _, ok := usedAdds[c]; !ok && c != nil {
 					addedLeft = append(addedLeft, c)
 				}
 			}
 
 			var newDeletes = make([]*Change, 0, len(deleted)-len(usedDeletes))
 			for _, c := range deleted {
-				if _, ok := usedDeletes[c]; !ok {
+				if _, ok := usedDeletes[c]; !ok && c != nil {
 					newDeletes = append(newDeletes, c)
 				}
 			}
@@ -197,11 +197,7 @@ func (d *renameDetector) detectExactRenames() {
 	d.added = addedLeft
 	d.deleted = nil
 	for _, dels := range deletes {
-		for _, del := range dels {
-			if del != nil {
-				d.deleted = append(d.deleted, del)
-			}
-		}
+		d.deleted = append(d.deleted, dels...)
 	}
 }
 
@@ -713,7 +709,7 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 }
 
 func (i *similarityIndex) add(key int, cnt uint64) error {
-	key = int(uint32(key)*0x9e370001 >> 1)
+	key = int(uint32(key) * 0x9e370001 >> 1)
 
 	j := i.slot(key)
 	for {
