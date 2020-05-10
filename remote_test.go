@@ -20,8 +20,8 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	. "gopkg.in/check.v1"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
+	. "gopkg.in/check.v1"
 )
 
 type RemoteSuite struct {
@@ -69,6 +69,35 @@ func (s *RemoteSuite) TestFetchWildcard(c *C) {
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/branch", "e8d3ffab552895c19b9fcf7aa264d277cde33881"),
 		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
+}
+
+func (s *RemoteSuite) TestFetchExactSHA1(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{"https://github.com/git-fixtures/basic.git"},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/foo", "35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchExactSHA1_NotSoported(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
+		},
+	})
+
+	c.Assert(err, Equals, ErrExactSHA1NotSupported)
+
 }
 
 func (s *RemoteSuite) TestFetchWildcardTags(c *C) {
