@@ -3,8 +3,8 @@ package config
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/plumbing"
+	. "gopkg.in/check.v1"
 )
 
 type RefSpecSuite struct{}
@@ -37,6 +37,12 @@ func (s *RefSpecSuite) TestRefSpecIsValid(c *C) {
 
 	spec = RefSpec("refs/heads:")
 	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedSeparator)
+
+	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/foo")
+	c.Assert(spec.Validate(), Equals, nil)
+
+	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/*")
+	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
 }
 
 func (s *RefSpecSuite) TestRefSpecIsForceUpdate(c *C) {
@@ -56,6 +62,14 @@ func (s *RefSpecSuite) TestRefSpecIsDelete(c *C) {
 
 	spec = RefSpec("refs/heads/*:refs/remotes/origin/*")
 	c.Assert(spec.IsDelete(), Equals, false)
+}
+
+func (s *RefSpecSuite) TestRefSpecIsExactSHA1(c *C) {
+	spec := RefSpec("foo:refs/heads/master")
+	c.Assert(spec.IsExactSHA1(), Equals, false)
+
+	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/foo")
+	c.Assert(spec.IsExactSHA1(), Equals, true)
 }
 
 func (s *RefSpecSuite) TestRefSpecSrc(c *C) {
