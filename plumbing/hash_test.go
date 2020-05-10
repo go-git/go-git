@@ -52,3 +52,9 @@ func (s *HashSuite) TestHashesSort(c *C) {
 	c.Assert(i[0], Equals, NewHash("1111111111111111111111111111111111111111"))
 	c.Assert(i[1], Equals, NewHash("2222222222222222222222222222222222222222"))
 }
+
+func (s *HashSuite) TestIsHash(c *C) {
+	c.Assert(IsHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"), Equals, true)
+	c.Assert(IsHash("foo"), Equals, false)
+	c.Assert(IsHash("zab686eafeb1f44702738c8b0f24f2567c36da6d"), Equals, false)
+}
