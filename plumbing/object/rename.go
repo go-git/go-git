@@ -709,7 +709,7 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 }
 
 func (i *similarityIndex) add(key int, cnt uint64) error {
-	key = int(uint32(key) * 0x9e370001 >> 1)
+	key = int(uint32(key)*0x9e370001 >> 1)
 
 	j := i.slot(key)
 	for {
@@ -769,11 +769,11 @@ func (i *similarityIndex) slot(key int) int {
 	// We use 31 - hashBits because the upper bit was already forced
 	// to be 0 and we want the remaining high bits to be used as the
 	// table slot.
-	return int(uint32(key) >> (31 - i.hashBits))
+	return int(uint32(key) >> uint(31 - i.hashBits))
 }
 
 func shouldGrowAt(hashBits int) int {
-	return (1 << hashBits) * (hashBits - 3) / hashBits
+	return (1 << uint(hashBits)) * (hashBits - 3) / hashBits
 }
 
 func (i *similarityIndex) grow() error {
@@ -788,7 +788,7 @@ func (i *similarityIndex) grow() error {
 
 	// TODO(erizocosmico): find a way to check if it will OOM and return
 	// errIndexFull instead.
-	i.hashes = make([]keyCountPair, 1<<i.hashBits)
+	i.hashes = make([]keyCountPair, 1<<uint(i.hashBits))
 
 	for _, v := range old {
 		if v != 0 {
