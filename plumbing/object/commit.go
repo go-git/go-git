@@ -87,9 +87,12 @@ func (c *Commit) PatchContext(ctx context.Context, to *Commit) (*Patch, error) {
 		return nil, err
 	}
 
-	toTree, err := to.Tree()
-	if err != nil {
-		return nil, err
+	var toTree *Tree
+	if to != nil {
+		toTree, err = to.Tree()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return fromTree.PatchContext(ctx, toTree)

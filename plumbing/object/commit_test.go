@@ -12,8 +12,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	. "gopkg.in/check.v1"
 )
 
 type SuiteCommit struct {
@@ -186,6 +186,15 @@ Binary files /dev/null and b/binary.jpg differ
 `)
 
 	c.Assert(buf.String(), Equals, patch.String())
+}
+
+func (s *SuiteCommit) TestPatchContext_ToNil(c *C) {
+	from := s.commit(c, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+
+	patch, err := from.PatchContext(context.Background(), nil)
+	c.Assert(err, IsNil)
+
+	c.Assert(len(patch.String()), Equals, 242679)
 }
 
 func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
