@@ -377,6 +377,17 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
 	c.Assert(count, Equals, 8)
 }
 
+func (s *TreeSuite) TestPatchContext_ToNil(c *C) {
+	commit := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	tree, err := commit.Tree()
+	c.Assert(err, IsNil)
+
+	patch, err := tree.PatchContext(context.Background(), nil)
+	c.Assert(err, IsNil)
+
+	c.Assert(len(patch.String()), Equals, 242971)
+}
+
 func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
