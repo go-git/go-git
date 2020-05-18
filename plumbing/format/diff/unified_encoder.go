@@ -86,48 +86,73 @@ func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch Fil
 	}
 	isBinary := filePatch.IsBinary()
 
-	sb.WriteString(e.color[Meta])
+	var lines []string
 	switch {
 	case from != nil && to != nil:
 		hashEquals := from.Hash() == to.Hash()
-		fmt.Fprintf(sb, "diff --git a/%s b/%s\n", from.Path(), to.Path())
+		lines = append(lines,
+			fmt.Sprintf("diff --git a/%s b/%s", from.Path(), to.Path()),
+		)
 		if from.Mode() != to.Mode() {
-			fmt.Fprintf(sb, "old mode %o\n", from.Mode())
-			fmt.Fprintf(sb, "new mode %o\n", to.Mode())
+			lines = append(lines,
+				fmt.Sprintf("old mode %o", from.Mode()),
+				fmt.Sprintf("new mode %o", to.Mode()),
+			)
 		}
 		if from.Path() != to.Path() {
-			fmt.Fprintf(sb, "rename from %s\n", from.Path())
-			fmt.Fprintf(sb, "rename to %s\n", to.Path())
+			lines = append(lines,
+				fmt.Sprintf("rename from %s", from.Path()),
+				fmt.Sprintf("rename to %s", to.Path()),
+			)
 		}
 		if from.Mode() != to.Mode() && !hashEquals {
-			fmt.Fprintf(sb, "index %s..%s\n", from.Hash(), to.Hash())
+			lines = append(lines,
+				fmt.Sprintf("index %s..%s", from.Hash(), to.Hash()),
+			)
 		} else if !hashEquals {
-			fmt.Fprintf(sb, "index %s..%s %o\n", from.Hash(), to.Hash(), from.Mode())
+			lines = append(lines,
+				fmt.Sprintf("index %s..%s %o", from.Hash(), to.Hash(), from.Mode()),
+			)
 		}
 		if !hashEquals {
-			e.writePathLines(sb, "a/"+from.Path(), "b/"+to.Path(), isBinary)
+			lines = e.appendPathLines(lines, "a/"+from.Path(), "b/"+to.Path(), isBinary)
 		}
 	case from == nil:
-		fmt.Fprintf(sb, "diff --git a/%s b/%s\n", to.Path(), to.Path())
-		fmt.Fprintf(sb, "new file mode %o\n", to.Mode())
-		fmt.Fprintf(sb, "index %s..%s\n", plumbing.ZeroHash, to.Hash())
-		e.writePathLines(sb, "/dev/null", "b/"+to.Path(), isBinary)
+		lines = append(lines,
+			fmt.Sprintf("diff --git a/%s b/%s", to.Path(), to.Path()),
+			fmt.Sprintf("new file mode %o", to.Mode()),
+			fmt.Sprintf("index %s..%s", plumbing.ZeroHash, to.Hash()),
+		)
+		lines = e.appendPathLines(lines, "/dev/null", "b/"+to.Path(), isBinary)
 	case to == nil:
-		fmt.Fprintf(sb, "diff --git a/%s b/%s\n", from.Path(), from.Path())
-		fmt.Fprintf(sb, "deleted file mode %o\n", from.Mode())
-		fmt.Fprintf(sb, "index %s..%s\n", from.Hash(), plumbing.ZeroHash)
-		e.writePathLines(sb, "a/"+from.Path(), "/dev/null", isBinary)
+		lines = append(lines,
+			fmt.Sprintf("diff --git a/%s b/%s", from.Path(), from.Path()),
+			fmt.Sprintf("deleted file mode %o", from.Mode()),
+			fmt.Sprintf("index %s..%s", from.Hash(), plumbing.ZeroHash),
+		)
+		lines = e.appendPathLines(lines, "a/"+from.Path(), "/dev/null", isBinary)
+	}
+
+	sb.WriteString(e.color[Meta])
+	sb.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		sb.WriteByte('\n')
+		sb.WriteString(line)
 	}
 	sb.WriteString(e.color.Reset(Meta))
+	sb.WriteByte('\n')
 }
 
-func (e *UnifiedEncoder) writePathLines(sb *strings.Builder, fromPath, toPath string, isBinary bool) {
+func (e *UnifiedEncoder) appendPathLines(lines []string, fromPath, toPath string, isBinary bool) []string {
 	if isBinary {
-		fmt.Fprintf(sb, "Binary files %s and %s differ\n", fromPath, toPath)
-	} else {
-		fmt.Fprintf(sb, "--- %s\n", fromPath)
-		fmt.Fprintf(sb, "+++ %s\n", toPath)
+		return append(lines,
+			fmt.Sprintf("Binary files %s and %s differ", fromPath, toPath),
+		)
 	}
+	return append(lines,
+		fmt.Sprintf("--- %s", fromPath),
+		fmt.Sprintf("+++ %s", toPath),
+	)
 }
 
 type hunksGenerator struct {
@@ -341,9 +366,11 @@ func (o *op) writeTo(sb *strings.Builder, color ColorConfig) {
 	colorKey := operationColorKey[o.t]
 	sb.WriteString(color[colorKey])
 	sb.WriteByte(operationChar[o.t])
-	sb.WriteString(o.text)
-	sb.WriteString(color.Reset(colorKey))
-	if !strings.HasSuffix(o.text, "\n") {
-		sb.WriteString("\n\\ No newline at end of file\n")
+	if strings.HasSuffix(o.text, "\n") {
+		sb.WriteString(strings.TrimSuffix(o.text, "\n"))
+	} else {
+		sb.WriteString(o.text + "\n\\ No newline at end of file")
 	}
+	sb.WriteString(color.Reset(colorKey))
+	sb.WriteByte('\n')
 }
