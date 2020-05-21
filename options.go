@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/openpgp"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"golang.org/x/crypto/openpgp"
 )
 
 // SubmoduleRescursivity defines how depth will affect any submodule recursive
@@ -190,6 +190,9 @@ type PushOptions struct {
 	// Prune specify that remote refs that match given RefSpecs and that do
 	// not exist locally will be removed.
 	Prune bool
+	// Force allows the push to update a remote branch even when the local
+	// branch does not descend from it.
+	Force bool
 }
 
 // Validate validates the fields and sets the default values.
