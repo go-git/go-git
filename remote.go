@@ -123,6 +123,15 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return ErrDeleteRefNotSupported
 	}
 
+	if o.Force {
+		for i := 0; i < len(o.RefSpecs); i++ {
+			rs := &o.RefSpecs[i]
+			if !rs.IsForceUpdate() {
+				o.RefSpecs[i] = config.RefSpec("+" + rs.String())
+			}
+		}
+	}
+
 	localRefs, err := r.references()
 	if err != nil {
 		return err

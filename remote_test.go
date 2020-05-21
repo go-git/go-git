@@ -612,6 +612,34 @@ func (s *RemoteSuite) TestPushForce(c *C) {
 	c.Assert(newRef, Not(DeepEquals), oldRef)
 }
 
+func (s *RemoteSuite) TestPushForceWithOption(c *C) {
+	f := fixtures.Basic().One()
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+
+	dstFs := f.DotGit()
+	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
+
+	url := dstFs.Root()
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(oldRef, NotNil)
+
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{"refs/heads/master:refs/heads/branch"},
+		Force:    true,
+	})
+	c.Assert(err, IsNil)
+
+	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef, Not(DeepEquals), oldRef)
+}
+
 func (s *RemoteSuite) TestPushPrune(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	url := c.MkDir()
