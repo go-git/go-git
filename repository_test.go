@@ -1870,6 +1870,21 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsPass(c *C) {
 	c.Assert(iterErr, Equals, io.EOF)
 }
 
+func (s *RepositorySuite) TestConfigScoped(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	cfg, err := r.ConfigScoped(config.LocalScope)
+	c.Assert(err, IsNil)
+	c.Assert(cfg.User.Email, Equals, "")
+
+	cfg, err = r.ConfigScoped(config.SystemScope)
+	c.Assert(err, IsNil)
+	c.Assert(cfg.User.Email, Not(Equals), "")
+}
+
 func (s *RepositorySuite) TestCommit(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{

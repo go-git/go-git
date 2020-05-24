@@ -24,16 +24,20 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-func (s *WorktreeSuite) TestCommitInvalidOptions(c *C) {
+func (s *WorktreeSuite) TestCommitEmptyOptions(c *C) {
 	r, err := Init(memory.NewStorage(), memfs.New())
 	c.Assert(err, IsNil)
 
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
-	hash, err := w.Commit("", &CommitOptions{})
-	c.Assert(err, Equals, ErrMissingAuthor)
-	c.Assert(hash.IsZero(), Equals, true)
+	hash, err := w.Commit("foo", &CommitOptions{})
+	c.Assert(err, IsNil)
+	c.Assert(hash.IsZero(), Equals, false)
+
+	commit, err := r.CommitObject(hash)
+	c.Assert(err, IsNil)
+	c.Assert(commit.Author.Name, Not(Equals), "")
 }
 
 func (s *WorktreeSuite) TestCommitInitial(c *C) {
