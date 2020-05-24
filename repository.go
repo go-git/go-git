@@ -435,9 +435,18 @@ func cleanUpDir(path string, all bool) error {
 	return err
 }
 
-// Config return the repository config
+// Config return the repository config. In a filesystem backed repository this
+// means read the `.git/config`.
 func (r *Repository) Config() (*config.Config, error) {
 	return r.Storer.Config()
+}
+
+// SetConfig marshall and writes the repository config. In a filesystem backed
+// repository this means write the `.git/config`. This function should be called
+// with the result of `Repository.Config` and never with the output of
+// `Repository.ConfigScoped`.
+func (r *Repository) SetConfig(cfg *config.Config) error {
+	return r.Storer.SetConfig(cfg)
 }
 
 // ConfigScoped returns the repository config, merged with requested scope and
