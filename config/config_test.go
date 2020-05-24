@@ -1,8 +1,8 @@
 package config
 
 import (
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/plumbing"
+	. "gopkg.in/check.v1"
 )
 
 type ConfigSuite struct{}
@@ -11,14 +11,23 @@ var _ = Suite(&ConfigSuite{})
 
 func (s *ConfigSuite) TestUnmarshal(c *C) {
 	input := []byte(`[core]
-        bare = true
+		bare = true
 		worktree = foo
 		commentchar = bar
+[user]
+		name = John Doe
+		email = john@example.com
+[author]
+		name = Jane Roe
+		email = jane@example.com
+[committer]
+		name = Richard Roe
+		email = richard@example.com
 [pack]
 		window = 20
 [remote "origin"]
-        url = git@github.com:mcuadros/go-git.git
-        fetch = +refs/heads/*:refs/remotes/origin/*
+		url = git@github.com:mcuadros/go-git.git
+		fetch = +refs/heads/*:refs/remotes/origin/*
 [remote "alt"]
 		url = git@github.com:mcuadros/go-git.git
 		url = git@github.com:src-d/go-git.git
@@ -27,12 +36,12 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [remote "win-local"]
 		url = X:\\Git\\
 [submodule "qux"]
-        path = qux
-        url = https://github.com/foo/qux.git
+		path = qux
+		url = https://github.com/foo/qux.git
 		branch = bar
 [branch "master"]
-        remote = origin
-        merge = refs/heads/master
+		remote = origin
+		merge = refs/heads/master
 `)
 
 	cfg := NewConfig()
@@ -42,6 +51,12 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Core.IsBare, Equals, true)
 	c.Assert(cfg.Core.Worktree, Equals, "foo")
 	c.Assert(cfg.Core.CommentChar, Equals, "bar")
+	c.Assert(cfg.User.Name, Equals, "John Doe")
+	c.Assert(cfg.User.Email, Equals, "john@example.com")
+	c.Assert(cfg.Author.Name, Equals, "Jane Roe")
+	c.Assert(cfg.Author.Email, Equals, "jane@example.com")
+	c.Assert(cfg.Committer.Name, Equals, "Richard Roe")
+	c.Assert(cfg.Committer.Email, Equals, "richard@example.com")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
 	c.Assert(cfg.Remotes, HasLen, 3)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
@@ -124,6 +139,15 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	bare = true
 	worktree = foo
 	custom = ignored
+[user]
+	name = John Doe
+	email = john@example.com
+[author]
+	name = Jane Roe
+	email = jane@example.com
+[committer]
+	name = Richard Roe
+	email = richard@example.co
 [pack]
 	window = 20
 [remote "origin"]

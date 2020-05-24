@@ -46,6 +46,27 @@ type Config struct {
 		CommentChar string
 	}
 
+	User struct {
+		// Name is the personal name of the author and the commiter of a commit.
+		Name string
+		// Email is the email of the author and the commiter of a commit.
+		Email string
+	}
+
+	Author struct {
+		// Name is the personal name of the author of a commit.
+		Name string
+		// Email is the email of the author of a commit.
+		Email string
+	}
+
+	Committer struct {
+		// Name is the personal name of the commiter of a commit.
+		Name string
+		// Email is the email of the  the commiter of a commit.
+		Email string
+	}
+
 	Pack struct {
 		// Window controls the size of the sliding window for delta
 		// compression.  The default is 10.  A value of 0 turns off
@@ -113,6 +134,9 @@ const (
 	branchSection    = "branch"
 	coreSection      = "core"
 	packSection      = "pack"
+	userSection      = "user"
+	authorSection    = "author"
+	committerSection = "committer"
 	fetchKey         = "fetch"
 	urlKey           = "url"
 	bareKey          = "bare"
@@ -121,6 +145,8 @@ const (
 	windowKey        = "window"
 	mergeKey         = "merge"
 	rebaseKey        = "rebase"
+	nameKey          = "name"
+	emailKey         = "email"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -138,6 +164,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	c.unmarshalCore()
+	c.unmarshalUser()
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
@@ -158,6 +185,20 @@ func (c *Config) unmarshalCore() {
 
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
+}
+
+func (c *Config) unmarshalUser() {
+	s := c.Raw.Section(userSection)
+	c.User.Name = s.Options.Get(nameKey)
+	c.User.Email = s.Options.Get(emailKey)
+
+	s = c.Raw.Section(authorSection)
+	c.Author.Name = s.Options.Get(nameKey)
+	c.Author.Email = s.Options.Get(emailKey)
+
+	s = c.Raw.Section(committerSection)
+	c.Committer.Name = s.Options.Get(nameKey)
+	c.Committer.Email = s.Options.Get(emailKey)
 }
 
 func (c *Config) unmarshalPack() error {
@@ -220,6 +261,7 @@ func (c *Config) unmarshalBranches() error {
 // Marshal returns Config encoded as a git-config file.
 func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
+	c.marshalUser()
 	c.marshalPack()
 	c.marshalRemotes()
 	c.marshalSubmodules()
@@ -239,6 +281,35 @@ func (c *Config) marshalCore() {
 
 	if c.Core.Worktree != "" {
 		s.SetOption(worktreeKey, c.Core.Worktree)
+	}
+}
+
+func (c *Config) marshalUser() {
+	s := c.Raw.Section(userSection)
+	if c.User.Name != "" {
+		s.SetOption(nameKey, c.User.Name)
+	}
+
+	if c.User.Email != "" {
+		s.SetOption(emailKey, c.User.Email)
+	}
+
+	s = c.Raw.Section(authorSection)
+	if c.Author.Name != "" {
+		s.SetOption(nameKey, c.Author.Name)
+	}
+
+	if c.Author.Email != "" {
+		s.SetOption(emailKey, c.Author.Email)
+	}
+
+	s = c.Raw.Section(committerSection)
+	if c.Committer.Name != "" {
+		s.SetOption(nameKey, c.Committer.Name)
+	}
+
+	if c.Committer.Email != "" {
+		s.SetOption(emailKey, c.Committer.Email)
 	}
 }
 
