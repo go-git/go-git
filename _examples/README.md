@@ -20,6 +20,7 @@ Here you can find a list of annotated _go-git_ examples:
 - [remotes](remotes/main.go) - Working with remotes: adding, removing, etc
 - [progress](progress/main.go) - Printing the progress information from the sideband
 - [revision](revision/main.go) - Solve a revision into a commit
+- [submodule](submodule/main.go) - Submodule update remote
 
 ### Advanced
 - [custom_http](custom_http/main.go) - Replacing the HTTP client using a custom one

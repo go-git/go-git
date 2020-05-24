@@ -894,11 +894,11 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 		color.Bold + "diff --git a/README.md b/README.md\n" +
 		"index 94954abda49de8615a048f8d2e64b5de848e27a1..f3dad9514629b9ff9136283ae331ad1fc95748a8 100644\n" +
 		"--- a/README.md\n" +
-		"+++ b/README.md\n" + color.Reset +
+		"+++ b/README.md" + color.Reset + "\n" +
 		color.Cyan + "@@ -1,2 +1,2 @@" + color.Reset + "\n" +
 		" hello\n" +
-		color.Red + "-world\n" + color.Reset +
-		color.Green + "+bug\n" + color.Reset,
+		color.Red + "-world" + color.Reset + "\n" +
+		color.Green + "+bug" + color.Reset + "\n",
 }, {
 	patch: testPatch{
 		message: "",
@@ -933,10 +933,10 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 		color.Bold + "diff --git a/test.txt b/test.txt\n" +
 		"index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..180cf8328022becee9aaa2577a8f84ea2b9f3827 100644\n" +
 		"--- a/test.txt\n" +
-		"+++ b/test.txt\n" + color.Reset +
+		"+++ b/test.txt" + color.Reset + "\n" +
 		color.Cyan + "@@ -1 +1 @@" + color.Reset + "\n" +
-		color.Red + "-test\n" + color.Reset +
-		color.Green + "+test2\n" + color.Reset,
+		color.Red + "-test" + color.Reset + "\n" +
+		color.Green + "+test2" + color.Reset + "\n",
 }, {
 	patch:   oneChunkPatch,
 	desc:    "modified deleting lines file with context to 1 with color",
@@ -948,21 +948,21 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 		color.Bold + "diff --git a/onechunk.txt b/onechunk.txt\n" +
 		"index ab5eed5d4a2c33aeef67e0188ee79bed666bde6f..0adddcde4fd38042c354518351820eb06c417c82 100644\n" +
 		"--- a/onechunk.txt\n" +
-		"+++ b/onechunk.txt\n" + color.Reset +
+		"+++ b/onechunk.txt" + color.Reset + "\n" +
 		color.Cyan + "@@ -1,2 +1 @@" + color.Reset + "\n" +
-		color.Red + "-A\n" + color.Reset +
+		color.Red + "-A" + color.Reset + "\n" +
 		" B\n" +
 		color.Cyan + "@@ -7,3 +6,2 @@" + color.Reset + " " + color.Reverse + "F" + color.Reset + "\n" +
 		" G\n" +
-		color.Red + "-H\n" + color.Reset +
+		color.Red + "-H" + color.Reset + "\n" +
 		" I\n" +
 		color.Cyan + "@@ -14,3 +12,2 @@" + color.Reset + " " + color.Reverse + "M" + color.Reset + "\n" +
 		" N\n" +
-		color.Red + "-Ñ\n" + color.Reset +
+		color.Red + "-Ñ" + color.Reset + "\n" +
 		" O\n" +
 		color.Cyan + "@@ -21,3 +18,2 @@" + color.Reset + " " + color.Reverse + "S" + color.Reset + "\n" +
 		" T\n" +
-		color.Red + "-U\n" + color.Reset +
+		color.Red + "-U" + color.Reset + "\n" +
 		" V\n",
 }}
 

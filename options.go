@@ -190,6 +190,9 @@ type PushOptions struct {
 	// Prune specify that remote refs that match given RefSpecs and that do
 	// not exist locally will be removed.
 	Prune bool
+	// Force allows the push to update a remote branch even when the local
+	// branch does not descend from it.
+	Force bool
 }
 
 // Validate validates the fields and sets the default values.
