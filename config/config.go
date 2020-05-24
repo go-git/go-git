@@ -66,9 +66,6 @@ type Config struct {
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
 	Raw *format.Config
-	// Merged contains the raw form of how git views the system (/etc/gitconfig),
-	// global (~/.gitconfig), and local (./.git/config) config params.
-	Merged *format.Merged
 }
 
 // NewConfig returns a new empty Config.
@@ -77,10 +74,8 @@ func NewConfig() *Config {
 		Remotes:    make(map[string]*RemoteConfig),
 		Submodules: make(map[string]*Submodule),
 		Branches:   make(map[string]*Branch),
-		Merged:     format.NewMerged(),
+		Raw:        format.New(),
 	}
-
-	config.Raw = config.Merged.LocalConfig()
 
 	config.Pack.Window = DefaultPackWindow
 
@@ -134,38 +129,25 @@ const (
 
 // Unmarshal parses a git-config file and stores it.
 func (c *Config) Unmarshal(b []byte) error {
-	return c.UnmarshalScoped(format.LocalScope, b)
-}
-
-func (c *Config) UnmarshalScoped(scope format.Scope, b []byte) error {
 	r := bytes.NewBuffer(b)
 	d := format.NewDecoder(r)
 
-	c.Merged.ResetScopedConfig(scope)
-
-	if err := d.Decode(c.Merged.ScopedConfig(scope)); err != nil {
+	c.Raw = format.New()
+	if err := d.Decode(c.Raw); err != nil {
 		return err
 	}
 
-	if scope == format.LocalScope {
-		c.Raw = c.Merged.LocalConfig()
+	c.unmarshalCore()
+	if err := c.unmarshalPack(); err != nil {
+		return err
+	}
+	unmarshalSubmodules(c.Raw, c.Submodules)
 
-		c.unmarshalCore()
-		if err := c.unmarshalPack(); err != nil {
-			return err
-		}
-		unmarshalSubmodules(c.Raw, c.Submodules)
-
-		if err := c.unmarshalBranches(); err != nil {
-			return err
-		}
-
-		if err := c.unmarshalRemotes(); err != nil {
-			return err
-		}
+	if err := c.unmarshalBranches(); err != nil {
+		return err
 	}
 
-	return nil
+	return c.unmarshalRemotes()
 }
 
 func (c *Config) unmarshalCore() {
@@ -236,7 +218,7 @@ func (c *Config) unmarshalBranches() error {
 }
 
 // Marshal returns Config encoded as a git-config file.
-func (c *Config) MarshalScope(scope format.Scope) ([]byte, error) {
+func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
 	c.marshalPack()
 	c.marshalRemotes()
@@ -244,16 +226,11 @@ func (c *Config) MarshalScope(scope format.Scope) ([]byte, error) {
 	c.marshalBranches()
 
 	buf := bytes.NewBuffer(nil)
-	cfg := c.Merged.ScopedConfig(scope)
-	if err := format.NewEncoder(buf).Encode(cfg); err != nil {
+	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
-}
-
-func (c *Config) Marshal() ([]byte, error) {
-	return c.MarshalScope(format.LocalScope)
 }
 
 func (c *Config) marshalCore() {
