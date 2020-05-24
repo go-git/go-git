@@ -46,7 +46,8 @@ func main() {
 
 	// Commits the current staging area to the repository, with the new file
 	// just created. We should provide the object.Signature of Author of the
-	// commit.
+	// commit Since version 5.0.1, we can omit the Author signature, being read
+	// from the git config files.
 	Info("git commit -m \"example go-git commit\"")
 	commit, err := w.Commit("example go-git commit", &git.CommitOptions{
 		Author: &object.Signature{

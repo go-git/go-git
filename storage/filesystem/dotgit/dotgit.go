@@ -21,17 +21,15 @@ import (
 )
 
 const (
-	suffix           = ".git"
-	packedRefsPath   = "packed-refs"
-	localConfigPath  = "config"
-	globalConfigPath = ".gitconfig"
-	systemConfigPath = "/etc/gitconfig"
-	indexPath        = "index"
-	shallowPath      = "shallow"
-	modulePath       = "modules"
-	objectsPath      = "objects"
-	packPath         = "pack"
-	refsPath         = "refs"
+	suffix         = ".git"
+	packedRefsPath = "packed-refs"
+	configPath     = "config"
+	indexPath      = "index"
+	shallowPath    = "shallow"
+	modulePath     = "modules"
+	objectsPath    = "objects"
+	packPath       = "pack"
+	refsPath       = "refs"
 
 	tmpPackedRefsPrefix = "._packed-refs"
 
@@ -157,32 +155,14 @@ func (d *DotGit) Close() error {
 	return nil
 }
 
-// LocalConfigWriter returns a file pointer for write to the local config file
-func (d *DotGit) LocalConfigWriter() (billy.File, error) {
-	return d.fs.Create(localConfigPath)
+// ConfigWriter returns a file pointer for write to the config file
+func (d *DotGit) ConfigWriter() (billy.File, error) {
+	return d.fs.Create(configPath)
 }
 
-// LocalConfig returns a file pointer for read to the local config file
-func (d *DotGit) LocalConfig() (billy.File, error) {
-	return d.fs.Open(localConfigPath)
-}
-
-// GlobalConfigWriter returns a file pointer for write to the global config file
-func (d *DotGit) GlobalConfigWriter() (billy.File, error) {
-	return osfs.New(os.Getenv("HOME")).Create(globalConfigPath)
-}
-
-// GlobalConfig returns a file pointer for read to the global config file
-func (d *DotGit) GlobalConfig() (billy.File, error) {
-	return osfs.New(os.Getenv("HOME")).Open(globalConfigPath)
-}
-
-// SystemConfigWriter doesn't exist because we typically do not have permission
-// to write to files in /etc.
-
-// SystemConfig returns a file pointer for read to the system config file
-func (d *DotGit) SystemConfig() (billy.File, error) {
-	return osfs.New("/").Open(systemConfigPath)
+// Config returns a file pointer for read to the config file
+func (d *DotGit) Config() (billy.File, error) {
+	return d.fs.Open(configPath)
 }
 
 // IndexWriter returns a file pointer for write to the index file

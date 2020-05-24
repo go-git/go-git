@@ -1,8 +1,8 @@
 package git
 
 import (
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	. "gopkg.in/check.v1"
 )
 
 type OptionsSuite struct {
@@ -16,12 +16,6 @@ func (s *OptionsSuite) TestCommitOptionsParentsFromHEAD(c *C) {
 	err := o.Validate(s.Repository)
 	c.Assert(err, IsNil)
 	c.Assert(o.Parents, HasLen, 1)
-}
-
-func (s *OptionsSuite) TestCommitOptionsMissingAuthor(c *C) {
-	o := CommitOptions{}
-	err := o.Validate(s.Repository)
-	c.Assert(err, Equals, ErrMissingAuthor)
 }
 
 func (s *OptionsSuite) TestCommitOptionsCommitter(c *C) {

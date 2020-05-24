@@ -378,7 +378,8 @@ type CommitOptions struct {
 	// All automatically stage files that have been modified and deleted, but
 	// new files you have not told Git about are not affected.
 	All bool
-	// Author is the author's signature of the commit.
+	// Author is the author's signature of the commit. If Author is empty the
+	// Name and Email is read from the config, and time.Now it's used as When.
 	Author *object.Signature
 	// Committer is the committer's signature of the commit. If Committer is
 	// nil the Author signature is used.
@@ -395,7 +396,9 @@ type CommitOptions struct {
 // Validate validates the fields and sets the default values.
 func (o *CommitOptions) Validate(r *Repository) error {
 	if o.Author == nil {
-		return ErrMissingAuthor
+		if err := o.loadConfigAuthorAndCommitter(r); err != nil {
+			return err
+		}
 	}
 
 	if o.Committer == nil {
@@ -411,6 +414,43 @@ func (o *CommitOptions) Validate(r *Repository) error {
 		if head != nil {
 			o.Parents = []plumbing.Hash{head.Hash()}
 		}
+	}
+
+	return nil
+}
+
+func (o *CommitOptions) loadConfigAuthorAndCommitter(r *Repository) error {
+	cfg, err := r.ConfigScoped(config.SystemScope)
+	if err != nil {
+		return err
+	}
+
+	if o.Author == nil && cfg.Author.Email != "" && cfg.Author.Name != "" {
+		o.Author = &object.Signature{
+			Name:  cfg.Author.Name,
+			Email: cfg.Author.Email,
+			When:  time.Now(),
+		}
+	}
+
+	if o.Committer == nil && cfg.Committer.Email != "" && cfg.Committer.Name != "" {
+		o.Committer = &object.Signature{
+			Name:  cfg.Committer.Name,
+			Email: cfg.Committer.Email,
+			When:  time.Now(),
+		}
+	}
+
+	if o.Author == nil && cfg.User.Email != "" && cfg.User.Name != "" {
+		o.Author = &object.Signature{
+			Name:  cfg.User.Name,
+			Email: cfg.User.Email,
+			When:  time.Now(),
+		}
+	}
+
+	if o.Author == nil {
+		return ErrMissingAuthor
 	}
 
 	return nil
