@@ -58,10 +58,6 @@ func main() {
 	// Get custom config param (merged in the same way git does: system -> global -> local)
 	Info("custom.name is %s", cfg.Merged.Section("custom").Option("name"))
 
-	//In order to save the config file, you need to call SetConfig
-	//After calling this go to .git/config and see the custom.name added and the changes to the remote
-	r.Storer.SetConfig(cfg)
-
 	// Get system config params (/etc/gitconfig)
 	systemSections := cfg.Merged.SystemConfig().Sections
 	for _, ss := range systemSections {
