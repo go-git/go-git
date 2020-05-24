@@ -170,6 +170,12 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	c.Assert(string(output), DeepEquals, string(input))
 }
 
+func (s *ConfigSuite) TestLoadConfig(c *C) {
+	cfg, err := LoadConfig(GlobalScope)
+	c.Assert(err, IsNil)
+	c.Assert(cfg.User.Email, Not(Equals), "")
+}
+
 func (s *ConfigSuite) TestValidateConfig(c *C) {
 	config := &Config{
 		Remotes: map[string]*RemoteConfig{

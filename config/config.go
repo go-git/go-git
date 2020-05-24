@@ -5,11 +5,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 
 	"github.com/go-git/go-git/v5/internal/url"
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
+	"github.com/mitchellh/go-homedir"
 )
 
 const (
@@ -30,6 +35,16 @@ var (
 	ErrRemoteConfigNotFound  = errors.New("remote config not found")
 	ErrRemoteConfigEmptyURL  = errors.New("remote config: empty URL")
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
+)
+
+// Scope defines the scope of a config file, such as local, global or system.
+type Scope int
+
+// Available ConfigScope's
+const (
+	LocalScope Scope = iota
+	GlobalScope
+	SystemScope
 )
 
 // Config contains the repository configuration
@@ -101,6 +116,77 @@ func NewConfig() *Config {
 	config.Pack.Window = DefaultPackWindow
 
 	return config
+}
+
+// ReadConfig reads a config file from a io.Reader.
+func ReadConfig(r io.Reader) (*Config, error) {
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := NewConfig()
+	if err = cfg.Unmarshal(b); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// LoadConfig loads a config file from a given scope. The returned Config,
+// contains exclusively information fom the given scope. If couldn't find a
+// config file to the given scope, a empty one is returned.
+func LoadConfig(scope Scope) (*Config, error) {
+	if scope == LocalScope {
+		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer.")
+	}
+
+	files, err := Paths(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		f, err := os.Open(file)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+
+			return nil, err
+		}
+
+		defer f.Close()
+		return ReadConfig(f)
+	}
+
+	return NewConfig(), nil
+}
+
+// Paths returns the config file location for a given scope.
+func Paths(scope Scope) ([]string, error) {
+	var files []string
+	switch scope {
+	case GlobalScope:
+		xdg := os.Getenv("XDG_CONFIG_HOME")
+		if xdg != "" {
+			files = append(files, filepath.Join(xdg, "git/config"))
+		}
+
+		home, err := homedir.Dir()
+		if err != nil {
+			return nil, err
+		}
+
+		files = append(files,
+			filepath.Join(home, ".gitconfig"),
+			filepath.Join(home, ".config/git/config"),
+		)
+	case SystemScope:
+		files = append(files, "/etc/gitconfig")
+	}
+
+	return files, nil
 }
 
 // Validate validates the fields and sets the default values.
