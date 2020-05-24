@@ -494,12 +494,12 @@ func objectEquals(a plumbing.EncodedObject, b plumbing.EncodedObject) error {
 
 	ra, err := a.Reader()
 	if err != nil {
-		return fmt.Errorf("can't get reader on b: %q", err)
+		return fmt.Errorf("can't get reader on a: %q", err)
 	}
 
 	rb, err := b.Reader()
 	if err != nil {
-		return fmt.Errorf("can't get reader on a: %q", err)
+		return fmt.Errorf("can't get reader on b: %q", err)
 	}
 
 	ca, err := ioutil.ReadAll(ra)
@@ -514,6 +514,16 @@ func objectEquals(a plumbing.EncodedObject, b plumbing.EncodedObject) error {
 
 	if hex.EncodeToString(ca) != hex.EncodeToString(cb) {
 		return errors.New("content does not match")
+	}
+
+	err = rb.Close()
+	if err != nil {
+		return fmt.Errorf("can't close reader on b: %q", err)
+	}
+
+	err = ra.Close()
+	if err != nil {
+		return fmt.Errorf("can't close reader on a: %q", err)
 	}
 
 	return nil

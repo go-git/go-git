@@ -287,6 +287,12 @@ func objectsEqual(c *C, o1, o2 plumbing.EncodedObject) {
 	c.Assert(err, IsNil)
 
 	c.Assert(bytes.Compare(b1, b2), Equals, 0)
+
+	err = r2.Close()
+	c.Assert(err, IsNil)
+
+	err = r1.Close()
+	c.Assert(err, IsNil)
 }
 
 func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
