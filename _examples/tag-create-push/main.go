@@ -1,0 +1,168 @@
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"time"
+
+	"github.com/go-git/go-git/v5"
+	. "github.com/go-git/go-git/v5/_examples"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+)
+
+func main() {
+	CheckArgs("<ssh-url>", "<directory>", "<tag>", "<name>", "<email>", "<public-key>")
+	url := os.Args[1]
+	directory := os.Args[2]
+	tag := os.Args[3]
+	name := os.Args[4]
+	email := os.Args[5]
+	key := os.Args[6]
+
+	r, err := cloneRepo(url, directory, key)
+
+	if err != nil {
+		log.Printf("clone repo error: %s", err)
+		return
+	}
+
+	if tagExists(tag, r) {
+		log.Printf("Tag %s already exists, nothing to do here", tag)
+		return
+	}
+
+	created, err := setTag(r, tag, defaultSignature(name, email))
+	if err != nil {
+		log.Printf("create tag error: %s", err)
+		return
+	}
+
+	if created {
+		err = pushTags(r, key)
+		if err != nil {
+			log.Printf("push tag error: %s", err)
+			return
+		}
+	}
+
+}
+
+func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
+
+	log.Printf("cloning %s into %s", url, dir)
+	auth, keyErr := publicKey(publicKeyPath)
+	if keyErr != nil {
+		return nil, keyErr
+	}
+
+	r, err := git.PlainClone(dir, false, &git.CloneOptions{
+		Progress: os.Stdout,
+		URL:      url,
+		Auth:     auth,
+	})
+
+	if err != nil {
+		if err == git.ErrRepositoryAlreadyExists {
+			log.Print("repo was already cloned")
+		} else {
+			log.Printf("clone git repo error: %s", err)
+			return nil, err
+		}
+	}
+
+	return r, nil
+}
+
+func publicKey(filePath string) (*ssh.PublicKeys, error) {
+	var publicKey *ssh.PublicKeys
+	sshKey, _ := ioutil.ReadFile(filePath)
+	publicKey, err := ssh.NewPublicKeys("git", []byte(sshKey), "")
+	if err != nil {
+		return nil, err
+	}
+	return publicKey, err
+}
+
+func tagExists(tag string, r *git.Repository) bool {
+	tagFoundErr := "tag was found"
+	tags, err := r.TagObjects()
+	if err != nil {
+		log.Printf("get tags error: %s", err)
+		return false
+	}
+	res := false
+	err = tags.ForEach(func(t *object.Tag) error {
+		if t.Name == tag {
+			res = true
+			return fmt.Errorf(tagFoundErr)
+		}
+		return nil
+	})
+	if err != nil && err.Error() != tagFoundErr {
+		log.Printf("iterate tags error: %s", err)
+		return false
+	}
+	return res
+}
+
+func setTag(r *git.Repository, tag string, tagger *object.Signature) (bool, error) {
+	if tagExists(tag, r) {
+		log.Printf("tag %s already exists", tag)
+		return false, nil
+	}
+	log.Printf("Set tag %s", tag)
+	h, err := r.Head()
+	if err != nil {
+		log.Printf("get HEAD error: %s", err)
+		return false, err
+	}
+
+	_, err = r.CreateTag(tag, h.Hash(), &git.CreateTagOptions{
+		Tagger:  tagger,
+		Message: tag,
+	})
+
+	if err != nil {
+		log.Printf("create tag error: %s", err)
+		return false, err
+	}
+
+	return true, nil
+}
+
+func pushTags(r *git.Repository, publicKeyPath string) error {
+
+	auth, _ := publicKey(publicKeyPath)
+
+	po := &git.PushOptions{
+		RemoteName: "origin",
+		Progress:   os.Stdout,
+		RefSpecs:   []config.RefSpec{config.RefSpec("refs/tags/*:refs/tags/*")},
+		Auth:       auth,
+	}
+
+	err := r.Push(po)
+
+	if err != nil {
+		if err == git.NoErrAlreadyUpToDate {
+			log.Print("origin remote was up to date, no push done")
+			return nil
+		}
+		log.Printf("push to remote origin error: %s", err)
+		return err
+	}
+
+	return nil
+}
+
+func defaultSignature(name, email string) *object.Signature {
+	return &object.Signature{
+		Name:  name,
+		Email: email,
+		When:  time.Now(),
+	}
+}
