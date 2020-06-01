@@ -30,11 +30,6 @@ func main() {
 		return
 	}
 
-	if tagExists(tag, r) {
-		log.Printf("Tag %s already exists, nothing to do here", tag)
-		return
-	}
-
 	created, err := setTag(r, tag, defaultSignature(name, email))
 	if err != nil {
 		log.Printf("create tag error: %s", err)
@@ -59,6 +54,7 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 		return nil, keyErr
 	}
 
+	Info("git clone %s", url)
 	r, err := git.PlainClone(dir, false, &git.CloneOptions{
 		Progress: os.Stdout,
 		URL:      url,
@@ -66,12 +62,8 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 	})
 
 	if err != nil {
-		if err == git.ErrRepositoryAlreadyExists {
-			log.Print("repo was already cloned")
-		} else {
-			log.Printf("clone git repo error: %s", err)
-			return nil, err
-		}
+		log.Printf("clone git repo error: %s", err)
+		return nil, err
 	}
 
 	return r, nil
@@ -89,6 +81,7 @@ func publicKey(filePath string) (*ssh.PublicKeys, error) {
 
 func tagExists(tag string, r *git.Repository) bool {
 	tagFoundErr := "tag was found"
+	Info("git show-ref --tag")
 	tags, err := r.TagObjects()
 	if err != nil {
 		log.Printf("get tags error: %s", err)
@@ -120,7 +113,7 @@ func setTag(r *git.Repository, tag string, tagger *object.Signature) (bool, erro
 		log.Printf("get HEAD error: %s", err)
 		return false, err
 	}
-
+	Info("git tag -a %s %s -m \"%s\"", tag, h.Hash(), tag)
 	_, err = r.CreateTag(tag, h.Hash(), &git.CreateTagOptions{
 		Tagger:  tagger,
 		Message: tag,
@@ -144,7 +137,7 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 		RefSpecs:   []config.RefSpec{config.RefSpec("refs/tags/*:refs/tags/*")},
 		Auth:       auth,
 	}
-
+	Info("git push --tags")
 	err := r.Push(po)
 
 	if err != nil {
