@@ -2103,15 +2103,7 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadOpts(c *C) {
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{
-		Message: "foo bar baz qux",
-	})
-	c.Assert(ref, IsNil)
-	c.Assert(err, Equals, ErrMissingTagger)
-
-	ref, err = r.CreateTag("foobar", expectedHash, &CreateTagOptions{
-		Tagger: defaultSignature(),
-	})
+	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{})
 	c.Assert(ref, IsNil)
 	c.Assert(err, Equals, ErrMissingMessage)
 }
