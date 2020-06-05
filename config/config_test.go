@@ -1,6 +1,10 @@
 package config
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	. "gopkg.in/check.v1"
 )
@@ -172,8 +176,39 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 
 func (s *ConfigSuite) TestLoadConfig(c *C) {
 	cfg, err := LoadConfig(GlobalScope)
-	c.Assert(err, IsNil)
 	c.Assert(cfg.User.Email, Not(Equals), "")
+	c.Assert(err, IsNil)
+
+}
+
+func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
+	cfg := NewConfig()
+	cfg.User.Name = "foo"
+	cfg.User.Email = "foo@foo.com"
+
+	tmp, err := ioutil.TempDir("", "test-commit-options")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tmp)
+
+	err = os.Mkdir(filepath.Join(tmp, "git"), 0777)
+	c.Assert(err, IsNil)
+
+	os.Setenv("XDG_CONFIG_HOME", tmp)
+	defer func() {
+		os.Setenv("XDG_CONFIG_HOME", "")
+	}()
+
+	content, err := cfg.Marshal()
+	c.Assert(err, IsNil)
+
+	cfgFile := filepath.Join(tmp, "git/config")
+	err = ioutil.WriteFile(cfgFile, content, 0777)
+	c.Assert(err, IsNil)
+
+	cfg, err = LoadConfig(GlobalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(cfg.User.Email, Equals, "foo@foo.com")
 }
 
 func (s *ConfigSuite) TestValidateConfig(c *C) {

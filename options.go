@@ -464,7 +464,8 @@ var (
 
 // CreateTagOptions describes how a tag object should be created.
 type CreateTagOptions struct {
-	// Tagger defines the signature of the tag creator.
+	// Tagger defines the signature of the tag creator. If Tagger is empty the
+	// Name and Email is read from the config, and time.Now it's used as When.
 	Tagger *object.Signature
 	// Message defines the annotation of the tag. It is canonicalized during
 	// validation into the format expected by git - no leading whitespace and
@@ -478,7 +479,9 @@ type CreateTagOptions struct {
 // Validate validates the fields and sets the default values.
 func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
 	if o.Tagger == nil {
-		return ErrMissingTagger
+		if err := o.loadConfigTagger(r); err != nil {
+			return err
+		}
 	}
 
 	if o.Message == "" {
@@ -487,6 +490,35 @@ func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
 
 	// Canonicalize the message into the expected message format.
 	o.Message = strings.TrimSpace(o.Message) + "\n"
+
+	return nil
+}
+
+func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
+	cfg, err := r.ConfigScoped(config.SystemScope)
+	if err != nil {
+		return err
+	}
+
+	if o.Tagger == nil && cfg.Author.Email != "" && cfg.Author.Name != "" {
+		o.Tagger = &object.Signature{
+			Name:  cfg.Author.Name,
+			Email: cfg.Author.Email,
+			When:  time.Now(),
+		}
+	}
+
+	if o.Tagger == nil && cfg.User.Email != "" && cfg.User.Name != "" {
+		o.Tagger = &object.Signature{
+			Name:  cfg.User.Name,
+			Email: cfg.User.Email,
+			When:  time.Now(),
+		}
+	}
+
+	if o.Tagger == nil {
+		return ErrMissingTagger
+	}
 
 	return nil
 }
