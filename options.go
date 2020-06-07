@@ -373,6 +373,12 @@ var (
 	ErrMissingAuthor = errors.New("author field is required")
 )
 
+// AddOptions describes how a add operation should be performed
+type AddOptions struct {
+	All  bool
+	Path string
+}
+
 // CommitOptions describes how a commit operation should be performed.
 type CommitOptions struct {
 	// All automatically stage files that have been modified and deleted, but
