@@ -1500,6 +1500,26 @@ func (s *RepositorySuite) TestLogRange(c *C) {
 	c.Assert(err, Equals, io.EOF)
 }
 
+func (s *RepositorySuite) TestLogRangeUnsupportedOrder(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cIter, err := r.LogRange(&LogRangeOptions{
+		LogOptions: LogOptions{
+			From:  plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+			Order: LogOrderDFS,
+		},
+		End: plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+
+	c.Assert(cIter, IsNil)
+	c.Assert(err, ErrorMatches, ".*unsupported order.*")
+}
+
 func (s *RepositorySuite) TestLogFileNext(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{
