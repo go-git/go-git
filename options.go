@@ -369,6 +369,13 @@ type LogOptions struct {
 	Until *time.Time
 }
 
+type LogRangeOptions struct {
+	LogOptions
+
+	// End commit hash, exclusive (will not be included in iterator)
+	End plumbing.Hash
+}
+
 var (
 	ErrMissingAuthor = errors.New("author field is required")
 )

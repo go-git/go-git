@@ -1166,6 +1166,37 @@ func (*Repository) logWithLimit(commitIter object.CommitIter, limitOptions objec
 	return object.NewCommitLimitIterFromIter(commitIter, limitOptions)
 }
 
+// LogRange returns the commit history from the given LogOptions excuding commits reachable from `end`
+// only Order=LogOrderCommitterTime is supported
+// we may add support for other time-based orders
+// like LogOrderCommitterTimeReverse, LogOrderAuthorTime, etc
+func (r *Repository) LogRange(o *LogRangeOptions) (object.CommitIter, error) {
+	switch o.Order {
+	case LogOrderCommitterTime:
+		break
+	case LogOrderDefault:
+		o.Order = LogOrderCommitterTime
+	default:
+		return nil, fmt.Errorf("unsupported order")
+	}
+	end_o := o.LogOptions
+	end_o.From = o.End
+	iter, err := r.Log(&o.LogOptions)
+	if err != nil {
+		return nil, err
+	}
+	end_iter, err := r.Log(&end_o)
+	if err != nil {
+		return nil, err
+	}
+	var before func(*object.Commit, *object.Commit) bool
+	// we may check `o.Order` later and set `before` func based on that
+	before = func(a *object.Commit, b *object.Commit) bool {
+		return a.Committer.When.After(b.Committer.When)
+	}
+	return object.DiffCommitIter(r.Storer, iter, end_iter, before)
+}
+
 func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 	switch order {
 	case LogOrderDefault:

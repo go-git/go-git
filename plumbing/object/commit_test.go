@@ -525,3 +525,55 @@ func (s *SuiteCommit) TestEncodeWithoutSignature(c *C) {
 		"\n"+
 		"Merge branch 'master' of github.com:tyba/git-fixture\n")
 }
+
+func (s *SuiteCommit) testDiffCommitCTime(c *C, startHash string, stopHash string, expected []string) {
+	startCommit := s.commit(c, plumbing.NewHash(startHash))
+	stopCommit := s.commit(c, plumbing.NewHash(stopHash))
+
+	startIter := NewCommitIterCTime(startCommit, nil, nil)
+	stopIter := NewCommitIterCTime(stopCommit, nil, nil)
+	before := func(a *Commit, b *Commit) bool {
+		return a.Committer.When.After(b.Committer.When)
+	}
+	resIter, err := DiffCommitIter(s.Storer, startIter, stopIter, before)
+	if err != nil {
+		panic(err)
+	}
+
+	var commits []*Commit
+	resIter.ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	c.Assert(commits, HasLen, len(expected))
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
+func (s *SuiteCommit) TestDiffCommitCTime1(c *C) {
+	s.testDiffCommitCTime(
+		c,
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5", // 2015-04-05T23:30:47+02:00
+		"35e85108805c84807bc66a02d91535e1e24b38b9", // 2015-03-31T13:46:24+02:00
+		// expected:
+		[]string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5", // 2015-04-05T23:30:47+02:00
+			"918c48b83bd081e863dbe1b80f8998f058cd8294", // 2015-03-31T13:56:18+02:00
+			"af2d6a6954d532f8ffb47615169c8fdf9d383a1a", // 2015-03-31T13:51:51+02:00
+			"1669dce138d9b841a518c64b10914d88f5e488ea", // 2015-03-31T13:48:14+02:00
+			"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69", // 2015-03-31T13:47:14+02:00
+		},
+	)
+}
+
+func (s *SuiteCommit) TestDiffCommitCTime2(c *C) {
+	s.testDiffCommitCTime(
+		c,
+		"35e85108805c84807bc66a02d91535e1e24b38b9", // 2015-03-31T13:46:24+02:00
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5", // 2015-04-05T23:30:47+02:00
+		// expected:
+		[]string{},
+	)
+}
