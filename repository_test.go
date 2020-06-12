@@ -1466,6 +1466,40 @@ func (s *RepositorySuite) TestLogError(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RepositorySuite) TestLogRange(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+
+	c.Assert(err, IsNil)
+
+	cIter, err := r.LogRange(&LogRangeOptions{
+		LogOptions: LogOptions{
+			From: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		},
+		End: plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	})
+
+	c.Assert(err, IsNil)
+
+	expectedCommits := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5", // 2015-04-05T23:30:47+02:00
+		"918c48b83bd081e863dbe1b80f8998f058cd8294", // 2015-03-31T13:56:18+02:00
+		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a", // 2015-03-31T13:51:51+02:00
+		"1669dce138d9b841a518c64b10914d88f5e488ea", // 2015-03-31T13:48:14+02:00
+		"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69", // 2015-03-31T13:47:14+02:00
+	}
+
+	for _, expectedHash := range expectedCommits {
+		commit, err := cIter.Next()
+		c.Assert(err, IsNil)
+		c.Assert(commit.Hash.String(), Equals, expectedHash)
+	}
+	_, err = cIter.Next()
+	c.Assert(err, Equals, io.EOF)
+}
+
 func (s *RepositorySuite) TestLogFileNext(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{
