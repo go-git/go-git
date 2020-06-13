@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"time"
 
 	"github.com/go-git/go-git/v5"
 	. "github.com/go-git/go-git/v5/_examples"
@@ -14,13 +13,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
+// Example of how create a tag and push it to a remote.
 func main() {
 	CheckArgs("<ssh-url>", "<directory>", "<tag>", "<name>", "<email>", "<public-key>")
 	url := os.Args[1]
 	directory := os.Args[2]
 	tag := os.Args[3]
-	name := os.Args[4]
-	email := os.Args[5]
 	key := os.Args[6]
 
 	r, err := cloneRepo(url, directory, key)
@@ -30,7 +28,7 @@ func main() {
 		return
 	}
 
-	created, err := setTag(r, tag, defaultSignature(name, email))
+	created, err := setTag(r, tag)
 	if err != nil {
 		log.Printf("create tag error: %s", err)
 		return
@@ -43,11 +41,9 @@ func main() {
 			return
 		}
 	}
-
 }
 
 func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
-
 	log.Printf("cloning %s into %s", url, dir)
 	auth, keyErr := publicKey(publicKeyPath)
 	if keyErr != nil {
@@ -102,7 +98,7 @@ func tagExists(tag string, r *git.Repository) bool {
 	return res
 }
 
-func setTag(r *git.Repository, tag string, tagger *object.Signature) (bool, error) {
+func setTag(r *git.Repository, tag string) (bool, error) {
 	if tagExists(tag, r) {
 		log.Printf("tag %s already exists", tag)
 		return false, nil
@@ -115,7 +111,6 @@ func setTag(r *git.Repository, tag string, tagger *object.Signature) (bool, erro
 	}
 	Info("git tag -a %s %s -m \"%s\"", tag, h.Hash(), tag)
 	_, err = r.CreateTag(tag, h.Hash(), &git.CreateTagOptions{
-		Tagger:  tagger,
 		Message: tag,
 	})
 
@@ -150,12 +145,4 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 	}
 
 	return nil
-}
-
-func defaultSignature(name, email string) *object.Signature {
-	return &object.Signature{
-		Name:  name,
-		Email: email,
-		When:  time.Now(),
-	}
 }
