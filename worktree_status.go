@@ -265,6 +265,7 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 // the worktree to the index. If any of the files is already staged in the index
 // no error is returned. When path is a file, the blob.Hash is returned.
 func (w *Worktree) Add(path string) (plumbing.Hash, error) {
+	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
 	return w.doAdd(path, make([]gitignore.Pattern, 0))
 }
 
@@ -308,16 +309,33 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 	return
 }
 
-// add changes from all tracked and untracked files
-func (w *Worktree) AddWithOptions(opts *AddOptions) (plumbing.Hash, error) {
-	if opts.All {
-		return w.doAdd(".", w.Excludes)
+// AddWithOptions file contents to the index,  updates the index using the
+// current content found in the working tree, to prepare the content staged for
+// the next commit.
+//
+// It typically adds the current content of existing paths as a whole, but with
+// some options it can also be used to add content with only part of the changes
+// made to the working tree files applied, or remove paths that do not exist in
+// the working tree anymore.
+func (w *Worktree) AddWithOptions(opts *AddOptions) error {
+	if err := opts.Validate(w.r); err != nil {
+		return err
 	}
-	return w.Add(opts.Path)
+
+	if opts.All {
+		_, err := w.doAdd(".", w.Excludes)
+		return err
+	}
+
+	if opts.Glob != "" {
+		return w.AddGlob(opts.Glob)
+	}
+
+	_, err := w.Add(opts.Path)
+	return err
 }
 
 func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern) (plumbing.Hash, error) {
-	// TODO(mcuadros): remove plumbing.Hash from signature at v5.
 	s, err := w.Status()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -353,6 +371,7 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern) (plumbi
 // directory path, all directory contents are added to the index recursively. No
 // error is returned if all matching paths are already staged in index.
 func (w *Worktree) AddGlob(pattern string) error {
+	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
 	files, err := util.Glob(w.Filesystem, pattern)
 	if err != nil {
 		return err

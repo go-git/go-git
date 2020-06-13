@@ -1396,7 +1396,7 @@ func (s *WorktreeSuite) TestAddAll(c *C) {
 	w.Excludes = make([]gitignore.Pattern, 0)
 	w.Excludes = append(w.Excludes, gitignore.ParsePattern("file3", nil))
 
-	_, err = w.AddWithOptions(&AddOptions{All: true})
+	err = w.AddWithOptions(&AddOptions{All: true})
 	c.Assert(err, IsNil)
 
 	idx, err = w.r.Storer.Index()
@@ -1437,7 +1437,7 @@ func (s *WorktreeSuite) TestAddGlob(c *C) {
 	err = util.WriteFile(w.Filesystem, "qux/bar/baz", []byte("BAZ"), 0755)
 	c.Assert(err, IsNil)
 
-	err = w.AddGlob(w.Filesystem.Join("qux", "b*"))
+	err = w.AddWithOptions(&AddOptions{Glob: w.Filesystem.Join("qux", "b*")})
 	c.Assert(err, IsNil)
 
 	idx, err = w.r.Storer.Index()
