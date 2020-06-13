@@ -1370,6 +1370,52 @@ func (s *WorktreeSuite) TestAddDirectoryErrorNotFound(c *C) {
 	c.Assert(h.IsZero(), Equals, true)
 }
 
+func (s *WorktreeSuite) TestAddAll(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(w.Filesystem, "file1", []byte("file1"), 0644)
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(w.Filesystem, "file2", []byte("file2"), 0644)
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(w.Filesystem, "file3", []byte("ignore me"), 0644)
+	c.Assert(err, IsNil)
+
+	w.Excludes = make([]gitignore.Pattern, 0)
+	w.Excludes = append(w.Excludes, gitignore.ParsePattern("file3", nil))
+
+	_, err = w.AddWithOptions(&AddOptions{All: true})
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 11)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
+
+	file1 := status.File("file1")
+	c.Assert(file1.Staging, Equals, Added)
+	file2 := status.File("file2")
+	c.Assert(file2.Staging, Equals, Added)
+	file3 := status.File("file3")
+	c.Assert(file3.Staging, Equals, Untracked)
+	c.Assert(file3.Worktree, Equals, Untracked)
+}
+
 func (s *WorktreeSuite) TestAddGlob(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
