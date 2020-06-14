@@ -46,6 +46,11 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [branch "master"]
 		remote = origin
 		merge = refs/heads/master
+[filter "lfs"]
+		clean = git-lfs clean -- %f
+		smudge = git-lfs smudge -- %f
+		process = git-lfs filter-process
+		required = true
 `)
 
 	cfg := NewConfig()
@@ -77,6 +82,10 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Submodules["qux"].Branch, Equals, "bar")
 	c.Assert(cfg.Branches["master"].Remote, Equals, "origin")
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
+	c.Assert(cfg.Filters["lfs"].Clean, Equals, "git-lfs clean -- %f")
+	c.Assert(cfg.Filters["lfs"].Smudge, Equals, "git-lfs smudge -- %f")
+	c.Assert(cfg.Filters["lfs"].Process, Equals, "git-lfs filter-process")
+	c.Assert(cfg.Filters["lfs"].Required, Equals, true)
 }
 
 func (s *ConfigSuite) TestMarshal(c *C) {
@@ -99,6 +108,11 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
 `)
 
 	cfg := NewConfig()
@@ -130,6 +144,14 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 		Name:   "master",
 		Remote: "origin",
 		Merge:  "refs/heads/master",
+	}
+
+	cfg.Filters["lfs"] = &Filter{
+		Name:     "lfs",
+		Clean:    "git-lfs clean -- %f",
+		Smudge:   "git-lfs smudge -- %f",
+		Process:  "git-lfs filter-process",
+		Required: true,
 	}
 
 	b, err := cfg.Marshal()
