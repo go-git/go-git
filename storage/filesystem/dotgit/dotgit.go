@@ -30,6 +30,12 @@ const (
 	objectsPath    = "objects"
 	packPath       = "pack"
 	refsPath       = "refs"
+	branchesPath   = "branches"
+	hooksPath      = "hooks"
+	infoPath       = "info"
+	remotesPath    = "remotes"
+	logsPath       = "logs"
+	worktreesPath  = "worktrees"
 
 	tmpPackedRefsPrefix = "._packed-refs"
 

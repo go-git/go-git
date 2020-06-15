@@ -2052,3 +2052,78 @@ func (s *WorktreeSuite) TestAddAndCommit(c *C) {
 	})
 	c.Assert(err, IsNil)
 }
+
+func (s *WorktreeSuite) TestLinkedWorktree(c *C) {
+	fs := fixtures.ByTag("linked-worktree").One().Worktree()
+
+	// Open main repo.
+	{
+		fs, err := fs.Chroot("main")
+		c.Assert(err, IsNil)
+		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		c.Assert(err, IsNil)
+
+		wt, err := repo.Worktree()
+		c.Assert(err, IsNil)
+
+		status, err := wt.Status()
+		c.Assert(err, IsNil)
+		c.Assert(len(status), Equals, 2) // 2 files
+
+		head, err := repo.Head()
+		c.Assert(err, IsNil)
+		c.Assert(string(head.Name()), Equals, "refs/heads/master")
+	}
+
+	// Open linked-worktree #1.
+	{
+		fs, err := fs.Chroot("linked-worktree-1")
+		c.Assert(err, IsNil)
+		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		c.Assert(err, IsNil)
+
+		wt, err := repo.Worktree()
+		c.Assert(err, IsNil)
+
+		status, err := wt.Status()
+		c.Assert(err, IsNil)
+		c.Assert(len(status), Equals, 3) // 3 files
+
+		_, ok := status["linked-worktree-1-unique-file.txt"]
+		c.Assert(ok, Equals, true)
+
+		head, err := repo.Head()
+		c.Assert(err, IsNil)
+		c.Assert(string(head.Name()), Equals, "refs/heads/linked-worktree-1")
+	}
+
+	// Open linked-worktree #2.
+	{
+		fs, err := fs.Chroot("linked-worktree-2")
+		c.Assert(err, IsNil)
+		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		c.Assert(err, IsNil)
+
+		wt, err := repo.Worktree()
+		c.Assert(err, IsNil)
+
+		status, err := wt.Status()
+		c.Assert(err, IsNil)
+		c.Assert(len(status), Equals, 3) // 3 files
+
+		_, ok := status["linked-worktree-2-unique-file.txt"]
+		c.Assert(ok, Equals, true)
+
+		head, err := repo.Head()
+		c.Assert(err, IsNil)
+		c.Assert(string(head.Name()), Equals, "refs/heads/branch-with-different-name")
+	}
+
+	// Open linked-worktree #2.
+	{
+		fs, err := fs.Chroot("linked-worktree-invalid-commondir")
+		c.Assert(err, IsNil)
+		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		c.Assert(err, Equals, ErrRepositoryIncomplete)
+	}
+}

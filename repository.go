@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
+
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/internal/revision"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -47,6 +49,7 @@ var (
 
 	ErrInvalidReference          = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNotExists       = errors.New("repository does not exist")
+	ErrRepositoryIncomplete      = errors.New("repository's commondir path does not exist")
 	ErrRepositoryAlreadyExists   = errors.New("repository already exists")
 	ErrRemoteNotFound            = errors.New("remote not found")
 	ErrRemoteExists              = errors.New("remote already exists")
@@ -253,7 +256,19 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		return nil, err
 	}
 
-	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	var repositoryFs billy.Filesystem
+
+	if o.EnableDotGitCommonDir {
+		dotGitCommon, err := dotGitCommonDirectory(dot)
+		if err != nil {
+			return nil, err
+		}
+		repositoryFs = dotgit.NewRepositoryFilesystem(dot, dotGitCommon)
+	} else {
+		repositoryFs = dot
+	}
+
+	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
 
 	return Open(s, wt)
 }
@@ -326,6 +341,38 @@ func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Files
 	}
 
 	return osfs.New(fs.Join(path, gitdir)), nil
+}
+
+func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err error) {
+	f, err := fs.Open("commondir")
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := stdioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > 0 {
+		path := strings.TrimSpace(string(b))
+		if filepath.IsAbs(path) {
+			commonDir = osfs.New(path)
+		} else {
+			commonDir = osfs.New(filepath.Join(fs.Root(), path))
+		}
+		if _, err := commonDir.Stat(""); err != nil {
+			if os.IsNotExist(err) {
+				return nil, ErrRepositoryIncomplete
+			}
+
+			return nil, err
+		}
+	}
+
+	return commonDir, nil
 }
 
 // PlainClone a repository into the path with the given options, isBare defines
