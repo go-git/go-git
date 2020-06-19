@@ -89,7 +89,7 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 
 func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	for i, name := range path {
-		if match, err := filepath.Match(p.pattern[0], name); err != nil {
+		if match, err := filepath.Match(strings.ReplaceAll(p.pattern[0], "\r", ""), name); err != nil {
 			return false
 		} else if !match {
 			continue
