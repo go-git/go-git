@@ -93,9 +93,15 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 
 	head, err := w.r.Head()
 	if err == nil {
-		if !updated && head.Hash() == ref.Hash() {
+		headAheadOfRef,err := isFastForward(w.r.Storer, ref.Hash(), head.Hash())
+		if err != nil {
+			return err
+		}
+
+		if !updated && headAheadOfRef {
 			return NoErrAlreadyUpToDate
 		}
+
 
 		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash())
 		if err != nil {

@@ -265,6 +265,26 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	c.Assert(branch.Hash().String(), Not(Equals), "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
+func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL: filepath.Join(path, ".git"),
+	})
+
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+	err = ioutil.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+}
+
 func (s *WorktreeSuite) TestCheckout(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
