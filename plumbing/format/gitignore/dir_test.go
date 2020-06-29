@@ -15,7 +15,7 @@ type MatcherSuite struct {
 	RFS  billy.Filesystem // root that contains user home
 	MCFS billy.Filesystem // root that contains user home, but missing ~/.gitconfig
 	MEFS billy.Filesystem // root that contains user home, but missing excludesfile entry
-	MIFS billy.Filesystem // root that contains user home, but missing .gitnignore
+	MIFS billy.Filesystem // root that contains user home, but missing .gitignore
 
 	SFS billy.Filesystem // root that contains /etc/gitconfig
 }
