@@ -60,4 +60,5 @@ func (s *ReceivePackSuite) TestReceivePackWithNilPackfile(c *C) {
 
 	report, err := r.ReceivePack(context.Background(), req)
 	c.Assert(report, IsNil, comment)
+	c.Assert(err, IsNil, comment)
 }

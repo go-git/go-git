@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
@@ -14,8 +13,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
+	"github.com/go-git/go-billy/v5/memfs"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"github.com/go-git/go-git-fixtures/v4"
 )
 
 type EncoderAdvancedSuite struct {

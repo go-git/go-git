@@ -3,12 +3,11 @@ package ssh
 import (
 	"testing"
 
-	"github.com/kevinburke/ssh_config"
-
-	"golang.org/x/crypto/ssh"
-
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+
+	"github.com/kevinburke/ssh_config"
+	"golang.org/x/crypto/ssh"
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }

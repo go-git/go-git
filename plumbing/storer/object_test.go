@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	. "gopkg.in/check.v1"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }

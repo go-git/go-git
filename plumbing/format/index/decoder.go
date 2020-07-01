@@ -390,7 +390,9 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 	e.Trees = i
 	_, err = io.ReadFull(d.r, e.Hash[:])
-
+	if err != nil {
+		return nil, err
+	}
 	return e, nil
 }
 
