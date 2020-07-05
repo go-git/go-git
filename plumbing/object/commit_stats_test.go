@@ -11,8 +11,9 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
+
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"github.com/go-git/go-git-fixtures/v4"
 )
 
 type CommitStatsSuite struct {

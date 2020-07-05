@@ -93,7 +93,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 
 	head, err := w.r.Head()
 	if err == nil {
-		headAheadOfRef,err := isFastForward(w.r.Storer, ref.Hash(), head.Hash())
+		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash())
 		if err != nil {
 			return err
 		}
@@ -101,7 +101,6 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		if !updated && headAheadOfRef {
 			return NoErrAlreadyUpToDate
 		}
-
 
 		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash())
 		if err != nil {

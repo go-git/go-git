@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport/test"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
-	"github.com/go-git/go-git-fixtures/v4"
 )
 
 type ReceivePackSuite struct {

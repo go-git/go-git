@@ -1875,6 +1875,7 @@ func (s *RepositorySuite) TestConfigScoped(c *C) {
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
+	c.Assert(err, IsNil)
 
 	cfg, err := r.ConfigScoped(config.LocalScope)
 	c.Assert(err, IsNil)

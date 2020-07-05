@@ -96,8 +96,8 @@ func (s *ParserSuite) TestParseWithValidExpression(c *C) {
 			TildePath{3},
 		},
 		"@{2016-12-16T21:42:47Z}": []Revisioner{AtDate{tim}},
-		"@{1}":  []Revisioner{AtReflog{1}},
-		"@{-1}": []Revisioner{AtCheckout{1}},
+		"@{1}":                    []Revisioner{AtReflog{1}},
+		"@{-1}":                   []Revisioner{AtCheckout{1}},
 		"master@{upstream}": []Revisioner{
 			Ref("master"),
 			AtUpstream{},
@@ -211,12 +211,12 @@ func (s *ParserSuite) TestParseAtWithValidExpression(c *C) {
 	tim, _ := time.Parse("2006-01-02T15:04:05Z", "2016-12-16T21:42:47Z")
 
 	datas := map[string]Revisioner{
-		"":           Ref("HEAD"),
-		"{1}":        AtReflog{1},
-		"{-1}":       AtCheckout{1},
-		"{push}":     AtPush{},
-		"{upstream}": AtUpstream{},
-		"{u}":        AtUpstream{},
+		"":                       Ref("HEAD"),
+		"{1}":                    AtReflog{1},
+		"{-1}":                   AtCheckout{1},
+		"{push}":                 AtPush{},
+		"{upstream}":             AtUpstream{},
+		"{u}":                    AtUpstream{},
 		"{2016-12-16T21:42:47Z}": AtDate{tim},
 	}
 
