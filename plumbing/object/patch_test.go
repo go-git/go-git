@@ -24,7 +24,7 @@ func (s *PatchSuite) TestStatsWithSubmodules(c *C) {
 	tree, err := commit.Tree()
 	c.Assert(err, IsNil)
 
-	e, err := tree.entry("basic")
+	e, err := tree.Entry("basic")
 	c.Assert(err, IsNil)
 
 	ch := &Change{

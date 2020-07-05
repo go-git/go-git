@@ -159,11 +159,11 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		t.t[pathCurrent] = tree
 	}
 
-	return tree.entry(pathParts[0])
+	return tree.Entry(pathParts[0])
 }
 
 func (t *Tree) dir(baseName string) (*Tree, error) {
-	entry, err := t.entry(baseName)
+	entry, err := t.Entry(baseName)
 	if err != nil {
 		return nil, ErrDirectoryNotFound
 	}
@@ -179,7 +179,8 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 	return tree, err
 }
 
-func (t *Tree) entry(baseName string) (*TreeEntry, error) {
+// Entry looks up a TreeEntry by name. object.ErrEntryNotFound is returned when the name is not found.
+func (t *Tree) Entry(baseName string) (*TreeEntry, error) {
 	if t.m == nil {
 		t.buildMap()
 	}
@@ -195,6 +196,11 @@ func (t *Tree) entry(baseName string) (*TreeEntry, error) {
 // Files returns a FileIter allowing to iterate over the Tree
 func (t *Tree) Files() *FileIter {
 	return NewFileIter(t.s, t)
+}
+
+// EntryIter returns a TreeEntryIter allowing easy iteration over the Tree.
+func (t *Tree) EntryIter() *TreeEntryIter {
+	return &TreeEntryIter{treeEntryIter: treeEntryIter{t: t, pos: 0}}
 }
 
 // ID returns the object ID of the tree. The returned value will always match
@@ -353,6 +359,17 @@ func (iter *treeEntryIter) Next() (TreeEntry, error) {
 	return iter.t.Entries[iter.pos-1], nil
 }
 
+// TreeEntryIter provides an iterator for the TreeEntry objects in a Tree.
+type TreeEntryIter struct {
+	treeEntryIter
+}
+
+// Next returns the next object from the tree. After the last object has been
+// returned, future calls to Next() will return io.EOF.
+func (iter *TreeEntryIter) Next() (TreeEntry, error) {
+	return iter.treeEntryIter.Next()
+}
+
 // TreeWalker provides a means of walking through all of the entries in a Tree.
 type TreeWalker struct {
 	stack     []*treeEntryIter
@@ -386,9 +403,9 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // and subtrees are included. After the last object has been returned further
 // calls to Next() will return io.EOF.
 //
-// In the current implementation any objects which cannot be found in the
-// underlying repository will be skipped automatically. It is possible that this
-// may change in future versions.
+// In recursive mode, any objects which cannot be found in the underlying
+// repository will be skipped automatically. It is possible that this may
+// change in future versions.
 func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 	var obj *Tree
 	for {
@@ -422,7 +439,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			continue
 		}
 
-		if entry.Mode == filemode.Dir {
+		if w.recursive && entry.Mode == filemode.Dir {
 			obj, err = GetTree(w.s, entry.Hash)
 		}
 
