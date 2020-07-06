@@ -19,7 +19,7 @@ type Options []*Option
 // IsKey returns true if the given key matches
 // this option's key in a case-insensitive comparison.
 func (o *Option) IsKey(key string) bool {
-	return strings.ToLower(o.Key) == strings.ToLower(key)
+	return strings.EqualFold(o.Key, key)
 }
 
 func (opts Options) GoString() string {

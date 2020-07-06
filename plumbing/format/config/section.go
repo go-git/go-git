@@ -61,7 +61,7 @@ func (s Subsections) GoString() string {
 
 // IsName checks if the name provided is equals to the Section name, case insensitive.
 func (s *Section) IsName(name string) bool {
-	return strings.ToLower(s.Name) == strings.ToLower(name)
+	return strings.EqualFold(s.Name, name)
 }
 
 // Option return the value for the specified key. Empty string is returned if
