@@ -713,7 +713,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	c.Assert(err, IsNil)
 
 	dummyFile := filepath.Join(repoDirPath, "dummyFile")
-	err = ioutil.WriteFile(dummyFile, []byte(fmt.Sprint("dummyContent")), 0644)
+	err = ioutil.WriteFile(dummyFile, []byte("dummyContent"), 0644)
 	c.Assert(err, IsNil)
 
 	r, err := PlainCloneContext(ctx, repoDirPath, false, &CloneOptions{
