@@ -195,6 +195,7 @@ func BenchmarkParse(b *testing.B) {
 	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag("packfile") {
+		f := f
 		b.Run(f.URL, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				parser, err := packfile.NewParser(packfile.NewScanner(f.Packfile()))

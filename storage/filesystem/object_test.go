@@ -179,6 +179,7 @@ func (s *FsSuite) TestIter(c *C) {
 func (s *FsSuite) TestIterWithType(c *C) {
 	fixtures.ByTag(".git").Test(c, func(f *fixtures.Fixture) {
 		for _, t := range objectTypes {
+			t := t
 			fs := f.DotGit()
 			o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
@@ -202,6 +203,7 @@ func (s *FsSuite) TestPackfileIter(c *C) {
 		dg := dotgit.New(fs)
 
 		for _, t := range objectTypes {
+			t := t
 			ph, err := dg.ObjectPacks()
 			c.Assert(err, IsNil)
 
@@ -285,6 +287,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors(c *C) {
 		dg := dotgit.NewWithOptions(fs, ops)
 
 		for _, t := range objectTypes {
+			t := t
 			ph, err := dg.ObjectPacks()
 			c.Assert(err, IsNil)
 
@@ -336,12 +339,14 @@ func BenchmarkPackfileIter(b *testing.B) {
 	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag(".git") {
+		f := f
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
 			dg := dotgit.New(fs)
 
 			for i := 0; i < b.N; i++ {
 				for _, t := range objectTypes {
+					t := t
 					ph, err := dg.ObjectPacks()
 					if err != nil {
 						b.Fatal(err)
@@ -384,12 +389,14 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 	defer fixtures.Clean()
 
 	for _, f := range fixtures.ByTag(".git") {
+		f := f
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
 			dg := dotgit.New(fs)
 
 			for i := 0; i < b.N; i++ {
 				for _, t := range objectTypes {
+					t := t
 					ph, err := dg.ObjectPacks()
 					if err != nil {
 						b.Fatal(err)
@@ -442,6 +449,7 @@ func BenchmarkGetObjectFromPackfile(b *testing.B) {
 	defer fixtures.Clean()
 
 	for _, f := range fixtures.Basic() {
+		f := f
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
 			o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())

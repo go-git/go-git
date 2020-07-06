@@ -56,6 +56,7 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 	}
 
 	for _, ch := range left {
+		ch := ch
 		a, err := ch.Action()
 		if err != nil {
 			return nil, err
@@ -80,6 +81,7 @@ func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
 	}
 
 	for _, ch := range right {
+		ch := ch
 		a, err := ch.Action()
 		if err != nil {
 			return nil, err

@@ -179,6 +179,7 @@ func (s *PackfileSuite) TestDecodeByType(c *C) {
 
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		for _, t := range ts {
+			t := t
 			index := getIndexFromIdxFile(f.Idx())
 			fs := osfs.New("")
 			pf, err := fs.Open(f.Packfile().Name())
