@@ -218,9 +218,9 @@ func (r *Remote) newReferenceUpdateRequest(
 	if o.Progress != nil {
 		req.Progress = o.Progress
 		if ar.Capabilities.Supports(capability.Sideband64k) {
-			req.Capabilities.Set(capability.Sideband64k)
+			_ = req.Capabilities.Set(capability.Sideband64k)
 		} else if ar.Capabilities.Supports(capability.Sideband) {
-			req.Capabilities.Set(capability.Sideband)
+			_ = req.Capabilities.Set(capability.Sideband)
 		}
 	}
 
@@ -1037,11 +1037,13 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 	}
 
 	var resultRefs []*plumbing.Reference
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
 		resultRefs = append(resultRefs, ref)
 		return nil
 	})
-
+	if err != nil {
+		return nil, err
+	}
 	return resultRefs, nil
 }
 
