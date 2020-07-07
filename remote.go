@@ -1044,7 +1044,7 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 }
 
 func objectsToPush(commands []*packp.Command) []plumbing.Hash {
-	objects := make([]plumbing.Hash, len(commands))
+	objects := make([]plumbing.Hash, 0, len(commands))
 	for _, cmd := range commands {
 		if cmd.New == plumbing.ZeroHash {
 			continue
