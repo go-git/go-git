@@ -92,7 +92,7 @@ func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 	}
 
 	if worktree == nil {
-		r.setIsBare(true)
+		_ = r.setIsBare(true)
 		return r, nil
 	}
 
@@ -408,7 +408,7 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 	err = r.clone(ctx, o)
 	if err != nil && err != ErrRepositoryAlreadyExists {
 		if cleanup {
-			cleanUpDir(path, cleanupParent)
+			_ = cleanUpDir(path, cleanupParent)
 		}
 	}
 
