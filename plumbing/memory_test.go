@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"io"
 	"io/ioutil"
 
 	. "gopkg.in/check.v1"
@@ -54,6 +55,33 @@ func (s *MemoryObjectSuite) TestReader(c *C) {
 	b, err := ioutil.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(b, DeepEquals, []byte("foo"))
+}
+
+func (s *MemoryObjectSuite) TestSeekableReader(c *C) {
+	const pageSize = 4096
+	const payload = "foo"
+	content := make([]byte, pageSize+len(payload))
+	copy(content[pageSize:], []byte(payload))
+
+	o := &MemoryObject{cont: content}
+
+	reader, err := o.Reader()
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(reader.Close(), IsNil) }()
+
+	rs, ok := reader.(io.ReadSeeker)
+	c.Assert(ok, Equals, true)
+
+	_, err = rs.Seek(pageSize, io.SeekStart)
+	c.Assert(err, IsNil)
+
+	b, err := ioutil.ReadAll(rs)
+	c.Assert(err, IsNil)
+	c.Assert(b, DeepEquals, []byte(payload))
+
+	// Check that our Reader isn't also accidentally writable
+	_, ok = reader.(io.WriteSeeker)
+	c.Assert(ok, Equals, false)
 }
 
 func (s *MemoryObjectSuite) TestWriter(c *C) {
