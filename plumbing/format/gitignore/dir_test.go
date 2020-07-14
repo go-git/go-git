@@ -15,7 +15,7 @@ type MatcherSuite struct {
 	RFS  billy.Filesystem // root that contains user home
 	MCFS billy.Filesystem // root that contains user home, but missing ~/.gitconfig
 	MEFS billy.Filesystem // root that contains user home, but missing excludesfile entry
-	MIFS billy.Filesystem // root that contains user home, but missing .gitnignore
+	MIFS billy.Filesystem // root that contains user home, but missing .gitignore
 
 	SFS billy.Filesystem // root that contains /etc/gitconfig
 }
@@ -29,6 +29,8 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("vendor/g*/\n"))
 	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("ignore.crlf\r\n"))
+	c.Assert(err, IsNil)
 	err = f.Close()
 	c.Assert(err, IsNil)
 
@@ -41,9 +43,14 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 	err = f.Close()
 	c.Assert(err, IsNil)
 
-	fs.MkdirAll("another", os.ModePerm)
-	fs.MkdirAll("vendor/github.com", os.ModePerm)
-	fs.MkdirAll("vendor/gopkg.in", os.ModePerm)
+	err = fs.MkdirAll("another", os.ModePerm)
+	c.Assert(err, IsNil)
+	err = fs.MkdirAll("ignore.crlf", os.ModePerm)
+	c.Assert(err, IsNil)
+	err = fs.MkdirAll("vendor/github.com", os.ModePerm)
+	c.Assert(err, IsNil)
+	err = fs.MkdirAll("vendor/gopkg.in", os.ModePerm)
+	c.Assert(err, IsNil)
 
 	s.GFS = fs
 
@@ -167,9 +174,10 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 func (s *MatcherSuite) TestDir_ReadPatterns(c *C) {
 	ps, err := ReadPatterns(s.GFS, nil)
 	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 2)
+	c.Assert(ps, HasLen, 3)
 
 	m := NewMatcher(ps)
+	c.Assert(m.Match([]string{"ignore.crlf"}, true), Equals, true)
 	c.Assert(m.Match([]string{"vendor", "gopkg.in"}, true), Equals, true)
 	c.Assert(m.Match([]string{"vendor", "github.com"}, true), Equals, false)
 }
