@@ -354,6 +354,7 @@ func (s *ParserSuite) TestParseRefWithValidName(c *C) {
 		"refs/remotes/test",
 		"refs/remotes/origin/HEAD",
 		"refs/remotes/origin/master",
+		"0123abcd", // short hash
 	}
 
 	for _, d := range datas {
