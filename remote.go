@@ -498,10 +498,8 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 			if _, ok := refsDict[rs.Dst(ref.Name()).String()]; ok {
 				return nil
 			}
-		} else {
-			if rs.Dst("") != ref.Name() {
-				return nil
-			}
+		} else if rs.Dst("") != ref.Name() {
+			return nil
 		}
 
 		cmd := &packp.Command{
@@ -1048,12 +1046,11 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 }
 
 func objectsToPush(commands []*packp.Command) []plumbing.Hash {
-	var objects []plumbing.Hash
+	objects := make([]plumbing.Hash, 0, len(commands))
 	for _, cmd := range commands {
 		if cmd.New == plumbing.ZeroHash {
 			continue
 		}
-
 		objects = append(objects, cmd.New)
 	}
 	return objects

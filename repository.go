@@ -1440,9 +1440,9 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 	var commit *object.Commit
 
 	for _, item := range items {
-		switch item.(type) {
+		switch item := item.(type) {
 		case revision.Ref:
-			revisionRef := item.(revision.Ref)
+			revisionRef := item
 
 			var tryHashes []plumbing.Hash
 
@@ -1491,7 +1491,7 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 			}
 
 		case revision.CaretPath:
-			depth := item.(revision.CaretPath).Depth
+			depth := item.Depth
 
 			if depth == 0 {
 				break
@@ -1519,7 +1519,7 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 
 			commit = c
 		case revision.TildePath:
-			for i := 0; i < item.(revision.TildePath).Depth; i++ {
+			for i := 0; i < item.Depth; i++ {
 				c, err := commit.Parents().Next()
 
 				if err != nil {
@@ -1531,8 +1531,8 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 		case revision.CaretReg:
 			history := object.NewCommitPreorderIter(commit, nil, nil)
 
-			re := item.(revision.CaretReg).Regexp
-			negate := item.(revision.CaretReg).Negate
+			re := item.Regexp
+			negate := item.Negate
 
 			var c *object.Commit
 

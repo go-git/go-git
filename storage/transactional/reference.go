@@ -27,7 +27,7 @@ func NewReferenceStorage(base, temporal storer.ReferenceStorer) *ReferenceStorag
 		ReferenceStorer: base,
 		temporal:        temporal,
 
-		deleted: make(map[plumbing.ReferenceName]struct{}, 0),
+		deleted: make(map[plumbing.ReferenceName]struct{}),
 	}
 }
 
