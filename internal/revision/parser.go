@@ -28,7 +28,7 @@ func (e *ErrInvalidRevision) Error() string {
 type Revisioner interface {
 }
 
-// Ref represents a reference name : HEAD, master
+// Ref represents a reference name : HEAD, master, <hash>
 type Ref string
 
 // TildePath represents ~, ~{n}

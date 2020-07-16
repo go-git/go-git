@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -1426,7 +1427,7 @@ func (r *Repository) Worktree() (*Worktree, error) {
 // resolve to a commit hash, not a tree or annotated tag.
 //
 // Implemented resolvers : HEAD, branch, tag, heads/branch, refs/heads/branch,
-// refs/tags/tag, refs/remotes/origin/branch, refs/remotes/origin/HEAD, tilde and caret (HEAD~1, master~^, tag~2, ref/heads/master~1, ...), selection by text (HEAD^{/fix nasty bug})
+// refs/tags/tag, refs/remotes/origin/branch, refs/remotes/origin/HEAD, tilde and caret (HEAD~1, master~^, tag~2, ref/heads/master~1, ...), selection by text (HEAD^{/fix nasty bug}), hash (prefix and full)
 func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, error) {
 	p := revision.NewParserFromString(string(rev))
 
@@ -1445,11 +1446,7 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 
 			var tryHashes []plumbing.Hash
 
-			maybeHash := plumbing.NewHash(string(revisionRef))
-
-			if !maybeHash.IsZero() {
-				tryHashes = append(tryHashes, maybeHash)
-			}
+			tryHashes = append(tryHashes, r.resolveHashPrefix(string(revisionRef))...)
 
 			for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
 				ref, err := storer.ResolveReference(r.Storer, plumbing.ReferenceName(fmt.Sprintf(rule, revisionRef)))
@@ -1567,6 +1564,49 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 	return &commit.Hash, nil
 }
 
+// resolveHashPrefix returns a list of potential hashes that the given string
+// is a prefix of. It quietly swallows errors, returning nil.
+func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
+	// Handle complete and partial hashes.
+	// plumbing.NewHash forces args into a full 20 byte hash, which isn't suitable
+	// for partial hashes since they will become zero-filled.
+
+	if hashStr == "" {
+		return nil
+	}
+	if len(hashStr) == len(plumbing.ZeroHash)*2 {
+		// Only a full hash is possible.
+		hexb, err := hex.DecodeString(hashStr)
+		if err != nil {
+			return nil
+		}
+		var h plumbing.Hash
+		copy(h[:], hexb)
+		return []plumbing.Hash{h}
+	}
+
+	// Partial hash.
+	// hex.DecodeString only decodes to complete bytes, so only works with pairs of hex digits.
+	evenHex := hashStr[:len(hashStr)&^1]
+	hexb, err := hex.DecodeString(evenHex)
+	if err != nil {
+		return nil
+	}
+	candidates := expandPartialHash(r.Storer, hexb)
+	if len(evenHex) == len(hashStr) {
+		// The prefix was an exact number of bytes.
+		return candidates
+	}
+	// Do another prefix check to ensure the dangling nybble is correct.
+	var hashes []plumbing.Hash
+	for _, h := range candidates {
+		if strings.HasPrefix(h.String(), hashStr) {
+			hashes = append(hashes, h)
+		}
+	}
+	return hashes
+}
+
 type RepackConfig struct {
 	// UseRefDeltas configures whether packfile encoder will use reference deltas.
 	// By default OFSDeltaObject is used.
@@ -1658,4 +1698,32 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	}
 
 	return h, err
+}
+
+func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []plumbing.Hash) {
+	// The fast version is implemented by storage/filesystem.ObjectStorage.
+	type fastIter interface {
+		HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
+	}
+	if fi, ok := st.(fastIter); ok {
+		h, err := fi.HashesWithPrefix(prefix)
+		if err != nil {
+			return nil
+		}
+		return h
+	}
+
+	// Slow path.
+	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		return nil
+	}
+	iter.ForEach(func(obj plumbing.EncodedObject) error {
+		h := obj.Hash()
+		if bytes.HasPrefix(h[:], prefix) {
+			hashes = append(hashes, h)
+		}
+		return nil
+	})
+	return
 }

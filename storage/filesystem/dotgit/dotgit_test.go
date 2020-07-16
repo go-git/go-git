@@ -2,6 +2,7 @@ package dotgit
 
 import (
 	"bufio"
+	"encoding/hex"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -591,6 +592,7 @@ func (s *SuiteDotGit) TestObjects(c *C) {
 	dir := New(fs)
 
 	testObjects(c, fs, dir)
+	testObjectsWithPrefix(c, fs, dir)
 }
 
 func (s *SuiteDotGit) TestObjectsExclusive(c *C) {
@@ -598,6 +600,7 @@ func (s *SuiteDotGit) TestObjectsExclusive(c *C) {
 	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
 
 	testObjects(c, fs, dir)
+	testObjectsWithPrefix(c, fs, dir)
 }
 
 func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
@@ -607,6 +610,20 @@ func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
 	c.Assert(hashes[0].String(), Equals, "0097821d427a3c3385898eb13b50dcbc8702b8a3")
 	c.Assert(hashes[1].String(), Equals, "01d5fa556c33743006de7e76e67a2dfcd994ca04")
 	c.Assert(hashes[2].String(), Equals, "03db8e1fbe133a480f2867aac478fd866686d69e")
+}
+
+func testObjectsWithPrefix(c *C, fs billy.Filesystem, dir *DotGit) {
+	prefix, _ := hex.DecodeString("01d5")
+	hashes, err := dir.ObjectsWithPrefix(prefix)
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, 1)
+	c.Assert(hashes[0].String(), Equals, "01d5fa556c33743006de7e76e67a2dfcd994ca04")
+
+	// Empty prefix should yield all objects.
+	// (subset of testObjects)
+	hashes, err = dir.ObjectsWithPrefix(nil)
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, 187)
 }
 
 func (s *SuiteDotGit) TestObjectsNoFolder(c *C) {
@@ -834,4 +851,22 @@ type norwfs struct {
 
 func (f *norwfs) Capabilities() billy.Capability {
 	return billy.Capabilities(f.Filesystem) &^ billy.ReadAndWriteCapability
+}
+
+func (s *SuiteDotGit) TestIncBytes(c *C) {
+	tests := []struct {
+		in       []byte
+		out      []byte
+		overflow bool
+	}{
+		{[]byte{0}, []byte{1}, false},
+		{[]byte{0xff}, []byte{0}, true},
+		{[]byte{7, 0xff}, []byte{8, 0}, false},
+		{[]byte{0xff, 0xff}, []byte{0, 0}, true},
+	}
+	for _, test := range tests {
+		out, overflow := incBytes(test.in)
+		c.Assert(out, DeepEquals, test.out)
+		c.Assert(overflow, Equals, test.overflow)
+	}
 }

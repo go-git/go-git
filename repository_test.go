@@ -2642,6 +2642,7 @@ func (s *RepositorySuite) TestResolveRevision(c *C) {
 		"v1.0.0~1":                   "918c48b83bd081e863dbe1b80f8998f058cd8294",
 		"master~1":                   "918c48b83bd081e863dbe1b80f8998f058cd8294",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294": "918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"918c48b": "918c48b83bd081e863dbe1b80f8998f058cd8294", // odd number of hex digits
 	}
 
 	for rev, hash := range datas {

@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -330,6 +331,22 @@ func (s *FsSuite) TestGetFromObjectFileSharedCache(c *C) {
 
 	obj, err = o2.EncodedObject(plumbing.CommitObject, expected)
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+}
+
+func (s *FsSuite) TestHashesWithPrefix(c *C) {
+	// Same setup as TestGetFromObjectFile.
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
+	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, expected)
+
+	prefix, _ := hex.DecodeString("f3dfe2")
+	hashes, err := o.HashesWithPrefix(prefix)
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, 1)
+	c.Assert(hashes[0].String(), Equals, "f3dfe29d268303fc6e1bbce268605fc99573406e")
 }
 
 func BenchmarkPackfileIter(b *testing.B) {
