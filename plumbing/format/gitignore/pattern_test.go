@@ -287,3 +287,9 @@ func (s *PatternSuite) TestGlobMatch_issue_923(c *C) {
 	r := p.Match([]string{"packages", "flutter_tools", "lib", "src", "android", "gradle.dart"}, false)
 	c.Assert(r, Equals, NoMatch)
 }
+
+func (s *PatternSuite) TestGlobMatch_folderVersusFile(c *C) {
+	p := ParsePattern("/a*/**", nil)
+	r := p.Match([]string{"ab"}, false)
+	c.Assert(r, Equals, NoMatch)
+}
