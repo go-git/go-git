@@ -126,7 +126,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	if o.Force {
 		for i := 0; i < len(o.RefSpecs); i++ {
 			rs := &o.RefSpecs[i]
-			if !rs.IsForceUpdate() {
+			if !rs.IsForceUpdate() && !rs.IsDelete() {
 				o.RefSpecs[i] = config.RefSpec("+" + rs.String())
 			}
 		}

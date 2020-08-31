@@ -558,6 +558,31 @@ func (s *RemoteSuite) TestPushDeleteReference(c *C) {
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 }
 
+func (s *RemoteSuite) TestForcePushDeleteReference(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+		URL: fs.Root(),
+	})
+	c.Assert(err, IsNil)
+
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{":refs/heads/branch"},
+		Force:    true,
+	})
+	c.Assert(err, IsNil)
+
+	_, err = sto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+
+	_, err = r.Storer.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+}
+
 func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	server := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
