@@ -569,12 +569,22 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
 	err = os.MkdirAll(subdir, 0755)
 	c.Assert(err, IsNil)
 
+	file := filepath.Join(subdir, "file.txt")
+	f, err := os.Create(file)
+	c.Assert(err, IsNil)
+	f.Close()
+
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
 	opt := &PlainOpenOptions{DetectDotGit: true}
 	r, err = PlainOpenWithOptions(subdir, opt)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	opt = &PlainOpenOptions{DetectDotGit: true}
+	r, err = PlainOpenWithOptions(file, opt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 }
