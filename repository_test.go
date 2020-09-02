@@ -583,10 +583,14 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	opt = &PlainOpenOptions{DetectDotGit: true}
 	r, err = PlainOpenWithOptions(file, opt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
+
+	optnodetect := &PlainOpenOptions{DetectDotGit: false}
+	r, err = PlainOpenWithOptions(file, optnodetect)
+	c.Assert(err, NotNil)
+	c.Assert(r, IsNil)
 }
 
 func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {

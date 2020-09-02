@@ -281,7 +281,7 @@ func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, 
 
 	pathinfo, err := os.Stat(path)
 	if !os.IsNotExist(err) {
-		if !pathinfo.IsDir() {
+		if !pathinfo.IsDir() && detect {
 			path = filepath.Dir(path)
 		}
 	}
