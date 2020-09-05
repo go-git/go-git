@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -53,6 +54,37 @@ func (s *RemoteSuite) TestFetchInvalidFetchOptions(c *C) {
 	invalid := config.RefSpec("^*$ñ")
 	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{invalid}})
 	c.Assert(err, Equals, config.ErrRefSpecMalformedSeparator)
+}
+
+func (s *RemoteSuite) TestFetchUnrelated(c *C) {
+	fmt.Println(fixtures.RootFolder)
+	mem := memory.NewStorage()
+	r1 := newRemote(mem, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+	r2 := newRemote(mem, &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	// Fetch both repos into the same storage but under different remote names.
+	s.testFetch(c, r1, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/r1/master"),
+		},
+		Depth: 1,
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/r1/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+	s.testFetch(c, r2, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/r2/master"),
+		},
+		Depth: 1,
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/r1/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/remotes/r2/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+
 }
 
 func (s *RemoteSuite) TestFetchWildcard(c *C) {
