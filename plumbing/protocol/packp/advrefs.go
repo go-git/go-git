@@ -88,7 +88,13 @@ func (a *AdvRefs) addRefs(s storer.ReferenceStorer) error {
 		return a.addSymbolicRefs(s)
 	}
 
-	return a.resolveHead(s)
+	// It's unusual to not be able to resolve HEAD, but not unusual enough that we
+	// should consider this function to have failed.
+	if err := a.resolveHead(s); err != nil && err != plumbing.ErrReferenceNotFound {
+		return err
+	}
+
+	return nil
 }
 
 // If the server does not support symrefs capability,

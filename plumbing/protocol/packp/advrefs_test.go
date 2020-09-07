@@ -131,7 +131,7 @@ func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoRef(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = a.AllReferences()
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 }
 
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoMasterAlphabeticallyOrdered(c *C) {
