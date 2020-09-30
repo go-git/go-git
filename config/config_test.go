@@ -46,6 +46,8 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [branch "master"]
 		remote = origin
 		merge = refs/heads/master
+[init]
+		defaultBranch = main
 `)
 
 	cfg := NewConfig()
@@ -77,6 +79,7 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Submodules["qux"].Branch, Equals, "bar")
 	c.Assert(cfg.Branches["master"].Remote, Equals, "origin")
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
+	c.Assert(cfg.Init.DefaultBranch, Equals, "main")
 }
 
 func (s *ConfigSuite) TestMarshal(c *C) {
@@ -99,12 +102,15 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[init]
+	defaultBranch = main
 `)
 
 	cfg := NewConfig()
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
 	cfg.Pack.Window = 20
+	cfg.Init.DefaultBranch = "main"
 	cfg.Remotes["origin"] = &RemoteConfig{
 		Name: "origin",
 		URLs: []string{"git@github.com:mcuadros/go-git.git"},
