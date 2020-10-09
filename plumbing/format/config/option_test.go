@@ -8,6 +8,21 @@ type OptionSuite struct{}
 
 var _ = Suite(&OptionSuite{})
 
+func (s *OptionSuite) TestOptions_Has(c *C) {
+	o := Options{
+		&Option{"k", "v"},
+		&Option{"ok", "v1"},
+		&Option{"K", "v2"},
+	}
+	c.Assert(o.Has("k"), Equals, true)
+	c.Assert(o.Has("K"), Equals, true)
+	c.Assert(o.Has("ok"), Equals, true)
+	c.Assert(o.Has("unexistant"), Equals, false)
+
+	o = Options{}
+	c.Assert(o.Has("k"), Equals, false)
+}
+
 func (s *OptionSuite) TestOptions_GetAll(c *C) {
 	o := Options{
 		&Option{"k", "v"},
