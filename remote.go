@@ -32,6 +32,19 @@ var (
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 )
 
+type NoMatchingRefSpecError struct {
+	refSpec config.RefSpec
+}
+
+func (e NoMatchingRefSpecError) Error() string {
+	return fmt.Sprintf("couldn't find remote ref %q", e.refSpec.Src())
+}
+
+func (e NoMatchingRefSpecError) Is(target error) bool {
+	_, ok := target.(NoMatchingRefSpecError)
+	return ok
+}
+
 const (
 	// This describes the maximum number of commits to walk when
 	// computing the haves to send to a server, for each ref in the
@@ -751,7 +764,7 @@ func doCalculateRefs(
 	})
 
 	if !matched && !s.IsWildcard() {
-		return fmt.Errorf("couldn't find remote ref %q", s.Src())
+		return NoMatchingRefSpecError{refSpec: s}
 	}
 
 	return err

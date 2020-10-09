@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -145,6 +146,7 @@ func (s *RemoteSuite) TestFetchNonExistantReference(c *C) {
 	})
 
 	c.Assert(err, ErrorMatches, "couldn't find remote ref.*")
+	c.Assert(errors.Is(err, NoMatchingRefSpecError{}), Equals, true)
 }
 
 func (s *RemoteSuite) TestFetchContext(c *C) {
