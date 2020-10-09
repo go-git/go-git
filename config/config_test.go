@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	. "gopkg.in/check.v1"
@@ -320,4 +321,30 @@ func (s *ConfigSuite) TestRemoteConfigDefaultValues(c *C) {
 	c.Assert(config.Submodules, HasLen, 0)
 	c.Assert(config.Raw, NotNil)
 	c.Assert(config.Pack.Window, Equals, DefaultPackWindow)
+}
+
+func (s *ConfigSuite) TestLoadConfigLocalScope(c *C) {
+	cfg, err := LoadConfig(LocalScope)
+	c.Assert(err, NotNil)
+	c.Assert(cfg, IsNil)
+}
+
+func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
+	buf := []byte(`
+[remote "alt"]
+	url = git@github.com:mcuadros/go-git.git
+	url = git@github.com:src-d/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	fetch = +refs/pull/*:refs/remotes/origin/pull/*`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(buf)
+	c.Assert(err, IsNil)
+	c.Assert(len(cfg.Remotes), Equals, 1)
+	cfg.Remotes["alt"].URLs = []string{}
+
+	buf, err = cfg.Marshal()
+	if strings.Contains(string(buf), "url") {
+		c.Fatal("conifg should not contain any url sections")
+	}
 }
