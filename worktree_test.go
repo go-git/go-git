@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	"github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -512,6 +513,47 @@ func (s *WorktreeSuite) TestCheckoutSubmoduleInitialized(c *C) {
 	c.Assert(err, IsNil)
 
 	err = sub.Update(&SubmoduleUpdateOptions{Init: true})
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
+
+func (s *WorktreeSuite) TestCheckoutRelativePathSubmoduleInitialized(c *C) {
+	url := "https://github.com/git-fixtures/submodule.git"
+	r := s.NewRepository(fixtures.ByURL(url).One())
+
+	// modify the .gitmodules from original one
+	file, err := r.wt.OpenFile(".gitmodules", os.O_WRONLY|os.O_TRUNC, 0666)
+	c.Assert(err, IsNil)
+
+	n, err := io.WriteString(file, `[submodule "basic"]
+	path = basic
+	url = ../basic.git
+[submodule "itself"]
+	path = itself
+	url = ../submodule.git`)
+	c.Assert(err, IsNil)
+	c.Assert(n, Not(Equals), 0)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	w.Add(".gitmodules")
+	w.Commit("test", &CommitOptions{})
+
+	// test submodule path
+	modules, err := w.readGitmodulesFile()
+
+	c.Assert(modules.Submodules["basic"].URL, Equals, "git@github.com:git-fixtures/basic.git")
+	c.Assert(modules.Submodules["itself"].URL, Equals, "git@github.com:git-fixtures/submodule.git")
+
+	sub, err := w.Submodules()
+	c.Assert(err, IsNil)
+
+	err = sub.Update(&SubmoduleUpdateOptions{Init: true, RecurseSubmodules:DefaultSubmoduleRecursionDepth})
 	c.Assert(err, IsNil)
 
 	status, err := w.Status()
