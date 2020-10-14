@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"sort"
+	"sync"
 
 	encbin "encoding/binary"
 
@@ -56,7 +57,7 @@ type MemoryIndex struct {
 	PackfileChecksum [20]byte
 	IdxChecksum      [20]byte
 
-	offsetHash       map[int64]plumbing.Hash
+	offsetHash       sync.Map
 	offsetHashIsFull bool
 }
 
@@ -127,10 +128,7 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 
 	if !idx.offsetHashIsFull {
 		// Save the offset for reverse lookup
-		if idx.offsetHash == nil {
-			idx.offsetHash = make(map[int64]plumbing.Hash)
-		}
-		idx.offsetHash[int64(offset)] = h
+		idx.offsetHash.Store(int64(offset), h)
 	}
 
 	return int64(offset), nil
@@ -169,39 +167,29 @@ func (idx *MemoryIndex) getCRC32(firstLevel, secondLevel int) uint32 {
 
 // FindHash implements the Index interface.
 func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
-	var hash plumbing.Hash
-	var ok bool
 
-	if idx.offsetHash != nil {
-		if hash, ok = idx.offsetHash[o]; ok {
-			return hash, nil
-		}
+	if hash, ok := idx.offsetHash.Load(o); ok {
+		return hash.(plumbing.Hash), nil
 	}
 
 	// Lazily generate the reverse offset/hash map if required.
-	if !idx.offsetHashIsFull || idx.offsetHash == nil {
+	if !idx.offsetHashIsFull {
 		if err := idx.genOffsetHash(); err != nil {
 			return plumbing.ZeroHash, err
 		}
 
-		hash, ok = idx.offsetHash[o]
+		if hash, ok := idx.offsetHash.Load(o); !ok {
+			return plumbing.ZeroHash, plumbing.ErrObjectNotFound
+		} else {
+			return hash.(plumbing.Hash), nil
+		}
 	}
 
-	if !ok {
-		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
-	}
-
-	return hash, nil
+	return plumbing.Hash{}, nil
 }
 
 // genOffsetHash generates the offset/hash mapping for reverse search.
 func (idx *MemoryIndex) genOffsetHash() error {
-	count, err := idx.Count()
-	if err != nil {
-		return err
-	}
-
-	idx.offsetHash = make(map[int64]plumbing.Hash, count)
 	idx.offsetHashIsFull = true
 
 	var hash plumbing.Hash
@@ -211,7 +199,7 @@ func (idx *MemoryIndex) genOffsetHash() error {
 		for secondLevel := uint32(0); i < fanoutValue; i++ {
 			copy(hash[:], idx.Names[mappedFirstLevel][secondLevel*objectIDLength:])
 			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
-			idx.offsetHash[offset] = hash
+			idx.offsetHash.Store(offset, hash)
 			secondLevel++
 		}
 	}
