@@ -21,11 +21,6 @@ type ServerResponse struct {
 // Decode decodes the response into the struct, isMultiACK should be true, if
 // the request was done with multi_ack or multi_ack_detailed capabilities.
 func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
-	// TODO: implement support for multi_ack or multi_ack_detailed responses
-	if isMultiACK {
-		return errors.New("multi_ack and multi_ack_detailed are not supported")
-	}
-
 	s := pktline.NewScanner(reader)
 
 	for s.Scan() {
