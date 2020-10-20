@@ -98,6 +98,8 @@ type Config struct {
 	// Branches list of branches, the key is the branch name and should
 	// equal Branch.Name
 	Branches map[string]*Branch
+	// Filters list of filters for smudge/clean. Key is the pattern to match.
+	Filters map[string]*Filter
 	// Raw contains the raw information of a config file. The main goal is
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
@@ -110,6 +112,7 @@ func NewConfig() *Config {
 		Remotes:    make(map[string]*RemoteConfig),
 		Submodules: make(map[string]*Submodule),
 		Branches:   make(map[string]*Branch),
+		Filters:    make(map[string]*Filter),
 		Raw:        format.New(),
 	}
 
@@ -223,6 +226,7 @@ const (
 	userSection      = "user"
 	authorSection    = "author"
 	committerSection = "committer"
+	filtersSection   = "filter"
 	fetchKey         = "fetch"
 	urlKey           = "url"
 	bareKey          = "bare"
@@ -233,6 +237,10 @@ const (
 	rebaseKey        = "rebase"
 	nameKey          = "name"
 	emailKey         = "email"
+	cleanKey         = "clean"
+	smudgeKey        = "smudge"
+	processKey       = "process"
+	requiredKey      = "required"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -257,6 +265,10 @@ func (c *Config) Unmarshal(b []byte) error {
 	unmarshalSubmodules(c.Raw, c.Submodules)
 
 	if err := c.unmarshalBranches(); err != nil {
+		return err
+	}
+
+	if err := c.unmarshalFilters(); err != nil {
 		return err
 	}
 
@@ -344,6 +356,20 @@ func (c *Config) unmarshalBranches() error {
 	return nil
 }
 
+func (c *Config) unmarshalFilters() error {
+	bs := c.Raw.Section(filtersSection)
+	for _, sub := range bs.Subsections {
+		f := &Filter{}
+
+		if err := f.unmarshal(sub); err != nil {
+			return err
+		}
+
+		c.Filters[f.Name] = f
+	}
+	return nil
+}
+
 // Marshal returns Config encoded as a git-config file.
 func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
@@ -352,6 +378,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalRemotes()
 	c.marshalSubmodules()
 	c.marshalBranches()
+	c.marshalFilters()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
@@ -473,6 +500,21 @@ func (c *Config) marshalBranches() {
 	}
 
 	s.Subsections = newSubsections
+}
+
+func (c *Config) marshalFilters() {
+	s := c.Raw.Section(filtersSection)
+	s.Subsections = make(format.Subsections, len(c.Filters))
+
+	var i int
+	for _, f := range c.Filters {
+		section := f.marshal()
+		// the submodule section at config is a subset of the .gitmodule file
+		// we should remove the non-valid options for the config file.
+		section.RemoveOption(pathKey)
+		s.Subsections[i] = section
+		i++
+	}
 }
 
 // RemoteConfig contains the configuration for a given remote repository.
