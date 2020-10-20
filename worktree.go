@@ -716,7 +716,33 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 	}
 
 	m := config.NewModules()
-	return m, m.Unmarshal(input)
+	if err := m.Unmarshal(input); err != nil {
+		return m, err
+	}
+
+	w.resolveRelativeSubmodulePaths(m)
+
+	return m, nil
+}
+
+
+// resolveRelativeSubmodulePaths is to replace any relative submodule URL (../foobar.git) in .gitmodules
+// to the accessible repository URL
+func (w *Worktree) resolveRelativeSubmodulePaths(m *config.Modules) {
+	origin, err := w.r.Remotes()
+	// remote is not associated with this worktree. we don't need to process any futher more
+	if err != nil {
+		return
+	}
+
+	parentURL := filepath.Dir(origin[0].c.URLs[0])
+
+	for i := range m.Submodules {
+		if strings.HasPrefix(m.Submodules[i].URL, "../") {
+			child := strings.Replace(m.Submodules[i].URL, "../", "", 1)
+			m.Submodules[i].URL = fmt.Sprintf("%s/%s", parentURL, child)
+		}
+	}
 }
 
 // Clean the worktree by removing untracked files.
