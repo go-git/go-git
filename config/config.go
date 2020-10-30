@@ -89,6 +89,13 @@ type Config struct {
 		Window uint
 	}
 
+	Init struct {
+		// DefaultBranch Allows overriding the default branch name
+		// e.g. when initializing a new repository or when cloning
+		// an empty repository.
+		DefaultBranch string
+	}
+
 	// Remotes list of repository remotes, the key of the map is the name
 	// of the remote, should equal to RemoteConfig.Name.
 	Remotes map[string]*RemoteConfig
@@ -223,6 +230,7 @@ const (
 	userSection      = "user"
 	authorSection    = "author"
 	committerSection = "committer"
+	initSection      = "init"
 	fetchKey         = "fetch"
 	urlKey           = "url"
 	bareKey          = "bare"
@@ -233,6 +241,7 @@ const (
 	rebaseKey        = "rebase"
 	nameKey          = "name"
 	emailKey         = "email"
+	defaultBranchKey = "defaultBranch"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -251,6 +260,7 @@ func (c *Config) Unmarshal(b []byte) error {
 
 	c.unmarshalCore()
 	c.unmarshalUser()
+	c.unmarshalInit()
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
@@ -344,6 +354,11 @@ func (c *Config) unmarshalBranches() error {
 	return nil
 }
 
+func (c *Config) unmarshalInit() {
+	s := c.Raw.Section(initSection)
+	c.Init.DefaultBranch = s.Options.Get(defaultBranchKey)
+}
+
 // Marshal returns Config encoded as a git-config file.
 func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
@@ -352,6 +367,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalRemotes()
 	c.marshalSubmodules()
 	c.marshalBranches()
+	c.marshalInit()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
@@ -473,6 +489,13 @@ func (c *Config) marshalBranches() {
 	}
 
 	s.Subsections = newSubsections
+}
+
+func (c *Config) marshalInit() {
+	s := c.Raw.Section(initSection)
+	if c.Init.DefaultBranch != "" {
+		s.SetOption(defaultBranchKey, c.Init.DefaultBranch)
+	}
 }
 
 // RemoteConfig contains the configuration for a given remote repository.
