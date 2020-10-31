@@ -73,29 +73,18 @@ Cloning a repository into memory and printing the history of HEAD, just like `gi
 // branches and fetching the objects, exactly as:
 Info("git clone https://github.com/go-git/go-billy")
 
-r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
-    URL: "https://github.com/go-git/go-billy",
+r, err := git.PlainClone(directory, false, &git.CloneOptions{
+    URL:               url,
+    RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 })
 
 CheckIfError(err)
 
-// Gets the HEAD history from HEAD, just like this command:
-Info("git log")
-
-// ... retrieves the branch pointed by HEAD
+// ... retrieving the branch being pointed by HEAD
 ref, err := r.Head()
 CheckIfError(err)
-
-
-// ... retrieves the commit history
-cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
-CheckIfError(err)
-
-// ... just iterates over the commits, printing it
-err = cIter.ForEach(func(c *object.Commit) error {
-	fmt.Println(c)
-	return nil
-})
+// ... retrieving the commit object
+commit, err := r.CommitObject(ref.Hash())
 CheckIfError(err)
 ```
 
