@@ -89,9 +89,18 @@ func (c *command) Close() error {
 
 	//XXX: If did read the full packfile, then the session might be already
 	//     closed.
-	_ = c.Session.Close()
+	serr := c.Session.Close()
 
-	return c.client.Close()
+	// Ignore errors when closing the client if the session has
+	// already been closed by the server. This has to be done
+	// as some git server will close the connection before the
+	// client does.
+	err := c.client.Close()
+	if serr.Error() == "EOF" {
+		return nil
+	}
+
+	return err
 }
 
 // connect connects to the SSH server, unless a AuthMethod was set with

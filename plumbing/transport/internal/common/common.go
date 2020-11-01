@@ -358,7 +358,7 @@ func (s *session) finish() error {
 func (s *session) Close() (err error) {
 	err = s.finish()
 
-	//defer ioutil.CheckClose(s.Command, &err)
+	defer ioutil.CheckClose(s.Command, &err)
 	return
 }
 
