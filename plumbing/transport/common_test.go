@@ -181,8 +181,8 @@ func (s *SuiteCommon) TestNewEndpointInvalidURL(c *C) {
 
 func (s *SuiteCommon) TestFilterUnsupportedCapabilities(c *C) {
 	l := capability.NewList()
-	l.Set(capability.MultiACK)
+	l.Set(capability.MultiACKDetailed)
 
 	FilterUnsupportedCapabilities(l)
-	c.Assert(l.Supports(capability.MultiACK), Equals, false)
+	c.Assert(l.Supports(capability.MultiACKDetailed), Equals, false)
 }

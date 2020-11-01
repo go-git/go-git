@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -67,7 +68,8 @@ func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 	defer res.Close()
 
 	err := res.Decode(ioutil.NopCloser(bytes.NewBuffer(nil)))
-	c.Assert(err, NotNil)
+	fmt.Println(err)
+	c.Assert(err, IsNil)
 }
 
 func (s *UploadPackResponseSuite) TestReadNoDecode(c *C) {

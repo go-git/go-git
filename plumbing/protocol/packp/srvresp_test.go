@@ -75,5 +75,5 @@ func (s *ServerResponseSuite) TestDecodeMalformed(c *C) {
 func (s *ServerResponseSuite) TestDecodeMultiACK(c *C) {
 	sr := &ServerResponse{}
 	err := sr.Decode(bufio.NewReader(bytes.NewBuffer(nil)), true)
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 }
