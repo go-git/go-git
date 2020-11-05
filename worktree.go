@@ -570,7 +570,7 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 
 	// On windows, this might fail.
 	// Follow Git on Windows behavior by writing the link as it is.
-	if err != nil && isSymlinkWindowsNonAdmin(err) {
+	if err != nil && (isSymlinkWindowsNonAdmin(err) || errors.Is(err, errorWineSymlinkSyscallBroken)) {
 		mode, _ := f.Mode.ToOSFileMode()
 
 		to, err := w.Filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())

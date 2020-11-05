@@ -427,7 +427,7 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 	return &Repository{
 		Storer: s,
-		wt:     worktree,
+		wt:     handleBrokenWineSymlinkStub(worktree),
 		r:      make(map[string]*Remote),
 	}
 }
