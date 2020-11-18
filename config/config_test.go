@@ -22,9 +22,12 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [user]
 		name = John Doe
 		email = john@example.com
+		signingKey = "12345"
 [author]
 		name = Jane Roe
 		email = jane@example.com
+[commit]
+		gpgSign = true
 [committer]
 		name = Richard Roe
 		email = richard@example.com
@@ -60,8 +63,10 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Core.CommentChar, Equals, "bar")
 	c.Assert(cfg.User.Name, Equals, "John Doe")
 	c.Assert(cfg.User.Email, Equals, "john@example.com")
+	c.Assert(cfg.User.SigningKey, Equals, "12345")
 	c.Assert(cfg.Author.Name, Equals, "Jane Roe")
 	c.Assert(cfg.Author.Email, Equals, "jane@example.com")
+	c.Assert(cfg.Commit.GPGSign, Equals, true)
 	c.Assert(cfg.Committer.Name, Equals, "Richard Roe")
 	c.Assert(cfg.Committer.Email, Equals, "richard@example.com")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
