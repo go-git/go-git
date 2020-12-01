@@ -110,10 +110,10 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
-[init]
-	defaultBranch = main
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
+[init]
+	defaultBranch = main
 `)
 
 	cfg := NewConfig()
