@@ -38,6 +38,8 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 		url = git@github.com:src-d/go-git.git
 		fetch = +refs/heads/*:refs/remotes/origin/*
 		fetch = +refs/pull/*:refs/remotes/origin/pull/*
+[remote "insteadOf"]
+		url = https://github.com/kostyay/go-git.git
 [remote "win-local"]
 		url = X:\\Git\\
 [submodule "qux"]
@@ -49,6 +51,8 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 		merge = refs/heads/master
 [init]
 		defaultBranch = main
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
 `)
 
 	cfg := NewConfig()
@@ -65,7 +69,7 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Committer.Name, Equals, "Richard Roe")
 	c.Assert(cfg.Committer.Email, Equals, "richard@example.com")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
-	c.Assert(cfg.Remotes, HasLen, 3)
+	c.Assert(cfg.Remotes, HasLen, 4)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URLs, DeepEquals, []string{"git@github.com:mcuadros/go-git.git"})
 	c.Assert(cfg.Remotes["origin"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*"})
@@ -74,6 +78,7 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Remotes["alt"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"})
 	c.Assert(cfg.Remotes["win-local"].Name, Equals, "win-local")
 	c.Assert(cfg.Remotes["win-local"].URLs, DeepEquals, []string{"X:\\Git\\"})
+	c.Assert(cfg.Remotes["insteadOf"].URLs, DeepEquals, []string{"ssh://git@github.com/kostyay/go-git.git"})
 	c.Assert(cfg.Submodules, HasLen, 1)
 	c.Assert(cfg.Submodules["qux"].Name, Equals, "qux")
 	c.Assert(cfg.Submodules["qux"].URL, Equals, "https://github.com/foo/qux.git")
@@ -94,6 +99,8 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 	url = git@github.com:src-d/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 	fetch = +refs/pull/*:refs/remotes/origin/pull/*
+[remote "insteadOf"]
+	url = https://github.com/kostyay/go-git.git
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git
 [remote "win-local"]
@@ -103,6 +110,8 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
 [init]
 	defaultBranch = main
 `)
@@ -128,6 +137,11 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 		URLs: []string{"X:\\Git\\"},
 	}
 
+	cfg.Remotes["insteadOf"] = &RemoteConfig{
+		Name: "insteadOf",
+		URLs: []string{"https://github.com/kostyay/go-git.git"},
+	}
+
 	cfg.Submodules["qux"] = &Submodule{
 		Name: "qux",
 		URL:  "https://github.com/foo/qux.git",
@@ -137,6 +151,11 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 		Name:   "master",
 		Remote: "origin",
 		Merge:  "refs/heads/master",
+	}
+
+	cfg.URLs["ssh://git@github.com/"] = &URL{
+		Name: "ssh://git@github.com/",
+		InsteadOf: "https://github.com/",
 	}
 
 	b, err := cfg.Marshal()
@@ -161,6 +180,8 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	email = richard@example.co
 [pack]
 	window = 20
+[remote "insteadOf"]
+	url = https://github.com/kostyay/go-git.git
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
@@ -170,6 +191,8 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
 `)
 
 	cfg := NewConfig()
