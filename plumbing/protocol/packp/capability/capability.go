@@ -247,7 +247,7 @@ var known = map[Capability]bool{
 	NoProgress: true, IncludeTag: true, ReportStatus: true, DeleteRefs: true,
 	Quiet: true, Atomic: true, PushOptions: true, AllowTipSHA1InWant: true,
 	AllowReachableSHA1InWant: true, PushCert: true, SymRef: true,
-	ObjectFormat: true, Filter: true
+	ObjectFormat: true, Filter: true,
 }
 
 var requiresArgument = map[Capability]bool{
