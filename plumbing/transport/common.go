@@ -107,6 +107,10 @@ type Endpoint struct {
 	Port int
 	// Path is the repository path.
 	Path string
+	// InsecureSkipTLS skips ssl verify if protocal is https
+	InsecureSkipTLS bool
+	// CaBundle specify additional ca bundle with system cert pool
+	CaBundle []byte
 }
 
 var defaultPorts = map[string]int{
