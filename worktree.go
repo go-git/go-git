@@ -769,7 +769,7 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files 
 		}
 	}
 
-	if opts.Dir {
+	if opts.Dir && dir != "" {
 		return doCleanDirectories(w.Filesystem, dir)
 	}
 	return nil
