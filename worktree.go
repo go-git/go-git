@@ -955,6 +955,9 @@ func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 func removeDirIfEmpty(fs billy.Filesystem, dir string) (bool, error) {
 	files, err := fs.ReadDir(dir)
 	if err != nil {
+		if err == os.ErrNotExist {
+			return false, nil
+		}
 		return false, err
 	}
 
