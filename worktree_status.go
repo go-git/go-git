@@ -283,10 +283,16 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		}
 	}
 
+	var entries []*index.Entry
+	entries, err = idx.Glob(directory + "/*")
+	if err != nil {
+		return false, err
+	}
+
+	var a bool
 	for _, file := range files {
 		name := path.Join(directory, file.Name())
 
-		var a bool
 		if file.IsDir() {
 			if file.Name() == GitDirName {
 				// ignore special git directory
@@ -301,6 +307,30 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 			return
 		}
 
+		if !added && a {
+			added = true
+		}
+	}
+
+	for _, e := range entries {
+		var foundMatch bool
+		for _, file := range files {
+			if file.IsDir() {
+				foundMatch = true
+				break
+			}
+
+			if e.Name == path.Join(directory, file.Name()) {
+				foundMatch = true
+				break
+			}
+		}
+
+		if foundMatch {
+			continue
+		}
+
+		a, _, err = w.doAddFile(idx, s, e.Name, ignorePattern)
 		if !added && a {
 			added = true
 		}
