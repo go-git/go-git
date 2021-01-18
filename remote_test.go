@@ -162,7 +162,7 @@ func (s *RemoteSuite) TestFetchContext(c *C) {
 			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
 	})
-	c.Assert(err, NotNil)
+	c.Assert(err, Equals, context.Canceled)
 }
 
 func (s *RemoteSuite) TestFetchWithAllTags(c *C) {
@@ -486,7 +486,7 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 	err = r.PushContext(ctx, &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
-	c.Assert(err, NotNil)
+	c.Assert(err, Equals, context.Canceled)
 
 	// let the goroutine from pushHashes finish and check that the number of
 	// goroutines is the same as before
