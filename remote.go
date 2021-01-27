@@ -102,7 +102,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
 
-	s, err := newSendPackSession(r.c.URLs[0], o.Auth)
+	s, err := newSendPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return err
 	}
@@ -309,7 +309,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RefSpecs = r.c.Fetch
 	}
 
-	s, err := newUploadPackSession(r.c.URLs[0], o.Auth)
+	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
 	}
@@ -369,8 +369,8 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	return remoteRefs, nil
 }
 
-func newUploadPackSession(url string, auth transport.AuthMethod) (transport.UploadPackSession, error) {
-	c, ep, err := newClient(url)
+func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.UploadPackSession, error) {
+	c, ep, err := newClient(url, auth, insecure, cabundle)
 	if err != nil {
 		return nil, err
 	}
@@ -378,8 +378,8 @@ func newUploadPackSession(url string, auth transport.AuthMethod) (transport.Uplo
 	return c.NewUploadPackSession(ep, auth)
 }
 
-func newSendPackSession(url string, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
-	c, ep, err := newClient(url)
+func newSendPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.ReceivePackSession, error) {
+	c, ep, err := newClient(url, auth, insecure, cabundle)
 	if err != nil {
 		return nil, err
 	}
@@ -387,11 +387,13 @@ func newSendPackSession(url string, auth transport.AuthMethod) (transport.Receiv
 	return c.NewReceivePackSession(ep, auth)
 }
 
-func newClient(url string) (transport.Transport, *transport.Endpoint, error) {
+func newClient(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.Transport, *transport.Endpoint, error) {
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
 		return nil, nil, err
 	}
+	ep.InsecureSkipTLS = insecure
+	ep.CaBundle = cabundle
 
 	c, err := client.NewClient(ep)
 	if err != nil {
@@ -1025,7 +1027,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 
 // List the references on the remote repository.
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
-	s, err := newUploadPackSession(r.c.URLs[0], o.Auth)
+	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
 	}
