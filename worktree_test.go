@@ -1826,7 +1826,39 @@ func (s *WorktreeSuite) TestClean(c *C) {
 	// An empty dir should be deleted, as well.
 	_, err = fs.Lstat("pkgA")
 	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
+}
 
+func (s *WorktreeSuite) TestCleanBare(c *C) {
+	storer := memory.NewStorage()
+
+	r, err := Init(storer, nil)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	wtfs := memfs.New()
+
+	err = wtfs.MkdirAll("worktree", os.ModePerm)
+	c.Assert(err, IsNil)
+
+	wtfs, err = wtfs.Chroot("worktree")
+	c.Assert(err, IsNil)
+
+	r, err = Open(storer, wtfs)
+	c.Assert(err, IsNil)
+
+	wt, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	_, err = wt.Filesystem.Lstat(".")
+	c.Assert(err, IsNil)
+
+	// Clean with Dir: true.
+	err = wt.Clean(&CleanOptions{Dir: true})
+	c.Assert(err, IsNil)
+
+	// Root worktree directory must remain after cleaning
+	_, err = wt.Filesystem.Lstat(".")
+	c.Assert(err, IsNil)
 }
 
 func (s *WorktreeSuite) TestAlternatesRepo(c *C) {
