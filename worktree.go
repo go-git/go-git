@@ -72,11 +72,13 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	}
 
 	fetchHead, err := remote.fetch(ctx, &FetchOptions{
-		RemoteName: o.RemoteName,
-		Depth:      o.Depth,
-		Auth:       o.Auth,
-		Progress:   o.Progress,
-		Force:      o.Force,
+		RemoteName:      o.RemoteName,
+		Depth:           o.Depth,
+		Auth:            o.Auth,
+		Progress:        o.Progress,
+		Force:           o.Force,
+		InsecureSkipTLS: o.InsecureSkipTLS,
+		CABundle:        o.CABundle,
 	})
 
 	updated := true
@@ -769,7 +771,7 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files 
 		}
 	}
 
-	if opts.Dir {
+	if opts.Dir && dir != "" {
 		return doCleanDirectories(w.Filesystem, dir)
 	}
 	return nil
