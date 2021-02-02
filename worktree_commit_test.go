@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -251,6 +252,64 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	err = cmd.Run()
 
 	c.Assert(err, IsNil, Commentf("%s", buf.Bytes()))
+}
+
+// https://github.com/go-git/go-git/pull/224
+func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
+	dir, err := ioutil.TempDir("", "TestJustStoreObjectsNotAlreadyStored")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir) // clean up
+
+	fs := osfs.New(dir)
+	fsDotgit := osfs.New(filepath.Join(dir, ".git")) // real fs to get modified timestamps
+	storage := filesystem.NewStorage(fsDotgit, cache.NewObjectLRUDefault())
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	// Step 1: Write LICENSE
+	util.WriteFile(fs, "LICENSE", []byte("license"), 0644)
+	hLicense, err := w.Add("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(hLicense, Equals, plumbing.NewHash("0484eba0d41636ba71fa612c78559cd6c3006cde"))
+
+	hash, err := w.Commit("commit 1\n", &CommitOptions{
+		All:    true,
+		Author: defaultSignature(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(hash, Equals, plumbing.NewHash("7a7faee4630d2664a6869677cc8ab614f3fd4a18"))
+
+	infoLicense, err := fsDotgit.Stat(filepath.Join("objects", "04", "84eba0d41636ba71fa612c78559cd6c3006cde"))
+	c.Assert(err, IsNil) // checking objects file exists
+
+	// Step 2: Write foo.
+	time.Sleep(1 * time.Millisecond) // uncool, but we need to get different timestamps...
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	hFoo, err := w.Add("foo")
+	c.Assert(err, IsNil)
+	c.Assert(hFoo, Equals, plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"))
+
+	hash, err = w.Commit("commit 2\n", &CommitOptions{
+		All:    true,
+		Author: defaultSignature(),
+	})
+	c.Assert(hash, Equals, plumbing.NewHash("97c0c5177e6ac57d10e8ea0017f2d39b91e2b364"))
+
+	// Step 3: Check
+	// There is no need to overwrite the object of LICENSE, because its content
+	// was not changed. Just a write on the object of foo is required. This behaviour
+	// is fixed by #224 and tested by comparing the timestamps of the stored objects.
+	infoFoo, err := fsDotgit.Stat(filepath.Join("objects", "19", "102815663d23f8b75a47e7a01965dcdc96468c"))
+	c.Assert(err, IsNil)                                                    // checking objects file exists
+	c.Assert(infoLicense.ModTime().Before(infoFoo.ModTime()), Equals, true) // object of foo has another/greaterThan timestamp than LICENSE
+
+	infoLicenseSecond, err := fsDotgit.Stat(filepath.Join("objects", "04", "84eba0d41636ba71fa612c78559cd6c3006cde"))
+	c.Assert(err, IsNil)
+	c.Assert(infoLicenseSecond.ModTime(), Equals, infoLicense.ModTime()) // object of LICENSE should have the same timestamp because no additional write operation was performed
 }
 
 func assertStorageStatus(
