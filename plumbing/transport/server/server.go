@@ -90,7 +90,7 @@ func (s *session) Close() error {
 }
 
 func (s *session) SetAuth(transport.AuthMethod) error {
-	//TODO: deprecate
+	// TODO: deprecate
 	return nil
 }
 
@@ -217,6 +217,10 @@ func (*upSession) setSupportedCapabilities(c *capability.List) error {
 		return err
 	}
 
+	if err := c.Set(capability.Shallow); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -269,7 +273,7 @@ func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateR
 
 	s.caps = req.Capabilities
 
-	//TODO: Implement 'atomic' update of references.
+	// TODO: Implement 'atomic' update of references.
 
 	if req.Packfile != nil {
 		r := ioutil.NewContextReadCloser(ctx, req.Packfile)
@@ -426,7 +430,7 @@ func setHEAD(s storer.Storer, ar *packp.AdvRefs) error {
 }
 
 func setReferences(s storer.Storer, ar *packp.AdvRefs) error {
-	//TODO: add peeled references.
+	// TODO: add peeled references.
 	iter, err := s.IterReferences()
 	if err != nil {
 		return err
