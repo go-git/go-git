@@ -971,3 +971,56 @@ func (s *RemoteSuite) TestUseRefDeltas(c *C) {
 	ar.Capabilities.Delete(capability.OFSDelta)
 	c.Assert(r.useRefDeltas(ar), Equals, true)
 }
+
+func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
+	f := fixtures.Basic().One()
+	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+
+	dstFs := f.DotGit()
+	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
+
+	url := dstFs.Root()
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(oldRef, NotNil)
+
+	otherRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/master"))
+	c.Assert(err, IsNil)
+	c.Assert(otherRef, NotNil)
+
+	err = r.Push(&PushOptions{
+		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RequireRemoteRefs: []config.RefSpec{config.RefSpec(otherRef.Hash().String() + ":refs/heads/branch")},
+	})
+	c.Assert(err, ErrorMatches, "remote ref refs/heads/branch required to be .* but is .*")
+
+	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef, DeepEquals, oldRef)
+
+	err = r.Push(&PushOptions{
+		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RequireRemoteRefs: []config.RefSpec{config.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
+	})
+	c.Assert(err, ErrorMatches, "non-fast-forward update: .*")
+
+	newRef, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef, DeepEquals, oldRef)
+
+	err = r.Push(&PushOptions{
+		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RequireRemoteRefs: []config.RefSpec{config.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
+		Force:             true,
+	})
+	c.Assert(err, IsNil)
+
+	newRef, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	c.Assert(err, IsNil)
+	c.Assert(newRef, Not(DeepEquals), oldRef)
+}

@@ -119,6 +119,10 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
+	if err := r.checkRequireRemoteRefs(o.RequireRemoteRefs, remoteRefs); err != nil {
+		return err
+	}
+
 	isDelete := false
 	allDelete := true
 	for _, rs := range o.RefSpecs {
@@ -1165,4 +1169,34 @@ outer:
 	}
 
 	return r.s.SetShallow(shallows)
+}
+
+func (r *Remote) checkRequireRemoteRefs(requires []config.RefSpec, remoteRefs storer.ReferenceStorer) error {
+	for _, require := range requires {
+		if require.IsWildcard() {
+			return fmt.Errorf("wildcards not supported in RequireRemoteRefs, got %s", require.String())
+		}
+
+		name := require.Dst("")
+		remote, err := remoteRefs.Reference(name)
+		if err != nil {
+			return fmt.Errorf("remote ref %s required to be %s but is absent", name.String(), require.Src())
+		}
+
+		var requireHash string
+		if require.IsExactSHA1() {
+			requireHash = require.Src()
+		} else {
+			target, err := storer.ResolveReference(remoteRefs, plumbing.ReferenceName(require.Src()))
+			if err != nil {
+				return fmt.Errorf("could not resolve ref %s in RequireRemoteRefs", require.Src())
+			}
+			requireHash = target.Hash().String()
+		}
+
+		if remote.Hash().String() != requireHash {
+			return fmt.Errorf("remote ref %s required to be %s but is %s", name.String(), requireHash, remote.Hash().String())
+		}
+	}
+	return nil
 }
