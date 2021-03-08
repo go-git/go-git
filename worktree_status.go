@@ -316,8 +316,7 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		var foundMatch bool
 		for _, file := range files {
 			if file.IsDir() {
-				foundMatch = true
-				break
+				continue
 			}
 
 			if e.Name == path.Join(directory, file.Name()) {
