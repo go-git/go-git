@@ -52,6 +52,34 @@ Binary files a/binary and b/binary differ
 `)
 }
 
+func (s *UnifiedEncoderTestSuite) TestCustomSrcDstPrefix(c *C) {
+	buffer := bytes.NewBuffer(nil)
+	e := NewUnifiedEncoder(buffer, 1).SetSrcPrefix("source/prefix/").SetDstPrefix("dest/prefix/")
+	p := testPatch{
+		message: "",
+		filePatches: []testFilePatch{{
+			from: &testFile{
+				mode: filemode.Regular,
+				path: "binary",
+				seed: "something",
+			},
+			to: &testFile{
+				mode: filemode.Regular,
+				path: "binary",
+				seed: "otherthing",
+			},
+		}},
+	}
+
+	err := e.Encode(p)
+	c.Assert(err, IsNil)
+
+	c.Assert(buffer.String(), Equals, `diff --git source/prefix/binary dest/prefix/binary
+index a459bc245bdbc45e1bca99e7fe61731da5c48da4..6879395eacf3cc7e5634064ccb617ac7aa62be7d 100644
+Binary files source/prefix/binary and dest/prefix/binary differ
+`)
+}
+
 func (s *UnifiedEncoderTestSuite) TestEncode(c *C) {
 	for _, f := range fixtures {
 		c.Log("executing: ", f.desc)
