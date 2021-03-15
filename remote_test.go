@@ -155,6 +155,22 @@ func (s *RemoteSuite) TestFetchContext(c *C) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := r.FetchContext(ctx, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+	})
+	c.Assert(err, IsNil)
+}
+
+func (s *RemoteSuite) TestFetchContextCanceled(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err := r.FetchContext(ctx, &FetchOptions{
@@ -466,6 +482,35 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 }
 
 func (s *RemoteSuite) TestPushContext(c *C) {
+	url := c.MkDir()
+	_, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	numGoroutines := runtime.NumGoroutine()
+
+	err = r.PushContext(ctx, &PushOptions{
+		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
+	})
+	c.Assert(err, IsNil)
+
+	// let the goroutine from pushHashes finish and check that the number of
+	// goroutines is the same as before
+	time.Sleep(100 * time.Millisecond)
+	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+}
+
+func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 	url := c.MkDir()
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
