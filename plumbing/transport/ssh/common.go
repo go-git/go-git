@@ -3,7 +3,9 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 
@@ -90,8 +92,13 @@ func (c *command) Close() error {
 	//XXX: If did read the full packfile, then the session might be already
 	//     closed.
 	_ = c.Session.Close()
+	err := c.client.Close()
 
-	return c.client.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+
+	return err
 }
 
 // connect connects to the SSH server, unless a AuthMethod was set with
