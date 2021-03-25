@@ -210,6 +210,9 @@ type PushOptions struct {
 	InsecureSkipTLS bool
 	// CABundle specify additional ca bundle with system cert pool
 	CABundle []byte
+	// RequireRemoteRefs only allows a remote ref to be updated if its current
+	// value is the one specified here.
+	RequireRemoteRefs []config.RefSpec
 }
 
 // Validate validates the fields and sets the default values.
