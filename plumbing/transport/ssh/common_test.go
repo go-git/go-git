@@ -7,6 +7,7 @@ import (
 
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
+	stdssh "golang.org/x/crypto/ssh"
 	. "gopkg.in/check.v1"
 )
 
@@ -91,6 +92,26 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard(c *C) {
 
 	cmd := &command{endpoint: ep}
 	c.Assert(cmd.getHostWithPort(), Equals, "github.com:22")
+}
+
+func (s *SuiteCommon) TestIssue70(c *C) {
+	uploadPack := &UploadPackSuite{}
+	uploadPack.SetUpSuite(c)
+
+	config := &ssh.ClientConfig{
+		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+	}
+	r := &runner{
+		config: config,
+	}
+
+	cmd, err := r.Command("command", uploadPack.newEndpoint(c, "endpoint"), uploadPack.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	c.Assert(cmd.(*command).client.Close(), IsNil)
+
+	err = cmd.Close()
+	c.Assert(err, IsNil)
 }
 
 type mockSSHConfig struct {
