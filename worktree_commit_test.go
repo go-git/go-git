@@ -289,7 +289,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
 	c.Assert(err, IsNil) // checking objects file exists
 
 	// Step 2: Write foo.
-	time.Sleep(1 * time.Millisecond) // uncool, but we need to get different timestamps...
+	time.Sleep(5 * time.Millisecond) // uncool, but we need to get different timestamps...
 	util.WriteFile(fs, "foo", []byte("foo"), 0644)
 	hFoo, err := w.Add("foo")
 	c.Assert(err, IsNil)
