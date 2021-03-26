@@ -109,7 +109,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 
 	defer ioutil.CheckClose(s, &err)
 
-	ar, err := s.AdvertisedReferences()
+	ar, err := s.AdvertisedReferencesContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -320,7 +320,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	defer ioutil.CheckClose(s, &err)
 
-	ar, err := s.AdvertisedReferences()
+	ar, err := s.AdvertisedReferencesContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1038,7 +1038,7 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 
 	defer ioutil.CheckClose(s, &err)
 
-	ar, err := s.AdvertisedReferences()
+	ar, err := s.AdvertisedReferencesContext(context.TODO())
 	if err != nil {
 		return nil, err
 	}

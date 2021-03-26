@@ -187,7 +187,7 @@ func (s *RepositorySuite) TestCloneContext(c *C) {
 	})
 
 	c.Assert(r, NotNil)
-	c.Assert(err, ErrorMatches, ".* context canceled")
+	c.Assert(err, Equals, context.Canceled)
 }
 
 func (s *RepositorySuite) TestCloneWithTags(c *C) {
@@ -655,12 +655,12 @@ func (s *RepositorySuite) TestPlainCloneContextCancel(c *C) {
 	})
 
 	c.Assert(r, NotNil)
-	c.Assert(err, ErrorMatches, ".* context canceled")
+	c.Assert(err, Equals, context.Canceled)
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 
 	tmpDir := c.MkDir()
 	repoDir := tmpDir
@@ -681,7 +681,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 
 	tmpDir := c.MkDir()
 	repoDir := filepath.Join(tmpDir, "repoDir")
@@ -719,7 +719,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 
 	tmpDir := c.MkDir()
 	repoDirPath := filepath.Join(tmpDir, "repoDir")
@@ -743,7 +743,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirectory(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 
 	tmpDir := c.MkDir()
 	r, err := PlainInit(tmpDir, false)
