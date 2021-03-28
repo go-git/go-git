@@ -57,6 +57,7 @@ func (s *SectionSuite) TestSection_IsName(c *C) {
 
 	c.Assert(sect.IsName("name1"), Equals, true)
 	c.Assert(sect.IsName("Name1"), Equals, true)
+	c.Assert(sect.IsName("otherkey"), Equals, false)
 }
 
 func (s *SectionSuite) TestSection_Subsection(c *C) {
@@ -221,7 +222,8 @@ func (s *SectionSuite) TestSubsection_IsName(c *C) {
 	}
 
 	c.Assert(sect.IsName("name1"), Equals, true)
-	c.Assert(sect.IsName("Name1"), Equals, false)
+	c.Assert(sect.IsName("Name1"), Equals, true)
+	c.Assert(sect.IsName("otherkey"), Equals, false)
 }
 
 func (s *SectionSuite) TestSubsection_Option(c *C) {

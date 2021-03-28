@@ -139,9 +139,9 @@ func (s *Section) RemoveOption(key string) *Section {
 	return s
 }
 
-// IsName checks if the name of the subsection is exactly the specified name.
+// IsName checks if the name provided is equals to the Subsection name, case insensitive.
 func (s *Subsection) IsName(name string) bool {
-	return s.Name == name
+	return strings.EqualFold(s.Name, name)
 }
 
 // Option returns an option with the specified key. If the option does not exists,
