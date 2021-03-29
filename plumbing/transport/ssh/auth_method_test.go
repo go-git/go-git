@@ -129,7 +129,7 @@ func (s *SuiteCommon) TestNewSSHAgentAuthNoAgent(c *C) {
 
 	k, err := NewSSHAgentAuth("foo")
 	c.Assert(k, IsNil)
-	c.Assert(err, ErrorMatches, ".*SSH_AUTH_SOCK.*|.*SSH agent .* not running.*")
+	c.Assert(err, ErrorMatches, ".*SSH_AUTH_SOCK.*|.*SSH agent .* not detect.*")
 }
 
 func (*SuiteCommon) TestNewPublicKeys(c *C) {
