@@ -3,6 +3,7 @@ package plumbing
 import (
 	"bytes"
 	"io"
+	"sync"
 )
 
 // MemoryObject on memory Object implementation
@@ -11,6 +12,11 @@ type MemoryObject struct {
 	h    Hash
 	cont []byte
 	sz   int64
+
+	// We like to hit sem acquire, it's what we do here.
+	// Okay but forreal, this allows for thread safe patch generation and commit parent reads.
+	// See https://github.com/zricethezav/gitleaks/issues/476 for some context
+	mut  sync.RWMutex
 }
 
 // Hash returns the object Hash, the hash is calculated on-the-fly the first
@@ -32,7 +38,11 @@ func (o *MemoryObject) Type() ObjectType { return o.t }
 func (o *MemoryObject) SetType(t ObjectType) { o.t = t }
 
 // Size return the size of the object
-func (o *MemoryObject) Size() int64 { return o.sz }
+func (o *MemoryObject) Size() int64 {
+	o.mut.RLock()
+	defer o.mut.RUnlock()
+	return o.sz
+}
 
 // SetSize set the object size, a content of the given size should be written
 // afterwards
@@ -51,6 +61,9 @@ func (o *MemoryObject) Writer() (io.WriteCloser, error) {
 }
 
 func (o *MemoryObject) Write(p []byte) (n int, err error) {
+	o.mut.Lock()
+	defer o.mut.Unlock()
+
 	o.cont = append(o.cont, p...)
 	o.sz = int64(len(o.cont))
 
