@@ -2,6 +2,7 @@ module github.com/go-git/go-git/v5
 
 require (
 	github.com/Microsoft/go-winio v0.4.16 // indirect
+	github.com/ProtonMail/go-crypto v0.0.0-20210329181949-3900d675f39b
 	github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239 // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/emirpasic/gods v1.12.0

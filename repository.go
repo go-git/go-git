@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/internal/revision"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -27,7 +28,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/imdario/mergo"
-	"golang.org/x/crypto/openpgp"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
