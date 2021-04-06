@@ -254,6 +254,24 @@ func (s *Submodule) fetchAndCheckout(
 		return err
 	}
 
+	// Handle a case when submodule refers to an orphaned commit that's still reachable
+	// through Git server using a special protocol capability[1].
+	//
+	// [1]: https://git-scm.com/docs/protocol-capabilities#_allow_reachable_sha1_in_want
+	if !o.NoFetch {
+		if _, err := w.r.Object(plumbing.AnyObject, hash); err != nil {
+			refSpec := config.RefSpec("+" + hash.String() + ":" + hash.String())
+
+			err := r.FetchContext(ctx, &FetchOptions{
+				Auth:     o.Auth,
+				RefSpecs: []config.RefSpec{refSpec},
+			})
+			if err != nil && err != NoErrAlreadyUpToDate && err != ErrExactSHA1NotSupported {
+				return err
+			}
+		}
+	}
+
 	if err := w.Checkout(&CheckoutOptions{Hash: hash}); err != nil {
 		return err
 	}
