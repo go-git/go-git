@@ -91,7 +91,7 @@ func (r *Remote) Push(o *PushOptions) error {
 // the remote was already up-to-date.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	if err := o.Validate(); err != nil {
@@ -284,7 +284,7 @@ func (r *Remote) updateRemoteReferenceStorage(
 // no changes to be fetched, or an error.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) FetchContext(ctx context.Context, o *FetchOptions) error {
 	_, err := r.fetch(ctx, o)
