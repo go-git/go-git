@@ -61,6 +61,20 @@ func DecodeTree(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Tree, 
 	return t, nil
 }
 
+// GetEmptyTree creates the empty tree
+func GetEmptyTree(s storer.EncodedObjectStorer) *Tree {
+	emptyTreeHash := plumbing.NewHash("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+
+	return &Tree{
+		Entries: make([]TreeEntry, 0),
+		Hash:    emptyTreeHash,
+
+		s: s,
+		m: make(map[string]*TreeEntry),
+		t: make(map[string]*Tree),
+	}
+}
+
 // TreeEntry represents a file
 type TreeEntry struct {
 	Name string

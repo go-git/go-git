@@ -1330,6 +1330,11 @@ func (r *Repository) TreeObjects() (*object.TreeIter, error) {
 	return object.NewTreeIter(r.Storer, iter), nil
 }
 
+// EmptyTreeObject returns empty tree object
+func (r *Repository) EmptyTreeObject() *object.Tree {
+	return object.GetEmptyTree(r.Storer)
+}
+
 // CommitObject return a Commit with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned.
 func (r *Repository) CommitObject(h plumbing.Hash) (*object.Commit, error) {
