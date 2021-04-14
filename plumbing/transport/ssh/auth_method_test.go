@@ -145,6 +145,13 @@ func (*SuiteCommon) TestNewPublicKeysWithEncryptedPEM(c *C) {
 	c.Assert(auth, NotNil)
 }
 
+func (*SuiteCommon) TestNewPublicKeysWithEncryptedEd25519PEM(c *C) {
+	f := testdata.PEMEncryptedKeys[2]
+	auth, err := NewPublicKeys("foo", f.PEMBytes, f.EncryptionKey)
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+}
+
 func (*SuiteCommon) TestNewPublicKeysFromFile(c *C) {
 	f, err := ioutil.TempFile("", "ssh-test")
 	c.Assert(err, IsNil)
