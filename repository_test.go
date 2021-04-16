@@ -1720,7 +1720,7 @@ func (s *RepositorySuite) TestLogPathRegexpWithError(c *C) {
 }
 
 func (s *RepositorySuite) TestLogPathFilterRegexp(c *C) {
-	pathRE := regexp.MustCompile(".*\\.go")
+	pathRE := regexp.MustCompile(`.*\.go`)
 	pathIter := func(path string) bool {
 		return pathRE.MatchString(path)
 	}
