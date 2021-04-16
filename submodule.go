@@ -173,7 +173,7 @@ func (s *Submodule) Update(o *SubmoduleUpdateOptions) error {
 // setting in the options SubmoduleUpdateOptions.Init equals true.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (s *Submodule) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	return s.update(ctx, o, plumbing.ZeroHash)
@@ -302,7 +302,7 @@ func (s Submodules) Update(o *SubmoduleUpdateOptions) error {
 // UpdateContext updates all the submodules in this list.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (s Submodules) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	for _, sub := range s {

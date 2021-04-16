@@ -23,7 +23,7 @@ func ExampleClone() {
 	// Git objects storer based on memory
 	storer := memory.NewStorage()
 
-	// Clones the repository into the worktree (fs) and storer all the .git
+	// Clones the repository into the worktree (fs) and stores all the .git
 	// content into the storer
 	_, err := git.Clone(storer, fs, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",

@@ -190,10 +190,6 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 // Clone a repository into the given Storer and worktree Filesystem with the
 // given options, if worktree is nil a bare repository is created. If the given
 // storer is not empty ErrRepositoryAlreadyExists is returned.
-//
-// The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
-// transport operations.
 func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
 	return CloneContext(context.Background(), s, worktree, o)
 }
@@ -203,7 +199,7 @@ func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repos
 // given storer is not empty ErrRepositoryAlreadyExists is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func CloneContext(
 	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
@@ -398,7 +394,7 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 // ErrRepositoryAlreadyExists is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 //
 // TODO(mcuadros): move isBare to CloneOptions in v5
@@ -1101,7 +1097,7 @@ func (r *Repository) Fetch(o *FetchOptions) error {
 // no changes to be fetched, or an error.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Repository) FetchContext(ctx context.Context, o *FetchOptions) error {
 	if err := o.Validate(); err != nil {
@@ -1128,7 +1124,7 @@ func (r *Repository) Push(o *PushOptions) error {
 // FetchOptions.RemoteName.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 	if err := o.Validate(); err != nil {
