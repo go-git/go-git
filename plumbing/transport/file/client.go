@@ -6,12 +6,12 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
+	"golang.org/x/sys/execabs"
 )
 
 // DefaultClient is the default local client.
@@ -36,7 +36,7 @@ func NewClient(uploadPackBin, receivePackBin string) transport.Transport {
 
 func prefixExecPath(cmd string) (string, error) {
 	// Use `git --exec-path` to find the exec path.
-	execCmd := exec.Command("git", "--exec-path")
+	execCmd := execabs.Command("git", "--exec-path")
 
 	stdout, err := execCmd.StdoutPipe()
 	if err != nil {
@@ -54,7 +54,7 @@ func prefixExecPath(cmd string) (string, error) {
 		return "", err
 	}
 	if isPrefix {
-		return "", errors.New("Couldn't read exec-path line all at once")
+		return "", errors.New("couldn't read exec-path line all at once")
 	}
 
 	err = execCmd.Wait()
@@ -66,7 +66,7 @@ func prefixExecPath(cmd string) (string, error) {
 	cmd = filepath.Join(execPath, cmd)
 
 	// Make sure it actually exists.
-	_, err = exec.LookPath(cmd)
+	_, err = execabs.LookPath(cmd)
 	if err != nil {
 		return "", err
 	}
@@ -83,9 +83,9 @@ func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.Auth
 		cmd = r.ReceivePackBin
 	}
 
-	_, err := exec.LookPath(cmd)
+	_, err := execabs.LookPath(cmd)
 	if err != nil {
-		if e, ok := err.(*exec.Error); ok && e.Err == exec.ErrNotFound {
+		if e, ok := err.(*execabs.Error); ok && e.Err == execabs.ErrNotFound {
 			cmd, err = prefixExecPath(cmd)
 			if err != nil {
 				return nil, err
@@ -95,11 +95,11 @@ func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.Auth
 		}
 	}
 
-	return &command{cmd: exec.Command(cmd, ep.Path)}, nil
+	return &command{cmd: execabs.Command(cmd, ep.Path)}, nil
 }
 
 type command struct {
-	cmd          *exec.Cmd
+	cmd          *execabs.Cmd
 	stderrCloser io.Closer
 	closed       bool
 }
@@ -148,7 +148,7 @@ func (c *command) Close() error {
 	}
 
 	// When a repository does not exist, the command exits with code 128.
-	if _, ok := err.(*exec.ExitError); ok {
+	if _, ok := err.(*execabs.ExitError); ok {
 		return nil
 	}
 
