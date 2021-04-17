@@ -235,7 +235,44 @@ func (fs FileStat) String() string {
 type FileStats []FileStat
 
 func (fileStats FileStats) String() string {
-	return printStat(fileStats)
+	finalOutput := printStat(fileStats)
+
+	additions := 0
+	deletions := 0
+	for _, fs := range fileStats {
+		additions += fs.Addition
+		deletions += fs.Deletion
+	}
+
+	fileSummaryCount := "file"
+	additionsSummary := "insertion"
+	deletionsSummary := "deletion"
+
+	if len(fileStats) > 1 {
+		fileSummaryCount = "files"
+	}
+
+	if additions > 1 {
+		additionsSummary = "insertions"
+	}
+
+	if deletions > 1 {
+		deletionsSummary = "deletions"
+	}
+
+	summary := fmt.Sprintf("%d %s changed", len(fileStats), fileSummaryCount)
+
+	if additions != 0 {
+		summary += fmt.Sprintf(", %d %s(+)", additions, additionsSummary)
+	}
+
+	if deletions != 0 {
+		summary += fmt.Sprintf(", %d %s(-)", deletions, deletionsSummary)
+	}
+
+	finalOutput += fmt.Sprintf(" %s", summary)
+
+	return finalOutput
 }
 
 func printStat(fileStats []FileStat) string {
@@ -291,6 +328,7 @@ func printStat(fileStats []FileStat) string {
 		dels := strings.Repeat("-", int(math.Floor(deln/scaleFactor)))
 		finalOutput += fmt.Sprintf(" %s | %d %s%s\n", fs.Name, (fs.Addition + fs.Deletion), adds, dels)
 	}
+
 
 	return finalOutput
 }
