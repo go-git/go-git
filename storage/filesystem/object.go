@@ -389,7 +389,6 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 		return cacheObj, nil
 	}
 
-	obj = s.NewEncodedObject()
 	r, err := objfile.NewReader(f)
 	if err != nil {
 		return nil, err
@@ -401,6 +400,14 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 	if err != nil {
 		return nil, err
 	}
+
+	if size > packfile.LargeObjectThreshold {
+		obj = dotgit.NewEncodedObject(s.dir, h, t, size)
+		s.objectCache.Put(obj)
+		return obj, nil
+	}
+
+	obj = s.NewEncodedObject()
 
 	obj.SetType(t)
 	obj.SetSize(size)
