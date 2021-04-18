@@ -32,6 +32,12 @@ var (
 // wrapped in FSObject.
 const smallObjectThreshold = 16 * 1024
 
+// Conversely there are large objects that should not be cached and kept
+// in memory as they're too large to be reasonably cached. Objects larger
+// than this threshold are now always never read into memory to be stored
+// in the cache
+const LargeObjectThreshold = 1024 * 1024
+
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
@@ -282,6 +288,37 @@ func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
 	return obj.Reader()
 }
 
+func (p *Packfile) getReaderDirect(h *ObjectHeader) (io.ReadCloser, error) {
+	switch h.Type {
+	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
+		return p.s.ReadObject()
+	case plumbing.REFDeltaObject:
+		deltaRC, err := p.s.ReadObject()
+		if err != nil {
+			return nil, err
+		}
+		r, err := p.readREFDeltaObjectContent(h, deltaRC)
+		if err != nil {
+			_ = deltaRC.Close()
+			return nil, err
+		}
+		return r, nil
+	case plumbing.OFSDeltaObject:
+		deltaRC, err := p.s.ReadObject()
+		if err != nil {
+			return nil, err
+		}
+		r, err := p.readOFSDeltaObjectContent(h, deltaRC)
+		if err != nil {
+			_ = deltaRC.Close()
+			return nil, err
+		}
+		return r, nil
+	default:
+		return nil, ErrInvalidObject.AddDetails("type %q", h.Type)
+	}
+}
+
 func (p *Packfile) getNextMemoryObject(h *ObjectHeader) (plumbing.EncodedObject, error) {
 	var obj = new(plumbing.MemoryObject)
 	obj.SetSize(h.Length)
@@ -334,6 +371,20 @@ func (p *Packfile) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plu
 	return p.fillREFDeltaObjectContentWithBuffer(obj, ref, buf)
 }
 
+func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+	var err error
+
+	base, ok := p.cacheGet(h.Reference)
+	if !ok {
+		base, err = p.Get(h.Reference)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return ReaderFromDelta(h, base, deltaRC)
+}
+
 func (p *Packfile) fillREFDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, ref plumbing.Hash, buf *bytes.Buffer) error {
 	var err error
 
@@ -362,6 +413,28 @@ func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset 
 	}
 
 	return p.fillOFSDeltaObjectContentWithBuffer(obj, offset, buf)
+}
+
+func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+	hash, err := p.FindHash(h.OffsetReference)
+	if err != nil {
+		return nil, err
+	}
+
+	base, err := p.objectAtOffset(h.OffsetReference, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	base, ok := p.cacheGet(h.Reference)
+	if !ok {
+		base, err = p.Get(h.Reference)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return ReaderFromDelta(h, base, deltaRC)
 }
 
 func (p *Packfile) fillOFSDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, offset int64, buf *bytes.Buffer) error {

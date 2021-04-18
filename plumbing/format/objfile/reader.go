@@ -3,11 +3,16 @@ package objfile
 import (
 	"compress/zlib"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"strconv"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/utils/ioutil"
+
+	"github.com/go-git/go-billy/v5"
 )
 
 var (
@@ -111,4 +116,76 @@ func (r *Reader) Hash() plumbing.Hash {
 // close the wrapped io.Reader originally passed to NewReader.
 func (r *Reader) Close() error {
 	return r.zlib.Close()
+}
+
+var _ (plumbing.EncodedObject) = &EncodedObject{}
+
+type BillyFileObjectGetter interface {
+	Object(plumbing.Hash) (billy.File, error)
+}
+
+type EncodedObject struct {
+	dir BillyFileObjectGetter
+	h   plumbing.Hash
+	t   plumbing.ObjectType
+	sz  int64
+}
+
+func (e *EncodedObject) Hash() plumbing.Hash {
+	return e.h
+}
+
+func (e *EncodedObject) Reader() (io.ReadCloser, error) {
+	f, err := e.dir.Object(e.h)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, plumbing.ErrObjectNotFound
+		}
+
+		return nil, err
+	}
+	r, err := NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+
+	t, size, err := r.Header()
+	if err != nil {
+		_ = r.Close()
+		return nil, err
+	}
+	if t != e.t {
+		_ = r.Close()
+		return nil, ErrHeader
+	}
+	if size != e.sz {
+		_ = r.Close()
+		return nil, ErrHeader
+	}
+	return ioutil.NewReadCloserWithCloser(r, f.Close), nil
+}
+
+func (e *EncodedObject) SetType(plumbing.ObjectType) {}
+
+func (e *EncodedObject) Type() plumbing.ObjectType {
+	return e.t
+}
+
+func (e *EncodedObject) Size() int64 {
+	return e.sz
+}
+
+func (e *EncodedObject) SetSize(int64) {}
+
+func (e *EncodedObject) Writer() (io.WriteCloser, error) {
+	return nil, fmt.Errorf("Not supported")
+}
+
+func NewEncodedObject(dir BillyFileObjectGetter, h plumbing.Hash, t plumbing.ObjectType, size int64) *EncodedObject {
+	return &EncodedObject{
+		dir: dir,
+		h:   h,
+		t:   t,
+		sz:  size,
+	}
 }
