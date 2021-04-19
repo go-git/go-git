@@ -1,5 +1,7 @@
 module github.com/go-git/go-git/v5
 
+replace github.com/go-git/go-billy/v5 => github.com/paralin/go-billy/v5 v5.1.1-0.20210419034928-36058ceb30d2 // gopherjs-compat
+
 require (
 	github.com/Microsoft/go-winio v0.4.16 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20210329181949-3900d675f39b
@@ -21,7 +23,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.0
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/net v0.0.0-20210326060303-6b1517762897
-	golang.org/x/sys v0.0.0-20210415045647-66c3f260301c // indirect
+	golang.org/x/sys v0.0.0-20210415045647-66c3f260301c
 	golang.org/x/text v0.3.3
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/warnings.v0 v0.1.2 // indirect
