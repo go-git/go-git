@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
@@ -1030,7 +1031,24 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 }
 
 // List the references on the remote repository.
+// The provided Context must be non-nil. If the context expires before the
+// operation is complete, an error is returned. The context only affects to the
+// transport operations.
+func (r *Remote) ListContext(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
+	refs, err := r.list(ctx, o)
+	if err != nil {
+		return refs, err
+	}
+	return refs, nil
+}
+
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	return r.ListContext(ctx, o)
+}
+
+func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
 	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
@@ -1038,7 +1056,7 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 
 	defer ioutil.CheckClose(s, &err)
 
-	ar, err := s.AdvertisedReferencesContext(context.TODO())
+	ar, err := s.AdvertisedReferencesContext(ctx)
 	if err != nil {
 		return nil, err
 	}

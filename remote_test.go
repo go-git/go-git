@@ -944,6 +944,17 @@ func (s *RemoteSuite) TestList(c *C) {
 	}
 }
 
+func (s *RemoteSuite) TestListTimeout(c *C) {
+	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{"https://deelay.me/60000/https://httpstat.us/503"},
+	})
+
+	_, err := remote.List(&ListOptions{})
+
+	c.Assert(err, NotNil)
+}
+
 func (s *RemoteSuite) TestUpdateShallows(c *C) {
 	hashes := []plumbing.Hash{
 		plumbing.NewHash("0000000000000000000000000000000000000001"),
