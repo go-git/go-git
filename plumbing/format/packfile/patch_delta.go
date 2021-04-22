@@ -168,7 +168,10 @@ func ReaderFromDelta(h *ObjectHeader, base plumbing.EncodedObject, deltaRC io.Re
 					basePos += uint(n)
 					discard -= uint(n)
 				}
-				io.Copy(dstWr, io.LimitReader(baseBuf, int64(sz)))
+				if _, err := io.Copy(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+					_ = dstWr.CloseWithError(err)
+					return
+				}
 				remainingTargetSz -= sz
 				basePos += sz
 			} else if isCopyFromDelta(cmd) {
@@ -177,7 +180,10 @@ func ReaderFromDelta(h *ObjectHeader, base plumbing.EncodedObject, deltaRC io.Re
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				io.Copy(dstWr, io.LimitReader(deltaBuf, int64(sz)))
+				if _, err := io.Copy(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+					_ = dstWr.CloseWithError(err)
+					return
+				}
 
 				remainingTargetSz -= sz
 			} else {
