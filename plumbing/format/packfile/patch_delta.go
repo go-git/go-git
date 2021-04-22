@@ -154,6 +154,7 @@ func ReaderFromDelta(h *ObjectHeader, base plumbing.EncodedObject, deltaRC io.Re
 					n, err := baseBuf.Discard(math.MaxInt32)
 					if err != nil {
 						_ = dstWr.CloseWithError(err)
+						return
 					}
 					basePos += uint(n)
 					discard -= uint(n)
@@ -162,6 +163,7 @@ func ReaderFromDelta(h *ObjectHeader, base plumbing.EncodedObject, deltaRC io.Re
 					n, err := baseBuf.Discard(int(discard))
 					if err != nil {
 						_ = dstWr.CloseWithError(err)
+						return
 					}
 					basePos += uint(n)
 					discard -= uint(n)
