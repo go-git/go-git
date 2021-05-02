@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 	"golang.org/x/sys/execabs"
 )
 
@@ -111,7 +112,7 @@ func (c *command) Start() error {
 func (c *command) StderrPipe() (io.Reader, error) {
 	// Pipe returned by Command.StderrPipe has a race with Read + Command.Wait.
 	// We use an io.Pipe and close it after the command finishes.
-	r, w := io.Pipe()
+	r, w := ioutil.Pipe()
 	c.cmd.Stderr = w
 	c.stderrCloser = r
 	return r, nil
