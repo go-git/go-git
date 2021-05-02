@@ -217,34 +217,3 @@ func sectionsExample(c *C, nSections, nLines int) io.Reader {
 
 	return &buf
 }
-
-func ExampleScanner() {
-	// A reader is needed as input.
-	input := strings.NewReader("000ahello\n" +
-		"000bworld!\n" +
-		"0000",
-	)
-
-	// Create the scanner...
-	s := pktline.NewScanner(input)
-
-	// and scan every pkt-line found in the input.
-	for s.Scan() {
-		payload := s.Bytes()
-		if len(payload) == 0 { // zero sized payloads correspond to flush-pkts.
-			fmt.Println("FLUSH-PKT DETECTED")
-		} else { // otherwise, you will be able to access the full payload.
-			fmt.Printf("PAYLOAD = %q\n", string(payload))
-		}
-	}
-
-	// this will catch any error when reading from the input, if any.
-	if s.Err() != nil {
-		fmt.Println(s.Err())
-	}
-
-	// Output:
-	// PAYLOAD = "hello\n"
-	// PAYLOAD = "world!\n"
-	// FLUSH-PKT DETECTED
-}

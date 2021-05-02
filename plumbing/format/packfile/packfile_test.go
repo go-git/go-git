@@ -4,7 +4,6 @@ import (
 	"io"
 	"math"
 
-	"github.com/go-git/go-billy/v5/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
@@ -109,14 +108,10 @@ var expectedEntries = map[plumbing.Hash]int64{
 func (s *PackfileSuite) SetUpTest(c *C) {
 	s.f = fixtures.Basic().One()
 
-	fs := osfs.New("")
-	f, err := fs.Open(s.f.Packfile().Name())
-	c.Assert(err, IsNil)
-
 	s.idx = idxfile.NewMemoryIndex()
 	c.Assert(idxfile.NewDecoder(s.f.Idx()).Decode(s.idx), IsNil)
 
-	s.p = packfile.NewPackfile(s.idx, fs, f)
+	s.p = packfile.NewPackfile(s.idx, fixtures.Filesystem, s.f.Packfile())
 }
 
 func (s *PackfileSuite) TearDownTest(c *C) {
@@ -126,11 +121,8 @@ func (s *PackfileSuite) TearDownTest(c *C) {
 func (s *PackfileSuite) TestDecode(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		index := getIndexFromIdxFile(f.Idx())
-		fs := osfs.New("")
-		pf, err := fs.Open(f.Packfile().Name())
-		c.Assert(err, IsNil)
 
-		p := packfile.NewPackfile(index, fs, pf)
+		p := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
 		defer p.Close()
 
 		for _, h := range expectedHashes {
@@ -145,11 +137,8 @@ func (s *PackfileSuite) TestDecodeByTypeRefDelta(c *C) {
 	f := fixtures.Basic().ByTag("ref-delta").One()
 
 	index := getIndexFromIdxFile(f.Idx())
-	fs := osfs.New("")
-	pf, err := fs.Open(f.Packfile().Name())
-	c.Assert(err, IsNil)
 
-	packfile := packfile.NewPackfile(index, fs, pf)
+	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
 	defer packfile.Close()
 
 	iter, err := packfile.GetByType(plumbing.CommitObject)
@@ -161,6 +150,7 @@ func (s *PackfileSuite) TestDecodeByTypeRefDelta(c *C) {
 		if err == io.EOF {
 			break
 		}
+
 		count++
 		c.Assert(err, IsNil)
 		c.Assert(obj.Type(), Equals, plumbing.CommitObject)
@@ -180,11 +170,8 @@ func (s *PackfileSuite) TestDecodeByType(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		for _, t := range ts {
 			index := getIndexFromIdxFile(f.Idx())
-			fs := osfs.New("")
-			pf, err := fs.Open(f.Packfile().Name())
-			c.Assert(err, IsNil)
 
-			packfile := packfile.NewPackfile(index, fs, pf)
+			packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
 			defer packfile.Close()
 
 			iter, err := packfile.GetByType(t)
@@ -201,14 +188,11 @@ func (s *PackfileSuite) TestDecodeByType(c *C) {
 func (s *PackfileSuite) TestDecodeByTypeConstructor(c *C) {
 	f := fixtures.Basic().ByTag("packfile").One()
 	index := getIndexFromIdxFile(f.Idx())
-	fs := osfs.New("")
-	pf, err := fs.Open(f.Packfile().Name())
-	c.Assert(err, IsNil)
 
-	packfile := packfile.NewPackfile(index, fs, pf)
+	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
 	defer packfile.Close()
 
-	_, err = packfile.GetByType(plumbing.OFSDeltaObject)
+	_, err := packfile.GetByType(plumbing.OFSDeltaObject)
 	c.Assert(err, Equals, plumbing.ErrInvalidType)
 
 	_, err = packfile.GetByType(plumbing.REFDeltaObject)
@@ -269,24 +253,20 @@ func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
 }
 
 func getIndexFromIdxFile(r io.Reader) idxfile.Index {
-	idxf := idxfile.NewMemoryIndex()
-	d := idxfile.NewDecoder(r)
-	if err := d.Decode(idxf); err != nil {
+	idx := idxfile.NewMemoryIndex()
+	if err := idxfile.NewDecoder(r).Decode(idx); err != nil {
 		panic(err)
 	}
 
-	return idxf
+	return idx
 }
 
 func (s *PackfileSuite) TestSize(c *C) {
 	f := fixtures.Basic().ByTag("ref-delta").One()
 
 	index := getIndexFromIdxFile(f.Idx())
-	fs := osfs.New("")
-	pf, err := fs.Open(f.Packfile().Name())
-	c.Assert(err, IsNil)
 
-	packfile := packfile.NewPackfile(index, fs, pf)
+	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
 	defer packfile.Close()
 
 	// Get the size of binary.jpg, which is not delta-encoded.
