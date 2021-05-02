@@ -2,7 +2,6 @@ package git
 
 import (
 	"bytes"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -22,7 +21,6 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/ProtonMail/go-crypto/openpgp/errors"
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	. "gopkg.in/check.v1"
 )
@@ -210,15 +208,15 @@ func (s *WorktreeSuite) TestCommitSignBadKey(c *C) {
 }
 
 func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
-	path, err := ioutil.TempDir(os.TempDir(), "test-commit-tree-sort")
-	c.Assert(err, IsNil)
-	fs := osfs.New(path)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	r, err := Init(st, nil)
 	c.Assert(err, IsNil)
 
 	r, _ = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
-		URL: path,
+		URL: fs.Root(),
 	})
 
 	w, err := r.Worktree()
@@ -245,7 +243,7 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	c.Assert(err, IsNil)
 
 	cmd := exec.Command("git", "fsck")
-	cmd.Dir = path
+	cmd.Dir = fs.Root()
 	cmd.Env = os.Environ()
 	buf := &bytes.Buffer{}
 	cmd.Stderr = buf
@@ -258,12 +256,11 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 
 // https://github.com/go-git/go-git/pull/224
 func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
-	dir, err := ioutil.TempDir("", "TestJustStoreObjectsNotAlreadyStored")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir) // clean up
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	fs := osfs.New(dir)
-	fsDotgit := osfs.New(filepath.Join(dir, ".git")) // real fs to get modified timestamps
+	fsDotgit, err := fs.Chroot(".git") // real fs to get modified timestamps
+	c.Assert(err, IsNil)
 	storage := filesystem.NewStorage(fsDotgit, cache.NewObjectLRUDefault())
 
 	r, err := Init(storage, fs)

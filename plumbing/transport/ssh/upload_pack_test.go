@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -32,6 +33,10 @@ type UploadPackSuite struct {
 var _ = Suite(&UploadPackSuite{})
 
 func (s *UploadPackSuite) SetUpSuite(c *C) {
+	if runtime.GOOS == "js" {
+		c.Skip("tcp connections are not available in wasm")
+	}
+
 	l, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
 

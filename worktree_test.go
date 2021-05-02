@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -60,7 +60,9 @@ func (s *WorktreeSuite) TestPullCheckout(c *C) {
 }
 
 func (s *WorktreeSuite) TestPullFastForward(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
 	server, err := PlainClone(url, false, &CloneOptions{
@@ -68,7 +70,10 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: url,
 	})
 	c.Assert(err, IsNil)
@@ -92,7 +97,9 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 }
 
 func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
 	server, err := PlainClone(url, false, &CloneOptions{
@@ -100,7 +107,10 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: url,
 	})
 	c.Assert(err, IsNil)
@@ -207,9 +217,8 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	dir, err := ioutil.TempDir("", "plain-clone-submodule")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, _ := PlainInit(dir, false)
 	r.CreateRemote(&config.RemoteConfig{
@@ -380,9 +389,8 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 		c.Skip("git doesn't support symlinks by default in windows")
 	}
 
-	dir, err := ioutil.TempDir("", "checkout")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -414,7 +422,9 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 		c.Skip("windows paths may contain non utf-8 sequences")
 	}
 
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
 	server, err := PlainClone(url, false, &CloneOptions{
@@ -604,17 +614,15 @@ func (s *WorktreeSuite) TestCheckoutIndexMem(c *C) {
 }
 
 func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
-	dir, err := ioutil.TempDir("", "checkout")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	fs := osfs.New(filepath.Join(dir, "worktree"))
 	w := &Worktree{
 		r:          s.Repository,
 		Filesystem: fs,
 	}
 
-	err = w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
 	idx, err := s.Repository.Storer.Index()
@@ -1029,17 +1037,15 @@ func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatusModified(c *C) {
-	dir, err := ioutil.TempDir("", "status")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	fs := osfs.New(filepath.Join(dir, "worktree"))
 	w := &Worktree{
 		r:          s.Repository,
 		Filesystem: fs,
 	}
 
-	err = w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
 	f, err := fs.Create(".gitignore")
@@ -1123,17 +1129,15 @@ func (s *WorktreeSuite) TestStatusUntracked(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatusDeleted(c *C) {
-	dir, err := ioutil.TempDir("", "status")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	fs := osfs.New(filepath.Join(dir, "worktree"))
 	w := &Worktree{
 		r:          s.Repository,
 		Filesystem: fs,
 	}
 
-	err = w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
 	err = fs.Remove(".gitignore")
@@ -1363,9 +1367,8 @@ func (s *WorktreeSuite) TestAddRemoved(c *C) {
 }
 
 func (s *WorktreeSuite) TestAddSymlink(c *C) {
-	dir, err := ioutil.TempDir("", "checkout")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -2078,7 +2081,11 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 	}
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
-	server, err := PlainClone(c.MkDir(), false, &CloneOptions{
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	server, err := PlainClone(dir, false, &CloneOptions{
 		URL: path,
 	})
 	c.Assert(err, IsNil)
@@ -2127,9 +2134,8 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 }
 
 func (s *WorktreeSuite) TestAddAndCommit(c *C) {
-	dir, err := ioutil.TempDir("", "plain-repo")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	repo, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)

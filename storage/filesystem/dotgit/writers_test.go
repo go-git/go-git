@@ -3,16 +3,15 @@ package dotgit
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"os"
 	"strconv"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 
-	"github.com/go-git/go-billy/v5/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
 )
@@ -20,14 +19,9 @@ import (
 func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 	f := fixtures.Basic().One()
 
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		log.Fatal(err)
-	}
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	defer os.RemoveAll(dir)
-
-	fs := osfs.New(dir)
 	dot := New(fs)
 
 	w, err := dot.NewObjectPack()
@@ -65,14 +59,9 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 }
 
 func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		log.Fatal(err)
-	}
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	defer os.RemoveAll(dir)
-
-	fs := osfs.New(dir)
 	dot := New(fs)
 
 	w, err := dot.NewObjectPack()
@@ -93,10 +82,10 @@ func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
 }
 
 func (s *SuiteDotGit) TestSyncedReader(c *C) {
-	tmpw, err := ioutil.TempFile("", "example")
+	tmpw, err := util.TempFile(osfs.Default, "", "example")
 	c.Assert(err, IsNil)
 
-	tmpr, err := os.Open(tmpw.Name())
+	tmpr, err := osfs.Default.Open(tmpw.Name())
 	c.Assert(err, IsNil)
 
 	defer func() {
@@ -137,14 +126,8 @@ func (s *SuiteDotGit) TestSyncedReader(c *C) {
 }
 
 func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		c.Assert(err, IsNil)
-	}
-
-	defer os.RemoveAll(dir)
-
-	fs := osfs.New(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
 	w, err := newPackWrite(fs)
 	c.Assert(err, IsNil)

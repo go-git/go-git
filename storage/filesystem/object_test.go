@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
@@ -226,14 +228,14 @@ func (s *FsSuite) TestPackfileIter(c *C) {
 	})
 }
 
-func copyFile(c *C, dstDir, dstFilename string, srcFile *os.File) {
+func copyFile(c *C, dstDir, dstFilename string, srcFile billy.File) {
 	_, err := srcFile.Seek(0, 0)
 	c.Assert(err, IsNil)
 
-	err = os.MkdirAll(dstDir, 0750|os.ModeDir)
+	err = osfs.Default.MkdirAll(dstDir, 0750|os.ModeDir)
 	c.Assert(err, IsNil)
 
-	dst, err := os.OpenFile(filepath.Join(dstDir, dstFilename), os.O_CREATE|os.O_WRONLY, 0666)
+	dst, err := osfs.Default.OpenFile(filepath.Join(dstDir, dstFilename), os.O_CREATE|os.O_WRONLY, 0666)
 	c.Assert(err, IsNil)
 	defer dst.Close()
 

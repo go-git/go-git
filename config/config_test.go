@@ -1,11 +1,12 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	. "gopkg.in/check.v1"
 )
@@ -154,7 +155,7 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 	}
 
 	cfg.URLs["ssh://git@github.com/"] = &URL{
-		Name: "ssh://git@github.com/",
+		Name:      "ssh://git@github.com/",
 		InsteadOf: "https://github.com/",
 	}
 
@@ -204,23 +205,16 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	c.Assert(string(output), DeepEquals, string(input))
 }
 
-func (s *ConfigSuite) TestLoadConfig(c *C) {
-	cfg, err := LoadConfig(GlobalScope)
-	c.Assert(cfg.User.Email, Not(Equals), "")
-	c.Assert(err, IsNil)
-
-}
-
 func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	cfg := NewConfig()
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	tmp, err := ioutil.TempDir("", "test-commit-options")
+	tmp, err := util.TempDir(osfs.Default, "", "test-commit-options")
 	c.Assert(err, IsNil)
-	defer os.RemoveAll(tmp)
+	defer util.RemoveAll(osfs.Default, tmp)
 
-	err = os.Mkdir(filepath.Join(tmp, "git"), 0777)
+	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0777)
 	c.Assert(err, IsNil)
 
 	os.Setenv("XDG_CONFIG_HOME", tmp)
@@ -232,7 +226,7 @@ func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	c.Assert(err, IsNil)
 
 	cfgFile := filepath.Join(tmp, "git/config")
-	err = ioutil.WriteFile(cfgFile, content, 0777)
+	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
 	c.Assert(err, IsNil)
 
 	cfg, err = LoadConfig(GlobalScope)

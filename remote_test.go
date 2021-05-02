@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
-	"os"
 	"runtime"
 	"time"
 
@@ -20,7 +18,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
-	"github.com/go-git/go-billy/v5/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
 )
@@ -284,21 +281,17 @@ func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
 }
 
 func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
-	dir, err := ioutil.TempDir("", "fetch")
-	c.Assert(err, IsNil)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	defer os.RemoveAll(dir) // clean up
-
-	fss := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
-	c.Assert(err, IsNil)
-
+	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	mock := &mockPackfileWriter{Storer: fss}
 
 	url := s.GetBasicLocalRepositoryURL()
 	r := NewRemote(mock, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	err = r.Fetch(&FetchOptions{
+	err := r.Fetch(&FetchOptions{
 		RefSpecs: []config.RefSpec{refspec},
 	})
 
@@ -421,12 +414,10 @@ func (s *RemoteSuite) TestFetchFastForwardMem(c *C) {
 }
 
 func (s *RemoteSuite) TestFetchFastForwardFS(c *C) {
-	dir, err := ioutil.TempDir("", "fetch")
-	c.Assert(err, IsNil)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	defer os.RemoveAll(dir) // clean up
-
-	fss := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
+	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	// This exercises `storage.filesystem.Storage.CheckAndSetReference()`.
 	s.testFetchFastForward(c, fss)
@@ -445,7 +436,9 @@ func (s *RemoteSuite) TestString(c *C) {
 }
 
 func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -482,7 +475,9 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 }
 
 func (s *RemoteSuite) TestPushContext(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -511,7 +506,9 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 }
 
 func (s *RemoteSuite) TestPushContextCanceled(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -540,7 +537,9 @@ func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -585,7 +584,10 @@ func (s *RemoteSuite) TestPushDeleteReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
@@ -609,7 +611,10 @@ func (s *RemoteSuite) TestForcePushDeleteReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
@@ -634,7 +639,10 @@ func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	server := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
@@ -714,13 +722,19 @@ func (s *RemoteSuite) TestPushForceWithOption(c *C) {
 
 func (s *RemoteSuite) TestPushPrune(c *C) {
 	fs := fixtures.Basic().One().DotGit()
-	url := c.MkDir()
+
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
 	})
 	c.Assert(err, IsNil)
@@ -771,13 +785,19 @@ func (s *RemoteSuite) TestPushPrune(c *C) {
 
 func (s *RemoteSuite) TestPushNewReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
-	url := c.MkDir()
+
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
 	})
 	c.Assert(err, IsNil)
@@ -804,13 +824,19 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 
 func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch(c *C) {
 	fs := fixtures.Basic().One().DotGit()
-	url := c.MkDir()
+
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	r, err := PlainClone(c.MkDir(), true, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
 	})
 	c.Assert(err, IsNil)
@@ -1007,7 +1033,9 @@ func (s *RemoteSuite) TestUpdateShallows(c *C) {
 }
 
 func (s *RemoteSuite) TestUseRefDeltas(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 

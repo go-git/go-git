@@ -2,9 +2,7 @@ package packp
 
 import (
 	"bytes"
-	"fmt"
 	"io"
-	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -379,69 +377,4 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 	}
 
 	s.test(c, input, expected, false)
-}
-
-func ExampleAdvRefs_Decode() {
-	// Here is a raw advertised-ref message.
-	raw := "" +
-		"0065a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 HEAD\x00multi_ack ofs-delta symref=HEAD:/refs/heads/master\n" +
-		"003fa6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n" +
-		"00441111111111111111111111111111111111111111 refs/tags/v2.6.11-tree\n" +
-		"00475555555555555555555555555555555555555555 refs/tags/v2.6.11-tree^{}\n" +
-		"0035shallow 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c\n" +
-		"0000"
-
-	// Use the raw message as our input.
-	input := strings.NewReader(raw)
-
-	// Decode the input into a newly allocated AdvRefs value.
-	ar := NewAdvRefs()
-	_ = ar.Decode(input) // error check ignored for brevity
-
-	// Do something interesting with the AdvRefs, e.g. print its contents.
-	fmt.Println("head =", ar.Head)
-	fmt.Println("capabilities =", ar.Capabilities.String())
-	fmt.Println("...")
-	fmt.Println("shallows =", ar.Shallows)
-	// Output: head = a6930aaee06755d1bdcfd943fbf614e4d92bb0c7
-	// capabilities = multi_ack ofs-delta symref=HEAD:/refs/heads/master
-	// ...
-	// shallows = [5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c]
-}
-
-func ExampleAdvRefs_Encode() {
-	// Create an AdvRefs with the contents you want...
-	ar := NewAdvRefs()
-
-	// ...add a hash for the HEAD...
-	head := plumbing.NewHash("1111111111111111111111111111111111111111")
-	ar.Head = &head
-
-	// ...add some server capabilities...
-	ar.Capabilities.Add(capability.MultiACK)
-	ar.Capabilities.Add(capability.OFSDelta)
-	ar.Capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
-
-	// ...add a couple of references...
-	ar.References["refs/heads/master"] = plumbing.NewHash("2222222222222222222222222222222222222222")
-	ar.References["refs/tags/v1"] = plumbing.NewHash("3333333333333333333333333333333333333333")
-
-	// ...including a peeled ref...
-	ar.Peeled["refs/tags/v1"] = plumbing.NewHash("4444444444444444444444444444444444444444")
-
-	// ...and finally add a shallow
-	ar.Shallows = append(ar.Shallows, plumbing.NewHash("5555555555555555555555555555555555555555"))
-
-	// Encode the packpContents to a bytes.Buffer.
-	// You can encode into stdout too, but you will not be able
-	// see the '\x00' after "HEAD".
-	var buf bytes.Buffer
-	_ = ar.Encode(&buf) // error checks ignored for brevity
-
-	// Print the contents of the buffer as a quoted string.
-	// Printing is as a non-quoted string will be prettier but you
-	// will miss the '\x00' after "HEAD".
-	fmt.Printf("%q", buf.String())
-	// Output:
-	// "00651111111111111111111111111111111111111111 HEAD\x00multi_ack ofs-delta symref=HEAD:/refs/heads/master\n003f2222222222222222222222222222222222222222 refs/heads/master\n003a3333333333333333333333333333333333333333 refs/tags/v1\n003d4444444444444444444444444444444444444444 refs/tags/v1^{}\n0035shallow 5555555555555555555555555555555555555555\n0000"
 }

@@ -1,14 +1,13 @@
 package filesystem
 
 import (
-	"io/ioutil"
 	"os"
 
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
-
-	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
 )
 
@@ -22,7 +21,7 @@ type ConfigSuite struct {
 var _ = Suite(&ConfigSuite{})
 
 func (s *ConfigSuite) SetUpTest(c *C) {
-	tmp, err := ioutil.TempDir("", "go-git-filestystem-config")
+	tmp, err := util.TempDir(osfs.Default, "", "go-git-filestystem-config")
 	c.Assert(err, IsNil)
 
 	s.dir = dotgit.New(osfs.New(tmp))
