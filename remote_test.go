@@ -233,6 +233,32 @@ func (s *RemoteSuite) TestFetchWithDepth(c *C) {
 	c.Assert(r.s.(*memory.Storage).Objects, HasLen, 18)
 }
 
+func (s *RemoteSuite) TestFetchWithDepthChange(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Depth: 1,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/heads/master:refs/heads/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+	c.Assert(r.s.(*memory.Storage).Commits, HasLen, 1)
+
+	s.testFetch(c, r, &FetchOptions{
+		Depth: 3,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/heads/master:refs/heads/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+	c.Assert(r.s.(*memory.Storage).Commits, HasLen, 3)
+}
+
 func (s *RemoteSuite) testFetch(c *C, r *Remote, o *FetchOptions, expected []*plumbing.Reference) {
 	err := r.Fetch(o)
 	c.Assert(err, IsNil)
