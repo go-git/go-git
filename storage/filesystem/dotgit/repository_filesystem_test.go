@@ -1,25 +1,16 @@
 package dotgit
 
 import (
-	"io/ioutil"
-	"log"
 	"os"
-
-	"github.com/go-git/go-billy/v5/osfs"
 
 	. "gopkg.in/check.v1"
 )
 
 func (s *SuiteDotGit) TestRepositoryFilesystem(c *C) {
-	dir, err := ioutil.TempDir("", "repository_filesystem")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	fs := osfs.New(dir)
-
-	err = fs.MkdirAll("dotGit", 0777)
+	err := fs.MkdirAll("dotGit", 0777)
 	c.Assert(err, IsNil)
 	dotGitFs, err := fs.Chroot("dotGit")
 	c.Assert(err, IsNil)

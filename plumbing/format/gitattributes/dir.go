@@ -2,7 +2,6 @@ package gitattributes
 
 import (
 	"os"
-	"os/user"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/plumbing/format/config"
@@ -106,12 +105,12 @@ func loadPatterns(fs billy.Filesystem, path string) ([]MatchAttribute, error) {
 // the function will return nil. The function assumes fs is rooted at the root
 // filesystem.
 func LoadGlobalPatterns(fs billy.Filesystem) (attributes []MatchAttribute, err error) {
-	usr, err := user.Current()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
 
-	return loadPatterns(fs, fs.Join(usr.HomeDir, gitconfigFile))
+	return loadPatterns(fs, fs.Join(home, gitconfigFile))
 }
 
 // LoadSystemPatterns loads gitattributes patterns and attributes from the

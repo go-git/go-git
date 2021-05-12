@@ -2,7 +2,6 @@ package gitattributes
 
 import (
 	"os"
-	"os/user"
 	"strconv"
 
 	"github.com/go-git/go-billy/v5"
@@ -23,8 +22,7 @@ type MatcherSuite struct {
 var _ = Suite(&MatcherSuite{})
 
 func (s *MatcherSuite) SetUpTest(c *C) {
-	// setup root that contains user home
-	usr, err := user.Current()
+	home, err := os.UserHomeDir()
 	c.Assert(err, IsNil)
 
 	gitAttributesGlobal := func(fs billy.Filesystem, filename string) {
@@ -62,59 +60,59 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 	fs.MkdirAll("vendor/github.com", os.ModePerm)
 	fs.MkdirAll("vendor/gopkg.in", os.ModePerm)
 
-	gitAttributesGlobal(fs, fs.Join(usr.HomeDir, ".gitattributes_global"))
+	gitAttributesGlobal(fs, fs.Join(home, ".gitattributes_global"))
 
 	s.GFS = fs
 
 	fs = memfs.New()
-	err = fs.MkdirAll(usr.HomeDir, os.ModePerm)
+	err = fs.MkdirAll(home, os.ModePerm)
 	c.Assert(err, IsNil)
 
-	f, err = fs.Create(fs.Join(usr.HomeDir, gitconfigFile))
+	f, err = fs.Create(fs.Join(home, gitconfigFile))
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("[core]\n"))
 	c.Assert(err, IsNil)
-	_, err = f.Write([]byte("	attributesfile = " + strconv.Quote(fs.Join(usr.HomeDir, ".gitattributes_global")) + "\n"))
+	_, err = f.Write([]byte("	attributesfile = " + strconv.Quote(fs.Join(home, ".gitattributes_global")) + "\n"))
 	c.Assert(err, IsNil)
 	err = f.Close()
 	c.Assert(err, IsNil)
 
-	gitAttributesGlobal(fs, fs.Join(usr.HomeDir, ".gitattributes_global"))
+	gitAttributesGlobal(fs, fs.Join(home, ".gitattributes_global"))
 
 	s.RFS = fs
 
 	// root that contains user home, but missing ~/.gitconfig
 	fs = memfs.New()
-	gitAttributesGlobal(fs, fs.Join(usr.HomeDir, ".gitattributes_global"))
+	gitAttributesGlobal(fs, fs.Join(home, ".gitattributes_global"))
 
 	s.MCFS = fs
 
 	// setup root that contains user home, but missing attributesfile entry
 	fs = memfs.New()
-	err = fs.MkdirAll(usr.HomeDir, os.ModePerm)
+	err = fs.MkdirAll(home, os.ModePerm)
 	c.Assert(err, IsNil)
 
-	f, err = fs.Create(fs.Join(usr.HomeDir, gitconfigFile))
+	f, err = fs.Create(fs.Join(home, gitconfigFile))
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("[core]\n"))
 	c.Assert(err, IsNil)
 	err = f.Close()
 	c.Assert(err, IsNil)
 
-	gitAttributesGlobal(fs, fs.Join(usr.HomeDir, ".gitattributes_global"))
+	gitAttributesGlobal(fs, fs.Join(home, ".gitattributes_global"))
 
 	s.MEFS = fs
 
 	// setup root that contains user home, but missing .gitattributes
 	fs = memfs.New()
-	err = fs.MkdirAll(usr.HomeDir, os.ModePerm)
+	err = fs.MkdirAll(home, os.ModePerm)
 	c.Assert(err, IsNil)
 
-	f, err = fs.Create(fs.Join(usr.HomeDir, gitconfigFile))
+	f, err = fs.Create(fs.Join(home, gitconfigFile))
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("[core]\n"))
 	c.Assert(err, IsNil)
-	_, err = f.Write([]byte("	attributesfile = " + strconv.Quote(fs.Join(usr.HomeDir, ".gitattributes_global")) + "\n"))
+	_, err = f.Write([]byte("	attributesfile = " + strconv.Quote(fs.Join(home, ".gitattributes_global")) + "\n"))
 	c.Assert(err, IsNil)
 	err = f.Close()
 	c.Assert(err, IsNil)

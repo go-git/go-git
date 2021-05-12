@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/mitchellh/go-homedir"
-	"github.com/xanzy/ssh-agent"
+	sshagent "github.com/xanzy/ssh-agent"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )

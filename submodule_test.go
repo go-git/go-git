@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,8 +23,8 @@ var _ = Suite(&SubmoduleSuite{})
 func (s *SubmoduleSuite) SetUpTest(c *C) {
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	dir, err := ioutil.TempDir("", "submodule")
-	c.Assert(err, IsNil)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
 		URL: path,

@@ -31,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
@@ -54,9 +55,8 @@ func (s *RepositorySuite) TestInit(c *C) {
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
-	dir, err := ioutil.TempDir("", "init-non-standard")
-	c.Assert(err, IsNil)
-	c.Assert(os.RemoveAll(dir), IsNil)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
@@ -80,9 +80,8 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 }
 
 func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
-	dir, err := ioutil.TempDir("", "init-standard")
-	c.Assert(err, IsNil)
-	c.Assert(os.RemoveAll(dir), IsNil)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
@@ -398,9 +397,8 @@ func (s *RepositorySuite) TestDeleteBranch(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainInit(c *C) {
-	dir, err := ioutil.TempDir("", "plain-init")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
@@ -412,9 +410,8 @@ func (s *RepositorySuite) TestPlainInit(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
-	dir, err := ioutil.TempDir("", "plain-init")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
@@ -426,9 +423,8 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpen(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -440,9 +436,8 @@ func (s *RepositorySuite) TestPlainOpen(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenBare(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
@@ -454,9 +449,8 @@ func (s *RepositorySuite) TestPlainOpenBare(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -468,22 +462,27 @@ func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
 }
 
 func (s *RepositorySuite) testPlainOpenGitFile(c *C, f func(string, string) string) {
-	dir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	r, err := PlainInit(dir, true)
+	dir, err := util.TempDir(fs, "", "plain-open")
+	c.Assert(err, IsNil)
+
+	r, err := PlainInit(fs.Join(fs.Root(), dir), true)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	altDir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(altDir)
-
-	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(f(dir, altDir)), 0644)
+	altDir, err := util.TempDir(fs, "", "plain-open")
 	c.Assert(err, IsNil)
 
-	r, err = PlainOpen(altDir)
+	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
+		[]byte(f(fs.Join(fs.Root(), dir), fs.Join(fs.Root(), altDir))),
+		0644,
+	)
+
+	c.Assert(err, IsNil)
+
+	r, err = PlainOpen(fs.Join(fs.Root(), altDir))
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 }
@@ -517,17 +516,23 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileNoEOL(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	altDir, err := ioutil.TempDir("", "plain-open")
+	altDir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(fmt.Sprintf("gitdir: %s\nTRAILING", altDir)), 0644)
+
+	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
+		[]byte(fmt.Sprintf("gitdir: %s\nTRAILING", fs.Join(fs.Root(), altDir))),
+		0644,
+	)
 	c.Assert(err, IsNil)
 
 	r, err = PlainOpen(altDir)
@@ -536,20 +541,26 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *
 }
 
 func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	r, err := PlainInit(dir, true)
+	dir, err := util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
+
+	r, err := PlainInit(fs.Join(fs.Root(), dir), true)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	altDir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(altDir, ".git"), []byte(fmt.Sprintf("xgitdir: %s\n", dir)), 0644)
+	altDir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
 
-	r, err = PlainOpen(altDir)
+	err = util.WriteFile(fs, fs.Join(altDir, ".git"), []byte(
+		fmt.Sprintf("xgitdir: %s\n", fs.Join(fs.Root(), dir)),
+	), 0644)
+
+	c.Assert(err, IsNil)
+
+	r, err = PlainOpen(fs.Join(fs.Root(), altDir))
 	c.Assert(err, ErrorMatches, ".*gitdir.*")
 	c.Assert(r, IsNil)
 }
@@ -561,42 +572,43 @@ func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
 
 	subdir := filepath.Join(dir, "a", "b")
-	err = os.MkdirAll(subdir, 0755)
+	err = fs.MkdirAll(subdir, 0755)
 	c.Assert(err, IsNil)
 
-	file := filepath.Join(subdir, "file.txt")
-	f, err := os.Create(file)
+	file := fs.Join(subdir, "file.txt")
+	f, err := fs.Create(file)
 	c.Assert(err, IsNil)
 	f.Close()
 
-	r, err := PlainInit(dir, false)
+	r, err := PlainInit(fs.Join(fs.Root(), dir), false)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
 	opt := &PlainOpenOptions{DetectDotGit: true}
-	r, err = PlainOpenWithOptions(subdir, opt)
+	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), subdir), opt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	r, err = PlainOpenWithOptions(file, opt)
+	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), file), opt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
 	optnodetect := &PlainOpenOptions{DetectDotGit: false}
-	r, err = PlainOpenWithOptions(file, optnodetect)
+	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), file), optnodetect)
 	c.Assert(err, NotNil)
 	c.Assert(r, IsNil)
 }
 
 func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {
-	dir, err := ioutil.TempDir("", "plain-open")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	opt := &PlainOpenOptions{DetectDotGit: true}
 	r, err := PlainOpenWithOptions(dir, opt)
@@ -605,7 +617,10 @@ func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainClone(c *C) {
-	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -621,7 +636,10 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
-	r, err := PlainClone(c.MkDir(), false, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, false, &CloneOptions{
 		URL:        s.GetBasicLocalRepositoryURL(),
 		RemoteName: "test",
 	})
@@ -634,12 +652,14 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory(c *C) {
-	tmpDir := c.MkDir()
-	r, err := PlainInit(tmpDir, false)
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainInit(dir, false)
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
-	r, err = PlainClone(tmpDir, false, &CloneOptions{
+	r, err = PlainClone(dir, false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	c.Assert(r, IsNil)
@@ -650,7 +670,10 @@ func (s *RepositorySuite) TestPlainCloneContextCancel(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	r, err := PlainCloneContext(ctx, c.MkDir(), false, &CloneOptions{
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -662,19 +685,22 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tmpDir := c.MkDir()
-	repoDir := tmpDir
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+	dir, err := util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
+
+	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
-	_, err = os.Stat(repoDir)
+	_, err = fs.Stat(dir)
 	c.Assert(os.IsNotExist(err), Equals, false)
 
-	names, err := ioutil.ReadDir(repoDir)
+	names, err := fs.ReadDir(dir)
 	c.Assert(err, IsNil)
 	c.Assert(names, HasLen, 0)
 }
@@ -683,7 +709,12 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tmpDir := c.MkDir()
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	tmpDir, err := util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
+
 	repoDir := filepath.Join(tmpDir, "repoDir")
 
 	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
@@ -692,7 +723,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
-	_, err = os.Stat(repoDir)
+	_, err = fs.Stat(repoDir)
 	c.Assert(os.IsNotExist(err), Equals, true)
 }
 
@@ -700,19 +731,25 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tmpDir := c.MkDir()
-	repoDir := filepath.Join(tmpDir, "repoDir")
-	f, err := os.Create(repoDir)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	tmpDir, err := util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
+
+	repoDir := fs.Join(tmpDir, "repoDir")
+
+	f, err := fs.Create(repoDir)
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
 
-	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
 	c.Assert(err, ErrorMatches, ".*not a directory.*")
 
-	fi, err := os.Stat(repoDir)
+	fi, err := fs.Stat(repoDir)
 	c.Assert(err, IsNil)
 	c.Assert(fi.IsDir(), Equals, false)
 }
@@ -721,22 +758,27 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tmpDir := c.MkDir()
-	repoDirPath := filepath.Join(tmpDir, "repoDir")
-	err := os.Mkdir(repoDirPath, 0777)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	tmpDir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
 
-	dummyFile := filepath.Join(repoDirPath, "dummyFile")
-	err = ioutil.WriteFile(dummyFile, []byte("dummyContent"), 0644)
+	repoDir := filepath.Join(tmpDir, "repoDir")
+	err = fs.MkdirAll(repoDir, 0777)
 	c.Assert(err, IsNil)
 
-	r, err := PlainCloneContext(ctx, repoDirPath, false, &CloneOptions{
+	dummyFile := filepath.Join(repoDir, "dummyFile")
+	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0644)
+	c.Assert(err, IsNil)
+
+	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
-	_, err = os.Stat(dummyFile)
+	_, err = fs.Stat(dummyFile)
 	c.Assert(err, IsNil)
 
 }
@@ -745,12 +787,14 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tmpDir := c.MkDir()
-	r, err := PlainInit(tmpDir, false)
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainInit(dir, false)
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
-	r, err = PlainCloneContext(ctx, tmpDir, false, &CloneOptions{
+	r, err = PlainCloneContext(ctx, dir, false, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
@@ -762,9 +806,8 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 		c.Skip("skipping test in short mode.")
 	}
 
-	dir, err := ioutil.TempDir("", "plain-clone-submodule")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainClone(dir, false, &CloneOptions{
@@ -782,9 +825,8 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneNoCheckout(c *C) {
-	dir, err := ioutil.TempDir("", "plain-clone-no-checkout")
-	c.Assert(err, IsNil)
-	defer os.RemoveAll(dir)
+	dir, clean := s.TemporalDir()
+	defer clean()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainClone(dir, false, &CloneOptions{
@@ -1134,7 +1176,9 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag(c *C) {
 }
 
 func (s *RepositorySuite) TestPush(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -1161,7 +1205,9 @@ func (s *RepositorySuite) TestPush(c *C) {
 }
 
 func (s *RepositorySuite) TestPushContext(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
@@ -1183,22 +1229,29 @@ func (s *RepositorySuite) TestPushContext(c *C) {
 // installPreReceiveHook installs a pre-receive hook in the .git
 // directory at path which prints message m before exiting
 // successfully.
-func installPreReceiveHook(c *C, path, m string) {
-	hooks := filepath.Join(path, "hooks")
-	err := os.MkdirAll(hooks, 0777)
+func installPreReceiveHook(c *C, fs billy.Filesystem, path, m string) {
+	hooks := fs.Join(path, "hooks")
+	err := fs.MkdirAll(hooks, 0777)
 	c.Assert(err, IsNil)
 
-	err = ioutil.WriteFile(filepath.Join(hooks, "pre-receive"), preReceiveHook(m), 0777)
+	err = util.WriteFile(fs, fs.Join(hooks, "pre-receive"), preReceiveHook(m), 0777)
 	c.Assert(err, IsNil)
 }
 
 func (s *RepositorySuite) TestPushWithProgress(c *C) {
-	url := c.MkDir()
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	path, err := util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
+
+	url := fs.Join(fs.Root(), path)
+
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
 
 	m := "Receiving..."
-	installPreReceiveHook(c, url, m)
+	installPreReceiveHook(c, fs, path, m)
 
 	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
 		Name: "bar",
@@ -1222,7 +1275,9 @@ func (s *RepositorySuite) TestPushWithProgress(c *C) {
 }
 
 func (s *RepositorySuite) TestPushDepth(c *C) {
-	url := c.MkDir()
+	url, clean := s.TemporalDir()
+	defer clean()
+
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fixtures.Basic().One().DotGit().Root(),
 	})
@@ -2312,15 +2367,13 @@ func (s *RepositorySuite) TestDeleteTagAnnotated(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	dir, err := ioutil.TempDir("", "go-git-test-deletetag-annotated")
-	c.Assert(err, IsNil)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	defer os.RemoveAll(dir) // clean up
-
-	fss := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
+	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r, _ := Init(fss, nil)
-	err = r.clone(context.Background(), &CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	ref, err := r.Tag("annotated-tag")
@@ -2347,7 +2400,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotated(c *C) {
 	err = r.RepackObjects(&RepackConfig{})
 	c.Assert(err, IsNil)
 
-	r, err = PlainOpen(dir)
+	r, err = PlainOpen(fs.Root())
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
@@ -2362,15 +2415,13 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	dir, err := ioutil.TempDir("", "go-git-test-deletetag-annotated-unpacked")
-	c.Assert(err, IsNil)
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
 
-	defer os.RemoveAll(dir) // clean up
-
-	fss := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
+	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r, _ := Init(fss, nil)
-	err = r.clone(context.Background(), &CloneOptions{URL: url})
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	c.Assert(err, IsNil)
 
 	// Create a tag for the deletion test. This ensures that the ultimate loose
