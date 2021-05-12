@@ -350,6 +350,13 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	if !req.Depth.IsZero() {
+		req.Shallows, err = r.s.Shallow()
+		if err != nil {
+			return nil, fmt.Errorf("existing checkout is not shallow")
+		}
+	}
+
 	req.Wants, err = getWants(r.s, refs)
 	if len(req.Wants) > 0 {
 		req.Haves, err = getHaves(localRefs, remoteRefs, r.s)
@@ -368,10 +375,40 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if !updated {
+		updated, err = depthChanged(req.Shallows, r.s)
+		if err != nil {
+			return nil, fmt.Errorf("error checking depth change: %v", err)
+		}
+	}
+
+	if !updated {
 		return remoteRefs, NoErrAlreadyUpToDate
 	}
 
 	return remoteRefs, nil
+}
+
+func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
+	after, err := s.Shallow()
+	if err != nil {
+		return false, err
+	}
+
+	if len(before) != len(after) {
+		return true, nil
+	}
+
+	bm := make(map[plumbing.Hash]bool, len(before))
+	for _, b := range before {
+		bm[b] = true
+	}
+	for _, a := range after {
+		if _, ok := bm[a]; !ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.UploadPackSession, error) {
@@ -778,6 +815,11 @@ func doCalculateRefs(
 }
 
 func getWants(localStorer storage.Storer, refs memory.ReferenceStorage) ([]plumbing.Hash, error) {
+	shallow := false
+	if s, _ := localStorer.Shallow(); len(s) > 0 {
+		shallow = true
+	}
+
 	wants := map[plumbing.Hash]bool{}
 	for _, ref := range refs {
 		hash := ref.Hash()
@@ -786,7 +828,7 @@ func getWants(localStorer storage.Storer, refs memory.ReferenceStorage) ([]plumb
 			return nil, err
 		}
 
-		if !exists {
+		if !exists || shallow {
 			wants[hash] = true
 		}
 	}
