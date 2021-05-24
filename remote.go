@@ -1085,7 +1085,7 @@ func (r *Remote) ListContext(ctx context.Context, o *ListOptions) (rfs []*plumbi
 }
 
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return r.ListContext(ctx, o)
 }
