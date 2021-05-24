@@ -575,6 +575,8 @@ type ListOptions struct {
 	InsecureSkipTLS bool
 	// CABundle specify additional ca bundle with system cert pool
 	CABundle []byte
+	// Timeout represents the context deadline of requests to the remote repository.
+	Timeout time.Duration
 }
 
 // CleanOptions describes how a clean should be performed.
