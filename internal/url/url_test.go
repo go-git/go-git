@@ -18,6 +18,7 @@ func (s *URLSuite) TestMatchesScpLike(c *C) {
 		"git@github.com:007/bond",
 		"git@github.com:22:james/bond",
 		"git@github.com:22:007/bond",
+		"git@github:/bond",
 	}
 
 	for _, url := range examples {
@@ -57,4 +58,12 @@ func (s *URLSuite) TestFindScpLikeComponents(c *C) {
 	c.Check(host, Equals, "github.com")
 	c.Check(port, Equals, "22")
 	c.Check(path, Equals, "007/bond")
+
+	url = "git@github:/bond"
+	user, host, port, path = FindScpLikeComponents(url)
+
+	c.Check(user, Equals, "git")
+	c.Check(host, Equals, "github")
+	c.Check(port, Equals, "22")
+	c.Check(path, Equals, "/bond")
 }
