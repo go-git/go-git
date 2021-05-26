@@ -602,6 +602,10 @@ func (r *Remote) addOrUpdateReferences(
 	if !rs.IsWildcard() {
 		ref, ok := refsDict[rs.Src()]
 		if !ok {
+			commit, err := object.GetCommit(r.s, plumbing.NewHash(rs.Src()))
+			if err == nil {
+				return r.addCommit(rs, remoteRefs, commit.Hash, req)
+			}
 			return nil
 		}
 
@@ -654,6 +658,43 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 		req.Commands = append(req.Commands, cmd)
 		return nil
 	})
+}
+
+func (r *Remote) addCommit(rs config.RefSpec,
+	remoteRefs storer.ReferenceStorer, localCommit plumbing.Hash,
+	req *packp.ReferenceUpdateRequest) error {
+
+	if rs.IsWildcard() {
+		return errors.New("can't use wildcard together with hash refspecs")
+	}
+
+	cmd := &packp.Command{
+		Name: rs.Dst(""),
+		Old:  plumbing.ZeroHash,
+		New:  localCommit,
+	}
+	remoteRef, err := remoteRefs.Reference(cmd.Name)
+	if err == nil {
+		if remoteRef.Type() != plumbing.HashReference {
+			//TODO: check actual git behavior here
+			return nil
+		}
+
+		cmd.Old = remoteRef.Hash()
+	} else if err != plumbing.ErrReferenceNotFound {
+		return err
+	}
+	if cmd.Old == cmd.New {
+		return nil
+	}
+	if !rs.IsForceUpdate() {
+		if err := checkFastForwardUpdate(r.s, remoteRefs, cmd); err != nil {
+			return err
+		}
+	}
+
+	req.Commands = append(req.Commands, cmd)
+	return nil
 }
 
 func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
