@@ -293,24 +293,28 @@ func (p *Packfile) getReaderDirect(h *ObjectHeader) (io.ReadCloser, error) {
 	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
 		return p.s.ReadObject()
 	case plumbing.REFDeltaObject:
-		deltaRC, err := p.s.ReadObject()
+		deltaBuf := bufPool.Get().(*bytes.Buffer)
+		defer bufPool.Put(deltaBuf)
+		deltaBuf.Reset()
+		_, _, err := p.s.NextObject(deltaBuf)
 		if err != nil {
 			return nil, err
 		}
-		r, err := p.readREFDeltaObjectContent(h, deltaRC)
+		r, err := p.readREFDeltaObjectContent(h, deltaBuf)
 		if err != nil {
-			_ = deltaRC.Close()
 			return nil, err
 		}
 		return r, nil
 	case plumbing.OFSDeltaObject:
-		deltaRC, err := p.s.ReadObject()
+		deltaBuf := bufPool.Get().(*bytes.Buffer)
+		defer bufPool.Put(deltaBuf)
+		deltaBuf.Reset()
+		_, _, err := p.s.NextObject(deltaBuf)
 		if err != nil {
 			return nil, err
 		}
-		r, err := p.readOFSDeltaObjectContent(h, deltaRC)
+		r, err := p.readOFSDeltaObjectContent(h, deltaBuf)
 		if err != nil {
-			_ = deltaRC.Close()
 			return nil, err
 		}
 		return r, nil
@@ -371,7 +375,7 @@ func (p *Packfile) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plu
 	return p.fillREFDeltaObjectContentWithBuffer(obj, ref, buf)
 }
 
-func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.Reader) (io.ReadCloser, error) {
 	var err error
 
 	base, ok := p.cacheGet(h.Reference)
@@ -415,7 +419,7 @@ func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset 
 	return p.fillOFSDeltaObjectContentWithBuffer(obj, offset, buf)
 }
 
-func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.Reader) (io.ReadCloser, error) {
 	hash, err := p.FindHash(h.OffsetReference)
 	if err != nil {
 		return nil, err
@@ -424,14 +428,6 @@ func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadClo
 	base, err := p.objectAtOffset(h.OffsetReference, hash)
 	if err != nil {
 		return nil, err
-	}
-
-	base, ok := p.cacheGet(h.Reference)
-	if !ok {
-		base, err = p.Get(h.Reference)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return ReaderFromDelta(h, base, deltaRC)
