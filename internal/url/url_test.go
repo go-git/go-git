@@ -64,6 +64,6 @@ func (s *URLSuite) TestFindScpLikeComponents(c *C) {
 
 	c.Check(user, Equals, "git")
 	c.Check(host, Equals, "github")
-	c.Check(port, Equals, "22")
+	c.Check(port, Equals, "")
 	c.Check(path, Equals, "/bond")
 }
