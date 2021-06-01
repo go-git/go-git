@@ -198,8 +198,14 @@ type PushOptions struct {
 	RemoteName string
 	// RemoteURL overrides the remote repo address with a custom URL
 	RemoteURL string
-	// RefSpecs specify what destination ref to update with what source
-	// object. A refspec with empty src can be used to delete a reference.
+	// RefSpecs specify what destination ref to update with what source object.
+	//
+	// The format of a <refspec> parameter is an optional plus +, followed by
+	//  the source object <src>, followed by a colon :, followed by the destination ref <dst>.
+	// The <src> is often the name of the branch you would want to push, but it can be a SHA-1.
+	// The <dst> tells which ref on the remote side is updated with this push.
+	//
+	// A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
