@@ -397,7 +397,7 @@ func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.Reader)
 		}
 	}
 
-	return ReaderFromDelta(h, base, deltaRC)
+	return ReaderFromDelta(base, deltaRC)
 }
 
 func (p *Packfile) fillREFDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, ref plumbing.Hash, buf *bytes.Buffer) error {
@@ -441,7 +441,7 @@ func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.Reader)
 		return nil, err
 	}
 
-	return ReaderFromDelta(h, base, deltaRC)
+	return ReaderFromDelta(base, deltaRC)
 }
 
 func (p *Packfile) fillOFSDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, offset int64, buf *bytes.Buffer) error {
