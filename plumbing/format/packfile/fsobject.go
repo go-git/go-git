@@ -7,7 +7,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 // FSObject is an object from the packfile on the filesystem.
@@ -64,20 +63,6 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 	}
 
 	p := NewPackfileWithCache(o.index, nil, f, o.cache)
-	if o.size > LargeObjectThreshold {
-		// We have a big object
-		h, err := p.objectHeaderAtOffset(o.offset)
-		if err != nil {
-			return nil, err
-		}
-
-		r, err := p.getReaderDirect(h)
-		if err != nil {
-			_ = f.Close()
-			return nil, err
-		}
-		return ioutil.NewReadCloserWithCloser(r, f.Close), nil
-	}
 	r, err := p.getObjectContent(o.offset)
 	if err != nil {
 		_ = f.Close()
