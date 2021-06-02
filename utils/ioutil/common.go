@@ -55,28 +55,6 @@ func NewReadCloser(r io.Reader, c io.Closer) io.ReadCloser {
 	return &readCloser{Reader: r, closer: c}
 }
 
-type readCloserCloser struct {
-	io.ReadCloser
-	closer func() error
-}
-
-func (r *readCloserCloser) Close() (err error) {
-	defer func() {
-		if err == nil {
-			err = r.closer()
-			return
-		}
-		_ = r.closer()
-	}()
-	return r.ReadCloser.Close()
-}
-
-// NewReadCloserWithCloser creates an `io.ReadCloser` with the given `io.ReaderCloser` and
-// `io.Closer` that ensures that the closer is closed on close
-func NewReadCloserWithCloser(r io.ReadCloser, c func() error) io.ReadCloser {
-	return &readCloserCloser{ReadCloser: r, closer: c}
-}
-
 type writeCloser struct {
 	io.Writer
 	closer io.Closer
