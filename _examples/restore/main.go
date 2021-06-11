@@ -71,6 +71,7 @@ func main() {
 	Info("rm for-delete")
 	err = os.Remove(filepath.Join(directory, "for-delete"))
 	CheckIfError(err)
+	Info("git add for-delete")
 	_, err = w.Add("for-delete")
 	CheckIfError(err)
 
