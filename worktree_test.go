@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -2241,4 +2242,87 @@ func (s *WorktreeSuite) TestLinkedWorktree(c *C) {
 		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
 		c.Assert(err, Equals, ErrRepositoryIncomplete)
 	}
+}
+
+var statusCodeNames = map[StatusCode]string{
+	Unmodified:         "Unmodified",
+	Untracked:          "Untracked",
+	Modified:           "Modified",
+	Added:              "Added",
+	Deleted:            "Deleted",
+	Renamed:            "Renamed",
+	Copied:             "Copied",
+	UpdatedButUnmerged: "UpdatedButUnmerged",
+}
+
+func verifyStatus(c *C, w *Worktree, files []string, statuses []FileStatus) {
+	c.Assert(len(files), Equals, len(statuses))
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+
+	for i, file := range files {
+		current := status.File(file)
+		expected := statuses[i]
+		c.Assert(current.Worktree, Equals, expected.Worktree, Commentf("[%d] : %s Worktree %s != %s", i, file, statusCodeNames[current.Worktree], statusCodeNames[expected.Worktree]))
+		c.Assert(current.Staging, Equals, expected.Staging, Commentf("[%d] : %s Staging %s != %s", i, file, statusCodeNames[current.Staging], statusCodeNames[expected.Staging]))
+	}
+}
+
+func (s *WorktreeSuite) TestRestoreStaged(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	// Touch of bunch of files including create a new file and delete an exsiting file
+	names := []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg"}
+	for i, name := range names {
+		contents := fmt.Sprintf("Foo Bar:%d", i)
+		err = util.WriteFile(fs, name, []byte(contents), 0755)
+		c.Assert(err, IsNil)
+	}
+	err = util.RemoveAll(fs, names[3])
+	c.Assert(err, IsNil)
+
+	//Confirm the status after doing the edits without staging anything
+	verifyStatus(c, w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Deleted, Staging: Unmodified},
+	})
+
+	// Stage all 3 files and verify the updated status
+	for _, name := range names {
+		_, err = w.Add(name)
+		c.Assert(err, IsNil)
+	}
+	verifyStatus(c, w, names, []FileStatus{
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Deleted},
+	})
+
+	// Restore Staged files in 2 groups and confirm status
+	w.RestoreStaged(names[0], names[1])
+	verifyStatus(c, w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Unmodified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Deleted},
+	})
+
+	w.RestoreStaged(names[2], names[3])
+	verifyStatus(c, w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Deleted, Staging: Unmodified},
+	})
 }

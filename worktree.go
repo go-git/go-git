@@ -262,6 +262,16 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	return w.r.Storer.SetReference(head)
 }
 
+// unstages a set of files -- equivalent to "git restore --staged <file>..."
+func (w *Worktree) RestoreStaged(files ...string) error {
+	opts := &ResetOptions{
+		Mode:  MixedReset,
+		Files: files,
+	}
+
+	return w.Reset(opts)
+}
+
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
 	if err := opts.Validate(w.r); err != nil {
@@ -293,7 +303,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset {
-		if err := w.resetIndex(t); err != nil {
+		if err := w.resetIndex(t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -307,7 +317,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	return nil
 }
 
-func (w *Worktree) resetIndex(t *object.Tree) error {
+func (w *Worktree) resetIndex(t *object.Tree, files []string) error {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return err
@@ -339,6 +349,13 @@ func (w *Worktree) resetIndex(t *object.Tree) error {
 			name = ch.From.String()
 		}
 
+		if len(files) > 0 {
+			contains := inFiles(files, name)
+			if !contains {
+				continue
+			}
+		}
+
 		b.Remove(name)
 		if e == nil {
 			continue
@@ -354,6 +371,16 @@ func (w *Worktree) resetIndex(t *object.Tree) error {
 
 	b.Write(idx)
 	return w.r.Storer.SetIndex(idx)
+}
+
+func inFiles(files []string, v string) bool {
+	for _, s := range files {
+		if s == v {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (w *Worktree) resetWorktree(t *object.Tree) error {
