@@ -403,7 +403,6 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 
 	if size > packfile.LargeObjectThreshold {
 		obj = dotgit.NewEncodedObject(s.dir, h, t, size)
-		s.objectCache.Put(obj)
 		return obj, nil
 	}
 
