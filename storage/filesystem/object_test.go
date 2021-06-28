@@ -107,6 +107,27 @@ func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptors(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{
+		MaxOpenDescriptors:   1,
+		LargeObjectThreshold: 1,
+	})
+
+	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
+	obj, err := o.getFromPackfile(expected, false)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, expected)
+
+	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
+	obj, err = o.getFromPackfile(expected, false)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, expected)
+
+	err = o.Close()
+	c.Assert(err, IsNil)
+}
+
 func (s *FsSuite) TestGetSizeOfObjectFile(c *C) {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
@@ -160,10 +181,44 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles(c *C) {
 	c.Assert(obj.Hash(), Equals, expected)
 }
 
+func (s *FsSuite) TestGetFromPackfileMultiplePackfilesLargeObjectThreshold(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{LargeObjectThreshold: 1})
+
+	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
+	obj, err := o.getFromPackfile(expected, false)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, expected)
+
+	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
+	obj, err = o.getFromPackfile(expected, false)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, expected)
+}
+
 func (s *FsSuite) TestIter(c *C) {
 	fixtures.ByTag(".git").ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		fs := f.DotGit()
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+
+		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
+		c.Assert(err, IsNil)
+
+		var count int32
+		err = iter.ForEach(func(o plumbing.EncodedObject) error {
+			count++
+			return nil
+		})
+
+		c.Assert(err, IsNil)
+		c.Assert(count, Equals, f.ObjectsCount)
+	})
+}
+
+func (s *FsSuite) TestIterLargeObjectThreshold(c *C) {
+	fixtures.ByTag(".git").ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{LargeObjectThreshold: 1})
 
 		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
 		c.Assert(err, IsNil)
@@ -215,7 +270,7 @@ func (s *FsSuite) TestPackfileIter(c *C) {
 				idxf, err := dg.ObjectPackIdx(h)
 				c.Assert(err, IsNil)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, false)
+				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0)
 				c.Assert(err, IsNil)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -298,7 +353,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors(c *C) {
 				idxf, err := dg.ObjectPackIdx(h)
 				c.Assert(err, IsNil)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, true)
+				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0)
 				c.Assert(err, IsNil)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -377,7 +432,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -425,7 +480,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0)
 						if err != nil {
 							b.Fatal(err)
 						}

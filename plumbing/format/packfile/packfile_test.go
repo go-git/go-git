@@ -111,7 +111,7 @@ func (s *PackfileSuite) SetUpTest(c *C) {
 	s.idx = idxfile.NewMemoryIndex()
 	c.Assert(idxfile.NewDecoder(s.f.Idx()).Decode(s.idx), IsNil)
 
-	s.p = packfile.NewPackfile(s.idx, fixtures.Filesystem, s.f.Packfile())
+	s.p = packfile.NewPackfile(s.idx, fixtures.Filesystem, s.f.Packfile(), 0)
 }
 
 func (s *PackfileSuite) TearDownTest(c *C) {
@@ -122,7 +122,7 @@ func (s *PackfileSuite) TestDecode(c *C) {
 	fixtures.Basic().ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
 		index := getIndexFromIdxFile(f.Idx())
 
-		p := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
+		p := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile(), 0)
 		defer p.Close()
 
 		for _, h := range expectedHashes {
@@ -138,7 +138,7 @@ func (s *PackfileSuite) TestDecodeByTypeRefDelta(c *C) {
 
 	index := getIndexFromIdxFile(f.Idx())
 
-	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
+	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile(), 0)
 	defer packfile.Close()
 
 	iter, err := packfile.GetByType(plumbing.CommitObject)
@@ -171,7 +171,7 @@ func (s *PackfileSuite) TestDecodeByType(c *C) {
 		for _, t := range ts {
 			index := getIndexFromIdxFile(f.Idx())
 
-			packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
+			packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile(), 0)
 			defer packfile.Close()
 
 			iter, err := packfile.GetByType(t)
@@ -189,7 +189,7 @@ func (s *PackfileSuite) TestDecodeByTypeConstructor(c *C) {
 	f := fixtures.Basic().ByTag("packfile").One()
 	index := getIndexFromIdxFile(f.Idx())
 
-	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
+	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile(), 0)
 	defer packfile.Close()
 
 	_, err := packfile.GetByType(plumbing.OFSDeltaObject)
@@ -266,7 +266,7 @@ func (s *PackfileSuite) TestSize(c *C) {
 
 	index := getIndexFromIdxFile(f.Idx())
 
-	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile())
+	packfile := packfile.NewPackfile(index, fixtures.Filesystem, f.Packfile(), 0)
 	defer packfile.Close()
 
 	// Get the size of binary.jpg, which is not delta-encoded.

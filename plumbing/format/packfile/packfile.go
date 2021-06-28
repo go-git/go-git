@@ -34,20 +34,15 @@ var (
 // wrapped in FSObject.
 const smallObjectThreshold = 16 * 1024
 
-// Conversely there are large objects that should not be cached and kept
-// in memory as they're too large to be reasonably cached. Objects larger
-// than this threshold are now always never read into memory to be stored
-// in the cache
-const LargeObjectThreshold = 1024 * 1024
-
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
-	fs             billy.Filesystem
-	file           billy.File
-	s              *Scanner
-	deltaBaseCache cache.Object
-	offsetToType   map[int64]plumbing.ObjectType
+	fs                   billy.Filesystem
+	file                 billy.File
+	s                    *Scanner
+	deltaBaseCache       cache.Object
+	offsetToType         map[int64]plumbing.ObjectType
+	largeObjectThreshold int64
 }
 
 // NewPackfileWithCache creates a new Packfile with the given object cache.
@@ -58,6 +53,7 @@ func NewPackfileWithCache(
 	fs billy.Filesystem,
 	file billy.File,
 	cache cache.Object,
+	largeObjectThreshold int64,
 ) *Packfile {
 	s := NewScanner(file)
 	return &Packfile{
@@ -67,6 +63,7 @@ func NewPackfileWithCache(
 		s,
 		cache,
 		make(map[int64]plumbing.ObjectType),
+		largeObjectThreshold,
 	}
 }
 
@@ -74,8 +71,8 @@ func NewPackfileWithCache(
 // and packfile idx.
 // If the filesystem is provided, the packfile will return FSObjects, otherwise
 // it will return MemoryObjects.
-func NewPackfile(index idxfile.Index, fs billy.Filesystem, file billy.File) *Packfile {
-	return NewPackfileWithCache(index, fs, file, cache.NewObjectLRUDefault())
+func NewPackfile(index idxfile.Index, fs billy.Filesystem, file billy.File, largeObjectThreshold int64) *Packfile {
+	return NewPackfileWithCache(index, fs, file, cache.NewObjectLRUDefault(), largeObjectThreshold)
 }
 
 // Get retrieves the encoded object in the packfile with the given hash.
@@ -271,6 +268,7 @@ func (p *Packfile) getNextObject(h *ObjectHeader, hash plumbing.Hash) (plumbing.
 		p.fs,
 		p.file.Name(),
 		p.deltaBaseCache,
+		p.largeObjectThreshold,
 	), nil
 }
 
