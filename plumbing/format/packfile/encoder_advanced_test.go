@@ -105,7 +105,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	_, err = f.Seek(0, io.SeekStart)
 	c.Assert(err, IsNil)
 
-	p := NewPackfile(index, fs, f)
+	p := NewPackfile(index, fs, f, 0)
 
 	decodeHash, err := p.ID()
 	c.Assert(err, IsNil)
