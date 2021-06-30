@@ -67,6 +67,8 @@ type Config struct {
 		Name string
 		// Email is the email of the author and the commiter of a commit.
 		Email string
+		// SigningKey is the GPG key used to sign commits.
+		SigningKey string
 	}
 
 	Author struct {
@@ -74,6 +76,11 @@ type Config struct {
 		Name string
 		// Email is the email of the author of a commit.
 		Email string
+	}
+
+	Commit struct {
+		//GPGSign is the signature of the GPG key used to sign commits.
+		GPGSign bool
 	}
 
 	Committer struct {
@@ -234,6 +241,7 @@ const (
 	packSection      = "pack"
 	userSection      = "user"
 	authorSection    = "author"
+	commitSection    = "commit"
 	committerSection = "committer"
 	initSection      = "init"
 	urlSection       = "url"
@@ -248,6 +256,8 @@ const (
 	nameKey          = "name"
 	emailKey         = "email"
 	defaultBranchKey = "defaultBranch"
+	signingKey       = "signingKey"
+	gpgSignKey       = "gpgSign"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -297,10 +307,16 @@ func (c *Config) unmarshalUser() {
 	s := c.Raw.Section(userSection)
 	c.User.Name = s.Options.Get(nameKey)
 	c.User.Email = s.Options.Get(emailKey)
+	c.User.SigningKey = s.Options.Get(signingKey)
 
 	s = c.Raw.Section(authorSection)
 	c.Author.Name = s.Options.Get(nameKey)
 	c.Author.Email = s.Options.Get(emailKey)
+
+	s = c.Raw.Section(commitSection)
+	if s.Options.Get(gpgSignKey) == "true" {
+		c.Commit.GPGSign = true
+	}
 
 	s = c.Raw.Section(committerSection)
 	c.Committer.Name = s.Options.Get(nameKey)
@@ -426,6 +442,10 @@ func (c *Config) marshalUser() {
 		s.SetOption(emailKey, c.User.Email)
 	}
 
+	if c.User.SigningKey != "" {
+		s.SetOption(signingKey, c.User.SigningKey)
+	}
+
 	s = c.Raw.Section(authorSection)
 	if c.Author.Name != "" {
 		s.SetOption(nameKey, c.Author.Name)
@@ -433,6 +453,11 @@ func (c *Config) marshalUser() {
 
 	if c.Author.Email != "" {
 		s.SetOption(emailKey, c.Author.Email)
+	}
+
+	s = c.Raw.Section(commitSection)
+	if c.Commit.GPGSign {
+		s.SetOption(gpgSignKey, fmt.Sprintf("%t", c.Commit.GPGSign))
 	}
 
 	s = c.Raw.Section(committerSection)
