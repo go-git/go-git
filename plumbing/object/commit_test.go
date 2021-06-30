@@ -393,6 +393,7 @@ func (s *SuiteCommit) TestStat(c *C) {
 	c.Assert(fileStats[0].Addition, Equals, 7)
 	c.Assert(fileStats[0].Deletion, Equals, 0)
 	c.Assert(fileStats[0].String(), Equals, " vendor/foo.go | 7 +++++++\n")
+	c.Assert(fileStats.String(), Equals, " vendor/foo.go | 7 +++++++\n 1 file changed, 7 insertions(+)")
 
 	// Stats for another commit.
 	aCommit = s.commit(c, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
@@ -408,6 +409,12 @@ func (s *SuiteCommit) TestStat(c *C) {
 	c.Assert(fileStats[1].Addition, Equals, 259)
 	c.Assert(fileStats[1].Deletion, Equals, 0)
 	c.Assert(fileStats[1].String(), Equals, " php/crappy.php | 259 ++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
+
+	summary := ` go/example.go | 142 ++++++++++++++++++++++++++++
+ php/crappy.php | 259 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 401 insertions(+)`
+
+	c.Assert(fileStats.String(), Equals, summary)
 }
 
 func (s *SuiteCommit) TestVerify(c *C) {
