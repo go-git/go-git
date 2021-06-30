@@ -4,15 +4,15 @@ Supported Capabilities
 Here is a non-comprehensive table of git commands and features whose equivalent
 is supported by go-git.
 
-| Feature                               | Status | Notes |
-|---------------------------------------|--------|-------|
+| Feature                               | Status | Sub-Feartures |Notes |
+|---------------------------------------|--------|-------|-------|
 | **config**                            |
-| config                                | ✔ | Reading and modifying per-repository configuration (`.git/config`) is supported. Global configuration (`$HOME/.gitconfig`) is not. |
+| config                                | ✔ | ✔ Per-repository configuration (`.git/config`)<br/>✖ Global configuration (`$HOME/.gitconfig`)| |
 | **getting and creating repositories** |
-| init                                  | ✔ | Plain init and `--bare` are supported. Flags `--template`, `--separate-git-dir` and `--shared` are not. |
-| clone                                 | ✔ | Plain clone and equivalents to `--progress`,  `--single-branch`, `--depth`, `--origin`, `--recurse-submodules` are supported. Others are not. |
+| init                                  | ✔ |  ✔ `--bare`<br/>✖ `--template`<br/>✖ `--separate-git-dir`<br/>✖ `--shared`| 
+| clone                                 | ✔ |  ✔ `--progress`<br/>✔ `--single-branch`<br/>✔ `--depth`<br/>✔ `--origin`<br/>✔ `--recurse-submodules`| |
 | **basic snapshotting** |
-| add                                   | ✔ | Plain add is supported. Any other flags aren't supported |
+| add                                   | ✔ |  ✔ Plain add<br/>✖ Other flags| |
 | status                                | ✔ |
 | commit                                | ✔ |
 | reset                                 | ✔ |
@@ -20,14 +20,14 @@ is supported by go-git.
 | mv                                    | ✔ |
 | **branching and merging** |
 | branch                                | ✔ |
-| checkout                              | ✔ | Basic usages of checkout are supported. |
+| checkout                              | ✔ | ✔ Basic usages | |
 | merge                                 | ✖ |
 | mergetool                             | ✖ |
 | stash                                 | ✖ |
 | tag                                   | ✔ |
 | **sharing and updating projects** |
 | fetch                                 | ✔ |
-| pull                                  | ✔ | Only supports merges where the merge can be resolved as a fast-forward. |
+| pull                                  | ✔ | ✔ Fast-forward merge |  |
 | push                                  | ✔ |
 | remote                                | ✔ |
 | submodule                             | ✔ |
@@ -39,7 +39,7 @@ is supported by go-git.
 | **patching** |
 | apply                                 | ✖ |
 | cherry-pick                           | ✖ |
-| diff                                  | ✔ | Patch object with UnifiedDiff output representation |
+| diff                                  | ✔ |  | Patch object with UnifiedDiff output representation |
 | rebase                                | ✖ |
 | revert                                | ✖ |
 | **debugging** |
@@ -86,7 +86,7 @@ is supported by go-git.
 | for-each-ref                          | ✔ |
 | hash-object                           | ✔ |
 | ls-files                              | ✔ |
-| merge-base                            | ✔ | Calculates the merge-base only between two commits, and supports `--independent` and `--is-ancestor` modifiers; Does not support `--fork-point` nor `--octopus` modifiers. |
+| merge-base                            | ✔ |  ✔ `--independent`<br/>✔ `--is-ancestor`<br/>✖ `--fork-point`<br/>✖ `--octopus`| Calculates the merge-base only between two commits.|
 | read-tree                             | |
 | rev-list                              | ✔ |
 | rev-parse                             | |
@@ -101,7 +101,7 @@ is supported by go-git.
 | http(s):// (smart)                    | ✔ |
 | git://                                | ✔ |
 | ssh://                                | ✔ |
-| file://                               | partial | Warning: this is not pure Golang. This shells out to the `git` binary. |
+| file://                               | partial |  | Warning: this is not pure Golang. This shells out to the `git` binary. |
 | custom                                | ✔ |
 | **other features** |
 | gitignore                             | ✔ |
