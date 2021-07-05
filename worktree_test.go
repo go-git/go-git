@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
@@ -2255,23 +2256,9 @@ var statusCodeNames = map[StatusCode]string{
 	UpdatedButUnmerged: "UpdatedButUnmerged",
 }
 
-func verifyStatus(c *C, w *Worktree, files []string, statuses []FileStatus) {
-	c.Assert(len(files), Equals, len(statuses))
-
-	status, err := w.Status()
-	c.Assert(err, IsNil)
-
-	for i, file := range files {
-		current := status.File(file)
-		expected := statuses[i]
-		c.Assert(current.Worktree, Equals, expected.Worktree, Commentf("[%d] : %s Worktree %s != %s", i, file, statusCodeNames[current.Worktree], statusCodeNames[expected.Worktree]))
-		c.Assert(current.Staging, Equals, expected.Staging, Commentf("[%d] : %s Staging %s != %s", i, file, statusCodeNames[current.Staging], statusCodeNames[expected.Staging]))
-	}
-}
-
-func (s *WorktreeSuite) TestRestoreStaged(c *C) {
-	fs := memfs.New()
-	w := &Worktree{
+func setupForRestore(c *C, s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names []string) {
+	fs = memfs.New()
+	w = &Worktree{
 		r:          s.Repository,
 		Filesystem: fs,
 	}
@@ -2279,8 +2266,15 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
+	names = []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg"}
+	verifyStatus(c, "Checkout", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+	})
+
 	// Touch of bunch of files including create a new file and delete an exsiting file
-	names := []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg"}
 	for i, name := range names {
 		contents := fmt.Sprintf("Foo Bar:%d", i)
 		err = util.WriteFile(fs, name, []byte(contents), 0755)
@@ -2290,39 +2284,134 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 	c.Assert(err, IsNil)
 
 	//Confirm the status after doing the edits without staging anything
-	verifyStatus(c, w, names, []FileStatus{
+	verifyStatus(c, "Edits", w, names, []FileStatus{
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Deleted, Staging: Unmodified},
 	})
 
-	// Stage all 3 files and verify the updated status
+	// Stage all files and verify the updated status
 	for _, name := range names {
 		_, err = w.Add(name)
 		c.Assert(err, IsNil)
 	}
-	verifyStatus(c, w, names, []FileStatus{
+	verifyStatus(c, "Staged", w, names, []FileStatus{
 		{Worktree: Unmodified, Staging: Added},
 		{Worktree: Unmodified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
 	})
 
-	// Restore Staged files in 2 groups and confirm status
-	w.RestoreStaged(names[0], names[1])
-	verifyStatus(c, w, names, []FileStatus{
-		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Modified, Staging: Unmodified},
-		{Worktree: Unmodified, Staging: Modified},
+	// Add secondary changes to a file to make sure we only restore the staged file
+	err = util.WriteFile(fs, names[1], []byte("Foo Bar:11"), 0755)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(fs, names[2], []byte("Foo Bar:22"), 0755)
+	c.Assert(err, IsNil)
+
+	verifyStatus(c, "Secondary Edits", w, names, []FileStatus{
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Modified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
 	})
 
-	w.RestoreStaged(names[2], names[3])
-	verifyStatus(c, w, names, []FileStatus{
+	return
+}
+
+func verifyStatus(c *C, marker string, w *Worktree, files []string, statuses []FileStatus) {
+	c.Assert(len(files), Equals, len(statuses))
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+
+	for i, file := range files {
+		current := status.File(file)
+		expected := statuses[i]
+		c.Assert(current.Worktree, Equals, expected.Worktree, Commentf("%s - [%d] : %s Worktree %s != %s", marker, i, file, statusCodeNames[current.Worktree], statusCodeNames[expected.Worktree]))
+		c.Assert(current.Staging, Equals, expected.Staging, Commentf("%s - [%d] : %s Staging %s != %s", marker, i, file, statusCodeNames[current.Staging], statusCodeNames[expected.Staging]))
+	}
+}
+
+func (s *WorktreeSuite) TestRestoreStaged(c *C) {
+	fs, w, names := setupForRestore(c, s)
+
+	//Attempt without files should throw an error like the git restore --staged
+	opts := RestoreOptions{Staged: true}
+	err := w.Restore(&opts)
+	c.Assert(err, Equals, ErrNoRestorePaths)
+
+	// Restore Staged files in 2 groups and confirm status
+	opts.Files = []string{names[0], names[1]}
+	err = w.Restore(&opts)
+	c.Assert(err, IsNil)
+	verifyStatus(c, "Restored First", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Deleted},
+	})
+
+	//Make sure the restore didn't overwrite our secondary changes
+	contents, err := util.ReadFile(fs, names[1])
+	c.Assert(err, IsNil)
+	c.Assert(string(contents), Equals, "Foo Bar:11")
+
+	opts.Files = []string{names[2], names[3]}
+	err = w.Restore(&opts)
+	c.Assert(err, IsNil)
+	verifyStatus(c, "Restored Second", w, names, []FileStatus{
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Deleted, Staging: Unmodified},
+	})
+
+	//Make sure the restore didn't overwrite our secondary changes
+	contents, err = util.ReadFile(fs, names[2])
+	c.Assert(err, IsNil)
+	c.Assert(string(contents), Equals, "Foo Bar:22")
+}
+
+func (s *WorktreeSuite) TestRestoreWorktree(c *C) {
+	_, w, names := setupForRestore(c, s)
+
+	//Attempt without files should throw an error like the git restore
+	opts := RestoreOptions{}
+	err := w.Restore(&opts)
+	c.Assert(err, Equals, ErrNoRestorePaths)
+
+	opts.Files = []string{names[0], names[1]}
+	err = w.Restore(&opts)
+	c.Assert(err, Equals, ErrRestoreWorktreeeOnlyNotSupported)
+}
+
+func (s *WorktreeSuite) TestRestoreBoth(c *C) {
+	_, w, names := setupForRestore(c, s)
+
+	//Attempt without files should throw an error like the git restore --staged --worktree
+	opts := RestoreOptions{Staged: true, Worktree: true}
+	err := w.Restore(&opts)
+	c.Assert(err, Equals, ErrNoRestorePaths)
+
+	// Restore Staged files in 2 groups and confirm status
+	opts.Files = []string{names[0], names[1]}
+	err = w.Restore(&opts)
+	c.Assert(err, IsNil)
+	verifyStatus(c, "Restored First", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Deleted},
+	})
+
+	opts.Files = []string{names[2], names[3]}
+	err = w.Restore(&opts)
+	c.Assert(err, IsNil)
+	verifyStatus(c, "Restored Second", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
 	})
 }

@@ -83,7 +83,7 @@ func main() {
 
 	// Unstage a single file and see the status
 	Info("git restore --staged for-modify")
-	err = w.RestoreStaged("for-modify")
+	err = w.Restore(&git.RestoreOptions{Staged: true, Files: []string{"for-modify"}})
 	CheckIfError(err)
 
 	Info("git status --porcelain")
@@ -93,7 +93,7 @@ func main() {
 
 	// Unstage the other 2 files and see the status
 	Info("git restore --staged for-add for-delete")
-	err = w.RestoreStaged("for-add", "for-delete")
+	err = w.Restore(&git.RestoreOptions{Staged: true, Files: []string{"for-add", "for-delete"}})
 	CheckIfError(err)
 
 	Info("git status --porcelain")

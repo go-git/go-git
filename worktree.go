@@ -26,11 +26,12 @@ import (
 )
 
 var (
-	ErrWorktreeNotClean     = errors.New("worktree is not clean")
-	ErrSubmoduleNotFound    = errors.New("submodule not found")
-	ErrUnstagedChanges      = errors.New("worktree contains unstaged changes")
-	ErrGitModulesSymlink    = errors.New(gitmodulesFile + " is a symlink")
-	ErrNonFastForwardUpdate = errors.New("non-fast-forward update")
+	ErrWorktreeNotClean                 = errors.New("worktree is not clean")
+	ErrSubmoduleNotFound                = errors.New("submodule not found")
+	ErrUnstagedChanges                  = errors.New("worktree contains unstaged changes")
+	ErrGitModulesSymlink                = errors.New(gitmodulesFile + " is a symlink")
+	ErrNonFastForwardUpdate             = errors.New("non-fast-forward update")
+	ErrRestoreWorktreeeOnlyNotSupported = errors.New("--worktree only is not supported")
 )
 
 // Worktree represents a git worktree.
@@ -263,13 +264,28 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 }
 
 // unstages a set of files -- equivalent to "git restore --staged <file>..."
-func (w *Worktree) RestoreStaged(files ...string) error {
-	opts := &ResetOptions{
-		Mode:  MixedReset,
-		Files: files,
+func (w *Worktree) Restore(o *RestoreOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
 	}
 
-	return w.Reset(opts)
+	if o.Worktree && o.Staged {
+		// If we are doing both Worktree and Staging then it is a hard reset
+		opts := &ResetOptions{
+			Mode:  HardReset,
+			Files: o.Files,
+		}
+		return w.Reset(opts)
+	} else if o.Staged {
+		// If we are doing just staging then it is a mixed reset
+		opts := &ResetOptions{
+			Mode:  MixedReset,
+			Files: o.Files,
+		}
+		return w.Reset(opts)
+	} else {
+		return ErrRestoreWorktreeeOnlyNotSupported
+	}
 }
 
 // Reset the worktree to a specified state.
@@ -309,7 +325,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == MergeReset || opts.Mode == HardReset {
-		if err := w.resetWorktree(t); err != nil {
+		if err := w.resetWorktree(t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -383,7 +399,7 @@ func inFiles(files []string, v string) bool {
 	return false
 }
 
-func (w *Worktree) resetWorktree(t *object.Tree) error {
+func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	changes, err := w.diffStagingWithWorktree(true)
 	if err != nil {
 		return err
@@ -396,6 +412,20 @@ func (w *Worktree) resetWorktree(t *object.Tree) error {
 	b := newIndexBuilder(idx)
 
 	for _, ch := range changes {
+		if len(files) > 0 {
+			file := ""
+			if ch.From != nil {
+				file = ch.From.Name()
+			} else {
+				file = ch.To.Name()
+			}
+
+			contains := inFiles(files, file)
+			if !contains {
+				continue
+			}
+		}
+
 		if err := w.checkoutChange(ch, t, b); err != nil {
 			return err
 		}

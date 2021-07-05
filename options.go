@@ -507,6 +507,7 @@ var (
 	ErrMissingName    = errors.New("name field is required")
 	ErrMissingTagger  = errors.New("tagger field is required")
 	ErrMissingMessage = errors.New("message field is required")
+	ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 )
 
 // CreateTagOptions describes how a tag object should be created.
@@ -635,3 +636,22 @@ type PlainOpenOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
+
+// RestoreOptions describes how a restore should be performed.
+type RestoreOptions struct {
+	// Marks to restore the content in the index
+	Staged bool
+	// Marks to restore the content of the working tree
+	Worktree bool
+	// List of file paths that will be restored
+	Files []string
+}
+
+// Validate validates the fields and sets the default values.
+func (o *RestoreOptions) Validate() error {
+	if len(o.Files) == 0 {
+		return ErrNoRestorePaths
+	}
+
+	return nil
+}
