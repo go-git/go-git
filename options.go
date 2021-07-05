@@ -507,7 +507,6 @@ var (
 	ErrMissingName    = errors.New("name field is required")
 	ErrMissingTagger  = errors.New("tagger field is required")
 	ErrMissingMessage = errors.New("message field is required")
-	ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 )
 
 // CreateTagOptions describes how a tag object should be created.
@@ -636,6 +635,10 @@ type PlainOpenOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
+
+var (
+	ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
+)
 
 // RestoreOptions describes how a restore should be performed.
 type RestoreOptions struct {
