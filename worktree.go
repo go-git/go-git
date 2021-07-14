@@ -31,7 +31,7 @@ var (
 	ErrUnstagedChanges                  = errors.New("worktree contains unstaged changes")
 	ErrGitModulesSymlink                = errors.New(gitmodulesFile + " is a symlink")
 	ErrNonFastForwardUpdate             = errors.New("non-fast-forward update")
-	ErrRestoreWorktreeeOnlyNotSupported = errors.New("--worktree only is not supported")
+	ErrRestoreWorktreeeOnlyNotSupported = errors.New("worktree only is not supported")
 )
 
 // Worktree represents a git worktree.
