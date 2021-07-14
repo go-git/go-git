@@ -263,7 +263,17 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	return w.r.Storer.SetReference(head)
 }
 
-// unstages a set of files -- equivalent to "git restore --staged <file>..."
+// Restore specified files in the working tree or stage with contents from
+// a restore source. If a path is tracked but does not exist in the restore,
+// source, it will be removed to match the source.
+//
+// If Staged and Worktree are true, then the restore source will be the index.
+// If only Staged is true, then the restore source will be HEAD.
+// If only Worktree is true or neither Staged nor Worktree are true, will
+// result in ErrRestoreWorktreeeOnlyNotSupported because restoring the working
+// tree while leaving the stage untouched is not currently supported
+//
+// Restore with no files specified will return ErrNoRestorePaths
 func (w *Worktree) Restore(o *RestoreOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
