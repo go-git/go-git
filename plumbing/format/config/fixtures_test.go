@@ -43,6 +43,24 @@ var fixtures = []*Fixture{
 		Config: New().AddOption("core", "", "repositoryformatversion", "0"),
 	},
 	{
+		Raw:    "[section]\n",
+		Text:   `[section]
+	option1 = "has # hash"
+	option2 = "has \" quote"
+	option3 = "has \\ backslash"
+	option4 = "  has leading spaces"
+	option5 = "has trailing spaces  "
+	option6 = has no special characters
+`,
+		Config: New().
+			AddOption("section", "", "option1", `has # hash`).
+			AddOption("section", "", "option2", `has " quote`).
+			AddOption("section", "", "option3", `has \ backslash`).
+			AddOption("section", "", "option4", `  has leading spaces`).
+			AddOption("section", "", "option5", `has trailing spaces  `).
+			AddOption("section", "", "option6", `has no special characters`),
+	},
+	{
 		Raw: `
 			[sect1]
 			opt1 = value1

@@ -59,7 +59,7 @@ func (e *Encoder) encodeSubsection(sectionName string, s *Subsection) error {
 func (e *Encoder) encodeOptions(opts Options) error {
 	for _, o := range opts {
 		pattern := "\t%s = %s\n"
-		if strings.Contains(o.Value, "\\") {
+		if strings.ContainsAny(o.Value, `"#\"`) || strings.HasPrefix(o.Value, " ") || strings.HasSuffix(o.Value, " ") {
 			pattern = "\t%s = %q\n"
 		}
 
