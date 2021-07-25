@@ -48,17 +48,24 @@ var fixtures = []*Fixture{
 	option1 = "has # hash"
 	option2 = "has \" quote"
 	option3 = "has \\ backslash"
-	option4 = "  has leading spaces"
-	option5 = "has trailing spaces  "
-	option6 = has no special characters
-`,
+	option4 = "has ; semicolon"
+	option5 = "has \n line-feed"
+	option6 = "has \t tab"
+	option7 = "  has leading spaces"
+	option8 = "has trailing spaces  "
+	option9 = has no special characters
+`+"\toption10 = has unusual \x01\x7f\xc8\x80 characters\n",
 		Config: New().
 			AddOption("section", "", "option1", `has # hash`).
 			AddOption("section", "", "option2", `has " quote`).
 			AddOption("section", "", "option3", `has \ backslash`).
-			AddOption("section", "", "option4", `  has leading spaces`).
-			AddOption("section", "", "option5", `has trailing spaces  `).
-			AddOption("section", "", "option6", `has no special characters`),
+			AddOption("section", "", "option4", `has ; semicolon`).
+			AddOption("section", "", "option5", "has \n line-feed").
+			AddOption("section", "", "option6", "has \t tab").
+			AddOption("section", "", "option7", `  has leading spaces`).
+			AddOption("section", "", "option8", `has trailing spaces  `).
+			AddOption("section", "", "option9", `has no special characters`).
+			AddOption("section", "", "option10", "has unusual \x01\x7f\u0200 characters"),
 	},
 	{
 		Raw: `
