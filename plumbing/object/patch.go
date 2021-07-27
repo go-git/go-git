@@ -225,6 +225,9 @@ type FileStat struct {
 	Name     string
 	Addition int
 	Deletion int
+	RenamedFrom string
+	FileAdded   bool
+	FileDeleted bool
 }
 
 func (fs FileStat) String() string {
@@ -297,7 +300,11 @@ func printStat(fileStats []FileStat) string {
 		}
 		adds := strings.Repeat("+", addc)
 		dels := strings.Repeat("-", delc)
-		finalOutput += fmt.Sprintf(" %s | %d %s%s\n", fs.Name, (fs.Addition + fs.Deletion), adds, dels)
+		name := fs.Name
+		if fs.RenamedFrom != "" {
+			name = fmt.Sprintf("%s -> %s", fs.RenamedFrom, fs.Name)
+		}
+		finalOutput += fmt.Sprintf(" %s | %d %s%s\n", name, (fs.Addition + fs.Deletion), adds, dels)
 	}
 
 	return finalOutput
@@ -316,13 +323,17 @@ func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
 		from, to := fp.Files()
 		if from == nil {
 			// New File is created.
+			cs.FileAdded = true
 			cs.Name = to.Path()
 		} else if to == nil {
 			// File is deleted.
+			cs.FileDeleted = true
 			cs.Name = from.Path()
 		} else if from.Path() != to.Path() {
-			// File is renamed. Not supported.
+			// File is renamed.
 			// cs.Name = fmt.Sprintf("%s => %s", from.Path(), to.Path())
+			cs.RenamedFrom = from.Path()
+			cs.Name = to.Path()
 		} else {
 			cs.Name = from.Path()
 		}
