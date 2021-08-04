@@ -2,4 +2,5 @@ coverage.out
 *~
 coverage.txt
 profile.out
-.tmp/
+/vendor
+/.tmp
