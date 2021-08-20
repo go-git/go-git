@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"runtime"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -236,6 +237,10 @@ func (s *UlReqEncodeSuite) TestDepthSinceUTC(c *C) {
 }
 
 func (s *UlReqEncodeSuite) TestDepthSinceNonUTC(c *C) {
+	if runtime.GOOS == "js" {
+		c.Skip("time.LoadLocation not supported in wasm")
+	}
+
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	berlin, err := time.LoadLocation("Europe/Berlin")

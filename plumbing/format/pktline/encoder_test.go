@@ -2,7 +2,6 @@ package pktline_test
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"testing"
 
@@ -210,40 +209,4 @@ func (s *SuiteEncoder) TestEncodef(c *C) {
 
 	expected := []byte("000c foo 42\n")
 	c.Assert(buf.Bytes(), DeepEquals, expected)
-}
-
-func ExampleEncoder() {
-	// Create an encoder that writes pktlines to stdout.
-	e := pktline.NewEncoder(os.Stdout)
-
-	// Encode some data as a new pkt-line.
-	_ = e.Encode([]byte("data\n")) // error checks removed for brevity
-
-	// Encode a flush-pkt.
-	_ = e.Flush()
-
-	// Encode a couple of byte slices and a flush in one go. Each of
-	// them will end up as payloads of their own pktlines.
-	_ = e.Encode(
-		[]byte("hello\n"),
-		[]byte("world!\n"),
-		pktline.Flush,
-	)
-
-	// You can also encode strings:
-	_ = e.EncodeString(
-		"foo\n",
-		"bar\n",
-		pktline.FlushString,
-	)
-
-	// You can also format and encode a payload:
-	_ = e.Encodef(" %s %d\n", "foo", 42)
-	// Output:
-	// 0009data
-	// 0000000ahello
-	// 000bworld!
-	// 00000008foo
-	// 0008bar
-	// 0000000c foo 42
 }

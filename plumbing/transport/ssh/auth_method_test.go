@@ -3,10 +3,12 @@ package ssh
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
+	"runtime"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
 
@@ -108,6 +110,10 @@ func (s *SuiteCommon) TestPublicKeysCallbackString(c *C) {
 	c.Assert(a.String(), Equals, fmt.Sprintf("user: test, name: %s", PublicKeysCallbackName))
 }
 func (s *SuiteCommon) TestNewSSHAgentAuth(c *C) {
+	if runtime.GOOS == "js" {
+		c.Skip("tcp connections are not available in wasm")
+	}
+
 	if os.Getenv("SSH_AUTH_SOCK") == "" {
 		c.Skip("SSH_AUTH_SOCK or SSH_TEST_PRIVATE_KEY are required")
 	}
@@ -129,7 +135,7 @@ func (s *SuiteCommon) TestNewSSHAgentAuthNoAgent(c *C) {
 
 	k, err := NewSSHAgentAuth("foo")
 	c.Assert(k, IsNil)
-	c.Assert(err, ErrorMatches, ".*SSH_AUTH_SOCK.*|.*SSH agent .* not running.*")
+	c.Assert(err, ErrorMatches, ".*SSH_AUTH_SOCK.*|.*SSH agent .* not detect.*")
 }
 
 func (*SuiteCommon) TestNewPublicKeys(c *C) {
@@ -145,13 +151,24 @@ func (*SuiteCommon) TestNewPublicKeysWithEncryptedPEM(c *C) {
 	c.Assert(auth, NotNil)
 }
 
+func (*SuiteCommon) TestNewPublicKeysWithEncryptedEd25519PEM(c *C) {
+	f := testdata.PEMEncryptedKeys[2]
+	auth, err := NewPublicKeys("foo", f.PEMBytes, f.EncryptionKey)
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+}
+
 func (*SuiteCommon) TestNewPublicKeysFromFile(c *C) {
-	f, err := ioutil.TempFile("", "ssh-test")
+	if runtime.GOOS == "js" {
+		c.Skip("not available in wasm")
+	}
+
+	f, err := util.TempFile(osfs.Default, "", "ssh-test")
 	c.Assert(err, IsNil)
 	_, err = f.Write(testdata.PEMBytes["rsa"])
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
-	defer os.RemoveAll(f.Name())
+	defer osfs.Default.Remove(f.Name())
 
 	auth, err := NewPublicKeysFromFile("foo", f.Name(), "")
 	c.Assert(err, IsNil)
@@ -165,9 +182,13 @@ func (*SuiteCommon) TestNewPublicKeysWithInvalidPEM(c *C) {
 }
 
 func (*SuiteCommon) TestNewKnownHostsCallback(c *C) {
+	if runtime.GOOS == "js" {
+		c.Skip("not available in wasm")
+	}
+
 	var mock = mockKnownHosts{}
 
-	f, err := ioutil.TempFile("", "known-hosts")
+	f, err := util.TempFile(osfs.Default, "", "known-hosts")
 	c.Assert(err, IsNil)
 
 	_, err = f.Write(mock.knownHosts())
@@ -176,9 +197,9 @@ func (*SuiteCommon) TestNewKnownHostsCallback(c *C) {
 	err = f.Close()
 	c.Assert(err, IsNil)
 
-	defer os.RemoveAll(f.Name())
+	defer util.RemoveAll(osfs.Default, f.Name())
 
-	f, err = os.Open(f.Name())
+	f, err = osfs.Default.Open(f.Name())
 	c.Assert(err, IsNil)
 
 	defer f.Close()

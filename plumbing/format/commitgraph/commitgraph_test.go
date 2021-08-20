@@ -1,11 +1,11 @@
 package commitgraph_test
 
 import (
-	"io/ioutil"
 	"os"
-	"path"
 	"testing"
 
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/commitgraph"
 
@@ -21,8 +21,8 @@ type CommitgraphSuite struct {
 
 var _ = Suite(&CommitgraphSuite{})
 
-func testDecodeHelper(c *C, path string) {
-	reader, err := os.Open(path)
+func testDecodeHelper(c *C, fs billy.Filesystem, path string) {
+	reader, err := fs.Open(path)
 	c.Assert(err, IsNil)
 	defer reader.Close()
 	index, err := commitgraph.OpenFileIndex(reader)
@@ -76,7 +76,7 @@ func testDecodeHelper(c *C, path string) {
 func (s *CommitgraphSuite) TestDecode(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()
-		testDecodeHelper(c, path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+		testDecodeHelper(c, dotgit, dotgit.Join("objects", "info", "commit-graph"))
 	})
 }
 
@@ -84,22 +84,23 @@ func (s *CommitgraphSuite) TestReencode(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()
 
-		reader, err := os.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
 		c.Assert(err, IsNil)
 		defer reader.Close()
 		index, err := commitgraph.OpenFileIndex(reader)
 		c.Assert(err, IsNil)
 
-		writer, err := ioutil.TempFile(dotgit.Root(), "commit-graph")
+		writer, err := util.TempFile(dotgit, "", "commit-graph")
 		c.Assert(err, IsNil)
 		tmpName := writer.Name()
 		defer os.Remove(tmpName)
+
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(index)
 		c.Assert(err, IsNil)
 		writer.Close()
 
-		testDecodeHelper(c, tmpName)
+		testDecodeHelper(c, dotgit, tmpName)
 	})
 }
 
@@ -107,7 +108,7 @@ func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
 		dotgit := f.DotGit()
 
-		reader, err := os.Open(path.Join(dotgit.Root(), "objects", "info", "commit-graph"))
+		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
 		c.Assert(err, IsNil)
 		index, err := commitgraph.OpenFileIndex(reader)
 		c.Assert(err, IsNil)
@@ -119,15 +120,16 @@ func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
 		}
 		reader.Close()
 
-		writer, err := ioutil.TempFile(dotgit.Root(), "commit-graph")
+		writer, err := util.TempFile(dotgit, "", "commit-graph")
 		c.Assert(err, IsNil)
 		tmpName := writer.Name()
 		defer os.Remove(tmpName)
+
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(memoryIndex)
 		c.Assert(err, IsNil)
 		writer.Close()
 
-		testDecodeHelper(c, tmpName)
+		testDecodeHelper(c, dotgit, tmpName)
 	})
 }

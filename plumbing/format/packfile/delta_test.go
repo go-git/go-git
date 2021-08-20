@@ -1,8 +1,11 @@
 package packfile
 
 import (
+	"bytes"
+	"io/ioutil"
 	"math/rand"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	. "gopkg.in/check.v1"
 )
 
@@ -97,6 +100,32 @@ func (s *DeltaSuite) TestAddDelta(c *C) {
 	}
 }
 
+func (s *DeltaSuite) TestAddDeltaReader(c *C) {
+	for _, t := range s.testCases {
+		baseBuf := genBytes(t.base)
+		baseObj := &plumbing.MemoryObject{}
+		baseObj.Write(baseBuf)
+
+		targetBuf := genBytes(t.target)
+
+		delta := DiffDelta(baseBuf, targetBuf)
+		deltaRC := ioutil.NopCloser(bytes.NewReader(delta))
+
+		c.Log("Executing test case:", t.description)
+
+		resultRC, err := ReaderFromDelta(baseObj, deltaRC)
+		c.Assert(err, IsNil)
+
+		result, err := ioutil.ReadAll(resultRC)
+		c.Assert(err, IsNil)
+
+		err = resultRC.Close()
+		c.Assert(err, IsNil)
+
+		c.Assert(result, DeepEquals, targetBuf)
+	}
+}
+
 func (s *DeltaSuite) TestIncompleteDelta(c *C) {
 	for _, t := range s.testCases {
 		c.Log("Incomplete delta on:", t.description)
@@ -122,6 +151,28 @@ func (s *DeltaSuite) TestMaxCopySizeDelta(c *C) {
 
 	delta := DiffDelta(baseBuf, targetBuf)
 	result, err := PatchDelta(baseBuf, delta)
+	c.Assert(err, IsNil)
+	c.Assert(result, DeepEquals, targetBuf)
+}
+
+func (s *DeltaSuite) TestMaxCopySizeDeltaReader(c *C) {
+	baseBuf := randBytes(maxCopySize)
+	baseObj := &plumbing.MemoryObject{}
+	baseObj.Write(baseBuf)
+
+	targetBuf := baseBuf[0:]
+	targetBuf = append(targetBuf, byte(1))
+
+	delta := DiffDelta(baseBuf, targetBuf)
+	deltaRC := ioutil.NopCloser(bytes.NewReader(delta))
+
+	resultRC, err := ReaderFromDelta(baseObj, deltaRC)
+	c.Assert(err, IsNil)
+
+	result, err := ioutil.ReadAll(resultRC)
+	c.Assert(err, IsNil)
+
+	err = resultRC.Close()
 	c.Assert(err, IsNil)
 	c.Assert(result, DeepEquals, targetBuf)
 }

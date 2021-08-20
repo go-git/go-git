@@ -411,27 +411,23 @@ func (s *SuiteCommit) TestStat(c *C) {
 }
 
 func (s *SuiteCommit) TestVerify(c *C) {
-	ts := time.Unix(1511197315, 0)
-	loc, _ := time.LoadLocation("Asia/Kolkata")
+	ts := time.Unix(1617402711, 0)
+	loc, _ := time.LoadLocation("UTC")
 	commit := &Commit{
-		Hash:      plumbing.NewHash("8a9cea36fe052711fbc42b86e1f99a4fa0065deb"),
-		Author:    Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts.In(loc)},
-		Committer: Signature{Name: "Sunny", Email: "me@darkowlzz.space", When: ts.In(loc)},
-		Message: `status: simplify template command selection
+		Hash:      plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
+		Author:    Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Committer: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Message: `test
 `,
-		TreeHash:     plumbing.NewHash("6572ba6df4f1fb323c8aaa24ce07bca0648b161e"),
-		ParentHashes: []plumbing.Hash{plumbing.NewHash("ede5f57ea1280a0065beec96d3e1a3453d010dbd")},
+		TreeHash:     plumbing.NewHash("52a266a58f2c028ad7de4dfd3a72fdf76b0d4e24"),
+		ParentHashes: []plumbing.Hash{plumbing.NewHash("e4fbb611cd14149c7a78e9c08425f59f4b736a9a")},
 		PGPSignature: `
 -----BEGIN PGP SIGNATURE-----
 
-iQFHBAABCAAxFiEEoRt6IzxHaZkkUslhQyLeMqcmyU4FAloTCrsTHG1lQGRhcmtv
-d2x6ei5zcGFjZQAKCRBDIt4ypybJTul5CADmVxB4kqlqRZ9fAcSU5LKva3GRXx0+
-leX6vbzoyQztSWYgl7zALh4kB3a3t2C9EnnM6uehlgaORNigyMArCSY1ivWVviCT
-BvldSVi8f8OvnqwbWX0I/5a8KmItthDf5WqZRFjhcRlY1AK5Bo2hUGVRq71euf8F
-rE6wNhDoyBCEpftXuXbq8duD7D6qJ7QiOS4m5+ej1UCssS2WQ60yta7q57odduHY
-+txqTKI8MQUpBgoTqh+V4lOkwQQxLiz7hIQ/ZYLUcnp6fan7/kY/G7YoLt9pOG1Y
-vLzAWdidLH2P+EUOqlNMuVScHYWD1FZB0/L5LJ8no5pTowQd2Z+Nggxl
-=0uC8
+iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
+8VtyAP9LbuXAhtK6FQqOjKybBwlV70rLcXVP24ubDuz88VVwSgD+LuObsasWq6/U
+TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
+=YQUf
 -----END PGP SIGNATURE-----
 `,
 	}
@@ -439,40 +435,23 @@ vLzAWdidLH2P+EUOqlNMuVScHYWD1FZB0/L5LJ8no5pTowQd2Z+Nggxl
 	armoredKeyRing := `
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 
-mQENBFmtHgABCADnfThM7q8D4pgUub9jMppSpgFh3ev84g3Csc3yQUlszEOVgXmu
-YiSWP1oAiWFQ8ahCydh3LT8TnEB2QvoRNiExUI5XlXFwVfKW3cpDu8gdhtufs90Q
-NvpaHOgTqRf/texGEKwXi6fvS47fpyaQ9BKNdN52LeaaHzDDZkVsAFmroE+7MMvj
-P4Mq8qDn2WcWnX9zheQKYrX6Cs48Tx80eehHor4f/XnuaP8DLmPQx7URdJ0Igckh
-N+i91Qv2ujin8zxUwhkfus66EZS9lQ4qR9iVHs4WHOs3j7whsejd4VhajonilVHj
-uqTtqHmpN/4njbIKb8q8uQkS26VQYoSYm2UvABEBAAG0GlN1bm55IDxtZUBkYXJr
-b3dsenouc3BhY2U+iQFUBBMBCAA+FiEEoRt6IzxHaZkkUslhQyLeMqcmyU4FAlmt
-HgACGwMFCQPCZwAFCwkIBwIGFQgJCgsCBBYCAwECHgECF4AACgkQQyLeMqcmyU7V
-nAf+J5BYu26B2i+iwctOzDRFcPwCLka9cBwe5wcDvoF2qL8QRo8NPWBBH4zWHa/k
-BthtGo1b89a53I2hnTwTQ0NOtAUNV+Vvu6nOHJd9Segsx3E1nM43bd2bUfGJ1eeO
-jDOlOvtP4ozuV6Ej+0Ln2ouMOc87yAwbAzTfQ9axU6CKUbqy0/t2dW1jdKntGH+t
-VPeFxJHL2gXjP89skCSPYA7yKqqyJRPFvC+7rde1OLdCmZi4VwghUiNbh3s1+xM3
-gfr2ahsRDTN2SQzwuHu4y1EgZgPtuWfRxzHqduoRoSgfOfFr9H9Il3UMHf2Etleu
-rif40YZJhge6STwsIycGh4wOiLkBDQRZrR4AAQgArpUvPdGC/W9X4AuZXrXEShvx
-TqM4K2Jk9n0j+ABx87k9fm48qgtae7+TayMbb0i7kcbgnjltKbauTbyRbju/EJvN
-CdIw76IPpjy6jUM37wG2QGLFo6Ku3x8/ZpNGGOZ8KMU258/EBqDlJQ/4g4kJ8D+m
-9yOH0r6/Xpe/jOY2V8Jo9pdFTm+8eAsSyZF0Cl7drz603Pymq1IS2wrwQbdxQA/w
-B75pQ5es7X34Ac7/9UZCwCPmZDAldnjHyw5dZgZe8XLrG84BIfbG0Hj8PjrFdF1D
-Czt9bk+PbYAnLORW2oX1oedxVrNFo5UrbWgBSjA1ppbGFjwSDHFlyjuEuxqyFwAR
-AQABiQE8BBgBCAAmFiEEoRt6IzxHaZkkUslhQyLeMqcmyU4FAlmtHgACGwwFCQPC
-ZwAACgkQQyLeMqcmyU7ZBggArzc8UUVSjde987Vqnu/S5Cv8Qhz+UB7gAFyTW2iF
-VYvB86r30H/NnfjvjCVkBE6FHCNHoxWVyDWmuxKviB7nkReHuwqniQHPgdJDcTKC
-tBboeX2IYBLJbEvEJuz5NSvnvFuYkIpZHqySFaqdl/qu9XcmoPL5AmIzIFOeiNty
-qT0ldkf3ru6yQQDDqBDpkfz4AzkpFnLYL59z6IbJDK2Hz7aKeSEeVOGiZLCjIZZV
-uISZThYqh5zUkvF346OHLDqfDdgQ4RZriqd/DTtRJPlz2uL0QcEIjJuYCkG0UWgl
-sYyf9RfOnw/KUFAQbdtvLx3ikODQC+D3KBtuKI9ISHQfgw==
-=FPev
+mDMEYGeSihYJKwYBBAHaRw8BAQdAIs9A3YD/EghhAOkHDkxlUkpqYrXUXebLfmmX
++pdEK6C0D2dvLWdpdCB0ZXN0IGtleYiPBBMWCgA3FiEEzKlNMnEN3+oNzzKFjJpp
+heC7lfEFAmBnkooCGyMECwkIBwUVCgkICwUWAwIBAAIeAQIXgAAKCRCMmmmF4LuV
+8a3jAQCi4hSqjj6J3ch290FvQaYPGwR+EMQTMBG54t+NN6sDfgD/aZy41+0dnFKl
+qM/wLW5Wr9XvwH+1zXXbuSvfxasHowq4OARgZ5KKEgorBgEEAZdVAQUBAQdAXoQz
+VTYug16SisAoSrxFnOmxmFu6efYgCAwXu0ZuvzsDAQgHiHgEGBYKACAWIQTMqU0y
+cQ3f6g3PMoWMmmmF4LuV8QUCYGeSigIbDAAKCRCMmmmF4LuV8Q4QAQCKW5FnEdWW
+lHYKeByw3JugnlZ0U3V/R20bCwDglst5UQEAtkN2iZkHtkPly9xapsfNqnrt2gTt
+YIefGtzXfldDxg4=
+=Psht
 -----END PGP PUBLIC KEY BLOCK-----
 `
 
 	e, err := commit.Verify(armoredKeyRing)
-	c.Assert(err, IsNil)
+        c.Assert(err, IsNil)
 
-	_, ok := e.Identities["Sunny <me@darkowlzz.space>"]
+	_, ok := e.Identities["go-git test key"]
 	c.Assert(ok, Equals, true)
 }
 

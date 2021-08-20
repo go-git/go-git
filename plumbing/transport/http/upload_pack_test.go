@@ -1,8 +1,10 @@
 package http
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -102,4 +104,37 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema(c *C) {
 
 	url := session.(*upSession).endpoint.String()
 	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
+}
+
+func (s *UploadPackSuite) TestAdvertisedReferencesContext(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
+
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	info, err := session.AdvertisedReferencesContext(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
+
+	url := session.(*upSession).endpoint.String()
+	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
+}
+
+func (s *UploadPackSuite) TestAdvertisedReferencesContextCanceled(c *C) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
+
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	info, err := session.AdvertisedReferencesContext(ctx)
+	c.Assert(err, DeepEquals, &url.Error{Op: "Get", URL: "http://github.com/git-fixtures/basic/info/refs?service=git-upload-pack", Err: context.Canceled})
+	c.Assert(info, IsNil)
+}
+
+func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
+	c.Skip("flaky tests, looks like sometimes the request body is cached, so doesn't fail on context cancel")
 }

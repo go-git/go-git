@@ -1,10 +1,9 @@
 package git
 
 import (
-	"io/ioutil"
 	"os"
-	"path/filepath"
 
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -39,8 +38,8 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalConfigUser(c *C) {
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	s.writeGlobalConfig(c, cfg)
-	defer s.clearGlobalConfig(c)
+	clean := s.writeGlobalConfig(c, cfg)
+	defer clean()
 
 	o := CommitOptions{}
 	err := o.Validate(s.Repository)
@@ -59,8 +58,8 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalCommitter(c *C) {
 	cfg.Committer.Name = "bar"
 	cfg.Committer.Email = "bar@bar.com"
 
-	s.writeGlobalConfig(c, cfg)
-	defer s.clearGlobalConfig(c)
+	clean := s.writeGlobalConfig(c, cfg)
+	defer clean()
 
 	o := CommitOptions{}
 	err := o.Validate(s.Repository)
@@ -77,8 +76,8 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal(c *C) {
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	s.writeGlobalConfig(c, cfg)
-	defer s.clearGlobalConfig(c)
+	clean := s.writeGlobalConfig(c, cfg)
+	defer clean()
 
 	o := CreateTagOptions{
 		Message: "foo",
@@ -91,23 +90,27 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal(c *C) {
 	c.Assert(o.Tagger.Email, Equals, "foo@foo.com")
 }
 
-func (s *OptionsSuite) writeGlobalConfig(c *C, cfg *config.Config) {
-	tmp, err := ioutil.TempDir("", "test-options")
+func (s *OptionsSuite) writeGlobalConfig(c *C, cfg *config.Config) func() {
+	fs, clean := s.TemporalFilesystem()
+
+	tmp, err := util.TempDir(fs, "", "test-options")
 	c.Assert(err, IsNil)
 
-	err = os.Mkdir(filepath.Join(tmp, "git"), 0777)
+	err = fs.MkdirAll(fs.Join(tmp, "git"), 0777)
 	c.Assert(err, IsNil)
 
-	os.Setenv("XDG_CONFIG_HOME", tmp)
+	os.Setenv("XDG_CONFIG_HOME", fs.Join(fs.Root(), tmp))
 
 	content, err := cfg.Marshal()
 	c.Assert(err, IsNil)
 
-	cfgFile := filepath.Join(tmp, "git/config")
-	err = ioutil.WriteFile(cfgFile, content, 0777)
+	cfgFile := fs.Join(tmp, "git/config")
+	err = util.WriteFile(fs, cfgFile, content, 0777)
 	c.Assert(err, IsNil)
-}
 
-func (s *OptionsSuite) clearGlobalConfig(c *C) {
-	os.Setenv("XDG_CONFIG_HOME", "")
+	return func() {
+		clean()
+		os.Setenv("XDG_CONFIG_HOME", "")
+
+	}
 }

@@ -1,10 +1,12 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	. "gopkg.in/check.v1"
 )
@@ -37,6 +39,8 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 		url = git@github.com:src-d/go-git.git
 		fetch = +refs/heads/*:refs/remotes/origin/*
 		fetch = +refs/pull/*:refs/remotes/origin/pull/*
+[remote "insteadOf"]
+		url = https://github.com/kostyay/go-git.git
 [remote "win-local"]
 		url = X:\\Git\\
 [submodule "qux"]
@@ -46,6 +50,10 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [branch "master"]
 		remote = origin
 		merge = refs/heads/master
+[init]
+		defaultBranch = main
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
 `)
 
 	cfg := NewConfig()
@@ -62,7 +70,7 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Committer.Name, Equals, "Richard Roe")
 	c.Assert(cfg.Committer.Email, Equals, "richard@example.com")
 	c.Assert(cfg.Pack.Window, Equals, uint(20))
-	c.Assert(cfg.Remotes, HasLen, 3)
+	c.Assert(cfg.Remotes, HasLen, 4)
 	c.Assert(cfg.Remotes["origin"].Name, Equals, "origin")
 	c.Assert(cfg.Remotes["origin"].URLs, DeepEquals, []string{"git@github.com:mcuadros/go-git.git"})
 	c.Assert(cfg.Remotes["origin"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*"})
@@ -71,12 +79,14 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Remotes["alt"].Fetch, DeepEquals, []RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"})
 	c.Assert(cfg.Remotes["win-local"].Name, Equals, "win-local")
 	c.Assert(cfg.Remotes["win-local"].URLs, DeepEquals, []string{"X:\\Git\\"})
+	c.Assert(cfg.Remotes["insteadOf"].URLs, DeepEquals, []string{"ssh://git@github.com/kostyay/go-git.git"})
 	c.Assert(cfg.Submodules, HasLen, 1)
 	c.Assert(cfg.Submodules["qux"].Name, Equals, "qux")
 	c.Assert(cfg.Submodules["qux"].URL, Equals, "https://github.com/foo/qux.git")
 	c.Assert(cfg.Submodules["qux"].Branch, Equals, "bar")
 	c.Assert(cfg.Branches["master"].Remote, Equals, "origin")
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
+	c.Assert(cfg.Init.DefaultBranch, Equals, "main")
 }
 
 func (s *ConfigSuite) TestMarshal(c *C) {
@@ -90,6 +100,8 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 	url = git@github.com:src-d/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 	fetch = +refs/pull/*:refs/remotes/origin/pull/*
+[remote "insteadOf"]
+	url = https://github.com/kostyay/go-git.git
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git
 [remote "win-local"]
@@ -99,12 +111,17 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
+[init]
+	defaultBranch = main
 `)
 
 	cfg := NewConfig()
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
 	cfg.Pack.Window = 20
+	cfg.Init.DefaultBranch = "main"
 	cfg.Remotes["origin"] = &RemoteConfig{
 		Name: "origin",
 		URLs: []string{"git@github.com:mcuadros/go-git.git"},
@@ -121,6 +138,11 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 		URLs: []string{"X:\\Git\\"},
 	}
 
+	cfg.Remotes["insteadOf"] = &RemoteConfig{
+		Name: "insteadOf",
+		URLs: []string{"https://github.com/kostyay/go-git.git"},
+	}
+
 	cfg.Submodules["qux"] = &Submodule{
 		Name: "qux",
 		URL:  "https://github.com/foo/qux.git",
@@ -130,6 +152,11 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 		Name:   "master",
 		Remote: "origin",
 		Merge:  "refs/heads/master",
+	}
+
+	cfg.URLs["ssh://git@github.com/"] = &URL{
+		Name:      "ssh://git@github.com/",
+		InsteadOf: "https://github.com/",
 	}
 
 	b, err := cfg.Marshal()
@@ -154,6 +181,8 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	email = richard@example.co
 [pack]
 	window = 20
+[remote "insteadOf"]
+	url = https://github.com/kostyay/go-git.git
 [remote "origin"]
 	url = git@github.com:mcuadros/go-git.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
@@ -163,6 +192,8 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
 `)
 
 	cfg := NewConfig()
@@ -174,23 +205,16 @@ func (s *ConfigSuite) TestUnmarshalMarshal(c *C) {
 	c.Assert(string(output), DeepEquals, string(input))
 }
 
-func (s *ConfigSuite) TestLoadConfig(c *C) {
-	cfg, err := LoadConfig(GlobalScope)
-	c.Assert(cfg.User.Email, Not(Equals), "")
-	c.Assert(err, IsNil)
-
-}
-
 func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	cfg := NewConfig()
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	tmp, err := ioutil.TempDir("", "test-commit-options")
+	tmp, err := util.TempDir(osfs.Default, "", "test-commit-options")
 	c.Assert(err, IsNil)
-	defer os.RemoveAll(tmp)
+	defer util.RemoveAll(osfs.Default, tmp)
 
-	err = os.Mkdir(filepath.Join(tmp, "git"), 0777)
+	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0777)
 	c.Assert(err, IsNil)
 
 	os.Setenv("XDG_CONFIG_HOME", tmp)
@@ -202,7 +226,7 @@ func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	c.Assert(err, IsNil)
 
 	cfgFile := filepath.Join(tmp, "git/config")
-	err = ioutil.WriteFile(cfgFile, content, 0777)
+	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
 	c.Assert(err, IsNil)
 
 	cfg, err = LoadConfig(GlobalScope)
@@ -314,4 +338,30 @@ func (s *ConfigSuite) TestRemoteConfigDefaultValues(c *C) {
 	c.Assert(config.Submodules, HasLen, 0)
 	c.Assert(config.Raw, NotNil)
 	c.Assert(config.Pack.Window, Equals, DefaultPackWindow)
+}
+
+func (s *ConfigSuite) TestLoadConfigLocalScope(c *C) {
+	cfg, err := LoadConfig(LocalScope)
+	c.Assert(err, NotNil)
+	c.Assert(cfg, IsNil)
+}
+
+func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
+	buf := []byte(`
+[remote "alt"]
+	url = git@github.com:mcuadros/go-git.git
+	url = git@github.com:src-d/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	fetch = +refs/pull/*:refs/remotes/origin/pull/*`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(buf)
+	c.Assert(err, IsNil)
+	c.Assert(len(cfg.Remotes), Equals, 1)
+	cfg.Remotes["alt"].URLs = []string{}
+
+	buf, err = cfg.Marshal()
+	if strings.Contains(string(buf), "url") {
+		c.Fatal("conifg should not contain any url sections")
+	}
 }

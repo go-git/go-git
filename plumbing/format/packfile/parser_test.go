@@ -2,14 +2,16 @@ package packfile_test
 
 import (
 	"io"
+	"os"
 	"testing"
 
-	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-
-	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
 )
 
@@ -78,40 +80,46 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 }
 
 func (s *ParserSuite) TestThinPack(c *C) {
+	fs := osfs.New(os.TempDir())
+	path, err := util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
 
 	// Initialize an empty repository
-	fs, err := git.PlainInit(c.MkDir(), true)
+	r, err := git.PlainInit(path, true)
 	c.Assert(err, IsNil)
 
 	// Try to parse a thin pack without having the required objects in the repo to
 	// see if the correct errors are returned
 	thinpack := fixtures.ByTag("thinpack").One()
 	scanner := packfile.NewScanner(thinpack.Packfile())
-	parser, err := packfile.NewParserWithStorage(scanner, fs.Storer) // ParserWithStorage writes to the storer all parsed objects!
+	parser, err := packfile.NewParserWithStorage(scanner, r.Storer) // ParserWithStorage writes to the storer all parsed objects!
 	c.Assert(err, IsNil)
 
 	_, err = parser.Parse()
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 
+	path, err = util.TempDir(fs, "", "")
+	c.Assert(err, IsNil)
+
 	// start over with a clean repo
-	fs, err = git.PlainInit(c.MkDir(), true)
+	r, err = git.PlainInit(path, true)
 	c.Assert(err, IsNil)
 
 	// Now unpack a base packfile into our empty repo:
 	f := fixtures.ByURL("https://github.com/spinnaker/spinnaker.git").One()
-	w, err := fs.Storer.(storer.PackfileWriter).PackfileWriter()
+	w, err := r.Storer.(storer.PackfileWriter).PackfileWriter()
 	c.Assert(err, IsNil)
 	_, err = io.Copy(w, f.Packfile())
 	c.Assert(err, IsNil)
 	w.Close()
 
 	// Check that the test object that will come with our thin pack is *not* in the repo
-	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
+	_, err = r.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 
 	// Now unpack the thin pack:
 	scanner = packfile.NewScanner(thinpack.Packfile())
-	parser, err = packfile.NewParserWithStorage(scanner, fs.Storer) // ParserWithStorage writes to the storer all parsed objects!
+	parser, err = packfile.NewParserWithStorage(scanner, r.Storer) // ParserWithStorage writes to the storer all parsed objects!
 	c.Assert(err, IsNil)
 
 	h, err := parser.Parse()
@@ -119,7 +127,7 @@ func (s *ParserSuite) TestThinPack(c *C) {
 	c.Assert(h, Equals, plumbing.NewHash("1288734cbe0b95892e663221d94b95de1f5d7be8"))
 
 	// Check that our test object is now accessible
-	_, err = fs.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
+	_, err = r.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	c.Assert(err, IsNil)
 
 }

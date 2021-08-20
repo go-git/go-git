@@ -64,6 +64,14 @@ func (s *CommonSuite) TestConfig_AddOption(c *C) {
 	c.Assert(obtained, DeepEquals, expected)
 }
 
+func (s *CommonSuite) TestConfig_HasSection(c *C) {
+	sect := New().
+		AddOption("section1", "sub1", "key1", "value1").
+		AddOption("section1", "sub2", "key1", "value1")
+	c.Assert(sect.HasSection("section1"), Equals, true)
+	c.Assert(sect.HasSection("section2"), Equals, false)
+}
+
 func (s *CommonSuite) TestConfig_RemoveSection(c *C) {
 	sect := New().
 		AddOption("section1", NoSubsection, "key1", "value1").
