@@ -302,6 +302,10 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 }
 
 func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.ReferenceStorer, err error) {
+	if o == nil {
+		o = &FetchOptions{}
+	}
+	
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
 	}
