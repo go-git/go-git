@@ -19,6 +19,7 @@ Here you can find a list of annotated _go-git_ examples:
 - [branch](branch/main.go) - How to create and remove branches or any other kind of reference.
 - [tag](tag/main.go) - List/print repository tags.
 - [tag create and push](tag-create-push/main.go) - Create and push a new tag.
+- [tag find if head is tagged](find-if-any-tag-point-head/main.go) - Find if `HEAD` is tagged.
 - [remotes](remotes/main.go) - Working with remotes: adding, removing, etc.
 - [progress](progress/main.go) - Printing the progress information from the sideband.
 - [revision](revision/main.go) - Solve a revision into a commit.
