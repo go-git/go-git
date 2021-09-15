@@ -91,6 +91,8 @@ func (o *CloneOptions) Validate() error {
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
+	// RemoteURL overrides the remote repo address with a custom URL
+	RemoteURL string
 	// Remote branch to clone. If empty, uses HEAD.
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
@@ -147,7 +149,9 @@ const (
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
 	RemoteName string
-	RefSpecs   []config.RefSpec
+	// RemoteURL overrides the remote repo address with a custom URL
+	RemoteURL string
+	RefSpecs  []config.RefSpec
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
@@ -192,6 +196,8 @@ func (o *FetchOptions) Validate() error {
 type PushOptions struct {
 	// RemoteName is the name of the remote to be pushed to.
 	RemoteName string
+	// RemoteURL overrides the remote repo address with a custom URL
+	RemoteURL string
 	// RefSpecs specify what destination ref to update with what source
 	// object. A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec

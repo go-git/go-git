@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -103,7 +104,11 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
 
-	s, err := newSendPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
+	if o.RemoteURL == "" {
+		o.RemoteURL = r.c.URLs[0]
+	}
+
+	s, err := newSendPackSession(o.RemoteURL, o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return err
 	}
@@ -183,12 +188,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	var hashesToPush []plumbing.Hash
 	// Avoid the expensive revlist operation if we're only doing deletes.
 	if !allDelete {
-		if r.c.IsFirstURLLocal() {
+		if url.IsLocalEndpoint(o.RemoteURL) {
 			// If we're are pushing to a local repo, it might be much
 			// faster to use a local storage layer to get the commits
 			// to ignore, when calculating the object revlist.
 			localStorer := filesystem.NewStorage(
-				osfs.New(r.c.URLs[0]), cache.NewObjectLRUDefault())
+				osfs.New(o.RemoteURL), cache.NewObjectLRUDefault())
 			hashesToPush, err = revlist.ObjectsWithStorageForIgnores(
 				r.s, localStorer, objects, haves)
 		} else {
@@ -314,7 +319,11 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RefSpecs = r.c.Fetch
 	}
 
-	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
+	if o.RemoteURL == "" {
+		o.RemoteURL = r.c.URLs[0]
+	}
+
+	s, err := newUploadPackSession(o.RemoteURL, o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
 	}
