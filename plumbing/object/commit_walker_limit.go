@@ -32,7 +32,7 @@ func (c *commitLimitIter) Next() (*Commit, error) {
 		}
 
 		if c.limitOptions.Since != nil && commit.Committer.When.Before(*c.limitOptions.Since) {
-			continue
+			return nil, io.EOF
 		}
 		if c.limitOptions.Until != nil && commit.Committer.When.After(*c.limitOptions.Until) {
 			continue
