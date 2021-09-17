@@ -1147,17 +1147,17 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		return nil, err
 	}
 
+	if o.Since != nil || o.Until != nil {
+		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until}
+		it = r.logWithLimit(it, limitOptions)
+	}
+
 	if o.FileName != nil {
 		// for `git log --all` also check parent (if the next commit comes from the real parent)
 		it = r.logWithFile(*o.FileName, it, o.All)
 	}
 	if o.PathFilter != nil {
 		it = r.logWithPathFilter(o.PathFilter, it, o.All)
-	}
-
-	if o.Since != nil || o.Until != nil {
-		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until}
-		it = r.logWithLimit(it, limitOptions)
 	}
 
 	return it, nil
