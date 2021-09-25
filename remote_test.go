@@ -14,6 +14,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
@@ -336,6 +338,47 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 	c.Assert(mock.PackfileWriterCalled, Equals, true)
 }
 
+type mockTransport struct {
+	transport.Transport
+	NewUploadPackSessionCalled  bool
+	NewReceivePackSessionCalled bool
+}
+
+func newMockTransport(url string) *mockTransport {
+	ep, _ := transport.NewEndpoint(url)
+	t, _ := client.NewClient(ep)
+	return &mockTransport{Transport: t}
+}
+
+func (t *mockTransport) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
+	t.NewUploadPackSessionCalled = true
+	return t.Transport.NewUploadPackSession(ep, auth)
+}
+
+func (t *mockTransport) NewReceivePackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
+	t.NewReceivePackSessionCalled = true
+	return t.Transport.NewReceivePackSession(ep, auth)
+}
+
+func (s *RemoteSuite) TestFetchWithTransport(c *C) {
+	url := s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())
+	mock := newMockTransport(url)
+
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{url},
+	})
+
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+		Transport: mock,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewUploadPackSessionCalled, Equals, true)
+}
+
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
 	s.doTestFetchNoErrAlreadyUpToDate(c, url)
@@ -560,6 +603,32 @@ func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 	// goroutines is the same as before
 	time.Sleep(100 * time.Millisecond)
 	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+}
+
+func (s *RemoteSuite) TestPushWithTransport(c *C) {
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	_, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	mock := newMockTransport(url)
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	err = r.Push(&PushOptions{
+		RefSpecs:  []config.RefSpec{"refs/tags/*:refs/tags/*"},
+		Transport: mock,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewReceivePackSessionCalled, Equals, true)
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
@@ -1005,6 +1074,20 @@ func (s *RemoteSuite) TestListTimeout(c *C) {
 	_, err := remote.List(&ListOptions{})
 
 	c.Assert(err, NotNil)
+}
+
+func (s *RemoteSuite) TestListWithTransport(c *C) {
+	repo := fixtures.Basic().One()
+	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{repo.URL},
+	})
+
+	mock := newMockTransport(repo.URL)
+
+	_, err := remote.List(&ListOptions{Transport: mock})
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewUploadPackSessionCalled, Equals, true)
 }
 
 func (s *RemoteSuite) TestUpdateShallows(c *C) {

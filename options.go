@@ -37,6 +37,9 @@ var (
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
 	URL string
+	// Specify the transport to use. If nil, a default transport will
+	// be selected based on the URL's protocol.
+	Transport transport.Transport
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Name of the remote to be added, by default `origin`.
@@ -97,6 +100,9 @@ type PullOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits.
 	Depth int
+	// Specify the transport to use. If nil, a default transport will
+	// be selected based on the URL's protocol.
+	Transport transport.Transport
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// RecurseSubmodules controls if new commits of all populated submodules
@@ -151,6 +157,9 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
+	// Specify the transport to use. If nil, a default transport will
+	// be selected based on the URL's protocol.
+	Transport transport.Transport
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Progress is where the human readable information sent by the server is
@@ -195,6 +204,9 @@ type PushOptions struct {
 	// RefSpecs specify what destination ref to update with what source
 	// object. A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
+	// Specify the transport to use. If nil, a default transport will
+	// be selected based on the URL's protocol.
+	Transport transport.Transport
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Progress is where the human readable information sent by the server is
@@ -247,6 +259,9 @@ type SubmoduleUpdateOptions struct {
 	// the current repository but also in any nested submodules inside those
 	// submodules (and so on). Until the SubmoduleRescursivity is reached.
 	RecurseSubmodules SubmoduleRescursivity
+	// Specify the transport to use. If nil, a default transport will
+	// be selected based on the URL's protocol.
+	Transport transport.Transport
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 }
@@ -569,6 +584,9 @@ func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
 
 // ListOptions describes how a remote list should be performed.
 type ListOptions struct {
+	// Specify the transport to use. If nil, a default transport will
+	// be selected based on the URL's protocol.
+	Transport transport.Transport
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// InsecureSkipTLS skips ssl verify if protocal is https

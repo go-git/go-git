@@ -74,6 +74,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	fetchHead, err := remote.fetch(ctx, &FetchOptions{
 		RemoteName:      o.RemoteName,
 		Depth:           o.Depth,
+		Transport:       o.Transport,
 		Auth:            o.Auth,
 		Progress:        o.Progress,
 		Force:           o.Force,

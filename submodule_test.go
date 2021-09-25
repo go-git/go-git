@@ -91,6 +91,25 @@ func (s *SubmoduleSuite) TestUpdate(c *C) {
 	c.Assert(status.IsClean(), Equals, true)
 }
 
+func (s *SubmoduleSuite) TestUpdateWithTransport(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
+	sm, err := s.Worktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	mock := newMockTransport(sm.Config().URL)
+
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init:      true,
+		Transport: mock,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewUploadPackSessionCalled, Equals, true)
+}
+
 func (s *SubmoduleSuite) TestRepositoryWithoutInit(c *C) {
 	sm, err := s.Worktree.Submodule("basic")
 	c.Assert(err, IsNil)

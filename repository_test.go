@@ -189,6 +189,19 @@ func (s *RepositorySuite) TestCloneContext(c *C) {
 	c.Assert(err, Equals, context.Canceled)
 }
 
+func (s *RepositorySuite) TestCloneWithTransport(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
+	mock := newMockTransport(url)
+
+	_, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+		URL:       url,
+		Transport: mock,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewUploadPackSessionCalled, Equals, true)
+}
+
 func (s *RepositorySuite) TestCloneWithTags(c *C) {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
@@ -882,6 +895,21 @@ func (s *RepositorySuite) TestFetchContext(c *C) {
 	c.Assert(r.FetchContext(ctx, &FetchOptions{}), NotNil)
 }
 
+func (s *RepositorySuite) TestFetchWithTransport(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
+	mock := newMockTransport(url)
+
+	r, _ := Init(memory.NewStorage(), nil)
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+	c.Assert(err, IsNil)
+
+	c.Assert(r.Fetch(&FetchOptions{Transport: mock}), IsNil)
+	c.Assert(mock.NewUploadPackSessionCalled, Equals, true)
+}
+
 func (s *RepositorySuite) TestCloneWithProgress(c *C) {
 	fs := memfs.New()
 
@@ -1224,6 +1252,30 @@ func (s *RepositorySuite) TestPushContext(c *C) {
 		RemoteName: "foo",
 	})
 	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestPushWithTransport(c *C) {
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	_, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+		Name: "test2",
+		URLs: []string{url},
+	})
+	c.Assert(err, IsNil)
+
+	mock := newMockTransport(url)
+
+	err = s.Repository.Push(&PushOptions{
+		RemoteName: "test2",
+		Transport:  mock,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewReceivePackSessionCalled, Equals, true)
 }
 
 // installPreReceiveHook installs a pre-receive hook in the .git

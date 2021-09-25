@@ -239,6 +239,28 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
 	c.Assert(cfg.Submodules, HasLen, 2)
 }
 
+func (s *WorktreeSuite) TestPullWithTransport(c *C) {
+	url := s.GetBasicLocalRepositoryURL()
+	mock := newMockTransport(url)
+
+	r, _ := Init(memory.NewStorage(), memfs.New())
+
+	r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{
+		Transport: mock,
+	})
+
+	c.Assert(err, IsNil)
+	c.Assert(mock.NewUploadPackSessionCalled, Equals, true)
+}
+
 func (s *RepositorySuite) TestPullAdd(c *C) {
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
