@@ -109,6 +109,10 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 		}
 
 		split := bytes.SplitN(line, []byte{' '}, 2)
+		if len(split) < 2 {
+			// we need at least two elements
+			continue
+		}
 		switch string(split[0]) {
 		case "object":
 			t.Target = plumbing.NewHash(string(split[1]))
