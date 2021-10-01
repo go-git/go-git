@@ -812,9 +812,10 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	c := &config.RemoteConfig{
-		Name:  o.RemoteName,
-		URLs:  []string{o.URL},
-		Fetch: r.cloneRefSpec(o),
+		Name:         o.RemoteName,
+		URLs:         []string{o.URL},
+		NewScpRegexp: o.NewScpRegexp,
+		Fetch:        r.cloneRefSpec(o),
 	}
 
 	if _, err := r.CreateRemote(c); err != nil {
@@ -1425,7 +1426,6 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 	p := revision.NewParserFromString(string(rev))
 
 	items, err := p.Parse()
-
 	if err != nil {
 		return nil, err
 	}
@@ -1493,7 +1493,6 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 			iter := commit.Parents()
 
 			c, err := iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1514,7 +1513,6 @@ func (r *Repository) ResolveRevision(rev plumbing.Revision) (*plumbing.Hash, err
 		case revision.TildePath:
 			for i := 0; i < item.Depth; i++ {
 				c, err := commit.Parents().Next()
-
 				if err != nil {
 					return &plumbing.ZeroHash, err
 				}

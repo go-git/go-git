@@ -4,17 +4,25 @@ import (
 	"fmt"
 	"os"
 
+	urlparse "github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
+func newEndpoint(path string) (*transport.Endpoint, error) {
+	if !urlparse.MatchesScpLike(path) && !urlparse.MatchesScpLikeExtended(path) {
+		return transport.NewEndpointScpCorrect(path)
+	}
+	return transport.NewEndpoint(path)
+}
+
 // ServeUploadPack serves a git-upload-pack request using standard output, input
 // and error. This is meant to be used when implementing a git-upload-pack
 // command.
 func ServeUploadPack(path string) error {
-	ep, err := transport.NewEndpoint(path)
+	ep, err := newEndpoint(path)
 	if err != nil {
 		return err
 	}
@@ -32,7 +40,7 @@ func ServeUploadPack(path string) error {
 // input and error. This is meant to be used when implementing a
 // git-receive-pack command.
 func ServeReceivePack(path string) error {
-	ep, err := transport.NewEndpoint(path)
+	ep, err := newEndpoint(path)
 	if err != nil {
 		return err
 	}

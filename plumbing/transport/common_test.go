@@ -44,7 +44,6 @@ func (s *SuiteCommon) TestNewEndpointPorts(c *C) {
 	e, err = NewEndpoint("git://github.com:9418/user/repository.git?foo#bar")
 	c.Assert(err, IsNil)
 	c.Assert(e.String(), Equals, "git://github.com/user/repository.git?foo#bar")
-
 }
 
 func (s *SuiteCommon) TestNewEndpointSSH(c *C) {
@@ -103,7 +102,7 @@ func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort(c *C) {
 	c.Assert(e.Password, Equals, "")
 	c.Assert(e.Host, Equals, "github.com")
 	c.Assert(e.Port, Equals, 9999)
-	c.Assert(e.Path, Equals, "/user/repository.git")
+	c.Assert(e.Path, Equals, "user/repository.git")
 	c.Assert(e.String(), Equals, "ssh://git@github.com:9999/user/repository.git")
 }
 

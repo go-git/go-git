@@ -24,6 +24,7 @@ func main() {
 	parser := flags.NewNamedParser(bin, flags.Default)
 	parser.AddCommand("receive-pack", "", "", &CmdReceivePack{})
 	parser.AddCommand("upload-pack", "", "", &CmdUploadPack{})
+	parser.AddCommand("clone", "", "", &CmdClone{})
 	parser.AddCommand("version", "Show the version information.", "", &CmdVersion{})
 
 	_, err := parser.Parse()

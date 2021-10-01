@@ -20,9 +20,9 @@ build-git:
 	else \
 		git clone $(GIT_REPOSITORY) -b $(GIT_VERSION) --depth 1 --single-branch $(GIT_DIST_PATH); \
 		cd $(GIT_DIST_PATH); \
-		make configure; \
+		$(MAKE) configure; \
 		./configure; \
-		make all; \
+		$(MAKE) all; \
 	fi
 
 test:
