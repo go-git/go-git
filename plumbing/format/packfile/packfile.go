@@ -2,6 +2,8 @@ package packfile
 
 import (
 	"bytes"
+	"compress/zlib"
+	"fmt"
 	"io"
 	"os"
 
@@ -32,20 +34,15 @@ var (
 // wrapped in FSObject.
 const smallObjectThreshold = 16 * 1024
 
-// Conversely there are large objects that should not be cached and kept
-// in memory as they're too large to be reasonably cached. Objects larger
-// than this threshold are now always never read into memory to be stored
-// in the cache
-const LargeObjectThreshold = 1024 * 1024
-
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
-	fs             billy.Filesystem
-	file           billy.File
-	s              *Scanner
-	deltaBaseCache cache.Object
-	offsetToType   map[int64]plumbing.ObjectType
+	fs                   billy.Filesystem
+	file                 billy.File
+	s                    *Scanner
+	deltaBaseCache       cache.Object
+	offsetToType         map[int64]plumbing.ObjectType
+	largeObjectThreshold int64
 }
 
 // NewPackfileWithCache creates a new Packfile with the given object cache.
@@ -56,6 +53,7 @@ func NewPackfileWithCache(
 	fs billy.Filesystem,
 	file billy.File,
 	cache cache.Object,
+	largeObjectThreshold int64,
 ) *Packfile {
 	s := NewScanner(file)
 	return &Packfile{
@@ -65,6 +63,7 @@ func NewPackfileWithCache(
 		s,
 		cache,
 		make(map[int64]plumbing.ObjectType),
+		largeObjectThreshold,
 	}
 }
 
@@ -72,8 +71,8 @@ func NewPackfileWithCache(
 // and packfile idx.
 // If the filesystem is provided, the packfile will return FSObjects, otherwise
 // it will return MemoryObjects.
-func NewPackfile(index idxfile.Index, fs billy.Filesystem, file billy.File) *Packfile {
-	return NewPackfileWithCache(index, fs, file, cache.NewObjectLRUDefault())
+func NewPackfile(index idxfile.Index, fs billy.Filesystem, file billy.File, largeObjectThreshold int64) *Packfile {
+	return NewPackfileWithCache(index, fs, file, cache.NewObjectLRUDefault(), largeObjectThreshold)
 }
 
 // Get retrieves the encoded object in the packfile with the given hash.
@@ -269,6 +268,7 @@ func (p *Packfile) getNextObject(h *ObjectHeader, hash plumbing.Hash) (plumbing.
 		p.fs,
 		p.file.Name(),
 		p.deltaBaseCache,
+		p.largeObjectThreshold,
 	), nil
 }
 
@@ -288,29 +288,42 @@ func (p *Packfile) getObjectContent(offset int64) (io.ReadCloser, error) {
 	return obj.Reader()
 }
 
+func asyncReader(p *Packfile) (io.ReadCloser, error) {
+	reader := ioutil.NewReaderUsingReaderAt(p.file, p.s.r.offset)
+	zr := zlibReaderPool.Get().(io.ReadCloser)
+
+	if err := zr.(zlib.Resetter).Reset(reader, nil); err != nil {
+		return nil, fmt.Errorf("zlib reset error: %s", err)
+	}
+
+	return ioutil.NewReadCloserWithCloser(zr, func() error {
+		zlibReaderPool.Put(zr)
+		return nil
+	}), nil
+
+}
+
 func (p *Packfile) getReaderDirect(h *ObjectHeader) (io.ReadCloser, error) {
 	switch h.Type {
 	case plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject:
-		return p.s.ReadObject()
+		return asyncReader(p)
 	case plumbing.REFDeltaObject:
-		deltaRC, err := p.s.ReadObject()
+		deltaRc, err := asyncReader(p)
 		if err != nil {
 			return nil, err
 		}
-		r, err := p.readREFDeltaObjectContent(h, deltaRC)
+		r, err := p.readREFDeltaObjectContent(h, deltaRc)
 		if err != nil {
-			_ = deltaRC.Close()
 			return nil, err
 		}
 		return r, nil
 	case plumbing.OFSDeltaObject:
-		deltaRC, err := p.s.ReadObject()
+		deltaRc, err := asyncReader(p)
 		if err != nil {
 			return nil, err
 		}
-		r, err := p.readOFSDeltaObjectContent(h, deltaRC)
+		r, err := p.readOFSDeltaObjectContent(h, deltaRc)
 		if err != nil {
-			_ = deltaRC.Close()
 			return nil, err
 		}
 		return r, nil
@@ -371,7 +384,7 @@ func (p *Packfile) fillREFDeltaObjectContent(obj plumbing.EncodedObject, ref plu
 	return p.fillREFDeltaObjectContentWithBuffer(obj, ref, buf)
 }
 
-func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.Reader) (io.ReadCloser, error) {
 	var err error
 
 	base, ok := p.cacheGet(h.Reference)
@@ -382,7 +395,7 @@ func (p *Packfile) readREFDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadClo
 		}
 	}
 
-	return ReaderFromDelta(h, base, deltaRC)
+	return ReaderFromDelta(base, deltaRC)
 }
 
 func (p *Packfile) fillREFDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, ref plumbing.Hash, buf *bytes.Buffer) error {
@@ -415,7 +428,7 @@ func (p *Packfile) fillOFSDeltaObjectContent(obj plumbing.EncodedObject, offset 
 	return p.fillOFSDeltaObjectContentWithBuffer(obj, offset, buf)
 }
 
-func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.Reader) (io.ReadCloser, error) {
 	hash, err := p.FindHash(h.OffsetReference)
 	if err != nil {
 		return nil, err
@@ -426,15 +439,7 @@ func (p *Packfile) readOFSDeltaObjectContent(h *ObjectHeader, deltaRC io.ReadClo
 		return nil, err
 	}
 
-	base, ok := p.cacheGet(h.Reference)
-	if !ok {
-		base, err = p.Get(h.Reference)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return ReaderFromDelta(h, base, deltaRC)
+	return ReaderFromDelta(base, deltaRC)
 }
 
 func (p *Packfile) fillOFSDeltaObjectContentWithBuffer(obj plumbing.EncodedObject, offset int64, buf *bytes.Buffer) error {

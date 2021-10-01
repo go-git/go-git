@@ -75,7 +75,7 @@ func PatchDelta(src, delta []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func ReaderFromDelta(h *ObjectHeader, base plumbing.EncodedObject, deltaRC io.ReadCloser) (io.ReadCloser, error) {
+func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadCloser, error) {
 	deltaBuf := bufio.NewReaderSize(deltaRC, 1024)
 	srcSz, err := decodeLEB128ByteReader(deltaBuf)
 	if err != nil {
@@ -140,7 +140,7 @@ func ReaderFromDelta(h *ObjectHeader, base plumbing.EncodedObject, deltaRC io.Re
 				}
 
 				discard := offset - basePos
-				if discard < 0 {
+				if basePos > offset {
 					_ = baseRd.Close()
 					baseRd, err = base.Reader()
 					if err != nil {

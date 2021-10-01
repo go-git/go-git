@@ -104,6 +104,24 @@ func WriteNopCloser(w io.Writer) io.WriteCloser {
 	return writeNopCloser{w}
 }
 
+type readerAtAsReader struct {
+	io.ReaderAt
+	offset int64
+}
+
+func (r *readerAtAsReader) Read(bs []byte) (int, error) {
+	n, err := r.ReaderAt.ReadAt(bs, r.offset)
+	r.offset += int64(n)
+	return n, err
+}
+
+func NewReaderUsingReaderAt(r io.ReaderAt, offset int64) io.Reader {
+	return &readerAtAsReader{
+		ReaderAt: r,
+		offset:   offset,
+	}
+}
+
 // CheckClose calls Close on the given io.Closer. If the given *error points to
 // nil, it will be assigned the error returned by Close. Otherwise, any error
 // returned by Close will be ignored. CheckClose is usually called with defer.

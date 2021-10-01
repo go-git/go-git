@@ -318,7 +318,7 @@ func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
 	index, err := w.Index()
 	c.Assert(err, IsNil)
 
-	return NewPackfile(index, fs, file), func() {
+	return NewPackfile(index, fs, file, 0), func() {
 		c.Assert(file.Close(), IsNil)
 	}
 }
