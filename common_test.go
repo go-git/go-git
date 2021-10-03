@@ -198,3 +198,11 @@ func AssertReferences(c *C, r *Repository, expected map[string]string) {
 		c.Assert(obtained, DeepEquals, expected)
 	}
 }
+
+func AssertReferencesMissing(c *C, r *Repository, expected []string) {
+	for _, name := range expected {
+		_, err := r.Reference(plumbing.ReferenceName(name), false)
+		c.Assert(err, NotNil)
+		c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	}
+}

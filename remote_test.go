@@ -591,6 +591,66 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestPushFollowTags(c *C) {
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	server, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/basic.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	localRepo := newRepository(sto, fs)
+	tipTag, err := localRepo.CreateTag(
+		"tip",
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		&CreateTagOptions{
+			Message: "an annotated tag",
+		},
+	)
+	c.Assert(err, IsNil)
+
+	initialTag, err := localRepo.CreateTag(
+		"initial-commit",
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		&CreateTagOptions{
+			Message: "a tag for the initial commit",
+		},
+	)
+	c.Assert(err, IsNil)
+
+	_, err = localRepo.CreateTag(
+		"master-tag",
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		&CreateTagOptions{
+			Message: "a tag with a commit not reachable from branch",
+		},
+	)
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{
+		RefSpecs:   []config.RefSpec{"+refs/heads/branch:refs/heads/branch"},
+		FollowTags: true,
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/branch":        "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+		"refs/tags/tip":            tipTag.Hash().String(),
+		"refs/tags/initial-commit": initialTag.Hash().String(),
+	})
+
+	AssertReferencesMissing(c, server, []string{
+		"refs/tags/master-tag",
+	})
+}
+
 func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
