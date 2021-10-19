@@ -427,6 +427,63 @@ func (s *RepositorySuite) TestDeleteBranch(c *C) {
 	c.Assert(err, Equals, ErrBranchNotFound)
 }
 
+func (s *RepositorySuite) TestCreateWorktree(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	fs := osfs.New(dir)
+	dot, _ := fs.Chroot("storage")
+	wt, _ := fs.Chroot("worktree")
+
+	path := fixtures.ByTag("worktree").One().Worktree().Root()
+	r, err := PlainClone(dot.Root(), true, &CloneOptions{
+		URL: path,
+	})
+	c.Assert(err, IsNil)
+
+	w, err := r.CreateWorktree(wt.Root(), &CheckoutOptions{})
+	c.Assert(err, IsNil)
+	c.Assert(w.Filesystem.Root(), Equals, wt.Root())
+
+	worktrees, err := r.Worktrees()
+	c.Assert(err, IsNil)
+	c.Assert(len(worktrees), Equals, 1)
+
+	r, err = PlainOpen(wt.Root())
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
+func (s *RepositorySuite) TestDeleteWorktree(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	fs := osfs.New(dir)
+	dot, _ := fs.Chroot("storage")
+	wt, _ := fs.Chroot("worktree")
+
+	path := fixtures.ByTag("worktree").One().Worktree().Root()
+	r, err := PlainClone(dot.Root(), true, &CloneOptions{
+		URL: path,
+	})
+	c.Assert(err, IsNil)
+
+	w, err := r.CreateWorktree(wt.Root(), &CheckoutOptions{})
+	c.Assert(err, IsNil)
+	c.Assert(w.Filesystem.Root(), Equals, wt.Root())
+
+	err = r.DeleteWorktree(wt.Root())
+	c.Assert(err, IsNil)
+
+	worktrees, err := r.Worktrees()
+	c.Assert(err, IsNil)
+	c.Assert(len(worktrees), Equals, 0)
+
+	r, err = PlainOpen(wt.Root())
+	c.Assert(err, Equals, ErrRepositoryNotExists)
+	c.Assert(r, IsNil)
+}
+
 func (s *RepositorySuite) TestPlainInit(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()

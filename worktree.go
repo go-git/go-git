@@ -266,6 +266,11 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	return w.r.Storer.SetReference(head)
 }
 
+// Repository returns the underlying repository.
+func (w *Worktree) Repository() *Repository {
+	return w.r
+}
+
 func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 	if err := opts.Validate(w.r); err != nil {
 		return err
