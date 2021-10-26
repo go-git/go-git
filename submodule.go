@@ -243,7 +243,10 @@ func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
 	if !o.NoFetch {
-		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth})
+		err := r.FetchContext(ctx, &FetchOptions{
+			Transport: o.Transport,
+			Auth:      o.Auth,
+		})
 		if err != nil && err != NoErrAlreadyUpToDate {
 			return err
 		}
@@ -263,8 +266,9 @@ func (s *Submodule) fetchAndCheckout(
 			refSpec := config.RefSpec("+" + hash.String() + ":" + hash.String())
 
 			err := r.FetchContext(ctx, &FetchOptions{
-				Auth:     o.Auth,
-				RefSpecs: []config.RefSpec{refSpec},
+				Transport: o.Transport,
+				Auth:      o.Auth,
+				RefSpecs:  []config.RefSpec{refSpec},
 			})
 			if err != nil && err != NoErrAlreadyUpToDate && err != ErrExactSHA1NotSupported {
 				return err

@@ -104,7 +104,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
 
-	s, err := newSendPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
+	s, err := newSendPackSession(r.c.URLs[0], o.Transport, o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return err
 	}
@@ -392,7 +392,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RefSpecs = r.c.Fetch
 	}
 
-	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
+	s, err := newUploadPackSession(r.c.URLs[0], o.Transport, o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
 	}
@@ -489,8 +489,8 @@ func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
 	return false, nil
 }
 
-func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.UploadPackSession, error) {
-	c, ep, err := newClient(url, auth, insecure, cabundle)
+func newUploadPackSession(url string, trans transport.Transport, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.UploadPackSession, error) {
+	c, ep, err := newClient(url, trans, auth, insecure, cabundle)
 	if err != nil {
 		return nil, err
 	}
@@ -498,8 +498,8 @@ func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, 
 	return c.NewUploadPackSession(ep, auth)
 }
 
-func newSendPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.ReceivePackSession, error) {
-	c, ep, err := newClient(url, auth, insecure, cabundle)
+func newSendPackSession(url string, trans transport.Transport, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.ReceivePackSession, error) {
+	c, ep, err := newClient(url, trans, auth, insecure, cabundle)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +507,7 @@ func newSendPackSession(url string, auth transport.AuthMethod, insecure bool, ca
 	return c.NewReceivePackSession(ep, auth)
 }
 
-func newClient(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.Transport, *transport.Endpoint, error) {
+func newClient(url string, trans transport.Transport, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.Transport, *transport.Endpoint, error) {
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
 		return nil, nil, err
@@ -515,12 +515,14 @@ func newClient(url string, auth transport.AuthMethod, insecure bool, cabundle []
 	ep.InsecureSkipTLS = insecure
 	ep.CaBundle = cabundle
 
-	c, err := client.NewClient(ep)
-	if err != nil {
-		return nil, nil, err
+	if trans == nil {
+		trans, err = client.NewClient(ep)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
-	return c, ep, err
+	return trans, ep, err
 }
 
 func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.UploadPackSession,
@@ -1169,7 +1171,7 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 }
 
 func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
-	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
+	s, err := newUploadPackSession(r.c.URLs[0], o.Transport, o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
 	}

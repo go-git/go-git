@@ -824,6 +824,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
 		RefSpecs:        c.Fetch,
 		Depth:           o.Depth,
+		Transport:       o.Transport,
 		Auth:            o.Auth,
 		Progress:        o.Progress,
 		Tags:            o.Tags,
