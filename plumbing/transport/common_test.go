@@ -44,7 +44,6 @@ func (s *SuiteCommon) TestNewEndpointPorts(c *C) {
 	e, err = NewEndpoint("git://github.com:9418/user/repository.git?foo#bar")
 	c.Assert(err, IsNil)
 	c.Assert(e.String(), Equals, "git://github.com/user/repository.git?foo#bar")
-
 }
 
 func (s *SuiteCommon) TestNewEndpointSSH(c *C) {

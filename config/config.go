@@ -548,7 +548,8 @@ type RemoteConfig struct {
 	Name string
 	// URLs the URLs of a remote repository. It must be non-empty. Fetch will
 	// always use the first URL, while push will use all of them.
-	URLs []string
+	URLs         []string
+	NewScpRegexp bool
 
 	// insteadOfRulesApplied have urls been modified
 	insteadOfRulesApplied bool

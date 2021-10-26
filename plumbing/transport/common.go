@@ -178,6 +178,18 @@ func NewEndpoint(endpoint string) (*Endpoint, error) {
 	return parseURL(endpoint)
 }
 
+func NewEndpointScpCorrect(endpoint string) (*Endpoint, error) {
+	if e, ok := parseSCPLikeCorrect(endpoint); ok {
+		return e, nil
+	}
+
+	if e, ok := parseFile(endpoint); ok {
+		return e, nil
+	}
+
+	return parseURL(endpoint)
+}
+
 func parseURL(endpoint string) (*Endpoint, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -239,6 +251,26 @@ func parseSCPLike(endpoint string) (*Endpoint, bool) {
 	}
 
 	user, host, portStr, path := giturl.FindScpLikeComponents(endpoint)
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		port = 22
+	}
+
+	return &Endpoint{
+		Protocol: "ssh",
+		User:     user,
+		Host:     host,
+		Port:     port,
+		Path:     path,
+	}, true
+}
+
+func parseSCPLikeCorrect(endpoint string) (*Endpoint, bool) {
+	if giturl.MatchesScheme(endpoint) || !giturl.MatchesScpLikeExtended(endpoint) {
+		return nil, false
+	}
+
+	user, host, portStr, path := giturl.FindScpLikeComponentsExtended(endpoint)
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		port = 22

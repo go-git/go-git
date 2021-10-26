@@ -29,14 +29,13 @@ const (
 	DefaultSubmoduleRecursionDepth SubmoduleRescursivity = 10
 )
 
-var (
-	ErrMissingURL = errors.New("URL field is required")
-)
+var ErrMissingURL = errors.New("URL field is required")
 
 // CloneOptions describes how a clone should be performed.
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
-	URL string
+	URL          string
+	NewScpRegexp bool
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Name of the remote to be added, by default `origin`.
@@ -139,7 +138,7 @@ const (
 	// AllTags fetch all tags from the remote (i.e., fetch remote tags
 	// refs/tags/* into local tags with the same name)
 	AllTags
-	//NoTags fetch no tags from the remote at all
+	// NoTags fetch no tags from the remote at all
 	NoTags
 )
 
@@ -392,9 +391,7 @@ type LogOptions struct {
 	Until *time.Time
 }
 
-var (
-	ErrMissingAuthor = errors.New("author field is required")
-)
+var ErrMissingAuthor = errors.New("author field is required")
 
 // AddOptions describes how an `add` operation should be performed
 type AddOptions struct {
@@ -599,9 +596,7 @@ type GrepOptions struct {
 	PathSpecs []*regexp.Regexp
 }
 
-var (
-	ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
-)
+var ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
 
 // Validate validates the fields and sets the default values.
 func (o *GrepOptions) Validate(w *Worktree) error {
