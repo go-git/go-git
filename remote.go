@@ -319,6 +319,13 @@ func (r *Remote) newReferenceUpdateRequest(
 		}
 	}
 
+	if ar.Capabilities.Supports(capability.PushOptions) {
+		_ = req.Capabilities.Set(capability.PushOptions)
+		for k, v := range o.Options {
+			req.Options = append(req.Options, &packp.Option{Key: k, Value: v})
+		}
+	}
+
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune); err != nil {
 		return nil, err
 	}
