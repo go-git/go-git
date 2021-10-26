@@ -46,6 +46,12 @@ func (s *RemoteSuite) TestFetchInvalidSchemaEndpoint(c *C) {
 	c.Assert(err, ErrorMatches, ".*unsupported scheme.*")
 }
 
+func (s *RemoteSuite) TestFetchOverriddenEndpoint(c *C) {
+	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://perfectly-valid-url.example.com"}})
+	err := r.Fetch(&FetchOptions{RemoteURL: "http://\\"})
+	c.Assert(err, ErrorMatches, ".*invalid character.*")
+}
+
 func (s *RemoteSuite) TestFetchInvalidFetchOptions(c *C) {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	invalid := config.RefSpec("^*$ñ")
@@ -961,6 +967,12 @@ func (s *RemoteSuite) TestPushNonExistentEndpoint(c *C) {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
 	err := r.Push(&PushOptions{})
 	c.Assert(err, NotNil)
+}
+
+func (s *RemoteSuite) TestPushOverriddenEndpoint(c *C) {
+	r := NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{"http://perfectly-valid-url.example.com"}})
+	err := r.Push(&PushOptions{RemoteURL: "http://\\"})
+	c.Assert(err, ErrorMatches, ".*invalid character.*")
 }
 
 func (s *RemoteSuite) TestPushInvalidSchemaEndpoint(c *C) {
