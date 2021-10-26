@@ -213,6 +213,9 @@ type PushOptions struct {
 	// RequireRemoteRefs only allows a remote ref to be updated if its current
 	// value is the one specified here.
 	RequireRemoteRefs []config.RefSpec
+	// FollowTags will send any annotated tags with a commit target reachable from
+	// the refs already being pushed
+	FollowTags bool
 }
 
 // Validate validates the fields and sets the default values.

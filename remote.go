@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
@@ -225,6 +226,77 @@ func (r *Remote) useRefDeltas(ar *packp.AdvRefs) bool {
 	return !ar.Capabilities.Supports(capability.OFSDelta)
 }
 
+func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer, req *packp.ReferenceUpdateRequest) error {
+	tags := make(map[plumbing.Reference]struct{})
+	// get a list of all tags locally
+	for _, ref := range localRefs {
+		if strings.HasPrefix(string(ref.Name()), "refs/tags") {
+			tags[*ref] = struct{}{}
+		}
+	}
+
+	remoteRefIter, err := remoteRefs.IterReferences()
+	if err != nil {
+		return err
+	}
+
+	// remove any that are already on the remote
+	if err := remoteRefIter.ForEach(func(reference *plumbing.Reference) error {
+		if _, ok := tags[*reference]; ok {
+			delete(tags, *reference)
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	for tag, _ := range tags {
+		tagObject, err := object.GetObject(r.s, tag.Hash())
+		var tagCommit *object.Commit
+		if err != nil {
+			return fmt.Errorf("get tag object: %w\n", err)
+		}
+
+		if tagObject.Type() != plumbing.TagObject {
+			continue
+		}
+
+		annotatedTag, ok := tagObject.(*object.Tag)
+		if !ok {
+			return errors.New("could not get annotated tag object")
+		}
+
+		tagCommit, err = object.GetCommit(r.s, annotatedTag.Target)
+		if err != nil {
+			return fmt.Errorf("get annotated tag commit: %w\n", err)
+		}
+
+		// only include tags that are reachable from one of the refs
+		// already being pushed
+		for _, cmd := range req.Commands {
+			if tag.Name() == cmd.Name {
+				continue
+			}
+
+			if strings.HasPrefix(cmd.Name.String(), "refs/tags") {
+				continue
+			}
+
+			c, err := object.GetCommit(r.s, cmd.New)
+			if err != nil {
+				return fmt.Errorf("get commit %v: %w", cmd.Name, err)
+			}
+
+			if isAncestor, err := tagCommit.IsAncestor(c); err == nil && isAncestor {
+				req.Commands = append(req.Commands, &packp.Command{Name: tag.Name(), New: tag.Hash()})
+			}
+		}
+	}
+
+	return nil
+}
+
 func (r *Remote) newReferenceUpdateRequest(
 	o *PushOptions,
 	localRefs []*plumbing.Reference,
@@ -244,6 +316,12 @@ func (r *Remote) newReferenceUpdateRequest(
 
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune); err != nil {
 		return nil, err
+	}
+
+	if o.FollowTags {
+		if err := r.addReachableTags(localRefs, remoteRefs, req); err != nil {
+			return nil, err
+		}
 	}
 
 	return req, nil
