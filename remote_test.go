@@ -5,12 +5,16 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -1205,4 +1209,92 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 	newRef, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
 	c.Assert(err, IsNil)
 	c.Assert(newRef, Not(DeepEquals), oldRef)
+}
+
+func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
+	d, err := ioutil.TempDir("", "TestCanPushShasToReference")
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	defer os.RemoveAll(d)
+
+	// remote currently forces a plain path for path based remotes inside the PushContext function.
+	// This makes it impossible, in the current state to use memfs.
+	// For the sake of readability, use the same osFS everywhere and use plain git repositories on temporary files
+	remote, err := PlainInit(filepath.Join(d, "remote"), true)
+	c.Assert(err, IsNil)
+	c.Assert(remote, NotNil)
+
+	repo, err := PlainInit(filepath.Join(d, "repo"), false)
+	c.Assert(err, IsNil)
+	c.Assert(repo, NotNil)
+
+	fd, err := os.Create(filepath.Join(d, "repo", "README.md"))
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	_, err = fd.WriteString("# test repo")
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	err = fd.Close()
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	wt, err := repo.Worktree()
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	wt.Add("README.md")
+	sha, err := wt.Commit("test commit", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+		Committer: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	gitremote, err := repo.CreateRemote(&config.RemoteConfig{
+		Name: "local",
+		URLs: []string{filepath.Join(d, "remote")},
+	})
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	err = gitremote.Push(&PushOptions{
+		RemoteName: "local",
+		RefSpecs: []config.RefSpec{
+			// TODO: check with short hashes that this is still respected
+			config.RefSpec(sha.String() + ":refs/heads/branch"),
+		},
+	})
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	ref, err := remote.Reference(plumbing.ReferenceName("refs/heads/branch"), false)
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	c.Assert(ref.Hash().String(), Equals, sha.String())
 }
