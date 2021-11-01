@@ -228,6 +228,8 @@ type PushOptions struct {
 	// FollowTags will send any annotated tags with a commit target reachable from
 	// the refs already being pushed
 	FollowTags bool
+	// PushOptions sets options to be transferred to the server during push.
+	Options map[string]string
 }
 
 // Validate validates the fields and sets the default values.

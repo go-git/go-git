@@ -29,6 +29,12 @@ func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
 		return err
 	}
 
+	if req.Capabilities.Supports(capability.PushOptions) {
+		if err := req.encodeOptions(e, req.Options); err != nil {
+			return err
+		}
+	}
+
 	if req.Packfile != nil {
 		if _, err := io.Copy(w, req.Packfile); err != nil {
 			return err
@@ -72,4 +78,16 @@ func formatCommand(cmd *Command) string {
 	o := cmd.Old.String()
 	n := cmd.New.String()
 	return fmt.Sprintf("%s %s %s", o, n, cmd.Name)
+}
+
+func (req *ReferenceUpdateRequest) encodeOptions(e *pktline.Encoder,
+	opts []*Option) error {
+
+	for _, opt := range opts {
+		if err := e.Encodef("%s=%s", opt.Key, opt.Value); err != nil {
+			return err
+		}
+	}
+
+	return e.Flush()
 }
