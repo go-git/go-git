@@ -228,8 +228,23 @@ type PushOptions struct {
 	// FollowTags will send any annotated tags with a commit target reachable from
 	// the refs already being pushed
 	FollowTags bool
+	// ForceWithLease allows a force push as long as the remote ref adheres to a "lease"
+	ForceWithLease *ForceWithLease
 	// PushOptions sets options to be transferred to the server during push.
 	Options map[string]string
+}
+
+// ForceWithLease sets fields on the lease
+// If neither RefName nor Hash are set, ForceWithLease protects
+// all refs in the refspec by ensuring the ref of the remote in the local repsitory
+// matches the one in the ref advertisement.
+type ForceWithLease struct {
+	// RefName, when set will protect the ref by ensuring it matches the
+	// hash in the ref advertisement.
+	RefName plumbing.ReferenceName
+	// Hash is the expected object id of RefName. The push will be rejected unless this
+	// matches the corresponding object id of RefName in the refs advertisement.
+	Hash plumbing.Hash
 }
 
 // Validate validates the fields and sets the default values.
