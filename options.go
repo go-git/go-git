@@ -91,6 +91,8 @@ func (o *CloneOptions) Validate() error {
 type PullOptions struct {
 	// Name of the remote to be pulled. If empty, uses the default.
 	RemoteName string
+	// RemoteURL overrides the remote repo address with a custom URL
+	RemoteURL string
 	// Remote branch to clone. If empty, uses HEAD.
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
@@ -147,7 +149,9 @@ const (
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
 	RemoteName string
-	RefSpecs   []config.RefSpec
+	// RemoteURL overrides the remote repo address with a custom URL
+	RemoteURL string
+	RefSpecs  []config.RefSpec
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
@@ -192,8 +196,16 @@ func (o *FetchOptions) Validate() error {
 type PushOptions struct {
 	// RemoteName is the name of the remote to be pushed to.
 	RemoteName string
-	// RefSpecs specify what destination ref to update with what source
-	// object. A refspec with empty src can be used to delete a reference.
+	// RemoteURL overrides the remote repo address with a custom URL
+	RemoteURL string
+	// RefSpecs specify what destination ref to update with what source object.
+	//
+	// The format of a <refspec> parameter is an optional plus +, followed by
+	//  the source object <src>, followed by a colon :, followed by the destination ref <dst>.
+	// The <src> is often the name of the branch you would want to push, but it can be a SHA-1.
+	// The <dst> tells which ref on the remote side is updated with this push.
+	//
+	// A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
@@ -213,6 +225,11 @@ type PushOptions struct {
 	// RequireRemoteRefs only allows a remote ref to be updated if its current
 	// value is the one specified here.
 	RequireRemoteRefs []config.RefSpec
+	// FollowTags will send any annotated tags with a commit target reachable from
+	// the refs already being pushed
+	FollowTags bool
+	// PushOptions sets options to be transferred to the server during push.
+	Options map[string]string
 }
 
 // Validate validates the fields and sets the default values.
