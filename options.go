@@ -230,6 +230,8 @@ type PushOptions struct {
 	FollowTags bool
 	// PushOptions sets options to be transferred to the server during push.
 	Options map[string]string
+	// Atomic sets option to be an atomic push
+	Atomic bool
 }
 
 // Validate validates the fields and sets the default values.
