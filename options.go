@@ -291,6 +291,8 @@ type CheckoutOptions struct {
 	// target branch. Force and Keep are mutually exclusive, should not be both
 	// set to true.
 	Keep bool
+	// SparseCheckoutDirectories
+	SparseCheckoutDirectories []string
 }
 
 // Validate validates the fields and sets the default values.

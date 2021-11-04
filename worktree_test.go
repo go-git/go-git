@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -415,6 +416,37 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 	target, err := w.Filesystem.Readlink("bar")
 	c.Assert(target, Equals, "not-exists")
 	c.Assert(err, IsNil)
+}
+
+func (s *WorktreeSuite) TestCheckoutSparse(c *C) {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	sparseCheckoutDirectories := []string{"go", "json", "php"}
+	c.Assert(w.Checkout(&CheckoutOptions{
+		SparseCheckoutDirectories: sparseCheckoutDirectories,
+	}), IsNil)
+
+	fis, err := fs.ReadDir("/")
+	c.Assert(err, IsNil)
+
+	for _, fi := range fis {
+		c.Assert(fi.IsDir(), Equals, true)
+		var oneOfSparseCheckoutDirs bool
+
+		for _, sparseCheckoutDirectory := range sparseCheckoutDirectories {
+			if strings.HasPrefix(fi.Name(), sparseCheckoutDirectory) {
+				oneOfSparseCheckoutDirs = true
+			}
+		}
+		c.Assert(oneOfSparseCheckoutDirs, Equals, true)
+	}
 }
 
 func (s *WorktreeSuite) TestFilenameNormalization(c *C) {

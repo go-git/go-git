@@ -112,6 +112,10 @@ func (d *dir) NumChildren() (int, error) {
 	return len(d.children), nil
 }
 
+func (d *dir) Skip() bool {
+	return false
+}
+
 const (
 	dirStartMark  = '('
 	dirEndMark    = ')'
