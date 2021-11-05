@@ -2266,8 +2266,11 @@ func setupForRestore(c *C, s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, 
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
-	names = []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg"}
+	names = []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg", "json/short.json", "json/medium.json", "json/long.json"}
 	verifyStatus(c, "Checkout", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
@@ -2289,6 +2292,9 @@ func setupForRestore(c *C, s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, 
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Deleted, Staging: Unmodified},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
 	})
 
 	// Stage all files and verify the updated status
@@ -2301,6 +2307,9 @@ func setupForRestore(c *C, s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, 
 		{Worktree: Unmodified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
+		{Worktree: Unmodified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
 	})
 
 	// Add secondary changes to a file to make sure we only restore the staged file
@@ -2308,19 +2317,24 @@ func setupForRestore(c *C, s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, 
 	c.Assert(err, IsNil)
 	err = util.WriteFile(fs, names[2], []byte("Foo Bar:22"), 0755)
 	c.Assert(err, IsNil)
+	err = util.WriteFile(fs, names[4], []byte("Foo Bar:44"), 0755)
+	c.Assert(err, IsNil)
 
 	verifyStatus(c, "Secondary Edits", w, names, []FileStatus{
 		{Worktree: Unmodified, Staging: Added},
 		{Worktree: Modified, Staging: Modified},
 		{Worktree: Modified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
 	})
 
 	return
 }
 
 func verifyStatus(c *C, marker string, w *Worktree, files []string, statuses []FileStatus) {
-	c.Assert(len(files), Equals, len(statuses))
+	c.Assert(len(files), Equals, len(statuses), Commentf("%s - Incorrect number of statuses %d != %d", marker, len(files), len(statuses)))
 
 	status, err := w.Status()
 	c.Assert(err, IsNil)
@@ -2350,6 +2364,9 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Modified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
 	})
 
 	//Make sure the restore didn't overwrite our secondary changes
@@ -2365,12 +2382,33 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Modified, Staging: Unmodified},
 		{Worktree: Deleted, Staging: Unmodified},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
 	})
 
 	//Make sure the restore didn't overwrite our secondary changes
 	contents, err = util.ReadFile(fs, names[2])
 	c.Assert(err, IsNil)
 	c.Assert(string(contents), Equals, "Foo Bar:22")
+
+	opts.Files = []string{names[4], names[5], names[6]}
+	err = w.Restore(&opts)
+	c.Assert(err, IsNil)
+	verifyStatus(c, "Restored Third", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Deleted, Staging: Unmodified},
+		{Worktree: Modified, Staging: Unmodified},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Unmodified},
+	})
+
+	//Make sure the restore didn't overwrite our secondary changes
+	contents, err = util.ReadFile(fs, names[4])
+	c.Assert(err, IsNil)
+	c.Assert(string(contents), Equals, "Foo Bar:44")
 }
 
 func (s *WorktreeSuite) TestRestoreWorktree(c *C) {
@@ -2403,12 +2441,31 @@ func (s *WorktreeSuite) TestRestoreBoth(c *C) {
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Modified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
 	})
 
 	opts.Files = []string{names[2], names[3]}
 	err = w.Restore(&opts)
 	c.Assert(err, IsNil)
 	verifyStatus(c, "Restored Second", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Modified, Staging: Modified},
+		{Worktree: Unmodified, Staging: Added},
+		{Worktree: Unmodified, Staging: Modified},
+	})
+
+	opts.Files = []string{names[4], names[5], names[6]}
+	err = w.Restore(&opts)
+	c.Assert(err, IsNil)
+	verifyStatus(c, "Restored Third", w, names, []FileStatus{
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},

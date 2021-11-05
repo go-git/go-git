@@ -425,9 +425,9 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 		if len(files) > 0 {
 			file := ""
 			if ch.From != nil {
-				file = ch.From.Name()
+				file = ch.From.String()
 			} else {
-				file = ch.To.Name()
+				file = ch.To.String()
 			}
 
 			contains := inFiles(files, file)
