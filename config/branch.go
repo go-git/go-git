@@ -92,6 +92,13 @@ func (b *Branch) marshal() *format.Subsection {
 	return b.raw
 }
 
+// hack to trigger conditional quoting in the
+// plumbing/format/config/Encoder.encodeOptions
+//
+// Current Encoder implementation uses Go %q format if value contains a backslash character,
+// which is not consistent with reference git implementation.
+// git just replaces newline characters with \n, while Encoder prints them directly.
+// Until value quoting fix, we should escape description value by replacing newline characters with \n.
 func quoteDescription(desc string) string {
 	return strings.ReplaceAll(desc, "\n", `\n`)
 }
@@ -108,6 +115,9 @@ func (b *Branch) unmarshal(s *format.Subsection) error {
 	return b.Validate()
 }
 
+// hack to enable conditional quoting in the
+// plumbing/format/config/Encoder.encodeOptions
+// goto quoteDescription for details.
 func unquoteDescription(desc string) string {
 	return strings.ReplaceAll(desc, `\n`, "\n")
 }
