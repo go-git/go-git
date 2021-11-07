@@ -50,6 +50,7 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [branch "master"]
 		remote = origin
 		merge = refs/heads/master
+		description = "Add support for branch description.\\n\\nEdit branch description: git branch --edit-description\\n"
 [init]
 		defaultBranch = main
 [url "ssh://git@github.com/"]
@@ -86,6 +87,7 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Submodules["qux"].Branch, Equals, "bar")
 	c.Assert(cfg.Branches["master"].Remote, Equals, "origin")
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
+	c.Assert(cfg.Branches["master"].Description, Equals, "Add support for branch description.\n\nEdit branch description: git branch --edit-description\n")
 	c.Assert(cfg.Init.DefaultBranch, Equals, "main")
 }
 
@@ -111,6 +113,7 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+	description = "Add support for branch description.\\n\\nEdit branch description: git branch --edit-description\\n"
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 [init]
@@ -149,9 +152,10 @@ func (s *ConfigSuite) TestMarshal(c *C) {
 	}
 
 	cfg.Branches["master"] = &Branch{
-		Name:   "master",
-		Remote: "origin",
-		Merge:  "refs/heads/master",
+		Name:        "master",
+		Remote:      "origin",
+		Merge:       "refs/heads/master",
+		Description: "Add support for branch description.\n\nEdit branch description: git branch --edit-description\n",
 	}
 
 	cfg.URLs["ssh://git@github.com/"] = &URL{
@@ -364,4 +368,5 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 	if strings.Contains(string(buf), "url") {
 		c.Fatal("conifg should not contain any url sections")
 	}
+	c.Assert(err, IsNil)
 }
