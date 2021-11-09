@@ -132,6 +132,20 @@ func (s *ParserSuite) TestThinPack(c *C) {
 
 }
 
+func (s *ParserSuite) TestResolveExternalRefsInThinPack(c *C) {
+	f, err := os.Open("testdata/pack-9733763ae7ee6efcf452d373d6fff77424fb1dcc.pack")
+	c.Assert(err, IsNil)
+
+	scanner := packfile.NewScanner(f)
+
+	obs := new(testObserver)
+	parser, err := packfile.NewParser(scanner, obs)
+	c.Assert(err, IsNil)
+
+	_, err = parser.Parse()
+	c.Assert(err, IsNil)
+}
+
 type observerObject struct {
 	hash   string
 	otype  plumbing.ObjectType
