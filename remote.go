@@ -256,7 +256,7 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 		return err
 	}
 
-	for tag, _ := range tags {
+	for tag := range tags {
 		tagObject, err := object.GetObject(r.s, tag.Hash())
 		var tagCommit *object.Commit
 		if err != nil {

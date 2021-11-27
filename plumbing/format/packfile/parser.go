@@ -46,7 +46,6 @@ type Parser struct {
 	oi         []*objectInfo
 	oiByHash   map[plumbing.Hash]*objectInfo
 	oiByOffset map[int64]*objectInfo
-	hashOffset map[plumbing.Hash]int64
 	checksum   plumbing.Hash
 
 	cache *cache.BufferLRU

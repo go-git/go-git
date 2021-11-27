@@ -386,7 +386,7 @@ func (s *FsSuite) TestGetFromObjectFileSharedCache(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(obj.Hash(), Equals, expected)
 
-	obj, err = o2.EncodedObject(plumbing.CommitObject, expected)
+	_, err = o2.EncodedObject(plumbing.CommitObject, expected)
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
 }
 
