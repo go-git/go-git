@@ -15,9 +15,6 @@ type ReferenceStorage struct {
 	// commit is requested, the entries are added when RemoveReference is called
 	// and deleted if SetReference is called.
 	deleted map[plumbing.ReferenceName]struct{}
-	// packRefs if true PackRefs is going to be called in the based storer when
-	// commit is called.
-	packRefs bool
 }
 
 // NewReferenceStorage returns a new ReferenceStorer based on a base storer and
@@ -108,7 +105,6 @@ func (r ReferenceStorage) CountLooseRefs() (int, error) {
 
 // PackRefs honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) PackRefs() error {
-	r.packRefs = true
 	return nil
 }
 
