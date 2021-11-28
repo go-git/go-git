@@ -29,10 +29,13 @@ import (
 )
 
 var (
-	NoErrAlreadyUpToDate     = errors.New("already up-to-date")
+	ErrAlreadyUpToDate       = errors.New("already up-to-date")
 	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
+
+	// Deprecated: Use ErrAlreadyUpToDate.
+	NoErrAlreadyUpToDate = ErrAlreadyUpToDate
 )
 
 type NoMatchingRefSpecError struct {
@@ -84,13 +87,13 @@ func (r *Remote) String() string {
 	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
 }
 
-// Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
+// Push performs a push to the remote. Returns ErrAlreadyUpToDate if the
 // remote was already up-to-date.
 func (r *Remote) Push(o *PushOptions) error {
 	return r.PushContext(context.Background(), o)
 }
 
-// PushContext performs a push to the remote. Returns NoErrAlreadyUpToDate if
+// PushContext performs a push to the remote. Returns ErrAlreadyUpToDate if
 // the remote was already up-to-date.
 //
 // The provided Context must be non-nil. If the context expires before the
@@ -167,7 +170,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	}
 
 	if len(req.Commands) == 0 {
-		return NoErrAlreadyUpToDate
+		return ErrAlreadyUpToDate
 	}
 
 	objects := objectsToPush(req.Commands)
@@ -371,7 +374,7 @@ func (r *Remote) updateRemoteReferenceStorage(
 // FetchContext fetches references along with the objects necessary to complete
 // their histories.
 //
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// Returns nil if the operation is successful, ErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 //
 // The provided Context must be non-nil. If the context expires before the
@@ -385,7 +388,7 @@ func (r *Remote) FetchContext(ctx context.Context, o *FetchOptions) error {
 // Fetch fetches references along with the objects necessary to complete their
 // histories.
 //
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// Returns nil if the operation is successful, ErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 func (r *Remote) Fetch(o *FetchOptions) error {
 	return r.FetchContext(context.Background(), o)
@@ -476,7 +479,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if !updated {
-		return remoteRefs, NoErrAlreadyUpToDate
+		return remoteRefs, ErrAlreadyUpToDate
 	}
 
 	return remoteRefs, nil

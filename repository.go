@@ -959,7 +959,7 @@ func (r *Repository) fetchAndUpdateReferences(
 
 	objsUpdated := true
 	remoteRefs, err := remote.fetch(ctx, o)
-	if err == NoErrAlreadyUpToDate {
+	if err == ErrAlreadyUpToDate {
 		objsUpdated = false
 	} else if err == packfile.ErrEmptyPackfile {
 		return nil, ErrFetching
@@ -978,7 +978,7 @@ func (r *Repository) fetchAndUpdateReferences(
 	}
 
 	if !objsUpdated && !refsUpdated {
-		return nil, NoErrAlreadyUpToDate
+		return nil, ErrAlreadyUpToDate
 	}
 
 	return resolvedRef, nil
@@ -1071,7 +1071,7 @@ func updateReferenceStorerIfNeeded(
 // Fetch fetches references along with the objects necessary to complete
 // their histories, from the remote named as FetchOptions.RemoteName.
 //
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// Returns nil if the operation is successful, ErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 func (r *Repository) Fetch(o *FetchOptions) error {
 	return r.FetchContext(context.Background(), o)
@@ -1080,7 +1080,7 @@ func (r *Repository) Fetch(o *FetchOptions) error {
 // FetchContext fetches references along with the objects necessary to complete
 // their histories, from the remote named as FetchOptions.RemoteName.
 //
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// Returns nil if the operation is successful, ErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 //
 // The provided Context must be non-nil. If the context expires before the
@@ -1099,14 +1099,14 @@ func (r *Repository) FetchContext(ctx context.Context, o *FetchOptions) error {
 	return remote.FetchContext(ctx, o)
 }
 
-// Push performs a push to the remote. Returns NoErrAlreadyUpToDate if
+// Push performs a push to the remote. Returns ErrAlreadyUpToDate if
 // the remote was already up-to-date, from the remote named as
 // FetchOptions.RemoteName.
 func (r *Repository) Push(o *PushOptions) error {
 	return r.PushContext(context.Background(), o)
 }
 
-// PushContext performs a push to the remote. Returns NoErrAlreadyUpToDate if
+// PushContext performs a push to the remote. Returns ErrAlreadyUpToDate if
 // the remote was already up-to-date, from the remote named as
 // FetchOptions.RemoteName.
 //

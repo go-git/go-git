@@ -244,7 +244,7 @@ func (s *Submodule) fetchAndCheckout(
 ) error {
 	if !o.NoFetch {
 		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth})
-		if err != nil && err != NoErrAlreadyUpToDate {
+		if err != nil && err != ErrAlreadyUpToDate {
 			return err
 		}
 	}
@@ -266,7 +266,7 @@ func (s *Submodule) fetchAndCheckout(
 				Auth:     o.Auth,
 				RefSpecs: []config.RefSpec{refSpec},
 			})
-			if err != nil && err != NoErrAlreadyUpToDate && err != ErrExactSHA1NotSupported {
+			if err != nil && err != ErrAlreadyUpToDate && err != ErrExactSHA1NotSupported {
 				return err
 			}
 		}

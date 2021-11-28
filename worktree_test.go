@@ -161,7 +161,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	err = w.Pull(&PullOptions{})
-	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+	c.Assert(err, Equals, ErrAlreadyUpToDate)
 }
 
 func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
@@ -177,7 +177,7 @@ func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
 	c.Assert(err, IsNil)
 
 	err = w.Pull(&PullOptions{})
-	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+	c.Assert(err, Equals, ErrAlreadyUpToDate)
 
 	branch, err := r.Reference("refs/heads/master", false)
 	c.Assert(err, IsNil)
@@ -292,7 +292,7 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
 	c.Assert(err, IsNil)
 
 	err = w.Pull(&PullOptions{})
-	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+	c.Assert(err, Equals, ErrAlreadyUpToDate)
 }
 
 func (s *WorktreeSuite) TestCheckout(c *C) {

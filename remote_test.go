@@ -346,12 +346,12 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
 	c.Assert(mock.PackfileWriterCalled, Equals, true)
 }
 
-func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate(c *C) {
+func (s *RemoteSuite) TestFetchErrAlreadyUpToDate(c *C) {
 	url := s.GetBasicLocalRepositoryURL()
-	s.doTestFetchNoErrAlreadyUpToDate(c, url)
+	s.doTestFetchErrAlreadyUpToDate(c, url)
 }
 
-func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateButStillUpdateLocalRemoteRefs(c *C) {
+func (s *RemoteSuite) TestFetchErrAlreadyUpToDateButStillUpdateLocalRemoteRefs(c *C) {
 	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -382,13 +382,13 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateButStillUpdateLocalRemoteRefs
 	c.Assert(exp.String(), Equals, ref.String())
 }
 
-func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateWithNonCommitObjects(c *C) {
+func (s *RemoteSuite) TestFetchErrAlreadyUpToDateWithNonCommitObjects(c *C) {
 	fixture := fixtures.ByTag("tags").One()
 	url := s.GetLocalRepositoryURL(fixture)
-	s.doTestFetchNoErrAlreadyUpToDate(c, url)
+	s.doTestFetchErrAlreadyUpToDate(c, url)
 }
 
-func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(c *C, url string) {
+func (s *RemoteSuite) doTestFetchErrAlreadyUpToDate(c *C, url string) {
 	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{URLs: []string{url}})
 
 	o := &FetchOptions{
@@ -400,7 +400,7 @@ func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(c *C, url string) {
 	err := r.Fetch(o)
 	c.Assert(err, IsNil)
 	err = r.Fetch(o)
-	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+	c.Assert(err, Equals, ErrAlreadyUpToDate)
 }
 
 func (s *RemoteSuite) testFetchFastForward(c *C, sto storage.Storer) {
@@ -661,7 +661,7 @@ func (s *RemoteSuite) TestPushFollowTags(c *C) {
 	})
 }
 
-func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
+func (s *RemoteSuite) TestPushErrAlreadyUpToDate(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
@@ -673,7 +673,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	err := r.Push(&PushOptions{
 		RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"},
 	})
-	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+	c.Assert(err, Equals, ErrAlreadyUpToDate)
 }
 
 func (s *RemoteSuite) TestPushDeleteReference(c *C) {
@@ -853,7 +853,7 @@ func (s *RemoteSuite) TestPushPrune(c *C) {
 		},
 		Prune: true,
 	})
-	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+	c.Assert(err, Equals, ErrAlreadyUpToDate)
 
 	AssertReferences(c, server, map[string]string{
 		"refs/tags/v1.0.0": tag.Hash().String(),

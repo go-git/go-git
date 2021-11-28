@@ -44,7 +44,7 @@ type Worktree struct {
 }
 
 // Pull incorporates changes from a remote repository into the current branch.
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
+// Returns nil if the operation is successful, ErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
 //
 // Pull only supports merges where the can be resolved as a fast-forward.
@@ -53,7 +53,7 @@ func (w *Worktree) Pull(o *PullOptions) error {
 }
 
 // PullContext incorporates changes from a remote repository into the current
-// branch. Returns nil if the operation is successful, NoErrAlreadyUpToDate if
+// branch. Returns nil if the operation is successful, ErrAlreadyUpToDate if
 // there are no changes to be fetched, or an error.
 //
 // Pull only supports merges where the can be resolved as a fast-forward.
@@ -83,7 +83,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	})
 
 	updated := true
-	if err == NoErrAlreadyUpToDate {
+	if err == ErrAlreadyUpToDate {
 		updated = false
 	} else if err != nil {
 		return err
@@ -102,7 +102,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		}
 
 		if !updated && headAheadOfRef {
-			return NoErrAlreadyUpToDate
+			return ErrAlreadyUpToDate
 		}
 
 		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash())

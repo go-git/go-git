@@ -136,7 +136,7 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 	err := r.Push(po)
 
 	if err != nil {
-		if err == git.NoErrAlreadyUpToDate {
+		if err == git.ErrAlreadyUpToDate {
 			log.Print("origin remote was up to date, no push done")
 			return nil
 		}
