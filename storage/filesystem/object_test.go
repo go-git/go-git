@@ -71,7 +71,7 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors(c *C) {
 		pack1, err := dg.ObjectPack(packfiles[0])
 		c.Assert(err, IsNil)
 
-		pack1.Seek(42, os.SEEK_SET)
+		pack1.Seek(42, io.SeekStart)
 
 		err = o.Close()
 		c.Assert(err, IsNil)
@@ -79,7 +79,7 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors(c *C) {
 		pack2, err := dg.ObjectPack(packfiles[0])
 		c.Assert(err, IsNil)
 
-		offset, err := pack2.Seek(0, os.SEEK_CUR)
+		offset, err := pack2.Seek(0, io.SeekCurrent)
 		c.Assert(err, IsNil)
 		c.Assert(offset, Equals, int64(0))
 
