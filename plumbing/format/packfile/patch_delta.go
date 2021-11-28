@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/go-git/go-git/v5/internal/iocopy"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -53,9 +54,7 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) (err error) {
 
 	target.SetSize(int64(dst.Len()))
 
-	b := byteSlicePool.Get().([]byte)
-	_, err = io.CopyBuffer(w, dst, b)
-	byteSlicePool.Put(b)
+	_, err = iocopy.Copy(w, dst)
 	return err
 }
 

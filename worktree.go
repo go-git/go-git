@@ -4,16 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	stdioutil "io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/internal/iocopy"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
@@ -532,12 +531,6 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 	return nil
 }
 
-var copyBufferPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 32*1024)
-	},
-}
-
 func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
@@ -561,9 +554,7 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	}
 
 	defer ioutil.CheckClose(to, &err)
-	buf := copyBufferPool.Get().([]byte)
-	_, err = io.CopyBuffer(to, from, buf)
-	copyBufferPool.Put(buf)
+	_, err = iocopy.Copy(to, from)
 	return
 }
 
