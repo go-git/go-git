@@ -247,10 +247,7 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 
 	// remove any that are already on the remote
 	if err := remoteRefIter.ForEach(func(reference *plumbing.Reference) error {
-		if _, ok := tags[*reference]; ok {
-			delete(tags, *reference)
-		}
-
+		delete(tags, *reference)
 		return nil
 	}); err != nil {
 		return err
