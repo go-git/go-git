@@ -54,7 +54,7 @@ func (s *ConfigSuite) TestSetConfigTemporal(c *C) {
 
 	cfg, err = cs.Config()
 	c.Assert(err, IsNil)
-	c.Assert(temporalCfg.Core.Worktree, Equals, "bar")
+	c.Assert(cfg.Core.Worktree, Equals, "bar")
 }
 
 func (s *ConfigSuite) TestCommit(c *C) {
