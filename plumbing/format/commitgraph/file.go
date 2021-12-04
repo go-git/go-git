@@ -14,14 +14,14 @@ import (
 var (
 	// ErrUnsupportedVersion is returned by OpenFileIndex when the commit graph
 	// file version is not supported.
-	ErrUnsupportedVersion = errors.New("Unsupported version")
+	ErrUnsupportedVersion = errors.New("unsupported version")
 	// ErrUnsupportedHash is returned by OpenFileIndex when the commit graph
 	// hash function is not supported. Currently only SHA-1 is defined and
 	// supported
-	ErrUnsupportedHash = errors.New("Unsupported hash algorithm")
+	ErrUnsupportedHash = errors.New("unsupported hash algorithm")
 	// ErrMalformedCommitGraphFile is returned by OpenFileIndex when the commit
 	// graph file is corrupted.
-	ErrMalformedCommitGraphFile = errors.New("Malformed commit graph file")
+	ErrMalformedCommitGraphFile = errors.New("malformed commit graph file")
 
 	commitFileSignature    = []byte{'C', 'G', 'P', 'H'}
 	oidFanoutSignature     = []byte{'O', 'I', 'D', 'F'}

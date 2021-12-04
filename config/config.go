@@ -150,7 +150,7 @@ func ReadConfig(r io.Reader) (*Config, error) {
 // config file to the given scope, a empty one is returned.
 func LoadConfig(scope Scope) (*Config, error) {
 	if scope == LocalScope {
-		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer.")
+		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer")
 	}
 
 	files, err := Paths(scope)
