@@ -247,6 +247,7 @@ const (
 	rebaseKey        = "rebase"
 	nameKey          = "name"
 	emailKey         = "email"
+	descriptionKey   = "description"
 	defaultBranchKey = "defaultBranch"
 
 	// DefaultPackWindow holds the number of previous objects used to

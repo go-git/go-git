@@ -25,6 +25,7 @@ func (n noderMock) Name() string               { return n.name }
 func (n noderMock) IsDir() bool                { return n.isDir }
 func (n noderMock) Children() ([]Noder, error) { return n.children, nil }
 func (n noderMock) NumChildren() (int, error)  { return len(n.children), nil }
+func (n noderMock) Skip() bool                 { return false }
 
 // Returns a sequence with the noders 3, 2, and 1 from the
 // following diagram:

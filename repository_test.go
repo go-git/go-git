@@ -210,6 +210,37 @@ func (s *RepositorySuite) TestCloneWithTags(c *C) {
 	c.Assert(count, Equals, 3)
 }
 
+func (s *RepositorySuite) TestCloneSparse(c *C) {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	sparseCheckoutDirectories := []string{"go", "json", "php"}
+	c.Assert(w.Checkout(&CheckoutOptions{
+		Branch:                    "refs/heads/master",
+		SparseCheckoutDirectories: sparseCheckoutDirectories,
+	}), IsNil)
+
+	fis, err := fs.ReadDir(".")
+	c.Assert(err, IsNil)
+	for _, fi := range fis {
+		c.Assert(fi.IsDir(), Equals, true)
+		var oneOfSparseCheckoutDirs bool
+
+		for _, sparseCheckoutDirectory := range sparseCheckoutDirectories {
+			if strings.HasPrefix(fi.Name(), sparseCheckoutDirectory) {
+				oneOfSparseCheckoutDirs = true
+			}
+		}
+		c.Assert(oneOfSparseCheckoutDirs, Equals, true)
+	}
+}
+
 func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{

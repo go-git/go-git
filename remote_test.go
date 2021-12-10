@@ -816,6 +816,133 @@ func (s *RemoteSuite) TestPushForceWithOption(c *C) {
 	c.Assert(newRef, Not(DeepEquals), oldRef)
 }
 
+func (s *RemoteSuite) TestPushForceWithLease_success(c *C) {
+	testCases := []struct {
+		desc           string
+		forceWithLease ForceWithLease
+	}{
+		{
+			desc:           "no arguments",
+			forceWithLease: ForceWithLease{},
+		},
+		{
+			desc: "ref name",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+			},
+		},
+		{
+			desc: "ref name and sha",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+				Hash:    plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Log("Executing test cases:", tc.desc)
+
+		f := fixtures.Basic().One()
+		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dstFs := f.DotGit()
+		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
+
+		newCommit := plumbing.NewHashReference(
+			"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+		)
+		c.Assert(sto.SetReference(newCommit), IsNil)
+
+		ref, err := sto.Reference("refs/heads/branch")
+		c.Log(ref.String())
+
+		url := dstFs.Root()
+		r := NewRemote(sto, &config.RemoteConfig{
+			Name: DefaultRemoteName,
+			URLs: []string{url},
+		})
+
+		oldRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(oldRef, NotNil)
+
+		c.Assert(r.Push(&PushOptions{
+			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
+			ForceWithLease: &ForceWithLease{},
+		}), IsNil)
+
+		newRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(newRef, DeepEquals, newCommit)
+	}
+}
+
+func (s *RemoteSuite) TestPushForceWithLease_failure(c *C) {
+	testCases := []struct {
+		desc           string
+		forceWithLease ForceWithLease
+	}{
+		{
+			desc:           "no arguments",
+			forceWithLease: ForceWithLease{},
+		},
+		{
+			desc: "ref name",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+			},
+		},
+		{
+			desc: "ref name and sha",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+				Hash:    plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Log("Executing test cases:", tc.desc)
+
+		f := fixtures.Basic().One()
+		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		c.Assert(sto.SetReference(
+			plumbing.NewHashReference(
+				"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+			),
+		), IsNil)
+
+		dstFs := f.DotGit()
+		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
+		c.Assert(dstSto.SetReference(
+			plumbing.NewHashReference(
+				"refs/heads/branch", plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+			),
+		), IsNil)
+
+		url := dstFs.Root()
+		r := NewRemote(sto, &config.RemoteConfig{
+			Name: DefaultRemoteName,
+			URLs: []string{url},
+		})
+
+		oldRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(oldRef, NotNil)
+
+		err = r.Push(&PushOptions{
+			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
+			ForceWithLease: &ForceWithLease{},
+		})
+
+		c.Assert(err, DeepEquals, errors.New("non-fast-forward update: refs/heads/branch"))
+
+		newRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(newRef, Not(DeepEquals), plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
+	}
+}
+
 func (s *RemoteSuite) TestPushPrune(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 

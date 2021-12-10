@@ -3,6 +3,7 @@ package dotgit
 import (
 	"bufio"
 	"encoding/hex"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -510,13 +511,13 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
 	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
 
 	// Move to an specific offset
-	pack.Seek(42, os.SEEK_SET)
+	pack.Seek(42, io.SeekStart)
 
 	pack2, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
 	c.Assert(err, IsNil)
 
 	// If the file is the same the offset should be the same
-	offset, err := pack2.Seek(0, os.SEEK_CUR)
+	offset, err := pack2.Seek(0, io.SeekCurrent)
 	c.Assert(err, IsNil)
 	c.Assert(offset, Equals, int64(42))
 
@@ -527,7 +528,7 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
 	c.Assert(err, IsNil)
 
 	// If the file is opened again its offset should be 0
-	offset, err = pack2.Seek(0, os.SEEK_CUR)
+	offset, err = pack2.Seek(0, io.SeekCurrent)
 	c.Assert(err, IsNil)
 	c.Assert(offset, Equals, int64(0))
 
