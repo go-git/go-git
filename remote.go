@@ -326,7 +326,12 @@ func (r *Remote) newReferenceUpdateRequest(
 		}
 	}
 
+	if o.Atomic && ar.Capabilities.Supports(capability.Atomic) {
+		_ = req.Capabilities.Set(capability.Atomic)
+	}
+
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune, o.ForceWithLease); err != nil {
+
 		return nil, err
 	}
 

@@ -232,6 +232,8 @@ type PushOptions struct {
 	ForceWithLease *ForceWithLease
 	// PushOptions sets options to be transferred to the server during push.
 	Options map[string]string
+	// Atomic sets option to be an atomic push
+	Atomic bool
 }
 
 // ForceWithLease sets fields on the lease
