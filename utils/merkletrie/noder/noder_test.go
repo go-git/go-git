@@ -58,20 +58,6 @@ func childrenFixture() []Noder {
 	return []Noder{c1, c2}
 }
 
-// Returns the same as nodersFixture but sorted by name, this is: "1",
-// "2" and then "3".
-func sortedNodersFixture() []Noder {
-	n1 := &noderMock{
-		name:     "1",
-		hash:     []byte{0x00, 0x01, 0x02},
-		isDir:    true,
-		children: childrenFixture(),
-	}
-	n2 := &noderMock{name: "2"}
-	n3 := &noderMock{name: "3"}
-	return []Noder{n1, n2, n3} // the same as nodersFixture but sorted by name
-}
-
 // returns nodersFixture as the path of "1".
 func pathFixture() Path {
 	return Path(nodersFixture())

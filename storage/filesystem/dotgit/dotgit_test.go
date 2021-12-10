@@ -654,7 +654,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
 	fs.Create(incomingFilePath)
 
-	file, err = dir.Object(plumbing.NewHash(incomingHash))
+	_, err = dir.Object(plumbing.NewHash(incomingHash))
 	c.Assert(err, IsNil)
 }
 

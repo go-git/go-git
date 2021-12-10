@@ -184,7 +184,7 @@ func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Reference("refs/remotes/foo/branch", false)
+	_, err = r.Reference("refs/remotes/foo/branch", false)
 	c.Assert(err, NotNil)
 
 	storage := r.Storer.(*memory.Storage)
@@ -587,6 +587,7 @@ func (s *WorktreeSuite) TestCheckoutRelativePathSubmoduleInitialized(c *C) {
 
 	// test submodule path
 	modules, err := w.readGitmodulesFile()
+	c.Assert(err, IsNil)
 
 	c.Assert(modules.Submodules["basic"].URL, Equals, "../basic.git")
 	c.Assert(modules.Submodules["itself"].URL, Equals, "../submodule.git")

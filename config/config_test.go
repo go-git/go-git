@@ -365,6 +365,7 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 	cfg.Remotes["alt"].URLs = []string{}
 
 	buf, err = cfg.Marshal()
+	c.Assert(err, IsNil)
 	if strings.Contains(string(buf), "url") {
 		c.Fatal("conifg should not contain any url sections")
 	}

@@ -212,10 +212,10 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	defer clean()
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	r, err := Init(st, nil)
+	_, err := Init(st, nil)
 	c.Assert(err, IsNil)
 
-	r, _ = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	r, _ := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: fs.Root(),
 	})
 
@@ -296,6 +296,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
 		All:    true,
 		Author: defaultSignature(),
 	})
+	c.Assert(err, IsNil)
 	c.Assert(hash, Equals, plumbing.NewHash("97c0c5177e6ac57d10e8ea0017f2d39b91e2b364"))
 
 	// Step 3: Check

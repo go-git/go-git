@@ -1002,7 +1002,7 @@ func (s *RemoteSuite) TestPushPrune(c *C) {
 		"refs/remotes/origin/master": ref.Hash().String(),
 	})
 
-	ref, err = server.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
+	_, err = server.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 }
 
