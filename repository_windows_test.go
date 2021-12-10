@@ -38,7 +38,6 @@ func (s *RepositorySuite) TestCloneFileUrlWindows(c *C) {
 	c.Assert(err, IsNil)
 
 	url := "file:///" + strings.ReplaceAll(dir, "\\", "/")
-	fmt.Println(url)
 	_, err = Clone(memory.NewStorage(), nil, &CloneOptions{
 		URL: url,
 	})
