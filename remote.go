@@ -257,7 +257,7 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 		tagObject, err := object.GetObject(r.s, tag.Hash())
 		var tagCommit *object.Commit
 		if err != nil {
-			return fmt.Errorf("get tag object: %w\n", err)
+			return fmt.Errorf("get tag object: %w", err)
 		}
 
 		if tagObject.Type() != plumbing.TagObject {
@@ -271,7 +271,7 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 
 		tagCommit, err = object.GetCommit(r.s, annotatedTag.Target)
 		if err != nil {
-			return fmt.Errorf("get annotated tag commit: %w\n", err)
+			return fmt.Errorf("get annotated tag commit: %w", err)
 		}
 
 		// only include tags that are reachable from one of the refs
