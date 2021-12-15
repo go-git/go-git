@@ -15,7 +15,7 @@ const (
 
 var (
 	ErrMacroNotAllowed      = errors.New("macro not allowed")
-	ErrInvalidAttributeName = errors.New("Invalid attribute name")
+	ErrInvalidAttributeName = errors.New("invalid attribute name")
 )
 
 type MatchAttribute struct {

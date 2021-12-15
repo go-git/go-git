@@ -55,6 +55,10 @@ func (f *file) NumChildren() (int, error) {
 	return 0, nil
 }
 
+func (f *file) Skip() bool {
+	return false
+}
+
 const (
 	fileStartMark = '<'
 	fileEndMark   = '>'

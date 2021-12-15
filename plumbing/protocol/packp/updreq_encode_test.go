@@ -170,3 +170,22 @@ func (s *UpdReqEncodeSuite) TestPushOptions(c *C) {
 
 	s.testEncode(c, r, expected)
 }
+
+func (s *UpdReqEncodeSuite) TestPushAtomic(c *C) {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	name := plumbing.ReferenceName("myref")
+
+	r := NewReferenceUpdateRequest()
+	r.Capabilities.Set(capability.Atomic)
+	r.Commands = []*Command{
+		{Name: name, Old: hash1, New: hash2},
+	}
+
+	expected := pktlines(c,
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00atomic",
+		pktline.FlushString,
+	)
+
+	s.testEncode(c, r, expected)
+}

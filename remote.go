@@ -247,20 +247,17 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 
 	// remove any that are already on the remote
 	if err := remoteRefIter.ForEach(func(reference *plumbing.Reference) error {
-		if _, ok := tags[*reference]; ok {
-			delete(tags, *reference)
-		}
-
+		delete(tags, *reference)
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	for tag, _ := range tags {
+	for tag := range tags {
 		tagObject, err := object.GetObject(r.s, tag.Hash())
 		var tagCommit *object.Commit
 		if err != nil {
-			return fmt.Errorf("get tag object: %w\n", err)
+			return fmt.Errorf("get tag object: %w", err)
 		}
 
 		if tagObject.Type() != plumbing.TagObject {
@@ -274,7 +271,7 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 
 		tagCommit, err = object.GetCommit(r.s, annotatedTag.Target)
 		if err != nil {
-			return fmt.Errorf("get annotated tag commit: %w\n", err)
+			return fmt.Errorf("get annotated tag commit: %w", err)
 		}
 
 		// only include tags that are reachable from one of the refs
@@ -326,7 +323,12 @@ func (r *Remote) newReferenceUpdateRequest(
 		}
 	}
 
-	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune); err != nil {
+	if o.Atomic && ar.Capabilities.Supports(capability.Atomic) {
+		_ = req.Capabilities.Set(capability.Atomic)
+	}
+
+	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune, o.ForceWithLease); err != nil {
+
 		return nil, err
 	}
 
@@ -568,6 +570,7 @@ func (r *Remote) addReferencesToUpdate(
 	remoteRefs storer.ReferenceStorer,
 	req *packp.ReferenceUpdateRequest,
 	prune bool,
+	forceWithLease *ForceWithLease,
 ) error {
 	// This references dictionary will be used to search references by name.
 	refsDict := make(map[string]*plumbing.Reference)
@@ -581,7 +584,7 @@ func (r *Remote) addReferencesToUpdate(
 				return err
 			}
 		} else {
-			err := r.addOrUpdateReferences(rs, localRefs, refsDict, remoteRefs, req)
+			err := r.addOrUpdateReferences(rs, localRefs, refsDict, remoteRefs, req, forceWithLease)
 			if err != nil {
 				return err
 			}
@@ -603,6 +606,7 @@ func (r *Remote) addOrUpdateReferences(
 	refsDict map[string]*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
 	req *packp.ReferenceUpdateRequest,
+	forceWithLease *ForceWithLease,
 ) error {
 	// If it is not a wilcard refspec we can directly search for the reference
 	// in the references dictionary.
@@ -616,11 +620,11 @@ func (r *Remote) addOrUpdateReferences(
 			return nil
 		}
 
-		return r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req)
+		return r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req, forceWithLease)
 	}
 
 	for _, ref := range localRefs {
-		err := r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req)
+		err := r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, req, forceWithLease)
 		if err != nil {
 			return err
 		}
@@ -706,7 +710,7 @@ func (r *Remote) addCommit(rs config.RefSpec,
 
 func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer, localRef *plumbing.Reference,
-	req *packp.ReferenceUpdateRequest) error {
+	req *packp.ReferenceUpdateRequest, forceWithLease *ForceWithLease) error {
 
 	if localRef.Type() != plumbing.HashReference {
 		return nil
@@ -738,13 +742,42 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 		return nil
 	}
 
-	if !rs.IsForceUpdate() {
+	if forceWithLease != nil {
+		if err = r.checkForceWithLease(localRef, cmd, forceWithLease); err != nil {
+			return err
+		}
+	} else if !rs.IsForceUpdate() {
 		if err := checkFastForwardUpdate(r.s, remoteRefs, cmd); err != nil {
 			return err
 		}
 	}
 
 	req.Commands = append(req.Commands, cmd)
+	return nil
+}
+
+func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Command, forceWithLease *ForceWithLease) error {
+	remotePrefix := fmt.Sprintf("refs/remotes/%s/", r.Config().Name)
+
+	ref, err := storer.ResolveReference(
+		r.s,
+		plumbing.ReferenceName(remotePrefix+strings.Replace(localRef.Name().String(), "refs/heads/", "", -1)))
+	if err != nil {
+		return err
+	}
+
+	if forceWithLease.RefName.String() == "" || (forceWithLease.RefName == cmd.Name) {
+		expectedOID := ref.Hash()
+
+		if !forceWithLease.Hash.IsZero() {
+			expectedOID = forceWithLease.Hash
+		}
+
+		if cmd.Old != expectedOID {
+			return fmt.Errorf("non-fast-forward update: %s", cmd.Name.String())
+		}
+	}
+
 	return nil
 }
 

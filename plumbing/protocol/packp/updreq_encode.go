@@ -9,10 +9,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 )
 
-var (
-	zeroHashString = plumbing.ZeroHash.String()
-)
-
 // Encode writes the ReferenceUpdateRequest encoding to the stream.
 func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
 	if err := req.validate(); err != nil {

@@ -7,7 +7,6 @@ import (
 
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
-	stdssh "golang.org/x/crypto/ssh"
 	. "gopkg.in/check.v1"
 )
 
@@ -99,7 +98,7 @@ func (s *SuiteCommon) TestIssue70(c *C) {
 	uploadPack.SetUpSuite(c)
 
 	config := &ssh.ClientConfig{
-		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	r := &runner{
 		config: config,

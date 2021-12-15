@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,7 +184,7 @@ func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err = r.Reference("refs/remotes/foo/branch", false)
+	_, err = r.Reference("refs/remotes/foo/branch", false)
 	c.Assert(err, NotNil)
 
 	storage := r.Storer.(*memory.Storage)
@@ -417,6 +418,37 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *WorktreeSuite) TestCheckoutSparse(c *C) {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	sparseCheckoutDirectories := []string{"go", "json", "php"}
+	c.Assert(w.Checkout(&CheckoutOptions{
+		SparseCheckoutDirectories: sparseCheckoutDirectories,
+	}), IsNil)
+
+	fis, err := fs.ReadDir("/")
+	c.Assert(err, IsNil)
+
+	for _, fi := range fis {
+		c.Assert(fi.IsDir(), Equals, true)
+		var oneOfSparseCheckoutDirs bool
+
+		for _, sparseCheckoutDirectory := range sparseCheckoutDirectories {
+			if strings.HasPrefix(fi.Name(), sparseCheckoutDirectory) {
+				oneOfSparseCheckoutDirs = true
+			}
+		}
+		c.Assert(oneOfSparseCheckoutDirs, Equals, true)
+	}
+}
+
 func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 	if runtime.GOOS == "windows" {
 		c.Skip("windows paths may contain non utf-8 sequences")
@@ -555,6 +587,7 @@ func (s *WorktreeSuite) TestCheckoutRelativePathSubmoduleInitialized(c *C) {
 
 	// test submodule path
 	modules, err := w.readGitmodulesFile()
+	c.Assert(err, IsNil)
 
 	c.Assert(modules.Submodules["basic"].URL, Equals, "../basic.git")
 	c.Assert(modules.Submodules["itself"].URL, Equals, "../submodule.git")

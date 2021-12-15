@@ -25,6 +25,7 @@ func (n noderMock) Name() string               { return n.name }
 func (n noderMock) IsDir() bool                { return n.isDir }
 func (n noderMock) Children() ([]Noder, error) { return n.children, nil }
 func (n noderMock) NumChildren() (int, error)  { return len(n.children), nil }
+func (n noderMock) Skip() bool                 { return false }
 
 // Returns a sequence with the noders 3, 2, and 1 from the
 // following diagram:
@@ -55,20 +56,6 @@ func childrenFixture() []Noder {
 	c1 := &noderMock{name: "c1"}
 	c2 := &noderMock{name: "c2"}
 	return []Noder{c1, c2}
-}
-
-// Returns the same as nodersFixture but sorted by name, this is: "1",
-// "2" and then "3".
-func sortedNodersFixture() []Noder {
-	n1 := &noderMock{
-		name:     "1",
-		hash:     []byte{0x00, 0x01, 0x02},
-		isDir:    true,
-		children: childrenFixture(),
-	}
-	n2 := &noderMock{name: "2"}
-	n3 := &noderMock{name: "3"}
-	return []Noder{n1, n2, n3} // the same as nodersFixture but sorted by name
 }
 
 // returns nodersFixture as the path of "1".

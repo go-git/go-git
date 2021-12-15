@@ -33,7 +33,7 @@ func main() {
 	CheckIfError(err)
 
 	// List remotes from a repository
-	Info("git remotes -v")
+	Info("git remote -v")
 
 	list, err := r.Remotes()
 	CheckIfError(err)

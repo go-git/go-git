@@ -8,7 +8,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
-	"github.com/go-git/go-git/v5/plumbing/storer"
 	. "gopkg.in/check.v1"
 )
 
@@ -234,22 +233,6 @@ var expectedHashes = []string{
 	"dbd3641b371024f44d0e469a9c8f5457b0660de1",
 	"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	"7e59600739c96546163833214c36459e324bad0a",
-}
-
-func assertObjects(c *C, s storer.EncodedObjectStorer, expects []string) {
-	i, err := s.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
-
-	var count int
-	err = i.ForEach(func(plumbing.EncodedObject) error { count++; return nil })
-	c.Assert(err, IsNil)
-	c.Assert(count, Equals, len(expects))
-
-	for _, exp := range expects {
-		obt, err := s.EncodedObject(plumbing.AnyObject, plumbing.NewHash(exp))
-		c.Assert(err, IsNil)
-		c.Assert(obt.Hash().String(), Equals, exp)
-	}
 }
 
 func getIndexFromIdxFile(r io.Reader) idxfile.Index {
