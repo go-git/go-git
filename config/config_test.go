@@ -371,3 +371,59 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 	}
 	c.Assert(err, IsNil)
 }
+
+func (s *ConfigSuite) TestGitGlobalConfig(c *C) {
+	origGlobalConfig, origOk := os.LookupEnv("GIT_CONFIG_GLOBAL")
+	defer func() {
+		if origOk {
+			os.Setenv("GIT_CONFIG_GLOBAL", origGlobalConfig)
+		} else {
+			os.Unsetenv("GIT_CONFIG_GLOBAL")
+		}
+	}()
+
+	os.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	paths, err := Paths(GlobalScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, IsNil)
+
+	os.Setenv("GIT_CONFIG_GLOBAL", "./some-path")
+	paths, err = Paths(GlobalScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, DeepEquals, []string{"./some-path"})
+
+	os.Unsetenv("GIT_CONFIG_GLOBAL")
+
+	os.Setenv("XDG_CONFIG_HOME", "/some-path")
+	paths, err = Paths(GlobalScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, HasLen, 3)
+	c.Assert(paths[0], Equals, "/some-path/git/config")
+}
+
+func (s *ConfigSuite) TestGitSystemConfig(c *C) {
+	origGlobalConfig, origOk := os.LookupEnv("GIT_CONFIG_SYSTEM")
+	defer func() {
+		if origOk {
+			os.Setenv("GIT_CONFIG_SYSTEM", origGlobalConfig)
+		} else {
+			os.Unsetenv("GIT_CONFIG_SYSTEM")
+		}
+	}()
+
+	os.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	paths, err := Paths(SystemScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, IsNil)
+
+	os.Setenv("GIT_CONFIG_SYSTEM", "./some-path")
+	paths, err = Paths(SystemScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, DeepEquals, []string{"./some-path"})
+
+	os.Unsetenv("GIT_CONFIG_SYSTEM")
+	paths, err = Paths(SystemScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, DeepEquals, []string{"/etc/gitconfig"})
+
+}

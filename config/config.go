@@ -180,22 +180,43 @@ func Paths(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
 	case GlobalScope:
-		xdg := os.Getenv("XDG_CONFIG_HOME")
-		if xdg != "" {
-			files = append(files, filepath.Join(xdg, "git/config"))
-		}
+		// implement the global override from git documentation:
+		// https://git-scm.com/docs/git#Documentation/git.txt-codeGITCONFIGGLOBALcode
+		if globalPath, ok := os.LookupEnv("GIT_CONFIG_GLOBAL"); ok {
+			if globalPath != "/dev/null" {
+				files = append(files, globalPath)
+			}
+		} else {
+			xdg := os.Getenv("XDG_CONFIG_HOME")
+			if xdg != "" {
+				files = append(files, filepath.Join(xdg, "git/config"))
+			}
 
-		home, err := homedir.Dir()
-		if err != nil {
-			return nil, err
-		}
+			home, err := homedir.Dir()
+			if err != nil {
+				return nil, err
+			}
 
-		files = append(files,
-			filepath.Join(home, ".gitconfig"),
-			filepath.Join(home, ".config/git/config"),
-		)
+			files = append(files,
+				filepath.Join(home, ".gitconfig"),
+				filepath.Join(home, ".config/git/config"),
+			)
+		}
 	case SystemScope:
-		files = append(files, "/etc/gitconfig")
+		// implement the opt-out option from git documentation:
+		// https://git-scm.com/docs/git#Documentation/git.txt-codeGITCONFIGNOSYSTEMcode
+		if _, ok := os.LookupEnv("GIT_CONFIG_NOSYSTEM"); !ok {
+			// implement the system overrides from git documentation:
+			// https://git-scm.com/docs/git#Documentation/git.txt-codeGITCONFIGSYSTEMcode
+			systemPath, ok := os.LookupEnv("GIT_CONFIG_SYSTEM")
+			if !ok {
+				// todo: implement %path
+				systemPath = "/etc/gitconfig"
+			}
+			if systemPath != "/dev/null" {
+				files = append(files, systemPath)
+			}
+		}
 	}
 
 	return files, nil
