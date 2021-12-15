@@ -24,7 +24,6 @@ type UploadPackResponse struct {
 	r          io.ReadCloser
 	isShallow  bool
 	isMultiACK bool
-	isOk       bool
 }
 
 // NewUploadPackResponse create a new UploadPackResponse instance, the request

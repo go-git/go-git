@@ -210,6 +210,37 @@ func (s *RepositorySuite) TestCloneWithTags(c *C) {
 	c.Assert(count, Equals, 3)
 }
 
+func (s *RepositorySuite) TestCloneSparse(c *C) {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	sparseCheckoutDirectories := []string{"go", "json", "php"}
+	c.Assert(w.Checkout(&CheckoutOptions{
+		Branch:                    "refs/heads/master",
+		SparseCheckoutDirectories: sparseCheckoutDirectories,
+	}), IsNil)
+
+	fis, err := fs.ReadDir(".")
+	c.Assert(err, IsNil)
+	for _, fi := range fis {
+		c.Assert(fi.IsDir(), Equals, true)
+		var oneOfSparseCheckoutDirs bool
+
+		for _, sparseCheckoutDirectory := range sparseCheckoutDirectories {
+			if strings.HasPrefix(fi.Name(), sparseCheckoutDirectory) {
+				oneOfSparseCheckoutDirs = true
+			}
+		}
+		c.Assert(oneOfSparseCheckoutDirs, Equals, true)
+	}
+}
+
 func (s *RepositorySuite) TestCreateRemoteAndRemote(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	remote, err := r.CreateRemote(&config.RemoteConfig{
@@ -2756,7 +2787,7 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 	datas := map[string]string{
 		"efs/heads/master~": "reference not found",
 		"HEAD^3":            `Revision invalid : "3" found must be 0, 1 or 2 after "^"`,
-		"HEAD^{/whatever}":  `No commit message match regexp : "whatever"`,
+		"HEAD^{/whatever}":  `no commit message match regexp: "whatever"`,
 		"4e1243bd22c66e76c2ba9eddc1f91394e57f9f83": "reference not found",
 	}
 

@@ -55,12 +55,6 @@ func (s *RevListSuite) SetUpTest(c *C) {
 	s.Storer = sto
 }
 
-func (s *RevListSuite) commit(c *C, h plumbing.Hash) *object.Commit {
-	commit, err := object.GetCommit(s.Storer, h)
-	c.Assert(err, IsNil)
-	return commit
-}
-
 func (s *RevListSuite) TestRevListObjects_Submodules(c *C) {
 	submodules := map[string]bool{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5": true,

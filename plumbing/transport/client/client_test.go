@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -67,8 +66,4 @@ func (*dummyClient) NewUploadPackSession(*transport.Endpoint, transport.AuthMeth
 func (*dummyClient) NewReceivePackSession(*transport.Endpoint, transport.AuthMethod) (
 	transport.ReceivePackSession, error) {
 	return nil, nil
-}
-
-func typeAsString(v interface{}) string {
-	return fmt.Sprintf("%T", v)
 }

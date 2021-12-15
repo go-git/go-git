@@ -19,6 +19,7 @@ var (
 type ReferenceUpdateRequest struct {
 	Capabilities *capability.List
 	Commands     []*Command
+	Options      []*Option
 	Shallow      *plumbing.Hash
 	// Packfile contains an optional packfile reader.
 	Packfile io.ReadCloser
@@ -86,9 +87,9 @@ type Action string
 
 const (
 	Create  Action = "create"
-	Update         = "update"
-	Delete         = "delete"
-	Invalid        = "invalid"
+	Update  Action = "update"
+	Delete  Action = "delete"
+	Invalid Action = "invalid"
 )
 
 type Command struct {
@@ -119,4 +120,9 @@ func (c *Command) validate() error {
 	}
 
 	return nil
+}
+
+type Option struct {
+	Key   string
+	Value string
 }

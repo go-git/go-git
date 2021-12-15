@@ -5,12 +5,16 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -44,6 +48,12 @@ func (s *RemoteSuite) TestFetchInvalidSchemaEndpoint(c *C) {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	err := r.Fetch(&FetchOptions{})
 	c.Assert(err, ErrorMatches, ".*unsupported scheme.*")
+}
+
+func (s *RemoteSuite) TestFetchOverriddenEndpoint(c *C) {
+	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://perfectly-valid-url.example.com"}})
+	err := r.Fetch(&FetchOptions{RemoteURL: "http://\\"})
+	c.Assert(err, ErrorMatches, ".*invalid character.*")
 }
 
 func (s *RemoteSuite) TestFetchInvalidFetchOptions(c *C) {
@@ -591,6 +601,66 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestPushFollowTags(c *C) {
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	server, err := PlainInit(url, true)
+	c.Assert(err, IsNil)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/basic.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	localRepo := newRepository(sto, fs)
+	tipTag, err := localRepo.CreateTag(
+		"tip",
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+		&CreateTagOptions{
+			Message: "an annotated tag",
+		},
+	)
+	c.Assert(err, IsNil)
+
+	initialTag, err := localRepo.CreateTag(
+		"initial-commit",
+		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+		&CreateTagOptions{
+			Message: "a tag for the initial commit",
+		},
+	)
+	c.Assert(err, IsNil)
+
+	_, err = localRepo.CreateTag(
+		"master-tag",
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		&CreateTagOptions{
+			Message: "a tag with a commit not reachable from branch",
+		},
+	)
+	c.Assert(err, IsNil)
+
+	err = r.Push(&PushOptions{
+		RefSpecs:   []config.RefSpec{"+refs/heads/branch:refs/heads/branch"},
+		FollowTags: true,
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/branch":        "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+		"refs/tags/tip":            tipTag.Hash().String(),
+		"refs/tags/initial-commit": initialTag.Hash().String(),
+	})
+
+	AssertReferencesMissing(c, server, []string{
+		"refs/tags/master-tag",
+	})
+}
+
 func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
@@ -746,6 +816,133 @@ func (s *RemoteSuite) TestPushForceWithOption(c *C) {
 	c.Assert(newRef, Not(DeepEquals), oldRef)
 }
 
+func (s *RemoteSuite) TestPushForceWithLease_success(c *C) {
+	testCases := []struct {
+		desc           string
+		forceWithLease ForceWithLease
+	}{
+		{
+			desc:           "no arguments",
+			forceWithLease: ForceWithLease{},
+		},
+		{
+			desc: "ref name",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+			},
+		},
+		{
+			desc: "ref name and sha",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+				Hash:    plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Log("Executing test cases:", tc.desc)
+
+		f := fixtures.Basic().One()
+		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dstFs := f.DotGit()
+		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
+
+		newCommit := plumbing.NewHashReference(
+			"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+		)
+		c.Assert(sto.SetReference(newCommit), IsNil)
+
+		ref, err := sto.Reference("refs/heads/branch")
+		c.Log(ref.String())
+
+		url := dstFs.Root()
+		r := NewRemote(sto, &config.RemoteConfig{
+			Name: DefaultRemoteName,
+			URLs: []string{url},
+		})
+
+		oldRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(oldRef, NotNil)
+
+		c.Assert(r.Push(&PushOptions{
+			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
+			ForceWithLease: &ForceWithLease{},
+		}), IsNil)
+
+		newRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(newRef, DeepEquals, newCommit)
+	}
+}
+
+func (s *RemoteSuite) TestPushForceWithLease_failure(c *C) {
+	testCases := []struct {
+		desc           string
+		forceWithLease ForceWithLease
+	}{
+		{
+			desc:           "no arguments",
+			forceWithLease: ForceWithLease{},
+		},
+		{
+			desc: "ref name",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+			},
+		},
+		{
+			desc: "ref name and sha",
+			forceWithLease: ForceWithLease{
+				RefName: plumbing.ReferenceName("refs/heads/branch"),
+				Hash:    plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Log("Executing test cases:", tc.desc)
+
+		f := fixtures.Basic().One()
+		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		c.Assert(sto.SetReference(
+			plumbing.NewHashReference(
+				"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+			),
+		), IsNil)
+
+		dstFs := f.DotGit()
+		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
+		c.Assert(dstSto.SetReference(
+			plumbing.NewHashReference(
+				"refs/heads/branch", plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+			),
+		), IsNil)
+
+		url := dstFs.Root()
+		r := NewRemote(sto, &config.RemoteConfig{
+			Name: DefaultRemoteName,
+			URLs: []string{url},
+		})
+
+		oldRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(oldRef, NotNil)
+
+		err = r.Push(&PushOptions{
+			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
+			ForceWithLease: &ForceWithLease{},
+		})
+
+		c.Assert(err, DeepEquals, errors.New("non-fast-forward update: refs/heads/branch"))
+
+		newRef, err := dstSto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
+		c.Assert(newRef, Not(DeepEquals), plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
+	}
+}
+
 func (s *RemoteSuite) TestPushPrune(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
@@ -805,7 +1002,7 @@ func (s *RemoteSuite) TestPushPrune(c *C) {
 		"refs/remotes/origin/master": ref.Hash().String(),
 	})
 
-	ref, err = server.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
+	_, err = server.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 }
 
@@ -901,6 +1098,12 @@ func (s *RemoteSuite) TestPushNonExistentEndpoint(c *C) {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
 	err := r.Push(&PushOptions{})
 	c.Assert(err, NotNil)
+}
+
+func (s *RemoteSuite) TestPushOverriddenEndpoint(c *C) {
+	r := NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{"http://perfectly-valid-url.example.com"}})
+	err := r.Push(&PushOptions{RemoteURL: "http://\\"})
+	c.Assert(err, ErrorMatches, ".*invalid character.*")
 }
 
 func (s *RemoteSuite) TestPushInvalidSchemaEndpoint(c *C) {
@@ -1133,4 +1336,92 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 	newRef, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
 	c.Assert(err, IsNil)
 	c.Assert(newRef, Not(DeepEquals), oldRef)
+}
+
+func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
+	d, err := ioutil.TempDir("", "TestCanPushShasToReference")
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	defer os.RemoveAll(d)
+
+	// remote currently forces a plain path for path based remotes inside the PushContext function.
+	// This makes it impossible, in the current state to use memfs.
+	// For the sake of readability, use the same osFS everywhere and use plain git repositories on temporary files
+	remote, err := PlainInit(filepath.Join(d, "remote"), true)
+	c.Assert(err, IsNil)
+	c.Assert(remote, NotNil)
+
+	repo, err := PlainInit(filepath.Join(d, "repo"), false)
+	c.Assert(err, IsNil)
+	c.Assert(repo, NotNil)
+
+	fd, err := os.Create(filepath.Join(d, "repo", "README.md"))
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	_, err = fd.WriteString("# test repo")
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	err = fd.Close()
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	wt, err := repo.Worktree()
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	wt.Add("README.md")
+	sha, err := wt.Commit("test commit", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+		Committer: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	gitremote, err := repo.CreateRemote(&config.RemoteConfig{
+		Name: "local",
+		URLs: []string{filepath.Join(d, "remote")},
+	})
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	err = gitremote.Push(&PushOptions{
+		RemoteName: "local",
+		RefSpecs: []config.RefSpec{
+			// TODO: check with short hashes that this is still respected
+			config.RefSpec(sha.String() + ":refs/heads/branch"),
+		},
+	})
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+
+	ref, err := remote.Reference(plumbing.ReferenceName("refs/heads/branch"), false)
+	c.Assert(err, IsNil)
+	if err != nil {
+		return
+	}
+	c.Assert(ref.Hash().String(), Equals, sha.String())
 }

@@ -66,7 +66,7 @@ func (e *EncodedObject) Size() int64 {
 func (e *EncodedObject) SetSize(int64) {}
 
 func (e *EncodedObject) Writer() (io.WriteCloser, error) {
-	return nil, fmt.Errorf("Not supported")
+	return nil, fmt.Errorf("not supported")
 }
 
 func NewEncodedObject(dir *DotGit, h plumbing.Hash, t plumbing.ObjectType, size int64) *EncodedObject {

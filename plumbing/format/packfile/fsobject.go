@@ -13,7 +13,6 @@ import (
 // FSObject is an object from the packfile on the filesystem.
 type FSObject struct {
 	hash                 plumbing.Hash
-	h                    *ObjectHeader
 	offset               int64
 	size                 int64
 	typ                  plumbing.ObjectType
@@ -117,18 +116,4 @@ func (o *FSObject) Type() plumbing.ObjectType {
 // returns a nil writer.
 func (o *FSObject) Writer() (io.WriteCloser, error) {
 	return nil, nil
-}
-
-type objectReader struct {
-	io.ReadCloser
-	f billy.File
-}
-
-func (r *objectReader) Close() error {
-	if err := r.ReadCloser.Close(); err != nil {
-		_ = r.f.Close()
-		return err
-	}
-
-	return r.f.Close()
 }

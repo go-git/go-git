@@ -24,7 +24,17 @@ var _ = Suite(&MatcherSuite{})
 func (s *MatcherSuite) SetUpTest(c *C) {
 	// setup generic git repository root
 	fs := memfs.New()
-	f, err := fs.Create(".gitignore")
+
+	err := fs.MkdirAll(".git/info", os.ModePerm)
+	c.Assert(err, IsNil)
+	f, err := fs.Create(".git/info/exclude")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("exclude.crlf\r\n"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	f, err = fs.Create(".gitignore")
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("vendor/g*/\n"))
 	c.Assert(err, IsNil)
@@ -43,6 +53,8 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 
 	err = fs.MkdirAll("another", os.ModePerm)
+	c.Assert(err, IsNil)
+	err = fs.MkdirAll("exclude.crlf", os.ModePerm)
 	c.Assert(err, IsNil)
 	err = fs.MkdirAll("ignore.crlf", os.ModePerm)
 	c.Assert(err, IsNil)
@@ -173,9 +185,10 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 func (s *MatcherSuite) TestDir_ReadPatterns(c *C) {
 	ps, err := ReadPatterns(s.GFS, nil)
 	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 3)
+	c.Assert(ps, HasLen, 4)
 
 	m := NewMatcher(ps)
+	c.Assert(m.Match([]string{"exclude.crlf"}, true), Equals, true)
 	c.Assert(m.Match([]string{"ignore.crlf"}, true), Equals, true)
 	c.Assert(m.Match([]string{"vendor", "gopkg.in"}, true), Equals, true)
 	c.Assert(m.Match([]string{"vendor", "github.com"}, true), Equals, false)

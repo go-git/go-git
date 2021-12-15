@@ -7,7 +7,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
@@ -25,8 +24,7 @@ type BaseSuite struct {
 	fixtures.Suite
 	Repository *Repository
 
-	backupProtocol transport.Transport
-	cache          map[string]*Repository
+	cache map[string]*Repository
 }
 
 func (s *BaseSuite) SetUpSuite(c *C) {
@@ -196,5 +194,13 @@ func AssertReferences(c *C, r *Repository, expected map[string]string) {
 		c.Assert(err, IsNil)
 
 		c.Assert(obtained, DeepEquals, expected)
+	}
+}
+
+func AssertReferencesMissing(c *C, r *Repository, expected []string) {
+	for _, name := range expected {
+		_, err := r.Reference(plumbing.ReferenceName(name), false)
+		c.Assert(err, NotNil)
+		c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	}
 }
