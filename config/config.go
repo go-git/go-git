@@ -36,6 +36,11 @@ var (
 	ErrRemoteConfigNotFound  = errors.New("remote config not found")
 	ErrRemoteConfigEmptyURL  = errors.New("remote config: empty URL")
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
+	// GitPrefix adds an option to specify the %path compilation time
+	// variable of the git executable.
+	// so system configuration lookups are closer to git standard behaviour:
+	// https://git-scm.com/docs/git-config#Documentation/git-config.txt-pathname
+	GitPrefix = "/usr"
 )
 
 // Scope defines the scope of a config file, such as local, global or system.
@@ -210,8 +215,13 @@ func Paths(scope Scope) ([]string, error) {
 			// https://git-scm.com/docs/git#Documentation/git.txt-codeGITCONFIGSYSTEMcode
 			systemPath, ok := os.LookupEnv("GIT_CONFIG_SYSTEM")
 			if !ok {
-				// todo: implement %path
-				systemPath = "/etc/gitconfig"
+				if GitPrefix == "/usr" {
+					// When git is compiled with a prefix of /usr, the config path is hard-coded to /etc/gitconfig
+					// https://github.com/git/git/blob/master/Makefile#L1274
+					systemPath = "/etc/gitconfig"
+				} else {
+					systemPath = filepath.Join(GitPrefix, "etc/gitconfig")
+				}
 			}
 			if systemPath != "/dev/null" {
 				files = append(files, systemPath)

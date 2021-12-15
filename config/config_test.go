@@ -403,12 +403,14 @@ func (s *ConfigSuite) TestGitGlobalConfig(c *C) {
 
 func (s *ConfigSuite) TestGitSystemConfig(c *C) {
 	origGlobalConfig, origOk := os.LookupEnv("GIT_CONFIG_SYSTEM")
+	origGitPrefix := GitPrefix
 	defer func() {
 		if origOk {
 			os.Setenv("GIT_CONFIG_SYSTEM", origGlobalConfig)
 		} else {
 			os.Unsetenv("GIT_CONFIG_SYSTEM")
 		}
+		GitPrefix = origGitPrefix
 	}()
 
 	os.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
@@ -425,5 +427,15 @@ func (s *ConfigSuite) TestGitSystemConfig(c *C) {
 	paths, err = Paths(SystemScope)
 	c.Assert(err, IsNil)
 	c.Assert(paths, DeepEquals, []string{"/etc/gitconfig"})
+
+	GitPrefix = "/usr"
+	paths, err = Paths(SystemScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, DeepEquals, []string{"/etc/gitconfig"})
+
+	GitPrefix = "/usr/local"
+	paths, err = Paths(SystemScope)
+	c.Assert(err, IsNil)
+	c.Assert(paths, DeepEquals, []string{"/usr/local/etc/gitconfig"})
 
 }
