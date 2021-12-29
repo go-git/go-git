@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
@@ -44,7 +45,6 @@ func (s *SuiteCommon) TestNewEndpointPorts(c *C) {
 	e, err = NewEndpoint("git://github.com:9418/user/repository.git?foo#bar")
 	c.Assert(err, IsNil)
 	c.Assert(e.String(), Equals, "git://github.com/user/repository.git?foo#bar")
-
 }
 
 func (s *SuiteCommon) TestNewEndpointSSH(c *C) {
@@ -185,4 +185,13 @@ func (s *SuiteCommon) TestFilterUnsupportedCapabilities(c *C) {
 
 	FilterUnsupportedCapabilities(l)
 	c.Assert(l.Supports(capability.MultiACK), Equals, false)
+}
+
+func (s *SuiteCommon) TestLoadCredentials(c *C) {
+	e, err := NewEndpoint("https://github.com/user/repository.git")
+	c.Assert(err, IsNil)
+
+	e.LoadCredentials(config.GlobalScope)
+	c.Assert(e.User, Equals, "")
+	c.Assert(e.Password, Equals, "")
 }

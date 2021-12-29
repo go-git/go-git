@@ -19,9 +19,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/go-git/go-git/v5/config"
 	giturl "github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
@@ -164,6 +167,94 @@ func (u *Endpoint) String() string {
 
 	buf.WriteString(u.Path)
 	return buf.String()
+}
+
+func (e Endpoint) url() string {
+	u := fmt.Sprintf("%s://%s", e.Protocol, e.Host)
+
+	if e.Port > 0 {
+		return fmt.Sprintf("%s:%d", u, e.Port)
+	}
+
+	return u
+}
+
+// Builds a typical credentical query with the Endpoint data
+// https://git-scm.com/docs/git-credential#_typical_use_of_git_credential
+func (e Endpoint) credentialQuery() string {
+	return fmt.Sprintf(
+		"protocol=%s\nhost=%s\npath=%s\n\n",
+		e.Protocol,
+		e.Host,
+		e.Path,
+	)
+}
+
+func (e *Endpoint) LoadCredentials(scope config.Scope) error {
+	c, err := config.LoadConfig(scope)
+	if err != nil {
+		return err
+	}
+
+	var cred config.CredentialConfig
+	if v, ok := c.Credential[e.url()]; ok {
+		cred = *v
+	} else {
+		cred = *c.Credential["default"]
+	}
+
+	e.User = cred.Username
+
+	execCredHelper(cred.Helper, e)
+
+	return nil
+}
+
+// A helper might be:
+// - shell snippet prefixed with !
+// - the absolute path to be executed
+// - otherwise 'git credential-' is prepended to the string before executing it
+//
+// https://git-scm.com/docs/gitcredentials#_custom_helpers
+func execCredHelper(helper string, e *Endpoint) {
+	var cmd exec.Cmd
+	switch {
+	case strings.HasPrefix(helper, "!"):
+		cmd = *exec.Command(strings.TrimLeft(helper, "!"), "get")
+	case filepath.IsAbs(helper):
+		cmd = *exec.Command(helper, "get")
+	default:
+		cmd = *exec.Command("git", fmt.Sprintf("credential-%s", helper), "get")
+	}
+
+	cmd.Stdin = strings.NewReader(e.credentialQuery())
+
+	out, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	raw := parseCredential(string(out))
+
+	if user, ok := raw["username"]; ok {
+		e.User = user
+	}
+
+	e.Password = raw["password"]
+}
+
+func parseCredential(out string) map[string]string {
+	data := map[string]string{}
+	if out == "" {
+		return data
+	}
+
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		kv := strings.Split(l, "=")
+		data[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+	}
+
+	return data
 }
 
 func NewEndpoint(endpoint string) (*Endpoint, error) {
