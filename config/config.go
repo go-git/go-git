@@ -83,6 +83,8 @@ type Config struct {
 		Email string
 	}
 
+	Credential map[string]*CredentialConfig
+
 	Pack struct {
 		// Window controls the size of the sliding window for delta
 		// compression.  The default is 10.  A value of 0 turns off
@@ -227,28 +229,29 @@ func (c *Config) Validate() error {
 }
 
 const (
-	remoteSection    = "remote"
-	submoduleSection = "submodule"
-	branchSection    = "branch"
-	coreSection      = "core"
-	packSection      = "pack"
-	userSection      = "user"
-	authorSection    = "author"
-	committerSection = "committer"
-	initSection      = "init"
-	urlSection       = "url"
-	fetchKey         = "fetch"
-	urlKey           = "url"
-	bareKey          = "bare"
-	worktreeKey      = "worktree"
-	commentCharKey   = "commentChar"
-	windowKey        = "window"
-	mergeKey         = "merge"
-	rebaseKey        = "rebase"
-	nameKey          = "name"
-	emailKey         = "email"
-	descriptionKey   = "description"
-	defaultBranchKey = "defaultBranch"
+	remoteSection     = "remote"
+	submoduleSection  = "submodule"
+	branchSection     = "branch"
+	coreSection       = "core"
+	packSection       = "pack"
+	userSection       = "user"
+	authorSection     = "author"
+	committerSection  = "committer"
+	initSection       = "init"
+	credentialSection = "credential"
+	urlSection        = "url"
+	fetchKey          = "fetch"
+	urlKey            = "url"
+	bareKey           = "bare"
+	worktreeKey       = "worktree"
+	commentCharKey    = "commentChar"
+	windowKey         = "window"
+	mergeKey          = "merge"
+	rebaseKey         = "rebase"
+	nameKey           = "name"
+	emailKey          = "email"
+	descriptionKey    = "description"
+	defaultBranchKey  = "defaultBranch"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -278,6 +281,10 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	if err := c.unmarshalURLs(); err != nil {
+		return err
+	}
+
+	if err := c.unmarshalCredential(); err != nil {
 		return err
 	}
 
@@ -320,6 +327,19 @@ func (c *Config) unmarshalPack() error {
 		}
 		c.Pack.Window = uint(winUint)
 	}
+	return nil
+}
+
+func (c *Config) unmarshalCredential() error {
+	sect := c.Raw.Section(credentialSection)
+
+	c.Credential = make(map[string]*CredentialConfig)
+	c.Credential["default"] = newCredentialConfig(sect.Options)
+
+	for _, sub := range sect.Subsections {
+		c.Credential[sub.Name] = newCredentialConfig(sub.Options)
+	}
+
 	return nil
 }
 
@@ -540,6 +560,20 @@ func (c *Config) marshalInit() {
 	s := c.Raw.Section(initSection)
 	if c.Init.DefaultBranch != "" {
 		s.SetOption(defaultBranchKey, c.Init.DefaultBranch)
+	}
+}
+
+type CredentialConfig struct {
+	Helper      string
+	Username    string
+	UseHttpPath bool
+}
+
+func newCredentialConfig(opts format.Options) *CredentialConfig {
+	return &CredentialConfig{
+		Helper:      opts.Get("helper"),
+		Username:    opts.Get("username"),
+		UseHttpPath: opts.Get("usehttppath") == "true",
 	}
 }
 

@@ -54,7 +54,11 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 [init]
 		defaultBranch = main
 [url "ssh://git@github.com/"]
-	insteadOf = https://github.com/
+		insteadOf = https://github.com/
+[credential]
+		helper = osxkeychain
+[credential "https://kernel.org"]
+		username = foo
 `)
 
 	cfg := NewConfig()
@@ -89,6 +93,12 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
 	c.Assert(cfg.Branches["master"].Description, Equals, "Add support for branch description.\n\nEdit branch description: git branch --edit-description\n")
 	c.Assert(cfg.Init.DefaultBranch, Equals, "main")
+	c.Assert(cfg.Credential["default"].Helper, Equals, "osxkeychain")
+	c.Assert(cfg.Credential["default"].Username, Equals, "")
+	c.Assert(cfg.Credential["default"].UseHttpPath, Equals, false)
+	c.Assert(cfg.Credential["https://kernel.org"].Helper, Equals, "")
+	c.Assert(cfg.Credential["https://kernel.org"].Username, Equals, "foo")
+	c.Assert(cfg.Credential["https://kernel.org"].UseHttpPath, Equals, false)
 }
 
 func (s *ConfigSuite) TestMarshal(c *C) {
