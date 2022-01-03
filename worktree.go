@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
@@ -188,6 +189,67 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 
 	return w.Reset(ro)
 }
+
+// CreateOrphanBranch creates a new orphan branch with an initial commit with msg as the commit message
+func (w *Worktree) CreateOrphanBranch(branch plumbing.ReferenceName, msg string, co *CommitOptions) error {
+	if co == nil {
+		co = &CommitOptions{}
+	}
+
+	if len(co.Parents) > 0 {
+		return errors.New("parents is not a valid option")
+	}
+
+	head, err := w.r.Head()
+	if err != nil {
+		return err
+	}
+
+	tree, err := w.getTreeFromCommitHash(head.Hash())
+	if err != nil {
+		return err
+	}
+
+	if co.Author == nil || co.Committer == nil {
+		conf, err := w.r.Config()
+		if err != nil {
+			return err
+		}
+
+		if co.Author == nil {
+			co.Author = &object.Signature{
+				Name:  conf.Author.Name,
+				Email: conf.Author.Email,
+				When:  time.Now(),
+			}
+		}
+
+		if co.Committer == nil {
+			co.Committer = &object.Signature{
+				Name:  conf.Committer.Name,
+				Email: conf.Committer.Email,
+				When:  time.Now(),
+			}
+		}
+	}
+
+	commit, err := w.buildCommitObject(msg, co, tree.Hash)
+	if err != nil {
+		return err
+	}
+
+	if err = w.createBranch(&CheckoutOptions{
+		Hash:                      commit,
+		Branch:                    branch,
+		Create:                    true,
+	}); err != nil {
+		return err
+	}
+
+	return w.setHEADToBranch(branch, commit)
+}
+
+
 func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 	_, err := w.r.Storer.Reference(opts.Branch)
 	if err == nil {
