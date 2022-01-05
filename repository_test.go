@@ -439,6 +439,59 @@ func (s *RepositorySuite) TestCreateBranchAndBranch(c *C) {
 	c.Assert(branch.Merge, Equals, testBranch.Merge)
 }
 
+func (s *RepositorySuite) TestMergeFF(c *C) {
+	r, _ := Init(memory.NewStorage(), memfs.New())
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	c.Assert(err, IsNil)
+	head, err := r.Head()
+	c.Assert(err, IsNil)
+
+	mergeBranchRefname := plumbing.NewBranchReferenceName("foo")
+	err = r.Storer.SetReference(plumbing.NewHashReference(mergeBranchRefname, head.Hash()))
+	c.Assert(err, IsNil)
+
+	commit, err := r.CommitObject(head.Hash())
+	c.Assert(err, IsNil)
+	treeHash := commit.TreeHash
+
+	hash := commit.Hash
+
+	for i := 0; i < 10; i++ {
+		commit = &object.Commit{
+			Author: object.Signature{
+				Name:  "A U Thor",
+				Email: "author@example.com",
+			},
+			Committer: object.Signature{
+				Name:  "A U Thor",
+				Email: "author@example.com",
+			},
+			Message:  fmt.Sprintf("commit #%d", i),
+			TreeHash: treeHash,
+			ParentHashes: []plumbing.Hash{
+				hash,
+			},
+		}
+
+		o := r.Storer.NewEncodedObject()
+		c.Assert(commit.Encode(o), IsNil)
+		hash, err = r.Storer.SetEncodedObject(o)
+	}
+
+	mergeBranchRef := plumbing.NewHashReference(mergeBranchRefname, hash)
+	c.Assert(r.Storer.SetReference(mergeBranchRef), IsNil)
+
+	err = r.Merge(*mergeBranchRef, MergeOptions{
+		FFOnly: true,
+	})
+	c.Assert(err, IsNil)
+
+	head, err = r.Head()
+	c.Assert(head.Hash(), Equals, mergeBranchRef.Hash())
+}
+
 func (s *RepositorySuite) TestCreateBranchUnmarshal(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 

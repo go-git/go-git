@@ -89,6 +89,13 @@ type CloneOptions struct {
 	Shared bool
 }
 
+// MergeOptions describes how a merge should be erformed
+type MergeOptions struct {
+	// Requires a merge to be fast forward only. If this is true, then a merge will
+	// throw an error if ff is not possible.
+	FFOnly bool
+}
+
 // Validate validates the fields and sets the default values.
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
