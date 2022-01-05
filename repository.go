@@ -1642,6 +1642,25 @@ func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 	return nil
 }
 
+// Merge attempts to merge ref onto HEAD. Currently only supports fast-forward merges
+func (r *Repository) Merge(ref plumbing.Reference, opts MergeOptions) error {
+	if !opts.FFOnly {
+		return errors.New("non fast-forward merges are not supported yet")
+	}
+
+	head, err := r.Head()
+	if err != nil {
+		return err
+	}
+
+	ff, err := IsFastForward(r.Storer, head.Hash(), ref.Hash())
+	if !ff {
+		return errors.New("fast forward is not possible")
+	}
+
+	return r.Storer.SetReference(plumbing.NewHashReference(head.Name(), ref.Hash()))
+}
+
 // createNewObjectPack is a helper for RepackObjects taking care
 // of creating a new pack. It is used so the the PackfileWriter
 // deferred close has the right scope.
