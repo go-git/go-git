@@ -2948,6 +2948,13 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func TestDotGitToOSFilesystems(t *testing.T) {
+	_, _, err := dotGitToOSFilesystems("\000", false)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
 func BenchmarkObjects(b *testing.B) {
 	defer fixtures.Clean()
 
