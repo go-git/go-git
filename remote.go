@@ -460,8 +460,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			return nil, err
 		}
 
-		if err = r.fetchPack(ctx, o, s, req); err != nil {
-			return nil, err
+		if !req.IsEmpty() {
+			if err = r.fetchPack(ctx, o, s, req); err != nil {
+				return nil, err
+			}
 		}
 	}
 
