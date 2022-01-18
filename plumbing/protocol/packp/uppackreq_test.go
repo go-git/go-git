@@ -18,7 +18,7 @@ func (s *UploadPackRequestSuite) TestNewUploadPackRequestFromCapabilities(c *C) 
 	cap.Set(capability.Agent, "foo")
 
 	r := NewUploadPackRequestFromCapabilities(cap)
-	c.Assert(r.Capabilities.String(), Equals, "agent=go-git/4.x")
+	c.Assert(r.Capabilities.String(), Equals, "agent=go-git/5.x")
 }
 
 func (s *UploadPackRequestSuite) TestIsEmpty(c *C) {
