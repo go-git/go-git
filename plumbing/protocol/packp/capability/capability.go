@@ -238,7 +238,7 @@ const (
 	Filter Capability = "filter"
 )
 
-const DefaultAgent = "go-git/4.x"
+const DefaultAgent = "go-git/5.x"
 
 var known = map[Capability]bool{
 	MultiACK: true, MultiACKDetailed: true, NoDone: true, ThinPack: true,
