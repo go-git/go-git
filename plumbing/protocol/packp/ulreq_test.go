@@ -25,7 +25,7 @@ func (s *UlReqSuite) TestNewUploadRequestFromCapabilities(c *C) {
 
 	r := NewUploadRequestFromCapabilities(cap)
 	c.Assert(r.Capabilities.String(), Equals,
-		"multi_ack_detailed side-band-64k thin-pack ofs-delta agent=go-git/4.x",
+		"multi_ack_detailed side-band-64k thin-pack ofs-delta agent=go-git/5.x",
 	)
 }
 
