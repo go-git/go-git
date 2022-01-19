@@ -2950,7 +2950,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
 
 func TestDotGitToOSFilesystemsInvalidPath(t *testing.T) {
 	_, _, err := dotGitToOSFilesystems("\000", false)
-	c.Assert(r, NotNil)
+	c.Assert(err, NotNil)
 }
 
 func BenchmarkObjects(b *testing.B) {
