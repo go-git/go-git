@@ -1261,6 +1261,22 @@ func (s *RemoteSuite) TestUpdateShallows(c *C) {
 	}
 }
 
+func (s *RemoteSuite) TestFetchShallows(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Depth: 0,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/heads/master:refs/heads/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+	c.Assert(r.s.(*memory.Storage).Commits, HasLen, 8)
+}
+
 func (s *RemoteSuite) TestUseRefDeltas(c *C) {
 	url, clean := s.TemporalDir()
 	defer clean()
