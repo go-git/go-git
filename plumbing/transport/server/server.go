@@ -136,7 +136,7 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
-	if req.IsEmpty() {
+	if req.IsEmpty() && len(req.Shallows) == 0 {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
 
