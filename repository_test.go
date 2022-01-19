@@ -2948,7 +2948,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func TestDotGitToOSFilesystemsInvalidPath(t *testing.T) {
+func (s *RepositorySuite) TestCreateTagLightweight(c *C) {
 	_, _, err := dotGitToOSFilesystems("\000", false)
 	c.Assert(err, NotNil)
 }
