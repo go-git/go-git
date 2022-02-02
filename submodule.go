@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"path"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
+	url "github.com/whilp/git-urls"
 )
 
 var (
@@ -375,7 +375,7 @@ func (s *SubmoduleStatus) IsClean() bool {
 // the SHA-1 found in the index of the containing repository.
 func (s *SubmoduleStatus) String() string {
 	var extra string
-	var status = ' '
+	status := ' '
 
 	if s.Current.IsZero() {
 		status = '-'
