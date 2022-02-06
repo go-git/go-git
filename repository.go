@@ -207,7 +207,7 @@ func CloneContext(
 		return nil, err
 	}
 
-	return r, r.clone(ctx, o)
+	return r, r.Clone(ctx, o)
 }
 
 // PlainInit create an empty git repository at the given path. isBare defines
@@ -412,7 +412,7 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 		return nil, err
 	}
 
-	err = r.clone(ctx, o)
+	err = r.Clone(ctx, o)
 	if err != nil && err != ErrRepositoryAlreadyExists {
 		if cleanup {
 			_ = cleanUpDir(path, cleanupParent)
@@ -809,7 +809,7 @@ func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error)
 }
 
 // Clone clones a remote repository
-func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
+func (r *Repository) Clone(ctx context.Context, o *CloneOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}

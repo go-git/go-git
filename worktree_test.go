@@ -167,7 +167,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 
 func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
-	err := r.clone(context.Background(), &CloneOptions{
+	err := r.Clone(context.Background(), &CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
 	})
