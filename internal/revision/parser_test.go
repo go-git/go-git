@@ -183,7 +183,7 @@ func (s *ParserSuite) TestParseWithValidExpression(c *C) {
 	}
 }
 
-func (s *ParserSuite) TestParseWithUnValidExpression(c *C) {
+func (s *ParserSuite) TestParseWithInvalidExpression(c *C) {
 	datas := map[string]error{
 		"..":                              &ErrInvalidRevision{`must not start with "."`},
 		"master^1master":                  &ErrInvalidRevision{`reference must be defined once at the beginning`},
@@ -198,6 +198,9 @@ func (s *ParserSuite) TestParseWithUnValidExpression(c *C) {
 		"~1":                              &ErrInvalidRevision{`"~" or "^" statement must have a reference defined at the beginning`},
 		"master:/test":                    &ErrInvalidRevision{`":" statement is not valid, could be : :/<regexp>`},
 		"master:0:README":                 &ErrInvalidRevision{`":" statement is not valid, could be : :<n>:<path>`},
+		"^{/":                             &ErrInvalidRevision{`missing "}" in ^{<data>} structure`},
+		"~@{":                             &ErrInvalidRevision{`missing "}" in @{<data>} structure`},
+		"@@{{0":                           &ErrInvalidRevision{`missing "}" in @{<data>} structure`},
 	}
 
 	for s, e := range datas {
@@ -230,7 +233,7 @@ func (s *ParserSuite) TestParseAtWithValidExpression(c *C) {
 	}
 }
 
-func (s *ParserSuite) TestParseAtWithUnValidExpression(c *C) {
+func (s *ParserSuite) TestParseAtWithInvalidExpression(c *C) {
 	datas := map[string]error{
 		"{test}": &ErrInvalidRevision{`wrong date "test" must fit ISO-8601 format : 2006-01-02T15:04:05Z`},
 		"{-1":    &ErrInvalidRevision{`missing "}" in @{-n} structure`},
