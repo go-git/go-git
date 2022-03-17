@@ -109,6 +109,9 @@ type Config struct {
 	// URLs list of url rewrite rules, if repo url starts with URL.InsteadOf value, it will be replaced with the
 	// key instead.
 	URLs map[string]*URL
+	// Credentials list of credentials, the key is the url or "default" for the defaults credentials
+	Credentials map[string]*Credential
+
 	// Raw contains the raw information of a config file. The main goal is
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
@@ -227,28 +230,29 @@ func (c *Config) Validate() error {
 }
 
 const (
-	remoteSection    = "remote"
-	submoduleSection = "submodule"
-	branchSection    = "branch"
-	coreSection      = "core"
-	packSection      = "pack"
-	userSection      = "user"
-	authorSection    = "author"
-	committerSection = "committer"
-	initSection      = "init"
-	urlSection       = "url"
-	fetchKey         = "fetch"
-	urlKey           = "url"
-	bareKey          = "bare"
-	worktreeKey      = "worktree"
-	commentCharKey   = "commentChar"
-	windowKey        = "window"
-	mergeKey         = "merge"
-	rebaseKey        = "rebase"
-	nameKey          = "name"
-	emailKey         = "email"
-	descriptionKey   = "description"
-	defaultBranchKey = "defaultBranch"
+	remoteSection     = "remote"
+	submoduleSection  = "submodule"
+	branchSection     = "branch"
+	coreSection       = "core"
+	packSection       = "pack"
+	userSection       = "user"
+	authorSection     = "author"
+	committerSection  = "committer"
+	initSection       = "init"
+	urlSection        = "url"
+	credentialSection = "credential"
+	fetchKey          = "fetch"
+	urlKey            = "url"
+	bareKey           = "bare"
+	worktreeKey       = "worktree"
+	commentCharKey    = "commentChar"
+	windowKey         = "window"
+	mergeKey          = "merge"
+	rebaseKey         = "rebase"
+	nameKey           = "name"
+	emailKey          = "email"
+	descriptionKey    = "description"
+	defaultBranchKey  = "defaultBranch"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -278,6 +282,10 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	if err := c.unmarshalURLs(); err != nil {
+		return err
+	}
+
+	if err := c.unmarshalCredential(); err != nil {
 		return err
 	}
 
@@ -351,6 +359,19 @@ func (c *Config) unmarshalURLs() error {
 		}
 
 		c.URLs[r.Name] = r
+	}
+
+	return nil
+}
+
+func (c *Config) unmarshalCredential() error {
+	sect := c.Raw.Section(credentialSection)
+
+	c.Credentials = make(map[string]*Credential)
+	c.Credentials["default"] = newCredential(sect.Options)
+
+	for _, sub := range sect.Subsections {
+		c.Credentials[sub.Name] = newCredential(sub.Options)
 	}
 
 	return nil
