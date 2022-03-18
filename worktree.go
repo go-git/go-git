@@ -25,11 +25,12 @@ import (
 )
 
 var (
-	ErrWorktreeNotClean     = errors.New("worktree is not clean")
-	ErrSubmoduleNotFound    = errors.New("submodule not found")
-	ErrUnstagedChanges      = errors.New("worktree contains unstaged changes")
-	ErrGitModulesSymlink    = errors.New(gitmodulesFile + " is a symlink")
-	ErrNonFastForwardUpdate = errors.New("non-fast-forward update")
+	ErrWorktreeNotClean                = errors.New("worktree is not clean")
+	ErrSubmoduleNotFound               = errors.New("submodule not found")
+	ErrUnstagedChanges                 = errors.New("worktree contains unstaged changes")
+	ErrGitModulesSymlink               = errors.New(gitmodulesFile + " is a symlink")
+	ErrNonFastForwardUpdate            = errors.New("non-fast-forward update")
+	ErrRestoreWorktreeOnlyNotSupported = errors.New("worktree only is not supported")
 )
 
 // Worktree represents a git worktree.
@@ -307,13 +308,13 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 	}
 
 	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset {
-		if err := w.resetIndex(t, dirs); err != nil {
+		if err := w.resetIndex(t, dirs, opts.Files); err != nil {
 			return err
 		}
 	}
 
 	if opts.Mode == MergeReset || opts.Mode == HardReset {
-		if err := w.resetWorktree(t); err != nil {
+		if err := w.resetWorktree(t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -321,12 +322,47 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 	return nil
 }
 
+// Restore restores specified files in the working tree or stage with contents from
+// a restore source. If a path is tracked but does not exist in the restore,
+// source, it will be removed to match the source.
+//
+// If Staged and Worktree are true, then the restore source will be the index.
+// If only Staged is true, then the restore source will be HEAD.
+// If only Worktree is true or neither Staged nor Worktree are true, will
+// result in ErrRestoreWorktreeOnlyNotSupported because restoring the working
+// tree while leaving the stage untouched is not currently supported.
+//
+// Restore with no files specified will return ErrNoRestorePaths.
+func (w *Worktree) Restore(o *RestoreOptions) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	if o.Staged {
+		opts := &ResetOptions{
+			Files: o.Files,
+		}
+
+		if o.Worktree {
+			// If we are doing both Worktree and Staging then it is a hard reset
+			opts.Mode = HardReset
+		} else {
+			// If we are doing just staging then it is a mixed reset
+			opts.Mode = MixedReset
+		}
+
+		return w.Reset(opts)
+	}
+
+	return ErrRestoreWorktreeOnlyNotSupported
+}
+
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
 	return w.ResetSparsely(opts, nil)
 }
 
-func (w *Worktree) resetIndex(t *object.Tree, dirs []string) error {
+func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) error {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return err
@@ -359,6 +395,13 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string) error {
 			name = ch.From.String()
 		}
 
+		if len(files) > 0 {
+			contains := inFiles(files, name)
+			if !contains {
+				continue
+			}
+		}
+
 		b.Remove(name)
 		if e == nil {
 			continue
@@ -381,7 +424,17 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string) error {
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) resetWorktree(t *object.Tree) error {
+func inFiles(files []string, v string) bool {
+	for _, s := range files {
+		if s == v {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	changes, err := w.diffStagingWithWorktree(true, false)
 	if err != nil {
 		return err
@@ -397,6 +450,25 @@ func (w *Worktree) resetWorktree(t *object.Tree) error {
 		if err := w.validChange(ch); err != nil {
 			return err
 		}
+
+		if len(files) > 0 {
+			file := ""
+			if ch.From != nil {
+				file = ch.From.Name()
+			} else if ch.To != nil {
+				file = ch.To.Name()
+			}
+
+			if file == "" {
+				continue
+			}
+
+			contains := inFiles(files, file)
+			if !contains {
+				continue
+			}
+		}
+
 		if err := w.checkoutChange(ch, t, b); err != nil {
 			return err
 		}
