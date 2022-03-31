@@ -370,17 +370,17 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	e.Entries = i
+	trees, err := binary.ReadUntil(d.r, '\n')
+	if err != nil {
+		return nil, err
+	}
 
 	// An entry can be in an invalidated state and is represented by having a
 	// negative number in the entry_count field.
 	if i == -1 {
 		return nil, nil
-	}
-
-	e.Entries = i
-	trees, err := binary.ReadUntil(d.r, '\n')
-	if err != nil {
-		return nil, err
 	}
 
 	i, err = strconv.Atoi(string(trees))
