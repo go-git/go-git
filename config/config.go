@@ -238,6 +238,7 @@ const (
 	initSection      = "init"
 	urlSection       = "url"
 	fetchKey         = "fetch"
+	pruneKey         = "prune"
 	urlKey           = "url"
 	bareKey          = "bare"
 	worktreeKey      = "worktree"
@@ -559,6 +560,9 @@ type RemoteConfig struct {
 	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
 
+	// Prune refs
+	Prune bool
+
 	// raw representation of the subsection, filled by marshal or unmarshal are
 	// called
 	raw *format.Subsection
@@ -603,6 +607,9 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.Name = c.raw.Name
 	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
 	c.Fetch = fetch
+	if c.raw.Options.Get(pruneKey) == "true" {
+		c.Prune = true
+	}
 
 	return nil
 }
@@ -633,6 +640,12 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 		}
 
 		c.raw.SetOption(fetchKey, values...)
+	}
+
+	if c.Prune {
+		c.raw.SetOption(pruneKey, "true")
+	} else if c.raw.HasOption(pruneKey) {
+		c.raw.SetOption(pruneKey, "false")
 	}
 
 	return c.raw
