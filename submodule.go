@@ -138,7 +138,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
-	if !path.IsAbs(moduleURL.Path) {
+	if !moduleURL.IsAbs() && !path.IsAbs(moduleURL.Path) {
 		remotes, err := s.w.r.Remotes()
 		if err != nil {
 			return nil, err
