@@ -4,6 +4,7 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -26,6 +27,89 @@ var DefaultSSHConfig sshConfig = ssh_config.DefaultUserSettings
 type sshConfig interface {
 	Get(alias, key string) string
 }
+
+// ENV_SSH_HOSTKEY_ALGORITHMS
+//
+// ssh.ClientConfig.HostKeyAlgorithms
+//
+// Use comma as separator if multiple values.
+//
+// Example:
+// export GO_GIT_SSH_HOSTKEY_ALGORITHMS="ssh-ed25519,ecdsa-sha2-nistp256"
+//
+// See golang.org/x/crypto/ssh for valid values.
+//
+//
+//
+const ENV_SSH_HOSTKEY_ALGORITHMS = "GO_GIT_SSH_HOSTKEY_ALGORITHMS"
+
+// ENV_SSH_CONFIG_KEY_EXCHANGES
+//
+// ssh.ClientConfig.Config.KeyExchanges
+//
+// Use comma as separator if multiple values.
+//
+// Example:
+// export GO_GIT_SSH_CONFIG_KEY_EXCHANGES="diffie-hellman-group14-sha1,ecdh-sha2-nistp256"
+//
+// See golang.org/x/crypto/ssh for valid values.
+const ENV_SSH_CONFIG_KEY_EXCHANGES = "GO_GIT_SSH_CONFIG_KEY_EXCHANGES"
+
+// ENV_SSH_CONFIG_CIPHERS
+//
+// ssh.ClientConfig.Config.Ciphers
+//
+// Use comma as separator if multiple values.
+//
+// Example:
+// export GO_GIT_SSH_CONFIG_CIPHERS="aes128-ctr,aes192-ctr"
+//
+// See golang.org/x/crypto/ssh for valid values.
+const ENV_SSH_CONFIG_CIPHERS = "GO_GIT_SSH_CONFIG_CIPHERS"
+
+// ENV_SSH_CONFIG_MACS
+//
+// ssh.ClientConfig.Config.MACs
+//
+// Use comma as separator if multiple values.
+//
+// Example:
+// export GO_GIT_SSH_CONFIG_MACS="hmac-sha2-256,hmac-sha1"
+//
+// See golang.org/x/crypto/ssh for valid values.
+const ENV_SSH_CONFIG_MACS = "GO_GIT_SSH_CONFIG_MACS"
+
+// DefaultSSHClientConfig
+//
+// The following environment variables will be used if defined
+//
+// GO_GIT_SSH_HOSTKEY_ALGORITHMS
+// GO_GIT_SSH_CONFIG_KEY_EXCHANGES
+// GO_GIT_SSH_CONFIG_CIPHERS
+// GO_GIT_SSH_CONFIG_MACS
+//
+var DefaultSSHClientConfig *ssh.ClientConfig = func() *ssh.ClientConfig {
+	sshClientConfig := &ssh.ClientConfig{}
+
+	if hostKeyAlgorithms, isSet := os.LookupEnv(ENV_SSH_HOSTKEY_ALGORITHMS); isSet {
+		// TODO validation
+		sshClientConfig.HostKeyAlgorithms = strings.Split(hostKeyAlgorithms, ",")
+	}
+	if keyExchanges, isSet := os.LookupEnv(ENV_SSH_CONFIG_KEY_EXCHANGES); isSet {
+		// TODO validation
+		sshClientConfig.Config.KeyExchanges = strings.Split(keyExchanges, ",")
+	}
+	if ciphers, isSet := os.LookupEnv(ENV_SSH_CONFIG_CIPHERS); isSet {
+		// TODO validation
+		sshClientConfig.Config.Ciphers = strings.Split(ciphers, ",")
+	}
+	if MACs, isSet := os.LookupEnv(ENV_SSH_CONFIG_MACS); isSet {
+		// TODO validation
+		sshClientConfig.Config.MACs = strings.Split(MACs, ",")
+	}
+
+	return sshClientConfig
+}()
 
 // NewClient creates a new SSH client with an optional *ssh.ClientConfig.
 func NewClient(config *ssh.ClientConfig) transport.Transport {

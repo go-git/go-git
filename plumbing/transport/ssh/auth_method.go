@@ -56,12 +56,10 @@ func (a *KeyboardInteractive) String() string {
 }
 
 func (a *KeyboardInteractive) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
-		User: a.User,
-		Auth: []ssh.AuthMethod{
-			a.Challenge,
-		},
-	})
+	clientConfig := DefaultSSHClientConfig
+	clientConfig.User = a.User
+	clientConfig.Auth = []ssh.AuthMethod{a.Challenge}
+	return a.SetHostKeyCallback(clientConfig)
 }
 
 // Password implements AuthMethod by using the given password.
@@ -80,10 +78,10 @@ func (a *Password) String() string {
 }
 
 func (a *Password) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
-		User: a.User,
-		Auth: []ssh.AuthMethod{ssh.Password(a.Password)},
-	})
+	clientConfig := DefaultSSHClientConfig
+	clientConfig.User = a.User
+	clientConfig.Auth = []ssh.AuthMethod{ssh.Password(a.Password)}
+	return a.SetHostKeyCallback(clientConfig)
 }
 
 // PasswordCallback implements AuthMethod by using a callback
@@ -103,10 +101,10 @@ func (a *PasswordCallback) String() string {
 }
 
 func (a *PasswordCallback) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
-		User: a.User,
-		Auth: []ssh.AuthMethod{ssh.PasswordCallback(a.Callback)},
-	})
+	clientConfig := DefaultSSHClientConfig
+	clientConfig.User = a.User
+	clientConfig.Auth = []ssh.AuthMethod{ssh.PasswordCallback(a.Callback)}
+	return a.SetHostKeyCallback(clientConfig)
 }
 
 // PublicKeys implements AuthMethod by using the given key pairs.
@@ -152,10 +150,10 @@ func (a *PublicKeys) String() string {
 }
 
 func (a *PublicKeys) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
-		User: a.User,
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(a.Signer)},
-	})
+	clientConfig := DefaultSSHClientConfig
+	clientConfig.User = a.User
+	clientConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(a.Signer)}
+	return a.SetHostKeyCallback(clientConfig)
 }
 
 func username() (string, error) {
@@ -213,10 +211,10 @@ func (a *PublicKeysCallback) String() string {
 }
 
 func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
-		User: a.User,
-		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(a.Callback)},
-	})
+	clientConfig := DefaultSSHClientConfig
+	clientConfig.User = a.User
+	clientConfig.Auth = []ssh.AuthMethod{ssh.PublicKeysCallback(a.Callback)}
+	return a.SetHostKeyCallback(clientConfig)
 }
 
 // NewKnownHostsCallback returns ssh.HostKeyCallback based on a file based on a
