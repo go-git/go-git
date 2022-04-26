@@ -132,6 +132,19 @@ func (s *ParserSuite) TestThinPack(c *C) {
 
 }
 
+func (s *ParserSuite) TestDOTest(c *C) {
+	extRefsThinPack := fixtures.ByTag("do-test").One()
+
+	scanner := packfile.NewScanner(extRefsThinPack.Packfile())
+
+	obs := new(testObserver)
+	parser, err := packfile.NewParser(scanner, obs)
+	c.Assert(err, IsNil)
+
+	_, err = parser.Parse()
+	c.Assert(err, IsNil)
+}
+
 func (s *ParserSuite) TestResolveExternalRefsInThinPack(c *C) {
 	extRefsThinPack := fixtures.ByTag("codecommit").One()
 
