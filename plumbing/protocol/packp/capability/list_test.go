@@ -122,6 +122,17 @@ func (s *SuiteCapabilities) TestSetEmpty(c *check.C) {
 	c.Assert(cap.Get(Agent), check.HasLen, 1)
 }
 
+func (s *SuiteCapabilities) TestSetDuplicate(c *check.C) {
+	cap := NewList()
+	err := cap.Set(Agent, "baz")
+	c.Assert(err, check.IsNil)
+
+	err = cap.Set(Agent, "bar")
+	c.Assert(err, check.IsNil)
+
+	c.Assert(cap.String(), check.Equals, "agent=bar")
+}
+
 func (s *SuiteCapabilities) TestGetEmpty(c *check.C) {
 	cap := NewList()
 	c.Assert(cap.Get(Agent), check.HasLen, 0)
