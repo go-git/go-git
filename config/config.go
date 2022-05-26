@@ -15,7 +15,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/internal/url"
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
-	"github.com/mitchellh/go-homedir"
 )
 
 const (
@@ -185,7 +184,7 @@ func Paths(scope Scope) ([]string, error) {
 			files = append(files, filepath.Join(xdg, "git/config"))
 		}
 
-		home, err := homedir.Dir()
+		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, err
 		}
