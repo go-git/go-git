@@ -1045,6 +1045,51 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestPushNewReferenceToNonDefaultRemote(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	server, err := PlainClone(url, true, &CloneOptions{
+		URL: fs.Root(),
+	})
+	c.Assert(err, IsNil)
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	remote, err := r.CreateRemote(&config.RemoteConfig{
+		Name: "other-remote",
+		URLs: []string{fs.Root()},
+	})
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{
+		RemoteName: "other-remote",
+		RefSpecs: []config.RefSpec{
+			"refs/heads/master:refs/heads/branch2",
+		},
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, server, map[string]string{
+		"refs/heads/branch2": ref.Hash().String(),
+	})
+
+	AssertReferences(c, r, map[string]string{
+		"refs/remotes/other-remote/branch2": ref.Hash().String(),
+	})
+}
+
 func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
