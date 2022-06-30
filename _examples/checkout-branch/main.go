@@ -35,7 +35,7 @@ func main() {
 	// ... checking out branch
 	Info("git checkout %s", branch)
 
-	branchRefName := fmt.Sprintf("refs/heads/%s", branch)
+	branchRefName := plumbing.NewBranchReferenceName(branch)
 	branchCoOpts := git.CheckoutOptions{
 		Branch: plumbing.ReferenceName(branchRefName),
 		Force:  true,
