@@ -7,6 +7,7 @@ import (
 	"hash"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Hash SHA1 hashed content
@@ -74,6 +75,10 @@ func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 // IsHash returns true if the given string is a valid hash.
 func IsHash(s string) bool {
+	if strings.Contains(s, "\n") {
+		s = strings.Replace(s, "\n", "", -1)
+	}
+
 	if len(s) != 40 {
 		return false
 	}
