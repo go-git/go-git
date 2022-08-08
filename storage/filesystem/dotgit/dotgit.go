@@ -10,6 +10,7 @@ import (
 	stdioutil "io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -578,10 +579,11 @@ func (d *DotGit) incomingObjectPath(h plumbing.Hash) string {
 // so it doesn't have to be found each time an object is accessed.
 func (d *DotGit) hasIncomingObjects() bool {
 	if !d.incomingChecked {
+		incomingRe := regexp.MustCompile("^(tmp_objdir-)?incoming-")
 		directoryContents, err := d.fs.ReadDir(objectsPath)
 		if err == nil {
 			for _, file := range directoryContents {
-				if strings.HasPrefix(file.Name(), "incoming-") && file.IsDir() {
+				if incomingRe.MatchString(file.Name()) && file.IsDir() {
 					d.incomingDirName = file.Name()
 				}
 			}
