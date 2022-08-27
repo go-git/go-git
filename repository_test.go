@@ -1986,6 +1986,323 @@ func (s *RepositorySuite) TestConfigScoped(c *C) {
 	c.Assert(cfg.User.Email, Not(Equals), "")
 }
 
+func (s *RepositorySuite) TestConfigWithLocalGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	repoConfig, err := repo.Config()
+	c.Assert(err, IsNil)
+
+	c.Assert(repoConfig.User.Name, Equals, "Local User")
+}
+
+func (s *RepositorySuite) TestConfigWithGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	repoConfig, err := repo.Config()
+	c.Assert(err, IsNil)
+
+	c.Assert(repoConfig.User.Name, Equals, "Global User")
+}
+
+func (s *RepositorySuite) TestConfigWithSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	repoConfig, err := repo.Config()
+	c.Assert(err, IsNil)
+
+	c.Assert(repoConfig.User.Name, Equals, "System User")
+}
+
+func (s *RepositorySuite) TestConfigScopedLocalWithLocalGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	localConfig, err := repo.ConfigScoped(config.LocalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(localConfig.User.Name, Equals, "Local User")
+}
+
+func (s *RepositorySuite) TestConfigScopedLocalWithGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	localConfig, err := repo.ConfigScoped(config.LocalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(localConfig.User.Name, Equals, "")
+}
+
+func (s *RepositorySuite) TestConfigScopedLocalWithSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	globalConfig, err := repo.ConfigScoped(config.LocalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(globalConfig.User.Name, Equals, "")
+}
+
+func (s *RepositorySuite) TestConfigScopedGlobalWithLocalGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	globalConfig, err := repo.ConfigScoped(config.GlobalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(globalConfig.User.Name, Equals, "Global User")
+}
+
+func (s *RepositorySuite) TestConfigScopedGlobalWithGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	globalConfig, err := repo.ConfigScoped(config.GlobalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(globalConfig.User.Name, Equals, "Global User")
+}
+
+func (s *RepositorySuite) TestConfigScopedGlobalWithSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	systemConfig, err := repo.ConfigScoped(config.GlobalScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(systemConfig.User.Name, Equals, "")
+}
+
+func (s *RepositorySuite) TestConfigScopedSystemWithLocalGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	systemConfig, err := repo.ConfigScoped(config.SystemScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(systemConfig.User.Name, Equals, "System User")
+}
+
+func (s *RepositorySuite) TestConfigScopedSystemWithGlobalSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	systemConfig, err := repo.ConfigScoped(config.SystemScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(systemConfig.User.Name, Equals, "System User")
+}
+
+func (s *RepositorySuite) TestConfigScopedSystemWithSystem(c *C) {
+	fs := memfs.New()
+
+	// stub the active filesystem used by the config package
+	config.ActiveFS = fs
+	defer func() { config.ActiveFS = config.DefaultFS() }()
+
+	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
+	c.Assert(err, IsNil)
+
+	repo, err := initRepoAt(fs, "/work/example")
+	c.Assert(err, IsNil)
+
+	systemConfig, err := repo.ConfigScoped(config.SystemScope)
+	c.Assert(err, IsNil)
+
+	c.Assert(systemConfig.User.Name, Equals, "System User")
+}
+
+// stubConfiguredUsernames writes into the given fs a git config file setting user.name at the local, global, and system
+// level. the path /work/example/.git/config is used
+func stubConfiguredUsernames(fs billy.Filesystem, worktreeDir string, localUsername string, globalUsername string, systemUsername string) error {
+	var gitConfigForUser = func(name string) string {
+		return fmt.Sprintf(`
+[user]
+name = "%s"
+`, name)
+	}
+
+	if systemUsername != "" {
+		// stub system level config
+		if err := writeFileContent(fs, "/etc/gitconfig", gitConfigForUser(systemUsername)); err != nil {
+			return err
+		}
+	}
+
+	if globalUsername != "" {
+		// get the current user's home dir to simulate it in our memfs filesystem
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+
+		// stub global level config (simulating the current user's homeDir)
+		if err = writeFileContent(fs, filepath.Join(homeDir, ".gitconfig"), gitConfigForUser(globalUsername)); err != nil {
+			return err
+		}
+	}
+
+	if localUsername != "" {
+		// stub local level config
+		if err := writeFileContent(fs, filepath.Join(worktreeDir, ".git", "config"), gitConfigForUser(localUsername)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// writeFileContent is a utility function that writes content to a path inside a billy.Filesystem
+// the containing directory (and any parents) are created as needed using fs.MkdirAll()
+func writeFileContent(fs billy.Filesystem, path string, content string) error {
+	// ensure the parent folder exists
+	pathDir := filepath.Dir(path)
+	if err := fs.MkdirAll(pathDir, os.ModePerm); err != nil {
+		return err
+	}
+
+	// create the file
+	f, err := fs.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// write the content
+	_, err = f.Write([]byte(content))
+	if err != nil {
+		return err
+	}
+
+	// close up
+	return f.Close()
+}
+
+// initRepoAt initializes a repo pointing at the working tree path and nested .git directory inside the given fs
+func initRepoAt(fs billy.Filesystem, workingTreePath string) (repo *Repository, err error) {
+	workTreeFS, err := fs.Chroot(workingTreePath)
+	if err != nil {
+		return
+	}
+
+	gitDir := filepath.Join(workingTreePath, ".git")
+	err = fs.MkdirAll(gitDir, os.ModePerm)
+	if err != nil {
+		return
+	}
+
+	gitDirFS, err := fs.Chroot(gitDir)
+	if err != nil {
+		return
+	}
+
+	// I think this is correct, though I expect the default to be init/open a worktree and use the GIT_DIR inside it
+	repo, err = Init(filesystem.NewStorage(gitDirFS, cache.NewObjectLRUDefault()), workTreeFS)
+	return
+}
+
 func (s *RepositorySuite) TestCommit(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 	err := r.clone(context.Background(), &CloneOptions{
