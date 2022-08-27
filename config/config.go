@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/internal/url"
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
@@ -35,7 +36,18 @@ var (
 	ErrRemoteConfigNotFound  = errors.New("remote config not found")
 	ErrRemoteConfigEmptyURL  = errors.New("remote config: empty URL")
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
+
+	// ActiveFS provides a configurable entry point to the billy.Filesystem in active use for reading global and
+	// system level configuration; override in a test to use a fake filesystem then reset to config.DefaultFS() to
+	// restore the default behavior.
+	ActiveFS = DefaultFS()
 )
+
+// DefaultFS provides a billy.Filesystem abstraction over the os filesystem (via osfs.OS) scoped to the
+// root directory / in order to enable access to global and system config files via absolute paths
+func DefaultFS() billy.Filesystem {
+	return osfs.New("/")
+}
 
 // Scope defines the scope of a config file, such as local, global or system.
 type Scope int
@@ -158,7 +170,7 @@ func LoadConfig(scope Scope) (*Config, error) {
 	}
 
 	for _, file := range files {
-		f, err := osfs.Default.Open(file)
+		f, err := ActiveFS.Open(file)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
