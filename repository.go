@@ -563,7 +563,14 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 // are returned merged in one config value.
 func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
+	if scope.IsV6PreviewScope() {
+		return r.configScopedV6(scope)
+	}
 
+	return r.configScopedV5(scope)
+}
+
+func (r *Repository) configScopedV5(scope config.Scope) (*config.Config, error) {
 	var err error
 	system := config.NewConfig()
 	if scope >= config.SystemScope {
@@ -589,6 +596,30 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	_ = mergo.Merge(global, system)
 	_ = mergo.Merge(local, global)
 	return local, nil
+}
+
+func (r *Repository) configScopedV6(scope config.Scope) (*config.Config, error) {
+	c, err := config.LoadConfig(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if scope == config.V6DefaultScope || scope == config.V6LocalScope {
+		// merge in local scope from the config storer over top of
+		// the local config which was merged in from the filesystem
+		// as the config storer may have more up-to-date config which
+		// has not yet been flushed to disk
+		local, err := r.Storer.Config()
+		if err != nil {
+			return nil, err
+		}
+
+		if err = mergo.Merge(c, local, mergo.WithOverride); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 // Remote return a remote if exists
