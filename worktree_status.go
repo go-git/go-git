@@ -393,6 +393,9 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 	var saveIndex bool
 	for _, file := range files {
+		if file == ".git" {
+			continue
+		}
 		fi, err := w.Filesystem.Lstat(file)
 		if err != nil {
 			return err
