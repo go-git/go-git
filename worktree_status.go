@@ -285,13 +285,13 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 
 	for _, file := range files {
 		name := path.Join(directory, file.Name())
-
+		if file.Name() == GitDirName {
+			// ignore special git directory
+			continue
+		}
+		
 		var a bool
 		if file.IsDir() {
-			if file.Name() == GitDirName {
-				// ignore special git directory
-				continue
-			}
 			a, err = w.doAddDirectory(idx, s, name, ignorePattern)
 		} else {
 			a, _, err = w.doAddFile(idx, s, name, ignorePattern)
@@ -393,7 +393,8 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 	var saveIndex bool
 	for _, file := range files {
-		if file == ".git" {
+		if file == GitDirName {
+			// ignore special git directory
 			continue
 		}
 		fi, err := w.Filesystem.Lstat(file)
