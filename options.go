@@ -402,7 +402,7 @@ type LogOptions struct {
 
 	// Show only those commits in which the specified file was inserted/updated.
 	// It is equivalent to running `git log -- <file-name>`.
-	// this field is kept for compatility, it can be replaced with PathFilter
+	// this field is kept for compatibility, it can be replaced with PathFilter
 	FileName *string
 
 	// Filter commits based on the path of files that are updated
