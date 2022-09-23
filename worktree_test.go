@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -2225,7 +2224,6 @@ func (s *WorktreeSuite) TestAddAndCommitWithSubmodule(c *C) {
 
 	// nothing should be added since it's only an empty git project with an empty submodule
 	status, err := w.Status()
-	fmt.Println(status)
 	c.Assert(err, IsNil)
 	c.Assert(status.IsClean(), Equals, true)
 }
