@@ -114,7 +114,7 @@ func (s *Scanner) Header() (version, objects uint32, err error) {
 	return
 }
 
-// readSignature reads an returns the signature field in the packfile.
+// readSignature reads a returns the signature field in the packfile.
 func (s *Scanner) readSignature() ([]byte, error) {
 	var sig = make([]byte, 4)
 	if _, err := io.ReadFull(s.r, sig); err != nil {
@@ -404,7 +404,7 @@ func (s *Scanner) Flush() error {
 // - Keeps track of the current read position, for when the underlying reader
 //   isn't an io.SeekReader, but we still want to know the current offset.
 // - Writes to the hash writer what it reads, with the aid of a smaller buffer.
-//   The buffer helps avoid a performance penality for performing small writes
+//   The buffer helps avoid a performance penalty for performing small writes
 //   to the crc32 hash writer.
 type scannerReader struct {
 	reader io.Reader

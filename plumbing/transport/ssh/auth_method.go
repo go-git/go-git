@@ -10,9 +10,9 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
+	"github.com/skeema/knownhosts"
 	sshagent "github.com/xanzy/ssh-agent"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const DefaultUsername = "git"
@@ -43,7 +43,6 @@ const (
 type KeyboardInteractive struct {
 	User      string
 	Challenge ssh.KeyboardInteractiveChallenge
-	HostKeyCallbackHelper
 }
 
 func (a *KeyboardInteractive) Name() string {
@@ -55,19 +54,18 @@ func (a *KeyboardInteractive) String() string {
 }
 
 func (a *KeyboardInteractive) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
+	return &ssh.ClientConfig{
 		User: a.User,
 		Auth: []ssh.AuthMethod{
 			a.Challenge,
 		},
-	})
+	}, nil
 }
 
 // Password implements AuthMethod by using the given password.
 type Password struct {
 	User     string
 	Password string
-	HostKeyCallbackHelper
 }
 
 func (a *Password) Name() string {
@@ -79,10 +77,10 @@ func (a *Password) String() string {
 }
 
 func (a *Password) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
+	return &ssh.ClientConfig{
 		User: a.User,
 		Auth: []ssh.AuthMethod{ssh.Password(a.Password)},
-	})
+	}, nil
 }
 
 // PasswordCallback implements AuthMethod by using a callback
@@ -90,7 +88,6 @@ func (a *Password) ClientConfig() (*ssh.ClientConfig, error) {
 type PasswordCallback struct {
 	User     string
 	Callback func() (pass string, err error)
-	HostKeyCallbackHelper
 }
 
 func (a *PasswordCallback) Name() string {
@@ -102,17 +99,16 @@ func (a *PasswordCallback) String() string {
 }
 
 func (a *PasswordCallback) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
+	return &ssh.ClientConfig{
 		User: a.User,
 		Auth: []ssh.AuthMethod{ssh.PasswordCallback(a.Callback)},
-	})
+	}, nil
 }
 
 // PublicKeys implements AuthMethod by using the given key pairs.
 type PublicKeys struct {
 	User   string
 	Signer ssh.Signer
-	HostKeyCallbackHelper
 }
 
 // NewPublicKeys returns a PublicKeys from a PEM encoded private key. An
@@ -151,10 +147,10 @@ func (a *PublicKeys) String() string {
 }
 
 func (a *PublicKeys) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
+	return &ssh.ClientConfig{
 		User: a.User,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(a.Signer)},
-	})
+	}, nil
 }
 
 func username() (string, error) {
@@ -177,7 +173,6 @@ func username() (string, error) {
 type PublicKeysCallback struct {
 	User     string
 	Callback func() (signers []ssh.Signer, err error)
-	HostKeyCallbackHelper
 }
 
 // NewSSHAgentAuth returns a PublicKeysCallback based on a SSH agent, it opens
@@ -212,10 +207,10 @@ func (a *PublicKeysCallback) String() string {
 }
 
 func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
-	return a.SetHostKeyCallback(&ssh.ClientConfig{
+	return &ssh.ClientConfig{
 		User: a.User,
 		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(a.Callback)},
-	})
+	}, nil
 }
 
 // NewKnownHostsCallback returns ssh.HostKeyCallback based on a file based on a
@@ -231,6 +226,11 @@ func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
 //	~/.ssh/known_hosts
 //	/etc/ssh/ssh_known_hosts
 func NewKnownHostsCallback(files ...string) (ssh.HostKeyCallback, error) {
+	kh, err := newKnownHosts(files...)
+	return ssh.HostKeyCallback(kh), err
+}
+
+func newKnownHosts(files ...string) (knownhosts.HostKeyCallback, error) {
 	var err error
 
 	if len(files) == 0 {
@@ -286,6 +286,9 @@ func filterKnownHostsFiles(files ...string) ([]string, error) {
 
 // HostKeyCallbackHelper is a helper that provides common functionality to
 // configure HostKeyCallback into a ssh.ClientConfig.
+// Deprecated in favor of SetConfigHostKeyFields (see common.go) which provides
+// a mechanism for also setting ClientConfig.HostKeyAlgorithms for a specific
+// host.
 type HostKeyCallbackHelper struct {
 	// HostKeyCallback is the function type used for verifying server keys.
 	// If nil default callback will be create using NewKnownHostsCallback

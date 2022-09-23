@@ -218,7 +218,7 @@ type PushOptions struct {
 	// Force allows the push to update a remote branch even when the local
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocal is https
+	// InsecureSkipTLS skips ssl verify if protocol is https
 	InsecureSkipTLS bool
 	// CABundle specify additional ca bundle with system cert pool
 	CABundle []byte
@@ -402,7 +402,7 @@ type LogOptions struct {
 
 	// Show only those commits in which the specified file was inserted/updated.
 	// It is equivalent to running `git log -- <file-name>`.
-	// this field is kept for compatility, it can be replaced with PathFilter
+	// this field is kept for compatibility, it can be replaced with PathFilter
 	FileName *string
 
 	// Filter commits based on the path of files that are updated
@@ -607,7 +607,7 @@ func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
 type ListOptions struct {
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
-	// InsecureSkipTLS skips ssl verify if protocal is https
+	// InsecureSkipTLS skips ssl verify if protocol is https
 	InsecureSkipTLS bool
 	// CABundle specify additional ca bundle with system cert pool
 	CABundle []byte

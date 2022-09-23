@@ -168,22 +168,22 @@ func NewHashReference(n ReferenceName, h Hash) *Reference {
 	}
 }
 
-// Type return the type of a reference
+// Type returns the type of a reference
 func (r *Reference) Type() ReferenceType {
 	return r.t
 }
 
-// Name return the name of a reference
+// Name returns the name of a reference
 func (r *Reference) Name() ReferenceName {
 	return r.n
 }
 
-// Hash return the hash of a hash reference
+// Hash returns the hash of a hash reference
 func (r *Reference) Hash() Hash {
 	return r.h
 }
 
-// Target return the target of a symbolic reference
+// Target returns the target of a symbolic reference
 func (r *Reference) Target() ReferenceName {
 	return r.target
 }
