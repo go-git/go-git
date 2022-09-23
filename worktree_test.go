@@ -696,6 +696,43 @@ func (s *WorktreeSuite) TestCheckoutBranch(c *C) {
 	c.Assert(status.IsClean(), Equals, true)
 }
 
+func (s *WorktreeSuite) TestCreateOrphanBranch(c *C) {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	head, err := w.r.Head()
+	c.Assert(err, IsNil)
+	tree, err := w.getTreeFromCommitHash(head.Hash())
+
+	err = w.CreateOrphanBranch(
+		plumbing.NewBranchReferenceName("orhpaned-branch"), "initial commit",&CommitOptions{
+			Author:    &object.Signature{
+				Name:  "A U Thor",
+				Email: "author@email.com",
+				When:  time.Now(),
+			},
+			Committer: &object.Signature{
+				Name:  "Comm Itter",
+				Email: "committer@email.com",
+				When:  time.Now(),
+			},
+		})
+	c.Assert(err, IsNil)
+
+	newHead, err := w.r.Head()
+	c.Assert(err, IsNil)
+
+	commit, err := object.GetCommit(w.r.Storer, newHead.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(len(commit.ParentHashes), Equals, 0)
+
+	newTree, err := w.getTreeFromCommitHash(newHead.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(newTree.Hash, Equals, tree.Hash)
+}
+
 func (s *WorktreeSuite) TestCheckoutCreateWithHash(c *C) {
 	w := &Worktree{
 		r:          s.Repository,
