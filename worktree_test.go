@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -2199,6 +2200,34 @@ func (s *WorktreeSuite) TestAddAndCommit(c *C) {
 		return err
 	})
 	c.Assert(err, IsNil)
+}
+
+func (s *WorktreeSuite) TestAddAndCommitWithSubmodule(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	repo, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	// add submodule folder and .git file as a new empty submodule added
+	submodulePath := filepath.Join(dir, "submodule")
+	err = os.Mkdir(submodulePath, 0755)
+	c.Assert(err, IsNil)
+	f, err := os.Create(filepath.Join(submodulePath, GitDirName))
+	c.Assert(err, IsNil)
+	defer f.Close()
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	// nothing should be added since it's only an empty git project with an empty submodule
+	status, err := w.Status()
+	fmt.Println(status)
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
 }
 
 func (s *WorktreeSuite) TestLinkedWorktree(c *C) {

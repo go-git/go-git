@@ -284,11 +284,11 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 	}
 
 	for _, file := range files {
-		name := path.Join(directory, file.Name())
 		// ignore git meta directory or file
-		if name == GitDirName {
+		if file.Name() == GitDirName {
 			continue
 		}
+		name := path.Join(directory, file.Name())
 
 		var a bool
 		if file.IsDir() {
