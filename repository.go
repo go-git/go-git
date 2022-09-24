@@ -750,21 +750,20 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash of the reference in ForEach:
 //
-//   ref, err := r.Tag("v0.1.0")
-//   if err != nil {
-//     // Handle error
-//   }
+//	ref, err := r.Tag("v0.1.0")
+//	if err != nil {
+//	  // Handle error
+//	}
 //
-//   obj, err := r.TagObject(ref.Hash())
-//   switch err {
-//   case nil:
-//     // Tag object present
-//   case plumbing.ErrObjectNotFound:
-//     // Not a tag object
-//   default:
-//     // Some other error
-//   }
-//
+//	obj, err := r.TagObject(ref.Hash())
+//	switch err {
+//	case nil:
+//	  // Tag object present
+//	case plumbing.ErrObjectNotFound:
+//	  // Not a tag object
+//	default:
+//	  // Some other error
+//	}
 func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
 	if err != nil {
@@ -777,6 +776,62 @@ func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 	}
 
 	return ref, nil
+}
+
+// LatestTag returns the latest tag from the given commit hash.
+// Similar to `git describe --tag`.
+//
+// This method returns a reference to the tag object and the distance to from in
+// number of commits. It works for annotated as well as for lightweight tags.
+// If no tag is found, it returns `plumbing.ErrReferenceNotFound`.
+//
+// To achieve an output similar to `git describe --tag` do something like
+//
+//	tag, distance, _ := r.LatestTag(commit)
+//	fmt.Printf("%s-%d-%s", ref.Name().Short(), distance, tag.Hash().String())
+func (r *Repository) LatestTag(from plumbing.Hash) (*plumbing.Reference, int, error) {
+	log, err := r.Log(&LogOptions{
+		From:  from,
+		Order: LogOrderCommitterTime,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	tags, err := r.buildTagRefMap()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	distance := 0
+	for obj, err := log.Next(); err == nil; {
+		if tag, exists := tags[obj.Hash]; exists {
+			return tag, distance, nil
+		}
+		distance++
+	}
+	return nil, 0, plumbing.ErrReferenceNotFound
+}
+
+func (r *Repository) buildTagRefMap() (map[plumbing.Hash]*plumbing.Reference, error) {
+	iter, err := r.Tags()
+	if err != nil {
+		return nil, err
+	}
+	tags := map[plumbing.Hash]*plumbing.Reference{}
+	for t, err := iter.Next(); err == nil; {
+		to, err := r.TagObject(t.Hash())
+		if err == plumbing.ErrObjectNotFound {
+			// t is a lighweight tag
+			tags[t.Hash()] = t
+		} else if err != nil {
+			return nil, err
+		} else {
+			// t is an annotated tag
+			tags[to.Target] = t
+		}
+	}
+	return tags, nil
 }
 
 // DeleteTag deletes a tag from the repository.
@@ -1241,26 +1296,25 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash Reference passed in through ForEach:
 //
-//   iter, err := r.Tags()
-//   if err != nil {
-//     // Handle error
-//   }
+//	iter, err := r.Tags()
+//	if err != nil {
+//	  // Handle error
+//	}
 //
-//   if err := iter.ForEach(func (ref *plumbing.Reference) error {
-//     obj, err := r.TagObject(ref.Hash())
-//     switch err {
-//     case nil:
-//       // Tag object present
-//     case plumbing.ErrObjectNotFound:
-//       // Not a tag object
-//     default:
-//       // Some other error
-//       return err
-//     }
-//   }); err != nil {
-//     // Handle outer iterator error
-//   }
-//
+//	if err := iter.ForEach(func (ref *plumbing.Reference) error {
+//	  obj, err := r.TagObject(ref.Hash())
+//	  switch err {
+//	  case nil:
+//	    // Tag object present
+//	  case plumbing.ErrObjectNotFound:
+//	    // Not a tag object
+//	  default:
+//	    // Some other error
+//	    return err
+//	  }
+//	}); err != nil {
+//	  // Handle outer iterator error
+//	}
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
 	refIter, err := r.Storer.IterReferences()
 	if err != nil {
