@@ -148,7 +148,7 @@ func (s *MatcherSuite) TestDir_ReadPatterns(c *C) {
 	c.Assert(results["foo"].Value(), Equals, "bar")
 
 	results, _ = m.Match([]string{"vendor", "github.com", "file"}, nil)
-	c.Assert(results["foo"].IsUnset(), Equals, false)
+	c.Assert(results["foo"].IsUnset(), Equals, true)
 }
 
 func (s *MatcherSuite) TestDir_LoadGlobalPatterns(c *C) {

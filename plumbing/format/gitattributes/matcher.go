@@ -44,8 +44,7 @@ func (m *matcher) init() {
 func (m *matcher) Match(path []string, attributes []string) (results map[string]Attribute, matched bool) {
 	results = make(map[string]Attribute, len(attributes))
 
-	n := len(m.stack)
-	for i := n - 1; i >= 0; i-- {
+	for i, _ := range m.stack {
 		if len(attributes) > 0 && len(attributes) == len(results) {
 			return
 		}
