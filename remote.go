@@ -859,6 +859,15 @@ func getHavesFromRef(
 	toVisit := maxHavesToVisitPerRef
 	return walker.ForEach(func(c *object.Commit) error {
 		haves[c.Hash] = true
+
+		if s, _ := s.Shallow(); len(s) > 0 {
+			for _, sh := range s {
+				if sh == c.Hash {
+					return storer.ErrStop
+				}
+			}
+		}
+
 		toVisit--
 		// If toVisit starts out at 0 (indicating there is no
 		// max), then it will be negative here and we won't stop
