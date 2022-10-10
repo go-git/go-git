@@ -32,7 +32,7 @@ func main() {
 	//
 	// For tags we should use `refs/tags/%s` instead of `refs/heads/%s` used
 	// for branches.
-	ref := plumbing.NewHashReference("refs/heads/my-branch", headRef.Hash())
+	ref := plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/my-branch"), headRef.Hash())
 
 	// The created reference is saved in the storage.
 	err = r.Storer.SetReference(ref)
