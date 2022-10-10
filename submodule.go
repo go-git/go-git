@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"strings"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -138,24 +139,33 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
+	finalURL := moduleURL.String()
+
 	if !path.IsAbs(moduleURL.Path) {
 		remotes, err := s.w.r.Remotes()
 		if err != nil {
 			return nil, err
 		}
 
-		rootURL, err := url.Parse(remotes[0].c.URLs[0])
-		if err != nil {
-			return nil, err
-		}
+		if strings.HasSuffix(remotes[0].c.URLs[0], ".git") {
+			gitParts := strings.Split(remotes[0].c.URLs[0], ":")
+			if len(gitParts) < 2 {
+				return nil, fmt.Errorf("not a valid git+ssh url")
+			}
+			finalURL = strings.Join([]string{gitParts[0], fmt.Sprintf("%s.git", path.Join(gitParts[1], moduleURL.Path))}, ":")
+		} else {
+			rootURL, err := url.Parse(remotes[0].c.URLs[0])
+			if err != nil {
+				return nil, err
+			}
 
-		rootURL.Path = path.Join(rootURL.Path, moduleURL.Path)
-		*moduleURL = *rootURL
+			finalURL = path.Join(rootURL.Path, moduleURL.Path)
+		}
 	}
 
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URLs: []string{moduleURL.String()},
+		URLs: []string{finalURL},
 	})
 
 	return r, err
