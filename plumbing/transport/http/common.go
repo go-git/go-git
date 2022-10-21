@@ -44,9 +44,8 @@ func advertisedReferences(ctx context.Context, s *session, serviceName string) (
 		return nil, err
 	}
 
-	s.ApplyAuthToRequest(req)
 	applyHeadersToRequest(req, nil, s.endpoint.Host, serviceName)
-	res, err := s.client.Do(req.WithContext(ctx))
+	res, err := doWithRetry(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -279,4 +278,19 @@ func (e *Err) Error() string {
 	return fmt.Sprintf("unexpected requesting %q status code: %d",
 		e.Response.Request.URL, e.Response.StatusCode,
 	)
+}
+
+func doWithRetry(ctx context.Context, s *session, req *http.Request) (*http.Response, error) {
+	res, err := s.client.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	if res.StatusCode == http.StatusUnauthorized {
+		ioutil.CheckClose(res.Body, &err)
+		s.ApplyAuthToRequest(req)
+		res, err = s.client.Do(req.WithContext(ctx))
+	}
+
+	return res, err
 }

@@ -94,9 +94,8 @@ func (s *rpSession) doRequest(
 	}
 
 	applyHeadersToRequest(req, content, s.endpoint.Host, transport.ReceivePackServiceName)
-	s.ApplyAuthToRequest(req)
 
-	res, err := s.client.Do(req.WithContext(ctx))
+	res, err := doWithRetry(ctx, s.session, req)
 	if err != nil {
 		return nil, plumbing.NewUnexpectedError(err)
 	}
