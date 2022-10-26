@@ -10,8 +10,10 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	. "gopkg.in/check.v1"
 )
 
@@ -245,6 +247,32 @@ func BenchmarkParseBasic(b *testing.B) {
 		_, err = parser.Parse()
 		if err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkParser(b *testing.B) {
+	f := fixtures.Basic().One()
+	defer fixtures.Clean()
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		scanner := packfile.NewScanner(f.Packfile())
+		fs := osfs.New(os.TempDir())
+		storage := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+		parser, err := packfile.NewParserWithStorage(scanner, storage)
+		if err != nil {
+			b.Error(err)
+		}
+
+		b.StartTimer()
+		_, err = parser.Parse()
+
+		b.StopTimer()
+		if err != nil {
+			b.Error(err)
 		}
 	}
 }

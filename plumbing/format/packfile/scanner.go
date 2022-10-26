@@ -346,15 +346,17 @@ func (s *Scanner) copyObject(w io.Writer) (n int64, err error) {
 	}
 
 	defer ioutil.CheckClose(zr, &err)
-	buf := byteSlicePool.Get().([]byte)
+	bufp := byteSlicePool.Get().(*[]byte)
+	buf := *bufp
 	n, err = io.CopyBuffer(w, zr, buf)
-	byteSlicePool.Put(buf)
+	byteSlicePool.Put(bufp)
 	return
 }
 
 var byteSlicePool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 32*1024)
+		b := make([]byte, 32*1024)
+		return &b
 	},
 }
 
@@ -387,9 +389,11 @@ func (s *Scanner) Checksum() (plumbing.Hash, error) {
 
 // Close reads the reader until io.EOF
 func (s *Scanner) Close() error {
-	buf := byteSlicePool.Get().([]byte)
+	bufp := byteSlicePool.Get().(*[]byte)
+	buf := *bufp
 	_, err := io.CopyBuffer(stdioutil.Discard, s.r, buf)
-	byteSlicePool.Put(buf)
+	byteSlicePool.Put(bufp)
+
 	return err
 }
 
