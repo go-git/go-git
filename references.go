@@ -6,8 +6,6 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/utils/diff"
-
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -35,7 +33,7 @@ func references(c *object.Commit, path string) ([]*object.Commit, error) {
 	sortCommits(result)
 
 	// for merges of identical cherry-picks
-	return removeComp(path, result, equivalent)
+	return removeRedundant(path, result)
 }
 
 type commitSorterer struct {
@@ -82,36 +80,42 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 	if err != nil {
 		return err
 	}
-	switch len(parents) {
-	// if the path is not found in any of its parents, the path was
-	// created by this commit; we must add it to the revisions list and
-	// stop searching. This includes the case when current is the
-	// initial commit.
-	case 0:
+	if len(parents) == 0 {
+		// if the path is not found in any of its parents, the path was
+		// created by this commit; we must add it to the revisions list and
+		// stop searching. This includes the case when current is the
+		// initial commit.
 		*result = append(*result, current)
 		return nil
-	case 1: // only one parent contains the path
-		// if the file contents has change, add the current commit
-		different, err := differentContents(path, current, parents)
+	}
+	skip, err := derivedFromAnyParent(path, current, parents)
+	if err != nil {
+		return err
+	}
+	if !skip {
+		*result = append(*result, current)
+	}
+
+	for _, p := range parents {
+		err := walkGraph(result, seen, p, path)
 		if err != nil {
 			return err
 		}
-		if len(different) == 1 {
-			*result = append(*result, current)
-		}
-		// in any case, walk the parent
-		return walkGraph(result, seen, parents[0], path)
-	default: // more than one parent contains the path
-		// TODO: detect merges that had a conflict, because they must be
-		// included in the result here.
-		for _, p := range parents {
-			err := walkGraph(result, seen, p, path)
-			if err != nil {
-				return err
-			}
-		}
 	}
 	return nil
+}
+
+func derivedFromAnyParent(path string, current *object.Commit, parents []*object.Commit) (bool, error) {
+	for _, parent := range parents {
+		same, err := sameContentWithParent(path, current, parent)
+		if err != nil {
+			return false, err
+		}
+		if same {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func parentsContainingPath(path string, c *object.Commit) ([]*object.Commit, error) {
@@ -133,20 +137,13 @@ func parentsContainingPath(path string, c *object.Commit) ([]*object.Commit, err
 	}
 }
 
-// Returns an slice of the commits in "cs" that has the file "path", but with different
-// contents than what can be found in "c".
-func differentContents(path string, c *object.Commit, cs []*object.Commit) ([]*object.Commit, error) {
-	result := make([]*object.Commit, 0, len(cs))
+func sameContentWithParent(path string, c, parent *object.Commit) (bool, error) {
 	h, found := blobHash(path, c)
 	if !found {
-		return nil, object.ErrFileNotFound
+		return false, object.ErrFileNotFound
 	}
-	for _, cx := range cs {
-		if hx, found := blobHash(path, cx); found && h != hx {
-			result = append(result, cx)
-		}
-	}
-	return result, nil
+	hx, found := blobHash(path, parent)
+	return found && h == hx, nil
 }
 
 // blobHash returns the hash of a path in a commit
@@ -159,82 +156,26 @@ func blobHash(path string, commit *object.Commit) (hash plumbing.Hash, found boo
 	return file.Hash, true
 }
 
-type contentsComparatorFn func(path string, a, b *object.Commit) (bool, error)
-
 // Returns a new slice of commits, with duplicates removed.  Expects a
-// sorted commit list.  Duplication is defined according to "comp".  It
-// will always keep the first commit of a series of duplicated commits.
-func removeComp(path string, cs []*object.Commit, comp contentsComparatorFn) ([]*object.Commit, error) {
-	result := make([]*object.Commit, 0, len(cs))
+// sorted commit list.  Duplication is defined according to the blob hash.
+// It will always keep the first commit of a series of duplicated commits.
+func removeRedundant(path string, cs []*object.Commit) ([]*object.Commit, error) {
 	if len(cs) == 0 {
-		return result, nil
+		return cs, nil
 	}
+	result := make([]*object.Commit, 0, len(cs))
 	result = append(result, cs[0])
+	var hashes []plumbing.Hash
+	for _, c := range cs {
+		h, _ := blobHash(path, c)
+		hashes = append(hashes, h)
+	}
 	for i := 1; i < len(cs); i++ {
-		equals, err := comp(path, cs[i], cs[i-1])
-		if err != nil {
-			return nil, err
-		}
-		if !equals {
+		if hashes[i] != hashes[i-1] {
 			result = append(result, cs[i])
 		}
 	}
 	return result, nil
-}
-
-// Equivalent commits are commits whose patch is the same.
-func equivalent(path string, a, b *object.Commit) (bool, error) {
-	numParentsA := a.NumParents()
-	numParentsB := b.NumParents()
-
-	// the first commit is not equivalent to anyone
-	// and "I think" merges can not be equivalent to anything
-	if numParentsA != 1 || numParentsB != 1 {
-		return false, nil
-	}
-
-	diffsA, err := patch(a, path)
-	if err != nil {
-		return false, err
-	}
-	diffsB, err := patch(b, path)
-	if err != nil {
-		return false, err
-	}
-
-	return sameDiffs(diffsA, diffsB), nil
-}
-
-func patch(c *object.Commit, path string) ([]diffmatchpatch.Diff, error) {
-	// get contents of the file in the commit
-	file, err := c.File(path)
-	if err != nil {
-		return nil, err
-	}
-	content, err := file.Contents()
-	if err != nil {
-		return nil, err
-	}
-
-	// get contents of the file in the first parent of the commit
-	var contentParent string
-	iter := c.Parents()
-	parent, err := iter.Next()
-	if err != nil {
-		return nil, err
-	}
-	file, err = parent.File(path)
-	if err != nil {
-		contentParent = ""
-	} else {
-		contentParent, err = file.Contents()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// compare the contents of parent and child
-	return diff.Do(content, contentParent), nil
 }
 
 func sameDiffs(a, b []diffmatchpatch.Diff) bool {

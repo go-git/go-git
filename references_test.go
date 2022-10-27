@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"fmt"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	"github.com/go-git/go-git/v5/utils/diff"
+	"github.com/sergi/go-diff/diffmatchpatch"
 	. "gopkg.in/check.v1"
 )
 
@@ -172,9 +173,10 @@ var referencesTests = [...]struct {
 		"d6e6fe0194447cc280f942d6a2e0521b68ea7796",
 		"174bdbf9edfb0ca88415dd4a673852d5b22e7036",
 		"9944d6cf72b8f82d622d85dad7434472bc8f397d",
-		"e805183c72f0426fb073728c01901c2fd2db1da6",
 		"8ef83dd443a05e9122681950399edaa58a38d466",
 		"d73f9cee49a5ad27a42a6e18af7c49a8f28ad8a8",
+		"a74422026841e05debdcc417190428b419a99f39",
+		"4f3c7375fa7c661735a6a69beeeeac1aaa43f7c9",
 	}},
 	// FAILS
 	/*
@@ -346,6 +348,61 @@ func (s *ReferencesSuite) TestRevList(c *C) {
 			}
 		}
 	}
+}
+
+// Equivalent commits are commits whose patch is the same.
+func equivalent(path string, a, b *object.Commit) (bool, error) {
+	numParentsA := a.NumParents()
+	numParentsB := b.NumParents()
+
+	// the first commit is not equivalent to anyone
+	// and "I think" merges can not be equivalent to anything
+	if numParentsA != 1 || numParentsB != 1 {
+		return false, nil
+	}
+
+	diffsA, err := patch(a, path)
+	if err != nil {
+		return false, err
+	}
+	diffsB, err := patch(b, path)
+	if err != nil {
+		return false, err
+	}
+
+	return sameDiffs(diffsA, diffsB), nil
+}
+
+func patch(c *object.Commit, path string) ([]diffmatchpatch.Diff, error) {
+	// get contents of the file in the commit
+	file, err := c.File(path)
+	if err != nil {
+		return nil, err
+	}
+	content, err := file.Contents()
+	if err != nil {
+		return nil, err
+	}
+
+	// get contents of the file in the first parent of the commit
+	var contentParent string
+	iter := c.Parents()
+	parent, err := iter.Next()
+	if err != nil {
+		return nil, err
+	}
+	file, err = parent.File(path)
+	if err != nil {
+		contentParent = ""
+	} else {
+		contentParent, err = file.Contents()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// compare the contents of parent and child
+	return diff.Do(content, contentParent), nil
 }
 
 // same length is assumed
