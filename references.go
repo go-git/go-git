@@ -7,7 +7,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/diff"
-
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -90,20 +89,15 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 	case 0:
 		*result = append(*result, current)
 		return nil
-	case 1: // only one parent contains the path
-		// if the file contents has change, add the current commit
+	default: // or more than one parent contains the path
 		different, err := differentContents(path, current, parents)
 		if err != nil {
 			return err
 		}
-		if len(different) == 1 {
+		if len(different) > 0 {
 			*result = append(*result, current)
 		}
-		// in any case, walk the parent
-		return walkGraph(result, seen, parents[0], path)
-	default: // more than one parent contains the path
-		// TODO: detect merges that had a conflict, because they must be
-		// included in the result here.
+
 		for _, p := range parents {
 			err := walkGraph(result, seen, p, path)
 			if err != nil {
