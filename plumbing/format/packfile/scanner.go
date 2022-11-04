@@ -3,17 +3,16 @@ package packfile
 import (
 	"bufio"
 	"bytes"
-	"compress/zlib"
 	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
 	stdioutil "io/ioutil"
-	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/utils/binary"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/sync"
 )
 
 var (
@@ -323,14 +322,14 @@ func (s *Scanner) NextObject(w io.Writer) (written int64, crc32 uint32, err erro
 // ReadObject returns a reader for the object content and an error
 func (s *Scanner) ReadObject() (io.ReadCloser, error) {
 	s.pendingObject = nil
-	zr := zlibReaderPool.Get().(io.ReadCloser)
+	zr, err := sync.GetZlibReader(s.r)
 
-	if err := zr.(zlib.Resetter).Reset(s.r, nil); err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("zlib reset error: %s", err)
 	}
 
-	return ioutil.NewReadCloserWithCloser(zr, func() error {
-		zlibReaderPool.Put(zr)
+	return ioutil.NewReadCloserWithCloser(zr.Reader, func() error {
+		sync.PutZlibReader(zr)
 		return nil
 	}), nil
 }
@@ -338,26 +337,18 @@ func (s *Scanner) ReadObject() (io.ReadCloser, error) {
 // ReadRegularObject reads and write a non-deltified object
 // from it zlib stream in an object entry in the packfile.
 func (s *Scanner) copyObject(w io.Writer) (n int64, err error) {
-	zr := zlibReaderPool.Get().(io.ReadCloser)
-	defer zlibReaderPool.Put(zr)
+	zr, err := sync.GetZlibReader(s.r)
+	defer sync.PutZlibReader(zr)
 
-	if err = zr.(zlib.Resetter).Reset(s.r, nil); err != nil {
+	if err != nil {
 		return 0, fmt.Errorf("zlib reset error: %s", err)
 	}
 
-	defer ioutil.CheckClose(zr, &err)
-	bufp := byteSlicePool.Get().(*[]byte)
-	buf := *bufp
-	n, err = io.CopyBuffer(w, zr, buf)
-	byteSlicePool.Put(bufp)
+	defer ioutil.CheckClose(zr.Reader, &err)
+	buf := sync.GetByteSlice()
+	n, err = io.CopyBuffer(w, zr.Reader, *buf)
+	sync.PutByteSlice(buf)
 	return
-}
-
-var byteSlicePool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 32*1024)
-		return &b
-	},
 }
 
 // SeekFromStart sets a new offset from start, returns the old position before
@@ -389,10 +380,9 @@ func (s *Scanner) Checksum() (plumbing.Hash, error) {
 
 // Close reads the reader until io.EOF
 func (s *Scanner) Close() error {
-	bufp := byteSlicePool.Get().(*[]byte)
-	buf := *bufp
-	_, err := io.CopyBuffer(stdioutil.Discard, s.r, buf)
-	byteSlicePool.Put(bufp)
+	buf := sync.GetByteSlice()
+	_, err := io.CopyBuffer(stdioutil.Discard, s.r, *buf)
+	sync.PutByteSlice(buf)
 
 	return err
 }
@@ -403,13 +393,13 @@ func (s *Scanner) Flush() error {
 }
 
 // scannerReader has the following characteristics:
-// - Provides an io.SeekReader impl for bufio.Reader, when the underlying
-//   reader supports it.
-// - Keeps track of the current read position, for when the underlying reader
-//   isn't an io.SeekReader, but we still want to know the current offset.
-// - Writes to the hash writer what it reads, with the aid of a smaller buffer.
-//   The buffer helps avoid a performance penalty for performing small writes
-//   to the crc32 hash writer.
+//   - Provides an io.SeekReader impl for bufio.Reader, when the underlying
+//     reader supports it.
+//   - Keeps track of the current read position, for when the underlying reader
+//     isn't an io.SeekReader, but we still want to know the current offset.
+//   - Writes to the hash writer what it reads, with the aid of a smaller buffer.
+//     The buffer helps avoid a performance penalty for performing small writes
+//     to the crc32 hash writer.
 type scannerReader struct {
 	reader io.Reader
 	crc    io.Writer
