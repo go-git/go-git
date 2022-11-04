@@ -535,10 +535,22 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	// let the goroutine from pushHashes finish and check that the number of
-	// goroutines is the same as before
-	time.Sleep(100 * time.Millisecond)
-	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+	eventually(c, func() bool {
+		return runtime.NumGoroutine() <= numGoroutines
+	})
+}
+
+func eventually(c *C, condition func() bool) {
+	select {
+	case <-time.After(5 * time.Second):
+	default:
+		if condition() {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c.Assert(condition(), Equals, true)
 }
 
 func (s *RemoteSuite) TestPushContextCanceled(c *C) {
@@ -566,10 +578,9 @@ func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 	})
 	c.Assert(err, Equals, context.Canceled)
 
-	// let the goroutine from pushHashes finish and check that the number of
-	// goroutines is the same as before
-	time.Sleep(100 * time.Millisecond)
-	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+	eventually(c, func() bool {
+		return runtime.NumGoroutine() <= numGoroutines
+	})
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
