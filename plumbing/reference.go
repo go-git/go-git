@@ -204,6 +204,21 @@ func (r *Reference) Strings() [2]string {
 }
 
 func (r *Reference) String() string {
-	s := r.Strings()
-	return fmt.Sprintf("%s %s", s[1], s[0])
+	ref := ""
+	switch r.Type() {
+	case HashReference:
+		ref = r.Hash().String()
+	case SymbolicReference:
+		ref = symrefPrefix + r.Target().String()
+	default:
+		return ""
+	}
+
+	name := r.Name().String()
+	var v strings.Builder
+	v.Grow(len(ref) + len(name) + 1)
+	v.WriteString(ref)
+	v.WriteString(" ")
+	v.WriteString(name)
+	return v.String()
 }

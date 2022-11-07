@@ -53,9 +53,10 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) (err error) {
 
 	target.SetSize(int64(dst.Len()))
 
-	b := byteSlicePool.Get().([]byte)
+	bufp := byteSlicePool.Get().(*[]byte)
+	b := *bufp
 	_, err = io.CopyBuffer(w, dst, b)
-	byteSlicePool.Put(b)
+	byteSlicePool.Put(bufp)
 	return err
 }
 

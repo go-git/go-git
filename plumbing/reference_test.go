@@ -1,6 +1,10 @@
 package plumbing
 
-import . "gopkg.in/check.v1"
+import (
+	"testing"
+
+	. "gopkg.in/check.v1"
+)
 
 type ReferenceSuite struct{}
 
@@ -97,4 +101,22 @@ func (s *ReferenceSuite) TestIsRemote(c *C) {
 func (s *ReferenceSuite) TestIsTag(c *C) {
 	r := ReferenceName("refs/tags/v3.1.")
 	c.Assert(r.IsTag(), Equals, true)
+}
+
+func benchMarkReferenceString(r *Reference, b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		r.String()
+	}
+}
+
+func BenchmarkReferenceStringSymbolic(b *testing.B) {
+	benchMarkReferenceString(NewSymbolicReference("v3.1.1", "refs/tags/v3.1.1"), b)
+}
+
+func BenchmarkReferenceStringHash(b *testing.B) {
+	benchMarkReferenceString(NewHashReference("v3.1.1", NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")), b)
+}
+
+func BenchmarkReferenceStringInvalid(b *testing.B) {
+	benchMarkReferenceString(&Reference{}, b)
 }

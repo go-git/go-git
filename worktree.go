@@ -534,7 +534,8 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 
 var copyBufferPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 32*1024)
+		b := make([]byte, 32*1024)
+		return &b
 	},
 }
 
@@ -561,9 +562,10 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	}
 
 	defer ioutil.CheckClose(to, &err)
-	buf := copyBufferPool.Get().([]byte)
+	bufp := copyBufferPool.Get().(*[]byte)
+	buf := *bufp
 	_, err = io.CopyBuffer(to, from, buf)
-	copyBufferPool.Put(buf)
+	copyBufferPool.Put(bufp)
 	return
 }
 
