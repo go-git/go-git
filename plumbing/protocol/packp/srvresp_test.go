@@ -72,8 +72,21 @@ func (s *ServerResponseSuite) TestDecodeMalformed(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// multi_ack isn't fully implemented, this ensures that Decode ignores that fact,
+// as in some circumstances that's OK to assume so.
+//
+// TODO: Review as part of multi_ack implementation.
 func (s *ServerResponseSuite) TestDecodeMultiACK(c *C) {
+	raw := "" +
+		"0031ACK 1111111111111111111111111111111111111111\n" +
+		"0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n" +
+		"00080PACK\n"
+
 	sr := &ServerResponse{}
-	err := sr.Decode(bufio.NewReader(bytes.NewBuffer(nil)), true)
-	c.Assert(err, NotNil)
+	err := sr.Decode(bufio.NewReader(bytes.NewBufferString(raw)), true)
+	c.Assert(err, IsNil)
+
+	c.Assert(sr.ACKs, HasLen, 2)
+	c.Assert(sr.ACKs[0], Equals, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	c.Assert(sr.ACKs[1], Equals, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 }

@@ -59,6 +59,10 @@ func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// multi_ack isn't fully implemented, this ensures that Decode ignores that fact,
+// as in some circumstances that's OK to assume so.
+//
+// TODO: Review as part of multi_ack implementation.
 func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 	req := NewUploadPackRequest()
 	req.Capabilities.Set(capability.MultiACK)
@@ -67,7 +71,7 @@ func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 	defer res.Close()
 
 	err := res.Decode(ioutil.NopCloser(bytes.NewBuffer(nil)))
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 }
 
 func (s *UploadPackResponseSuite) TestReadNoDecode(c *C) {
