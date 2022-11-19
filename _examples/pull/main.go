@@ -11,9 +11,9 @@ import (
 
 // Pull changes from a remote repository
 func main() {
-	CheckArgs("<path>")
+	CheckArgs("<path>", "<branch>")
 	path := os.Args[1]
-
+	branch := os.Args[2]
 	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
@@ -27,7 +27,7 @@ func main() {
 	err = w.Pull(&git.PullOptions{
 		RemoteName: "origin",
 		// If your local branch is not master,you will have to specify the branch
-		ReferenceName: plumbing.NewBranchReferenceName("you branch name"),
+		ReferenceName: plumbing.NewBranchReferenceName(branch),
 	})
 	CheckIfError(err)
 
