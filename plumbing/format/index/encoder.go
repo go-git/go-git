@@ -2,13 +2,13 @@ package index
 
 import (
 	"bytes"
-	"crypto/sha1"
+	"crypto"
 	"errors"
-	"hash"
 	"io"
 	"sort"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/utils/binary"
 )
 
@@ -29,7 +29,7 @@ type Encoder struct {
 
 // NewEncoder returns a new encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
-	h := sha1.New()
+	h := hash.New(crypto.SHA1)
 	mw := io.MultiWriter(w, h)
 	return &Encoder{mw, h}
 }
