@@ -42,6 +42,7 @@ jobs:
     - name: Coveralls
       if: matrix.platform == 'ubuntu-latest' && matrix.go-version == '1.19.x' 
       uses: coverallsapp/github-action@master
+      continue-on-error: true
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path-to-lcov: coverage.lcov
