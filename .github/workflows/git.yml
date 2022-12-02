@@ -38,3 +38,8 @@ jobs:
  
     - name: Test
       run: make test-coverage
+
+    - name: Build go-git with CGO disabled
+      run: go build ./...
+      env:
+        CGO_ENABLED: 0
