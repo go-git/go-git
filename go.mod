@@ -14,7 +14,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/kevinburke/ssh_config v1.2.0
-	github.com/pjbgf/sha1cd v0.2.0
+	github.com/pjbgf/sha1cd v0.2.3
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sergi/go-diff v1.1.0
 	github.com/skeema/knownhosts v1.1.0
