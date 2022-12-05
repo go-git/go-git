@@ -18,7 +18,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sergi/go-diff v1.1.0
 	github.com/skeema/knownhosts v1.1.0
-	github.com/xanzy/ssh-agent v0.3.2
+	github.com/xanzy/ssh-agent v0.3.3
 	golang.org/x/crypto v0.3.0
 	golang.org/x/net v0.2.0
 	golang.org/x/sys v0.2.0
