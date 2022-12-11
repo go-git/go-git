@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -2167,6 +2166,51 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 }
 
 func (s *WorktreeSuite) TestAddAndCommit(c *C) {
+	expectedFiles := 2
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	repo, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o644)
+	os.WriteFile(filepath.Join(dir, "bar"), []byte("foo"), 0o644)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
+		Name:  "foo",
+		Email: "foo@foo.foo",
+		When:  time.Now(),
+	}})
+	c.Assert(err, IsNil)
+
+	iter, err := w.r.Log(&LogOptions{})
+	c.Assert(err, IsNil)
+
+	filesFound := 0
+	err = iter.ForEach(func(c *object.Commit) error {
+		files, err := c.Files()
+		if err != nil {
+			return err
+		}
+
+		err = files.ForEach(func(f *object.File) error {
+			filesFound++
+			return nil
+		})
+		return err
+	})
+	c.Assert(err, IsNil)
+	c.Assert(filesFound, Equals, expectedFiles)
+}
+
+func (s *WorktreeSuite) TestAddAndCommitEmpty(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
 
@@ -2179,26 +2223,12 @@ func (s *WorktreeSuite) TestAddAndCommit(c *C) {
 	_, err = w.Add(".")
 	c.Assert(err, IsNil)
 
-	w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
+	_, err = w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
 		Name:  "foo",
 		Email: "foo@foo.foo",
 		When:  time.Now(),
 	}})
-
-	iter, err := w.r.Log(&LogOptions{})
-	c.Assert(err, IsNil)
-	err = iter.ForEach(func(c *object.Commit) error {
-		files, err := c.Files()
-		if err != nil {
-			return err
-		}
-
-		err = files.ForEach(func(f *object.File) error {
-			return errors.New("Expected no files, got at least 1")
-		})
-		return err
-	})
-	c.Assert(err, IsNil)
+	c.Assert(err, Equals, ErrEmptyCommit)
 }
 
 func (s *WorktreeSuite) TestLinkedWorktree(c *C) {

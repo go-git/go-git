@@ -458,6 +458,10 @@ type CommitOptions struct {
 	// All automatically stage files that have been modified and deleted, but
 	// new files you have not told Git about are not affected.
 	All bool
+	// AllowEmptyCommits enable empty commits to be created. An empty commit
+	// is when no changes to the tree were made, but a new commit message is
+	// provided. The default behavior is false, which results in ErrEmptyCommit.
+	AllowEmptyCommits bool
 	// Author is the author's signature of the commit. If Author is empty the
 	// Name and Email is read from the config, and time.Now it's used as When.
 	Author *object.Signature
