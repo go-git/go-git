@@ -86,7 +86,7 @@ func (s *ScannerSuite) TestReadSpace(c *C) {
 }
 
 func (s *ScannerSuite) TestReadControl(c *C) {
-	scanner := newScanner(bytes.NewBufferString(""))
+	scanner := newScanner(bytes.NewBufferString("\x01"))
 	tok, data, err := scanner.scan()
 
 	c.Assert(err, Equals, nil)
