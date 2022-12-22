@@ -439,6 +439,8 @@ type AddOptions struct {
 	All bool
 	// Path is the exact filepath to the file or directory to be added.
 	Path string
+	// Paths are the exact filepaths to the files or directories to be added.
+	Paths []string
 	// Glob adds all paths, matching pattern, to the index. If pattern matches a
 	// directory path, all directory contents are added to the index recursively.
 	Glob string
@@ -446,7 +448,7 @@ type AddOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *AddOptions) Validate(r *Repository) error {
-	if o.Path != "" && o.Glob != "" {
+	if (o.Path != "" || len(o.Paths) > 0) && o.Glob != "" {
 		return fmt.Errorf("fields Path and Glob are mutual exclusive")
 	}
 
