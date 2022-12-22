@@ -251,11 +251,13 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	err = mfs.MkdirAll("delta", 0755)
 	c.Assert(err, IsNil)
 
-	for _, p := range []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"} {
-		util.WriteFile(mfs, p, []byte("foo"), 0644)
-		_, err = w.Add(p)
+	paths := []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"}
+	for _, p := range paths {
+		err = util.WriteFile(mfs, p, []byte("foo"), 0644)
 		c.Assert(err, IsNil)
 	}
+	_, err = w.Add(paths...)
+	c.Assert(err, IsNil)
 
 	_, err = w.Commit("foo\n", &CommitOptions{
 		All:    true,
