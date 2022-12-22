@@ -264,9 +264,9 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 // directory given, adds the files and all his sub-directories recursively in
 // the worktree to the index. If any of the files is already staged in the index
 // no error is returned. When path is a file, the blob.Hash is returned.
-func (w *Worktree) Add(path string) (plumbing.Hash, error) {
+func (w *Worktree) Add(paths ...string) (plumbing.Hash, error) {
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
-	return w.doAdd(path, make([]gitignore.Pattern, 0))
+	return w.doAdd(paths, make([]gitignore.Pattern, 0))
 }
 
 func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
@@ -323,7 +323,7 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 	}
 
 	if opts.All {
-		_, err := w.doAdd(".", w.Excludes)
+		_, err := w.doAdd([]string{"."}, w.Excludes)
 		return err
 	}
 
@@ -331,11 +331,11 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 		return w.AddGlob(opts.Glob)
 	}
 
-	_, err := w.Add(opts.Path)
+	_, err := w.Add(append(opts.Paths, opts.Path)...)
 	return err
 }
 
-func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern) (plumbing.Hash, error) {
+func (w *Worktree) doAdd(paths []string, ignorePattern []gitignore.Pattern) (plumbing.Hash, error) {
 	s, err := w.Status()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -349,15 +349,18 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern) (plumbi
 	var h plumbing.Hash
 	var added bool
 
-	fi, err := w.Filesystem.Lstat(path)
-	if err != nil || !fi.IsDir() {
-		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
-	} else {
-		added, err = w.doAddDirectory(idx, s, path, ignorePattern)
-	}
-
-	if err != nil {
-		return h, err
+	for _, path := range paths {
+		var singleAdded bool
+		fi, err := w.Filesystem.Lstat(path)
+		if err != nil || !fi.IsDir() {
+			singleAdded, h, err = w.doAddFile(idx, s, path, ignorePattern)
+		} else {
+			singleAdded, err = w.doAddDirectory(idx, s, path, ignorePattern)
+		}
+		if err != nil {
+			return h, err
+		}
+		added = added || singleAdded
 	}
 
 	if !added {
