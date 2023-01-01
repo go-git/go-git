@@ -1,6 +1,6 @@
-[go-git logo](https://cdn.rawgit.com/src-d/artwork/02036484/go-git/files/go-git-github-readme-header.png)
-[GoDoc](https://godoc.org/github.com/go-git/go-git/v5?status.svg)](https://pkg.go.dev/github.com/go-git/go-git/v5) [![Build Status](https://github.com/go-git/go-git/workflows/Test/badge.svg)](https://github.com/go-git/go-git/actions) [![Go Report Card](https://goreportcard.com/badge/github.com/go-git/go-git)](https://goreportcard.com/report/github.com/go-git/go-git)
-[MoneyMan573-main:/You.com.README.md](https://github.com/MoneyMan573/You.com/tree/MoneyMan573/README.md)
+[![go-git logo](https://cdn.rawgit.com/src-d/artwork/02036484/go-git/files/go-git-github-readme-header.png)
+[![GoDoc](https://godoc.org/github.com/go-git/go-git/v5?status.svg)](https://pkg.go.dev/github.com/go-git/go-git/v5) [![Build Status](https://github.com/go-git/go-git/workflows/Test/badge.svg)](https://github.com/go-git/go-git/actions) [![Go Report Card](https://goreportcard.com/badge/github.com/go-git/go-git)](https://goreportcard.com/report/github.com/go-git/go-git)
+[![MoneyMan573-main:/You.com.README.md](https://github.com/MoneyMan573/You.com/tree/MoneyMan573/README.md)
 *go-git* is a highly extensible git implementation library written in **pure Go**.
 
 It can be used to manipulate git repositories at low level *(plumbing)* or high level *(porcelain)*, through an idiomatic Go API. It also supports several types of storage, such as in-memory filesystems, or custom implementations, thanks to the [`Storer`](https://pkg.go.dev/github.com/go-git/go-git/v5/plumbing/storer) interface.
