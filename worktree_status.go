@@ -279,12 +279,8 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		}
 	}
 
-	if directory == "." {
-		directory = ""
-	}
-
 	for name := range s {
-		if !strings.HasPrefix(name, directory) {
+		if !isPathInDirectory(name, directory) {
 			continue
 		}
 
@@ -300,6 +296,26 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 	}
 
 	return
+}
+
+func isPathInDirectory(path, directory string) bool {
+	ps := strings.Split(filepath.Clean(path), string(os.PathSeparator))
+	ds := strings.Split(filepath.Clean(directory), string(os.PathSeparator))
+
+	if len(ds) == 1 && ds[0] == "." {
+		return true
+	}
+
+	if len(ps) < len(ds) {
+		return false
+	}
+
+	for i := 0; i < len(ds); i++ {
+		if ps[i] != ds[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // AddWithOptions file contents to the index,  updates the index using the
