@@ -306,6 +306,25 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		}
 	}
 
+	// add removed files in the directory
+	entries, err := idx.Glob(path.Join(directory, "*"))
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		var a bool
+		a, _, err = w.doAddFile(idx, s, entry.Name, ignorePattern)
+
+		if err != nil {
+			return
+		}
+
+		if !added && a {
+			added = true
+		}
+	}
+
 	return
 }
 
