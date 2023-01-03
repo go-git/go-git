@@ -1415,7 +1415,10 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory(c *C) {
 	err = w.Filesystem.Remove(filepath.Join("go", "example.go"))
 	c.Assert(err, IsNil)
 
-	hash, err := w.Add(".")
+	err = w.Filesystem.Remove(filepath.Join("json", "short.json"))
+	c.Assert(err, IsNil)
+
+	hash, err := w.Add("go")
 	c.Assert(err, IsNil)
 	c.Assert(hash.IsZero(), Equals, true)
 
@@ -1424,12 +1427,20 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory(c *C) {
 	c.Assert(e.Hash, Equals, plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"))
 	c.Assert(e.Mode, Equals, filemode.Regular)
 
+	e, err = idx.Entry(filepath.Join("json", "short.json"))
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash, Equals, plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"))
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
 	status, err := w.Status()
 	c.Assert(err, IsNil)
-	c.Assert(status, HasLen, 1)
+	c.Assert(status, HasLen, 2)
 
 	file := status.File(filepath.Join("go", "example.go"))
 	c.Assert(file.Staging, Equals, Deleted)
+
+	file = status.File(filepath.Join("json", "short.json"))
+	c.Assert(file.Staging, Equals, Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddSymlink(c *C) {
