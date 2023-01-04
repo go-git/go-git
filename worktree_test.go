@@ -1412,22 +1412,22 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(idx.Entries, HasLen, 9)
 
-	err = w.Filesystem.Remove(filepath.Join("go", "example.go"))
+	err = w.Filesystem.Remove("go/example.go")
 	c.Assert(err, IsNil)
 
-	err = w.Filesystem.Remove(filepath.Join("json", "short.json"))
+	err = w.Filesystem.Remove("json/short.json")
 	c.Assert(err, IsNil)
 
 	hash, err := w.Add("go")
 	c.Assert(err, IsNil)
 	c.Assert(hash.IsZero(), Equals, true)
 
-	e, err := idx.Entry(filepath.Join("go", "example.go"))
+	e, err := idx.Entry("go/example.go")
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash, Equals, plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"))
 	c.Assert(e.Mode, Equals, filemode.Regular)
 
-	e, err = idx.Entry(filepath.Join("json", "short.json"))
+	e, err = idx.Entry("json/short.json")
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash, Equals, plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"))
 	c.Assert(e.Mode, Equals, filemode.Regular)
@@ -1436,10 +1436,10 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(status, HasLen, 2)
 
-	file := status.File(filepath.Join("go", "example.go"))
+	file := status.File("go/example.go")
 	c.Assert(file.Staging, Equals, Deleted)
 
-	file = status.File(filepath.Join("json", "short.json"))
+	file = status.File("json/short.json")
 	c.Assert(file.Staging, Equals, Unmodified)
 }
 
