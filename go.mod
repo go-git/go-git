@@ -7,7 +7,7 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.5
 	github.com/go-git/gcfg v1.5.0
-	github.com/go-git/go-billy/v5 v5.3.1
+	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git-fixtures/v4 v4.3.1
 	github.com/google/go-cmp v0.5.9
 	github.com/imdario/mergo v0.3.13
@@ -21,7 +21,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3
 	golang.org/x/crypto v0.3.0
 	golang.org/x/net v0.2.0
-	golang.org/x/sys v0.2.0
+	golang.org/x/sys v0.3.0
 	golang.org/x/text v0.4.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/warnings.v0 v0.1.2 // indirect
