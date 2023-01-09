@@ -25,6 +25,7 @@ import (
 type UploadPackSuite struct {
 	test.UploadPackSuite
 	fixtures.Suite
+	opts []ssh.Option
 
 	port int
 	base string
@@ -57,6 +58,9 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 
 	server := &ssh.Server{Handler: handlerSSH}
+	for _, opt := range s.opts {
+		opt(server)
+	}
 	go func() {
 		log.Fatal(server.Serve(l))
 	}()
