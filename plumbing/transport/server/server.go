@@ -391,6 +391,14 @@ func (*rpSession) setSupportedCapabilities(c *capability.List) error {
 		return err
 	}
 
+	if err := c.Set(capability.Sideband64k); err != nil {
+		return err
+	}
+
+	if err := c.Set(capability.Shallow); err != nil {
+		return err
+	}
+
 	return c.Set(capability.ReportStatus)
 }
 
