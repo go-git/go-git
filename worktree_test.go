@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -2208,6 +2209,56 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 			}
 		}
 	}
+}
+
+func (s *WorktreeSuite) TestResetLingeringDirectories(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	commitOpts := &CommitOptions{Author: &object.Signature{
+		Name:  "foo",
+		Email: "foo@foo.foo",
+		When:  time.Now(),
+	}}
+
+	repo, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	os.WriteFile(filepath.Join(dir, "README"), []byte("placeholder"), 0o644)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	initialHash, err := w.Commit("Initial commit", commitOpts)
+	c.Assert(err, IsNil)
+
+	os.MkdirAll(filepath.Join(dir, "a", "b"), 0o755)
+	os.WriteFile(filepath.Join(dir, "a", "b", "1"), []byte("1"), 0o644)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("Add file in nested sub-directories", commitOpts)
+	c.Assert(err, IsNil)
+
+	// reset to initial commit, which should remove a/b/1, a/b, and a
+	err = w.Reset(&ResetOptions{
+		Commit: initialHash,
+		Mode:   HardReset,
+	})
+	c.Assert(err, IsNil)
+
+	_, err = os.Stat(filepath.Join(dir, "a", "b", "1"))
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
+
+	_, err = os.Stat(filepath.Join(dir, "a", "b"))
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
+
+	_, err = os.Stat(filepath.Join(dir, "a"))
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 }
 
 func (s *WorktreeSuite) TestAddAndCommit(c *C) {
