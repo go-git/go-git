@@ -737,12 +737,18 @@ func (s *SuiteDotGit) TestPackRefs(c *C) {
 	), nil)
 	c.Assert(err, IsNil)
 
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/symbolic",
+		"ref: refs/heads/foo",
+	), nil)
+	c.Assert(err, IsNil)
+
 	refs, err := dir.Refs()
 	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	c.Assert(refs, HasLen, 3)
 	looseCount, err := dir.CountLooseRefs()
 	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 2)
+	c.Assert(looseCount, Equals, 3)
 
 	err = dir.PackRefs()
 	c.Assert(err, IsNil)
@@ -750,10 +756,10 @@ func (s *SuiteDotGit) TestPackRefs(c *C) {
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
 	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	c.Assert(refs, HasLen, 3)
 	looseCount, err = dir.CountLooseRefs()
 	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 0)
+	c.Assert(looseCount, Equals, 1) // The symbolic ref shouldn't be packed
 
 	ref, err := dir.Ref("refs/heads/foo")
 	c.Assert(err, IsNil)
@@ -772,17 +778,17 @@ func (s *SuiteDotGit) TestPackRefs(c *C) {
 	c.Assert(err, IsNil)
 	looseCount, err = dir.CountLooseRefs()
 	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 1)
+	c.Assert(looseCount, Equals, 2)
 	err = dir.PackRefs()
 	c.Assert(err, IsNil)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
 	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	c.Assert(refs, HasLen, 3)
 	looseCount, err = dir.CountLooseRefs()
 	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 0)
+	c.Assert(looseCount, Equals, 1)
 
 	ref, err = dir.Ref("refs/heads/foo")
 	c.Assert(err, IsNil)

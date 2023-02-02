@@ -1040,10 +1040,18 @@ func (d *DotGit) PackRefs() (err error) {
 	defer ioutil.CheckClose(f, &err)
 
 	// Gather all refs using addRefsFromRefDir and addRefsFromPackedRefs.
-	var refs []*plumbing.Reference
+	var allRefs []*plumbing.Reference
 	seen := make(map[plumbing.ReferenceName]bool)
-	if err = d.addRefsFromRefDir(&refs, seen); err != nil {
+	if err = d.addRefsFromRefDir(&allRefs, seen); err != nil {
 		return err
+	}
+	// Filter out all non-hash references, as packed-refs can only contain
+	// hash references.
+	var refs []*plumbing.Reference
+	for _, ref := range allRefs {
+		if ref.Type() == plumbing.HashReference {
+			refs = append(refs, ref)
+		}
 	}
 	if len(refs) == 0 {
 		// Nothing to do!
