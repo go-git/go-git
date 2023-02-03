@@ -68,6 +68,8 @@ var (
 	// ErrIsDir is returned when a reference file is attempting to be read,
 	// but the path specified is a directory.
 	ErrIsDir = errors.New("reference path is a directory")
+	// ErrEmptyRefFile is returned when a reference file is an empty file.
+	ErrEmptyRefFile = errors.New("reference file is empty")
 )
 
 // Options holds configuration for the storage.
@@ -650,17 +652,28 @@ func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Ref
 		return nil, err
 	}
 
+	if len(b) == 0 {
+		return nil, ErrEmptyRefFile
+	}
+
 	line := strings.TrimSpace(string(b))
 	return plumbing.NewReferenceFromStrings(name, line), nil
 }
 
 func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference) error {
-	if old == nil {
-		return nil
+	var name string
+	if old != nil {
+		name = old.Name().String()
 	}
-	ref, err := d.readReferenceFrom(f, old.Name().String())
+	ref, err := d.readReferenceFrom(f, name)
 	if err != nil {
 		return err
+	}
+	// Only check old after we've already read the reference - that way, we pass
+	// on the error if the file is empty, which is important as it forces a lookup
+	// of packed-refs.
+	if old == nil {
+		return nil
 	}
 	if ref.Hash() != old.Hash() {
 		return storage.ErrReferenceHasChanged
@@ -872,6 +885,10 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 	}
 	defer ioutil.CheckClose(pr, &err)
 
+	return d.rewritePackedRefsWithoutRefWhileLocked(pr, name)
+}
+
+func (d *DotGit) rewritePackedRefsWithoutRefWhileLocked(pr billy.File, name plumbing.ReferenceName) (err error) {
 	// Creating the temp file in the same directory as the target file
 	// improves our chances for rename operation to be atomic.
 	tmp, err := d.fs.TempFile("", tmpPackedRefsPrefix)

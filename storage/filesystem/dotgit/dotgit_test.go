@@ -149,10 +149,11 @@ func testSetRefs(c *C, dir *DotGit) {
 	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
 	// Check that SetRef with a non-nil `old` works.
-	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+	newFoo := plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
-	), firstFoo)
+	)
+	err = dir.SetRef(newFoo, firstFoo)
 	c.Assert(err, IsNil)
 
 	// `firstFoo` is no longer the right `old` reference, so this
@@ -162,6 +163,55 @@ func testSetRefs(c *C, dir *DotGit) {
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	), firstFoo)
 	c.Assert(err, NotNil)
+
+	// Check the behaviour with packed refs
+	err = dir.PackRefs()
+	c.Assert(err, IsNil)
+
+	ref, err = dir.Ref(newFoo.Name())
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, newFoo.Hash().String())
+
+	// Make sure that seting a ref with an incorrect old value doesn't disturb it
+	err = dir.SetRef(newFoo, firstFoo)
+	c.Assert(err, NotNil)
+	looseCount, err := dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 1) // The symbolic ref won't be packed'
+
+	ref, err = dir.Ref(newFoo.Name())
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, newFoo.Hash().String())
+
+	// Make sure that setting a packed ref properly unpacks it
+	err = dir.SetRef(firstFoo, newFoo)
+	c.Assert(err, IsNil)
+
+	looseCount, err = dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 2)
+
+	packedRefs, err := dir.findPackedRefs()
+	c.Assert(err, IsNil)
+	for _, packed := range packedRefs {
+		if packed.Name() == newFoo.Name() {
+			c.Error("Setting a packed ref left it packed")
+		}
+	}
+
+	ref, err = dir.Ref(newFoo.Name())
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, firstFoo.Hash().String())
+
+	// Make sure we can add a new ref when we have packed refs
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/after-symbolic",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	), nil)
+	c.Assert(err, IsNil)
 }
 
 func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
@@ -779,6 +829,9 @@ func (s *SuiteDotGit) TestPackRefs(c *C) {
 	looseCount, err = dir.CountLooseRefs()
 	c.Assert(err, IsNil)
 	c.Assert(looseCount, Equals, 2)
+	packed, err := dir.findPackedRefs()
+	c.Assert(err, IsNil)
+	c.Assert(len(packed), Equals, 1)
 	err = dir.PackRefs()
 	c.Assert(err, IsNil)
 
