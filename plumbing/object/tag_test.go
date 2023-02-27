@@ -312,6 +312,27 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
 }
 
+func (s *TagSuite) TestSSHSignatureSerialization(c *C) {
+	encoded := &plumbing.MemoryObject{}
+	decoded := &Tag{}
+	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
+
+	signature := `-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
+0D7wOhjWVbYZH6KugAAAADZ2l0AAAAAAAAAAZzaGE1MTIAAABTAAAAC3NzaC1lZDI1NTE5
+AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
+MKEQruIQWJb+8HVXwssA4=
+-----END SSH SIGNATURE-----`
+	tag.PGPSignature = signature
+
+	err := tag.Encode(encoded)
+	c.Assert(err, IsNil)
+
+	err = decoded.Decode(encoded)
+	c.Assert(err, IsNil)
+	c.Assert(decoded.PGPSignature, Equals, signature)
+}
+
 func (s *TagSuite) TestVerify(c *C) {
 	ts := time.Unix(1617403017, 0)
 	loc, _ := time.LoadLocation("UTC")
