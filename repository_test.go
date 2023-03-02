@@ -2953,6 +2953,15 @@ func (s *RepositorySuite) TestDotGitToOSFilesystemsInvalidPath(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RepositorySuite) TestIssue674(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	h, err := r.ResolveRevision(plumbing.Revision(""))
+
+	c.Assert(err, NotNil)
+	c.Assert(h, NotNil)
+	c.Check(h.IsZero(), Equals, true)
+}
+
 func BenchmarkObjects(b *testing.B) {
 	defer fixtures.Clean()
 
