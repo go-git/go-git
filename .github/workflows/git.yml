@@ -1,5 +1,8 @@
 on: [push, pull_request]
 name: Git Compatibility
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
