@@ -122,9 +122,11 @@ func (c *command) connect() error {
 		return err
 	}
 	hostWithPort := c.getHostWithPort()
-	config, err = SetConfigHostKeyFields(config, hostWithPort)
-	if err != nil {
-		return err
+	if config.HostKeyCallback == nil {
+		config, err = SetConfigHostKeyFields(config, hostWithPort)
+		if err != nil {
+			return err
+		}
 	}
 
 	overrideConfig(c.config, config)
