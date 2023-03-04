@@ -873,9 +873,10 @@ type notExistsFS struct {
 	paths []string
 }
 
-func (f *notExistsFS) matches(filename string) bool {
+func (f *notExistsFS) matches(path string) bool {
+	p := filepath.ToSlash(path)
 	for _, n := range f.paths {
-		if filename == n {
+		if p == n {
 			return true
 		}
 	}
