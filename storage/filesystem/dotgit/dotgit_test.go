@@ -864,3 +864,70 @@ func (s *SuiteDotGit) TestIncBytes(c *C) {
 		c.Assert(overflow, Equals, test.overflow)
 	}
 }
+
+// this filesystem wrapper returns os.ErrNotExist if the file matches
+// the provided paths list
+type notExistsFS struct {
+	billy.Filesystem
+
+	paths []string
+}
+
+func (f *notExistsFS) matches(filename string) bool {
+	for _, n := range f.paths {
+		if filename == n {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *notExistsFS) Open(filename string) (billy.File, error) {
+	if f.matches(filename) {
+		return nil, os.ErrNotExist
+	}
+
+	return f.Filesystem.Open(filename)
+}
+
+func (f *notExistsFS) ReadDir(path string) ([]os.FileInfo, error) {
+	if f.matches(path) {
+		return nil, os.ErrNotExist
+	}
+
+	return f.Filesystem.ReadDir(path)
+}
+
+func (s *SuiteDotGit) TestDeletedRefs(c *C) {
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	dir := New(&notExistsFS{
+		Filesystem: fs,
+		paths: []string{
+			"refs/heads/bar",
+			"refs/heads/baz",
+		},
+	})
+
+	err := dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/bar",
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/baz/baz",
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 1)
+	c.Assert(refs[0].Name(), Equals, plumbing.ReferenceName("refs/heads/foo"))
+}
