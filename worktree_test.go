@@ -259,7 +259,7 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	ExecuteOnPath(c, path,
 		"touch foo",
 		"git add foo",
-		"git commit -m foo foo",
+		"git commit --no-gpg-sign -m foo foo",
 	)
 
 	w, err := r.Worktree()
