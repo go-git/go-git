@@ -45,6 +45,10 @@ type CloneOptions struct {
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
 	SingleBranch bool
+	// Custom RefSpec defines the RefSpec used in the clone and overwrites the
+	// above ReferenceName and SingleBranch.  This is used to clone multiple
+	// references at once.
+	CustomRefSpec []config.RefSpec
 	// No checkout of HEAD after clone if true.
 	NoCheckout bool
 	// Limit fetching to the specified number of commits.
