@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 
@@ -552,8 +553,8 @@ func (d *DotGit) hasPack(h plumbing.Hash) error {
 }
 
 func (d *DotGit) objectPath(h plumbing.Hash) string {
-	hash := h.String()
-	return d.fs.Join(objectsPath, hash[0:2], hash[2:40])
+	hex := h.String()
+	return d.fs.Join(objectsPath, hex[0:2], hex[2:hash.HexSize])
 }
 
 // incomingObjectPath is intended to add support for a git pre-receive hook
@@ -563,15 +564,16 @@ func (d *DotGit) objectPath(h plumbing.Hash) string {
 //
 // More on git hooks found here : https://git-scm.com/docs/githooks
 // More on 'quarantine'/incoming directory here:
-//     https://git-scm.com/docs/git-receive-pack
+//
+//	https://git-scm.com/docs/git-receive-pack
 func (d *DotGit) incomingObjectPath(h plumbing.Hash) string {
 	hString := h.String()
 
 	if d.incomingDirName == "" {
-		return d.fs.Join(objectsPath, hString[0:2], hString[2:40])
+		return d.fs.Join(objectsPath, hString[0:2], hString[2:hash.HexSize])
 	}
 
-	return d.fs.Join(objectsPath, d.incomingDirName, hString[0:2], hString[2:40])
+	return d.fs.Join(objectsPath, d.incomingDirName, hString[0:2], hString[2:hash.HexSize])
 }
 
 // hasIncomingObjects searches for an incoming directory and keeps its name

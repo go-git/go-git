@@ -1,7 +1,6 @@
 package commitgraph
 
 import (
-	"crypto"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -17,7 +16,7 @@ type Encoder struct {
 
 // NewEncoder returns a new stream encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
-	h := hash.New(crypto.SHA1)
+	h := hash.New(hash.CryptoType)
 	mw := io.MultiWriter(w, h)
 	return &Encoder{mw, h}
 }
@@ -31,7 +30,7 @@ func (e *Encoder) Encode(idx Index) error {
 	hashToIndex, fanout, extraEdgesCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{oidFanoutSignature, oidLookupSignature, commitDataSignature}
-	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * 20, uint64(len(hashes)) * 36}
+	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * hash.Size, uint64(len(hashes)) * 36}
 	if extraEdgesCount > 0 {
 		chunkSignatures = append(chunkSignatures, extraEdgeListSignature)
 		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*4)
@@ -183,6 +182,6 @@ func (e *Encoder) encodeExtraEdges(extraEdges []uint32) (err error) {
 }
 
 func (e *Encoder) encodeChecksum() error {
-	_, err := e.Write(e.hash.Sum(nil)[:20])
+	_, err := e.Write(e.hash.Sum(nil)[:hash.Size])
 	return err
 }
