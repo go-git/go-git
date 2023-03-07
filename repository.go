@@ -907,7 +907,6 @@ func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
 	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
 		return []config.RefSpec{
 			config.RefSpec(fmt.Sprintf(refspecSingleBranchHEAD, o.RemoteName)),
-			config.RefSpec(fmt.Sprintf(refspecSingleBranch, plumbing.Master.Short(), o.RemoteName)),
 		}
 	case o.SingleBranch:
 		return []config.RefSpec{
