@@ -11,6 +11,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object/signature/pgp"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/go-git/go-git/v5/utils/sync"
@@ -351,29 +352,24 @@ func (c *Commit) String() string {
 	)
 }
 
+// Signature returns the signature of the commit.
+func (c *Commit) Signature() string {
+	return c.PGPSignature
+}
+
 // Verify performs PGP verification of the commit with a provided armored
 // keyring and returns openpgp.Entity associated with verifying key on success.
 func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
+	verifier, err := pgp.NewVerifierFromArmoredKeyRing(keyRingReader)
 	if err != nil {
 		return nil, err
 	}
-
-	// Extract signature.
-	signature := strings.NewReader(c.PGPSignature)
-
-	encoded := &plumbing.MemoryObject{}
-	// Encode commit components, excluding signature and get a reader object.
-	if err := c.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	er, err := encoded.Reader()
+	entity, err := verifier.Verify(c)
 	if err != nil {
 		return nil, err
 	}
-
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+	return entity.Concrete().(*openpgp.Entity), nil
 }
 
 func indent(t string) string {

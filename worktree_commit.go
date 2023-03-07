@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"errors"
 	"path"
 	"sort"
@@ -11,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/object/signature/pgp"
 	"github.com/go-git/go-git/v5/storage"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -124,19 +124,11 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 }
 
 func (w *Worktree) buildCommitSignature(commit *object.Commit, signKey *openpgp.Entity) (string, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := commit.Encode(encoded); err != nil {
-		return "", err
-	}
-	r, err := encoded.Reader()
+	signer, err := pgp.NewSigner(signKey)
 	if err != nil {
 		return "", err
 	}
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, r, nil); err != nil {
-		return "", err
-	}
-	return b.String(), nil
+	return signer.Sign(commit)
 }
 
 // buildTreeHelper converts a given index.Index file into multiple git objects

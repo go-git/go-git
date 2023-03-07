@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/object/signature/pgp"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -727,22 +728,11 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 }
 
 func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := tag.Encode(encoded); err != nil {
-		return "", err
-	}
-
-	rdr, err := encoded.Reader()
+	signer, err := pgp.NewSigner(signKey)
 	if err != nil {
 		return "", err
 	}
-
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
-		return "", err
-	}
-
-	return b.String(), nil
+	return signer.Sign(tag)
 }
 
 // Tag returns a tag from the repository.
