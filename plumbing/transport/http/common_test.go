@@ -2,7 +2,9 @@ package http
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -72,6 +74,17 @@ func (s *ClientSuite) TestNewErrOK(c *C) {
 	res := &http.Response{StatusCode: http.StatusOK}
 	err := NewErr(res)
 	c.Assert(err, IsNil)
+}
+
+func (s *ClientSuite) TestNewErrResponseBody(c *C) {
+	res := &http.Response{StatusCode: http.StatusForbidden, Body: io.NopCloser(strings.NewReader("foo bar"))}
+	err := NewErr(res)
+	c.Assert(err, NotNil)
+
+	var e *Err
+	ok := errors.As(err, &e)
+	c.Assert(ok, Equals, true)
+	c.Assert(string(e.ResponseBody), Equals, "foo bar")
 }
 
 func (s *ClientSuite) TestNewErrUnauthorized(c *C) {

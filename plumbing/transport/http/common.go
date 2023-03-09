@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -249,7 +250,9 @@ func (a *TokenAuth) String() string {
 
 // Err is a dedicated error to return errors based on status code
 type Err struct {
-	Response *http.Response
+	Response     *http.Response
+	ResponseBody []byte
+	WrappedError error
 }
 
 // NewErr returns a new Err based on a http response
@@ -257,17 +260,32 @@ func NewErr(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
+	res := &Err{
+		Response: r,
+	}
+	if r.Body != nil {
+		data, err := io.ReadAll(r.Body)
+		// ignore error, we cannot do anything at this point
+		if err == nil {
+			r.Body.Close()
+			res.ResponseBody = data
+			r.Body = io.NopCloser(bytes.NewReader(data))
+		}
+	}
 
 	switch r.StatusCode {
 	case http.StatusUnauthorized:
-		return transport.ErrAuthenticationRequired
+		res.WrappedError = transport.ErrAuthenticationRequired
+		return res
 	case http.StatusForbidden:
-		return transport.ErrAuthorizationFailed
+		res.WrappedError = transport.ErrAuthorizationFailed
+		return res
 	case http.StatusNotFound:
-		return transport.ErrRepositoryNotFound
+		res.WrappedError = transport.ErrRepositoryNotFound
+		return res
 	}
 
-	return plumbing.NewUnexpectedError(&Err{r})
+	return plumbing.NewUnexpectedError(res)
 }
 
 // StatusCode returns the status code of the response
@@ -275,8 +293,22 @@ func (e *Err) StatusCode() int {
 	return e.Response.StatusCode
 }
 
+// Body returns the body of the response
+func (e *Err) Body() io.ReadCloser {
+	return e.Response.Body
+}
+
+// Error implements Error interface and returns string representation of the error
 func (e *Err) Error() string {
+	if e.WrappedError != nil {
+		return e.WrappedError.Error()
+	}
 	return fmt.Sprintf("unexpected requesting %q status code: %d",
 		e.Response.Request.URL, e.Response.StatusCode,
 	)
+}
+
+// Unwrap implements the Unwrap interface and returns WrappedError
+func (e *Err) Unwrap() error {
+	return e.WrappedError
 }

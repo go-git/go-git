@@ -14,8 +14,14 @@ func NewPermanentError(err error) *PermanentError {
 	return &PermanentError{Err: err}
 }
 
+// Error implements Error interface and returns string representation of the error
 func (e *PermanentError) Error() string {
 	return fmt.Sprintf("permanent client error: %s", e.Err.Error())
+}
+
+// Unwrap implements the Unwrap interface and returns WrappedError
+func (e *PermanentError) Unwrap() error {
+	return e.Err
 }
 
 type UnexpectedError struct {
@@ -30,6 +36,12 @@ func NewUnexpectedError(err error) *UnexpectedError {
 	return &UnexpectedError{Err: err}
 }
 
+// Error implements Error interface and returns string representation of the error
 func (e *UnexpectedError) Error() string {
 	return fmt.Sprintf("unexpected client error: %s", e.Err.Error())
+}
+
+// Unwrap implements the Unwrap interface and returns WrappedError
+func (e *UnexpectedError) Unwrap() error {
+	return e.Err
 }

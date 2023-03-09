@@ -37,7 +37,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
+	c.Assert(err, ErrorMatches, "repository not found")
 	c.Assert(info, IsNil)
 }
 
