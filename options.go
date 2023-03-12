@@ -145,6 +145,17 @@ const (
 	NoTags
 )
 
+type PruneMode int
+
+const (
+	// Use the prune setting from the remote configuration.
+	PruneUnspecified PruneMode = iota
+	// Prune tracking refs.
+	Prune
+	// Do not prune.
+	NoPrune
+)
+
 // FetchOptions describes how a fetch should be performed
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
@@ -164,6 +175,8 @@ type FetchOptions struct {
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is TagFollowing.
 	Tags TagMode
+	// Prune tracking refs no longer present on the remote.
+	Prune PruneMode
 	// Force allows the fetch to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool

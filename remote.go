@@ -470,6 +470,22 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	var prune bool
+	switch o.Prune {
+	case PruneUnspecified:
+		prune = r.c.Prune
+	case Prune:
+		prune = true
+	case NoPrune:
+		prune = false
+	}
+
+	if prune {
+		if err := r.prune(o.RefSpecs, refs); err != nil {
+			return nil, err
+		}
+	}
+
 	if !updated {
 		updated, err = depthChanged(req.Shallows, r.s)
 		if err != nil {
@@ -1238,6 +1254,65 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 	}
 
 	return
+}
+
+// Prunes local refs that match refSpecs but are not found on the remote; remoteRefs are the
+// refs just fetched from the remote.
+func (r *Remote) prune(refSpecs []config.RefSpec, remoteRefs memory.ReferenceStorage) error {
+	// We will be matching against RHS of the refspecs. Reverse them first.
+	reverseSpecs := make([]config.RefSpec, 0, len(refSpecs))
+	for _, rs := range refSpecs {
+		reverseSpecs = append(reverseSpecs, rs.Reverse())
+	}
+
+	candidates := map[plumbing.ReferenceName]*plumbing.Reference{}
+	iter, err := r.s.IterReferences()
+	if err != nil {
+		return err
+	}
+	// Candidates for pruning are local refs that are destinations for just
+	// fetched refSpecs; the refs match rhs of the refspec.
+	if err := iter.ForEach(func(ref *plumbing.Reference) error {
+		for _, rs := range reverseSpecs {
+			if rs.Match(ref.Name()) {
+				candidates[ref.Name()] = ref
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Remove the candidates for which there exists an active remote reference.
+	iter, err = remoteRefs.IterReferences()
+	if err != nil {
+		return err
+	}
+	if err := iter.ForEach(func(remote *plumbing.Reference) error {
+		// Compute the ref destinations for this remote ref and remove them from prune
+		// candidates
+		for _, rs := range refSpecs {
+			if rs.Match(remote.Name()) {
+				dst := rs.Dst(remote.Name())
+				delete(candidates, dst)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Now delete the references; do not delete symbolic refs.
+	for refName, ref := range candidates {
+		if ref.Type() == plumbing.SymbolicReference {
+			continue
+		}
+		if err := r.s.RemoveReference(refName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // List the references on the remote repository.
