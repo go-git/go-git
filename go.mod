@@ -12,6 +12,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.4.1
 	github.com/go-git/go-git-fixtures/v4 v4.3.1
 	github.com/google/go-cmp v0.5.9
+	github.com/hiddeco/sshsig v0.1.0
 	github.com/imdario/mergo v0.3.13
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 	github.com/jessevdk/go-flags v1.5.0
@@ -21,10 +22,10 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	github.com/skeema/knownhosts v1.1.0
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.6.0
-	golang.org/x/net v0.7.0
-	golang.org/x/sys v0.5.0
-	golang.org/x/text v0.7.0
+	golang.org/x/crypto v0.7.0
+	golang.org/x/net v0.8.0
+	golang.org/x/sys v0.6.0
+	golang.org/x/text v0.8.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
