@@ -871,6 +871,51 @@ func (s *WorktreeSuite) TestStatusEmpty(c *C) {
 	c.Assert(status, NotNil)
 }
 
+func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored(c *C) {
+	fs := memfs.New()
+	storage := memory.NewStorage()
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "fileToIgnore", []byte("Initial data"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Add("fileToIgnore")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("Added file that will be ignored later", &CommitOptions{})
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, ".gitignore", []byte("fileToIgnore\nsecondIgnoredFile"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Add(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("Added .gitignore", &CommitOptions{})
+	c.Assert(err, IsNil)
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status, NotNil)
+
+	err = util.WriteFile(fs, "secondIgnoredFile", []byte("Should be completly ignored"), 0755)
+	c.Assert(err, IsNil)
+	status = nil
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status, NotNil)
+
+	err = util.WriteFile(fs, "fileToIgnore", []byte("Updated data"), 0755)
+	c.Assert(err, IsNil)
+	status = nil
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+	c.Assert(status, NotNil)
+}
+
 func (s *WorktreeSuite) TestStatusEmptyDirty(c *C) {
 	fs := memfs.New()
 	err := util.WriteFile(fs, "foo", []byte("foo"), 0755)
