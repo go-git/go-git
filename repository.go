@@ -85,7 +85,7 @@ func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		return nil, err
 	}
 
-	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)
+	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Main)
 	if err := s.SetReference(h); err != nil {
 		return nil, err
 	}
@@ -907,7 +907,7 @@ func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
 	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
 		return []config.RefSpec{
 			config.RefSpec(fmt.Sprintf(refspecSingleBranchHEAD, o.RemoteName)),
-			config.RefSpec(fmt.Sprintf(refspecSingleBranch, plumbing.Master.Short(), o.RemoteName)),
+			config.RefSpec(fmt.Sprintf(refspecSingleBranch, plumbing.Main.Short(), o.RemoteName)),
 		}
 	case o.SingleBranch:
 		return []config.RefSpec{

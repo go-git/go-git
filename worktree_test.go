@@ -144,7 +144,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 	err := r.Fetch(&FetchOptions{})
 	c.Assert(err, IsNil)
 
-	_, err = r.Reference("refs/heads/master", false)
+	_, err = r.Reference("refs/heads/main", false)
 	c.Assert(err, NotNil)
 
 	w, err := r.Worktree()
@@ -157,7 +157,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(head.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	branch, err := r.Reference("refs/heads/master", false)
+	branch, err := r.Reference("refs/heads/main", false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
@@ -168,8 +168,9 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded(c *C) {
 func (s *WorktreeSuite) TestPullInSingleBranch(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	err := r.clone(context.Background(), &CloneOptions{
-		URL:          s.GetBasicLocalRepositoryURL(),
-		SingleBranch: true,
+		URL:           s.GetBasicLocalRepositoryURL(),
+		SingleBranch:  true,
+		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
 	})
 
 	c.Assert(err, IsNil)
@@ -304,7 +305,8 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	}
 
 	err := w.Checkout(&CheckoutOptions{
-		Force: true,
+		Force:  true,
+		Branch: plumbing.ReferenceName("refs/heads/master"),
 	})
 	c.Assert(err, IsNil)
 
@@ -330,13 +332,14 @@ func (s *WorktreeSuite) TestCheckoutForce(c *C) {
 		Filesystem: memfs.New(),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	w.Filesystem = memfs.New()
 
 	err = w.Checkout(&CheckoutOptions{
-		Force: true,
+		Force:  true,
+		Branch: plumbing.ReferenceName("refs/heads/master"),
 	})
 	c.Assert(err, IsNil)
 
@@ -352,7 +355,8 @@ func (s *WorktreeSuite) TestCheckoutKeep(c *C) {
 	}
 
 	err := w.Checkout(&CheckoutOptions{
-		Force: true,
+		Force:  true,
+		Branch: plumbing.ReferenceName("refs/heads/master"),
 	})
 	c.Assert(err, IsNil)
 
@@ -376,7 +380,8 @@ func (s *WorktreeSuite) TestCheckoutKeep(c *C) {
 
 	// Switch branch to master, and verify that the new file was kept in staging.
 	err = w.Checkout(&CheckoutOptions{
-		Keep: true,
+		Keep:   true,
+		Branch: plumbing.ReferenceName("refs/heads/master"),
 	})
 	c.Assert(err, IsNil)
 
@@ -431,6 +436,7 @@ func (s *WorktreeSuite) TestCheckoutSparse(c *C) {
 	sparseCheckoutDirectories := []string{"go", "json", "php"}
 	c.Assert(w.Checkout(&CheckoutOptions{
 		SparseCheckoutDirectories: sparseCheckoutDirectories,
+		Branch:                    plumbing.ReferenceName("refs/heads/master"),
 	}), IsNil)
 
 	fis, err := fs.ReadDir("/")
@@ -536,7 +542,7 @@ func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
-	err = w.Checkout(&CheckoutOptions{})
+	err = w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	status, err := w.Status()
@@ -626,7 +632,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMem(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := s.Repository.Storer.Index()
@@ -655,7 +661,7 @@ func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := s.Repository.Storer.Index()
@@ -774,7 +780,7 @@ func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
-	err = w.Checkout(&CheckoutOptions{})
+	err = w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 	head, err := w.r.Head()
 	c.Assert(err, IsNil)
@@ -899,7 +905,7 @@ func (s *WorktreeSuite) TestReset(c *C) {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	branch, err := w.r.Reference(plumbing.Master, false)
@@ -927,7 +933,7 @@ func (s *WorktreeSuite) TestResetWithUntracked(c *C) {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = util.WriteFile(fs, "foo", nil, 0755)
@@ -950,7 +956,7 @@ func (s *WorktreeSuite) TestResetSoft(c *C) {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = w.Reset(&ResetOptions{Mode: SoftReset, Commit: commit})
@@ -975,7 +981,7 @@ func (s *WorktreeSuite) TestResetMixed(c *C) {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = w.Reset(&ResetOptions{Mode: MixedReset, Commit: commit})
@@ -1001,7 +1007,7 @@ func (s *WorktreeSuite) TestResetMerge(c *C) {
 	commitA := plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294")
 	commitB := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commitA})
@@ -1035,7 +1041,7 @@ func (s *WorktreeSuite) TestResetHard(c *C) {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	f, err := fs.Create(".gitignore")
@@ -1060,7 +1066,7 @@ func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	status, err := w.Status()
@@ -1078,7 +1084,7 @@ func (s *WorktreeSuite) TestStatusModified(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	f, err := fs.Create(".gitignore")
@@ -1101,7 +1107,7 @@ func (s *WorktreeSuite) TestStatusIgnored(c *C) {
 		Filesystem: fs,
 	}
 
-	w.Checkout(&CheckoutOptions{})
+	w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 
 	fs.MkdirAll("another", os.ModePerm)
 	f, _ := fs.Create("another/file")
@@ -1148,7 +1154,7 @@ func (s *WorktreeSuite) TestStatusUntracked(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	f, err := w.Filesystem.Create("foo")
@@ -1170,7 +1176,7 @@ func (s *WorktreeSuite) TestStatusDeleted(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = fs.Remove(".gitignore")
@@ -1217,7 +1223,7 @@ func (s *WorktreeSuite) TestAddUntracked(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1264,7 +1270,7 @@ func (s *WorktreeSuite) TestIgnored(c *C) {
 	w.Excludes = make([]gitignore.Pattern, 0)
 	w.Excludes = append(w.Excludes, gitignore.ParsePattern("foo", nil))
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1318,7 +1324,7 @@ func (s *WorktreeSuite) TestAddModified(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1357,7 +1363,7 @@ func (s *WorktreeSuite) TestAddUnmodified(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Add("LICENSE")
@@ -1372,7 +1378,7 @@ func (s *WorktreeSuite) TestAddRemoved(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1406,7 +1412,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1478,7 +1484,7 @@ func (s *WorktreeSuite) TestAddDirectory(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1535,7 +1541,7 @@ func (s *WorktreeSuite) TestAddAll(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1581,7 +1587,7 @@ func (s *WorktreeSuite) TestAddGlob(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	idx, err := w.r.Storer.Index()
@@ -1642,7 +1648,7 @@ func (s *WorktreeSuite) TestRemove(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Remove("LICENSE")
@@ -1662,7 +1668,7 @@ func (s *WorktreeSuite) TestRemoveNotExistentEntry(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Remove("not-exists")
@@ -1677,7 +1683,7 @@ func (s *WorktreeSuite) TestRemoveDirectory(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Remove("json")
@@ -1701,7 +1707,7 @@ func (s *WorktreeSuite) TestRemoveDirectoryUntracked(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = util.WriteFile(w.Filesystem, "json/foo", []byte("FOO"), 0755)
@@ -1729,7 +1735,7 @@ func (s *WorktreeSuite) TestRemoveDeletedFromWorktree(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = fs.Remove("LICENSE")
@@ -1752,7 +1758,7 @@ func (s *WorktreeSuite) TestRemoveGlob(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = w.RemoveGlob(w.Filesystem.Join("json", "l*"))
@@ -1771,7 +1777,7 @@ func (s *WorktreeSuite) TestRemoveGlobDirectory(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = w.RemoveGlob("js*")
@@ -1794,7 +1800,7 @@ func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	err = fs.Remove("json/short.json")
@@ -1820,7 +1826,7 @@ func (s *WorktreeSuite) TestMove(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Move("LICENSE", "foo")
@@ -1842,7 +1848,7 @@ func (s *WorktreeSuite) TestMoveNotExistentEntry(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Move("not-exists", "foo")
@@ -1857,7 +1863,7 @@ func (s *WorktreeSuite) TestMoveToExistent(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{Force: true})
+	err := w.Checkout(&CheckoutOptions{Force: true, Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	hash, err := w.Move(".gitignore", "LICENSE")

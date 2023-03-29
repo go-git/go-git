@@ -1042,8 +1042,9 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	c.Assert(head, IsNil)
 
 	err = r.clone(context.Background(), &CloneOptions{
-		URL:          s.GetBasicLocalRepositoryURL(),
-		SingleBranch: true,
+		URL:           s.GetBasicLocalRepositoryURL(),
+		SingleBranch:  true,
+		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
 	})
 
 	c.Assert(err, IsNil)

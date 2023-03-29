@@ -98,7 +98,7 @@ func (s *WorktreeSuite) TestCommitParent(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0644)
@@ -122,7 +122,7 @@ func (s *WorktreeSuite) TestCommitAll(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
@@ -148,7 +148,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll(c *C) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName("refs/heads/master")})
 	c.Assert(err, IsNil)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0644)

@@ -323,7 +323,7 @@ func (o *CheckoutOptions) Validate() error {
 	}
 
 	if o.Branch == "" {
-		o.Branch = plumbing.Master
+		o.Branch = plumbing.Main
 	}
 
 	return nil
