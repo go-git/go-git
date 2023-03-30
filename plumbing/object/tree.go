@@ -271,6 +271,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 }
 
 // Encode transforms a Tree into a plumbing.EncodedObject.
+// The tree entries must be sorted by name.
 func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 	o.SetType(plumbing.TreeObject)
 	w, err := o.Writer()
