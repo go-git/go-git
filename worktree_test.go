@@ -2211,6 +2211,87 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 	}
 }
 
+func (s *WorktreeSuite) TestGrepBare(c *C) {
+	cases := []struct {
+		name           string
+		options        GrepOptions
+		wantResult     []GrepResult
+		dontWantResult []GrepResult
+		wantError      error
+	}{
+		{
+			name: "basic word match",
+			options: GrepOptions{
+				Patterns:   []*regexp.Regexp{regexp.MustCompile("import")},
+				CommitHash: plumbing.ZeroHash,
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		},
+	}
+
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
+		URL: path,
+	})
+	c.Assert(err, IsNil)
+
+	for _, tc := range cases {
+		gr, err := r.Grep(&tc.options)
+		if tc.wantError != nil {
+			c.Assert(err, Equals, tc.wantError)
+		} else {
+			c.Assert(err, IsNil)
+		}
+
+		// Iterate through the results and check if the wanted result is present
+		// in the got result.
+		for _, wantResult := range tc.wantResult {
+			found := false
+			for _, gotResult := range gr {
+				if wantResult == gotResult {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
+			}
+		}
+
+		// Iterate through the results and check if the not wanted result is
+		// present in the got result.
+		for _, dontWantResult := range tc.dontWantResult {
+			found := false
+			for _, gotResult := range gr {
+				if dontWantResult == gotResult {
+					found = true
+					break
+				}
+			}
+			if found {
+				c.Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
+			}
+		}
+	}
+}
+
 func (s *WorktreeSuite) TestResetLingeringDirectories(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()

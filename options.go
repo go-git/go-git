@@ -642,7 +642,13 @@ var (
 )
 
 // Validate validates the fields and sets the default values.
+//
+// TODO: deprecate in favor of Validate(r *Repository) in v6.
 func (o *GrepOptions) Validate(w *Worktree) error {
+	return o.validate(w.r)
+}
+
+func (o *GrepOptions) validate(r *Repository) error {
 	if !o.CommitHash.IsZero() && o.ReferenceName != "" {
 		return ErrHashOrReference
 	}
@@ -650,7 +656,7 @@ func (o *GrepOptions) Validate(w *Worktree) error {
 	// If none of CommitHash and ReferenceName are provided, set commit hash of
 	// the repository's head.
 	if o.CommitHash.IsZero() && o.ReferenceName == "" {
-		ref, err := w.r.Head()
+		ref, err := r.Head()
 		if err != nil {
 			return err
 		}
