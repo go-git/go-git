@@ -4,6 +4,7 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -30,7 +31,12 @@ type sshConfig interface {
 
 // NewClient creates a new SSH client with an optional *ssh.ClientConfig.
 func NewClient(config *ssh.ClientConfig) transport.Transport {
-	return common.NewClient(&runner{config: config})
+	return NewClientWithDialer(config, nil)
+}
+
+// NewClientWithDialer creates a new SSH client with an optional *ssh.ClientConfig and an optional proxy.Dialer.
+func NewClientWithDialer(config *ssh.ClientConfig, dialer proxy.Dialer) transport.Transport {
+	return common.NewClient(&runner{config: config, dialer: dialer})
 }
 
 // DefaultAuthBuilder is the function used to create a default AuthMethod, when
@@ -43,10 +49,11 @@ const DefaultPort = 22
 
 type runner struct {
 	config *ssh.ClientConfig
+	dialer proxy.Dialer
 }
 
 func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
-	c := &command{command: cmd, endpoint: ep, config: r.config}
+	c := &command{command: cmd, endpoint: ep, config: r.config, dialer: r.dialer}
 	if auth != nil {
 		c.setAuth(auth)
 	}
@@ -65,6 +72,7 @@ type command struct {
 	client    *ssh.Client
 	auth      AuthMethod
 	config    *ssh.ClientConfig
+	dialer    proxy.Dialer
 }
 
 func (c *command) setAuth(auth transport.AuthMethod) error {
@@ -139,7 +147,7 @@ func (c *command) connect() error {
 
 	overrideConfig(c.config, config)
 
-	c.client, err = dial("tcp", hostWithPort, config)
+	c.client, err = dial("tcp", hostWithPort, config, c.dialer)
 	if err != nil {
 		return err
 	}
@@ -154,7 +162,7 @@ func (c *command) connect() error {
 	return nil
 }
 
-func dial(network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+func dial(network, addr string, config *ssh.ClientConfig, dialer proxy.Dialer) (*ssh.Client, error) {
 	var (
 		ctx    = context.Background()
 		cancel context.CancelFunc
@@ -166,10 +174,23 @@ func dial(network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
 	}
 	defer cancel()
 
-	conn, err := proxy.Dial(ctx, network, addr)
+	if dialer == nil {
+		dialer = proxy.FromEnvironment()
+	}
+
+	var (
+		conn net.Conn
+		err  error
+	)
+	if ctxDialer, ok := dialer.(proxy.ContextDialer); ok {
+		conn, err = ctxDialer.DialContext(ctx, network, addr)
+	} else {
+		conn, err = dialContext(ctx, dialer, network, addr)
+	}
 	if err != nil {
 		return nil, err
 	}
+
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
 	if err != nil {
 		return nil, err
@@ -247,4 +268,27 @@ func overrideConfig(overrides *ssh.ClientConfig, c *ssh.ClientConfig) {
 	}
 
 	*c = vc.Interface().(ssh.ClientConfig)
+}
+
+// WARNING: this can leak a goroutine for as long as the underlying Dialer implementation takes to timeout
+// A Conn returned from a successful Dial after the context has been cancelled will be immediately closed.
+func dialContext(ctx context.Context, d proxy.Dialer, network, address string) (net.Conn, error) {
+	var (
+		conn net.Conn
+		done = make(chan struct{}, 1)
+		err  error
+	)
+	go func() {
+		conn, err = d.Dial(network, address)
+		close(done)
+		if conn != nil && ctx.Err() != nil {
+			conn.Close()
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	case <-done:
+	}
+	return conn, err
 }
