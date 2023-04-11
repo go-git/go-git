@@ -25,7 +25,7 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Install build dependencies
-      run: sudo apt-get install gettext
+      run: sudo apt-get install gettext libcurl4-openssl-dev
 
     - name: Git Build
       run: make build-git
