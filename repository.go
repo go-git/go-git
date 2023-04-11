@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -21,7 +22,9 @@ import (
 	"github.com/go-git/go-git/v5/internal/revision"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
@@ -57,6 +60,7 @@ var (
 	ErrIsBareRepository          = errors.New("worktree not available in a bare repository")
 	ErrUnableToResolveCommit     = errors.New("unable to resolve commit")
 	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
+	ErrSHA256NotSupported        = errors.New("go-git was not compiled with SHA256 support")
 )
 
 // Repository represents a git repository
@@ -226,6 +230,39 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	return Init(s, wt)
+}
+
+func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, error) {
+	wt := osfs.New(path)
+	dot, _ := wt.Chroot(GitDirName)
+
+	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+
+	r, err := Init(s, wt)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	if opts != nil {
+		if opts.ObjectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
+			return nil, ErrSHA256NotSupported
+		}
+
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
+		cfg.Extensions.ObjectFormat = opts.ObjectFormat
+	}
+
+	err = r.Storer.SetConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, err
 }
 
 // PlainOpen opens a git repository from the given path. It detects if the
