@@ -147,6 +147,19 @@ func (s *ParserSuite) TestResolveExternalRefsInThinPack(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *ParserSuite) TestResolveExternalRefs(c *C) {
+	extRefsThinPack := fixtures.ByTag("delta-before-base").One()
+
+	scanner := packfile.NewScanner(extRefsThinPack.Packfile())
+
+	obs := new(testObserver)
+	parser, err := packfile.NewParser(scanner, obs)
+	c.Assert(err, IsNil)
+
+	_, err = parser.Parse()
+	c.Assert(err, IsNil)
+}
+
 type observerObject struct {
 	hash   string
 	otype  plumbing.ObjectType
