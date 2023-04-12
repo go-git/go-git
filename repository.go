@@ -936,6 +936,10 @@ const (
 )
 
 func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
+	if len(o.CustomRefSpec) > 0 {
+		return append([]config.RefSpec{}, o.CustomRefSpec...)
+	}
+
 	switch {
 	case o.ReferenceName.IsTag():
 		return []config.RefSpec{
