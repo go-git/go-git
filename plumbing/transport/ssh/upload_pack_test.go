@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	testutils "github.com/go-git/go-git/v5/plumbing/transport/ssh/internal/test"
 	"github.com/go-git/go-git/v5/plumbing/transport/test"
 
 	"github.com/gliderlabs/ssh"
@@ -57,7 +58,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
 	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 
-	server := &ssh.Server{Handler: handlerSSH}
+	server := &ssh.Server{Handler: testutils.HandlerSSH}
 	for _, opt := range s.opts {
 		opt(server)
 	}
