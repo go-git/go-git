@@ -444,6 +444,9 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 		return nil, err
 	}
 
+	if o.Mirror {
+		isBare = true
+	}
 	r, err := PlainInit(path, isBare)
 	if err != nil {
 		return nil, err
@@ -851,9 +854,10 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	c := &config.RemoteConfig{
-		Name:  o.RemoteName,
-		URLs:  []string{o.URL},
-		Fetch: r.cloneRefSpec(o),
+		Name:   o.RemoteName,
+		URLs:   []string{o.URL},
+		Fetch:  r.cloneRefSpec(o),
+		Mirror: o.Mirror,
 	}
 
 	if _, err := r.CreateRemote(c); err != nil {
@@ -906,7 +910,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		return err
 	}
 
-	if ref.Name().IsBranch() {
+	if !o.Mirror && ref.Name().IsBranch() {
 		branchRef := ref.Name()
 		branchName := strings.Split(string(branchRef), "refs/heads/")[1]
 
@@ -937,6 +941,8 @@ const (
 
 func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
 	switch {
+	case o.Mirror:
+		return []config.RefSpec{"+refs/*:refs/*"}
 	case o.ReferenceName.IsTag():
 		return []config.RefSpec{
 			config.RefSpec(fmt.Sprintf(refspecTag, o.ReferenceName.Short())),

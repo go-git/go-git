@@ -264,6 +264,7 @@ const (
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormat               = "objectformat"
+	mirrorKey                  = "mirror"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -578,6 +579,8 @@ type RemoteConfig struct {
 	// URLs the URLs of a remote repository. It must be non-empty. Fetch will
 	// always use the first URL, while push will use all of them.
 	URLs []string
+	// Mirror indicates that the repository is a mirror of remote.
+	Mirror bool
 
 	// insteadOfRulesApplied have urls been modified
 	insteadOfRulesApplied bool
@@ -631,6 +634,7 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.Name = c.raw.Name
 	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
 	c.Fetch = fetch
+	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
 
 	return nil
 }
@@ -661,6 +665,10 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 		}
 
 		c.raw.SetOption(fetchKey, values...)
+	}
+
+	if c.Mirror {
+		c.raw.SetOption(mirrorKey, strconv.FormatBool(c.Mirror))
 	}
 
 	return c.raw

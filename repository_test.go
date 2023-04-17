@@ -189,6 +189,35 @@ func (s *RepositorySuite) TestCloneContext(c *C) {
 	c.Assert(err, Equals, context.Canceled)
 }
 
+func (s *RepositorySuite) TestCloneMirror(c *C) {
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+		URL:    fixtures.Basic().One().URL,
+		Mirror: true,
+	})
+
+	c.Assert(err, IsNil)
+
+	refs, err := r.References()
+	var count int
+	refs.ForEach(func(r *plumbing.Reference) error { c.Log(r); count++; return nil })
+	c.Assert(err, IsNil)
+	// 6 refs total from github.com/git-fixtures/basic.git:
+	//  - HEAD
+	//  - refs/heads/master
+	//  - refs/heads/branch
+	//  - refs/pull/1/head
+	//  - refs/pull/2/head
+	//  - refs/pull/2/merge
+	c.Assert(count, Equals, 6)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+
+	c.Assert(cfg.Core.IsBare, Equals, true)
+	c.Assert(cfg.Remotes[DefaultRemoteName].Validate(), IsNil)
+	c.Assert(cfg.Remotes[DefaultRemoteName].Mirror, Equals, true)
+}
+
 func (s *RepositorySuite) TestCloneWithTags(c *C) {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
