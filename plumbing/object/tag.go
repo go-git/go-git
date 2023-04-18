@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object/signature/pgp"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/go-git/go-git/v5/utils/sync"
@@ -255,29 +257,24 @@ func (t *Tag) String() string {
 	)
 }
 
+// Signature returns the signature of the tag.
+func (t *Tag) Signature() string {
+	return t.PGPSignature
+}
+
 // Verify performs PGP verification of the tag with a provided armored
 // keyring and returns openpgp.Entity associated with verifying key on success.
 func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
+	verifier, err := pgp.NewVerifierFromArmoredKeyRing(keyRingReader)
 	if err != nil {
 		return nil, err
 	}
-
-	// Extract signature.
-	signature := strings.NewReader(t.PGPSignature)
-
-	encoded := &plumbing.MemoryObject{}
-	// Encode tag components, excluding signature and get a reader object.
-	if err := t.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	er, err := encoded.Reader()
+	entity, err := verifier.Verify(t)
 	if err != nil {
 		return nil, err
 	}
-
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+	return entity.Concrete().(*openpgp.Entity), nil
 }
 
 // TagIter provides an iterator for a set of tags.
