@@ -91,6 +91,60 @@ func (s *ClientSuite) TestNewHTTPError40x(c *C) {
 		"unexpected client error.*")
 }
 
+func (s *ClientSuite) Test_newSession(c *C) {
+	cl := NewClientWithOptions(nil, &ClientOptions{
+		CacheMaxEntries: 2,
+	}).(*client)
+
+	insecureEP := s.Endpoint
+	insecureEP.InsecureSkipTLS = true
+	session, err := newSession(cl, insecureEP, nil)
+	c.Assert(err, IsNil)
+
+	sessionTransport := session.client.Transport.(*http.Transport)
+	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
+	t, ok := cl.fetchTransport(transportOptions{
+		insecureSkipTLS: true,
+	})
+	// transport should be cached.
+	c.Assert(ok, Equals, true)
+	// cached transport should be the one that's used.
+	c.Assert(sessionTransport, Equals, t)
+
+	caEndpoint := insecureEP
+	caEndpoint.CaBundle = []byte("this is the way")
+	session, err = newSession(cl, caEndpoint, nil)
+	c.Assert(err, IsNil)
+
+	sessionTransport = session.client.Transport.(*http.Transport)
+	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
+	c.Assert(sessionTransport.TLSClientConfig.RootCAs, NotNil)
+	t, ok = cl.fetchTransport(transportOptions{
+		insecureSkipTLS: true,
+		caBundle:        "this is the way",
+	})
+	// transport should be cached.
+	c.Assert(ok, Equals, true)
+	// cached transport should be the one that's used.
+	c.Assert(sessionTransport, Equals, t)
+
+	session, err = newSession(cl, caEndpoint, nil)
+	c.Assert(err, IsNil)
+	sessionTransport = session.client.Transport.(*http.Transport)
+	// transport that's going to be used should be cached already.
+	c.Assert(sessionTransport, Equals, t)
+	// no new transport got cached.
+	c.Assert(cl.transports.Len(), Equals, 2)
+
+	// if the cache does not exist, the transport should still be correctly configured.
+	cl.transports = nil
+	session, err = newSession(cl, insecureEP, nil)
+	c.Assert(err, IsNil)
+
+	sessionTransport = session.client.Transport.(*http.Transport)
+	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
+}
+
 func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
 	res := &http.Response{
