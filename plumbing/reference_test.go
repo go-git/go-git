@@ -105,7 +105,7 @@ func (s *ReferenceSuite) TestIsTag(c *C) {
 
 func benchMarkReferenceString(r *Reference, b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		r.String()
+		_ = r.String()
 	}
 }
 
