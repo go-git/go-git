@@ -508,7 +508,7 @@ func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
 }
 
 func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.UploadPackSession, error) {
-	c, ep, err := newClient(url, auth, insecure, cabundle)
+	c, ep, err := newClient(url, insecure, cabundle)
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +517,7 @@ func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, 
 }
 
 func newSendPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.ReceivePackSession, error) {
-	c, ep, err := newClient(url, auth, insecure, cabundle)
+	c, ep, err := newClient(url, insecure, cabundle)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +525,7 @@ func newSendPackSession(url string, auth transport.AuthMethod, insecure bool, ca
 	return c.NewReceivePackSession(ep, auth)
 }
 
-func newClient(url string, auth transport.AuthMethod, insecure bool, cabundle []byte) (transport.Transport, *transport.Endpoint, error) {
+func newClient(url string, insecure bool, cabundle []byte) (transport.Transport, *transport.Endpoint, error) {
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
 		return nil, nil, err
