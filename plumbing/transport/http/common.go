@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -188,6 +189,10 @@ func transportWithCABundle(transport *http.Transport, caBundle []byte) error {
 	return nil
 }
 
+func transportWithProxy(transport *http.Transport, proxyURL *url.URL) {
+	transport.Proxy = http.ProxyURL(proxyURL)
+}
+
 func configureTransport(transport *http.Transport, ep *transport.Endpoint) error {
 	if len(ep.CaBundle) > 0 {
 		if err := transportWithCABundle(transport, ep.CaBundle); err != nil {
@@ -197,6 +202,14 @@ func configureTransport(transport *http.Transport, ep *transport.Endpoint) error
 	if ep.InsecureSkipTLS {
 		transportWithInsecureTLS(transport)
 	}
+
+	if ep.Proxy.URL != "" {
+		proxyURL, err := ep.Proxy.FullURL()
+		if err != nil {
+			return err
+		}
+		transportWithProxy(transport, proxyURL)
+	}
 	return nil
 }
 
@@ -205,7 +218,7 @@ func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*
 
 	// We need to configure the http transport if there are transport specific
 	// options present in the endpoint.
-	if len(ep.CaBundle) > 0 || ep.InsecureSkipTLS {
+	if len(ep.CaBundle) > 0 || ep.InsecureSkipTLS || ep.Proxy.URL != "" {
 		var transport *http.Transport
 		// if the client wasn't configured to have a cache for transports then just configure
 		// the transport and use it directly, otherwise try to use the cache.
@@ -222,6 +235,13 @@ func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*
 			transportOpts := transportOptions{
 				caBundle:        string(ep.CaBundle),
 				insecureSkipTLS: ep.InsecureSkipTLS,
+			}
+			if ep.Proxy.URL != "" {
+				proxyURL, err := ep.Proxy.FullURL()
+				if err != nil {
+					return nil, err
+				}
+				transportOpts.proxyURL = *proxyURL
 			}
 			var found bool
 			transport, found = c.fetchTransport(transportOpts)

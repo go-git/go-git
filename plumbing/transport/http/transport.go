@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"net/url"
 )
 
 // transportOptions contains transport specific configuration.
@@ -9,6 +10,7 @@ type transportOptions struct {
 	insecureSkipTLS bool
 	// []byte is not comparable.
 	caBundle string
+	proxyURL url.URL
 }
 
 func (c *client) addTransport(opts transportOptions, transport *http.Transport) {
