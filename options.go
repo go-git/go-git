@@ -624,7 +624,27 @@ type ListOptions struct {
 	InsecureSkipTLS bool
 	// CABundle specify additional ca bundle with system cert pool
 	CABundle []byte
+
+	// PeelingOption defines how peeled objects are handled during a
+	// remote list.
+	PeelingOption PeelingOption
 }
+
+// PeelingOption represents the different ways to handle peeled references.
+//
+// Peeled references represent the underlying object of an annotated
+// (or signed) tag. Refer to upstream documentation for more info:
+// https://github.com/git/git/blob/master/Documentation/technical/reftable.txt
+type PeelingOption uint8
+
+const (
+	// IgnorePeeled ignores all peeled reference names. This is the default behavior.
+	IgnorePeeled PeelingOption = 0
+	// OnlyPeeled returns only peeled reference names.
+	OnlyPeeled PeelingOption = 1
+	// AppendPeeled appends peeled reference names to the reference list.
+	AppendPeeled PeelingOption = 2
+)
 
 // CleanOptions describes how a clean should be performed.
 type CleanOptions struct {

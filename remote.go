@@ -33,6 +33,7 @@ var (
 	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
+	ErrEmptyUrls             = errors.New("URLs cannot be empty")
 )
 
 type NoMatchingRefSpecError struct {
@@ -54,6 +55,9 @@ const (
 	// repo containing this remote, when not using the multi-ack
 	// protocol.  Setting this to 0 means there is no limit.
 	maxHavesToVisitPerRef = 100
+
+	// peeledSuffix is the suffix used to build peeled reference names.
+	peeledSuffix = "^{}"
 )
 
 // Remote represents a connection to a remote repository.
@@ -1259,6 +1263,10 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 }
 
 func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
+	if r.c == nil || len(r.c.URLs) == 0 {
+		return nil, ErrEmptyUrls
+	}
+
 	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle)
 	if err != nil {
 		return nil, err
@@ -1282,13 +1290,22 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 	}
 
 	var resultRefs []*plumbing.Reference
-	err = refs.ForEach(func(ref *plumbing.Reference) error {
-		resultRefs = append(resultRefs, ref)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	if o.PeelingOption == AppendPeeled || o.PeelingOption == IgnorePeeled {
+		err = refs.ForEach(func(ref *plumbing.Reference) error {
+			resultRefs = append(resultRefs, ref)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
+
+	if o.PeelingOption == AppendPeeled || o.PeelingOption == OnlyPeeled {
+		for k, v := range ar.Peeled {
+			resultRefs = append(resultRefs, plumbing.NewReferenceFromStrings(k+"^{}", v.String()))
+		}
+	}
+
 	return resultRefs, nil
 }
 
