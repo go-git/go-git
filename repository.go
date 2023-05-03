@@ -1012,9 +1012,21 @@ func (r *Repository) fetchAndUpdateReferences(
 		return nil, err
 	}
 
-	resolvedRef, err := storer.ResolveReference(remoteRefs, ref)
+	var resolvedRef *plumbing.Reference
+	// return error from checking the raw ref passed in
+	var rawRefError error
+	for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
+		resolvedRef, err = storer.ResolveReference(remoteRefs, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
+
+		if err == nil {
+			break
+		} else if rawRefError == nil {
+			rawRefError = err
+		}
+	}
+
 	if err != nil {
-		return nil, err
+		return nil, rawRefError
 	}
 
 	refsUpdated, err := r.updateReferences(remote.c.Fetch, resolvedRef)
