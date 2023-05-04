@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
+	"github.com/go-git/go-git/v5/plumbing/transport/common"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"golang.org/x/sys/execabs"
 )

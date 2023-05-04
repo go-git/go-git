@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
+	"github.com/go-git/go-git/v5/plumbing/transport/common"
 	"github.com/skeema/knownhosts"
 
 	"github.com/kevinburke/ssh_config"
