@@ -873,6 +873,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		RemoteName:      o.RemoteName,
 		InsecureSkipTLS: o.InsecureSkipTLS,
 		CABundle:        o.CABundle,
+		ProxyOptions:    o.ProxyOptions,
 	}, o.ReferenceName)
 	if err != nil {
 		return err
