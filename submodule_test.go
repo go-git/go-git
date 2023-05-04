@@ -233,3 +233,32 @@ func (s *SubmoduleSuite) TestSubmodulesUpdateContext(c *C) {
 	err = sm.UpdateContext(ctx, &SubmoduleUpdateOptions{Init: true})
 	c.Assert(err, NotNil)
 }
+
+func (s *SubmoduleSuite) TestSubmodulesFetchDepth(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
+	sm, err := s.Worktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init:  true,
+		Depth: 1,
+	})
+	c.Assert(err, IsNil)
+
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	lr, err := r.Log(&LogOptions{})
+	c.Assert(err, IsNil)
+
+	commitCount := 0
+	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+		commitCount++
+	}
+	c.Assert(err, IsNil)
+
+	c.Assert(commitCount, Equals, 1)
+}
