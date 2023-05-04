@@ -300,6 +300,9 @@ type SubmoduleUpdateOptions struct {
 	RecurseSubmodules SubmoduleRescursivity
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
+	// Depth limit fetching to the specified number of commits from the tip of
+	// each remote branch history.
+	Depth int
 }
 
 var (
