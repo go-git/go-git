@@ -557,9 +557,7 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 		return nil, err
 	}
 
-	_ = mergo.Merge(global, system)
-	_ = mergo.Merge(local, global)
-	return local, nil
+	return mergeConfigs(local, global, system)
 }
 
 // Remote return a remote if exists
@@ -1784,4 +1782,15 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 		return nil
 	})
 	return
+}
+
+func mergeConfigs(local, global, system *config.Config) (*config.Config, error) {
+	if err := mergo.Merge(global, local, mergo.WithOverride); err != nil {
+		return nil, err
+	}
+	if err := mergo.Merge(system, global, mergo.WithOverride); err != nil {
+		return nil, err
+	}
+
+	return system, nil
 }

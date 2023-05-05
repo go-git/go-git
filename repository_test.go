@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	format "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -3060,5 +3061,264 @@ func BenchmarkPlainClone(b *testing.B) {
 		b.StopTimer()
 		os.RemoveAll(t)
 		b.StartTimer()
+	}
+}
+
+func (s *RepositorySuite) TestMergeConfigs(c *C) {
+	type userStruct struct {
+		Name  string
+		Email string
+	}
+	tests := map[string]struct {
+		local  *config.Config
+		global *config.Config
+		system *config.Config
+		merged *config.Config
+	}{
+		"no `raw` values": {
+			local: &config.Config{
+				User: userStruct{
+					Name:  "local name",
+					Email: "local email",
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+				Raw:        format.New(),
+			},
+			global: &config.Config{
+				User: userStruct{
+					Name:  "global name",
+					Email: "global email",
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+				Raw:        format.New(),
+			},
+			system: &config.Config{
+				User: userStruct{
+					Name:  "system name",
+					Email: "system email",
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+				Raw:        format.New(),
+			},
+			merged: &config.Config{
+				User: userStruct{
+					Name:  "local name",
+					Email: "local email",
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+				Raw:        format.New(),
+			},
+		},
+		"with single `raw` value": {
+			local: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "bar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			global: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "baz"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			system: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "foobar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			merged: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "bar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+		},
+		"with single, sometimes omitted `raw` value": {
+			local: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "bar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			global: &config.Config{
+				Raw:        &format.Config{},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			system: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "foobar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			merged: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "bar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+		},
+		"with multiple `raw` values": {
+			local: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "bar"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			global: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "bax", Value: "baz"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			system: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "foobar"},
+								&format.Option{Key: "bax", Value: "notbaz"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+			merged: &config.Config{
+				Raw: &format.Config{
+					Sections: format.Sections{
+						&format.Section{
+							Name: "myapplication",
+							Options: format.Options{
+								&format.Option{Key: "foo", Value: "bar"},
+								&format.Option{Key: "bax", Value: "baz"},
+							},
+						},
+					},
+				},
+				Remotes:    make(map[string]*config.RemoteConfig),
+				Submodules: make(map[string]*config.Submodule),
+				Branches:   make(map[string]*config.Branch),
+				URLs:       make(map[string]*config.URL),
+			},
+		},
+	}
+
+	for name, test := range tests {
+		merged, err := mergeConfigs(test.local, test.global, test.system)
+		c.Assert(err, IsNil)
+		expected, _ := test.merged.Marshal()
+		obtained, _ := merged.Marshal()
+		c.Assert(merged, DeepEquals, test.merged, Commentf("test '%s' failed, expected merged config:\n%s\nobtained merged config:\n%s", name, string(expected), string(obtained)))
 	}
 }
