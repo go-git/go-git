@@ -212,7 +212,7 @@ func (c *command) getHostWithPort() string {
 		port = DefaultPort
 	}
 
-	return fmt.Sprintf("%s:%d", host, port)
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
@@ -240,7 +240,7 @@ func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 		}
 	}
 
-	addr = fmt.Sprintf("%s:%d", host, port)
+	addr = net.JoinHostPort(host, strconv.Itoa(port))
 	return
 }
 
