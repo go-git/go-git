@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 type SubmoduleSuite struct {
 	BaseSuite
 	Worktree *Worktree
-	path     string
+	clean    func()
 }
 
 var _ = Suite(&SubmoduleSuite{})
@@ -23,8 +22,8 @@ var _ = Suite(&SubmoduleSuite{})
 func (s *SubmoduleSuite) SetUpTest(c *C) {
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	var dir string
+	dir, s.clean = s.TemporalDir()
 
 	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
 		URL: path,
@@ -35,13 +34,10 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 	s.Repository = r
 	s.Worktree, err = r.Worktree()
 	c.Assert(err, IsNil)
-
-	s.path = dir
 }
 
-func (s *SubmoduleSuite) TearDownTest(c *C) {
-	err := os.RemoveAll(s.path)
-	c.Assert(err, IsNil)
+func (s *SubmoduleSuite) TearDownTest(_ *C) {
+	s.clean()
 }
 
 func (s *SubmoduleSuite) TestInit(c *C) {
@@ -198,7 +194,7 @@ func (s *SubmoduleSuite) TestSubmodulesInit(c *C) {
 func (s *SubmoduleSuite) TestGitSubmodulesSymlink(c *C) {
 	f, err := s.Worktree.Filesystem.Create("badfile")
 	c.Assert(err, IsNil)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	err = s.Worktree.Filesystem.Remove(gitmodulesFile)
 	c.Assert(err, IsNil)

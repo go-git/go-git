@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,17 +59,18 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
-	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	wt, _ := fs.Chroot("worktree")
-	r, err := Init(storage, wt)
+	r, err := Init(st, wt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
 	f, err := fs.Open(fs.Join("worktree", ".git"))
 	c.Assert(err, IsNil)
+	defer func() { _ = f.Close() }()
 
-	all, err := ioutil.ReadAll(f)
+	all, err := io.ReadAll(f)
 	c.Assert(err, IsNil)
 	c.Assert(string(all), Equals, fmt.Sprintf("gitdir: %s\n", filepath.Join("..", "storage")))
 
@@ -85,9 +85,9 @@ func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
-	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
-	r, err := Init(storage, fs)
+	r, err := Init(st, fs)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
@@ -3009,14 +3009,14 @@ func BenchmarkObjects(b *testing.B) {
 
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
-			storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 			worktree, err := fs.Chroot(filepath.Dir(fs.Root()))
 			if err != nil {
 				b.Fatal(err)
 			}
 
-			repo, err := Open(storer, worktree)
+			repo, err := Open(st, worktree)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -3046,7 +3046,7 @@ func BenchmarkObjects(b *testing.B) {
 
 func BenchmarkPlainClone(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		t, err := ioutil.TempDir("", "")
+		t, err := os.MkdirTemp("", "")
 		if err != nil {
 			b.Fatal(err)
 		}
