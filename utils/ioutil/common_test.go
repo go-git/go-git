@@ -3,7 +3,7 @@ package ioutil
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
+	"io"
 	"strings"
 	"testing"
 
@@ -38,7 +38,7 @@ func (s *CommonSuite) TestNonEmptyReader_NonEmpty(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	read, err := ioutil.ReadAll(r)
+	read, err := io.ReadAll(r)
 	c.Assert(err, IsNil)
 	c.Assert(string(read), Equals, "1")
 }
@@ -48,7 +48,7 @@ func (s *CommonSuite) TestNewReadCloser(c *C) {
 	closer := &closer{}
 	r := NewReadCloser(buf, closer)
 
-	read, err := ioutil.ReadAll(r)
+	read, err := io.ReadAll(r)
 	c.Assert(err, IsNil)
 	c.Assert(string(read), Equals, "1")
 
@@ -160,7 +160,7 @@ func ExampleCheckClose() {
 	// CheckClose is commonly used with named return values
 	f := func() (err error) {
 		// Get a io.ReadCloser
-		r := ioutil.NopCloser(strings.NewReader("foo"))
+		r := io.NopCloser(strings.NewReader("foo"))
 
 		// defer CheckClose call with an io.Closer and pointer to error
 		defer CheckClose(r, &err)

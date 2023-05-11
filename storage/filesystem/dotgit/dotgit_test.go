@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/hex"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -374,7 +373,7 @@ func (s *SuiteDotGit) TestConfigWriteAndConfig(c *C) {
 	f, err = dir.Config()
 	c.Assert(err, IsNil)
 
-	cnt, err := ioutil.ReadAll(f)
+	cnt, err := io.ReadAll(f)
 	c.Assert(err, IsNil)
 
 	c.Assert(string(cnt), Equals, "foo")
@@ -404,7 +403,7 @@ func (s *SuiteDotGit) TestIndexWriteAndIndex(c *C) {
 	f, err = dir.Index()
 	c.Assert(err, IsNil)
 
-	cnt, err := ioutil.ReadAll(f)
+	cnt, err := io.ReadAll(f)
 	c.Assert(err, IsNil)
 
 	c.Assert(string(cnt), Equals, "foo")
@@ -434,7 +433,7 @@ func (s *SuiteDotGit) TestShallowWriteAndShallow(c *C) {
 	f, err = dir.Shallow()
 	c.Assert(err, IsNil)
 
-	cnt, err := ioutil.ReadAll(f)
+	cnt, err := io.ReadAll(f)
 	c.Assert(err, IsNil)
 
 	c.Assert(string(cnt), Equals, "foo")

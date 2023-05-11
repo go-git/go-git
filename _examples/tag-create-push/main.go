@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -67,7 +66,7 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 
 func publicKey(filePath string) (*ssh.PublicKeys, error) {
 	var publicKey *ssh.PublicKeys
-	sshKey, _ := ioutil.ReadFile(filePath)
+	sshKey, _ := os.ReadFile(filePath)
 	publicKey, err := ssh.NewPublicKeys("git", []byte(sshKey), "")
 	if err != nil {
 		return nil, err

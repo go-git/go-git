@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1387,7 +1386,7 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 }
 
 func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
-	d, err := ioutil.TempDir("", "TestCanPushShasToReference")
+	d, err := os.MkdirTemp("", "TestCanPushShasToReference")
 	c.Assert(err, IsNil)
 	if err != nil {
 		return

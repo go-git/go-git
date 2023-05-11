@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -81,7 +80,7 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	err = os.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
 	c.Assert(err, IsNil)
 	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -118,14 +117,14 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	err = os.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
 	w, err = r.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	err = os.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -287,7 +286,7 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
 
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	err = os.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -315,7 +314,7 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	ch, err := fs.Open("CHANGELOG")
 	c.Assert(err, IsNil)
 
-	content, err := ioutil.ReadAll(ch)
+	content, err := io.ReadAll(ch)
 	c.Assert(err, IsNil)
 	c.Assert(string(content), Equals, "Initial changelog\n")
 

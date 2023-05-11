@@ -3,7 +3,6 @@ package packfile
 import (
 	"bytes"
 	"io"
-	stdioutil "io/ioutil"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
@@ -278,13 +277,13 @@ func objectsEqual(c *C, o1, o2 plumbing.EncodedObject) {
 	r1, err := o1.Reader()
 	c.Assert(err, IsNil)
 
-	b1, err := stdioutil.ReadAll(r1)
+	b1, err := io.ReadAll(r1)
 	c.Assert(err, IsNil)
 
 	r2, err := o2.Reader()
 	c.Assert(err, IsNil)
 
-	b2, err := stdioutil.ReadAll(r2)
+	b2, err := io.ReadAll(r2)
 	c.Assert(err, IsNil)
 
 	c.Assert(bytes.Compare(b1, b2), Equals, 0)

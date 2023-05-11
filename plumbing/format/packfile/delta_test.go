@@ -2,7 +2,7 @@ package packfile
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"math/rand"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -109,14 +109,14 @@ func (s *DeltaSuite) TestAddDeltaReader(c *C) {
 		targetBuf := genBytes(t.target)
 
 		delta := DiffDelta(baseBuf, targetBuf)
-		deltaRC := ioutil.NopCloser(bytes.NewReader(delta))
+		deltaRC := io.NopCloser(bytes.NewReader(delta))
 
 		c.Log("Executing test case:", t.description)
 
 		resultRC, err := ReaderFromDelta(baseObj, deltaRC)
 		c.Assert(err, IsNil)
 
-		result, err := ioutil.ReadAll(resultRC)
+		result, err := io.ReadAll(resultRC)
 		c.Assert(err, IsNil)
 
 		err = resultRC.Close()
@@ -164,12 +164,12 @@ func (s *DeltaSuite) TestMaxCopySizeDeltaReader(c *C) {
 	targetBuf = append(targetBuf, byte(1))
 
 	delta := DiffDelta(baseBuf, targetBuf)
-	deltaRC := ioutil.NopCloser(bytes.NewReader(delta))
+	deltaRC := io.NopCloser(bytes.NewReader(delta))
 
 	resultRC, err := ReaderFromDelta(baseObj, deltaRC)
 	c.Assert(err, IsNil)
 
-	result, err := ioutil.ReadAll(resultRC)
+	result, err := io.ReadAll(resultRC)
 	c.Assert(err, IsNil)
 
 	err = resultRC.Close()

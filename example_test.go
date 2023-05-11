@@ -3,7 +3,6 @@ package git_test
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -44,7 +43,7 @@ func ExampleClone() {
 
 func ExamplePlainClone() {
 	// Tempdir to clone the repository
-	dir, err := ioutil.TempDir("", "clone-example")
+	dir, err := os.MkdirTemp("", "clone-example")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +71,7 @@ func ExamplePlainClone() {
 
 func ExamplePlainClone_usernamePassword() {
 	// Tempdir to clone the repository
-	dir, err := ioutil.TempDir("", "clone-example")
+	dir, err := os.MkdirTemp("", "clone-example")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,7 +94,7 @@ func ExamplePlainClone_usernamePassword() {
 
 func ExamplePlainClone_accessToken() {
 	// Tempdir to clone the repository
-	dir, err := ioutil.TempDir("", "clone-example")
+	dir, err := os.MkdirTemp("", "clone-example")
 	if err != nil {
 		log.Fatal(err)
 	}

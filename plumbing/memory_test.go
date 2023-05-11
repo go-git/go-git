@@ -2,7 +2,6 @@ package plumbing
 
 import (
 	"io"
-	"io/ioutil"
 
 	. "gopkg.in/check.v1"
 )
@@ -52,7 +51,7 @@ func (s *MemoryObjectSuite) TestReader(c *C) {
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(reader.Close(), IsNil) }()
 
-	b, err := ioutil.ReadAll(reader)
+	b, err := io.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(b, DeepEquals, []byte("foo"))
 }
@@ -75,7 +74,7 @@ func (s *MemoryObjectSuite) TestSeekableReader(c *C) {
 	_, err = rs.Seek(pageSize, io.SeekStart)
 	c.Assert(err, IsNil)
 
-	b, err := ioutil.ReadAll(rs)
+	b, err := io.ReadAll(rs)
 	c.Assert(err, IsNil)
 	c.Assert(b, DeepEquals, []byte(payload))
 

@@ -3,7 +3,6 @@ package http
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -222,7 +221,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	l, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
 
-	base, err := ioutil.TempDir(os.TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
+	base, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
 	c.Assert(err, IsNil)
 
 	s.port = l.Addr().(*net.TCPAddr).Port

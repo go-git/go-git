@@ -3,7 +3,6 @@ package object
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 	"time"
 
@@ -466,7 +465,7 @@ func (s *TagSuite) TestEncodeWithoutSignature(c *C) {
 	c.Assert(err, IsNil)
 	er, err := encoded.Reader()
 	c.Assert(err, IsNil)
-	payload, err := ioutil.ReadAll(er)
+	payload, err := io.ReadAll(er)
 	c.Assert(err, IsNil)
 
 	c.Assert(string(payload), Equals, ""+
