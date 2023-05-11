@@ -131,11 +131,7 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 	defer ioutil.CheckClose(or, &err)
 
 	_, err = io.Copy(e.zw, or)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (e *Encoder) writeBaseIfDelta(o *ObjectToPack) error {

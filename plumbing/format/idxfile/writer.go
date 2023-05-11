@@ -84,11 +84,8 @@ func (w *Writer) OnFooter(h plumbing.Hash) error {
 	w.checksum = h
 	w.finished = true
 	_, err := w.createIndex()
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 // creatIndex returns a filled MemoryIndex with the information filled by
