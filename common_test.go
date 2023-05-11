@@ -37,7 +37,7 @@ func (s *BaseSuite) TearDownSuite(c *C) {
 	s.Suite.TearDownSuite(c)
 }
 
-func (s *BaseSuite) buildBasicRepository(c *C) {
+func (s *BaseSuite) buildBasicRepository(_ *C) {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)
 }
@@ -105,13 +105,16 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 
 	storer := memory.NewStorage()
 	p := f.Packfile()
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	if err := packfile.UpdateObjectStorage(storer, p); err != nil {
 		panic(err)
 	}
 
-	storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head)))
+	err := storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head)))
+	if err != nil {
+		panic(err)
+	}
 
 	r, err := Open(storer, memfs.New())
 	if err != nil {
@@ -133,14 +136,17 @@ func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
 
 func (s *BaseSuite) TemporalDir() (path string, clean func()) {
 	fs := osfs.New(os.TempDir())
-	path, err := util.TempDir(fs, "", "")
+	relPath, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
 	}
 
-	return fs.Join(fs.Root(), path), func() {
-		util.RemoveAll(fs, path)
+	path = fs.Join(fs.Root(), relPath)
+	clean = func() {
+		_ = util.RemoveAll(fs, relPath)
 	}
+
+	return
 }
 
 func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
@@ -155,9 +161,11 @@ func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
 		panic(err)
 	}
 
-	return fs, func() {
-		util.RemoveAll(fs, path)
+	clean = func() {
+		_ = util.RemoveAll(fs, path)
 	}
+
+	return
 }
 
 type SuiteCommon struct{}
