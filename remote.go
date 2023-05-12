@@ -837,6 +837,7 @@ func getHavesFromRef(
 	remoteRefs map[plumbing.Hash]bool,
 	s storage.Storer,
 	haves map[plumbing.Hash]bool,
+	shallows *map[plumbing.Hash]struct{},
 ) error {
 	h := ref.Hash()
 	if haves[h] {
@@ -864,6 +865,21 @@ func getHavesFromRef(
 	toVisit := maxHavesToVisitPerRef
 	return walker.ForEach(func(c *object.Commit) error {
 		haves[c.Hash] = true
+
+		// initialise the shallows map
+		if *shallows == nil {
+			shallowList, _ := s.Shallow()
+			*shallows = make(map[plumbing.Hash]struct{}, len(shallowList))
+			for _, sh := range shallowList {
+				(*shallows)[sh] = struct{}{}
+			}
+		}
+
+		// If this is a shallow reference don't try to iterate further
+		if _, ok := (*shallows)[c.Hash]; ok {
+			return storer.ErrStop
+		}
+
 		toVisit--
 		// If toVisit starts out at 0 (indicating there is no
 		// max), then it will be negative here and we won't stop
@@ -890,6 +906,9 @@ func getHaves(
 		return nil, err
 	}
 
+	// create a map of all the shallow references, but only populate on first use
+	var shallows map[plumbing.Hash]struct{}
+
 	for _, ref := range localRefs {
 		if haves[ref.Hash()] {
 			continue
@@ -899,7 +918,7 @@ func getHaves(
 			continue
 		}
 
-		err = getHavesFromRef(ref, remoteRefs, s, haves)
+		err = getHavesFromRef(ref, remoteRefs, s, haves, &shallows)
 		if err != nil {
 			return nil, err
 		}

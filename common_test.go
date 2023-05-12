@@ -3,10 +3,12 @@ package git
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
@@ -211,4 +213,37 @@ func AssertReferencesMissing(c *C, r *Repository, expected []string) {
 		c.Assert(err, NotNil)
 		c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	}
+}
+
+func CommitNewFile(c *C, repo *Repository, fileName string) plumbing.Hash {
+	wt, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	fd, err := wt.Filesystem.Create(fileName)
+	c.Assert(err, IsNil)
+
+	_, err = fd.Write([]byte("# test file"))
+	c.Assert(err, IsNil)
+
+	err = fd.Close()
+	c.Assert(err, IsNil)
+
+	_, err = wt.Add(fileName)
+	c.Assert(err, IsNil)
+
+	sha, err := wt.Commit("test commit", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+		Committer: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	c.Assert(err, IsNil)
+
+	return sha
 }
