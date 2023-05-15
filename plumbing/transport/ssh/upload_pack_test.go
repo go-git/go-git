@@ -3,7 +3,6 @@ package ssh
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -43,7 +42,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base, err = ioutil.TempDir(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
+	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
 	c.Assert(err, IsNil)
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {

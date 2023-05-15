@@ -3,7 +3,7 @@ package http
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -49,7 +49,7 @@ func (s *UploadPackSuite) TestuploadPackRequestToReader(c *C) {
 
 	sr, err := uploadPackRequestToReader(r)
 	c.Assert(err, IsNil)
-	b, _ := ioutil.ReadAll(sr)
+	b, _ := io.ReadAll(sr)
 	c.Assert(string(b), Equals,
 		"0032want 2b41ef280fdb67a9b250678686a0c3e03b0a9989\n"+
 			"0032want d82f291cde9987322c8a0c81a325e1ba6159684c\n0000"+

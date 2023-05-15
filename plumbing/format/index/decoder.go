@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
+
 	"strconv"
 	"time"
 
@@ -201,7 +201,7 @@ func (d *Decoder) padEntry(idx *Index, e *Entry, read int) error {
 
 	entrySize := read + len(e.Name)
 	padLen := 8 - entrySize%8
-	_, err := io.CopyN(ioutil.Discard, d.r, int64(padLen))
+	_, err := io.CopyN(io.Discard, d.r, int64(padLen))
 	return err
 }
 

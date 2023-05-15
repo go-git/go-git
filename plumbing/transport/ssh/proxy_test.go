@@ -3,7 +3,6 @@ package ssh
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -54,7 +53,7 @@ func (s *ProxySuite) TestCommand(c *C) {
 	}()
 
 	s.u.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.u.base, err = ioutil.TempDir(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.u.port))
+	s.u.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.u.port))
 	c.Assert(err, IsNil)
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {

@@ -1250,11 +1250,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 // operation is complete, an error is returned. The context only affects to the
 // transport operations.
 func (r *Remote) ListContext(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
-	refs, err := r.list(ctx, o)
-	if err != nil {
-		return refs, err
-	}
-	return refs, nil
+	return r.list(ctx, o)
 }
 
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {

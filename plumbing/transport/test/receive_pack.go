@@ -1,13 +1,11 @@
 // Package test implements common test suite for different transport
 // implementations.
-//
 package test
 
 import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -235,7 +233,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 
 	if rootPath != "" && err == nil && stat.IsDir() {
 		objectPath := filepath.Join(rootPath, "objects/pack")
-		files, err := ioutil.ReadDir(objectPath)
+		files, err := os.ReadDir(objectPath)
 		c.Assert(err, IsNil)
 
 		for _, file := range files {
@@ -371,5 +369,5 @@ func (s *ReceivePackSuite) emptyPackfile() io.ReadCloser {
 		panic(err)
 	}
 
-	return ioutil.NopCloser(&buf)
+	return io.NopCloser(&buf)
 }

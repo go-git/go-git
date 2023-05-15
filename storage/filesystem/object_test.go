@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -510,7 +509,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 								b.Fatal(err)
 							}
 
-							if _, err := ioutil.ReadAll(r); err != nil {
+							if _, err := io.ReadAll(r); err != nil {
 								b.Fatal(err)
 							}
 

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	stdioutil "io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -647,7 +646,7 @@ func (d *DotGit) ObjectDelete(h plumbing.Hash) error {
 }
 
 func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Reference, err error) {
-	b, err := stdioutil.ReadAll(rd)
+	b, err := io.ReadAll(rd)
 	if err != nil {
 		return nil, err
 	}

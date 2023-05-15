@@ -1,13 +1,11 @@
 // Package test implements common test suite for different transport
 // implementations.
-//
 package test
 
 import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -154,7 +152,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
 
 	cancel()
 
-	_, err = io.Copy(ioutil.Discard, reader)
+	_, err = io.Copy(io.Discard, reader)
 	c.Assert(err, NotNil)
 
 	err = reader.Close()
@@ -255,7 +253,7 @@ func (s *UploadPackSuite) TestFetchError(c *C) {
 }
 
 func (s *UploadPackSuite) checkObjectNumber(c *C, r io.Reader, n int) {
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 	c.Assert(err, IsNil)
 	buf := bytes.NewBuffer(b)
 	storage := memory.NewStorage()

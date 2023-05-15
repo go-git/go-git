@@ -2,7 +2,7 @@ package idxfile_test
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 
 	. "github.com/go-git/go-git/v5/plumbing/format/idxfile"
 
@@ -12,7 +12,7 @@ import (
 
 func (s *IdxfileSuite) TestDecodeEncode(c *C) {
 	fixtures.ByTag("packfile").Test(c, func(f *fixtures.Fixture) {
-		expected, err := ioutil.ReadAll(f.Idx())
+		expected, err := io.ReadAll(f.Idx())
 		c.Assert(err, IsNil)
 
 		idx := new(MemoryIndex)

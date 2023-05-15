@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -119,7 +118,7 @@ ch2xUA==
 
 func BenchmarkDecode(b *testing.B) {
 	f := fixtures.Basic().One()
-	fixture, err := ioutil.ReadAll(f.Idx())
+	fixture, err := io.ReadAll(f.Idx())
 	if err != nil {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}

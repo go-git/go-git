@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -101,7 +100,7 @@ func (s *SidebandSuite) TestDecodeWithProgress(c *C) {
 	c.Assert(n, Equals, 26)
 	c.Assert(content, DeepEquals, expected)
 
-	progress, err := ioutil.ReadAll(output)
+	progress, err := io.ReadAll(output)
 	c.Assert(err, IsNil)
 	c.Assert(progress, DeepEquals, []byte{'F', 'O', 'O', '\n'})
 }
