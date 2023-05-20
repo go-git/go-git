@@ -32,6 +32,8 @@ type ObjectStorage struct {
 	packList    []plumbing.Hash
 	packListIdx int
 	packfiles   map[plumbing.Hash]*packfile.Packfile
+	muI         sync.RWMutex
+	muP         sync.RWMutex
 }
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
@@ -227,6 +229,9 @@ func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfi
 }
 
 func (s *ObjectStorage) packfileFromCache(hash plumbing.Hash) *packfile.Packfile {
+	s.muP.Lock()
+	defer s.muP.Unlock()
+
 	if s.packfiles == nil {
 		if s.options.KeepDescriptors {
 			s.packfiles = make(map[plumbing.Hash]*packfile.Packfile)
@@ -240,6 +245,9 @@ func (s *ObjectStorage) packfileFromCache(hash plumbing.Hash) *packfile.Packfile
 }
 
 func (s *ObjectStorage) storePackfileInCache(hash plumbing.Hash, p *packfile.Packfile) error {
+	s.muP.Lock()
+	defer s.muP.Unlock()
+
 	if s.options.KeepDescriptors {
 		s.packfiles[hash] = p
 		return nil
@@ -462,7 +470,10 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (
 		return nil, plumbing.ErrObjectNotFound
 	}
 
+	s.muI.RLock()
 	idx := s.index[pack]
+	s.muI.RUnlock()
+
 	p, err := s.packfile(idx, pack)
 	if err != nil {
 		return nil, err
@@ -540,6 +551,9 @@ func (s *ObjectStorage) decodeDeltaObjectAt(
 }
 
 func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, plumbing.Hash, int64) {
+	defer s.muI.Unlock()
+	s.muI.Lock()
+
 	for packfile, index := range s.index {
 		offset, err := index.FindOffset(h)
 		if err == nil {
@@ -645,6 +659,10 @@ func (s *ObjectStorage) buildPackfileIters(
 // Close closes all opened files.
 func (s *ObjectStorage) Close() error {
 	var firstError error
+
+	s.muP.RLock()
+	defer s.muP.RUnlock()
+
 	if s.options.KeepDescriptors || s.options.MaxOpenDescriptors > 0 {
 		for _, packfile := range s.packfiles {
 			err := packfile.Close()
