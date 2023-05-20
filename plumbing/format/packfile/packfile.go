@@ -55,6 +55,10 @@ func NewPackfileWithCache(
 	cache cache.Object,
 	largeObjectThreshold int64,
 ) *Packfile {
+	if index == nil {
+		index = idxfile.NewMemoryIndex()
+	}
+
 	s := NewScanner(file)
 	return &Packfile{
 		index,
