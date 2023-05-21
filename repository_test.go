@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,17 +59,18 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
-	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	wt, _ := fs.Chroot("worktree")
-	r, err := Init(storage, wt)
+	r, err := Init(st, wt)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
 	f, err := fs.Open(fs.Join("worktree", ".git"))
 	c.Assert(err, IsNil)
+	defer func() { _ = f.Close() }()
 
-	all, err := ioutil.ReadAll(f)
+	all, err := io.ReadAll(f)
 	c.Assert(err, IsNil)
 	c.Assert(string(all), Equals, fmt.Sprintf("gitdir: %s\n", filepath.Join("..", "storage")))
 
@@ -85,9 +85,9 @@ func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
-	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
-	r, err := Init(storage, fs)
+	r, err := Init(st, fs)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
@@ -187,6 +187,35 @@ func (s *RepositorySuite) TestCloneContext(c *C) {
 
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, context.Canceled)
+}
+
+func (s *RepositorySuite) TestCloneMirror(c *C) {
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+		URL:    fixtures.Basic().One().URL,
+		Mirror: true,
+	})
+
+	c.Assert(err, IsNil)
+
+	refs, err := r.References()
+	var count int
+	refs.ForEach(func(r *plumbing.Reference) error { c.Log(r); count++; return nil })
+	c.Assert(err, IsNil)
+	// 6 refs total from github.com/git-fixtures/basic.git:
+	//  - HEAD
+	//  - refs/heads/master
+	//  - refs/heads/branch
+	//  - refs/pull/1/head
+	//  - refs/pull/2/head
+	//  - refs/pull/2/merge
+	c.Assert(count, Equals, 6)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+
+	c.Assert(cfg.Core.IsBare, Equals, true)
+	c.Assert(cfg.Remotes[DefaultRemoteName].Validate(), IsNil)
+	c.Assert(cfg.Remotes[DefaultRemoteName].Mirror, Equals, true)
 }
 
 func (s *RepositorySuite) TestCloneWithTags(c *C) {
@@ -991,6 +1020,14 @@ func (s *RepositorySuite) TestCloneConfig(c *C) {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
+	s.testCloneSingleBranchAndNonHEADReference(c, "refs/heads/branch")
+}
+
+func (s *RepositorySuite) TestCloneSingleBranchAndNonHEADAndNonFull(c *C) {
+	s.testCloneSingleBranchAndNonHEADReference(c, "branch")
+}
+
+func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(c *C, ref string) {
 	r, _ := Init(memory.NewStorage(), nil)
 
 	head, err := r.Head()
@@ -999,7 +1036,7 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD(c *C) {
 
 	err = r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
-		ReferenceName: plumbing.ReferenceName("refs/heads/branch"),
+		ReferenceName: plumbing.ReferenceName(ref),
 		SingleBranch:  true,
 	})
 
@@ -2953,6 +2990,15 @@ func (s *RepositorySuite) TestDotGitToOSFilesystemsInvalidPath(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RepositorySuite) TestIssue674(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	h, err := r.ResolveRevision(plumbing.Revision(""))
+
+	c.Assert(err, NotNil)
+	c.Assert(h, NotNil)
+	c.Check(h.IsZero(), Equals, true)
+}
+
 func BenchmarkObjects(b *testing.B) {
 	defer fixtures.Clean()
 
@@ -2963,14 +3009,14 @@ func BenchmarkObjects(b *testing.B) {
 
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
-			storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 			worktree, err := fs.Chroot(filepath.Dir(fs.Root()))
 			if err != nil {
 				b.Fatal(err)
 			}
 
-			repo, err := Open(storer, worktree)
+			repo, err := Open(st, worktree)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -3000,7 +3046,7 @@ func BenchmarkObjects(b *testing.B) {
 
 func BenchmarkPlainClone(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		t, err := ioutil.TempDir("", "")
+		t, err := os.MkdirTemp("", "")
 		if err != nil {
 			b.Fatal(err)
 		}

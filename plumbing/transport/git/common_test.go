@@ -2,7 +2,6 @@ package git
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -37,7 +36,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	s.port, err = freePort()
 	c.Assert(err, IsNil)
 
-	s.base, err = ioutil.TempDir(os.TempDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
+	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
 	c.Assert(err, IsNil)
 }
 

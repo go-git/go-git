@@ -10,8 +10,10 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	. "gopkg.in/check.v1"
 )
 
@@ -145,6 +147,19 @@ func (s *ParserSuite) TestResolveExternalRefsInThinPack(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *ParserSuite) TestResolveExternalRefs(c *C) {
+	extRefsThinPack := fixtures.ByTag("delta-before-base").One()
+
+	scanner := packfile.NewScanner(extRefsThinPack.Packfile())
+
+	obs := new(testObserver)
+	parser, err := packfile.NewParser(scanner, obs)
+	c.Assert(err, IsNil)
+
+	_, err = parser.Parse()
+	c.Assert(err, IsNil)
+}
+
 type observerObject struct {
 	hash   string
 	otype  plumbing.ObjectType
@@ -245,6 +260,32 @@ func BenchmarkParseBasic(b *testing.B) {
 		_, err = parser.Parse()
 		if err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkParser(b *testing.B) {
+	f := fixtures.Basic().One()
+	defer fixtures.Clean()
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		scanner := packfile.NewScanner(f.Packfile())
+		fs := osfs.New(os.TempDir())
+		storage := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+		parser, err := packfile.NewParserWithStorage(scanner, storage)
+		if err != nil {
+			b.Error(err)
+		}
+
+		b.StartTimer()
+		_, err = parser.Parse()
+
+		b.StopTimer()
+		if err != nil {
+			b.Error(err)
 		}
 	}
 }

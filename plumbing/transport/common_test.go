@@ -95,16 +95,28 @@ func (s *SuiteCommon) TestNewEndpointSCPLike(c *C) {
 	c.Assert(e.String(), Equals, "ssh://git@github.com/user/repository.git")
 }
 
-func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort(c *C) {
+func (s *SuiteCommon) TestNewEndpointSCPLikeWithNumericPath(c *C) {
 	e, err := NewEndpoint("git@github.com:9999/user/repository.git")
 	c.Assert(err, IsNil)
 	c.Assert(e.Protocol, Equals, "ssh")
 	c.Assert(e.User, Equals, "git")
 	c.Assert(e.Password, Equals, "")
 	c.Assert(e.Host, Equals, "github.com")
-	c.Assert(e.Port, Equals, 9999)
-	c.Assert(e.Path, Equals, "user/repository.git")
-	c.Assert(e.String(), Equals, "ssh://git@github.com:9999/user/repository.git")
+	c.Assert(e.Port, Equals, 22)
+	c.Assert(e.Path, Equals, "9999/user/repository.git")
+	c.Assert(e.String(), Equals, "ssh://git@github.com/9999/user/repository.git")
+}
+
+func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort(c *C) {
+	e, err := NewEndpoint("git@github.com:8080:9999/user/repository.git")
+	c.Assert(err, IsNil)
+	c.Assert(e.Protocol, Equals, "ssh")
+	c.Assert(e.User, Equals, "git")
+	c.Assert(e.Password, Equals, "")
+	c.Assert(e.Host, Equals, "github.com")
+	c.Assert(e.Port, Equals, 8080)
+	c.Assert(e.Path, Equals, "9999/user/repository.git")
+	c.Assert(e.String(), Equals, "ssh://git@github.com:8080/9999/user/repository.git")
 }
 
 func (s *SuiteCommon) TestNewEndpointFileAbs(c *C) {

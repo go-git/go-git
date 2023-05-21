@@ -3,10 +3,10 @@ package packfile
 import (
 	"bytes"
 	"io"
-	stdioutil "io/ioutil"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -30,10 +30,10 @@ func (s *EncoderSuite) SetUpTest(c *C) {
 }
 
 func (s *EncoderSuite) TestCorrectPackHeader(c *C) {
-	hash, err := s.enc.Encode([]plumbing.Hash{}, 10)
+	h, err := s.enc.Encode([]plumbing.Hash{}, 10)
 	c.Assert(err, IsNil)
 
-	hb := [20]byte(hash)
+	hb := [hash.Size]byte(h)
 
 	// PACK + VERSION + OBJECTS + HASH
 	expectedResult := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0}
@@ -51,7 +51,7 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
 	_, err := s.store.SetEncodedObject(o)
 	c.Assert(err, IsNil)
 
-	hash, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
+	h, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
 	c.Assert(err, IsNil)
 
 	// PACK + VERSION(2) + OBJECT NUMBER(1)
@@ -64,7 +64,7 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
 		[]byte{120, 156, 1, 0, 0, 255, 255, 0, 0, 0, 1}...)
 
 	// + HASH
-	hb := [20]byte(hash)
+	hb := [hash.Size]byte(h)
 	expectedResult = append(expectedResult, hb[:]...)
 
 	result := s.buf.Bytes()
@@ -277,13 +277,13 @@ func objectsEqual(c *C, o1, o2 plumbing.EncodedObject) {
 	r1, err := o1.Reader()
 	c.Assert(err, IsNil)
 
-	b1, err := stdioutil.ReadAll(r1)
+	b1, err := io.ReadAll(r1)
 	c.Assert(err, IsNil)
 
 	r2, err := o2.Reader()
 	c.Assert(err, IsNil)
 
-	b2, err := stdioutil.ReadAll(r2)
+	b2, err := io.ReadAll(r2)
 	c.Assert(err, IsNil)
 
 	c.Assert(bytes.Compare(b1, b2), Equals, 0)

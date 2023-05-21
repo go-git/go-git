@@ -52,6 +52,11 @@ func (p *pattern) Match(path []string) bool {
 	var match, doublestar bool
 	var err error
 	for _, part := range path {
+		// path is deeper than pattern
+		if len(pattern) == 0 {
+			return false
+		}
+
 		// skip empty
 		if pattern[0] == "" {
 			pattern = pattern[1:]

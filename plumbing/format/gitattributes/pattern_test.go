@@ -174,6 +174,12 @@ func (s *PatternSuite) TestGlobMatch_tailingAsterisks_single(c *C) {
 	c.Assert(r, Equals, true)
 }
 
+func (s *PatternSuite) TestGlobMatch_tailingAsterisk_single(c *C) {
+	p := ParsePattern("/*lue/*", nil)
+	r := p.Match([]string{"value", "volcano", "tail"})
+	c.Assert(r, Equals, false)
+}
+
 func (s *PatternSuite) TestGlobMatch_tailingAsterisks_exactMatch(c *C) {
 	p := ParsePattern("/*lue/vol?ano/**", nil)
 	r := p.Match([]string{"value", "volcano"})

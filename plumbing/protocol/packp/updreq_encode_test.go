@@ -2,12 +2,11 @@ package packp
 
 import (
 	"bytes"
+	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-
-	"io/ioutil"
 
 	. "gopkg.in/check.v1"
 )
@@ -128,7 +127,7 @@ func (s *UpdReqEncodeSuite) TestWithPackfile(c *C) {
 
 	packfileContent := []byte("PACKabc")
 	packfileReader := bytes.NewReader(packfileContent)
-	packfileReadCloser := ioutil.NopCloser(packfileReader)
+	packfileReadCloser := io.NopCloser(packfileReader)
 
 	r := NewReferenceUpdateRequest()
 	r.Commands = []*Command{

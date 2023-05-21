@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/config"
@@ -535,10 +535,22 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	// let the goroutine from pushHashes finish and check that the number of
-	// goroutines is the same as before
-	time.Sleep(100 * time.Millisecond)
-	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+	eventually(c, func() bool {
+		return runtime.NumGoroutine() <= numGoroutines
+	})
+}
+
+func eventually(c *C, condition func() bool) {
+	select {
+	case <-time.After(5 * time.Second):
+	default:
+		if condition() {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c.Assert(condition(), Equals, true)
 }
 
 func (s *RemoteSuite) TestPushContextCanceled(c *C) {
@@ -566,10 +578,9 @@ func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 	})
 	c.Assert(err, Equals, context.Canceled)
 
-	// let the goroutine from pushHashes finish and check that the number of
-	// goroutines is the same as before
-	time.Sleep(100 * time.Millisecond)
-	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+	eventually(c, func() bool {
+		return runtime.NumGoroutine() <= numGoroutines
+	})
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
@@ -854,6 +865,7 @@ func (s *RemoteSuite) TestPushForceWithLease_success(c *C) {
 		c.Assert(sto.SetReference(newCommit), IsNil)
 
 		ref, err := sto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
 		c.Log(ref.String())
 
 		url := dstFs.Root()
@@ -1199,6 +1211,41 @@ func (s *RemoteSuite) TestList(c *C) {
 	}
 }
 
+func (s *RemoteSuite) TestListPeeling(c *C) {
+	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{"https://github.com/git-fixtures/tags.git"},
+	})
+
+	for _, tc := range []struct {
+		peelingOption   PeelingOption
+		expectPeeled    bool
+		expectNonPeeled bool
+	}{
+		{peelingOption: AppendPeeled, expectPeeled: true, expectNonPeeled: true},
+		{peelingOption: IgnorePeeled, expectPeeled: false, expectNonPeeled: true},
+		{peelingOption: OnlyPeeled, expectPeeled: true, expectNonPeeled: false},
+	} {
+		refs, err := remote.List(&ListOptions{
+			PeelingOption: tc.peelingOption,
+		})
+		c.Assert(err, IsNil)
+		c.Assert(len(refs) > 0, Equals, true)
+
+		foundPeeled, foundNonPeeled := false, false
+		for _, ref := range refs {
+			if strings.HasSuffix(ref.Name().String(), peeledSuffix) {
+				foundPeeled = true
+			} else {
+				foundNonPeeled = true
+			}
+		}
+
+		c.Assert(foundPeeled, Equals, tc.expectPeeled)
+		c.Assert(foundNonPeeled, Equals, tc.expectNonPeeled)
+	}
+}
+
 func (s *RemoteSuite) TestListTimeout(c *C) {
 	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -1355,7 +1402,7 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 }
 
 func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
-	d, err := ioutil.TempDir("", "TestCanPushShasToReference")
+	d, err := os.MkdirTemp("", "TestCanPushShasToReference")
 	c.Assert(err, IsNil)
 	if err != nil {
 		return

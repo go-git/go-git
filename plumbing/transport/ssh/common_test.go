@@ -5,23 +5,25 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
+	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
-	"golang.org/x/crypto/ssh"
+	stdssh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/testdata"
 	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { TestingT(t) }
 
 func (s *SuiteCommon) TestOverrideConfig(c *C) {
-	config := &ssh.ClientConfig{
+	config := &stdssh.ClientConfig{
 		User: "foo",
-		Auth: []ssh.AuthMethod{
-			ssh.Password("yourpassword"),
+		Auth: []stdssh.AuthMethod{
+			stdssh.Password("yourpassword"),
 		},
-		HostKeyCallback: ssh.FixedHostKey(nil),
+		HostKeyCallback: stdssh.FixedHostKey(nil),
 	}
 
-	target := &ssh.ClientConfig{}
+	target := &stdssh.ClientConfig{}
 	overrideConfig(config, target)
 
 	c.Assert(target.User, Equals, "foo")
@@ -30,11 +32,11 @@ func (s *SuiteCommon) TestOverrideConfig(c *C) {
 }
 
 func (s *SuiteCommon) TestOverrideConfigKeep(c *C) {
-	config := &ssh.ClientConfig{
+	config := &stdssh.ClientConfig{
 		User: "foo",
 	}
 
-	target := &ssh.ClientConfig{
+	target := &stdssh.ClientConfig{
 		User: "bar",
 	}
 
@@ -93,12 +95,69 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard(c *C) {
 	c.Assert(cmd.getHostWithPort(), Equals, "github.com:22")
 }
 
+func (s *SuiteCommon) TestIgnoreHostKeyCallback(c *C) {
+	uploadPack := &UploadPackSuite{
+		opts: []ssh.Option{
+			ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
+		},
+	}
+	uploadPack.SetUpSuite(c)
+	// Use the default client, which does not have a host key callback
+	uploadPack.Client = DefaultClient
+	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+	auth.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
+	ep := uploadPack.newEndpoint(c, "bar.git")
+	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
+	c.Assert(err, IsNil)
+	c.Assert(ps, NotNil)
+}
+
+func (s *SuiteCommon) TestFixedHostKeyCallback(c *C) {
+	hostKey, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
+	c.Assert(err, IsNil)
+	uploadPack := &UploadPackSuite{
+		opts: []ssh.Option{
+			ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
+		},
+	}
+	uploadPack.SetUpSuite(c)
+	// Use the default client, which does not have a host key callback
+	uploadPack.Client = DefaultClient
+	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
+	ep := uploadPack.newEndpoint(c, "bar.git")
+	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
+	c.Assert(err, IsNil)
+	c.Assert(ps, NotNil)
+}
+
+func (s *SuiteCommon) TestFailHostKeyCallback(c *C) {
+	uploadPack := &UploadPackSuite{
+		opts: []ssh.Option{
+			ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
+		},
+	}
+	uploadPack.SetUpSuite(c)
+	// Use the default client, which does not have a host key callback
+	uploadPack.Client = DefaultClient
+	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+	ep := uploadPack.newEndpoint(c, "bar.git")
+	_, err = uploadPack.Client.NewUploadPackSession(ep, auth)
+	c.Assert(err, NotNil)
+}
+
 func (s *SuiteCommon) TestIssue70(c *C) {
 	uploadPack := &UploadPackSuite{}
 	uploadPack.SetUpSuite(c)
 
-	config := &ssh.ClientConfig{
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	config := &stdssh.ClientConfig{
+		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
 	r := &runner{
 		config: config,

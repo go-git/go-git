@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -81,7 +80,7 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	err = os.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
 	c.Assert(err, IsNil)
 	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -118,14 +117,14 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	err = os.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
 	w, err = r.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	err = os.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -259,7 +258,7 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 	ExecuteOnPath(c, path,
 		"touch foo",
 		"git add foo",
-		"git commit -m foo foo",
+		"git commit --no-gpg-sign -m foo foo",
 	)
 
 	w, err := r.Worktree()
@@ -287,7 +286,7 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
 
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	err = os.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
@@ -315,7 +314,7 @@ func (s *WorktreeSuite) TestCheckout(c *C) {
 	ch, err := fs.Open("CHANGELOG")
 	c.Assert(err, IsNil)
 
-	content, err := ioutil.ReadAll(ch)
+	content, err := io.ReadAll(ch)
 	c.Assert(err, IsNil)
 	c.Assert(string(content), Equals, "Initial changelog\n")
 
@@ -871,6 +870,51 @@ func (s *WorktreeSuite) TestStatusEmpty(c *C) {
 	c.Assert(status, NotNil)
 }
 
+func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored(c *C) {
+	fs := memfs.New()
+	storage := memory.NewStorage()
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "fileToIgnore", []byte("Initial data"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Add("fileToIgnore")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("Added file that will be ignored later", &CommitOptions{})
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, ".gitignore", []byte("fileToIgnore\nsecondIgnoredFile"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Add(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("Added .gitignore", &CommitOptions{})
+	c.Assert(err, IsNil)
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status, NotNil)
+
+	err = util.WriteFile(fs, "secondIgnoredFile", []byte("Should be completly ignored"), 0755)
+	c.Assert(err, IsNil)
+	status = nil
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status, NotNil)
+
+	err = util.WriteFile(fs, "fileToIgnore", []byte("Updated data"), 0755)
+	c.Assert(err, IsNil)
+	status = nil
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+	c.Assert(status, NotNil)
+}
+
 func (s *WorktreeSuite) TestStatusEmptyDirty(c *C) {
 	fs := memfs.New()
 	err := util.WriteFile(fs, "foo", []byte("foo"), 0755)
@@ -1397,6 +1441,51 @@ func (s *WorktreeSuite) TestAddRemoved(c *C) {
 
 	file := status.File("LICENSE")
 	c.Assert(file.Staging, Equals, Deleted)
+}
+
+func (s *WorktreeSuite) TestAddRemovedInDirectory(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = w.Filesystem.Remove("go/example.go")
+	c.Assert(err, IsNil)
+
+	err = w.Filesystem.Remove("json/short.json")
+	c.Assert(err, IsNil)
+
+	hash, err := w.Add("go")
+	c.Assert(err, IsNil)
+	c.Assert(hash.IsZero(), Equals, true)
+
+	e, err := idx.Entry("go/example.go")
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash, Equals, plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"))
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	e, err = idx.Entry("json/short.json")
+	c.Assert(err, IsNil)
+	c.Assert(e.Hash, Equals, plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"))
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 2)
+
+	file := status.File("go/example.go")
+	c.Assert(file.Staging, Equals, Deleted)
+
+	file = status.File("json/short.json")
+	c.Assert(file.Staging, Equals, Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddSymlink(c *C) {
@@ -2166,7 +2255,183 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 	}
 }
 
+func (s *WorktreeSuite) TestGrepBare(c *C) {
+	cases := []struct {
+		name           string
+		options        GrepOptions
+		wantResult     []GrepResult
+		dontWantResult []GrepResult
+		wantError      error
+	}{
+		{
+			name: "basic word match",
+			options: GrepOptions{
+				Patterns:   []*regexp.Regexp{regexp.MustCompile("import")},
+				CommitHash: plumbing.ZeroHash,
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		},
+	}
+
+	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
+		URL: path,
+	})
+	c.Assert(err, IsNil)
+
+	for _, tc := range cases {
+		gr, err := r.Grep(&tc.options)
+		if tc.wantError != nil {
+			c.Assert(err, Equals, tc.wantError)
+		} else {
+			c.Assert(err, IsNil)
+		}
+
+		// Iterate through the results and check if the wanted result is present
+		// in the got result.
+		for _, wantResult := range tc.wantResult {
+			found := false
+			for _, gotResult := range gr {
+				if wantResult == gotResult {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
+			}
+		}
+
+		// Iterate through the results and check if the not wanted result is
+		// present in the got result.
+		for _, dontWantResult := range tc.dontWantResult {
+			found := false
+			for _, gotResult := range gr {
+				if dontWantResult == gotResult {
+					found = true
+					break
+				}
+			}
+			if found {
+				c.Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
+			}
+		}
+	}
+}
+
+func (s *WorktreeSuite) TestResetLingeringDirectories(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	commitOpts := &CommitOptions{Author: &object.Signature{
+		Name:  "foo",
+		Email: "foo@foo.foo",
+		When:  time.Now(),
+	}}
+
+	repo, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	os.WriteFile(filepath.Join(dir, "README"), []byte("placeholder"), 0o644)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	initialHash, err := w.Commit("Initial commit", commitOpts)
+	c.Assert(err, IsNil)
+
+	os.MkdirAll(filepath.Join(dir, "a", "b"), 0o755)
+	os.WriteFile(filepath.Join(dir, "a", "b", "1"), []byte("1"), 0o644)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("Add file in nested sub-directories", commitOpts)
+	c.Assert(err, IsNil)
+
+	// reset to initial commit, which should remove a/b/1, a/b, and a
+	err = w.Reset(&ResetOptions{
+		Commit: initialHash,
+		Mode:   HardReset,
+	})
+	c.Assert(err, IsNil)
+
+	_, err = os.Stat(filepath.Join(dir, "a", "b", "1"))
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
+
+	_, err = os.Stat(filepath.Join(dir, "a", "b"))
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
+
+	_, err = os.Stat(filepath.Join(dir, "a"))
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
+}
+
 func (s *WorktreeSuite) TestAddAndCommit(c *C) {
+	expectedFiles := 2
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	repo, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o644)
+	os.WriteFile(filepath.Join(dir, "bar"), []byte("foo"), 0o644)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
+		Name:  "foo",
+		Email: "foo@foo.foo",
+		When:  time.Now(),
+	}})
+	c.Assert(err, IsNil)
+
+	iter, err := w.r.Log(&LogOptions{})
+	c.Assert(err, IsNil)
+
+	filesFound := 0
+	err = iter.ForEach(func(c *object.Commit) error {
+		files, err := c.Files()
+		if err != nil {
+			return err
+		}
+
+		err = files.ForEach(func(f *object.File) error {
+			filesFound++
+			return nil
+		})
+		return err
+	})
+	c.Assert(err, IsNil)
+	c.Assert(filesFound, Equals, expectedFiles)
+}
+
+func (s *WorktreeSuite) TestAddAndCommitEmpty(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
 
@@ -2179,26 +2444,12 @@ func (s *WorktreeSuite) TestAddAndCommit(c *C) {
 	_, err = w.Add(".")
 	c.Assert(err, IsNil)
 
-	w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
+	_, err = w.Commit("Test Add And Commit", &CommitOptions{Author: &object.Signature{
 		Name:  "foo",
 		Email: "foo@foo.foo",
 		When:  time.Now(),
 	}})
-
-	iter, err := w.r.Log(&LogOptions{})
-	c.Assert(err, IsNil)
-	err = iter.ForEach(func(c *object.Commit) error {
-		files, err := c.Files()
-		if err != nil {
-			return err
-		}
-
-		err = files.ForEach(func(f *object.File) error {
-			return errors.New("Expected no files, got at least 1")
-		})
-		return err
-	})
-	c.Assert(err, IsNil)
+	c.Assert(err, Equals, ErrEmptyCommit)
 }
 
 func (s *WorktreeSuite) TestLinkedWorktree(c *C) {

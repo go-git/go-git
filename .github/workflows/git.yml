@@ -1,5 +1,8 @@
 on: [push, pull_request]
 name: Git Compatibility
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -14,15 +17,15 @@ jobs:
 
     steps:
     - name: Install Go
-      uses: actions/setup-go@v1
+      uses: actions/setup-go@v3
       with:
-        go-version: 1.14.x
+        go-version: 1.20.x
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Install build dependencies
-      run: sudo apt-get install gettext
+      run: sudo apt-get install gettext libcurl4-openssl-dev
 
     - name: Git Build
       run: make build-git
@@ -38,3 +41,11 @@ jobs:
  
     - name: Test
       run: make test-coverage
+
+    - name: Test SHA256
+      run: make test-sha256
+
+    - name: Build go-git with CGO disabled
+      run: go build ./...
+      env:
+        CGO_ENABLED: 0

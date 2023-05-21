@@ -2,7 +2,6 @@ package object
 
 import (
 	"io"
-	"io/ioutil"
 	"testing"
 	"time"
 
@@ -103,7 +102,7 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 			reader, err := f.Reader()
 			c.Assert(err, IsNil)
 			defer func() { c.Assert(reader.Close(), IsNil) }()
-			content, _ := ioutil.ReadAll(reader)
+			content, _ := io.ReadAll(reader)
 			c.Assert(content, HasLen, 2780)
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"strings"
 	"time"
 
@@ -449,7 +448,7 @@ YIefGtzXfldDxg4=
 `
 
 	e, err := commit.Verify(armoredKeyRing)
-        c.Assert(err, IsNil)
+	c.Assert(err, IsNil)
 
 	_, ok := e.Identities["go-git test key"]
 	c.Assert(ok, Equals, true)
@@ -492,7 +491,7 @@ func (s *SuiteCommit) TestEncodeWithoutSignature(c *C) {
 	c.Assert(err, IsNil)
 	er, err := encoded.Reader()
 	c.Assert(err, IsNil)
-	payload, err := ioutil.ReadAll(er)
+	payload, err := io.ReadAll(er)
 	c.Assert(err, IsNil)
 
 	c.Assert(string(payload), Equals, ""+

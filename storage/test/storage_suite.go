@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -502,12 +501,12 @@ func objectEquals(a plumbing.EncodedObject, b plumbing.EncodedObject) error {
 		return fmt.Errorf("can't get reader on b: %q", err)
 	}
 
-	ca, err := ioutil.ReadAll(ra)
+	ca, err := io.ReadAll(ra)
 	if err != nil {
 		return fmt.Errorf("error reading a: %q", err)
 	}
 
-	cb, err := ioutil.ReadAll(rb)
+	cb, err := io.ReadAll(rb)
 	if err != nil {
 		return fmt.Errorf("error reading b: %q", err)
 	}

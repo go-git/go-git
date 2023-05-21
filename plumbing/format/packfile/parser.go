@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	stdioutil "io/ioutil"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/sync"
 )
 
 var (
@@ -175,7 +175,8 @@ func (p *Parser) init() error {
 }
 
 func (p *Parser) indexObjects() error {
-	buf := new(bytes.Buffer)
+	buf := sync.GetBytesBuffer()
+	defer sync.PutBytesBuffer(buf)
 
 	for i := uint32(0); i < p.count; i++ {
 		buf.Reset()
@@ -219,6 +220,7 @@ func (p *Parser) indexObjects() error {
 			ota = newBaseObject(oh.Offset, oh.Length, t)
 		}
 
+		buf.Grow(int(oh.Length))
 		_, crc, err := p.scanner.NextObject(buf)
 		if err != nil {
 			return err
@@ -232,6 +234,15 @@ func (p *Parser) indexObjects() error {
 			sha1, err := getSHA1(ota.Type, data)
 			if err != nil {
 				return err
+			}
+
+			// Move children of placeholder parent into actual parent, in case this
+			// was a non-external delta reference.
+			if placeholder, ok := p.oiByHash[sha1]; ok {
+				ota.Children = placeholder.Children
+				for _, c := range ota.Children {
+					c.Parent = ota
+				}
 			}
 
 			ota.SHA1 = sha1
@@ -264,7 +275,9 @@ func (p *Parser) indexObjects() error {
 }
 
 func (p *Parser) resolveDeltas() error {
-	buf := &bytes.Buffer{}
+	buf := sync.GetBytesBuffer()
+	defer sync.PutBytesBuffer(buf)
+
 	for _, obj := range p.oi {
 		buf.Reset()
 		err := p.get(obj, buf)
@@ -283,7 +296,7 @@ func (p *Parser) resolveDeltas() error {
 
 		if !obj.IsDelta() && len(obj.Children) > 0 {
 			for _, child := range obj.Children {
-				if err := p.resolveObject(stdioutil.Discard, child, content); err != nil {
+				if err := p.resolveObject(io.Discard, child, content); err != nil {
 					return err
 				}
 				p.resolveExternalRef(child)
@@ -346,9 +359,8 @@ func (p *Parser) get(o *objectInfo, buf *bytes.Buffer) (err error) {
 	}
 
 	if o.DiskType.IsDelta() {
-		b := bufPool.Get().(*bytes.Buffer)
-		defer bufPool.Put(b)
-		b.Reset()
+		b := sync.GetBytesBuffer()
+		defer sync.PutBytesBuffer(b)
 		err := p.get(o.Parent, b)
 		if err != nil {
 			return err
@@ -382,9 +394,8 @@ func (p *Parser) resolveObject(
 	if !o.DiskType.IsDelta() {
 		return nil
 	}
-	buf := bufPool.Get().(*bytes.Buffer)
-	defer bufPool.Put(buf)
-	buf.Reset()
+	buf := sync.GetBytesBuffer()
+	defer sync.PutBytesBuffer(buf)
 	err := p.readData(buf, o)
 	if err != nil {
 		return err
