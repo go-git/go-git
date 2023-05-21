@@ -71,12 +71,28 @@ type Repository struct {
 	wt billy.Filesystem
 }
 
+type InitOptions struct {
+	// The default branch (e.g. "refs/heads/master")
+	DefaultBranch plumbing.ReferenceName
+}
+
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
 func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
+	options := InitOptions{
+		DefaultBranch: plumbing.Master,
+	}
+	return InitWithOptions(s, worktree, options)
+}
+
+func InitWithOptions(s storage.Storer, worktree billy.Filesystem, options InitOptions) (*Repository, error) {
 	if err := initStorer(s); err != nil {
 		return nil, err
+	}
+
+	if options.DefaultBranch == "" {
+		options.DefaultBranch = plumbing.Master
 	}
 
 	r := newRepository(s, worktree)
@@ -89,7 +105,7 @@ func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		return nil, err
 	}
 
-	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)
+	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.DefaultBranch)
 	if err := s.SetReference(h); err != nil {
 		return nil, err
 	}
