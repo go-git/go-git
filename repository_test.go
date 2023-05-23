@@ -51,6 +51,54 @@ func (s *RepositorySuite) TestInit(c *C) {
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Core.IsBare, Equals, false)
+
+	// check the HEAD to see what the default branch is
+	createCommit(c, r)
+	ref, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(ref.Name().String(), Equals, plumbing.Master.String())
+}
+
+func (s *RepositorySuite) TestInitWithOptions(c *C) {
+	r, err := InitWithOptions(memory.NewStorage(), memfs.New(), InitOptions{
+		DefaultBranch: "refs/heads/foo",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+	createCommit(c, r)
+
+	ref, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(ref.Name().String(), Equals, "refs/heads/foo")
+
+}
+
+func createCommit(c *C, r *Repository) {
+	// Create a commit so there is a HEAD to check
+	wt, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	rm, err := wt.Filesystem.Create("foo.txt")
+	c.Assert(err, IsNil)
+
+	_, err = rm.Write([]byte("foo text"))
+	c.Assert(err, IsNil)
+
+	_, err = wt.Add("foo.txt")
+	c.Assert(err, IsNil)
+
+	author := object.Signature{
+		Name:  "go-git",
+		Email: "go-git@fake.local",
+		When:  time.Now(),
+	}
+	_, err = wt.Commit("test commit message", &CommitOptions{
+		All:       true,
+		Author:    &author,
+		Committer: &author,
+	})
+	c.Assert(err, IsNil)
+
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
