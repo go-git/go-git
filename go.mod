@@ -4,7 +4,7 @@ module github.com/go-git/go-git/v5
 go 1.18
 
 require (
-	github.com/ProtonMail/go-crypto v0.0.0-20230417170513-8ee5748c52b5
+	github.com/ProtonMail/go-crypto v0.0.0-20230518184743-7afd39499903
 	github.com/acomagu/bufpipe v1.0.4
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v0.0.0-20221015165544-a0805db90819
@@ -21,11 +21,11 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/pjbgf/sha1cd v0.3.0
 	github.com/sergi/go-diff v1.1.0
-	github.com/skeema/knownhosts v1.1.0
+	github.com/skeema/knownhosts v1.1.1
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.8.0
-	golang.org/x/net v0.9.0
-	golang.org/x/sys v0.7.0
+	golang.org/x/crypto v0.9.0
+	golang.org/x/net v0.10.0
+	golang.org/x/sys v0.8.0
 	golang.org/x/text v0.9.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
