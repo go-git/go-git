@@ -459,7 +459,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	req.Wants, err = getWants(r.s, refs)
 	if len(req.Wants) > 0 {
-		req.Haves, err = getHaves(localRefs, remoteRefs, r.s)
+		req.Haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
 		if err != nil {
 			return nil, err
 		}
@@ -837,6 +837,7 @@ func getHavesFromRef(
 	remoteRefs map[plumbing.Hash]bool,
 	s storage.Storer,
 	haves map[plumbing.Hash]bool,
+	depth int,
 ) error {
 	h := ref.Hash()
 	if haves[h] {
@@ -862,7 +863,13 @@ func getHavesFromRef(
 	// commits from the history of each ref.
 	walker := object.NewCommitPreorderIter(commit, haves, nil)
 	toVisit := maxHavesToVisitPerRef
-	return walker.ForEach(func(c *object.Commit) error {
+	// But only need up to the requested depth
+	if depth > 0 && depth < maxHavesToVisitPerRef {
+		toVisit = depth
+	}
+	// It is safe to ignore any error here as we are just trying to find the references that we already have
+	// An example of a legitimate failure is we have a shallow clone and don't have the previous commit(s)
+	_ = walker.ForEach(func(c *object.Commit) error {
 		haves[c.Hash] = true
 		toVisit--
 		// If toVisit starts out at 0 (indicating there is no
@@ -873,12 +880,15 @@ func getHavesFromRef(
 		}
 		return nil
 	})
+
+	return nil
 }
 
 func getHaves(
 	localRefs []*plumbing.Reference,
 	remoteRefStorer storer.ReferenceStorer,
 	s storage.Storer,
+	depth int,
 ) ([]plumbing.Hash, error) {
 	haves := map[plumbing.Hash]bool{}
 
@@ -899,7 +909,7 @@ func getHaves(
 			continue
 		}
 
-		err = getHavesFromRef(ref, remoteRefs, s, haves)
+		err = getHavesFromRef(ref, remoteRefs, s, haves, depth)
 		if err != nil {
 			return nil, err
 		}
