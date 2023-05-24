@@ -140,6 +140,62 @@ func (s *RemoteSuite) TestFetch(c *C) {
 	})
 }
 
+func (s *RemoteSuite) TestFetchToNewBranch(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			// qualified branch to unqualified branch
+			"refs/heads/master:foo",
+			// unqualified branch to unqualified branch
+			"+master:bar",
+			// unqualified tag to unqualified branch
+			config.RefSpec("tree-tag:tree-tag"),
+			// unqualified tag to qualified tag
+			config.RefSpec("+commit-tag:refs/tags/renamed-tag"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/bar", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/renamed-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchToNewBranchWithAllTags(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Tags: AllTags,
+		RefSpecs: []config.RefSpec{
+			// qualified branch to unqualified branch
+			"+refs/heads/master:foo",
+			// unqualified branch to unqualified branch
+			"master:bar",
+			// unqualified tag to unqualified branch
+			config.RefSpec("+tree-tag:tree-tag"),
+			// unqualified tag to qualified tag
+			config.RefSpec("commit-tag:refs/tags/renamed-tag"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/bar", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/renamed-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
+		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+}
+
 func (s *RemoteSuite) TestFetchNonExistantReference(c *C) {
 	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},

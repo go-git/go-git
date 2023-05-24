@@ -445,7 +445,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	refs, err := calculateRefs(o.RefSpecs, remoteRefs, o.Tags)
+	refs, specToRefs, err := calculateRefs(o.RefSpecs, remoteRefs, o.Tags)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +469,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, o.Tags, o.Force)
+	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
 	if err != nil {
 		return nil, err
 	}
@@ -929,42 +929,41 @@ func calculateRefs(
 	spec []config.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	tagMode TagMode,
-) (memory.ReferenceStorage, error) {
+) (memory.ReferenceStorage, [][]*plumbing.Reference, error) {
 	if tagMode == AllTags {
 		spec = append(spec, refspecAllTags)
 	}
 
 	refs := make(memory.ReferenceStorage)
-	for _, s := range spec {
-		if err := doCalculateRefs(s, remoteRefs, refs); err != nil {
-			return nil, err
+	// list of references matched for each spec
+	specToRefs := make([][]*plumbing.Reference, len(spec))
+	for i := range spec {
+		var err error
+		specToRefs[i], err = doCalculateRefs(spec[i], remoteRefs, refs)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
-	return refs, nil
+	return refs, specToRefs, nil
 }
 
 func doCalculateRefs(
 	s config.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	refs memory.ReferenceStorage,
-) error {
-	iter, err := remoteRefs.IterReferences()
-	if err != nil {
-		return err
-	}
+) ([]*plumbing.Reference, error) {
+	var refList []*plumbing.Reference
 
 	if s.IsExactSHA1() {
 		ref := plumbing.NewHashReference(s.Dst(""), plumbing.NewHash(s.Src()))
-		return refs.SetReference(ref)
+
+		refList = append(refList, ref)
+		return refList, refs.SetReference(ref)
 	}
 
 	var matched bool
-	err = iter.ForEach(func(ref *plumbing.Reference) error {
-		if !s.Match(ref.Name()) {
-			return nil
-		}
-
+	onMatched := func(ref *plumbing.Reference) error {
 		if ref.Type() == plumbing.SymbolicReference {
 			target, err := storer.ResolveReference(remoteRefs, ref.Name())
 			if err != nil {
@@ -979,22 +978,37 @@ func doCalculateRefs(
 		}
 
 		matched = true
-		if err := refs.SetReference(ref); err != nil {
-			return err
-		}
-
-		if !s.IsWildcard() {
-			return storer.ErrStop
-		}
-
-		return nil
-	})
-
-	if !matched && !s.IsWildcard() {
-		return NoMatchingRefSpecError{refSpec: s}
+		refList = append(refList, ref)
+		return refs.SetReference(ref)
 	}
 
-	return err
+	var ret error
+	if s.IsWildcard() {
+		iter, err := remoteRefs.IterReferences()
+		if err != nil {
+			return nil, err
+		}
+		ret = iter.ForEach(func(ref *plumbing.Reference) error {
+			if !s.Match(ref.Name()) {
+				return nil
+			}
+
+			return onMatched(ref)
+		})
+	} else {
+		var resolvedRef *plumbing.Reference
+		src := s.Src()
+		resolvedRef, ret = expand_ref(remoteRefs, plumbing.ReferenceName(src))
+		if ret == nil {
+			ret = onMatched(resolvedRef)
+		}
+	}
+
+	if !matched && !s.IsWildcard() {
+		return nil, NoMatchingRefSpecError{refSpec: s}
+	}
+
+	return refList, ret
 }
 
 func getWants(localStorer storage.Storer, refs memory.ReferenceStorage) ([]plumbing.Hash, error) {
@@ -1154,27 +1168,28 @@ func buildSidebandIfSupported(l *capability.List, reader io.Reader, p sideband.P
 func (r *Remote) updateLocalReferenceStorage(
 	specs []config.RefSpec,
 	fetchedRefs, remoteRefs memory.ReferenceStorage,
+	specToRefs [][]*plumbing.Reference,
 	tagMode TagMode,
 	force bool,
 ) (updated bool, err error) {
 	isWildcard := true
 	forceNeeded := false
 
-	for _, spec := range specs {
+	for i, spec := range specs {
 		if !spec.IsWildcard() {
 			isWildcard = false
 		}
 
-		for _, ref := range fetchedRefs {
-			if !spec.Match(ref.Name()) && !spec.IsExactSHA1() {
-				continue
-			}
-
+		for _, ref := range specToRefs[i] {
 			if ref.Type() != plumbing.HashReference {
 				continue
 			}
 
 			localName := spec.Dst(ref.Name())
+			// If localName doesn't start with "refs/" then treat as a branch.
+			if !strings.HasPrefix(localName.String(), "refs/") {
+				localName = plumbing.NewBranchReferenceName(localName.String())
+			}
 			old, _ := storer.ResolveReference(r.s, localName)
 			new := plumbing.NewHashReference(localName, ref.Hash())
 
