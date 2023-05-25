@@ -25,6 +25,14 @@ const (
 
 // readIgnoreFile reads a specific git ignore file.
 func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps []Pattern, err error) {
+
+	if strings.HasPrefix(ignoreFile, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			ignoreFile = strings.Replace(ignoreFile, "~", home, 1)
+		}
+	}
+
 	f, err := fs.Open(fs.Join(append(path, ignoreFile)...))
 	if err == nil {
 		defer f.Close()
