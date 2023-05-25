@@ -1029,21 +1029,9 @@ func (r *Repository) fetchAndUpdateReferences(
 		return nil, err
 	}
 
-	var resolvedRef *plumbing.Reference
-	// return error from checking the raw ref passed in
-	var rawRefError error
-	for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
-		resolvedRef, err = storer.ResolveReference(remoteRefs, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
-
-		if err == nil {
-			break
-		} else if rawRefError == nil {
-			rawRefError = err
-		}
-	}
-
+	resolvedRef, err := expand_ref(remoteRefs, ref)
 	if err != nil {
-		return nil, rawRefError
+		return nil, err
 	}
 
 	refsUpdated, err := r.updateReferences(remote.c.Fetch, resolvedRef)
@@ -1489,6 +1477,23 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	return &Worktree{r: r, Filesystem: r.wt}, nil
 }
 
+func expand_ref(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
+	// For improving troubleshooting, this preserves the error for the provided `ref`,
+	// and returns the error for that specific ref in case all parse rules fails.
+	var ret error
+	for _, rule := range plumbing.RefRevParseRules {
+		resolvedRef, err := storer.ResolveReference(s, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
+
+		if err == nil {
+			return resolvedRef, nil
+		} else if ret == nil {
+			ret = err
+		}
+	}
+
+	return nil, ret
+}
+
 // ResolveRevision resolves revision to corresponding hash. It will always
 // resolve to a commit hash, not a tree or annotated tag.
 //
@@ -1518,13 +1523,9 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 			tryHashes = append(tryHashes, r.resolveHashPrefix(string(revisionRef))...)
 
-			for _, rule := range append([]string{"%s"}, plumbing.RefRevParseRules...) {
-				ref, err := storer.ResolveReference(r.Storer, plumbing.ReferenceName(fmt.Sprintf(rule, revisionRef)))
-
-				if err == nil {
-					tryHashes = append(tryHashes, ref.Hash())
-					break
-				}
+			ref, err := expand_ref(r.Storer, plumbing.ReferenceName(revisionRef))
+			if err == nil {
+				tryHashes = append(tryHashes, ref.Hash())
 			}
 
 			// in ambiguous cases, `git rev-parse` will emit a warning, but
