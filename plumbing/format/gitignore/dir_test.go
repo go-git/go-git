@@ -96,7 +96,7 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 
 	s.RFS = fs
 
-	// root that contains user home, but with with relative ~/.gitignore_global
+	// root that contains user home, but with relative ~/.gitignore_global
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
 	c.Assert(err, IsNil)
