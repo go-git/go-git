@@ -89,12 +89,30 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 	case 0:
 		*result = append(*result, current)
 		return nil
-	default: // or more than one parent contains the path
+	case 1: // only one parent contains the path
+		// if the file contents has change, add the current commit
 		different, err := differentContents(path, current, parents)
 		if err != nil {
 			return err
 		}
-		if len(different) > 0 {
+		if len(different) == 1 {
+			*result = append(*result, current)
+		}
+		// in any case, walk the parent
+		return walkGraph(result, seen, parents[0], path)
+	default: // or more than one parent contains the path
+		skip := false
+		for _, parent := range parents {
+			different, err := differentContents(path, current, []*object.Commit{parent})
+			if err != nil {
+				return err
+			}
+			if len(different) == 0 {
+				skip = true
+				break
+			}
+		}
+		if !skip {
 			*result = append(*result, current)
 		}
 
@@ -169,7 +187,11 @@ func removeComp(path string, cs []*object.Commit, comp contentsComparatorFn) ([]
 		if err != nil {
 			return nil, err
 		}
-		if !equals {
+		currentHash, _ := blobHash(path, cs[i])
+		previousHash, _ := blobHash(path, cs[i-1])
+		fileEqual := currentHash == previousHash
+
+		if !equals && !fileEqual {
 			result = append(result, cs[i])
 		}
 	}
