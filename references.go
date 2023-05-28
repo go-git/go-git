@@ -90,11 +90,11 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 		*result = append(*result, current)
 		return nil
 	default: // or more than one parent contains the path
-		different, err := differentContents(path, current, parents)
+		skip, err := derivedFromOneParent(path, current, parents)
 		if err != nil {
 			return err
 		}
-		if len(different) > 0 {
+		if !skip {
 			*result = append(*result, current)
 		}
 
@@ -106,6 +106,19 @@ func walkGraph(result *[]*object.Commit, seen *map[plumbing.Hash]struct{}, curre
 		}
 	}
 	return nil
+}
+
+func derivedFromOneParent(path string, current *object.Commit, parents []*object.Commit) (bool, error) {
+	for _, parent := range parents {
+		different, err := differentContents(path, current, []*object.Commit{parent})
+		if err != nil {
+			return false, err
+		}
+		if len(different) == 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func parentsContainingPath(path string, c *object.Commit) ([]*object.Commit, error) {
@@ -156,8 +169,8 @@ func blobHash(path string, commit *object.Commit) (hash plumbing.Hash, found boo
 type contentsComparatorFn func(path string, a, b *object.Commit) (bool, error)
 
 // Returns a new slice of commits, with duplicates removed.  Expects a
-// sorted commit list.  Duplication is defined according to "comp".  It
-// will always keep the first commit of a series of duplicated commits.
+// sorted commit list.  Duplication is defined according to the blob hash.
+// It will always keep the first commit of a series of duplicated commits.
 func removeComp(path string, cs []*object.Commit, comp contentsComparatorFn) ([]*object.Commit, error) {
 	result := make([]*object.Commit, 0, len(cs))
 	if len(cs) == 0 {
@@ -165,11 +178,11 @@ func removeComp(path string, cs []*object.Commit, comp contentsComparatorFn) ([]
 	}
 	result = append(result, cs[0])
 	for i := 1; i < len(cs); i++ {
-		equals, err := comp(path, cs[i], cs[i-1])
-		if err != nil {
-			return nil, err
-		}
-		if !equals {
+		h1, _ := blobHash(path, cs[i])
+		h2, _ := blobHash(path, cs[i-1])
+		equal := h1 == h2
+
+		if !equal {
 			result = append(result, cs[i])
 		}
 	}
