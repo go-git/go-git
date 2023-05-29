@@ -457,7 +457,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	req.Wants, err = getWants(r.s, refs)
+	req.Wants, err = getWants(r.s, refs, o.Depth)
 	if len(req.Wants) > 0 {
 		req.Haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
 		if err != nil {
@@ -1011,10 +1011,14 @@ func doCalculateRefs(
 	return refList, ret
 }
 
-func getWants(localStorer storage.Storer, refs memory.ReferenceStorage) ([]plumbing.Hash, error) {
+func getWants(localStorer storage.Storer, refs memory.ReferenceStorage, depth int) ([]plumbing.Hash, error) {
+	// If depth is anything other than 1 and the repo has shallow commits then just because we have the commit
+	// at the reference doesn't mean that we don't still need to fetch the parents
 	shallow := false
-	if s, _ := localStorer.Shallow(); len(s) > 0 {
-		shallow = true
+	if depth != 1 {
+		if s, _ := localStorer.Shallow(); len(s) > 0 {
+			shallow = true
+		}
 	}
 
 	wants := map[plumbing.Hash]bool{}
