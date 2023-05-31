@@ -294,9 +294,7 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 			return
 		}
 
-		if !added && a {
-			added = true
-		}
+		added = added || a
 	}
 
 	return
