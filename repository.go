@@ -235,23 +235,24 @@ func CloneContext(
 // if the repository will have worktree (non-bare) or not (bare), if the path
 // is not empty ErrRepositoryAlreadyExists is returned.
 func PlainInit(path string, isBare bool) (*Repository, error) {
+	return PlainInitWithOptions(path, &PlainInitOptions{
+		Bare: isBare,
+	})
+}
+
+func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, error) {
+	if opts == nil {
+		opts = &PlainInitOptions{}
+	}
+
 	var wt, dot billy.Filesystem
 
-	if isBare {
+	if opts.Bare {
 		dot = osfs.New(path)
 	} else {
 		wt = osfs.New(path)
 		dot, _ = wt.Chroot(GitDirName)
 	}
-
-	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-
-	return Init(s, wt)
-}
-
-func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, error) {
-	wt := osfs.New(path)
-	dot, _ := wt.Chroot(GitDirName)
 
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
@@ -265,7 +266,7 @@ func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, err
 		return nil, err
 	}
 
-	if opts != nil {
+	if opts.ObjectFormat != "" {
 		if opts.ObjectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
 			return nil, ErrSHA256NotSupported
 		}

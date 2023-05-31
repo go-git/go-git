@@ -518,6 +518,21 @@ func (s *RepositorySuite) TestPlainInit(c *C) {
 	c.Assert(cfg.Core.IsBare, Equals, true)
 }
 
+func (s *RepositorySuite) TestPlainInitWithOptions(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainInitWithOptions(dir, &PlainInitOptions{
+		Bare: true,
+	})
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.IsBare, Equals, true)
+}
+
 func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()

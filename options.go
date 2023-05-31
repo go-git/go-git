@@ -737,6 +737,8 @@ type PlainOpenOptions struct {
 func (o *PlainOpenOptions) Validate() error { return nil }
 
 type PlainInitOptions struct {
+	// Determines if the repository will have a worktree (non-bare) or not (bare).
+	Bare         bool
 	ObjectFormat formatcfg.ObjectFormat
 }
 
