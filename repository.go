@@ -256,7 +256,7 @@ func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, err
 
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
-	r, err := Init(s, wt)
+	r, err := InitWithOptions(s, wt, opts.InitOptions)
 	if err != nil {
 		return nil, err
 	}
