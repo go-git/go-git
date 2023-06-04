@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/user"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -27,9 +28,18 @@ const (
 func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps []Pattern, err error) {
 
 	if strings.HasPrefix(ignoreFile, "~") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			ignoreFile = strings.Replace(ignoreFile, "~", home, 1)
+		firstSlash := strings.Index(ignoreFile, "/")
+		if firstSlash == 1 {
+			home, err := os.UserHomeDir()
+			if err == nil {
+				ignoreFile = strings.Replace(ignoreFile, "~", home, 1)
+			}
+		} else if firstSlash > 1 {
+			username := ignoreFile[1:firstSlash]
+			userAccount, err := user.Lookup(username)
+			if err == nil {
+				ignoreFile = strings.Replace(ignoreFile, ignoreFile[:firstSlash], userAccount.HomeDir, 1)
+			}
 		}
 	}
 
