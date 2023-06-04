@@ -1119,6 +1119,49 @@ func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(c *C, ref str
 	c.Assert(branch.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
 }
 
+func (s *RepositorySuite) TestCloneSingleBranchHEADMain(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+
+	head, err := r.Head()
+	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	c.Assert(head, IsNil)
+
+	err = r.clone(context.Background(), &CloneOptions{
+		URL:          s.GetLocalRepositoryURL(fixtures.ByTag("no-master-head").One()),
+		SingleBranch: true,
+	})
+
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["main"].Name, Equals, "main")
+	c.Assert(cfg.Branches["main"].Remote, Equals, "origin")
+	c.Assert(cfg.Branches["main"].Merge, Equals, plumbing.ReferenceName("refs/heads/main"))
+
+	head, err = r.Reference(plumbing.HEAD, false)
+	c.Assert(err, IsNil)
+	c.Assert(head, NotNil)
+	c.Assert(head.Type(), Equals, plumbing.SymbolicReference)
+	c.Assert(head.Target().String(), Equals, "refs/heads/main")
+
+	branch, err := r.Reference(head.Target(), false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Hash().String(), Equals, "786dafbd351e587da1ae97e5fb9fbdf868b4a28f")
+
+	branch, err = r.Reference("refs/remotes/origin/HEAD", false)
+	c.Assert(err, IsNil)
+	c.Assert(branch, NotNil)
+	c.Assert(branch.Type(), Equals, plumbing.HashReference)
+	c.Assert(branch.Hash().String(), Equals, "786dafbd351e587da1ae97e5fb9fbdf868b4a28f")
+}
+
 func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	r, _ := Init(memory.NewStorage(), nil)
 
@@ -1153,12 +1196,6 @@ func (s *RepositorySuite) TestCloneSingleBranch(c *C) {
 	branch, err := r.Reference(head.Target(), false)
 	c.Assert(err, IsNil)
 	c.Assert(branch, NotNil)
-	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-
-	branch, err = r.Reference("refs/remotes/origin/master", false)
-	c.Assert(err, IsNil)
-	c.Assert(branch, NotNil)
-	c.Assert(branch.Type(), Equals, plumbing.HashReference)
 	c.Assert(branch.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 }
 
