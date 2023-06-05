@@ -5,7 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -257,4 +260,27 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(commitCount, Equals, 1)
+}
+
+func (s *SubmoduleSuite) TestSubmoduleParseScp(c *C) {
+	repo := &Repository{
+		Storer: memory.NewStorage(),
+		wt:     memfs.New(),
+	}
+	worktree := &Worktree{
+		Filesystem: memfs.New(),
+		r:          repo,
+	}
+	submodule := &Submodule{
+		initialized: true,
+		c:           nil,
+		w:           worktree,
+	}
+
+	submodule.c = &config.Submodule{
+		URL: "git@github.com:username/submodule_repo",
+	}
+
+	_, err := submodule.Repository()
+	c.Assert(err, IsNil)
 }
