@@ -932,6 +932,43 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 	c.Assert(cfg.Submodules, HasLen, 2)
 }
 
+func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	path := fixtures.ByTag("submodule").One().Worktree().Root()
+	mainRepo, err := PlainClone(dir, false, &CloneOptions{
+		URL:               path,
+		RecurseSubmodules: 1,
+		ShallowSubmodules: true,
+	})
+	c.Assert(err, IsNil)
+
+	mainWorktree, err := mainRepo.Worktree()
+	c.Assert(err, IsNil)
+
+	submodule, err := mainWorktree.Submodule("basic")
+	c.Assert(err, IsNil)
+
+	subRepo, err := submodule.Repository()
+	c.Assert(err, IsNil)
+
+	lr, err := subRepo.Log(&LogOptions{})
+	c.Assert(err, IsNil)
+
+	commitCount := 0
+	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+		commitCount++
+	}
+	c.Assert(err, IsNil)
+
+	c.Assert(commitCount, Equals, 1)
+}
+
 func (s *RepositorySuite) TestPlainCloneNoCheckout(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
