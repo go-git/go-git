@@ -20,10 +20,10 @@ func Limit(s Storer, n int64) *Limited {
 }
 
 func (s *Limited) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
-	*s.N -= obj.Size()
-	if *s.N < 0 {
+	if *s.N - obj.Size() < 0 {
 		return plumbing.ZeroHash, ErrLimitExceeded
 	}
+	*s.N -= obj.Size()
 	return s.Storer.SetEncodedObject(obj)
 }
 

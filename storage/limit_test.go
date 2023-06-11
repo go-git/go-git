@@ -25,6 +25,8 @@ func (s *LimitSuite) TestLimit(c *C) {
 
 	_, err := storer.SetEncodedObject(&mockEncodedObject{size: 40})
 	c.Assert(err, IsNil)
+	
+	c.Assert(*storer.N, Equals, int64(60))
 }
 
 func (s *LimitSuite) TestLimitExceeded(c *C) {
@@ -42,6 +44,8 @@ func (s *LimitSuite) TestLimitExceeded(c *C) {
 
 	_, err = storer.SetEncodedObject(&mockEncodedObject{size: 70})
 	c.Assert(err, Equals, ErrLimitExceeded)
+
+	c.Assert(*storer.N, Equals, int64(60))
 }
 
 type mockStorer struct {
