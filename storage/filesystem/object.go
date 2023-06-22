@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"sync"
@@ -152,7 +153,7 @@ func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 	// Check unpacked objects
 	f, err := s.dir.Object(h)
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		// Fall through to check packed objects.
@@ -176,7 +177,7 @@ func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (
 	size int64, err error) {
 	f, err := s.dir.Object(h)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return 0, plumbing.ErrObjectNotFound
 		}
 
@@ -378,7 +379,7 @@ func (s *ObjectStorage) DeltaObject(t plumbing.ObjectType,
 func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedObject, err error) {
 	f, err := s.dir.Object(h)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, plumbing.ErrObjectNotFound
 		}
 

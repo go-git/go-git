@@ -1,6 +1,7 @@
 package gitattributes
 
 import (
+	"errors"
 	"os"
 
 	"github.com/go-git/go-billy/v5"
@@ -19,7 +20,7 @@ const (
 
 func ReadAttributesFile(fs billy.Filesystem, path []string, attributesFile string, allowMacro bool) ([]MatchAttribute, error) {
 	f, err := fs.Open(fs.Join(append(path, attributesFile)...))
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -76,7 +77,7 @@ func walkDirectory(fs billy.Filesystem, root []string) (attributes []MatchAttrib
 
 func loadPatterns(fs billy.Filesystem, path string) ([]MatchAttribute, error) {
 	f, err := fs.Open(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {

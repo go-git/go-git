@@ -449,7 +449,7 @@ func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePatt
 
 	h, err = w.copyFileToStorage(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			added = true
 			h, err = w.deleteFromIndex(idx, path)
 		}
@@ -645,7 +645,7 @@ func (w *Worktree) deleteFromIndex(idx *index.Index, path string) (plumbing.Hash
 
 func (w *Worktree) deleteFromFilesystem(path string) error {
 	err := w.Filesystem.Remove(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 
@@ -668,7 +668,7 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 
 	for _, e := range entries {
 		file := filepath.FromSlash(e.Name)
-		if _, err := w.Filesystem.Lstat(file); err != nil && !os.IsNotExist(err) {
+		if _, err := w.Filesystem.Lstat(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 

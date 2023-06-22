@@ -1,6 +1,7 @@
 package file
 
 import (
+	"errors"
 	"os"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -43,7 +44,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
 	c.Skip("failing test")
 
-	if _, err := os.Stat("/bin/true"); os.IsNotExist(err) {
+	if _, err := os.Stat("/bin/true"); errors.Is(err, os.ErrNotExist) {
 		c.Skip("/bin/true not found")
 	}
 
@@ -56,7 +57,7 @@ func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
 }
 
 func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
-	if _, err := os.Stat("/usr/bin/yes"); os.IsNotExist(err) {
+	if _, err := os.Stat("/usr/bin/yes"); errors.Is(err, os.ErrNotExist) {
 		c.Skip("/usr/bin/yes not found")
 	}
 

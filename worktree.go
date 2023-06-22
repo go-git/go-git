@@ -709,7 +709,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 
 	f, err := w.Filesystem.Open(gitmodulesFile)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 

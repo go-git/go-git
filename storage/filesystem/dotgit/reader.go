@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,7 +27,7 @@ func (e *EncodedObject) Hash() plumbing.Hash {
 func (e *EncodedObject) Reader() (io.ReadCloser, error) {
 	f, err := e.dir.Object(e.h)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, plumbing.ErrObjectNotFound
 		}
 

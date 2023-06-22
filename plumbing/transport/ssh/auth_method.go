@@ -276,7 +276,7 @@ func filterKnownHostsFiles(files ...string) ([]string, error) {
 			continue
 		}
 
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 	}

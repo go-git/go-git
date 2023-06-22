@@ -1735,7 +1735,7 @@ func (s *WorktreeSuite) TestRemoveDirectory(c *C) {
 	c.Assert(status.File("json/short.json").Staging, Equals, Deleted)
 
 	_, err = w.Filesystem.Stat("json")
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 }
 
 func (s *WorktreeSuite) TestRemoveDirectoryUntracked(c *C) {
@@ -1828,7 +1828,7 @@ func (s *WorktreeSuite) TestRemoveGlobDirectory(c *C) {
 	c.Assert(status.File("json/long.json").Staging, Equals, Deleted)
 
 	_, err = w.Filesystem.Stat("json")
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 }
 
 func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted(c *C) {

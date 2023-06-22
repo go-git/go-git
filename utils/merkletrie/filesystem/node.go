@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -92,7 +93,7 @@ func (n *node) calculateChildren() error {
 
 	files, err := n.fs.ReadDir(n.path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err

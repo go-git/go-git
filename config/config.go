@@ -172,7 +172,7 @@ func LoadConfig(scope Scope) (*Config, error) {
 	for _, file := range files {
 		f, err := osfs.Default.Open(file)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 

@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"errors"
 	"os"
 
 	. "gopkg.in/check.v1"
@@ -70,7 +71,7 @@ func (s *SuiteDotGit) TestRepositoryFilesystem(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = repositoryFs.Stat("somelink")
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 
 	dirs := []string{objectsPath, refsPath, packedRefsPath, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, worktreesPath}
 	for _, dir := range dirs {
@@ -79,7 +80,7 @@ func (s *SuiteDotGit) TestRepositoryFilesystem(c *C) {
 		_, err = commonDotGitFs.Stat(dir)
 		c.Assert(err, IsNil)
 		_, err = dotGitFs.Stat(dir)
-		c.Assert(os.IsNotExist(err), Equals, true)
+		c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 	}
 
 	exceptionsPaths := []string{repositoryFs.Join(logsPath, "HEAD"), repositoryFs.Join(refsPath, "bisect"), repositoryFs.Join(refsPath, "rewritten"), repositoryFs.Join(refsPath, "worktree")}
@@ -87,7 +88,7 @@ func (s *SuiteDotGit) TestRepositoryFilesystem(c *C) {
 		_, err := repositoryFs.Create(path)
 		c.Assert(err, IsNil)
 		_, err = commonDotGitFs.Stat(path)
-		c.Assert(os.IsNotExist(err), Equals, true)
+		c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 		_, err = dotGitFs.Stat(path)
 		c.Assert(err, IsNil)
 	}
@@ -97,19 +98,19 @@ func (s *SuiteDotGit) TestRepositoryFilesystem(c *C) {
 	_, err = commonDotGitFs.Stat("refs/heads")
 	c.Assert(err, IsNil)
 	_, err = dotGitFs.Stat("refs/heads")
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 
 	err = repositoryFs.MkdirAll("objects/pack", 0777)
 	c.Assert(err, IsNil)
 	_, err = commonDotGitFs.Stat("objects/pack")
 	c.Assert(err, IsNil)
 	_, err = dotGitFs.Stat("objects/pack")
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 
 	err = repositoryFs.MkdirAll("a/b/c", 0777)
 	c.Assert(err, IsNil)
 	_, err = commonDotGitFs.Stat("a/b/c")
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 	_, err = dotGitFs.Stat("a/b/c")
 	c.Assert(err, IsNil)
 }
