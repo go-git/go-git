@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "hash",
+    srcs = [
+        "hash.go",
+        "hash_sha1.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/hash",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_pjbgf_sha1cd//:sha1cd"],
+)
+
+go_test(
+    name = "hash_test",
+    srcs = ["hash_test.go"],
+    embed = [":hash"],
+)

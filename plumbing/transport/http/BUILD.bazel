@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "http",
+    srcs = [
+        "common.go",
+        "receive_pack.go",
+        "transport.go",
+        "upload_pack.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/transport/http",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/pktline",
+        "//plumbing/protocol/packp",
+        "//plumbing/protocol/packp/capability",
+        "//plumbing/protocol/packp/sideband",
+        "//plumbing/transport",
+        "//plumbing/transport/internal/common",
+        "//utils/ioutil",
+        "@com_github_golang_groupcache//lru",
+    ],
+)
+
+go_test(
+    name = "http_test",
+    srcs = [
+        "common_test.go",
+        "proxy_test.go",
+        "receive_pack_test.go",
+        "upload_pack_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":http"],
+    deps = [
+        "//plumbing",
+        "//plumbing/protocol/packp",
+        "//plumbing/transport",
+        "//plumbing/transport/http/internal/test",
+        "//plumbing/transport/test",
+        "@com_github_elazarl_goproxy//:goproxy",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

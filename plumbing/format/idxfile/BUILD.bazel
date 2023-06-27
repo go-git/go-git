@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "idxfile",
+    srcs = [
+        "decoder.go",
+        "doc.go",
+        "encoder.go",
+        "idxfile.go",
+        "writer.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/idxfile",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/hash",
+        "//utils/binary",
+    ],
+)
+
+go_test(
+    name = "idxfile_test",
+    srcs = [
+        "decoder_test.go",
+        "encoder_test.go",
+        "idxfile_test.go",
+        "writer_test.go",
+    ],
+    deps = [
+        ":idxfile",
+        "//plumbing",
+        "//plumbing/format/packfile",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

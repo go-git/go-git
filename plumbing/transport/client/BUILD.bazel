@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "client",
+    srcs = ["client.go"],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/transport/client",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing/transport",
+        "//plumbing/transport/file",
+        "//plumbing/transport/git",
+        "//plumbing/transport/http",
+        "//plumbing/transport/ssh",
+    ],
+)
+
+go_test(
+    name = "client_test",
+    srcs = [
+        "client_test.go",
+        "example_test.go",
+    ],
+    embed = [":client"],
+    deps = [
+        "//plumbing/transport",
+        "//plumbing/transport/http",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

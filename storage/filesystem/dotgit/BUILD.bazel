@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "dotgit",
+    srcs = [
+        "dotgit.go",
+        "dotgit_rewrite_packed_refs.go",
+        "dotgit_setref.go",
+        "reader.go",
+        "repository_filesystem.go",
+        "writers.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/storage/filesystem/dotgit",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/idxfile",
+        "//plumbing/format/objfile",
+        "//plumbing/format/packfile",
+        "//plumbing/hash",
+        "//storage",
+        "//utils/ioutil",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+        "@com_github_go_git_go_billy_v5//osfs",
+    ],
+)
+
+go_test(
+    name = "dotgit_test",
+    srcs = [
+        "dotgit_test.go",
+        "repository_filesystem_test.go",
+        "writers_test.go",
+    ],
+    embed = [":dotgit"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/idxfile",
+        "//plumbing/format/packfile",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+        "@com_github_go_git_go_billy_v5//osfs",
+        "@com_github_go_git_go_billy_v5//util",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

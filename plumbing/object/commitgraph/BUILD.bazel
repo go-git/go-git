@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "commitgraph",
+    srcs = [
+        "commitnode.go",
+        "commitnode_graph.go",
+        "commitnode_object.go",
+        "commitnode_walker_ctime.go",
+        "doc.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/object/commitgraph",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/commitgraph",
+        "//plumbing/object",
+        "//plumbing/storer",
+        "@com_github_emirpasic_gods//trees/binaryheap",
+    ],
+)
+
+go_test(
+    name = "commitgraph_test",
+    srcs = ["commitnode_test.go"],
+    embed = [":commitgraph"],
+    deps = [
+        "//plumbing",
+        "//plumbing/cache",
+        "//plumbing/format/commitgraph",
+        "//plumbing/format/packfile",
+        "//storage/filesystem",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "test",
+    srcs = ["storage_suite.go"],
+    importpath = "github.com/sgnl-ai/go-git/storage/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config",
+        "//plumbing",
+        "//plumbing/format/index",
+        "//plumbing/storer",
+        "//storage",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

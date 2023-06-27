@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "test",
+    srcs = ["test_utils.go"],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/transport/http/internal/test",
+    visibility = ["//plumbing/transport/http:__subpackages__"],
+    deps = ["@com_github_elazarl_goproxy//:goproxy"],
+)
+
+go_test(
+    name = "test_test",
+    srcs = ["proxy_test.go"],
+    embed = [":test"],
+    deps = [
+        "//plumbing/transport",
+        "//plumbing/transport/http",
+        "@com_github_elazarl_goproxy//:goproxy",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

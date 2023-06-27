@@ -1,0 +1,55 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "filesystem",
+    srcs = [
+        "config.go",
+        "deltaobject.go",
+        "index.go",
+        "module.go",
+        "object.go",
+        "reference.go",
+        "shallow.go",
+        "storage.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/storage/filesystem",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config",
+        "//plumbing",
+        "//plumbing/cache",
+        "//plumbing/format/idxfile",
+        "//plumbing/format/index",
+        "//plumbing/format/objfile",
+        "//plumbing/format/packfile",
+        "//plumbing/storer",
+        "//storage",
+        "//storage/filesystem/dotgit",
+        "//utils/ioutil",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+    ],
+)
+
+go_test(
+    name = "filesystem_test",
+    srcs = [
+        "config_test.go",
+        "object_test.go",
+        "storage_test.go",
+    ],
+    embed = [":filesystem"],
+    deps = [
+        "//config",
+        "//plumbing",
+        "//plumbing/cache",
+        "//plumbing/storer",
+        "//storage/filesystem/dotgit",
+        "//storage/test",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+        "@com_github_go_git_go_billy_v5//memfs",
+        "@com_github_go_git_go_billy_v5//osfs",
+        "@com_github_go_git_go_billy_v5//util",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

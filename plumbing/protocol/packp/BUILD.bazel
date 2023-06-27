@@ -1,0 +1,63 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "packp",
+    srcs = [
+        "advrefs.go",
+        "advrefs_decode.go",
+        "advrefs_encode.go",
+        "common.go",
+        "doc.go",
+        "report_status.go",
+        "shallowupd.go",
+        "srvresp.go",
+        "ulreq.go",
+        "ulreq_decode.go",
+        "ulreq_encode.go",
+        "updreq.go",
+        "updreq_decode.go",
+        "updreq_encode.go",
+        "uppackreq.go",
+        "uppackresp.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/protocol/packp",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/pktline",
+        "//plumbing/protocol/packp/capability",
+        "//plumbing/protocol/packp/sideband",
+        "//plumbing/storer",
+        "//storage/memory",
+        "//utils/ioutil",
+    ],
+)
+
+go_test(
+    name = "packp_test",
+    srcs = [
+        "advrefs_decode_test.go",
+        "advrefs_encode_test.go",
+        "advrefs_test.go",
+        "common_test.go",
+        "report_status_test.go",
+        "shallowupd_test.go",
+        "srvresp_test.go",
+        "ulreq_decode_test.go",
+        "ulreq_encode_test.go",
+        "ulreq_test.go",
+        "updreq_decode_test.go",
+        "updreq_encode_test.go",
+        "updreq_test.go",
+        "uppackreq_test.go",
+        "uppackresp_test.go",
+    ],
+    embed = [":packp"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/pktline",
+        "//plumbing/hash",
+        "//plumbing/protocol/packp/capability",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "index",
+    srcs = ["node.go"],
+    importpath = "github.com/sgnl-ai/go-git/utils/merkletrie/index",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing/format/index",
+        "//utils/merkletrie/noder",
+    ],
+)
+
+go_test(
+    name = "index_test",
+    srcs = ["node_test.go"],
+    embed = [":index"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/index",
+        "//utils/merkletrie",
+        "//utils/merkletrie/noder",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

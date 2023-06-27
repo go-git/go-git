@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "transactional",
+    srcs = [
+        "config.go",
+        "doc.go",
+        "index.go",
+        "object.go",
+        "reference.go",
+        "shallow.go",
+        "storage.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/storage/transactional",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config",
+        "//plumbing",
+        "//plumbing/format/index",
+        "//plumbing/storer",
+        "//storage",
+    ],
+)
+
+go_test(
+    name = "transactional_test",
+    srcs = [
+        "config_test.go",
+        "index_test.go",
+        "object_test.go",
+        "reference_test.go",
+        "shallow_test.go",
+        "storage_test.go",
+    ],
+    embed = [":transactional"],
+    deps = [
+        "//config",
+        "//plumbing",
+        "//plumbing/cache",
+        "//plumbing/format/index",
+        "//plumbing/storer",
+        "//storage",
+        "//storage/filesystem",
+        "//storage/memory",
+        "//storage/test",
+        "@com_github_go_git_go_billy_v5//memfs",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

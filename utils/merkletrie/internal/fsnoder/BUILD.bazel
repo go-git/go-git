@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "fsnoder",
+    srcs = [
+        "dir.go",
+        "doc.go",
+        "file.go",
+        "new.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/utils/merkletrie/internal/fsnoder",
+    visibility = ["//utils/merkletrie:__subpackages__"],
+    deps = ["//utils/merkletrie/noder"],
+)
+
+go_test(
+    name = "fsnoder_test",
+    srcs = [
+        "dir_test.go",
+        "file_test.go",
+        "new_test.go",
+    ],
+    embed = [":fsnoder"],
+    deps = [
+        "//utils/merkletrie/noder",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sideband",
+    srcs = [
+        "common.go",
+        "demux.go",
+        "doc.go",
+        "muxer.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/protocol/packp/sideband",
+    visibility = ["//visibility:public"],
+    deps = ["//plumbing/format/pktline"],
+)
+
+go_test(
+    name = "sideband_test",
+    srcs = [
+        "demux_test.go",
+        "muxer_test.go",
+    ],
+    embed = [":sideband"],
+    deps = [
+        "//plumbing/format/pktline",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

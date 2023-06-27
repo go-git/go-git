@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "go-git_lib",
+    srcs = [
+        "main.go",
+        "receive_pack.go",
+        "upload_pack.go",
+        "version.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/cli/go-git",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//plumbing/transport/file",
+        "@com_github_jessevdk_go_flags//:go-flags",
+    ],
+)
+
+go_binary(
+    name = "go-git",
+    embed = [":go-git_lib"],
+    visibility = ["//visibility:public"],
+)

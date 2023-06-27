@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "merkletrie",
+    srcs = [
+        "change.go",
+        "difftree.go",
+        "doc.go",
+        "doubleiter.go",
+        "iter.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/utils/merkletrie",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//utils/merkletrie/internal/frame",
+        "//utils/merkletrie/noder",
+    ],
+)
+
+go_test(
+    name = "merkletrie_test",
+    srcs = [
+        "change_test.go",
+        "difftree_test.go",
+        "iter_test.go",
+    ],
+    deps = [
+        ":merkletrie",
+        "//utils/merkletrie/internal/fsnoder",
+        "//utils/merkletrie/noder",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

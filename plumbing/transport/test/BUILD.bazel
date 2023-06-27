@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "test",
+    srcs = [
+        "receive_pack.go",
+        "upload_pack.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/transport/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/packfile",
+        "//plumbing/protocol/packp",
+        "//plumbing/protocol/packp/capability",
+        "//plumbing/transport",
+        "//storage/memory",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "frame",
+    srcs = ["frame.go"],
+    importpath = "github.com/sgnl-ai/go-git/utils/merkletrie/internal/frame",
+    visibility = ["//utils/merkletrie:__subpackages__"],
+    deps = ["//utils/merkletrie/noder"],
+)
+
+go_test(
+    name = "frame_test",
+    srcs = ["frame_test.go"],
+    embed = [":frame"],
+    deps = [
+        "//utils/merkletrie/internal/fsnoder",
+        "//utils/merkletrie/noder",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

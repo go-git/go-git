@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sync",
+    srcs = [
+        "bufio.go",
+        "bytes.go",
+        "zlib.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/utils/sync",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "sync_test",
+    srcs = [
+        "bufio_test.go",
+        "bytes_test.go",
+        "zlib_test.go",
+    ],
+    embed = [":sync"],
+)

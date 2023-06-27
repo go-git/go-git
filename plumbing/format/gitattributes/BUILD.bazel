@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gitattributes",
+    srcs = [
+        "attributes.go",
+        "dir.go",
+        "matcher.go",
+        "pattern.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/gitattributes",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing/format/config",
+        "//utils/ioutil",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+    ],
+)
+
+go_test(
+    name = "gitattributes_test",
+    srcs = [
+        "attributes_test.go",
+        "dir_test.go",
+        "matcher_test.go",
+        "pattern_test.go",
+    ],
+    embed = [":gitattributes"],
+    deps = [
+        "@com_github_go_git_go_billy_v5//:go-billy",
+        "@com_github_go_git_go_billy_v5//memfs",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

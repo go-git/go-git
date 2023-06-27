@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "memory",
+    srcs = ["storage.go"],
+    importpath = "github.com/sgnl-ai/go-git/storage/memory",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config",
+        "//plumbing",
+        "//plumbing/format/index",
+        "//plumbing/storer",
+        "//storage",
+    ],
+)
+
+go_test(
+    name = "memory_test",
+    srcs = ["storage_test.go"],
+    embed = [":memory"],
+    deps = [
+        "//storage/test",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

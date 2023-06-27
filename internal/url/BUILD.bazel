@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "url",
+    srcs = ["url.go"],
+    importpath = "github.com/sgnl-ai/go-git/internal/url",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "url_test",
+    srcs = ["url_test.go"],
+    embed = [":url"],
+    deps = ["@in_gopkg_check_v1//:check_v1"],
+)

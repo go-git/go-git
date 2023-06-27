@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gitignore",
+    srcs = [
+        "dir.go",
+        "doc.go",
+        "matcher.go",
+        "pattern.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/gitignore",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing/format/config",
+        "//utils/ioutil",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+    ],
+)
+
+go_test(
+    name = "gitignore_test",
+    srcs = [
+        "dir_test.go",
+        "matcher_test.go",
+        "pattern_test.go",
+    ],
+    embed = [":gitignore"],
+    deps = [
+        "@com_github_go_git_go_billy_v5//:go-billy",
+        "@com_github_go_git_go_billy_v5//memfs",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

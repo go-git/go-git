@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "revlist",
+    srcs = ["revlist.go"],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/revlist",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/filemode",
+        "//plumbing/object",
+        "//plumbing/storer",
+    ],
+)
+
+go_test(
+    name = "revlist_test",
+    srcs = ["revlist_test.go"],
+    embed = [":revlist"],
+    deps = [
+        "//plumbing",
+        "//plumbing/cache",
+        "//plumbing/object",
+        "//plumbing/storer",
+        "//storage/filesystem",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

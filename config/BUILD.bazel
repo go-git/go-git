@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "config",
+    srcs = [
+        "branch.go",
+        "config.go",
+        "modules.go",
+        "refspec.go",
+        "url.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/config",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/url",
+        "//plumbing",
+        "//plumbing/format/config",
+        "@com_github_go_git_go_billy_v5//osfs",
+    ],
+)
+
+go_test(
+    name = "config_test",
+    srcs = [
+        "branch_test.go",
+        "config_test.go",
+        "modules_test.go",
+        "refspec_test.go",
+        "url_test.go",
+    ],
+    embed = [":config"],
+    deps = [
+        "//plumbing",
+        "@com_github_go_git_go_billy_v5//osfs",
+        "@com_github_go_git_go_billy_v5//util",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

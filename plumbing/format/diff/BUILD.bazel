@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "diff",
+    srcs = [
+        "colorconfig.go",
+        "patch.go",
+        "unified_encoder.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/diff",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/color",
+        "//plumbing/filemode",
+    ],
+)
+
+go_test(
+    name = "diff_test",
+    srcs = ["unified_encoder_test.go"],
+    embed = [":diff"],
+    deps = [
+        "//plumbing",
+        "//plumbing/color",
+        "//plumbing/filemode",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "storer",
+    srcs = [
+        "doc.go",
+        "index.go",
+        "object.go",
+        "reference.go",
+        "shallow.go",
+        "storer.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/storer",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/format/index",
+    ],
+)
+
+go_test(
+    name = "storer_test",
+    srcs = [
+        "object_test.go",
+        "reference_test.go",
+    ],
+    embed = [":storer"],
+    deps = [
+        "//plumbing",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

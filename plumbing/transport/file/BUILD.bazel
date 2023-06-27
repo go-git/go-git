@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "file",
+    srcs = [
+        "client.go",
+        "server.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/transport/file",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing/transport",
+        "//plumbing/transport/internal/common",
+        "//plumbing/transport/server",
+        "//utils/ioutil",
+        "@org_golang_x_sys//execabs",
+    ],
+)
+
+go_test(
+    name = "file_test",
+    srcs = [
+        "client_test.go",
+        "common_test.go",
+        "receive_pack_test.go",
+        "server_test.go",
+        "upload_pack_test.go",
+    ],
+    embed = [":file"],
+    deps = [
+        "//plumbing/transport",
+        "//plumbing/transport/test",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

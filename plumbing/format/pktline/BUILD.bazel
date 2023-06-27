@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pktline",
+    srcs = [
+        "encoder.go",
+        "scanner.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/pktline",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "pktline_test",
+    srcs = [
+        "encoder_test.go",
+        "scanner_test.go",
+    ],
+    deps = [
+        ":pktline",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

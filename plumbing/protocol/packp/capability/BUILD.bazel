@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "capability",
+    srcs = [
+        "capability.go",
+        "list.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/protocol/packp/capability",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "capability_test",
+    srcs = [
+        "capability_test.go",
+        "list_test.go",
+    ],
+    embed = [":capability"],
+    deps = ["@in_gopkg_check_v1//:check_v1"],
+)

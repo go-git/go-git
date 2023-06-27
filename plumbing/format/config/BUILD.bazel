@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "config",
+    srcs = [
+        "common.go",
+        "decoder.go",
+        "doc.go",
+        "encoder.go",
+        "format.go",
+        "option.go",
+        "section.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/config",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_go_git_gcfg//:gcfg"],
+)
+
+go_test(
+    name = "config_test",
+    srcs = [
+        "common_test.go",
+        "decoder_test.go",
+        "encoder_test.go",
+        "fixtures_test.go",
+        "option_test.go",
+        "section_test.go",
+    ],
+    embed = [":config"],
+    deps = ["@in_gopkg_check_v1//:check_v1"],
+)

@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "plumbing",
+    srcs = [
+        "error.go",
+        "hash.go",
+        "memory.go",
+        "object.go",
+        "reference.go",
+        "revision.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing",
+    visibility = ["//visibility:public"],
+    deps = ["//plumbing/hash"],
+)
+
+go_test(
+    name = "plumbing_test",
+    srcs = [
+        "hash_test.go",
+        "memory_test.go",
+        "object_test.go",
+        "reference_test.go",
+    ],
+    embed = [":plumbing"],
+    deps = ["@in_gopkg_check_v1//:check_v1"],
+)

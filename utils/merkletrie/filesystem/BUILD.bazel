@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "filesystem",
+    srcs = ["node.go"],
+    importpath = "github.com/sgnl-ai/go-git/utils/merkletrie/filesystem",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/filemode",
+        "//utils/merkletrie/noder",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+    ],
+)
+
+go_test(
+    name = "filesystem_test",
+    srcs = ["node_test.go"],
+    embed = [":filesystem"],
+    deps = [
+        "//plumbing",
+        "//utils/merkletrie",
+        "//utils/merkletrie/noder",
+        "@com_github_go_git_go_billy_v5//:go-billy",
+        "@com_github_go_git_go_billy_v5//memfs",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

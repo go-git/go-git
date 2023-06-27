@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "index",
+    srcs = [
+        "decoder.go",
+        "doc.go",
+        "encoder.go",
+        "index.go",
+        "match.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/format/index",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//plumbing",
+        "//plumbing/filemode",
+        "//plumbing/hash",
+        "//utils/binary",
+    ],
+)
+
+go_test(
+    name = "index_test",
+    srcs = [
+        "decoder_test.go",
+        "encoder_test.go",
+        "index_test.go",
+    ],
+    embed = [":index"],
+    deps = [
+        "//plumbing",
+        "//plumbing/filemode",
+        "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
+        "@com_github_google_go_cmp//cmp",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "noder",
+    srcs = [
+        "noder.go",
+        "path.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/utils/merkletrie/noder",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "noder_test",
+    srcs = [
+        "noder_test.go",
+        "path_test.go",
+    ],
+    embed = [":noder"],
+    deps = [
+        "@in_gopkg_check_v1//:check_v1",
+        "@org_golang_x_text//unicode/norm",
+    ],
+)

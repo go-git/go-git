@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "filemode",
+    srcs = ["filemode.go"],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/filemode",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "filemode_test",
+    srcs = ["filemode_test.go"],
+    embed = [":filemode"],
+    deps = ["@in_gopkg_check_v1//:check_v1"],
+)

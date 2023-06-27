@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cache",
+    srcs = [
+        "buffer_lru.go",
+        "common.go",
+        "object_lru.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/plumbing/cache",
+    visibility = ["//visibility:public"],
+    deps = ["//plumbing"],
+)
+
+go_test(
+    name = "cache_test",
+    srcs = [
+        "buffer_test.go",
+        "object_test.go",
+    ],
+    embed = [":cache"],
+    deps = [
+        "//plumbing",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

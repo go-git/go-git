@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "diff",
+    srcs = ["diff.go"],
+    importpath = "github.com/sgnl-ai/go-git/utils/diff",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_sergi_go_diff//diffmatchpatch"],
+)
+
+go_test(
+    name = "diff_test",
+    srcs = ["diff_ext_test.go"],
+    deps = [
+        ":diff",
+        "@com_github_sergi_go_diff//diffmatchpatch",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)

@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "binary",
+    srcs = [
+        "read.go",
+        "write.go",
+    ],
+    importpath = "github.com/sgnl-ai/go-git/utils/binary",
+    visibility = ["//visibility:public"],
+    deps = ["//plumbing"],
+)
+
+go_test(
+    name = "binary_test",
+    srcs = [
+        "read_test.go",
+        "write_test.go",
+    ],
+    embed = [":binary"],
+    deps = [
+        "//plumbing",
+        "@in_gopkg_check_v1//:check_v1",
+    ],
+)
