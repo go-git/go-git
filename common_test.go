@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/format/packfile"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/sgnl-ai/go-git/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing/cache"
+	"github.com/sgnl-ai/go-git/plumbing/format/packfile"
+	"github.com/sgnl-ai/go-git/plumbing/object"
+	"github.com/sgnl-ai/go-git/storage/filesystem"
+	"github.com/sgnl-ai/go-git/storage/memory"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"

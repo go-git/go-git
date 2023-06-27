@@ -6,8 +6,8 @@ import (
 
 	"bufio"
 
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/sgnl-ai/go-git/plumbing/protocol/packp/capability"
+	"github.com/sgnl-ai/go-git/utils/ioutil"
 )
 
 // ErrUploadPackResponseNotDecoded is returned if Read is called without

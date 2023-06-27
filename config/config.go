@@ -12,8 +12,8 @@ import (
 	"strconv"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/internal/url"
-	format "github.com/go-git/go-git/v5/plumbing/format/config"
+	"github.com/sgnl-ai/go-git/internal/url"
+	format "github.com/sgnl-ai/go-git/plumbing/format/config"
 )
 
 const (

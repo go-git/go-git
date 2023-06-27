@@ -1,9 +1,9 @@
 package transactional
 
 import (
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/sgnl-ai/go-git/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing/storer"
+	"github.com/sgnl-ai/go-git/storage"
 )
 
 // ReferenceStorage implements the storer.ReferenceStorage for the transactional package.

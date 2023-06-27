@@ -13,7 +13,6 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
 	github.com/go-git/go-billy/v5 v5.4.1
 	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20230305113008-0c11038e723f
-	github.com/go-git/go-git/v5 v5.7.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
@@ -34,7 +33,6 @@ require (
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/cloudflare/circl v1.3.3 // indirect
-	github.com/imdario/mergo v0.3.15 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

@@ -10,16 +10,16 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
-	"github.com/go-git/go-git/v5/plumbing/format/index"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/go-git/go-git/v5/utils/merkletrie/filesystem"
-	mindex "github.com/go-git/go-git/v5/utils/merkletrie/index"
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/sgnl-ai/go-git/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing/filemode"
+	"github.com/sgnl-ai/go-git/plumbing/format/gitignore"
+	"github.com/sgnl-ai/go-git/plumbing/format/index"
+	"github.com/sgnl-ai/go-git/plumbing/object"
+	"github.com/sgnl-ai/go-git/utils/ioutil"
+	"github.com/sgnl-ai/go-git/utils/merkletrie"
+	"github.com/sgnl-ai/go-git/utils/merkletrie/filesystem"
+	mindex "github.com/sgnl-ai/go-git/utils/merkletrie/index"
+	"github.com/sgnl-ai/go-git/utils/merkletrie/noder"
 )
 
 var (

@@ -5,13 +5,13 @@ import (
 	"sort"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/format/diff"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/sgnl-ai/go-git/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing/cache"
+	"github.com/sgnl-ai/go-git/plumbing/filemode"
+	"github.com/sgnl-ai/go-git/plumbing/format/diff"
+	"github.com/sgnl-ai/go-git/plumbing/storer"
+	"github.com/sgnl-ai/go-git/storage/filesystem"
+	"github.com/sgnl-ai/go-git/utils/merkletrie"
 
 	. "gopkg.in/check.v1"
 )

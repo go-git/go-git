@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/sgnl-ai/go-git/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
 )

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/sgnl-ai/go-git/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing/hash"
+	"github.com/sgnl-ai/go-git/utils/binary"
 )
 
 var (

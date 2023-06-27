@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/index"
-	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/sgnl-ai/go-git/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing/format/index"
+	"github.com/sgnl-ai/go-git/utils/merkletrie"
+	"github.com/sgnl-ai/go-git/utils/merkletrie/noder"
 
 	. "gopkg.in/check.v1"
 )

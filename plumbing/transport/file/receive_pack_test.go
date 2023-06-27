@@ -3,7 +3,7 @@ package file
 import (
 	"os"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/test"
+	"github.com/sgnl-ai/go-git/plumbing/transport/test"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
