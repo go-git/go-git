@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/sgnl-ai/go-git/plumbing"
 	. "gopkg.in/check.v1"
 )
 

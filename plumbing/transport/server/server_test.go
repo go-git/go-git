@@ -3,13 +3,13 @@ package server_test
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
-	"github.com/go-git/go-git/v5/plumbing/transport/server"
-	"github.com/go-git/go-git/v5/plumbing/transport/test"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/sgnl-ai/go-git/plumbing/cache"
+	"github.com/sgnl-ai/go-git/plumbing/transport"
+	"github.com/sgnl-ai/go-git/plumbing/transport/client"
+	"github.com/sgnl-ai/go-git/plumbing/transport/server"
+	"github.com/sgnl-ai/go-git/plumbing/transport/test"
+	"github.com/sgnl-ai/go-git/storage/filesystem"
+	"github.com/sgnl-ai/go-git/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
