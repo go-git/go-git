@@ -31,7 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
