@@ -82,7 +82,6 @@ go_library(
         "@com_github_go_git_go_billy_v5//:go-billy",
         "@com_github_go_git_go_billy_v5//osfs",
         "@com_github_go_git_go_billy_v5//util",
-        "@com_github_protonmail_go_crypto//openpgp",
         "@com_github_sergi_go_diff//diffmatchpatch",
     ],
 )
@@ -128,9 +127,6 @@ go_test(
         "@com_github_go_git_go_billy_v5//osfs",
         "@com_github_go_git_go_billy_v5//util",
         "@com_github_go_git_go_git_fixtures_v4//:go-git-fixtures",
-        "@com_github_protonmail_go_crypto//openpgp",
-        "@com_github_protonmail_go_crypto//openpgp/armor",
-        "@com_github_protonmail_go_crypto//openpgp/errors",
         "@in_gopkg_check_v1//:check_v1",
         "@org_golang_x_text//unicode/norm",
     ],

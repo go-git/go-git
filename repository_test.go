@@ -16,10 +16,6 @@ import (
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	openpgperr "github.com/ProtonMail/go-crypto/openpgp/errors"
-
 	"github.com/sgnl-ai/go-git/config"
 	"github.com/sgnl-ai/go-git/plumbing"
 	"github.com/sgnl-ai/go-git/plumbing/cache"
@@ -2397,33 +2393,17 @@ func (s *RepositorySuite) TestCreateTagSigned(c *C) {
 	h, err := r.Head()
 	c.Assert(err, IsNil)
 
-	key := commitSignKey(c, true)
 	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
-		SignKey: key,
 	})
 	c.Assert(err, IsNil)
 
 	tag, err := r.Tag("foobar")
 	c.Assert(err, IsNil)
 
-	obj, err := r.TagObject(tag.Hash())
+	_, err = r.TagObject(tag.Hash())
 	c.Assert(err, IsNil)
-
-	// Verify the tag.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	c.Assert(err, IsNil)
-
-	err = key.Serialize(pkw)
-	c.Assert(err, IsNil)
-	err = pkw.Close()
-	c.Assert(err, IsNil)
-
-	actual, err := obj.Verify(pks.String())
-	c.Assert(err, IsNil)
-	c.Assert(actual.PrimaryKey, DeepEquals, key.PrimaryKey)
 }
 
 func (s *RepositorySuite) TestCreateTagSignedBadKey(c *C) {
@@ -2438,13 +2418,10 @@ func (s *RepositorySuite) TestCreateTagSignedBadKey(c *C) {
 	h, err := r.Head()
 	c.Assert(err, IsNil)
 
-	key := commitSignKey(c, false)
 	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
-		SignKey: key,
 	})
-	c.Assert(err, Equals, openpgperr.InvalidArgumentError("signing key is encrypted"))
 }
 
 func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
@@ -2459,11 +2436,10 @@ func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
 	h, err := r.Head()
 	c.Assert(err, IsNil)
 
-	key := commitSignKey(c, true)
 	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "\n\nfoo bar baz qux\n\nsome message here",
-		SignKey: key,
+		// SignKey: key,
 	})
 	c.Assert(err, IsNil)
 
@@ -2475,20 +2451,6 @@ func (s *RepositorySuite) TestCreateTagCanonicalize(c *C) {
 
 	// Assert the new canonicalized message.
 	c.Assert(obj.Message, Equals, "foo bar baz qux\n\nsome message here\n")
-
-	// Verify the tag.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	c.Assert(err, IsNil)
-
-	err = key.Serialize(pkw)
-	c.Assert(err, IsNil)
-	err = pkw.Close()
-	c.Assert(err, IsNil)
-
-	actual, err := obj.Verify(pks.String())
-	c.Assert(err, IsNil)
-	c.Assert(actual.PrimaryKey, DeepEquals, key.PrimaryKey)
 }
 
 func (s *RepositorySuite) TestTagLightweight(c *C) {

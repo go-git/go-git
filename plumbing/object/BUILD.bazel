@@ -39,7 +39,6 @@ go_library(
         "//utils/merkletrie/noder",
         "//utils/sync",
         "@com_github_emirpasic_gods//trees/binaryheap",
-        "@com_github_protonmail_go_crypto//openpgp",
         "@com_github_sergi_go_diff//diffmatchpatch",
     ],
 )

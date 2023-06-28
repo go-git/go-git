@@ -8,18 +8,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-
 	"github.com/sgnl-ai/go-git/plumbing"
 	"github.com/sgnl-ai/go-git/plumbing/storer"
 	"github.com/sgnl-ai/go-git/utils/ioutil"
 	"github.com/sgnl-ai/go-git/utils/sync"
-)
-
-const (
-	beginpgp  string = "-----BEGIN PGP SIGNATURE-----"
-	endpgp    string = "-----END PGP SIGNATURE-----"
-	headerpgp string = "gpgsig"
 )
 
 // Hash represents the hash of an object
@@ -38,8 +30,6 @@ type Commit struct {
 	// Committer is the one performing the commit, might be different from
 	// Author.
 	Committer Signature
-	// PGPSignature is the PGP signature of the commit.
-	PGPSignature string
 	// Message is the commit message, contains arbitrary text.
 	Message string
 	// TreeHash is the hash of the root tree of the commit.
@@ -184,22 +174,11 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	defer sync.PutBufioReader(r)
 
 	var message bool
-	var pgpsig bool
 	var msgbuf bytes.Buffer
 	for {
 		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
-		}
-
-		if pgpsig {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.PGPSignature += string(line)
-				continue
-			} else {
-				pgpsig = false
-			}
 		}
 
 		if !message {
@@ -225,9 +204,6 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				c.Author.Decode(data)
 			case "committer":
 				c.Committer.Decode(data)
-			case headerpgp:
-				c.PGPSignature += string(data) + "\n"
-				pgpsig = true
 			}
 		} else {
 			msgbuf.Write(line)
@@ -246,7 +222,6 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 	return c.encode(o, true)
 }
 
-// EncodeWithoutSignature export a Commit into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
 func (c *Commit) EncodeWithoutSignature(o plumbing.EncodedObject) error {
 	return c.encode(o, false)
 }
@@ -284,22 +259,6 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 
 	if err = c.Committer.Encode(w); err != nil {
 		return err
-	}
-
-	if c.PGPSignature != "" && includeSig {
-		if _, err = fmt.Fprint(w, "\n"+headerpgp+" "); err != nil {
-			return err
-		}
-
-		// Split all the signature lines and re-write with a left padding and
-		// newline. Use join for this so it's clear that a newline should not be
-		// added after this section, as it will be added when the message is
-		// printed.
-		signature := strings.TrimSuffix(c.PGPSignature, "\n")
-		lines := strings.Split(signature, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
-			return err
-		}
 	}
 
 	if _, err = fmt.Fprintf(w, "\n\n%s", c.Message); err != nil {
@@ -349,31 +308,6 @@ func (c *Commit) String() string {
 		plumbing.CommitObject, c.Hash, c.Author.String(),
 		c.Author.When.Format(DateFormat), indent(c.Message),
 	)
-}
-
-// Verify performs PGP verification of the commit with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
-func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract signature.
-	signature := strings.NewReader(c.PGPSignature)
-
-	encoded := &plumbing.MemoryObject{}
-	// Encode commit components, excluding signature and get a reader object.
-	if err := c.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	er, err := encoded.Reader()
-	if err != nil {
-		return nil, err
-	}
-
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
 }
 
 func indent(t string) string {

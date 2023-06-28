@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/sgnl-ai/go-git/config"
 	"github.com/sgnl-ai/go-git/plumbing"
 	formatcfg "github.com/sgnl-ai/go-git/plumbing/format/config"
@@ -494,10 +493,6 @@ type CommitOptions struct {
 	// Parents are the parents commits for the new commit, by default when
 	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
-	// SignKey denotes a key to sign the commit with. A nil value here means the
-	// commit will not be signed. The private key must be present and already
-	// decrypted.
-	SignKey *openpgp.Entity
 }
 
 // Validate validates the fields and sets the default values.
@@ -578,9 +573,6 @@ type CreateTagOptions struct {
 	// validation into the format expected by git - no leading whitespace and
 	// ending in a newline.
 	Message string
-	// SignKey denotes a key to sign the tag with. A nil value here means the tag
-	// will not be signed. The private key must be present and already decrypted.
-	SignKey *openpgp.Entity
 }
 
 // Validate validates the fields and sets the default values.
