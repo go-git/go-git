@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"errors"
+	"io"
 	"path"
 	"sort"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	"github.com/sgnl-ai/go-git/plumbing/object"
 	"github.com/sgnl-ai/go-git/storage"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v5"
 )
 
@@ -108,14 +108,6 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		ParentHashes: opts.Parents,
 	}
 
-	if opts.SignKey != nil {
-		sig, err := w.buildCommitSignature(commit, opts.SignKey)
-		if err != nil {
-			return plumbing.ZeroHash, err
-		}
-		commit.PGPSignature = sig
-	}
-
 	obj := w.r.Storer.NewEncodedObject()
 	if err := commit.Encode(obj); err != nil {
 		return plumbing.ZeroHash, err
@@ -123,7 +115,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 	return w.r.Storer.SetEncodedObject(obj)
 }
 
-func (w *Worktree) buildCommitSignature(commit *object.Commit, signKey *openpgp.Entity) (string, error) {
+func (w *Worktree) buildCommitSignature(commit *object.Commit) (string, error) {
 	encoded := &plumbing.MemoryObject{}
 	if err := commit.Encode(encoded); err != nil {
 		return "", err
@@ -133,9 +125,7 @@ func (w *Worktree) buildCommitSignature(commit *object.Commit, signKey *openpgp.
 		return "", err
 	}
 	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, r, nil); err != nil {
-		return "", err
-	}
+	io.Copy(&b, r)
 	return b.String(), nil
 }
 

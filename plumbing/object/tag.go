@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strings"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/sgnl-ai/go-git/plumbing"
 	"github.com/sgnl-ai/go-git/plumbing/storer"
 	"github.com/sgnl-ai/go-git/utils/ioutil"
@@ -31,8 +29,6 @@ type Tag struct {
 	Tagger Signature
 	// Message is an arbitrary text message.
 	Message string
-	// PGPSignature is the PGP signature of the tag.
-	PGPSignature string
 	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
 	// Target is the hash of the target object.
@@ -131,7 +127,6 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 		return err
 	}
 	if sm, _ := parseSignedBytes(data); sm >= 0 {
-		t.PGPSignature = string(data[sm:])
 		data = data[:sm]
 	}
 	t.Message = string(data)
@@ -144,7 +139,7 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 	return t.encode(o, true)
 }
 
-// EncodeWithoutSignature export a Tag into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
+// EncodeWithoutSignature export a Tag into a plumbing.EncodedObject.
 func (t *Tag) EncodeWithoutSignature(o plumbing.EncodedObject) error {
 	return t.encode(o, false)
 }
@@ -173,17 +168,6 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 
 	if _, err = fmt.Fprint(w, t.Message); err != nil {
 		return err
-	}
-
-	// Note that this is highly sensitive to what it sent along in the message.
-	// Message *always* needs to end with a newline, or else the message and the
-	// signature will be concatenated into a corrupt object. Since this is a
-	// lower-level method, we assume you know what you are doing and have already
-	// done the needful on the message in the caller.
-	if includeSig {
-		if _, err = fmt.Fprint(w, t.PGPSignature); err != nil {
-			return err
-		}
 	}
 
 	return err
@@ -253,31 +237,6 @@ func (t *Tag) String() string {
 		plumbing.TagObject, t.Name, t.Tagger.String(), t.Tagger.When.Format(DateFormat),
 		t.Message, objectAsString(obj),
 	)
-}
-
-// Verify performs PGP verification of the tag with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
-func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract signature.
-	signature := strings.NewReader(t.PGPSignature)
-
-	encoded := &plumbing.MemoryObject{}
-	// Encode tag components, excluding signature and get a reader object.
-	if err := t.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	er, err := encoded.Reader()
-	if err != nil {
-		return nil, err
-	}
-
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
 }
 
 // TagIter provides an iterator for a set of tags.

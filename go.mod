@@ -1,10 +1,9 @@
 module github.com/sgnl-ai/go-git
 
-go 1.19
+go 1.18
 
 require (
 	dario.cat/mergo v1.0.0
-	github.com/ProtonMail/go-crypto v0.0.0-20230626094100-7e9e0395ebec
 	github.com/acomagu/bufpipe v1.0.4
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v0.0.0-20221015165544-a0805db90819
@@ -32,7 +31,6 @@ require (
 require (
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
-	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

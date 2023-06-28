@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
+	"dario.cat/mergo"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
@@ -31,7 +31,6 @@ import (
 	"github.com/sgnl-ai/go-git/storage/filesystem"
 	"github.com/sgnl-ai/go-git/storage/filesystem/dotgit"
 	"github.com/sgnl-ai/go-git/utils/ioutil"
-	"dario.cat/mergo"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -765,15 +764,6 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 		Target:     hash,
 	}
 
-	if opts.SignKey != nil {
-		sig, err := r.buildTagSignature(tag, opts.SignKey)
-		if err != nil {
-			return plumbing.ZeroHash, err
-		}
-
-		tag.PGPSignature = sig
-	}
-
 	obj := r.Storer.NewEncodedObject()
 	if err := tag.Encode(obj); err != nil {
 		return plumbing.ZeroHash, err
@@ -782,7 +772,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	return r.Storer.SetEncodedObject(obj)
 }
 
-func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
+func (r *Repository) buildTagSignature(tag *object.Tag) (string, error) {
 	encoded := &plumbing.MemoryObject{}
 	if err := tag.Encode(encoded); err != nil {
 		return "", err
@@ -794,10 +784,7 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 	}
 
 	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
-		return "", err
-	}
-
+	io.Copy(&b, rdr)
 	return b.String(), nil
 }
 

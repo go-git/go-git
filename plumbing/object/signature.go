@@ -4,17 +4,11 @@ import "bytes"
 
 const (
 	signatureTypeUnknown signatureType = iota
-	signatureTypeOpenPGP
 	signatureTypeX509
 	signatureTypeSSH
 )
 
 var (
-	// openPGPSignatureFormat is the format of an OpenPGP signature.
-	openPGPSignatureFormat = signatureFormat{
-		[]byte("-----BEGIN PGP SIGNATURE-----"),
-		[]byte("-----BEGIN PGP MESSAGE-----"),
-	}
 	// x509SignatureFormat is the format of an X509 signature, which is
 	// a PKCS#7 (S/MIME) signature.
 	x509SignatureFormat = signatureFormat{
@@ -31,9 +25,8 @@ var (
 	// knownSignatureFormats is a map of known signature formats, indexed by
 	// their signatureType.
 	knownSignatureFormats = map[signatureType]signatureFormat{
-		signatureTypeOpenPGP: openPGPSignatureFormat,
-		signatureTypeX509:    x509SignatureFormat,
-		signatureTypeSSH:     sshSignatureFormat,
+		signatureTypeX509: x509SignatureFormat,
+		signatureTypeSSH:  sshSignatureFormat,
 	}
 )
 
