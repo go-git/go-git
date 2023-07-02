@@ -41,6 +41,13 @@ func (s *UploadPackRequestSuite) TestIsEmpty(c *C) {
 	r.Haves = append(r.Haves, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
 
 	c.Assert(r.IsEmpty(), Equals, true)
+
+	r = NewUploadPackRequest()
+	r.Wants = append(r.Wants, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
+	r.Haves = append(r.Haves, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
+	r.Shallows = append(r.Shallows, plumbing.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
+
+	c.Assert(r.IsEmpty(), Equals, false)
 }
 
 type UploadHavesSuite struct{}
