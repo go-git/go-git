@@ -24,8 +24,12 @@ Here you can find a list of annotated _go-git_ examples:
 - [progress](progress/main.go) - Printing the progress information from the sideband.
 - [revision](revision/main.go) - Solve a revision into a commit.
 - [submodule](submodule/main.go) - Submodule update remote.
+- [azure devops](azure_devops/main.go) - Cloning Azure DevOps repositories.
+- [blame](blame/main.go) - Blame/annotate a commit.
+- [ls-remote](ls-remote/main.go) - List remote tags without cloning a repository.
 
 ### Advanced
 - [custom_http](custom_http/main.go) - Replacing the HTTP client using a custom one.
 - [clone with context](context/main.go) - Cloning a repository with graceful cancellation.
 - [storage](storage/README.md) - Implementing a custom storage system.
+- [sha256](sha256/main.go) - Init and commiting repositories that use sha256 as object format.
