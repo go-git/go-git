@@ -224,11 +224,13 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
-	if err = rs.Error(); err != nil {
-		return err
+	if rs != nil {
+		if err = rs.Error(); err != nil {
+			return err
+		}
 	}
 
-	return r.updateRemoteReferenceStorage(req, rs)
+	return r.updateRemoteReferenceStorage(req)
 }
 
 func (r *Remote) useRefDeltas(ar *packp.AdvRefs) bool {
@@ -347,7 +349,6 @@ func (r *Remote) newReferenceUpdateRequest(
 
 func (r *Remote) updateRemoteReferenceStorage(
 	req *packp.ReferenceUpdateRequest,
-	result *packp.ReportStatus,
 ) error {
 
 	for _, spec := range r.c.Fetch {
