@@ -503,3 +503,73 @@ func (s *SuiteCommit) TestEncodeWithoutSignature(c *C) {
 		"\n"+
 		"Merge branch 'master' of github.com:tyba/git-fixture\n")
 }
+
+func (s *SuiteCommit) TestLess(c *C) {
+	when1 := time.Now()
+	when2 := when1.Add(time.Hour)
+
+	hash1 := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+	hash2 := plumbing.NewHash("2669dce138d9b841a518c64b10914d88f5e488ea")
+
+	commitLessTests := []struct {
+		Committer1When, Committer2When time.Time
+		Author1When, Author2When       time.Time
+		Hash1, Hash2                   plumbing.Hash
+		Exp                            bool
+	}{
+		{when1, when1, when1, when1, hash1, hash2, true},
+		{when1, when1, when1, when1, hash2, hash1, false},
+		{when1, when1, when1, when2, hash1, hash2, true},
+		{when1, when1, when1, when2, hash2, hash1, true},
+		{when1, when1, when2, when1, hash1, hash2, false},
+		{when1, when1, when2, when1, hash2, hash1, false},
+		{when1, when1, when2, when2, hash1, hash2, true},
+		{when1, when1, when2, when2, hash2, hash1, false},
+		{when1, when2, when1, when1, hash1, hash2, true},
+		{when1, when2, when1, when1, hash2, hash1, true},
+		{when1, when2, when1, when2, hash1, hash2, true},
+		{when1, when2, when1, when2, hash2, hash1, true},
+		{when1, when2, when2, when1, hash1, hash2, true},
+		{when1, when2, when2, when1, hash2, hash1, true},
+		{when1, when2, when2, when2, hash1, hash2, true},
+		{when1, when2, when2, when2, hash2, hash1, true},
+		{when2, when1, when1, when1, hash1, hash2, false},
+		{when2, when1, when1, when1, hash2, hash1, false},
+		{when2, when1, when1, when2, hash1, hash2, false},
+		{when2, when1, when1, when2, hash2, hash1, false},
+		{when2, when1, when2, when1, hash1, hash2, false},
+		{when2, when1, when2, when1, hash2, hash1, false},
+		{when2, when1, when2, when2, hash1, hash2, false},
+		{when2, when1, when2, when2, hash2, hash1, false},
+		{when2, when2, when1, when1, hash1, hash2, true},
+		{when2, when2, when1, when1, hash2, hash1, false},
+		{when2, when2, when1, when2, hash1, hash2, true},
+		{when2, when2, when1, when2, hash2, hash1, true},
+		{when2, when2, when2, when1, hash1, hash2, false},
+		{when2, when2, when2, when1, hash2, hash1, false},
+		{when2, when2, when2, when2, hash1, hash2, true},
+		{when2, when2, when2, when2, hash2, hash1, false},
+	}
+
+	for _, t := range commitLessTests {
+		commit1 := &Commit{
+			Hash: t.Hash1,
+			Author: Signature{
+				When: t.Author1When,
+			},
+			Committer: Signature{
+				When: t.Committer1When,
+			},
+		}
+		commit2 := &Commit{
+			Hash: t.Hash2,
+			Author: Signature{
+				When: t.Author2When,
+			},
+			Committer: Signature{
+				When: t.Committer2When,
+			},
+		}
+		c.Assert(commit1.Less(commit2), Equals, t.Exp)
+	}
+}
