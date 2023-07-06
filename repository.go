@@ -322,8 +322,16 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 }
 
 func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
-	if path, err = filepath.Abs(path); err != nil {
-		return nil, nil, err
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, nil, err
+		}
+		path = filepath.Join(home, path[2:])
+	} else {
+		if path, err = filepath.Abs(path); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	var fs billy.Filesystem
