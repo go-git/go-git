@@ -151,6 +151,26 @@ func (s *BaseSuite) TemporalDir() (path string, clean func()) {
 	return
 }
 
+func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	fs := osfs.New(home)
+	relPath, err := util.TempDir(fs, "", "")
+	if err != nil {
+		panic(err)
+	}
+
+	path = fs.Join(fs.Root(), relPath)
+	clean = func() {
+		_ = util.RemoveAll(fs, relPath)
+	}
+
+	return
+}
+
 func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
 	fs = osfs.New(os.TempDir())
 	path, err := util.TempDir(fs, "", "")

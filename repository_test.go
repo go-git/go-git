@@ -543,6 +543,21 @@ func (s *RepositorySuite) TestPlainOpen(c *C) {
 	c.Assert(r, NotNil)
 }
 
+func (s *RepositorySuite) TestPlainOpenTildePath(c *C) {
+	dir, clean := s.TemporalHomeDir()
+	defer clean()
+
+	r, err := PlainInit(dir, false)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	path := strings.Replace(dir, strings.Split(dir, ".tmp")[0], "~/", 1)
+
+	r, err = PlainOpen(path)
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+}
+
 func (s *RepositorySuite) TestPlainOpenBare(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
