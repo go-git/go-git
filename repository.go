@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/internal/path_util"
 	"github.com/go-git/go-git/v5/internal/revision"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -322,16 +323,13 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 }
 
 func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, nil, err
-		}
-		path = filepath.Join(home, path[2:])
-	} else {
-		if path, err = filepath.Abs(path); err != nil {
-			return nil, nil, err
-		}
+	path, err = path_util.ReplaceTildeWithHome(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if path, err = filepath.Abs(path); err != nil {
+		return nil, nil, err
 	}
 
 	var fs billy.Filesystem

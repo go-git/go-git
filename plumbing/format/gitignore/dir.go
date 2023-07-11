@@ -5,10 +5,10 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/user"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-git/v5/internal/path_util"
 	"github.com/go-git/go-git/v5/plumbing/format/config"
 	gioutil "github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -27,21 +27,7 @@ const (
 // readIgnoreFile reads a specific git ignore file.
 func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps []Pattern, err error) {
 
-	if strings.HasPrefix(ignoreFile, "~") {
-		firstSlash := strings.Index(ignoreFile, "/")
-		if firstSlash == 1 {
-			home, err := os.UserHomeDir()
-			if err == nil {
-				ignoreFile = strings.Replace(ignoreFile, "~", home, 1)
-			}
-		} else if firstSlash > 1 {
-			username := ignoreFile[1:firstSlash]
-			userAccount, err := user.Lookup(username)
-			if err == nil {
-				ignoreFile = strings.Replace(ignoreFile, ignoreFile[:firstSlash], userAccount.HomeDir, 1)
-			}
-		}
-	}
+	ignoreFile, _ = path_util.ReplaceTildeWithHome(ignoreFile)
 
 	f, err := fs.Open(fs.Join(append(path, ignoreFile)...))
 	if err == nil {

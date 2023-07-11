@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -551,11 +552,19 @@ func (s *RepositorySuite) TestPlainOpenTildePath(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
-	path := strings.Replace(dir, strings.Split(dir, ".tmp")[0], "~/", 1)
-
-	r, err = PlainOpen(path)
+	currentUser, err := user.Current()
 	c.Assert(err, IsNil)
-	c.Assert(r, NotNil)
+	// remove domain for windows
+	username := currentUser.Username[strings.Index(currentUser.Username, "\\")+1:]
+
+	homes := []string{"~/", "~" + username + "/"}
+	for _, home := range homes {
+		path := strings.Replace(dir, strings.Split(dir, ".tmp")[0], home, 1)
+
+		r, err = PlainOpen(path)
+		c.Assert(err, IsNil)
+		c.Assert(r, NotNil)
+	}
 }
 
 func (s *RepositorySuite) TestPlainOpenBare(c *C) {
