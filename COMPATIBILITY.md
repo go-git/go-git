@@ -72,7 +72,7 @@ is supported by go-git.
 | **advanced** |
 | notes                                 | ✖ |
 | replace                               | ✖ |
-| worktree                              | ✖ |
+| worktree                              | ✔ |
 | annotate                              | (see blame) |
 | **gpg** |
 | git-verify-commit                     | ✔ |
