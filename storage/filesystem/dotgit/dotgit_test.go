@@ -648,6 +648,27 @@ func (s *SuiteDotGit) TestObject(c *C) {
 		Equals, true,
 	)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
+	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
+	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
+	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
+	fs.Create(incomingFilePath)
+
+	_, err = dir.Object(plumbing.NewHash(incomingHash))
+	c.Assert(err, IsNil)
+}
+
+func (s *SuiteDotGit) TestPreGit235Object(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	dir := New(fs)
+
+	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
+	file, err := dir.Object(hash)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(
+		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
+		Equals, true,
+	)
+	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
 	incomingDirPath := fs.Join("objects", "incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
 	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
@@ -665,7 +686,7 @@ func (s *SuiteDotGit) TestObjectStat(c *C) {
 	_, err := dir.ObjectStat(hash)
 	c.Assert(err, IsNil)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
-	incomingDirPath := fs.Join("objects", "incoming-123456")
+	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
 	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
 	fs.Create(incomingFilePath)
@@ -683,7 +704,7 @@ func (s *SuiteDotGit) TestObjectDelete(c *C) {
 	c.Assert(err, IsNil)
 
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
-	incomingDirPath := fs.Join("objects", "incoming-123456")
+	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingSubDirPath := fs.Join(incomingDirPath, incomingHash[0:2])
 	incomingFilePath := fs.Join(incomingSubDirPath, incomingHash[2:40])
 
