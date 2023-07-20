@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 
@@ -263,6 +264,107 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 	}
 
 	return nil
+}
+
+func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
+	typ plumbing.ObjectType, writeHeader objectHeaderWriter) (uint, plumbing.Hash, error) {
+	deltaBuf := bufio.NewReaderSize(delta, 1024)
+	srcSz, err := decodeLEB128ByteReader(deltaBuf)
+	if err != nil {
+		if err == io.EOF {
+			return 0, plumbing.ZeroHash, ErrInvalidDelta
+		}
+		return 0, plumbing.ZeroHash, err
+	}
+
+	if r, ok := base.(*bytes.Reader); ok && srcSz != uint(r.Size()) {
+		return 0, plumbing.ZeroHash, ErrInvalidDelta
+	}
+
+	targetSz, err := decodeLEB128ByteReader(deltaBuf)
+	if err != nil {
+		if err == io.EOF {
+			return 0, plumbing.ZeroHash, ErrInvalidDelta
+		}
+		return 0, plumbing.ZeroHash, err
+	}
+
+	// If header still needs to be written, caller will provide
+	// a LazyObjectWriterHeader. This seems to be the case when
+	// dealing with thin-packs.
+	if writeHeader != nil {
+		err = writeHeader(typ, int64(targetSz))
+		if err != nil {
+			return 0, plumbing.ZeroHash, fmt.Errorf("could not lazy write header: %w", err)
+		}
+	}
+
+	remainingTargetSz := targetSz
+
+	hasher := plumbing.NewHasher(typ, int64(targetSz))
+	mw := io.MultiWriter(dst, hasher)
+
+	bufp := sync.GetByteSlice()
+	defer sync.PutByteSlice(bufp)
+
+	sr := io.NewSectionReader(base, int64(0), int64(srcSz))
+	// Keep both the io.LimitedReader types, so we can reset N.
+	baselr := io.LimitReader(sr, 0).(*io.LimitedReader)
+	deltalr := io.LimitReader(deltaBuf, 0).(*io.LimitedReader)
+
+	for {
+		buf := *bufp
+		cmd, err := deltaBuf.ReadByte()
+		if err == io.EOF {
+			return 0, plumbing.ZeroHash, ErrInvalidDelta
+		}
+		if err != nil {
+			return 0, plumbing.ZeroHash, err
+		}
+
+		if isCopyFromSrc(cmd) {
+			offset, err := decodeOffsetByteReader(cmd, deltaBuf)
+			if err != nil {
+				return 0, plumbing.ZeroHash, err
+			}
+			sz, err := decodeSizeByteReader(cmd, deltaBuf)
+			if err != nil {
+				return 0, plumbing.ZeroHash, err
+			}
+
+			if invalidSize(sz, targetSz) ||
+				invalidOffsetSize(offset, sz, srcSz) {
+				return 0, plumbing.ZeroHash, err
+			}
+
+			if _, err := sr.Seek(int64(offset), io.SeekStart); err != nil {
+				return 0, plumbing.ZeroHash, err
+			}
+			baselr.N = int64(sz)
+			if _, err := io.CopyBuffer(mw, baselr, buf); err != nil {
+				return 0, plumbing.ZeroHash, err
+			}
+			remainingTargetSz -= sz
+		} else if isCopyFromDelta(cmd) {
+			sz := uint(cmd) // cmd is the size itself
+			if invalidSize(sz, targetSz) {
+				return 0, plumbing.ZeroHash, ErrInvalidDelta
+			}
+			deltalr.N = int64(sz)
+			if _, err := io.CopyBuffer(mw, deltalr, buf); err != nil {
+				return 0, plumbing.ZeroHash, err
+			}
+
+			remainingTargetSz -= sz
+		} else {
+			return 0, plumbing.ZeroHash, err
+		}
+		if remainingTargetSz <= 0 {
+			break
+		}
+	}
+
+	return targetSz, hasher.Sum(), nil
 }
 
 // Decodes a number encoded as an unsigned LEB128 at the start of some
