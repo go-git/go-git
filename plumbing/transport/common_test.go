@@ -198,3 +198,15 @@ func (s *SuiteCommon) TestFilterUnsupportedCapabilities(c *C) {
 	FilterUnsupportedCapabilities(l)
 	c.Assert(l.Supports(capability.MultiACK), Equals, false)
 }
+
+func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
+	// see issue https://github.com/go-git/go-git/issues/740
+	//
+	//	IPv6 host names are not being properly handled, which results in unhelpful
+	//	error messages depending on the format used.
+	//
+	e, err := NewEndpoint("http://[::1]:8080/foo.git")
+	c.Assert(err, IsNil)
+	c.Assert(e.Host, Equals, "[::1]")
+	c.Assert(e.String(), Equals, "http://[::1]:8080/foo.git")
+}
