@@ -29,6 +29,10 @@ import (
 	. "gopkg.in/check.v1"
 )
 
+var (
+	defaultTestCommitOptions = &CommitOptions{Author: &object.Signature{Name: "testuser", Email: "testemail"}}
+)
+
 type WorktreeSuite struct {
 	BaseSuite
 }
@@ -884,14 +888,15 @@ func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored(c *C) {
 	c.Assert(err, IsNil)
 	_, err = w.Add("fileToIgnore")
 	c.Assert(err, IsNil)
-	_, err = w.Commit("Added file that will be ignored later", &CommitOptions{})
+
+	_, err = w.Commit("Added file that will be ignored later", defaultTestCommitOptions)
 	c.Assert(err, IsNil)
 
 	err = util.WriteFile(fs, ".gitignore", []byte("fileToIgnore\nsecondIgnoredFile"), 0755)
 	c.Assert(err, IsNil)
 	_, err = w.Add(".gitignore")
 	c.Assert(err, IsNil)
-	_, err = w.Commit("Added .gitignore", &CommitOptions{})
+	_, err = w.Commit("Added .gitignore", defaultTestCommitOptions)
 	c.Assert(err, IsNil)
 	status, err := w.Status()
 	c.Assert(err, IsNil)
@@ -1095,6 +1100,49 @@ func (s *WorktreeSuite) TestResetHard(c *C) {
 	branch, err := w.r.Reference(plumbing.Master, false)
 	c.Assert(err, IsNil)
 	c.Assert(branch.Hash(), Equals, commit)
+}
+
+func (s *WorktreeSuite) TestResetHardWithGitIgnore(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	tf, err := fs.Create("newTestFile.txt")
+	c.Assert(err, IsNil)
+	_, err = tf.Write([]byte("testfile content"))
+	c.Assert(err, IsNil)
+	err = tf.Close()
+	c.Assert(err, IsNil)
+	_, err = w.Add("newTestFile.txt")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("testcommit", &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	c.Assert(err, IsNil)
+
+	err = fs.Remove("newTestFile.txt")
+	c.Assert(err, IsNil)
+	f, err := fs.Create(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("foo\n"))
+	_, err = f.Write([]byte("newTestFile.txt\n"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+
+	err = w.Reset(&ResetOptions{Mode: HardReset})
+	c.Assert(err, IsNil)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
 }
 
 func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
