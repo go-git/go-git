@@ -6,6 +6,7 @@ import (
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 
 	. "gopkg.in/check.v1"
 )
@@ -71,7 +72,7 @@ func (s *ScannerSuite) testNextObjectHeader(c *C, tag string,
 
 	n, err := p.Checksum()
 	c.Assert(err, IsNil)
-	c.Assert(n, HasLen, 20)
+	c.Assert(n, HasLen, hash.Size)
 }
 
 func (s *ScannerSuite) TestNextObjectHeaderWithOutReadObject(c *C) {

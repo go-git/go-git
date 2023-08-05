@@ -76,3 +76,17 @@ func (s *CommonSuite) TestIsRepoNotFoundErrorForGogsAccessDenied(c *C) {
 
 	c.Assert(isRepoNotFound, Equals, true)
 }
+
+func (s *CommonSuite) TestCheckNotFoundError(c *C) {
+	firstErrLine := make(chan string, 1)
+
+	session := session{
+		firstErrLine: firstErrLine,
+	}
+
+	firstErrLine <- ""
+
+	err := session.checkNotFoundError()
+
+	c.Assert(err, IsNil)
+}

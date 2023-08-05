@@ -3,7 +3,6 @@ package object
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 
 	"github.com/go-git/go-git/v5/plumbing"
 
@@ -37,7 +36,7 @@ func (s *BlobsSuite) TestBlobHash(c *C) {
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(reader.Close(), IsNil) }()
 
-	data, err := ioutil.ReadAll(reader)
+	data, err := io.ReadAll(reader)
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "FOO")
 }
@@ -96,14 +95,14 @@ func (s *BlobsSuite) TestBlobIter(c *C) {
 		r1, err := b.Reader()
 		c.Assert(err, IsNil)
 
-		b1, err := ioutil.ReadAll(r1)
+		b1, err := io.ReadAll(r1)
 		c.Assert(err, IsNil)
 		c.Assert(r1.Close(), IsNil)
 
 		r2, err := blobs[i].Reader()
 		c.Assert(err, IsNil)
 
-		b2, err := ioutil.ReadAll(r2)
+		b2, err := io.ReadAll(r2)
 		c.Assert(err, IsNil)
 		c.Assert(r2.Close(), IsNil)
 

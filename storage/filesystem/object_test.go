@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -406,6 +405,21 @@ func (s *FsSuite) TestHashesWithPrefix(c *C) {
 	c.Assert(hashes[0].String(), Equals, "f3dfe29d268303fc6e1bbce268605fc99573406e")
 }
 
+func (s *FsSuite) TestHashesWithPrefixFromPackfile(c *C) {
+	// Same setup as TestGetFromPackfile
+	fixtures.Basic().ByTag(".git").Test(c, func(f *fixtures.Fixture) {
+		fs := f.DotGit()
+		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+
+		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+		// Only pass the first 8 bytes
+		hashes, err := o.HashesWithPrefix(expected[:8])
+		c.Assert(err, IsNil)
+		c.Assert(hashes, HasLen, 1)
+		c.Assert(hashes[0], Equals, expected)
+	})
+}
+
 func BenchmarkPackfileIter(b *testing.B) {
 	defer fixtures.Clean()
 
@@ -495,7 +509,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 								b.Fatal(err)
 							}
 
-							if _, err := ioutil.ReadAll(r); err != nil {
+							if _, err := io.ReadAll(r); err != nil {
 								b.Fatal(err)
 							}
 

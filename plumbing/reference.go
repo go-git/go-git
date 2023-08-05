@@ -15,10 +15,11 @@ const (
 	symrefPrefix    = "ref: "
 )
 
-// RefRevParseRules are a set of rules to parse references into short names.
-// These are the same rules as used by git in shorten_unambiguous_ref.
+// RefRevParseRules are a set of rules to parse references into short names, or expand into a full reference.
+// These are the same rules as used by git in shorten_unambiguous_ref and expand_ref.
 // See: https://github.com/git/git/blob/e0aaa1b6532cfce93d87af9bc813fb2e7a7ce9d7/refs.c#L417
 var RefRevParseRules = []string{
+	"%s",
 	"refs/%s",
 	"refs/tags/%s",
 	"refs/heads/%s",
@@ -113,7 +114,7 @@ func (r ReferenceName) String() string {
 func (r ReferenceName) Short() string {
 	s := string(r)
 	res := s
-	for _, format := range RefRevParseRules {
+	for _, format := range RefRevParseRules[1:] {
 		_, err := fmt.Sscanf(s, format, &res)
 		if err == nil {
 			continue
@@ -126,6 +127,7 @@ func (r ReferenceName) Short() string {
 const (
 	HEAD   ReferenceName = "HEAD"
 	Master ReferenceName = "refs/heads/master"
+	Main   ReferenceName = "refs/heads/main"
 )
 
 // Reference is a representation of git reference
@@ -168,22 +170,22 @@ func NewHashReference(n ReferenceName, h Hash) *Reference {
 	}
 }
 
-// Type return the type of a reference
+// Type returns the type of a reference
 func (r *Reference) Type() ReferenceType {
 	return r.t
 }
 
-// Name return the name of a reference
+// Name returns the name of a reference
 func (r *Reference) Name() ReferenceName {
 	return r.n
 }
 
-// Hash return the hash of a hash reference
+// Hash returns the hash of a hash reference
 func (r *Reference) Hash() Hash {
 	return r.h
 }
 
-// Target return the target of a symbolic reference
+// Target returns the target of a symbolic reference
 func (r *Reference) Target() ReferenceName {
 	return r.target
 }
@@ -204,6 +206,21 @@ func (r *Reference) Strings() [2]string {
 }
 
 func (r *Reference) String() string {
-	s := r.Strings()
-	return fmt.Sprintf("%s %s", s[1], s[0])
+	ref := ""
+	switch r.Type() {
+	case HashReference:
+		ref = r.Hash().String()
+	case SymbolicReference:
+		ref = symrefPrefix + r.Target().String()
+	default:
+		return ""
+	}
+
+	name := r.Name().String()
+	var v strings.Builder
+	v.Grow(len(ref) + len(name) + 1)
+	v.WriteString(ref)
+	v.WriteString(" ")
+	v.WriteString(name)
+	return v.String()
 }

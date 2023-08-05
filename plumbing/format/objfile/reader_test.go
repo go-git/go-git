@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	"github.com/go-git/go-git/v5/plumbing"
 
@@ -36,7 +35,7 @@ func testReader(c *C, source io.Reader, hash plumbing.Hash, t plumbing.ObjectTyp
 	c.Assert(typ, Equals, t)
 	c.Assert(content, HasLen, int(size))
 
-	rc, err := ioutil.ReadAll(r)
+	rc, err := io.ReadAll(r)
 	c.Assert(err, IsNil)
 	c.Assert(rc, DeepEquals, content, Commentf("%scontent=%s, expected=%s", base64.StdEncoding.EncodeToString(rc), base64.StdEncoding.EncodeToString(content)))
 

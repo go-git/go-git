@@ -3,7 +3,7 @@ package idxfile_test
 import (
 	"bytes"
 	"encoding/base64"
-	"io/ioutil"
+	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
@@ -34,7 +34,7 @@ func (s *WriterSuite) TestWriter(c *C) {
 	c.Assert(err, IsNil)
 
 	idxFile := f.Idx()
-	expected, err := ioutil.ReadAll(idxFile)
+	expected, err := io.ReadAll(idxFile)
 	c.Assert(err, IsNil)
 	idxFile.Close()
 
@@ -65,7 +65,7 @@ func (s *WriterSuite) TestWriterLarge(c *C) {
 
 	// load fixture index
 	f := bytes.NewBufferString(fixtureLarge4GB)
-	expected, err := ioutil.ReadAll(base64.NewDecoder(base64.StdEncoding, f))
+	expected, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, f))
 	c.Assert(err, IsNil)
 
 	buf := new(bytes.Buffer)

@@ -3,7 +3,6 @@ package ssh
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	testutils "github.com/go-git/go-git/v5/plumbing/transport/ssh/internal/test"
 	"github.com/go-git/go-git/v5/plumbing/transport/test"
 
 	"github.com/gliderlabs/ssh"
@@ -25,6 +25,7 @@ import (
 type UploadPackSuite struct {
 	test.UploadPackSuite
 	fixtures.Suite
+	opts []ssh.Option
 
 	port int
 	base string
@@ -41,7 +42,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base, err = ioutil.TempDir(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
+	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
 	c.Assert(err, IsNil)
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
@@ -56,7 +57,10 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
 	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 
-	server := &ssh.Server{Handler: handlerSSH}
+	server := &ssh.Server{Handler: testutils.HandlerSSH}
+	for _, opt := range s.opts {
+		opt(server)
+	}
 	go func() {
 		log.Fatal(server.Serve(l))
 	}()

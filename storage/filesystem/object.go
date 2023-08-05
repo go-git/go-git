@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -419,8 +420,19 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 
 	s.objectCache.Put(obj)
 
-	_, err = io.Copy(w, r)
+	bufp := copyBufferPool.Get().(*[]byte)
+	buf := *bufp
+	_, err = io.CopyBuffer(w, r, buf)
+	copyBufferPool.Put(bufp)
+
 	return obj, err
+}
+
+var copyBufferPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 32*1024)
+		return &b
+	},
 }
 
 // Get returns the object with the given hash, by searching for it in
@@ -525,14 +537,21 @@ func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, pl
 	return plumbing.ZeroHash, plumbing.ZeroHash, -1
 }
 
+// HashesWithPrefix returns all objects with a hash that starts with a prefix by searching for
+// them in the packfile and the git object directories.
 func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error) {
 	hashes, err := s.dir.ObjectsWithPrefix(prefix)
 	if err != nil {
 		return nil, err
 	}
 
+	seen := hashListAsMap(hashes)
+
 	// TODO: This could be faster with some idxfile changes,
 	// or diving into the packfile.
+	if err := s.requireIndex(); err != nil {
+		return nil, err
+	}
 	for _, index := range s.index {
 		ei, err := index.Entries()
 		if err != nil {
@@ -546,6 +565,9 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 				return nil, err
 			}
 			if bytes.HasPrefix(e.Hash[:], prefix) {
+				if _, ok := seen[e.Hash]; ok {
+					continue
+				}
 				hashes = append(hashes, e.Hash)
 			}
 		}

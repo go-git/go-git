@@ -218,6 +218,16 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 			{Name: capability.SymRef, Values: []string{"HEAD:refs/heads/master"}},
 			{Name: capability.Agent, Values: []string{"foo=bar"}},
 		},
+	}, {
+		input: []string{
+			"0000000000000000000000000000000000000000 capabilities^{}\x00report-status report-status-v2 delete-refs side-band-64k quiet atomic ofs-delta object-format=sha1 agent=git/2.41.0\n",
+			pktline.FlushString,
+		},
+		capabilities: []entry{
+			{Name: capability.ReportStatus, Values: []string(nil)},
+			{Name: capability.ObjectFormat, Values: []string{"sha1"}},
+			{Name: capability.Agent, Values: []string{"git/2.41.0"}},
+		},
 	}} {
 		ar := s.testDecodeOK(c, test.input)
 		for _, fixCap := range test.capabilities {

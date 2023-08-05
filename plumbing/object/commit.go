@@ -1,7 +1,6 @@
 package object
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/sync"
 )
 
 const (
@@ -180,9 +180,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	r := bufPool.Get().(*bufio.Reader)
-	defer bufPool.Put(r)
-	r.Reset(reader)
+	r := sync.GetBufioReader(reader)
+	defer sync.PutBufioReader(r)
 
 	var message bool
 	var pgpsig bool
@@ -375,6 +374,17 @@ func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	}
 
 	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+}
+
+// Less defines a compare function to determine which commit is 'earlier' by:
+// - First use Committer.When
+// - If Committer.When are equal then use Author.When
+// - If Author.When also equal then compare the string value of the hash
+func (c *Commit) Less(rhs *Commit) bool {
+	return c.Committer.When.Before(rhs.Committer.When) ||
+		(c.Committer.When.Equal(rhs.Committer.When) &&
+			(c.Author.When.Before(rhs.Author.When) ||
+				(c.Author.When.Equal(rhs.Author.When) && bytes.Compare(c.Hash[:], rhs.Hash[:]) < 0)))
 }
 
 func indent(t string) string {

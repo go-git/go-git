@@ -1,7 +1,6 @@
 package file
 
 import (
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +24,7 @@ func (s *CommonSuite) SetUpSuite(c *C) {
 	}
 
 	var err error
-	s.tmpDir, err = ioutil.TempDir("", "")
+	s.tmpDir, err = os.MkdirTemp("", "")
 	c.Assert(err, IsNil)
 	s.ReceivePackBin = filepath.Join(s.tmpDir, "git-receive-pack")
 	s.UploadPackBin = filepath.Join(s.tmpDir, "git-upload-pack")

@@ -3,7 +3,6 @@ package examples
 import (
 	"flag"
 	"go/build"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,7 +64,7 @@ func TestExamples(t *testing.T) {
 }
 
 func tempFolder() string {
-	path, err := ioutil.TempDir("", "")
+	path, err := os.MkdirTemp("", "")
 	CheckIfError(err)
 
 	tempFolders = append(tempFolders, path)

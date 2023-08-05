@@ -32,9 +32,6 @@ func main() {
 	}
 
 	r, err := git.PlainClone(directory, false, &git.CloneOptions{
-		// The intended use of a GitHub personal access token is in replace of your password
-		// because access tokens can easily be revoked.
-		// https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/
 		Auth:     publicKeys,
 		URL:      url,
 		Progress: os.Stdout,

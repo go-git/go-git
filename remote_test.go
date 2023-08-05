@@ -5,16 +5,15 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -138,6 +137,62 @@ func (s *RemoteSuite) TestFetch(c *C) {
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchToNewBranch(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			// qualified branch to unqualified branch
+			"refs/heads/master:foo",
+			// unqualified branch to unqualified branch
+			"+master:bar",
+			// unqualified tag to unqualified branch
+			config.RefSpec("tree-tag:tree-tag"),
+			// unqualified tag to qualified tag
+			config.RefSpec("+commit-tag:refs/tags/renamed-tag"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/bar", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/renamed-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+	})
+}
+
+func (s *RemoteSuite) TestFetchToNewBranchWithAllTags(c *C) {
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
+	})
+
+	s.testFetch(c, r, &FetchOptions{
+		Tags: AllTags,
+		RefSpecs: []config.RefSpec{
+			// qualified branch to unqualified branch
+			"+refs/heads/master:foo",
+			// unqualified branch to unqualified branch
+			"master:bar",
+			// unqualified tag to unqualified branch
+			config.RefSpec("+tree-tag:tree-tag"),
+			// unqualified tag to qualified tag
+			config.RefSpec("commit-tag:refs/tags/renamed-tag"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/bar", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/heads/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/renamed-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
+		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	})
 }
 
@@ -535,10 +590,22 @@ func (s *RemoteSuite) TestPushContext(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	// let the goroutine from pushHashes finish and check that the number of
-	// goroutines is the same as before
-	time.Sleep(100 * time.Millisecond)
-	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+	eventually(c, func() bool {
+		return runtime.NumGoroutine() <= numGoroutines
+	})
+}
+
+func eventually(c *C, condition func() bool) {
+	select {
+	case <-time.After(5 * time.Second):
+	default:
+		if condition() {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c.Assert(condition(), Equals, true)
 }
 
 func (s *RemoteSuite) TestPushContextCanceled(c *C) {
@@ -566,10 +633,9 @@ func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 	})
 	c.Assert(err, Equals, context.Canceled)
 
-	// let the goroutine from pushHashes finish and check that the number of
-	// goroutines is the same as before
-	time.Sleep(100 * time.Millisecond)
-	c.Assert(runtime.NumGoroutine(), Equals, numGoroutines)
+	eventually(c, func() bool {
+		return runtime.NumGoroutine() <= numGoroutines
+	})
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
@@ -854,6 +920,7 @@ func (s *RemoteSuite) TestPushForceWithLease_success(c *C) {
 		c.Assert(sto.SetReference(newCommit), IsNil)
 
 		ref, err := sto.Reference("refs/heads/branch")
+		c.Assert(err, IsNil)
 		c.Log(ref.String())
 
 		url := dstFs.Root()
@@ -1163,7 +1230,7 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 		),
 	}
 
-	l, err := getHaves(localRefs, memory.NewStorage(), sto)
+	l, err := getHaves(localRefs, memory.NewStorage(), sto, 0)
 	c.Assert(err, IsNil)
 	c.Assert(l, HasLen, 2)
 }
@@ -1196,6 +1263,41 @@ func (s *RemoteSuite) TestList(c *C) {
 			}
 		}
 		c.Assert(found, Equals, true)
+	}
+}
+
+func (s *RemoteSuite) TestListPeeling(c *C) {
+	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{"https://github.com/git-fixtures/tags.git"},
+	})
+
+	for _, tc := range []struct {
+		peelingOption   PeelingOption
+		expectPeeled    bool
+		expectNonPeeled bool
+	}{
+		{peelingOption: AppendPeeled, expectPeeled: true, expectNonPeeled: true},
+		{peelingOption: IgnorePeeled, expectPeeled: false, expectNonPeeled: true},
+		{peelingOption: OnlyPeeled, expectPeeled: true, expectNonPeeled: false},
+	} {
+		refs, err := remote.List(&ListOptions{
+			PeelingOption: tc.peelingOption,
+		})
+		c.Assert(err, IsNil)
+		c.Assert(len(refs) > 0, Equals, true)
+
+		foundPeeled, foundNonPeeled := false, false
+		for _, ref := range refs {
+			if strings.HasSuffix(ref.Name().String(), peeledSuffix) {
+				foundPeeled = true
+			} else {
+				foundNonPeeled = true
+			}
+		}
+
+		c.Assert(foundPeeled, Equals, tc.expectPeeled)
+		c.Assert(foundNonPeeled, Equals, tc.expectNonPeeled)
 	}
 }
 
@@ -1339,7 +1441,7 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 }
 
 func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
-	d, err := ioutil.TempDir("", "TestCanPushShasToReference")
+	d, err := os.MkdirTemp("", "TestCanPushShasToReference")
 	c.Assert(err, IsNil)
 	if err != nil {
 		return
@@ -1357,45 +1459,7 @@ func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(repo, NotNil)
 
-	fd, err := os.Create(filepath.Join(d, "repo", "README.md"))
-	c.Assert(err, IsNil)
-	if err != nil {
-		return
-	}
-	_, err = fd.WriteString("# test repo")
-	c.Assert(err, IsNil)
-	if err != nil {
-		return
-	}
-	err = fd.Close()
-	c.Assert(err, IsNil)
-	if err != nil {
-		return
-	}
-
-	wt, err := repo.Worktree()
-	c.Assert(err, IsNil)
-	if err != nil {
-		return
-	}
-
-	wt.Add("README.md")
-	sha, err := wt.Commit("test commit", &CommitOptions{
-		Author: &object.Signature{
-			Name:  "test",
-			Email: "test@example.com",
-			When:  time.Now(),
-		},
-		Committer: &object.Signature{
-			Name:  "test",
-			Email: "test@example.com",
-			When:  time.Now(),
-		},
-	})
-	c.Assert(err, IsNil)
-	if err != nil {
-		return
-	}
+	sha := CommitNewFile(c, repo, "README.md")
 
 	gitremote, err := repo.CreateRemote(&config.RemoteConfig{
 		Name: "local",
@@ -1424,4 +1488,70 @@ func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
 		return
 	}
 	c.Assert(ref.Hash().String(), Equals, sha.String())
+}
+
+func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
+	tempDir, clean := s.TemporalDir()
+	defer clean()
+	remoteUrl := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	// Create a new repo and add more than 1 commit (so we can have a shallow commit)
+	remote, err := PlainInit(remoteUrl, false)
+	c.Assert(err, IsNil)
+	c.Assert(remote, NotNil)
+
+	_ = CommitNewFile(c, remote, "File1")
+	_ = CommitNewFile(c, remote, "File2")
+
+	// Clone the repo with a depth of 1
+	repo, err := PlainClone(repoDir, false, &CloneOptions{
+		URL:           remoteUrl,
+		Depth:         1,
+		Tags:          NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	c.Assert(err, IsNil)
+
+	// Add new commits to the origin (more than 1 so that our next test hits a missing commit)
+	_ = CommitNewFile(c, remote, "File3")
+	sha4 := CommitNewFile(c, remote, "File4")
+
+	// Try fetch with depth of 1 again (note, we need to ensure no remote branch remains pointing at the old commit)
+	r, err := repo.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+	s.testFetch(c, r, &FetchOptions{
+		Depth: 2,
+		Tags:  NoTags,
+
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/master:refs/heads/master",
+			"+refs/heads/master:refs/remotes/origin/master",
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", sha4.String()),
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", sha4.String()),
+		plumbing.NewSymbolicReference("HEAD", "refs/heads/master"),
+	})
+
+	// Add another commit to the origin
+	sha5 := CommitNewFile(c, remote, "File5")
+
+	// Try fetch with depth of 2 this time (to reach a commit that we don't have locally)
+	r, err = repo.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+	s.testFetch(c, r, &FetchOptions{
+		Depth: 1,
+		Tags:  NoTags,
+
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/master:refs/heads/master",
+			"+refs/heads/master:refs/remotes/origin/master",
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/master", sha5.String()),
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", sha5.String()),
+		plumbing.NewSymbolicReference("HEAD", "refs/heads/master"),
+	})
 }

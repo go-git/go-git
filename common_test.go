@@ -3,10 +3,12 @@ package git
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
@@ -37,7 +39,7 @@ func (s *BaseSuite) TearDownSuite(c *C) {
 	s.Suite.TearDownSuite(c)
 }
 
-func (s *BaseSuite) buildBasicRepository(c *C) {
+func (s *BaseSuite) buildBasicRepository(_ *C) {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)
 }
@@ -105,13 +107,16 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 
 	storer := memory.NewStorage()
 	p := f.Packfile()
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	if err := packfile.UpdateObjectStorage(storer, p); err != nil {
 		panic(err)
 	}
 
-	storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head)))
+	err := storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head)))
+	if err != nil {
+		panic(err)
+	}
 
 	r, err := Open(storer, memfs.New())
 	if err != nil {
@@ -133,14 +138,37 @@ func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
 
 func (s *BaseSuite) TemporalDir() (path string, clean func()) {
 	fs := osfs.New(os.TempDir())
-	path, err := util.TempDir(fs, "", "")
+	relPath, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
 	}
 
-	return fs.Join(fs.Root(), path), func() {
-		util.RemoveAll(fs, path)
+	path = fs.Join(fs.Root(), relPath)
+	clean = func() {
+		_ = util.RemoveAll(fs, relPath)
 	}
+
+	return
+}
+
+func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	fs := osfs.New(home)
+	relPath, err := util.TempDir(fs, "", "")
+	if err != nil {
+		panic(err)
+	}
+
+	path = fs.Join(fs.Root(), relPath)
+	clean = func() {
+		_ = util.RemoveAll(fs, relPath)
+	}
+
+	return
 }
 
 func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
@@ -155,9 +183,11 @@ func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
 		panic(err)
 	}
 
-	return fs, func() {
-		util.RemoveAll(fs, path)
+	clean = func() {
+		_ = util.RemoveAll(fs, path)
 	}
+
+	return
 }
 
 type SuiteCommon struct{}
@@ -203,4 +233,37 @@ func AssertReferencesMissing(c *C, r *Repository, expected []string) {
 		c.Assert(err, NotNil)
 		c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	}
+}
+
+func CommitNewFile(c *C, repo *Repository, fileName string) plumbing.Hash {
+	wt, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	fd, err := wt.Filesystem.Create(fileName)
+	c.Assert(err, IsNil)
+
+	_, err = fd.Write([]byte("# test file"))
+	c.Assert(err, IsNil)
+
+	err = fd.Close()
+	c.Assert(err, IsNil)
+
+	_, err = wt.Add(fileName)
+	c.Assert(err, IsNil)
+
+	sha, err := wt.Commit("test commit", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+		Committer: &object.Signature{
+			Name:  "test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	c.Assert(err, IsNil)
+
+	return sha
 }

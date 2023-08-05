@@ -78,7 +78,7 @@ func (r *UploadPackResponse) Encode(w io.Writer) (err error) {
 		}
 	}
 
-	if err := r.ServerResponse.Encode(w); err != nil {
+	if err := r.ServerResponse.Encode(w, r.isMultiACK); err != nil {
 		return err
 	}
 
