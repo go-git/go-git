@@ -113,6 +113,37 @@ func (s *WorktreeSuite) TestCommitParent(c *C) {
 	assertStorageStatus(c, s.Repository, 13, 11, 10, expected)
 }
 
+func (s *WorktreeSuite) TestCommitAmend(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+
+	amendedHash, err := w.Commit("bar\n", &CommitOptions{Amend: true})
+	c.Assert(err, IsNil)
+
+	headRef, err := w.r.Head()
+	c.Assert(amendedHash, Equals, headRef.Hash())
+	commit, err := w.r.CommitObject(headRef.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(commit.Message, Equals, "bar\n")
+
+	assertStorageStatus(c, s.Repository, 13, 11, 11, amendedHash)
+}
+
 func (s *WorktreeSuite) TestCommitAll(c *C) {
 	expected := plumbing.NewHash("aede6f8c9c1c7ec9ca8d287c64b8ed151276fa28")
 
