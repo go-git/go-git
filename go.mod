@@ -8,7 +8,7 @@ require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230717121422-5aa5874ade95
 	github.com/acomagu/bufpipe v1.0.4
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/elazarl/goproxy v0.0.0-20221015165544-a0805db90819
+	github.com/elazarl/goproxy v0.0.0-20230731152917-f99041a5c027
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.5
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
