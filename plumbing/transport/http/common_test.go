@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -88,6 +90,23 @@ func (s *ClientSuite) TestNewErrNotFound(c *C) {
 func (s *ClientSuite) TestNewHTTPError40x(c *C) {
 	s.testNewHTTPError(c, http.StatusPaymentRequired,
 		"unexpected client error.*")
+}
+
+func (s *ClientSuite) TestNewUnexpectedError(c *C) {
+	res := &http.Response{
+		StatusCode: 500,
+		Body:       io.NopCloser(strings.NewReader("Unexpected error")),
+	}
+
+	err := NewErr(res)
+	c.Assert(err, NotNil)
+	c.Assert(err, FitsTypeOf, &plumbing.UnexpectedError{})
+
+	unexpectedError, _ := err.(*plumbing.UnexpectedError)
+	c.Assert(unexpectedError.Err, FitsTypeOf, &Err{})
+
+	httpError, _ := unexpectedError.Err.(*Err)
+	c.Assert(httpError.Reason, Equals, "Unexpected error")
 }
 
 func (s *ClientSuite) Test_newSession(c *C) {
