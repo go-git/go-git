@@ -518,6 +518,30 @@ func (s *RepositorySuite) TestPlainInit(c *C) {
 	c.Assert(cfg.Core.IsBare, Equals, true)
 }
 
+func (s *RepositorySuite) TestPlainInitWithOptions(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainInitWithOptions(dir, &PlainInitOptions{
+		InitOptions: InitOptions{
+			DefaultBranch: "refs/heads/foo",
+		},
+		Bare: false,
+	})
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Core.IsBare, Equals, false)
+
+	createCommit(c, r)
+
+	ref, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(ref.Name().String(), Equals, "refs/heads/foo")
+}
+
 func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
