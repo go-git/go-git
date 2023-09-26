@@ -13,6 +13,7 @@ import (
 // safe, use the New function instead.
 // This is a low level type, use UploadPackRequest instead.
 type UploadRequest struct {
+	Version      int
 	Capabilities *capability.List
 	Wants        []plumbing.Hash
 	Shallows     []plumbing.Hash
@@ -96,6 +97,12 @@ func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
 
 	if adv.Supports(capability.Agent) {
 		r.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+	}
+
+	if adv.Supports(capability.LsRefs) {
+		r.Version = 2
+	} else {
+		r.Version = 1
 	}
 
 	return r

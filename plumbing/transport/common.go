@@ -58,6 +58,11 @@ type Session interface {
 	// If the repository does not exist, returns ErrRepositoryNotFound.
 	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
 	AdvertisedReferences() (*packp.AdvRefs, error)
+	// AdvertisedCapabilities retrieves the advertised capabilities for a
+	// repository.
+	// If the repository does not exist, returns ErrRepositoryNotFound.
+	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
+	AdvertisedCapabilities() (*packp.AdvCaps, error)
 	// AdvertisedReferencesContext retrieves the advertised references for a
 	// repository.
 	// If the repository does not exist, returns ErrRepositoryNotFound.

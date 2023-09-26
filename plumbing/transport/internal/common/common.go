@@ -102,6 +102,7 @@ type session struct {
 
 	isReceivePack bool
 	advRefs       *packp.AdvRefs
+	advCaps       *packp.AdvCaps
 	packRun       bool
 	finished      bool
 	firstErrLine  chan string
@@ -165,7 +166,7 @@ func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
 }
 
-// AdvertisedReferences retrieves the advertised references from the server.
+// AdvertisedReferencesCaontext retrieves the advertised references from the server.
 func (s *session) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
 	if s.advRefs != nil {
 		return s.advRefs, nil
@@ -190,7 +191,75 @@ func (s *session) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRe
 	return ar, nil
 }
 
+func (s *session) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return s.AdvertisedCapabilitiesContext(context.TODO())
+}
+
+// AdvertisedCapabilitiesContext retrieves the advertised capabilities from the server.
+func (s *session) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	if s.advCaps != nil {
+		return s.advCaps, nil
+	}
+
+	ar := packp.NewAdvCaps()
+	if err := ar.Decode(s.StdoutContext(ctx)); err != nil {
+		if err := s.handleAdvCapsDecodeError(err); err != nil {
+			return nil, err
+		}
+	}
+
+	// Some servers like jGit, announce capabilities instead of returning a
+	// packp message with a flush. This verifies that we received an empty
+	// adv-refs, even it contains capabilities.
+	if !s.isReceivePack && ar.IsEmpty() {
+		return nil, transport.ErrEmptyRemoteRepository
+	}
+
+	transport.FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advCaps = ar
+	return ar, nil
+}
+
 func (s *session) handleAdvRefDecodeError(err error) error {
+	// If repository is not found, we get empty stdout and server writes an
+	// error to stderr.
+	if err == packp.ErrEmptyInput {
+		s.finished = true
+		if err := s.checkNotFoundError(); err != nil {
+			return err
+		}
+
+		return io.ErrUnexpectedEOF
+	}
+
+	// For empty (but existing) repositories, we get empty advertised-references
+	// message. But valid. That is, it includes at least a flush.
+	if err == packp.ErrEmptyAdvRefs {
+		// Empty repositories are valid for git-receive-pack.
+		if s.isReceivePack {
+			return nil
+		}
+
+		if err := s.finish(); err != nil {
+			return err
+		}
+
+		return transport.ErrEmptyRemoteRepository
+	}
+
+	// Some server sends the errors as normal content (git protocol), so when
+	// we try to decode it fails, we need to check the content of it, to detect
+	// not found errors
+	if uerr, ok := err.(*packp.ErrUnexpectedData); ok {
+		if isRepoNotFoundError(string(uerr.Data)) {
+			return transport.ErrRepositoryNotFound
+		}
+	}
+
+	return err
+}
+
+func (s *session) handleAdvCapsDecodeError(err error) error {
 	// If repository is not found, we get empty stdout and server writes an
 	// error to stderr.
 	if err == packp.ErrEmptyInput {

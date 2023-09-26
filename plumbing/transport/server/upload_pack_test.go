@@ -1,6 +1,9 @@
 package server_test
 
 import (
+	"bytes"
+
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	. "gopkg.in/check.v1"
@@ -30,6 +33,25 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 
 func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
 	c.Skip("UploadPack cannot be canceled on server")
+}
+
+func (s *UploadPackSuite) TestAdvertisedCapabilities(c *C) {
+	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
+	caps, err := r.AdvertisedCapabilities()
+	c.Assert(err, IsNil)
+
+	caps.Capabilities.Add(capability.Fetch)
+	caps.Service = "git-upload-pack"
+
+	res := bytes.Buffer{}
+	caps.Encode(&res)
+
+	exp := `001e# service=git-upload-pack
+0000000eversion 2
+0007fetch
+0000`
+
+	c.Assert(res.String(), Equals, exp)
 }
 
 // Tests server with `asClient = true`. This is recommended when using a server

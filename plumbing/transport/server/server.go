@@ -79,6 +79,7 @@ func (h *handler) NewReceivePackSession(s storer.Storer) (transport.ReceivePackS
 }
 
 type session struct {
+	version  int
 	storer   storer.Storer
 	caps     *capability.List
 	asClient bool
@@ -111,6 +112,10 @@ func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
 }
 
+func (s *upSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return s.AdvertisedCapabilitiesContext(context.TODO())
+}
+
 func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
 	ar := packp.NewAdvRefs()
 
@@ -133,6 +138,20 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 	}
 
 	return ar, nil
+}
+
+func (s *upSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	ac := packp.NewAdvCaps()
+
+	if err := s.setSupportedCapabilities(ac.Capabilities); err != nil {
+		return nil, err
+	}
+
+	if s.asClient {
+		return nil, transport.ErrEmptyRemoteRepository
+	}
+
+	return ac, nil
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
@@ -209,6 +228,20 @@ type rpSession struct {
 
 func (s *rpSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
+}
+
+func (s *rpSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return s.AdvertisedCapabilitiesContext(context.TODO())
+}
+
+func (s *rpSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	ar := packp.NewAdvCaps()
+
+	if err := s.setSupportedCapabilities(ar.Capabilities); err != nil {
+		return nil, err
+	}
+
+	return ar, nil
 }
 
 func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {

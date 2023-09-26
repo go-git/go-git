@@ -241,6 +241,119 @@ const (
 	// Filter if present, fetch-pack may send "filter" commands to request a
 	// partial clone or partial fetch and request that the server omit various objects from the packfile
 	Filter Capability = "filter"
+	// LsRefs is the command used to request a reference advertisement in v2.
+	// Unlike the current reference advertisement, ls-refs takes in arguments
+	// which can be used to limit the refs sent from the server.
+	// 
+	// Additional features not supported in the base command will be
+	// advertised as the value of the command in the capability 
+	// advertisement in the form of a space separated list of features:
+	// "<command>=<feature 1> <feature 2>"
+	// 
+	// ls-refs takes in the following arguments:
+	// 
+	//     symrefs
+	// 	In addition to the object pointed by it, show the underlying ref
+	// 	pointed by it when showing a symbolic ref.
+	//     peel
+	// 	Show peeled tags.
+	//     ref-prefix <prefix>
+	// 	When specified, only references having a prefix matching one of
+	// 	the provided prefixes are displayed. Multiple instances may be
+	// 	given, in which case references matching any prefix will be
+	// 	shown. Note that this is purely for optimization; a server MAY
+	// 	show refs not matching the prefix if it chooses, and clients
+	// 	should filter the result themselves.
+	LsRefs Capability = "ls-refs"
+	// Fetch is the command used to fetch a packfile in v2.  It can be
+	// looked at as a modified version of the v1 fetch where the 
+	// ref-advertisement is stripped out (since the ls-refs command fills
+	// that role) and the message format is tweaked to eliminate 
+	// redundancies and permit easy addition of future extensions.
+	// 
+	// Additional features not supported in the base command will be
+	// advertised as the value of the command in the capability 
+	// advertisement in the form of a space separated list of features:
+	// "<command>=<feature 1> <feature 2>"
+	// 
+	// A fetch request can take the following arguments:
+	// 
+	//     want <oid>
+	// 	Indicates to the server an object which the client wants to
+	// 	retrieve.  Wants can be anything and are not limited to
+	// 	advertised objects.
+	// 
+	//     have <oid>
+	// 	Indicates to the server an object which the client has locally.
+	// 	This allows the server to make a packfile which only contains
+	// 	the objects that the client needs. Multiple 'have' lines can be
+	// 	supplied.
+	// 
+	//     done
+	// 	Indicates to the server that negotiation should terminate (or
+	// 	not even begin if performing a clone) and that the server should
+	// 	use the information supplied in the request to construct the
+	// 	packfile.
+	// 
+	//     thin-pack
+	// 	Request that a thin pack be sent, which is a pack with deltas
+	// 	which reference base objects not contained within the pack (but
+	// 	are known to exist at the receiving end). This can reduce the
+	// 	network traffic significantly, but it requires the receiving end
+	// 	to know how to "thicken" these packs by adding the missing bases
+	// 	to the pack.
+	// 
+	//     no-progress
+	// 	Request that progress information that would normally be sent on
+	// 	side-band channel 2, during the packfile transfer, should not be
+	// 	sent.  However, the side-band channel 3 is still used for error
+	// 	responses.
+	// 
+	//     include-tag
+	// 	Request that annotated tags should be sent if the objects they
+	// 	point to are being sent.
+	// 
+	//     ofs-delta
+	// 	Indicate that the client understands PACKv2 with delta referring
+	// 	to its base by position in pack rather than by an oid.  That is,
+	// 	they can read OBJ_OFS_DELTA (aka type 6) in a packfile.
+	Fetch Capability = "fetch"
+	// ServerOption if advertised, indicates that any number of server
+	// specific options can be included in a request.  This is done by
+	// sending each option as a "server-option=<option>" capability line
+	// in the capability-list section of  a request.
+	// The provided options must not contain a NUL or LF character.
+	ServerOption Capability = "server-option"
+	// ObjectInfo s the command to retrieve information about one or more
+	// objects. Its main purpose is to allow a client to make decisions 
+	// based on this information without having to fully fetch objects.
+	// Object size is the only information that is currently supported.
+	// 
+	// An object-info request takes the following arguments:
+	// 
+	// 	size
+	// 	Requests size information to be returned for each listed object
+	//	id.
+	// 
+	// 	oid <oid>
+	// 	Indicates to the server an object which the client wants to
+	//	obtain information for.
+	// 
+	// The response of `object-info` is a list of the requested object ids
+	// and associated requested information, each separated by a single
+	// space.
+	// 
+	// 	output = info flush-pkt
+	// 
+	// 	info = PKT-LINE(attrs) LF)
+	// 		*PKT-LINE(obj-info LF)
+	// 
+	// 	attrs = attr | attrs SP attrs
+	// 
+	// 	attr = "size"
+	// 
+	// 	obj-info = obj-id SP obj-size
+	ObjectInfo Capability = "object-info"
 )
 
 const userAgent = "go-git/5.x"
