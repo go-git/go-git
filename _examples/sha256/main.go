@@ -15,7 +15,7 @@ import (
 // This example requires building with the sha256 tag for it to work:
 // go run -tags sha256 main.go /tmp/repository
 
-// Basic example of how to initialise a repository using sha256 as the hashing algorithmn.
+// Basic example of how to initialise a repository using sha256 as the hashing algorithm.
 func main() {
 	CheckArgs("<directory>")
 	directory := os.Args[1]

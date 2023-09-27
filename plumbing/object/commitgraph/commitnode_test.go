@@ -22,7 +22,7 @@ type CommitNodeSuite struct {
 
 var _ = Suite(&CommitNodeSuite{})
 
-func unpackRepositry(f *fixtures.Fixture) *filesystem.Storage {
+func unpackRepository(f *fixtures.Fixture) *filesystem.Storage {
 	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	p := f.Packfile()
 	defer p.Close()
@@ -99,7 +99,7 @@ func testCommitAndTree(c *C, nodeIndex CommitNodeIndex) {
 
 func (s *CommitNodeSuite) TestObjectGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := unpackRepositry(f)
+	storer := unpackRepository(f)
 
 	nodeIndex := NewObjectCommitNodeIndex(storer)
 	testWalker(c, nodeIndex)
@@ -109,7 +109,7 @@ func (s *CommitNodeSuite) TestObjectGraph(c *C) {
 
 func (s *CommitNodeSuite) TestCommitGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := unpackRepositry(f)
+	storer := unpackRepository(f)
 	reader, err := storer.Filesystem().Open(path.Join("objects", "info", "commit-graph"))
 	c.Assert(err, IsNil)
 	defer reader.Close()
@@ -124,7 +124,7 @@ func (s *CommitNodeSuite) TestCommitGraph(c *C) {
 
 func (s *CommitNodeSuite) TestMixedGraph(c *C) {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := unpackRepositry(f)
+	storer := unpackRepository(f)
 
 	// Take the commit-graph file and copy it to memory index without the last commit
 	reader, err := storer.Filesystem().Open(path.Join("objects", "info", "commit-graph"))

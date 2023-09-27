@@ -903,7 +903,7 @@ func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored(c *C) {
 	c.Assert(status.IsClean(), Equals, true)
 	c.Assert(status, NotNil)
 
-	err = util.WriteFile(fs, "secondIgnoredFile", []byte("Should be completly ignored"), 0755)
+	err = util.WriteFile(fs, "secondIgnoredFile", []byte("Should be completely ignored"), 0755)
 	c.Assert(err, IsNil)
 	status = nil
 	status, err = w.Status()
