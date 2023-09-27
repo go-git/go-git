@@ -354,6 +354,14 @@ const (
 	// 
 	// 	obj-info = obj-id SP obj-size
 	ObjectInfo Capability = "object-info"
+	// Unborn the server will send information about HEAD even if it is a
+	// symref pointing to an unborn branch in the form "unborn HEAD
+	// symref-target:<target>".
+	Unborn Capability = "unborn"
+	// WaitForDone indicates to the server that it should never send
+	// "ready", but should wait for the client to say "done" before
+	// sending the packfile.
+	WaitForDone Capability = "wait-for-done"
 )
 
 const userAgent = "go-git/5.x"

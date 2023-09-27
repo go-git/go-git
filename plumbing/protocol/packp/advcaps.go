@@ -38,7 +38,12 @@ func (a *AdvCaps) Encode(w io.Writer) error {
 	pe.EncodeString("version 2\n")
 
 	for _, c := range a.Capabilities.All() {
-		pe.EncodeString(c.String() + "\n")
+		vals := a.Capabilities.Get(c)
+		if len(vals) > 0 {
+			pe.EncodeString(c.String() + "=" + strings.Join(vals, " ") + "\n")
+		} else {
+			pe.EncodeString(c.String() + "\n")
+		}
 	}
 
 	return pe.Flush()
