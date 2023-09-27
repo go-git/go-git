@@ -20,6 +20,11 @@ const (
 	beginpgp  string = "-----BEGIN PGP SIGNATURE-----"
 	endpgp    string = "-----END PGP SIGNATURE-----"
 	headerpgp string = "gpgsig"
+
+	// https://github.com/git/git/blob/bcb6cae2966cc407ca1afc77413b3ef11103c175/Documentation/gitformat-signature.txt#L153
+	// When a merge commit is created from a signed tag, the tag is embedded in
+	// the commit with the "mergetag" header.
+	headermergetag string = "mergetag"
 )
 
 // Hash represents the hash of an object
@@ -38,6 +43,9 @@ type Commit struct {
 	// Committer is the one performing the commit, might be different from
 	// Author.
 	Committer Signature
+	// MergeTag is the embedded tag object when a merge commit is created by
+	// merging a signed tag.
+	MergeTag string
 	// PGPSignature is the PGP signature of the commit.
 	PGPSignature string
 	// Message is the commit message, contains arbitrary text.
@@ -184,12 +192,23 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	defer sync.PutBufioReader(r)
 
 	var message bool
+	var mergetag bool
 	var pgpsig bool
 	var msgbuf bytes.Buffer
 	for {
 		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
+		}
+
+		if mergetag {
+			if len(line) > 0 && line[0] == ' ' {
+				line = bytes.TrimLeft(line, " ")
+				c.MergeTag += string(line)
+				continue
+			} else {
+				mergetag = false
+			}
 		}
 
 		if pgpsig {
@@ -225,6 +244,9 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				c.Author.Decode(data)
 			case "committer":
 				c.Committer.Decode(data)
+			case headermergetag:
+				c.MergeTag += string(data) + "\n"
+				mergetag = true
 			case headerpgp:
 				c.PGPSignature += string(data) + "\n"
 				pgpsig = true
@@ -284,6 +306,22 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 
 	if err = c.Committer.Encode(w); err != nil {
 		return err
+	}
+
+	if c.MergeTag != "" {
+		if _, err = fmt.Fprint(w, "\n"+headermergetag+" "); err != nil {
+			return err
+		}
+
+		// Split tag information lines and re-write with a left padding and
+		// newline. Use join for this so it's clear that a newline should not be
+		// added after this section. The newline will be added either as part of
+		// the PGP signature or the commit message.
+		mergetag := strings.TrimSuffix(c.MergeTag, "\n")
+		lines := strings.Split(mergetag, "\n")
+		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+			return err
+		}
 	}
 
 	if c.PGPSignature != "" && includeSig {
