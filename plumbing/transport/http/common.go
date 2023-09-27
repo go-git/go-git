@@ -90,6 +90,57 @@ func advertisedReferences(ctx context.Context, s *session, serviceName string) (
 	return ar, nil
 }
 
+func advertisedCapabilities(ctx context.Context, s *session, serviceName string) (ref *packp.AdvCaps, err error) {
+	url := fmt.Sprintf(
+		"%s%s?service=%s",
+		s.endpoint.String(), infoRefsPath, serviceName,
+	)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	s.ApplyAuthToRequest(req)
+	applyHeadersToRequest(req, nil, s.endpoint.Host, serviceName)
+	res, err := s.client.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	s.ModifyEndpointIfRedirect(res)
+	defer ioutil.CheckClose(res.Body, &err)
+
+	if err = NewErr(res); err != nil {
+		return nil, err
+	}
+
+	ar := packp.NewAdvCaps()
+	if err = ar.Decode(res.Body); err != nil {
+		if err == packp.ErrEmptyAdvRefs {
+			err = transport.ErrEmptyRemoteRepository
+		}
+
+		return nil, err
+	}
+
+	// Git 2.41+ returns a zero-id plus capabilities when an empty
+	// repository is being cloned. This skips the existing logic within
+	// advrefs_decode.decodeFirstHash, which expects a flush-pkt instead.
+	//
+	// This logic aligns with plumbing/transport/internal/common/common.go.
+	if ar.IsEmpty() &&
+		// Empty repositories are valid for git-receive-pack.
+		transport.ReceivePackServiceName != serviceName {
+		return nil, transport.ErrEmptyRemoteRepository
+	}
+
+	transport.FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advCaps = ar
+
+	return ar, nil
+}
+
 type client struct {
 	c          *http.Client
 	transports *lru.Cache
@@ -175,6 +226,7 @@ type session struct {
 	client   *http.Client
 	endpoint *transport.Endpoint
 	advRefs  *packp.AdvRefs
+	advCaps  *packp.AdvCaps
 }
 
 func transportWithInsecureTLS(transport *http.Transport) {

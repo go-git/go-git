@@ -141,17 +141,11 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 }
 
 func (s *upSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
-	ac := packp.NewAdvCaps()
-
-	if err := s.setSupportedCapabilities(ac.Capabilities); err != nil {
-		return nil, err
-	}
-
 	if s.asClient {
-		return nil, transport.ErrEmptyRemoteRepository
+		return nil, nil
 	}
 
-	return ac, nil
+	return packp.NewAdvCaps(), nil
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {

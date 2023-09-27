@@ -32,6 +32,14 @@ func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 	return advertisedReferences(ctx, s.session, transport.ReceivePackServiceName)
 }
 
+func (s *rpSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return advertisedCapabilities(context.TODO(), s.session, transport.ReceivePackServiceName)
+}
+
+func (s *rpSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	return advertisedCapabilities(ctx, s.session, transport.ReceivePackServiceName)
+}
+
 func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (
 	*packp.ReportStatus, error) {
 	url := fmt.Sprintf(

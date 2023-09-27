@@ -36,9 +36,16 @@ func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
 }
 
 func (s *UploadPackSuite) TestAdvertisedCapabilities(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
+	s.BaseSuite.prepareRepositories(c)
+	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
 	caps, err := r.AdvertisedCapabilities()
 	c.Assert(err, IsNil)
+	if s.asClient {
+		c.Assert(caps, IsNil)
+		return
+	}
 
 	caps.Capabilities.Add(capability.Fetch)
 	caps.Service = "git-upload-pack"
@@ -48,7 +55,7 @@ func (s *UploadPackSuite) TestAdvertisedCapabilities(c *C) {
 
 	exp := `001e# service=git-upload-pack
 0000000eversion 2
-0007fetch
+000afetch
 0000`
 
 	c.Assert(res.String(), Equals, exp)
@@ -65,6 +72,7 @@ var _ = Suite(&ClientLikeUploadPackSuite{})
 func (s *ClientLikeUploadPackSuite) SetUpSuite(c *C) {
 	s.asClient = true
 	s.UploadPackSuite.SetUpSuite(c)
+	s.UploadPackSuite.SetUpTest(c)
 }
 
 func (s *ClientLikeUploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {

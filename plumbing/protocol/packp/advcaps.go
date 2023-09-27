@@ -38,7 +38,7 @@ func (a *AdvCaps) Encode(w io.Writer) error {
 	pe.EncodeString("version 2\n")
 
 	for _, c := range a.Capabilities.All() {
-		pe.EncodeString(c.String())
+		pe.EncodeString(c.String() + "\n")
 	}
 
 	return pe.Flush()
@@ -53,7 +53,7 @@ func (a *AdvCaps) Decode(r io.Reader) error {
 	if i := strings.Index(f, "service="); i < 0 {
 		return fmt.Errorf("missing service indication")
 	} else {
-		a.Service = f[i+8:len(f)-1]
+		a.Service = f[i+8 : len(f)-1]
 	}
 
 	// scan flush
@@ -63,6 +63,6 @@ func (a *AdvCaps) Decode(r io.Reader) error {
 	}
 
 	// now read capabilities
-		
+
 	return nil
 }

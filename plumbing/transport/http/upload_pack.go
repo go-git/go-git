@@ -32,6 +32,14 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 	return advertisedReferences(ctx, s.session, transport.UploadPackServiceName)
 }
 
+func (s *upSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return advertisedCapabilities(context.TODO(), s.session, transport.UploadPackServiceName)
+}
+
+func (s *upSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	return advertisedCapabilities(ctx, s.session, transport.UploadPackServiceName)
+}
+
 func (s *upSession) UploadPack(
 	ctx context.Context, req *packp.UploadPackRequest,
 ) (*packp.UploadPackResponse, error) {
