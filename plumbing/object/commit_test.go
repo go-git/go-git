@@ -3,6 +3,7 @@ package object
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -197,6 +198,27 @@ func (s *SuiteCommit) TestPatchContext_ToNil(c *C) {
 }
 
 func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
+	pgpsignature := `-----BEGIN PGP SIGNATURE-----
+
+iQEcBAABAgAGBQJTZbQlAAoJEF0+sviABDDrZbQH/09PfE51KPVPlanr6q1v4/Ut
+LQxfojUWiLQdg2ESJItkcuweYg+kc3HCyFejeDIBw9dpXt00rY26p05qrpnG+85b
+hM1/PswpPLuBSr+oCIDj5GMC2r2iEKsfv2fJbNW8iWAXVLoWZRF8B0MfqX/YTMbm
+ecorc4iXzQu7tupRihslbNkfvfciMnSDeSvzCpWAHl7h8Wj6hhqePmLm9lAYqnKp
+8S5B/1SSQuEAjRZgI4IexpZoeKGVDptPHxLLS38fozsyi0QyDyzEgJxcJQVMXxVi
+RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
+=EFTF
+-----END PGP SIGNATURE-----
+`
+
+	tag := fmt.Sprintf(`object f000000000000000000000000000000000000000
+type commit
+tag change
+tagger Foo <foo@example.local> 1695827841 -0400
+
+change
+%s
+`, pgpsignature)
+
 	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
 	c.Assert(err, IsNil)
 	commits := []*Commit{
@@ -218,6 +240,29 @@ func (s *SuiteCommit) TestCommitEncodeDecodeIdempotent(c *C) {
 				plumbing.NewHash("f000000000000000000000000000000000000006"),
 				plumbing.NewHash("f000000000000000000000000000000000000007"),
 			},
+		},
+		{
+			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
+			Message:   "Testing mergetag\n\nHere, commit is not signed",
+			TreeHash:  plumbing.NewHash("f000000000000000000000000000000000000001"),
+			ParentHashes: []plumbing.Hash{
+				plumbing.NewHash("f000000000000000000000000000000000000002"),
+				plumbing.NewHash("f000000000000000000000000000000000000003"),
+			},
+			MergeTag: tag,
+		},
+		{
+			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Committer: Signature{Name: "Bar", Email: "bar@example.local", When: ts},
+			Message:   "Testing mergetag\n\nHere, commit is also signed",
+			TreeHash:  plumbing.NewHash("f000000000000000000000000000000000000001"),
+			ParentHashes: []plumbing.Hash{
+				plumbing.NewHash("f000000000000000000000000000000000000002"),
+				plumbing.NewHash("f000000000000000000000000000000000000003"),
+			},
+			MergeTag:     tag,
+			PGPSignature: pgpsignature,
 		},
 	}
 	for _, commit := range commits {
