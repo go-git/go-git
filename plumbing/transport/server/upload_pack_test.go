@@ -2,7 +2,10 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
@@ -59,6 +62,23 @@ func (s *UploadPackSuite) TestAdvertisedCapabilities(c *C) {
 0000`
 
 	c.Assert(res.String(), Equals, exp)
+}
+
+func (s *UploadPackSuite) TestLsRefs(c *C) {
+	s.BaseSuite.prepareRepositories(c)
+	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	req := &packp.CommandRequest{
+		Command: capability.LsRefs.String(), 
+		Args: capability.NewList(),
+	}
+	req.Args.Add("ref-prefix", "refs/heads/main")
+
+	res, err := r.CommandHandler(context.TODO(), req)
+	c.Assert(err, IsNil)
+
+	c.Assert(res.Refs, DeepEquals, []plumbing.Reference{})
 }
 
 // Tests server with `asClient = true`. This is recommended when using a server

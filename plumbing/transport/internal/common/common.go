@@ -297,6 +297,16 @@ func (s *session) handleAdvCapsDecodeError(err error) error {
 
 	return err
 }
+func (s *session) CommandHandler(ctx context.Context, req *packp.CommandRequest) (*packp.CommandResponse, error) {
+	if req.Command != capability.LsRefs.String() {
+		return nil, fmt.Errorf("unsupported command")
+	}
+
+	// grab wanted refs
+	refs := req.Args.Get("ref-prefix")
+	println("wants", refs)
+	return nil, nil
+}
 
 // UploadPack performs a request to the server to fetch a packfile. A reader is
 // returned with the packfile content. The reader must be closed after reading.

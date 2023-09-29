@@ -29,6 +29,10 @@ var (
 	Flush = []byte{}
 	// FlushString is the payload to use with the EncodeString method to encode a flush-pkt.
 	FlushString = ""
+	// DelimPkt is the delimiter packet
+	DelimPkt = []byte{'0', '0', '0', '1'}
+	// Delim is the payload of a delimpkt
+	Delim = []byte{'0'}
 	// ErrPayloadTooLong is returned by the Encode methods when any of the
 	// provided payloads is bigger than MaxPayloadSize.
 	ErrPayloadTooLong = errors.New("payload is too long")

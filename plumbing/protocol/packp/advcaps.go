@@ -52,7 +52,7 @@ func (a *AdvCaps) Encode(w io.Writer) error {
 func (a *AdvCaps) Decode(r io.Reader) error {
 	s := pktline.NewScanner(r)
 
-	// decode # service=<service>LF
+	// decode # SP service=<service> LF
 	s.Scan()
 	f := string(s.Bytes())
 	if i := strings.Index(f, "service="); i < 0 {
@@ -63,11 +63,33 @@ func (a *AdvCaps) Decode(r io.Reader) error {
 
 	// scan flush
 	s.Scan()
-	if string(s.Bytes()) != "0000" {
+	if !isFlush(s.Bytes()) {
 		return fmt.Errorf("missing flush after service indication")
 	}
 
+	// now version LF
+	s.Scan()
+	if string(s.Bytes()) != "version 2\n" {
+		return fmt.Errorf("missing version after flush")
+	}
+
 	// now read capabilities
+	for s.Scan(); !isFlush(s.Bytes()); {
+		if sp := strings.Split(string(s.Bytes()), "="); len(sp) == 2 {
+			a.Capabilities.Add(capability.Capability((sp[0])))
+		} else {
+			a.Capabilities.Add(
+				capability.Capability(sp[0]),
+				strings.Split(sp[1], " ")...,
+			)
+		}
+	}
+
+	// read final flush
+	s.Scan()
+	if !isFlush(s.Bytes()) {
+		return fmt.Errorf("missing flush after capability")
+	}
 
 	return nil
 }

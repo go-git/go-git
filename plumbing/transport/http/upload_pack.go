@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
 	"github.com/go-git/go-git/v5/utils/ioutil"
@@ -78,6 +79,17 @@ func (s *upSession) UploadPack(
 
 	rc := ioutil.NewReadCloser(r, res.Body)
 	return common.DecodeUploadPackResponse(rc, req)
+}
+
+func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandRequest) (*packp.CommandResponse, error) {
+	if req.Command != capability.LsRefs.String() {
+		return nil, fmt.Errorf("unsupported command")
+	}
+
+	// grab wanted refs
+	refs := req.Args.Get("ref-prefix")
+	println("wants", refs)
+	return nil, nil
 }
 
 // Close does nothing.

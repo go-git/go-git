@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -211,6 +212,37 @@ func (*upSession) setSupportedCapabilities(c *capability.List) error {
 	}
 
 	return nil
+}
+
+func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandRequest) (*packp.CommandResponse, error) {
+	res := &packp.CommandResponse{
+		Refs:         []plumbing.Reference{},
+		Command:      "",
+		Capabilities: &capability.List{},
+		Args:         &capability.List{},
+	}
+	if req.Command != capability.LsRefs.String() {
+		return nil, fmt.Errorf("unsupported command")
+	}
+
+	// grab wanted refs
+	refs := req.Args.Get("ref-prefix")
+	iter, err := s.storer.IterReferences()
+	if err != nil {
+		return res, err
+	}
+
+	iter.ForEach(func(r *plumbing.Reference) error {
+		println(r.String())
+		for _, ref := range refs {
+			if strings.HasPrefix(r.Name().String(), ref) {
+				res.Refs = append(res.Refs, *r)
+			}
+		}
+		return nil
+	})
+
+	return res, nil
 }
 
 type rpSession struct {

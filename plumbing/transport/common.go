@@ -86,6 +86,9 @@ type UploadPackSession interface {
 	// side of a git-upload-pack is called git-fetch-pack, although here
 	// the same interface is used to make it RPC-like.
 	UploadPack(context.Context, *packp.UploadPackRequest) (*packp.UploadPackResponse, error)
+	// Command is used for git protocol v2, it reads a command request and
+	// generates the response for that command.
+	CommandHandler(context.Context, *packp.CommandRequest) (*packp.CommandResponse, error)
 }
 
 // ReceivePackSession represents a git-receive-pack session.
