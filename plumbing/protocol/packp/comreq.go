@@ -10,6 +10,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 )
 
+const (
+	symRefAttr = "symref-target:"
+)
+
 // CommandRequest values represent the information transmitted on a
 // command request message used in wire protocol v2. Values from this type
 // are not zero-value safe, use the New function instead.
@@ -111,7 +115,14 @@ type CommandResponse struct {
 func (res *CommandResponse) Encode(w io.Writer) error {
 	pe := pktline.NewEncoder(w)
 	for _, r := range res.Refs {
-		pe.EncodeString(r.String() + "\n")
+		switch r.Type() {
+		case plumbing.SymbolicReference:
+			pe.EncodeString(r.Hash().String() + " " + r.Name().String() + " " + symRefAttr + " " + r.Target().String() + "\n")
+		case plumbing.HashReference:
+			pe.EncodeString(r.Hash().String() + " " + r.Name().String() + "\n")
+		default:
+			return fmt.Errorf("unreckognized reference type")
+		}
 	}
 
 	return pe.Flush()
