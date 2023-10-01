@@ -178,3 +178,10 @@ signed tag`),
 		})
 	}
 }
+
+func FuzzParseSignedBytes(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+		parseSignedBytes(input)
+	})
+}

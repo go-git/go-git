@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"testing"
 
 	. "gopkg.in/check.v1"
 )
@@ -90,4 +91,14 @@ func decodeFails(c *C, text string) {
 	cfg := &Config{}
 	err := d.Decode(cfg)
 	c.Assert(err, NotNil)
+}
+
+func FuzzDecoder(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+
+		d := NewDecoder(bytes.NewReader(input))
+		cfg := &Config{}
+		d.Decode(cfg)
+	})
 }

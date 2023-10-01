@@ -3,6 +3,7 @@ package revision
 import (
 	"bytes"
 	"regexp"
+	"testing"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -396,4 +397,12 @@ func (s *ParserSuite) TestParseRefWithInvalidName(c *C) {
 
 		c.Assert(err, DeepEquals, e)
 	}
+}
+
+func FuzzParser(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input string) {
+		parser := NewParser(bytes.NewBufferString(input))
+		parser.Parse()
+	})
 }

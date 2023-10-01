@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"math/rand"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	. "gopkg.in/check.v1"
@@ -175,4 +176,15 @@ func (s *DeltaSuite) TestMaxCopySizeDeltaReader(c *C) {
 	err = resultRC.Close()
 	c.Assert(err, IsNil)
 	c.Assert(result, DeepEquals, targetBuf)
+}
+
+func FuzzPatchDelta(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+
+		input_0 := input[:len(input)/2]
+		input_1 := input[len(input)/2:]
+
+		PatchDelta(input_0, input_1)
+	})
 }
