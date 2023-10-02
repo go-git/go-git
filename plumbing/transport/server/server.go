@@ -216,31 +216,54 @@ func (*upSession) setSupportedCapabilities(c *capability.List) error {
 
 func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandRequest) (*packp.CommandResponse, error) {
 	res := &packp.CommandResponse{
-		Refs:         []plumbing.Reference{},
-		Command:      "",
-		Capabilities: &capability.List{},
-		Args:         &capability.List{},
-	}
-	if req.Command != capability.LsRefs.String() {
-		return nil, fmt.Errorf("unsupported command")
+		Command:      req.Command,
+		Refs:         []*plumbing.Reference{},
+		Capabilities: capability.NewList(),
+		Args:         capability.NewList(),
 	}
 
-	// grab wanted refs
-	refs := req.Args.Get("ref-prefix")
-	iter, err := s.storer.IterReferences()
-	if err != nil {
-		return res, err
-	}
+	switch req.Command {
+	case capability.LsRefs.String():
+		advRefs, err := s.AdvertisedReferences()
+		if err != nil {
+			return res, err
+		}
 
-	iter.ForEach(func(r *plumbing.Reference) error {
-		println(r.String())
-		for _, ref := range refs {
-			if strings.HasPrefix(r.Name().String(), ref) {
-				res.Refs = append(res.Refs, *r)
+		// grab wanted refs
+		refs := req.Args.Get("ref-prefix")
+		for r, h := range advRefs.References {
+			for _, ref := range refs {
+				if strings.HasPrefix(r, ref) {
+					n := plumbing.NewReferenceFromStrings(r, h.String())
+					res.Refs = append( res.Refs, n)
+				}
 			}
 		}
-		return nil
-	})
+	case capability.Fetch.String():
+		// done changes the response so it must be passed if present
+		if req.Args.Supports("done") {
+			res.Args.Add("done")
+		}
+
+		// grab wanted hashes
+		refs := req.Args.Get("want")
+		res.Wants = make([]plumbing.Hash, len(refs))
+		for i, r := range refs {
+			res.Wants[i] = plumbing.NewHash(r)
+		}
+
+		// get wanted hashes
+		var err error
+		res.Haves, err = revlist.Objects(s.storer, res.Wants, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// pass storer (seems easier)
+		res.Storer = s.storer
+	default:
+		return nil, fmt.Errorf("unsuported command")
+	}
 
 	return res, nil
 }
