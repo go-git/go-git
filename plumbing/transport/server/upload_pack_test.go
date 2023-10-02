@@ -64,21 +64,37 @@ func (s *UploadPackSuite) TestAdvertisedCapabilities(c *C) {
 	c.Assert(res.String(), Equals, exp)
 }
 
-func (s *UploadPackSuite) TestLsRefs(c *C) {
+func (s *UploadPackSuite) TestLsRefsEmpty(c *C) {
 	s.BaseSuite.prepareRepositories(c)
-	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
 	req := &packp.CommandRequest{
-		Command: capability.LsRefs.String(), 
-		Args: capability.NewList(),
+		Command: capability.LsRefs.String(),
+		Args:    capability.NewList(),
+	}
+
+	res, err := r.CommandHandler(context.TODO(), req)
+	c.Assert(err, IsNil)
+
+	c.Assert(res.Refs, DeepEquals, []*plumbing.Reference{})
+}
+
+func (s *UploadPackSuite) TestLsRefs(c *C) {
+	s.BaseSuite.prepareRepositories(c)
+	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
+	c.Assert(err, IsNil)
+
+	req := &packp.CommandRequest{
+		Command: capability.LsRefs.String(),
+		Args:    capability.NewList(),
 	}
 	req.Args.Add("ref-prefix", "refs/heads/main")
 
 	res, err := r.CommandHandler(context.TODO(), req)
 	c.Assert(err, IsNil)
 
-	c.Assert(res.Refs, DeepEquals, []plumbing.Reference{})
+	c.Assert(res.Refs, DeepEquals, []*plumbing.Reference{})
 }
 
 // Tests server with `asClient = true`. This is recommended when using a server
