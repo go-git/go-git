@@ -1,0 +1,31 @@
+name: "stale issues bot"
+on:
+  schedule:
+  - cron: "0 7 * * *"
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale-bot:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/stale@v8
+      with:
+        ascending: true
+        operations-per-run: 30
+        days-before-stale: 90
+        days-before-close: 30
+        stale-issue-label: stale
+        stale-pr-label: stale
+        exempt-issue-labels: no-autoclose
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        stale-issue-message: |
+          To help us keep things tidy and focus on the active tasks, we've introduced a stale bot to spot issues/PRs that haven't had any activity in a while.
+
+          This particular issue hasn't had any updates or activity in the past 90 days, so it's been labeled as 'stale'. If it remains inactive for the next 30 days, it'll be automatically closed.
+
+          We understand everyone's busy, but if this issue is still important to you, please feel free to add a comment or make an update to keep it active. 
+
+          Thanks for your understanding and cooperation!

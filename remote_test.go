@@ -196,7 +196,7 @@ func (s *RemoteSuite) TestFetchToNewBranchWithAllTags(c *C) {
 	})
 }
 
-func (s *RemoteSuite) TestFetchNonExistantReference(c *C) {
+func (s *RemoteSuite) TestFetchNonExistentReference(c *C) {
 	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})

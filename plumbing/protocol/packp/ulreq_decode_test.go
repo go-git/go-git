@@ -398,7 +398,7 @@ func (s *UlReqDecodeSuite) TestDeepenCommits(c *C) {
 	c.Assert(int(commits), Equals, 1234)
 }
 
-func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteInplicit(c *C) {
+func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteImplicit(c *C) {
 	payloads := []string{
 		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
 		"deepen 0",

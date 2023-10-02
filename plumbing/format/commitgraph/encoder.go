@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"crypto"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -30,7 +31,7 @@ func (e *Encoder) Encode(idx Index) error {
 	hashToIndex, fanout, extraEdgesCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{oidFanoutSignature, oidLookupSignature, commitDataSignature}
-	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * hash.Size, uint64(len(hashes)) * 36}
+	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * hash.Size, uint64(len(hashes)) * (hash.Size + commitDataSize)}
 	if extraEdgesCount > 0 {
 		chunkSignatures = append(chunkSignatures, extraEdgeListSignature)
 		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*4)
@@ -88,7 +89,11 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 	if _, err = e.Write(commitFileSignature); err == nil {
-		_, err = e.Write([]byte{1, 1, byte(chunkCount), 0})
+		version := byte(1)
+		if hash.CryptoType == crypto.SHA256 {
+			version = byte(2)
+		}
+		_, err = e.Write([]byte{1, version, byte(chunkCount), 0})
 	}
 	return
 }
