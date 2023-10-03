@@ -1,6 +1,8 @@
 package fsnoder
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
 
 	. "gopkg.in/check.v1"
@@ -351,4 +353,11 @@ func (s *FSNoderSuite) TestHashEqual(c *C) {
 
 	c.Assert(HashEqual(t3, t1), Equals, false)
 	c.Assert(HashEqual(t1, t3), Equals, false)
+}
+
+func FuzzDecodeFile(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+		decodeFile(input)
+	})
 }

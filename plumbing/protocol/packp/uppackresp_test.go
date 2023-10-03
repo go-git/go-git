@@ -3,6 +3,7 @@ package packp
 import (
 	"bytes"
 	"io"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -127,4 +128,15 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), NotNil)
+}
+
+func FuzzDecoder(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+		req := NewUploadPackRequest()
+		res := NewUploadPackResponse(req)
+		defer res.Close()
+
+		res.Decode(io.NopCloser(bytes.NewReader(input)))
+	})
 }

@@ -210,3 +210,10 @@ func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
 	c.Assert(e.Host, Equals, "[::1]")
 	c.Assert(e.String(), Equals, "http://[::1]:8080/foo.git")
 }
+
+func FuzzNewEndpoint(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input string) {
+		NewEndpoint(input)
+	})
+}

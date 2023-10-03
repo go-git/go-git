@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -1622,4 +1623,20 @@ func (s *TreeSuite) TestTreeDecodeReadBug(c *C) {
 	err := obtained.Decode(obj)
 	c.Assert(err, IsNil)
 	c.Assert(entriesEquals(obtained.Entries, expected.Entries), Equals, true)
+}
+
+func FuzzDecode(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+
+		obj := &SortReadObject{
+			t:    plumbing.TreeObject,
+			h:    plumbing.ZeroHash,
+			cont: input,
+			sz:   int64(len(input)),
+		}
+
+		newTree := &Tree{}
+		newTree.Decode(obj)
+	})
 }
