@@ -17,18 +17,24 @@ import (
 )
 
 const (
-	beginpgp  string = "-----BEGIN PGP SIGNATURE-----"
-	endpgp    string = "-----END PGP SIGNATURE-----"
-	headerpgp string = "gpgsig"
+	beginpgp       string = "-----BEGIN PGP SIGNATURE-----"
+	endpgp         string = "-----END PGP SIGNATURE-----"
+	headerpgp      string = "gpgsig"
+	headerencoding string = "encoding"
 
 	// https://github.com/git/git/blob/bcb6cae2966cc407ca1afc77413b3ef11103c175/Documentation/gitformat-signature.txt#L153
 	// When a merge commit is created from a signed tag, the tag is embedded in
 	// the commit with the "mergetag" header.
 	headermergetag string = "mergetag"
+
+	defaultUtf8CommitMesageEncoding MessageEncoding = "UTF-8"
 )
 
 // Hash represents the hash of an object
 type Hash plumbing.Hash
+
+// MessageEncoding represents the encoding of a commit
+type MessageEncoding string
 
 // Commit points to a single tree, marking it as what the project looked like
 // at a certain point in time. It contains meta-information about that point
@@ -54,6 +60,8 @@ type Commit struct {
 	TreeHash plumbing.Hash
 	// ParentHashes are the hashes of the parent commits of the commit.
 	ParentHashes []plumbing.Hash
+	// Encoding is the encoding of the commit.
+	Encoding MessageEncoding
 
 	s storer.EncodedObjectStorer
 }
@@ -181,6 +189,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	}
 
 	c.Hash = o.Hash()
+	c.Encoding = defaultUtf8CommitMesageEncoding
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -247,6 +256,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			case headermergetag:
 				c.MergeTag += string(data) + "\n"
 				mergetag = true
+			case headerencoding:
+				c.Encoding = MessageEncoding(data)
 			case headerpgp:
 				c.PGPSignature += string(data) + "\n"
 				pgpsig = true
@@ -320,6 +331,12 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		mergetag := strings.TrimSuffix(c.MergeTag, "\n")
 		lines := strings.Split(mergetag, "\n")
 		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+			return err
+		}
+	}
+
+	if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMesageEncoding {
+		if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
 			return err
 		}
 	}
