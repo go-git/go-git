@@ -45,10 +45,9 @@ clean:
 
 fuzz:
 	@go test -fuzz=FuzzParser				$(PWD)/internal/revision
-	@go test -fuzz=FuzzParseSignedByte		$(PWD)/plumbing/object
-	@go test -fuzz=FuzzDecode				$(PWD)/plumbing/object
-	@go test -fuzz=FuzzNewEndpoint			$(PWD)/plumbing/transport
-	@go test -fuzz=FuzzDecoder				$(PWD)/plumbing/protocol/packp
 	@go test -fuzz=FuzzDecoder				$(PWD)/plumbing/format/config
 	@go test -fuzz=FuzzPatchDelta			$(PWD)/plumbing/format/packfile
-	@go test -fuzz=FuzzDecodeFile			$(PWD)/utils/merkletrie/internal/fsnoder
+	@go test -fuzz=FuzzParseSignedBytes		$(PWD)/plumbing/object
+	@go test -fuzz=FuzzDecode				$(PWD)/plumbing/object
+	@go test -fuzz=FuzzDecoder				$(PWD)/plumbing/protocol/packp
+	@go test -fuzz=FuzzNewEndpoint			$(PWD)/plumbing/transport
