@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -789,6 +790,101 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Branches, HasLen, 1)
 	c.Assert(cfg.Branches["master"].Name, Equals, "master")
+}
+
+func (s *RepositorySuite) TestPlainCloneBareAndShared(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	remote := s.GetBasicLocalRepositoryURL()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
+		URL:    remote,
+		Shared: true,
+	})
+	c.Assert(err, IsNil)
+
+	altpath := path.Join(dir, "objects", "info", "alternates")
+	_, err = os.Stat(altpath)
+	c.Assert(err, IsNil)
+
+	data, err := os.ReadFile(altpath)
+	c.Assert(err, IsNil)
+
+	line := path.Join(remote, GitDirName, "objects") + "\n"
+	c.Assert(string(data), Equals, line)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["master"].Name, Equals, "master")
+}
+
+func (s *RepositorySuite) TestPlainCloneShared(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	remote := s.GetBasicLocalRepositoryURL()
+
+	r, err := PlainClone(dir, false, &CloneOptions{
+		URL:    remote,
+		Shared: true,
+	})
+	c.Assert(err, IsNil)
+
+	altpath := path.Join(dir, GitDirName, "objects", "info", "alternates")
+	_, err = os.Stat(altpath)
+	c.Assert(err, IsNil)
+
+	data, err := os.ReadFile(altpath)
+	c.Assert(err, IsNil)
+
+	line := path.Join(remote, GitDirName, "objects") + "\n"
+	c.Assert(string(data), Equals, line)
+
+	cfg, err := r.Config()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Branches, HasLen, 1)
+	c.Assert(cfg.Branches["master"].Name, Equals, "master")
+}
+
+func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	remote := "http://somerepo"
+
+	_, err := PlainClone(dir, false, &CloneOptions{
+		URL:    remote,
+		Shared: true,
+	})
+	c.Assert(err, Equals, ErrAlternatePathNotSupported)
+}
+
+func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	remote := "https://somerepo"
+
+	_, err := PlainClone(dir, false, &CloneOptions{
+		URL:    remote,
+		Shared: true,
+	})
+	c.Assert(err, Equals, ErrAlternatePathNotSupported)
+}
+
+func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError(c *C) {
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	remote := "ssh://somerepo"
+
+	_, err := PlainClone(dir, false, &CloneOptions{
+		URL:    remote,
+		Shared: true,
+	})
+	c.Assert(err, Equals, ErrAlternatePathNotSupported)
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {

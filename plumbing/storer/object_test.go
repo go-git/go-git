@@ -168,3 +168,7 @@ func (o *MockObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (EncodedOb
 func (o *MockObjectStorage) Begin() Transaction {
 	return nil
 }
+
+func (o *MockObjectStorage) AddAlternate(remote string) error {
+	return nil
+}
