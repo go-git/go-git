@@ -29,8 +29,10 @@ var (
 	Flush = []byte{}
 	// FlushString is the payload to use with the EncodeString method to encode a flush-pkt.
 	FlushString = ""
-	// DelimPkt is the delimiter packet
+	// DelimPkt is the delimiter packet used in v2
 	DelimPkt = []byte{'0', '0', '0', '1'}
+	// EndPkt is the end packet used in v2
+	EndPkt = []byte{'0', '0', '0', '2'}
 	// Delim is the payload of a delimpkt
 	Delim = []byte{'0'}
 	// ErrPayloadTooLong is returned by the Encode methods when any of the
@@ -51,6 +53,17 @@ func (e *Encoder) Flush() error {
 	return err
 }
 
+// Delim encodes a delim-pkt to the output stream.
+func (e *Encoder) Delim() error {
+	_, err := e.w.Write(DelimPkt)
+	return err
+}
+
+// End encodes an end-pkt to the output stream.
+func (e *Encoder) End() error {
+	_, err := e.w.Write(EndPkt)
+	return err
+}
 // Encode encodes a pkt-line with the payload specified and write it to
 // the output stream.  If several payloads are specified, each of them
 // will get streamed in their own pkt-lines.

@@ -235,7 +235,7 @@ func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandReques
 			for _, ref := range refs {
 				if strings.HasPrefix(r, ref) {
 					n := plumbing.NewReferenceFromStrings(r, h.String())
-					res.Refs = append( res.Refs, n)
+					res.Refs = append(res.Refs, n)
 				}
 			}
 		}
@@ -247,17 +247,43 @@ func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandReques
 
 		// grab wanted hashes
 		refs := req.Args.Get("want")
-		res.Wants = make([]plumbing.Hash, len(refs))
+		wants := make([]plumbing.Hash, len(refs))
 		for i, r := range refs {
-			res.Wants[i] = plumbing.NewHash(r)
+			wants[i] = plumbing.NewHash(r)
 		}
 
-		// get wanted hashes
+		// grab wanted hashes
+		reqHaves := req.Args.Get("have")
+		haves := make([]plumbing.Hash, len(reqHaves))
+		for i, r := range reqHaves {
+			haves[i] = plumbing.NewHash(r)
+		}
+
 		var err error
-		res.Haves, err = revlist.Objects(s.storer, res.Wants, nil)
+		res.Haves, err = revlist.Objects(s.storer, haves, nil)
 		if err != nil {
 			return nil, err
 		}
+
+		res.Wants, err = revlist.Objects(s.storer, wants, res.Haves)
+		if err != nil {
+			return nil, err
+		}
+
+		// just the common haves
+		seen := map[string]struct{}{}
+		for _, h := range haves {
+			seen[h.String()] = struct{}{}
+		}
+
+
+		commons := make([]plumbing.Hash, 0, len(haves))
+		for _, h := range res.Haves {
+			if _, ok := seen[h.String()]; ok {
+				commons = append(commons, h)
+			}
+		}
+		res.Haves = commons
 
 		// pass storer (seems easier)
 		res.Storer = s.storer

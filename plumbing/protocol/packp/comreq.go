@@ -15,7 +15,7 @@ import (
 
 const (
 	symRefAttr = "symref-target:"
-	acksLine   = "acknowledgements\n"
+	acksLine   = "acknowledgments\n"
 	packLine   = "packfile\n"
 )
 
@@ -143,21 +143,29 @@ func (res *CommandResponse) Encode(w io.Writer) error {
 		}
 
 		// if done was sent skip acks section
-		if res.Args.Supports("done") {
-			ple.EncodeString(packLine)
-			if len(res.Haves) > 0 {
+		if len(res.Haves) > 0 {
+			if res.Args.Supports("done") {
+				ple.EncodeString(packLine)
 				pack := &bytes.Buffer{}
 				pke := packfile.NewEncoder(pack, res.Storer, false)
-				_, err := pke.Encode(res.Haves, delta)
+				_, err := pke.Encode(res.Wants, delta)
 				if err != nil {
 					return err
 				}
 				ple.Encode(append([]byte{1}, pack.Bytes()...))
+			} else {
+				ple.EncodeString(acksLine)
+				for _, h := range res.Haves {
+					ple.EncodeString(string(ack) + " " + h.String() + "\n")
+				}
 			}
 		} else {
 			ple.EncodeString(acksLine)
+			ple.Delim()
+			ple.Encode(append(nak, '\n'))
 		}
 	}
 
 	return ple.Flush()
+
 }
