@@ -34,14 +34,23 @@ var (
 )
 
 const (
-	commitDataSize = 16
+	szUint32 = 4
+	szUint64 = 8
+
+	szSignature  = 4
+	szHeader     = 4
+	szCommitData = 2*szUint32 + szUint64
+
+	lenFanout = 256
 )
 
 type fileIndex struct {
-	reader  ReaderAtCloser
-	fanout  [256]uint32
-	offsets [9]int64
-	parent  Index
+	reader                ReaderAtCloser
+	fanout                [lenFanout]uint32
+	offsets               [lenChunks]int64
+	parent                Index
+	hasGenerationV2       bool
+	minimumNumberOfHashes uint32
 }
 
 // ReaderAtCloser is an interface that combines io.ReaderAt and io.Closer.
@@ -74,6 +83,15 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 		return nil, err
 	}
 
+	fi.hasGenerationV2 = fi.offsets[GenerationDataChunk] > 0
+	if fi.parent != nil {
+		fi.hasGenerationV2 = fi.hasGenerationV2 && fi.parent.HasGenerationV2()
+	}
+
+	if fi.parent != nil {
+		fi.minimumNumberOfHashes = fi.parent.MaximumNumberOfHashes()
+	}
+
 	return fi, nil
 }
 
@@ -94,7 +112,7 @@ func (fi *fileIndex) Close() (err error) {
 
 func (fi *fileIndex) verifyFileHeader() error {
 	// Verify file signature
-	signature := make([]byte, 4)
+	signature := make([]byte, szSignature)
 	if _, err := fi.reader.ReadAt(signature, 0); err != nil {
 		return err
 	}
@@ -103,8 +121,8 @@ func (fi *fileIndex) verifyFileHeader() error {
 	}
 
 	// Read and verify the file header
-	header := make([]byte, 4)
-	if _, err := fi.reader.ReadAt(header, 4); err != nil {
+	header := make([]byte, szHeader)
+	if _, err := fi.reader.ReadAt(header, szHeader); err != nil {
 		return err
 	}
 	if header[0] != 1 {
@@ -120,10 +138,11 @@ func (fi *fileIndex) verifyFileHeader() error {
 }
 
 func (fi *fileIndex) readChunkHeaders() error {
-	chunkID := make([]byte, 4)
+	// The chunk table is a list of 4-byte chunk signatures and uint64 offsets into the file
+	chunkID := make([]byte, szChunkSig)
 	for i := 0; ; i++ {
-		chunkHeader := io.NewSectionReader(fi.reader, 8+(int64(i)*12), 12)
-		if _, err := io.ReadAtLeast(chunkHeader, chunkID, 4); err != nil {
+		chunkHeader := io.NewSectionReader(fi.reader, szSignature+szHeader+(int64(i)*(szChunkSig+szUint64)), szChunkSig+szUint64)
+		if _, err := io.ReadAtLeast(chunkHeader, chunkID, szChunkSig); err != nil {
 			return err
 		}
 		chunkOffset, err := binary.ReadUint64(chunkHeader)
@@ -149,7 +168,9 @@ func (fi *fileIndex) readChunkHeaders() error {
 }
 
 func (fi *fileIndex) readFanout() error {
-	fanoutReader := io.NewSectionReader(fi.reader, fi.offsets[OIDFanoutChunk], 256*4)
+	// The Fanout table is a 256 entry table of the number (as uint32) of OIDs with first byte at most i.
+	// Thus F[255] stores the total number of commits (N)
+	fanoutReader := io.NewSectionReader(fi.reader, fi.offsets[OIDFanoutChunk], lenFanout*szUint32)
 	for i := 0; i < 256; i++ {
 		fanoutValue, err := binary.ReadUint32(fanoutReader)
 		if err != nil {
@@ -185,7 +206,7 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 		if cmp < 0 {
 			high = mid
 		} else if cmp == 0 {
-			return mid, nil
+			return mid + fi.minimumNumberOfHashes, nil
 		} else {
 			low = mid + 1
 		}
@@ -196,7 +217,7 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 		if err != nil {
 			return 0, err
 		}
-		return idx + fi.fanout[0xff], nil
+		return idx, nil
 	}
 
 	return 0, plumbing.ErrObjectNotFound
@@ -204,23 +225,24 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 
 // GetCommitDataByIndex returns the commit data for the given index in the commit-graph.
 func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
-	if idx >= fi.fanout[0xff] {
+	if idx < fi.minimumNumberOfHashes {
 		if fi.parent != nil {
-			data, err := fi.parent.GetCommitDataByIndex(idx - fi.fanout[0xff])
+			data, err := fi.parent.GetCommitDataByIndex(idx)
 			if err != nil {
 				return nil, err
-			}
-			for i := range data.ParentIndexes {
-				data.ParentIndexes[i] += fi.fanout[0xff]
 			}
 			return data, nil
 		}
 
 		return nil, plumbing.ErrObjectNotFound
 	}
+	idx -= fi.minimumNumberOfHashes
+	if idx >= fi.fanout[0xff] {
+		return nil, plumbing.ErrObjectNotFound
+	}
 
-	offset := fi.offsets[CommitDataChunk] + int64(idx)*(hash.Size+commitDataSize)
-	commitDataReader := io.NewSectionReader(fi.reader, offset, hash.Size+commitDataSize)
+	offset := fi.offsets[CommitDataChunk] + int64(idx)*(hash.Size+szCommitData)
+	commitDataReader := io.NewSectionReader(fi.reader, offset, hash.Size+szCommitData)
 
 	treeHash, err := binary.ReadHash(commitDataReader)
 	if err != nil {
@@ -241,10 +263,11 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 
 	var parentIndexes []uint32
 	if parent2&parentOctopusUsed == parentOctopusUsed {
-		// Octopus merge
+		// Octopus merge - Look-up the extra parents from the extra edge list
+		// The extra edge list is a list of uint32s, each of which is an index into the Commit Data table, terminated by a index with the most significant bit on.
 		parentIndexes = []uint32{parent1 & parentOctopusMask}
-		offset := fi.offsets[ExtraEdgeListChunk] + 4*int64(parent2&parentOctopusMask)
-		buf := make([]byte, 4)
+		offset := fi.offsets[ExtraEdgeListChunk] + szUint32*int64(parent2&parentOctopusMask)
+		buf := make([]byte, szUint32)
 		for {
 			_, err := fi.reader.ReadAt(buf, offset)
 			if err != nil {
@@ -252,7 +275,7 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 			}
 
 			parent := encbin.BigEndian.Uint32(buf)
-			offset += 4
+			offset += szUint32
 			parentIndexes = append(parentIndexes, parent&parentOctopusMask)
 			if parent&parentLast == parentLast {
 				break
@@ -269,21 +292,55 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 		return nil, err
 	}
 
+	generationV2 := uint64(0)
+
+	if fi.hasGenerationV2 {
+		// set the GenerationV2 result to the commit time
+		generationV2 = uint64(genAndTime & 0x3FFFFFFFF)
+
+		// Next read the generation (offset) data from the generation data chunk
+		offset := fi.offsets[GenerationDataChunk] + int64(idx)*szUint32
+		buf := make([]byte, szUint32)
+		if _, err := fi.reader.ReadAt(buf, offset); err != nil {
+			return nil, err
+		}
+		genV2Data := encbin.BigEndian.Uint32(buf)
+
+		// check if the data is an overflow that needs to be looked up in the overflow chunk
+		if genV2Data&0x80000000 > 0 {
+			// Overflow
+			offset := fi.offsets[GenerationDataOverflowChunk] + int64(genV2Data&0x7fffffff)*szUint64
+			buf := make([]byte, 8)
+			if _, err := fi.reader.ReadAt(buf, offset); err != nil {
+				return nil, err
+			}
+
+			generationV2 += encbin.BigEndian.Uint64(buf)
+		} else {
+			generationV2 += uint64(genV2Data)
+		}
+	}
+
 	return &CommitData{
 		TreeHash:      treeHash,
 		ParentIndexes: parentIndexes,
 		ParentHashes:  parentHashes,
 		Generation:    genAndTime >> 34,
+		GenerationV2:  generationV2,
 		When:          time.Unix(int64(genAndTime&0x3FFFFFFFF), 0),
 	}, nil
 }
 
 // GetHashByIndex looks up the hash for the given index in the commit-graph.
 func (fi *fileIndex) GetHashByIndex(idx uint32) (found plumbing.Hash, err error) {
-	if idx >= fi.fanout[0xff] {
+	if idx < fi.minimumNumberOfHashes {
 		if fi.parent != nil {
-			return fi.parent.GetHashByIndex(idx - fi.fanout[0xff])
+			return fi.parent.GetHashByIndex(idx)
 		}
+		return found, ErrMalformedCommitGraphFile
+	}
+	idx -= fi.minimumNumberOfHashes
+	if idx >= fi.fanout[0xff] {
 		return found, ErrMalformedCommitGraphFile
 	}
 
@@ -299,9 +356,9 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 	hashes := make([]plumbing.Hash, len(indexes))
 
 	for i, idx := range indexes {
-		if idx >= fi.fanout[0xff] {
+		if idx < fi.minimumNumberOfHashes {
 			if fi.parent != nil {
-				hash, err := fi.parent.GetHashByIndex(idx - fi.fanout[0xff])
+				hash, err := fi.parent.GetHashByIndex(idx)
 				if err != nil {
 					return nil, err
 				}
@@ -309,6 +366,11 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 				continue
 			}
 
+			return nil, ErrMalformedCommitGraphFile
+		}
+
+		idx -= fi.minimumNumberOfHashes
+		if idx >= fi.fanout[0xff] {
 			return nil, ErrMalformedCommitGraphFile
 		}
 
@@ -323,16 +385,28 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 
 // Hashes returns all the hashes that are available in the index.
 func (fi *fileIndex) Hashes() []plumbing.Hash {
-	hashes := make([]plumbing.Hash, fi.fanout[0xff])
+	hashes := make([]plumbing.Hash, fi.fanout[0xff]+fi.minimumNumberOfHashes)
+	for i := uint32(0); i < fi.minimumNumberOfHashes; i++ {
+		hash, err := fi.parent.GetHashByIndex(i)
+		if err != nil {
+			return nil
+		}
+		hashes[i] = hash
+	}
+
 	for i := uint32(0); i < fi.fanout[0xff]; i++ {
 		offset := fi.offsets[OIDLookupChunk] + int64(i)*hash.Size
-		if n, err := fi.reader.ReadAt(hashes[i][:], offset); err != nil || n < hash.Size {
+		if n, err := fi.reader.ReadAt(hashes[i+fi.minimumNumberOfHashes][:], offset); err != nil || n < hash.Size {
 			return nil
 		}
 	}
-	if fi.parent != nil {
-		parentHashes := fi.parent.Hashes()
-		hashes = append(hashes, parentHashes...)
-	}
 	return hashes
+}
+
+func (fi *fileIndex) HasGenerationV2() bool {
+	return fi.hasGenerationV2
+}
+
+func (fi *fileIndex) MaximumNumberOfHashes() uint32 {
+	return fi.minimumNumberOfHashes + fi.fanout[0xff]
 }

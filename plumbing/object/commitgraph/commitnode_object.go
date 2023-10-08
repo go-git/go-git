@@ -85,6 +85,13 @@ func (c *objectCommitNode) Generation() uint64 {
 	return math.MaxUint64
 }
 
+func (c *objectCommitNode) GenerationV2() uint64 {
+	// Commit nodes representing objects outside of the commit graph can never
+	// be reached by objects from the commit-graph thus we return the highest
+	// possible value.
+	return math.MaxUint64
+}
+
 func (c *objectCommitNode) Commit() (*object.Commit, error) {
 	return c.commit, nil
 }

@@ -17,7 +17,8 @@ type commitNodeIteratorByCTime struct {
 
 // NewCommitNodeIterCTime returns a CommitNodeIter that walks the commit history,
 // starting at the given commit and visiting its parents while preserving Committer Time order.
-// this appears to be the closest order to `git log`
+// this is close in order to `git log` but does not guarantee topological order and will
+// order things incorrectly occasionally.
 // The given callback will be called for each visited commit. Each commit will
 // be visited only once. If the callback returns an error, walking will stop
 // and will return the error. Other errors might be returned if the history
