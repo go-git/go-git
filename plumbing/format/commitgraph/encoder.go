@@ -10,12 +10,18 @@ import (
 )
 
 // Encoder writes MemoryIndex structs to an output stream.
+//
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
 type Encoder struct {
 	io.Writer
 	hash hash.Hash
 }
 
 // NewEncoder returns a new stream encoder that writes to w.
+//
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
 func NewEncoder(w io.Writer) *Encoder {
 	h := hash.New(hash.CryptoType)
 	mw := io.MultiWriter(w, h)
@@ -23,6 +29,9 @@ func NewEncoder(w io.Writer) *Encoder {
 }
 
 // Encode writes an index into the commit-graph file
+//
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
 func (e *Encoder) Encode(idx Index) error {
 	// Get all the hashes in the input index
 	hashes := idx.Hashes()

@@ -13,6 +13,9 @@ import (
 	"github.com/go-git/go-git/v5/utils/binary"
 )
 
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
+
 var (
 	// ErrUnsupportedVersion is returned by OpenFileIndex when the commit graph
 	// file version is not supported.
@@ -51,6 +54,9 @@ type fileIndex struct {
 
 // OpenFileIndex opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.txt
+//
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
 func OpenFileIndex(reader io.ReaderAt) (Index, error) {
 	fi := &fileIndex{reader: reader}
 
