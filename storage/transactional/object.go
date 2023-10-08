@@ -82,3 +82,7 @@ func (o *ObjectStorage) Commit() error {
 		return err
 	})
 }
+
+func (o *ObjectStorage) AddAlternate(remote string) error {
+	return o.temporal.AddAlternate(remote)
+}
