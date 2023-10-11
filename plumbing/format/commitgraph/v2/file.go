@@ -353,6 +353,9 @@ func (fi *fileIndex) GetHashByIndex(idx uint32) (found plumbing.Hash, err error)
 }
 
 func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, error) {
+	if len(indexes) == 0 {
+		return nil, nil
+	}
 	hashes := make([]plumbing.Hash, len(indexes))
 
 	for i, idx := range indexes {

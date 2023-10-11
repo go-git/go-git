@@ -131,6 +131,10 @@ func (c *graphCommitNode) Commit() (*object.Commit, error) {
 	return object.GetCommit(c.gci.s, c.hash)
 }
 
+func (c *graphCommitNode) TreeHash() plumbing.Hash {
+	return c.commitData.TreeHash
+}
+
 func (c *graphCommitNode) String() string {
 	return fmt.Sprintf(
 		"%s %s\nDate:   %s",
