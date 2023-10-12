@@ -1,0 +1,30 @@
+name: 'PR Validation'
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  check-commit-message:
+    name: Check Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Package Prefix
+        uses: gsactions/commit-message-checker@v2
+        with:
+          pattern: '^(\*|plumbing|utils|config|_examples|internal|storage|cli|build): .+'
+          error: |
+            Commit message(s) does not align with contribution acceptance criteria.
+
+            Refer to https://github.com/go-git/go-git/blob/master/CONTRIBUTING.md#format-of-the-commit-message for more information.
+          excludeDescription: 'true'
+          excludeTitle: 'true'
+          checkAllCommitMessages: 'true'
+          accessToken: ${{ secrets.GITHUB_TOKEN }}

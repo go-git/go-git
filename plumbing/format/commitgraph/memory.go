@@ -6,12 +6,18 @@ import (
 
 // MemoryIndex provides a way to build the commit-graph in memory
 // for later encoding to file.
+//
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
 type MemoryIndex struct {
 	commitData []*CommitData
 	indexMap   map[plumbing.Hash]int
 }
 
 // NewMemoryIndex creates in-memory commit graph representation
+//
+// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
+// Use the v2 package instead.
 func NewMemoryIndex() *MemoryIndex {
 	return &MemoryIndex{
 		indexMap: make(map[plumbing.Hash]int),

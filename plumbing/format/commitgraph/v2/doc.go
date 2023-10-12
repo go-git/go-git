@@ -1,7 +1,7 @@
-// Package commitgraph implements encoding and decoding of commit-graph files.
+// Package v2 implements encoding and decoding of commit-graph files.
 //
-// Deprecated: This package uses the wrong types for Generation and Index in CommitData.
-// Use the v2 package instead.
+// This package was created to work around the issues of the incorrect types in
+// the commitgraph package.
 //
 // Git commit graph format
 // =======================
@@ -103,4 +103,4 @@
 //
 // Source:
 // https://raw.githubusercontent.com/git/git/master/Documentation/technical/commit-graph-format.txt
-package commitgraph
+package v2

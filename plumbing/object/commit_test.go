@@ -228,6 +228,7 @@ change
 			Message:      "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
 			TreeHash:     plumbing.NewHash("f000000000000000000000000000000000000001"),
 			ParentHashes: []plumbing.Hash{plumbing.NewHash("f000000000000000000000000000000000000002")},
+			Encoding:     defaultUtf8CommitMesageEncoding,
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -240,6 +241,7 @@ change
 				plumbing.NewHash("f000000000000000000000000000000000000006"),
 				plumbing.NewHash("f000000000000000000000000000000000000007"),
 			},
+			Encoding: MessageEncoding("ISO-8859-1"),
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -251,6 +253,7 @@ change
 				plumbing.NewHash("f000000000000000000000000000000000000003"),
 			},
 			MergeTag: tag,
+			Encoding: defaultUtf8CommitMesageEncoding,
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -263,6 +266,7 @@ change
 			},
 			MergeTag:     tag,
 			PGPSignature: pgpsignature,
+			Encoding:     defaultUtf8CommitMesageEncoding,
 		},
 	}
 	for _, commit := range commits {
@@ -530,7 +534,7 @@ func (s *SuiteCommit) TestMalformedHeader(c *C) {
 }
 
 func (s *SuiteCommit) TestEncodeWithoutSignature(c *C) {
-	//Similar to TestString since no signature
+	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err := s.Commit.EncodeWithoutSignature(encoded)
 	c.Assert(err, IsNil)

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/commitgraph"
+	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
@@ -19,7 +19,7 @@ type graphCommitNode struct {
 	// Hash for the Commit object
 	hash plumbing.Hash
 	// Index of the node in the commit graph file
-	index int
+	index uint32
 
 	commitData *commitgraph.CommitData
 	gci        *graphCommitNodeIndex
@@ -41,20 +41,22 @@ func NewGraphCommitNodeIndex(commitGraph commitgraph.Index, s storer.EncodedObje
 }
 
 func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
-	// Check the commit graph first
-	parentIndex, err := gci.commitGraph.GetIndexByHash(hash)
-	if err == nil {
-		parent, err := gci.commitGraph.GetCommitDataByIndex(parentIndex)
-		if err != nil {
-			return nil, err
-		}
+	if gci.commitGraph != nil {
+		// Check the commit graph first
+		parentIndex, err := gci.commitGraph.GetIndexByHash(hash)
+		if err == nil {
+			parent, err := gci.commitGraph.GetCommitDataByIndex(parentIndex)
+			if err != nil {
+				return nil, err
+			}
 
-		return &graphCommitNode{
-			hash:       hash,
-			index:      parentIndex,
-			commitData: parent,
-			gci:        gci,
-		}, nil
+			return &graphCommitNode{
+				hash:       hash,
+				index:      parentIndex,
+				commitData: parent,
+				gci:        gci,
+			}, nil
+		}
 	}
 
 	// Fallback to loading full commit object
@@ -115,7 +117,7 @@ func (c *graphCommitNode) Generation() uint64 {
 	// If the commit-graph file was generated with older Git version that
 	// set the generation to zero for every commit the generation assumption
 	// is still valid. It is just less useful.
-	return uint64(c.commitData.Generation)
+	return c.commitData.Generation
 }
 
 func (c *graphCommitNode) Commit() (*object.Commit, error) {
