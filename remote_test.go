@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -1554,4 +1558,141 @@ func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", sha5.String()),
 		plumbing.NewSymbolicReference("HEAD", "refs/heads/master"),
 	})
+}
+
+func TestFetchFastForwardForCustomRef(t *testing.T) {
+	customRef := "refs/custom/branch"
+	// 1. Set up a remote with a URL
+	remoteURL := t.TempDir()
+	remoteRepo, err := PlainInit(remoteURL, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Add a commit with an empty tree to master and custom ref, also set HEAD
+	emptyTreeID := writeEmptyTree(t, remoteRepo)
+	writeCommitToRef(t, remoteRepo, "refs/heads/master", emptyTreeID, time.Now())
+	writeCommitToRef(t, remoteRepo, customRef, emptyTreeID, time.Now())
+	if err := remoteRepo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/master")); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Clone repo, then fetch the custom ref
+	// Note that using custom ref in ReferenceName has an IsBranch issue
+	localRepo, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL: remoteURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := localRepo.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Make divergent changes
+	remoteCommitID := writeCommitToRef(t, remoteRepo, customRef, emptyTreeID, time.Now())
+	// Consecutive calls to writeCommitToRef with time.Now() might have the same
+	// time value, explicitly set distinct ones to ensure the commit hashes
+	// differ
+	writeCommitToRef(t, localRepo, customRef, emptyTreeID, time.Now().Add(time.Second))
+
+	// 5. Try to fetch with fast-forward only mode
+	remote, err := localRepo.Remote(DefaultRemoteName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
+		config.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
+	}})
+	if !errors.Is(err, ErrForceNeeded) {
+		t.Errorf("expected %v, got %v", ErrForceNeeded, err)
+	}
+
+	// 6. Fetch with force
+	err = remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
+		config.RefSpec(fmt.Sprintf("+%s:%s", customRef, customRef)),
+	}})
+	if err != nil {
+		t.Errorf("unexpected error %v", err)
+	}
+
+	// 7. Assert commit ID matches
+	ref, err := localRepo.Reference(plumbing.ReferenceName(customRef), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remoteCommitID != ref.Hash() {
+		t.Errorf("expected %s, got %s", remoteCommitID.String(), ref.Hash().String())
+	}
+}
+
+func writeEmptyTree(t *testing.T, repo *Repository) plumbing.Hash {
+	t.Helper()
+
+	obj := repo.Storer.NewEncodedObject()
+	obj.SetType(plumbing.TreeObject)
+
+	tree := object.Tree{Entries: nil}
+	if err := tree.Encode(obj); err != nil {
+		t.Fatal(err)
+	}
+
+	treeID, err := repo.Storer.SetEncodedObject(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return treeID
+}
+
+func writeCommitToRef(t *testing.T, repo *Repository, refName string, treeID plumbing.Hash, when time.Time) plumbing.Hash {
+	t.Helper()
+
+	ref, err := repo.Reference(plumbing.ReferenceName(refName), true)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName(refName), plumbing.ZeroHash)); err != nil {
+				t.Fatal(err)
+			}
+
+			ref, err = repo.Reference(plumbing.ReferenceName(refName), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			t.Fatal(err)
+		}
+	}
+
+	commit := &object.Commit{
+		TreeHash: treeID,
+		Author: object.Signature{
+			When: when,
+		},
+	}
+	if !ref.Hash().IsZero() {
+		commit.ParentHashes = []plumbing.Hash{ref.Hash()}
+	}
+
+	obj := repo.Storer.NewEncodedObject()
+	if err := commit.Encode(obj); err != nil {
+		t.Fatal(err)
+	}
+
+	commitID, err := repo.Storer.SetEncodedObject(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newRef := plumbing.NewHashReference(plumbing.ReferenceName(refName), commitID)
+	if err := repo.Storer.CheckAndSetReference(newRef, ref); err != nil {
+		t.Fatal(err)
+	}
+
+	return commitID
 }
