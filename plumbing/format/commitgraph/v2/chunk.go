@@ -3,7 +3,7 @@ package v2
 import "bytes"
 
 const (
-	chunkSigLen    = 4 // Length of a chunk signature
+	szChunkSig     = 4 // Length of a chunk signature
 	chunkSigOffset = 4 // Offset of each chunk signature in chunkSignatures
 )
 
@@ -28,14 +28,15 @@ const (
 	BaseGraphsListChunk                          // "BASE"
 	ZeroChunk                                    // "\000\000\000\000"
 )
+const lenChunks = int(ZeroChunk) // ZeroChunk is not a valid chunk type, but it is used to determine the length of the chunk type list.
 
 // Signature returns the byte signature for the chunk type.
 func (ct ChunkType) Signature() []byte {
 	if ct >= BaseGraphsListChunk || ct < 0 { // not a valid chunk type just return ZeroChunk
-		return chunkSignatures[ZeroChunk*chunkSigOffset : ZeroChunk*chunkSigOffset+chunkSigLen]
+		return chunkSignatures[ZeroChunk*chunkSigOffset : ZeroChunk*chunkSigOffset+szChunkSig]
 	}
 
-	return chunkSignatures[ct*chunkSigOffset : ct*chunkSigOffset+chunkSigLen]
+	return chunkSignatures[ct*chunkSigOffset : ct*chunkSigOffset+szChunkSig]
 }
 
 // ChunkTypeFromBytes returns the chunk type for the given byte signature.

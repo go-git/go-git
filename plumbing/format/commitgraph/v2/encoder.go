@@ -3,6 +3,7 @@ package v2
 import (
 	"crypto"
 	"io"
+	"math"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/hash"
@@ -28,13 +29,21 @@ func (e *Encoder) Encode(idx Index) error {
 	hashes := idx.Hashes()
 
 	// Sort the inout and prepare helper structures we'll need for encoding
-	hashToIndex, fanout, extraEdgesCount := e.prepare(idx, hashes)
+	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{OIDFanoutChunk.Signature(), OIDLookupChunk.Signature(), CommitDataChunk.Signature()}
-	chunkSizes := []uint64{4 * 256, uint64(len(hashes)) * hash.Size, uint64(len(hashes)) * (hash.Size + commitDataSize)}
+	chunkSizes := []uint64{szUint32 * lenFanout, uint64(len(hashes)) * hash.Size, uint64(len(hashes)) * (hash.Size + szCommitData)}
 	if extraEdgesCount > 0 {
 		chunkSignatures = append(chunkSignatures, ExtraEdgeListChunk.Signature())
-		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*4)
+		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*szUint32)
+	}
+	if idx.HasGenerationV2() {
+		chunkSignatures = append(chunkSignatures, GenerationDataChunk.Signature())
+		chunkSizes = append(chunkSizes, uint64(len(hashes))*szUint32)
+		if generationV2OverflowCount > 0 {
+			chunkSignatures = append(chunkSignatures, GenerationDataOverflowChunk.Signature())
+			chunkSizes = append(chunkSizes, uint64(generationV2OverflowCount)*szUint64)
+		}
 	}
 
 	if err := e.encodeFileHeader(len(chunkSignatures)); err != nil {
@@ -49,38 +58,52 @@ func (e *Encoder) Encode(idx Index) error {
 	if err := e.encodeOidLookup(hashes); err != nil {
 		return err
 	}
-	if extraEdges, err := e.encodeCommitData(hashes, hashToIndex, idx); err == nil {
-		if err = e.encodeExtraEdges(extraEdges); err != nil {
+
+	extraEdges, generationV2Data, err := e.encodeCommitData(hashes, hashToIndex, idx)
+	if err != nil {
+		return err
+	}
+	if err = e.encodeExtraEdges(extraEdges); err != nil {
+		return err
+	}
+	if idx.HasGenerationV2() {
+		overflows, err := e.encodeGenerationV2Data(generationV2Data)
+		if err != nil {
 			return err
 		}
-	} else {
-		return err
+		if err = e.encodeGenerationV2Overflow(overflows); err != nil {
+			return err
+		}
 	}
 
 	return e.encodeChecksum()
 }
 
-func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount uint32) {
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount uint32, generationV2OverflowCount uint32) {
 	// Sort the hashes and build our index
 	plumbing.HashesSort(hashes)
 	hashToIndex = make(map[plumbing.Hash]uint32)
-	fanout = make([]uint32, 256)
+	fanout = make([]uint32, lenFanout)
 	for i, hash := range hashes {
 		hashToIndex[hash] = uint32(i)
 		fanout[hash[0]]++
 	}
 
 	// Convert the fanout to cumulative values
-	for i := 1; i <= 0xff; i++ {
+	for i := 1; i < lenFanout; i++ {
 		fanout[i] += fanout[i-1]
 	}
+
+	hasGenerationV2 := idx.HasGenerationV2()
 
 	// Find out if we will need extra edge table
 	for i := 0; i < len(hashes); i++ {
 		v, _ := idx.GetCommitDataByIndex(uint32(i))
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
-			break
+		}
+		if hasGenerationV2 && v.GenerationV2Data() > math.MaxUint32 {
+			generationV2OverflowCount++
 		}
 	}
 
@@ -100,7 +123,7 @@ func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 
 func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint64) (err error) {
 	// 8 bytes of file header, 12 bytes for each chunk header and 12 byte for terminator
-	offset := uint64(8 + len(chunkSignatures)*12 + 12)
+	offset := uint64(szSignature + szHeader + (len(chunkSignatures)+1)*(szChunkSig+szUint64))
 	for i, signature := range chunkSignatures {
 		if _, err = e.Write(signature); err == nil {
 			err = binary.WriteUint64(e, offset)
@@ -134,7 +157,10 @@ func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 	return
 }
 
-func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (extraEdges []uint32, err error) {
+func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (extraEdges []uint32, generationV2Data []uint64, err error) {
+	if idx.HasGenerationV2() {
+		generationV2Data = make([]uint64, 0, len(hashes))
+	}
 	for _, hash := range hashes {
 		origIndex, _ := idx.GetIndexByHash(hash)
 		commitData, _ := idx.GetCommitDataByIndex(origIndex)
@@ -173,6 +199,9 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 		if err = binary.WriteUint64(e, unixTime); err != nil {
 			return
 		}
+		if generationV2Data != nil {
+			generationV2Data = append(generationV2Data, commitData.GenerationV2Data())
+		}
 	}
 	return
 }
@@ -180,6 +209,35 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 func (e *Encoder) encodeExtraEdges(extraEdges []uint32) (err error) {
 	for _, parent := range extraEdges {
 		if err = binary.WriteUint32(e, parent); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (e *Encoder) encodeGenerationV2Data(generationV2Data []uint64) (overflows []uint64, err error) {
+	head := 0
+	for _, data := range generationV2Data {
+		if data >= 0x80000000 {
+			// overflow
+			if err = binary.WriteUint32(e, uint32(head)|0x80000000); err != nil {
+				return nil, err
+			}
+			generationV2Data[head] = data
+			head++
+			continue
+		}
+		if err = binary.WriteUint32(e, uint32(data)); err != nil {
+			return nil, err
+		}
+	}
+
+	return generationV2Data[:head], nil
+}
+
+func (e *Encoder) encodeGenerationV2Overflow(overflows []uint64) (err error) {
+	for _, overflow := range overflows {
+		if err = binary.WriteUint64(e, overflow); err != nil {
 			return
 		}
 	}
