@@ -23,8 +23,8 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	github.com/skeema/knownhosts v1.2.0
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.13.0
-	golang.org/x/net v0.15.0
+	golang.org/x/crypto v0.14.0
+	golang.org/x/net v0.17.0
 	golang.org/x/sys v0.13.0
 	golang.org/x/text v0.13.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
