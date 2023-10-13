@@ -64,6 +64,9 @@ func (s *Scanner) Scan() bool {
 	if s.err != nil {
 		return false
 	}
+	if s.pktType != DataType {
+		return true
+	}
 
 	if cap(s.payload) < l {
 		s.payload = make([]byte, 0, l)
@@ -73,6 +76,11 @@ func (s *Scanner) Scan() bool {
 		return false
 	}
 	s.payload = s.payload[:l]
+
+	if len(s.payload) != l {
+		s.err = ErrInvalidPktLen
+		return false
+	}
 
 	return true
 }
@@ -117,9 +125,12 @@ func (s *Scanner) readPayloadLen() (int, error) {
 	case n == 2:
 		s.pktType = EndType
 		return 0, nil
+	case n <= lenSize:
+		return 0, ErrInvalidPktLen
 	case n > OversizePayloadMax+lenSize:
 		return 0, ErrInvalidPktLen
 	default:
+		s.pktType = DataType
 		return n - lenSize, nil
 	}
 }
