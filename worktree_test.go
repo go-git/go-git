@@ -1128,6 +1128,7 @@ func (s *WorktreeSuite) TestResetHardWithGitIgnore(c *C) {
 	f, err := fs.Create(".gitignore")
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("foo\n"))
+	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("newTestFile.txt\n"))
 	c.Assert(err, IsNil)
 	err = f.Close()
