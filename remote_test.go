@@ -562,7 +562,6 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	AssertReferences(c, server, expected)
-
 }
 
 func (s *RemoteSuite) TestPushContext(c *C) {
@@ -1554,4 +1553,103 @@ func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", sha5.String()),
 		plumbing.NewSymbolicReference("HEAD", "refs/heads/master"),
 	})
+}
+
+// ensure insteadOf substitution is applied on Fetch()
+func (s *RemoteSuite) TestFetchInsteadOf(c *C) {
+	url := s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())
+	prefix := url[:len(url)-1]
+	suffix := url[len(url)-1:]
+
+	// modify url to be invalid if insteadof is not applied
+	url = "tobereplaced" + suffix
+
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		URLs: []string{url},
+	})
+
+	cfg, err := r.s.Config()
+	c.Assert(err, IsNil)
+
+	cfg.URLs[prefix] = &config.URL{
+		Name:      prefix,
+		InsteadOf: "tobereplaced",
+	}
+
+	c.Assert(r.s.SetConfig(cfg), IsNil)
+
+	s.testFetch(c, r, &FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		},
+	}, []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+	})
+}
+
+// ensure insteadOf substitution is applied on Push()
+//
+// adapted from TestPushNoErrAlreadyUpToDate(...)
+func (s *RemoteSuite) TestPushInsteadOf(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	url := fs.Root()
+	prefix := url[:len(url)-1]
+	suffix := url[len(url)-1:]
+
+	// modify url to be invalid if insteadof is not applied
+	url = "tobereplaced" + suffix
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	cfg, err := r.s.Config()
+	c.Assert(err, IsNil)
+
+	cfg.URLs[prefix] = &config.URL{
+		Name:      prefix,
+		InsteadOf: "tobereplaced",
+	}
+
+	c.Assert(r.s.SetConfig(cfg), IsNil)
+
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"},
+	})
+	c.Assert(err, Equals, NoErrAlreadyUpToDate)
+}
+
+// ensure insteadOf substitution is applied on List()
+//
+// adapted from TestList(...)
+func (s *RemoteSuite) TestListInsteadOf(c *C) {
+	repo := fixtures.Basic().One()
+
+	url := repo.URL
+	prefix := url[:len(url)-1]
+	suffix := url[len(url)-1:]
+
+	// modify url to be invalid if insteadof is not applied
+	url = "tobereplaced" + suffix
+
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	cfg, err := r.s.Config()
+	c.Assert(err, IsNil)
+
+	cfg.URLs[prefix] = &config.URL{
+		Name:      prefix,
+		InsteadOf: "tobereplaced",
+	}
+
+	c.Assert(r.s.SetConfig(cfg), IsNil)
+
+	_, err = r.List(&ListOptions{})
+	c.Assert(err, IsNil)
 }

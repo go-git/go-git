@@ -105,6 +105,10 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
+	if err := r.ensureURLRulesApplied(); err != nil {
+		return err
+	}
+
 	if o.RemoteName != r.c.Name {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
@@ -409,6 +413,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	if len(o.RefSpecs) == 0 {
 		o.RefSpecs = r.c.Fetch
+	}
+
+	if err := r.ensureURLRulesApplied(); err != nil {
+		return nil, err
 	}
 
 	if o.RemoteURL == "" {
@@ -1302,6 +1310,10 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, ErrEmptyUrls
 	}
 
+	if err := r.ensureURLRulesApplied(); err != nil {
+		return nil, err
+	}
+
 	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
 	if err != nil {
 		return nil, err
@@ -1478,5 +1490,18 @@ func (r *Remote) checkRequireRemoteRefs(requires []config.RefSpec, remoteRefs st
 			return fmt.Errorf("remote ref %s required to be %s but is %s", name.String(), requireHash, remote.Hash().String())
 		}
 	}
+	return nil
+}
+
+func (r *Remote) ensureURLRulesApplied() error {
+	if r.s != nil {
+		cfg, err := r.s.Config()
+		if err != nil {
+			return err
+		}
+
+		r.c.ApplyURLRules(cfg.URLs)
+	}
+
 	return nil
 }

@@ -87,6 +87,8 @@ type CloneOptions struct {
 	//
 	// [Reference]: https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
 	Shared bool
+	// URLRules are used to substitute urls details via the config's insteadOf sections
+	URLRules map[string]*config.URL
 }
 
 // Validate validates the fields and sets the default values.

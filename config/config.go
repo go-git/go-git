@@ -351,7 +351,7 @@ func (c *Config) unmarshalRemotes() error {
 
 	// Apply insteadOf url rules
 	for _, r := range c.Remotes {
-		r.applyURLRules(c.URLs)
+		r.ApplyURLRules(c.URLs)
 	}
 
 	return nil
@@ -583,6 +583,7 @@ type RemoteConfig struct {
 
 	// insteadOfRulesApplied have urls been modified
 	insteadOfRulesApplied bool
+
 	// originalURLs are the urls before applying insteadOf rules
 	originalURLs []string
 
@@ -677,19 +678,18 @@ func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }
 
-func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
-	// save original urls
-	originalURLs := make([]string, len(c.URLs))
-	copy(originalURLs, c.URLs)
+// ApplyURLRules() updates c.URLs by substituting the longest matching insteadOf value found in urlRules.
+func (c *RemoteConfig) ApplyURLRules(urlRules map[string]*URL) {
+	// save original urls if we haven't already
+	// never overwrite c.originalURLs on subsequent calls
+	if !c.insteadOfRulesApplied {
+		copy(c.originalURLs, c.URLs)
+	}
 
 	for i, url := range c.URLs {
 		if matchingURLRule := findLongestInsteadOfMatch(url, urlRules); matchingURLRule != nil {
 			c.URLs[i] = matchingURLRule.ApplyInsteadOf(c.URLs[i])
 			c.insteadOfRulesApplied = true
 		}
-	}
-
-	if c.insteadOfRulesApplied {
-		c.originalURLs = originalURLs
 	}
 }
