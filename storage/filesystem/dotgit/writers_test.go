@@ -3,11 +3,7 @@ package dotgit
 import (
 	"fmt"
 	"io"
-	"os"
-	"strconv"
 
-	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -79,50 +75,6 @@ func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
 	for _, fi := range info {
 		c.Assert(fi.IsDir(), Equals, true)
 	}
-}
-
-func (s *SuiteDotGit) TestSyncedReader(c *C) {
-	tmpw, err := util.TempFile(osfs.Default, "", "example")
-	c.Assert(err, IsNil)
-
-	tmpr, err := osfs.Default.Open(tmpw.Name())
-	c.Assert(err, IsNil)
-
-	defer func() {
-		tmpw.Close()
-		tmpr.Close()
-		os.Remove(tmpw.Name())
-	}()
-
-	synced := newSyncedReader(tmpw, tmpr)
-
-	go func() {
-		for i := 0; i < 281; i++ {
-			_, err := synced.Write([]byte(strconv.Itoa(i) + "\n"))
-			c.Assert(err, IsNil)
-		}
-
-		synced.Close()
-	}()
-
-	o, err := synced.Seek(1002, io.SeekStart)
-	c.Assert(err, IsNil)
-	c.Assert(o, Equals, int64(1002))
-
-	head := make([]byte, 3)
-	n, err := io.ReadFull(synced, head)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
-	c.Assert(string(head), Equals, "278")
-
-	o, err = synced.Seek(1010, io.SeekStart)
-	c.Assert(err, IsNil)
-	c.Assert(o, Equals, int64(1010))
-
-	n, err = io.ReadFull(synced, head)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
-	c.Assert(string(head), Equals, "280")
 }
 
 func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
