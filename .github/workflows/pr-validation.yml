@@ -19,7 +19,7 @@ jobs:
       - name: Check Package Prefix
         uses: gsactions/commit-message-checker@v2
         with:
-          pattern: '^(\*|plumbing|utils|config|_examples|internal|storage|cli|build): .+'
+          pattern: '^(\*|git|plumbing|utils|config|_examples|internal|storage|cli|build): .+'
           error: |
             Commit message(s) does not align with contribution acceptance criteria.
 
