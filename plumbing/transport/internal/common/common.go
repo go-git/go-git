@@ -299,7 +299,7 @@ func (s *session) handleAdvCapsDecodeError(err error) error {
 	}
 
 	// Some server sends the errors as normal content (git protocol), so when
-	// we try to decode it fails, we need to check the content of it, to detect
+	// we try to decode it fails, we need to check its content, to detect
 	// not found errors
 	if uerr, ok := err.(*packp.ErrUnexpectedData); ok {
 		if isRepoNotFoundError(string(uerr.Data)) {
