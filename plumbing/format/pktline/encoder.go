@@ -64,6 +64,7 @@ func (e *Encoder) End() error {
 	_, err := e.w.Write(EndPkt)
 	return err
 }
+
 // Encode encodes a pkt-line with the payload specified and write it to
 // the output stream.  If several payloads are specified, each of them
 // will get streamed in their own pkt-lines.
