@@ -57,9 +57,9 @@ func (a *AdvCaps) Decode(r io.Reader) error {
 	f := string(s.Bytes())
 	if i := strings.Index(f, "service="); i < 0 {
 		return fmt.Errorf("missing service indication")
-	} else {
-		a.Service = f[i+8 : len(f)-1]
 	}
+	
+	a.Service = f[i+8 : len(f)-1]
 
 	// scan flush
 	s.Scan()
