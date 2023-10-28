@@ -288,7 +288,7 @@ func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandReques
 		// pass storer (seems easier)
 		res.Storer = s.storer
 	default:
-		return nil, fmt.Errorf("unsuported command")
+		return nil, fmt.Errorf("unsupported command")
 	}
 
 	return res, nil
