@@ -19,7 +19,7 @@ type AdvCaps struct {
 	Capabilities *capability.List
 }
 
-// NewAdvRefs returns a pointer to a new AdvRefs value, ready to be used.
+// NewAdvCaps creates a new AdvCaps object, ready to be used.
 func NewAdvCaps() *AdvCaps {
 	return &AdvCaps{
 		Capabilities: capability.NewList(),
