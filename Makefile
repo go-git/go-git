@@ -1,5 +1,6 @@
 # General
 WORKDIR = $(PWD)
+BASHCMD = /usr/bin/env bash
 
 # Go parameters
 GOCMD = go
@@ -13,6 +14,10 @@ GIT_REPOSITORY = http://github.com/git/git.git
 # Coverage
 COVERAGE_REPORT = coverage.out
 COVERAGE_MODE = count
+
+# https://www.gnu.org/software/make/manual/html_node/One-Shell.html
+# Fix for cat <<EOF >>.env, include all lines
+.ONESHELL:
 
 build-git:
 	@if [ -f $(GIT_DIST_PATH)/git ]; then \
@@ -29,6 +34,43 @@ test:
 	@echo "running against `git version`"; \
 	$(GOTEST) -race ./...
 
+TEST_ENV=.env
+DOCKER_ENV=.env-docker
+.PHONY: test-env test-go1.19 test-go1.20 test-go1.21 test-go-all
+test-env:
+	cat <<EOF >>$(TEST_ENV)
+	WORKDIR=$(WORKDIR)
+	DOCKER_ENV=$(DOCKER_ENV)
+	GOCMD=$(GOCMD)
+	GOTEST=$(GOTEST)
+	GO_VERSIONS=(1.19 1.20 1.21)
+	GIT_DIST_PATH=$(GIT_DIST_PATH)
+	GIT_REPOSITORY=$(GIT_REPOSITORY)
+	COVERAGE_REPORT=$(COVERAGE_REPORT)
+	COVERAGE_MODE=$(COVERAGE_MODE)
+	EOF
+
+test-go1.19: test-env
+	export BASH_ENV=$(TEST_ENV)
+	$(BASHCMD) _local/test-go.sh "1.19"
+
+test-go1.20: test-env
+	export BASH_ENV=$(TEST_ENV)
+	$(BASHCMD) _local/test-go.sh "1.20"
+
+test-go1.21: test-env
+	BASH_ENV=$(TEST_ENV)
+	$(BASHCMD) _local/test-go.sh "1.21"
+
+test-go-all: test-go1.19 test-go1.20 test-go1.21
+
+.PHONY: test-git-master test-git-v2.11
+test-git-v2.11:
+
+test-git-master:
+
+test-git-all: test-git-master test-git-v2.11
+
 TEMP_REPO := $(shell mktemp)
 test-sha256:
 	$(GOCMD) run -tags sha256 _examples/sha256/main.go $(TEMP_REPO)
@@ -42,6 +84,7 @@ test-coverage:
 
 clean:
 	rm -rf $(GIT_DIST_PATH)
+	rm $(TEST_ENV) $(DOCKER_ENV)
 
 fuzz:
 	@go test -fuzz=FuzzParser				$(PWD)/internal/revision

@@ -1,0 +1,5 @@
+ARG GOVER
+
+FROM golang:${GOVER} as build
+
+FROM golang:${GOVER} as test
