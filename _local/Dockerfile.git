@@ -2,4 +2,6 @@ ARG GOVER
 
 FROM golang:${GOVER} as build
 
+ARG GOVER
+
 FROM golang:${GOVER} as test

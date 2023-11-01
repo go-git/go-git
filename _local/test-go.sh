@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
+PLATFORM=$(uname -s | tr '[[:upper:]]' '[[:lower:]]')
 DOCKER_ENV=${DOCKER_ENV:-.env-docker}
 GO_VERSIONS="${GO_VERSIONS-(1.19 1.20 1.21)}"
 WORKDIR=${WORKDIR:-$(git rev-parse --show-toplevel)}
 
-# shellcheck disable=SC1091
 source "$WORKDIR/_local/commons.sh"
 
 function usage() {
@@ -25,6 +25,9 @@ elif ! [[ "${GO_VERSIONS[*]}" =~ $1 ]]; then
 fi
 
 # additional checks
+if [ -f "$WORKDIR/_local/${PLATFORM}.sh" ]; then
+    source "$WORKDIR/_local/${PLATFORM}.sh"
+fi
 checkDocker
 
 gover=$1
