@@ -19,8 +19,8 @@ EOF
 if [ -z "$1" ]; then
     printf "error: missing required go version\n\n"
     usage && exit 1
-elif ! [[ "${GO_VERSIONS}" =~ $1 ]]; then
-    printf "error: invalid go version provided: %s\n\n" "$1"
+elif ! [[ "${GO_VERSIONS[*]}" =~ $1 ]]; then
+    printf "error: invalid go version provided: %s\nnot found in %s\n" "$1" "${GO_VERSIONS[*]}"
     usage && exit 1
 fi
 
@@ -45,4 +45,9 @@ docker image build \
     --build-arg GID="$gid" \
     -f "${WORKDIR}/_local/Dockerfile" -t "$image" "${WORKDIR}"
 
-docker container run -v "${WORKDIR}:/go/src" --workdir /go/src/ --env-file "${DOCKER_ENV}" -u "$locuser"  --rm "$image" make test-coverage $
+docker container run \
+    -u "$locuser" --rm \
+    --workdir /go/src/ \
+    -v "${WORKDIR}:/go/src" \
+    --env-file "${DOCKER_ENV}" \
+    "$image" make test-coverage
