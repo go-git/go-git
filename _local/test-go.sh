@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-COVERAGE_REPORT=${COVERAGE_REPORT:-coverage.out}
 DOCKER_ENV=${DOCKER_ENV:-.env-docker}
 GO_VERSIONS="${GO_VERSIONS-(1.19 1.20 1.21)}"
 WORKDIR=${WORKDIR:-$(git rev-parse --show-toplevel)}
@@ -25,15 +24,25 @@ elif ! [[ "${GO_VERSIONS}" =~ $1 ]]; then
     usage && exit 1
 fi
 
-tag="$1-bullseye"
-image="go-git-golang:$tag"
-
 # additional checks
 checkDocker
 
-cat <<EOF >>"$DOCKER_ENV"
-COVERAGE_REPORT="/tmp/${COVERAGE_REPORT}"
+gover=$1
+tag="$gover-bullseye"
+image="go-git:$tag"
+locuser=$(id -n -u)
+uid=$(id -u)
+gid=$(id -g)
+
+cat <<EOF >"$DOCKER_ENV"
+COVERAGE_REPORT="coverage-${gover}.out"
 EOF
 
-docker image build --build-arg GOVER="$tag" -f "${WORKDIR}/_local/Dockerfile" -t "$image" "${WORKDIR}"
-docker container run -v "${WORKDIR}:/go/src" --workdir /go/src/ --rm "$image" make test-coverage
+docker image build \
+    --build-arg GOTAG="$tag" \
+    --build-arg LOCUSER="$locuser" \
+    --build-arg UID="$uid" \
+    --build-arg GID="$gid" \
+    -f "${WORKDIR}/_local/Dockerfile" -t "$image" "${WORKDIR}"
+
+docker container run -v "${WORKDIR}:/go/src" --workdir /go/src/ --env-file "${DOCKER_ENV}" -u "$locuser"  --rm "$image" make test-coverage $

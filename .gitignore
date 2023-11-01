@@ -6,3 +6,4 @@ profile.out
 .git-dist/
 .vscode
 .env*
+coverage*

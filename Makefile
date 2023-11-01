@@ -12,11 +12,11 @@ GIT_DIST_PATH ?= $(PWD)/.git-dist
 GIT_REPOSITORY = http://github.com/git/git.git
 
 # Coverage
-COVERAGE_REPORT = coverage.out
+COVERAGE_REPORT ?= coverage.out
 COVERAGE_MODE = count
 
 # https://www.gnu.org/software/make/manual/html_node/One-Shell.html
-# Fix for cat <<EOF >>.env, include all lines
+# Fix for cat <<EOF >.env, include multiline command
 .ONESHELL:
 
 build-git:
@@ -38,7 +38,7 @@ TEST_ENV=.env
 DOCKER_ENV=.env-docker
 .PHONY: test-env test-go1.19 test-go1.20 test-go1.21 test-go-all
 test-env:
-	cat <<EOF >>$(TEST_ENV)
+	cat <<EOF >$(TEST_ENV)
 	WORKDIR=$(WORKDIR)
 	DOCKER_ENV=$(DOCKER_ENV)
 	GOCMD=$(GOCMD)
@@ -46,8 +46,6 @@ test-env:
 	GO_VERSIONS=(1.19 1.20 1.21)
 	GIT_DIST_PATH=$(GIT_DIST_PATH)
 	GIT_REPOSITORY=$(GIT_REPOSITORY)
-	COVERAGE_REPORT=$(COVERAGE_REPORT)
-	COVERAGE_MODE=$(COVERAGE_MODE)
 	EOF
 
 test-go1.19: test-env
@@ -85,6 +83,7 @@ test-coverage:
 clean:
 	rm -rf $(GIT_DIST_PATH)
 	rm $(TEST_ENV) $(DOCKER_ENV)
+	rm coverage.*
 
 fuzz:
 	@go test -fuzz=FuzzParser				$(PWD)/internal/revision
