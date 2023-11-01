@@ -80,10 +80,24 @@ test-coverage:
 	echo "" > $(COVERAGE_REPORT); \
 	$(GOTEST) -coverprofile=$(COVERAGE_REPORT) -coverpkg=./... -covermode=$(COVERAGE_MODE) ./...
 
+.PHONY: clean clean-docker clean-all
+
 clean:
-	rm -rf $(GIT_DIST_PATH)
-	rm $(TEST_ENV) $(DOCKER_ENV)
-	rm coverage.*
+	@if [ -d $(GIT_DIST_PATH) ]; then
+		rm -rf $(GIT_DIST_PATH)
+	fi
+	if [ -f $(TEST_ENV) ] || [ -f $(DOCKER_ENV) ]; then
+		rm $(TEST_ENV) $(DOCKER_ENV)
+	fi
+	rm coverage*
+
+# doc sys prune in this case only removes dangling images
+GOGIT_IMAGES := $(shell docker image ls --filter reference=go-git -q)
+clean-docker:
+	docker image rm $(GOGIT_IMAGES)
+	docker system prune -f
+
+clean-all: clean clean-docker
 
 fuzz:
 	@go test -fuzz=FuzzParser				$(PWD)/internal/revision
