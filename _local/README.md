@@ -10,3 +10,10 @@ The specific make targets related to local CI tests are the following:
 ## Platforms
 
 Currently only attempting to support `Linux` and `Darwin (Apple)`. At least until either someone offers to add it or we get enough requests for more.
+
+### Darwin
+
+*Requirements:*
+
+- bash 5 or greater. Recommend `brew install bash`.
+- make 4 or greater. Recommend `brew install make` and it will install as gmake, so you can run with that or adjust path as you desire.
