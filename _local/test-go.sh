@@ -24,12 +24,6 @@ elif ! [[ "${GO_VERSIONS[*]}" =~ $1 ]]; then
     usage && exit 1
 fi
 
-# additional checks
-if [ -f "$WORKDIR/_local/${PLATFORM}.sh" ]; then
-    source "$WORKDIR/_local/${PLATFORM}.sh"
-fi
-checkDocker
-
 gover=$1
 tag="$gover-bullseye"
 image="go-git:$tag"
@@ -37,9 +31,38 @@ locuser=$(id -n -u)
 uid=$(id -u)
 gid=$(id -g)
 
+# this happen on darwin cause user primary group was staff
+if [ "$gid" -lt 1000 ]; then
+    # something much higher than default
+    gid=1200
+fi
+
+checkDocker
+
+# additional platform checks
+echo "Running checks for: ${PLATFORM}"
+PLTFM_CHECKS="$WORKDIR/_local/platform/${PLATFORM}.sh"
+
+### BEGIN Platform Specific Section
+
+function preDockerCommands() {
+    # noop for linux
+    return
+}
+
+if [ -f $PLTFM_CHECKS ]; then
+    source "$PLTFM_CHECKS"
+fi
+
+### END Platform Specific Section
+
 cat <<EOF >"$DOCKER_ENV"
 COVERAGE_REPORT="coverage-${gover}.out"
 EOF
+
+preDockerCommands "$tag"
+
+# exit
 
 docker image build \
     --build-arg GOTAG="$tag" \
