@@ -9,9 +9,9 @@ ARG GID
 # worktree_test.go:677:
 # c.Assert(idx.Entries[0].UID, Not(Equals), uint32(0))
 # User MUST NOT == uid=0(root) gid=0(root) groups=0(root)
-RUN echo "$UID $GID $LOCUSER"; \
+RUN DEBIAN_FRONTEND=noninteractive; \
     addgroup --gid $GID $LOCUSER; \
-    adduser --uid ${UID} --ingroup ${LOCUSER} --disabled-password ${LOCUSER}
+    adduser --uid ${UID} --ingroup ${LOCUSER} --disabled-password --quiet ${LOCUSER}
 
 USER ${LOCUSER}
 
