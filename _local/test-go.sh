@@ -4,6 +4,7 @@ DOCKER_ENV=${DOCKER_ENV:-.env-docker}
 GO_VERSIONS="${GO_VERSIONS-(1.19 1.20 1.21)}"
 WORKDIR=${WORKDIR:-$(git rev-parse --show-toplevel)}
 
+# shellcheck disable=SC1090
 source "$WORKDIR/_local/commons.sh"
 
 function usage() {
@@ -51,6 +52,7 @@ function preDockerCommands() {
 }
 
 if [ -f $PLTFM_CHECKS ]; then
+    # shellcheck disable=SC1090
     source "$PLTFM_CHECKS"
 fi
 
