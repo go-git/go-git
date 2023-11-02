@@ -172,6 +172,28 @@ func (s *SuiteCommon) TestIssue70(c *C) {
 	c.Assert(err, IsNil)
 }
 
+/*
+Given, an endpoint to a git server with a socks5 proxy URL,
+When, the socks5 proxy server is not reachable,
+Then, there should not be any panic and an error with appropriate message should be returned.
+Related issue : https://github.com/go-git/go-git/pull/900
+*/
+func (s *SuiteCommon) TestInvalidSocks5Proxy(c *C) {
+	ep, err := transport.NewEndpoint("git@github.com:foo/bar.git")
+	c.Assert(err, IsNil)
+	ep.Proxy.URL = "socks5://127.0.0.1:1080"
+
+	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
+	c.Assert(err, IsNil)
+	c.Assert(auth, NotNil)
+
+	ps, err := DefaultClient.NewUploadPackSession(ep, auth)
+	//Since the proxy server is not running, we expect an error.
+	c.Assert(ps, IsNil)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "socks connect .* dial tcp 127.0.0.1:1080: .*")
+}
+
 type mockSSHConfig struct {
 	Values map[string]map[string]string
 }
