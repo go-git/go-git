@@ -15,5 +15,5 @@ Currently only attempting to support `Linux` and `Darwin (Apple)`. At least unti
 
 *Requirements:*
 
-- bash 5 or greater. Recommend `brew install bash`.
+- bash 4 or greater. Recommend `brew install bash`.
 - make 4 or greater. Recommend `brew install make` and it will install as gmake, so you can run with that or adjust path as you desire.

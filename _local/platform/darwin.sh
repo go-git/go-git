@@ -15,9 +15,9 @@ function preDockerCommands() {
 ### END Platform Specific Section
 
 VERSION=$(bash --version | grep version)
-if echo "$VERSION" | grep -Eq "version ([34]\.)"; then
+if echo "$VERSION" | grep -Eq "version ([3]\.)"; then
     cat << EOF
-error: invalid version of bash, must be 5.x or greater
+error: invalid version of bash, must be 4.x or greater
 
 In order to run local CI tests, please install a modern version of bash.
 If you use 'brew' you can do the following:
