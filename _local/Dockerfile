@@ -10,7 +10,7 @@ ARG GID
 # c.Assert(idx.Entries[0].UID, Not(Equals), uint32(0))
 # User MUST NOT == uid=0(root) gid=0(root) groups=0(root)
 RUN DEBIAN_FRONTEND=noninteractive; \
-    addgroup --gid $GID --force-badname $LOCUSER; \
+    addgroup --gid ${GID} --force-badname ${LOCUSER}; \
     adduser --uid ${UID} --ingroup ${LOCUSER} \
         --disabled-password --quiet --force-badname ${LOCUSER}
 
