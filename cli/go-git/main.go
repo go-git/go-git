@@ -22,6 +22,7 @@ func main() {
 	}
 
 	parser := flags.NewNamedParser(bin, flags.Default)
+	parser.AddCommand("update-server-info", "", "", &CmdUpdateServerInfo{})
 	parser.AddCommand("receive-pack", "", "", &CmdReceivePack{})
 	parser.AddCommand("upload-pack", "", "", &CmdUploadPack{})
 	parser.AddCommand("version", "Show the version information.", "", &CmdVersion{})
