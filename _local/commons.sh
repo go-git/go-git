@@ -8,15 +8,6 @@ function checkDocker() {
     fi
 }
 
-function checkGID() {
-    local gid=$1
-    # Fix case when on darwin, cause user primary group was "staff"
-    if [ "$gid" -lt 1000 ]; then
-        # something much higher than default
-        gid=1200
-    fi
-}
-
 function buildDockerImage() {
     local srcdir=$1 image=$2 gotag=$3 user=$4 uid=$5 gid=$6
 
@@ -32,4 +23,14 @@ function buildDockerImage() {
         return 1
     fi
     return 0
+}
+
+function patchGID() {
+    local gid=$1
+    # Fix case when on darwin, cause user primary group was "staff"
+    if [ "$gid" -lt 1000 ]; then
+        # something much higher than default
+        gid=1200
+    fi
+    echo "$gid"
 }

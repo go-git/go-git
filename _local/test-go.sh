@@ -33,8 +33,8 @@ uid=$(id -u)
 gid=$(id -g)
 
 # run common checks
-checkGID
 checkDocker
+gid=$(patchGID "$gid")
 
 # additional platform checks
 echo "Running checks for: ${PLATFORM}"
