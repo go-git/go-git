@@ -32,12 +32,8 @@ locuser=$(id -n -u)
 uid=$(id -u)
 gid=$(id -g)
 
-# this happen on darwin cause user primary group was staff
-if [ "$gid" -lt 1000 ]; then
-    # something much higher than default
-    gid=1200
-fi
-
+# run common checks
+checkGID
 checkDocker
 
 # additional platform checks
@@ -64,18 +60,14 @@ EOF
 
 preDockerCommands "$tag"
 
-# exit
-
-docker image build \
-    --build-arg GOTAG="$tag" \
-    --build-arg LOCUSER="$locuser" \
-    --build-arg UID="$uid" \
-    --build-arg GID="$gid" \
-    -f "${WORKDIR}/_local/Dockerfile" -t "$image" "${WORKDIR}"
+if ! buildDockerImage "${WORKDIR}" "$image" "$tag" "$locuser" "$uid" "$gid"; then
+    exit 1
+fi
 
 docker container run \
     -u "$locuser" --rm \
     --workdir /go/src/ \
     -v "${WORKDIR}:/go/src" \
     --env-file "${DOCKER_ENV}" \
+    --label "$DOCKER_GOGIT_KEY=$DOCKER_GOGIT_LABEL" \
     "$image" make test-coverage

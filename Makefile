@@ -36,16 +36,21 @@ test:
 
 TEST_ENV=.env
 DOCKER_ENV=.env-docker
+DOCKER_GOGIT_KEY = go-git
+DOCKER_GOGIT_LABEL = testing
+DOCKER_GOGIT_NAME = $(DOCKER_GOGIT_KEY)-dist
 .PHONY: test-env test-go1.19 test-go1.20 test-go1.21 test-go-all
 test-env:
 	cat <<EOF >$(TEST_ENV)
-	WORKDIR=$(WORKDIR)
 	DOCKER_ENV=$(DOCKER_ENV)
-	GOCMD=$(GOCMD)
-	GOTEST=$(GOTEST)
-	GO_VERSIONS=(1.19 1.20 1.21)
-	GIT_DIST_PATH=$(GIT_DIST_PATH)
+	DOCKER_GOGIT_KEY=$(DOCKER_GOGIT_KEY)
+	DOCKER_GOGIT_LABEL=$(DOCKER_GOGIT_LABEL)
+	DOCKER_GOGIT_NAME=$(DOCKER_GOGIT_NAME)
 	GIT_REPOSITORY=$(GIT_REPOSITORY)
+	GIT_VERSIONS=(master v2.11.0)
+	GO_VERSION_WGIT=1.21
+	GO_VERSIONS=(1.19 1.20 1.21)
+	WORKDIR=$(WORKDIR)
 	EOF
 
 test-go1.19: test-env
@@ -64,8 +69,12 @@ test-go-all: test-go1.19 test-go1.20 test-go1.21
 
 .PHONY: test-git-master test-git-v2.11
 test-git-v2.11:
+	BASH_ENV=$(TEST_ENV)
+	$(BASHCMD) _local/test-git-compatability.sh "v2.11.0"
 
 test-git-master:
+	BASH_ENV=$(TEST_ENV)
+	$(BASHCMD) _local/test-git-compatability.sh "master"
 
 test-git-all: test-git-master test-git-v2.11
 
@@ -91,11 +100,12 @@ clean:
 	fi
 	rm coverage*
 
-# doc sys prune in this case only removes dangling images
+# doc sys prune in this case only removes dangling images, but filter it anyway
 GOGIT_IMAGES := $(shell docker image ls --filter reference=go-git -q)
 clean-docker:
-	docker image rm $(GOGIT_IMAGES)
-	docker system prune -f
+	docker system prune -f --filter "label=$(DOCKER_GOGIT_KEY)=$(DOCKER_GOGIT_LABEL)"
+	docker volume prune -f --filter "label=$(DOCKER_GOGIT_KEY)=$(DOCKER_GOGIT_LABEL)"
+	docker image rm -f $(GOGIT_IMAGES)
 
 clean-all: clean clean-docker
 
