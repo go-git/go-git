@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol"
 	. "gopkg.in/check.v1"
 )
 
@@ -368,6 +369,26 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 	c.Assert(err, IsNil)
 	if strings.Contains(string(buf), "url") {
 		c.Fatal("conifg should not contain any url sections")
+	}
+	c.Assert(err, IsNil)
+}
+
+func (s *ConfigSuite) TestProtocol(c *C) {
+	buf := []byte(`
+[protocol]
+	version = 1`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(buf)
+	c.Assert(err, IsNil)
+	c.Assert(cfg.Protocol.Version, Equals, protocol.V1)
+
+	cfg.Protocol.Version = protocol.V2
+	buf, err = cfg.Marshal()
+	c.Assert(err, IsNil)
+
+	if !strings.Contains(string(buf), "version = 2") {
+		c.Fatal("marshal did not update version")
 	}
 	c.Assert(err, IsNil)
 }
