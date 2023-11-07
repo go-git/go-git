@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,29 +9,26 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/file"
 )
 
-type CmdUploadPack struct {
-	cmd
+// TODO: usage: git upload-pack [--strict] [--timeout=<n>] <dir>
+func uploadPackRun(args []string) error {
+	f := flag.NewFlagSet("", flag.ExitOnError)
+	if err := f.Parse(args); err != nil {
+		return err
+	}
 
-	Args struct {
-		GitDir string `positional-arg-name:"git-dir" required:"true"`
-	} `positional-args:"yes"`
-}
+	if f.NArg() == 0 {
+		showReceiveUploadUsage()
+		os.Exit(cannotStartExitCode)
+	}
 
-func (CmdUploadPack) Usage() string {
-	//TODO: usage: git upload-pack [--strict] [--timeout=<n>] <dir>
-	//TODO: git-upload-pack returns error code 129 if arguments are invalid.
-	return fmt.Sprintf("usage: %s <git-dir>", os.Args[0])
-}
-
-func (c *CmdUploadPack) Execute(args []string) error {
-	gitDir, err := filepath.Abs(c.Args.GitDir)
+	gitDir, err := filepath.Abs(f.Arg(0))
 	if err != nil {
 		return err
 	}
 
 	if err := file.ServeUploadPack(gitDir); err != nil {
 		fmt.Fprintln(os.Stderr, "ERR:", err)
-		os.Exit(128)
+		os.Exit(fatalApplicationExitCode)
 	}
 
 	return nil
