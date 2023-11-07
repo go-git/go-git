@@ -17,7 +17,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
-	github.com/jessevdk/go-flags v1.5.0
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/pjbgf/sha1cd v0.3.0
 	github.com/sergi/go-diff v1.1.0
