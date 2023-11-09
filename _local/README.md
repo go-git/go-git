@@ -9,7 +9,7 @@ The specific make targets related to local CI tests are the following:
 
 ## Platforms
 
-Currently only attempting to support `Linux` and `Darwin (Apple)`. At least until either someone offers to add it or we get enough requests for more.
+Currently only attempting to support `Linux` and `Darwin (Apple)`. Contributors are more than welcome to propose changes to expand support.
 
 ### Darwin
 

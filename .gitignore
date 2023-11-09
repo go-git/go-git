@@ -5,5 +5,4 @@ profile.out
 .tmp/
 .git-dist/
 .vscode
-.env*
-coverage*
+build/

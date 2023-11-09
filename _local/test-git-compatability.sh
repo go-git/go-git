@@ -1,44 +1,48 @@
 #!/usr/bin/env bash
 PLATFORM=$(uname -s | tr '[[:upper:]]' '[[:lower:]]')
-DOCKER_ENV=${DOCKER_ENV:-.env-docker}
-DOCKER_GOGIT_KEY=${DOCKER_GOGIT_KEY:-go-git}
-DOCKER_GOGIT_LABEL=${DOCKER_GOGIT_LABEL:-testing}
-DOCKER_GOGIT_NAME=${DOCKER_GOGIT_NAME:-"$DOCKER_GOGIT_KEY-dist"}
 GIT_DIST_PATH="/git/src"
-GIT_VERSIONS="${GIT_VERSIONS:-(v2.11.0 master)}"
-GO_VERSION_WGIT="${GO_VERSION_WGIT:-1.21}"
+GIT_REPOSITORY="${GIT_REPOSITORY:-http://github.com/git/git.git}"
+GIT_VERSION="${GIT_VERSION:-master}"
+GO_VERSION=${2:-$(go env GOVERSION | sed -e "s/[A-Za-z]*//" | sed -e "s/\.[0-9]*$//")}
 WORKDIR=${WORKDIR:-$(git rev-parse --show-toplevel)}
+DOCKER_ENV=${DOCKER_ENV:-$WORKDIR/build/.env-docker}
 
 # shellcheck disable=SC1090
 source "$WORKDIR/_local/commons.sh"
 
 function usage() {
     cat << EOF
-Usage: $(basename "$0") git-ref
-Runs \`make build-git\` and\`make test\` for the given git-ref on go ${GO_VERSION_WGIT}.
+Usage: $(basename "$0") git-ref [go-version]
+Runs \`make build-git\` and\`make test\` for the given git-ref on go-version.
 
 Required:
-    git-ref      can be one of: ${GIT_VERSIONS[*]}
+    git-ref         Must be a git tag or branch which exits on the git repository: $GIT_REPOSITORY
+    go-version      Should be formatted like "1.xx", defaults to \$(go env GOVERSION).
 EOF
 }
 
 if [ -z "$1" ]; then
     printf "error: missing required git ref\n\n"
     usage && exit 1
-elif ! [[ "${GIT_VERSIONS[*]}" =~ $1 ]]; then
-    printf "error: invalid git ref provided: %s\nnot found in %s\n" "$1" "${GIT_VERSIONS[*]}"
+fi
+
+if [ -z "$GO_VERSION" ]; then
+    printf "error: missing required go version\n\n"
+    usage && exit 1
+elif ! [[ $GO_VERSION =~ 1\.[0-9]* ]]; then
+    printf "error: invalid go version provided, '%s', please use format '1.xx'\n" "$GO_VERSION"
     usage && exit 1
 fi
 
 gitref=$1
-gover="$GO_VERSION_WGIT"
-tag="$gover-bullseye"
+tag="$GO_VERSION-bullseye"
 image="go-git:$tag"
 locuser=$(id -n -u)
 uid=$(id -u)
 gid=$(id -g)
 
 # run common checks
+buildDir
 checkDocker
 gid=$(patchGID "$gid")
 
@@ -77,7 +81,7 @@ fi
 set -e
 
 cat <<EOF >"$DOCKER_ENV"
-COVERAGE_REPORT="coverage-${gover}.out"
+COVERAGE_REPORT="/go/src/build/coverage-${GO_VERSION}.out"
 GIT_VERSION=$gitref
 GIT_DIST_PATH=$GIT_DIST_PATH/$gitref
 GIT_EXEC_PATH=$GIT_DIST_PATH/$gitref

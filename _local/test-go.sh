@@ -1,38 +1,38 @@
 #!/usr/bin/env bash
 PLATFORM=$(uname -s | tr '[[:upper:]]' '[[:lower:]]')
-DOCKER_ENV=${DOCKER_ENV:-.env-docker}
-GO_VERSIONS="${GO_VERSIONS-(1.19 1.20 1.21)}"
 WORKDIR=${WORKDIR:-$(git rev-parse --show-toplevel)}
+DOCKER_ENV=${DOCKER_ENV:-$WORKDIR/build/.env-docker}
+GO_VERSION=${1:-$(go env GOVERSION | sed -e "s/[A-Za-z]*//" | sed -e "s/\.[0-9]*$//")}
 
 # shellcheck disable=SC1090
 source "$WORKDIR/_local/commons.sh"
 
 function usage() {
     cat << EOF
-Usage: $(basename "$0") go-version
+Usage: $(basename "$0") [go-version]
 Runs \`make test-coverage\` for the given go-version.
 
 Required:
-    go-version      can be one of: ${GO_VERSIONS[*]}
+    go-version      Should be formatted like "1.xx", defaults to \$(go env GOVERSION).
 EOF
 }
 
-if [ -z "$1" ]; then
+if [ -z "$GO_VERSION" ]; then
     printf "error: missing required go version\n\n"
     usage && exit 1
-elif ! [[ "${GO_VERSIONS[*]}" =~ $1 ]]; then
-    printf "error: invalid go version provided: %s\nnot found in %s\n" "$1" "${GO_VERSIONS[*]}"
+elif ! [[ $GO_VERSION =~ 1\.[0-9]* ]]; then
+    printf "error: invalid go version provided, '%s', please use format '1.xx'\n" "$GO_VERSION"
     usage && exit 1
 fi
 
-gover=$1
-tag="$gover-bullseye"
+tag="$GO_VERSION-bullseye"
 image="go-git:$tag"
 locuser=$(id -n -u)
 uid=$(id -u)
 gid=$(id -g)
 
 # run common checks
+buildDir
 checkDocker
 gid=$(patchGID "$gid")
 
@@ -43,8 +43,11 @@ PLTFM_CHECKS="$WORKDIR/_local/platform/${PLATFORM}.sh"
 ### BEGIN Platform Specific Section
 
 function preDockerCommands() {
-    # noop for linux
-    return
+    local tag=$1
+    # Docker Desktop for Darwin fails when trying to use an image that isn't available locally. Therefore, we first check if it exists in the machine and preemptively pull it if not.
+    if [ "$(docker image ls -q --filter "reference=golang:$tag")" == "" ]; then
+        docker image pull "golang:$tag"
+    fi
 }
 
 if [ -f $PLTFM_CHECKS ]; then
@@ -55,7 +58,7 @@ fi
 ### END Platform Specific Section
 
 cat <<EOF >"$DOCKER_ENV"
-COVERAGE_REPORT="coverage-${gover}.out"
+COVERAGE_REPORT="/go/src/build/coverage-${GO_VERSION}.out"
 EOF
 
 preDockerCommands "$tag"

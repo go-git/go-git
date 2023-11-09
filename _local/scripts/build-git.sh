@@ -14,10 +14,10 @@ GIT_URL="${GIT_URL}/${GIT_ARCHIVE}"
 #       Cloning into '/git/src'...
 #       git: 'remote-https' is not a git command. See 'git --help'.
 #   - while using ssh git@github.com:git/git.git:
-#       Permission denined (publickey)
+#       Permission denied (publickey)
 #   - apt update && apt reinstall -y git; git clone fails with ... (publickey)
 if [ -f "${GIT_DIST_PATH}/git" ]; then
-    echo "nothing to do, using cache ${GIT_DIST_PATH}"
+    echo "nothing to do, using cached git from ${GIT_DIST_PATH}"
 else
     # git clone "${GIT_REPOSITORY}" -b "${GIT_VERSION}" --depth 1 --single-branch "${GIT_DIST_PATH}"; \
     if ! [ -d "${GIT_DIST_PATH}" ]; then

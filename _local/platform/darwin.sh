@@ -2,16 +2,6 @@
 
 ### BEGIN Platform Specific Section
 
-function preDockerCommands() {
-    local tag=$1
-    # Docker Desktop for Darwin is stupid, and doesn't read FROM image
-    # Also fails with confusing "denied: request access" in addition to error
-    # when build fails, instead of just error.
-    if [ "$(docker image ls -q --filter "reference=golang:$tag")" == "" ]; then
-        docker image pull "golang:$tag"
-    fi
-}
-
 ### END Platform Specific Section
 
 VERSION=$(bash --version | grep version)

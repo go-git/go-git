@@ -5,9 +5,10 @@ BASHCMD = /usr/bin/env bash
 # Go parameters
 GOCMD = go
 GOTEST = $(GOCMD) test 
+GO_VERSION ?= $(go env GOVERSION)
 
 # Git config
-GIT_VERSION ?=
+GIT_VERSION ?= master
 GIT_DIST_PATH ?= $(PWD)/.git-dist
 GIT_REPOSITORY = http://github.com/git/git.git
 
@@ -19,6 +20,7 @@ COVERAGE_MODE = count
 # Fix for cat <<EOF >.env, include multiline command
 .ONESHELL:
 
+.PHONY: build-git clean test test-coverage test-env test-go test-git test-sha256
 build-git:
 	@if [ -f $(GIT_DIST_PATH)/git ]; then \
 		echo "nothing to do, using cache $(GIT_DIST_PATH)"; \
@@ -34,49 +36,26 @@ test:
 	@echo "running against `git version`"; \
 	$(GOTEST) -race ./...
 
-TEST_ENV=.env
-DOCKER_ENV=.env-docker
-DOCKER_GOGIT_KEY = go-git
-DOCKER_GOGIT_LABEL = testing
-DOCKER_GOGIT_NAME = $(DOCKER_GOGIT_KEY)-dist
-.PHONY: test-env test-go1.19 test-go1.20 test-go1.21 test-go-all
+TEST_DIR = build
+TEST_ENV = $(TEST_DIR)/.env
+DOCKER_ENV = $(TEST_DIR)/.env-docker
 test-env:
+	@mkdir -p $(TEST_DIR); \
 	cat <<EOF >$(TEST_ENV)
 	DOCKER_ENV=$(DOCKER_ENV)
-	DOCKER_GOGIT_KEY=$(DOCKER_GOGIT_KEY)
-	DOCKER_GOGIT_LABEL=$(DOCKER_GOGIT_LABEL)
-	DOCKER_GOGIT_NAME=$(DOCKER_GOGIT_NAME)
 	GIT_REPOSITORY=$(GIT_REPOSITORY)
-	GIT_VERSIONS=(master v2.11.0)
-	GO_VERSION_WGIT=1.21
-	GO_VERSIONS=(1.19 1.20 1.21)
+	GIT_VERSION=$(GIT_VERSION)
+	GO_VERSION=$(GO_VERSION)
 	WORKDIR=$(WORKDIR)
 	EOF
 
-test-go1.19: test-env
+test-go: test-env
 	export BASH_ENV=$(TEST_ENV)
-	$(BASHCMD) _local/test-go.sh "1.19"
+	$(BASHCMD) _local/test-go.sh $(GO_VERSION)
 
-test-go1.20: test-env
+test-git: test-env
 	export BASH_ENV=$(TEST_ENV)
-	$(BASHCMD) _local/test-go.sh "1.20"
-
-test-go1.21: test-env
-	export BASH_ENV=$(TEST_ENV)
-	$(BASHCMD) _local/test-go.sh "1.21"
-
-test-go-all: test-go1.19 test-go1.20 test-go1.21
-
-.PHONY: test-git-master test-git-v2.11
-test-git-v2.11:
-	export BASH_ENV=$(TEST_ENV)
-	$(BASHCMD) _local/test-git-compatability.sh "v2.11.0"
-
-test-git-master:
-	export BASH_ENV=$(TEST_ENV)
-	$(BASHCMD) _local/test-git-compatability.sh "master"
-
-test-git-all: test-git-master test-git-v2.11
+	$(BASHCMD) _local/test-git-compatability.sh $(GIT_VERSION)
 
 TEMP_REPO := $(shell mktemp)
 test-sha256:
@@ -89,25 +68,8 @@ test-coverage:
 	echo "" > $(COVERAGE_REPORT); \
 	$(GOTEST) -coverprofile=$(COVERAGE_REPORT) -coverpkg=./... -covermode=$(COVERAGE_MODE) ./...
 
-.PHONY: clean clean-docker clean-all
-
 clean:
-	@if [ -d $(GIT_DIST_PATH) ]; then
-		rm -rf $(GIT_DIST_PATH)
-	fi
-	if [ -f $(TEST_ENV) ] || [ -f $(DOCKER_ENV) ]; then
-		rm $(TEST_ENV) $(DOCKER_ENV)
-	fi
-	rm coverage*
-
-# doc sys prune in this case only removes dangling images, but filter it anyway
-GOGIT_IMAGES := $(shell docker image ls --filter reference=go-git -q)
-clean-docker:
-	docker system prune -f --filter "label=$(DOCKER_GOGIT_KEY)=$(DOCKER_GOGIT_LABEL)"
-	docker volume prune -f --filter "label=$(DOCKER_GOGIT_KEY)=$(DOCKER_GOGIT_LABEL)"
-	docker image rm -f $(GOGIT_IMAGES)
-
-clean-all: clean clean-docker
+	rm -rf $(GIT_DIST_PATH) $(TEST_DIR)
 
 fuzz:
 	@go test -fuzz=FuzzParser				$(PWD)/internal/revision
