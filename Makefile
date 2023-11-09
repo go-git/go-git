@@ -62,18 +62,18 @@ test-go1.20: test-env
 	$(BASHCMD) _local/test-go.sh "1.20"
 
 test-go1.21: test-env
-	BASH_ENV=$(TEST_ENV)
+	export BASH_ENV=$(TEST_ENV)
 	$(BASHCMD) _local/test-go.sh "1.21"
 
 test-go-all: test-go1.19 test-go1.20 test-go1.21
 
 .PHONY: test-git-master test-git-v2.11
 test-git-v2.11:
-	BASH_ENV=$(TEST_ENV)
+	export BASH_ENV=$(TEST_ENV)
 	$(BASHCMD) _local/test-git-compatability.sh "v2.11.0"
 
 test-git-master:
-	BASH_ENV=$(TEST_ENV)
+	export BASH_ENV=$(TEST_ENV)
 	$(BASHCMD) _local/test-git-compatability.sh "master"
 
 test-git-all: test-git-master test-git-v2.11
