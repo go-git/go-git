@@ -4,6 +4,7 @@ package hash
 
 import (
 	"crypto"
+	"errors"
 	"fmt"
 	"hash"
 
@@ -15,6 +16,10 @@ const (
 	SHA1HexSize   = SHA1Size * 2
 	SHA256Size    = 32
 	SHA256HexSize = SHA256Size * 2
+)
+
+var (
+	ErrUnsupportedHashFunction = errors.New("unsupported hash function")
 )
 
 // algos is a map of hash algorithms.
@@ -45,7 +50,7 @@ func RegisterHash(h crypto.Hash, f func() hash.Hash) error {
 	case crypto.SHA256:
 		algos[h] = f
 	default:
-		return fmt.Errorf("unsupported hash function: %v", h)
+		return fmt.Errorf("%w: %v", ErrUnsupportedHashFunction, h)
 	}
 	return nil
 }
