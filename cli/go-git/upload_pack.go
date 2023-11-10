@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/file"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/server"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 type CmdUploadPack struct {
@@ -28,10 +30,21 @@ func (c *CmdUploadPack) Execute(args []string) error {
 		return err
 	}
 
-	if err := file.ServeUploadPack(gitDir); err != nil {
+	repo, err := git.PlainOpen(gitDir)
+	if err != nil {
+		return err
+	}
+
+	if err := server.ServeUploadPack(srvCmd, repo.Storer); err != nil {
 		fmt.Fprintln(os.Stderr, "ERR:", err)
 		os.Exit(128)
 	}
 
 	return nil
+}
+
+var srvCmd = server.ServerCommand{
+	Stdin:  os.Stdin,
+	Stdout: ioutil.WriteNopCloser(os.Stdout),
+	Stderr: os.Stderr,
 }

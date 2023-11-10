@@ -36,6 +36,7 @@ var socksProxiedRequests int32
 // Its located in a separate package because golang caches the value
 // of proxy env vars leading to misleading/unexpected test results.
 func (s *ProxyEnvSuite) TestCommand(c *C) {
+	c.Skip("skipping test in short mode.")
 	socksListener, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
 

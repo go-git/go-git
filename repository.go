@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,7 +19,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/internal/path_util"
+	"github.com/go-git/go-git/v5/internal/repository"
 	"github.com/go-git/go-git/v5/internal/revision"
 	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -32,7 +31,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
@@ -295,153 +293,17 @@ func PlainOpen(path string) (*Repository, error) {
 // PlainOpenWithOptions opens a git repository from the given path with specific
 // options. See PlainOpen for more info.
 func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error) {
-	dot, wt, err := dotGitToOSFilesystems(path, o.DetectDotGit)
+	s, wt, err := repository.PlainOpen(path, o.DetectDotGit, o.EnableDotGitCommonDir)
 	if err != nil {
-		return nil, err
-	}
-
-	if _, err := dot.Stat(""); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, repository.ErrCommonDirNotFound) {
+			return nil, ErrRepositoryIncomplete
+		} else if os.IsNotExist(err) {
 			return nil, ErrRepositoryNotExists
 		}
-
 		return nil, err
 	}
-
-	var repositoryFs billy.Filesystem
-
-	if o.EnableDotGitCommonDir {
-		dotGitCommon, err := dotGitCommonDirectory(dot)
-		if err != nil {
-			return nil, err
-		}
-		repositoryFs = dotgit.NewRepositoryFilesystem(dot, dotGitCommon)
-	} else {
-		repositoryFs = dot
-	}
-
-	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
 
 	return Open(s, wt)
-}
-
-func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
-	path, err = path_util.ReplaceTildeWithHome(path)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if path, err = filepath.Abs(path); err != nil {
-		return nil, nil, err
-	}
-
-	var fs billy.Filesystem
-	var fi os.FileInfo
-	for {
-		fs = osfs.New(path)
-
-		pathinfo, err := fs.Stat("/")
-		if !os.IsNotExist(err) {
-			if pathinfo == nil {
-				return nil, nil, err
-			}
-			if !pathinfo.IsDir() && detect {
-				fs = osfs.New(filepath.Dir(path))
-			}
-		}
-
-		fi, err = fs.Stat(GitDirName)
-		if err == nil {
-			// no error; stop
-			break
-		}
-		if !os.IsNotExist(err) {
-			// unknown error; stop
-			return nil, nil, err
-		}
-		if detect {
-			// try its parent as long as we haven't reached
-			// the root dir
-			if dir := filepath.Dir(path); dir != path {
-				path = dir
-				continue
-			}
-		}
-		// not detecting via parent dirs and the dir does not exist;
-		// stop
-		return fs, nil, nil
-	}
-
-	if fi.IsDir() {
-		dot, err = fs.Chroot(GitDirName)
-		return dot, fs, err
-	}
-
-	dot, err = dotGitFileToOSFilesystem(path, fs)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return dot, fs, nil
-}
-
-func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Filesystem, err error) {
-	f, err := fs.Open(GitDirName)
-	if err != nil {
-		return nil, err
-	}
-	defer ioutil.CheckClose(f, &err)
-
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-
-	line := string(b)
-	const prefix = "gitdir: "
-	if !strings.HasPrefix(line, prefix) {
-		return nil, fmt.Errorf(".git file has no %s prefix", prefix)
-	}
-
-	gitdir := strings.Split(line[len(prefix):], "\n")[0]
-	gitdir = strings.TrimSpace(gitdir)
-	if filepath.IsAbs(gitdir) {
-		return osfs.New(gitdir), nil
-	}
-
-	return osfs.New(fs.Join(path, gitdir)), nil
-}
-
-func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err error) {
-	f, err := fs.Open("commondir")
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	if len(b) > 0 {
-		path := strings.TrimSpace(string(b))
-		if filepath.IsAbs(path) {
-			commonDir = osfs.New(path)
-		} else {
-			commonDir = osfs.New(filepath.Join(fs.Root(), path))
-		}
-		if _, err := commonDir.Stat(""); err != nil {
-			if os.IsNotExist(err) {
-				return nil, ErrRepositoryIncomplete
-			}
-
-			return nil, err
-		}
-	}
-
-	return commonDir, nil
 }
 
 // PlainClone a repository into the path with the given options, isBare defines

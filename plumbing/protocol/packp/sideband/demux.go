@@ -124,7 +124,7 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return content[1:], nil
 	case ProgressMessage:
 		if d.Progress != nil {
-			_, err := d.Progress.Write(content[1:])
+			_, err := d.Progress.Write(append([]byte("remote: "), content[1:]...))
 			return nil, err
 		}
 	case ErrorMessage:

@@ -1387,7 +1387,7 @@ func pushHashes(
 	allDelete bool,
 ) (*packp.ReportStatus, error) {
 
-	rd, wr := ioutil.Pipe()
+	rd, wr := io.Pipe()
 
 	config, err := s.Config()
 	if err != nil {

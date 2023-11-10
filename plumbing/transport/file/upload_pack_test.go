@@ -1,8 +1,6 @@
 package file
 
 import (
-	"os"
-
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/test"
 
@@ -11,15 +9,12 @@ import (
 )
 
 type UploadPackSuite struct {
-	CommonSuite
 	test.UploadPackSuite
 }
 
 var _ = Suite(&UploadPackSuite{})
 
 func (s *UploadPackSuite) SetUpSuite(c *C) {
-	s.CommonSuite.SetUpSuite(c)
-
 	s.UploadPackSuite.Client = DefaultClient
 
 	fixture := fixtures.Basic().One()
@@ -41,13 +36,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 
 // TODO: fix test
 func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
-	c.Skip("failing test")
-
-	if _, err := os.Stat("/bin/true"); os.IsNotExist(err) {
-		c.Skip("/bin/true not found")
-	}
-
-	client := NewClient("true", "true")
+	client := NewClient()
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
@@ -56,11 +45,7 @@ func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
 }
 
 func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
-	if _, err := os.Stat("/usr/bin/yes"); os.IsNotExist(err) {
-		c.Skip("/usr/bin/yes not found")
-	}
-
-	client := NewClient("yes", "yes")
+	client := NewClient()
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
@@ -69,8 +54,7 @@ func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
 }
 
 func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
-	cmd := "/non-existent-git"
-	client := NewClient(cmd, cmd)
+	client := NewClient()
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	// Error message is OS-dependant, so do a broad check
 	c.Assert(err, ErrorMatches, ".*file.*")

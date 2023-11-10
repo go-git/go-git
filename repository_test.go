@@ -23,6 +23,7 @@ import (
 	openpgperr "github.com/ProtonMail/go-crypto/openpgp/errors"
 
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/internal/repository"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -3252,7 +3253,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch(c *C) {
 }
 
 func (s *RepositorySuite) TestDotGitToOSFilesystemsInvalidPath(c *C) {
-	_, _, err := dotGitToOSFilesystems("\000", false)
+	_, _, err := repository.DotGitToOSFilesystems("\000", false)
 	c.Assert(err, NotNil)
 }
 

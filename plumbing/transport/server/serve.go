@@ -1,11 +1,14 @@
-package common
+package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -17,9 +20,10 @@ type ServerCommand struct {
 	Stdin  io.Reader
 }
 
-func ServeUploadPack(cmd ServerCommand, s transport.UploadPackSession) (err error) {
-	ioutil.CheckClose(cmd.Stdout, &err)
+func ServeUploadPack(cmd ServerCommand, st storer.Storer) (err error) {
+	defer ioutil.CheckClose(cmd.Stdout, &err)
 
+	s := upSession{session{storer: st, service: transport.UploadPackServiceName}}
 	ar, err := s.AdvertisedReferences()
 	if err != nil {
 		return err
@@ -43,7 +47,14 @@ func ServeUploadPack(cmd ServerCommand, s transport.UploadPackSession) (err erro
 	return resp.Encode(cmd.Stdout)
 }
 
-func ServeReceivePack(cmd ServerCommand, s transport.ReceivePackSession) error {
+func ServeReceivePack(cmd ServerCommand, st storer.Storer) error {
+	s := rpSession{
+		session: session{
+			storer:  st,
+			service: transport.ReceivePackServiceName,
+		},
+		cmdStatus: make(map[plumbing.ReferenceName]error),
+	}
 	ar, err := s.AdvertisedReferences()
 	if err != nil {
 		return fmt.Errorf("internal error in advertised references: %s", err)
@@ -55,6 +66,10 @@ func ServeReceivePack(cmd ServerCommand, s transport.ReceivePackSession) error {
 
 	req := packp.NewReferenceUpdateRequest()
 	if err := req.Decode(cmd.Stdin); err != nil {
+		if errors.Is(err, packp.ErrEmpty) {
+			return nil
+		}
+
 		return fmt.Errorf("error decoding: %s", err)
 	}
 

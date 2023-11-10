@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/file"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/server"
 )
 
 type CmdReceivePack struct {
@@ -27,7 +28,12 @@ func (c *CmdReceivePack) Execute(args []string) error {
 		return err
 	}
 
-	if err := file.ServeReceivePack(gitDir); err != nil {
+	repo, err := git.PlainOpen(gitDir)
+	if err != nil {
+		return err
+	}
+
+	if err := server.ServeReceivePack(srvCmd, repo.Storer); err != nil {
 		fmt.Fprintln(os.Stderr, "ERR:", err)
 		os.Exit(128)
 	}

@@ -18,78 +18,15 @@ import (
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
-var DefaultServer = NewServer(DefaultLoader)
-
-type server struct {
-	loader  Loader
-	handler *handler
-}
-
-// NewServer returns a transport.Transport implementing a git server,
-// independent of transport. Each transport must wrap this.
-func NewServer(loader Loader) transport.Transport {
-	return &server{
-		loader,
-		&handler{asClient: false},
-	}
-}
-
-// NewClient returns a transport.Transport implementing a client with an
-// embedded server.
-func NewClient(loader Loader) transport.Transport {
-	return &server{
-		loader,
-		&handler{asClient: true},
-	}
-}
-
-func (s *server) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
-	sto, err := s.loader.Load(ep)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.handler.NewUploadPackSession(sto)
-}
-
-func (s *server) NewReceivePackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
-	sto, err := s.loader.Load(ep)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.handler.NewReceivePackSession(sto)
-}
-
-type handler struct {
-	asClient bool
-}
-
-func (h *handler) NewUploadPackSession(s storer.Storer) (transport.UploadPackSession, error) {
-	return &upSession{
-		session: session{storer: s, asClient: h.asClient},
-	}, nil
-}
-
-func (h *handler) NewReceivePackSession(s storer.Storer) (transport.ReceivePackSession, error) {
-	return &rpSession{
-		session:   session{storer: s, asClient: h.asClient},
-		cmdStatus: map[plumbing.ReferenceName]error{},
-	}, nil
-}
-
 type session struct {
-	storer   storer.Storer
-	caps     *capability.List
-	asClient bool
+	storer  storer.Storer
+	caps    *capability.List
+	service string
 }
+
+var _ transport.Session = &session{}
 
 func (s *session) Close() error {
-	return nil
-}
-
-func (s *session) SetAuth(transport.AuthMethod) error {
-	//TODO: deprecate
 	return nil
 }
 
@@ -103,15 +40,31 @@ func (s *session) checkSupportedCapabilities(cl *capability.List) error {
 	return nil
 }
 
-type upSession struct {
-	session
+func (s *session) setSupportedCapabilities(c *capability.List) error {
+	if err := c.Set(capability.Agent, capability.DefaultAgent()); err != nil {
+		return err
+	}
+
+	if err := c.Set(capability.OFSDelta); err != nil {
+		return err
+	}
+
+	if s.service == transport.ReceivePackServiceName {
+		if err := c.Set(capability.DeleteRefs); err != nil {
+			return err
+		}
+
+		return c.Set(capability.ReportStatus)
+	}
+
+	return nil
 }
 
-func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
+func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
 }
 
-func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
+func (s *session) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
 	ar := packp.NewAdvRefs()
 
 	if err := s.setSupportedCapabilities(ar.Capabilities); err != nil {
@@ -128,11 +81,15 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 		return nil, err
 	}
 
-	if s.asClient && len(ar.References) == 0 {
+	if s.service == transport.UploadPackServiceName && len(ar.References) == 0 {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
 
 	return ar, nil
+}
+
+type upSession struct {
+	session
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
@@ -166,7 +123,7 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 		return nil, err
 	}
 
-	pr, pw := ioutil.Pipe()
+	pr, pw := io.Pipe()
 	e := packfile.NewEncoder(pw, s.storer, false)
 	go func() {
 		// TODO: plumb through a pack window.
@@ -188,47 +145,11 @@ func (s *upSession) objectsToUpload(req *packp.UploadPackRequest) ([]plumbing.Ha
 	return revlist.Objects(s.storer, req.Wants, haves)
 }
 
-func (*upSession) setSupportedCapabilities(c *capability.List) error {
-	if err := c.Set(capability.Agent, capability.DefaultAgent()); err != nil {
-		return err
-	}
-
-	if err := c.Set(capability.OFSDelta); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 type rpSession struct {
 	session
 	cmdStatus map[plumbing.ReferenceName]error
 	firstErr  error
 	unpackErr error
-}
-
-func (s *rpSession) AdvertisedReferences() (*packp.AdvRefs, error) {
-	return s.AdvertisedReferencesContext(context.TODO())
-}
-
-func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
-	ar := packp.NewAdvRefs()
-
-	if err := s.setSupportedCapabilities(ar.Capabilities); err != nil {
-		return nil, err
-	}
-
-	s.caps = ar.Capabilities
-
-	if err := setReferences(s.storer, ar); err != nil {
-		return nil, err
-	}
-
-	if err := setHEAD(s.storer, ar); err != nil {
-		return nil, err
-	}
-
-	return ar, nil
 }
 
 var (
@@ -352,22 +273,6 @@ func (s *rpSession) reportStatus() *packp.ReportStatus {
 	}
 
 	return rs
-}
-
-func (*rpSession) setSupportedCapabilities(c *capability.List) error {
-	if err := c.Set(capability.Agent, capability.DefaultAgent()); err != nil {
-		return err
-	}
-
-	if err := c.Set(capability.OFSDelta); err != nil {
-		return err
-	}
-
-	if err := c.Set(capability.DeleteRefs); err != nil {
-		return err
-	}
-
-	return c.Set(capability.ReportStatus)
 }
 
 func setHEAD(s storer.Storer, ar *packp.AdvRefs) error {

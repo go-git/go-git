@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-git/go-git/v5/utils/trace"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -12,6 +13,12 @@ const (
 	receivePackBin = "git-receive-pack"
 	uploadPackBin  = "git-upload-pack"
 )
+
+func init() {
+	if t := os.Getenv("GIT_TRACE"); t == "1" {
+		trace.SetTarget(trace.General | trace.Packet)
+	}
+}
 
 func main() {
 	switch filepath.Base(os.Args[0]) {
@@ -26,6 +33,7 @@ func main() {
 	parser.AddCommand("receive-pack", "", "", &CmdReceivePack{})
 	parser.AddCommand("upload-pack", "", "", &CmdUploadPack{})
 	parser.AddCommand("version", "Show the version information.", "", &CmdVersion{})
+	parser.AddCommand("clone", "", "", &CmdClone{})
 
 	_, err := parser.Parse()
 	if err != nil {
