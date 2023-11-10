@@ -1,6 +1,7 @@
 package hasher
 
 import (
+	"bytes"
 	"crypto"
 	"fmt"
 	"strconv"
@@ -12,8 +13,13 @@ import (
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
 )
 
+type ObjectID interface {
+	String() string
+	Bytes() []byte
+}
+
 // ObjectHasher computes hashes for Git objects. A few differences
-// it has when compared to plumbing.Hasher:
+// it has when compared to Hasher:
 //
 //   - ObjectType awareness: produces either SHA1 or SHA256 hashes
 //     depending on the format needed.
@@ -25,7 +31,7 @@ type ObjectHasher interface {
 	// Compute calculates the hash of a Git object. The process involves
 	// first writing the object header, which contains the object type
 	// and content size, followed by the content itself.
-	Compute(ot plumbing.ObjectType, d []byte) (ImmutableHash, error)
+	Compute(ot plumbing.ObjectType, d []byte) (ObjectID, error)
 }
 
 // FromObjectFormat returns the correct ObjectHasher for the given
@@ -63,27 +69,32 @@ func FromHash(h hash.Hash) (ObjectHasher, error) {
 func newHasherSHA1() *objectHasherSHA1 {
 	return &objectHasherSHA1{
 		hasher: hash.New(crypto.SHA1),
+		buf:    *bytes.NewBuffer(make([]byte, 32)),
 	}
 }
 
 type objectHasherSHA1 struct {
 	hasher hash.Hash
 	m      sync.Mutex
+	// both fields below are allocation optimisations.
+	b   [20]byte
+	buf bytes.Buffer
 }
 
-func (h *objectHasherSHA1) Compute(ot plumbing.ObjectType, d []byte) (ImmutableHash, error) {
+func (h *objectHasherSHA1) Compute(ot plumbing.ObjectType, d []byte) (ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
+	h.buf.Reset()
 
-	writeHeader(h.hasher, ot, int64(len(d)))
+	writeHeader(h.hasher, h.buf, ot, int64(len(d)))
 	_, err := h.hasher.Write(d)
 	if err != nil {
 		h.m.Unlock()
 		return nil, fmt.Errorf("failed to compute hash: %w", err)
 	}
 
-	var out immutableHashSHA1
-	copy(out[:], h.hasher.Sum(out[:0]))
+	var out hash.SHA1Hash
+	out.Write(h.hasher.Sum(h.b[:0]))
 	h.m.Unlock()
 	return out, nil
 }
@@ -92,30 +103,39 @@ func (h *objectHasherSHA1) Size() int {
 	return h.hasher.Size()
 }
 
+func (h *objectHasherSHA1) Write(p []byte) (int, error) {
+	return h.hasher.Write(p)
+}
+
 func newHasherSHA256() *objectHasherSHA256 {
 	return &objectHasherSHA256{
 		hasher: hash.New(crypto.SHA256),
+		buf:    *bytes.NewBuffer(make([]byte, 32)),
 	}
 }
 
 type objectHasherSHA256 struct {
 	hasher hash.Hash
 	m      sync.Mutex
+	// both fields below are allocation optimisations.
+	b   [32]byte
+	buf bytes.Buffer
 }
 
-func (h *objectHasherSHA256) Compute(ot plumbing.ObjectType, d []byte) (ImmutableHash, error) {
+func (h *objectHasherSHA256) Compute(ot plumbing.ObjectType, d []byte) (ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
+	h.buf.Reset()
 
-	writeHeader(h.hasher, ot, int64(len(d)))
+	writeHeader(h.hasher, h.buf, ot, int64(len(d)))
 	_, err := h.hasher.Write(d)
 	if err != nil {
 		h.m.Unlock()
 		return nil, fmt.Errorf("failed to compute hash: %w", err)
 	}
 
-	out := immutableHashSHA256{}
-	copy(out[:], h.hasher.Sum(out[:0]))
+	var out hash.SHA256Hash
+	out.Write(h.hasher.Sum(h.b[:0]))
 	h.m.Unlock()
 	return out, nil
 }
@@ -124,12 +144,15 @@ func (h *objectHasherSHA256) Size() int {
 	return h.hasher.Size()
 }
 
-func writeHeader(h hash.Hash, ot plumbing.ObjectType, sz int64) {
-	// TODO: Optimise hasher.Write calls.
-	// Writing into hash in amounts smaller than oh.BlockSize() is
-	// sub-optimal.
-	h.Write(ot.Bytes())
-	h.Write([]byte(" "))
-	h.Write([]byte(strconv.FormatInt(sz, 10)))
-	h.Write([]byte{0})
+func (h *objectHasherSHA256) Write(p []byte) (int, error) {
+	return h.hasher.Write(p)
+}
+
+func writeHeader(h hash.Hash, buf bytes.Buffer, ot plumbing.ObjectType, sz int64) {
+	buf.Write(ot.Bytes())
+	buf.Write([]byte(" "))
+	buf.Write([]byte(strconv.FormatInt(sz, 10)))
+	buf.Write([]byte{0})
+
+	h.Write(buf.Bytes())
 }

@@ -1,9 +1,10 @@
-//go:build !sha256
-// +build !sha256
-
 package hash
 
-import "crypto"
+import (
+	"bytes"
+	"crypto"
+	"encoding/hex"
+)
 
 const (
 	// CryptoType defines what hash algorithm is being used.
@@ -13,3 +14,36 @@ const (
 	// HexSize defines the strings size of the hash when represented in hexadecimal.
 	HexSize = SHA1HexSize
 )
+
+type SHA1Hash struct {
+	hash [SHA1Size]byte
+}
+
+func (ih SHA1Hash) Size() int {
+	return len(ih.hash)
+}
+
+func (ih SHA1Hash) IsZero() bool {
+	var empty SHA1Hash
+	return ih == empty
+}
+
+func (ih SHA1Hash) String() string {
+	return hex.EncodeToString(ih.hash[:])
+}
+
+func (ih SHA1Hash) Bytes() []byte {
+	return ih.hash[:]
+}
+
+func (ih SHA1Hash) Compare(in []byte) int {
+	return bytes.Compare(ih.hash[:], in)
+}
+
+func (ih SHA1Hash) HasPrefix(prefix []byte) bool {
+	return bytes.HasPrefix(ih.hash[:], prefix)
+}
+
+func (ih *SHA1Hash) Write(in []byte) (int, error) {
+	return copy(ih.hash[:], in), nil
+}

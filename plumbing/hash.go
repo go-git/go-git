@@ -41,6 +41,18 @@ func (h Hash) String() string {
 	return hex.EncodeToString(h[:])
 }
 
+func (h Hash) Bytes() []byte {
+	return h[:]
+}
+
+func (h Hash) Compare(in []byte) int {
+	return bytes.Compare(h[:], in)
+}
+
+func (h *Hash) Write(in []byte) (int, error) {
+	return copy(h[:], in), nil
+}
+
 type Hasher struct {
 	hash.Hash
 }
