@@ -10,6 +10,13 @@ import (
 	"github.com/pjbgf/sha1cd"
 )
 
+const (
+	SHA1Size      = 20
+	SHA1HexSize   = SHA1Size * 2
+	SHA256Size    = 32
+	SHA256HexSize = SHA256Size * 2
+)
+
 // algos is a map of hash algorithms.
 var algos = map[crypto.Hash]func() hash.Hash{}
 
