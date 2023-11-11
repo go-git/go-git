@@ -42,14 +42,6 @@ PLTFM_CHECKS="$WORKDIR/_local/platform/${PLATFORM}.sh"
 
 ### BEGIN Platform Specific Section
 
-function preDockerCommands() {
-    local tag=$1
-    # Docker Desktop for Darwin fails when trying to use an image that isn't available locally. Therefore, we first check if it exists in the machine and preemptively pull it if not.
-    if [ "$(docker image ls -q --filter "reference=golang:$tag")" == "" ]; then
-        docker image pull "golang:$tag"
-    fi
-}
-
 if [ -f $PLTFM_CHECKS ]; then
     # shellcheck disable=SC1090
     source "$PLTFM_CHECKS"

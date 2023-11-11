@@ -52,11 +52,6 @@ PLTFM_CHECKS="$WORKDIR/_local/platform/${PLATFORM}.sh"
 
 ### BEGIN Platform Specific Section
 
-function preDockerCommands() {
-    # noop for linux
-    return
-}
-
 if [ -f $PLTFM_CHECKS ]; then
     # shellcheck disable=SC1090
     source "$PLTFM_CHECKS"
