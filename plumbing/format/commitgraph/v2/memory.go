@@ -1,14 +1,17 @@
 package v2
 
 import (
+	"math"
+
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // MemoryIndex provides a way to build the commit-graph in memory
 // for later encoding to file.
 type MemoryIndex struct {
-	commitData []commitData
-	indexMap   map[plumbing.Hash]uint32
+	commitData      []commitData
+	indexMap        map[plumbing.Hash]uint32
+	hasGenerationV2 bool
 }
 
 type commitData struct {
@@ -19,7 +22,8 @@ type commitData struct {
 // NewMemoryIndex creates in-memory commit graph representation
 func NewMemoryIndex() *MemoryIndex {
 	return &MemoryIndex{
-		indexMap: make(map[plumbing.Hash]uint32),
+		indexMap:        make(map[plumbing.Hash]uint32),
+		hasGenerationV2: true,
 	}
 }
 
@@ -83,9 +87,21 @@ func (mi *MemoryIndex) Add(hash plumbing.Hash, data *CommitData) {
 	data.ParentIndexes = nil
 	mi.indexMap[hash] = uint32(len(mi.commitData))
 	mi.commitData = append(mi.commitData, commitData{Hash: hash, CommitData: data})
+	if data.GenerationV2 == math.MaxUint64 { // if GenerationV2 is not available reset it to zero
+		data.GenerationV2 = 0
+	}
+	mi.hasGenerationV2 = mi.hasGenerationV2 && data.GenerationV2 != 0
+}
+
+func (mi *MemoryIndex) HasGenerationV2() bool {
+	return mi.hasGenerationV2
 }
 
 // Close closes the index
 func (mi *MemoryIndex) Close() error {
 	return nil
+}
+
+func (mi *MemoryIndex) MaximumNumberOfHashes() uint32 {
+	return uint32(len(mi.indexMap))
 }

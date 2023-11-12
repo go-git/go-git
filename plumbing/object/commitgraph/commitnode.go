@@ -29,6 +29,10 @@ type CommitNode interface {
 	// Generation returns the generation of the commit for reachability analysis.
 	// Objects with newer generation are not reachable from objects of older generation.
 	Generation() uint64
+	// GenerationV2 stores the corrected commit date for the commits
+	// It combines the contents of the GDA2 and GDO2 sections of the commit-graph
+	// with the commit time portion of the CDAT section.
+	GenerationV2() uint64
 	// Commit returns the full commit object from the node
 	Commit() (*object.Commit, error)
 }

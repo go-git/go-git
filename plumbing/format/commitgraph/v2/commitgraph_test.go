@@ -7,7 +7,11 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -74,6 +78,37 @@ func testDecodeHelper(c *C, index commitgraph.Index) {
 	c.Assert(len(hashes), Equals, 11)
 	c.Assert(hashes[0].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")
 	c.Assert(hashes[10].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")
+}
+
+func (s *CommitgraphSuite) TestDecodeMultiChain(c *C) {
+	fixtures.ByTag("commit-graph-chain-2").Test(c, func(f *fixtures.Fixture) {
+		dotgit := f.DotGit()
+		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
+		c.Assert(err, IsNil)
+		defer index.Close()
+		storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		p := f.Packfile()
+		defer p.Close()
+		packfile.UpdateObjectStorage(storer, p)
+
+		for idx, hash := range index.Hashes() {
+			idx2, err := index.GetIndexByHash(hash)
+			c.Assert(err, IsNil)
+			c.Assert(idx2, Equals, uint32(idx))
+			hash2, err := index.GetHashByIndex(idx2)
+			c.Assert(err, IsNil)
+			c.Assert(hash2.String(), Equals, hash.String())
+
+			commitData, err := index.GetCommitDataByIndex(uint32(idx))
+			c.Assert(err, IsNil)
+			commit, err := object.GetCommit(storer, hash)
+			c.Assert(err, IsNil)
+
+			for i, parent := range commit.ParentHashes {
+				c.Assert(hash.String()+":"+parent.String(), Equals, hash.String()+":"+commitData.ParentHashes[i].String())
+			}
+		}
+	})
 }
 
 func (s *CommitgraphSuite) TestDecode(c *C) {

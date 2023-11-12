@@ -3311,20 +3311,25 @@ func BenchmarkObjects(b *testing.B) {
 }
 
 func BenchmarkPlainClone(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		t, err := os.MkdirTemp("", "")
-		if err != nil {
-			b.Fatal(err)
-		}
-		_, err = PlainClone(t, false, &CloneOptions{
-			URL:   "https://github.com/knqyf263/vuln-list",
-			Depth: 1,
+	b.StopTimer()
+	clone := func(b *testing.B) {
+		_, err := PlainClone(b.TempDir(), true, &CloneOptions{
+			URL:          "https://github.com/go-git/go-git.git",
+			Depth:        1,
+			Tags:         NoTags,
+			SingleBranch: true,
 		})
 		if err != nil {
 			b.Error(err)
 		}
-		b.StopTimer()
-		os.RemoveAll(t)
-		b.StartTimer()
+	}
+
+	// Warm-up as the initial clone could have a higher cost which
+	// may skew results.
+	clone(b)
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		clone(b)
 	}
 }
