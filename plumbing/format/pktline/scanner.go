@@ -3,6 +3,8 @@ package pktline
 import (
 	"errors"
 	"io"
+
+	"github.com/go-git/go-git/v5/internal/trace"
 )
 
 const (
@@ -65,6 +67,7 @@ func (s *Scanner) Scan() bool {
 		return false
 	}
 	s.payload = s.payload[:l]
+	trace.Packet.Printf("packet: < %04x %s", l, s.payload)
 
 	return true
 }
