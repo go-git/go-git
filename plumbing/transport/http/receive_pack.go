@@ -33,7 +33,7 @@ func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 }
 
 func (s *rpSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
-	return advertisedCapabilities(context.TODO(), s.session, transport.ReceivePackServiceName)
+	return s.AdvertisedCapabilitiesContext(context.TODO())
 }
 
 func (s *rpSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
