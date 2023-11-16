@@ -1720,6 +1720,52 @@ func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
 	return hashes
 }
 
+// GetNote retuns the note for the given commit. returns a empty string, if the commit has no note.
+func (r *Repository) GetNote(commit *object.Commit) (string, error) {
+	notes, err := r.Notes()
+	if err != nil {
+		return "", err
+	}
+
+	noteRef, err := notes.Next()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	noteCommit, err := r.CommitObject(noteRef.Hash())
+	if err != nil {
+		return "", err
+	}
+
+	tree, err := noteCommit.Tree()
+	if err != nil {
+		return "", err
+	}
+
+	fi, err := tree.File(commit.Hash.String())
+	if err != nil {
+		if errors.Is(err, object.ErrFileNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	reader, err := fi.Blob.Reader()
+	if err != nil {
+		return "", err
+	}
+
+	by, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(by)), nil
+}
+
 type RepackConfig struct {
 	// UseRefDeltas configures whether packfile encoder will use reference deltas.
 	// By default OFSDeltaObject is used.

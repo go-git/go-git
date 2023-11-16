@@ -116,12 +116,12 @@ compatibility status with go-git.
 
 ## Advanced
 
-| Feature    | Sub-feature | Status      | Notes | Examples |
-| ---------- | ----------- | ----------- | ----- | -------- |
-| `notes`    |             | ❌          |       |          |
-| `replace`  |             | ❌          |       |          |
-| `worktree` |             | ❌          |       |          |
-| `annotate` |             | (see blame) |       |          |
+| Feature    | Sub-feature | Status      | Notes         | Examples |
+| ---------- | ----------- | ----------- | ------------- | -------- |
+| `notes`    |             | ✅          | Only reading |          |
+| `replace`  |             | ❌          |              |          |
+| `worktree` |             | ❌          |              |          |
+| `annotate` |             | (see blame) |              |          |
 
 ## GPG
 

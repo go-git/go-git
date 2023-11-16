@@ -3333,3 +3333,20 @@ func BenchmarkPlainClone(b *testing.B) {
 		clone(b)
 	}
 }
+
+func (s *RepositorySuite) TestGetNoteNotExisting(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	c.Assert(err, IsNil)
+
+	head, err := r.Head()
+	c.Assert(err, IsNil)
+
+	commit, err := r.CommitObject(head.Hash())
+	c.Assert(err, IsNil)
+
+	note, err := r.GetNote(commit)
+	c.Assert(err, IsNil)
+
+	c.Check(note, Equals, "")
+}
