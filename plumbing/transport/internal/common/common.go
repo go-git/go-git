@@ -245,6 +245,12 @@ func (s *session) handleAdvRefDecodeError(err error) error {
 // returned with the packfile content. The reader must be closed after reading.
 func (s *session) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
 	if req.IsEmpty() {
+		// XXX: IsEmpty means haves are a subset of wants, in that case we have
+		// everything we asked for. Close the connection and return nil.
+		if err := s.finish(); err != nil {
+			return nil, err
+		}
+		// TODO:(v6) return nil here
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
 

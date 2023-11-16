@@ -552,6 +552,10 @@ func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.Upl
 
 	reader, err := s.UploadPack(ctx, req)
 	if err != nil {
+		if errors.Is(err, transport.ErrEmptyUploadPackRequest) {
+			// XXX: no packfile provided, everything is up-to-date.
+			return nil
+		}
 		return err
 	}
 
