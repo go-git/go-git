@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/go-git/go-git/v5/internal/trace"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 const (
