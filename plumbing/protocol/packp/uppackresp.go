@@ -65,7 +65,7 @@ func (r *UploadPackResponse) Decode(reader io.Reader) error {
 	}
 
 	// now the reader is ready to read the packfile content
-	r.r = reader
+	r.r = buf
 
 	return nil
 }

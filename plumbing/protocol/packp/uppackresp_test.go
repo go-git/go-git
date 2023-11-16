@@ -21,7 +21,7 @@ func (s *UploadPackResponseSuite) TestDecodeNAK(c *C) {
 	req := NewUploadPackRequest()
 	res := NewUploadPackResponse(req)
 
-	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
+	err := res.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, IsNil)
 
 	pack, err := io.ReadAll(res)
@@ -37,7 +37,7 @@ func (s *UploadPackResponseSuite) TestDecodeDepth(c *C) {
 
 	res := NewUploadPackResponse(req)
 
-	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
+	err := res.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, IsNil)
 
 	pack, err := io.ReadAll(res)
@@ -53,7 +53,7 @@ func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
 
 	res := NewUploadPackResponse(req)
 
-	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
+	err := res.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, NotNil)
 }
 
@@ -67,7 +67,7 @@ func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 
 	res := NewUploadPackResponse(req)
 
-	err := res.Decode(io.NopCloser(bytes.NewBuffer(nil)))
+	err := res.Decode(bytes.NewBuffer(nil))
 	c.Assert(err, IsNil)
 }
 
@@ -124,6 +124,6 @@ func FuzzDecoder(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		req := NewUploadPackRequest()
 		res := NewUploadPackResponse(req)
-		res.Decode(io.NopCloser(bytes.NewReader(input)))
+		res.Decode(bytes.NewReader(input))
 	})
 }

@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 const ackLineLen = 44
@@ -20,7 +20,7 @@ type ServerResponse struct {
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
 // the request was done with multi_ack or multi_ack_detailed capabilities.
-func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
+func (r *ServerResponse) Decode(reader ioutil.ReadPeeker, isMultiACK bool) error {
 	s := pktline.NewScanner(reader)
 
 	for s.Scan() {
@@ -64,7 +64,7 @@ func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 
 // stopReading detects when a valid command such as ACK or NAK is found to be
 // read in the buffer without moving the read pointer.
-func (r *ServerResponse) stopReading(reader *bufio.Reader) (bool, error) {
+func (r *ServerResponse) stopReading(reader ioutil.ReadPeeker) (bool, error) {
 	ahead, err := reader.Peek(7)
 	if err == io.EOF {
 		return true, nil
