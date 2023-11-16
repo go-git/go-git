@@ -2,9 +2,12 @@ package filesystem
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
+	"runtime"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
 	. "gopkg.in/check.v1"
 )
 
@@ -194,6 +198,28 @@ func (s *NoderSuite) TestDiffDirectory(c *C) {
 	a, err := ch[0].Action()
 	c.Assert(err, IsNil)
 	c.Assert(a, Equals, merkletrie.Modify)
+}
+
+func (s *NoderSuite) TestSocket(c *C) {
+	if runtime.GOOS == "windows" {
+		c.Skip("socket files do not exist on windows")
+	}
+
+	td, err := os.MkdirTemp("", "socket-test")
+	defer os.RemoveAll(td)
+	c.Assert(err, IsNil)
+
+	sock, err := net.ListenUnix("unix", &net.UnixAddr{Name: fmt.Sprintf("%s/socket", td), Net: "unix"})
+	c.Assert(err, IsNil)
+	defer sock.Close()
+
+	fsA := osfs.New(td)
+	WriteFile(fsA, "foo", []byte("foo"), 0644)
+
+	noder := NewRootNode(fsA, nil)
+	childs, err := noder.Children()
+	c.Assert(err, IsNil)
+	c.Assert(childs, HasLen, 1)
 }
 
 func WriteFile(fs billy.Filesystem, filename string, data []byte, perm os.FileMode) error {
