@@ -12,6 +12,7 @@ import (
 
 // UploadPackRequest represents a upload-pack request.
 // Zero-value is not safe, use NewUploadPackRequest instead.
+// TODO(v6): remove this struct and handle this in FetchPack.
 type UploadPackRequest struct {
 	UploadRequest
 	UploadHaves

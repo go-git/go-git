@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os/exec"
@@ -9,44 +10,56 @@ import (
 	"sync"
 
 	"github.com/gliderlabs/ssh"
+	. "gopkg.in/check.v1"
 )
 
-func HandlerSSH(s ssh.Session) {
-	cmd, stdin, stderr, stdout, err := buildCommand(s.Command())
-	if err != nil {
-		fmt.Println(err)
-		return
+func HandlerSSH(c *C) func(s ssh.Session) {
+	return func(s ssh.Session) {
+		cmd, stdin, stderr, stdout, err := buildCommand(s.Command())
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		go func() {
+			defer stdin.Close()
+			io.Copy(stdin, s)
+		}()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Tee stderr
+		var stderrBuf bytes.Buffer
+		defer func() {
+			if stderrBuf.Len() > 0 {
+				c.Logf("stderr: %s", stderrBuf.String())
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			tee := io.TeeReader(stderr, &stderrBuf)
+			io.Copy(s.Stderr(), tee)
+		}()
+
+		go func() {
+			defer wg.Done()
+			io.Copy(s, stdout)
+		}()
+
+		wg.Wait()
+
+		if err := cmd.Wait(); err != nil {
+			c.Logf("%s: command failed: %s", c.TestName(), err)
+			return
+		}
 	}
-
-	if err := cmd.Start(); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	go func() {
-		defer stdin.Close()
-		io.Copy(stdin, s)
-	}()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(s.Stderr(), stderr)
-	}()
-
-	go func() {
-		defer wg.Done()
-		io.Copy(s, stdout)
-	}()
-
-	wg.Wait()
-
-	if err := cmd.Wait(); err != nil {
-		return
-	}
-
 }
 
 func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdout io.ReadCloser, err error) {

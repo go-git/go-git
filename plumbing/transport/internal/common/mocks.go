@@ -31,8 +31,13 @@ func (c MockCommand) Start() error {
 	return nil
 }
 
-func (c MockCommand) Close() error {
+func (c MockCommand) Wait() error {
 	panic("not implemented")
+}
+
+// Deprecated
+func (c MockCommand) Close() error {
+	return c.Wait()
 }
 
 type MockCommander struct {

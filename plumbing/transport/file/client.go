@@ -4,6 +4,7 @@ package file
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -102,9 +103,16 @@ type command struct {
 	cmd          *execabs.Cmd
 	stderrCloser io.Closer
 	closed       bool
+	started      bool
 }
 
-func (c *command) Start() error {
+func (c *command) Start() (err error) {
+	if c.started {
+		return fmt.Errorf("command already started")
+	}
+	defer func() {
+		c.started = err == nil
+	}()
 	return c.cmd.Start()
 }
 
@@ -131,6 +139,7 @@ func (c *command) Kill() error {
 }
 
 // Close waits for the command to exit.
+// Deprecated: use Wait instead.
 func (c *command) Close() error {
 	if c.closed {
 		return nil
@@ -142,6 +151,14 @@ func (c *command) Close() error {
 
 	}()
 
+	return nil
+}
+
+// Wait waits for the command to exit.
+func (c *command) Wait() error {
+	if !c.started {
+		return nil
+	}
 	err := c.cmd.Wait()
 	if _, ok := err.(*os.PathError); ok {
 		return nil

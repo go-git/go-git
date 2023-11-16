@@ -47,7 +47,7 @@ func (s *ProxySuite) TestCommand(c *C) {
 
 	sshListener, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
-	sshServer := &ssh.Server{Handler: test.HandlerSSH}
+	sshServer := &ssh.Server{Handler: test.HandlerSSH(c)}
 	go func() {
 		log.Fatal(sshServer.Serve(sshListener))
 	}()

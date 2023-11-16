@@ -118,6 +118,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
+	// Make sure we close the session at the end.
 	defer ioutil.CheckClose(s, &err)
 
 	ar, err := s.AdvertisedReferencesContext(ctx)
@@ -420,6 +421,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	// Make sure we close the session at the end.
 	defer ioutil.CheckClose(s, &err)
 
 	ar, err := s.AdvertisedReferencesContext(ctx)
@@ -555,8 +557,6 @@ func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.Upl
 		return err
 	}
 
-	defer ioutil.CheckClose(reader, &err)
-
 	if err = r.updateShallow(o, reader); err != nil {
 		return err
 	}
@@ -567,7 +567,7 @@ func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.Upl
 		return err
 	}
 
-	return err
+	return nil
 }
 
 func (r *Remote) addReferencesToUpdate(

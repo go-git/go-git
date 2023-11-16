@@ -68,8 +68,7 @@ func (s *upSession) UploadPack(
 		return nil, err
 	}
 
-	rc := ioutil.NewReadCloser(r, res.Body)
-	return common.DecodeUploadPackResponse(rc, req)
+	return common.DecodeUploadPackResponse(r, req)
 }
 
 // Close does nothing.

@@ -2,15 +2,12 @@ package ssh
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
-	"sync"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	testutils "github.com/go-git/go-git/v5/plumbing/transport/ssh/internal/test"
@@ -42,8 +39,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
-	c.Assert(err, IsNil)
+	s.base = c.MkDir()
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
@@ -57,7 +53,10 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
 	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 
-	server := &ssh.Server{Handler: testutils.HandlerSSH}
+	server := &ssh.Server{
+		Handler:     testutils.HandlerSSH(c),
+		IdleTimeout: time.Second,
+	}
 	for _, opt := range s.opts {
 		opt(server)
 	}
@@ -86,69 +85,4 @@ func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 
 	c.Assert(err, IsNil)
 	return ep
-}
-
-func handlerSSH(s ssh.Session) {
-	cmd, stdin, stderr, stdout, err := buildCommand(s.Command())
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	go func() {
-		defer stdin.Close()
-		io.Copy(stdin, s)
-	}()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(s.Stderr(), stderr)
-	}()
-
-	go func() {
-		defer wg.Done()
-		io.Copy(s, stdout)
-	}()
-
-	wg.Wait()
-
-	if err := cmd.Wait(); err != nil {
-		return
-	}
-}
-
-func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdout io.ReadCloser, err error) {
-	if len(c) != 2 {
-		err = fmt.Errorf("invalid command")
-		return
-	}
-
-	// fix for Windows environments
-	path := strings.Replace(c[1], "/C:/", "C:/", 1)
-
-	cmd = exec.Command(c[0], path)
-	stdout, err = cmd.StdoutPipe()
-	if err != nil {
-		return
-	}
-
-	stdin, err = cmd.StdinPipe()
-	if err != nil {
-		return
-	}
-
-	stderr, err = cmd.StderrPipe()
-	if err != nil {
-		return
-	}
-
-	return
 }

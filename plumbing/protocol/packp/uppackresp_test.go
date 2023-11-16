@@ -20,7 +20,6 @@ func (s *UploadPackResponseSuite) TestDecodeNAK(c *C) {
 
 	req := NewUploadPackRequest()
 	res := NewUploadPackResponse(req)
-	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
 	c.Assert(err, IsNil)
@@ -37,7 +36,6 @@ func (s *UploadPackResponseSuite) TestDecodeDepth(c *C) {
 	req.Depth = DepthCommits(1)
 
 	res := NewUploadPackResponse(req)
-	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
 	c.Assert(err, IsNil)
@@ -54,7 +52,6 @@ func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
 	req.Depth = DepthCommits(1)
 
 	res := NewUploadPackResponse(req)
-	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
 	c.Assert(err, NotNil)
@@ -69,7 +66,6 @@ func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 	req.Capabilities.Set(capability.MultiACK)
 
 	res := NewUploadPackResponse(req)
-	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBuffer(nil)))
 	c.Assert(err, IsNil)
@@ -80,8 +76,6 @@ func (s *UploadPackResponseSuite) TestReadNoDecode(c *C) {
 	req.Capabilities.Set(capability.MultiACK)
 
 	res := NewUploadPackResponse(req)
-	defer res.Close()
-
 	n, err := res.Read(nil)
 	c.Assert(err, Equals, ErrUploadPackResponseNotDecoded)
 	c.Assert(n, Equals, 0)
@@ -91,8 +85,6 @@ func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
 	pf := io.NopCloser(bytes.NewBuffer([]byte("[PACK]")))
 	req := NewUploadPackRequest()
 	res := NewUploadPackResponseWithPackfile(req, pf)
-	defer func() { c.Assert(res.Close(), IsNil) }()
-
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
 
@@ -106,8 +98,6 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 	req.Depth = DepthCommits(1)
 
 	res := NewUploadPackResponseWithPackfile(req, pf)
-	defer func() { c.Assert(res.Close(), IsNil) }()
-
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
 
@@ -120,7 +110,6 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 	req := NewUploadPackRequest()
 
 	res := NewUploadPackResponseWithPackfile(req, pf)
-	defer func() { c.Assert(res.Close(), IsNil) }()
 	res.ACKs = []plumbing.Hash{
 		plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81"),
 		plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82"),
@@ -135,8 +124,6 @@ func FuzzDecoder(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		req := NewUploadPackRequest()
 		res := NewUploadPackResponse(req)
-		defer res.Close()
-
 		res.Decode(io.NopCloser(bytes.NewReader(input)))
 	})
 }

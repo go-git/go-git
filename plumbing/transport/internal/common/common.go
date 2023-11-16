@@ -67,7 +67,10 @@ type Command interface {
 	Start() error
 	// Close closes the command and releases any resources used by it. It
 	// will block until the command exits.
+	// Deprecated: use Wait instead.
 	Close() error
+	// Wait waits for the command to exit.
+	Wait() error
 }
 
 // CommandKiller expands the Command interface, enabling it for being killed.
@@ -110,6 +113,7 @@ type session struct {
 	packRun       bool
 	finished      bool
 	firstErrLine  chan string
+	started       bool
 }
 
 func (c *client) newSession(s string, ep *transport.Endpoint, auth transport.AuthMethod) (*session, error) {
@@ -143,6 +147,7 @@ func (c *client) newSession(s string, ep *transport.Endpoint, auth transport.Aut
 		Command:       cmd,
 		firstErrLine:  c.listenFirstError(stderr),
 		isReceivePack: s == transport.ReceivePackServiceName,
+		started:       true,
 	}, nil
 }
 
@@ -278,8 +283,12 @@ func (s *session) UploadPack(ctx context.Context, req *packp.UploadPackRequest) 
 		return nil, err
 	}
 
-	rc := ioutil.NewReadCloser(r, s)
-	return DecodeUploadPackResponse(rc, req)
+	res, err := DecodeUploadPackResponse(r, req)
+	if err != nil {
+		return res, err
+	}
+
+	return res, nil
 }
 
 func (s *session) StdinContext(ctx context.Context) io.WriteCloser {
@@ -321,9 +330,8 @@ func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateReq
 	}
 
 	if !req.Capabilities.Supports(capability.ReportStatus) {
-		// If we don't have report-status, we can only
-		// check return value error.
-		return nil, s.Command.Close()
+		// If we don't have report-status, we're done here.
+		return nil, nil
 	}
 
 	r := s.StdoutContext(ctx)
@@ -345,18 +353,24 @@ func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateReq
 	}
 
 	if err := report.Error(); err != nil {
-		defer s.Close()
 		return report, err
 	}
 
-	return report, s.Command.Close()
+	return report, nil
 }
 
-func (s *session) finish() error {
+func (s *session) finish() (err error) {
 	if s.finished {
 		return nil
 	}
 
+	defer func() {
+		werr := s.Command.Wait()
+		if err != nil {
+			// XXX: replace with errors.Join in go1.20
+			err = fmt.Errorf("%w: %s", werr, err)
+		}
+	}()
 	s.finished = true
 
 	// If we did not run a upload/receive-pack, we close the connection
@@ -367,13 +381,11 @@ func (s *session) finish() error {
 		return err
 	}
 
-	return nil
+	return
 }
 
 func (s *session) Close() (err error) {
 	err = s.finish()
-
-	defer ioutil.CheckClose(s.Command, &err)
 	return
 }
 
@@ -477,7 +489,7 @@ func sendDone(w io.Writer) error {
 }
 
 // DecodeUploadPackResponse decodes r into a new packp.UploadPackResponse
-func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
+func DecodeUploadPackResponse(r io.Reader, req *packp.UploadPackRequest) (
 	*packp.UploadPackResponse, error,
 ) {
 	res := packp.NewUploadPackResponse(req)

@@ -100,7 +100,13 @@ func endpointToCommand(cmd string, ep *transport.Endpoint) string {
 }
 
 // Close closes the TCP connection and connection.
+// Deprecated: use Wait instead.
 func (c *command) Close() error {
+	return c.Wait()
+}
+
+// Wait waits for the command to exit.
+func (c *command) Wait() error {
 	if !c.connected {
 		return nil
 	}

@@ -3,11 +3,11 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
@@ -66,6 +66,7 @@ type command struct {
 	client    *ssh.Client
 	auth      AuthMethod
 	config    *ssh.ClientConfig
+	started   bool
 }
 
 func (c *command) setAuth(auth transport.AuthMethod) error {
@@ -78,29 +79,43 @@ func (c *command) setAuth(auth transport.AuthMethod) error {
 	return nil
 }
 
-func (c *command) Start() error {
+func (c *command) Start() (err error) {
+	if c.started {
+		return fmt.Errorf("command already started")
+	}
+	defer func() {
+		c.started = err == nil
+	}()
 	return c.Session.Start(endpointToCommand(c.command, c.endpoint))
 }
 
 // Close closes the SSH session and connection.
+// Deprecated: use Wait instead.
 func (c *command) Close() error {
 	if !c.connected {
 		return nil
 	}
 
 	c.connected = false
-
 	//XXX: If did read the full packfile, then the session might be already
 	//     closed.
 	_ = c.Session.Close()
 	err := c.client.Close()
 
-	//XXX: in go1.16+ we can use errors.Is(err, net.ErrClosed)
-	if err != nil && strings.HasSuffix(err.Error(), "use of closed network connection") {
+	if errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 
 	return err
+}
+
+// Wait waits for the command to exit.
+func (c *command) Wait() error {
+	if c.started {
+		return nil
+	}
+
+	return c.Session.Wait()
 }
 
 // connect connects to the SSH server, unless a AuthMethod was set with

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -260,7 +261,14 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 		req.Packfile = s.emptyPackfile()
 	}
 
-	return r.ReceivePack(context.Background(), req)
+	defer func() {
+		// XXX: Wait for the remote to be updated.
+		// On ssh for example, this some times produce a `cannot lock ref
+		// 'refs/heads/master': reference already exists` error.
+		time.Sleep(500 * time.Millisecond)
+	}()
+
+	return r.ReceivePack(context.TODO(), req)
 }
 
 func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,

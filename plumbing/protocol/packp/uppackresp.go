@@ -7,7 +7,6 @@ import (
 	"bufio"
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 // ErrUploadPackResponseNotDecoded is returned if Read is called without
@@ -17,11 +16,12 @@ var ErrUploadPackResponseNotDecoded = errors.New("upload-pack-response should be
 // UploadPackResponse contains all the information responded by the upload-pack
 // service, the response implements io.ReadCloser that allows to read the
 // packfile directly from it.
+// TODO(v6): remove this struct and handle this in FetchPack.
 type UploadPackResponse struct {
 	ShallowUpdate
 	ServerResponse
 
-	r          io.ReadCloser
+	r          io.Reader
 	isShallow  bool
 	isMultiACK bool
 }
@@ -51,7 +51,7 @@ func NewUploadPackResponseWithPackfile(req *UploadPackRequest,
 
 // Decode decodes all the responses sent by upload-pack service into the struct
 // and prepares it to read the packfile using the Read method
-func (r *UploadPackResponse) Decode(reader io.ReadCloser) error {
+func (r *UploadPackResponse) Decode(reader io.Reader) error {
 	buf := bufio.NewReader(reader)
 
 	if r.isShallow {
@@ -65,7 +65,7 @@ func (r *UploadPackResponse) Decode(reader io.ReadCloser) error {
 	}
 
 	// now the reader is ready to read the packfile content
-	r.r = ioutil.NewReadCloser(buf, reader)
+	r.r = reader
 
 	return nil
 }
@@ -82,7 +82,6 @@ func (r *UploadPackResponse) Encode(w io.Writer) (err error) {
 		return err
 	}
 
-	defer ioutil.CheckClose(r.r, &err)
 	_, err = io.Copy(w, r.r)
 	return err
 }
@@ -96,13 +95,4 @@ func (r *UploadPackResponse) Read(p []byte) (int, error) {
 	}
 
 	return r.r.Read(p)
-}
-
-// Close the underlying reader, if any
-func (r *UploadPackResponse) Close() error {
-	if r.r == nil {
-		return nil
-	}
-
-	return r.r.Close()
 }
