@@ -1,8 +1,10 @@
 package pktline
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/utils/trace"
 )
@@ -68,6 +70,13 @@ func (s *Scanner) Scan() bool {
 	}
 	s.payload = s.payload[:l]
 	trace.Packet.Printf("packet: < %04x %s", l, s.payload)
+
+	if bytes.HasPrefix(s.payload, errPrefix) {
+		s.err = &ErrorLine{
+			Text: strings.TrimSpace(string(s.payload[4:])),
+		}
+		return false
+	}
 
 	return true
 }
