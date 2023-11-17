@@ -76,7 +76,11 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 func (g *GitProtoRequest) Decode(r io.Reader) error {
 	s := pktline.NewScanner(r)
 	if !s.Scan() {
-		return s.Err()
+		err := s.Err()
+		if err == nil {
+			return ErrInvalidGitProtoRequest
+		}
+		return err
 	}
 
 	line := string(s.Bytes())
@@ -99,8 +103,9 @@ func (g *GitProtoRequest) Decode(r io.Reader) error {
 		return fmt.Errorf("%w: missing pathname", ErrInvalidGitProtoRequest)
 	}
 
+	g.Pathname = params[0]
 	if len(params) > 1 {
-		g.Host = params[1]
+		g.Host = strings.TrimPrefix(params[1], "host=")
 	}
 
 	if len(params) > 2 {
