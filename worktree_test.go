@@ -299,6 +299,20 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
 	c.Assert(err, Equals, NoErrAlreadyUpToDate)
 }
 
+func (s *WorktreeSuite) TestPullDepth(c *C) {
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL:   fixtures.Basic().One().URL,
+		Depth: 1,
+	})
+
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+	err = w.Pull(&PullOptions{})
+	c.Assert(err, Equals, nil)
+}
+
 func (s *WorktreeSuite) TestCheckout(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
