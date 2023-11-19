@@ -46,7 +46,7 @@ func (s *UploadPackSuite) TestNewClient(c *C) {
 	cl := &http.Client{Transport: roundTripper}
 	r, ok := NewClient(cl).(*client)
 	c.Assert(ok, Equals, true)
-	c.Assert(r.c, Equals, cl)
+	c.Assert(r.client, Equals, cl)
 }
 
 func (s *ClientSuite) TestNewBasicAuth(c *C) {
