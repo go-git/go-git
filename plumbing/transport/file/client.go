@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
 	"golang.org/x/sys/execabs"
 )
 
@@ -28,7 +27,7 @@ type runner struct {
 // NewClient returns a new local client using the given git-upload-pack and
 // git-receive-pack binaries.
 func NewClient(uploadPackBin, receivePackBin string) transport.Transport {
-	return common.NewClient(&runner{
+	return transport.NewClient(&runner{
 		UploadPackBin:  uploadPackBin,
 		ReceivePackBin: receivePackBin,
 	})
@@ -74,7 +73,7 @@ func prefixExecPath(cmd string) (string, error) {
 }
 
 func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod,
-) (common.Command, error) {
+) (transport.Command, error) {
 
 	switch cmd {
 	case transport.UploadPackServiceName:

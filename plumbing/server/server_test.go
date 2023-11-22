@@ -3,11 +3,11 @@ package server_test
 import (
 	"testing"
 
+	"github.com/go-git/go-git/v5/internal/transport/test"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
-	"github.com/go-git/go-git/v5/plumbing/transport/server"
-	"github.com/go-git/go-git/v5/plumbing/transport/test"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
