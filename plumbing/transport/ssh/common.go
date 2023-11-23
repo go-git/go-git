@@ -17,6 +17,10 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+func init() {
+	transport.Register("ssh", DefaultClient)
+}
+
 // DefaultClient is the default SSH client.
 var DefaultClient = NewClient(nil)
 

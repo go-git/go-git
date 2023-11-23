@@ -7,7 +7,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
+	"github.com/go-git/go-git/v5/plumbing/transport/file"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
@@ -35,15 +35,15 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 		s.client = server.NewServer(s.loader)
 	}
 
-	s.clientBackup = client.Protocols["file"]
-	client.Protocols["file"] = s.client
+	s.clientBackup = file.DefaultClient
+	transport.Register("file", s.client)
 }
 
 func (s *BaseSuite) TearDownSuite(c *C) {
 	if s.clientBackup == nil {
-		delete(client.Protocols, "file")
+		transport.Unregister("file")
 	} else {
-		client.Protocols["file"] = s.clientBackup
+		transport.Register("file", s.clientBackup)
 	}
 }
 

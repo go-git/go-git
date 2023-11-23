@@ -22,6 +22,11 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
+func init() {
+	transport.Register("http", DefaultClient)
+	transport.Register("https", DefaultClient)
+}
+
 // it requires a bytes.Buffer, because we need to know the length
 func applyHeadersToRequest(req *http.Request, content *bytes.Buffer, host string, requestType string) {
 	req.Header.Add("User-Agent", "git/1.0")

@@ -11,6 +11,10 @@ import (
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
+func init() {
+	transport.Register("git", DefaultClient)
+}
+
 // DefaultClient is the default git client.
 var DefaultClient = transport.NewClient(&runner{})
 
