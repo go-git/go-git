@@ -13,6 +13,10 @@ import (
 	"golang.org/x/sys/execabs"
 )
 
+func init() {
+	transport.Register("file", DefaultClient)
+}
+
 // DefaultClient is the default local client.
 var DefaultClient = NewClient(
 	transport.UploadPackServiceName,

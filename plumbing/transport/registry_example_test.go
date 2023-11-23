@@ -1,10 +1,10 @@
-package client_test
+package transport_test
 
 import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
@@ -17,5 +17,5 @@ func ExampleInstallProtocol() {
 	}
 
 	// Install it as default client for https URLs.
-	client.InstallProtocol("https", githttp.NewClient(httpClient))
+	transport.Register("https", githttp.NewClient(httpClient))
 }
