@@ -23,8 +23,7 @@ const (
 )
 
 var (
-	// Empty is an empty pkt-line payload. When encoded, it will produce a
-	// flush pkt.
+	// Empty is an empty pkt-line payload.
 	Empty = []byte{}
 
 	// FlushPkt are the contents of a flush-pkt pkt-line.
