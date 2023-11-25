@@ -99,7 +99,19 @@ func readPayloadLen(r io.Reader, l [lenSize]byte) (int, error) {
 		return 0, err
 	}
 
-	return ParseLength(l[:])
+	n, err := ParseLength(l[:])
+	if err != nil {
+		return 0, err
+	}
+
+	switch {
+	case n == 0:
+		return 0, nil
+	case n <= lenSize:
+		return 0, ErrInvalidPktLen
+	}
+
+	return n - lenSize, nil
 }
 
 // Turns the hexadecimal representation of a number in a byte slice into

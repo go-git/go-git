@@ -6,17 +6,19 @@ package pktline
 func ParseLength(b []byte) (int, error) {
 	n, err := hexDecode(b)
 	if err != nil {
-		return 0, err
+		return Err, err
 	}
 
-	switch {
-	case n == 0:
-		return 0, nil
-	case n <= lenSize:
-		return 0, ErrInvalidPktLen
-	case n > OversizePayloadMax+lenSize:
-		return 0, ErrInvalidPktLen
-	default:
-		return n - lenSize, nil
+	if n == 3 {
+		return Err, ErrInvalidPktLen
 	}
+
+	// Limit the maximum size of a pkt-line to 65520 bytes.
+	// Fixes: b4177b89c08b (plumbing: format: pktline, Accept oversized pkt-lines up to 65524 bytes)
+	// See https://github.com/git/git/commit/7841c4801ce51f1f62d376d164372e8677c6bc94
+	if n > MaxPayloadSize+lenSize {
+		return Err, ErrInvalidPktLen
+	}
+
+	return n, nil
 }

@@ -44,7 +44,7 @@ func (s *SuiteScanner) TestDecodeOversizePktLines(c *C) {
 		r := strings.NewReader(test)
 		sc := pktline.NewScanner(r)
 		_ = sc.Scan()
-		c.Assert(sc.Err(), IsNil)
+		c.Assert(sc.Err(), NotNil)
 	}
 }
 
