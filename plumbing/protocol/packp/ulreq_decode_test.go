@@ -67,15 +67,20 @@ func (s *UlReqDecodeSuite) TestWantOK(c *C) {
 
 func (s *UlReqDecodeSuite) testDecodeOK(c *C, payloads []string) *UploadRequest {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.EncodeString(payloads...)
-	c.Assert(err, IsNil)
+	e := pktline.NewWriter(&buf)
+	for _, p := range payloads {
+		if p == "" {
+			c.Assert(e.WriteFlush(), IsNil)
+		} else {
+			_, err := e.WritePacketString(p)
+			c.Assert(err, IsNil)
+		}
+	}
 
 	ur := NewUploadRequest()
 	d := newUlReqDecoder(&buf)
 
-	err = d.Decode(ur)
-	c.Assert(err, IsNil)
+	c.Assert(d.Decode(ur), IsNil)
 
 	return ur
 }

@@ -253,8 +253,15 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 		"",
 	}
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	c.Assert(e.EncodeString(payloads...), IsNil)
+	e := pktline.NewWriter(&buf)
+	for _, p := range payloads {
+		if p == "" {
+			c.Assert(e.WriteFlush(), IsNil)
+		} else {
+			_, err := e.WritePacketString(p)
+			c.Assert(err, IsNil)
+		}
+	}
 	buf.Write(packfileContent)
 
 	s.testDecodeOkRaw(c, expected, buf.Bytes())
@@ -267,9 +274,15 @@ func (s *UpdReqDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, patte
 
 func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *ReferenceUpdateRequest {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.EncodeString(payloads...)
-	c.Assert(err, IsNil)
+	e := pktline.NewWriter(&buf)
+	for _, p := range payloads {
+		if p == "" {
+			c.Assert(e.WriteFlush(), IsNil)
+		} else {
+			_, err := e.WritePacketString(p)
+			c.Assert(err, IsNil)
+		}
+	}
 
 	r := NewReferenceUpdateRequest()
 	c.Assert(r.Decode(&buf), IsNil)

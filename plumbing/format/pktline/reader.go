@@ -1,9 +1,11 @@
 package pktline
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/utils/trace"
 )
@@ -11,10 +13,6 @@ import (
 var (
 	// ErrNegativeCount is returned by Read when the count is negative.
 	ErrNegativeCount = errors.New("negative count")
-
-	// ErrShortRead is returned by Read when the count is less than the
-	// number of bytes requested.
-	ErrShortRead = errors.New("short read")
 )
 
 // Reader represents a pktline reader.
@@ -27,6 +25,9 @@ type Reader struct {
 // NewReader returns a new pktline reader that reads from r and supports
 // peeking.
 func NewReader(r io.Reader) *Reader {
+	if rdr, ok := r.(*Reader); ok {
+		return rdr
+	}
 	rdr := &Reader{
 		r: r,
 	}
@@ -50,10 +51,6 @@ func (r *Reader) Peek(n int) (b []byte, err error) {
 		return nil, err
 	}
 
-	if readN != readLen {
-		err = fmt.Errorf("%w: %d != %d", ErrShortRead, readN, readLen)
-	}
-
 	r.buf = append(r.buf, readBuf[:readN]...)
 	return r.buf, err
 }
@@ -64,17 +61,22 @@ func (r *Reader) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 
+	var n int
 	if len(r.buf) > 0 {
-		n := copy(p, r.buf)
+		n = copy(p, r.buf)
 		r.buf = r.buf[n:]
-		if n == len(p) {
-			return n, nil
-		}
-
-		p = p[n:]
 	}
 
-	return r.r.Read(p)
+	// Read the rest from the underlying reader.
+	if n < len(p) {
+		nr, err := r.r.Read(p[n:])
+		n += nr
+		if err != nil {
+			return n, err
+		}
+	}
+
+	return n, nil
 }
 
 // PeekPacket returns the next pktline without advancing the reader.
@@ -119,7 +121,14 @@ func (r *Reader) PeekPacket() (l int, p []byte, err error) {
 		return Err, nil, err
 	}
 
-	return length, r.buf[lenSize : lenSize+dataLen], nil
+	buf := r.buf[lenSize : lenSize+dataLen]
+	if bytes.HasPrefix(buf, errPrefix) {
+		err = &ErrorLine{
+			Text: strings.TrimSpace(string(buf[4:])),
+		}
+	}
+
+	return length, buf, nil
 }
 
 // ReadPacket reads a pktline from the reader.
@@ -171,6 +180,13 @@ func (r *Reader) ReadPacket() (l int, p []byte, err error) {
 		return Err, data, fmt.Errorf("%w: %d", ErrInvalidPktLen, dn)
 	}
 
+	buf := data[:dn]
+	if bytes.HasPrefix(buf, errPrefix) {
+		err = &ErrorLine{
+			Text: strings.TrimSpace(string(buf[4:])),
+		}
+	}
+
 	// TODO: handle newlines (\n)
-	return length, data[:dn], nil
+	return length, buf, err
 }

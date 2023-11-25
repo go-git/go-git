@@ -5,8 +5,7 @@ package pktline
 type Status = int
 
 const (
-	// Err is returned when the pktline is a error packet or encountered an
-	// error.
+	// Err is returned when the pktline has encountered an error.
 	Err Status = iota - 1
 
 	// Flush is the numeric value of a flush packet. It is returned when the

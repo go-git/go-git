@@ -24,18 +24,18 @@ func (s *AdvRefsDecodeSuite) TestEmpty(c *C) {
 
 func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	e.Flush()
+	e := pktline.NewWriter(&buf)
+	e.WriteFlush()
 	ar := NewAdvRefs()
 	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	e.EncodeString("# service=git-upload-pack")
-	e.Flush()
-	e.Flush()
+	e := pktline.NewWriter(&buf)
+	e.WritePacketString("# service=git-upload-pack")
+	e.WriteFlush()
+	e.WriteFlush()
 	ar := NewAdvRefs()
 	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
@@ -74,9 +74,15 @@ func (s *AdvRefsDecodeSuite) TestZeroId(c *C) {
 
 func (s *AdvRefsDecodeSuite) testDecodeOK(c *C, payloads []string) *AdvRefs {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.EncodeString(payloads...)
-	c.Assert(err, IsNil)
+	e := pktline.NewWriter(&buf)
+	for _, p := range payloads {
+		if p == "" {
+			c.Assert(e.WriteFlush(), IsNil)
+		} else {
+			_, err := e.WritePacketString(p)
+			c.Assert(err, IsNil)
+		}
+	}
 
 	ar := NewAdvRefs()
 	c.Assert(ar.Decode(&buf), IsNil)

@@ -34,6 +34,7 @@ type Scanner struct {
 }
 
 // NewScanner returns a new Scanner to read from r.
+// Deprecated: use NewReader instead.
 func NewScanner(r io.Reader) *Scanner {
 	return &Scanner{
 		r: r,

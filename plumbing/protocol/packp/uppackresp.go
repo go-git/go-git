@@ -4,8 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"bufio"
-
+	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -52,7 +51,7 @@ func NewUploadPackResponseWithPackfile(req *UploadPackRequest,
 // Decode decodes all the responses sent by upload-pack service into the struct
 // and prepares it to read the packfile using the Read method
 func (r *UploadPackResponse) Decode(reader io.ReadCloser) error {
-	buf := bufio.NewReader(reader)
+	buf := pktline.NewReader(reader)
 
 	if r.isShallow {
 		if err := r.ShallowUpdate.Decode(buf); err != nil {

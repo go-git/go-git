@@ -21,14 +21,14 @@ func (req *UploadRequest) Encode(w io.Writer) error {
 }
 
 type ulReqEncoder struct {
-	pe   *pktline.Encoder // where to write the encoded data
-	data *UploadRequest   // the data to encode
-	err  error            // sticky error
+	pe   *pktline.Writer // where to write the encoded data
+	data *UploadRequest  // the data to encode
+	err  error           // sticky error
 }
 
 func newUlReqEncoder(w io.Writer) *ulReqEncoder {
 	return &ulReqEncoder{
-		pe: pktline.NewEncoder(w),
+		pe: pktline.NewWriter(w),
 	}
 }
 
@@ -50,10 +50,9 @@ func (e *ulReqEncoder) Encode(v *UploadRequest) error {
 func (e *ulReqEncoder) encodeFirstWant() stateFn {
 	var err error
 	if e.data.Capabilities.IsEmpty() {
-		err = e.pe.Encodef("want %s\n", e.data.Wants[0])
+		_, err = e.pe.WritePacketf("want %s\n", e.data.Wants[0])
 	} else {
-		err = e.pe.Encodef(
-			"want %s %s\n",
+		_, err = e.pe.WritePacketf("want %s %s\n",
 			e.data.Wants[0],
 			e.data.Capabilities.String(),
 		)
@@ -74,7 +73,7 @@ func (e *ulReqEncoder) encodeAdditionalWants() stateFn {
 			continue
 		}
 
-		if err := e.pe.Encodef("want %s\n", w); err != nil {
+		if _, err := e.pe.WritePacketf("want %s\n", w); err != nil {
 			e.err = fmt.Errorf("encoding want %q: %s", w, err)
 			return nil
 		}
@@ -94,7 +93,7 @@ func (e *ulReqEncoder) encodeShallows() stateFn {
 			continue
 		}
 
-		if err := e.pe.Encodef("shallow %s\n", s); err != nil {
+		if _, err := e.pe.WritePacketf("shallow %s\n", s); err != nil {
 			e.err = fmt.Errorf("encoding shallow %q: %s", s, err)
 			return nil
 		}
@@ -110,20 +109,20 @@ func (e *ulReqEncoder) encodeDepth() stateFn {
 	case DepthCommits:
 		if depth != 0 {
 			commits := int(depth)
-			if err := e.pe.Encodef("deepen %d\n", commits); err != nil {
+			if _, err := e.pe.WritePacketf("deepen %d\n", commits); err != nil {
 				e.err = fmt.Errorf("encoding depth %d: %s", depth, err)
 				return nil
 			}
 		}
 	case DepthSince:
 		when := time.Time(depth).UTC()
-		if err := e.pe.Encodef("deepen-since %d\n", when.Unix()); err != nil {
+		if _, err := e.pe.WritePacketf("deepen-since %d\n", when.Unix()); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", when, err)
 			return nil
 		}
 	case DepthReference:
 		reference := string(depth)
-		if err := e.pe.Encodef("deepen-not %s\n", reference); err != nil {
+		if _, err := e.pe.WritePacketf("deepen-not %s\n", reference); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", reference, err)
 			return nil
 		}
@@ -136,7 +135,7 @@ func (e *ulReqEncoder) encodeDepth() stateFn {
 }
 
 func (e *ulReqEncoder) encodeFlush() stateFn {
-	if err := e.pe.Flush(); err != nil {
+	if err := e.pe.WriteFlush(); err != nil {
 		e.err = fmt.Errorf("encoding flush-pkt: %s", err)
 		return nil
 	}

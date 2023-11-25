@@ -20,16 +20,16 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 }
 
 type ulReqDecoder struct {
-	s     *pktline.Scanner // a pkt-line scanner from the input stream
-	line  []byte           // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine int              // current pkt-line number for debugging, begins at 1
-	err   error            // sticky error, use the parser.error() method to fill this out
-	data  *UploadRequest   // parsed data is stored here
+	s     *pktline.Reader // a pkt-line scanner from the input stream
+	line  []byte          // current pkt-line contents, use parser.nextLine() to make it advance
+	nLine int             // current pkt-line number for debugging, begins at 1
+	err   error           // sticky error, use the parser.error() method to fill this out
+	data  *UploadRequest  // parsed data is stored here
 }
 
 func newUlReqDecoder(r io.Reader) *ulReqDecoder {
 	return &ulReqDecoder{
-		s: pktline.NewScanner(r),
+		s: pktline.NewReader(r),
 	}
 }
 
@@ -60,16 +60,17 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 func (d *ulReqDecoder) nextLine() bool {
 	d.nLine++
 
-	if !d.s.Scan() {
-		if d.err = d.s.Err(); d.err != nil {
-			return false
-		}
-
+	_, p, err := d.s.ReadPacket()
+	if err == io.EOF {
 		d.error("EOF")
 		return false
 	}
+	if err != nil {
+		d.err = err
+		return false
+	}
 
-	d.line = d.s.Bytes()
+	d.line = p
 	d.line = bytes.TrimSuffix(d.line, eol)
 
 	return true

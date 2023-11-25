@@ -160,22 +160,33 @@ type AdvRefsDecodeEncodeSuite struct{}
 var _ = Suite(&AdvRefsDecodeEncodeSuite{})
 
 func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty bool) {
-	var err error
 	var input io.Reader
 	{
 		var buf bytes.Buffer
-		p := pktline.NewEncoder(&buf)
-		err = p.EncodeString(in...)
-		c.Assert(err, IsNil)
+		p := pktline.NewWriter(&buf)
+		for _, l := range in {
+			if l == "" {
+				c.Assert(p.WriteFlush(), IsNil)
+			} else {
+				_, err := p.WritePacketString(l)
+				c.Assert(err, IsNil)
+			}
+		}
 		input = &buf
 	}
 
 	var expected []byte
 	{
 		var buf bytes.Buffer
-		p := pktline.NewEncoder(&buf)
-		err = p.EncodeString(exp...)
-		c.Assert(err, IsNil)
+		p := pktline.NewWriter(&buf)
+		for _, l := range exp {
+			if l == "" {
+				c.Assert(p.WriteFlush(), IsNil)
+			} else {
+				_, err := p.WritePacketString(l)
+				c.Assert(err, IsNil)
+			}
+		}
 
 		expected = buf.Bytes()
 	}

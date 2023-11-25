@@ -107,7 +107,7 @@ func (s *upSession) doRequest(
 
 func uploadPackRequestToReader(req *packp.UploadPackRequest) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
+	e := pktline.NewWriter(buf)
 
 	if err := req.UploadRequest.Encode(buf); err != nil {
 		return nil, fmt.Errorf("sending upload-req message: %s", err)
@@ -117,7 +117,7 @@ func uploadPackRequestToReader(req *packp.UploadPackRequest) (*bytes.Buffer, err
 		return nil, fmt.Errorf("sending haves message: %s", err)
 	}
 
-	if err := e.EncodeString("done\n"); err != nil {
+	if _, err := e.WritePacketf("done\n"); err != nil {
 		return nil, err
 	}
 

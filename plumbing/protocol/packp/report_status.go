@@ -43,8 +43,8 @@ func (s *ReportStatus) Error() error {
 
 // Encode writes the report status to a writer.
 func (s *ReportStatus) Encode(w io.Writer) error {
-	e := pktline.NewEncoder(w)
-	if err := e.Encodef("unpack %s\n", s.UnpackStatus); err != nil {
+	e := pktline.NewWriter(w)
+	if _, err := e.WritePacketf("unpack %s\n", s.UnpackStatus); err != nil {
 		return err
 	}
 
@@ -54,25 +54,31 @@ func (s *ReportStatus) Encode(w io.Writer) error {
 		}
 	}
 
-	return e.Flush()
+	return e.WriteFlush()
 }
 
 // Decode reads from the given reader and decodes a report-status message. It
 // does not read more input than what is needed to fill the report status.
 func (s *ReportStatus) Decode(r io.Reader) error {
-	scan := pktline.NewScanner(r)
-	if err := s.scanFirstLine(scan); err != nil {
+	scan := pktline.NewReader(r)
+	b, err := s.scanFirstLine(scan)
+	if err != nil {
 		return err
 	}
 
-	if err := s.decodeReportStatus(scan.Bytes()); err != nil {
+	if err := s.decodeReportStatus(b); err != nil {
 		return err
 	}
 
+	var l int
 	flushed := false
-	for scan.Scan() {
-		b := scan.Bytes()
-		if isFlush(b) {
+	for {
+		l, b, err = scan.ReadPacket()
+		if err != nil {
+			break
+		}
+
+		if l == pktline.Flush {
 			flushed = true
 			break
 		}
@@ -86,19 +92,23 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 		return fmt.Errorf("missing flush")
 	}
 
-	return scan.Err()
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
 }
 
-func (s *ReportStatus) scanFirstLine(scan *pktline.Scanner) error {
-	if scan.Scan() {
-		return nil
+func (s *ReportStatus) scanFirstLine(scan *pktline.Reader) ([]byte, error) {
+	_, p, err := scan.ReadPacket()
+	if err == io.EOF {
+		return p, io.ErrUnexpectedEOF
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	if scan.Err() != nil {
-		return scan.Err()
-	}
-
-	return io.ErrUnexpectedEOF
+	return p, nil
 }
 
 func (s *ReportStatus) decodeReportStatus(b []byte) error {
@@ -156,10 +166,12 @@ func (s *CommandStatus) Error() error {
 }
 
 func (s *CommandStatus) encode(w io.Writer) error {
-	e := pktline.NewEncoder(w)
+	e := pktline.NewWriter(w)
 	if s.Error() == nil {
-		return e.Encodef("ok %s\n", s.ReferenceName.String())
+		_, err := e.WritePacketf("ok %s\n", s.ReferenceName.String())
+		return err
 	}
 
-	return e.Encodef("ng %s %s\n", s.ReferenceName.String(), s.Status)
+	_, err := e.WritePacketf("ng %s %s\n", s.ReferenceName.String(), s.Status)
+	return err
 }

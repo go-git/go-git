@@ -259,18 +259,6 @@ func (s *SuiteReader) TestInvalidPeek(c *C) {
 	c.Assert(err, ErrorMatches, pktline.ErrNegativeCount.Error())
 }
 
-func (s *SuiteReader) TestPeekTooLong(c *C) {
-	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.EncodeString("a")
-	c.Assert(err, IsNil)
-
-	sc := pktline.NewReader(&buf)
-	b, err := sc.Peek(6)
-	c.Assert(b, NotNil)
-	c.Assert(err, ErrorMatches, pktline.ErrShortRead.Error()+".*")
-}
-
 func (s *SuiteReader) TestPeekPacket(c *C) {
 	var buf bytes.Buffer
 	e := pktline.NewEncoder(&buf)
@@ -308,4 +296,52 @@ func (s *SuiteReader) TestPeekPacketReadPacket(c *C) {
 	c.Assert(err, ErrorMatches, io.EOF.Error())
 	c.Assert(l, Equals, -1)
 	c.Assert(p, IsNil)
+}
+
+func (s *SuiteReader) TestPeekRead(c *C) {
+	hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+
+	var buf bytes.Buffer
+	e := pktline.NewWriter(&buf)
+	e.WritePacketf(hash)
+
+	sc := pktline.NewReader(&buf)
+	b, err := sc.Peek(7)
+	c.Assert(err, IsNil)
+	c.Assert(b, DeepEquals, []byte("002c6ec"))
+
+	full, err := io.ReadAll(sc)
+	c.Assert(err, IsNil)
+	c.Assert(string(full), DeepEquals, "002c"+hash)
+}
+
+func (s *SuiteReader) TestPeekReadPart(c *C) {
+	hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+
+	var buf bytes.Buffer
+	e := pktline.NewWriter(&buf)
+	e.WritePacketf(hash)
+
+	sc := pktline.NewReader(&buf)
+	b, err := sc.Peek(7)
+	c.Assert(err, IsNil)
+	c.Assert(b, DeepEquals, []byte("002c6ec"))
+
+	var part [8]byte
+	n, err := sc.Read(part[:])
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 8)
+	c.Assert(part[:], DeepEquals, []byte("002c6ecf"))
+}
+
+func (s *SuiteReader) TestReadPacketError(c *C) {
+	var buf bytes.Buffer
+	e := pktline.NewWriter(&buf)
+	e.WriteError(io.EOF)
+
+	sc := pktline.NewReader(&buf)
+	l, p, err := sc.ReadPacket()
+	c.Assert(err, NotNil)
+	c.Assert(l, Equals, 12)
+	c.Assert(string(p), DeepEquals, "ERR EOF\n")
 }

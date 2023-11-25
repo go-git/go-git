@@ -10,7 +10,7 @@ import (
 // information. The multiplex is perform using pktline format.
 type Muxer struct {
 	max int
-	e   *pktline.Encoder
+	e   *pktline.Writer
 }
 
 const chLen = 1
@@ -28,7 +28,7 @@ func NewMuxer(t Type, w io.Writer) *Muxer {
 
 	return &Muxer{
 		max: max - chLen,
-		e:   pktline.NewEncoder(w),
+		e:   pktline.NewWriter(w),
 	}
 }
 
@@ -61,5 +61,6 @@ func (m *Muxer) doWrite(ch Channel, p []byte) (int, error) {
 		sz = m.max
 	}
 
-	return sz, m.e.Encode(ch.WithPayload(p[:sz]))
+	_, err := m.e.WritePacket(ch.WithPayload(p[:sz]))
+	return sz, err
 }

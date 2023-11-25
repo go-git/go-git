@@ -2,7 +2,6 @@ package pktline_test
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -216,7 +215,7 @@ func (s *SuiteWriter) TestFormatString(c *C) {
 	var buf bytes.Buffer
 	e := pktline.NewWriter(&buf)
 
-	_, err := e.WritePacketString(fmt.Sprintf(format, str, d))
+	_, err := e.WritePacketf(format, str, d)
 	c.Assert(err, IsNil)
 
 	expected := []byte("000c foo 42\n")

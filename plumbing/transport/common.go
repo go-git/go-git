@@ -472,9 +472,9 @@ func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) err
 }
 
 func sendDone(w io.Writer) error {
-	e := pktline.NewEncoder(w)
-
-	return e.Encodef("done\n")
+	e := pktline.NewWriter(w)
+	_, err := e.WritePacketf("done\n")
+	return err
 }
 
 // DecodeUploadPackResponse decodes r into a new packp.UploadPackResponse

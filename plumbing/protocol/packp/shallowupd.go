@@ -20,13 +20,19 @@ type ShallowUpdate struct {
 }
 
 func (r *ShallowUpdate) Decode(reader io.Reader) error {
-	s := pktline.NewScanner(reader)
+	s := pktline.NewReader(reader)
 
-	for s.Scan() {
-		line := s.Bytes()
-		line = bytes.TrimSpace(line)
+	var (
+		p   []byte
+		err error
+	)
+	for {
+		_, p, err = s.ReadPacket()
+		if err != nil {
+			break
+		}
 
-		var err error
+		line := bytes.TrimSpace(p)
 		switch {
 		case bytes.HasPrefix(line, shallow):
 			err = r.decodeShallowLine(line)
@@ -41,7 +47,11 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 		}
 	}
 
-	return s.Err()
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
 }
 
 func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
@@ -74,19 +84,19 @@ func (r *ShallowUpdate) decodeLine(line, prefix []byte, expLen int) (plumbing.Ha
 }
 
 func (r *ShallowUpdate) Encode(w io.Writer) error {
-	e := pktline.NewEncoder(w)
+	e := pktline.NewWriter(w)
 
 	for _, h := range r.Shallows {
-		if err := e.Encodef("%s%s\n", shallow, h.String()); err != nil {
+		if _, err := e.WritePacketf("%s%s\n", shallow, h.String()); err != nil {
 			return err
 		}
 	}
 
 	for _, h := range r.Unshallows {
-		if err := e.Encodef("%s%s\n", unshallow, h.String()); err != nil {
+		if _, err := e.WritePacketf("%s%s\n", unshallow, h.String()); err != nil {
 			return err
 		}
 	}
 
-	return e.Flush()
+	return e.WriteFlush()
 }

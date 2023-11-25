@@ -28,6 +28,7 @@ var (
 )
 
 // NewEncoder returns a new encoder that writes to w.
+// Deprecated: use NewWriter instead.
 func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{
 		w: w,

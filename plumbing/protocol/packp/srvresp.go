@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -20,20 +19,25 @@ type ServerResponse struct {
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
 // the request was done with multi_ack or multi_ack_detailed capabilities.
-func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
-	s := pktline.NewScanner(reader)
+func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
+	s := pktline.NewReader(reader)
 
-	for s.Scan() {
-		line := s.Bytes()
+	var err error
+	for {
+		var p []byte
+		_, p, err = s.ReadPacket()
+		if err != nil {
+			break
+		}
 
-		if err := r.decodeLine(line); err != nil {
+		if err := r.decodeLine(p); err != nil {
 			return err
 		}
 
 		// we need to detect when the end of a response header and the beginning
 		// of a packfile header happened, some requests to the git daemon
 		// produces a duplicate ACK header even when multi_ack is not supported.
-		stop, err := r.stopReading(reader)
+		stop, err := r.stopReading(s)
 		if err != nil {
 			return err
 		}
@@ -41,6 +45,10 @@ func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 		if stop {
 			break
 		}
+	}
+
+	if err == io.EOF {
+		err = nil
 	}
 
 	// isMultiACK is true when the remote server advertises the related
@@ -54,7 +62,6 @@ func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 	// information highlighting that this capabilities are not supported by go-git.
 	//
 	// TODO: Implement support for multi_ack or multi_ack_detailed responses.
-	err := s.Err()
 	if err != nil && isMultiACK {
 		return fmt.Errorf("multi_ack and multi_ack_detailed are not supported: %w", err)
 	}
@@ -64,7 +71,7 @@ func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 
 // stopReading detects when a valid command such as ACK or NAK is found to be
 // read in the buffer without moving the read pointer.
-func (r *ServerResponse) stopReading(reader *bufio.Reader) (bool, error) {
+func (r *ServerResponse) stopReading(reader *pktline.Reader) (bool, error) {
 	ahead, err := reader.Peek(7)
 	if err == io.EOF {
 		return true, nil
@@ -132,10 +139,12 @@ func (r *ServerResponse) Encode(w io.Writer, isMultiACK bool) error {
 		return errors.New("multi_ack and multi_ack_detailed are not supported")
 	}
 
-	e := pktline.NewEncoder(w)
+	e := pktline.NewWriter(w)
 	if len(r.ACKs) == 0 {
-		return e.Encodef("%s\n", nak)
+		_, err := e.WritePacketString(string(nak) + "\n")
+		return err
 	}
 
-	return e.Encodef("%s %s\n", ack, r.ACKs[0].String())
+	_, err := e.WritePacketf("%s %s\n", ack, r.ACKs[0].String())
+	return err
 }

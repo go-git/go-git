@@ -30,18 +30,21 @@ func (e *ErrorLine) Error() string {
 
 // Encode encodes the ErrorLine into a packet line.
 func (e *ErrorLine) Encode(w io.Writer) error {
-	p := NewEncoder(w)
-	return p.Encodef("%s%s\n", string(errPrefix), e.Text)
+	p := NewWriter(w)
+	_, err := p.WritePacketf("%s%s\n", string(errPrefix), e.Text)
+	return err
 }
 
 // Decode decodes a packet line into an ErrorLine.
 func (e *ErrorLine) Decode(r io.Reader) error {
-	s := NewScanner(r)
-	if !s.Scan() {
-		return s.Err()
+	s := NewReader(r)
+	_, line, err := s.ReadPacket()
+	if err == io.EOF {
+		return nil
 	}
-
-	line := s.Bytes()
+	if err != nil {
+		return err
+	}
 	if !bytes.HasPrefix(line, errPrefix) {
 		return ErrInvalidErrorLine
 	}

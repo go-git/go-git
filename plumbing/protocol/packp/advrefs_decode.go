@@ -19,12 +19,12 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 }
 
 type advRefsDecoder struct {
-	s     *pktline.Scanner // a pkt-line scanner from the input stream
-	line  []byte           // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine int              // current pkt-line number for debugging, begins at 1
-	hash  plumbing.Hash    // last hash read
-	err   error            // sticky error, use the parser.error() method to fill this out
-	data  *AdvRefs         // parsed data is stored here
+	s     *pktline.Reader // a pkt-line scanner from the input stream
+	line  []byte          // current pkt-line contents, use parser.nextLine() to make it advance
+	nLine int             // current pkt-line number for debugging, begins at 1
+	hash  plumbing.Hash   // last hash read
+	err   error           // sticky error, use the parser.error() method to fill this out
+	data  *AdvRefs        // parsed data is stored here
 }
 
 var (
@@ -37,7 +37,7 @@ var (
 
 func newAdvRefsDecoder(r io.Reader) *advRefsDecoder {
 	return &advRefsDecoder{
-		s: pktline.NewScanner(r),
+		s: pktline.NewReader(r),
 	}
 }
 
@@ -70,8 +70,10 @@ func (d *advRefsDecoder) error(format string, a ...interface{}) {
 func (d *advRefsDecoder) nextLine() bool {
 	d.nLine++
 
-	if !d.s.Scan() {
-		if d.err = d.s.Err(); d.err != nil {
+	_, p, err := d.s.ReadPacket()
+	if err != nil {
+		if !errors.Is(err, io.EOF) {
+			d.err = err
 			return false
 		}
 
@@ -84,7 +86,7 @@ func (d *advRefsDecoder) nextLine() bool {
 		return false
 	}
 
-	d.line = d.s.Bytes()
+	d.line = p
 	d.line = bytes.TrimSuffix(d.line, eol)
 
 	return true

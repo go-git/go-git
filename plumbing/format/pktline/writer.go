@@ -1,6 +1,7 @@
 package pktline
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/utils/trace"
@@ -15,6 +16,9 @@ var _ io.Writer = (*Writer)(nil)
 
 // NewWriter returns a new pktline writer.
 func NewWriter(w io.Writer) *Writer {
+	if wtr, ok := w.(*Writer); ok {
+		return wtr
+	}
 	return &Writer{w: w}
 }
 
@@ -49,6 +53,14 @@ func (w *Writer) WritePacket(p []byte) (n int, err error) {
 // WritePacketString writes a pktline packet from a string.
 func (w *Writer) WritePacketString(s string) (n int, err error) {
 	return w.WritePacket([]byte(s))
+}
+
+// WritePacketf writes a pktline packet from a format string.
+func (w *Writer) WritePacketf(format string, a ...interface{}) (n int, err error) {
+	if len(a) == 0 {
+		return w.WritePacketString(format)
+	}
+	return w.WritePacketString(fmt.Sprintf(format, a...))
 }
 
 // WriteFlush writes a flush packet.
