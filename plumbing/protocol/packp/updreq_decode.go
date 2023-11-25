@@ -149,7 +149,7 @@ func (d *updReqDecoder) decodeShallow() error {
 func (d *updReqDecoder) decodeCommands() error {
 	for {
 		b := d.s.Bytes()
-		if bytes.Equal(b, pktline.Flush) {
+		if bytes.Equal(b, pktline.Empty) {
 			return nil
 		}
 

@@ -198,12 +198,12 @@ func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty
 func (s *AdvRefsDecodeEncodeSuite) TestNoHead(c *C) {
 	input := []string{
 		"0000000000000000000000000000000000000000 capabilities^{}\x00",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
 		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, true)
@@ -213,13 +213,13 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
 		"# service=git-upload-pack\n",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, true)
@@ -228,16 +228,16 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart(c *C) {
 func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmartBug(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
-		pktline.FlushString,
+		"",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
 		"# service=git-upload-pack\n",
-		pktline.FlushString,
+		"",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, true)
@@ -249,7 +249,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestRefs(c *C) {
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
@@ -257,7 +257,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestRefs(c *C) {
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, false)
@@ -271,7 +271,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestPeeled(c *C) {
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree",
 		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
@@ -281,7 +281,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestPeeled(c *C) {
 		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
 		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, false)
@@ -297,7 +297,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}",
 		"shallow 1111111111111111111111111111111111111111",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
@@ -309,7 +309,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, false)
@@ -318,7 +318,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
 func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
-		pktline.FlushString,
+		"",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
@@ -327,12 +327,12 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
 		"# service=git-upload-pack\n",
-		pktline.FlushString,
+		"",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
@@ -341,7 +341,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, false)
@@ -350,7 +350,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
 func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 	input := []string{
 		"# service=git-upload-pack\n",
-		pktline.FlushString,
+		"",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
@@ -359,12 +359,12 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 
 	expected := []string{
 		"# service=git-upload-pack\n",
-		pktline.FlushString,
+		"",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
@@ -373,7 +373,7 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
 		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 
 	s.test(c, input, expected, false)

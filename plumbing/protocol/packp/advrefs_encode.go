@@ -79,7 +79,7 @@ type encoderStateFn func(*advRefsEncoder) encoderStateFn
 
 func encodePrefix(e *advRefsEncoder) encoderStateFn {
 	for _, p := range e.data.Prefix {
-		if bytes.Equal(p, pktline.Flush) {
+		if bytes.Equal(p, pktline.Empty) {
 			if e.err = e.pe.Flush(); e.err != nil {
 				return nil
 			}

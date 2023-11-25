@@ -52,7 +52,7 @@ func (s *Scanner) Err() error {
 // it was io.EOF, Err will return nil.
 func (s *Scanner) Scan() bool {
 	var l int
-	l, s.err = s.readPayloadLen()
+	l, s.err = readPayloadLen(s.r, s.len)
 	if s.err == io.EOF {
 		s.err = nil
 		return false
@@ -90,8 +90,8 @@ func (s *Scanner) Bytes() []byte {
 
 // Method readPayloadLen returns the payload length by reading the
 // pkt-len and subtracting the pkt-len size.
-func (s *Scanner) readPayloadLen() (int, error) {
-	if _, err := io.ReadFull(s.r, s.len[:]); err != nil {
+func readPayloadLen(r io.Reader, l [lenSize]byte) (int, error) {
+	if _, err := io.ReadFull(r, l[:]); err != nil {
 		if err == io.ErrUnexpectedEOF {
 			return 0, ErrInvalidPktLen
 		}
@@ -99,28 +99,18 @@ func (s *Scanner) readPayloadLen() (int, error) {
 		return 0, err
 	}
 
-	n, err := hexDecode(s.len)
-	if err != nil {
-		return 0, err
-	}
-
-	switch {
-	case n == 0:
-		return 0, nil
-	case n <= lenSize:
-		return 0, ErrInvalidPktLen
-	case n > OversizePayloadMax+lenSize:
-		return 0, ErrInvalidPktLen
-	default:
-		return n - lenSize, nil
-	}
+	return ParseLength(l[:])
 }
 
 // Turns the hexadecimal representation of a number in a byte slice into
 // a number. This function substitute strconv.ParseUint(string(buf), 16,
 // 16) and/or hex.Decode, to avoid generating new strings, thus helping the
 // GC.
-func hexDecode(buf [lenSize]byte) (int, error) {
+func hexDecode(buf []byte) (int, error) {
+	if len(buf) < 4 {
+		return 0, ErrInvalidPktLen
+	}
+
 	var ret int
 	for i := 0; i < lenSize; i++ {
 		n, err := asciiHexToByte(buf[i])

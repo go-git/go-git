@@ -40,7 +40,7 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Flush,
+				pktline.Empty,
 			},
 			expected: []byte("000ahello\n0000"),
 		}, {
@@ -53,10 +53,10 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Flush,
+				pktline.Empty,
 				[]byte("world!\n"),
 				[]byte("foo"),
-				pktline.Flush,
+				pktline.Empty,
 			},
 			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
 		}, {
@@ -125,7 +125,7 @@ func (s *SuiteEncoder) TestEncodeStrings(c *C) {
 		}, {
 			input: []string{
 				"hello\n",
-				pktline.FlushString,
+				"",
 			},
 			expected: []byte("000ahello\n0000"),
 		}, {
@@ -138,10 +138,10 @@ func (s *SuiteEncoder) TestEncodeStrings(c *C) {
 		}, {
 			input: []string{
 				"hello\n",
-				pktline.FlushString,
+				"",
 				"world!\n",
 				"foo",
-				pktline.FlushString,
+				"",
 			},
 			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
 		}, {

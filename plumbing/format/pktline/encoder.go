@@ -25,12 +25,6 @@ const (
 )
 
 var (
-	// FlushPkt are the contents of a flush-pkt pkt-line.
-	FlushPkt = []byte{'0', '0', '0', '0'}
-	// Flush is the payload to use with the Encode method to encode a flush-pkt.
-	Flush = []byte{}
-	// FlushString is the payload to use with the EncodeString method to encode a flush-pkt.
-	FlushString = ""
 	// ErrPayloadTooLong is returned by the Encode methods when any of the
 	// provided payloads is bigger than MaxPayloadSize.
 	ErrPayloadTooLong = errors.New("payload is too long")
@@ -50,9 +44,10 @@ func (e *Encoder) Flush() error {
 	return err
 }
 
-// Encode encodes a pkt-line with the payload specified and write it to
-// the output stream.  If several payloads are specified, each of them
-// will get streamed in their own pkt-lines.
+// Encode encodes a pkt-line with the payload specified and write it to the
+// output stream. If several payloads are specified, each of them will get
+// streamed in their own pkt-lines. Encoding an empty payload will result in a
+// flush-pkt.
 func (e *Encoder) Encode(payloads ...[]byte) error {
 	for _, p := range payloads {
 		if err := e.encodeLine(p); err != nil {
@@ -68,7 +63,7 @@ func (e *Encoder) encodeLine(p []byte) error {
 		return ErrPayloadTooLong
 	}
 
-	if bytes.Equal(p, Flush) {
+	if bytes.Equal(p, Empty) {
 		return e.Flush()
 	}
 

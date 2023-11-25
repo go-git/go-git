@@ -111,7 +111,7 @@ func decodePrefix(d *advRefsDecoder) decoderStateFn {
 		return decodeFirstHash
 	}
 
-	d.data.Prefix = append(d.data.Prefix, pktline.Flush)
+	d.data.Prefix = append(d.data.Prefix, pktline.Empty)
 	if ok := d.nextLine(); !ok {
 		return nil
 	}
