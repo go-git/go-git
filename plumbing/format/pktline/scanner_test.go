@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -175,7 +174,8 @@ func (s *SuiteScanner) TestInternalReadError(c *C) {
 func (s *SuiteScanner) TestReadSomeSections(c *C) {
 	nSections := 2
 	nLines := 4
-	data := sectionsExample(c, nSections, nLines)
+	data, err := sectionsExample(nSections, nLines)
+	c.Assert(err, IsNil)
 	sc := pktline.NewScanner(data)
 
 	sectionCounter := 0
@@ -199,7 +199,7 @@ func (s *SuiteScanner) TestReadSomeSections(c *C) {
 // ...
 // 0000
 // and so on
-func sectionsExample(c *C, nSections, nLines int) io.Reader {
+func sectionsExample(nSections, nLines int) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
 	e := pktline.NewEncoder(&buf)
 
@@ -209,11 +209,13 @@ func sectionsExample(c *C, nSections, nLines int) io.Reader {
 			line := fmt.Sprintf(" %d.%d\n", section, line)
 			ss = append(ss, line)
 		}
-		err := e.EncodeString(ss...)
-		c.Assert(err, IsNil)
-		err = e.Flush()
-		c.Assert(err, IsNil)
+		if err := e.EncodeString(ss...); err != nil {
+			return nil, err
+		}
+		if err := e.Flush(); err != nil {
+			return nil, err
+		}
 	}
 
-	return &buf
+	return &buf, nil
 }

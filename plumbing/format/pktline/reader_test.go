@@ -186,7 +186,8 @@ func (s *SuiteReader) TestInternalReadError(c *C) {
 func (s *SuiteReader) TestReadSomeSections(c *C) {
 	nSections := 2
 	nLines := 4
-	data := sectionsExample(c, nSections, nLines)
+	data, err := sectionsExample(nSections, nLines)
+	c.Assert(err, IsNil)
 	sc := pktline.NewReader(data)
 
 	sectionCounter := 0
