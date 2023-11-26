@@ -472,8 +472,7 @@ func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) err
 }
 
 func sendDone(w io.Writer) error {
-	e := pktline.NewWriter(w)
-	_, err := e.WritePacketf("done\n")
+	_, err := pktline.WritePacketf(w, "done\n")
 	return err
 }
 

@@ -15,14 +15,13 @@ func Test(t *testing.T) { TestingT(t) }
 // returns a byte slice with the pkt-lines for the given payloads.
 func pktlines(c *C, payloads ...string) []byte {
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
 
 	comment := Commentf("building pktlines for %v\n", payloads)
 	for _, p := range payloads {
 		if p == "" {
-			c.Assert(e.WriteFlush(), IsNil, comment)
+			c.Assert(pktline.WriteFlush(&buf), IsNil, comment)
 		} else {
-			_, err := e.WritePacketString(p)
+			_, err := pktline.WritePacketString(&buf, p)
 			c.Assert(err, IsNil, comment)
 		}
 	}
@@ -32,12 +31,11 @@ func pktlines(c *C, payloads ...string) []byte {
 
 func toPktLines(c *C, payloads []string) io.Reader {
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
 	for _, p := range payloads {
 		if p == "" {
-			c.Assert(e.WriteFlush(), IsNil)
+			c.Assert(pktline.WriteFlush(&buf), IsNil)
 		} else {
-			_, err := e.WritePacketString(p)
+			_, err := pktline.WritePacketString(&buf, p)
 			c.Assert(err, IsNil)
 		}
 	}

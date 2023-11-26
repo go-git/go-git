@@ -1,6 +1,7 @@
 package packp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 const ackLineLen = 44
@@ -20,12 +22,12 @@ type ServerResponse struct {
 // Decode decodes the response into the struct, isMultiACK should be true, if
 // the request was done with multi_ack or multi_ack_detailed capabilities.
 func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
-	s := pktline.NewReader(reader)
+	s := bufio.NewReader(reader)
 
 	var err error
 	for {
 		var p []byte
-		_, p, err = s.ReadPacket()
+		_, p, err = pktline.ReadPacket(s)
 		if err != nil {
 			break
 		}
@@ -71,7 +73,7 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 
 // stopReading detects when a valid command such as ACK or NAK is found to be
 // read in the buffer without moving the read pointer.
-func (r *ServerResponse) stopReading(reader *pktline.Reader) (bool, error) {
+func (r *ServerResponse) stopReading(reader ioutil.ReadPeeker) (bool, error) {
 	ahead, err := reader.Peek(7)
 	if err == io.EOF {
 		return true, nil
@@ -139,12 +141,11 @@ func (r *ServerResponse) Encode(w io.Writer, isMultiACK bool) error {
 		return errors.New("multi_ack and multi_ack_detailed are not supported")
 	}
 
-	e := pktline.NewWriter(w)
 	if len(r.ACKs) == 0 {
-		_, err := e.WritePacketString(string(nak) + "\n")
+		_, err := pktline.WritePacketString(w, string(nak)+"\n")
 		return err
 	}
 
-	_, err := e.WritePacketf("%s %s\n", ack, r.ACKs[0].String())
+	_, err := pktline.WritePacketf(w, "%s %s\n", ack, r.ACKs[0].String())
 	return err
 }

@@ -163,12 +163,11 @@ func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty
 	var input io.Reader
 	{
 		var buf bytes.Buffer
-		p := pktline.NewWriter(&buf)
 		for _, l := range in {
 			if l == "" {
-				c.Assert(p.WriteFlush(), IsNil)
+				c.Assert(pktline.WriteFlush(&buf), IsNil)
 			} else {
-				_, err := p.WritePacketString(l)
+				_, err := pktline.WritePacketString(&buf, l)
 				c.Assert(err, IsNil)
 			}
 		}
@@ -178,12 +177,11 @@ func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty
 	var expected []byte
 	{
 		var buf bytes.Buffer
-		p := pktline.NewWriter(&buf)
 		for _, l := range exp {
 			if l == "" {
-				c.Assert(p.WriteFlush(), IsNil)
+				c.Assert(pktline.WriteFlush(&buf), IsNil)
 			} else {
-				_, err := p.WritePacketString(l)
+				_, err := pktline.WritePacketString(&buf, l)
 				c.Assert(err, IsNil)
 			}
 		}

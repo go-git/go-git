@@ -52,7 +52,6 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 		return err
 	}
 
-	p := pktline.NewWriter(w)
 	req := fmt.Sprintf("%s %s\x00", g.RequestCommand, g.Pathname)
 	if host := g.Host; host != "" {
 		req += fmt.Sprintf("host=%s\x00", host)
@@ -65,7 +64,7 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 		}
 	}
 
-	if _, err := p.WritePacketf(req); err != nil {
+	if _, err := pktline.WritePacketf(w, req); err != nil {
 		return err
 	}
 
@@ -74,8 +73,7 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 
 // Decode decodes the request from the reader.
 func (g *GitProtoRequest) Decode(r io.Reader) error {
-	s := pktline.NewReader(r)
-	_, p, err := s.ReadPacket()
+	_, p, err := pktline.ReadPacket(r)
 	if err == io.EOF {
 		return ErrInvalidGitProtoRequest
 	}

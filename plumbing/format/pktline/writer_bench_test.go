@@ -48,7 +48,7 @@ func BenchmarkEncoder(b *testing.B) {
 	}
 }
 
-func BenchmarkWriter(b *testing.B) {
+func BenchmarkWritePacket(b *testing.B) {
 	sections, err := sectionsExample(2, 4)
 	if err != nil {
 		b.Fatal(err)
@@ -79,8 +79,7 @@ func BenchmarkWriter(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			var buf bytes.Buffer
 			for i := 0; i < b.N; i++ {
-				e := pktline.NewWriter(&buf)
-				_, err := e.WritePacket(tc.input)
+				_, err := pktline.WritePacket(&buf, tc.input)
 				if err != nil {
 					b.Fatal(err)
 				}

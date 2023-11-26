@@ -1,10 +1,7 @@
 package pktline
 
 import (
-	"fmt"
 	"io"
-
-	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 // Writer is a pktline writer.
@@ -29,65 +26,30 @@ func (w *Writer) Write(p []byte) (int, error) {
 
 // WritePacket writes a pktline packet.
 func (w *Writer) WritePacket(p []byte) (n int, err error) {
-	defer func() {
-		if err == nil {
-			defer trace.Packet.Printf("packet: > %04x %s", n, p)
-		}
-	}()
-
-	if len(p) > MaxPayloadSize {
-		return 0, ErrPayloadTooLong
-	}
-
-	pktlen := len(p) + 4
-	n, err = w.Write(asciiHex16(pktlen))
-	if err != nil {
-		return
-	}
-
-	n2, err := w.Write(p)
-	n += n2
-	return
+	return WritePacket(w, p)
 }
 
 // WritePacketString writes a pktline packet from a string.
 func (w *Writer) WritePacketString(s string) (n int, err error) {
-	return w.WritePacket([]byte(s))
+	return WritePacketString(w, s)
 }
 
 // WritePacketf writes a pktline packet from a format string.
 func (w *Writer) WritePacketf(format string, a ...interface{}) (n int, err error) {
-	if len(a) == 0 {
-		return w.WritePacketString(format)
-	}
-	return w.WritePacketString(fmt.Sprintf(format, a...))
+	return WritePacketf(w, format, a...)
 }
 
 // WriteFlush writes a flush packet.
 func (w *Writer) WriteFlush() (err error) {
-	defer func() {
-		if err == nil {
-			defer trace.Packet.Printf("packet: > 0000")
-		}
-	}()
-
-	_, err = w.Write(FlushPkt)
-	return err
+	return WriteFlush(w)
 }
 
 // WriteDelim writes a delimiter packet.
 func (w *Writer) WriteDelim() (err error) {
-	defer func() {
-		if err == nil {
-			defer trace.Packet.Printf("packet: > 0000")
-		}
-	}()
-
-	_, err = w.Write(DelimPkt)
-	return err
+	return WriteDelim(w)
 }
 
 // WriteError writes an error packet.
 func (w *Writer) WriteError(e error) (n int, err error) {
-	return w.WritePacketString("ERR " + e.Error() + "\n")
+	return WriteErrorPacket(w, e)
 }

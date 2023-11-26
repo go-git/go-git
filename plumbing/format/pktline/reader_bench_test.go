@@ -46,7 +46,7 @@ func BenchmarkScanner(b *testing.B) {
 	}
 }
 
-func BenchmarkReader(b *testing.B) {
+func BenchmarkReadPacket(b *testing.B) {
 	sections, err := sectionsExample(2, 4)
 	if err != nil {
 		b.Fatal(err)
@@ -76,10 +76,9 @@ func BenchmarkReader(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			r := strings.NewReader(tc.input)
-			sc := pktline.NewReader(r)
 			for i := 0; i < b.N; i++ {
 				for {
-					_, _, err := sc.ReadPacket()
+					_, _, err := pktline.ReadPacket(r)
 					if err != nil {
 						break
 					}

@@ -15,9 +15,7 @@ var _ = Suite(&SuiteWriter{})
 
 func (s *SuiteWriter) TestFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
-
-	err := e.WriteFlush()
+	err := pktline.WriteFlush(&buf)
 	c.Assert(err, IsNil)
 
 	obtained := buf.Bytes()
@@ -75,14 +73,13 @@ func (s *SuiteWriter) TestEncode(c *C) {
 		comment := Commentf("input %d = %s\n", i, test.input)
 
 		var buf bytes.Buffer
-		e := pktline.NewWriter(&buf)
 
 		for _, p := range test.input {
 			var err error
 			if bytes.Equal(p, pktline.Empty) {
-				err = e.WriteFlush()
+				err = pktline.WriteFlush(&buf)
 			} else {
-				_, err = e.WritePacket(p)
+				_, err = pktline.WritePacket(&buf, p)
 			}
 			c.Assert(err, IsNil, comment)
 		}
@@ -109,9 +106,7 @@ func (s *SuiteWriter) TestEncodeErrPayloadTooLong(c *C) {
 		comment := Commentf("input %d = %v\n", i, input)
 
 		var buf bytes.Buffer
-		e := pktline.NewWriter(&buf)
-
-		_, err := e.WritePacket(bytes.Join(input, nil))
+		_, err := pktline.WritePacket(&buf, bytes.Join(input, nil))
 		c.Assert(err, Equals, pktline.ErrPayloadTooLong, comment)
 	}
 }
@@ -167,14 +162,12 @@ func (s *SuiteWriter) TestWritePacketStrings(c *C) {
 		comment := Commentf("input %d = %v\n", i, test.input)
 
 		var buf bytes.Buffer
-		e := pktline.NewWriter(&buf)
-
 		for _, p := range test.input {
 			var err error
 			if p == "" {
-				err = e.WriteFlush()
+				err = pktline.WriteFlush(&buf)
 			} else {
-				_, err = e.WritePacketString(p)
+				_, err = pktline.WritePacketString(&buf, p)
 			}
 			c.Assert(err, IsNil, comment)
 		}
@@ -200,9 +193,7 @@ func (s *SuiteWriter) TestWritePacketStringErrPayloadTooLong(c *C) {
 		comment := Commentf("input %d = %v\n", i, input)
 
 		var buf bytes.Buffer
-		e := pktline.NewWriter(&buf)
-
-		_, err := e.WritePacketString(strings.Join(input, ""))
+		_, err := pktline.WritePacketString(&buf, strings.Join(input, ""))
 		c.Assert(err, Equals, pktline.ErrPayloadTooLong, comment)
 	}
 }
@@ -213,9 +204,7 @@ func (s *SuiteWriter) TestFormatString(c *C) {
 	d := 42
 
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
-
-	_, err := e.WritePacketf(format, str, d)
+	_, err := pktline.WritePacketf(&buf, format, str, d)
 	c.Assert(err, IsNil)
 
 	expected := []byte("000c foo 42\n")

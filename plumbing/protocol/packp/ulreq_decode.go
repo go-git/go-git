@@ -20,16 +20,16 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 }
 
 type ulReqDecoder struct {
-	s     *pktline.Reader // a pkt-line scanner from the input stream
-	line  []byte          // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine int             // current pkt-line number for debugging, begins at 1
-	err   error           // sticky error, use the parser.error() method to fill this out
-	data  *UploadRequest  // parsed data is stored here
+	r     io.Reader      // a pkt-line scanner from the input stream
+	line  []byte         // current pkt-line contents, use parser.nextLine() to make it advance
+	nLine int            // current pkt-line number for debugging, begins at 1
+	err   error          // sticky error, use the parser.error() method to fill this out
+	data  *UploadRequest // parsed data is stored here
 }
 
 func newUlReqDecoder(r io.Reader) *ulReqDecoder {
 	return &ulReqDecoder{
-		s: pktline.NewReader(r),
+		r: r,
 	}
 }
 
@@ -60,7 +60,7 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 func (d *ulReqDecoder) nextLine() bool {
 	d.nLine++
 
-	_, p, err := d.s.ReadPacket()
+	_, p, err := pktline.ReadPacket(d.r)
 	if err == io.EOF {
 		d.error("EOF")
 		return false

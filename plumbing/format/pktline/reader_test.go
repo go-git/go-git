@@ -1,6 +1,7 @@
 package pktline_test
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -29,8 +30,7 @@ func (s *SuiteReader) TestInvalid(c *C) {
 		"-001", "-000",
 	} {
 		r := strings.NewReader(test)
-		sc := pktline.NewReader(r)
-		_, _, err := sc.ReadPacket()
+		_, _, err := pktline.ReadPacket(r)
 		c.Assert(err, ErrorMatches, pktline.ErrInvalidPktLen.Error()+".*",
 			Commentf("i = %d, data = %q", i, test))
 	}
@@ -44,16 +44,14 @@ func (s *SuiteReader) TestDecodeOversizePktLines(c *C) {
 		"fff4" + strings.Repeat("a", 0xfff4),
 	} {
 		r := strings.NewReader(test)
-		sc := pktline.NewReader(r)
-		_, _, err := sc.ReadPacket()
+		_, _, err := pktline.ReadPacket(r)
 		c.Assert(err, NotNil)
 	}
 }
 
 func (s *SuiteReader) TestEmptyReader(c *C) {
 	r := strings.NewReader("")
-	sc := pktline.NewReader(r)
-	l, p, err := sc.ReadPacket()
+	l, p, err := pktline.ReadPacket(r)
 	c.Assert(l, Equals, -1)
 	c.Assert(p, IsNil)
 	c.Assert(err, ErrorMatches, io.EOF.Error())
@@ -65,8 +63,7 @@ func (s *SuiteReader) TestFlush(c *C) {
 	err := e.Flush()
 	c.Assert(err, IsNil)
 
-	sc := pktline.NewReader(&buf)
-	l, p, err := sc.ReadPacket()
+	l, p, err := pktline.ReadPacket(&buf)
 	c.Assert(l, Equals, pktline.Flush)
 	c.Assert(p, IsNil)
 	c.Assert(err, IsNil)
@@ -75,10 +72,7 @@ func (s *SuiteReader) TestFlush(c *C) {
 
 func (s *SuiteReader) TestPktLineTooShort(c *C) {
 	r := strings.NewReader("010cfoobar")
-
-	sc := pktline.NewReader(r)
-
-	_, _, err := sc.ReadPacket()
+	_, _, err := pktline.ReadPacket(r)
 	c.Assert(err, ErrorMatches, "unexpected EOF")
 }
 
@@ -99,8 +93,7 @@ func (s *SuiteReader) TestScanAndPayload(c *C) {
 		c.Assert(err, IsNil,
 			Commentf("input len=%x, contents=%.10q\n", len(test), test))
 
-		sc := pktline.NewReader(&buf)
-		_, p, err := sc.ReadPacket()
+		_, p, err := pktline.ReadPacket(&buf)
 		c.Assert(err, IsNil)
 		c.Assert(p, NotNil,
 			Commentf("i = %d, payload = %q, test = %.20q...", i, p, test))
@@ -138,13 +131,12 @@ func (s *SuiteReader) TestSkip(c *C) {
 		err := e.EncodeString(test.input...)
 		c.Assert(err, IsNil)
 
-		sc := pktline.NewReader(&buf)
 		for i := 0; i < test.n; i++ {
-			_, p, err := sc.ReadPacket()
+			_, p, err := pktline.ReadPacket(&buf)
 			c.Assert(p, NotNil,
 				Commentf("scan error = %s", err))
 		}
-		_, p, err := sc.ReadPacket()
+		_, p, err := pktline.ReadPacket(&buf)
 		c.Assert(p, NotNil,
 			Commentf("scan error = %s", err))
 
@@ -160,9 +152,8 @@ func (s *SuiteReader) TestEOF(c *C) {
 	err := e.EncodeString("first", "second")
 	c.Assert(err, IsNil)
 
-	sc := pktline.NewReader(&buf)
 	for {
-		_, _, err = sc.ReadPacket()
+		_, _, err = pktline.ReadPacket(&buf)
 		if err == io.EOF {
 			break
 		}
@@ -175,8 +166,8 @@ type mockSuiteReader struct{}
 func (r *mockSuiteReader) Read([]byte) (int, error) { return 0, errors.New("foo") }
 
 func (s *SuiteReader) TestInternalReadError(c *C) {
-	sc := pktline.NewReader(&mockSuiteReader{})
-	_, p, err := sc.ReadPacket()
+	r := &mockSuiteReader{}
+	_, p, err := pktline.ReadPacket(r)
 	c.Assert(p, IsNil)
 	c.Assert(err, ErrorMatches, "foo")
 }
@@ -188,7 +179,6 @@ func (s *SuiteReader) TestReadSomeSections(c *C) {
 	nLines := 4
 	data, err := sectionsExample(nSections, nLines)
 	c.Assert(err, IsNil)
-	sc := pktline.NewReader(data)
 
 	sectionCounter := 0
 	lineCounter := 0
@@ -197,7 +187,7 @@ func (s *SuiteReader) TestReadSomeSections(c *C) {
 		e error
 	)
 	for {
-		_, p, e = sc.ReadPacket()
+		_, p, e = pktline.ReadPacket(data)
 		if e == io.EOF {
 			break
 		}
@@ -217,12 +207,12 @@ func (s *SuiteReader) TestPeekReadPacket(c *C) {
 	err := e.EncodeString("first", "second")
 	c.Assert(err, IsNil)
 
-	sc := pktline.NewReader(&buf)
+	sc := bufio.NewReader(&buf)
 	p, err := sc.Peek(4)
 	c.Assert(err, IsNil)
 	c.Assert(p, DeepEquals, []byte("0009"))
 
-	l, p, err := sc.ReadPacket()
+	l, p, err := pktline.ReadPacket(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 9)
 	c.Assert(p, DeepEquals, []byte("first"))
@@ -238,7 +228,7 @@ func (s *SuiteReader) TestPeekMultiple(c *C) {
 	err := e.EncodeString("a")
 	c.Assert(err, IsNil)
 
-	sc := pktline.NewReader(&buf)
+	sc := bufio.NewReader(&buf)
 	b, err := sc.Peek(4)
 	c.Assert(b, DeepEquals, []byte("0005"))
 	c.Assert(err, IsNil)
@@ -254,9 +244,9 @@ func (s *SuiteReader) TestInvalidPeek(c *C) {
 	err := e.EncodeString("a")
 	c.Assert(err, IsNil)
 
-	sc := pktline.NewReader(&buf)
+	sc := bufio.NewReader(&buf)
 	_, err = sc.Peek(-1)
-	c.Assert(err, ErrorMatches, pktline.ErrNegativeCount.Error())
+	c.Assert(err, ErrorMatches, bufio.ErrNegativeCount.Error())
 }
 
 func (s *SuiteReader) TestPeekPacket(c *C) {
@@ -264,12 +254,12 @@ func (s *SuiteReader) TestPeekPacket(c *C) {
 	e := pktline.NewEncoder(&buf)
 	err := e.EncodeString("first", "second")
 	c.Assert(err, IsNil)
-	sc := pktline.NewReader(&buf)
-	l, p, err := sc.PeekPacket()
+	sc := bufio.NewReader(&buf)
+	l, p, err := pktline.PeekPacket(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 9)
 	c.Assert(p, DeepEquals, []byte("first"))
-	l, p, err = sc.PeekPacket()
+	l, p, err = pktline.PeekPacket(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 9)
 	c.Assert(p, DeepEquals, []byte("first"))
@@ -281,18 +271,18 @@ func (s *SuiteReader) TestPeekPacketReadPacket(c *C) {
 	err := e.EncodeString("a")
 	c.Assert(err, IsNil)
 
-	sc := pktline.NewReader(&buf)
-	l, p, err := sc.PeekPacket()
+	sc := bufio.NewReader(&buf)
+	l, p, err := pktline.PeekPacket(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 5)
 	c.Assert(p, DeepEquals, []byte("a"))
 
-	l, p, err = sc.ReadPacket()
+	l, p, err = pktline.ReadPacket(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 5)
 	c.Assert(p, DeepEquals, []byte("a"))
 
-	l, p, err = sc.PeekPacket()
+	l, p, err = pktline.PeekPacket(sc)
 	c.Assert(err, ErrorMatches, io.EOF.Error())
 	c.Assert(l, Equals, -1)
 	c.Assert(p, IsNil)
@@ -302,10 +292,9 @@ func (s *SuiteReader) TestPeekRead(c *C) {
 	hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
-	e.WritePacketf(hash)
+	pktline.WritePacketf(&buf, hash)
 
-	sc := pktline.NewReader(&buf)
+	sc := bufio.NewReader(&buf)
 	b, err := sc.Peek(7)
 	c.Assert(err, IsNil)
 	c.Assert(b, DeepEquals, []byte("002c6ec"))
@@ -319,10 +308,9 @@ func (s *SuiteReader) TestPeekReadPart(c *C) {
 	hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
-	e.WritePacketf(hash)
+	pktline.WritePacketf(&buf, hash)
 
-	sc := pktline.NewReader(&buf)
+	sc := bufio.NewReader(&buf)
 	b, err := sc.Peek(7)
 	c.Assert(err, IsNil)
 	c.Assert(b, DeepEquals, []byte("002c6ec"))
@@ -336,11 +324,9 @@ func (s *SuiteReader) TestPeekReadPart(c *C) {
 
 func (s *SuiteReader) TestReadPacketError(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewWriter(&buf)
-	e.WriteError(io.EOF)
+	pktline.WriteErrorPacket(&buf, io.EOF)
 
-	sc := pktline.NewReader(&buf)
-	l, p, err := sc.ReadPacket()
+	l, p, err := pktline.ReadPacket(&buf)
 	c.Assert(err, NotNil)
 	c.Assert(l, Equals, 12)
 	c.Assert(string(p), DeepEquals, "ERR EOF\n")

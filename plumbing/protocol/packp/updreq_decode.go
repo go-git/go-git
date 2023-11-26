@@ -83,13 +83,13 @@ func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
 		rc = io.NopCloser(r)
 	}
 
-	d := &updReqDecoder{r: rc, s: pktline.NewReader(r)}
+	d := &updReqDecoder{r: rc, s: r}
 	return d.Decode(req)
 }
 
 type updReqDecoder struct {
 	r   io.ReadCloser
-	s   *pktline.Reader
+	s   io.Reader
 	req *ReferenceUpdateRequest
 
 	payload []byte
@@ -116,7 +116,7 @@ func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
 }
 
 func (d *updReqDecoder) readLine(e error) error {
-	_, p, err := d.s.ReadPacket()
+	_, p, err := pktline.ReadPacket(d.s)
 	if err == io.EOF {
 		return e
 	}

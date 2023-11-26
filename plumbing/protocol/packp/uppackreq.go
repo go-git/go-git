@@ -71,8 +71,6 @@ type UploadHaves struct {
 // Encode encodes the UploadHaves into the Writer. If flush is true, a flush
 // command will be encoded at the end of the writer content.
 func (u *UploadHaves) Encode(w io.Writer, flush bool) error {
-	e := pktline.NewWriter(w)
-
 	plumbing.HashesSort(u.Haves)
 
 	var last plumbing.Hash
@@ -81,7 +79,7 @@ func (u *UploadHaves) Encode(w io.Writer, flush bool) error {
 			continue
 		}
 
-		if _, err := e.WritePacketf("have %s\n", have); err != nil {
+		if _, err := pktline.WritePacketf(w, "have %s\n", have); err != nil {
 			return fmt.Errorf("sending haves for %q: %s", have, err)
 		}
 
@@ -89,7 +87,7 @@ func (u *UploadHaves) Encode(w io.Writer, flush bool) error {
 	}
 
 	if flush && len(u.Haves) != 0 {
-		if err := e.WriteFlush(); err != nil {
+		if err := pktline.WriteFlush(w); err != nil {
 			return fmt.Errorf("sending flush-pkt after haves: %s", err)
 		}
 	}

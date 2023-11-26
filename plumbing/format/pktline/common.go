@@ -1,12 +1,8 @@
 package pktline
 
-// Status represents the status of a pktline. Any value greater than 4 is
-// considered a data pkt.
-type Status = int
-
 const (
 	// Err is returned when the pktline has encountered an error.
-	Err Status = iota - 1
+	Err = iota - 1
 
 	// Flush is the numeric value of a flush packet. It is returned when the
 	// pktline is a flush packet.
@@ -33,4 +29,7 @@ var (
 
 	// ResponseEndPkt are the contents of a response-end-pkt pkt-line.
 	ResponseEndPkt = []byte{'0', '0', '0', '2'}
+
+	// emptyPkt is an empty string pkt-line payload.
+	emptyPkt = []byte{'0', '0', '0', '4'}
 )

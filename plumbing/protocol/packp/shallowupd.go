@@ -20,14 +20,12 @@ type ShallowUpdate struct {
 }
 
 func (r *ShallowUpdate) Decode(reader io.Reader) error {
-	s := pktline.NewReader(reader)
-
 	var (
 		p   []byte
 		err error
 	)
 	for {
-		_, p, err = s.ReadPacket()
+		_, p, err = pktline.ReadPacket(reader)
 		if err != nil {
 			break
 		}
@@ -84,19 +82,17 @@ func (r *ShallowUpdate) decodeLine(line, prefix []byte, expLen int) (plumbing.Ha
 }
 
 func (r *ShallowUpdate) Encode(w io.Writer) error {
-	e := pktline.NewWriter(w)
-
 	for _, h := range r.Shallows {
-		if _, err := e.WritePacketf("%s%s\n", shallow, h.String()); err != nil {
+		if _, err := pktline.WritePacketf(w, "%s%s\n", shallow, h.String()); err != nil {
 			return err
 		}
 	}
 
 	for _, h := range r.Unshallows {
-		if _, err := e.WritePacketf("%s%s\n", unshallow, h.String()); err != nil {
+		if _, err := pktline.WritePacketf(w, "%s%s\n", unshallow, h.String()); err != nil {
 			return err
 		}
 	}
 
-	return e.WriteFlush()
+	return pktline.WriteFlush(w)
 }

@@ -1,13 +1,8 @@
 package pktline
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"io"
-	"strings"
-
-	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 var (
@@ -85,50 +80,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 // will be nil and the length will be the pktline type.
 // To get the payload length, subtract the length by the pkt-len size (4).
 func (r *Reader) PeekPacket() (l int, p []byte, err error) {
-	defer func() {
-		if err == nil {
-			trace.Packet.Printf("packet: < %04x %s", l, p)
-		}
-	}()
-
-	npeek := lenSize - len(r.buf)
-	if npeek > 0 {
-		_, err := r.Peek(npeek)
-		if err != nil {
-			return Err, nil, err
-		}
-	}
-
-	length, err := ParseLength(r.buf[:lenSize])
-	if err != nil {
-		return Err, nil, err
-	}
-
-	switch length {
-	case Flush, Delim, ResponseEnd:
-		return length, nil, nil
-	case 4: // empty line
-		return length, Empty, nil
-	}
-
-	dataLen := length - lenSize
-	if len(r.buf) >= lenSize+dataLen {
-		return length, r.buf[lenSize : lenSize+dataLen], nil
-	}
-
-	_, err = r.Peek(lenSize + dataLen)
-	if err != nil {
-		return Err, nil, err
-	}
-
-	buf := r.buf[lenSize : lenSize+dataLen]
-	if bytes.HasPrefix(buf, errPrefix) {
-		err = &ErrorLine{
-			Text: strings.TrimSpace(string(buf[4:])),
-		}
-	}
-
-	return length, buf, nil
+	return PeekPacket(r)
 }
 
 // ReadPacket reads a pktline from the reader.
@@ -137,56 +89,5 @@ func (r *Reader) PeekPacket() (l int, p []byte, err error) {
 // will be nil and the length will be the pktline type.
 // To get the payload length, subtract the length by the pkt-len size (4).
 func (r *Reader) ReadPacket() (l int, p []byte, err error) {
-	defer func() {
-		if err == nil {
-			trace.Packet.Printf("packet: < %04x %s", l, p)
-		}
-	}()
-
-	var pktlen [lenSize]byte
-	n, err := io.ReadFull(r, pktlen[:])
-	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return Err, nil, fmt.Errorf("%w: %d", ErrInvalidPktLen, n)
-		}
-
-		return Err, nil, err
-	}
-
-	if n != lenSize {
-		return Err, nil, fmt.Errorf("%w: %d", ErrInvalidPktLen, n)
-	}
-
-	length, err := ParseLength(pktlen[:])
-	if err != nil {
-		return Err, nil, err
-	}
-
-	switch length {
-	case Flush, Delim, ResponseEnd:
-		return length, nil, nil
-	case 4: // empty line
-		return length, Empty, nil
-	}
-
-	dataLen := length - lenSize
-	data := make([]byte, 0, dataLen)
-	dn, err := io.ReadFull(r, data[:dataLen])
-	if err != nil {
-		return Err, nil, err
-	}
-
-	if dn != dataLen {
-		return Err, data, fmt.Errorf("%w: %d", ErrInvalidPktLen, dn)
-	}
-
-	buf := data[:dn]
-	if bytes.HasPrefix(buf, errPrefix) {
-		err = &ErrorLine{
-			Text: strings.TrimSpace(string(buf[4:])),
-		}
-	}
-
-	// TODO: handle newlines (\n)
-	return length, buf, err
+	return ReadPacket(r)
 }
