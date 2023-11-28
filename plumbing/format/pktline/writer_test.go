@@ -19,7 +19,7 @@ func (s *SuiteWriter) TestFlush(c *C) {
 	c.Assert(err, IsNil)
 
 	obtained := buf.Bytes()
-	c.Assert(obtained, DeepEquals, pktline.FlushPkt)
+	c.Assert(obtained, DeepEquals, []byte("0000"))
 }
 
 func (s *SuiteWriter) TestEncode(c *C) {
@@ -35,7 +35,7 @@ func (s *SuiteWriter) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Empty,
+				{},
 			},
 			expected: []byte("000ahello\n0000"),
 		}, {
@@ -48,10 +48,10 @@ func (s *SuiteWriter) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Empty,
+				{},
 				[]byte("world!\n"),
 				[]byte("foo"),
-				pktline.Empty,
+				{},
 			},
 			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
 		}, {
@@ -76,7 +76,7 @@ func (s *SuiteWriter) TestEncode(c *C) {
 
 		for _, p := range test.input {
 			var err error
-			if bytes.Equal(p, pktline.Empty) {
+			if len(p) == 0 {
 				err = pktline.WriteFlush(&buf)
 			} else {
 				_, err = pktline.WritePacket(&buf, p)

@@ -24,7 +24,7 @@ func (s *SuiteEncoder) TestFlush(c *C) {
 	c.Assert(err, IsNil)
 
 	obtained := buf.Bytes()
-	c.Assert(obtained, DeepEquals, pktline.FlushPkt)
+	c.Assert(obtained, DeepEquals, []byte("0000"))
 }
 
 func (s *SuiteEncoder) TestEncode(c *C) {
@@ -40,7 +40,7 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Empty,
+				{},
 			},
 			expected: []byte("000ahello\n0000"),
 		}, {
@@ -53,10 +53,10 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Empty,
+				{},
 				[]byte("world!\n"),
 				[]byte("foo"),
-				pktline.Empty,
+				{},
 			},
 			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
 		}, {

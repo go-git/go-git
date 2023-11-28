@@ -36,7 +36,7 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 			err = r.decodeShallowLine(line)
 		case bytes.HasPrefix(line, unshallow):
 			err = r.decodeUnshallowLine(line)
-		case bytes.Equal(line, pktline.Empty):
+		case len(line) == 0:
 			return nil
 		}
 

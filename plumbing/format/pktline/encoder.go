@@ -3,7 +3,6 @@
 package pktline
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -38,8 +37,7 @@ func NewEncoder(w io.Writer) *Encoder {
 // Flush encodes a flush-pkt to the output stream.
 func (e *Encoder) Flush() error {
 	defer trace.Packet.Print("packet: > 0000")
-	_, err := e.w.Write(FlushPkt)
-	return err
+	return WriteFlush(e.w)
 }
 
 // Encode encodes a pkt-line with the payload specified and write it to the
@@ -61,7 +59,7 @@ func (e *Encoder) encodeLine(p []byte) error {
 		return ErrPayloadTooLong
 	}
 
-	if bytes.Equal(p, Empty) {
+	if len(p) == 0 {
 		return e.Flush()
 	}
 

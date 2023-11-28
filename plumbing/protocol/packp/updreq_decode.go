@@ -161,7 +161,7 @@ func (d *updReqDecoder) decodeShallow() error {
 func (d *updReqDecoder) decodeCommands() error {
 	for {
 		b := d.payload
-		if bytes.Equal(b, pktline.Empty) {
+		if len(b) == 0 {
 			return nil
 		}
 

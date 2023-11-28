@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"sort"
@@ -79,7 +78,7 @@ type encoderStateFn func(*advRefsEncoder) encoderStateFn
 
 func encodePrefix(e *advRefsEncoder) encoderStateFn {
 	for _, p := range e.data.Prefix {
-		if bytes.Equal(p, pktline.Empty) {
+		if len(p) == 0 {
 			if e.err = pktline.WriteFlush(e.w); e.err != nil {
 				return nil
 			}

@@ -381,8 +381,7 @@ func (s *session) finish() error {
 	// gracefully by sending a flush packet to the server. If the server
 	// operates correctly, it will exit with status 0.
 	if !s.packRun {
-		_, err := s.Stdin.Write(pktline.FlushPkt)
-		return err
+		return pktline.WriteFlush(s.Stdin)
 	}
 
 	return nil
