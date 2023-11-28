@@ -51,6 +51,9 @@ var (
 	// ErrFetching is returned when the packfile could not be downloaded
 	ErrFetching = errors.New("unable to fetch packfile")
 
+	// ErrInvalidTagName is returned when the tag name is invalid.
+	ErrInvalidTagName = errors.New("invalid tag name")
+
 	ErrInvalidReference          = errors.New("invalid reference, should be a tag or a branch")
 	ErrRepositoryNotExists       = errors.New("repository does not exist")
 	ErrRepositoryIncomplete      = errors.New("repository's commondir path does not exist")
@@ -724,6 +727,10 @@ func (r *Repository) DeleteBranch(name string) error {
 // CreateTag creates a tag. If opts is included, the tag is an annotated tag,
 // otherwise a lightweight tag is created.
 func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
+	if name == "" {
+		return nil, ErrInvalidTagName
+	}
+
 	rname := plumbing.ReferenceName(path.Join("refs", "tags", name))
 
 	_, err := r.Storer.Reference(rname)
@@ -757,6 +764,10 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagO
 }
 
 func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
+	if name == "" {
+		return plumbing.ZeroHash, ErrInvalidTagName
+	}
+
 	if err := opts.Validate(r, hash); err != nil {
 		return plumbing.ZeroHash, err
 	}

@@ -3265,6 +3265,14 @@ func (s *RepositorySuite) TestIssue674(c *C) {
 	c.Check(h.IsZero(), Equals, true)
 }
 
+func (s *RepositorySuite) TestEmptyTagName(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	_, err := r.CreateTag("", plumbing.ZeroHash, nil)
+
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "invalid tag name")
+}
+
 func BenchmarkObjects(b *testing.B) {
 	defer fixtures.Clean()
 
