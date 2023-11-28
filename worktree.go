@@ -189,6 +189,10 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	return w.Reset(ro)
 }
 func (w *Worktree) createBranch(opts *CheckoutOptions) error {
+	if err := opts.Branch.Validate(); err != nil {
+		return err
+	}
+
 	_, err := w.r.Storer.Reference(opts.Branch)
 	if err == nil {
 		return fmt.Errorf("a branch named %q already exists", opts.Branch)

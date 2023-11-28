@@ -785,6 +785,30 @@ func (s *WorktreeSuite) TestCheckoutCreateMissingBranch(c *C) {
 	c.Assert(err, Equals, ErrCreateRequiresBranch)
 }
 
+func (s *WorktreeSuite) TestCheckoutCreateInvalidBranch(c *C) {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	for _, name := range []plumbing.ReferenceName{
+		"foo",
+		"-",
+		"-foo",
+		"refs/heads//",
+		"refs/heads/..",
+		"refs/heads/a..b",
+		"refs/heads/.",
+	} {
+		err := w.Checkout(&CheckoutOptions{
+			Create: true,
+			Branch: name,
+		})
+
+		c.Assert(err, Equals, plumbing.ErrInvalidReferenceName)
+	}
+}
+
 func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	f := fixtures.ByTag("tags").One()
 	r := s.NewRepositoryWithEmptyWorktree(f)
