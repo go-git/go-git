@@ -95,7 +95,15 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 
 	head, err := w.r.Head()
 	if err == nil {
-		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash())
+		// if we don't have a shallows list, just ignore it
+		shallowList, _ := w.r.Storer.Shallow()
+
+		var earliestShallow *plumbing.Hash
+		if len(shallowList) > 0 {
+			earliestShallow = &shallowList[0]
+		}
+
+		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash(), earliestShallow)
 		if err != nil {
 			return err
 		}
@@ -104,7 +112,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 			return NoErrAlreadyUpToDate
 		}
 
-		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash())
+		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash(), earliestShallow)
 		if err != nil {
 			return err
 		}
@@ -188,6 +196,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 
 	return w.Reset(ro)
 }
+
 func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 	if err := opts.Branch.Validate(); err != nil {
 		return err

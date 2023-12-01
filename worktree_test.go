@@ -313,6 +313,42 @@ func (s *WorktreeSuite) TestPullDepth(c *C) {
 	c.Assert(err, Equals, nil)
 }
 
+func (s *WorktreeSuite) TestPullAfterShallowClone(c *C) {
+	tempDir, clean := s.TemporalDir()
+	defer clean()
+	remoteURL := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	remote, err := PlainInit(remoteURL, false)
+	c.Assert(err, IsNil)
+	c.Assert(remote, NotNil)
+
+	_ = CommitNewFile(c, remote, "File1")
+	_ = CommitNewFile(c, remote, "File2")
+
+	repo, err := PlainClone(repoDir, false, &CloneOptions{
+		URL:           remoteURL,
+		Depth:         1,
+		Tags:          NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	c.Assert(err, IsNil)
+
+	_ = CommitNewFile(c, remote, "File3")
+	_ = CommitNewFile(c, remote, "File4")
+
+	w, err := repo.Worktree()
+	c.Assert(err, IsNil)
+
+	err = w.Pull(&PullOptions{
+		RemoteName:    DefaultRemoteName,
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewBranchReferenceName("master"),
+	})
+	c.Assert(err, IsNil)
+}
+
 func (s *WorktreeSuite) TestCheckout(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
