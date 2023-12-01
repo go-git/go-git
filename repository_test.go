@@ -75,6 +75,13 @@ func (s *RepositorySuite) TestInitWithOptions(c *C) {
 
 }
 
+func (s *RepositorySuite) TestInitWithInvalidDefaultBranch(c *C) {
+	_, err := InitWithOptions(memory.NewStorage(), memfs.New(), InitOptions{
+		DefaultBranch: "foo",
+	})
+	c.Assert(err, NotNil)
+}
+
 func createCommit(c *C, r *Repository) {
 	// Create a commit so there is a HEAD to check
 	wt, err := r.Worktree()
@@ -389,6 +396,22 @@ func (s *RepositorySuite) TestDeleteRemote(c *C) {
 	alt, err := r.Remote("foo")
 	c.Assert(err, Equals, ErrRemoteNotFound)
 	c.Assert(alt, IsNil)
+}
+
+func (s *RepositorySuite) TestEmptyCreateBranch(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.CreateBranch(&config.Branch{})
+
+	c.Assert(err, NotNil)
+}
+
+func (s *RepositorySuite) TestInvalidCreateBranch(c *C) {
+	r, _ := Init(memory.NewStorage(), nil)
+	err := r.CreateBranch(&config.Branch{
+		Name: "-foo",
+	})
+
+	c.Assert(err, NotNil)
 }
 
 func (s *RepositorySuite) TestCreateBranchAndBranch(c *C) {
@@ -2795,6 +2818,20 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked(c *C) {
 	obj, err = r.TagObject(ref.Hash())
 	c.Assert(obj, IsNil)
 	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+}
+
+func (s *RepositorySuite) TestInvalidTagName(c *C) {
+	r, err := Init(memory.NewStorage(), nil)
+	c.Assert(err, IsNil)
+	for i, name := range []string{
+		"",
+		"foo bar",
+		"foo\tbar",
+		"foo\nbar",
+	} {
+		_, err = r.CreateTag(name, plumbing.ZeroHash, nil)
+		c.Assert(err, NotNil, Commentf("case %d %q", i, name))
+	}
 }
 
 func (s *RepositorySuite) TestBranches(c *C) {
