@@ -16,11 +16,14 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -2198,34 +2201,40 @@ func (s *WorktreeSuite) TestCleanBare(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *WorktreeSuite) TestAlternatesRepo(c *C) {
+func TestAlternatesRepo(t *testing.T) {
 	fs := fixtures.ByTag("alternates").One().Worktree()
 
 	// Open 1st repo.
 	rep1fs, err := fs.Chroot("rep1")
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 	rep1, err := PlainOpen(rep1fs.Root())
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	// Open 2nd repo.
 	rep2fs, err := fs.Chroot("rep2")
-	c.Assert(err, IsNil)
-	rep2, err := PlainOpen(rep2fs.Root())
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
+	d, _ := rep2fs.Chroot(GitDirName)
+	storer := filesystem.NewStorageWithOptions(d,
+		cache.NewObjectLRUDefault(), filesystem.Options{
+			AlternatesFS: fs,
+		})
+	rep2, err := Open(storer, rep2fs)
+
+	assert.NoError(t, err)
 
 	// Get the HEAD commit from the main repo.
 	h, err := rep1.Head()
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 	commit1, err := rep1.CommitObject(h.Hash())
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	// Get the HEAD commit from the shared repo.
 	h, err = rep2.Head()
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 	commit2, err := rep2.CommitObject(h.Hash())
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
-	c.Assert(commit1.String(), Equals, commit2.String())
+	assert.Equal(t, commit1.String(), commit2.String())
 }
 
 func (s *WorktreeSuite) TestGrep(c *C) {
