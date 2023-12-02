@@ -14,6 +14,7 @@ var examplesTest = flag.Bool("examples", false, "run the examples tests")
 var defaultURL = "https://github.com/git-fixtures/basic.git"
 
 var args = map[string][]string{
+	"blame":                      {defaultURL, "CHANGELOG"},
 	"branch":                     {defaultURL, tempFolder()},
 	"checkout":                   {defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
 	"checkout-branch":            {defaultURL, tempFolder(), "branch"},
@@ -23,18 +24,23 @@ var args = map[string][]string{
 	"custom_http":                {defaultURL},
 	"find-if-any-tag-point-head": {cloneRepository(defaultURL, tempFolder())},
 	"ls":                         {cloneRepository(defaultURL, tempFolder()), "HEAD", "vendor"},
+	"ls-remote":                  {defaultURL},
 	"merge_base":                 {cloneRepository(defaultURL, tempFolder()), "--is-ancestor", "HEAD~3", "HEAD^"},
 	"open":                       {cloneRepository(defaultURL, tempFolder())},
 	"progress":                   {defaultURL, tempFolder()},
 	"pull":                       {createRepositoryWithRemote(tempFolder(), defaultURL)},
 	"push":                       {setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
 	"revision":                   {cloneRepository(defaultURL, tempFolder()), "master~2^"},
+	"sha256":                     {tempFolder()},
 	"showcase":                   {defaultURL, tempFolder()},
 	"tag":                        {cloneRepository(defaultURL, tempFolder())},
 }
 
 // tests not working / set-up
 var ignored = map[string]bool{
+	"azure_devops":    true,
+	"ls":              true,
+	"sha256":          true,
 	"submodule":       true,
 	"tag-create-push": true,
 }
