@@ -1,5 +1,7 @@
 package pktline
 
+import "errors"
+
 const (
 	// Err is returned when the pktline has encountered an error.
 	Err = iota - 1
@@ -15,6 +17,23 @@ const (
 	// ResponseEnd is the numeric value of a response-end packet. It is
 	// returned when the pktline is a response-end packet.
 	ResponseEnd
+)
+
+const (
+	// MaxPayloadSize is the maximum payload size of a pkt-line in bytes.
+	// See https://git-scm.com/docs/protocol-common#_pkt_line_format
+	MaxPayloadSize = 65516
+
+	lenSize = 4
+)
+
+var (
+	// ErrPayloadTooLong is returned by the Encode methods when any of the
+	// provided payloads is bigger than MaxPayloadSize.
+	ErrPayloadTooLong = errors.New("payload is too long")
+
+	// ErrInvalidPktLen is returned by Err() when an invalid pkt-len is found.
+	ErrInvalidPktLen = errors.New("invalid pkt-len found")
 )
 
 var (
