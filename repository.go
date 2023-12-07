@@ -448,35 +448,30 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 	return commonDir, nil
 }
 
-// PlainClone a repository into the path with the given options, isBare defines
-// if the new repository will be bare or normal. If the path is not empty
-// ErrRepositoryAlreadyExists is returned.
-//
-// TODO(mcuadros): move isBare to CloneOptions in v5
-func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) {
-	return PlainCloneContext(context.Background(), path, isBare, o)
+// PlainClone a repository into the path with the given options.
+// If the path is not empty ErrRepositoryAlreadyExists is returned.
+func PlainClone(path string, o *CloneOptions) (*Repository, error) {
+	return PlainCloneContext(context.Background(), path, o)
 }
 
-// PlainCloneContext a repository into the path with the given options, isBare
-// defines if the new repository will be bare or normal. If the path is not empty
-// ErrRepositoryAlreadyExists is returned.
+// PlainCloneContext a repository into the path with the given options.
+// If the path is not empty ErrRepositoryAlreadyExists is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 //
-// TODO(mcuadros): move isBare to CloneOptions in v5
 // TODO(smola): refuse upfront to clone on a non-empty directory in v5, see #1027
-func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
+func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repository, error) {
 	cleanup, cleanupParent, err := checkIfCleanupIsNeeded(path)
 	if err != nil {
 		return nil, err
 	}
 
 	if o.Mirror {
-		isBare = true
+		o.IsBare = true
 	}
-	r, err := PlainInit(path, isBare)
+	r, err := PlainInit(path, o.IsBare)
 	if err != nil {
 		return nil, err
 	}

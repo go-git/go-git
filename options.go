@@ -87,6 +87,9 @@ type CloneOptions struct {
 	//
 	// [Reference]: https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
 	Shared bool
+
+	// IsBare defines if the new repository will be bare or normal.
+	IsBare bool
 }
 
 // Validate validates the fields and sets the default values.
