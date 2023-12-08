@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -2745,5 +2746,79 @@ func (s *WorktreeSuite) TestLinkedWorktree(c *C) {
 		c.Assert(err, IsNil)
 		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
 		c.Assert(err, Equals, ErrRepositoryIncomplete)
+	}
+}
+
+func TestValidPath(t *testing.T) {
+	type testcase struct {
+		path    string
+		wantErr bool
+	}
+
+	tests := []testcase{
+		{".git", true},
+		{".git/b", true},
+		{".git\\b", true},
+		{"git~1", true},
+		{"a/../b", true},
+		{"a\\..\\b", true},
+		{".gitmodules", false},
+		{".gitignore", false},
+		{"a..b", false},
+		{".", false},
+		{"a/.git", false},
+		{"a\\.git", false},
+		{"a/.git/b", false},
+		{"a\\.git\\b", false},
+	}
+
+	if runtime.GOOS == "windows" {
+		tests = append(tests, []testcase{
+			{"\\\\a\\b", true},
+			{"C:\\a\\b", true},
+			{".git . . .", true},
+			{".git . . ", true},
+			{".git ", true},
+			{".git.", true},
+			{".git::$INDEX_ALLOCATION", true},
+		}...)
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%s", tc.path), func(t *testing.T) {
+			err := validPath(tc.path)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWindowsValidPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{".git", false},
+		{".git . . .", false},
+		{".git ", false},
+		{".git  ", false},
+		{".git . .", false},
+		{".git . .", false},
+		{".git::$INDEX_ALLOCATION", false},
+		{".git:", false},
+		{"a", true},
+		{"a\\b", true},
+		{"a/b", true},
+		{".gitm", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%s", tc.path), func(t *testing.T) {
+			got := windowsValidPath(tc.path)
+			assert.Equal(t, tc.want, got)
+		})
 	}
 }
