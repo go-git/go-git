@@ -70,7 +70,18 @@ type Commit struct {
 func GetCommit(s storer.EncodedObjectStorer, h plumbing.Hash) (*Commit, error) {
 	o, err := s.EncodedObject(plumbing.CommitObject, h)
 	if err != nil {
-		return nil, err
+		// Possible the commit object is tied to a tag.
+		o, e := s.EncodedObject(plumbing.TagObject, h)
+		if e != nil {
+			// Send back original error
+			return nil, err
+		}
+		t, e := DecodeTag(s, o)
+		if e != nil {
+			// Send back original error
+			return nil, err
+		}
+		return t.Commit()
 	}
 
 	return DecodeCommit(s, o)
