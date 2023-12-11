@@ -2420,6 +2420,14 @@ func (s *RepositorySuite) TestTagObject(c *C) {
 	c.Assert(tag.Hash.IsZero(), Equals, false)
 	c.Assert(tag.Hash, Equals, hash)
 	c.Assert(tag.Type(), Equals, plumbing.TagObject)
+
+	commit, err := r.CommitObject(hash)
+
+	c.Assert(err, IsNil)
+
+	c.Assert(commit.Hash.IsZero(), Equals, false)
+	c.Assert(commit.Hash, Equals, hash)
+	c.Assert(commit.Type(), Equals, plumbing.CommitObject)
 }
 
 func (s *RepositorySuite) TestTags(c *C) {
