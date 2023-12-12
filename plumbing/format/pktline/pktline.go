@@ -103,8 +103,8 @@ func WriteResponseEnd(w io.Writer) (err error) {
 // This returns the length of the packet, the packet payload, and an error.
 // The error can be of type *ErrorLine if the packet is an error packet.
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
-// 1 is a delim packet, 2 is a response-end packet, and a length greater than 4
-// is a data packet.
+// 1 is a delim packet, 2 is a response-end packet, and a length greater or
+// equal to 4 is a data packet.
 func ReadPacket(r io.Reader) (l int, p []byte, err error) {
 	defer func() {
 		if err == nil {
@@ -170,8 +170,8 @@ func ReadPacketString(r io.Reader) (l int, s string, err error) {
 // This returns the length of the packet, the packet payload, and an error.
 // The error can be of type *ErrorLine if the packet is an error packet.
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
-// 1 is a delim packet, 2 is a response-end packet, and a length greater than 4
-// is a data packet.
+// 1 is a delim packet, 2 is a response-end packet, and a length greater or
+// equal to 4 is a data packet.
 func PeekPacket(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 	defer func() {
 		if err == nil {
