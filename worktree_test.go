@@ -886,6 +886,41 @@ func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	c.Assert(head.Name().String(), Equals, "HEAD")
 }
 
+func (s *WorktreeSuite) TestCheckoutTagHash(c *C) {
+	f := fixtures.ByTag("tags").One()
+	r := s.NewRepositoryWithEmptyWorktree(f)
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	for _, hash := range []string{
+		"b742a2a9fa0afcfa9a6fad080980fbc26b007c69", // annotated tag
+		"ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc", // commit tag
+		"f7b877701fbf855b44c0a9e86f3fdce2c298b07f", // lightweight tag
+	} {
+		err = w.Checkout(&CheckoutOptions{
+			Hash: plumbing.NewHash(hash),
+		})
+		c.Assert(err, IsNil)
+		head, err := w.r.Head()
+		c.Assert(err, IsNil)
+		c.Assert(head.Name().String(), Equals, "HEAD")
+
+		status, err := w.Status()
+		c.Assert(err, IsNil)
+		c.Assert(status.IsClean(), Equals, true)
+	}
+
+	for _, hash := range []string{
+		"fe6cb94756faa81e5ed9240f9191b833db5f40ae", // blob tag
+		"152175bf7e5580299fa1f0ba41ef6474cc043b70", // tree tag
+	} {
+		err = w.Checkout(&CheckoutOptions{
+			Hash: plumbing.NewHash(hash),
+		})
+		c.Assert(err, NotNil)
+	}
+}
+
 func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
 	if testing.Short() {
 		c.Skip("skipping test in short mode.")
