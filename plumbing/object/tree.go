@@ -280,6 +280,9 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 
 	defer ioutil.CheckClose(w, &err)
 	for _, entry := range t.Entries {
+		if strings.IndexByte(entry.Name, 0) != -1 {
+			return fmt.Errorf("malformed filename %q", entry.Name)
+		}
 		if _, err = fmt.Fprintf(w, "%o %s", entry.Mode, entry.Name); err != nil {
 			return err
 		}
