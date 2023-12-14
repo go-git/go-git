@@ -206,3 +206,26 @@ func (c *mockSSHConfig) Get(alias, key string) string {
 
 	return a[key]
 }
+
+type invalidAuthMethod struct {
+}
+
+func (a *invalidAuthMethod) Name() string {
+	return "invalid"
+}
+
+func (a *invalidAuthMethod) String() string {
+	return "invalid"
+}
+
+func (s *SuiteCommon) TestCommandWithInvalidAuthMethod(c *C) {
+	uploadPack := &UploadPackSuite{}
+	uploadPack.SetUpSuite(c)
+	r := &runner{}
+	auth := &invalidAuthMethod{}
+
+	_, err := r.Command("command", uploadPack.newEndpoint(c, "endpoint"), auth)
+
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "invalid auth method")
+}
