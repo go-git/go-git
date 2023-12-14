@@ -12,6 +12,10 @@ import (
 
 // WritePacket writes a pktline packet.
 func WritePacket(w io.Writer, p []byte) (n int, err error) {
+	if w == nil {
+		return 0, ErrNilWriter
+	}
+
 	defer func() {
 		if err == nil {
 			trace.Packet.Printf("packet: > %04x %s", n, p)
