@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"

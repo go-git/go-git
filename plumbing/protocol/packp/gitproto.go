@@ -1,6 +1,7 @@
 package packp
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -8,11 +9,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 )
 
-var (
-	// ErrInvalidGitProtoRequest is returned by Decode if the input is not a
-	// valid git protocol request.
-	ErrInvalidGitProtoRequest = fmt.Errorf("invalid git protocol request")
-)
+// ErrInvalidGitProtoRequest is returned by Decode if the input is not a
+// valid git protocol request.
+var ErrInvalidGitProtoRequest = fmt.Errorf("invalid git protocol request")
 
 // GitProtoRequest is a command request for the git protocol.
 // It is used to send the command, endpoint, and extra parameters to the
