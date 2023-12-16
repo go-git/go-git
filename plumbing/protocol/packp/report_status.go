@@ -99,7 +99,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 
 func (s *ReportStatus) scanFirstLine(r io.Reader) ([]byte, error) {
 	_, p, err := pktline.ReadPacket(r)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return p, io.ErrUnexpectedEOF
 	}
 	if err != nil {
