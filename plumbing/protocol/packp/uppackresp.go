@@ -16,7 +16,7 @@ var ErrUploadPackResponseNotDecoded = errors.New("upload-pack-response should be
 // UploadPackResponse contains all the information responded by the upload-pack
 // service, the response implements io.ReadCloser that allows to read the
 // packfile directly from it.
-// TODO: to be removed
+// TODO: v6, to be removed
 type UploadPackResponse struct {
 	ShallowUpdate
 	ServerResponse
