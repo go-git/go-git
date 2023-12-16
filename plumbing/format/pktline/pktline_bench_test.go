@@ -36,14 +36,13 @@ func BenchmarkReadPacket(b *testing.B) {
 		},
 	}
 	for _, tc := range cases {
+		r := strings.NewReader("")
 		b.Run(tc.name, func(b *testing.B) {
-			r := strings.NewReader(tc.input)
 			for i := 0; i < b.N; i++ {
-				for {
-					_, _, err := pktline.ReadPacket(r)
-					if err != nil {
-						break
-					}
+				r.Reset(tc.input)
+				_, _, err := pktline.ReadPacket(r)
+				if err != nil {
+					break
 				}
 			}
 		})
