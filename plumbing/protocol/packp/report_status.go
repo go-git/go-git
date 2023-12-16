@@ -90,7 +90,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 		return fmt.Errorf("missing flush")
 	}
 
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
 
