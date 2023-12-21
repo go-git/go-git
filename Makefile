@@ -55,7 +55,7 @@ test-go: test-env
 
 test-git: test-env
 	export BASH_ENV=$(TEST_ENV)
-	$(BASHCMD) _local/test-git-compatability.sh $(GIT_VERSION)
+	$(BASHCMD) _local/test-git-compatibility.sh $(GIT_VERSION)
 
 TEMP_REPO := $(shell mktemp)
 test-sha256:
