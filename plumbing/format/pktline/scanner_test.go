@@ -3,8 +3,6 @@ package pktline_test
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"io"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -58,8 +56,7 @@ func (s *SuiteScanner) TestEmptyReader(c *C) {
 
 func (s *SuiteScanner) TestFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.Flush()
+	err := pktline.WriteFlush(&buf)
 	c.Assert(err, IsNil)
 
 	sc := pktline.NewScanner(&buf)
@@ -90,8 +87,7 @@ func (s *SuiteScanner) TestScanAndPayload(c *C) {
 		strings.Repeat("a", pktline.MaxPayloadSize-1) + "\n",
 	} {
 		var buf bytes.Buffer
-		e := pktline.NewEncoder(&buf)
-		err := e.EncodeString(test)
+		_, err := pktline.WritePacketf(&buf, test)
 		c.Assert(err, IsNil,
 			Commentf("input len=%x, contents=%.10q\n", len(test), test))
 
@@ -108,14 +104,15 @@ func (s *SuiteScanner) TestScanAndPayload(c *C) {
 func (s *SuiteScanner) TestSkip(c *C) {
 	for _, test := range [...]struct {
 		input    []string
-		n        int
 		expected []byte
+		n        int
 	}{
 		{
 			input: []string{
 				"first",
 				"second",
-				"third"},
+				"third",
+			},
 			n:        1,
 			expected: []byte("second"),
 		},
@@ -123,15 +120,17 @@ func (s *SuiteScanner) TestSkip(c *C) {
 			input: []string{
 				"first",
 				"second",
-				"third"},
+				"third",
+			},
 			n:        2,
 			expected: []byte("third"),
 		},
 	} {
 		var buf bytes.Buffer
-		e := pktline.NewEncoder(&buf)
-		err := e.EncodeString(test.input...)
-		c.Assert(err, IsNil)
+		for _, in := range test.input {
+			_, err := pktline.WritePacketf(&buf, in)
+			c.Assert(err, IsNil)
+		}
 
 		sc := pktline.NewScanner(&buf)
 		for i := 0; i < test.n; i++ {
@@ -150,9 +149,10 @@ func (s *SuiteScanner) TestSkip(c *C) {
 
 func (s *SuiteScanner) TestEOF(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.EncodeString("first", "second")
-	c.Assert(err, IsNil)
+	for _, in := range []string{"first", "second"} {
+		_, err := pktline.WritePacketf(&buf, in)
+		c.Assert(err, IsNil)
+	}
 
 	sc := pktline.NewScanner(&buf)
 	for sc.Scan() {
@@ -175,7 +175,8 @@ func (s *SuiteScanner) TestInternalReadError(c *C) {
 func (s *SuiteScanner) TestReadSomeSections(c *C) {
 	nSections := 2
 	nLines := 4
-	data := sectionsExample(c, nSections, nLines)
+	data, err := sectionsExample(nSections, nLines)
+	c.Assert(err, IsNil)
 	sc := pktline.NewScanner(data)
 
 	sectionCounter := 0
@@ -189,31 +190,4 @@ func (s *SuiteScanner) TestReadSomeSections(c *C) {
 	c.Assert(sc.Err(), IsNil)
 	c.Assert(sectionCounter, Equals, nSections)
 	c.Assert(lineCounter, Equals, (1+nLines)*nSections)
-}
-
-// returns nSection sections, each of them with nLines pkt-lines (not
-// counting the flush-pkt:
-//
-// 0009 0.0\n
-// 0009 0.1\n
-// ...
-// 0000
-// and so on
-func sectionsExample(c *C, nSections, nLines int) io.Reader {
-	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-
-	for section := 0; section < nSections; section++ {
-		ss := []string{}
-		for line := 0; line < nLines; line++ {
-			line := fmt.Sprintf(" %d.%d\n", section, line)
-			ss = append(ss, line)
-		}
-		err := e.EncodeString(ss...)
-		c.Assert(err, IsNil)
-		err = e.Flush()
-		c.Assert(err, IsNil)
-	}
-
-	return &buf
 }
