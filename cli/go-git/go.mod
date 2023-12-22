@@ -1,4 +1,4 @@
-module github.com/go-git/v5/go-git/cli/go-git
+module github.com/go-git/go-git/cli/go-git
 
 go 1.19
 
