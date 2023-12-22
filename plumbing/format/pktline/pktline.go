@@ -2,7 +2,6 @@ package pktline
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 
@@ -30,7 +29,7 @@ func WritePacket(w io.Writer, p []byte) (n int, err error) {
 		return 0, ErrPayloadTooLong
 	}
 
-	pktlen := len(p) + lenSize
+	pktlen := len(p) + PacketLenSize
 	n, err = w.Write(asciiHex16(pktlen))
 	if err != nil {
 		return
@@ -103,92 +102,110 @@ func WriteResponseEnd(w io.Writer) (err error) {
 	return err
 }
 
-// ReadPacket reads a pktline packet.
-// This returns the length of the packet, the packet payload, and an error.
+// ReadPacket reads a pktline packet payload into p and returns the packet full
+// length.
+// If p is less than 4 bytes, or cannot hold the entire packet, ReadPacket
+// returns io.ErrUnexpectedEOF.
 // The error can be of type *ErrorLine if the packet is an error packet.
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
 // equal to 4 is a data packet.
-func ReadPacket(r io.Reader) (l int, p []byte, err error) {
+func ReadPacket(r io.Reader, p []byte) (l int, err error) {
 	defer func() {
 		if err == nil {
 			trace.Packet.Printf("packet: < %04x %s", l, p)
 		}
 	}()
 
-	var pktlen [lenSize]byte
-	n, err := io.ReadFull(r, pktlen[:])
-	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return Err, nil, fmt.Errorf("%w: %d", ErrInvalidPktLen, n)
-		}
-
-		return Err, nil, err
+	if len(p) < PacketLenSize {
+		return Err, io.ErrUnexpectedEOF
 	}
 
-	if n != lenSize {
-		return Err, nil, fmt.Errorf("%w: %d", ErrInvalidPktLen, n)
+	n, err := r.Read(p[:PacketLenSize])
+	if err != nil {
+		return Err, err
 	}
 
-	length, err := ParseLength(pktlen[:])
+	if n != PacketLenSize {
+		return Err, fmt.Errorf("%w: %d", ErrInvalidPktLen, n)
+	}
+
+	length, err := ParseLength(p)
 	if err != nil {
-		return Err, nil, err
+		return Err, err
 	}
 
 	switch length {
 	case Flush, Delim, ResponseEnd:
-		return length, nil, nil
-	case lenSize: // empty line
-		return length, []byte{}, nil
+		return length, nil
+	case PacketLenSize: // empty line
+		return length, nil
 	}
 
-	dataLen := length - lenSize
-	data := make([]byte, 0, dataLen)
-	dn, err := io.ReadFull(r, data[:dataLen])
+	if len(p) < length {
+		return Err, io.ErrUnexpectedEOF
+	}
+
+	dataLen := length - PacketLenSize
+	dn, err := r.Read(p[PacketLenSize:length])
 	if err != nil {
-		return Err, nil, err
+		return Err, err
 	}
 
 	if dn != dataLen {
-		return Err, data, fmt.Errorf("%w: %d", ErrInvalidPktLen, dn)
+		return Err, fmt.Errorf("%w: %d", ErrInvalidPktLen, dn)
 	}
 
-	buf := data[:dn]
-	if bytes.HasPrefix(buf, errPrefix) {
+	if bytes.HasPrefix(p[PacketLenSize:], errPrefix) {
 		err = &ErrorLine{
-			Text: string(bytes.TrimSpace(buf[4:])),
+			Text: string(bytes.TrimSpace(p[PacketLenSize+errPrefixSize : length])),
 		}
 	}
 
-	return length, buf, err
+	return length, err
 }
 
-// ReadPacketString reads a pktline packet and returns it as a string.
-// The returned string is trimmed of whitespace.
-func ReadPacketString(r io.Reader) (l int, s string, err error) {
-	l, p, err := ReadPacket(r)
-	return l, string(bytes.TrimSpace(p)), err
-}
-
-// PeekPacket reads a pktline packet without consuming it.
+// ReadPacketLine reads a pktline packet.
 // This returns the length of the packet, the packet payload, and an error.
 // The error can be of type *ErrorLine if the packet is an error packet.
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
 // equal to 4 is a data packet.
-func PeekPacket(r ioutil.ReadPeeker) (l int, p []byte, err error) {
+//
+// Note that ReadPacketLine is a wrapper around ReadPacket and it uses a temporary
+// buffer to read the packet. The underlying buffer may point to data that will
+// overwritten by a subsequent call to ReadPacketLine.
+func ReadPacketLine(r io.Reader) (l int, p []byte, err error) {
+	buf := GetPacketBuffer()
+	defer PutPacketBuffer(buf)
+
+	l, err = ReadPacket(r, (*buf)[:])
+	if l < PacketLenSize {
+		return l, nil, err
+	}
+
+	return l, (*buf)[PacketLenSize:l], err
+}
+
+// PeekPacketLine reads a pktline packet without consuming it.
+// This returns the length of the packet, the packet payload, and an error.
+// The error can be of type *ErrorLine if the packet is an error packet.
+// Use packet length to determine the type of packet i.e. 0 is a flush packet,
+// 1 is a delim packet, 2 is a response-end packet, and a length greater or
+// equal to 4 is a data packet.
+func PeekPacketLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 	defer func() {
 		if err == nil {
 			trace.Packet.Printf("packet: < %04x %s", l, p)
 		}
 	}()
 
-	n, err := r.Peek(lenSize)
+	n, err := r.Peek(PacketLenSize)
 	if err != nil {
 		return Err, nil, err
 	}
 
-	if len(n) != lenSize {
+	if len(n) != PacketLenSize {
 		return Err, nil, fmt.Errorf("%w: %d", ErrInvalidPktLen, len(n))
 	}
 
@@ -200,30 +217,22 @@ func PeekPacket(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 	switch length {
 	case Flush, Delim, ResponseEnd:
 		return length, nil, nil
-	case lenSize: // empty line
+	case PacketLenSize: // empty line
 		return length, []byte{}, nil
 	}
 
-	dataLen := length - lenSize
-	data, err := r.Peek(lenSize + dataLen)
+	dataLen := length - PacketLenSize
+	data, err := r.Peek(PacketLenSize + dataLen)
 	if err != nil {
 		return Err, nil, err
 	}
 
-	buf := data[lenSize : lenSize+dataLen]
+	buf := data[PacketLenSize : PacketLenSize+dataLen]
 	if bytes.HasPrefix(buf, errPrefix) {
 		err = &ErrorLine{
-			Text: string(bytes.TrimSpace(buf[4:])),
+			Text: string(bytes.TrimSpace(buf[errPrefixSize:])),
 		}
 	}
 
 	return length, buf, err
-}
-
-// PeekPacketString reads a pktline packet without consuming it and returns it
-// as a string.
-// The returned string is trimmed of whitespace.
-func PeekPacketString(r ioutil.ReadPeeker) (l int, s string, err error) {
-	l, p, err := PeekPacket(r)
-	return l, string(bytes.TrimSpace(p)), err
 }

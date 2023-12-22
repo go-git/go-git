@@ -25,7 +25,7 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 		err error
 	)
 	for {
-		_, p, err = pktline.ReadPacket(reader)
+		_, p, err = pktline.ReadPacketLine(reader)
 		if err != nil {
 			break
 		}

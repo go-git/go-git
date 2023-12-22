@@ -72,7 +72,7 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 
 // Decode decodes the request from the reader.
 func (g *GitProtoRequest) Decode(r io.Reader) error {
-	_, p, err := pktline.ReadPacket(r)
+	_, p, err := pktline.ReadPacketLine(r)
 	if errors.Is(err, io.EOF) {
 		return ErrInvalidGitProtoRequest
 	}

@@ -72,7 +72,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 	var l int
 	flushed := false
 	for {
-		l, b, err = pktline.ReadPacket(r)
+		l, b, err = pktline.ReadPacketLine(r)
 		if err != nil {
 			break
 		}
@@ -99,7 +99,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 }
 
 func (s *ReportStatus) scanFirstLine(r io.Reader) ([]byte, error) {
-	_, p, err := pktline.ReadPacket(r)
+	_, p, err := pktline.ReadPacketLine(r)
 	if errors.Is(err, io.EOF) {
 		return p, io.ErrUnexpectedEOF
 	}

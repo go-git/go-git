@@ -27,7 +27,7 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 	var err error
 	for {
 		var p []byte
-		_, p, err = pktline.ReadPacket(s)
+		_, p, err = pktline.ReadPacketLine(s)
 		if err != nil {
 			break
 		}
