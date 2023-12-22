@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 PLATFORM=$(uname -s | tr '[[:upper:]]' '[[:lower:]]')
 GIT_DIST_PATH="/git/src"
-GIT_REPOSITORY="${GIT_REPOSITORY:-http://github.com/git/git.git}"
+GIT_REPOSITORY="${GIT_REPOSITORY:-https://github.com/git/git.git}"
 GIT_VERSION="${GIT_VERSION:-master}"
 GO_VERSION=${2:-$(go env GOVERSION | sed -e "s/[A-Za-z]*//" | sed -e "s/\.[0-9]*$//")}
 WORKDIR=${WORKDIR:-$(git rev-parse --show-toplevel)}
