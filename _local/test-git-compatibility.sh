@@ -84,7 +84,7 @@ EOF
 
 echo "Building git-dist: $gitref"
 docker container run \
-     -u root --privileged --rm \
+     -u root --rm \
     --workdir /go/src/ \
     -v "${WORKDIR}:/go/src" \
     -v "$DOCKER_GOGIT_NAME:$GIT_DIST_PATH" \
