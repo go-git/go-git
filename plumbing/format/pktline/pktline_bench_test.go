@@ -15,6 +15,11 @@ func BenchmarkScanner(b *testing.B) {
 		b.Fatal(err)
 	}
 
+	var maxp bytes.Buffer
+	if _, err := pktline.WritePacketString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
+		b.Fatal(err)
+	}
+
 	cases := []struct {
 		name  string
 		input string
@@ -35,6 +40,10 @@ func BenchmarkScanner(b *testing.B) {
 			name:  "sections",
 			input: sections.String(),
 		},
+		{
+			name:  "max packet size",
+			input: maxp.String(),
+		},
 	}
 	for _, tc := range cases {
 		r := strings.NewReader("")
@@ -42,7 +51,7 @@ func BenchmarkScanner(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r.Reset(tc.input)
-				if !s.Scan() {
+				for s.Scan() {
 					if err := s.Err(); err != nil && err != io.EOF {
 						b.Error(err)
 					}
@@ -58,46 +67,8 @@ func BenchmarkReadPacket(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	cases := []struct {
-		name  string
-		input string
-	}{
-		{
-			name:  "empty",
-			input: "",
-		},
-		{
-			name:  "one message",
-			input: "000ahello\n",
-		},
-		{
-			name:  "two messages",
-			input: "000ahello\n000bworld!\n",
-		},
-		{
-			name:  "sections",
-			input: sections.String(),
-		},
-	}
-	for _, tc := range cases {
-		r := strings.NewReader("")
-		b.Run(tc.name, func(b *testing.B) {
-			buf := pktline.GetPacketBuffer()
-			for i := 0; i < b.N; i++ {
-				r.Reset(tc.input)
-				_, err := pktline.ReadPacket(r, (*buf)[:])
-				if err != nil && err != io.EOF {
-					b.Error(err)
-				}
-			}
-			pktline.PutPacketBuffer(buf)
-		})
-	}
-}
-
-func BenchmarkReadPacketLine(b *testing.B) {
-	sections, err := sectionsExample(2, 4)
-	if err != nil {
+	var maxp bytes.Buffer
+	if _, err := pktline.WritePacketString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
 		b.Fatal(err)
 	}
 
@@ -121,15 +92,81 @@ func BenchmarkReadPacketLine(b *testing.B) {
 			name:  "sections",
 			input: sections.String(),
 		},
+		{
+			name:  "max packet size",
+			input: maxp.String(),
+		},
+	}
+	for _, tc := range cases {
+		r := strings.NewReader("")
+		b.Run(tc.name, func(b *testing.B) {
+			buf := pktline.GetPacketBuffer()
+			for i := 0; i < b.N; i++ {
+				r.Reset(tc.input)
+				for {
+					_, err := pktline.ReadPacket(r, (*buf)[:])
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						b.Error(err)
+					}
+				}
+			}
+			pktline.PutPacketBuffer(buf)
+		})
+	}
+}
+
+func BenchmarkReadPacketLine(b *testing.B) {
+	sections, err := sectionsExample(2, 4)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var maxp bytes.Buffer
+	if _, err := pktline.WritePacketString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
+		b.Fatal(err)
+	}
+
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "empty",
+			input: "",
+		},
+		{
+			name:  "one message",
+			input: "000ahello\n",
+		},
+		{
+			name:  "two messages",
+			input: "000ahello\n000bworld!\n",
+		},
+		{
+			name:  "sections",
+			input: sections.String(),
+		},
+		{
+			name:  "max packet size",
+			input: maxp.String(),
+		},
 	}
 	for _, tc := range cases {
 		r := strings.NewReader("")
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r.Reset(tc.input)
-				_, _, err := pktline.ReadPacketLine(r)
-				if err != nil {
-					break
+				for {
+					_, _, err := pktline.ReadPacketLine(r)
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						break
+					}
 				}
 			}
 		})

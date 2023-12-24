@@ -15,17 +15,16 @@ import (
 //
 // Scanning stops at EOF or the first I/O error.
 type Scanner struct {
-	r   io.Reader // The reader provided by the client
-	err error     // Sticky error
-	buf []byte    // Buffer used to read the pktlines
-	n   int       // Number of bytes read in the last read
+	r   io.Reader           // The reader provided by the client
+	err error               // Sticky error
+	buf [MaxPacketSize]byte // Buffer used to read the pktlines
+	n   int                 // Number of bytes read in the last read
 }
 
 // NewScanner returns a new Scanner to read from r.
 func NewScanner(r io.Reader) *Scanner {
 	return &Scanner{
-		r:   r,
-		buf: make([]byte, MaxPacketSize),
+		r: r,
 	}
 }
 
@@ -40,7 +39,7 @@ func (s *Scanner) Err() error {
 // will return any error that occurred during scanning, except that if
 // it was io.EOF, Err will return nil.
 func (s *Scanner) Scan() bool {
-	s.n, s.err = ReadPacket(s.r, s.buf)
+	s.n, s.err = ReadPacket(s.r, s.buf[:])
 	return s.err == nil
 }
 

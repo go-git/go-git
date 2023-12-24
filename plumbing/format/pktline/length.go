@@ -4,6 +4,10 @@ package pktline
 // into its integer representation. If the byte slice contains non-hexadecimal,
 // it will return an error.
 func ParseLength(b []byte) (int, error) {
+	if b == nil {
+		return Err, ErrInvalidPktLen
+	}
+
 	n, err := hexDecode(b)
 	if err != nil {
 		return Err, err

@@ -42,9 +42,6 @@ func (e *ErrorLine) Encode(w io.Writer) error {
 // Decode decodes a packet line into an ErrorLine.
 func (e *ErrorLine) Decode(r io.Reader) error {
 	_, _, err := ReadPacketLine(r)
-	if err == io.EOF {
-		return nil
-	}
 	var el *ErrorLine
 	if !errors.As(err, &el) {
 		return ErrInvalidErrorLine

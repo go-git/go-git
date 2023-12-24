@@ -34,7 +34,7 @@ func TestDecodeEmptyErrorLine(t *testing.T) {
 	var buf bytes.Buffer
 	e := &ErrorLine{}
 	err := e.Decode(&buf)
-	if err != nil {
+	if !errors.Is(err, ErrInvalidErrorLine) {
 		t.Fatal(err)
 	}
 	if e.Text != "" {
