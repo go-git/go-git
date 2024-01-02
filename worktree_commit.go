@@ -36,6 +36,12 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		}
 	}
 
+	if len(opts.Path) > 0 && !opts.All {
+		if err := w.addPaths(opts.Path); err != nil {
+			return plumbing.ZeroHash, err
+		}
+	}
+
 	var treeHash plumbing.Hash
 
 	if opts.Amend {
@@ -98,6 +104,20 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 
 	}
 
+	return w.r.Storer.SetIndex(idx)
+}
+
+func (w *Worktree) addPaths(paths []string) error {
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if _, _, err := w.doAddFile(idx, nil, path, nil); err != nil {
+			return err
+		}
+
+	}
 	return w.r.Storer.SetIndex(idx)
 }
 
