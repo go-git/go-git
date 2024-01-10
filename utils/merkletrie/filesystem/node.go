@@ -50,6 +50,10 @@ func NewRootNode(
 // difftree algorithm will detect changes in the contents of files and also in
 // their mode.
 //
+// Please note that the hash is calculated on first invocation of Hash(),
+// meaning that it will not update when the underlying file changes
+// between invocations.
+//
 // The hash of a directory is always a 24-bytes slice of zero values
 func (n *node) Hash() []byte {
 	if n.hash == nil {
