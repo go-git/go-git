@@ -1,6 +1,7 @@
 package git
 
 import (
+	"crypto"
 	"errors"
 	"fmt"
 	"regexp"
@@ -507,6 +508,10 @@ type CommitOptions struct {
 	// commit will not be signed. The private key must be present and already
 	// decrypted.
 	SignKey *openpgp.Entity
+	// Signer denotes a cryptographic signer to sign the commit with.
+	// A nil value here means the commit will not be signed.
+	// Takes precedence over SignKey.
+	Signer crypto.Signer
 	// Amend will create a new commit object and replace the commit that HEAD currently
 	// points to. Cannot be used with All nor Parents.
 	Amend bool

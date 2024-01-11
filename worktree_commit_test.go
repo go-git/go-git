@@ -131,7 +131,6 @@ func (s *WorktreeSuite) TestCommitAmend(c *C) {
 	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
-
 	amendedHash, err := w.Commit("bar\n", &CommitOptions{Amend: true})
 	c.Assert(err, IsNil)
 
