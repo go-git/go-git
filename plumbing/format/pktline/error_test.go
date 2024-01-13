@@ -72,7 +72,7 @@ func TestPeekErrorLine(t *testing.T) {
 	var buf bytes.Buffer
 	buf.WriteString("000fERR foobar\n")
 	var e *ErrorLine
-	_, _, err := PeekPacketLine(bufio.NewReader(&buf))
+	_, _, err := PeekLine(bufio.NewReader(&buf))
 	if !errors.As(err, &e) {
 		t.Fatalf("expected error line, got: %T: %v", err, err)
 	}

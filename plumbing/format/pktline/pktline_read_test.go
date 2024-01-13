@@ -27,7 +27,7 @@ func (s *SuiteReader) TestInvalid(c *C) {
 		"-001", "-000",
 	} {
 		r := strings.NewReader(test)
-		_, _, err := pktline.ReadPacketLine(r)
+		_, _, err := pktline.ReadLine(r)
 		c.Assert(err, ErrorMatches, pktline.ErrInvalidPktLen.Error()+".*",
 			Commentf("i = %d, data = %q", i, test))
 	}
@@ -41,14 +41,14 @@ func (s *SuiteReader) TestDecodeOversizePktLines(c *C) {
 		"fff4" + strings.Repeat("a", 0xfff4),
 	} {
 		r := strings.NewReader(test)
-		_, _, err := pktline.ReadPacketLine(r)
+		_, _, err := pktline.ReadLine(r)
 		c.Assert(err, NotNil)
 	}
 }
 
 func (s *SuiteReader) TestEmptyReader(c *C) {
 	r := strings.NewReader("")
-	l, p, err := pktline.ReadPacketLine(r)
+	l, p, err := pktline.ReadLine(r)
 	c.Assert(l, Equals, -1)
 	c.Assert(p, IsNil)
 	c.Assert(err, ErrorMatches, io.EOF.Error())
@@ -59,7 +59,7 @@ func (s *SuiteReader) TestFlush(c *C) {
 	err := pktline.WriteFlush(&buf)
 	c.Assert(err, IsNil)
 
-	l, p, err := pktline.ReadPacketLine(&buf)
+	l, p, err := pktline.ReadLine(&buf)
 	c.Assert(l, Equals, pktline.Flush)
 	c.Assert(p, IsNil)
 	c.Assert(err, IsNil)
@@ -68,7 +68,7 @@ func (s *SuiteReader) TestFlush(c *C) {
 
 func (s *SuiteReader) TestPktLineTooShort(c *C) {
 	r := strings.NewReader("010cfoobar")
-	_, _, err := pktline.ReadPacketLine(r)
+	_, _, err := pktline.ReadLine(r)
 	c.Assert(err, ErrorMatches, "unexpected EOF")
 }
 
@@ -84,11 +84,11 @@ func (s *SuiteReader) TestScanAndPayload(c *C) {
 		strings.Repeat("a", pktline.MaxPayloadSize-1) + "\n",
 	} {
 		var buf bytes.Buffer
-		_, err := pktline.WritePacketf(&buf, test)
+		_, err := pktline.Writef(&buf, test)
 		c.Assert(err, IsNil,
 			Commentf("input len=%x, contents=%.10q\n", len(test), test))
 
-		_, p, err := pktline.ReadPacketLine(&buf)
+		_, p, err := pktline.ReadLine(&buf)
 		c.Assert(err, IsNil)
 		c.Assert(p, NotNil,
 			Commentf("i = %d, payload = %q, test = %.20q...", i, p, test))
@@ -125,16 +125,16 @@ func (s *SuiteReader) TestSkip(c *C) {
 	} {
 		var buf bytes.Buffer
 		for _, in := range test.input {
-			_, err := pktline.WritePacketf(&buf, in)
+			_, err := pktline.Writef(&buf, in)
 			c.Assert(err, IsNil)
 		}
 
 		for i := 0; i < test.n; i++ {
-			_, p, err := pktline.ReadPacketLine(&buf)
+			_, p, err := pktline.ReadLine(&buf)
 			c.Assert(p, NotNil,
 				Commentf("scan error = %s", err))
 		}
-		_, p, err := pktline.ReadPacketLine(&buf)
+		_, p, err := pktline.ReadLine(&buf)
 		c.Assert(p, NotNil,
 			Commentf("scan error = %s", err))
 
@@ -146,13 +146,13 @@ func (s *SuiteReader) TestSkip(c *C) {
 
 func (s *SuiteReader) TestEOF(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketf(&buf, "first")
+	_, err := pktline.Writef(&buf, "first")
 	c.Assert(err, IsNil)
-	_, err = pktline.WritePacketf(&buf, "second")
+	_, err = pktline.Writef(&buf, "second")
 	c.Assert(err, IsNil)
 
 	for {
-		_, _, err = pktline.ReadPacketLine(&buf)
+		_, _, err = pktline.ReadLine(&buf)
 		if err == io.EOF {
 			break
 		}
@@ -166,7 +166,7 @@ func (r *mockSuiteReader) Read([]byte) (int, error) { return 0, errors.New("foo"
 
 func (s *SuiteReader) TestInternalReadError(c *C) {
 	r := &mockSuiteReader{}
-	_, p, err := pktline.ReadPacketLine(r)
+	_, p, err := pktline.ReadLine(r)
 	c.Assert(p, IsNil)
 	c.Assert(err, ErrorMatches, "foo")
 }
@@ -186,7 +186,7 @@ func (s *SuiteReader) TestReadSomeSections(c *C) {
 		e error
 	)
 	for {
-		_, p, e = pktline.ReadPacketLine(data)
+		_, p, e = pktline.ReadLine(data)
 		if e == io.EOF {
 			break
 		}
@@ -202,9 +202,9 @@ func (s *SuiteReader) TestReadSomeSections(c *C) {
 
 func (s *SuiteReader) TestPeekReadPacket(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketf(&buf, "first")
+	_, err := pktline.Writef(&buf, "first")
 	c.Assert(err, IsNil)
-	_, err = pktline.WritePacketf(&buf, "second")
+	_, err = pktline.Writef(&buf, "second")
 	c.Assert(err, IsNil)
 
 	sc := bufio.NewReader(&buf)
@@ -212,7 +212,7 @@ func (s *SuiteReader) TestPeekReadPacket(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(p, DeepEquals, []byte("0009"))
 
-	l, p, err := pktline.ReadPacketLine(sc)
+	l, p, err := pktline.ReadLine(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 9)
 	c.Assert(p, DeepEquals, []byte("first"))
@@ -224,7 +224,7 @@ func (s *SuiteReader) TestPeekReadPacket(c *C) {
 
 func (s *SuiteReader) TestPeekMultiple(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketString(&buf, "a")
+	_, err := pktline.WriteString(&buf, "a")
 	c.Assert(err, IsNil)
 
 	sc := bufio.NewReader(&buf)
@@ -239,7 +239,7 @@ func (s *SuiteReader) TestPeekMultiple(c *C) {
 
 func (s *SuiteReader) TestInvalidPeek(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketString(&buf, "a")
+	_, err := pktline.WriteString(&buf, "a")
 	c.Assert(err, IsNil)
 	c.Assert(err, IsNil)
 
@@ -250,16 +250,16 @@ func (s *SuiteReader) TestInvalidPeek(c *C) {
 
 func (s *SuiteReader) TestPeekPacket(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketf(&buf, "first")
+	_, err := pktline.Writef(&buf, "first")
 	c.Assert(err, IsNil)
-	_, err = pktline.WritePacketf(&buf, "second")
+	_, err = pktline.Writef(&buf, "second")
 	c.Assert(err, IsNil)
 	sc := bufio.NewReader(&buf)
-	l, p, err := pktline.PeekPacketLine(sc)
+	l, p, err := pktline.PeekLine(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 9)
 	c.Assert(p, DeepEquals, []byte("first"))
-	l, p, err = pktline.PeekPacketLine(sc)
+	l, p, err = pktline.PeekLine(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 9)
 	c.Assert(p, DeepEquals, []byte("first"))
@@ -267,21 +267,21 @@ func (s *SuiteReader) TestPeekPacket(c *C) {
 
 func (s *SuiteReader) TestPeekPacketReadPacket(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketString(&buf, "a")
+	_, err := pktline.WriteString(&buf, "a")
 	c.Assert(err, IsNil)
 
 	sc := bufio.NewReader(&buf)
-	l, p, err := pktline.PeekPacketLine(sc)
+	l, p, err := pktline.PeekLine(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 5)
 	c.Assert(p, DeepEquals, []byte("a"))
 
-	l, p, err = pktline.ReadPacketLine(sc)
+	l, p, err = pktline.ReadLine(sc)
 	c.Assert(err, IsNil)
 	c.Assert(l, Equals, 5)
 	c.Assert(p, DeepEquals, []byte("a"))
 
-	l, p, err = pktline.PeekPacketLine(sc)
+	l, p, err = pktline.PeekLine(sc)
 	c.Assert(err, ErrorMatches, io.EOF.Error())
 	c.Assert(l, Equals, -1)
 	c.Assert(p, IsNil)
@@ -291,7 +291,7 @@ func (s *SuiteReader) TestPeekRead(c *C) {
 	hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketf(&buf, hash)
+	_, err := pktline.Writef(&buf, hash)
 	c.Assert(err, NotNil)
 
 	sc := bufio.NewReader(&buf)
@@ -308,7 +308,7 @@ func (s *SuiteReader) TestPeekReadPart(c *C) {
 	hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 
 	var buf bytes.Buffer
-	_, err := pktline.WritePacketf(&buf, hash)
+	_, err := pktline.Writef(&buf, hash)
 	c.Assert(err, NotNil)
 
 	sc := bufio.NewReader(&buf)
@@ -325,10 +325,10 @@ func (s *SuiteReader) TestPeekReadPart(c *C) {
 
 func (s *SuiteReader) TestReadPacketError(c *C) {
 	var buf bytes.Buffer
-	_, err := pktline.WriteErrorPacket(&buf, io.EOF)
+	_, err := pktline.WriteError(&buf, io.EOF)
 	c.Assert(err, NotNil)
 
-	l, p, err := pktline.ReadPacketLine(&buf)
+	l, p, err := pktline.ReadLine(&buf)
 	c.Assert(err, NotNil)
 	c.Assert(l, Equals, 12)
 	c.Assert(string(p), DeepEquals, "ERR EOF\n")
@@ -347,7 +347,7 @@ func sectionsExample(nSections, nLines int) (*bytes.Buffer, error) {
 	for section := 0; section < nSections; section++ {
 		for line := 0; line < nLines; line++ {
 			line := fmt.Sprintf(" %d.%d\n", section, line)
-			_, err := pktline.WritePacketString(&buf, line)
+			_, err := pktline.WriteString(&buf, line)
 			if err != nil {
 				return nil, err
 			}

@@ -27,7 +27,7 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 	var err error
 	for {
 		var p []byte
-		_, p, err = pktline.ReadPacketLine(s)
+		_, p, err = pktline.ReadLine(s)
 		if err != nil {
 			break
 		}
@@ -142,10 +142,10 @@ func (r *ServerResponse) Encode(w io.Writer, isMultiACK bool) error {
 	}
 
 	if len(r.ACKs) == 0 {
-		_, err := pktline.WritePacketString(w, string(nak)+"\n")
+		_, err := pktline.WriteString(w, string(nak)+"\n")
 		return err
 	}
 
-	_, err := pktline.WritePacketf(w, "%s %s\n", ack, r.ACKs[0].String())
+	_, err := pktline.Writef(w, "%s %s\n", ack, r.ACKs[0].String())
 	return err
 }

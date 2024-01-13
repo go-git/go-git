@@ -34,7 +34,6 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 func (s *upSession) UploadPack(
 	ctx context.Context, req *packp.UploadPackRequest,
 ) (*packp.UploadPackResponse, error) {
-
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -79,7 +78,6 @@ func (s *upSession) Close() error {
 func (s *upSession) doRequest(
 	ctx context.Context, method, url string, content *bytes.Buffer,
 ) (*http.Response, error) {
-
 	var body io.Reader
 	if content != nil {
 		body = content
@@ -115,7 +113,7 @@ func uploadPackRequestToReader(req *packp.UploadPackRequest) (*bytes.Buffer, err
 		return nil, fmt.Errorf("sending haves message: %s", err)
 	}
 
-	if _, err := pktline.WritePacketf(buf, "done\n"); err != nil {
+	if _, err := pktline.Writef(buf, "done\n"); err != nil {
 		return nil, err
 	}
 

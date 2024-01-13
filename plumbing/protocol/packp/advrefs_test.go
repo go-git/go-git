@@ -167,7 +167,7 @@ func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty
 			if l == "" {
 				c.Assert(pktline.WriteFlush(&buf), IsNil)
 			} else {
-				_, err := pktline.WritePacketString(&buf, l)
+				_, err := pktline.WriteString(&buf, l)
 				c.Assert(err, IsNil)
 			}
 		}
@@ -181,7 +181,7 @@ func (s *AdvRefsDecodeEncodeSuite) test(c *C, in []string, exp []string, isEmpty
 			if l == "" {
 				c.Assert(pktline.WriteFlush(&buf), IsNil)
 			} else {
-				_, err := pktline.WritePacketString(&buf, l)
+				_, err := pktline.WriteString(&buf, l)
 				c.Assert(err, IsNil)
 			}
 		}

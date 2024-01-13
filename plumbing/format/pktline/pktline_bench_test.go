@@ -16,7 +16,7 @@ func BenchmarkScanner(b *testing.B) {
 	}
 
 	var maxp bytes.Buffer
-	if _, err := pktline.WritePacketString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
+	if _, err := pktline.WriteString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
 		b.Fatal(err)
 	}
 
@@ -68,7 +68,7 @@ func BenchmarkReadPacket(b *testing.B) {
 	}
 
 	var maxp bytes.Buffer
-	if _, err := pktline.WritePacketString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
+	if _, err := pktline.WriteString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
 		b.Fatal(err)
 	}
 
@@ -104,7 +104,7 @@ func BenchmarkReadPacket(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r.Reset(tc.input)
 				for {
-					_, err := pktline.ReadPacket(r, (*buf)[:])
+					_, err := pktline.Read(r, (*buf)[:])
 					if err == io.EOF {
 						break
 					}
@@ -125,7 +125,7 @@ func BenchmarkReadPacketLine(b *testing.B) {
 	}
 
 	var maxp bytes.Buffer
-	if _, err := pktline.WritePacketString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
+	if _, err := pktline.WriteString(&maxp, strings.Repeat("a", pktline.MaxPayloadSize)); err != nil {
 		b.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func BenchmarkReadPacketLine(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r.Reset(tc.input)
 				for {
-					_, _, err := pktline.ReadPacketLine(r)
+					_, _, err := pktline.ReadLine(r)
 					if err == io.EOF {
 						break
 					}
@@ -204,7 +204,7 @@ func BenchmarkWritePacket(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			var buf bytes.Buffer
 			for i := 0; i < b.N; i++ {
-				_, err := pktline.WritePacket(&buf, tc.input)
+				_, err := pktline.Write(&buf, tc.input)
 				if err != nil {
 					b.Fatal(err)
 				}

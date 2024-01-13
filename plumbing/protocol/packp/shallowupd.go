@@ -25,7 +25,7 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 		err error
 	)
 	for {
-		_, p, err = pktline.ReadPacketLine(reader)
+		_, p, err = pktline.ReadLine(reader)
 		if err != nil {
 			break
 		}
@@ -83,13 +83,13 @@ func (r *ShallowUpdate) decodeLine(line, prefix []byte, expLen int) (plumbing.Ha
 
 func (r *ShallowUpdate) Encode(w io.Writer) error {
 	for _, h := range r.Shallows {
-		if _, err := pktline.WritePacketf(w, "%s%s\n", shallow, h.String()); err != nil {
+		if _, err := pktline.Writef(w, "%s%s\n", shallow, h.String()); err != nil {
 			return err
 		}
 	}
 
 	for _, h := range r.Unshallows {
-		if _, err := pktline.WritePacketf(w, "%s%s\n", unshallow, h.String()); err != nil {
+		if _, err := pktline.Writef(w, "%s%s\n", unshallow, h.String()); err != nil {
 			return err
 		}
 	}

@@ -60,7 +60,7 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 func (d *ulReqDecoder) nextLine() bool {
 	d.nLine++
 
-	_, p, err := pktline.ReadPacketLine(d.r)
+	_, p, err := pktline.ReadLine(d.r)
 	if err == io.EOF {
 		d.error("EOF")
 		return false

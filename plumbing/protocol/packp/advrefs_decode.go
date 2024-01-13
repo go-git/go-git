@@ -70,7 +70,7 @@ func (d *advRefsDecoder) error(format string, a ...interface{}) {
 func (d *advRefsDecoder) nextLine() bool {
 	d.nLine++
 
-	_, p, err := pktline.ReadPacketLine(d.s)
+	_, p, err := pktline.ReadLine(d.s)
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			d.err = err

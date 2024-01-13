@@ -257,7 +257,7 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 		if p == "" {
 			c.Assert(pktline.WriteFlush(&buf), IsNil)
 		} else {
-			_, err := pktline.WritePacketString(&buf, p)
+			_, err := pktline.WriteString(&buf, p)
 			c.Assert(err, IsNil)
 		}
 	}
@@ -277,7 +277,7 @@ func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *ReferenceUpda
 		if p == "" {
 			c.Assert(pktline.WriteFlush(&buf), IsNil)
 		} else {
-			_, err := pktline.WritePacketString(&buf, p)
+			_, err := pktline.WriteString(&buf, p)
 			c.Assert(err, IsNil)
 		}
 	}

@@ -21,7 +21,7 @@ func pktlines(c *C, payloads ...string) []byte {
 		if p == "" {
 			c.Assert(pktline.WriteFlush(&buf), IsNil, comment)
 		} else {
-			_, err := pktline.WritePacketString(&buf, p)
+			_, err := pktline.WriteString(&buf, p)
 			c.Assert(err, IsNil, comment)
 		}
 	}
@@ -35,7 +35,7 @@ func toPktLines(c *C, payloads []string) io.Reader {
 		if p == "" {
 			c.Assert(pktline.WriteFlush(&buf), IsNil)
 		} else {
-			_, err := pktline.WritePacketString(&buf, p)
+			_, err := pktline.WriteString(&buf, p)
 			c.Assert(err, IsNil)
 		}
 	}

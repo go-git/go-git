@@ -35,13 +35,13 @@ func (e *ErrorLine) Error() string {
 
 // Encode encodes the ErrorLine into a packet line.
 func (e *ErrorLine) Encode(w io.Writer) error {
-	_, err := WritePacketf(w, "%s%s\n", errPrefix, e.Text)
+	_, err := Writef(w, "%s%s\n", errPrefix, e.Text)
 	return err
 }
 
 // Decode decodes a packet line into an ErrorLine.
 func (e *ErrorLine) Decode(r io.Reader) error {
-	_, _, err := ReadPacketLine(r)
+	_, _, err := ReadLine(r)
 	var el *ErrorLine
 	if !errors.As(err, &el) {
 		return ErrInvalidErrorLine

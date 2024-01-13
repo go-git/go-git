@@ -50,9 +50,9 @@ func (e *ulReqEncoder) Encode(v *UploadRequest) error {
 func (e *ulReqEncoder) encodeFirstWant() stateFn {
 	var err error
 	if e.data.Capabilities.IsEmpty() {
-		_, err = pktline.WritePacketf(e.w, "want %s\n", e.data.Wants[0])
+		_, err = pktline.Writef(e.w, "want %s\n", e.data.Wants[0])
 	} else {
-		_, err = pktline.WritePacketf(e.w, "want %s %s\n",
+		_, err = pktline.Writef(e.w, "want %s %s\n",
 			e.data.Wants[0],
 			e.data.Capabilities.String(),
 		)
@@ -73,7 +73,7 @@ func (e *ulReqEncoder) encodeAdditionalWants() stateFn {
 			continue
 		}
 
-		if _, err := pktline.WritePacketf(e.w, "want %s\n", w); err != nil {
+		if _, err := pktline.Writef(e.w, "want %s\n", w); err != nil {
 			e.err = fmt.Errorf("encoding want %q: %s", w, err)
 			return nil
 		}
@@ -93,7 +93,7 @@ func (e *ulReqEncoder) encodeShallows() stateFn {
 			continue
 		}
 
-		if _, err := pktline.WritePacketf(e.w, "shallow %s\n", s); err != nil {
+		if _, err := pktline.Writef(e.w, "shallow %s\n", s); err != nil {
 			e.err = fmt.Errorf("encoding shallow %q: %s", s, err)
 			return nil
 		}
@@ -109,20 +109,20 @@ func (e *ulReqEncoder) encodeDepth() stateFn {
 	case DepthCommits:
 		if depth != 0 {
 			commits := int(depth)
-			if _, err := pktline.WritePacketf(e.w, "deepen %d\n", commits); err != nil {
+			if _, err := pktline.Writef(e.w, "deepen %d\n", commits); err != nil {
 				e.err = fmt.Errorf("encoding depth %d: %s", depth, err)
 				return nil
 			}
 		}
 	case DepthSince:
 		when := time.Time(depth).UTC()
-		if _, err := pktline.WritePacketf(e.w, "deepen-since %d\n", when.Unix()); err != nil {
+		if _, err := pktline.Writef(e.w, "deepen-since %d\n", when.Unix()); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", when, err)
 			return nil
 		}
 	case DepthReference:
 		reference := string(depth)
-		if _, err := pktline.WritePacketf(e.w, "deepen-not %s\n", reference); err != nil {
+		if _, err := pktline.Writef(e.w, "deepen-not %s\n", reference); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", reference, err)
 			return nil
 		}

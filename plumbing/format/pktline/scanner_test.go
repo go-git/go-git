@@ -87,7 +87,7 @@ func (s *SuiteScanner) TestScanAndPayload(c *C) {
 		strings.Repeat("a", pktline.MaxPayloadSize-1) + "\n",
 	} {
 		var buf bytes.Buffer
-		_, err := pktline.WritePacketf(&buf, test)
+		_, err := pktline.Writef(&buf, test)
 		c.Assert(err, IsNil,
 			Commentf("input len=%x, contents=%.10q\n", len(test), test))
 
@@ -128,7 +128,7 @@ func (s *SuiteScanner) TestSkip(c *C) {
 	} {
 		var buf bytes.Buffer
 		for _, in := range test.input {
-			_, err := pktline.WritePacketf(&buf, in)
+			_, err := pktline.Writef(&buf, in)
 			c.Assert(err, IsNil)
 		}
 
@@ -150,7 +150,7 @@ func (s *SuiteScanner) TestSkip(c *C) {
 func (s *SuiteScanner) TestEOF(c *C) {
 	var buf bytes.Buffer
 	for _, in := range []string{"first", "second"} {
-		_, err := pktline.WritePacketf(&buf, in)
+		_, err := pktline.Writef(&buf, in)
 		c.Assert(err, IsNil)
 	}
 

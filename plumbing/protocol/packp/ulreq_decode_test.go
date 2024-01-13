@@ -71,7 +71,7 @@ func (s *UlReqDecodeSuite) testDecodeOK(c *C, payloads []string) *UploadRequest 
 		if p == "" {
 			c.Assert(pktline.WriteFlush(&buf), IsNil)
 		} else {
-			_, err := pktline.WritePacketString(&buf, p)
+			_, err := pktline.WriteString(&buf, p)
 			c.Assert(err, IsNil)
 		}
 	}
@@ -91,7 +91,8 @@ func (s *UlReqDecodeSuite) TestWantWithCapabilities(c *C) {
 	}
 	ur := s.testDecodeOK(c, payloads)
 	c.Assert(ur.Wants, DeepEquals, []plumbing.Hash{
-		plumbing.NewHash("1111111111111111111111111111111111111111")})
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+	})
 
 	c.Assert(ur.Capabilities.Supports(capability.OFSDelta), Equals, true)
 	c.Assert(ur.Capabilities.Supports(capability.MultiACK), Equals, true)

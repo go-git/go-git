@@ -39,7 +39,7 @@ func (s *Scanner) Err() error {
 // will return any error that occurred during scanning, except that if
 // it was io.EOF, Err will return nil.
 func (s *Scanner) Scan() bool {
-	s.n, s.err = ReadPacket(s.r, s.buf[:])
+	s.n, s.err = Read(s.r, s.buf[:])
 	return s.err == nil
 }
 

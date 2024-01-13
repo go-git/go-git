@@ -100,7 +100,7 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return content, nil
 	}
 
-	_, p, err := pktline.ReadPacketLine(d.r)
+	_, p, err := pktline.ReadLine(d.r)
 	if err != nil {
 		return nil, err
 	}

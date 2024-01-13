@@ -44,7 +44,7 @@ func (s *ReportStatus) Error() error {
 
 // Encode writes the report status to a writer.
 func (s *ReportStatus) Encode(w io.Writer) error {
-	if _, err := pktline.WritePacketf(w, "unpack %s\n", s.UnpackStatus); err != nil {
+	if _, err := pktline.Writef(w, "unpack %s\n", s.UnpackStatus); err != nil {
 		return err
 	}
 
@@ -72,7 +72,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 	var l int
 	flushed := false
 	for {
-		l, b, err = pktline.ReadPacketLine(r)
+		l, b, err = pktline.ReadLine(r)
 		if err != nil {
 			break
 		}
@@ -99,7 +99,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 }
 
 func (s *ReportStatus) scanFirstLine(r io.Reader) ([]byte, error) {
-	_, p, err := pktline.ReadPacketLine(r)
+	_, p, err := pktline.ReadLine(r)
 	if errors.Is(err, io.EOF) {
 		return p, io.ErrUnexpectedEOF
 	}
@@ -166,10 +166,10 @@ func (s *CommandStatus) Error() error {
 
 func (s *CommandStatus) encode(w io.Writer) error {
 	if s.Error() == nil {
-		_, err := pktline.WritePacketf(w, "ok %s\n", s.ReferenceName.String())
+		_, err := pktline.Writef(w, "ok %s\n", s.ReferenceName.String())
 		return err
 	}
 
-	_, err := pktline.WritePacketf(w, "ng %s %s\n", s.ReferenceName.String(), s.Status)
+	_, err := pktline.Writef(w, "ng %s %s\n", s.ReferenceName.String(), s.Status)
 	return err
 }

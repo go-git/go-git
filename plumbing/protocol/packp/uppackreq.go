@@ -79,7 +79,7 @@ func (u *UploadHaves) Encode(w io.Writer, flush bool) error {
 			continue
 		}
 
-		if _, err := pktline.WritePacketf(w, "have %s\n", have); err != nil {
+		if _, err := pktline.Writef(w, "have %s\n", have); err != nil {
 			return fmt.Errorf("sending haves for %q: %s", have, err)
 		}
 

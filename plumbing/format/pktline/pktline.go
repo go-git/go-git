@@ -9,8 +9,8 @@ import (
 	"github.com/go-git/go-git/v5/utils/trace"
 )
 
-// WritePacket writes a pktline packet.
-func WritePacket(w io.Writer, p []byte) (n int, err error) {
+// Write writes a pktline packet.
+func Write(w io.Writer, p []byte) (n int, err error) {
 	if w == nil {
 		return 0, ErrNilWriter
 	}
@@ -40,27 +40,27 @@ func WritePacket(w io.Writer, p []byte) (n int, err error) {
 	return
 }
 
-// WritePacketf writes a pktline packet from a format string.
-func WritePacketf(w io.Writer, format string, a ...interface{}) (n int, err error) {
+// Writef writes a pktline packet from a format string.
+func Writef(w io.Writer, format string, a ...interface{}) (n int, err error) {
 	if len(a) == 0 {
-		return WritePacket(w, []byte(format))
+		return Write(w, []byte(format))
 	}
-	return WritePacket(w, []byte(fmt.Sprintf(format, a...)))
+	return Write(w, []byte(fmt.Sprintf(format, a...)))
 }
 
-// WritePacketln writes a pktline packet from a string and appends a newline.
-func WritePacketln(w io.Writer, s string) (n int, err error) {
-	return WritePacket(w, []byte(s+"\n"))
+// Writeln writes a pktline packet from a string and appends a newline.
+func Writeln(w io.Writer, s string) (n int, err error) {
+	return Write(w, []byte(s+"\n"))
 }
 
-// WritePacketString writes a pktline packet from a string.
-func WritePacketString(w io.Writer, s string) (n int, err error) {
-	return WritePacket(w, []byte(s))
+// WriteString writes a pktline packet from a string.
+func WriteString(w io.Writer, s string) (n int, err error) {
+	return Write(w, []byte(s))
 }
 
-// WriteErrorPacket writes an error packet.
-func WriteErrorPacket(w io.Writer, e error) (n int, err error) {
-	return WritePacketf(w, "%s%s\n", errPrefix, e.Error())
+// WriteError writes an error packet.
+func WriteError(w io.Writer, e error) (n int, err error) {
+	return Writef(w, "%s%s\n", errPrefix, e.Error())
 }
 
 // WriteFlush writes a flush packet.
@@ -102,17 +102,17 @@ func WriteResponseEnd(w io.Writer) (err error) {
 	return err
 }
 
-// ReadPacket reads a pktline packet payload into p and returns the packet full
+// Read reads a pktline packet payload into p and returns the packet full
 // length.
 //
-// If p is less than 4 bytes, ReadPacket returns ErrInvalidPktLen. If p cannot hold
-// the entire packet, ReadPacket returns io.ErrUnexpectedEOF.
+// If p is less than 4 bytes, Read returns ErrInvalidPktLen. If p cannot hold
+// the entire packet, Read returns io.ErrUnexpectedEOF.
 // The error can be of type *ErrorLine if the packet is an error packet.
 //
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
 // equal to 4 is a data packet.
-func ReadPacket(r io.Reader, p []byte) (l int, err error) {
+func Read(r io.Reader, p []byte) (l int, err error) {
 	_, err = io.ReadFull(r, p[:PacketLenSize])
 	if err != nil {
 		if err == io.ErrUnexpectedEOF {
@@ -151,20 +151,20 @@ func ReadPacket(r io.Reader, p []byte) (l int, err error) {
 	return length, err
 }
 
-// ReadPacketLine reads a packet line into a temporary shared buffer and
+// ReadLine reads a packet line into a temporary shared buffer and
 // returns the packet length and payload.
-// Subsequent calls to ReadPacketLine may overwrite the buffer.
+// Subsequent calls to ReadLine may overwrite the buffer.
 //
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
 // equal to 4 is a data packet.
 //
 // The error can be of type *ErrorLine if the packet is an error packet.
-func ReadPacketLine(r io.Reader) (l int, p []byte, err error) {
+func ReadLine(r io.Reader) (l int, p []byte, err error) {
 	buf := GetPacketBuffer()
 	defer PutPacketBuffer(buf)
 
-	l, err = ReadPacket(r, (*buf)[:])
+	l, err = Read(r, (*buf)[:])
 	if l < PacketLenSize {
 		return l, nil, err
 	}
@@ -172,14 +172,14 @@ func ReadPacketLine(r io.Reader) (l int, p []byte, err error) {
 	return l, (*buf)[PacketLenSize:l], err
 }
 
-// PeekPacketLine reads a packet line without consuming it.
+// PeekLine reads a packet line without consuming it.
 //
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
 // equal to 4 is a data packet.
 //
 // The error can be of type *ErrorLine if the packet is an error packet.
-func PeekPacketLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
+func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 	n, err := r.Peek(PacketLenSize)
 	if err != nil {
 		return Err, nil, err

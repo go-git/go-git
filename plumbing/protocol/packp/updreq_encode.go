@@ -41,27 +41,27 @@ func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
 }
 
 func (req *ReferenceUpdateRequest) encodeShallow(w io.Writer,
-	h *plumbing.Hash) error {
-
+	h *plumbing.Hash,
+) error {
 	if h == nil {
 		return nil
 	}
 
 	objId := []byte(h.String())
-	_, err := pktline.WritePacketf(w, "%s%s", shallow, objId)
+	_, err := pktline.Writef(w, "%s%s", shallow, objId)
 	return err
 }
 
 func (req *ReferenceUpdateRequest) encodeCommands(w io.Writer,
-	cmds []*Command, cap *capability.List) error {
-
-	if _, err := pktline.WritePacketf(w, "%s\x00%s",
+	cmds []*Command, cap *capability.List,
+) error {
+	if _, err := pktline.Writef(w, "%s\x00%s",
 		formatCommand(cmds[0]), cap.String()); err != nil {
 		return err
 	}
 
 	for _, cmd := range cmds[1:] {
-		if _, err := pktline.WritePacketf(w, formatCommand(cmd)); err != nil {
+		if _, err := pktline.Writef(w, formatCommand(cmd)); err != nil {
 			return err
 		}
 	}
@@ -76,10 +76,10 @@ func formatCommand(cmd *Command) string {
 }
 
 func (req *ReferenceUpdateRequest) encodeOptions(w io.Writer,
-	opts []*Option) error {
-
+	opts []*Option,
+) error {
 	for _, opt := range opts {
-		if _, err := pktline.WritePacketf(w, "%s=%s", opt.Key, opt.Value); err != nil {
+		if _, err := pktline.Writef(w, "%s=%s", opt.Key, opt.Value); err != nil {
 			return err
 		}
 	}

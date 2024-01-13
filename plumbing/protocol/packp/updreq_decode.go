@@ -116,7 +116,7 @@ func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
 }
 
 func (d *updReqDecoder) readLine(e error) error {
-	_, p, err := pktline.ReadPacketLine(d.s)
+	_, p, err := pktline.ReadLine(d.s)
 	if err == io.EOF {
 		return e
 	}

@@ -87,15 +87,15 @@ func NewClient(runner Commander) Transport {
 
 // NewUploadPackSession creates a new UploadPackSession.
 func (c *client) NewUploadPackSession(ep *Endpoint, auth AuthMethod) (
-	UploadPackSession, error) {
-
+	UploadPackSession, error,
+) {
 	return c.newSession(UploadPackServiceName, ep, auth)
 }
 
 // NewReceivePackSession creates a new ReceivePackSession.
 func (c *client) NewReceivePackSession(ep *Endpoint, auth AuthMethod) (
-	ReceivePackSession, error) {
-
+	ReceivePackSession, error,
+) {
 	return c.newSession(ReceivePackServiceName, ep, auth)
 }
 
@@ -471,7 +471,7 @@ func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) err
 }
 
 func sendDone(w io.Writer) error {
-	_, err := pktline.WritePacketf(w, "done\n")
+	_, err := pktline.Writef(w, "done\n")
 	return err
 }
 
