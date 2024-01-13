@@ -19,7 +19,7 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 }
 
 type advRefsDecoder struct {
-	s     io.Reader     // a pkt-line scanner from the input stream
+	s     io.Reader     // a pkt-line reader from the input stream
 	line  []byte        // current pkt-line contents, use parser.nextLine() to make it advance
 	nLine int           // current pkt-line number for debugging, begins at 1
 	hash  plumbing.Hash // last hash read
