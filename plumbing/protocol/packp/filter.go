@@ -1,0 +1,45 @@
+package packp
+
+import (
+	"fmt"
+	"github.com/go-git/go-git/v5/plumbing"
+	"net/url"
+	"strings"
+)
+
+// Filter values enable the partial clone capability which causes
+// the server to omit objects that match the filter.
+type Filter string
+
+// FilterBlobNone omits all blobs.
+func FilterBlobNone() Filter {
+	return "blob:none"
+}
+
+// FilterBlobLimit omits blobs of size at least n bytes. n can be zero,
+// in which case all blobs will be omitted.
+func FilterBlobLimit(n uint64) Filter {
+	return Filter(fmt.Sprintf("blob:limit=%d", n))
+}
+
+// FilterTreeDepth omits all blobs and trees whose depth from the root tree
+// is larger or equal to depth.
+func FilterTreeDepth(depth uint64) Filter {
+	return Filter(fmt.Sprintf("tree:%d", depth))
+}
+
+// FilterObjectType omits all objects which are not of the requested type t.
+func FilterObjectType(t plumbing.ObjectType) Filter {
+	return Filter(fmt.Sprintf("object:type=%s", t.String()))
+}
+
+// FilterCombine combines multiple Filter values together.
+func FilterCombine(filters ...Filter) Filter {
+	var escapedFilters []string
+
+	for _, filter := range filters {
+		escapedFilters = append(escapedFilters, url.QueryEscape(string(filter)))
+	}
+
+	return Filter(fmt.Sprintf("combine:%s", strings.Join(escapedFilters, "+")))
+}
