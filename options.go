@@ -475,6 +475,11 @@ type AddOptions struct {
 	// Glob adds all paths, matching pattern, to the index. If pattern matches a
 	// directory path, all directory contents are added to the index recursively.
 	Glob string
+	// SkipStatus adds the path with no status check. This option is relevant only
+	// when the `Path` option is specified and does not apply when the `All` option is used.
+	// Notice that when passing an ignored path it will be added anyway.
+	// When true it can speed up adding files to the worktree in very large repositories.
+	SkipStatus bool
 }
 
 // Validate validates the fields and sets the default values.
