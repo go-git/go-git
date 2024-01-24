@@ -101,7 +101,7 @@ func (r *Remote) Push(o *PushOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
-	if err := o.Validate(); err != nil {
+	if err := o.Validate(r.c.Name); err != nil {
 		return err
 	}
 
@@ -334,7 +334,6 @@ func (r *Remote) newReferenceUpdateRequest(
 	}
 
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune, o.ForceWithLease); err != nil {
-
 		return nil, err
 	}
 
@@ -350,7 +349,6 @@ func (r *Remote) newReferenceUpdateRequest(
 func (r *Remote) updateRemoteReferenceStorage(
 	req *packp.ReferenceUpdateRequest,
 ) error {
-
 	for _, spec := range r.c.Fetch {
 		for _, c := range req.Commands {
 			if !spec.Match(c.Name) {
@@ -548,8 +546,8 @@ func newClient(url string, insecure bool, cabundle []byte, proxyOpts transport.P
 }
 
 func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.UploadPackSession,
-	req *packp.UploadPackRequest) (err error) {
-
+	req *packp.UploadPackRequest,
+) (err error) {
 	reader, err := s.UploadPack(ctx, req)
 	if err != nil {
 		if errors.Is(err, transport.ErrEmptyUploadPackRequest) {
@@ -647,7 +645,8 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	refsDict map[string]*plumbing.Reference,
 	req *packp.ReferenceUpdateRequest,
-	prune bool) error {
+	prune bool,
+) error {
 	iter, err := remoteRefs.IterReferences()
 	if err != nil {
 		return err
@@ -683,8 +682,8 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 
 func (r *Remote) addCommit(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer, localCommit plumbing.Hash,
-	req *packp.ReferenceUpdateRequest) error {
-
+	req *packp.ReferenceUpdateRequest,
+) error {
 	if rs.IsWildcard() {
 		return errors.New("can't use wildcard together with hash refspecs")
 	}
@@ -720,8 +719,8 @@ func (r *Remote) addCommit(rs config.RefSpec,
 
 func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer, localRef *plumbing.Reference,
-	req *packp.ReferenceUpdateRequest, forceWithLease *ForceWithLease) error {
-
+	req *packp.ReferenceUpdateRequest, forceWithLease *ForceWithLease,
+) error {
 	if localRef.Type() != plumbing.HashReference {
 		return nil
 	}
@@ -816,7 +815,8 @@ func (r *Remote) references() ([]*plumbing.Reference, error) {
 }
 
 func getRemoteRefsFromStorer(remoteRefStorer storer.ReferenceStorer) (
-	map[plumbing.Hash]bool, error) {
+	map[plumbing.Hash]bool, error,
+) {
 	remoteRefs := map[plumbing.Hash]bool{}
 	iter, err := remoteRefStorer.IterReferences()
 	if err != nil {
@@ -1116,8 +1116,8 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash, earlies
 }
 
 func (r *Remote) newUploadPackRequest(o *FetchOptions,
-	ar *packp.AdvRefs) (*packp.UploadPackRequest, error) {
-
+	ar *packp.AdvRefs,
+) (*packp.UploadPackRequest, error) {
 	req := packp.NewUploadPackRequestFromCapabilities(ar.Capabilities)
 
 	if o.Depth != 0 {

@@ -1215,6 +1215,18 @@ func (s *RemoteSuite) TestPushWrongRemoteName(c *C) {
 	c.Assert(err, ErrorMatches, ".*remote names don't match.*")
 }
 
+func (s *RemoteSuite) TestPushNonDefaultRemoteName(c *C) {
+	const remoteName = "foo"
+
+	r := NewRemote(nil, &config.RemoteConfig{
+		Name: remoteName,
+		URLs: []string{"some-url"},
+	})
+
+	err := r.Push(&PushOptions{})
+	c.Assert(err, ErrorMatches, "repository not found")
+}
+
 func (s *RemoteSuite) TestGetHaves(c *C) {
 	f := fixtures.Basic().One()
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())

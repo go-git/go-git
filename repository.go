@@ -1221,7 +1221,7 @@ func (r *Repository) Push(o *PushOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
-	if err := o.Validate(); err != nil {
+	if err := o.Validate(DefaultRemoteName); err != nil {
 		return err
 	}
 
