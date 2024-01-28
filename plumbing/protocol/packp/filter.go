@@ -12,6 +12,10 @@ var ErrUnsupportedObjectFilterType = errors.New("unsupported object filter type"
 
 // Filter values enable the partial clone capability which causes
 // the server to omit objects that match the filter.
+//
+// See [Git's documentation] for more details.
+//
+// [Git's documentation]: https://github.com/git/git/blob/e02ecfcc534e2021aae29077a958dd11c3897e4c/Documentation/rev-list-options.txt#L948
 type Filter string
 
 type BlobLimitPrefix string
