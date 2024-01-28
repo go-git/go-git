@@ -11,8 +11,11 @@ func TestFilterBlobNone(t *testing.T) {
 }
 
 func TestFilterBlobLimit(t *testing.T) {
-	require.EqualValues(t, "blob:limit=0", FilterBlobLimit(0))
-	require.EqualValues(t, "blob:limit=1000", FilterBlobLimit(1000))
+	require.EqualValues(t, "blob:limit=0", FilterBlobLimit(0, BlobLimitPrefixNone))
+	require.EqualValues(t, "blob:limit=1000", FilterBlobLimit(1000, BlobLimitPrefixNone))
+	require.EqualValues(t, "blob:limit=4k", FilterBlobLimit(4, BlobLimitPrefixKibi))
+	require.EqualValues(t, "blob:limit=4m", FilterBlobLimit(4, BlobLimitPrefixMebi))
+	require.EqualValues(t, "blob:limit=4g", FilterBlobLimit(4, BlobLimitPrefixGibi))
 }
 
 func TestFilterTreeDepth(t *testing.T) {

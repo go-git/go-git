@@ -14,15 +14,27 @@ var ErrUnsupportedObjectFilterType = errors.New("unsupported object filter type"
 // the server to omit objects that match the filter.
 type Filter string
 
+type BlobLimitPrefix string
+
+const (
+	BlobLimitPrefixNone BlobLimitPrefix = ""
+	BlobLimitPrefixKibi BlobLimitPrefix = "k"
+	BlobLimitPrefixMebi BlobLimitPrefix = "m"
+	BlobLimitPrefixGibi BlobLimitPrefix = "g"
+)
+
 // FilterBlobNone omits all blobs.
 func FilterBlobNone() Filter {
 	return "blob:none"
 }
 
-// FilterBlobLimit omits blobs of size at least n bytes. n can be zero,
-// in which case all blobs will be omitted.
-func FilterBlobLimit(n uint64) Filter {
-	return Filter(fmt.Sprintf("blob:limit=%d", n))
+// FilterBlobLimit omits blobs of size at least n bytes (when prefix is
+// BlobLimitPrefixNone), n kibibytes (when prefix is BlobLimitPrefixKibi),
+// n mebibytes (when prefix is BlobLimitPrefixMebi) or n gibibytes (when
+// prefix is BlobLimitPrefixGibi). n can be zero, in which case all blobs
+// will be omitted.
+func FilterBlobLimit(n uint64, prefix BlobLimitPrefix) Filter {
+	return Filter(fmt.Sprintf("blob:limit=%d%s", n, prefix))
 }
 
 // FilterTreeDepth omits all blobs and trees whose depth from the root tree
