@@ -1,11 +1,14 @@
 package packp
 
 import (
+	"errors"
 	"fmt"
 	"github.com/go-git/go-git/v5/plumbing"
 	"net/url"
 	"strings"
 )
+
+var ErrUnsupportedObjectFilterType = errors.New("unsupported object filter type")
 
 // Filter values enable the partial clone capability which causes
 // the server to omit objects that match the filter.
@@ -30,8 +33,19 @@ func FilterTreeDepth(depth uint64) Filter {
 
 // FilterObjectType omits all objects which are not of the requested type t.
 // Supported types are TagObject, CommitObject, TreeObject and BlobObject.
-func FilterObjectType(t plumbing.ObjectType) Filter {
-	return Filter(fmt.Sprintf("object:type=%s", t.String()))
+func FilterObjectType(t plumbing.ObjectType) (Filter, error) {
+	switch t {
+	case plumbing.TagObject:
+		fallthrough
+	case plumbing.CommitObject:
+		fallthrough
+	case plumbing.TreeObject:
+		fallthrough
+	case plumbing.BlobObject:
+		return Filter(fmt.Sprintf("object:type=%s", t.String())), nil
+	default:
+		return "", fmt.Errorf("%w: %s", ErrUnsupportedObjectFilterType, t.String())
+	}
 }
 
 // FilterCombine combines multiple Filter values together.

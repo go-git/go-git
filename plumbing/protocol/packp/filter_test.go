@@ -22,10 +22,27 @@ func TestFilterTreeDepth(t *testing.T) {
 }
 
 func TestFilterObjectType(t *testing.T) {
-	require.EqualValues(t, "object:type=tag", FilterObjectType(plumbing.TagObject))
-	require.EqualValues(t, "object:type=commit", FilterObjectType(plumbing.CommitObject))
-	require.EqualValues(t, "object:type=tree", FilterObjectType(plumbing.TreeObject))
-	require.EqualValues(t, "object:type=blob", FilterObjectType(plumbing.BlobObject))
+	filter, err := FilterObjectType(plumbing.TagObject)
+	require.NoError(t, err)
+	require.EqualValues(t, "object:type=tag", filter)
+
+	filter, err = FilterObjectType(plumbing.CommitObject)
+	require.NoError(t, err)
+	require.EqualValues(t, "object:type=commit", filter)
+
+	filter, err = FilterObjectType(plumbing.TreeObject)
+	require.NoError(t, err)
+	require.EqualValues(t, "object:type=tree", filter)
+
+	filter, err = FilterObjectType(plumbing.BlobObject)
+	require.NoError(t, err)
+	require.EqualValues(t, "object:type=blob", filter)
+
+	_, err = FilterObjectType(plumbing.InvalidObject)
+	require.Error(t, err)
+
+	_, err = FilterObjectType(plumbing.OFSDeltaObject)
+	require.Error(t, err)
 }
 
 func TestFilterCombine(t *testing.T) {
