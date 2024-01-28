@@ -29,6 +29,7 @@ func FilterTreeDepth(depth uint64) Filter {
 }
 
 // FilterObjectType omits all objects which are not of the requested type t.
+// Supported types are TagObject, CommitObject, TreeObject and BlobObject.
 func FilterObjectType(t plumbing.ObjectType) Filter {
 	return Filter(fmt.Sprintf("object:type=%s", t.String()))
 }
