@@ -101,7 +101,7 @@ func (r *Remote) Push(o *PushOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
-	if o.RemoteName == "" && r.c.URLs[0] == "" {
+	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
 	}
 
