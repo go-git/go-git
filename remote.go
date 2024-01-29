@@ -101,16 +101,16 @@ func (r *Remote) Push(o *PushOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
-	if err := o.Validate(r.c.Name); err != nil {
+	if o.RemoteName == "" && r.c.URLs[0] == "" {
+		o.RemoteName = r.c.Name
+	}
+
+	if err := o.Validate(); err != nil {
 		return err
 	}
 
 	if o.RemoteName != r.c.Name {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
-	}
-
-	if o.RemoteURL == "" {
-		o.RemoteURL = r.c.URLs[0]
 	}
 
 	s, err := newSendPackSession(o.RemoteURL, o.Auth, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)

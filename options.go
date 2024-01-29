@@ -280,9 +280,9 @@ type ForceWithLease struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *PushOptions) Validate(defaultRemoteName string) error {
+func (o *PushOptions) Validate() error {
 	if o.RemoteName == "" {
-		o.RemoteName = defaultRemoteName
+		o.RemoteName = DefaultRemoteName
 	}
 
 	if len(o.RefSpecs) == 0 {

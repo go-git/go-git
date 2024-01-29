@@ -91,14 +91,12 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal(c *C) {
 }
 
 func (s *OptionsSuite) TestPushOptionsValidateDefaults(c *C) {
-	const defaultRemoteName = "foo"
-
 	o := &PushOptions{}
 
-	err := o.Validate(defaultRemoteName)
+	err := o.Validate()
 	c.Assert(err, IsNil)
 
-	c.Assert(o.RemoteName, Equals, defaultRemoteName)
+	c.Assert(o.RemoteName, Equals, DefaultRemoteName)
 	c.Assert(o.RefSpecs, DeepEquals, []config.RefSpec{
 		config.RefSpec(config.DefaultPushRefSpec),
 	})
