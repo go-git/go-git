@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"dario.cat/mergo"
 	"errors"
 	"fmt"
 	"io"
@@ -52,12 +53,41 @@ func DefaultFS() billy.Filesystem {
 // Scope defines the scope of a config file, such as local, global or system.
 type Scope int
 
-// Available ConfigScope's
+// Available ConfigScopes; those with a V6 prefix are opt-ins to preview go-git v6 config behavior which
+// more closely matches the `git config` subcommand documentation
 const (
 	LocalScope Scope = iota
 	GlobalScope
 	SystemScope
+
+	// V6DefaultScope is equivalent to running config commands without any explicit flags
+	V6DefaultScope
+
+	// V6SystemScope is equivalent to running config commands with the --system flag
+	V6SystemScope
+
+	// V6GlobalScope is equivalent to running config commands with the --global flag
+	V6GlobalScope
+
+	// V6LocalScope is equivalent to running config commands with the --local flag
+	V6LocalScope
 )
+
+// IsV6PreviewScope returns true when we want to opt into processing config commands using
+// the newer semantics which will become the default in go-git v6
+func (s Scope) IsV6PreviewScope() bool {
+	switch s {
+	case V6DefaultScope:
+		return true
+	case V6SystemScope:
+		return true
+	case V6GlobalScope:
+		return true
+	case V6LocalScope:
+		return true
+	}
+	return false
+}
 
 // Config contains the repository configuration
 // https://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
@@ -173,8 +203,15 @@ func ReadConfig(r io.Reader) (*Config, error) {
 // contains exclusively information from the given scope. If it couldn't find a
 // config file to the given scope, an empty one is returned.
 func LoadConfig(scope Scope) (*Config, error) {
+	if scope.IsV6PreviewScope() {
+		return loadConfigv6(scope)
+	}
+	return loadConfigv5(scope)
+}
+
+func loadConfigv5(scope Scope) (*Config, error) {
 	if scope == LocalScope {
-		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer")
+		return nil, fmt.Errorf("LocalScope should be read from the a Repository.ConfigStorer")
 	}
 
 	files, err := Paths(scope)
@@ -183,24 +220,71 @@ func LoadConfig(scope Scope) (*Config, error) {
 	}
 
 	for _, file := range files {
-		f, err := ActiveFS.Open(file)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-
-			return nil, err
+		c, loadErr := loadConfigFromFile(file)
+		if c == nil {
+			continue
+		} else if loadErr != nil {
+			return nil, loadErr
+		} else {
+			return c, nil
 		}
-
-		defer f.Close()
-		return ReadConfig(f)
 	}
 
 	return NewConfig(), nil
 }
 
+func loadConfigFromFile(path string) (*Config, error) {
+	f, err := ActiveFS.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	defer f.Close()
+	return ReadConfig(f)
+}
+
+func loadConfigv6(scope Scope) (*Config, error) {
+	//if scope == V6LocalScope {
+	//	return nil, fmt.Errorf("V6LocalScope should be read from the Repository.ConfigStorer")
+	//}
+
+	files, err := Paths(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	// create a new empty config to hold merged values
+	mergedConfig := NewConfig()
+
+	for _, file := range files {
+		c, loadErr := loadConfigFromFile(file)
+		if c == nil {
+			continue
+		} else if loadErr != nil {
+			return nil, loadErr
+		} else {
+			if err = mergo.Merge(mergedConfig, c, mergo.WithOverride); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return mergedConfig, nil
+}
+
 // Paths returns the config file location for a given scope.
 func Paths(scope Scope) ([]string, error) {
+	if scope.IsV6PreviewScope() {
+		return configPathsV6(scope)
+	}
+	return configPathsV5(scope)
+}
+
+func configPathsV5(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
 	case GlobalScope:
@@ -223,6 +307,48 @@ func Paths(scope Scope) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+// configPathsV6 finds config paths to merge based on scope
+func configPathsV6(scope Scope) ([]string, error) {
+	if !scope.IsV6PreviewScope() {
+		return nil, fmt.Errorf("this method only accepts V6 config scopes")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	systemWideConfigFiles := []string{"/etc/gitconfig"}
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" {
+		systemWideConfigFiles = append(systemWideConfigFiles, filepath.Join(home, ".config/git/config"))
+	} else {
+		systemWideConfigFiles = append(systemWideConfigFiles, filepath.Join(xdg, "git/config"))
+	}
+	globalConfigFiles := []string{filepath.Join(home, ".gitconfig")}
+	repoConfigFiles := make([]string, 0)
+	gitDir := os.Getenv("GIT_DIR")
+	if gitDir != "" {
+		repoConfigFiles = append(repoConfigFiles, filepath.Join(gitDir, "config"))
+	}
+
+	switch scope {
+	case V6DefaultScope:
+		files := make([]string, 0)
+		files = append(files, systemWideConfigFiles...)
+		files = append(files, globalConfigFiles...)
+		files = append(files, repoConfigFiles...)
+		return files, nil
+	case V6SystemScope:
+		return systemWideConfigFiles, nil
+	case V6GlobalScope:
+		return globalConfigFiles, nil
+	case V6LocalScope:
+		return repoConfigFiles, nil
+	}
+
+	return nil, fmt.Errorf("unrecognized V6 config scope: %v", scope)
 }
 
 // Validate validates the fields and sets the default values.
