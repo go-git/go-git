@@ -3,6 +3,7 @@ package gitignore
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -40,7 +41,7 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 				ps = append(ps, ParsePattern(s, path))
 			}
 		}
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 
@@ -82,7 +83,7 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
 	f, err := fs.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -109,7 +110,7 @@ func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
 	}
 
 	ps, err = readIgnoreFile(fs, nil, efo)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 

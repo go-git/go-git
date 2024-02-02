@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"bufio"
+	"errors"
 	"os"
 
 	"github.com/go-git/go-git/v5/plumbing/format/index"
@@ -39,7 +40,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 
 	f, err := s.dir.Index()
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return idx, nil
 		}
 

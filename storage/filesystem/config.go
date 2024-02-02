@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"errors"
 	"os"
 
 	"github.com/go-git/go-git/v5/config"
@@ -15,7 +16,7 @@ type ConfigStorage struct {
 func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 	f, err := c.dir.Config()
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return config.NewConfig(), nil
 		}
 

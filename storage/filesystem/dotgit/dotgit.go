@@ -137,7 +137,7 @@ func (d *DotGit) Initialize() error {
 			continue
 		}
 
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 
@@ -200,7 +200,7 @@ func (d *DotGit) ShallowWriter() (billy.File, error) {
 func (d *DotGit) Shallow() (billy.File, error) {
 	f, err := d.fs.Open(shallowPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 
@@ -235,7 +235,7 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 	packDir := d.fs.Join(objectsPath, packPath)
 	files, err := d.fs.ReadDir(packDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 
@@ -284,7 +284,7 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 	path := d.objectPackPath(hash, extension)
 	pack, err := d.fs.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrPackfileNotFound
 		}
 
@@ -441,7 +441,7 @@ func (d *DotGit) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 func (d *DotGit) forEachObjectHash(fun func(plumbing.Hash) error) error {
 	files, err := d.fs.ReadDir(objectsPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 
@@ -612,7 +612,7 @@ func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
 	}
 
 	obj1, err1 := d.fs.Open(d.objectPath(h))
-	if os.IsNotExist(err1) && d.hasIncomingObjects() {
+	if errors.Is(err1, os.ErrNotExist) && d.hasIncomingObjects() {
 		obj2, err2 := d.fs.Open(d.incomingObjectPath(h))
 		if err2 != nil {
 			return obj1, err1
@@ -630,7 +630,7 @@ func (d *DotGit) ObjectStat(h plumbing.Hash) (os.FileInfo, error) {
 	}
 
 	obj1, err1 := d.fs.Stat(d.objectPath(h))
-	if os.IsNotExist(err1) && d.hasIncomingObjects() {
+	if errors.Is(err1, os.ErrNotExist) && d.hasIncomingObjects() {
 		obj2, err2 := d.fs.Stat(d.incomingObjectPath(h))
 		if err2 != nil {
 			return obj1, err1
@@ -645,7 +645,7 @@ func (d *DotGit) ObjectDelete(h plumbing.Hash) error {
 	d.cleanObjectList()
 
 	err1 := d.fs.Remove(d.objectPath(h))
-	if os.IsNotExist(err1) && d.hasIncomingObjects() {
+	if errors.Is(err1, os.ErrNotExist) && d.hasIncomingObjects() {
 		err2 := d.fs.Remove(d.incomingObjectPath(h))
 		if err2 != nil {
 			return err1
@@ -752,7 +752,7 @@ type refsRecv func(*plumbing.Reference) bool
 func (d *DotGit) findPackedRefs(recv refsRecv) error {
 	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
@@ -789,7 +789,7 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 		// Drop down to remove it from the packed refs file, too.
 	}
 
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
@@ -836,7 +836,7 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 	for {
 		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0600)
 		if err != nil {
-			if os.IsNotExist(err) && !doCreate {
+			if errors.Is(err, os.ErrNotExist) && !doCreate {
 				return nil, nil
 			}
 
@@ -949,7 +949,7 @@ func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference, seen map[plumbin
 func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string, seen map[plumbing.ReferenceName]bool) error {
 	files, err := d.fs.ReadDir(d.fs.Join(relPath...))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// a race happened, and our directory is gone now
 			return nil
 		}
@@ -968,7 +968,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []strin
 		}
 
 		ref, err := d.readReferenceFile(".", strings.Join(newRelPath, "/"))
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// a race happened, and our file is gone now
 			continue
 		}
@@ -988,7 +988,7 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []strin
 func (d *DotGit) addRefFromHEAD(refs *[]*plumbing.Reference) error {
 	ref, err := d.readReferenceFile(".", "HEAD")
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 
@@ -1100,7 +1100,7 @@ func (d *DotGit) PackRefs() (err error) {
 	for _, ref := range refs[:numLooseRefs] {
 		path := d.fs.Join(".", ref.Name().String())
 		err = d.fs.Remove(path)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}

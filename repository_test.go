@@ -973,7 +973,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(dir)
-	c.Assert(os.IsNotExist(err), Equals, false)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, false)
 
 	names, err := fs.ReadDir(dir)
 	c.Assert(err, IsNil)
@@ -999,7 +999,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(repoDir)
-	c.Assert(os.IsNotExist(err), Equals, true)
+	c.Assert(errors.Is(err, os.ErrNotExist), Equals, true)
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
