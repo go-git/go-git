@@ -73,14 +73,20 @@ const (
 	V6LocalScope
 )
 
-// IsV6PreviewScope returns true when we want to opt into processing config commands using
-// the newer semantics which will become the default in go-git v6.
-func (s Scope) IsV6PreviewScope() bool {
+func (s Scope) loadConfig() (*Config, error) {
 	switch s {
 	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
-		return true
+		return loadConfigV6(s)
 	}
-	return false
+	return loadConfigV5(s)
+}
+
+func (s Scope) paths() ([]string, error) {
+	switch s {
+	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
+		return configPathsV6(s)
+	}
+	return configPathsV5(s)
 }
 
 // Config contains the repository configuration
@@ -197,13 +203,10 @@ func ReadConfig(r io.Reader) (*Config, error) {
 // contains exclusively information from the given scope. If it couldn't find a
 // config file to the given scope, an empty one is returned.
 func LoadConfig(scope Scope) (*Config, error) {
-	if scope.IsV6PreviewScope() {
-		return loadConfigv6(scope)
-	}
-	return loadConfigv5(scope)
+	return scope.loadConfig()
 }
 
-func loadConfigv5(scope Scope) (*Config, error) {
+func loadConfigV5(scope Scope) (*Config, error) {
 	if scope == LocalScope {
 		return nil, fmt.Errorf("LocalScope should be read from the a Repository.ConfigStorer")
 	}
@@ -241,7 +244,7 @@ func loadConfigFromFile(path string) (*Config, error) {
 	return ReadConfig(f)
 }
 
-func loadConfigv6(scope Scope) (*Config, error) {
+func loadConfigV6(scope Scope) (*Config, error) {
 	//if scope == V6LocalScope {
 	//	return nil, fmt.Errorf("V6LocalScope should be read from the Repository.ConfigStorer")
 	//}
@@ -272,10 +275,7 @@ func loadConfigv6(scope Scope) (*Config, error) {
 
 // Paths returns the config file location for a given scope.
 func Paths(scope Scope) ([]string, error) {
-	if scope.IsV6PreviewScope() {
-		return configPathsV6(scope)
-	}
-	return configPathsV5(scope)
+	return scope.paths()
 }
 
 func configPathsV5(scope Scope) ([]string, error) {
@@ -305,9 +305,6 @@ func configPathsV5(scope Scope) ([]string, error) {
 
 // configPathsV6 finds config paths to merge based on scope
 func configPathsV6(scope Scope) ([]string, error) {
-	if !scope.IsV6PreviewScope() {
-		return nil, fmt.Errorf("this method only accepts V6 config scopes")
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
