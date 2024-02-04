@@ -74,16 +74,10 @@ const (
 )
 
 // IsV6PreviewScope returns true when we want to opt into processing config commands using
-// the newer semantics which will become the default in go-git v6
+// the newer semantics which will become the default in go-git v6.
 func (s Scope) IsV6PreviewScope() bool {
 	switch s {
-	case V6DefaultScope:
-		return true
-	case V6SystemScope:
-		return true
-	case V6GlobalScope:
-		return true
-	case V6LocalScope:
+	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
 		return true
 	}
 	return false
