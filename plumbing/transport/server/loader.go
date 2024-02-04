@@ -1,17 +1,17 @@
 package server
 
 import (
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 )
 
 // DefaultLoader is a filesystem loader ignoring host and resolving paths to /.
-var DefaultLoader = NewFilesystemLoader(osfs.New(""))
+var DefaultLoader = NewFilesystemLoader(config.DefaultFS())
 
 // Loader loads repository's storer.Storer based on an optional host and a path.
 type Loader interface {

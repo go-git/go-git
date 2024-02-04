@@ -47,7 +47,7 @@ var (
 // DefaultFS provides a billy.Filesystem abstraction over the os filesystem (via osfs.OS) scoped to the
 // root directory / in order to enable access to global and system config files via absolute paths
 func DefaultFS() billy.Filesystem {
-	return osfs.New("/")
+	return osfs.New("")
 }
 
 // Scope defines the scope of a config file, such as local, global or system.
