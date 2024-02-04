@@ -282,7 +282,7 @@ func configPathsV5(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
 	case GlobalScope:
-		xdg := os.Getenv("XDG_CONFIG_HOME")
+		xdg := os.Getenv(XdgConfigHome)
 		if xdg != "" {
 			files = append(files, filepath.Join(xdg, "git/config"))
 		}
@@ -311,7 +311,7 @@ func configPathsV6(scope Scope) ([]string, error) {
 	}
 
 	systemWideConfigFiles := []string{"/etc/gitconfig"}
-	xdg := os.Getenv("XDG_CONFIG_HOME")
+	xdg := os.Getenv(XdgConfigHome)
 	if xdg == "" {
 		systemWideConfigFiles = append(systemWideConfigFiles, filepath.Join(home, ".config/git/config"))
 	} else {
@@ -398,6 +398,12 @@ const (
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
+
+	// XdgConfigHome is the name of the recognized XDG base directory
+	// as per the https://wiki.archlinux.org/title/XDG_Base_Directory
+	// specification; this is supported by git when reading system-scoped
+	// configuration from the filesystem provider.
+	XdgConfigHome = "XDG_CONFIG_HOME"
 )
 
 // Unmarshal parses a git-config file and stores it.

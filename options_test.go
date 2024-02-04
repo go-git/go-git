@@ -99,7 +99,7 @@ func (s *OptionsSuite) writeGlobalConfig(c *C, cfg *config.Config) func() {
 	err = fs.MkdirAll(fs.Join(tmp, "git"), 0777)
 	c.Assert(err, IsNil)
 
-	os.Setenv("XDG_CONFIG_HOME", fs.Join(fs.Root(), tmp))
+	os.Setenv(config.XdgConfigHome, fs.Join(fs.Root(), tmp))
 
 	content, err := cfg.Marshal()
 	c.Assert(err, IsNil)
@@ -110,7 +110,7 @@ func (s *OptionsSuite) writeGlobalConfig(c *C, cfg *config.Config) func() {
 
 	return func() {
 		clean()
-		os.Setenv("XDG_CONFIG_HOME", "")
+		os.Setenv(config.XdgConfigHome, "")
 
 	}
 }

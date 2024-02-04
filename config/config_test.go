@@ -221,7 +221,7 @@ func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0777)
 	c.Assert(err, IsNil)
 
-	defer setEnvVarWithCleanup("XDG_CONFIG_HOME", tmp)()
+	defer setEnvVarWithCleanup(XdgConfigHome, tmp)()
 
 	content, err := cfg.Marshal()
 	c.Assert(err, IsNil)
@@ -349,7 +349,7 @@ func (s *ConfigSuite) TestLoadConfigLocalScope(c *C) {
 
 func (s *ConfigSuite) TestPathsV6DefaultScope(c *C) {
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
-	defer unsetEnvVarWithCleanup("XDG_CONFIG_HOME")()
+	defer unsetEnvVarWithCleanup(XdgConfigHome)()
 
 	pp, err := Paths(V6DefaultScope)
 
@@ -363,7 +363,7 @@ func (s *ConfigSuite) TestPathsV6DefaultScope(c *C) {
 
 func (s *ConfigSuite) TestPathsV6DefaultScopeWithXDGSet(c *C) {
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
-	defer setEnvVarWithCleanup("XDG_CONFIG_HOME", "/xdg")()
+	defer setEnvVarWithCleanup(XdgConfigHome, "/xdg")()
 
 	pp, err := Paths(V6DefaultScope)
 
@@ -376,7 +376,7 @@ func (s *ConfigSuite) TestPathsV6DefaultScopeWithXDGSet(c *C) {
 }
 
 func (s *ConfigSuite) TestPathsV6SystemScope(c *C) {
-	defer unsetEnvVarWithCleanup("XDG_CONFIG_HOME")()
+	defer unsetEnvVarWithCleanup(XdgConfigHome)()
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
 
 	pp, err := Paths(V6SystemScope)
@@ -389,11 +389,11 @@ func (s *ConfigSuite) TestPathsV6SystemScope(c *C) {
 }
 
 func (s *ConfigSuite) TestPathsV6SystemScopeWithXDGSet(c *C) {
-	xdgBefore := os.Getenv("XDG_CONFIG_HOME")
+	xdgBefore := os.Getenv(XdgConfigHome)
 	defer func() {
-		os.Setenv("XDG_CONFIG_HOME", xdgBefore)
+		os.Setenv(XdgConfigHome, xdgBefore)
 	}()
-	os.Setenv("XDG_CONFIG_HOME", "/xdg")
+	os.Setenv(XdgConfigHome, "/xdg")
 
 	pp, err := Paths(V6SystemScope)
 
