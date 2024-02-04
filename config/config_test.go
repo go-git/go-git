@@ -230,7 +230,7 @@ func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
 	c.Assert(err, IsNil)
 
-	cfg, err = LoadConfig(GlobalScope)
+	cfg, err = GlobalScope.loadConfig()
 	c.Assert(err, IsNil)
 
 	c.Assert(cfg.User.Email, Equals, "foo@foo.com")
@@ -342,7 +342,7 @@ func (s *ConfigSuite) TestRemoteConfigDefaultValues(c *C) {
 }
 
 func (s *ConfigSuite) TestLoadConfigLocalScope(c *C) {
-	cfg, err := LoadConfig(LocalScope)
+	cfg, err := LocalScope.loadConfig()
 	c.Assert(err, NotNil)
 	c.Assert(cfg, IsNil)
 }

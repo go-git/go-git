@@ -89,6 +89,17 @@ func (s Scope) paths() ([]string, error) {
 	return configPathsV5(s)
 }
 
+// LoadFromConfigStorer loads a config file from the given ConfigStorer based
+// on the given Scope. If no configuration is found in the given Scope an
+// empty Config instance is returned.
+func (s Scope) LoadFromConfigStorer(storer ConfigStorer) (*Config, error) {
+	switch s {
+	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
+		return configScopedV6(s, storer)
+	}
+	return configScopedV5(s, storer)
+}
+
 // Config contains the repository configuration
 // https://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
 type Config struct {
@@ -197,13 +208,6 @@ func ReadConfig(r io.Reader) (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// LoadConfig loads a config file from a given scope. The returned Config,
-// contains exclusively information from the given scope. If it couldn't find a
-// config file to the given scope, an empty one is returned.
-func LoadConfig(scope Scope) (*Config, error) {
-	return scope.loadConfig()
 }
 
 func loadConfigV5(scope Scope) (*Config, error) {
@@ -340,6 +344,58 @@ func configPathsV6(scope Scope) ([]string, error) {
 	}
 
 	return nil, fmt.Errorf("unrecognized V6 config scope: %v", scope)
+}
+
+func configScopedV5(scope Scope, storer ConfigStorer) (*Config, error) {
+	var err error
+	system := NewConfig()
+	if scope >= SystemScope {
+		system, err = SystemScope.loadConfig()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	global := NewConfig()
+	if scope >= GlobalScope {
+		global, err = GlobalScope.loadConfig()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	local, err := storer.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	_ = mergo.Merge(global, system)
+	_ = mergo.Merge(local, global)
+	return local, nil
+}
+
+func configScopedV6(scope Scope, storer ConfigStorer) (*Config, error) {
+	c, err := scope.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	if scope == V6DefaultScope || scope == V6LocalScope {
+		// merge in local scope from the config storer over top of
+		// the local config which was merged in from the filesystem
+		// as the config storer may have more up-to-date config which
+		// has not yet been flushed to disk
+		local, err := storer.Config()
+		if err != nil {
+			return nil, err
+		}
+
+		if err = mergo.Merge(c, local, mergo.WithOverride); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 // Validate validates the fields and sets the default values.
