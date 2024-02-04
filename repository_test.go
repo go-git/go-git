@@ -2422,7 +2422,7 @@ func (s *RepositorySuite) TestConfigScopedV6LocalWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	localConfig, err := repo.ConfigScoped(config.V6LocalScope)
+	localConfig, err := repo.ConfigScoped(config.LocalScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(localConfig.User.Name, Equals, "Local User")
@@ -2441,7 +2441,7 @@ func (s *RepositorySuite) TestConfigScopedV6LocalWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	localConfig, err := repo.ConfigScoped(config.V6LocalScope)
+	localConfig, err := repo.ConfigScoped(config.LocalScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(localConfig.User.Name, Equals, "")
@@ -2479,7 +2479,7 @@ func (s *RepositorySuite) TestConfigScopedV6GlobalWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	globalConfig, err := repo.ConfigScoped(config.V6GlobalScope)
+	globalConfig, err := repo.ConfigScoped(config.GlobalScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(globalConfig.User.Name, Equals, "Global User")
@@ -2498,7 +2498,7 @@ func (s *RepositorySuite) TestConfigScopedV6GlobalWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	globalConfig, err := repo.ConfigScoped(config.V6GlobalScope)
+	globalConfig, err := repo.ConfigScoped(config.GlobalScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(globalConfig.User.Name, Equals, "Global User")
@@ -2517,7 +2517,7 @@ func (s *RepositorySuite) TestConfigScopedV6GlobalWithSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.V6GlobalScope)
+	systemConfig, err := repo.ConfigScoped(config.GlobalScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "")
@@ -2536,7 +2536,7 @@ func (s *RepositorySuite) TestConfigScopedV6SystemWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.V6SystemScope)
+	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "System User")
@@ -2555,7 +2555,7 @@ func (s *RepositorySuite) TestConfigScopedV6SystemWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.V6SystemScope)
+	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "System User")
@@ -2574,7 +2574,7 @@ func (s *RepositorySuite) TestConfigScopedV6SystemWithSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.V6SystemScope)
+	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6)
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "System User")

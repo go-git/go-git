@@ -552,7 +552,7 @@ func (r *Repository) Config() (*config.Config, error) {
 // SetConfig marshall and overwrites the local repository config. In a filesystem
 // backed repository this means write/overwrite the `.git/config` file. This function
 // should only be called with the result of `Repository.Config` or
-// `Repository.ConfigScoped(config.V6LocalScope)` and never with the output of
+// `Repository.ConfigScoped(config.LocalScopeV6)` and never with the output of
 // any other `Repository.ConfigScoped`.
 func (r *Repository) SetConfig(cfg *config.Config) error {
 	return r.Storer.SetConfig(cfg)

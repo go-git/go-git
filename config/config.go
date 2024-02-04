@@ -60,22 +60,22 @@ const (
 	GlobalScope
 	SystemScope
 
-	// V6DefaultScope is equivalent to running config commands without any explicit flags
-	V6DefaultScope
+	// DefaultScopeV6 is equivalent to running config commands without any explicit flags
+	DefaultScopeV6
 
-	// V6SystemScope is equivalent to running config commands with the --system flag
-	V6SystemScope
+	// SystemScopeV6 is equivalent to running config commands with the --system flag
+	SystemScopeV6
 
-	// V6GlobalScope is equivalent to running config commands with the --global flag
-	V6GlobalScope
+	// GlobalScopeV6 is equivalent to running config commands with the --global flag
+	GlobalScopeV6
 
-	// V6LocalScope is equivalent to running config commands with the --local flag
-	V6LocalScope
+	// LocalScopeV6 is equivalent to running config commands with the --local flag
+	LocalScopeV6
 )
 
 func (s Scope) loadConfig() (*Config, error) {
 	switch s {
-	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
+	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
 		return loadConfigV6(s)
 	}
 	return loadConfigV5(s)
@@ -83,7 +83,7 @@ func (s Scope) loadConfig() (*Config, error) {
 
 func (s Scope) paths() ([]string, error) {
 	switch s {
-	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
+	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
 		return configPathsV6(s)
 	}
 	return configPathsV5(s)
@@ -94,7 +94,7 @@ func (s Scope) paths() ([]string, error) {
 // empty Config instance is returned.
 func (s Scope) LoadFromConfigStorer(storer ConfigStorer) (*Config, error) {
 	switch s {
-	case V6DefaultScope, V6SystemScope, V6GlobalScope, V6LocalScope:
+	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
 		return configScopedV6(s, storer)
 	}
 	return configScopedV5(s, storer)
@@ -249,8 +249,8 @@ func loadConfigFromFile(path string) (*Config, error) {
 }
 
 func loadConfigV6(scope Scope) (*Config, error) {
-	//if scope == V6LocalScope {
-	//	return nil, fmt.Errorf("V6LocalScope should be read from the Repository.ConfigStorer")
+	//if scope == LocalScopeV6 {
+	//	return nil, fmt.Errorf("LocalScopeV6 should be read from the Repository.ConfigStorer")
 	//}
 
 	files, err := Paths(scope)
@@ -329,17 +329,17 @@ func configPathsV6(scope Scope) ([]string, error) {
 	}
 
 	switch scope {
-	case V6DefaultScope:
+	case DefaultScopeV6:
 		files := make([]string, 0)
 		files = append(files, systemWideConfigFiles...)
 		files = append(files, globalConfigFiles...)
 		files = append(files, repoConfigFiles...)
 		return files, nil
-	case V6SystemScope:
+	case SystemScopeV6:
 		return systemWideConfigFiles, nil
-	case V6GlobalScope:
+	case GlobalScopeV6:
 		return globalConfigFiles, nil
-	case V6LocalScope:
+	case LocalScopeV6:
 		return repoConfigFiles, nil
 	}
 
@@ -380,7 +380,7 @@ func configScopedV6(scope Scope, storer ConfigStorer) (*Config, error) {
 		return nil, err
 	}
 
-	if scope == V6DefaultScope || scope == V6LocalScope {
+	if scope == DefaultScopeV6 || scope == LocalScopeV6 {
 		// merge in local scope from the config storer over top of
 		// the local config which was merged in from the filesystem
 		// as the config storer may have more up-to-date config which

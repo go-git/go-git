@@ -351,7 +351,7 @@ func (s *ConfigSuite) TestPathsV6DefaultScope(c *C) {
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
 	defer unsetEnvVarWithCleanup(XdgConfigHome)()
 
-	pp, err := Paths(V6DefaultScope)
+	pp, err := Paths(DefaultScopeV6)
 
 	c.Assert(err, IsNil)
 	c.Assert(pp, DeepEquals, []string{
@@ -365,7 +365,7 @@ func (s *ConfigSuite) TestPathsV6DefaultScopeWithXDGSet(c *C) {
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
 	defer setEnvVarWithCleanup(XdgConfigHome, "/xdg")()
 
-	pp, err := Paths(V6DefaultScope)
+	pp, err := Paths(DefaultScopeV6)
 
 	c.Assert(err, IsNil)
 	c.Assert(pp, DeepEquals, []string{
@@ -379,7 +379,7 @@ func (s *ConfigSuite) TestPathsV6SystemScope(c *C) {
 	defer unsetEnvVarWithCleanup(XdgConfigHome)()
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
 
-	pp, err := Paths(V6SystemScope)
+	pp, err := Paths(SystemScopeV6)
 
 	c.Assert(err, IsNil)
 	c.Assert(pp, DeepEquals, []string{
@@ -395,7 +395,7 @@ func (s *ConfigSuite) TestPathsV6SystemScopeWithXDGSet(c *C) {
 	}()
 	os.Setenv(XdgConfigHome, "/xdg")
 
-	pp, err := Paths(V6SystemScope)
+	pp, err := Paths(SystemScopeV6)
 
 	c.Assert(err, IsNil)
 	c.Assert(pp, DeepEquals, []string{
@@ -407,7 +407,7 @@ func (s *ConfigSuite) TestPathsV6SystemScopeWithXDGSet(c *C) {
 func (s *ConfigSuite) TestPathsV6GlobalScope(c *C) {
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
 
-	pp, err := Paths(V6GlobalScope)
+	pp, err := Paths(GlobalScopeV6)
 	c.Assert(err, IsNil)
 	c.Assert(pp, DeepEquals, []string{"/home/me/.gitconfig"})
 }
@@ -415,7 +415,7 @@ func (s *ConfigSuite) TestPathsV6GlobalScope(c *C) {
 func (s *ConfigSuite) TestPathsV6LocalScope(c *C) {
 	defer setEnvVarWithCleanup("HOME", "/home/me")()
 
-	pp, err := Paths(V6LocalScope)
+	pp, err := Paths(LocalScopeV6)
 
 	c.Assert(err, IsNil)
 	c.Assert(pp, DeepEquals, []string{})
