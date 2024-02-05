@@ -37,12 +37,48 @@ var (
 	ErrRemoteConfigNotFound  = errors.New("remote config not found")
 	ErrRemoteConfigEmptyURL  = errors.New("remote config: empty URL")
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
-
-	// ActiveFS provides a configurable entry point to the billy.Filesystem in active use for reading global and
-	// system level configuration; override in a test to use a fake filesystem then reset to config.DefaultFS() to
-	// restore the default behavior.
-	ActiveFS = DefaultFS()
 )
+
+// Options allows configuration of the config package
+type Options struct {
+	// fs provides a configurable entry point to the billy.Filesystem in active use for reading global and
+	// system level configuration; set using the WithFS option in a test to use a fake filesystem.
+	fs billy.Filesystem
+}
+
+func (o Options) readConfigFromFS(path string) (*Config, error) {
+	f, err := o.fs.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	defer f.Close()
+	return ReadConfig(f)
+}
+
+func NewOptions(ofns ...WithOptions) Options {
+	o := Options{
+		fs: DefaultFS(),
+	}
+
+	for _, fn := range ofns {
+		fn(&o)
+	}
+
+	return o
+}
+
+type WithOptions = func(*Options)
+
+func WithFS(fs billy.Filesystem) func(*Options) {
+	return func(o *Options) {
+		o.fs = fs
+	}
+}
 
 // DefaultFS provides a billy.Filesystem abstraction over the os filesystem (via osfs.OS) scoped to the
 // root directory / in order to enable access to global and system config files via absolute paths
@@ -73,12 +109,12 @@ const (
 	LocalScopeV6
 )
 
-func (s Scope) loadConfig() (*Config, error) {
+func (s Scope) loadConfig(ofns ...WithOptions) (*Config, error) {
 	switch s {
 	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
-		return loadConfigV6(s)
+		return loadConfigV6(s, ofns...)
 	}
-	return loadConfigV5(s)
+	return loadConfigV5(s, ofns...)
 }
 
 func (s Scope) paths() ([]string, error) {
@@ -92,12 +128,12 @@ func (s Scope) paths() ([]string, error) {
 // LoadFromConfigStorer loads a config file from the given ConfigStorer based
 // on the given Scope. If no configuration is found in the given Scope an
 // empty Config instance is returned.
-func (s Scope) LoadFromConfigStorer(storer ConfigStorer) (*Config, error) {
+func (s Scope) LoadFromConfigStorer(storer ConfigStorer, ofns ...WithOptions) (*Config, error) {
 	switch s {
 	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
-		return configScopedV6(s, storer)
+		return configScopedV6(s, storer, ofns...)
 	}
-	return configScopedV5(s, storer)
+	return configScopedV5(s, storer, ofns...)
 }
 
 // Config contains the repository configuration
@@ -210,7 +246,9 @@ func ReadConfig(r io.Reader) (*Config, error) {
 	return cfg, nil
 }
 
-func loadConfigV5(scope Scope) (*Config, error) {
+func loadConfigV5(scope Scope, ofns ...WithOptions) (*Config, error) {
+	o := NewOptions(ofns...)
+
 	if scope == LocalScope {
 		return nil, fmt.Errorf("LocalScope should be read from the a Repository.ConfigStorer")
 	}
@@ -221,7 +259,7 @@ func loadConfigV5(scope Scope) (*Config, error) {
 	}
 
 	for _, file := range files {
-		c, loadErr := loadConfigFromFile(file)
+		c, loadErr := o.readConfigFromFS(file)
 		if c == nil {
 			continue
 		} else if loadErr != nil {
@@ -234,24 +272,8 @@ func loadConfigV5(scope Scope) (*Config, error) {
 	return NewConfig(), nil
 }
 
-func loadConfigFromFile(path string) (*Config, error) {
-	f, err := ActiveFS.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-
-		return nil, err
-	}
-
-	defer f.Close()
-	return ReadConfig(f)
-}
-
-func loadConfigV6(scope Scope) (*Config, error) {
-	//if scope == LocalScopeV6 {
-	//	return nil, fmt.Errorf("LocalScopeV6 should be read from the Repository.ConfigStorer")
-	//}
+func loadConfigV6(scope Scope, ofns ...WithOptions) (*Config, error) {
+	o := NewOptions(ofns...)
 
 	files, err := Paths(scope)
 	if err != nil {
@@ -262,7 +284,7 @@ func loadConfigV6(scope Scope) (*Config, error) {
 	mergedConfig := NewConfig()
 
 	for _, file := range files {
-		c, loadErr := loadConfigFromFile(file)
+		c, loadErr := o.readConfigFromFS(file)
 		if c == nil {
 			continue
 		} else if loadErr != nil {
@@ -346,11 +368,11 @@ func configPathsV6(scope Scope) ([]string, error) {
 	return nil, fmt.Errorf("unrecognized V6 config scope: %v", scope)
 }
 
-func configScopedV5(scope Scope, storer ConfigStorer) (*Config, error) {
+func configScopedV5(scope Scope, storer ConfigStorer, ofns ...WithOptions) (*Config, error) {
 	var err error
 	system := NewConfig()
 	if scope >= SystemScope {
-		system, err = SystemScope.loadConfig()
+		system, err = SystemScope.loadConfig(ofns...)
 		if err != nil {
 			return nil, err
 		}
@@ -358,7 +380,7 @@ func configScopedV5(scope Scope, storer ConfigStorer) (*Config, error) {
 
 	global := NewConfig()
 	if scope >= GlobalScope {
-		global, err = GlobalScope.loadConfig()
+		global, err = GlobalScope.loadConfig(ofns...)
 		if err != nil {
 			return nil, err
 		}
@@ -374,8 +396,8 @@ func configScopedV5(scope Scope, storer ConfigStorer) (*Config, error) {
 	return local, nil
 }
 
-func configScopedV6(scope Scope, storer ConfigStorer) (*Config, error) {
-	c, err := scope.loadConfig()
+func configScopedV6(scope Scope, storer ConfigStorer, ofns ...WithOptions) (*Config, error) {
+	c, err := scope.loadConfig(ofns...)
 	if err != nil {
 		return nil, err
 	}

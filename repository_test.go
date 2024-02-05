@@ -2313,11 +2313,8 @@ func (s *RepositorySuite) TestConfigScoped(c *C) {
 }
 
 func (s *RepositorySuite) TestConfigWithLocalGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2325,18 +2322,15 @@ func (s *RepositorySuite) TestConfigWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	repoConfig, err := repo.Config()
+	repoConfig, err := repo.Config(config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(repoConfig.User.Name, Equals, "Local User")
 }
 
 func (s *RepositorySuite) TestConfigWithGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2344,7 +2338,7 @@ func (s *RepositorySuite) TestConfigWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	repoConfig, err := repo.Config()
+	repoConfig, err := repo.Config(config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	// c.Assert(repoConfig.User.Name, Equals, "Global User") // v6 behavior
@@ -2352,11 +2346,8 @@ func (s *RepositorySuite) TestConfigWithGlobalSystem(c *C) {
 }
 
 func (s *RepositorySuite) TestConfigWithSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
 	c.Assert(err, IsNil)
@@ -2364,7 +2355,7 @@ func (s *RepositorySuite) TestConfigWithSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	repoConfig, err := repo.Config()
+	repoConfig, err := repo.Config(config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	// c.Assert(repoConfig.User.Name, Equals, "System User") // v6 behavior
@@ -2372,11 +2363,8 @@ func (s *RepositorySuite) TestConfigWithSystem(c *C) {
 }
 
 func (s *RepositorySuite) TestConfigScopedLocalWithLocalGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2384,18 +2372,15 @@ func (s *RepositorySuite) TestConfigScopedLocalWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	localConfig, err := repo.ConfigScoped(config.LocalScope)
+	localConfig, err := repo.ConfigScoped(config.LocalScope, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(localConfig.User.Name, Equals, "Local User")
 }
 
 func (s *RepositorySuite) TestConfigScopedLocalWithGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2403,18 +2388,15 @@ func (s *RepositorySuite) TestConfigScopedLocalWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	localConfig, err := repo.ConfigScoped(config.LocalScope)
+	localConfig, err := repo.ConfigScoped(config.LocalScope, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(localConfig.User.Name, Equals, "")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6LocalWithLocalGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2422,18 +2404,15 @@ func (s *RepositorySuite) TestConfigScopedV6LocalWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	localConfig, err := repo.ConfigScoped(config.LocalScopeV6)
+	localConfig, err := repo.ConfigScoped(config.LocalScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(localConfig.User.Name, Equals, "Local User")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6LocalWithGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2441,18 +2420,15 @@ func (s *RepositorySuite) TestConfigScopedV6LocalWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	localConfig, err := repo.ConfigScoped(config.LocalScopeV6)
+	localConfig, err := repo.ConfigScoped(config.LocalScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(localConfig.User.Name, Equals, "")
 }
 
 func (s *RepositorySuite) TestConfigScopedLocalWithSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
 	c.Assert(err, IsNil)
@@ -2460,18 +2436,15 @@ func (s *RepositorySuite) TestConfigScopedLocalWithSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	globalConfig, err := repo.ConfigScoped(config.LocalScope)
+	globalConfig, err := repo.ConfigScoped(config.LocalScope, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(globalConfig.User.Name, Equals, "")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6GlobalWithLocalGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2479,18 +2452,15 @@ func (s *RepositorySuite) TestConfigScopedV6GlobalWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	globalConfig, err := repo.ConfigScoped(config.GlobalScopeV6)
+	globalConfig, err := repo.ConfigScoped(config.GlobalScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(globalConfig.User.Name, Equals, "Global User")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6GlobalWithGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2498,18 +2468,15 @@ func (s *RepositorySuite) TestConfigScopedV6GlobalWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	globalConfig, err := repo.ConfigScoped(config.GlobalScopeV6)
+	globalConfig, err := repo.ConfigScoped(config.GlobalScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(globalConfig.User.Name, Equals, "Global User")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6GlobalWithSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
 	c.Assert(err, IsNil)
@@ -2517,18 +2484,15 @@ func (s *RepositorySuite) TestConfigScopedV6GlobalWithSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.GlobalScopeV6)
+	systemConfig, err := repo.ConfigScoped(config.GlobalScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6SystemWithLocalGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "Local User", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2536,18 +2500,15 @@ func (s *RepositorySuite) TestConfigScopedV6SystemWithLocalGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6)
+	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "System User")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6SystemWithGlobalSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "Global User", "System User")
 	c.Assert(err, IsNil)
@@ -2555,18 +2516,15 @@ func (s *RepositorySuite) TestConfigScopedV6SystemWithGlobalSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6)
+	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "System User")
 }
 
 func (s *RepositorySuite) TestConfigScopedV6SystemWithSystem(c *C) {
-	fs := memfs.New()
-
 	// stub the active filesystem used by the config package
-	config.ActiveFS = fs
-	defer func() { config.ActiveFS = config.DefaultFS() }()
+	fs := memfs.New()
 
 	err := stubConfiguredUsernames(fs, "/work/example", "", "", "System User")
 	c.Assert(err, IsNil)
@@ -2574,7 +2532,7 @@ func (s *RepositorySuite) TestConfigScopedV6SystemWithSystem(c *C) {
 	repo, err := initRepoAt(fs, "/work/example")
 	c.Assert(err, IsNil)
 
-	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6)
+	systemConfig, err := repo.ConfigScoped(config.SystemScopeV6, config.WithFS(fs))
 	c.Assert(err, IsNil)
 
 	c.Assert(systemConfig.User.Name, Equals, "System User")
