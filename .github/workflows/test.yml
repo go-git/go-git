@@ -34,3 +34,8 @@ jobs:
 
     - name: Test
       run: make test-coverage
+
+    - name: Examples
+      env:
+        EXAMPLES_DIR: _examples
+      run: go test -test.v -test.run='^TestBuildExamples$'
