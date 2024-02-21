@@ -2,8 +2,6 @@ package git
 
 import (
 	"bytes"
-	"crypto"
-	"crypto/rand"
 	"errors"
 	"io"
 	"path"
@@ -135,7 +133,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		signer = &gpgSigner{key: opts.SignKey}
 	}
 	if signer != nil {
-		sig, err := w.buildCommitSignature(commit, signer)
+		sig, err := signObject(signer, commit)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -151,42 +149,15 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 
 type gpgSigner struct {
 	key *openpgp.Entity
+	cfg *packet.Config
 }
 
-func (s *gpgSigner) Public() crypto.PublicKey {
-	return s.key.PrimaryKey
-}
-
-func (s *gpgSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
-	var cfg *packet.Config
-	if opts != nil {
-		cfg = &packet.Config{
-			DefaultHash: opts.HashFunc(),
-		}
-	}
-
+func (s *gpgSigner) Sign(message io.Reader) ([]byte, error) {
 	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, s.key, bytes.NewReader(digest), cfg); err != nil {
+	if err := openpgp.ArmoredDetachSign(&b, s.key, message, s.cfg); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
-}
-
-func (w *Worktree) buildCommitSignature(commit *object.Commit, signer crypto.Signer) ([]byte, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := commit.Encode(encoded); err != nil {
-		return nil, err
-	}
-	r, err := encoded.Reader()
-	if err != nil {
-		return nil, err
-	}
-	b, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return signer.Sign(rand.Reader, b, nil)
 }
 
 // buildTreeHelper converts a given index.Index file into multiple git objects
