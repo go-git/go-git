@@ -1444,6 +1444,120 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 	c.Assert(newRef, Not(DeepEquals), oldRef)
 }
 
+func (s *RemoteSuite) TestFetchPrune(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	_, err := PlainClone(url, true, &CloneOptions{
+		URL: fs.Root(),
+	})
+	c.Assert(err, IsNil)
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/heads/master:refs/heads/branch",
+	}})
+	c.Assert(err, IsNil)
+
+	dirSave, clean := s.TemporalDir()
+	defer clean()
+
+	rSave, err := PlainClone(dirSave, true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, rSave, map[string]string{
+		"refs/remotes/origin/branch": ref.Hash().String(),
+	})
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		":refs/heads/branch",
+	}})
+
+	AssertReferences(c, rSave, map[string]string{
+		"refs/remotes/origin/branch": ref.Hash().String(),
+	})
+
+	err = rSave.Fetch(&FetchOptions{Prune: true})
+	c.Assert(err, IsNil)
+
+	_, err = rSave.Reference("refs/remotes/origin/branch", true)
+	c.Assert(err, ErrorMatches, "reference not found")
+}
+
+func (s *RemoteSuite) TestFetchPruneTags(c *C) {
+	fs := fixtures.Basic().One().DotGit()
+
+	url, clean := s.TemporalDir()
+	defer clean()
+
+	_, err := PlainClone(url, true, &CloneOptions{
+		URL: fs.Root(),
+	})
+	c.Assert(err, IsNil)
+
+	dir, clean := s.TemporalDir()
+	defer clean()
+
+	r, err := PlainClone(dir, true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	remote, err := r.Remote(DefaultRemoteName)
+	c.Assert(err, IsNil)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	c.Assert(err, IsNil)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/heads/master:refs/tags/v1",
+	}})
+	c.Assert(err, IsNil)
+
+	dirSave, clean := s.TemporalDir()
+	defer clean()
+
+	rSave, err := PlainClone(dirSave, true, &CloneOptions{
+		URL: url,
+	})
+	c.Assert(err, IsNil)
+
+	AssertReferences(c, rSave, map[string]string{
+		"refs/tags/v1": ref.Hash().String(),
+	})
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		":refs/tags/v1",
+	}})
+
+	AssertReferences(c, rSave, map[string]string{
+		"refs/tags/v1": ref.Hash().String(),
+	})
+
+	err = rSave.Fetch(&FetchOptions{Prune: true, RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"}})
+	c.Assert(err, IsNil)
+
+	_, err = rSave.Reference("refs/tags/v1", true)
+	c.Assert(err, ErrorMatches, "reference not found")
+}
+
 func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
 	d, err := os.MkdirTemp("", "TestCanPushShasToReference")
 	c.Assert(err, IsNil)

@@ -166,7 +166,7 @@ const (
 	// AllTags fetch all tags from the remote (i.e., fetch remote tags
 	// refs/tags/* into local tags with the same name)
 	AllTags
-	//NoTags fetch no tags from the remote at all
+	// NoTags fetch no tags from the remote at all
 	NoTags
 )
 
@@ -198,6 +198,9 @@ type FetchOptions struct {
 	CABundle []byte
 	// ProxyOptions provides info required for connecting to a proxy.
 	ProxyOptions transport.ProxyOptions
+	// Prune specify that local refs that match given RefSpecs and that do
+	// not exist remotely will be removed.
+	Prune bool
 }
 
 // Validate validates the fields and sets the default values.
