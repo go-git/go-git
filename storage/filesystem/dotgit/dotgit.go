@@ -608,6 +608,9 @@ func (d *DotGit) hasIncomingObjects() bool {
 func (d *DotGit) Object(h plumbing.Hash) (billy.File, error) {
 	err := d.hasObject(h)
 	if err != nil {
+		if err == plumbing.ErrObjectNotFound {
+			return nil, os.ErrNotExist
+		}
 		return nil, err
 	}
 
