@@ -4,10 +4,23 @@ package hash
 
 import (
 	"crypto"
+	"errors"
 	"fmt"
 	"hash"
 
+	format "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/pjbgf/sha1cd"
+)
+
+const (
+	SHA1_Size      = 20
+	SHA1_HexSize   = SHA1_Size * 2
+	SHA256_Size    = 32
+	SHA256_HexSize = SHA256_Size * 2
+)
+
+var (
+	ErrUnsupportedHashFunction = errors.New("unsupported hash function")
 )
 
 // algos is a map of hash algorithms.
@@ -38,7 +51,7 @@ func RegisterHash(h crypto.Hash, f func() hash.Hash) error {
 	case crypto.SHA256:
 		algos[h] = f
 	default:
-		return fmt.Errorf("unsupported hash function: %v", h)
+		return fmt.Errorf("%w: %v", ErrUnsupportedHashFunction, h)
 	}
 	return nil
 }
@@ -57,4 +70,18 @@ func New(h crypto.Hash) Hash {
 		panic(fmt.Sprintf("hash algorithm not registered: %v", h))
 	}
 	return hh()
+}
+
+// FromObjectFormat returns the correct Hash to be used based on the
+// ObjectFormat being used.
+// If the ObjectFormat is not recognised, returns ErrInvalidObjectFormat.
+func FromObjectFormat(f format.ObjectFormat) (hash.Hash, error) {
+	switch f {
+	case format.SHA1:
+		return New(crypto.SHA1), nil
+	case format.SHA256:
+		return New(crypto.SHA256), nil
+	default:
+		return nil, format.ErrInvalidObjectFormat
+	}
 }
