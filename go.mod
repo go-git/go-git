@@ -20,7 +20,7 @@ require (
 	github.com/pjbgf/sha1cd v0.3.0
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/skeema/knownhosts v1.2.1
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/xanzy/ssh-agent v0.3.3
 	golang.org/x/crypto v0.20.0
 	golang.org/x/net v0.21.0
