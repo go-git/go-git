@@ -2957,6 +2957,8 @@ func TestValidPath(t *testing.T) {
 		{"git~1", true},
 		{"a/../b", true},
 		{"a\\..\\b", true},
+		{"/", true},
+		{"", true},
 		{".gitmodules", false},
 		{".gitignore", false},
 		{"a..b", false},
