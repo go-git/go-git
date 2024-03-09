@@ -1128,7 +1128,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash, earlies
 	}
 
 	found := false
-	// stop iterating at the earlist shallow commit, ignoring its parents
+	// stop iterating at the earliest shallow commit, ignoring its parents
 	// note: when pull depth is smaller than the number of new changes on the remote, this fails due to missing parents.
 	//       as far as i can tell, without the commits in-between the shallow pull and the earliest shallow, there's no
 	//       real way of telling whether it will be a fast-forward merge.

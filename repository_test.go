@@ -82,7 +82,7 @@ func (s *RepositorySuite) TestInitWithInvalidDefaultBranch(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func createCommit(c *C, r *Repository) {
+func createCommit(c *C, r *Repository) plumbing.Hash {
 	// Create a commit so there is a HEAD to check
 	wt, err := r.Worktree()
 	c.Assert(err, IsNil)
@@ -101,13 +101,14 @@ func createCommit(c *C, r *Repository) {
 		Email: "go-git@fake.local",
 		When:  time.Now(),
 	}
-	_, err = wt.Commit("test commit message", &CommitOptions{
+
+	h, err := wt.Commit("test commit message", &CommitOptions{
 		All:       true,
 		Author:    &author,
 		Committer: &author,
 	})
 	c.Assert(err, IsNil)
-
+	return h
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
@@ -440,56 +441,109 @@ func (s *RepositorySuite) TestCreateBranchAndBranch(c *C) {
 }
 
 func (s *RepositorySuite) TestMergeFF(c *C) {
-	r, _ := Init(memory.NewStorage(), memfs.New())
-	err := r.clone(context.Background(), &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+	r, err := Init(memory.NewStorage(), memfs.New())
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	createCommit(c, r)
+	createCommit(c, r)
+	createCommit(c, r)
+	lastCommit := createCommit(c, r)
+
+	wt, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	targetBranch := plumbing.NewBranchReferenceName("foo")
+	err = wt.Checkout(&CheckoutOptions{
+		Hash:   lastCommit,
+		Create: true,
+		Branch: targetBranch,
 	})
 	c.Assert(err, IsNil)
+
+	createCommit(c, r)
+	fooHash := createCommit(c, r)
+
+	// Checkout the master branch so that we can try to merge foo into it.
+	err = wt.Checkout(&CheckoutOptions{
+		Branch: plumbing.Master,
+	})
+	c.Assert(err, IsNil)
+
 	head, err := r.Head()
 	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, lastCommit)
 
-	mergeBranchRefname := plumbing.NewBranchReferenceName("foo")
-	err = r.Storer.SetReference(plumbing.NewHashReference(mergeBranchRefname, head.Hash()))
-	c.Assert(err, IsNil)
+	targetRef := plumbing.NewHashReference(targetBranch, fooHash)
+	c.Assert(targetRef, NotNil)
 
-	commit, err := r.CommitObject(head.Hash())
-	c.Assert(err, IsNil)
-	treeHash := commit.TreeHash
-
-	hash := commit.Hash
-
-	for i := 0; i < 10; i++ {
-		commit = &object.Commit{
-			Author: object.Signature{
-				Name:  "A U Thor",
-				Email: "author@example.com",
-			},
-			Committer: object.Signature{
-				Name:  "A U Thor",
-				Email: "author@example.com",
-			},
-			Message:  fmt.Sprintf("commit #%d", i),
-			TreeHash: treeHash,
-			ParentHashes: []plumbing.Hash{
-				hash,
-			},
-		}
-
-		o := r.Storer.NewEncodedObject()
-		c.Assert(commit.Encode(o), IsNil)
-		hash, err = r.Storer.SetEncodedObject(o)
-	}
-
-	mergeBranchRef := plumbing.NewHashReference(mergeBranchRefname, hash)
-	c.Assert(r.Storer.SetReference(mergeBranchRef), IsNil)
-
-	err = r.Merge(*mergeBranchRef, MergeOptions{
-		FFOnly: true,
+	err = r.Merge(*targetRef, MergeOptions{
+		Strategy: FastForwardMerge,
 	})
 	c.Assert(err, IsNil)
 
 	head, err = r.Head()
-	c.Assert(head.Hash(), Equals, mergeBranchRef.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, fooHash)
+}
+
+func (s *RepositorySuite) TestMergeFF_Invalid(c *C) {
+	r, err := Init(memory.NewStorage(), memfs.New())
+	c.Assert(err, IsNil)
+	c.Assert(r, NotNil)
+
+	// Keep track of the first commit, which will be the
+	// reference to create the target branch so that we
+	// can simulate a non-ff merge.
+	firstCommit := createCommit(c, r)
+	createCommit(c, r)
+	createCommit(c, r)
+	lastCommit := createCommit(c, r)
+
+	wt, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	targetBranch := plumbing.NewBranchReferenceName("foo")
+	err = wt.Checkout(&CheckoutOptions{
+		Hash:   firstCommit,
+		Create: true,
+		Branch: targetBranch,
+	})
+
+	c.Assert(err, IsNil)
+
+	createCommit(c, r)
+	h := createCommit(c, r)
+
+	// Checkout the master branch so that we can try to merge foo into it.
+	err = wt.Checkout(&CheckoutOptions{
+		Branch: plumbing.Master,
+	})
+	c.Assert(err, IsNil)
+
+	head, err := r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, lastCommit)
+
+	targetRef := plumbing.NewHashReference(targetBranch, h)
+	c.Assert(targetRef, NotNil)
+
+	err = r.Merge(*targetRef, MergeOptions{
+		Strategy: MergeStrategy(10),
+	})
+	c.Assert(err, Equals, ErrUnsupportedMergeStrategy)
+
+	// Failed merge operations must not change HEAD.
+	head, err = r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, lastCommit)
+
+	err = r.Merge(*targetRef, MergeOptions{})
+	c.Assert(err, Equals, ErrFastForwardMergeNotPossible)
+
+	head, err = r.Head()
+	c.Assert(err, IsNil)
+	c.Assert(head.Hash(), Equals, lastCommit)
 }
 
 func (s *RepositorySuite) TestCreateBranchUnmarshal(c *C) {

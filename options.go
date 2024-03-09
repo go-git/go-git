@@ -89,12 +89,24 @@ type CloneOptions struct {
 	Shared bool
 }
 
-// MergeOptions describes how a merge should be erformed
+// MergeOptions describes how a merge should be performed.
 type MergeOptions struct {
-	// Requires a merge to be fast forward only. If this is true, then a merge will
-	// throw an error if ff is not possible.
-	FFOnly bool
+	// Strategy defines the merge strategy to be used.
+	Strategy MergeStrategy
 }
+
+// MergeStrategy represents the different types of merge strategies.
+type MergeStrategy int8
+
+const (
+	// FastForwardMerge represents a Git merge strategy where the current
+	// branch can be simply updated to point to the HEAD of the branch being
+	// merged. This is only possible if the history of the branch being merged
+	// is a linear descendant of the current branch, with no conflicting commits.
+	//
+	// This is the default option.
+	FastForwardMerge MergeStrategy = iota
+)
 
 // Validate validates the fields and sets the default values.
 func (o *CloneOptions) Validate() error {
