@@ -131,16 +131,37 @@ func (s *WorktreeSuite) TestCommitAmend(c *C) {
 	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
+	util.WriteFile(fs, "bar", []byte("bar"), 0644)
+
+	_, err = w.Add("bar")
+	c.Assert(err, IsNil)
+
 	amendedHash, err := w.Commit("bar\n", &CommitOptions{Amend: true})
 	c.Assert(err, IsNil)
 
 	headRef, err := w.r.Head()
+	c.Assert(err, IsNil)
+
 	c.Assert(amendedHash, Equals, headRef.Hash())
+
 	commit, err := w.r.CommitObject(headRef.Hash())
 	c.Assert(err, IsNil)
 	c.Assert(commit.Message, Equals, "bar\n")
+	c.Assert(commit.NumParents(), Equals, 1)
 
-	assertStorageStatus(c, s.Repository, 13, 11, 11, amendedHash)
+	stats, err := commit.Stats()
+	c.Assert(err, IsNil)
+	c.Assert(stats, HasLen, 2)
+	c.Assert(stats[0], Equals, object.FileStat{
+		Name:     "bar",
+		Addition: 1,
+	})
+	c.Assert(stats[1], Equals, object.FileStat{
+		Name:     "foo",
+		Addition: 1,
+	})
+
+	assertStorageStatus(c, s.Repository, 14, 12, 11, amendedHash)
 }
 
 func (s *WorktreeSuite) TestAddAndCommitWithSkipStatus(c *C) {
