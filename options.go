@@ -166,7 +166,7 @@ const (
 	// AllTags fetch all tags from the remote (i.e., fetch remote tags
 	// refs/tags/* into local tags with the same name)
 	AllTags
-	//NoTags fetch no tags from the remote at all
+	// NoTags fetch no tags from the remote at all
 	NoTags
 )
 
@@ -198,6 +198,9 @@ type FetchOptions struct {
 	CABundle []byte
 	// ProxyOptions provides info required for connecting to a proxy.
 	ProxyOptions transport.ProxyOptions
+	// Prune specify that local refs that match given RefSpecs and that do
+	// not exist remotely will be removed.
+	Prune bool
 }
 
 // Validate validates the fields and sets the default values.
@@ -474,6 +477,11 @@ type AddOptions struct {
 	// Glob adds all paths, matching pattern, to the index. If pattern matches a
 	// directory path, all directory contents are added to the index recursively.
 	Glob string
+	// SkipStatus adds the path with no status check. This option is relevant only
+	// when the `Path` option is specified and does not apply when the `All` option is used.
+	// Notice that when passing an ignored path it will be added anyway.
+	// When true it can speed up adding files to the worktree in very large repositories.
+	SkipStatus bool
 }
 
 // Validate validates the fields and sets the default values.
@@ -507,6 +515,10 @@ type CommitOptions struct {
 	// commit will not be signed. The private key must be present and already
 	// decrypted.
 	SignKey *openpgp.Entity
+	// Signer denotes a cryptographic signer to sign the commit with.
+	// A nil value here means the commit will not be signed.
+	// Takes precedence over SignKey.
+	Signer Signer
 	// Amend will create a new commit object and replace the commit that HEAD currently
 	// points to. Cannot be used with All nor Parents.
 	Amend bool

@@ -5,7 +5,7 @@ go 1.19
 
 require (
 	dario.cat/mergo v1.0.0
-	github.com/ProtonMail/go-crypto v0.0.0-20230828082145-3c4c8a2d2371
+	github.com/ProtonMail/go-crypto v1.0.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v0.0.0-20230808193330-2592e75ae04a
 	github.com/emirpasic/gods v1.18.1
@@ -18,13 +18,13 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/pjbgf/sha1cd v0.3.0
-	github.com/sergi/go-diff v1.1.0
+	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/skeema/knownhosts v1.2.1
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.17.0
-	golang.org/x/net v0.19.0
-	golang.org/x/sys v0.15.0
+	golang.org/x/crypto v0.20.0
+	golang.org/x/net v0.21.0
+	golang.org/x/sys v0.17.0
 	golang.org/x/text v0.14.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
@@ -32,7 +32,7 @@ require (
 require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
-	github.com/cloudflare/circl v1.3.3 // indirect
+	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

@@ -228,7 +228,7 @@ change
 			Message:      "Message\n\nFoo\nBar\nWith trailing blank lines\n\n",
 			TreeHash:     plumbing.NewHash("f000000000000000000000000000000000000001"),
 			ParentHashes: []plumbing.Hash{plumbing.NewHash("f000000000000000000000000000000000000002")},
-			Encoding:     defaultUtf8CommitMesageEncoding,
+			Encoding:     defaultUtf8CommitMessageEncoding,
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -253,7 +253,7 @@ change
 				plumbing.NewHash("f000000000000000000000000000000000000003"),
 			},
 			MergeTag: tag,
-			Encoding: defaultUtf8CommitMesageEncoding,
+			Encoding: defaultUtf8CommitMessageEncoding,
 		},
 		{
 			Author:    Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -266,7 +266,7 @@ change
 			},
 			MergeTag:     tag,
 			PGPSignature: pgpsignature,
-			Encoding:     defaultUtf8CommitMesageEncoding,
+			Encoding:     defaultUtf8CommitMessageEncoding,
 		},
 	}
 	for _, commit := range commits {
