@@ -1770,7 +1770,7 @@ func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 }
 
 // createNewObjectPack is a helper for RepackObjects taking care
-// of creating a new pack. It is used so the the PackfileWriter
+// of creating a new pack. It is used so the PackfileWriter
 // deferred close has the right scope.
 func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, err error) {
 	ow := newObjectWalker(r.Storer)
