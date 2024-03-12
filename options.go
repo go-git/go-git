@@ -427,6 +427,11 @@ func (o *ResetOptions) Validate(r *Repository) error {
 		}
 
 		o.Commit = ref.Hash()
+	} else {
+		_, err := r.CommitObject(o.Commit)
+		if err != nil {
+			return fmt.Errorf("invalid reset option: %w", err)
+		}
 	}
 
 	return nil
