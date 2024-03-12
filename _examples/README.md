@@ -33,4 +33,4 @@ Here you can find a list of annotated _go-git_ examples:
 - [custom_http](custom_http/main.go) - Replacing the HTTP client using a custom one.
 - [clone with context](context/main.go) - Cloning a repository with graceful cancellation.
 - [storage](storage/README.md) - Implementing a custom storage system.
-- [sha256](sha256/main.go) - Init and commiting repositories that use sha256 as object format.
+- [sha256](sha256/main.go) - Init and committing repositories that use sha256 as object format.
