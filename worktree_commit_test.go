@@ -365,7 +365,8 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {
 	c.Assert(foo.Worktree, Equals, Untracked)
 
 	hash, err = w.Commit("commit with no changes\n", &CommitOptions{
-		Author: defaultSignature(),
+		Author:            defaultSignature(),
+		AllowEmptyCommits: true,
 	})
 	c.Assert(hash, Equals, expected2)
 	c.Assert(err, IsNil)
