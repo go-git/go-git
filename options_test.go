@@ -23,6 +23,12 @@ func (s *OptionsSuite) TestCommitOptionsParentsFromHEAD(c *C) {
 	c.Assert(o.Parents, HasLen, 1)
 }
 
+func (s *OptionsSuite) TestResetOptionsCommitNotFound(c *C) {
+	o := ResetOptions{Commit: plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd")}
+	err := o.Validate(s.Repository)
+	c.Assert(err, NotNil)
+}
+
 func (s *OptionsSuite) TestCommitOptionsCommitter(c *C) {
 	sig := &object.Signature{}
 
