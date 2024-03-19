@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
+
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -491,7 +492,18 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if !updated && !updatedPrune {
-		return remoteRefs, NoErrAlreadyUpToDate
+		// No references updated, but may have fetched new objects, check if we now have any of our wants
+		for _, hash := range req.Wants {
+			exists, _ := objectExists(r.s, hash)
+			if exists {
+				updated = true
+				break
+			}
+		}
+
+		if !updated {
+			return remoteRefs, NoErrAlreadyUpToDate
+		}
 	}
 
 	return remoteRefs, nil
@@ -878,17 +890,12 @@ func getHavesFromRef(
 		return nil
 	}
 
-	// No need to load the commit if we know the remote already
-	// has this hash.
-	if remoteRefs[h] {
-		haves[h] = true
-		return nil
-	}
-
 	commit, err := object.GetCommit(s, h)
 	if err != nil {
-		// Ignore the error if this isn't a commit.
-		haves[ref.Hash()] = true
+		if !errors.Is(err, plumbing.ErrObjectNotFound) {
+			// Ignore the error if this isn't a commit.
+			haves[ref.Hash()] = true
+		}
 		return nil
 	}
 
