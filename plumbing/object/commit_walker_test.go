@@ -228,3 +228,29 @@ func (s *CommitWalkerSuite) TestCommitBSFIteratorWithIgnore(c *C) {
 		c.Assert(commit.Hash.String(), Equals, expected[i])
 	}
 }
+
+func (s *CommitWalkerSuite) TestCommitPathIteratorInitialCommit(c *C) {
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+
+	fileName := "LICENSE"
+
+	var commits []*Commit
+	NewCommitPathIterFromIter(
+		func(path string) bool { return path == fileName },
+		NewCommitIterCTime(commit, nil, nil),
+		true,
+	).ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	expected := []string{
+		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+	}
+
+	c.Assert(commits, HasLen, len(expected))
+
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}

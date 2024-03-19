@@ -455,7 +455,7 @@ func (s *SuiteCommit) TestStat(c *C) {
 	c.Assert(fileStats[1].Name, Equals, "php/crappy.php")
 	c.Assert(fileStats[1].Addition, Equals, 259)
 	c.Assert(fileStats[1].Deletion, Equals, 0)
-	c.Assert(fileStats[1].String(), Equals, " php/crappy.php | 259 ++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
+	c.Assert(fileStats[1].String(), Equals, " php/crappy.php | 259 +++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
 }
 
 func (s *SuiteCommit) TestVerify(c *C) {

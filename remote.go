@@ -471,6 +471,14 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
+	var updatedPrune bool
+	if o.Prune {
+		updatedPrune, err = r.pruneRemotes(o.RefSpecs, localRefs, remoteRefs)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
 	if err != nil {
 		return nil, err
@@ -483,7 +491,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	if !updated {
+	if !updated && !updatedPrune {
 		// No references updated, but may have fetched new objects, check if we now have any of our wants
 		for _, hash := range req.Wants {
 			exists, _ := objectExists(r.s, hash)
@@ -492,10 +500,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 				break
 			}
 		}
-	}
 
-	if !updated {
-		return remoteRefs, NoErrAlreadyUpToDate
+		if !updated {
+			return remoteRefs, NoErrAlreadyUpToDate
+		}
 	}
 
 	return remoteRefs, nil
@@ -584,6 +592,27 @@ func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.Upl
 	}
 
 	return err
+}
+
+func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs memory.ReferenceStorage) (bool, error) {
+	var updatedPrune bool
+	for _, spec := range specs {
+		rev := spec.Reverse()
+		for _, ref := range localRefs {
+			if !rev.Match(ref.Name()) {
+				continue
+			}
+			_, err := remoteRefs.Reference(rev.Dst(ref.Name()))
+			if errors.Is(err, plumbing.ErrReferenceNotFound) {
+				updatedPrune = true
+				err := r.s.RemoveReference(ref.Name())
+				if err != nil {
+					return false, err
+				}
+			}
+		}
+	}
+	return updatedPrune, nil
 }
 
 func (r *Remote) addReferencesToUpdate(
@@ -1106,7 +1135,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash, earlies
 	}
 
 	found := false
-	// stop iterating at the earlist shallow commit, ignoring its parents
+	// stop iterating at the earliest shallow commit, ignoring its parents
 	// note: when pull depth is smaller than the number of new changes on the remote, this fails due to missing parents.
 	//       as far as i can tell, without the commits in-between the shallow pull and the earliest shallow, there's no
 	//       real way of telling whether it will be a fast-forward merge.

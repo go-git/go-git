@@ -428,6 +428,10 @@ var worktreeDeny = map[string]struct{}{
 func validPath(paths ...string) error {
 	for _, p := range paths {
 		parts := strings.FieldsFunc(p, func(r rune) bool { return (r == '\\' || r == '/') })
+		if len(parts) == 0 {
+			return fmt.Errorf("invalid path: %q", p)
+		}
+
 		if _, denied := worktreeDeny[strings.ToLower(parts[0])]; denied {
 			return fmt.Errorf("invalid path prefix: %q", p)
 		}
