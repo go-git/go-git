@@ -88,8 +88,9 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	err = os.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	err = os.WriteFile(filepath.Join(url, "foo"), []byte("foo"), 0755)
 	c.Assert(err, IsNil)
+	w.Add("foo")
 	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
@@ -125,15 +126,17 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 
 	w, err := server.Worktree()
 	c.Assert(err, IsNil)
-	err = os.WriteFile(filepath.Join(path, "foo"), []byte("foo"), 0755)
+	err = os.WriteFile(filepath.Join(url, "foo"), []byte("foo"), 0755)
 	c.Assert(err, IsNil)
+	w.Add("foo")
 	_, err = w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
 	w, err = r.Worktree()
 	c.Assert(err, IsNil)
-	err = os.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	err = os.WriteFile(filepath.Join(dir, "bar"), []byte("bar"), 0755)
 	c.Assert(err, IsNil)
+	w.Add("bar")
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
@@ -286,7 +289,8 @@ func (s *RepositorySuite) TestPullAdd(c *C) {
 func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
 		URL: filepath.Join(path, ".git"),
 	})
 
@@ -294,8 +298,9 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate(c *C) {
 
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
-	err = os.WriteFile(filepath.Join(path, "bar"), []byte("bar"), 0755)
+	util.WriteFile(fs, "bar", []byte("bar"), 0755)
 	c.Assert(err, IsNil)
+	w.Add("bar")
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	c.Assert(err, IsNil)
 
