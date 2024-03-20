@@ -721,7 +721,10 @@ const (
 
 // CleanOptions describes how a clean should be performed.
 type CleanOptions struct {
+	// Dir recurses into nested directories.
 	Dir bool
+	// All removes all changes, even those excluded by gitignore.
+	All bool
 }
 
 // GrepOptions describes how a grep should be performed.
