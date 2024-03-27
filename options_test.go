@@ -96,6 +96,18 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal(c *C) {
 	c.Assert(o.Tagger.Email, Equals, "foo@foo.com")
 }
 
+func (s *OptionsSuite) TestPushOptionsValidateDefaults(c *C) {
+	o := &PushOptions{}
+
+	err := o.Validate()
+	c.Assert(err, IsNil)
+
+	c.Assert(o.RemoteName, Equals, DefaultRemoteName)
+	c.Assert(o.RefSpecs, DeepEquals, []config.RefSpec{
+		config.RefSpec(config.DefaultPushRefSpec),
+	})
+}
+
 func (s *OptionsSuite) writeGlobalConfig(c *C, cfg *config.Config) func() {
 	fs, clean := s.TemporalFilesystem()
 
