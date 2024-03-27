@@ -39,6 +39,7 @@ var (
 	// server-response
 	ack = []byte("ACK")
 	nak = []byte("NAK")
+	ready = []byte("ready")
 
 	// updreq
 	shallowNoSp = []byte("shallow")
