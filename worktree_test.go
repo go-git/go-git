@@ -3059,7 +3059,7 @@ func setupForRestore(c *C, s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, 
 	err = util.RemoveAll(fs, names[3])
 	c.Assert(err, IsNil)
 
-	//Confirm the status after doing the edits without staging anything
+	// Confirm the status after doing the edits without staging anything
 	verifyStatus(c, "Edits", w, names, []FileStatus{
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Modified, Staging: Unmodified},
@@ -3112,7 +3112,7 @@ func verifyStatus(c *C, marker string, w *Worktree, files []string, statuses []F
 func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 	fs, w, names := setupForRestore(c, s)
 
-	//Attempt without files should throw an error like the git restore --staged
+	// Attempt without files should throw an error like the git restore --staged
 	opts := RestoreOptions{Staged: true}
 	err := w.Restore(&opts)
 	c.Assert(err, Equals, ErrNoRestorePaths)
@@ -3128,7 +3128,7 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 		{Worktree: Unmodified, Staging: Deleted},
 	})
 
-	//Make sure the restore didn't overwrite our secondary changes
+	// Make sure the restore didn't overwrite our secondary changes
 	contents, err := util.ReadFile(fs, names[1])
 	c.Assert(err, IsNil)
 	c.Assert(string(contents), Equals, "Foo Bar:11")
@@ -3143,7 +3143,7 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 		{Worktree: Deleted, Staging: Unmodified},
 	})
 
-	//Make sure the restore didn't overwrite our secondary changes
+	// Make sure the restore didn't overwrite our secondary changes
 	contents, err = util.ReadFile(fs, names[2])
 	c.Assert(err, IsNil)
 	c.Assert(string(contents), Equals, "Foo Bar:22")
@@ -3152,7 +3152,7 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 func (s *WorktreeSuite) TestRestoreWorktree(c *C) {
 	_, w, names := setupForRestore(c, s)
 
-	//Attempt without files should throw an error like the git restore
+	// Attempt without files should throw an error like the git restore
 	opts := RestoreOptions{}
 	err := w.Restore(&opts)
 	c.Assert(err, Equals, ErrNoRestorePaths)
@@ -3165,7 +3165,7 @@ func (s *WorktreeSuite) TestRestoreWorktree(c *C) {
 func (s *WorktreeSuite) TestRestoreBoth(c *C) {
 	_, w, names := setupForRestore(c, s)
 
-	//Attempt without files should throw an error like the git restore --staged --worktree
+	// Attempt without files should throw an error like the git restore --staged --worktree
 	opts := RestoreOptions{Staged: true, Worktree: true}
 	err := w.Restore(&opts)
 	c.Assert(err, Equals, ErrNoRestorePaths)

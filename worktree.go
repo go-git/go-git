@@ -322,7 +322,7 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 	return nil
 }
 
-// Restore specified files in the working tree or stage with contents from
+// Restore restores specified files in the working tree or stage with contents from
 // a restore source. If a path is tracked but does not exist in the restore,
 // source, it will be removed to match the source.
 //
@@ -330,31 +330,31 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 // If only Staged is true, then the restore source will be HEAD.
 // If only Worktree is true or neither Staged nor Worktree are true, will
 // result in ErrRestoreWorktreeeOnlyNotSupported because restoring the working
-// tree while leaving the stage untouched is not currently supported
+// tree while leaving the stage untouched is not currently supported.
 //
-// Restore with no files specified will return ErrNoRestorePaths
+// Restore with no files specified will return ErrNoRestorePaths.
 func (w *Worktree) Restore(o *RestoreOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
 
-	if o.Worktree && o.Staged {
-		// If we are doing both Worktree and Staging then it is a hard reset
+	if o.Staged {
 		opts := &ResetOptions{
-			Mode:  HardReset,
 			Files: o.Files,
 		}
-		return w.Reset(opts)
-	} else if o.Staged {
-		// If we are doing just staging then it is a mixed reset
-		opts := &ResetOptions{
-			Mode:  MixedReset,
-			Files: o.Files,
+
+		if o.Worktree {
+			// If we are doing both Worktree and Staging then it is a hard reset
+			opts.Mode = HardReset
+		} else {
+			// If we are doing just staging then it is a mixed reset
+			opts.Mode = MixedReset
 		}
+
 		return w.Reset(opts)
-	} else {
-		return ErrRestoreWorktreeeOnlyNotSupported
 	}
+
+	return ErrRestoreWorktreeeOnlyNotSupported
 }
 
 // Reset the worktree to a specified state.
@@ -452,8 +452,12 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			file := ""
 			if ch.From != nil {
 				file = ch.From.Name()
-			} else {
+			} else if ch.To != nil {
 				file = ch.To.Name()
+			}
+
+			if file == "" {
+				continue
 			}
 
 			contains := inFiles(files, file)

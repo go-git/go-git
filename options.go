@@ -417,7 +417,7 @@ type ResetOptions struct {
 	// depending on Mode. If empty MixedReset is used.
 	Mode ResetMode
 	// Files, if not empty will constrain the reseting the index to only files
-	// specified in this list
+	// specified in this list.
 	Files []string
 }
 
