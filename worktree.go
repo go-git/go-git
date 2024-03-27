@@ -448,6 +448,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 		if err := w.validChange(ch); err != nil {
 			return err
 		}
+
 		if len(files) > 0 {
 			file := ""
 			if ch.From != nil {
