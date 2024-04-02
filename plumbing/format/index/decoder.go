@@ -24,8 +24,8 @@ var (
 	// ErrInvalidChecksum is returned by Decode if the SHA1 hash mismatch with
 	// the read content
 	ErrInvalidChecksum = errors.New("invalid checksum")
-
-	errUnknownExtension = errors.New("unknown extension")
+	// ErrUnknownExtension is returned when an index extension is encountered that is considered mandatory
+	ErrUnknownExtension = errors.New("unknown extension")
 )
 
 const (
@@ -234,12 +234,8 @@ func (d *Decoder) readExtensions(idx *Index) error {
 
 		err = d.readExtension(idx)
 		if err != nil {
-			break
+			return err
 		}
-	}
-
-	if err != nil && err != errUnknownExtension {
-		return err
 	}
 
 	return d.readChecksum(expected)
@@ -277,7 +273,14 @@ func (d *Decoder) readExtension(idx *Index) error {
 			return err
 		}
 	default:
-		return errUnknownExtension
+		if header[0] < 'A' || header[0] > 'Z' {
+			return ErrUnknownExtension
+		}
+
+		d := &unknownExtensionDecoder{r}
+		if err := d.Decode(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -477,4 +480,23 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 
 	_, err = io.ReadFull(d.r, e.Hash[:])
 	return err
+}
+
+type unknownExtensionDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *unknownExtensionDecoder) Decode() error {
+	var buf [1024]byte
+
+	for {
+		_, err := d.r.Read(buf[:])
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
