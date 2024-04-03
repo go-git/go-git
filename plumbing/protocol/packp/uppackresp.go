@@ -72,6 +72,13 @@ func (r *UploadPackResponse) Decode(reader io.ReadCloser) error {
 
 // Encode encodes an UploadPackResponse.
 func (r *UploadPackResponse) Encode(w io.Writer) (err error) {
+	if err := r.EncodePacketLines(w); err != nil {
+		return err
+	}
+	return r.EncodePackfiles(w)
+}
+
+func (r *UploadPackResponse) EncodePacketLines(w io.Writer) error {
 	if r.isShallow {
 		if err := r.ShallowUpdate.Encode(w); err != nil {
 			return err
@@ -82,6 +89,10 @@ func (r *UploadPackResponse) Encode(w io.Writer) (err error) {
 		return err
 	}
 
+	return nil
+}
+
+func (r *UploadPackResponse) EncodePackfiles(w io.Writer) (err error) {
 	defer ioutil.CheckClose(r.r, &err)
 	_, err = io.Copy(w, r.r)
 	return err
