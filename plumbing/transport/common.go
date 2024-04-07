@@ -87,15 +87,15 @@ func NewClient(runner Commander) Transport {
 
 // NewUploadPackSession creates a new UploadPackSession.
 func (c *client) NewUploadPackSession(ep *Endpoint, auth AuthMethod) (
-	UploadPackSession, error) {
-
+	UploadPackSession, error,
+) {
 	return c.newSession(UploadPackServiceName, ep, auth)
 }
 
 // NewReceivePackSession creates a new ReceivePackSession.
 func (c *client) NewReceivePackSession(ep *Endpoint, auth AuthMethod) (
-	ReceivePackSession, error) {
-
+	ReceivePackSession, error,
+) {
 	return c.newSession(ReceivePackServiceName, ep, auth)
 }
 
@@ -381,8 +381,7 @@ func (s *session) finish() error {
 	// gracefully by sending a flush packet to the server. If the server
 	// operates correctly, it will exit with status 0.
 	if !s.packRun {
-		_, err := s.Stdin.Write(pktline.FlushPkt)
-		return err
+		return pktline.WriteFlush(s.Stdin)
 	}
 
 	return nil
@@ -472,9 +471,8 @@ func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) err
 }
 
 func sendDone(w io.Writer) error {
-	e := pktline.NewEncoder(w)
-
-	return e.Encodef("done\n")
+	_, err := pktline.Writef(w, "done\n")
+	return err
 }
 
 // DecodeUploadPackResponse decodes r into a new packp.UploadPackResponse

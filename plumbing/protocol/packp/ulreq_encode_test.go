@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
@@ -52,7 +51,7 @@ func (s *UlReqEncodeSuite) TestOneWant(c *C) {
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -69,7 +68,7 @@ func (s *UlReqEncodeSuite) TestOneWantWithCapabilities(c *C) {
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band symref=HEAD:/refs/heads/master thin-pack\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -91,7 +90,7 @@ func (s *UlReqEncodeSuite) TestWants(c *C) {
 		"want 3333333333333333333333333333333333333333\n",
 		"want 4444444444444444444444444444444444444444\n",
 		"want 5555555555555555555555555555555555555555\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -113,7 +112,7 @@ func (s *UlReqEncodeSuite) TestWantsDuplicates(c *C) {
 		"want 2222222222222222222222222222222222222222\n",
 		"want 3333333333333333333333333333333333333333\n",
 		"want 4444444444444444444444444444444444444444\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -141,7 +140,7 @@ func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
 		"want 3333333333333333333333333333333333333333\n",
 		"want 4444444444444444444444444444444444444444\n",
 		"want 5555555555555555555555555555555555555555\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -156,7 +155,7 @@ func (s *UlReqEncodeSuite) TestShallow(c *C) {
 	expected := []string{
 		"want 1111111111111111111111111111111111111111 multi_ack\n",
 		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -179,7 +178,7 @@ func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
 		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
 		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
 		"shallow dddddddddddddddddddddddddddddddddddddddd\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -201,7 +200,7 @@ func (s *UlReqEncodeSuite) TestShallowsDuplicate(c *C) {
 		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
 		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
 		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -215,7 +214,7 @@ func (s *UlReqEncodeSuite) TestDepthCommits(c *C) {
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
 		"deepen 1234\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -230,7 +229,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceUTC(c *C) {
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
 		"deepen-since 1420167845\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -253,7 +252,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC(c *C) {
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
 		"deepen-since 1420164245\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -267,7 +266,7 @@ func (s *UlReqEncodeSuite) TestDepthReference(c *C) {
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
 		"deepen-not refs/heads/feature-foo\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
@@ -322,7 +321,7 @@ func (s *UlReqEncodeSuite) TestAll(c *C) {
 		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
 		"shallow dddddddddddddddddddddddddddddddddddddddd\n",
 		"deepen-since 1420167845\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
