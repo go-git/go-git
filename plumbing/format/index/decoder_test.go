@@ -1,6 +1,11 @@
 package index
 
 import (
+	"bytes"
+	"crypto"
+	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/go-git/go-git/v5/utils/binary"
+	"io"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -217,4 +222,101 @@ func (s *IndexSuite) TestDecodeEndOfIndexEntry(c *C) {
 	c.Assert(idx.EndOfIndexEntry, NotNil)
 	c.Assert(idx.EndOfIndexEntry.Offset, Equals, uint32(716))
 	c.Assert(idx.EndOfIndexEntry.Hash.String(), Equals, "922e89d9ffd7cefce93a211615b2053c0f42bd78")
+}
+
+func (s *IndexSuite) readSimpleIndex(c *C) *Index {
+	f, err := fixtures.Basic().One().DotGit().Open("index")
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(f.Close(), IsNil) }()
+
+	idx := &Index{}
+	d := NewDecoder(f)
+	err = d.Decode(idx)
+	c.Assert(err, IsNil)
+
+	return idx
+}
+
+func (s *IndexSuite) buildIndexWithExtension(c *C, signature string, data string) []byte {
+	idx := s.readSimpleIndex(c)
+
+	buf := bytes.NewBuffer(nil)
+	e := NewEncoder(buf)
+
+	err := e.encode(idx, false)
+	c.Assert(err, IsNil)
+	err = e.encodeRawExtension(signature, []byte(data))
+	c.Assert(err, IsNil)
+
+	err = e.encodeFooter()
+	c.Assert(err, IsNil)
+
+	return buf.Bytes()
+}
+
+func (s *IndexSuite) TestDecodeUnknownOptionalExt(c *C) {
+	f := bytes.NewReader(s.buildIndexWithExtension(c, "TEST", "testdata"))
+
+	idx := &Index{}
+	d := NewDecoder(f)
+	err := d.Decode(idx)
+	c.Assert(err, IsNil)
+}
+
+func (s *IndexSuite) TestDecodeUnknownMandatoryExt(c *C) {
+	f := bytes.NewReader(s.buildIndexWithExtension(c, "test", "testdata"))
+
+	idx := &Index{}
+	d := NewDecoder(f)
+	err := d.Decode(idx)
+	c.Assert(err, ErrorMatches, ErrUnknownExtension.Error())
+}
+
+func (s *IndexSuite) TestDecodeTruncatedExt(c *C) {
+	idx := s.readSimpleIndex(c)
+
+	buf := bytes.NewBuffer(nil)
+	e := NewEncoder(buf)
+
+	err := e.encode(idx, false)
+	c.Assert(err, IsNil)
+
+	_, err = e.w.Write([]byte("TEST"))
+	c.Assert(err, IsNil)
+
+	err = binary.WriteUint32(e.w, uint32(100))
+	c.Assert(err, IsNil)
+
+	_, err = e.w.Write([]byte("truncated"))
+	c.Assert(err, IsNil)
+
+	err = e.encodeFooter()
+	c.Assert(err, IsNil)
+
+	idx = &Index{}
+	d := NewDecoder(buf)
+	err = d.Decode(idx)
+	c.Assert(err, ErrorMatches, io.EOF.Error())
+}
+
+func (s *IndexSuite) TestDecodeInvalidHash(c *C) {
+	idx := s.readSimpleIndex(c)
+
+	buf := bytes.NewBuffer(nil)
+	e := NewEncoder(buf)
+
+	err := e.encode(idx, false)
+	c.Assert(err, IsNil)
+
+	err = e.encodeRawExtension("TEST", []byte("testdata"))
+	c.Assert(err, IsNil)
+
+	h := hash.New(crypto.SHA1)
+	err = binary.Write(e.w, h.Sum(nil))
+	c.Assert(err, IsNil)
+
+	idx = &Index{}
+	d := NewDecoder(buf)
+	err = d.Decode(idx)
+	c.Assert(err, ErrorMatches, ErrInvalidChecksum.Error())
 }
