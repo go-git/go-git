@@ -22,3 +22,12 @@ func (s *ReceivePackSuite) SetUpTest(c *C) {
 	s.ReceivePackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
 	s.ReceivePackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
 }
+
+func (s *ReceivePackSuite) TestAdvertisedReferencesEmptyRepo(c *C) {
+	client, err := s.Client.NewReceivePackSession(s.EmptyEndpoint, basicAuthFromEndpoint(s.EmptyEndpoint))
+	c.Assert(err, IsNil)
+
+	ref, err := client.AdvertisedReferences()
+	c.Assert(err, IsNil)
+	c.Assert(ref.IsEmpty(), Equals, true)
+}
