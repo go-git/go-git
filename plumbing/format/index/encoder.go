@@ -3,6 +3,7 @@ package index
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -35,6 +36,11 @@ func NewEncoder(w io.Writer) *Encoder {
 
 // Encode writes the Index to the stream of the encoder.
 func (e *Encoder) Encode(idx *Index) error {
+	return e.encode(idx, true)
+}
+
+func (e *Encoder) encode(idx *Index, footer bool) error {
+
 	// TODO: support v4
 	// TODO: support extensions
 	if idx.Version > EncodeVersionSupported {
@@ -49,7 +55,10 @@ func (e *Encoder) Encode(idx *Index) error {
 		return err
 	}
 
-	return e.encodeFooter()
+	if footer {
+		return e.encodeFooter()
+	}
+	return nil
 }
 
 func (e *Encoder) encodeHeader(idx *Index) error {
@@ -133,6 +142,29 @@ func (e *Encoder) encodeEntry(entry *Entry) error {
 	}
 
 	return binary.Write(e.w, []byte(entry.Name))
+}
+
+func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
+	if len(signature) != 4 {
+		return fmt.Errorf("invalid signature length")
+	}
+
+	_, err := e.w.Write([]byte(signature))
+	if err != nil {
+		return err
+	}
+
+	err = binary.WriteUint32(e.w, uint32(len(data)))
+	if err != nil {
+		return err
+	}
+
+	_, err = e.w.Write(data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (e *Encoder) timeToUint32(t *time.Time) (uint32, uint32, error) {
