@@ -30,6 +30,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
@@ -934,7 +935,13 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		ProxyOptions:    o.ProxyOptions,
 	}, o.ReferenceName)
 	if err != nil {
-		return err
+		if err != transport.ErrEmptyRemoteRepository {
+			return err
+		}
+		ref, err = r.Reference(plumbing.HEAD, false)
+		if err != nil {
+			return err
+		}
 	}
 
 	if r.wt != nil && !o.NoCheckout {
@@ -944,15 +951,17 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		}
 
 		head, err := r.Head()
-		if err != nil {
+		if err != nil && err != plumbing.ErrReferenceNotFound {
 			return err
 		}
 
-		if err := w.Reset(&ResetOptions{
-			Mode:   MergeReset,
-			Commit: head.Hash(),
-		}); err != nil {
-			return err
+		if head != nil {
+			if err := w.Reset(&ResetOptions{
+				Mode:   MergeReset,
+				Commit: head.Hash(),
+			}); err != nil {
+				return err
+			}
 		}
 
 		if o.RecurseSubmodules != NoRecurseSubmodules {

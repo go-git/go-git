@@ -276,6 +276,19 @@ func (s *RepositorySuite) TestCloneMirror(c *C) {
 	c.Assert(cfg.Remotes[DefaultRemoteName].Mirror, Equals, true)
 }
 
+func (s *RepositorySuite) TestCloneEmptyRemote(c *C) {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL: fixtures.ByTag("empty").One().URL,
+	})
+
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+}
+
 func (s *RepositorySuite) TestCloneWithTags(c *C) {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
