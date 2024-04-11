@@ -233,7 +233,9 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {
 	})
 	c.Assert(hash, Equals, expected)
 	c.Assert(err, IsNil)
+
 	commit1, err := w.r.CommitObject(hash)
+	c.Assert(err, IsNil)
 
 	status, err = w.Status()
 	c.Assert(err, IsNil)
@@ -260,7 +262,9 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {
 	})
 	c.Assert(hash, Equals, expected2)
 	c.Assert(err, IsNil)
+
 	commit2, err := w.r.CommitObject(hash)
+	c.Assert(err, IsNil)
 
 	status, err = w.Status()
 	c.Assert(err, IsNil)

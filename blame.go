@@ -97,12 +97,9 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		if finished == true {
+		if finished {
 			break
 		}
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	b.lineToCommit = make([]*object.Commit, finalLength)
