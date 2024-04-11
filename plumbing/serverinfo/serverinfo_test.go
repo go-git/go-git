@@ -179,6 +179,7 @@ func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange(c *C) {
 	c.Assert(err, IsNil)
 
 	err = UpdateServerInfo(st, fs)
+	c.Assert(err, IsNil)
 
 	assertInfoRefs(c, st, fs)
 	assertObjectPacks(c, st, fs)

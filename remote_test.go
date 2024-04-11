@@ -1489,6 +1489,7 @@ func (s *RemoteSuite) TestFetchPrune(c *C) {
 	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
 		":refs/heads/branch",
 	}})
+	c.Assert(err, IsNil)
 
 	AssertReferences(c, rSave, map[string]string{
 		"refs/remotes/origin/branch": ref.Hash().String(),
@@ -1546,6 +1547,7 @@ func (s *RemoteSuite) TestFetchPruneTags(c *C) {
 	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
 		":refs/tags/v1",
 	}})
+	c.Assert(err, IsNil)
 
 	AssertReferences(c, rSave, map[string]string{
 		"refs/tags/v1": ref.Hash().String(),

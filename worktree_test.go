@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -1241,6 +1240,7 @@ func (s *WorktreeSuite) TestResetHardWithGitIgnore(c *C) {
 	f, err := fs.Create(".gitignore")
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("foo\n"))
+	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("newTestFile.txt\n"))
 	c.Assert(err, IsNil)
 	err = f.Close()
@@ -2982,7 +2982,7 @@ func TestValidPath(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("%s", tc.path), func(t *testing.T) {
+		t.Run(tc.path, func(t *testing.T) {
 			err := validPath(tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -3013,7 +3013,7 @@ func TestWindowsValidPath(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("%s", tc.path), func(t *testing.T) {
+		t.Run(tc.path, func(t *testing.T) {
 			got := windowsValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
 		})
