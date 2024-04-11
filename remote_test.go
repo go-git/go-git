@@ -355,8 +355,9 @@ func (s *RemoteSuite) TestFetchOfMissingObjects() {
 	s.NoError(err)
 
 	// clone to a local temp folder
-	_, err = PlainClone(tmp, true, &CloneOptions{
-		URL: fixtures.Basic().One().DotGit().Root(),
+	_, err = PlainClone(tmp, &CloneOptions{
+		URL:  fixtures.Basic().One().DotGit().Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -787,8 +788,9 @@ func (s *RemoteSuite) TestPushDeleteReference() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	r, err := PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -814,8 +816,9 @@ func (s *RemoteSuite) TestForcePushDeleteReference() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	r, err := PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -842,8 +845,9 @@ func (s *RemoteSuite) TestPushRejectNonFastForward() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	r, err := PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1054,16 +1058,18 @@ func (s *RemoteSuite) TestPushPrune() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1117,16 +1123,18 @@ func (s *RemoteSuite) TestPushNewReference() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1156,16 +1164,18 @@ func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1487,16 +1497,18 @@ func (s *RemoteSuite) TestFetchPrune() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	_, err = PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	_, err = PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1514,8 +1526,9 @@ func (s *RemoteSuite) TestFetchPrune() {
 	dirSave, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	rSave, err := PlainClone(dirSave, true, &CloneOptions{
-		URL: url,
+	rSave, err := PlainClone(dirSave, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1545,16 +1558,18 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	_, err = PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	_, err = PlainClone(url, &CloneOptions{
+		URL:  fs.Root(),
+		Bare: true,
 	})
 	s.NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1572,8 +1587,9 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 	dirSave, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	rSave, err := PlainClone(dirSave, true, &CloneOptions{
-		URL: url,
+	rSave, err := PlainClone(dirSave, &CloneOptions{
+		URL:  url,
+		Bare: true,
 	})
 	s.NoError(err)
 
@@ -1664,7 +1680,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	_ = CommitNewFile(s.T(), remote, "File2")
 
 	// Clone the repo with a depth of 1
-	repo, err := PlainClone(repoDir, false, &CloneOptions{
+	repo, err := PlainClone(repoDir, &CloneOptions{
 		URL:           remoteUrl,
 		Depth:         1,
 		Tags:          plumbing.NoTags,

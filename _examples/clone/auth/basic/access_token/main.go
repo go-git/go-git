@@ -16,7 +16,7 @@ func main() {
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
 
-	r, err := git.PlainClone(directory, false, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		// The intended use of a GitHub personal access token is in replace of your password
 		// because access tokens can easily be revoked.
 		// https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/

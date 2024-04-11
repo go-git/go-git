@@ -45,6 +45,8 @@ type CloneOptions struct {
 	ReferenceName plumbing.ReferenceName
 	// Fetch only ReferenceName if true.
 	SingleBranch bool
+	// Bare defines if the repository will have worktree (non-bare) or not (bare).
+	Bare bool
 	// Mirror clones the repository as a mirror.
 	//
 	// Compared to a bare clone, mirror not only maps local branches of the
