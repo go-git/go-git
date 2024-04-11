@@ -89,6 +89,56 @@ func (s *WorktreeSuite) TestNothingToCommit(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo(c *C) {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	c.Assert(err, IsNil)
+
+	w.Add("foo")
+	_, err = w.Commit("previous commit\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	hash, err := w.Commit("failed empty commit\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(hash, Equals, plumbing.ZeroHash)
+	c.Assert(err, Equals, ErrEmptyCommit)
+
+	_, err = w.Commit("enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+	c.Assert(err, IsNil)
+}
+
+func (s *WorktreeSuite) TestRemoveAndCommitToMakeEmptyRepo(c *C) {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("Add in Repo\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	err = fs.Remove("foo")
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("Remove foo\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+}
+
 func (s *WorktreeSuite) TestCommitParent(c *C) {
 	expected := plumbing.NewHash("ef3ca05477530b37f48564be33ddd48063fc7a22")
 
@@ -101,7 +151,8 @@ func (s *WorktreeSuite) TestCommitParent(c *C) {
 	err := w.Checkout(&CheckoutOptions{})
 	c.Assert(err, IsNil)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	c.Assert(err, IsNil)
 
 	_, err = w.Add("foo")
 	c.Assert(err, IsNil)
@@ -113,7 +164,42 @@ func (s *WorktreeSuite) TestCommitParent(c *C) {
 	assertStorageStatus(c, s.Repository, 13, 11, 10, expected)
 }
 
-func (s *WorktreeSuite) TestCommitAmend(c *C) {
+func (s *WorktreeSuite) TestCommitAmendWithoutChanges(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	prevHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	amendedHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
+	c.Assert(err, IsNil)
+
+	headRef, err := w.r.Head()
+	c.Assert(err, IsNil)
+
+	c.Assert(amendedHash, Equals, headRef.Hash())
+	c.Assert(amendedHash, Equals, prevHash)
+
+	commit, err := w.r.CommitObject(headRef.Hash())
+	c.Assert(err, IsNil)
+	c.Assert(commit.Message, Equals, "foo\n")
+
+	assertStorageStatus(c, s.Repository, 13, 11, 10, amendedHash)
+}
+
+func (s *WorktreeSuite) TestCommitAmendWithChanges(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -162,6 +248,34 @@ func (s *WorktreeSuite) TestCommitAmend(c *C) {
 	})
 
 	assertStorageStatus(c, s.Repository, 14, 12, 11, amendedHash)
+}
+
+func (s *WorktreeSuite) TestCommitAmendNothingToCommit(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	prevHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	c.Assert(err, IsNil)
+
+	_, err = w.Commit("bar\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+	c.Assert(err, IsNil)
+
+	amendedHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
+	c.Log(prevHash, amendedHash)
+	c.Assert(err, Equals, ErrEmptyCommit)
+	c.Assert(amendedHash, Equals, plumbing.ZeroHash)
 }
 
 func (s *WorktreeSuite) TestAddAndCommitWithSkipStatus(c *C) {
@@ -233,7 +347,9 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {
 	})
 	c.Assert(hash, Equals, expected)
 	c.Assert(err, IsNil)
+
 	commit1, err := w.r.CommitObject(hash)
+	c.Assert(err, IsNil)
 
 	status, err = w.Status()
 	c.Assert(err, IsNil)
@@ -256,11 +372,14 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {
 	c.Assert(foo.Worktree, Equals, Untracked)
 
 	hash, err = w.Commit("commit with no changes\n", &CommitOptions{
-		Author: defaultSignature(),
+		Author:            defaultSignature(),
+		AllowEmptyCommits: true,
 	})
 	c.Assert(hash, Equals, expected2)
 	c.Assert(err, IsNil)
+
 	commit2, err := w.r.CommitObject(hash)
+	c.Assert(err, IsNil)
 
 	status, err = w.Status()
 	c.Assert(err, IsNil)
