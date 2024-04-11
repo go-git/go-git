@@ -35,7 +35,7 @@ func main() {
 		capability.ThinPack,
 	}
 
-	r, err := git.PlainClone(directory, false, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		Auth: &http.BasicAuth{
 			Username: username,
 			Password: password,

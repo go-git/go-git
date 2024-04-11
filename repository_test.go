@@ -907,7 +907,7 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -928,9 +928,10 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared(c *C) {
 
 	remote := s.GetBasicLocalRepositoryURL()
 
-	r, err := PlainClone(dir, true, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
+		Bare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -956,7 +957,7 @@ func (s *RepositorySuite) TestPlainCloneShared(c *C) {
 
 	remote := s.GetBasicLocalRepositoryURL()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -984,7 +985,7 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError(c *C) {
 
 	remote := "http://somerepo"
 
-	_, err := PlainClone(dir, false, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -997,7 +998,7 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError(c *C) {
 
 	remote := "https://somerepo"
 
-	_, err := PlainClone(dir, false, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1010,7 +1011,7 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError(c *C) {
 
 	remote := "ssh://somerepo"
 
-	_, err := PlainClone(dir, false, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1021,7 +1022,7 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:        s.GetBasicLocalRepositoryURL(),
 		RemoteName: "test",
 	})
@@ -1041,7 +1042,7 @@ func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory(c *C) {
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
-	r, err = PlainClone(dir, false, &CloneOptions{
+	r, err = PlainClone(dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	c.Assert(r, IsNil)
@@ -1055,7 +1056,7 @@ func (s *RepositorySuite) TestPlainCloneContextCancel(c *C) {
 	dir, clean := s.TemporalDir()
 	defer clean()
 
-	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -1073,7 +1074,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
 
-	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
@@ -1099,7 +1100,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
 
-	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, repoDir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
@@ -1125,7 +1126,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
 
-	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
@@ -1154,7 +1155,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0644)
 	c.Assert(err, IsNil)
 
-	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
+	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
@@ -1176,7 +1177,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
-	r, err = PlainCloneContext(ctx, dir, false, &CloneOptions{
+	r, err = PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
@@ -1192,7 +1193,7 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 	defer clean()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:               path,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 	})
@@ -1215,7 +1216,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules(c *C) {
 	defer clean()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	mainRepo, err := PlainClone(dir, false, &CloneOptions{
+	mainRepo, err := PlainClone(dir, &CloneOptions{
 		URL:               path,
 		RecurseSubmodules: 1,
 		ShallowSubmodules: true,
@@ -1248,7 +1249,7 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout(c *C) {
 	defer clean()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:               path,
 		NoCheckout:        true,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
@@ -1742,8 +1743,9 @@ func (s *RepositorySuite) TestPushDepth(c *C) {
 	url, clean := s.TemporalDir()
 	defer clean()
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fixtures.Basic().One().DotGit().Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:    fixtures.Basic().One().DotGit().Root(),
+		Bare: true,
 	})
 
 	c.Assert(err, IsNil)
@@ -3457,11 +3459,12 @@ func BenchmarkObjects(b *testing.B) {
 func BenchmarkPlainClone(b *testing.B) {
 	b.StopTimer()
 	clone := func(b *testing.B) {
-		_, err := PlainClone(b.TempDir(), true, &CloneOptions{
+		_, err := PlainClone(b.TempDir(), &CloneOptions{
 			URL:          "https://github.com/go-git/go-git.git",
 			Depth:        1,
 			Tags:         NoTags,
 			SingleBranch: true,
+			Bare:       true,
 		})
 		if err != nil {
 			b.Error(err)
