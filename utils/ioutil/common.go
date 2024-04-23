@@ -10,9 +10,15 @@ import (
 	ctxio "github.com/jbenet/go-context/io"
 )
 
-type readPeeker interface {
-	io.Reader
+// Peeker is an interface for types that can peek at the next bytes.
+type Peeker interface {
 	Peek(int) ([]byte, error)
+}
+
+// ReadPeeker is an interface that groups the basic Read and Peek methods.
+type ReadPeeker interface {
+	io.Reader
+	Peeker
 }
 
 var (
@@ -23,7 +29,7 @@ var (
 // `ErrEmptyReader` if it is empty. If there is an error when reading the first
 // byte of the given reader, it will be propagated.
 func NonEmptyReader(r io.Reader) (io.Reader, error) {
-	pr, ok := r.(readPeeker)
+	pr, ok := r.(ReadPeeker)
 	if !ok {
 		pr = bufio.NewReader(r)
 	}

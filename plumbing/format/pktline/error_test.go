@@ -1,6 +1,7 @@
 package pktline
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -33,7 +34,7 @@ func TestDecodeEmptyErrorLine(t *testing.T) {
 	var buf bytes.Buffer
 	e := &ErrorLine{}
 	err := e.Decode(&buf)
-	if err != nil {
+	if !errors.Is(err, ErrInvalidErrorLine) {
 		t.Fatal(err)
 	}
 	if e.Text != "" {
@@ -44,10 +45,10 @@ func TestDecodeEmptyErrorLine(t *testing.T) {
 func TestDecodeErrorLine(t *testing.T) {
 	var buf bytes.Buffer
 	buf.WriteString("000eERR foobar")
-	var e *ErrorLine
+	var e ErrorLine
 	err := e.Decode(&buf)
-	if !errors.As(err, &e) {
-		t.Fatalf("expected error line, got: %T: %v", err, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if e.Text != "foobar" {
 		t.Fatalf("unexpected error line: %q", e.Text)
@@ -57,12 +58,22 @@ func TestDecodeErrorLine(t *testing.T) {
 func TestDecodeErrorLineLn(t *testing.T) {
 	var buf bytes.Buffer
 	buf.WriteString("000fERR foobar\n")
-	var e *ErrorLine
+	var e ErrorLine
 	err := e.Decode(&buf)
-	if !errors.As(err, &e) {
-		t.Fatalf("expected error line, got: %T: %v", err, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if e.Text != "foobar" {
 		t.Fatalf("unexpected error line: %q", e.Text)
+	}
+}
+
+func TestPeekErrorLine(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString("000fERR foobar\n")
+	var e *ErrorLine
+	_, _, err := PeekLine(bufio.NewReader(&buf))
+	if !errors.As(err, &e) {
+		t.Fatalf("expected error line, got: %T: %v", err, err)
 	}
 }

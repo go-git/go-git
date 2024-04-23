@@ -3,31 +3,26 @@ package pktline_test
 import (
 	"bytes"
 	"strings"
-	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 
 	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type SuiteWriter struct{}
 
-type SuiteEncoder struct{}
+var _ = Suite(&SuiteWriter{})
 
-var _ = Suite(&SuiteEncoder{})
-
-func (s *SuiteEncoder) TestFlush(c *C) {
+func (s *SuiteWriter) TestFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-
-	err := e.Flush()
+	err := pktline.WriteFlush(&buf)
 	c.Assert(err, IsNil)
 
 	obtained := buf.Bytes()
-	c.Assert(obtained, DeepEquals, pktline.FlushPkt)
+	c.Assert(obtained, DeepEquals, []byte("0000"))
 }
 
-func (s *SuiteEncoder) TestEncode(c *C) {
+func (s *SuiteWriter) TestEncode(c *C) {
 	for i, test := range [...]struct {
 		input    [][]byte
 		expected []byte
@@ -40,7 +35,7 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Flush,
+				{},
 			},
 			expected: []byte("000ahello\n0000"),
 		}, {
@@ -53,10 +48,10 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 		}, {
 			input: [][]byte{
 				[]byte("hello\n"),
-				pktline.Flush,
+				{},
 				[]byte("world!\n"),
 				[]byte("foo"),
-				pktline.Flush,
+				{},
 			},
 			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
 		}, {
@@ -75,19 +70,25 @@ func (s *SuiteEncoder) TestEncode(c *C) {
 					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize)),
 		},
 	} {
-		comment := Commentf("input %d = %v\n", i, test.input)
+		comment := Commentf("input %d = %s\n", i, test.input)
 
 		var buf bytes.Buffer
-		e := pktline.NewEncoder(&buf)
 
-		err := e.Encode(test.input...)
-		c.Assert(err, IsNil, comment)
+		for _, p := range test.input {
+			var err error
+			if len(p) == 0 {
+				err = pktline.WriteFlush(&buf)
+			} else {
+				_, err = pktline.Write(&buf, p)
+			}
+			c.Assert(err, IsNil, comment)
+		}
 
-		c.Assert(buf.Bytes(), DeepEquals, test.expected, comment)
+		c.Assert(buf.String(), DeepEquals, string(test.expected), comment)
 	}
 }
 
-func (s *SuiteEncoder) TestEncodeErrPayloadTooLong(c *C) {
+func (s *SuiteWriter) TestEncodeErrPayloadTooLong(c *C) {
 	for i, input := range [...][][]byte{
 		{
 			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
@@ -105,14 +106,12 @@ func (s *SuiteEncoder) TestEncodeErrPayloadTooLong(c *C) {
 		comment := Commentf("input %d = %v\n", i, input)
 
 		var buf bytes.Buffer
-		e := pktline.NewEncoder(&buf)
-
-		err := e.Encode(input...)
+		_, err := pktline.Write(&buf, bytes.Join(input, nil))
 		c.Assert(err, Equals, pktline.ErrPayloadTooLong, comment)
 	}
 }
 
-func (s *SuiteEncoder) TestEncodeStrings(c *C) {
+func (s *SuiteWriter) TestWritePacketStrings(c *C) {
 	for i, test := range [...]struct {
 		input    []string
 		expected []byte
@@ -125,7 +124,7 @@ func (s *SuiteEncoder) TestEncodeStrings(c *C) {
 		}, {
 			input: []string{
 				"hello\n",
-				pktline.FlushString,
+				"",
 			},
 			expected: []byte("000ahello\n0000"),
 		}, {
@@ -138,10 +137,10 @@ func (s *SuiteEncoder) TestEncodeStrings(c *C) {
 		}, {
 			input: []string{
 				"hello\n",
-				pktline.FlushString,
+				"",
 				"world!\n",
 				"foo",
-				pktline.FlushString,
+				"",
 			},
 			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
 		}, {
@@ -163,15 +162,20 @@ func (s *SuiteEncoder) TestEncodeStrings(c *C) {
 		comment := Commentf("input %d = %v\n", i, test.input)
 
 		var buf bytes.Buffer
-		e := pktline.NewEncoder(&buf)
-
-		err := e.EncodeString(test.input...)
-		c.Assert(err, IsNil, comment)
-		c.Assert(buf.Bytes(), DeepEquals, test.expected, comment)
+		for _, p := range test.input {
+			var err error
+			if p == "" {
+				err = pktline.WriteFlush(&buf)
+			} else {
+				_, err = pktline.WriteString(&buf, p)
+			}
+			c.Assert(err, IsNil, comment)
+		}
+		c.Assert(buf.String(), DeepEquals, string(test.expected), comment)
 	}
 }
 
-func (s *SuiteEncoder) TestEncodeStringErrPayloadTooLong(c *C) {
+func (s *SuiteWriter) TestWritePacketStringErrPayloadTooLong(c *C) {
 	for i, input := range [...][]string{
 		{
 			strings.Repeat("a", pktline.MaxPayloadSize+1),
@@ -189,22 +193,18 @@ func (s *SuiteEncoder) TestEncodeStringErrPayloadTooLong(c *C) {
 		comment := Commentf("input %d = %v\n", i, input)
 
 		var buf bytes.Buffer
-		e := pktline.NewEncoder(&buf)
-
-		err := e.EncodeString(input...)
+		_, err := pktline.WriteString(&buf, strings.Join(input, ""))
 		c.Assert(err, Equals, pktline.ErrPayloadTooLong, comment)
 	}
 }
 
-func (s *SuiteEncoder) TestEncodef(c *C) {
+func (s *SuiteWriter) TestFormatString(c *C) {
 	format := " %s %d\n"
 	str := "foo"
 	d := 42
 
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-
-	err := e.Encodef(format, str, d)
+	_, err := pktline.Writef(&buf, format, str, d)
 	c.Assert(err, IsNil)
 
 	expected := []byte("000c foo 42\n")

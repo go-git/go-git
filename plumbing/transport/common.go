@@ -1,320 +1,488 @@
-// Package transport includes the implementation for different transport
-// protocols.
+// Package transport implements the git pack protocol with a pluggable
+// This is a low-level package to implement new transports. Use a concrete
+// implementation instead (e.g. http, file, ssh).
 //
-// `Client` can be used to fetch and send packfiles to a git server.
-// The `client` package provides higher level functions to instantiate the
-// appropriate `Client` based on the repository URL.
-//
-// go-git supports HTTP and SSH (see `Protocols`), but you can also install
-// your own protocols (see the `client` package).
-//
-// Each protocol has its own implementation of `Client`, but you should
-// generally not use them directly, use `client.NewClient` instead.
+// A simple example of usage can be found in the file package.
 package transport
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
-	"strconv"
+	"regexp"
 	"strings"
+	"time"
 
-	giturl "github.com/go-git/go-git/v5/internal/url"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-)
-
-var (
-	ErrRepositoryNotFound     = errors.New("repository not found")
-	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
-	ErrAuthenticationRequired = errors.New("authentication required")
-	ErrAuthorizationFailed    = errors.New("authorization failed")
-	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
-	ErrInvalidAuthMethod      = errors.New("invalid auth method")
-	ErrAlreadyConnected       = errors.New("session already established")
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 const (
-	UploadPackServiceName  = "git-upload-pack"
-	ReceivePackServiceName = "git-receive-pack"
+	readErrorSecondsTimeout = 10
 )
 
-// Transport can initiate git-upload-pack and git-receive-pack processes.
-// It is implemented both by the client and the server, making this a RPC.
-type Transport interface {
-	// NewUploadPackSession starts a git-upload-pack session for an endpoint.
-	NewUploadPackSession(*Endpoint, AuthMethod) (UploadPackSession, error)
-	// NewReceivePackSession starts a git-receive-pack session for an endpoint.
-	NewReceivePackSession(*Endpoint, AuthMethod) (ReceivePackSession, error)
+var (
+	ErrTimeoutExceeded = errors.New("timeout exceeded")
+	// stdErrSkipPattern is used for skipping lines from a command's stderr output.
+	// Any line matching this pattern will be skipped from further
+	// processing and not be returned to calling code.
+	stdErrSkipPattern = regexp.MustCompile("^remote:( =*){0,1}$")
+)
+
+// Commander creates Command instances. This is the main entry point for
+// transport implementations.
+type Commander interface {
+	// Command creates a new Command for the given git command and
+	// endpoint. cmd can be git-upload-pack or git-receive-pack. An
+	// error should be returned if the endpoint is not supported or the
+	// command cannot be created (e.g. binary does not exist, connection
+	// cannot be established).
+	Command(cmd string, ep *Endpoint, auth AuthMethod) (Command, error)
 }
 
-type Session interface {
-	// AdvertisedReferences retrieves the advertised references for a
-	// repository.
-	// If the repository does not exist, returns ErrRepositoryNotFound.
-	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
-	AdvertisedReferences() (*packp.AdvRefs, error)
-	// AdvertisedReferencesContext retrieves the advertised references for a
-	// repository.
-	// If the repository does not exist, returns ErrRepositoryNotFound.
-	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
-	AdvertisedReferencesContext(context.Context) (*packp.AdvRefs, error)
-	io.Closer
+// Command is used for a single command execution.
+// This interface is modeled after exec.Cmd and ssh.Session in the standard
+// library.
+type Command interface {
+	// StderrPipe returns a pipe that will be connected to the command's
+	// standard error when the command starts. It should not be called after
+	// Start.
+	StderrPipe() (io.Reader, error)
+	// StdinPipe returns a pipe that will be connected to the command's
+	// standard input when the command starts. It should not be called after
+	// Start. The pipe should be closed when no more input is expected.
+	StdinPipe() (io.WriteCloser, error)
+	// StdoutPipe returns a pipe that will be connected to the command's
+	// standard output when the command starts. It should not be called after
+	// Start.
+	StdoutPipe() (io.Reader, error)
+	// Start starts the specified command. It does not wait for it to
+	// complete.
+	Start() error
+	// Close closes the command and releases any resources used by it. It
+	// will block until the command exits.
+	Close() error
 }
 
-type AuthMethod interface {
-	fmt.Stringer
-	Name() string
+// CommandKiller expands the Command interface, enabling it for being killed.
+type CommandKiller interface {
+	// Kill and close the session whatever the state it is. It will block until
+	// the command is terminated.
+	Kill() error
 }
 
-// UploadPackSession represents a git-upload-pack session.
-// A git-upload-pack session has two steps: reference discovery
-// (AdvertisedReferences) and uploading pack (UploadPack).
-type UploadPackSession interface {
-	Session
-	// UploadPack takes a git-upload-pack request and returns a response,
-	// including a packfile. Don't be confused by terminology, the client
-	// side of a git-upload-pack is called git-fetch-pack, although here
-	// the same interface is used to make it RPC-like.
-	UploadPack(context.Context, *packp.UploadPackRequest) (*packp.UploadPackResponse, error)
+type client struct {
+	cmdr Commander
 }
 
-// ReceivePackSession represents a git-receive-pack session.
-// A git-receive-pack session has two steps: reference discovery
-// (AdvertisedReferences) and receiving pack (ReceivePack).
-// In that order.
-type ReceivePackSession interface {
-	Session
-	// ReceivePack sends an update references request and a packfile
-	// reader and returns a ReportStatus and error. Don't be confused by
-	// terminology, the client side of a git-receive-pack is called
-	// git-send-pack, although here the same interface is used to make it
-	// RPC-like.
-	ReceivePack(context.Context, *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error)
+// NewClient creates a new client using the given Commander.
+func NewClient(runner Commander) Transport {
+	return &client{runner}
 }
 
-// Endpoint represents a Git URL in any supported protocol.
-type Endpoint struct {
-	// Protocol is the protocol of the endpoint (e.g. git, https, file).
-	Protocol string
-	// User is the user.
-	User string
-	// Password is the password.
-	Password string
-	// Host is the host.
-	Host string
-	// Port is the port to connect, if 0 the default port for the given protocol
-	// will be used.
-	Port int
-	// Path is the repository path.
-	Path string
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CaBundle specify additional ca bundle with system cert pool
-	CaBundle []byte
-	// Proxy provides info required for connecting to a proxy.
-	Proxy ProxyOptions
+// NewUploadPackSession creates a new UploadPackSession.
+func (c *client) NewUploadPackSession(ep *Endpoint, auth AuthMethod) (
+	UploadPackSession, error,
+) {
+	return c.newSession(UploadPackServiceName, ep, auth)
 }
 
-type ProxyOptions struct {
-	URL      string
-	Username string
-	Password string
+// NewReceivePackSession creates a new ReceivePackSession.
+func (c *client) NewReceivePackSession(ep *Endpoint, auth AuthMethod) (
+	ReceivePackSession, error,
+) {
+	return c.newSession(ReceivePackServiceName, ep, auth)
 }
 
-func (o *ProxyOptions) Validate() error {
-	if o.URL != "" {
-		_, err := url.Parse(o.URL)
-		return err
-	}
-	return nil
+type session struct {
+	Stdin   io.WriteCloser
+	Stdout  io.Reader
+	Command Command
+
+	isReceivePack bool
+	advRefs       *packp.AdvRefs
+	packRun       bool
+	finished      bool
+	firstErrLine  chan string
 }
 
-func (o *ProxyOptions) FullURL() (*url.URL, error) {
-	proxyURL, err := url.Parse(o.URL)
-	if err != nil {
-		return nil, err
-	}
-	if o.Username != "" {
-		if o.Password != "" {
-			proxyURL.User = url.UserPassword(o.Username, o.Password)
-		} else {
-			proxyURL.User = url.User(o.Username)
-		}
-	}
-	return proxyURL, nil
-}
-
-var defaultPorts = map[string]int{
-	"http":  80,
-	"https": 443,
-	"git":   9418,
-	"ssh":   22,
-}
-
-// String returns a string representation of the Git URL.
-func (u *Endpoint) String() string {
-	var buf bytes.Buffer
-	if u.Protocol != "" {
-		buf.WriteString(u.Protocol)
-		buf.WriteByte(':')
-	}
-
-	if u.Protocol != "" || u.Host != "" || u.User != "" || u.Password != "" {
-		buf.WriteString("//")
-
-		if u.User != "" || u.Password != "" {
-			buf.WriteString(url.PathEscape(u.User))
-			if u.Password != "" {
-				buf.WriteByte(':')
-				buf.WriteString(url.PathEscape(u.Password))
-			}
-
-			buf.WriteByte('@')
-		}
-
-		if u.Host != "" {
-			buf.WriteString(u.Host)
-
-			if u.Port != 0 {
-				port, ok := defaultPorts[strings.ToLower(u.Protocol)]
-				if !ok || ok && port != u.Port {
-					fmt.Fprintf(&buf, ":%d", u.Port)
-				}
-			}
-		}
-	}
-
-	if u.Path != "" && u.Path[0] != '/' && u.Host != "" {
-		buf.WriteByte('/')
-	}
-
-	buf.WriteString(u.Path)
-	return buf.String()
-}
-
-func NewEndpoint(endpoint string) (*Endpoint, error) {
-	if e, ok := parseSCPLike(endpoint); ok {
-		return e, nil
-	}
-
-	if e, ok := parseFile(endpoint); ok {
-		return e, nil
-	}
-
-	return parseURL(endpoint)
-}
-
-func parseURL(endpoint string) (*Endpoint, error) {
-	u, err := url.Parse(endpoint)
+func (c *client) newSession(s string, ep *Endpoint, auth AuthMethod) (*session, error) {
+	cmd, err := c.cmdr.Command(s, ep, auth)
 	if err != nil {
 		return nil, err
 	}
 
-	if !u.IsAbs() {
-		return nil, plumbing.NewPermanentError(fmt.Errorf(
-			"invalid endpoint: %s", endpoint,
-		))
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
 	}
 
-	var user, pass string
-	if u.User != nil {
-		user = u.User.Username()
-		pass, _ = u.User.Password()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
 	}
 
-	host := u.Hostname()
-	if strings.Contains(host, ":") {
-		// IPv6 address
-		host = "[" + host + "]"
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
 	}
 
-	return &Endpoint{
-		Protocol: u.Scheme,
-		User:     user,
-		Password: pass,
-		Host:     host,
-		Port:     getPort(u),
-		Path:     getPath(u),
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	return &session{
+		Stdin:         stdin,
+		Stdout:        stdout,
+		Command:       cmd,
+		firstErrLine:  c.listenFirstError(stderr),
+		isReceivePack: s == ReceivePackServiceName,
 	}, nil
 }
 
-func getPort(u *url.URL) int {
-	p := u.Port()
-	if p == "" {
-		return 0
+func (c *client) listenFirstError(r io.Reader) chan string {
+	if r == nil {
+		return nil
 	}
 
-	i, err := strconv.Atoi(p)
+	errLine := make(chan string, 1)
+	go func() {
+		s := bufio.NewScanner(r)
+		for {
+			if s.Scan() {
+				line := s.Text()
+				if !stdErrSkipPattern.MatchString(line) {
+					errLine <- line
+					break
+				}
+			} else {
+				close(errLine)
+				break
+			}
+		}
+
+		_, _ = io.Copy(io.Discard, r)
+	}()
+
+	return errLine
+}
+
+func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
+	return s.AdvertisedReferencesContext(context.TODO())
+}
+
+// AdvertisedReferences retrieves the advertised references from the server.
+func (s *session) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
+	if s.advRefs != nil {
+		return s.advRefs, nil
+	}
+
+	ar := packp.NewAdvRefs()
+	if err := ar.Decode(s.StdoutContext(ctx)); err != nil {
+		if err := s.handleAdvRefDecodeError(err); err != nil {
+			return nil, err
+		}
+	}
+
+	// Some servers like jGit, announce capabilities instead of returning an
+	// packp message with a flush. This verifies that we received a empty
+	// adv-refs, even it contains capabilities.
+	if !s.isReceivePack && ar.IsEmpty() {
+		return nil, ErrEmptyRemoteRepository
+	}
+
+	FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advRefs = ar
+	return ar, nil
+}
+
+func (s *session) handleAdvRefDecodeError(err error) error {
+	var errLine *pktline.ErrorLine
+	if errors.As(err, &errLine) {
+		if isRepoNotFoundError(errLine.Text) {
+			return ErrRepositoryNotFound
+		}
+
+		return errLine
+	}
+
+	// If repository is not found, we get empty stdout and server writes an
+	// error to stderr.
+	if errors.Is(err, packp.ErrEmptyInput) {
+		// TODO:(v6): handle this error in a better way.
+		// Instead of checking the stderr output for a specific error message,
+		// define an ExitError and embed the stderr output and exit (if one
+		// exists) in the error struct. Just like exec.ExitError.
+		s.finished = true
+		if err := s.checkNotFoundError(); err != nil {
+			return err
+		}
+
+		return io.ErrUnexpectedEOF
+	}
+
+	// For empty (but existing) repositories, we get empty advertised-references
+	// message. But valid. That is, it includes at least a flush.
+	if err == packp.ErrEmptyAdvRefs {
+		// Empty repositories are valid for git-receive-pack.
+		if s.isReceivePack {
+			return nil
+		}
+
+		if err := s.finish(); err != nil {
+			return err
+		}
+
+		return ErrEmptyRemoteRepository
+	}
+
+	// Some server sends the errors as normal content (git protocol), so when
+	// we try to decode it fails, we need to check the content of it, to detect
+	// not found errors
+	if uerr, ok := err.(*packp.ErrUnexpectedData); ok {
+		if isRepoNotFoundError(string(uerr.Data)) {
+			return ErrRepositoryNotFound
+		}
+	}
+
+	return err
+}
+
+// UploadPack performs a request to the server to fetch a packfile. A reader is
+// returned with the packfile content. The reader must be closed after reading.
+func (s *session) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+	if req.IsEmpty() {
+		// XXX: IsEmpty means haves are a subset of wants, in that case we have
+		// everything we asked for. Close the connection and return nil.
+		if err := s.finish(); err != nil {
+			return nil, err
+		}
+		// TODO:(v6) return nil here
+		return nil, ErrEmptyUploadPackRequest
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.AdvertisedReferencesContext(ctx); err != nil {
+		return nil, err
+	}
+
+	s.packRun = true
+
+	in := s.StdinContext(ctx)
+	out := s.StdoutContext(ctx)
+
+	if err := uploadPack(in, out, req); err != nil {
+		return nil, err
+	}
+
+	r, err := ioutil.NonEmptyReader(out)
+	if err == ioutil.ErrEmptyReader {
+		if c, ok := s.Stdout.(io.Closer); ok {
+			_ = c.Close()
+		}
+
+		return nil, ErrEmptyUploadPackRequest
+	}
+
 	if err != nil {
-		return 0
+		return nil, err
 	}
 
-	return i
+	rc := ioutil.NewReadCloser(r, s)
+	return DecodeUploadPackResponse(rc, req)
 }
 
-func getPath(u *url.URL) string {
-	var res string = u.Path
-	if u.RawQuery != "" {
-		res += "?" + u.RawQuery
-	}
-
-	if u.Fragment != "" {
-		res += "#" + u.Fragment
-	}
-
-	return res
+func (s *session) StdinContext(ctx context.Context) io.WriteCloser {
+	return ioutil.NewWriteCloserOnError(
+		ioutil.NewContextWriteCloser(ctx, s.Stdin),
+		s.onError,
+	)
 }
 
-func parseSCPLike(endpoint string) (*Endpoint, bool) {
-	if giturl.MatchesScheme(endpoint) || !giturl.MatchesScpLike(endpoint) {
-		return nil, false
-	}
-
-	user, host, portStr, path := giturl.FindScpLikeComponents(endpoint)
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		port = 22
-	}
-
-	return &Endpoint{
-		Protocol: "ssh",
-		User:     user,
-		Host:     host,
-		Port:     port,
-		Path:     path,
-	}, true
+func (s *session) StdoutContext(ctx context.Context) io.Reader {
+	return ioutil.NewReaderOnError(
+		ioutil.NewContextReader(ctx, s.Stdout),
+		s.onError,
+	)
 }
 
-func parseFile(endpoint string) (*Endpoint, bool) {
-	if giturl.MatchesScheme(endpoint) {
-		return nil, false
+func (s *session) onError(err error) {
+	if k, ok := s.Command.(CommandKiller); ok {
+		_ = k.Kill()
 	}
 
-	path := endpoint
-	return &Endpoint{
-		Protocol: "file",
-		Path:     path,
-	}, true
+	_ = s.Close()
 }
 
-// UnsupportedCapabilities are the capabilities not supported by any client
-// implementation
-var UnsupportedCapabilities = []capability.Capability{
-	capability.MultiACK,
-	capability.MultiACKDetailed,
-	capability.ThinPack,
-}
-
-// FilterUnsupportedCapabilities it filter out all the UnsupportedCapabilities
-// from a capability.List, the intended usage is on the client implementation
-// to filter the capabilities from an AdvRefs message.
-func FilterUnsupportedCapabilities(list *capability.List) {
-	for _, c := range UnsupportedCapabilities {
-		list.Delete(c)
+func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+	if _, err := s.AdvertisedReferences(); err != nil {
+		return nil, err
 	}
+
+	s.packRun = true
+
+	w := s.StdinContext(ctx)
+	if err := req.Encode(w); err != nil {
+		return nil, err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	if !req.Capabilities.Supports(capability.ReportStatus) {
+		// If we don't have report-status, we can only
+		// check return value error.
+		return nil, s.Command.Close()
+	}
+
+	r := s.StdoutContext(ctx)
+
+	var d *sideband.Demuxer
+	if req.Capabilities.Supports(capability.Sideband64k) {
+		d = sideband.NewDemuxer(sideband.Sideband64k, r)
+	} else if req.Capabilities.Supports(capability.Sideband) {
+		d = sideband.NewDemuxer(sideband.Sideband, r)
+	}
+	if d != nil {
+		d.Progress = req.Progress
+		r = d
+	}
+
+	report := packp.NewReportStatus()
+	if err := report.Decode(r); err != nil {
+		return nil, err
+	}
+
+	if err := report.Error(); err != nil {
+		defer s.Close()
+		return report, err
+	}
+
+	return report, s.Command.Close()
+}
+
+func (s *session) finish() error {
+	if s.finished {
+		return nil
+	}
+
+	s.finished = true
+
+	// If we did not run a upload/receive-pack, we close the connection
+	// gracefully by sending a flush packet to the server. If the server
+	// operates correctly, it will exit with status 0.
+	if !s.packRun {
+		return pktline.WriteFlush(s.Stdin)
+	}
+
+	return nil
+}
+
+func (s *session) Close() (err error) {
+	err = s.finish()
+
+	defer ioutil.CheckClose(s.Command, &err)
+	return
+}
+
+func (s *session) checkNotFoundError() error {
+	t := time.NewTicker(time.Second * readErrorSecondsTimeout)
+	defer t.Stop()
+
+	select {
+	case <-t.C:
+		return ErrTimeoutExceeded
+	case line, ok := <-s.firstErrLine:
+		if !ok || len(line) == 0 {
+			return nil
+		}
+
+		if isRepoNotFoundError(line) {
+			return ErrRepositoryNotFound
+		}
+
+		return fmt.Errorf("unknown error: %s", line)
+	}
+}
+
+const (
+	githubRepoNotFoundErr      = "Repository not found."
+	bitbucketRepoNotFoundErr   = "repository does not exist."
+	localRepoNotFoundErr       = "does not appear to be a git repository"
+	gitProtocolNotFoundErr     = "Repository not found."
+	gitProtocolNoSuchErr       = "no such repository"
+	gitProtocolAccessDeniedErr = "access denied"
+	gogsAccessDeniedErr        = "Repository does not exist or you do not have access"
+	gitlabRepoNotFoundErr      = "The project you were looking for could not be found"
+)
+
+func isRepoNotFoundError(s string) bool {
+	for _, err := range []string{
+		githubRepoNotFoundErr,
+		bitbucketRepoNotFoundErr,
+		localRepoNotFoundErr,
+		gitProtocolNotFoundErr,
+		gitProtocolNoSuchErr,
+		gitProtocolAccessDeniedErr,
+		gogsAccessDeniedErr,
+		gitlabRepoNotFoundErr,
+	} {
+		if strings.Contains(s, err) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// uploadPack implements the git-upload-pack protocol.
+func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) error {
+	// TODO support multi_ack mode
+	// TODO support multi_ack_detailed mode
+	// TODO support acks for common objects
+	// TODO build a proper state machine for all these processing options
+
+	if err := req.UploadRequest.Encode(w); err != nil {
+		return fmt.Errorf("sending upload-req message: %s", err)
+	}
+
+	if err := req.UploadHaves.Encode(w, true); err != nil {
+		return fmt.Errorf("sending haves message: %s", err)
+	}
+
+	if err := sendDone(w); err != nil {
+		return fmt.Errorf("sending done message: %s", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("closing input: %s", err)
+	}
+
+	return nil
+}
+
+func sendDone(w io.Writer) error {
+	_, err := pktline.Writef(w, "done\n")
+	return err
+}
+
+// DecodeUploadPackResponse decodes r into a new packp.UploadPackResponse
+func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
+	*packp.UploadPackResponse, error,
+) {
+	res := packp.NewUploadPackResponse(req)
+	if err := res.Decode(r); err != nil {
+		return nil, fmt.Errorf("error decoding upload-pack response: %s", err)
+	}
+
+	return res, nil
 }

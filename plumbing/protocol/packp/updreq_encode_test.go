@@ -5,7 +5,6 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
@@ -47,7 +46,7 @@ func (s *UpdReqEncodeSuite) TestOneUpdateCommand(c *C) {
 
 	expected := pktlines(c,
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
-		pktline.FlushString,
+		"",
 	)
 
 	s.testEncode(c, r, expected)
@@ -68,7 +67,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommands(c *C) {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00",
 		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 0000000000000000000000000000000000000000 myref3",
-		pktline.FlushString,
+		"",
 	)
 
 	s.testEncode(c, r, expected)
@@ -90,7 +89,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
 		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 0000000000000000000000000000000000000000 myref3",
-		pktline.FlushString,
+		"",
 	)
 
 	s.testEncode(c, r, expected)
@@ -114,7 +113,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
 		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 0000000000000000000000000000000000000000 myref3",
-		pktline.FlushString,
+		"",
 	)
 
 	s.testEncode(c, r, expected)
@@ -137,7 +136,7 @@ func (s *UpdReqEncodeSuite) TestWithPackfile(c *C) {
 
 	expected := pktlines(c,
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
-		pktline.FlushString,
+		"",
 	)
 	expected = append(expected, packfileContent...)
 
@@ -161,10 +160,10 @@ func (s *UpdReqEncodeSuite) TestPushOptions(c *C) {
 
 	expected := pktlines(c,
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00push-options",
-		pktline.FlushString,
+		"",
 		"SomeKey=SomeValue",
 		"AnotherKey=AnotherValue",
-		pktline.FlushString,
+		"",
 	)
 
 	s.testEncode(c, r, expected)
@@ -183,7 +182,7 @@ func (s *UpdReqEncodeSuite) TestPushAtomic(c *C) {
 
 	expected := pktlines(c,
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00atomic",
-		pktline.FlushString,
+		"",
 	)
 
 	s.testEncode(c, r, expected)

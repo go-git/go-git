@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"sort"
@@ -22,18 +21,17 @@ func (a *AdvRefs) Encode(w io.Writer) error {
 }
 
 type advRefsEncoder struct {
-	data         *AdvRefs         // data to encode
-	pe           *pktline.Encoder // where to write the encoded data
-	firstRefName string           // reference name to encode in the first pkt-line (HEAD if present)
-	firstRefHash plumbing.Hash    // hash referenced to encode in the first pkt-line (HEAD if present)
-	sortedRefs   []string         // hash references to encode ordered by increasing order
-	err          error            // sticky error
-
+	data         *AdvRefs      // data to encode
+	w            io.Writer     // where to write the encoded data
+	firstRefName string        // reference name to encode in the first pkt-line (HEAD if present)
+	firstRefHash plumbing.Hash // hash referenced to encode in the first pkt-line (HEAD if present)
+	sortedRefs   []string      // hash references to encode ordered by increasing order
+	err          error         // sticky error
 }
 
 func newAdvRefsEncoder(w io.Writer) *advRefsEncoder {
 	return &advRefsEncoder{
-		pe: pktline.NewEncoder(w),
+		w: w,
 	}
 }
 
@@ -79,13 +77,13 @@ type encoderStateFn func(*advRefsEncoder) encoderStateFn
 
 func encodePrefix(e *advRefsEncoder) encoderStateFn {
 	for _, p := range e.data.Prefix {
-		if bytes.Equal(p, pktline.Flush) {
-			if e.err = e.pe.Flush(); e.err != nil {
+		if len(p) == 0 {
+			if e.err = pktline.WriteFlush(e.w); e.err != nil {
 				return nil
 			}
 			continue
 		}
-		if e.err = e.pe.Encodef("%s\n", string(p)); e.err != nil {
+		if _, e.err = pktline.WriteString(e.w, string(p)+"\n"); e.err != nil {
 			return nil
 		}
 	}
@@ -107,10 +105,9 @@ func encodeFirstLine(e *advRefsEncoder) encoderStateFn {
 		firstLine = fmt.Sprintf(formatFirstLine, plumbing.ZeroHash.String(), "capabilities^{}", capabilities)
 	} else {
 		firstLine = fmt.Sprintf(formatFirstLine, e.firstRefHash.String(), e.firstRefName, capabilities)
-
 	}
 
-	if e.err = e.pe.EncodeString(firstLine); e.err != nil {
+	if _, e.err = pktline.WriteString(e.w, firstLine); e.err != nil {
 		return nil
 	}
 
@@ -134,12 +131,12 @@ func encodeRefs(e *advRefsEncoder) encoderStateFn {
 		}
 
 		hash := e.data.References[r]
-		if e.err = e.pe.Encodef("%s %s\n", hash.String(), r); e.err != nil {
+		if _, e.err = pktline.Writef(e.w, "%s %s\n", hash.String(), r); e.err != nil {
 			return nil
 		}
 
 		if hash, ok := e.data.Peeled[r]; ok {
-			if e.err = e.pe.Encodef("%s %s^{}\n", hash.String(), r); e.err != nil {
+			if _, e.err = pktline.Writef(e.w, "%s %s^{}\n", hash.String(), r); e.err != nil {
 				return nil
 			}
 		}
@@ -152,7 +149,7 @@ func encodeRefs(e *advRefsEncoder) encoderStateFn {
 func encodeShallow(e *advRefsEncoder) encoderStateFn {
 	sorted := sortShallows(e.data.Shallows)
 	for _, hash := range sorted {
-		if e.err = e.pe.Encodef("shallow %s\n", hash); e.err != nil {
+		if _, e.err = pktline.Writef(e.w, "shallow %s\n", hash); e.err != nil {
 			return nil
 		}
 	}
@@ -171,6 +168,6 @@ func sortShallows(c []plumbing.Hash) []string {
 }
 
 func encodeFlush(e *advRefsEncoder) encoderStateFn {
-	e.err = e.pe.Flush()
+	e.err = pktline.WriteFlush(e.w)
 	return nil
 }

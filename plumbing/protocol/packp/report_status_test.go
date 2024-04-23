@@ -4,7 +4,6 @@ import (
 	"bytes"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 
 	. "gopkg.in/check.v1"
 )
@@ -74,7 +73,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkOneReference(c *C) {
 	s.testEncodeDecodeOk(c, rs,
 		"unpack ok\n",
 		"ok refs/heads/master\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -89,7 +88,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkOneReferenceFailed(c *C) {
 	s.testEncodeDecodeOk(c, rs,
 		"unpack my error\n",
 		"ng refs/heads/master command error\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -112,7 +111,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferences(c *C) {
 		"ok refs/heads/master\n",
 		"ok refs/heads/a\n",
 		"ok refs/heads/b\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -135,7 +134,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferencesFailed(c *C) {
 		"ok refs/heads/master\n",
 		"ng refs/heads/a command error\n",
 		"ok refs/heads/b\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -145,7 +144,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferences(c *C) {
 
 	s.testEncodeDecodeOk(c, expected,
 		"unpack ok\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -155,7 +154,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferencesFailed(c *C) {
 
 	s.testEncodeDecodeOk(c, rs,
 		"unpack my error\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -194,7 +193,7 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformed(c *C) {
 
 	s.testDecodeError(c, "malformed unpack status: unpackok",
 		"unpackok\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -208,7 +207,7 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformed2(c *C) {
 
 	s.testDecodeError(c, "malformed unpack status: UNPACK OK",
 		"UNPACK OK\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -223,7 +222,7 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformedCommandStatus(c *C) {
 	s.testDecodeError(c, "malformed command status: ko refs/heads/master",
 		"unpack ok\n",
 		"ko refs/heads/master\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -238,7 +237,7 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformedCommandStatus2(c *C) {
 	s.testDecodeError(c, "malformed command status: ng refs/heads/master",
 		"unpack ok\n",
 		"ng refs/heads/master\n",
-		pktline.FlushString,
+		"",
 	)
 }
 
@@ -251,6 +250,6 @@ func (s *ReportStatusSuite) TestDecodeErrorPrematureFlush(c *C) {
 	}}
 
 	s.testDecodeError(c, "premature flush",
-		pktline.FlushString,
+		"",
 	)
 }

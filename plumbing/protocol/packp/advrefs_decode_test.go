@@ -24,18 +24,16 @@ func (s *AdvRefsDecodeSuite) TestEmpty(c *C) {
 
 func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	e.Flush()
+	pktline.WriteFlush(&buf)
 	ar := NewAdvRefs()
 	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	e.EncodeString("# service=git-upload-pack")
-	e.Flush()
-	e.Flush()
+	pktline.WriteString(&buf, "# service=git-upload-pack")
+	pktline.WriteFlush(&buf)
+	pktline.WriteFlush(&buf)
 	ar := NewAdvRefs()
 	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
@@ -43,7 +41,7 @@ func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
 func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*too short.*")
@@ -57,7 +55,7 @@ func (s *AdvRefsDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, patt
 func (s *AdvRefsDecodeSuite) TestInvalidFirstHash(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796alberto2219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*invalid hash.*")
@@ -66,7 +64,7 @@ func (s *AdvRefsDecodeSuite) TestInvalidFirstHash(c *C) {
 func (s *AdvRefsDecodeSuite) TestZeroId(c *C) {
 	payloads := []string{
 		"0000000000000000000000000000000000000000 capabilities^{}\x00multi_ack thin-pack\n",
-		pktline.FlushString,
+		"",
 	}
 	ar := s.testDecodeOK(c, payloads)
 	c.Assert(ar.Head, IsNil)
@@ -74,9 +72,14 @@ func (s *AdvRefsDecodeSuite) TestZeroId(c *C) {
 
 func (s *AdvRefsDecodeSuite) testDecodeOK(c *C, payloads []string) *AdvRefs {
 	var buf bytes.Buffer
-	e := pktline.NewEncoder(&buf)
-	err := e.EncodeString(payloads...)
-	c.Assert(err, IsNil)
+	for _, p := range payloads {
+		if p == "" {
+			c.Assert(pktline.WriteFlush(&buf), IsNil)
+		} else {
+			_, err := pktline.WriteString(&buf, p)
+			c.Assert(err, IsNil)
+		}
+	}
 
 	ar := NewAdvRefs()
 	c.Assert(ar.Decode(&buf), IsNil)
@@ -87,7 +90,7 @@ func (s *AdvRefsDecodeSuite) testDecodeOK(c *C, payloads []string) *AdvRefs {
 func (s *AdvRefsDecodeSuite) TestMalformedZeroId(c *C) {
 	payloads := []string{
 		"0000000000000000000000000000000000000000 wrong\x00multi_ack thin-pack\n",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*malformed zero-id.*")
@@ -96,7 +99,7 @@ func (s *AdvRefsDecodeSuite) TestMalformedZeroId(c *C) {
 func (s *AdvRefsDecodeSuite) TestShortZeroId(c *C) {
 	payloads := []string{
 		"0000000000000000000000000000000000000000 capabi",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*too short zero-id.*")
@@ -105,7 +108,7 @@ func (s *AdvRefsDecodeSuite) TestShortZeroId(c *C) {
 func (s *AdvRefsDecodeSuite) TestHead(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00",
-		pktline.FlushString,
+		"",
 	}
 	ar := s.testDecodeOK(c, payloads)
 	c.Assert(*ar.Head, Equals,
@@ -115,7 +118,7 @@ func (s *AdvRefsDecodeSuite) TestHead(c *C) {
 func (s *AdvRefsDecodeSuite) TestFirstIsNotHead(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\x00",
-		pktline.FlushString,
+		"",
 	}
 	ar := s.testDecodeOK(c, payloads)
 	c.Assert(ar.Head, IsNil)
@@ -126,7 +129,7 @@ func (s *AdvRefsDecodeSuite) TestFirstIsNotHead(c *C) {
 func (s *AdvRefsDecodeSuite) TestShortRef(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 H",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*too short.*")
@@ -135,7 +138,7 @@ func (s *AdvRefsDecodeSuite) TestShortRef(c *C) {
 func (s *AdvRefsDecodeSuite) TestNoNULL(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEADofs-delta multi_ack",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*NULL not found.*")
@@ -144,7 +147,7 @@ func (s *AdvRefsDecodeSuite) TestNoNULL(c *C) {
 func (s *AdvRefsDecodeSuite) TestNoSpaceAfterHash(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5-HEAD\x00",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*no space after hash.*")
@@ -153,7 +156,7 @@ func (s *AdvRefsDecodeSuite) TestNoSpaceAfterHash(c *C) {
 func (s *AdvRefsDecodeSuite) TestNoCaps(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00",
-		pktline.FlushString,
+		"",
 	}
 	ar := s.testDecodeOK(c, payloads)
 	c.Assert(ar.Capabilities.IsEmpty(), Equals, true)
@@ -171,19 +174,19 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 	}{{
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{},
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00\n",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{},
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{
 			{
@@ -194,7 +197,7 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta multi_ack",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{
 			{Name: capability.OFSDelta, Values: []string(nil)},
@@ -203,7 +206,7 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta multi_ack\n",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{
 			{Name: capability.OFSDelta, Values: []string(nil)},
@@ -212,7 +215,7 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:refs/heads/master agent=foo=bar\n",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{
 			{Name: capability.SymRef, Values: []string{"HEAD:refs/heads/master"}},
@@ -221,7 +224,7 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 	}, {
 		input: []string{
 			"0000000000000000000000000000000000000000 capabilities^{}\x00report-status report-status-v2 delete-refs side-band-64k quiet atomic ofs-delta object-format=sha1 agent=git/2.41.0\n",
-			pktline.FlushString,
+			"",
 		},
 		capabilities: []entry{
 			{Name: capability.ReportStatus, Values: []string(nil)},
@@ -243,7 +246,7 @@ func (s *AdvRefsDecodeSuite) TestWithPrefix(c *C) {
 	payloads := []string{
 		"# this is a prefix\n",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta\n",
-		pktline.FlushString,
+		"",
 	}
 	ar := s.testDecodeOK(c, payloads)
 	c.Assert(len(ar.Prefix), Equals, 1)
@@ -253,14 +256,14 @@ func (s *AdvRefsDecodeSuite) TestWithPrefix(c *C) {
 func (s *AdvRefsDecodeSuite) TestWithPrefixAndFlush(c *C) {
 	payloads := []string{
 		"# this is a prefix\n",
-		pktline.FlushString,
+		"",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta\n",
-		pktline.FlushString,
+		"",
 	}
 	ar := s.testDecodeOK(c, payloads)
 	c.Assert(len(ar.Prefix), Equals, 2)
 	c.Assert(ar.Prefix[0], DeepEquals, []byte("# this is a prefix"))
-	c.Assert(ar.Prefix[1], DeepEquals, []byte(pktline.FlushString))
+	c.Assert(ar.Prefix[1], DeepEquals, []byte(""))
 }
 
 func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
@@ -271,7 +274,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 	}{{
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
-			pktline.FlushString,
+			"",
 		},
 		references: make(map[string]plumbing.Hash),
 		peeled:     make(map[string]plumbing.Hash),
@@ -279,7 +282,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
 			"1111111111111111111111111111111111111111 ref/foo",
-			pktline.FlushString,
+			"",
 		},
 		references: map[string]plumbing.Hash{
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -289,7 +292,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
 			"1111111111111111111111111111111111111111 ref/foo\n",
-			pktline.FlushString,
+			"",
 		},
 		references: map[string]plumbing.Hash{
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -300,7 +303,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
 			"1111111111111111111111111111111111111111 ref/foo\n",
 			"2222222222222222222222222222222222222222 ref/bar",
-			pktline.FlushString,
+			"",
 		},
 		references: map[string]plumbing.Hash{
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -311,7 +314,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
 			"1111111111111111111111111111111111111111 ref/foo^{}\n",
-			pktline.FlushString,
+			"",
 		},
 		references: make(map[string]plumbing.Hash),
 		peeled: map[string]plumbing.Hash{
@@ -322,7 +325,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
 			"1111111111111111111111111111111111111111 ref/foo\n",
 			"2222222222222222222222222222222222222222 ref/bar^{}",
-			pktline.FlushString,
+			"",
 		},
 		references: map[string]plumbing.Hash{
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -342,7 +345,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {
 			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11^{}\n",
 			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-			pktline.FlushString,
+			"",
 		},
 		references: map[string]plumbing.Hash{
 			"refs/heads/master":      plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7"),
@@ -369,7 +372,7 @@ func (s *AdvRefsDecodeSuite) TestMalformedOtherRefsNoSpace(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8crefs/tags/v2.6.11\n",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*malformed ref data.*")
@@ -379,7 +382,7 @@ func (s *AdvRefsDecodeSuite) TestMalformedOtherRefsMultipleSpaces(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags v2.6.11\n",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*malformed ref data.*")
@@ -395,7 +398,7 @@ func (s *AdvRefsDecodeSuite) TestShallow(c *C) {
 			"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-			pktline.FlushString,
+			"",
 		},
 		shallows: []plumbing.Hash{},
 	}, {
@@ -405,7 +408,7 @@ func (s *AdvRefsDecodeSuite) TestShallow(c *C) {
 			"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
 			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
 			"shallow 1111111111111111111111111111111111111111\n",
-			pktline.FlushString,
+			"",
 		},
 		shallows: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
 	}, {
@@ -416,7 +419,7 @@ func (s *AdvRefsDecodeSuite) TestShallow(c *C) {
 			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
 			"shallow 1111111111111111111111111111111111111111\n",
 			"shallow 2222222222222222222222222222222222222222\n",
-			pktline.FlushString,
+			"",
 		},
 		shallows: []plumbing.Hash{
 			plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -437,7 +440,7 @@ func (s *AdvRefsDecodeSuite) TestInvalidShallowHash(c *C) {
 		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
 		"shallow 11111111alcortes111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*invalid hash text.*")
@@ -452,7 +455,7 @@ func (s *AdvRefsDecodeSuite) TestGarbageAfterShallow(c *C) {
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222\n",
 		"b5be40b90dbaa6bd337f3b77de361bfc0723468b refs/tags/v4.4",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*malformed shallow prefix.*")
@@ -466,7 +469,7 @@ func (s *AdvRefsDecodeSuite) TestMalformedShallowHash(c *C) {
 		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
 		"shallow 1111111111111111111111111111111111111111\n",
 		"shallow 2222222222222222222222222222222222222222 malformed\n",
-		pktline.FlushString,
+		"",
 	}
 	r := toPktLines(c, payloads)
 	s.testDecoderErrorMatches(c, r, ".*malformed shallow hash.*")

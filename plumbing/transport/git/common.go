@@ -8,19 +8,22 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
+func init() {
+	transport.Register("git", DefaultClient)
+}
+
 // DefaultClient is the default git client.
-var DefaultClient = common.NewClient(&runner{})
+var DefaultClient = transport.NewClient(&runner{})
 
 const DefaultPort = 9418
 
 type runner struct{}
 
 // Command returns a new Command for the given cmd in the given Endpoint
-func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
+func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod) (transport.Command, error) {
 	// auth not allowed since git protocol doesn't support authentication
 	if auth != nil {
 		return nil, transport.ErrInvalidAuthMethod

@@ -1,6 +1,7 @@
 package packp
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -8,11 +9,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 )
 
-var (
-	// ErrInvalidGitProtoRequest is returned by Decode if the input is not a
-	// valid git protocol request.
-	ErrInvalidGitProtoRequest = fmt.Errorf("invalid git protocol request")
-)
+// ErrInvalidGitProtoRequest is returned by Decode if the input is not a
+// valid git protocol request.
+var ErrInvalidGitProtoRequest = fmt.Errorf("invalid git protocol request")
 
 // GitProtoRequest is a command request for the git protocol.
 // It is used to send the command, endpoint, and extra parameters to the
@@ -52,7 +51,6 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 		return err
 	}
 
-	p := pktline.NewEncoder(w)
 	req := fmt.Sprintf("%s %s\x00", g.RequestCommand, g.Pathname)
 	if host := g.Host; host != "" {
 		req += fmt.Sprintf("host=%s\x00", host)
@@ -65,7 +63,7 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 		}
 	}
 
-	if err := p.Encode([]byte(req)); err != nil {
+	if _, err := pktline.Writef(w, req); err != nil {
 		return err
 	}
 
@@ -74,16 +72,15 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 
 // Decode decodes the request from the reader.
 func (g *GitProtoRequest) Decode(r io.Reader) error {
-	s := pktline.NewScanner(r)
-	if !s.Scan() {
-		err := s.Err()
-		if err == nil {
-			return ErrInvalidGitProtoRequest
-		}
+	_, p, err := pktline.ReadLine(r)
+	if errors.Is(err, io.EOF) {
+		return ErrInvalidGitProtoRequest
+	}
+	if err != nil {
 		return err
 	}
 
-	line := string(s.Bytes())
+	line := string(p)
 	if len(line) == 0 {
 		return io.EOF
 	}
