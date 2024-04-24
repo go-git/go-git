@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/internal/repository"
 	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -34,19 +36,6 @@ var (
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
 )
-
-type NoMatchingRefSpecError struct {
-	refSpec config.RefSpec
-}
-
-func (e NoMatchingRefSpecError) Error() string {
-	return fmt.Sprintf("couldn't find remote ref %q", e.refSpec.Src())
-}
-
-func (e NoMatchingRefSpecError) Is(target error) bool {
-	_, ok := target.(NoMatchingRefSpecError)
-	return ok
-}
 
 const (
 	// This describes the maximum number of commits to walk when
@@ -236,7 +225,7 @@ func (r *Remote) useRefDeltas(ar *packp.AdvRefs) bool {
 	return !ar.Capabilities.Supports(capability.OFSDelta)
 }
 
-func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer, req *packp.ReferenceUpdateRequest) error {
+func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer, req *packp.UpdateRequests) error {
 	tags := make(map[plumbing.Reference]struct{})
 	// get a list of all tags locally
 	for _, ref := range localRefs {
@@ -309,7 +298,7 @@ func (r *Remote) newReferenceUpdateRequest(
 	localRefs []*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
 	ar *packp.AdvRefs,
-) (*packp.ReferenceUpdateRequest, error) {
+) (*packp.UpdateRequests, error) {
 	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
 
 	if o.Progress != nil {
@@ -333,7 +322,6 @@ func (r *Remote) newReferenceUpdateRequest(
 	}
 
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, req, o.Prune, o.ForceWithLease); err != nil {
-
 		return nil, err
 	}
 
@@ -347,9 +335,8 @@ func (r *Remote) newReferenceUpdateRequest(
 }
 
 func (r *Remote) updateRemoteReferenceStorage(
-	req *packp.ReferenceUpdateRequest,
+	req *packp.UpdateRequests,
 ) error {
-
 	for _, spec := range r.c.Fetch {
 		for _, c := range req.Commands {
 			if !spec.Match(c.Name) {
@@ -414,28 +401,22 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RemoteURL = r.c.URLs[0]
 	}
 
-	s, err := newUploadPackSession(o.RemoteURL, o.Auth, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
+	c, ep, err := newClient(o.RemoteURL, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	defer ioutil.CheckClose(s, &err)
-
-	ar, err := s.AdvertisedReferencesContext(ctx)
+	sess, err := c.NewSession(r.s, ep, o.Auth)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := r.newUploadPackRequest(o, ar)
+	conn, err := sess.Handshake(ctx, false)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.isSupportedRefSpec(o.RefSpecs, ar); err != nil {
-		return nil, err
-	}
-
-	remoteRefs, err := ar.AllReferences()
+	remoteRefs, _, err := conn.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -450,23 +431,45 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	if !req.Depth.IsZero() {
-		req.Shallows, err = r.s.Shallow()
+	var shallows []plumbing.Hash
+	if o.Depth != 0 {
+		shallows, err = r.s.Shallow()
 		if err != nil {
-			return nil, fmt.Errorf("existing checkout is not shallow")
+			return nil, err
 		}
 	}
 
-	req.Wants, err = getWants(r.s, refs, o.Depth)
-	if len(req.Wants) > 0 {
-		req.Haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
+	var haves []plumbing.Hash
+	wants, _ := getWants(r.s, refs, o.Depth)
+	if len(wants) > 0 {
+		haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
 		if err != nil {
 			return nil, err
 		}
 
-		if err = r.fetchPack(ctx, o, s, req); err != nil {
+		isWildcard := true
+		for _, s := range o.RefSpecs {
+			if !s.IsWildcard() {
+				isWildcard = false
+				break
+			}
+		}
+
+		req := &transport.FetchRequest{
+			Wants:       wants,
+			Haves:       haves,
+			Depth:       o.Depth,
+			Progress:    o.Progress,
+			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
+		}
+
+		if err := transport.FetchPack(ctx, r.s, conn, req); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := conn.Close(); err != nil {
+		return nil, fmt.Errorf("error closing connection: %v", err)
 	}
 
 	var updatedPrune bool
@@ -477,22 +480,29 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
+	log.Printf("updating references...")
 	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
 	if err != nil {
+		log.Printf("error updating local reference storage: %v", err)
 		return nil, err
 	}
 
+	log.Printf("updating references completed")
 	if !updated {
-		updated, err = depthChanged(req.Shallows, r.s)
+		updated, err = depthChanged(shallows, r.s)
 		if err != nil {
 			return nil, fmt.Errorf("error checking depth change: %v", err)
 		}
 	}
 
+	log.Printf("might update prune")
+
 	if !updated && !updatedPrune {
+		log.Printf("no changes, already up-to-date")
 		return remoteRefs, NoErrAlreadyUpToDate
 	}
 
+	log.Printf("fetch completed, err = %v", err)
 	return remoteRefs, nil
 }
 
@@ -517,15 +527,6 @@ func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
 	}
 
 	return false, nil
-}
-
-func newUploadPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte, proxyOpts transport.ProxyOptions) (transport.UploadPackSession, error) {
-	c, ep, err := newClient(url, insecure, cabundle, proxyOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.NewUploadPackSession(ep, auth)
 }
 
 func newSendPackSession(url string, auth transport.AuthMethod, insecure bool, cabundle []byte, proxyOpts transport.ProxyOptions) (transport.ReceivePackSession, error) {
@@ -554,33 +555,6 @@ func newClient(url string, insecure bool, cabundle []byte, proxyOpts transport.P
 	return c, ep, err
 }
 
-func (r *Remote) fetchPack(ctx context.Context, o *FetchOptions, s transport.UploadPackSession,
-	req *packp.UploadPackRequest) (err error) {
-
-	reader, err := s.UploadPack(ctx, req)
-	if err != nil {
-		if errors.Is(err, transport.ErrEmptyUploadPackRequest) {
-			// XXX: no packfile provided, everything is up-to-date.
-			return nil
-		}
-		return err
-	}
-
-	defer ioutil.CheckClose(reader, &err)
-
-	if err = r.updateShallow(o, reader); err != nil {
-		return err
-	}
-
-	if err = packfile.UpdateObjectStorage(r.s,
-		buildSidebandIfSupported(req.Capabilities, reader, o.Progress),
-	); err != nil {
-		return err
-	}
-
-	return err
-}
-
 func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs memory.ReferenceStorage) (bool, error) {
 	var updatedPrune bool
 	for _, spec := range specs {
@@ -606,7 +580,7 @@ func (r *Remote) addReferencesToUpdate(
 	refspecs []config.RefSpec,
 	localRefs []*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
-	req *packp.ReferenceUpdateRequest,
+	req *packp.UpdateRequests,
 	prune bool,
 	forceWithLease *ForceWithLease,
 ) error {
@@ -643,7 +617,7 @@ func (r *Remote) addOrUpdateReferences(
 	localRefs []*plumbing.Reference,
 	refsDict map[string]*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
-	req *packp.ReferenceUpdateRequest,
+	req *packp.UpdateRequests,
 	forceWithLease *ForceWithLease,
 ) error {
 	// If it is not a wildcard refspec we can directly search for the reference
@@ -674,8 +648,9 @@ func (r *Remote) addOrUpdateReferences(
 func (r *Remote) deleteReferences(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	refsDict map[string]*plumbing.Reference,
-	req *packp.ReferenceUpdateRequest,
-	prune bool) error {
+	req *packp.UpdateRequests,
+	prune bool,
+) error {
 	iter, err := remoteRefs.IterReferences()
 	if err != nil {
 		return err
@@ -711,8 +686,8 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 
 func (r *Remote) addCommit(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer, localCommit plumbing.Hash,
-	req *packp.ReferenceUpdateRequest) error {
-
+	req *packp.UpdateRequests,
+) error {
 	if rs.IsWildcard() {
 		return errors.New("can't use wildcard together with hash refspecs")
 	}
@@ -748,8 +723,8 @@ func (r *Remote) addCommit(rs config.RefSpec,
 
 func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 	remoteRefs storer.ReferenceStorer, localRef *plumbing.Reference,
-	req *packp.ReferenceUpdateRequest, forceWithLease *ForceWithLease) error {
-
+	req *packp.UpdateRequests, forceWithLease *ForceWithLease,
+) error {
 	if localRef.Type() != plumbing.HashReference {
 		return nil
 	}
@@ -844,7 +819,8 @@ func (r *Remote) references() ([]*plumbing.Reference, error) {
 }
 
 func getRemoteRefsFromStorer(remoteRefStorer storer.ReferenceStorer) (
-	map[plumbing.Hash]bool, error) {
+	map[plumbing.Hash]bool, error,
+) {
 	remoteRefs := map[plumbing.Hash]bool{}
 	iter, err := remoteRefStorer.IterReferences()
 	if err != nil {
@@ -961,9 +937,9 @@ const refspecAllTags = "+refs/tags/*:refs/tags/*"
 func calculateRefs(
 	spec []config.RefSpec,
 	remoteRefs storer.ReferenceStorer,
-	tagMode TagMode,
+	tagMode plumbing.TagMode,
 ) (memory.ReferenceStorage, [][]*plumbing.Reference, error) {
-	if tagMode == AllTags {
+	if tagMode == plumbing.AllTags {
 		spec = append(spec, refspecAllTags)
 	}
 
@@ -1031,14 +1007,14 @@ func doCalculateRefs(
 	} else {
 		var resolvedRef *plumbing.Reference
 		src := s.Src()
-		resolvedRef, ret = expand_ref(remoteRefs, plumbing.ReferenceName(src))
+		resolvedRef, ret = repository.ExpandRef(remoteRefs, plumbing.ReferenceName(src))
 		if ret == nil {
 			ret = onMatched(resolvedRef)
 		}
 	}
 
 	if !matched && !s.IsWildcard() {
-		return nil, NoMatchingRefSpecError{refSpec: s}
+		return nil, transport.NoMatchingRefSpecError{RefSpec: s}
 	}
 
 	return refList, ret
@@ -1143,41 +1119,6 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash, earlies
 	return found, err
 }
 
-func (r *Remote) newUploadPackRequest(o *FetchOptions,
-	ar *packp.AdvRefs) (*packp.UploadPackRequest, error) {
-
-	req := packp.NewUploadPackRequestFromCapabilities(ar.Capabilities)
-
-	if o.Depth != 0 {
-		req.Depth = packp.DepthCommits(o.Depth)
-		if err := req.Capabilities.Set(capability.Shallow); err != nil {
-			return nil, err
-		}
-	}
-
-	if o.Progress == nil && ar.Capabilities.Supports(capability.NoProgress) {
-		if err := req.Capabilities.Set(capability.NoProgress); err != nil {
-			return nil, err
-		}
-	}
-
-	isWildcard := true
-	for _, s := range o.RefSpecs {
-		if !s.IsWildcard() {
-			isWildcard = false
-			break
-		}
-	}
-
-	if isWildcard && o.Tags == TagFollowing && ar.Capabilities.Supports(capability.IncludeTag) {
-		if err := req.Capabilities.Set(capability.IncludeTag); err != nil {
-			return nil, err
-		}
-	}
-
-	return req, nil
-}
-
 func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, ar *packp.AdvRefs) error {
 	var containsIsExact bool
 	for _, ref := range refs {
@@ -1220,7 +1161,7 @@ func (r *Remote) updateLocalReferenceStorage(
 	specs []config.RefSpec,
 	fetchedRefs, remoteRefs memory.ReferenceStorage,
 	specToRefs [][]*plumbing.Reference,
-	tagMode TagMode,
+	tagMode plumbing.TagMode,
 	force bool,
 ) (updated bool, err error) {
 	isWildcard := true
@@ -1269,7 +1210,7 @@ func (r *Remote) updateLocalReferenceStorage(
 		}
 	}
 
-	if tagMode == NoTags {
+	if tagMode == plumbing.NoTags {
 		return updated, nil
 	}
 
@@ -1348,19 +1289,24 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, ErrEmptyUrls
 	}
 
-	s, err := newUploadPackSession(r.c.URLs[0], o.Auth, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
+	c, ep, err := newClient(r.c.URLs[0], o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	defer ioutil.CheckClose(s, &err)
-
-	ar, err := s.AdvertisedReferencesContext(ctx)
+	s, err := c.NewSession(r.s, ep, o.Auth)
 	if err != nil {
 		return nil, err
 	}
 
-	allRefs, err := ar.AllReferences()
+	conn, err := s.Handshake(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+
+	defer ioutil.CheckClose(conn, &err)
+
+	allRefs, peeledRefs, err := conn.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1382,7 +1328,7 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 	}
 
 	if o.PeelingOption == AppendPeeled || o.PeelingOption == OnlyPeeled {
-		for k, v := range ar.Peeled {
+		for k, v := range peeledRefs {
 			resultRefs = append(resultRefs, plumbing.NewReferenceFromStrings(k+"^{}", v.String()))
 		}
 	}
@@ -1427,7 +1373,7 @@ func pushHashes(
 	ctx context.Context,
 	sess transport.ReceivePackSession,
 	s storage.Storer,
-	req *packp.ReferenceUpdateRequest,
+	req *packp.UpdateRequests,
 	hs []plumbing.Hash,
 	useRefDeltas bool,
 	allDelete bool,

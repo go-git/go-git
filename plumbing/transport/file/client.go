@@ -3,6 +3,7 @@ package file
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -76,9 +77,7 @@ func prefixExecPath(cmd string) (string, error) {
 	return cmd, nil
 }
 
-func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod,
-) (transport.Command, error) {
-
+func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
 	switch cmd {
 	case transport.UploadPackServiceName:
 		cmd = r.UploadPackBin
@@ -142,7 +141,6 @@ func (c *command) Close() error {
 	defer func() {
 		c.closed = true
 		_ = c.stderrCloser.Close()
-
 	}()
 
 	err := c.cmd.Wait()

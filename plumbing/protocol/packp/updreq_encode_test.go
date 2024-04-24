@@ -14,9 +14,9 @@ type UpdReqEncodeSuite struct{}
 
 var _ = Suite(&UpdReqEncodeSuite{})
 
-func (s *UpdReqEncodeSuite) testEncode(c *C, input *ReferenceUpdateRequest,
-	expected []byte) {
-
+func (s *UpdReqEncodeSuite) testEncode(c *C, input *UpdateRequests,
+	expected []byte,
+) {
 	var buf bytes.Buffer
 	c.Assert(input.Encode(&buf), IsNil)
 	obtained := buf.Bytes()
@@ -26,7 +26,7 @@ func (s *UpdReqEncodeSuite) testEncode(c *C, input *ReferenceUpdateRequest,
 }
 
 func (s *UpdReqEncodeSuite) TestZeroValue(c *C) {
-	r := &ReferenceUpdateRequest{}
+	r := &UpdateRequests{}
 	var buf bytes.Buffer
 	c.Assert(r.Encode(&buf), Equals, ErrEmptyCommands)
 

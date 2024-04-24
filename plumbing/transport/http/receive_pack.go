@@ -20,7 +20,7 @@ type rpSession struct {
 }
 
 func newReceivePackSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
-	s, err := newSession(c, ep, auth)
+	s, err := newSession(nil, c, ep, auth)
 	return &rpSession{s}, err
 }
 
@@ -32,8 +32,9 @@ func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 	return advertisedReferences(ctx, s.session, transport.ReceivePackServiceName)
 }
 
-func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (
-	*packp.ReportStatus, error) {
+func (s *rpSession) ReceivePack(ctx context.Context, req *packp.UpdateRequests) (
+	*packp.ReportStatus, error,
+) {
 	url := fmt.Sprintf(
 		"%s/%s",
 		s.endpoint.String(), transport.ReceivePackServiceName,
@@ -82,7 +83,6 @@ func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateR
 func (s *rpSession) doRequest(
 	ctx context.Context, method, url string, content *bytes.Buffer,
 ) (*http.Response, error) {
-
 	var body io.Reader
 	if content != nil {
 		body = content
@@ -101,7 +101,7 @@ func (s *rpSession) doRequest(
 		return nil, plumbing.NewUnexpectedError(err)
 	}
 
-	if err := NewErr(res); err != nil {
+	if err := checkError(res); err != nil {
 		return nil, err
 	}
 

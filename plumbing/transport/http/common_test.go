@@ -71,7 +71,7 @@ func (s *ClientSuite) TestNewTokenAuth(c *C) {
 
 func (s *ClientSuite) TestNewErrOK(c *C) {
 	res := &http.Response{StatusCode: http.StatusOK}
-	err := NewErr(res)
+	err := checkError(res)
 	c.Assert(err, IsNil)
 }
 
@@ -98,7 +98,7 @@ func (s *ClientSuite) TestNewUnexpectedError(c *C) {
 		Body:       io.NopCloser(strings.NewReader("Unexpected error")),
 	}
 
-	err := NewErr(res)
+	err := checkError(res)
 	c.Assert(err, NotNil)
 	c.Assert(err, FitsTypeOf, &plumbing.UnexpectedError{})
 
@@ -170,7 +170,7 @@ func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 		Request:    req,
 	}
 
-	err := NewErr(res)
+	err := checkError(res)
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, msg)
 }
@@ -210,12 +210,16 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 		expected *transport.Endpoint
 	}{
 		{"https://example.com/foo/bar", nil, nil},
-		{"https://example.com/foo.git/info/refs",
+		{
+			"https://example.com/foo.git/info/refs",
 			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"}},
-		{"https://example.com:8080/foo.git/info/refs",
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"},
+		},
+		{
+			"https://example.com:8080/foo.git/info/refs",
 			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"}},
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"},
+		},
 	}
 
 	for _, d := range data {

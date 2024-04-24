@@ -146,7 +146,9 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 		}
 	}
 
-	trace.Packet.Printf("packet: < %04x %s", length, p[LenSize:length])
+	if length > 4 && p[LenSize] != 0x01 && p[LenSize] != 0x02 {
+		trace.Packet.Printf("packet: < %04x %q", length, p[LenSize:length])
+	}
 
 	return length, err
 }
@@ -211,7 +213,7 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 		}
 	}
 
-	trace.Packet.Printf("packet: < %04x %s", length, buf)
+	trace.Packet.Printf("packet: < %04x %q", length, buf)
 
 	return length, buf, err
 }

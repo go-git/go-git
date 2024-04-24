@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
@@ -108,7 +109,6 @@ func (s *RemoteSuite) TestFetchExactSHA1_NotSoported(c *C) {
 	})
 
 	c.Assert(err, Equals, ErrExactSHA1NotSupported)
-
 }
 
 func (s *RemoteSuite) TestFetchWildcardTags(c *C) {
@@ -176,7 +176,7 @@ func (s *RemoteSuite) TestFetchToNewBranchWithAllTags(c *C) {
 	})
 
 	s.testFetch(c, r, &FetchOptions{
-		Tags: AllTags,
+		Tags: plumbing.AllTags,
 		RefSpecs: []config.RefSpec{
 			// qualified branch to unqualified branch
 			"+refs/heads/master:foo",
@@ -212,7 +212,7 @@ func (s *RemoteSuite) TestFetchNonExistentReference(c *C) {
 	})
 
 	c.Assert(err, ErrorMatches, "couldn't find remote ref.*")
-	c.Assert(errors.Is(err, NoMatchingRefSpecError{}), Equals, true)
+	c.Assert(errors.Is(err, transport.NoMatchingRefSpecError{}), Equals, true)
 }
 
 func (s *RemoteSuite) TestFetchContext(c *C) {
@@ -253,7 +253,7 @@ func (s *RemoteSuite) TestFetchWithAllTags(c *C) {
 	})
 
 	s.testFetch(c, r, &FetchOptions{
-		Tags: AllTags,
+		Tags: plumbing.AllTags,
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
@@ -273,14 +273,13 @@ func (s *RemoteSuite) TestFetchWithNoTags(c *C) {
 	})
 
 	s.testFetch(c, r, &FetchOptions{
-		Tags: NoTags,
+		Tags: plumbing.NoTags,
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	})
-
 }
 
 func (s *RemoteSuite) TestFetchWithDepth(c *C) {
@@ -566,7 +565,6 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 	c.Assert(err, IsNil)
 
 	AssertReferences(c, server, expected)
-
 }
 
 func (s *RemoteSuite) TestPushContext(c *C) {
@@ -1219,7 +1217,7 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 	f := fixtures.Basic().One()
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
-	var localRefs = []*plumbing.Reference{
+	localRefs := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings(
 			"foo",
 			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
@@ -1628,7 +1626,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
 	repo, err := PlainClone(repoDir, false, &CloneOptions{
 		URL:           remoteUrl,
 		Depth:         1,
-		Tags:          NoTags,
+		Tags:          plumbing.NoTags,
 		SingleBranch:  true,
 		ReferenceName: "master",
 	})
@@ -1643,7 +1641,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
 	c.Assert(err, IsNil)
 	s.testFetch(c, r, &FetchOptions{
 		Depth: 2,
-		Tags:  NoTags,
+		Tags:  plumbing.NoTags,
 
 		RefSpecs: []config.RefSpec{
 			"+refs/heads/master:refs/heads/master",
@@ -1663,7 +1661,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
 	c.Assert(err, IsNil)
 	s.testFetch(c, r, &FetchOptions{
 		Depth: 1,
-		Tags:  NoTags,
+		Tags:  plumbing.NoTags,
 
 		RefSpecs: []config.RefSpec{
 			"+refs/heads/master:refs/heads/master",

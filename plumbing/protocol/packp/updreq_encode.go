@@ -10,7 +10,7 @@ import (
 )
 
 // Encode writes the ReferenceUpdateRequest encoding to the stream.
-func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
+func (req *UpdateRequests) Encode(w io.Writer) error {
 	if err := req.validate(); err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
 	return nil
 }
 
-func (req *ReferenceUpdateRequest) encodeShallow(w io.Writer,
+func (req *UpdateRequests) encodeShallow(w io.Writer,
 	h *plumbing.Hash,
 ) error {
 	if h == nil {
@@ -52,7 +52,7 @@ func (req *ReferenceUpdateRequest) encodeShallow(w io.Writer,
 	return err
 }
 
-func (req *ReferenceUpdateRequest) encodeCommands(w io.Writer,
+func (req *UpdateRequests) encodeCommands(w io.Writer,
 	cmds []*Command, cap *capability.List,
 ) error {
 	if _, err := pktline.Writef(w, "%s\x00%s",
@@ -75,7 +75,7 @@ func formatCommand(cmd *Command) string {
 	return fmt.Sprintf("%s %s %s", o, n, cmd.Name)
 }
 
-func (req *ReferenceUpdateRequest) encodeOptions(w io.Writer,
+func (req *UpdateRequests) encodeOptions(w io.Writer,
 	opts []*Option,
 ) error {
 	for _, opt := range opts {

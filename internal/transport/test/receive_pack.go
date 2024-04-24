@@ -203,7 +203,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C)
 	req.Capabilities.Set(capability.ReportStatus)
 
 	report, err := s.receivePackNoCheck(c, endpoint, req, fixture, full)
-	//XXX: Recent git versions return "failed to update ref", while older
+	// XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
 	c.Assert(err, ErrorMatches, ".*(failed to update ref|failed to lock).*")
 	c.Assert(report.UnpackStatus, Equals, "ok")
@@ -214,8 +214,9 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C)
 }
 
 func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
-	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
-	callAdvertisedReferences bool) (*packp.ReportStatus, error) {
+	req *packp.UpdateRequests, fixture *fixtures.Fixture,
+	callAdvertisedReferences bool,
+) (*packp.ReportStatus, error) {
 	url := ""
 	if fixture != nil {
 		url = fixture.URL
@@ -264,8 +265,9 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 }
 
 func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
-	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
-	callAdvertisedReferences bool) {
+	req *packp.UpdateRequests, fixture *fixtures.Fixture,
+	callAdvertisedReferences bool,
+) {
 	url := ""
 	if fixture != nil {
 		url = fixture.URL
@@ -290,8 +292,8 @@ func (s *ReceivePackSuite) checkRemoteHead(c *C, ep *transport.Endpoint, head pl
 }
 
 func (s *ReceivePackSuite) checkRemoteReference(c *C, ep *transport.Endpoint,
-	refName string, head plumbing.Hash) {
-
+	refName string, head plumbing.Hash,
+) {
 	r, err := s.Client.NewUploadPackSession(ep, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(r.Close(), IsNil) }()

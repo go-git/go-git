@@ -271,7 +271,7 @@ func (s *UpdReqDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, patte
 	c.Assert(r.Decode(input), ErrorMatches, pattern)
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *ReferenceUpdateRequest {
+func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *UpdateRequests {
 	var buf bytes.Buffer
 	for _, p := range payloads {
 		if p == "" {
@@ -288,7 +288,7 @@ func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *ReferenceUpda
 	return r
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOkRaw(c *C, expected *ReferenceUpdateRequest, raw []byte) {
+func (s *UpdReqDecodeSuite) testDecodeOkRaw(c *C, expected *UpdateRequests, raw []byte) {
 	req := NewReferenceUpdateRequest()
 	c.Assert(req.Decode(bytes.NewBuffer(raw)), IsNil)
 	c.Assert(req.Packfile, NotNil)
@@ -298,7 +298,7 @@ func (s *UpdReqDecodeSuite) testDecodeOkRaw(c *C, expected *ReferenceUpdateReque
 	c.Assert(req, DeepEquals, expected)
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOkExpected(c *C, expected *ReferenceUpdateRequest, payloads []string) {
+func (s *UpdReqDecodeSuite) testDecodeOkExpected(c *C, expected *UpdateRequests, payloads []string) {
 	req := s.testDecodeOK(c, payloads)
 	c.Assert(req.Packfile, NotNil)
 	s.compareReaders(c, req.Packfile, expected.Packfile)

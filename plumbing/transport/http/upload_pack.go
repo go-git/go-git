@@ -19,7 +19,7 @@ type upSession struct {
 }
 
 func newUploadPackSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
-	s, err := newSession(c, ep, auth)
+	s, err := newSession(nil, c, ep, auth)
 	return &upSession{s}, err
 }
 
@@ -96,7 +96,7 @@ func (s *upSession) doRequest(
 		return nil, plumbing.NewUnexpectedError(err)
 	}
 
-	if err := NewErr(res); err != nil {
+	if err := checkError(res); err != nil {
 		return nil, err
 	}
 
@@ -109,7 +109,7 @@ func uploadPackRequestToReader(req *packp.UploadPackRequest) (*bytes.Buffer, err
 		return nil, fmt.Errorf("sending upload-req message: %s", err)
 	}
 
-	if err := req.UploadHaves.Encode(buf, false); err != nil {
+	if err := req.UploadHaves.Encode(buf); err != nil {
 		return nil, fmt.Errorf("sending haves message: %s", err)
 	}
 

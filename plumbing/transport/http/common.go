@@ -2,11 +2,13 @@
 package http
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,8 +18,12 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/golang/groupcache/lru"
 )
@@ -25,6 +31,73 @@ import (
 func init() {
 	transport.Register("http", DefaultClient)
 	transport.Register("https", DefaultClient)
+}
+
+func applyHeaders(
+	req *http.Request,
+	service string,
+	ep *transport.Endpoint,
+	auth AuthMethod,
+	isSmart bool,
+) {
+	// Add headers
+	req.Header.Add("User-Agent", "git/1.0")
+	req.Header.Add("Host", ep.Host) // host:port
+
+	if isSmart {
+		req.Header.Add("Accept", fmt.Sprintf("application/x-%s-result", service))
+		req.Header.Add("Content-Type", fmt.Sprintf("application/x-%s-request", service))
+	}
+
+	// Set auth headers
+	if auth != nil {
+		auth.SetAuth(req)
+	}
+}
+
+// doRequest applies the auth and headers, then performs a request to the
+// server and returns the response.
+func doRequest(
+	client *http.Client,
+	req *http.Request,
+) (*http.Response, error) {
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices {
+		return res, nil
+	}
+
+	return nil, checkError(res)
+}
+
+// modifyRedirect modifies the endpoint based on the redirect response.
+func modifyRedirect(res *http.Response, ep *transport.Endpoint) {
+	if res.Request == nil {
+		return
+	}
+
+	r := res.Request
+	if !strings.HasSuffix(r.URL.Path, infoRefsPath) {
+		return
+	}
+
+	h, p, err := net.SplitHostPort(r.URL.Host)
+	if err != nil {
+		h = r.URL.Host
+	}
+	if p != "" {
+		port, err := strconv.Atoi(p)
+		if err == nil {
+			ep.Port = port
+		}
+	}
+
+	ep.Host = h
+	ep.Protocol = r.URL.Scheme
+	ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
 }
 
 // it requires a bytes.Buffer, because we need to know the length
@@ -65,7 +138,7 @@ func advertisedReferences(ctx context.Context, s *session, serviceName string) (
 	s.ModifyEndpointIfRedirect(res)
 	defer ioutil.CheckClose(res.Body, &err)
 
-	if err = NewErr(res); err != nil {
+	if err = checkError(res); err != nil {
 		return nil, err
 	}
 
@@ -163,24 +236,33 @@ func NewClientWithOptions(c *http.Client, opts *ClientOptions) transport.Transpo
 	return cl
 }
 
-func (c *client) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
-	transport.UploadPackSession, error) {
+func (c *client) NewSession(st storage.Storer, ep *transport.Endpoint, auth transport.AuthMethod) (transport.PackSession, error) {
+	return newSession(st, c, ep, auth)
+}
 
+func (c *client) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
+	transport.UploadPackSession, error,
+) {
 	return newUploadPackSession(c, ep, auth)
 }
 
 func (c *client) NewReceivePackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
-	transport.ReceivePackSession, error) {
-
+	transport.ReceivePackSession, error,
+) {
 	return newReceivePackSession(c, ep, auth)
 }
 
+// TODO: support smart client
 type session struct {
+	st       storage.Storer
 	auth     AuthMethod
 	client   *http.Client
 	endpoint *transport.Endpoint
 	advRefs  *packp.AdvRefs
+	version  protocol.Version
 }
+
+var _ transport.PackSession = (*session)(nil)
 
 func transportWithInsecureTLS(transport *http.Transport) {
 	if transport.TLSClientConfig == nil {
@@ -229,7 +311,7 @@ func configureTransport(transport *http.Transport, ep *transport.Endpoint) error
 	return nil
 }
 
-func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*session, error) {
+func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*session, error) {
 	var httpClient *http.Client
 
 	// We need to configure the http transport if there are transport specific
@@ -280,6 +362,7 @@ func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*
 	}
 
 	s := &session{
+		st:       st,
 		auth:     basicAuthFromEndpoint(ep),
 		client:   httpClient,
 		endpoint: ep,
@@ -294,6 +377,166 @@ func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*
 	}
 
 	return s, nil
+}
+
+// Handshake implements transport.PackSession.
+func (s *session) Handshake(ctx context.Context, forPush bool, params ...string) (transport.Connection, error) {
+	service := transport.UploadPackServiceName
+	if forPush {
+		service = transport.ReceivePackServiceName
+	}
+
+	url := fmt.Sprintf(
+		"%s%s?service=%s",
+		s.endpoint.String(), infoRefsPath, service,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	applyHeaders(req, service, s.endpoint, s.auth, false) // TODO: support smart client
+	res, err := doRequest(s.client, req)
+	if err != nil {
+		return nil, err
+	}
+
+	modifyRedirect(res, s.endpoint)
+	defer ioutil.CheckClose(res.Body, &err)
+
+	rd := bufio.NewReader(res.Body)
+	s.version, _ = transport.DetermineProtocolVersion(rd)
+
+	ar := packp.NewAdvRefs()
+	if err = ar.Decode(rd); err != nil {
+		if err == packp.ErrEmptyAdvRefs {
+			err = transport.ErrEmptyRemoteRepository
+		}
+
+		return nil, err
+	}
+
+	// Git 2.41+ returns a zero-id plus capabilities when an empty
+	// repository is being cloned. This skips the existing logic within
+	// advrefs_decode.decodeFirstHash, which expects a flush-pkt instead.
+	//
+	// This logic aligns with plumbing/transport/internal/common/common.go.
+	if ar.IsEmpty() &&
+		// Empty repositories are valid for git-receive-pack.
+		transport.ReceivePackServiceName != service {
+		return nil, transport.ErrEmptyRemoteRepository
+	}
+
+	transport.FilterUnsupportedCapabilities(ar.Capabilities)
+	s.advRefs = ar
+
+	return s, nil
+}
+
+var _ transport.Connection = &session{}
+
+// Capabilities implements transport.Connection.
+func (s *session) Capabilities() *capability.List {
+	return s.advRefs.Capabilities
+}
+
+// IsStatelessRPC implements transport.Connection.
+func (*session) IsStatelessRPC() bool {
+	return true
+}
+
+// Fetch implements transport.Connection.
+func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (*transport.FetchResponse, error) {
+	rwc := &requestReadWriteCloser{
+		ctx:     ctx,
+		client:  s.client,
+		auth:    s.auth,
+		ep:      s.endpoint,
+		service: transport.UploadPackServiceName,
+		isSmart: false,
+	}
+
+	shupd, err := transport.NegotiatePack(s.st, s, rwc, rwc, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &transport.FetchResponse{
+		// XXX: at this point, the rwc will contain the packfile. Make sure we
+		// pass the right closer to avoid leaks.
+		Packfile: ioutil.NewReadCloser(rwc, rwc.res.Body),
+		Shallows: shupd.Shallows,
+	}, nil
+}
+
+// GetRemoteRefs implements transport.Connection.
+func (s *session) GetRemoteRefs(ctx context.Context) (memory.ReferenceStorage, map[string]plumbing.Hash, error) {
+	allRefs, err := s.advRefs.AllReferences()
+	if err != nil {
+		return nil, nil, err
+	}
+	return allRefs, s.advRefs.Peeled, nil
+}
+
+// Push implements transport.Connection.
+func (s *session) Push(ctx context.Context, req *transport.PushRequest) (*transport.PushResponse, error) {
+	panic("unimplemented")
+}
+
+// Version implements transport.Connection.
+func (s *session) Version() protocol.Version {
+	return s.version
+}
+
+// requestReadWriteCloser is a io.ReadWriteCloser that sends a request to the
+// server and reads the response into the struct.
+type requestReadWriteCloser struct {
+	client *http.Client
+
+	reqBuf bytes.Buffer
+	ctx    context.Context
+	req    *http.Request  // the last request made
+	res    *http.Response // the last response received
+
+	auth    AuthMethod
+	ep      *transport.Endpoint
+	service string
+	isSmart bool
+}
+
+var _ io.ReadWriteCloser = &requestReadWriteCloser{}
+
+// Close implements io.ReadWriteCloser.
+func (r *requestReadWriteCloser) Close() (err error) {
+	defer r.reqBuf.Reset()
+
+	var req *http.Request
+	url := fmt.Sprintf("%s/%s", r.ep.String(), r.service)
+	req, err = http.NewRequestWithContext(r.ctx, http.MethodPost, url, &r.reqBuf)
+	if err != nil {
+		return
+	}
+
+	applyHeaders(req, r.service, r.ep, r.auth, r.isSmart)
+	r.req = req
+
+	r.res, err = doRequest(r.client, r.req)
+	return
+}
+
+// Write implements io.ReadWriteCloser.
+func (r *requestReadWriteCloser) Write(p []byte) (n int, err error) {
+	return r.reqBuf.Write(p)
+}
+
+// Read implements io.ReadWriteCloser.
+func (r *requestReadWriteCloser) Read(p []byte) (n int, err error) {
+	if r.res == nil || r.res.Body == nil {
+		return 0, io.EOF
+	}
+
+	return r.res.Body.Read(p)
 }
 
 func (s *session) ApplyAuthToRequest(req *http.Request) {
@@ -410,13 +653,13 @@ func (a *TokenAuth) String() string {
 
 // Err is a dedicated error to return errors based on status code
 type Err struct {
-	Response *http.Response
-	Reason   string
+	URL    *url.URL
+	Status int
+	Reason string
 }
 
-// NewErr returns a new Err based on a http response and closes response body
-// if needed
-func NewErr(r *http.Response) error {
+// checkError returns a new Err based on a http response.
+func checkError(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
@@ -430,7 +673,6 @@ func NewErr(r *http.Response) error {
 		if messageLength > 0 {
 			reason = messageBuffer.String()
 		}
-		_ = r.Body.Close()
 	}
 
 	switch r.StatusCode {
@@ -442,16 +684,22 @@ func NewErr(r *http.Response) error {
 		return transport.ErrRepositoryNotFound
 	}
 
-	return plumbing.NewUnexpectedError(&Err{r, reason})
+	return plumbing.NewUnexpectedError(&Err{
+		URL:    r.Request.URL,
+		Status: r.StatusCode,
+		Reason: reason,
+	})
 }
 
 // StatusCode returns the status code of the response
 func (e *Err) StatusCode() int {
-	return e.Response.StatusCode
+	return e.Status
 }
 
 func (e *Err) Error() string {
-	return fmt.Sprintf("unexpected requesting %q status code: %d",
-		e.Response.Request.URL, e.Response.StatusCode,
-	)
+	format := "unexpected requesting %q status code: %d"
+	if e.Reason != "" {
+		return fmt.Sprintf(format+": %s", e.URL, e.Status, e.Reason)
+	}
+	return fmt.Sprintf(format, e.URL, e.Status)
 }

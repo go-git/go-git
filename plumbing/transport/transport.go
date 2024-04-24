@@ -26,6 +26,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v5/storage"
 )
 
 var (
@@ -46,6 +47,9 @@ const (
 // Transport can initiate git-upload-pack and git-receive-pack processes.
 // It is implemented both by the client and the server, making this a RPC.
 type Transport interface {
+	// NewSession returns a new session for an endpoint.
+	NewSession(storage.Storer, *Endpoint, AuthMethod) (PackSession, error)
+
 	// NewUploadPackSession starts a git-upload-pack session for an endpoint.
 	NewUploadPackSession(*Endpoint, AuthMethod) (UploadPackSession, error)
 	// NewReceivePackSession starts a git-receive-pack session for an endpoint.
@@ -94,7 +98,7 @@ type ReceivePackSession interface {
 	// terminology, the client side of a git-receive-pack is called
 	// git-send-pack, although here the same interface is used to make it
 	// RPC-like.
-	ReceivePack(context.Context, *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error)
+	ReceivePack(context.Context, *packp.UpdateRequests) (*packp.ReportStatus, error)
 }
 
 // Endpoint represents a Git URL in any supported protocol.

@@ -32,9 +32,7 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-var (
-	defaultTestCommitOptions = &CommitOptions{Author: &object.Signature{Name: "testuser", Email: "testemail"}}
-)
+var defaultTestCommitOptions = &CommitOptions{Author: &object.Signature{Name: "testuser", Email: "testemail"}}
 
 type WorktreeSuite struct {
 	BaseSuite
@@ -332,7 +330,7 @@ func (s *WorktreeSuite) TestPullAfterShallowClone(c *C) {
 	repo, err := PlainClone(repoDir, false, &CloneOptions{
 		URL:           remoteURL,
 		Depth:         1,
-		Tags:          NoTags,
+		Tags:          plumbing.NoTags,
 		SingleBranch:  true,
 		ReferenceName: "master",
 	})
@@ -1271,7 +1269,6 @@ func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 	status, err := w.Status()
 	c.Assert(err, IsNil)
 	c.Assert(status.IsClean(), Equals, true)
-
 }
 
 func (s *WorktreeSuite) TestStatusModified(c *C) {
@@ -2287,7 +2284,6 @@ func (s *WorktreeSuite) TestMove(c *C) {
 	c.Assert(status, HasLen, 2)
 	c.Assert(status.File("LICENSE").Staging, Equals, Deleted)
 	c.Assert(status.File("foo").Staging, Equals, Added)
-
 }
 
 func (s *WorktreeSuite) TestMoveNotExistentEntry(c *C) {

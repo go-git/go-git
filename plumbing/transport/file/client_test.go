@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,11 +29,11 @@ func (s *ClientSuite) TestCommand(c *C) {
 	ep, err := transport.NewEndpoint(filepath.Join("fake", "repo"))
 	c.Assert(err, IsNil)
 	var emptyAuth transport.AuthMethod
-	_, err = runner.Command("git-receive-pack", ep, emptyAuth)
+	_, err = runner.Command(context.TODO(), "git-receive-pack", ep, emptyAuth)
 	c.Assert(err, IsNil)
 
 	// Make sure we get an error for one that doesn't exist.
-	_, err = runner.Command("git-fake-command", ep, emptyAuth)
+	_, err = runner.Command(context.TODO(), "git-fake-command", ep, emptyAuth)
 	c.Assert(err, NotNil)
 }
 

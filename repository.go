@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/internal/path_util"
+	"github.com/go-git/go-git/v5/internal/repository"
 	"github.com/go-git/go-git/v5/internal/revision"
 	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -1056,7 +1058,6 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 func (r *Repository) fetchAndUpdateReferences(
 	ctx context.Context, o *FetchOptions, ref plumbing.ReferenceName,
 ) (*plumbing.Reference, error) {
-
 	if err := o.Validate(); err != nil {
 		return nil, err
 	}
@@ -1068,21 +1069,25 @@ func (r *Repository) fetchAndUpdateReferences(
 
 	objsUpdated := true
 	remoteRefs, err := remote.fetch(ctx, o)
+	log.Printf("remoteRefs: %v, err = %v", remoteRefs, err)
 	if err == NoErrAlreadyUpToDate {
 		objsUpdated = false
 	} else if err == packfile.ErrEmptyPackfile {
 		return nil, ErrFetching
 	} else if err != nil {
+		log.Printf("error fetching: %v", err)
 		return nil, err
 	}
 
-	resolvedRef, err := expand_ref(remoteRefs, ref)
+	resolvedRef, err := repository.ExpandRef(remoteRefs, ref)
 	if err != nil {
+		log.Printf("error expanding ref: %v", err)
 		return nil, err
 	}
 
 	refsUpdated, err := r.updateReferences(remote.c.Fetch, resolvedRef)
 	if err != nil {
+		log.Printf("error updating references: %v", err)
 		return nil, err
 	}
 
@@ -1094,8 +1099,8 @@ func (r *Repository) fetchAndUpdateReferences(
 }
 
 func (r *Repository) updateReferences(spec []config.RefSpec,
-	resolvedRef *plumbing.Reference) (updated bool, err error) {
-
+	resolvedRef *plumbing.Reference,
+) (updated bool, err error) {
 	if !resolvedRef.Name().IsBranch() {
 		// Detached HEAD mode
 		h, err := r.resolveToCommitHash(resolvedRef.Hash())
@@ -1130,8 +1135,8 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 }
 
 func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
-	resolvedHead *plumbing.Reference) []*plumbing.Reference {
-
+	resolvedHead *plumbing.Reference,
+) []*plumbing.Reference {
 	var refs []*plumbing.Reference
 
 	// Create resolved HEAD reference with remote prefix if it does not
@@ -1154,7 +1159,8 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 
 func checkAndUpdateReferenceStorerIfNeeded(
 	s storer.ReferenceStorer, r, old *plumbing.Reference) (
-	updated bool, err error) {
+	updated bool, err error,
+) {
 	p, err := s.Reference(r.Name())
 	if err != nil && err != plumbing.ErrReferenceNotFound {
 		return false, err
@@ -1173,7 +1179,8 @@ func checkAndUpdateReferenceStorerIfNeeded(
 }
 
 func updateReferenceStorerIfNeeded(
-	s storer.ReferenceStorer, r *plumbing.Reference) (updated bool, err error) {
+	s storer.ReferenceStorer, r *plumbing.Reference,
+) (updated bool, err error) {
 	return checkAndUpdateReferenceStorerIfNeeded(s, r, nil)
 }
 
@@ -1500,8 +1507,8 @@ func (r *Repository) Head() (*plumbing.Reference, error) {
 // Reference returns the reference for a given reference name. If resolved is
 // true, any symbolic reference will be resolved.
 func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
-	*plumbing.Reference, error) {
-
+	*plumbing.Reference, error,
+) {
 	if resolved {
 		return storer.ResolveReference(r.Storer, name)
 	}
@@ -1524,23 +1531,6 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	return &Worktree{r: r, Filesystem: r.wt}, nil
 }
 
-func expand_ref(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
-	// For improving troubleshooting, this preserves the error for the provided `ref`,
-	// and returns the error for that specific ref in case all parse rules fails.
-	var ret error
-	for _, rule := range plumbing.RefRevParseRules {
-		resolvedRef, err := storer.ResolveReference(s, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
-
-		if err == nil {
-			return resolvedRef, nil
-		} else if ret == nil {
-			ret = err
-		}
-	}
-
-	return nil, ret
-}
-
 // ResolveRevision resolves revision to corresponding hash. It will always
 // resolve to a commit hash, not a tree or annotated tag.
 //
@@ -1554,7 +1544,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 	p := revision.NewParserFromString(rev)
 	items, err := p.Parse()
-
 	if err != nil {
 		return nil, err
 	}
@@ -1570,7 +1559,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 			tryHashes = append(tryHashes, r.resolveHashPrefix(string(revisionRef))...)
 
-			ref, err := expand_ref(r.Storer, plumbing.ReferenceName(revisionRef))
+			ref, err := repository.ExpandRef(r.Storer, plumbing.ReferenceName(revisionRef))
 			if err == nil {
 				tryHashes = append(tryHashes, ref.Hash())
 			}
@@ -1618,7 +1607,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			iter := commit.Parents()
 
 			c, err := iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1630,7 +1618,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			}
 
 			c, err = iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1639,7 +1626,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 		case revision.TildePath:
 			for i := 0; i < item.Depth; i++ {
 				c, err := commit.Parents().Next()
-
 				if err != nil {
 					return &plumbing.ZeroHash, err
 				}

@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -163,7 +164,7 @@ func (s *SuiteCommon) TestIssue70(c *C) {
 		config: config,
 	}
 
-	cmd, err := r.Command("command", uploadPack.newEndpoint(c, "endpoint"), uploadPack.EmptyAuth)
+	cmd, err := r.Command(context.TODO(), "command", uploadPack.newEndpoint(c, "endpoint"), uploadPack.EmptyAuth)
 	c.Assert(err, IsNil)
 
 	c.Assert(cmd.(*command).client.Close(), IsNil)
@@ -188,7 +189,7 @@ func (s *SuiteCommon) TestInvalidSocks5Proxy(c *C) {
 	c.Assert(auth, NotNil)
 
 	ps, err := DefaultClient.NewUploadPackSession(ep, auth)
-	//Since the proxy server is not running, we expect an error.
+	// Since the proxy server is not running, we expect an error.
 	c.Assert(ps, IsNil)
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, "socks connect .* dial tcp 127.0.0.1:1080: .*")
@@ -207,8 +208,7 @@ func (c *mockSSHConfig) Get(alias, key string) string {
 	return a[key]
 }
 
-type invalidAuthMethod struct {
-}
+type invalidAuthMethod struct{}
 
 func (a *invalidAuthMethod) Name() string {
 	return "invalid"
@@ -224,7 +224,7 @@ func (s *SuiteCommon) TestCommandWithInvalidAuthMethod(c *C) {
 	r := &runner{}
 	auth := &invalidAuthMethod{}
 
-	_, err := r.Command("command", uploadPack.newEndpoint(c, "endpoint"), auth)
+	_, err := r.Command(context.TODO(), "command", uploadPack.newEndpoint(c, "endpoint"), auth)
 
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, "invalid auth method")

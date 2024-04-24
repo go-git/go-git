@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/revlist"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
@@ -41,6 +42,10 @@ func NewClient(loader Loader) transport.Transport {
 		loader,
 		&handler{asClient: true},
 	}
+}
+
+func (s *server) NewSession(st storage.Storer, ep *transport.Endpoint, auth transport.AuthMethod) (transport.PackSession, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (s *server) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
@@ -89,7 +94,7 @@ func (s *session) Close() error {
 }
 
 func (s *session) SetAuth(transport.AuthMethod) error {
-	//TODO: deprecate
+	// TODO: deprecate
 	return nil
 }
 
@@ -231,11 +236,9 @@ func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 	return ar, nil
 }
 
-var (
-	ErrUpdateReference = errors.New("failed to update ref")
-)
+var ErrUpdateReference = errors.New("failed to update ref")
 
-func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+func (s *rpSession) ReceivePack(ctx context.Context, req *packp.UpdateRequests) (*packp.ReportStatus, error) {
 	if s.caps == nil {
 		s.caps = capability.NewList()
 		if err := s.setSupportedCapabilities(s.caps); err != nil {
@@ -249,7 +252,7 @@ func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateR
 
 	s.caps = req.Capabilities
 
-	//TODO: Implement 'atomic' update of references.
+	// TODO: Implement 'atomic' update of references.
 
 	if req.Packfile != nil {
 		r := ioutil.NewContextReadCloser(ctx, req.Packfile)
@@ -264,7 +267,7 @@ func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateR
 	return s.reportStatus(), s.firstErr
 }
 
-func (s *rpSession) updateReferences(req *packp.ReferenceUpdateRequest) {
+func (s *rpSession) updateReferences(req *packp.UpdateRequests) {
 	for _, cmd := range req.Commands {
 		exists, err := referenceExists(s.storer, cmd.Name)
 		if err != nil {
@@ -406,7 +409,7 @@ func setHEAD(s storer.Storer, ar *packp.AdvRefs) error {
 }
 
 func setReferences(s storer.Storer, ar *packp.AdvRefs) error {
-	//TODO: add peeled references.
+	// TODO: add peeled references.
 	iter, err := s.IterReferences()
 	if err != nil {
 		return err

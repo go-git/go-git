@@ -114,7 +114,7 @@ func (s *Scanner) Header() (version, objects uint32, err error) {
 
 // readSignature reads a returns the signature field in the packfile.
 func (s *Scanner) readSignature() ([]byte, error) {
-	var sig = make([]byte, 4)
+	sig := make([]byte, 4)
 	if _, err := io.ReadFull(s.r, sig); err != nil {
 		return []byte{}, err
 	}
@@ -322,7 +322,6 @@ func (s *Scanner) NextObject(w io.Writer) (written int64, crc32 uint32, err erro
 func (s *Scanner) ReadObject() (io.ReadCloser, error) {
 	s.pendingObject = nil
 	zr, err := sync.GetZlibReader(s.r)
-
 	if err != nil {
 		return nil, fmt.Errorf("zlib reset error: %s", err)
 	}

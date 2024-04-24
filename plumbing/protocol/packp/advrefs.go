@@ -167,7 +167,8 @@ func (a *AdvRefs) resolveHead(s storer.ReferenceStorer) error {
 
 func (a *AdvRefs) createHeadIfCorrectReference(
 	reference *plumbing.Reference,
-	s storer.ReferenceStorer) (bool, error) {
+	s storer.ReferenceStorer,
+) (bool, error) {
 	if reference.Hash() == *a.Head {
 		headRef := plumbing.NewSymbolicReference(plumbing.HEAD, reference.Name())
 		if err := s.SetReference(headRef); err != nil {

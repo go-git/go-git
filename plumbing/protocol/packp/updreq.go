@@ -14,12 +14,12 @@ var (
 	ErrMalformedCommand = errors.New("malformed command")
 )
 
-// ReferenceUpdateRequest values represent reference upload requests.
+// UpdateRequests values represent reference upload requests.
 // Values from this type are not zero-value safe, use the New function instead.
 // TODO: remove the Packfile and Progress fields to make this 1-1 with the
 // wire protocol.
 // See https://git-scm.com/docs/pack-protocol#_reference_update_request_and_packfile_transfer
-type ReferenceUpdateRequest struct {
+type UpdateRequests struct {
 	Capabilities *capability.List
 	Commands     []*Command
 	Options      []*Option
@@ -32,8 +32,8 @@ type ReferenceUpdateRequest struct {
 }
 
 // New returns a pointer to a new ReferenceUpdateRequest value.
-func NewReferenceUpdateRequest() *ReferenceUpdateRequest {
-	return &ReferenceUpdateRequest{
+func NewReferenceUpdateRequest() *UpdateRequests {
+	return &UpdateRequests{
 		// TODO: Add support for push-cert
 		Capabilities: capability.NewList(),
 		Commands:     nil,
@@ -59,7 +59,7 @@ func NewReferenceUpdateRequest() *ReferenceUpdateRequest {
 //   - side-band-64k
 //   - quiet
 //   - push-cert
-func NewReferenceUpdateRequestFromCapabilities(adv *capability.List) *ReferenceUpdateRequest {
+func NewReferenceUpdateRequestFromCapabilities(adv *capability.List) *UpdateRequests {
 	r := NewReferenceUpdateRequest()
 
 	if adv.Supports(capability.Agent) {
@@ -73,7 +73,7 @@ func NewReferenceUpdateRequestFromCapabilities(adv *capability.List) *ReferenceU
 	return r
 }
 
-func (req *ReferenceUpdateRequest) validate() error {
+func (req *UpdateRequests) validate() error {
 	if len(req.Commands) == 0 {
 		return ErrEmptyCommands
 	}

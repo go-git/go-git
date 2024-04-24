@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v5/storage"
 )
 
 // UploadPackRequest represents a upload-pack request.
@@ -15,6 +16,8 @@ import (
 type UploadPackRequest struct {
 	UploadRequest
 	UploadHaves
+
+	Storer storage.Storer
 }
 
 // NewUploadPackRequest creates a new UploadPackRequest and returns a pointer.
@@ -68,9 +71,8 @@ type UploadHaves struct {
 	Haves []plumbing.Hash
 }
 
-// Encode encodes the UploadHaves into the Writer. If flush is true, a flush
-// command will be encoded at the end of the writer content.
-func (u *UploadHaves) Encode(w io.Writer, flush bool) error {
+// Encode encodes the UploadHaves into the Writer.
+func (u *UploadHaves) Encode(w io.Writer) error {
 	plumbing.HashesSort(u.Haves)
 
 	var last plumbing.Hash
@@ -86,11 +88,17 @@ func (u *UploadHaves) Encode(w io.Writer, flush bool) error {
 		last = have
 	}
 
-	if flush && len(u.Haves) != 0 {
+	return nil
+}
+
+// Flush encodes a flush command if there are haves to send.
+// Deprecated
+// TODO: remove
+func (u *UploadHaves) Flush(w io.Writer) error {
+	if len(u.Haves) != 0 {
 		if err := pktline.WriteFlush(w); err != nil {
 			return fmt.Errorf("sending flush-pkt after haves: %s", err)
 		}
 	}
-
 	return nil
 }

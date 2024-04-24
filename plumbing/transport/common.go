@@ -11,14 +11,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
@@ -37,12 +41,12 @@ var (
 // Commander creates Command instances. This is the main entry point for
 // transport implementations.
 type Commander interface {
-	// Command creates a new Command for the given git command and
+	// Connect creates a new Command for the given git command and
 	// endpoint. cmd can be git-upload-pack or git-receive-pack. An
 	// error should be returned if the endpoint is not supported or the
 	// command cannot be created (e.g. binary does not exist, connection
 	// cannot be established).
-	Command(cmd string, ep *Endpoint, auth AuthMethod) (Command, error)
+	Command(ctx context.Context, cmd string, ep *Endpoint, auth AuthMethod, params ...string) (Command, error)
 }
 
 // Command is used for a single command execution.
@@ -85,6 +89,10 @@ func NewClient(runner Commander) Transport {
 	return &client{runner}
 }
 
+func (c *client) NewSession(st storage.Storer, ep *Endpoint, auth AuthMethod) (PackSession, error) {
+	return NewPackSession(st, ep, auth, c.cmdr)
+}
+
 // NewUploadPackSession creates a new UploadPackSession.
 func (c *client) NewUploadPackSession(ep *Endpoint, auth AuthMethod) (
 	UploadPackSession, error,
@@ -112,7 +120,7 @@ type session struct {
 }
 
 func (c *client) newSession(s string, ep *Endpoint, auth AuthMethod) (*session, error) {
-	cmd, err := c.cmdr.Command(s, ep, auth)
+	cmd, err := c.cmdr.Command(context.Background(), s, ep, auth)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +330,7 @@ func (s *session) onError(err error) {
 	_ = s.Close()
 }
 
-func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+func (s *session) ReceivePack(ctx context.Context, req *packp.UpdateRequests) (*packp.ReportStatus, error) {
 	if _, err := s.AdvertisedReferences(); err != nil {
 		return nil, err
 	}
@@ -341,7 +349,7 @@ func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateReq
 	if !req.Capabilities.Supports(capability.ReportStatus) {
 		// If we don't have report-status, we can only
 		// check return value error.
-		return nil, s.Command.Close()
+		return nil, s.Stdin.Close()
 	}
 
 	r := s.StdoutContext(ctx)
@@ -367,7 +375,7 @@ func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateReq
 		return report, err
 	}
 
-	return report, s.Command.Close()
+	return report, s.Stdin.Close()
 }
 
 func (s *session) finish() error {
@@ -390,7 +398,7 @@ func (s *session) finish() error {
 func (s *session) Close() (err error) {
 	err = s.finish()
 
-	defer ioutil.CheckClose(s.Command, &err)
+	defer ioutil.CheckClose(s.Stdin, &err)
 	return
 }
 
@@ -455,8 +463,12 @@ func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) err
 		return fmt.Errorf("sending upload-req message: %s", err)
 	}
 
-	if err := req.UploadHaves.Encode(w, true); err != nil {
+	if err := req.UploadHaves.Encode(w); err != nil {
 		return fmt.Errorf("sending haves message: %s", err)
+	}
+
+	if err := req.UploadHaves.Flush(w); err != nil {
+		return fmt.Errorf("sending flush-pkt after haves: %s", err)
 	}
 
 	if err := sendDone(w); err != nil {
@@ -485,4 +497,22 @@ func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
 	}
 
 	return res, nil
+}
+
+// DetermineProtocolVersion used by the transport client to determine which
+// protocol version the remote server is using.
+func DetermineProtocolVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
+	var ver protocol.Version
+
+	_, pktb, err := pktline.PeekLine(r)
+	if err == nil {
+		pkt := string(pktb)
+		if strings.HasPrefix(pkt, "version ") {
+			log.Printf("version pkt: %q", pkt)
+			v, _ := strconv.Atoi(pkt[8:])
+			ver = protocol.Version(v)
+		}
+	}
+
+	return ver, nil
 }

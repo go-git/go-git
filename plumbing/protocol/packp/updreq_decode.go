@@ -75,7 +75,7 @@ func errMalformedCommand(err error) error {
 }
 
 // Decode reads the next update-request message form the reader and wr
-func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
+func (req *UpdateRequests) Decode(r io.Reader) error {
 	var rc io.ReadCloser
 	var ok bool
 	rc, ok = r.(io.ReadCloser)
@@ -90,12 +90,12 @@ func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
 type updReqDecoder struct {
 	r   io.ReadCloser
 	s   io.Reader
-	req *ReferenceUpdateRequest
+	req *UpdateRequests
 
 	payload []byte
 }
 
-func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
+func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 	d.req = req
 	funcs := []func() error{
 		d.scanLine,
