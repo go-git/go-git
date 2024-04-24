@@ -136,7 +136,7 @@ func (e *ulReqEncoder) encodeDepth() stateFn {
 
 func (e *ulReqEncoder) encodeFilter() stateFn {
 	if filter := e.data.Filter; filter != "" {
-		if err := e.pe.Encodef("filter %s\n", filter); err != nil {
+		if _, err := pktline.Writef(e.w, "filter %s\n", filter); err != nil {
 			e.err = fmt.Errorf("encoding filter %s: %s", filter, err)
 			return nil
 		}
