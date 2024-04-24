@@ -272,6 +272,20 @@ func (s *UlReqEncodeSuite) TestDepthReference(c *C) {
 	testUlReqEncode(c, ur, expected)
 }
 
+func (s *UlReqEncodeSuite) TestFilter(c *C) {
+	ur := NewUploadRequest()
+	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	ur.Filter = FilterTreeDepth(0)
+
+	expected := []string{
+		"want 1111111111111111111111111111111111111111\n",
+		"filter tree:0\n",
+		pktline.FlushString,
+	}
+
+	testUlReqEncode(c, ur, expected)
+}
+
 func (s *UlReqEncodeSuite) TestAll(c *C) {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants,

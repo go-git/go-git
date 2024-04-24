@@ -885,6 +885,41 @@ func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	c.Assert(head.Name().String(), Equals, "HEAD")
 }
 
+func (s *WorktreeSuite) TestCheckoutTagHash(c *C) {
+	f := fixtures.ByTag("tags").One()
+	r := s.NewRepositoryWithEmptyWorktree(f)
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	for _, hash := range []string{
+		"b742a2a9fa0afcfa9a6fad080980fbc26b007c69", // annotated tag
+		"ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc", // commit tag
+		"f7b877701fbf855b44c0a9e86f3fdce2c298b07f", // lightweight tag
+	} {
+		err = w.Checkout(&CheckoutOptions{
+			Hash: plumbing.NewHash(hash),
+		})
+		c.Assert(err, IsNil)
+		head, err := w.r.Head()
+		c.Assert(err, IsNil)
+		c.Assert(head.Name().String(), Equals, "HEAD")
+
+		status, err := w.Status()
+		c.Assert(err, IsNil)
+		c.Assert(status.IsClean(), Equals, true)
+	}
+
+	for _, hash := range []string{
+		"fe6cb94756faa81e5ed9240f9191b833db5f40ae", // blob tag
+		"152175bf7e5580299fa1f0ba41ef6474cc043b70", // tree tag
+	} {
+		err = w.Checkout(&CheckoutOptions{
+			Hash: plumbing.NewHash(hash),
+		})
+		c.Assert(err, NotNil)
+	}
+}
+
 func (s *WorktreeSuite) TestCheckoutBisect(c *C) {
 	if testing.Short() {
 		c.Skip("skipping test in short mode.")
@@ -1205,6 +1240,7 @@ func (s *WorktreeSuite) TestResetHardWithGitIgnore(c *C) {
 	f, err := fs.Create(".gitignore")
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("foo\n"))
+	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("newTestFile.txt\n"))
 	c.Assert(err, IsNil)
 	err = f.Close()
@@ -1892,6 +1928,166 @@ func (s *WorktreeSuite) TestAddGlobErrorNoMatches(c *C) {
 
 	err := w.AddGlob("foo")
 	c.Assert(err, Equals, ErrGlobNoMatches)
+}
+
+func (s *WorktreeSuite) TestAddSkipStatusAddedPath(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(w.Filesystem, "file1", []byte("file1"), 0644)
+	c.Assert(err, IsNil)
+
+	err = w.AddWithOptions(&AddOptions{Path: "file1", SkipStatus: true})
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 10)
+
+	e, err := idx.Entry("file1")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+
+	file := status.File("file1")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+}
+
+func (s *WorktreeSuite) TestAddSkipStatusModifiedPath(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(w.Filesystem, "LICENSE", []byte("file1"), 0644)
+	c.Assert(err, IsNil)
+
+	err = w.AddWithOptions(&AddOptions{Path: "LICENSE", SkipStatus: true})
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	e, err := idx.Entry("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+
+	file := status.File("LICENSE")
+	c.Assert(file.Staging, Equals, Modified)
+	c.Assert(file.Worktree, Equals, Unmodified)
+}
+
+func (s *WorktreeSuite) TestAddSkipStatusNonModifiedPath(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = w.AddWithOptions(&AddOptions{Path: "LICENSE", SkipStatus: true})
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	e, err := idx.Entry("LICENSE")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 0)
+
+	file := status.File("LICENSE")
+	c.Assert(file.Staging, Equals, Untracked)
+	c.Assert(file.Worktree, Equals, Untracked)
+}
+
+func (s *WorktreeSuite) TestAddSkipStatusWithIgnoredPath(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(fs, ".gitignore", []byte("fileToIgnore\n"), 0755)
+	c.Assert(err, IsNil)
+	_, err = w.Add(".gitignore")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("Added .gitignore", defaultTestCommitOptions)
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(fs, "fileToIgnore", []byte("file to ignore"), 0644)
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 0)
+
+	file := status.File("fileToIgnore")
+	c.Assert(file.Staging, Equals, Untracked)
+	c.Assert(file.Worktree, Equals, Untracked)
+
+	err = w.AddWithOptions(&AddOptions{Path: "fileToIgnore", SkipStatus: true})
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 10)
+
+	e, err := idx.Entry("fileToIgnore")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Regular)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 1)
+
+	file = status.File("fileToIgnore")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
 }
 
 func (s *WorktreeSuite) TestRemove(c *C) {
@@ -2745,5 +2941,81 @@ func (s *WorktreeSuite) TestLinkedWorktree(c *C) {
 		c.Assert(err, IsNil)
 		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
 		c.Assert(err, Equals, ErrRepositoryIncomplete)
+	}
+}
+
+func TestValidPath(t *testing.T) {
+	type testcase struct {
+		path    string
+		wantErr bool
+	}
+
+	tests := []testcase{
+		{".git", true},
+		{".git/b", true},
+		{".git\\b", true},
+		{"git~1", true},
+		{"a/../b", true},
+		{"a\\..\\b", true},
+		{"/", true},
+		{"", true},
+		{".gitmodules", false},
+		{".gitignore", false},
+		{"a..b", false},
+		{".", false},
+		{"a/.git", false},
+		{"a\\.git", false},
+		{"a/.git/b", false},
+		{"a\\.git\\b", false},
+	}
+
+	if runtime.GOOS == "windows" {
+		tests = append(tests, []testcase{
+			{"\\\\a\\b", true},
+			{"C:\\a\\b", true},
+			{".git . . .", true},
+			{".git . . ", true},
+			{".git ", true},
+			{".git.", true},
+			{".git::$INDEX_ALLOCATION", true},
+		}...)
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			err := validPath(tc.path)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWindowsValidPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{".git", false},
+		{".git . . .", false},
+		{".git ", false},
+		{".git  ", false},
+		{".git . .", false},
+		{".git . .", false},
+		{".git::$INDEX_ALLOCATION", false},
+		{".git:", false},
+		{"a", true},
+		{"a\\b", true},
+		{"a/b", true},
+		{".gitm", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			got := windowsValidPath(tc.path)
+			assert.Equal(t, tc.want, got)
+		})
 	}
 }

@@ -16,13 +16,13 @@ jobs:
         GIT_DIST_PATH: .git-dist/${{ matrix.git[0] }}
 
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: 1.21.x
-
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.21.x
 
     - name: Install build dependencies
       run: sudo apt-get update && sudo apt-get install gettext libcurl4-openssl-dev

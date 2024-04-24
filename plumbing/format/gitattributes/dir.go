@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/go-git/go-billy/v5"
+
 	"github.com/go-git/go-git/v5/plumbing/format/config"
 	gioutil "github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -25,6 +26,8 @@ func ReadAttributesFile(fs billy.Filesystem, path []string, attributesFile strin
 	if err != nil {
 		return nil, err
 	}
+
+	defer gioutil.CheckClose(f, &err)
 
 	return ReadAttributes(f, path, allowMacro)
 }

@@ -13,13 +13,13 @@ jobs:
     
     runs-on: ${{ matrix.platform }}
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ matrix.go-version }}   
-
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}   
   
     - name: Configure known hosts
       if: matrix.platform != 'ubuntu-latest'

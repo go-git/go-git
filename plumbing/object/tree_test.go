@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sort"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -220,6 +221,30 @@ func (o *SortReadCloser) Read(p []byte) (int, error) {
 	return nw, nil
 }
 
+func (s *TreeSuite) TestTreeEntriesSorted(c *C) {
+	tree := &Tree{
+		Entries: []TreeEntry{
+			{"foo", filemode.Empty, plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			{"bar", filemode.Empty, plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			{"baz", filemode.Empty, plumbing.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
+		},
+	}
+
+	{
+		c.Assert(sort.IsSorted(TreeEntrySorter(tree.Entries)), Equals, false)
+		obj := &plumbing.MemoryObject{}
+		err := tree.Encode(obj)
+		c.Assert(err, Equals, ErrEntriesNotSorted)
+	}
+
+	{
+		sort.Sort(TreeEntrySorter(tree.Entries))
+		obj := &plumbing.MemoryObject{}
+		err := tree.Encode(obj)
+		c.Assert(err, IsNil)
+	}
+}
+
 func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 	trees := []*Tree{
 		{
@@ -231,6 +256,7 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 		},
 	}
 	for _, tree := range trees {
+		sort.Sort(TreeEntrySorter(tree.Entries))
 		obj := &plumbing.MemoryObject{}
 		err := tree.Encode(obj)
 		c.Assert(err, IsNil)
