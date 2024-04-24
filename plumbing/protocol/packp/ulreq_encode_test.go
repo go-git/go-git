@@ -280,7 +280,7 @@ func (s *UlReqEncodeSuite) TestFilter(c *C) {
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
 		"filter tree:0\n",
-		pktline.FlushString,
+		"",
 	}
 
 	testUlReqEncode(c, ur, expected)
