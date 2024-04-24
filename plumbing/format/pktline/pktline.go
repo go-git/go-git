@@ -29,7 +29,7 @@ func Write(w io.Writer, p []byte) (n int, err error) {
 		return 0, ErrPayloadTooLong
 	}
 
-	pktlen := len(p) + PacketLenSize
+	pktlen := len(p) + LenSize
 	n, err = w.Write(asciiHex16(pktlen))
 	if err != nil {
 		return
@@ -113,7 +113,7 @@ func WriteResponseEnd(w io.Writer) (err error) {
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
 // equal to 4 is a data packet.
 func Read(r io.Reader, p []byte) (l int, err error) {
-	_, err = io.ReadFull(r, p[:PacketLenSize])
+	_, err = io.ReadFull(r, p[:LenSize])
 	if err != nil {
 		if err == io.ErrUnexpectedEOF {
 			return Err, ErrInvalidPktLen
@@ -128,25 +128,25 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 
 	switch length {
 	case Flush, Delim, ResponseEnd:
-		trace.Packet.Printf("packet: < %04x", l)
+		trace.Packet.Printf("packet: < %04x", length)
 		return length, nil
-	case PacketLenSize: // empty line
-		trace.Packet.Printf("packet: < %04x", l)
+	case LenSize: // empty line
+		trace.Packet.Printf("packet: < %04x", length)
 		return length, nil
 	}
 
-	_, err = io.ReadFull(r, p[PacketLenSize:length])
+	_, err = io.ReadFull(r, p[LenSize:length])
 	if err != nil {
 		return Err, err
 	}
 
-	if bytes.HasPrefix(p[PacketLenSize:], errPrefix) {
+	if bytes.HasPrefix(p[LenSize:], errPrefix) {
 		err = &ErrorLine{
-			Text: string(bytes.TrimSpace(p[PacketLenSize+errPrefixSize : length])),
+			Text: string(bytes.TrimSpace(p[LenSize+errPrefixSize : length])),
 		}
 	}
 
-	trace.Packet.Printf("packet: < %04x %s", l, p[PacketLenSize:length])
+	trace.Packet.Printf("packet: < %04x %s", length, p[LenSize:length])
 
 	return length, err
 }
@@ -165,11 +165,11 @@ func ReadLine(r io.Reader) (l int, p []byte, err error) {
 	defer PutPacketBuffer(buf)
 
 	l, err = Read(r, (*buf)[:])
-	if l < PacketLenSize {
+	if l < LenSize {
 		return l, nil, err
 	}
 
-	return l, (*buf)[PacketLenSize:l], err
+	return l, (*buf)[LenSize:l], err
 }
 
 // PeekLine reads a packet line without consuming it.
@@ -180,7 +180,7 @@ func ReadLine(r io.Reader) (l int, p []byte, err error) {
 //
 // The error can be of type *ErrorLine if the packet is an error packet.
 func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
-	n, err := r.Peek(PacketLenSize)
+	n, err := r.Peek(LenSize)
 	if err != nil {
 		return Err, nil, err
 	}
@@ -192,10 +192,10 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 
 	switch length {
 	case Flush, Delim, ResponseEnd:
-		trace.Packet.Printf("packet: < %04x", l)
+		trace.Packet.Printf("packet: < %04x", length)
 		return length, nil, nil
-	case PacketLenSize: // empty line
-		trace.Packet.Printf("packet: < %04x", l)
+	case LenSize: // empty line
+		trace.Packet.Printf("packet: < %04x", length)
 		return length, []byte{}, nil
 	}
 
@@ -204,14 +204,14 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 		return Err, nil, err
 	}
 
-	buf := data[PacketLenSize:length]
+	buf := data[LenSize:length]
 	if bytes.HasPrefix(buf, errPrefix) {
 		err = &ErrorLine{
 			Text: string(bytes.TrimSpace(buf[errPrefixSize:])),
 		}
 	}
 
-	trace.Packet.Printf("packet: < %04x %s", l, buf)
+	trace.Packet.Printf("packet: < %04x %s", length, buf)
 
 	return length, buf, err
 }

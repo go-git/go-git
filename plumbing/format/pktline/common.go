@@ -22,14 +22,14 @@ const (
 const (
 	// MaxPayloadSize is the maximum payload size of a pkt-line in bytes.
 	// See https://git-scm.com/docs/protocol-common#_pkt_line_format
-	MaxPayloadSize = MaxPacketSize - PacketLenSize
+	MaxPayloadSize = MaxSize - LenSize
 
-	// MaxPacketSize is the maximum packet size of a pkt-line in bytes.
+	// MaxSize is the maximum packet size of a pkt-line in bytes.
 	// See https://git-scm.com/docs/protocol-common#_pkt_line_format
-	MaxPacketSize = 65520
+	MaxSize = 65520
 
-	// PacketLenSize is the size of the packet length in bytes.
-	PacketLenSize = 4
+	// LenSize is the size of the packet length in bytes.
+	LenSize = 4
 )
 
 var (

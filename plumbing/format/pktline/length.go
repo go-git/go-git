@@ -20,7 +20,7 @@ func ParseLength(b []byte) (int, error) {
 	// Limit the maximum size of a pkt-line to 65520 bytes.
 	// Fixes: b4177b89c08b (plumbing: format: pktline, Accept oversized pkt-lines up to 65524 bytes)
 	// See https://github.com/git/git/commit/7841c4801ce51f1f62d376d164372e8677c6bc94
-	if n > MaxPacketSize {
+	if n > MaxSize {
 		return Err, ErrInvalidPktLen
 	}
 
@@ -37,7 +37,7 @@ func hexDecode(buf []byte) (int, error) {
 	}
 
 	var ret int
-	for i := 0; i < PacketLenSize; i++ {
+	for i := 0; i < LenSize; i++ {
 		n, err := asciiHexToByte(buf[i])
 		if err != nil {
 			return 0, ErrInvalidPktLen

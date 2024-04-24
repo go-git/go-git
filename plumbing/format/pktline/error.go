@@ -17,7 +17,7 @@ var (
 )
 
 const (
-	errPrefixSize = PacketLenSize
+	errPrefixSize = LenSize
 )
 
 // ErrorLine is a packet line that contains an error message.
