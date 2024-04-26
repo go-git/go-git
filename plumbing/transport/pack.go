@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // Connection represents a session endpoint connection.
@@ -38,7 +37,7 @@ type Connection interface {
 	// command on the remote.
 	// This will error if the session is not already established using
 	// Handshake.
-	GetRemoteRefs(ctx context.Context) (memory.ReferenceStorage, map[string]plumbing.Hash, error)
+	GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error)
 
 	// Fetch sends a fetch-pack request to the server.
 	Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error)

@@ -67,6 +67,8 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	return nil
 }
 
+// XXX: AllReferences doesn't return all the references advertised by the
+// server, instead, it only returns non-peeled references.
 func (a *AdvRefs) AllReferences() (memory.ReferenceStorage, error) {
 	s := memory.ReferenceStorage{}
 	if err := a.addRefs(s); err != nil {

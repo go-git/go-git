@@ -10,7 +10,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // packConnection is a convenience type that implements io.ReadWriteCloser.
@@ -39,18 +38,30 @@ func (p *packConnection) Capabilities() *capability.List {
 }
 
 // GetRemoteRefs implements Connection.
-func (p *packConnection) GetRemoteRefs(ctx context.Context) (memory.ReferenceStorage, map[string]plumbing.Hash, error) {
+func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
 	if p.refs == nil {
 		// TODO: return appropriate error
-		return nil, nil, ErrEmptyRemoteRepository
+		return nil, ErrEmptyRemoteRepository
 	}
 
 	refs, err := p.refs.AllReferences()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return refs, p.refs.Peeled, nil
+	// FIXME: this is a bit of a hack, to fix this, we need to redefine and
+	// simplify AdvRefs.
+	var allRefs []*plumbing.Reference
+	for _, ref := range refs {
+		allRefs = append(allRefs, ref)
+	}
+	for name, hash := range p.refs.Peeled {
+		allRefs = append(allRefs,
+			plumbing.NewReferenceFromStrings(name, hash.String()),
+		)
+	}
+
+	return allRefs, nil
 }
 
 // Version implements Connection.

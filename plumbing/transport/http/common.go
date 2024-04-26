@@ -23,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/golang/groupcache/lru"
 )
@@ -471,12 +470,25 @@ func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (*tran
 }
 
 // GetRemoteRefs implements transport.Connection.
-func (s *session) GetRemoteRefs(ctx context.Context) (memory.ReferenceStorage, map[string]plumbing.Hash, error) {
-	allRefs, err := s.advRefs.AllReferences()
+func (s *session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+	refs, err := s.advRefs.AllReferences()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return allRefs, s.advRefs.Peeled, nil
+
+	// FIXME: this is a bit of a hack, to fix this, we need to redefine and
+	// simplify AdvRefs.
+	var allRefs []*plumbing.Reference
+	for _, ref := range refs {
+		allRefs = append(allRefs, ref)
+	}
+	for name, hash := range s.advRefs.Peeled {
+		allRefs = append(allRefs,
+			plumbing.NewReferenceFromStrings(name, hash.String()),
+		)
+	}
+
+	return allRefs, nil
 }
 
 // Push implements transport.Connection.

@@ -416,9 +416,14 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	remoteRefs, _, err := conn.GetRemoteRefs(ctx)
+	rRefs, err := conn.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	remoteRefs := memory.ReferenceStorage{}
+	for _, ref := range rRefs {
+		remoteRefs.SetReference(ref) // nolint: errcheck
 	}
 
 	localRefs, err := r.references()
@@ -1306,15 +1311,12 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 
 	defer ioutil.CheckClose(conn, &err)
 
-	allRefs, peeledRefs, err := conn.GetRemoteRefs(ctx)
+	allRefs, err := conn.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	refs, err := allRefs.IterReferences()
-	if err != nil {
-		return nil, err
-	}
+	refs := storer.NewReferenceSliceIter(allRefs)
 
 	var resultRefs []*plumbing.Reference
 	if o.PeelingOption == AppendPeeled || o.PeelingOption == IgnorePeeled {
@@ -1328,8 +1330,10 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 	}
 
 	if o.PeelingOption == AppendPeeled || o.PeelingOption == OnlyPeeled {
-		for k, v := range peeledRefs {
-			resultRefs = append(resultRefs, plumbing.NewReferenceFromStrings(k+"^{}", v.String()))
+		for _, ref := range allRefs {
+			if strings.HasSuffix(ref.Name().String(), "^{}") {
+				resultRefs = append(resultRefs, ref)
+			}
 		}
 	}
 
