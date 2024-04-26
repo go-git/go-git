@@ -105,8 +105,34 @@ func (s *SidebandSuite) TestDecodeWithProgress(c *C) {
 	c.Assert(progress, DeepEquals, []byte{'F', 'O', 'O', '\n'})
 }
 
-func (s *SidebandSuite) TestDecodeWithUnknownChannel(c *C) {
+func (s *SidebandSuite) TestDecodeFlushEOF(c *C) {
+	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
+	input := bytes.NewBuffer(nil)
+	e := pktline.NewEncoder(input)
+	e.Encode(PackData.WithPayload(expected[0:8]))
+	e.Encode(ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
+	e.Encode(PackData.WithPayload(expected[8:16]))
+	e.Encode(PackData.WithPayload(expected[16:26]))
+	e.Flush()
+	e.Encode(PackData.WithPayload([]byte("bar\n")))
+
+	output := bytes.NewBuffer(nil)
+	content := bytes.NewBuffer(nil)
+	d := NewDemuxer(Sideband64k, input)
+	d.Progress = output
+
+	n, err := content.ReadFrom(d)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(26))
+	c.Assert(content.Bytes(), DeepEquals, expected)
+
+	progress, err := io.ReadAll(output)
+	c.Assert(err, IsNil)
+	c.Assert(progress, DeepEquals, []byte{'F', 'O', 'O', '\n'})
+}
+
+func (s *SidebandSuite) TestDecodeWithUnknownChannel(c *C) {
 	buf := bytes.NewBuffer(nil)
 	e := pktline.NewEncoder(buf)
 	e.Encode([]byte{'4', 'F', 'O', 'O', '\n'})
@@ -150,5 +176,4 @@ func (s *SidebandSuite) TestDecodeErrMaxPacked(c *C) {
 	n, err := io.ReadFull(d, content)
 	c.Assert(err, Equals, ErrMaxPackedExceeded)
 	c.Assert(n, Equals, 0)
-
 }
