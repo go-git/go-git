@@ -405,7 +405,7 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 	defer ioutil.CheckClose(res.Body, &err)
 
 	rd := bufio.NewReader(res.Body)
-	s.version, _ = transport.DetermineProtocolVersion(rd)
+	s.version, _ = transport.DiscoverVersion(rd)
 
 	ar := packp.NewAdvRefs()
 	if err = ar.Decode(rd); err != nil {

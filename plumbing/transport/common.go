@@ -499,11 +499,10 @@ func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
 	return res, nil
 }
 
-// DetermineProtocolVersion used by the transport client to determine which
-// protocol version the remote server is using.
-func DetermineProtocolVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
-	var ver protocol.Version
-
+// DiscoverVersion used by the transport client to determine which protocol
+// version the remote server is using.
+func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
+	ver := protocol.VersionV0
 	_, pktb, err := pktline.PeekLine(r)
 	if err == nil {
 		pkt := string(pktb)

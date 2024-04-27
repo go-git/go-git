@@ -194,7 +194,7 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 
 	log.Printf("open conn: command started")
 
-	c.version, _ = DetermineProtocolVersion(c.r)
+	c.version, _ = DiscoverVersion(c.r)
 
 	ar := packp.NewAdvRefs()
 	if err := ar.Decode(c.r); err != nil {
