@@ -5,11 +5,14 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"os"
+	"log"
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5/internal/repository"
+	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"golang.org/x/sys/execabs"
 )
@@ -78,58 +81,87 @@ func prefixExecPath(cmd string) (string, error) {
 }
 
 func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
-	switch cmd {
-	case transport.UploadPackServiceName:
-		cmd = r.UploadPackBin
-	case transport.ReceivePackServiceName:
-		cmd = r.ReceivePackBin
-	}
+	log.Printf("file endpoint: %v", ep)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
 
-	_, err := execabs.LookPath(cmd)
-	if err != nil {
-		if e, ok := err.(*execabs.Error); ok && e.Err == execabs.ErrNotFound {
-			cmd, err = prefixExecPath(cmd)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
-
-	return &command{cmd: execabs.Command(cmd, ep.Path)}, nil
+	return &command{
+		ctx:     ctx,
+		cancel:  cancel,
+		ep:      ep,
+		service: cmd,
+		errc:    make(chan error, 1),
+	}, nil
 }
 
 type command struct {
-	cmd          *execabs.Cmd
-	stderrCloser io.Closer
-	closed       bool
+	ctx     context.Context
+	cancel  context.CancelFunc
+	ep      *transport.Endpoint
+	service string
+
+	stdin  io.Reader
+	stdout io.WriteCloser
+	stderr io.Writer
+
+	childIOFiles  []io.Closer
+	parentIOFiles []io.Closer
+
+	closed bool
+	errc   chan error
 }
 
 func (c *command) Start() error {
-	return c.cmd.Start()
+	st, _, err := repository.PlainOpen(c.ep.Path, true, false)
+	if err != nil {
+		return fmt.Errorf("failed to load repository: %w", err)
+	}
+
+	switch c.service {
+	case transport.UploadPackServiceName:
+		go func() {
+			c.errc <- server.UploadPack(
+				c.ctx,
+				st,
+				c.stdin,
+				c.stdout,
+				nil,
+			)
+		}()
+		return nil
+	case transport.ReceivePackServiceName:
+	}
+	return fmt.Errorf("unsupported service: %s", c.service)
 }
 
 func (c *command) StderrPipe() (io.Reader, error) {
-	// Pipe returned by Command.StderrPipe has a race with Read + Command.Wait.
-	// We use an io.Pipe and close it after the command finishes.
-	r, w := io.Pipe()
-	c.cmd.Stderr = w
-	c.stderrCloser = r
-	return r, nil
+	pr, pw := io.Pipe()
+
+	c.stderr = pw
+	c.childIOFiles = append(c.childIOFiles, pw)
+	c.parentIOFiles = append(c.parentIOFiles, pr)
+
+	return pr, nil
 }
 
 func (c *command) StdinPipe() (io.WriteCloser, error) {
-	return c.cmd.StdinPipe()
+	pr, pw := io.Pipe()
+
+	c.stdin = pr
+	c.childIOFiles = append(c.childIOFiles, pr)
+	c.parentIOFiles = append(c.parentIOFiles, pw)
+
+	return pw, nil
 }
 
 func (c *command) StdoutPipe() (io.Reader, error) {
-	return c.cmd.StdoutPipe()
-}
+	pr, pw := io.Pipe()
 
-func (c *command) Kill() error {
-	c.cmd.Process.Kill()
-	return c.Close()
+	c.stdout = pw
+	c.childIOFiles = append(c.childIOFiles, pw)
+	c.parentIOFiles = append(c.parentIOFiles, pr)
+
+	return pr, nil
 }
 
 // Close waits for the command to exit.
@@ -138,20 +170,14 @@ func (c *command) Close() error {
 		return nil
 	}
 
-	defer func() {
-		c.closed = true
-		_ = c.stderrCloser.Close()
-	}()
+	closeDiscriptors(c.childIOFiles)
+	closeDiscriptors(c.parentIOFiles)
 
-	err := c.cmd.Wait()
-	if _, ok := err.(*os.PathError); ok {
-		return nil
+	return nil
+}
+
+func closeDiscriptors(fds []io.Closer) {
+	for _, fd := range fds {
+		fd.Close()
 	}
-
-	// When a repository does not exist, the command exits with code 128.
-	if _, ok := err.(*execabs.ExitError); ok {
-		return nil
-	}
-
-	return err
 }

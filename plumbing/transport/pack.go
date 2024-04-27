@@ -194,7 +194,10 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 
 	log.Printf("open conn: command started")
 
-	c.version, _ = DiscoverVersion(c.r)
+	c.version, err = DiscoverVersion(c.r)
+	if err != nil {
+		return nil, err
+	}
 
 	ar := packp.NewAdvRefs()
 	if err := ar.Decode(c.r); err != nil {
@@ -216,4 +219,89 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 	log.Printf("open conn: success")
 
 	return c, nil
+}
+
+// packConnection is a convenience type that implements io.ReadWriteCloser.
+type packConnection struct {
+	st  storage.Storer
+	cmd Command
+	w   io.WriteCloser // stdin
+	r   *bufio.Reader  // stdout
+	e   io.Reader      // stderr
+
+	version protocol.Version
+	caps    *capability.List
+	refs    *packp.AdvRefs
+}
+
+var _ Connection = &packConnection{}
+
+// Close implements Connection.
+func (p *packConnection) Close() error {
+	return p.cmd.Close()
+}
+
+// Capabilities implements Connection.
+func (p *packConnection) Capabilities() *capability.List {
+	return p.caps
+}
+
+// GetRemoteRefs implements Connection.
+func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+	if p.refs == nil {
+		// TODO: return appropriate error
+		return nil, ErrEmptyRemoteRepository
+	}
+
+	refs, err := p.refs.AllReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	// FIXME: this is a bit of a hack, to fix this, we need to redefine and
+	// simplify AdvRefs.
+	var allRefs []*plumbing.Reference
+	for _, ref := range refs {
+		allRefs = append(allRefs, ref)
+	}
+	for name, hash := range p.refs.Peeled {
+		allRefs = append(allRefs,
+			plumbing.NewReferenceFromStrings(name, hash.String()),
+		)
+	}
+
+	return allRefs, nil
+}
+
+// Version implements Connection.
+func (p *packConnection) Version() protocol.Version {
+	return p.version
+}
+
+// IsStatelessRPC implements Connection.
+func (*packConnection) IsStatelessRPC() bool {
+	return false
+}
+
+// Fetch implements Connection.
+func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
+	shupd, err := NegotiatePack(p.st, p, p.r, p.w, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var shallows []plumbing.Hash
+	if shupd != nil {
+		shallows = shupd.Shallows
+	}
+
+	return &FetchResponse{
+		Packfile: io.NopCloser(p.r),
+		Shallows: shallows,
+	}, nil
+}
+
+// Push implements Connection.
+func (p *packConnection) Push(ctx context.Context, req *PushRequest) (*PushResponse, error) {
+	panic("unimplemented")
 }

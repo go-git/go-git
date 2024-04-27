@@ -249,7 +249,7 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 			continue
 		}
 
-		h := plumbing.NewHash(n[5 : len(n)-5]) //pack-(hash).pack
+		h := plumbing.NewHash(n[5 : len(n)-5]) // pack-(hash).pack
 		if h.IsZero() {
 			// Ignore files with badly-formatted names.
 			continue
@@ -701,16 +701,16 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 // Symbolic references are resolved and included in the output.
 func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 	var refs []*plumbing.Reference
-	var seen = make(map[plumbing.ReferenceName]bool)
+	seen := make(map[plumbing.ReferenceName]bool)
+	if err := d.addRefFromHEAD(&refs); err != nil {
+		return nil, err
+	}
+
 	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
 		return nil, err
 	}
 
 	if err := d.addRefsFromPackedRefs(&refs, seen); err != nil {
-		return nil, err
-	}
-
-	if err := d.addRefFromHEAD(&refs); err != nil {
 		return nil, err
 	}
 
@@ -815,7 +815,8 @@ func (d *DotGit) addRefsFromPackedRefsFile(refs *[]*plumbing.Reference, f billy.
 }
 
 func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
-	pr billy.File, err error) {
+	pr billy.File, err error,
+) {
 	var f billy.File
 	defer func() {
 		if err != nil && f != nil {
@@ -1020,7 +1021,7 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 
 func (d *DotGit) CountLooseRefs() (int, error) {
 	var refs []*plumbing.Reference
-	var seen = make(map[plumbing.ReferenceName]bool)
+	seen := make(map[plumbing.ReferenceName]bool)
 	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
 		return 0, err
 	}

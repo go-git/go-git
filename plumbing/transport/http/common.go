@@ -461,11 +461,16 @@ func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (*tran
 		return nil, err
 	}
 
+	var shallows []plumbing.Hash
+	if shupd != nil {
+		shallows = shupd.Shallows
+	}
+
 	return &transport.FetchResponse{
 		// XXX: at this point, the rwc will contain the packfile. Make sure we
 		// pass the right closer to avoid leaks.
 		Packfile: ioutil.NewReadCloser(rwc, rwc.res.Body),
-		Shallows: shupd.Shallows,
+		Shallows: shallows,
 	}, nil
 }
 

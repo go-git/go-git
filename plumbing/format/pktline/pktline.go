@@ -17,7 +17,7 @@ func Write(w io.Writer, p []byte) (n int, err error) {
 
 	defer func() {
 		if err == nil {
-			trace.Packet.Printf("packet: > %04x %s", n, p)
+			trace.Packet.Printf("packet: > %04x %q", n, p)
 		}
 	}()
 

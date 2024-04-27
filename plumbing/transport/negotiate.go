@@ -19,12 +19,12 @@ import (
 func NegotiatePack(
 	st storage.Storer,
 	conn Connection,
-	writer io.WriteCloser,
 	reader io.Reader,
+	writer io.WriteCloser,
 	req *FetchRequest,
-) (shupd packp.ShallowUpdate, err error) {
+) (shupd *packp.ShallowUpdate, err error) {
 	if len(req.Wants) == 0 {
-		return shupd, fmt.Errorf("no wants specified")
+		return nil, fmt.Errorf("no wants specified")
 	}
 
 	caps := conn.Capabilities()
@@ -78,7 +78,7 @@ func NegotiatePack(
 	// everything we asked for. Close the connection and return nil.
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
 		log.Printf("no need to fetch, we have everything")
-		return shupd, pktline.WriteFlush(writer)
+		return nil, pktline.WriteFlush(writer)
 	}
 
 	// Create upload-haves
@@ -93,34 +93,40 @@ func NegotiatePack(
 		caps.Supports(capability.MultiACKDetailed)
 
 	if err := upreq.Validate(); err != nil {
-		return shupd, err
+		return nil, err
 	}
 
 	for !done {
+		log.Printf("> sending upload request")
 		if err := upreq.Encode(writer); err != nil {
-			return shupd, fmt.Errorf("sending upload-request: %s", err)
+			return nil, fmt.Errorf("sending upload-request: %s", err)
 		}
 
 		// Encode upload-haves
 		// TODO: support multi_ack and multi_ack_detailed caps
 		if err := uphav.Encode(writer); err != nil {
-			return shupd, fmt.Errorf("sending upload-haves: %s", err)
+			return nil, fmt.Errorf("sending upload-haves: %s", err)
 		}
 
 		if conn.IsStatelessRPC() && len(uphav.Haves) > 0 {
+			log.Printf("> sending flush-pkt after haves")
 			if err := pktline.WriteFlush(writer); err != nil {
-				return shupd, fmt.Errorf("sending flush-pkt after haves: %s", err)
+				return nil, fmt.Errorf("sending flush-pkt after haves: %s", err)
 			}
 		}
 
+		log.Printf("> done sending upload request")
+
 		// Let the server know we're done
 		if _, err := pktline.Writeln(writer, "done"); err != nil {
-			return shupd, fmt.Errorf("sending done: %s", err)
+			return nil, fmt.Errorf("sending done: %s", err)
 		}
+
+		log.Printf("> closing writer")
 
 		// Close the writer to signal the end of the request
 		if err := writer.Close(); err != nil {
-			return shupd, fmt.Errorf("closing writer: %s", err)
+			return nil, fmt.Errorf("closing writer: %s", err)
 		}
 
 		// TODO: handle server-response to support incremental fetch i.e.
@@ -136,8 +142,9 @@ func NegotiatePack(
 		// If depth is not zero, then we expect a shallow update from the
 		// server.
 		if req.Depth != 0 {
+			shupd = &packp.ShallowUpdate{}
 			if err := shupd.Decode(reader); err != nil {
-				return shupd, fmt.Errorf("decoding shallow-update: %s", err)
+				return nil, fmt.Errorf("decoding shallow-update: %s", err)
 			}
 		}
 
@@ -146,12 +153,12 @@ func NegotiatePack(
 		var acks bytes.Buffer
 		tee := io.TeeReader(reader, &acks)
 		if _, _, err := pktline.ReadLine(tee); err != nil {
-			return shupd, fmt.Errorf("reading server-response: %s", err)
+			return nil, fmt.Errorf("reading server-response: %s", err)
 		}
 
 		// Decode server-response final ACK/NAK
 		if err := srvrs.Decode(&acks, isMultiAck); err != nil {
-			return shupd, fmt.Errorf("decoding server-response: %s", err)
+			return nil, fmt.Errorf("decoding server-response: %s", err)
 		}
 
 		log.Printf("server-response: %s", srvrs)

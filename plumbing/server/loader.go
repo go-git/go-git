@@ -4,6 +4,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/go-git/go-billy/v5"
@@ -18,7 +19,7 @@ type Loader interface {
 	// Load loads a storer.Storer given a transport.Endpoint.
 	// Returns transport.ErrRepositoryNotFound if the repository does not
 	// exist.
-	Load(ep *transport.Endpoint) (storer.Storer, error)
+	Load(ep *transport.Endpoint) (storage.Storer, error)
 }
 
 type fsLoader struct {
@@ -34,7 +35,7 @@ func NewFilesystemLoader(base billy.Filesystem) Loader {
 // Load looks up the endpoint's path in the base file system and returns a
 // storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
-func (l *fsLoader) Load(ep *transport.Endpoint) (storer.Storer, error) {
+func (l *fsLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 	fs, err := l.base.Chroot(ep.Path)
 	if err != nil {
 		return nil, err
