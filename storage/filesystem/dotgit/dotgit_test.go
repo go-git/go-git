@@ -85,6 +85,15 @@ func (s *SuiteDotGit) TestSetRefsNorwfs(c *C) {
 	testSetRefs(c, dir)
 }
 
+func (s *SuiteDotGit) TestRefsHeadFirst(c *C) {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(len(refs), Not(Equals), 0)
+	c.Assert(refs[0].Name().String(), Equals, "HEAD")
+}
+
 func testSetRefs(c *C, dir *DotGit) {
 	firstFoo := plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
@@ -175,7 +184,6 @@ func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
 	ref := findReference(refs, "refs/remotes/origin/branch")
 	c.Assert(ref, NotNil)
 	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
-
 }
 
 func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
@@ -189,7 +197,6 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
 	c.Assert(ref, NotNil)
 	c.Assert(ref.Type(), Equals, plumbing.SymbolicReference)
 	c.Assert(string(ref.Target()), Equals, "refs/remotes/origin/master")
-
 }
 
 func BenchmarkRefMultipleTimes(b *testing.B) {
@@ -538,7 +545,6 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
 
 	err = dir.Close()
 	c.Assert(err, NotNil)
-
 }
 
 func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
@@ -649,7 +655,7 @@ func (s *SuiteDotGit) TestObject(c *C) {
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 		Equals, true,
 	)
-	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
+	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
 	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
@@ -670,7 +676,7 @@ func (s *SuiteDotGit) TestPreGit235Object(c *C) {
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 		Equals, true,
 	)
-	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
+	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
 	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
@@ -687,7 +693,7 @@ func (s *SuiteDotGit) TestObjectStat(c *C) {
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	_, err := dir.ObjectStat(hash)
 	c.Assert(err, IsNil)
-	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
+	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
 	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
@@ -705,7 +711,7 @@ func (s *SuiteDotGit) TestObjectDelete(c *C) {
 	err := dir.ObjectDelete(hash)
 	c.Assert(err, IsNil)
 
-	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" //made up hash
+	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingSubDirPath := fs.Join(incomingDirPath, incomingHash[0:2])
 	incomingFilePath := fs.Join(incomingSubDirPath, incomingHash[2:40])
