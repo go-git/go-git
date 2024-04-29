@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"io"
+	"log"
 
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
@@ -25,11 +26,14 @@ const (
 // packfile.
 func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	if pw, ok := s.(storer.PackfileWriter); ok {
+		log.Printf("packfile: storer supports packfile writing")
 		return WritePackfileToObjectStorage(pw, packfile)
 	}
 
+	log.Printf("packfile: storer does not support packfile writing, falling back to object storage")
 	p, err := NewParserWithStorage(NewScanner(packfile), s)
 	if err != nil {
+		log.Printf("packfile: error creating parser: %v", err)
 		return err
 	}
 

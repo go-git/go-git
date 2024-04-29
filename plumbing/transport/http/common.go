@@ -497,7 +497,7 @@ func (s *session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, err
 	}
 	for name, hash := range s.advRefs.Peeled {
 		allRefs = append(allRefs,
-			plumbing.NewReferenceFromStrings(name, hash.String()),
+			plumbing.NewReferenceFromStrings(name+"^{}", hash.String()),
 		)
 	}
 

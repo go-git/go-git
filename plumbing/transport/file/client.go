@@ -121,13 +121,23 @@ func (c *command) Start() error {
 			c.errc <- server.UploadPack(
 				c.ctx,
 				st,
-				c.stdin,
+				io.NopCloser(c.stdin),
 				c.stdout,
 				nil,
 			)
 		}()
 		return nil
 	case transport.ReceivePackServiceName:
+		go func() {
+			c.errc <- server.ReceivePack(
+				c.ctx,
+				st,
+				io.NopCloser(c.stdin),
+				c.stdout,
+				nil,
+			)
+		}()
+		return nil
 	}
 	return fmt.Errorf("unsupported service: %s", c.service)
 }
@@ -168,10 +178,12 @@ func (c *command) Close() error {
 		return nil
 	}
 
+	err := <-c.errc
+
 	closeDiscriptors(c.childIOFiles)
 	closeDiscriptors(c.parentIOFiles)
 
-	return nil
+	return err
 }
 
 func closeDiscriptors(fds []io.Closer) {

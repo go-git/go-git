@@ -1335,16 +1335,25 @@ func pushHashes(
 	// ReceivePack fails. Otherwise the goroutine will be blocked writing
 	// to the channel.
 	done := make(chan error, 1)
+	req := &transport.PushRequest{
+		Commands: cmds,
+		Progress: o.Progress,
+		Options:  o.Options,
+		Atomic:   o.Atomic,
+	}
 
-	var packf io.ReadCloser
 	if !allDelete {
-		packf = rd
+		req.Packfile = rd
 		go func() {
+			log.Printf("encoding packfile")
 			e := packfile.NewEncoder(wr, s, useRefDeltas)
 			if _, err := e.Encode(hs, config.Pack.Window); err != nil {
+				log.Printf("packfile encoding error: %v", err)
 				done <- wr.CloseWithError(err)
 				return
 			}
+
+			log.Printf("packfile encoded")
 
 			done <- wr.Close()
 		}()
@@ -1352,20 +1361,14 @@ func pushHashes(
 		close(done)
 	}
 
-	req := &transport.PushRequest{
-		Packfile: packf,
-		Commands: cmds,
-		Progress: o.Progress,
-		Options:  o.Options,
-		Atomic:   o.Atomic,
-	}
-
+	log.Printf("running conn push")
 	if err := conn.Push(ctx, req); err != nil {
 		// close the pipe to unlock encode write
 		_ = rd.Close()
 		return err
 	}
 
+	log.Printf("conn push completed")
 	if err := <-done; err != nil {
 		return err
 	}
