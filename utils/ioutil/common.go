@@ -21,9 +21,7 @@ type ReadPeeker interface {
 	Peeker
 }
 
-var (
-	ErrEmptyReader = errors.New("reader is empty")
-)
+var ErrEmptyReader = errors.New("reader is empty")
 
 // NonEmptyReader takes a reader and returns it if it is not empty, or
 // `ErrEmptyReader` if it is empty. If there is an error when reading the first
@@ -213,4 +211,14 @@ func (r *writerOnError) Write(p []byte) (n int, err error) {
 	}
 
 	return
+}
+
+// CloserFunc implements the io.Closer interface with a function.
+type CloserFunc func() error
+
+var _ io.Closer = CloserFunc(nil)
+
+// Close calls the function.
+func (f CloserFunc) Close() error {
+	return f()
 }

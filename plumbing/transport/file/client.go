@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 
@@ -81,7 +80,6 @@ func prefixExecPath(cmd string) (string, error) {
 }
 
 func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
-	log.Printf("file endpoint: %v", ep)
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithCancel(ctx)
 

@@ -31,6 +31,14 @@ type UpdateRequests struct {
 	Progress sideband.Progress
 }
 
+// NewUpdateRequests returns a new UpdateRequests.
+func NewUpdateRequests() *UpdateRequests {
+	// TODO: Add support for push-cert
+	return &UpdateRequests{
+		Capabilities: capability.NewList(),
+	}
+}
+
 // New returns a pointer to a new ReferenceUpdateRequest value.
 func NewReferenceUpdateRequest() *UpdateRequests {
 	return &UpdateRequests{

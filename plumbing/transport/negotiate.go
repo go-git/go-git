@@ -15,14 +15,14 @@ import (
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
-// TODO: make this generic for both pack-protocol and http-protocol.
+// TODO: make it return only shallows.
 func NegotiatePack(
 	st storage.Storer,
 	conn Connection,
 	reader io.Reader,
 	writer io.WriteCloser,
 	req *FetchRequest,
-) (shupd *packp.ShallowUpdate, err error) {
+) (shallows []plumbing.Hash, err error) {
 	if len(req.Wants) == 0 {
 		return nil, fmt.Errorf("no wants specified")
 	}
@@ -70,7 +70,7 @@ func NegotiatePack(
 		upreq.Capabilities.Set(capability.Shallow) // nolint: errcheck
 		upreq.Shallows, err = st.Shallow()
 		if err != nil {
-			return shupd, err
+			return nil, err
 		}
 	}
 
@@ -96,6 +96,7 @@ func NegotiatePack(
 		return nil, err
 	}
 
+	var shupd packp.ShallowUpdate
 	for !done {
 		log.Printf("> sending upload request")
 		if err := upreq.Encode(writer); err != nil {
@@ -142,18 +143,17 @@ func NegotiatePack(
 		// If depth is not zero, then we expect a shallow update from the
 		// server.
 		if req.Depth != 0 {
-			shupd = &packp.ShallowUpdate{}
 			if err := shupd.Decode(reader); err != nil {
 				return nil, fmt.Errorf("decoding shallow-update: %s", err)
 			}
 		}
 
-		// XXX: The server replies with one last NAK/ACK after the client is
+		// The server replies with one last NAK/ACK after the client is
 		// done sending the request.
 		var acks bytes.Buffer
 		tee := io.TeeReader(reader, &acks)
-		if _, _, err := pktline.ReadLine(tee); err != nil {
-			return nil, fmt.Errorf("reading server-response: %s", err)
+		if l, p, err := pktline.ReadLine(tee); err != nil {
+			return nil, fmt.Errorf("reading server-response, len: %d, pkt: %q: %s", l, p, err)
 		}
 
 		// Decode server-response final ACK/NAK
@@ -164,7 +164,7 @@ func NegotiatePack(
 		log.Printf("server-response: %s", srvrs)
 	}
 
-	return shupd, nil
+	return shupd.Shallows, nil
 }
 
 func isSubset(needle []plumbing.Hash, haystack []plumbing.Hash) bool {

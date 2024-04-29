@@ -20,7 +20,7 @@ type rpSession struct {
 }
 
 func newReceivePackSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
-	s, err := newSession(nil, c, ep, auth)
+	s, err := newSession(nil, c, ep, auth, !c.useDumb)
 	return &rpSession{s}, err
 }
 
@@ -37,7 +37,7 @@ func (s *rpSession) ReceivePack(ctx context.Context, req *packp.UpdateRequests) 
 ) {
 	url := fmt.Sprintf(
 		"%s/%s",
-		s.endpoint.String(), transport.ReceivePackServiceName,
+		s.ep.String(), transport.ReceivePackServiceName,
 	)
 
 	buf := bytes.NewBuffer(nil)
@@ -93,7 +93,7 @@ func (s *rpSession) doRequest(
 		return nil, plumbing.NewPermanentError(err)
 	}
 
-	applyHeadersToRequest(req, content, s.endpoint.Host, transport.ReceivePackServiceName)
+	applyHeadersToRequest(req, content, s.ep.Host, transport.ReceivePackServiceName)
 	s.ApplyAuthToRequest(req)
 
 	res, err := s.client.Do(req.WithContext(ctx))

@@ -88,7 +88,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 
-	url := session.(*upSession).endpoint.String()
+	url := session.(*upSession).ep.String()
 	c.Assert(url, Equals, "https://gitlab.com/gitlab-org/gitter/webapp.git")
 }
 
@@ -102,7 +102,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 
-	url := session.(*upSession).endpoint.String()
+	url := session.(*upSession).ep.String()
 	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
 }
 
@@ -118,7 +118,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContext(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 
-	url := session.(*upSession).endpoint.String()
+	url := session.(*upSession).ep.String()
 	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
 }
 

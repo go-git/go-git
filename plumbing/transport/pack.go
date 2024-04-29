@@ -40,26 +40,13 @@ type Connection interface {
 	GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error)
 
 	// Fetch sends a fetch-pack request to the server.
-	Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error)
+	Fetch(ctx context.Context, req *FetchRequest) error
 
 	// Push sends a send-pack request to the server.
-	Push(ctx context.Context, req *PushRequest) (*PushResponse, error)
+	Push(ctx context.Context, req *PushRequest) error
 }
 
 var _ io.Closer = Connection(nil)
-
-// ServiceResponse contains the response from the server after a session handshake.
-type ServiceResponse struct {
-	// Capabilities is the list of capabilities supported by the server.
-	Capabilities *capability.List
-
-	// AdvRefs is the list of references advertised by the server.
-	// This is only populated if the server is using protocol v0 or v1.
-	AdvRefs *packp.AdvRefs
-
-	// Version is the Git protocol version negotiated with the server.
-	Version protocol.Version
-}
 
 // FetchRequest contains the parameters for a fetch-pack request.
 // This is used during the pack negotiation phase of the fetch operation.
@@ -79,36 +66,26 @@ type FetchRequest struct {
 
 	// IncludeTags indicates whether tags should be fetched.
 	IncludeTags bool
-
-	// StatelessRPC indicates whether the server should use stateless-rpc.
-	StatelessRPC bool
-}
-
-// FetchResponse contains the response from the server after a fetch request.
-type FetchResponse struct {
-	// Packfile is the packfile reader.
-	Packfile io.ReadCloser
-
-	// Shallows is the list of shallow references.
-	Shallows []plumbing.Hash
 }
 
 // PushRequest contains the parameters for a push request.
 type PushRequest struct {
-	// UpdateRequests is the list of reference update requests.
-	packp.UpdateRequests
-
 	// Packfile is the packfile reader.
 	Packfile io.ReadCloser
 
+	// Commands is the list of push commands to be sent to the server.
+	Commands []*packp.Command
+
 	// Progress is the progress sideband.
 	Progress sideband.Progress
-}
 
-// PushResponse contains the response from the server after a push request.
-type PushResponse struct {
-	// ReportStatus is the status of the reference update requests.
-	packp.ReportStatus
+	// Options is a set of push-options to be sent to the server during push.
+	Options map[string]string
+
+	// Atomic indicates an atomic push.
+	// If the server supports atomic push, it will update the refs in one
+	// atomic transaction. Either all refs are updated or none.
+	Atomic bool
 }
 
 // PackSession is a Git protocol transfer session.
@@ -266,7 +243,7 @@ func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Referen
 	}
 	for name, hash := range p.refs.Peeled {
 		allRefs = append(allRefs,
-			plumbing.NewReferenceFromStrings(name, hash.String()),
+			plumbing.NewReferenceFromStrings(name+"^{}", hash.String()),
 		)
 	}
 
@@ -284,24 +261,16 @@ func (*packConnection) IsStatelessRPC() bool {
 }
 
 // Fetch implements Connection.
-func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
-	shupd, err := NegotiatePack(p.st, p, p.r, p.w, req)
+func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) error {
+	shallows, err := NegotiatePack(p.st, p, p.r, p.w, req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var shallows []plumbing.Hash
-	if shupd != nil {
-		shallows = shupd.Shallows
-	}
-
-	return &FetchResponse{
-		Packfile: io.NopCloser(p.r),
-		Shallows: shallows,
-	}, nil
+	return FetchPack(ctx, p.st, p, io.NopCloser(p.r), shallows, req)
 }
 
 // Push implements Connection.
-func (p *packConnection) Push(ctx context.Context, req *PushRequest) (*PushResponse, error) {
-	panic("unimplemented")
+func (p *packConnection) Push(ctx context.Context, req *PushRequest) error {
+	return SendPack(ctx, p.st, p, p.w, io.NopCloser(p.r), req)
 }

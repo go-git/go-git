@@ -193,14 +193,14 @@ func (s *ClientSuite) TestSetAuthWrongType(c *C) {
 }
 
 func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
-	sess := &session{endpoint: nil}
+	sess := &session{ep: nil}
 	u, _ := url.Parse("https://example.com/info/refs")
 	res := &http.Response{Request: &http.Request{URL: u}}
 	c.Assert(func() {
 		sess.ModifyEndpointIfRedirect(res)
 	}, PanicMatches, ".*nil pointer dereference.*")
 
-	sess = &session{endpoint: nil}
+	sess = &session{ep: nil}
 	// no-op - should return and not panic
 	sess.ModifyEndpointIfRedirect(&http.Response{})
 
@@ -224,7 +224,7 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 
 	for _, d := range data {
 		u, _ := url.Parse(d.url)
-		sess := &session{endpoint: d.endpoint}
+		sess := &session{ep: d.endpoint}
 		sess.ModifyEndpointIfRedirect(&http.Response{
 			Request: &http.Request{URL: u},
 		})

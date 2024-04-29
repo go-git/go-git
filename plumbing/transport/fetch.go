@@ -33,16 +33,13 @@ func FetchPack(
 	ctx context.Context,
 	st storage.Storer,
 	conn Connection,
+	packf io.ReadCloser,
+	shallows []plumbing.Hash,
 	req *FetchRequest,
 ) (err error) {
-	res, err := conn.Fetch(ctx, req)
-	if err != nil {
-		return err
-	}
-
 	// Do we have sideband enabled?
 	var demuxer *sideband.Demuxer
-	var reader io.Reader = res.Packfile
+	var reader io.Reader = packf
 	caps := conn.Capabilities()
 	if caps.Supports(capability.Sideband) {
 		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
@@ -61,15 +58,15 @@ func FetchPack(
 		return err
 	}
 
-	if err := res.Packfile.Close(); err != nil {
+	if err := packf.Close(); err != nil {
 		return err
 	}
 
 	log.Printf("updating shallows")
 
 	// Update shallow
-	if len(res.Shallows) > 0 {
-		if err := updateShallow(st, res.Shallows); err != nil {
+	if len(shallows) > 0 {
+		if err := updateShallow(st, shallows); err != nil {
 			return err
 		}
 	}

@@ -19,7 +19,7 @@ type upSession struct {
 }
 
 func newUploadPackSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
-	s, err := newSession(nil, c, ep, auth)
+	s, err := newSession(nil, c, ep, auth, c.useDumb)
 	return &upSession{s}, err
 }
 
@@ -44,7 +44,7 @@ func (s *upSession) UploadPack(
 
 	url := fmt.Sprintf(
 		"%s/%s",
-		s.endpoint.String(), transport.UploadPackServiceName,
+		s.ep.String(), transport.UploadPackServiceName,
 	)
 
 	content, err := uploadPackRequestToReader(req)
@@ -88,7 +88,7 @@ func (s *upSession) doRequest(
 		return nil, plumbing.NewPermanentError(err)
 	}
 
-	applyHeadersToRequest(req, content, s.endpoint.Host, transport.UploadPackServiceName)
+	applyHeadersToRequest(req, content, s.ep.Host, transport.UploadPackServiceName)
 	s.ApplyAuthToRequest(req)
 
 	res, err := s.client.Do(req.WithContext(ctx))

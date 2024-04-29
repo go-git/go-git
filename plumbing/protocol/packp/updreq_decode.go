@@ -102,7 +102,6 @@ func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 		d.decodeShallow,
 		d.decodeCommandAndCapabilities,
 		d.decodeCommands,
-		d.setPackfile,
 		req.validate,
 	}
 
@@ -203,12 +202,6 @@ func (d *updReqDecoder) decodeCommandAndCapabilities() error {
 	if err := d.scanLine(); err != nil {
 		return err
 	}
-
-	return nil
-}
-
-func (d *updReqDecoder) setPackfile() error {
-	d.req.Packfile = d.r
 
 	return nil
 }

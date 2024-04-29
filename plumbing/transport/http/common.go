@@ -37,13 +37,13 @@ func applyHeaders(
 	service string,
 	ep *transport.Endpoint,
 	auth AuthMethod,
-	isSmart bool,
+	useSmart bool,
 ) {
 	// Add headers
 	req.Header.Add("User-Agent", "git/1.0")
 	req.Header.Add("Host", ep.Host) // host:port
 
-	if isSmart {
+	if useSmart {
 		req.Header.Add("Accept", fmt.Sprintf("application/x-%s-result", service))
 		req.Header.Add("Content-Type", fmt.Sprintf("application/x-%s-request", service))
 	}
@@ -119,7 +119,7 @@ const infoRefsPath = "/info/refs"
 func advertisedReferences(ctx context.Context, s *session, serviceName string) (ref *packp.AdvRefs, err error) {
 	url := fmt.Sprintf(
 		"%s%s?service=%s",
-		s.endpoint.String(), infoRefsPath, serviceName,
+		s.ep.String(), infoRefsPath, serviceName,
 	)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -128,7 +128,7 @@ func advertisedReferences(ctx context.Context, s *session, serviceName string) (
 	}
 
 	s.ApplyAuthToRequest(req)
-	applyHeadersToRequest(req, nil, s.endpoint.Host, serviceName)
+	applyHeadersToRequest(req, nil, s.ep.Host, serviceName)
 	res, err := s.client.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
@@ -171,6 +171,7 @@ type client struct {
 	client     *http.Client
 	transports *lru.Cache
 	mutex      sync.RWMutex
+	useDumb    bool // When true, the client will always use the dumb protocol.
 }
 
 // ClientOptions holds user configurable options for the client.
@@ -181,6 +182,10 @@ type ClientOptions struct {
 	// size, will result in the least recently used transport getting deleted
 	// before the provided transport is added to the cache.
 	CacheMaxEntries int
+
+	// UseDumb is a flag that when set to true, the client will always use the
+	// dumb protocol.
+	UseDumb bool
 }
 
 var (
@@ -224,7 +229,8 @@ func NewClientWithOptions(c *http.Client, opts *ClientOptions) transport.Transpo
 		}
 	}
 	cl := &client{
-		client: c,
+		client:  c,
+		useDumb: opts.UseDumb,
 	}
 
 	if opts != nil {
@@ -236,7 +242,7 @@ func NewClientWithOptions(c *http.Client, opts *ClientOptions) transport.Transpo
 }
 
 func (c *client) NewSession(st storage.Storer, ep *transport.Endpoint, auth transport.AuthMethod) (transport.PackSession, error) {
-	return newSession(st, c, ep, auth)
+	return newSession(st, c, ep, auth, c.useDumb)
 }
 
 func (c *client) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
@@ -253,12 +259,19 @@ func (c *client) NewReceivePackSession(ep *transport.Endpoint, auth transport.Au
 
 // TODO: support smart client
 type session struct {
-	st       storage.Storer
-	auth     AuthMethod
-	client   *http.Client
-	endpoint *transport.Endpoint
-	advRefs  *packp.AdvRefs
-	version  protocol.Version
+	st      storage.Storer
+	auth    AuthMethod
+	client  *http.Client
+	ep      *transport.Endpoint
+	advRefs *packp.AdvRefs
+	version protocol.Version
+	useDumb bool // When true, the client will always use the dumb protocol
+	isSmart bool // This is true if the session is using the smart protocol
+}
+
+// IsSmart returns true if the session is using the smart protocol.
+func (s *session) IsSmart() bool {
+	return s.isSmart && !s.useDumb
 }
 
 var _ transport.PackSession = (*session)(nil)
@@ -310,7 +323,7 @@ func configureTransport(transport *http.Transport, ep *transport.Endpoint) error
 	return nil
 }
 
-func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*session, error) {
+func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth transport.AuthMethod, useDumb bool) (*session, error) {
 	var httpClient *http.Client
 
 	// We need to configure the http transport if there are transport specific
@@ -361,10 +374,11 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 	}
 
 	s := &session{
-		st:       st,
-		auth:     basicAuthFromEndpoint(ep),
-		client:   httpClient,
-		endpoint: ep,
+		st:      st,
+		auth:    basicAuthFromEndpoint(ep),
+		client:  httpClient,
+		ep:      ep,
+		useDumb: useDumb,
 	}
 	if auth != nil {
 		a, ok := auth.(AuthMethod)
@@ -385,23 +399,27 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 		service = transport.ReceivePackServiceName
 	}
 
-	url := fmt.Sprintf(
-		"%s%s?service=%s",
-		s.endpoint.String(), infoRefsPath, service,
-	)
+	url := s.ep.String() + infoRefsPath
+	if !s.useDumb {
+		url += "?service=" + service
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	applyHeaders(req, service, s.endpoint, s.auth, false) // TODO: support smart client
+	applyHeaders(req, service, s.ep, s.auth, !s.useDumb)
 	res, err := doRequest(s.client, req)
 	if err != nil {
 		return nil, err
 	}
 
-	modifyRedirect(res, s.endpoint)
+	if contentType := res.Header.Get("Content-Type"); !s.useDumb {
+		s.isSmart = contentType == fmt.Sprintf("application/x-%s-advertisement", service)
+	}
+
+	modifyRedirect(res, s.ep)
 	defer ioutil.CheckClose(res.Body, &err)
 
 	rd := bufio.NewReader(res.Body)
@@ -446,32 +464,22 @@ func (*session) IsStatelessRPC() bool {
 }
 
 // Fetch implements transport.Connection.
-func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (*transport.FetchResponse, error) {
-	rwc := &requestReadWriteCloser{
-		ctx:     ctx,
-		client:  s.client,
-		auth:    s.auth,
-		ep:      s.endpoint,
-		service: transport.UploadPackServiceName,
-		isSmart: false,
-	}
+func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (err error) {
+	rwc := newRequester(ctx, s, false)
 
-	shupd, err := transport.NegotiatePack(s.st, s, rwc, rwc, req)
+	// XXX: packfile will be populated and accessible once rwc.Close() is
+	// called in NegotiatePack.
+	packfile := rwc.BodyCloser()
+	shallows, err := transport.NegotiatePack(s.st, s, packfile, rwc, req)
 	if err != nil {
-		return nil, err
+		if rwc.res != nil {
+			// Make sure the response body is closed.
+			defer packfile.Close() // nolint: errcheck
+		}
+		return err
 	}
 
-	var shallows []plumbing.Hash
-	if shupd != nil {
-		shallows = shupd.Shallows
-	}
-
-	return &transport.FetchResponse{
-		// XXX: at this point, the rwc will contain the packfile. Make sure we
-		// pass the right closer to avoid leaks.
-		Packfile: ioutil.NewReadCloser(rwc, rwc.res.Body),
-		Shallows: shallows,
-	}, nil
+	return transport.FetchPack(ctx, s.st, s, packfile, shallows, req)
 }
 
 // GetRemoteRefs implements transport.Connection.
@@ -497,8 +505,9 @@ func (s *session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, err
 }
 
 // Push implements transport.Connection.
-func (s *session) Push(ctx context.Context, req *transport.PushRequest) (*transport.PushResponse, error) {
-	panic("unimplemented")
+func (s *session) Push(ctx context.Context, req *transport.PushRequest) (err error) {
+	rwc := newRequester(ctx, s, true)
+	return transport.SendPack(ctx, s.st, s, rwc, rwc.BodyCloser(), req)
 }
 
 // Version implements transport.Connection.
@@ -506,54 +515,78 @@ func (s *session) Version() protocol.Version {
 	return s.version
 }
 
-// requestReadWriteCloser is a io.ReadWriteCloser that sends a request to the
-// server and reads the response into the struct.
-type requestReadWriteCloser struct {
-	client *http.Client
+// requester is a io.WriteCloser that sends an HTTP request to on close and
+// reads the response into the struct.
+type requester struct {
+	*session
 
 	reqBuf bytes.Buffer
 	ctx    context.Context
 	req    *http.Request  // the last request made
 	res    *http.Response // the last response received
+	done   bool           // indicates if the request has been done without errors
 
-	auth    AuthMethod
-	ep      *transport.Endpoint
 	service string
-	isSmart bool
 }
 
-var _ io.ReadWriteCloser = &requestReadWriteCloser{}
-
-// Close implements io.ReadWriteCloser.
-func (r *requestReadWriteCloser) Close() (err error) {
-	defer r.reqBuf.Reset()
-
-	var req *http.Request
-	url := fmt.Sprintf("%s/%s", r.ep.String(), r.service)
-	req, err = http.NewRequestWithContext(r.ctx, http.MethodPost, url, &r.reqBuf)
-	if err != nil {
-		return
+func newRequester(ctx context.Context, s *session, forPush bool) *requester {
+	service := transport.UploadPackServiceName
+	if forPush {
+		service = transport.ReceivePackServiceName
 	}
 
-	applyHeaders(req, r.service, r.ep, r.auth, r.isSmart)
-	r.req = req
-
-	r.res, err = doRequest(r.client, r.req)
-	return
+	return &requester{
+		ctx:     ctx,
+		session: s,
+		service: service,
+	}
 }
 
-// Write implements io.ReadWriteCloser.
-func (r *requestReadWriteCloser) Write(p []byte) (n int, err error) {
-	return r.reqBuf.Write(p)
+var _ io.ReadWriteCloser = &requester{}
+
+// BodyCloser returns the response body as an io.ReadCloser.
+func (r *requester) BodyCloser() io.ReadCloser {
+	return ioutil.NewReadCloser(r, ioutil.CloserFunc(func() error {
+		if r.res == nil {
+			panic("http: requester.res is accessed before requester.Close")
+		}
+		return r.res.Body.Close()
+	}))
 }
 
 // Read implements io.ReadWriteCloser.
-func (r *requestReadWriteCloser) Read(p []byte) (n int, err error) {
-	if r.res == nil || r.res.Body == nil {
-		return 0, io.EOF
+func (r *requester) Read(p []byte) (n int, err error) {
+	if r.res == nil {
+		panic("http: requester.Read called before requester.Close")
+	}
+	return r.res.Body.Read(p)
+}
+
+// Close implements io.ReadWriteCloser.
+func (r *requester) Close() error {
+	defer r.reqBuf.Reset()
+
+	url := fmt.Sprintf("%s/%s", r.ep.String(), r.service)
+	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, url, &r.reqBuf)
+	if err != nil {
+		return err
 	}
 
-	return r.res.Body.Read(p)
+	applyHeaders(req, r.service, r.ep, r.auth, r.IsSmart())
+	res, err := doRequest(r.client, req)
+	if err != nil {
+		return err
+	}
+
+	r.res = res
+	r.req = req
+
+	return nil
+}
+
+// Write implements io.ReadWriteCloser.
+func (r *requester) Write(p []byte) (n int, err error) {
+	return r.reqBuf.Write(p)
 }
 
 func (s *session) ApplyAuthToRequest(req *http.Request) {
@@ -581,13 +614,13 @@ func (s *session) ModifyEndpointIfRedirect(res *http.Response) {
 	if p != "" {
 		port, err := strconv.Atoi(p)
 		if err == nil {
-			s.endpoint.Port = port
+			s.ep.Port = port
 		}
 	}
-	s.endpoint.Host = h
+	s.ep.Host = h
 
-	s.endpoint.Protocol = r.URL.Scheme
-	s.endpoint.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
+	s.ep.Protocol = r.URL.Scheme
+	s.ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
 }
 
 func (*session) Close() error {
