@@ -110,7 +110,7 @@ func (s *SidebandSuite) TestDecodeFlushEOF(c *C) {
 	pktline.Write(input, PackData.WithPayload(expected[8:16]))
 	pktline.Write(input, PackData.WithPayload(expected[16:26]))
 	pktline.WriteFlush(input)
-	pktline.Write(PackData.WithPayload([]byte("bar\n")))
+	pktline.Write(input, PackData.WithPayload([]byte("bar\n")))
 
 	output := bytes.NewBuffer(nil)
 	content := bytes.NewBuffer(nil)
