@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -1069,25 +1068,21 @@ func (r *Repository) fetchAndUpdateReferences(
 
 	objsUpdated := true
 	remoteRefs, err := remote.fetch(ctx, o)
-	log.Printf("remoteRefs: %v, err = %v", remoteRefs, err)
 	if err == NoErrAlreadyUpToDate {
 		objsUpdated = false
 	} else if err == packfile.ErrEmptyPackfile {
 		return nil, ErrFetching
 	} else if err != nil {
-		log.Printf("error fetching: %v", err)
 		return nil, err
 	}
 
 	resolvedRef, err := repository.ExpandRef(remoteRefs, ref)
 	if err != nil {
-		log.Printf("error expanding ref: %v", err)
 		return nil, err
 	}
 
 	refsUpdated, err := r.updateReferences(remote.c.Fetch, resolvedRef)
 	if err != nil {
-		log.Printf("error updating references: %v", err)
 		return nil, err
 	}
 

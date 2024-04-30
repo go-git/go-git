@@ -29,14 +29,6 @@ func (req *UpdateRequests) Encode(w io.Writer) error {
 		}
 	}
 
-	// if req.Packfile != nil {
-	// 	if _, err := io.Copy(w, req.Packfile); err != nil {
-	// 		return err
-	// 	}
-	//
-	// 	return req.Packfile.Close()
-	// }
-
 	return nil
 }
 

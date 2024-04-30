@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -56,18 +55,15 @@ func UploadPack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		log.Printf("advertising refs")
 		if err := AdvertiseReferences(ctx, st, w, false); err != nil {
 			return err
 		}
-		log.Printf("refs advertised")
 	}
 
 	if !opts.AdvertiseRefs {
 		rd := bufio.NewReader(r)
 
 		// TODO: implement server negotiation algorithm
-		log.Printf("decoding upload pack request")
 		// Receive upload request
 		upreq := packp.NewUploadRequest()
 		if err := upreq.Decode(rd); err != nil {
@@ -78,8 +74,6 @@ func UploadPack(
 		if len(upreq.Shallows) > 0 {
 			return fmt.Errorf("shallow not supported")
 		}
-
-		log.Printf("upload request decoded")
 
 		var (
 			wants = upreq.Wants
@@ -105,21 +99,16 @@ func UploadPack(
 			return fmt.Errorf("closing reader: %s", err)
 		}
 
-		log.Printf("sending server response")
 		srvupd := packp.ServerResponse{}
-		if err := srvupd.Encode(w, false); err != nil {
+		if err := srvupd.Encode(w); err != nil {
 			return err
 		}
-
-		log.Printf("server response sent")
 
 		// Find common commits/objects
 		objs, err := objectsToUpload(st, wants, nil)
 		if err != nil {
 			return err
 		}
-
-		log.Printf("encoding packfile")
 
 		var writer io.Writer = w
 		if !caps.Supports(capability.NoProgress) {
@@ -138,8 +127,6 @@ func UploadPack(
 		if err != nil {
 			return err
 		}
-
-		log.Printf("packfile encoded")
 
 		if err := w.Close(); err != nil {
 			return fmt.Errorf("closing writer: %s", err)

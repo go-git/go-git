@@ -13,22 +13,6 @@ type UlReqSuite struct{}
 
 var _ = Suite(&UlReqSuite{})
 
-func (s *UlReqSuite) TestNewUploadRequestFromCapabilities(c *C) {
-	cap := capability.NewList()
-	cap.Set(capability.Sideband)
-	cap.Set(capability.Sideband64k)
-	cap.Set(capability.MultiACK)
-	cap.Set(capability.MultiACKDetailed)
-	cap.Set(capability.ThinPack)
-	cap.Set(capability.OFSDelta)
-	cap.Set(capability.Agent, "foo")
-
-	r := NewUploadRequestFromCapabilities(cap)
-	c.Assert(r.Capabilities.String(), Equals,
-		"multi_ack_detailed side-band-64k thin-pack ofs-delta agent=go-git/5.x",
-	)
-}
-
 func (s *UlReqSuite) TestValidateWants(c *C) {
 	r := NewUploadRequest()
 	err := r.Validate()

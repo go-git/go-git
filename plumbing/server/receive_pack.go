@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -70,19 +69,9 @@ func ReceivePack(
 		return err
 	}
 
-	// l, p, err := pktline.PeekLine(rd)
-	// if err != nil {
-	// 	return err
-	// }
-	//
-	// log.Printf("peeked line: %04x %s", l, string(p))
-
 	// Receive the packfile
 	// TODO: type assert unpack error?
 	unpackErr := packfile.UpdateObjectStorage(st, rd)
-	if unpackErr != nil {
-		log.Printf("unpack error: %s", unpackErr)
-	}
 
 	// Done with the request, now close the reader
 	// to indicate that we are done reading from it.

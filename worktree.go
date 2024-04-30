@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -83,7 +82,6 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		ProxyOptions:    o.ProxyOptions,
 	})
 
-	log.Printf("PullContext fetchHead: %v", fetchHead)
 	updated := true
 	if err == NoErrAlreadyUpToDate {
 		updated = false

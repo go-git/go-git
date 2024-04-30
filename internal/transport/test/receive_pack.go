@@ -48,7 +48,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 
 	r, err = s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "master", Old: plumbing.ZeroHash, New: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
 	}
@@ -97,7 +97,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty(c *C) {
 	endpoint := s.EmptyEndpoint
 	full := true
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
@@ -107,7 +107,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty(c *C) {
 
 func (s *ReceivePackSuite) TestSendPackWithContext(c *C) {
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Packfile = fixture.Packfile()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
@@ -133,7 +133,7 @@ func (s *ReceivePackSuite) TestSendPackOnEmpty(c *C) {
 	endpoint := s.EmptyEndpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
@@ -145,7 +145,7 @@ func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus(c *C) {
 	endpoint := s.EmptyEndpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
@@ -158,7 +158,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnNonEmpty(c *C) {
 	endpoint := s.Endpoint
 	full := true
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
 	}
@@ -170,7 +170,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmpty(c *C) {
 	endpoint := s.Endpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
 	}
@@ -182,7 +182,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
 	endpoint := s.Endpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
 	}
@@ -196,7 +196,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C)
 	endpoint := s.Endpoint
 	full := false
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
@@ -322,7 +322,7 @@ func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
 
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/newbranch", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
@@ -345,7 +345,7 @@ func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
 	ar, err := r.AdvertisedReferences()
 	c.Assert(err, IsNil)
 
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/newbranch", Old: plumbing.NewHash(fixture.Head), New: plumbing.ZeroHash},
 	}

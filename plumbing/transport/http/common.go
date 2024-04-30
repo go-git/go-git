@@ -195,7 +195,10 @@ func (c *client) NewSession(st storage.Storer, ep *transport.Endpoint, auth tran
 
 // SupportedProtocols returns the supported protocols by the client.
 func (c *client) SupportedProtocols() []protocol.Version {
-	return []protocol.Version{protocol.VersionV0}
+	return []protocol.Version{
+		protocol.VersionV0,
+		protocol.VersionV1,
+	}
 }
 
 type session struct {

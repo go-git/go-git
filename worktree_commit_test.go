@@ -2,7 +2,6 @@ package git
 
 import (
 	"bytes"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -228,7 +227,8 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {
 	c.Assert(foo.Staging, Equals, Added)
 	c.Assert(foo.Worktree, Equals, Unmodified)
 
-	hash, err := w.Commit("commit foo only\n", &CommitOptions{All: true,
+	hash, err := w.Commit("commit foo only\n", &CommitOptions{
+		All:    true,
 		Author: defaultSignature(),
 	})
 	c.Assert(hash, Equals, expected)
@@ -501,7 +501,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
 	infoLicenseSecond, err := fsDotgit.Stat(filepath.Join("objects", "04", "84eba0d41636ba71fa612c78559cd6c3006cde"))
 	c.Assert(err, IsNil)
 
-	log.Printf("comparing mod time: %v == %v on %v (%v)", infoLicenseSecond.ModTime(), infoLicense.ModTime(), runtime.GOOS, runtime.GOARCH)
+	c.Logf("comparing mod time: %v == %v on %v (%v)", infoLicenseSecond.ModTime(), infoLicense.ModTime(), runtime.GOOS, runtime.GOARCH)
 	c.Assert(infoLicenseSecond.ModTime(), Equals, infoLicense.ModTime()) // object of LICENSE should have the same timestamp because no additional write operation was performed
 }
 

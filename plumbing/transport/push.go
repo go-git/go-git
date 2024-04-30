@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"io"
-	"log"
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -64,13 +63,9 @@ func SendPack(
 
 	// Send the packfile.
 	if req.Packfile != nil {
-		log.Printf("transport: sending packfile to server")
-		n, err := io.Copy(writer, req.Packfile)
-		if err != nil {
+		if _, err := io.Copy(writer, req.Packfile); err != nil {
 			return err
 		}
-
-		log.Printf("transport: sent %d bytes", n)
 
 		if err := req.Packfile.Close(); err != nil {
 			return err

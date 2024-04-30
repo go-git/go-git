@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -31,11 +30,12 @@ func NegotiatePack(
 
 	// Create upload-request
 	upreq := packp.NewUploadRequest()
-	if caps.Supports(capability.MultiACKDetailed) {
-		upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
-	} else if caps.Supports(capability.MultiACK) {
-		upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
-	}
+	// TODO: support multi_ack and multi_ack_detailed caps
+	// if caps.Supports(capability.MultiACKDetailed) {
+	// 	upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
+	// } else if caps.Supports(capability.MultiACK) {
+	// 	upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
+	// }
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
@@ -77,7 +77,6 @@ func NegotiatePack(
 	// XXX: empty request means haves are a subset of wants, in that case we have
 	// everything we asked for. Close the connection and return nil.
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
-		log.Printf("no need to fetch, we have everything")
 		return nil, pktline.WriteFlush(writer)
 	}
 
@@ -92,13 +91,17 @@ func NegotiatePack(
 	isMultiAck := caps.Supports(capability.MultiACK) ||
 		caps.Supports(capability.MultiACKDetailed)
 
+	// TODO: Implement support for multi_ack or multi_ack_detailed responses.
+	if isMultiAck {
+		return nil, fmt.Errorf("multi_ack and multi_ack_detailed are not supported")
+	}
+
 	if err := upreq.Validate(); err != nil {
 		return nil, err
 	}
 
 	var shupd packp.ShallowUpdate
 	for !done {
-		log.Printf("> sending upload request")
 		if err := upreq.Encode(writer); err != nil {
 			return nil, fmt.Errorf("sending upload-request: %s", err)
 		}
@@ -110,20 +113,15 @@ func NegotiatePack(
 		}
 
 		if conn.IsStatelessRPC() && len(uphav.Haves) > 0 {
-			log.Printf("> sending flush-pkt after haves")
 			if err := pktline.WriteFlush(writer); err != nil {
 				return nil, fmt.Errorf("sending flush-pkt after haves: %s", err)
 			}
 		}
 
-		log.Printf("> done sending upload request")
-
 		// Let the server know we're done
 		if _, err := pktline.Writeln(writer, "done"); err != nil {
 			return nil, fmt.Errorf("sending done: %s", err)
 		}
-
-		log.Printf("> closing writer")
 
 		// Close the writer to signal the end of the request
 		if err := writer.Close(); err != nil {
@@ -134,10 +132,6 @@ func NegotiatePack(
 		// multi_ack and multi_ack_detailed modes.
 
 		done = true
-
-		log.Printf("done sending upload request")
-
-		log.Printf("waiting for server-response")
 
 		// Decode shallow-update
 		// If depth is not zero, then we expect a shallow update from the
@@ -157,11 +151,10 @@ func NegotiatePack(
 		}
 
 		// Decode server-response final ACK/NAK
-		if err := srvrs.Decode(&acks, isMultiAck); err != nil {
+		if err := srvrs.Decode(&acks); err != nil {
 			return nil, fmt.Errorf("decoding server-response: %s", err)
 		}
 
-		log.Printf("server-response: %s", srvrs)
 	}
 
 	return shupd.Shallows, nil

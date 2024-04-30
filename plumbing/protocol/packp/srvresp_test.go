@@ -3,7 +3,6 @@ package packp
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 
@@ -18,7 +17,7 @@ func (s *ServerResponseSuite) TestDecodeNAK(c *C) {
 	raw := "0008NAK\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode((bytes.NewBufferString(raw)), false)
+	err := sr.Decode((bytes.NewBufferString(raw)))
 	c.Assert(err, IsNil)
 
 	c.Assert(sr.ACKs, HasLen, 0)
@@ -28,7 +27,7 @@ func (s *ServerResponseSuite) TestDecodeNewLine(c *C) {
 	raw := "\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "invalid pkt-len found.*")
 }
@@ -37,7 +36,7 @@ func (s *ServerResponseSuite) TestDecodeEmpty(c *C) {
 	raw := ""
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, IsNil)
 }
 
@@ -45,7 +44,7 @@ func (s *ServerResponseSuite) TestDecodePartial(c *C) {
 	raw := "000600\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, fmt.Sprintf("unexpected content %q", "00"))
 }
@@ -54,7 +53,7 @@ func (s *ServerResponseSuite) TestDecodeACK(c *C) {
 	raw := "0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, IsNil)
 
 	c.Assert(sr.ACKs, HasLen, 1)
@@ -68,7 +67,7 @@ func (s *ServerResponseSuite) TestDecodeMultipleACK(c *C) {
 		"00080PACK\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, IsNil)
 
 	c.Assert(sr.ACKs, HasLen, 2)
@@ -83,7 +82,7 @@ func (s *ServerResponseSuite) TestDecodeMultipleACKWithSideband(c *C) {
 		"00080aaaa\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, IsNil)
 
 	c.Assert(sr.ACKs, HasLen, 2)
@@ -95,7 +94,7 @@ func (s *ServerResponseSuite) TestDecodeMalformed(c *C) {
 	raw := "0029ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode(bytes.NewBufferString(raw), false)
+	err := sr.Decode(bytes.NewBufferString(raw))
 	c.Assert(err, NotNil)
 }
 
@@ -104,16 +103,17 @@ func (s *ServerResponseSuite) TestDecodeMalformed(c *C) {
 //
 // TODO: Review as part of multi_ack implementation.
 func (s *ServerResponseSuite) TestDecodeMultiACK(c *C) {
-	raw := "" +
-		"0031ACK 1111111111111111111111111111111111111111\n" +
-		"0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n" +
-		"00080PACK\n"
-
-	sr := &ServerResponse{}
-	err := sr.Decode(strings.NewReader(raw), true)
-	c.Assert(err, IsNil)
-
-	c.Assert(sr.ACKs, HasLen, 2)
-	c.Assert(sr.ACKs[0], Equals, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	c.Assert(sr.ACKs[1], Equals, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Skip("not implemented")
+	// raw := "" +
+	// 	"0031ACK 1111111111111111111111111111111111111111\n" +
+	// 	"0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n" +
+	// 	"00080PACK\n"
+	//
+	// sr := &ServerResponse{}
+	// err := sr.Decode(strings.NewReader(raw), true)
+	// c.Assert(err, IsNil)
+	//
+	// c.Assert(sr.ACKs, HasLen, 2)
+	// c.Assert(sr.ACKs[0], Equals, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	// c.Assert(sr.ACKs[1], Equals, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 }

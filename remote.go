@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
@@ -35,6 +34,19 @@ var (
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
 )
+
+type NoMatchingRefSpecError struct {
+	RefSpec config.RefSpec
+}
+
+func (e NoMatchingRefSpecError) Error() string {
+	return fmt.Sprintf("couldn't find remote ref %q", e.RefSpec.Src())
+}
+
+func (e NoMatchingRefSpecError) Is(target error) bool {
+	_, ok := target.(NoMatchingRefSpecError)
+	return ok
+}
 
 const (
 	// This describes the maximum number of commits to walk when
@@ -447,14 +459,11 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	log.Printf("updating references...")
 	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
 	if err != nil {
-		log.Printf("error updating local reference storage: %v", err)
 		return nil, err
 	}
 
-	log.Printf("updating references completed")
 	if !updated {
 		updated, err = depthChanged(shallows, r.s)
 		if err != nil {
@@ -462,14 +471,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	log.Printf("might update prune")
-
 	if !updated && !updatedPrune {
-		log.Printf("no changes, already up-to-date")
 		return remoteRefs, NoErrAlreadyUpToDate
 	}
 
-	log.Printf("fetch completed, err = %v", err)
 	return remoteRefs, nil
 }
 
@@ -960,7 +965,6 @@ func doCalculateRefs(
 		return refs.SetReference(ref)
 	}
 
-	log.Printf("calculate refs %s", s)
 	var ret error
 	if s.IsWildcard() {
 		iter, err := remoteRefs.IterReferences()
@@ -969,11 +973,9 @@ func doCalculateRefs(
 		}
 		ret = iter.ForEach(func(ref *plumbing.Reference) error {
 			if !s.Match(ref.Name()) {
-				log.Printf("ref %s %q does not match", ref.Name(), ref.Hash())
 				return nil
 			}
 
-			log.Printf("ref %s match %q", ref.Name(), ref.Hash())
 			return onMatched(ref)
 		})
 	} else {
@@ -986,7 +988,7 @@ func doCalculateRefs(
 	}
 
 	if !matched && !s.IsWildcard() {
-		return nil, transport.NoMatchingRefSpecError{RefSpec: s}
+		return nil, NoMatchingRefSpecError{RefSpec: s}
 	}
 
 	return refList, ret
@@ -1004,9 +1006,6 @@ func getWants(localStorer storage.Storer, refs memory.ReferenceStorage, depth in
 
 	wants := map[plumbing.Hash]bool{}
 	for _, ref := range refs {
-		if ref.Name().IsTag() {
-			log.Printf("got tag %s hash %q", ref.Name(), ref.Hash())
-		}
 		hash := ref.Hash()
 		exists, err := objectExists(localStorer, ref.Hash())
 		if err != nil {
@@ -1336,15 +1335,11 @@ func pushHashes(
 	if !allDelete {
 		req.Packfile = rd
 		go func() {
-			log.Printf("encoding packfile")
 			e := packfile.NewEncoder(wr, s, useRefDeltas)
 			if _, err := e.Encode(hs, config.Pack.Window); err != nil {
-				log.Printf("packfile encoding error: %v", err)
 				done <- wr.CloseWithError(err)
 				return
 			}
-
-			log.Printf("packfile encoded")
 
 			done <- wr.Close()
 		}()
@@ -1352,42 +1347,17 @@ func pushHashes(
 		close(done)
 	}
 
-	log.Printf("running conn push")
 	if err := conn.Push(ctx, req); err != nil {
 		// close the pipe to unlock encode write
 		_ = rd.Close()
 		return err
 	}
 
-	log.Printf("conn push completed")
 	if err := <-done; err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func (r *Remote) updateShallow(o *FetchOptions, resp *packp.UploadPackResponse) error {
-	if o.Depth == 0 || len(resp.Shallows) == 0 {
-		return nil
-	}
-
-	shallows, err := r.s.Shallow()
-	if err != nil {
-		return err
-	}
-
-outer:
-	for _, s := range resp.Shallows {
-		for _, oldS := range shallows {
-			if s == oldS {
-				continue outer
-			}
-		}
-		shallows = append(shallows, s)
-	}
-
-	return r.s.SetShallow(shallows)
 }
 
 func (r *Remote) checkRequireRemoteRefs(requires []config.RefSpec, remoteRefs storer.ReferenceStorer) error {

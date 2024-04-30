@@ -42,7 +42,7 @@ func (s *ReceivePackSuite) TestReceivePackWithNilPackfile(c *C) {
 	auth := s.EmptyAuth
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
-	req := packp.NewReferenceUpdateRequest()
+	req := packp.NewUpdateRequests()
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/newbranch", Old: plumbing.NewHash(fixture.Head), New: plumbing.ZeroHash},
 	}

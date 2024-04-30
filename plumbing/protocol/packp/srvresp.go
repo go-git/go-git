@@ -2,110 +2,42 @@ package packp
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 const ackLineLen = 44
 
 // ServerResponse object acknowledgement from upload-pack service
+// TODO: support multi_ack and multi_ack_detailed capabilities
 type ServerResponse struct {
 	ACKs []plumbing.Hash
 }
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
 // the request was done with multi_ack or multi_ack_detailed capabilities.
-func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
-	log.Printf("server-response decode start")
+func (r *ServerResponse) Decode(reader io.Reader) error {
 	var err error
 	for {
 		var p []byte
 		_, p, err = pktline.ReadLine(reader)
 		if err != nil {
-			log.Printf("server-response decode error: %s", err)
 			break
 		}
 
-		log.Printf("server-response decode line: %q", p)
 		if err := r.decodeLine(p); err != nil {
 			return err
 		}
-
-		// we need to detect when the end of a response header and the beginning
-		// of a packfile header happened, some requests to the git daemon
-		// produces a duplicate ACK header even when multi_ack is not supported.
-		// TODO: remove
-		// stop, err := r.stopReading(s)
-		// if err != nil {
-		// 	return err
-		// }
-		//
-		// if stop {
-		// 	break
-		// }
 	}
 
 	if err == io.EOF {
 		err = nil
 	}
 
-	// isMultiACK is true when the remote server advertises the related
-	// capabilities when they are not in transport.UnsupportedCapabilities.
-	//
-	// Users may decide to remove multi_ack and multi_ack_detailed from the
-	// unsupported capabilities list, which allows them to do initial clones
-	// from Azure DevOps.
-	//
-	// Follow-up fetches may error, therefore errors are wrapped with additional
-	// information highlighting that this capabilities are not supported by go-git.
-	//
-	// TODO: Implement support for multi_ack or multi_ack_detailed responses.
-	if err != nil && isMultiACK {
-		return fmt.Errorf("multi_ack and multi_ack_detailed are not supported: %w", err)
-	}
-
 	return err
-}
-
-// stopReading detects when a valid command such as ACK or NAK is found to be
-// read in the buffer without moving the read pointer.
-func (r *ServerResponse) stopReading(reader ioutil.ReadPeeker) (bool, error) {
-	ahead, err := reader.Peek(7)
-	if err == io.EOF {
-		return true, nil
-	}
-
-	if err != nil {
-		return false, err
-	}
-
-	log.Printf("server-response ahead: %q", ahead)
-	if len(ahead) > 4 && r.isValidCommand(ahead[0:3]) {
-		return false, nil
-	}
-
-	if len(ahead) == 7 && r.isValidCommand(ahead[4:]) {
-		return false, nil
-	}
-
-	return true, nil
-}
-
-func (r *ServerResponse) isValidCommand(b []byte) bool {
-	commands := [][]byte{ack, nak}
-	for _, c := range commands {
-		if bytes.Equal(b, c) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (r *ServerResponse) decodeLine(line []byte) error {
@@ -138,12 +70,7 @@ func (r *ServerResponse) decodeACKLine(line []byte) error {
 }
 
 // Encode encodes the ServerResponse into a writer.
-func (r *ServerResponse) Encode(w io.Writer, isMultiACK bool) error {
-	if len(r.ACKs) > 1 && !isMultiACK {
-		// For further information, refer to comments in the Decode func above.
-		return errors.New("multi_ack and multi_ack_detailed are not supported")
-	}
-
+func (r *ServerResponse) Encode(w io.Writer) error {
 	if len(r.ACKs) == 0 {
 		_, err := pktline.WriteString(w, string(nak)+"\n")
 		return err

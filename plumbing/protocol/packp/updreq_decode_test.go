@@ -15,14 +15,14 @@ type UpdReqDecodeSuite struct{}
 var _ = Suite(&UpdReqDecodeSuite{})
 
 func (s *UpdReqDecodeSuite) TestEmpty(c *C) {
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	var buf bytes.Buffer
 	c.Assert(r.Decode(&buf), Equals, ErrEmpty)
-	c.Assert(r, DeepEquals, NewReferenceUpdateRequest())
+	c.Assert(r, DeepEquals, NewUpdateRequests())
 }
 
 func (s *UpdReqDecodeSuite) TestInvalidPktlines(c *C) {
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	input := bytes.NewReader([]byte("xxxxxxxxxx"))
 	c.Assert(r.Decode(input), ErrorMatches, "invalid pkt-len found")
 }
@@ -152,11 +152,11 @@ func (s *UpdReqDecodeSuite) TestOneUpdateCommand(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	expected := NewReferenceUpdateRequest()
+	expected := NewUpdateRequests()
 	expected.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
-	expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
+	// expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
@@ -170,13 +170,13 @@ func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewReferenceUpdateRequest()
+	expected := NewUpdateRequests()
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
 		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
-	expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
+	// expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00",
@@ -192,14 +192,14 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewReferenceUpdateRequest()
+	expected := NewUpdateRequests()
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
 		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	expected.Capabilities.Add("shallow")
-	expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
+	// expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
@@ -215,7 +215,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewReferenceUpdateRequest()
+	expected := NewUpdateRequests()
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -223,7 +223,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 	}
 	expected.Capabilities.Add("shallow")
 	expected.Shallow = &hash1
-	expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
+	// expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
 
 	payloads := []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -241,12 +241,12 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	expected := NewReferenceUpdateRequest()
+	expected := NewUpdateRequests()
 	expected.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
 	packfileContent := []byte("PACKabc")
-	expected.Packfile = io.NopCloser(bytes.NewReader(packfileContent))
+	// expected.Packfile = io.NopCloser(bytes.NewReader(packfileContent))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
@@ -267,7 +267,7 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 }
 
 func (s *UpdReqDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	c.Assert(r.Decode(input), ErrorMatches, pattern)
 }
 
@@ -282,28 +282,28 @@ func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *UpdateRequest
 		}
 	}
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	c.Assert(r.Decode(&buf), IsNil)
 
 	return r
 }
 
 func (s *UpdReqDecodeSuite) testDecodeOkRaw(c *C, expected *UpdateRequests, raw []byte) {
-	req := NewReferenceUpdateRequest()
+	req := NewUpdateRequests()
 	c.Assert(req.Decode(bytes.NewBuffer(raw)), IsNil)
-	c.Assert(req.Packfile, NotNil)
-	s.compareReaders(c, req.Packfile, expected.Packfile)
-	req.Packfile = nil
-	expected.Packfile = nil
+	// c.Assert(req.Packfile, NotNil)
+	// s.compareReaders(c, req.Packfile, expected.Packfile)
+	// req.Packfile = nil
+	// expected.Packfile = nil
 	c.Assert(req, DeepEquals, expected)
 }
 
 func (s *UpdReqDecodeSuite) testDecodeOkExpected(c *C, expected *UpdateRequests, payloads []string) {
 	req := s.testDecodeOK(c, payloads)
-	c.Assert(req.Packfile, NotNil)
-	s.compareReaders(c, req.Packfile, expected.Packfile)
-	req.Packfile = nil
-	expected.Packfile = nil
+	// c.Assert(req.Packfile, NotNil)
+	// s.compareReaders(c, req.Packfile, expected.Packfile)
+	// req.Packfile = nil
+	// expected.Packfile = nil
 	c.Assert(req, DeepEquals, expected)
 }
 

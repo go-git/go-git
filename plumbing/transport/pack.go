@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"io"
-	"log"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol"
@@ -45,7 +44,6 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 		service = ReceivePackServiceName
 	}
 
-	log.Printf("handshake: service=%s", service)
 	cmd, err := p.cmdr.Command(ctx, service, p.ep, p.auth, params...)
 	if err != nil {
 		return nil, err
@@ -78,12 +76,9 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 
 	c.e = stderr
 
-	log.Printf("open conn: starting command")
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-
-	log.Printf("open conn: command started")
 
 	c.version, err = DiscoverVersion(c.r)
 	if err != nil {
@@ -115,8 +110,6 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 	}
 
 	FilterUnsupportedCapabilities(ar.Capabilities)
-
-	log.Printf("open conn: success")
 
 	return c, nil
 }

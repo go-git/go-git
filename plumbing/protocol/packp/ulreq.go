@@ -68,40 +68,6 @@ func NewUploadRequest() *UploadRequest {
 	}
 }
 
-// NewUploadRequestFromCapabilities returns a pointer to a new UploadRequest
-// value, the request capabilities are filled with the most optimal ones, based
-// on the adv value (advertised capabilities), the UploadRequest generated it
-// has no wants or shallows and an infinite depth.
-func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
-	r := NewUploadRequest()
-
-	if adv.Supports(capability.MultiACKDetailed) {
-		r.Capabilities.Set(capability.MultiACKDetailed)
-	} else if adv.Supports(capability.MultiACK) {
-		r.Capabilities.Set(capability.MultiACK)
-	}
-
-	if adv.Supports(capability.Sideband64k) {
-		r.Capabilities.Set(capability.Sideband64k)
-	} else if adv.Supports(capability.Sideband) {
-		r.Capabilities.Set(capability.Sideband)
-	}
-
-	if adv.Supports(capability.ThinPack) {
-		r.Capabilities.Set(capability.ThinPack)
-	}
-
-	if adv.Supports(capability.OFSDelta) {
-		r.Capabilities.Set(capability.OFSDelta)
-	}
-
-	if adv.Supports(capability.Agent) {
-		r.Capabilities.Set(capability.Agent, capability.DefaultAgent())
-	}
-
-	return r
-}
-
 // Validate validates the content of UploadRequest, following the next rules:
 //   - Wants MUST have at least one reference
 //   - capability.Shallow MUST be present if Shallows is not empty

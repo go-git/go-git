@@ -2,30 +2,14 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"log"
 
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/storage"
 )
-
-type NoMatchingRefSpecError struct {
-	RefSpec config.RefSpec
-}
-
-func (e NoMatchingRefSpecError) Error() string {
-	return fmt.Sprintf("couldn't find remote ref %q", e.RefSpec.Src())
-}
-
-func (e NoMatchingRefSpecError) Is(target error) bool {
-	_, ok := target.(NoMatchingRefSpecError)
-	return ok
-}
 
 // FetchPack fetches a packfile from the remote connection into the given
 // storage repository and updates the shallow information.
@@ -53,7 +37,6 @@ func FetchPack(
 		reader = demuxer
 	}
 
-	log.Printf("updating repository with packfile")
 	if err := packfile.UpdateObjectStorage(st, reader); err != nil {
 		return err
 	}
@@ -62,16 +45,12 @@ func FetchPack(
 		return err
 	}
 
-	log.Printf("updating shallows")
-
 	// Update shallow
 	if len(shallows) > 0 {
 		if err := updateShallow(st, shallows); err != nil {
 			return err
 		}
 	}
-
-	log.Printf("fetch-pack done")
 
 	return nil
 }
