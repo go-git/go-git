@@ -189,7 +189,7 @@ func NewTransport(c *http.Client, opts *TransportOptions) transport.Transport {
 }
 
 // NewSession creates a new session for the client.
-func (c *client) NewSession(st storage.Storer, ep *transport.Endpoint, auth transport.AuthMethod) (transport.PackSession, error) {
+func (c *client) NewSession(st storage.Storer, ep *transport.Endpoint, auth transport.AuthMethod) (transport.Session, error) {
 	return newSession(st, c, ep, auth, c.useDumb)
 }
 
@@ -215,7 +215,7 @@ func (s *session) IsSmart() bool {
 	return s.isSmart && !s.useDumb
 }
 
-var _ transport.PackSession = (*session)(nil)
+var _ transport.Session = (*session)(nil)
 
 func transportWithInsecureTLS(transport *http.Transport) {
 	if transport.TLSClientConfig == nil {

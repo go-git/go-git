@@ -46,7 +46,7 @@ const (
 // It is implemented both by the client and the server, making this a RPC.
 type Transport interface {
 	// NewSession returns a new session for an endpoint.
-	NewSession(storage.Storer, *Endpoint, AuthMethod) (PackSession, error)
+	NewSession(storage.Storer, *Endpoint, AuthMethod) (Session, error)
 
 	// SupportedProtocols returns a list of supported Git protocol versions by
 	// the transport client.

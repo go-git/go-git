@@ -58,7 +58,7 @@ type dummyClient struct {
 	*http.Client
 }
 
-func (*dummyClient) NewSession(*transport.Endpoint, transport.AuthMethod) (transport.PackSession, error) {
+func (*dummyClient) NewSession(*transport.Endpoint, transport.AuthMethod) (transport.Session, error) {
 	return nil, nil
 }
 

@@ -10,94 +10,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/storage"
 )
-
-// Connection represents a session endpoint connection.
-type Connection interface {
-	// Close closes the connection.
-	Close() error
-
-	// Capabilities returns the list of capabilities supported by the server.
-	Capabilities() *capability.List
-
-	// Version returns the Git protocol version the server supports.
-	Version() protocol.Version
-
-	// IsStatelessRPC indicates that the connection is a half-duplex connection
-	// and should operate in half-duplex mode i.e. performs a single read-write
-	// cycle. This fits with the HTTP POST request process where session may
-	// read the request, write a response, and exit.
-	IsStatelessRPC() bool
-
-	// GetRemoteRefs returns the references advertised by the remote.
-	// Using protocol v0 or v1, this returns the references advertised by the
-	// remote during the handshake. Using protocol v2, this runs the ls-refs
-	// command on the remote.
-	// This will error if the session is not already established using
-	// Handshake.
-	GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error)
-
-	// Fetch sends a fetch-pack request to the server.
-	Fetch(ctx context.Context, req *FetchRequest) error
-
-	// Push sends a send-pack request to the server.
-	Push(ctx context.Context, req *PushRequest) error
-}
-
-var _ io.Closer = Connection(nil)
-
-// FetchRequest contains the parameters for a fetch-pack request.
-// This is used during the pack negotiation phase of the fetch operation.
-// See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
-type FetchRequest struct {
-	// Progress is the progress sideband.
-	Progress sideband.Progress
-
-	// Wants is the list of references to fetch.
-	Wants []plumbing.Hash
-
-	// Haves is the list of references the client already has.
-	Haves []plumbing.Hash
-
-	// Depth is the depth of the fetch.
-	Depth int
-
-	// IncludeTags indicates whether tags should be fetched.
-	IncludeTags bool
-}
-
-// PushRequest contains the parameters for a push request.
-type PushRequest struct {
-	// Packfile is the packfile reader.
-	Packfile io.ReadCloser
-
-	// Commands is the list of push commands to be sent to the server.
-	Commands []*packp.Command
-
-	// Progress is the progress sideband.
-	Progress sideband.Progress
-
-	// Options is a set of push-options to be sent to the server during push.
-	Options map[string]string
-
-	// Atomic indicates an atomic push.
-	// If the server supports atomic push, it will update the refs in one
-	// atomic transaction. Either all refs are updated or none.
-	Atomic bool
-}
-
-// PackSession is a Git protocol transfer session.
-// This is used by all protocols.
-// TODO: rename this to Session.
-type PackSession interface {
-	// Handshake starts the negotiation with the remote to get version if not
-	// already connected.
-	// Params are the optional extra parameters to be sent to the server. Use
-	// this to send the protocol version of the client and any other extra parameters.
-	Handshake(ctx context.Context, forPush bool, params ...string) (Connection, error)
-}
 
 // NewPackSession creates a new session that implements a full-duplex Git pack protocol.
 func NewPackSession(
@@ -105,7 +19,7 @@ func NewPackSession(
 	ep *Endpoint,
 	auth AuthMethod,
 	cmdr Commander,
-) (PackSession, error) {
+) (Session, error) {
 	ps := &packSession{
 		ep:   ep,
 		auth: auth,
@@ -122,7 +36,7 @@ type packSession struct {
 	st   storage.Storer
 }
 
-var _ PackSession = &packSession{}
+var _ Session = &packSession{}
 
 // Handshake implements Session.
 func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...string) (Connection, error) {
