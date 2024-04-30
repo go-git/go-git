@@ -2,101 +2,61 @@
 package file
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5/internal/repository"
 	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"golang.org/x/sys/execabs"
 )
 
 func init() {
-	transport.Register("file", DefaultClient)
+	transport.Register("file", DefaultTransport)
 }
 
-// DefaultClient is the default local client.
-var DefaultClient = NewClient(
-	transport.UploadPackServiceName,
-	transport.ReceivePackServiceName,
-)
+// DefaultTransport is the default local client.
+var DefaultTransport = NewTransport()
 
-type runner struct {
-	UploadPackBin  string
-	ReceivePackBin string
-}
+type runner struct{}
 
-// NewClient returns a new local client using the given git-upload-pack and
-// git-receive-pack binaries.
-func NewClient(uploadPackBin, receivePackBin string) transport.Transport {
-	return transport.NewClient(&runner{
-		UploadPackBin:  uploadPackBin,
-		ReceivePackBin: receivePackBin,
-	})
-}
-
-func prefixExecPath(cmd string) (string, error) {
-	// Use `git --exec-path` to find the exec path.
-	execCmd := execabs.Command("git", "--exec-path")
-
-	stdout, err := execCmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	stdoutBuf := bufio.NewReader(stdout)
-
-	err = execCmd.Start()
-	if err != nil {
-		return "", err
-	}
-
-	execPathBytes, isPrefix, err := stdoutBuf.ReadLine()
-	if err != nil {
-		return "", err
-	}
-	if isPrefix {
-		return "", errors.New("couldn't read exec-path line all at once")
-	}
-
-	err = execCmd.Wait()
-	if err != nil {
-		return "", err
-	}
-	execPath := string(execPathBytes)
-	execPath = strings.TrimSpace(execPath)
-	cmd = filepath.Join(execPath, cmd)
-
-	// Make sure it actually exists.
-	_, err = execabs.LookPath(cmd)
-	if err != nil {
-		return "", err
-	}
-	return cmd, nil
+// NewTransport returns a new file transport that users go-git built-in server
+// implementation to serve repositories.
+func NewTransport() transport.Transport {
+	return transport.NewTransport(&runner{})
 }
 
 func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithCancel(ctx)
 
+	var gitProtocol string
+	for _, param := range params {
+		if strings.HasPrefix("version=", param) {
+			if v, _ := strconv.Atoi(param[8:]); v > 0 {
+				gitProtocol += param
+			}
+		}
+	}
+
 	return &command{
-		ctx:     ctx,
-		cancel:  cancel,
-		ep:      ep,
-		service: cmd,
-		errc:    make(chan error, 1),
+		ctx:         ctx,
+		cancel:      cancel,
+		ep:          ep,
+		service:     cmd,
+		errc:        make(chan error, 1),
+		gitProtocol: gitProtocol,
 	}, nil
 }
 
 type command struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	ep      *transport.Endpoint
-	service string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	ep          *transport.Endpoint
+	service     string
+	gitProtocol string
 
 	stdin  io.Reader
 	stdout io.WriteCloser
@@ -117,24 +77,30 @@ func (c *command) Start() error {
 
 	switch c.service {
 	case transport.UploadPackServiceName:
+		opts := &server.UploadPackOptions{
+			GitProtocol: c.gitProtocol,
+		}
 		go func() {
 			c.errc <- server.UploadPack(
 				c.ctx,
 				st,
 				io.NopCloser(c.stdin),
 				c.stdout,
-				nil,
+				opts,
 			)
 		}()
 		return nil
 	case transport.ReceivePackServiceName:
+		opts := &server.ReceivePackOptions{
+			GitProtocol: c.gitProtocol,
+		}
 		go func() {
 			c.errc <- server.ReceivePack(
 				c.ctx,
 				st,
 				io.NopCloser(c.stdin),
 				c.stdout,
-				nil,
+				opts,
 			)
 		}()
 		return nil

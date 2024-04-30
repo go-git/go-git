@@ -8,7 +8,7 @@ import (
 // registry are the protocols supported by default.
 var (
 	registry = map[string]Transport{}
-	mtx      sync.Mutex
+	mtx      sync.RWMutex
 )
 
 // Register adds or modifies an existing protocol.
@@ -27,6 +27,8 @@ func Unregister(scheme string) {
 
 // Get returns the appropriate client for the given protocol.
 func Get(p string) (Transport, error) {
+	mtx.RLock()
+	defer mtx.RUnlock()
 	f, ok := registry[p]
 	if !ok {
 		return nil, fmt.Errorf("unsupported scheme %q", p)

@@ -49,7 +49,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 		return &Password{User: user}, nil
 	}
 
-	s.UploadPackSuite.Client = NewClient(&stdssh.ClientConfig{
+	s.UploadPackSuite.Client = NewTransport(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
 

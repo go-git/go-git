@@ -176,6 +176,15 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 		return nil, err
 	}
 
+	switch c.version {
+	case protocol.VersionV2:
+		return nil, ErrUnsupportedVersion
+	case protocol.VersionV1:
+		// Read the version line
+		fallthrough
+	case protocol.VersionV0:
+	}
+
 	ar := packp.NewAdvRefs()
 	if err := ar.Decode(c.r); err != nil {
 		return nil, err

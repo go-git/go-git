@@ -3,8 +3,8 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"net"
 	"reflect"
 	"strconv"
@@ -19,11 +19,11 @@ import (
 )
 
 func init() {
-	transport.Register("ssh", DefaultClient)
+	transport.Register("ssh", DefaultTransport)
 }
 
-// DefaultClient is the default SSH client.
-var DefaultClient = NewClient(nil)
+// DefaultTransport is the default SSH client.
+var DefaultTransport = NewTransport(nil)
 
 // DefaultSSHConfig is the reader used to access parameters stored in the
 // system's ssh_config files. If nil all the ssh_config are ignored.
@@ -33,9 +33,9 @@ type sshConfig interface {
 	Get(alias, key string) string
 }
 
-// NewClient creates a new SSH client with an optional *ssh.ClientConfig.
-func NewClient(config *ssh.ClientConfig) transport.Transport {
-	return transport.NewClient(&runner{config: config})
+// NewTransport creates a new SSH client with an optional *ssh.ClientConfig.
+func NewTransport(config *ssh.ClientConfig) transport.Transport {
+	return transport.NewTransport(&runner{config: config})
 }
 
 // DefaultAuthBuilder is the function used to create a default AuthMethod, when
@@ -58,22 +58,13 @@ func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint
 		}
 	}
 
+	gitProtocol := strings.Join(params, ":")
 	if err := c.connect(ctx); err != nil {
 		return nil, err
 	}
 
-	for _, p := range params {
-		parts := strings.SplitN(p, "=", 2)
-		if len(parts) == 0 {
-			continue
-		}
-
-		var value string
-		key := parts[0]
-		if len(parts) > 1 {
-			value = parts[1]
-		}
-		c.Session.Setenv(key, value)
+	if gitProtocol != "" {
+		c.Session.Setenv("GIT_PROTOCOL", gitProtocol)
 	}
 
 	return c, nil
@@ -83,7 +74,6 @@ type command struct {
 	*ssh.Session
 	connected bool
 	command   string
-	env       []string
 	endpoint  *transport.Endpoint
 	client    *ssh.Client
 	auth      AuthMethod
@@ -102,7 +92,6 @@ func (c *command) setAuth(auth transport.AuthMethod) error {
 
 func (c *command) Start() error {
 	cmd := endpointToCommand(c.command, c.endpoint)
-	log.Printf("ssh start: %s", cmd)
 	return c.Session.Start(cmd)
 }
 
@@ -118,9 +107,7 @@ func (c *command) Close() error {
 	//     closed.
 	_ = c.Session.Close()
 	err := c.client.Close()
-
-	// XXX: in go1.16+ we can use errors.Is(err, net.ErrClosed)
-	if err != nil && strings.HasSuffix(err.Error(), "use of closed network connection") {
+	if errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 

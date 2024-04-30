@@ -14,17 +14,15 @@ package transport
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"strconv"
 	"strings"
 
 	giturl "github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/storage"
 )
@@ -50,55 +48,14 @@ type Transport interface {
 	// NewSession returns a new session for an endpoint.
 	NewSession(storage.Storer, *Endpoint, AuthMethod) (PackSession, error)
 
-	// NewUploadPackSession starts a git-upload-pack session for an endpoint.
-	NewUploadPackSession(*Endpoint, AuthMethod) (UploadPackSession, error)
-	// NewReceivePackSession starts a git-receive-pack session for an endpoint.
-	NewReceivePackSession(*Endpoint, AuthMethod) (ReceivePackSession, error)
-}
-
-type Session interface {
-	// AdvertisedReferences retrieves the advertised references for a
-	// repository.
-	// If the repository does not exist, returns ErrRepositoryNotFound.
-	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
-	AdvertisedReferences() (*packp.AdvRefs, error)
-	// AdvertisedReferencesContext retrieves the advertised references for a
-	// repository.
-	// If the repository does not exist, returns ErrRepositoryNotFound.
-	// If the repository exists, but is empty, returns ErrEmptyRemoteRepository.
-	AdvertisedReferencesContext(context.Context) (*packp.AdvRefs, error)
-	io.Closer
+	// SupportedProtocols returns a list of supported Git protocol versions by
+	// the transport client.
+	SupportedProtocols() []protocol.Version
 }
 
 type AuthMethod interface {
 	fmt.Stringer
 	Name() string
-}
-
-// UploadPackSession represents a git-upload-pack session.
-// A git-upload-pack session has two steps: reference discovery
-// (AdvertisedReferences) and uploading pack (UploadPack).
-type UploadPackSession interface {
-	Session
-	// UploadPack takes a git-upload-pack request and returns a response,
-	// including a packfile. Don't be confused by terminology, the client
-	// side of a git-upload-pack is called git-fetch-pack, although here
-	// the same interface is used to make it RPC-like.
-	UploadPack(context.Context, *packp.UploadPackRequest) (*packp.UploadPackResponse, error)
-}
-
-// ReceivePackSession represents a git-receive-pack session.
-// A git-receive-pack session has two steps: reference discovery
-// (AdvertisedReferences) and receiving pack (ReceivePack).
-// In that order.
-type ReceivePackSession interface {
-	Session
-	// ReceivePack sends an update references request and a packfile
-	// reader and returns a ReportStatus and error. Don't be confused by
-	// terminology, the client side of a git-receive-pack is called
-	// git-send-pack, although here the same interface is used to make it
-	// RPC-like.
-	ReceivePack(context.Context, *packp.UpdateRequests) (*packp.ReportStatus, error)
 }
 
 // Endpoint represents a Git URL in any supported protocol.

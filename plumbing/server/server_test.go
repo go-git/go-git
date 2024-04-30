@@ -35,7 +35,7 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 		s.client = server.NewServer(s.loader)
 	}
 
-	s.clientBackup = file.DefaultClient
+	s.clientBackup = file.DefaultTransport
 	transport.Register("file", s.client)
 }
 

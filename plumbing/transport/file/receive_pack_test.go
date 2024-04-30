@@ -18,7 +18,7 @@ var _ = Suite(&ReceivePackSuite{})
 
 func (s *ReceivePackSuite) SetUpSuite(c *C) {
 	s.CommonSuite.SetUpSuite(c)
-	s.ReceivePackSuite.Client = DefaultClient
+	s.ReceivePackSuite.Client = DefaultTransport
 }
 
 func (s *ReceivePackSuite) SetUpTest(c *C) {
@@ -45,7 +45,7 @@ func (s *ReceivePackSuite) TestCommandNoOutput(c *C) {
 		c.Skip("/bin/true not found")
 	}
 
-	client := NewClient("true", "true")
+	client := NewTransport("true", "true")
 	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
@@ -58,7 +58,7 @@ func (s *ReceivePackSuite) TestMalformedInputNoErrors(c *C) {
 		c.Skip("/usr/bin/yes not found")
 	}
 
-	client := NewClient("yes", "yes")
+	client := NewTransport("yes", "yes")
 	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
@@ -68,7 +68,7 @@ func (s *ReceivePackSuite) TestMalformedInputNoErrors(c *C) {
 
 func (s *ReceivePackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
-	client := NewClient(cmd, cmd)
+	client := NewTransport(cmd, cmd)
 	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
 	c.Assert(session, IsNil)

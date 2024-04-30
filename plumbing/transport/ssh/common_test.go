@@ -104,7 +104,7 @@ func (s *SuiteCommon) TestIgnoreHostKeyCallback(c *C) {
 	}
 	uploadPack.SetUpSuite(c)
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
+	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
@@ -125,7 +125,7 @@ func (s *SuiteCommon) TestFixedHostKeyCallback(c *C) {
 	}
 	uploadPack.SetUpSuite(c)
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
+	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
@@ -144,7 +144,7 @@ func (s *SuiteCommon) TestFailHostKeyCallback(c *C) {
 	}
 	uploadPack.SetUpSuite(c)
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
+	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
@@ -188,7 +188,7 @@ func (s *SuiteCommon) TestInvalidSocks5Proxy(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 
-	ps, err := DefaultClient.NewUploadPackSession(ep, auth)
+	ps, err := DefaultTransport.NewUploadPackSession(ep, auth)
 	// Since the proxy server is not running, we expect an error.
 	c.Assert(ps, IsNil)
 	c.Assert(err, NotNil)

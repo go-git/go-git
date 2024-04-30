@@ -110,7 +110,7 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
 		wantErr = fmt.Errorf("unknown error: something")
 	)
 
-	client := NewClient(mockCommander{stderr: stderr})
+	client := NewTransport(mockCommander{stderr: stderr})
 	sess, err := client.NewUploadPackSession(nil, nil)
 	if err != nil {
 		c.Fatalf("unexpected error: %s", err)
@@ -142,7 +142,7 @@ remote:`
 		wantErr = ErrRepositoryNotFound
 	)
 
-	client := NewClient(mockCommander{stderr: stderr})
+	client := NewTransport(mockCommander{stderr: stderr})
 	sess, err := client.NewUploadPackSession(nil, nil)
 	if err != nil {
 		c.Fatalf("unexpected error: %s", err)

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,6 +30,14 @@ const (
 )
 
 var (
+	// ErrUnsupportedVersion is returned when the protocol version is not
+	// supported.
+	ErrUnsupportedVersion = errors.New("unsupported protocol version")
+	// ErrUnsupportedService is returned when the service is not supported.
+	ErrUnsupportedService = errors.New("unsupported service")
+	// ErrInvalidResponse is returned when the response is invalid.
+	ErrInvalidResponse = errors.New("invalid response")
+	// ErrTimeoutExceeded is returned when the timeout is exceeded.
 	ErrTimeoutExceeded = errors.New("timeout exceeded")
 	// stdErrSkipPattern is used for skipping lines from a command's stderr output.
 	// Any line matching this pattern will be skipped from further
@@ -84,27 +91,20 @@ type client struct {
 	cmdr Commander
 }
 
-// NewClient creates a new client using the given Commander.
-func NewClient(runner Commander) Transport {
+// NewTransport creates a new client using the given Commander.
+func NewTransport(runner Commander) Transport {
 	return &client{runner}
 }
 
+// NewSession returns a new session for an endpoint.
 func (c *client) NewSession(st storage.Storer, ep *Endpoint, auth AuthMethod) (PackSession, error) {
 	return NewPackSession(st, ep, auth, c.cmdr)
 }
 
-// NewUploadPackSession creates a new UploadPackSession.
-func (c *client) NewUploadPackSession(ep *Endpoint, auth AuthMethod) (
-	UploadPackSession, error,
-) {
-	return c.newSession(UploadPackServiceName, ep, auth)
-}
-
-// NewReceivePackSession creates a new ReceivePackSession.
-func (c *client) NewReceivePackSession(ep *Endpoint, auth AuthMethod) (
-	ReceivePackSession, error,
-) {
-	return c.newSession(ReceivePackServiceName, ep, auth)
+// SupportedProtocols returns a list of supported Git protocol versions by
+// the transport client.
+func (c *client) SupportedProtocols() []protocol.Version {
+	return []protocol.Version{protocol.VersionV0}
 }
 
 type session struct {
@@ -504,11 +504,15 @@ func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
 func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
 	ver := protocol.VersionV0
 	_, pktb, err := pktline.PeekLine(r)
-	if err == nil {
-		pkt := string(pktb)
-		if strings.HasPrefix(pkt, "version ") {
-			log.Printf("version pkt: %q", pkt)
-			v, _ := strconv.Atoi(pkt[8:])
+	if err != nil {
+		return ver, err
+	}
+
+	pkt := strings.TrimSpace(string(pktb))
+	if strings.HasPrefix(pkt, "version ") {
+		// Consume the version packet
+		pktline.ReadLine(r) // nolint:errcheck
+		if v, _ := strconv.Atoi(pkt[8:]); v > int(ver) {
 			ver = protocol.Version(v)
 		}
 	}

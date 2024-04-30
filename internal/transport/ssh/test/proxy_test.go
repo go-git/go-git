@@ -68,7 +68,7 @@ func (s *ProxyEnvSuite) TestCommand(c *C) {
 	ep := s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
 	c.Assert(err, IsNil)
 
-	client := ggssh.NewClient(&stdssh.ClientConfig{
+	client := ggssh.NewTransport(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
 	r, err := client.NewUploadPackSession(ep, nil)

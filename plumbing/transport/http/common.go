@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -28,8 +29,8 @@ import (
 )
 
 func init() {
-	transport.Register("http", DefaultClient)
-	transport.Register("https", DefaultClient)
+	transport.Register("http", DefaultTransport)
+	transport.Register("https", DefaultTransport)
 }
 
 func applyHeaders(
@@ -37,6 +38,7 @@ func applyHeaders(
 	service string,
 	ep *transport.Endpoint,
 	auth AuthMethod,
+	protocol string,
 	useSmart bool,
 ) {
 	// Add headers
@@ -46,6 +48,10 @@ func applyHeaders(
 	if useSmart {
 		req.Header.Add("Accept", fmt.Sprintf("application/x-%s-result", service))
 		req.Header.Add("Content-Type", fmt.Sprintf("application/x-%s-request", service))
+	}
+
+	if protocol != "" {
+		req.Header.Set("Git-Protocol", protocol)
 	}
 
 	// Set auth headers
@@ -116,57 +122,6 @@ func applyHeadersToRequest(req *http.Request, content *bytes.Buffer, host string
 
 const infoRefsPath = "/info/refs"
 
-func advertisedReferences(ctx context.Context, s *session, serviceName string) (ref *packp.AdvRefs, err error) {
-	url := fmt.Sprintf(
-		"%s%s?service=%s",
-		s.ep.String(), infoRefsPath, serviceName,
-	)
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	s.ApplyAuthToRequest(req)
-	applyHeadersToRequest(req, nil, s.ep.Host, serviceName)
-	res, err := s.client.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-
-	s.ModifyEndpointIfRedirect(res)
-	defer ioutil.CheckClose(res.Body, &err)
-
-	if err = checkError(res); err != nil {
-		return nil, err
-	}
-
-	ar := packp.NewAdvRefs()
-	if err = ar.Decode(res.Body); err != nil {
-		if err == packp.ErrEmptyAdvRefs {
-			err = transport.ErrEmptyRemoteRepository
-		}
-
-		return nil, err
-	}
-
-	// Git 2.41+ returns a zero-id plus capabilities when an empty
-	// repository is being cloned. This skips the existing logic within
-	// advrefs_decode.decodeFirstHash, which expects a flush-pkt instead.
-	//
-	// This logic aligns with plumbing/transport/internal/common/common.go.
-	if ar.IsEmpty() &&
-		// Empty repositories are valid for git-receive-pack.
-		transport.ReceivePackServiceName != serviceName {
-		return nil, transport.ErrEmptyRemoteRepository
-	}
-
-	transport.FilterUnsupportedCapabilities(ar.Capabilities)
-	s.advRefs = ar
-
-	return ar, nil
-}
-
 type client struct {
 	client     *http.Client
 	transports *lru.Cache
@@ -174,8 +129,8 @@ type client struct {
 	useDumb    bool // When true, the client will always use the dumb protocol.
 }
 
-// ClientOptions holds user configurable options for the client.
-type ClientOptions struct {
+// TransportOptions holds user configurable options for the client.
+type TransportOptions struct {
 	// CacheMaxEntries is the max no. of entries that the transport objects
 	// cache will hold at any given point of time. It must be a positive integer.
 	// Calling `client.addTransport()` after the cache has reached the specified
@@ -194,12 +149,14 @@ var (
 	// opt-in feature.
 	defaultTransportCacheSize = 0
 
-	// DefaultClient is the default HTTP client, which uses a net/http client configured
+	// DefaultTransport is the default HTTP client, which uses a net/http client configured
 	// with http.DefaultTransport.
-	DefaultClient = NewClient(nil)
+	DefaultTransport = NewTransport(nil, nil)
 )
 
-// NewClient creates a new client with a custom net/http client.
+// NewTransport creates a new HTTP transport with a custom net/http client and
+// options.
+//
 // See `InstallProtocol` to install and override default http client.
 // If the net/http client is nil or empty, it will use a net/http client configured
 // with http.DefaultTransport.
@@ -207,66 +164,50 @@ var (
 // Note that for HTTP client cannot distinguish between private repositories and
 // unexistent repositories on GitHub. So it returns `ErrAuthorizationRequired`
 // for both.
-func NewClient(c *http.Client) transport.Transport {
+func NewTransport(c *http.Client, opts *TransportOptions) transport.Transport {
 	if c == nil {
 		c = &http.Client{
 			Transport: http.DefaultTransport,
 		}
 	}
-	return NewClientWithOptions(c, &ClientOptions{
-		CacheMaxEntries: defaultTransportCacheSize,
-	})
-}
 
-// NewClientWithOptions returns a new client configured with the provided net/http client
-// and other custom options specific to the client.
-// If the net/http client is nil or empty, it will use a net/http client configured
-// with http.DefaultTransport.
-func NewClientWithOptions(c *http.Client, opts *ClientOptions) transport.Transport {
-	if c == nil {
-		c = &http.Client{
-			Transport: http.DefaultTransport,
+	if opts == nil {
+		opts = &TransportOptions{
+			CacheMaxEntries: defaultTransportCacheSize,
 		}
 	}
+
 	cl := &client{
 		client:  c,
 		useDumb: opts.UseDumb,
 	}
-
-	if opts != nil {
-		if opts.CacheMaxEntries > 0 {
-			cl.transports = lru.New(opts.CacheMaxEntries)
-		}
+	if opts.CacheMaxEntries > 0 {
+		cl.transports = lru.New(opts.CacheMaxEntries)
 	}
+
 	return cl
 }
 
+// NewSession creates a new session for the client.
 func (c *client) NewSession(st storage.Storer, ep *transport.Endpoint, auth transport.AuthMethod) (transport.PackSession, error) {
 	return newSession(st, c, ep, auth, c.useDumb)
 }
 
-func (c *client) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
-	transport.UploadPackSession, error,
-) {
-	return newUploadPackSession(c, ep, auth)
+// SupportedProtocols returns the supported protocols by the client.
+func (c *client) SupportedProtocols() []protocol.Version {
+	return []protocol.Version{protocol.VersionV0}
 }
 
-func (c *client) NewReceivePackSession(ep *transport.Endpoint, auth transport.AuthMethod) (
-	transport.ReceivePackSession, error,
-) {
-	return newReceivePackSession(c, ep, auth)
-}
-
-// TODO: support smart client
 type session struct {
-	st      storage.Storer
-	auth    AuthMethod
-	client  *http.Client
-	ep      *transport.Endpoint
-	advRefs *packp.AdvRefs
-	version protocol.Version
-	useDumb bool // When true, the client will always use the dumb protocol
-	isSmart bool // This is true if the session is using the smart protocol
+	st          storage.Storer
+	auth        AuthMethod
+	client      *http.Client
+	ep          *transport.Endpoint
+	advRefs     *packp.AdvRefs
+	gitProtocol string           // the Git-Protocol header to send
+	version     protocol.Version // the server's protocol version
+	useDumb     bool             // When true, the client will always use the dumb protocol
+	isSmart     bool             // This is true if the session is using the smart protocol
 }
 
 // IsSmart returns true if the session is using the smart protocol.
@@ -409,7 +350,11 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 		return nil, err
 	}
 
-	applyHeaders(req, service, s.ep, s.auth, !s.useDumb)
+	if len(params) > 0 {
+		s.gitProtocol = strings.Join(params, ":")
+	}
+
+	applyHeaders(req, service, s.ep, s.auth, s.gitProtocol, !s.useDumb)
 	res, err := doRequest(s.client, req)
 	if err != nil {
 		return nil, err
@@ -423,7 +368,35 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 	defer ioutil.CheckClose(res.Body, &err)
 
 	rd := bufio.NewReader(res.Body)
+	_, prefix, err := pktline.PeekLine(rd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Consumes the prefix
+	//  # service=<service>\n
+	//  0000
+	if bytes.HasPrefix(prefix, []byte("# service=")) {
+		var reply packp.SmartReply
+		err := reply.Decode(rd)
+		if err != nil {
+			return nil, err
+		}
+
+		if reply.Service != service {
+			return nil, fmt.Errorf("unexpected service name: %w", transport.ErrInvalidResponse)
+		}
+	}
+
 	s.version, _ = transport.DiscoverVersion(rd)
+	switch s.version {
+	case protocol.VersionV2:
+		return nil, transport.ErrUnsupportedVersion
+	case protocol.VersionV1:
+		// Read the version line
+		fallthrough
+	case protocol.VersionV0:
+	}
 
 	ar := packp.NewAdvRefs()
 	if err = ar.Decode(rd); err != nil {
@@ -572,7 +545,7 @@ func (r *requester) Close() error {
 		return err
 	}
 
-	applyHeaders(req, r.service, r.ep, r.auth, r.IsSmart())
+	applyHeaders(req, r.service, r.ep, r.auth, r.gitProtocol, r.IsSmart())
 	res, err := doRequest(r.client, req)
 	if err != nil {
 		return err

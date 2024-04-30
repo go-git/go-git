@@ -26,7 +26,7 @@ var _ = Suite(&UploadPackSuite{})
 
 func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpTest(c)
-	s.UploadPackSuite.Client = DefaultClient
+	s.UploadPackSuite.Client = DefaultTransport
 	s.UploadPackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
 	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
 	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")

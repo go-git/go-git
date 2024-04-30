@@ -17,5 +17,5 @@ func ExampleInstallProtocol() {
 	}
 
 	// Install it as default client for https URLs.
-	transport.Register("https", githttp.NewClient(httpClient))
+	transport.Register("https", githttp.NewTransport(httpClient))
 }

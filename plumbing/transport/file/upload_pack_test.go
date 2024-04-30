@@ -20,7 +20,7 @@ var _ = Suite(&UploadPackSuite{})
 func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.CommonSuite.SetUpSuite(c)
 
-	s.UploadPackSuite.Client = DefaultClient
+	s.UploadPackSuite.Client = DefaultTransport
 
 	fixture := fixtures.Basic().One()
 	path := fixture.DotGit().Root()
@@ -47,7 +47,7 @@ func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
 		c.Skip("/bin/true not found")
 	}
 
-	client := NewClient("true", "true")
+	client := NewTransport("true", "true")
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
@@ -60,7 +60,7 @@ func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
 		c.Skip("/usr/bin/yes not found")
 	}
 
-	client := NewClient("yes", "yes")
+	client := NewTransport("yes", "yes")
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := session.AdvertisedReferences()
@@ -70,7 +70,7 @@ func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
 
 func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
 	cmd := "/non-existent-git"
-	client := NewClient(cmd, cmd)
+	client := NewTransport(cmd, cmd)
 	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	// Error message is OS-dependant, so do a broad check
 	c.Assert(err, ErrorMatches, ".*file.*")
