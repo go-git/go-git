@@ -77,7 +77,12 @@ func NegotiatePack(
 	// XXX: empty request means haves are a subset of wants, in that case we have
 	// everything we asked for. Close the connection and return nil.
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
-		return nil, pktline.WriteFlush(writer)
+		if err := pktline.WriteFlush(writer); err != nil {
+			return nil, err
+		}
+
+		// Close the writer to signal the end of the request
+		return nil, writer.Close()
 	}
 
 	// Create upload-haves

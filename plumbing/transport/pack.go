@@ -109,8 +109,6 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 		return nil, ErrEmptyRemoteRepository
 	}
 
-	FilterUnsupportedCapabilities(ar.Capabilities)
-
 	return c, nil
 }
 

@@ -414,14 +414,12 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 	// repository is being cloned. This skips the existing logic within
 	// advrefs_decode.decodeFirstHash, which expects a flush-pkt instead.
 	//
-	// This logic aligns with plumbing/transport/internal/common/common.go.
+	// This logic aligns with plumbing/transport/common/common.go.
 	if ar.IsEmpty() &&
 		// Empty repositories are valid for git-receive-pack.
 		transport.ReceivePackServiceName != service {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
-
-	transport.FilterUnsupportedCapabilities(ar.Capabilities)
 	s.advRefs = ar
 
 	return s, nil

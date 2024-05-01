@@ -26,13 +26,14 @@ func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, fo
 	// Set server default capabilities
 	ar.Capabilities.Set(capability.Agent, capability.DefaultAgent()) // nolint: errcheck
 	ar.Capabilities.Set(capability.OFSDelta)                         // nolint: errcheck
+	ar.Capabilities.Set(capability.Sideband64k)                      // nolint: errcheck
 	if forPush {
 		ar.Capabilities.Set(capability.DeleteRefs)   // nolint: errcheck
 		ar.Capabilities.Set(capability.ReportStatus) // nolint: errcheck
+		ar.Capabilities.Set(capability.PushOptions)  // nolint: errcheck
 	} else {
-		ar.Capabilities.Set(capability.Sideband)    // nolint: errcheck
-		ar.Capabilities.Set(capability.Sideband64k) // nolint: errcheck
-		ar.Capabilities.Set(capability.NoProgress)  // nolint: errcheck
+		ar.Capabilities.Set(capability.Sideband)   // nolint: errcheck
+		ar.Capabilities.Set(capability.NoProgress) // nolint: errcheck
 	}
 
 	// Set references

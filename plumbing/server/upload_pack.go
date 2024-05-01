@@ -60,8 +60,19 @@ func UploadPack(
 		}
 	}
 
+	rd := bufio.NewReader(r)
 	if !opts.AdvertiseRefs {
-		rd := bufio.NewReader(r)
+		l, _, err := pktline.PeekLine(rd)
+		if err != nil {
+			return err
+		}
+
+		// XXX: In case the client has nothing to send, it sends a flush
+		// packet to indicate that it is done sending data.
+		// In that case, we're done here.
+		if l == pktline.Flush {
+			return nil
+		}
 
 		// TODO: implement server negotiation algorithm
 		// Receive upload request
@@ -81,6 +92,7 @@ func UploadPack(
 		)
 
 		for {
+			// TODO: support multi_ack & multi_ack_detailed
 			_, p, err := pktline.PeekLine(rd)
 			if err != nil {
 				return err
@@ -91,6 +103,9 @@ func UploadPack(
 				pktline.ReadLine(rd) // nolint: errcheck
 				break
 			}
+
+			// Consume line
+			pktline.ReadLine(rd) // nolint: errcheck
 		}
 
 		// Done with the request, now close the reader

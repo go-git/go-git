@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/internal/repository"
+	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
@@ -58,9 +59,10 @@ type command struct {
 	service     string
 	gitProtocol string
 
-	stdin  io.Reader
+	stdin  io.ReadCloser
+	stdinW *io.PipeWriter
 	stdout io.WriteCloser
-	stderr io.Writer
+	stderr io.WriteCloser
 
 	childIOFiles  []io.Closer
 	parentIOFiles []io.Closer
@@ -122,6 +124,7 @@ func (c *command) StdinPipe() (io.WriteCloser, error) {
 	pr, pw := io.Pipe()
 
 	c.stdin = pr
+	c.stdinW = pw
 	c.childIOFiles = append(c.childIOFiles, pr)
 	c.parentIOFiles = append(c.parentIOFiles, pw)
 
@@ -139,17 +142,20 @@ func (c *command) StdoutPipe() (io.Reader, error) {
 }
 
 // Close waits for the command to exit.
-func (c *command) Close() error {
+func (c *command) Close() (err error) {
 	if c.closed {
 		return nil
 	}
 
-	err := <-c.errc
+	// XXX: Write a flush to stdin to signal the end of the request when the
+	// client has everything it asked for.
+	err = c.stdinW.CloseWithError(pktline.WriteFlush(c.stdinW))
 
 	closeDiscriptors(c.childIOFiles)
 	closeDiscriptors(c.parentIOFiles)
+	c.closed = true
 
-	return err
+	return
 }
 
 func closeDiscriptors(fds []io.Closer) {
