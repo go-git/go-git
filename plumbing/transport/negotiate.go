@@ -93,13 +93,6 @@ func NegotiatePack(
 		done  bool
 		srvrs packp.ServerResponse
 	)
-	isMultiAck := caps.Supports(capability.MultiACK) ||
-		caps.Supports(capability.MultiACKDetailed)
-
-	// TODO: Implement support for multi_ack or multi_ack_detailed responses.
-	if isMultiAck {
-		return nil, fmt.Errorf("multi_ack and multi_ack_detailed are not supported")
-	}
 
 	if err := upreq.Validate(); err != nil {
 		return nil, err
