@@ -3,6 +3,7 @@ package transport
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -37,8 +38,18 @@ type packSession struct {
 
 var _ Session = &packSession{}
 
+// readStderr is a helper function that reads the stderr of a command and
+// returns an error if it's not empty.
+func readStderr(r io.Reader) error {
+	bts, err := io.ReadAll(r)
+	if err == nil && len(bts) > 0 {
+		return NewRemoteError(string(bts))
+	}
+	return nil
+}
+
 // Handshake implements Session.
-func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...string) (Connection, error) {
+func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...string) (conn Connection, err error) {
 	service := UploadPackServiceName
 	if forPush {
 		service = ReceivePackServiceName
@@ -68,7 +79,6 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 
 	c.r = bufio.NewReader(stdout)
 
-	// TODO: listen for errors in stderr
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, err
@@ -79,6 +89,16 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+
+	// If we receive an EOF error, we need to check if there is any error
+	// message in the stderr.
+	defer func() {
+		if errors.Is(err, io.EOF) {
+			if rerr := readStderr(stderr); rerr != nil {
+				err = rerr
+			}
+		}
+	}()
 
 	c.version, err = DiscoverVersion(c.r)
 	if err != nil {

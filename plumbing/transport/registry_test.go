@@ -3,7 +3,9 @@ package transport_test
 import (
 	"net/http"
 
+	"github.com/go-git/go-git/v5/plumbing/protocol"
 	_ "github.com/go-git/go-git/v5/plumbing/transport/ssh" // ssh transport
+	"github.com/go-git/go-git/v5/storage"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	. "gopkg.in/check.v1"
@@ -58,18 +60,13 @@ type dummyClient struct {
 	*http.Client
 }
 
-func (*dummyClient) NewSession(*transport.Endpoint, transport.AuthMethod) (transport.Session, error) {
+var _ transport.Transport = &dummyClient{}
+
+func (*dummyClient) NewSession(storage.Storer, *transport.Endpoint, transport.AuthMethod) (transport.Session, error) {
 	return nil, nil
 }
 
-func (*dummyClient) NewUploadPackSession(*transport.Endpoint, transport.AuthMethod) (
-	transport.UploadPackSession, error,
-) {
-	return nil, nil
-}
-
-func (*dummyClient) NewReceivePackSession(*transport.Endpoint, transport.AuthMethod) (
-	transport.ReceivePackSession, error,
-) {
-	return nil, nil
+// SupportedProtocols implements transport.Transport.
+func (d *dummyClient) SupportedProtocols() []protocol.Version {
+	return []protocol.Version{}
 }

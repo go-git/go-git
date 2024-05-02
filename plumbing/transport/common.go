@@ -43,6 +43,21 @@ var (
 	stdErrSkipPattern = regexp.MustCompile("^remote:( =*){0,1}$")
 )
 
+// RemoteError represents an error returned by the remote.
+type RemoteError struct {
+	Reason string
+}
+
+// Error implements the error interface.
+func (e *RemoteError) Error() string {
+	return e.Reason
+}
+
+// NewRemoteError creates a new RemoteError.
+func NewRemoteError(reason string) error {
+	return &RemoteError{Reason: reason}
+}
+
 // Connection represents a session endpoint connection.
 type Connection interface {
 	// Close closes the connection.
