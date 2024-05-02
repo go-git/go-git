@@ -81,6 +81,10 @@ func (a *Password) ClientConfig() (*ssh.ClientConfig, error) {
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
 		User: a.User,
 		Auth: []ssh.AuthMethod{ssh.Password(a.Password)},
+		HostKeyAlgorithms: []string{
+			ssh.KeyAlgoRSASHA256,
+			ssh.KeyAlgoRSASHA512,
+		},
 	})
 }
 
