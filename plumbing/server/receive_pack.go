@@ -64,6 +64,17 @@ func ReceivePack(
 	}
 
 	rd := bufio.NewReader(r)
+	l, _, err := pktline.PeekLine(rd)
+	if err != nil {
+		return err
+	}
+
+	// At this point, if we get a flush packet, it means the client
+	// has nothing to send, so we can return early.
+	if l == pktline.Flush {
+		return nil
+	}
+
 	updreq := packp.NewUpdateRequests()
 	if err := updreq.Decode(rd); err != nil {
 		return err

@@ -67,9 +67,9 @@ func UploadPack(
 			return err
 		}
 
-		// XXX: In case the client has nothing to send, it sends a flush
-		// packet to indicate that it is done sending data.
-		// In that case, we're done here.
+		// In case the client has nothing to send, it sends a flush packet to
+		// indicate that it is done sending data. In that case, we're done
+		// here.
 		if l == pktline.Flush {
 			return nil
 		}
