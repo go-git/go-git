@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	. "gopkg.in/check.v1"
@@ -14,7 +15,7 @@ var _ = Suite(&CommonSuite{})
 func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
 	var (
 		stderr  = "something"
-		wantErr = fmt.Errorf("unknown error: something")
+		wantErr = fmt.Errorf("something")
 	)
 
 	client := NewTransport(mockCommander{stderr: stderr})
@@ -24,7 +25,7 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
 	}
 
 	_, err = sess.Handshake(context.TODO(), false)
-
+	c.Assert(err, NotNil)
 	if wantErr != nil {
 		if wantErr != err {
 			if wantErr.Error() != err.Error() {
@@ -46,7 +47,7 @@ remote: ERROR: The project you were looking for could not be found or you don't 
 remote: 
 remote: ========================================================================
 remote:`
-		wantErr = ErrRepositoryNotFound
+		wantErr *RemoteError
 	)
 
 	client := NewTransport(mockCommander{stderr: stderr})
@@ -56,14 +57,8 @@ remote:`
 	}
 
 	_, err = sess.Handshake(context.TODO(), false)
-
-	if wantErr != nil {
-		if wantErr != err {
-			if wantErr.Error() != err.Error() {
-				c.Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
-			}
-		}
-	} else if err != nil {
-		c.Fatalf("unexpected error: %s", err)
+	c.Assert(err, NotNil)
+	if !errors.As(err, &wantErr) {
+		c.Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
 	}
 }

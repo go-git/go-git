@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 // NewPackSession creates a new session that implements a full-duplex Git pack protocol.
@@ -77,7 +78,8 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 		return nil, err
 	}
 
-	c.r = bufio.NewReader(stdout)
+	cr := ioutil.NewContextReaderWithCloser(ctx, stdout, cmd)
+	c.r = bufio.NewReader(cr)
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -164,24 +166,7 @@ func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Referen
 		return nil, ErrEmptyRemoteRepository
 	}
 
-	refs, err := p.refs.AllReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	// FIXME: this is a bit of a hack, to fix this, we need to redefine and
-	// simplify AdvRefs.
-	var allRefs []*plumbing.Reference
-	for _, ref := range refs {
-		allRefs = append(allRefs, ref)
-	}
-	for name, hash := range p.refs.Peeled {
-		allRefs = append(allRefs,
-			plumbing.NewReferenceFromStrings(name+"^{}", hash.String()),
-		)
-	}
-
-	return allRefs, nil
+	return p.refs.References, nil
 }
 
 // Version implements Connection.

@@ -60,7 +60,7 @@ func (s *ProxySuite) TestCommand(c *C) {
 		return &Password{User: user}, nil
 	}
 
-	ep := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	ep, _ := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
 	c.Assert(err, IsNil)
 	ep.Proxy = transport.ProxyOptions{
 		URL:      socksProxyAddr,

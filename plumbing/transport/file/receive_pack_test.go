@@ -1,9 +1,10 @@
 package file
 
 import (
-	"os"
+	"context"
 
 	"github.com/go-git/go-git/v5/internal/transport/test"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -37,39 +38,28 @@ func (s *ReceivePackSuite) TearDownTest(c *C) {
 	s.Suite.TearDownSuite(c)
 }
 
-// TODO: fix test
 func (s *ReceivePackSuite) TestCommandNoOutput(c *C) {
-	c.Skip("failing test")
-
-	if _, err := os.Stat("/bin/true"); os.IsNotExist(err) {
-		c.Skip("/bin/true not found")
-	}
-
-	client := NewTransport("true", "true")
-	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	client := NewTransport()
+	session, err := client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	ar, err := session.AdvertisedReferences()
+	conn, err := session.Handshake(context.TODO(), true)
 	c.Assert(err, IsNil)
-	c.Assert(ar, IsNil)
+	c.Assert(conn, NotNil)
+	conn.Close()
 }
 
 func (s *ReceivePackSuite) TestMalformedInputNoErrors(c *C) {
-	if _, err := os.Stat("/usr/bin/yes"); os.IsNotExist(err) {
-		c.Skip("/usr/bin/yes not found")
-	}
-
-	client := NewTransport("yes", "yes")
-	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	client := NewTransport()
+	session, err := client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	ar, err := session.AdvertisedReferences()
+	conn, err := session.Handshake(context.TODO(), true)
 	c.Assert(err, NotNil)
-	c.Assert(ar, IsNil)
+	c.Assert(conn, IsNil)
 }
 
 func (s *ReceivePackSuite) TestNonExistentCommand(c *C) {
-	cmd := "/non-existent-git"
-	client := NewTransport(cmd, cmd)
-	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	client := NewTransport()
+	session, err := client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
 	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
 	c.Assert(session, IsNil)
 }

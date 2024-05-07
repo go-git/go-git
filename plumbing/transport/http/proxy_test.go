@@ -8,6 +8,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/internal/transport/http/test"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -31,7 +32,7 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 	defer httpListener.Close()
 	defer proxyServer.Close()
 
-	endpoint := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	endpoint, _ := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpProxyAddr,
 		Username: "user",
@@ -39,12 +40,12 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 	}
 
 	s.u.Client = NewTransport(nil)
-	session, err := s.u.Client.NewUploadPackSession(endpoint, nil)
+	session, err := s.u.Client.NewSession(memory.NewStorage(), endpoint, nil)
 	c.Assert(err, IsNil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	info, err := session.AdvertisedReferencesContext(ctx)
+	info, err := session.Handshake(ctx, false)
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
@@ -66,10 +67,10 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 	}
 	endpoint.InsecureSkipTLS = true
 
-	session, err = s.u.Client.NewUploadPackSession(endpoint, nil)
+	session, err = s.u.Client.NewSession(memory.NewStorage(), endpoint, nil)
 	c.Assert(err, IsNil)
 
-	info, err = session.AdvertisedReferencesContext(ctx)
+	info, err = session.Handshake(context.TODO(), false)
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	proxyUsed = atomic.LoadInt32(&proxiedRequests) > 0

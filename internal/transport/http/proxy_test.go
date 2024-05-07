@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/internal/transport/http/test"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -43,13 +44,17 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 	c.Assert(err, IsNil)
 	endpoint.InsecureSkipTLS = true
 
+	st := memory.NewStorage()
 	client := http.DefaultTransport
-	session, err := client.NewUploadPackSession(endpoint, nil)
+	session, err := client.NewSession(st, endpoint, nil)
 	c.Assert(err, IsNil)
+	conn, err := session.Handshake(context.Background(), false)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(conn.Close(), IsNil) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	info, err := session.AdvertisedReferencesContext(ctx)
+	info, err := conn.GetRemoteRefs(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0

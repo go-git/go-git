@@ -44,6 +44,7 @@ var (
 )
 
 // RemoteError represents an error returned by the remote.
+// TODO: embed error
 type RemoteError struct {
 	Reason string
 }

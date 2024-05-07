@@ -12,8 +12,11 @@ import (
 
 	"github.com/armon/go-socks5"
 	"github.com/gliderlabs/ssh"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	ggssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	stdssh "golang.org/x/crypto/ssh"
@@ -65,24 +68,26 @@ func (s *ProxyEnvSuite) TestCommand(c *C) {
 		return &ggssh.Password{User: user}, nil
 	}
 
-	ep := s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	st, ep := s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
 	c.Assert(err, IsNil)
 
 	client := ggssh.NewTransport(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
-	r, err := client.NewUploadPackSession(ep, nil)
+	r, err := client.NewSession(st, ep, nil)
 	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	conn, err := r.Handshake(context.Background(), false)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(conn.Close(), IsNil) }()
 
-	info, err := r.AdvertisedReferences()
+	info, err := conn.GetRemoteRefs(context.Background())
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	proxyUsed := atomic.LoadInt32(&socksProxiedRequests) > 0
 	c.Assert(proxyUsed, Equals, true)
 }
 
-func (s *ProxyEnvSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *ProxyEnvSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) (storage.Storer, *transport.Endpoint) {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
@@ -92,7 +97,7 @@ func (s *ProxyEnvSuite) prepareRepository(c *C, f *fixtures.Fixture, name string
 	err = os.Rename(fs.Root(), path)
 	c.Assert(err, IsNil)
 
-	return s.newEndpoint(c, name)
+	return filesystem.NewStorage(fs, cache.NewObjectLRUDefault()), s.newEndpoint(c, name)
 }
 
 func (s *ProxyEnvSuite) newEndpoint(c *C, name string) *transport.Endpoint {

@@ -16,7 +16,7 @@ import (
 
 var (
 	// ErrEmptyPackfile is returned by ReadHeader when no data is found in the packfile
-	ErrEmptyPackfile = NewError("empty packfile")
+	ErrEmptyPackfile = NewError("empty packfile").AddDetails("%w", io.EOF)
 	// ErrBadSignature is returned by ReadHeader when the signature in the packfile is incorrect.
 	ErrBadSignature = NewError("malformed pack file signature")
 	// ErrUnsupportedVersion is returned by ReadHeader when the packfile version is

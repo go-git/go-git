@@ -12,9 +12,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	testutils "github.com/go-git/go-git/v5/internal/transport/ssh/test"
 	"github.com/go-git/go-git/v5/internal/transport/test"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/gliderlabs/ssh"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -53,9 +58,9 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
 
-	s.UploadPackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
-	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
+	s.UploadPackSuite.Endpoint, s.UploadPackSuite.Storer = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	s.UploadPackSuite.EmptyEndpoint, s.UploadPackSuite.EmptyStorer = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
+	s.UploadPackSuite.NonExistentEndpoint, s.UploadPackSuite.NonExistentStorer = s.newEndpoint(c, "non-existent.git"), memory.NewStorage()
 
 	server := &ssh.Server{Handler: testutils.HandlerSSH}
 	for _, opt := range s.opts {
@@ -66,7 +71,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	}()
 }
 
-func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) (*transport.Endpoint, storage.Storer) {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
@@ -75,8 +80,9 @@ func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name stri
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
 	c.Assert(err, IsNil)
+	fs = osfs.New(path)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(c, name), filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 }
 
 func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {

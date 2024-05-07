@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
@@ -110,7 +111,7 @@ func (s *SuiteCommon) TestIgnoreHostKeyCallback(c *C) {
 	c.Assert(auth, NotNil)
 	auth.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
 	ep := uploadPack.newEndpoint(c, "bar.git")
-	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
+	ps, err := uploadPack.Client.NewSession(memory.NewStorage(), ep, auth)
 	c.Assert(err, IsNil)
 	c.Assert(ps, NotNil)
 }
@@ -131,7 +132,7 @@ func (s *SuiteCommon) TestFixedHostKeyCallback(c *C) {
 	c.Assert(auth, NotNil)
 	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
 	ep := uploadPack.newEndpoint(c, "bar.git")
-	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
+	ps, err := uploadPack.Client.NewSession(memory.NewStorage(), ep, auth)
 	c.Assert(err, IsNil)
 	c.Assert(ps, NotNil)
 }
@@ -149,7 +150,7 @@ func (s *SuiteCommon) TestFailHostKeyCallback(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 	ep := uploadPack.newEndpoint(c, "bar.git")
-	_, err = uploadPack.Client.NewUploadPackSession(ep, auth)
+	_, err = uploadPack.Client.NewSession(memory.NewStorage(), ep, auth)
 	c.Assert(err, NotNil)
 }
 
@@ -188,7 +189,7 @@ func (s *SuiteCommon) TestInvalidSocks5Proxy(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 
-	ps, err := DefaultTransport.NewUploadPackSession(ep, auth)
+	ps, err := DefaultTransport.NewSession(memory.NewStorage(), ep, auth)
 	// Since the proxy server is not running, we expect an error.
 	c.Assert(ps, IsNil)
 	c.Assert(err, NotNil)

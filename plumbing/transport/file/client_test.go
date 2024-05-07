@@ -22,13 +22,10 @@ type ClientSuite struct {
 var _ = Suite(&ClientSuite{})
 
 func (s *ClientSuite) TestCommand(c *C) {
-	runner := &runner{
-		UploadPackBin:  transport.UploadPackServiceName,
-		ReceivePackBin: transport.ReceivePackServiceName,
-	}
+	runner := &runner{}
 	ep, err := transport.NewEndpoint(filepath.Join("fake", "repo"))
-	c.Assert(err, IsNil)
 	var emptyAuth transport.AuthMethod
+	c.Assert(err, IsNil)
 	_, err = runner.Command(context.TODO(), "git-receive-pack", ep, emptyAuth)
 	c.Assert(err, IsNil)
 

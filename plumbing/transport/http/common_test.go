@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -43,10 +44,10 @@ func (s *UploadPackSuite) TestNewClient(c *C) {
 	roundTripper := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	cl := &http.Client{Transport: roundTripper}
+	cl := &TransportOptions{Client: &http.Client{Transport: roundTripper}}
 	r, ok := NewTransport(cl).(*client)
 	c.Assert(ok, Equals, true)
-	c.Assert(r.client, Equals, cl)
+	c.Assert(r.client, Equals, cl.Client)
 }
 
 func (s *ClientSuite) TestNewBasicAuth(c *C) {
@@ -110,13 +111,13 @@ func (s *ClientSuite) TestNewUnexpectedError(c *C) {
 }
 
 func (s *ClientSuite) Test_newSession(c *C) {
-	cl := NewClientWithOptions(nil, &TransportOptions{
+	cl := NewTransport(&TransportOptions{
 		CacheMaxEntries: 2,
 	}).(*client)
 
 	insecureEP := s.Endpoint
 	insecureEP.InsecureSkipTLS = true
-	session, err := newSession(cl, insecureEP, nil)
+	session, err := newSession(nil, cl, insecureEP, nil, false)
 	c.Assert(err, IsNil)
 
 	sessionTransport := session.client.Transport.(*http.Transport)
@@ -131,7 +132,7 @@ func (s *ClientSuite) Test_newSession(c *C) {
 
 	caEndpoint := insecureEP
 	caEndpoint.CaBundle = []byte("this is the way")
-	session, err = newSession(cl, caEndpoint, nil)
+	session, err = newSession(nil, cl, caEndpoint, nil, false)
 	c.Assert(err, IsNil)
 
 	sessionTransport = session.client.Transport.(*http.Transport)
@@ -146,7 +147,7 @@ func (s *ClientSuite) Test_newSession(c *C) {
 	// cached transport should be the one that's used.
 	c.Assert(sessionTransport, Equals, t)
 
-	session, err = newSession(cl, caEndpoint, nil)
+	session, err = newSession(nil, cl, caEndpoint, nil, false)
 	c.Assert(err, IsNil)
 	sessionTransport = session.client.Transport.(*http.Transport)
 	// transport that's going to be used should be cached already.
@@ -156,7 +157,7 @@ func (s *ClientSuite) Test_newSession(c *C) {
 
 	// if the cache does not exist, the transport should still be correctly configured.
 	cl.transports = nil
-	session, err = newSession(cl, insecureEP, nil)
+	session, err = newSession(nil, cl, insecureEP, nil, false)
 	c.Assert(err, IsNil)
 
 	sessionTransport = session.client.Transport.(*http.Transport)
@@ -177,9 +178,9 @@ func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 
 func (s *ClientSuite) TestSetAuth(c *C) {
 	auth := &BasicAuth{}
-	r, err := DefaultTransport.NewUploadPackSession(s.Endpoint, auth)
+	r, err := DefaultTransport.NewSession(memory.NewStorage(), s.Endpoint, auth)
 	c.Assert(err, IsNil)
-	c.Assert(auth, Equals, r.(*upSession).auth)
+	c.Assert(auth, Equals, r.(*session).auth)
 }
 
 type mockAuth struct{}
@@ -188,7 +189,7 @@ func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
 func (s *ClientSuite) TestSetAuthWrongType(c *C) {
-	_, err := DefaultTransport.NewUploadPackSession(s.Endpoint, &mockAuth{})
+	_, err := DefaultTransport.NewSession(memory.NewStorage(), s.Endpoint, &mockAuth{})
 	c.Assert(err, Equals, transport.ErrInvalidAuthMethod)
 }
 

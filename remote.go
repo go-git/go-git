@@ -404,7 +404,6 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	if err != nil {
 		return nil, err
 	}
-
 	refs, specToRefs, err := calculateRefs(o.RefSpecs, remoteRefs, o.Tags)
 	if err != nil {
 		return nil, err

@@ -131,6 +131,10 @@ type client struct {
 
 // TransportOptions holds user configurable options for the client.
 type TransportOptions struct {
+	// Client is the http client that the transport will use to make requests.
+	// If nil, [http.DefaultTransport] will be used.
+	Client *http.Client
+
 	// CacheMaxEntries is the max no. of entries that the transport objects
 	// cache will hold at any given point of time. It must be a positive integer.
 	// Calling `client.addTransport()` after the cache has reached the specified
@@ -151,7 +155,7 @@ var (
 
 	// DefaultTransport is the default HTTP client, which uses a net/http client configured
 	// with http.DefaultTransport.
-	DefaultTransport = NewTransport(nil, nil)
+	DefaultTransport = NewTransport(nil)
 )
 
 // NewTransport creates a new HTTP transport with a custom net/http client and
@@ -164,21 +168,20 @@ var (
 // Note that for HTTP client cannot distinguish between private repositories and
 // unexistent repositories on GitHub. So it returns `ErrAuthorizationRequired`
 // for both.
-func NewTransport(c *http.Client, opts *TransportOptions) transport.Transport {
-	if c == nil {
-		c = &http.Client{
-			Transport: http.DefaultTransport,
-		}
-	}
-
+func NewTransport(opts *TransportOptions) transport.Transport {
 	if opts == nil {
 		opts = &TransportOptions{
 			CacheMaxEntries: defaultTransportCacheSize,
 		}
 	}
+	if opts.Client == nil {
+		opts.Client = &http.Client{
+			Transport: http.DefaultTransport,
+		}
+	}
 
 	cl := &client{
-		client:  c,
+		client:  opts.Client,
 		useDumb: opts.UseDumb,
 	}
 	if opts.CacheMaxEntries > 0 {
@@ -458,24 +461,11 @@ func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (err e
 
 // GetRemoteRefs implements transport.Connection.
 func (s *session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
-	refs, err := s.advRefs.AllReferences()
-	if err != nil {
-		return nil, err
+	if s.advRefs == nil {
+		return nil, transport.ErrEmptyRemoteRepository
 	}
 
-	// FIXME: this is a bit of a hack, to fix this, we need to redefine and
-	// simplify AdvRefs.
-	var allRefs []*plumbing.Reference
-	for _, ref := range refs {
-		allRefs = append(allRefs, ref)
-	}
-	for name, hash := range s.advRefs.Peeled {
-		allRefs = append(allRefs,
-			plumbing.NewReferenceFromStrings(name+"^{}", hash.String()),
-		)
-	}
-
-	return allRefs, nil
+	return s.advRefs.References, nil
 }
 
 // Push implements transport.Connection.

@@ -51,26 +51,27 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 	}
 
 	// Add references and their peeled values
-	if err := iter.ForEach(func(r *plumbing.Reference) error {
-		hash, name := r.Hash(), r.Name()
-		switch r.Type() {
+	if err := iter.ForEach(func(r *plumbing.Reference) (err error) {
+		ref := r
+		switch ref.Type() {
 		case plumbing.SymbolicReference:
-			ref, err := storer.ResolveReference(st, r.Target())
+			ref, err = storer.ResolveReference(st, r.Target())
 			if err != nil {
 				return err
 			}
-			hash = ref.Hash()
 		}
-		if name == plumbing.HEAD {
+		if ref.Name() == plumbing.HEAD {
 			if !addHead {
 				return nil
 			}
+			hash := ref.Hash()
 			ar.Head = &hash
 		}
-		ar.References[name.String()] = hash
-		if r.Name().IsTag() {
-			if tag, err := object.GetTag(st, hash); err == nil {
-				ar.Peeled[name.String()] = tag.Target
+		ar.References = append(ar.References, ref)
+		if ref.Name().IsTag() {
+			if tag, err := object.GetTag(st, ref.Hash()); err == nil {
+				tagRef := plumbing.NewReferenceFromStrings(ref.Name().String()+"^{}", tag.Target.String())
+				ar.References = append(ar.References, tagRef)
 			}
 		}
 		return nil

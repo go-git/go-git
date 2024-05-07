@@ -3,15 +3,17 @@ package http
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/internal/transport/test"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -27,38 +29,21 @@ var _ = Suite(&UploadPackSuite{})
 func (s *UploadPackSuite) SetUpSuite(c *C) {
 	s.BaseSuite.SetUpTest(c)
 	s.UploadPackSuite.Client = DefaultTransport
-	s.UploadPackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
-	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
+	s.UploadPackSuite.Endpoint, s.UploadPackSuite.Storer = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	s.UploadPackSuite.EmptyEndpoint, s.UploadPackSuite.EmptyStorer = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
+	s.UploadPackSuite.NonExistentEndpoint, s.UploadPackSuite.NonExistentStorer = s.newEndpoint(c, "non-existent.git"), memory.NewStorage()
 }
 
 // Overwritten, different behaviour for HTTP.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
-	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
+	r, err := s.Client.NewSession(memory.NewStorage(), s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	info, err := r.AdvertisedReferences()
+	conn, err := r.Handshake(context.TODO(), false)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(info, IsNil)
+	c.Assert(conn, IsNil)
 }
 
-func (s *UploadPackSuite) TestuploadPackRequestToReader(c *C) {
-	r := packp.NewUploadPackRequest()
-	r.Wants = append(r.Wants, plumbing.NewHash("d82f291cde9987322c8a0c81a325e1ba6159684c"))
-	r.Wants = append(r.Wants, plumbing.NewHash("2b41ef280fdb67a9b250678686a0c3e03b0a9989"))
-	r.Haves = append(r.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-
-	sr, err := uploadPackRequestToReader(r)
-	c.Assert(err, IsNil)
-	b, _ := io.ReadAll(sr)
-	c.Assert(string(b), Equals,
-		"0032want 2b41ef280fdb67a9b250678686a0c3e03b0a9989\n"+
-			"0032want d82f291cde9987322c8a0c81a325e1ba6159684c\n0000"+
-			"0032have 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"+
-			"0009done\n",
-	)
-}
-
-func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) (*transport.Endpoint, storage.Storer) {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
@@ -67,8 +52,9 @@ func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name stri
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
 	c.Assert(err, IsNil)
+	fs = osfs.New(path)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(c, name), filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 }
 
 func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {
@@ -81,28 +67,30 @@ func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath(c *C) {
 	endpoint, _ := transport.NewEndpoint("https://gitlab.com/gitlab-org/gitter/webapp")
 
-	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	info, err := session.AdvertisedReferences()
+	conn, err := sess.Handshake(context.TODO(), false)
 	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	c.Assert(conn, NotNil)
+	defer conn.Close()
 
-	url := session.(*upSession).ep.String()
+	url := sess.(*session).ep.String()
 	c.Assert(url, Equals, "https://gitlab.com/gitlab-org/gitter/webapp.git")
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema(c *C) {
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	info, err := session.AdvertisedReferences()
+	conn, err := sess.Handshake(context.TODO(), false)
 	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	c.Assert(conn, NotNil)
+	defer conn.Close()
 
-	url := session.(*upSession).ep.String()
+	url := sess.(*session).ep.String()
 	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
 }
 
@@ -111,14 +99,15 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContext(c *C) {
 	defer cancel()
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	info, err := session.AdvertisedReferencesContext(ctx)
+	conn, err := sess.Handshake(ctx, false)
 	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	c.Assert(conn, NotNil)
+	defer conn.Close()
 
-	url := session.(*upSession).ep.String()
+	url := sess.(*session).ep.String()
 	c.Assert(url, Equals, "https://github.com/git-fixtures/basic")
 }
 
@@ -127,12 +116,13 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContextCanceled(c *C) {
 	cancel()
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
+	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	info, err := session.AdvertisedReferencesContext(ctx)
+	conn, err := sess.Handshake(ctx, false)
+	c.Assert(err, NotNil)
+	c.Assert(conn, IsNil)
 	c.Assert(err, DeepEquals, &url.Error{Op: "Get", URL: "http://github.com/git-fixtures/basic/info/refs?service=git-upload-pack", Err: context.Canceled})
-	c.Assert(info, IsNil)
 }
 
 func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {

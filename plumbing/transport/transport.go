@@ -36,6 +36,7 @@ var (
 	ErrAlreadyConnected       = errors.New("session already established")
 )
 
+// Git fetch/push service names.
 const (
 	UploadPackServiceName  = "git-upload-pack"
 	ReceivePackServiceName = "git-receive-pack"
