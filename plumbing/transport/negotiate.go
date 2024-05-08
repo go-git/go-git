@@ -47,9 +47,10 @@ func NegotiatePack(
 		upreq.Capabilities.Set(capability.NoProgress) // nolint: errcheck
 	}
 
-	if caps.Supports(capability.ThinPack) {
-		upreq.Capabilities.Set(capability.ThinPack) // nolint: errcheck
-	}
+	// TODO: support thin-pack
+	// if caps.Supports(capability.ThinPack) {
+	// 	upreq.Capabilities.Set(capability.ThinPack) // nolint: errcheck
+	// }
 
 	if caps.Supports(capability.OFSDelta) {
 		upreq.Capabilities.Set(capability.OFSDelta) // nolint: errcheck
@@ -74,7 +75,7 @@ func NegotiatePack(
 		}
 	}
 
-	// XXX: empty request means haves are a subset of wants, in that case we have
+	// Note: empty request means haves are a subset of wants, in that case we have
 	// everything we asked for. Close the connection and return nil.
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
 		if err := pktline.WriteFlush(writer); err != nil {
@@ -110,7 +111,10 @@ func NegotiatePack(
 			return nil, fmt.Errorf("sending upload-haves: %s", err)
 		}
 
-		if conn.IsStatelessRPC() && len(uphav.Haves) > 0 {
+		// Note: Stateless RPC servers don't expect a flush-pkt after the
+		// haves. Sending one might result in a response without a packfile in
+		// return.
+		if !conn.IsStatelessRPC() && len(uphav.Haves) > 0 {
 			if err := pktline.WriteFlush(writer); err != nil {
 				return nil, fmt.Errorf("sending flush-pkt after haves: %s", err)
 			}

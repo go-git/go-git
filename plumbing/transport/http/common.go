@@ -42,7 +42,7 @@ func applyHeaders(
 	useSmart bool,
 ) {
 	// Add headers
-	req.Header.Add("User-Agent", "git/1.0")
+	req.Header.Add("User-Agent", capability.DefaultAgent())
 	req.Header.Add("Host", ep.Host) // host:port
 
 	if useSmart {
@@ -103,21 +103,6 @@ func modifyRedirect(res *http.Response, ep *transport.Endpoint) {
 	ep.Host = h
 	ep.Protocol = r.URL.Scheme
 	ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
-}
-
-// it requires a bytes.Buffer, because we need to know the length
-func applyHeadersToRequest(req *http.Request, content *bytes.Buffer, host string, requestType string) {
-	req.Header.Add("User-Agent", "git/1.0")
-	req.Header.Add("Host", host) // host:port
-
-	if content == nil {
-		req.Header.Add("Accept", "*/*")
-		return
-	}
-
-	req.Header.Add("Accept", fmt.Sprintf("application/x-%s-result", requestType))
-	req.Header.Add("Content-Type", fmt.Sprintf("application/x-%s-request", requestType))
-	req.Header.Add("Content-Length", strconv.Itoa(content.Len()))
 }
 
 const infoRefsPath = "/info/refs"
@@ -488,7 +473,6 @@ type requester struct {
 	ctx    context.Context
 	req    *http.Request  // the last request made
 	res    *http.Response // the last response received
-	done   bool           // indicates if the request has been done without errors
 
 	service string
 }
@@ -527,23 +511,20 @@ func (r *requester) Read(p []byte) (n int, err error) {
 }
 
 // Close implements io.ReadWriteCloser.
-func (r *requester) Close() error {
+func (r *requester) Close() (err error) {
 	defer r.reqBuf.Reset()
 
 	url := fmt.Sprintf("%s/%s", r.ep.String(), r.service)
-	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, url, &r.reqBuf)
+	r.req, err = http.NewRequestWithContext(r.ctx, http.MethodPost, url, &r.reqBuf)
 	if err != nil {
 		return err
 	}
 
-	applyHeaders(req, r.service, r.ep, r.auth, r.gitProtocol, r.IsSmart())
-	res, err := doRequest(r.client, req)
+	applyHeaders(r.req, r.service, r.ep, r.auth, r.gitProtocol, r.IsSmart())
+	r.res, err = doRequest(r.client, r.req)
 	if err != nil {
 		return err
 	}
-
-	r.res = res
-	r.req = req
 
 	return nil
 }
