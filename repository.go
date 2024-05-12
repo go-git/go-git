@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
@@ -34,6 +33,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"golang.org/x/crypto/openpgp"
 )
 
 // GitDirName this is a special folder where all the git stuff is.

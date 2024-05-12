@@ -6,11 +6,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/go-git/go-git/v5/utils/sync"
+	"golang.org/x/crypto/openpgp"
 )
 
 // Tag represents an annotated tag object. It points to a single git object of
@@ -277,7 +277,7 @@ func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 		return nil, err
 	}
 
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature)
 }
 
 // TagIter provides an iterator for a set of tags.
