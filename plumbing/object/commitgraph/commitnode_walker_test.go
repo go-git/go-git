@@ -3,8 +3,8 @@ package commitgraph
 import (
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	commitgraph "github.com/grahambrooks/go-git/v5/plumbing/format/commitgraph/v2"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"

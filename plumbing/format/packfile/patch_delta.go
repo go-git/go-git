@@ -8,9 +8,9 @@ import (
 	"io"
 	"math"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/sync"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/utils/ioutil"
+	"github.com/grahambrooks/go-git/v5/utils/sync"
 )
 
 // See https://github.com/git/git/blob/49fa3dc76179e04b0833542fa52d0f287a4955ac/delta.h

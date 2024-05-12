@@ -6,10 +6,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/sync"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/storer"
+	"github.com/grahambrooks/go-git/v5/utils/ioutil"
+	"github.com/grahambrooks/go-git/v5/utils/sync"
 	"golang.org/x/crypto/openpgp"
 )
 

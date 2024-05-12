@@ -1,6 +1,6 @@
 package color
 
-// TODO read colors from a github.com/go-git/go-git/plumbing/format/config.Config struct
+// TODO read colors from a github.com/grahambrooks/go-git/plumbing/format/config.Config struct
 // TODO implement color parsing, see https://github.com/git/git/blob/v2.26.2/color.c
 
 // Colors. See https://github.com/git/git/blob/v2.26.2/color.h#L24-L53.

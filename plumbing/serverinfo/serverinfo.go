@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/internal/reference"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/grahambrooks/go-git/v5"
+	"github.com/grahambrooks/go-git/v5/internal/reference"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/object"
+	"github.com/grahambrooks/go-git/v5/plumbing/storer"
+	"github.com/grahambrooks/go-git/v5/storage"
 )
 
 // UpdateServerInfo updates the server info files in the repository.

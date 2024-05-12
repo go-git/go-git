@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/hash"
+	"github.com/grahambrooks/go-git/v5/storage"
+	"github.com/grahambrooks/go-git/v5/utils/ioutil"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/helper/chroot"
@@ -1124,7 +1124,7 @@ func (d *DotGit) AddAlternate(remote string) error {
 	defer f.Close()
 
 	// locking in windows throws an error, based on comments
-	// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
+	// https://github.com/grahambrooks/go-git/pull/860#issuecomment-1751823044
 	// do not lock on windows platform.
 	if runtime.GOOS != "windows" {
 		if err = f.Lock(); err != nil {

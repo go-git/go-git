@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport/internal/common"
 	"golang.org/x/sys/execabs"
 )
 

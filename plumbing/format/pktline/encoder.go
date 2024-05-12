@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/grahambrooks/go-git/v5/utils/trace"
 )
 
 // An Encoder writes pkt-lines to an output stream.

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/grahambrooks/go-git/v5/plumbing/object"
+	"github.com/grahambrooks/go-git/v5/storage/memory"
 )
 
 type b64signer struct{}

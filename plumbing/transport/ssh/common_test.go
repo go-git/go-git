@@ -3,7 +3,7 @@ package ssh
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
@@ -176,7 +176,7 @@ func (s *SuiteCommon) TestIssue70(c *C) {
 Given, an endpoint to a git server with a socks5 proxy URL,
 When, the socks5 proxy server is not reachable,
 Then, there should not be any panic and an error with appropriate message should be returned.
-Related issue : https://github.com/go-git/go-git/pull/900
+Related issue : https://github.com/grahambrooks/go-git/pull/900
 */
 func (s *SuiteCommon) TestInvalidSocks5Proxy(c *C) {
 	ep, err := transport.NewEndpoint("git@github.com:foo/bar.git")

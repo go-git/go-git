@@ -3,13 +3,13 @@ package index
 import (
 	"bytes"
 	"crypto"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/grahambrooks/go-git/v5/plumbing/hash"
+	"github.com/grahambrooks/go-git/v5/utils/binary"
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/filemode"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"

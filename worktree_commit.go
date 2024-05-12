@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/format/index"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/filemode"
+	"github.com/grahambrooks/go-git/v5/plumbing/format/index"
+	"github.com/grahambrooks/go-git/v5/plumbing/object"
+	"github.com/grahambrooks/go-git/v5/storage"
 
 	"github.com/go-git/go-billy/v5"
 	"golang.org/x/crypto/openpgp"

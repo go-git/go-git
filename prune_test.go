@@ -3,11 +3,11 @@ package git
 import (
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/cache"
+	"github.com/grahambrooks/go-git/v5/plumbing/storer"
+	"github.com/grahambrooks/go-git/v5/storage"
+	"github.com/grahambrooks/go-git/v5/storage/filesystem"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"

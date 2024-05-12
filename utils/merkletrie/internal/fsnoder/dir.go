@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/grahambrooks/go-git/v5/utils/merkletrie/noder"
 )
 
 // Dir values implement directory-like noders.

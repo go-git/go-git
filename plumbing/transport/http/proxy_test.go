@@ -11,8 +11,8 @@ import (
 
 	"github.com/elazarl/goproxy"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http/internal/test"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport/http/internal/test"
 
 	. "gopkg.in/check.v1"
 )

@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/packfile"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/format/packfile"
+	"github.com/grahambrooks/go-git/v5/plumbing/protocol/packp"
+	"github.com/grahambrooks/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport"
+	"github.com/grahambrooks/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"

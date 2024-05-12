@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing"
 )
 
 // Read reads structured binary data from r into data. Bytes are read and
@@ -80,10 +80,9 @@ func ReadUntilFromBufioReader(r *bufio.Reader, delim byte) ([]byte, error) {
 //
 // This is how the offset is saved in C:
 //
-//     dheader[pos] = ofs & 127;
-//     while (ofs >>= 7)
-//         dheader[--pos] = 128 | (--ofs & 127);
-//
+//	dheader[pos] = ofs & 127;
+//	while (ofs >>= 7)
+//	    dheader[--pos] = 128 | (--ofs & 127);
 func ReadVariableWidthInt(r io.Reader) (int64, error) {
 	var c byte
 	if err := Read(r, &c); err != nil {

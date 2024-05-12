@@ -8,10 +8,10 @@ import (
 	"hash/crc32"
 	"io"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/utils/binary"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/sync"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/utils/binary"
+	"github.com/grahambrooks/go-git/v5/utils/ioutil"
+	"github.com/grahambrooks/go-git/v5/utils/sync"
 )
 
 var (

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	testutils "github.com/go-git/go-git/v5/plumbing/transport/ssh/internal/test"
-	"github.com/go-git/go-git/v5/plumbing/transport/test"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport"
+	testutils "github.com/grahambrooks/go-git/v5/plumbing/transport/ssh/internal/test"
+	"github.com/grahambrooks/go-git/v5/plumbing/transport/test"
 
 	"github.com/gliderlabs/ssh"
 	fixtures "github.com/go-git/go-git-fixtures/v4"

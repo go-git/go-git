@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/cache"
+	"github.com/grahambrooks/go-git/v5/plumbing/object"
+	"github.com/grahambrooks/go-git/v5/plumbing/storer"
+	"github.com/grahambrooks/go-git/v5/storage/filesystem"
+	"github.com/grahambrooks/go-git/v5/storage/memory"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
@@ -445,7 +445,7 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 	c.Assert(err, IsNil, Commentf("%s", buf.Bytes()))
 }
 
-// https://github.com/go-git/go-git/pull/224
+// https://github.com/grahambrooks/go-git/pull/224
 func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
 	fs, clean := s.TemporalFilesystem()
 	defer clean()

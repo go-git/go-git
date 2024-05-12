@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/go-git/go-git/v5/utils/merkletrie/internal/fsnoder"
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/grahambrooks/go-git/v5/utils/merkletrie"
+	"github.com/grahambrooks/go-git/v5/utils/merkletrie/internal/fsnoder"
+	"github.com/grahambrooks/go-git/v5/utils/merkletrie/noder"
 
 	. "gopkg.in/check.v1"
 )
@@ -30,10 +30,10 @@ var _ = Suite(&IterSuite{})
 //
 // For instance:
 //
-//     t := test{
-//         operations: "ns",
-//         expected:   "a a/b"
-//     }
+//	t := test{
+//	    operations: "ns",
+//	    expected:   "a a/b"
+//	}
 //
 // means:
 //
@@ -99,21 +99,21 @@ func (t test) run(c *C, iter *merkletrie.Iter,
 //
 // Example:
 //
-//            .
-//            |
-//        ---------
-//        |   |   |
-//        a   b   c
-//            |
-//            z
+//	           .
+//	           |
+//	       ---------
+//	       |   |   |
+//	       a   b   c
+//	           |
+//	           z
 //
-//    var foo testCollection = {
-// 	      tree: "(a<> b(z<>) c<>)"
-//     	  tests: []test{
-//            {operations: "nns", expected: "a b b/z"},
-//            {operations: "nnn", expected: "a b c"},
-//		  },
-//    }
+//	   var foo testCollection = {
+//		      tree: "(a<> b(z<>) c<>)"
+//	    	  tests: []test{
+//	           {operations: "nns", expected: "a b b/z"},
+//	           {operations: "nnn", expected: "a b c"},
+//			  },
+//	   }
 //
 // A new iterator will be build for each test.
 type testsCollection struct {
@@ -190,9 +190,11 @@ func (s *IterSuite) TestOneFile(c *C) {
 	tc.run(c)
 }
 
-//     root
-//      / \
-//     a   b
+// root
+//
+//	/ \
+//
+// a   b
 func (s *IterSuite) TestTwoFiles(c *C) {
 	tc := testsCollection{
 		tree: "(a<> b<>)",
@@ -210,11 +212,12 @@ func (s *IterSuite) TestTwoFiles(c *C) {
 	tc.run(c)
 }
 
-//     root
-//      |
-//      a
-//      |
-//      b
+// root
+//
+//	|
+//	a
+//	|
+//	b
 func (s *IterSuite) TestDirWithFile(c *C) {
 	tc := testsCollection{
 		tree: "(a(b<>))",
@@ -232,9 +235,11 @@ func (s *IterSuite) TestDirWithFile(c *C) {
 	tc.run(c)
 }
 
-//     root
-//      /|\
-//     c a b
+// root
+//
+//	/|\
+//
+// c a b
 func (s *IterSuite) TestThreeSiblings(c *C) {
 	tc := testsCollection{
 		tree: "(c<> a<> b<>)",
@@ -260,13 +265,14 @@ func (s *IterSuite) TestThreeSiblings(c *C) {
 	tc.run(c)
 }
 
-//     root
-//      |
-//      b
-//      |
-//      c
-//      |
-//      a
+// root
+//
+//	|
+//	b
+//	|
+//	c
+//	|
+//	a
 func (s *IterSuite) TestThreeVertical(c *C) {
 	tc := testsCollection{
 		tree: "(b(c(a())))",
@@ -292,11 +298,13 @@ func (s *IterSuite) TestThreeVertical(c *C) {
 	tc.run(c)
 }
 
-//     root
-//      / \
-//     c   a
-//     |
-//     b
+// root
+//
+//	/ \
+//
+// c   a
+// |
+// b
 func (s *IterSuite) TestThreeMix1(c *C) {
 	tc := testsCollection{
 		tree: "(c(b<>) a<>)",
@@ -322,11 +330,14 @@ func (s *IterSuite) TestThreeMix1(c *C) {
 	tc.run(c)
 }
 
-//     root
-//      / \
-//     b   a
-//         |
-//         c
+// root
+//
+//	/ \
+//
+// b   a
+//
+//	|
+//	c
 func (s *IterSuite) TestThreeMix2(c *C) {
 	tc := testsCollection{
 		tree: "(b() a(c<>))",
@@ -352,18 +363,20 @@ func (s *IterSuite) TestThreeMix2(c *C) {
 	tc.run(c)
 }
 
-//      root
-//      / | \
-//     /  |  ----
-//    f   d      h --------
-//   /\         /  \      |
-//  e   a      j   b/      g
-//  |  / \     |
-//  l  n  k    icm
-//     |
-//     o
-//     |
-//     p/
+//	   root
+//	   / | \
+//	  /  |  ----
+//	 f   d      h --------
+//	/\         /  \      |
+//
+// e   a      j   b/      g
+// |  / \     |
+// l  n  k    icm
+//
+//	|
+//	o
+//	|
+//	p/
 func (s *IterSuite) TestCrazy(c *C) {
 	tc := testsCollection{
 		tree: "(f(e(l<>) a(n(o(p())) k<>)) d<> h(j(i<> c<> m<>) b() g<>))",
@@ -386,17 +399,19 @@ func (s *IterSuite) TestCrazy(c *C) {
 	tc.run(c)
 }
 
-//      .
-//      |
-//      a
-//      |
-//      b
-//     / \
-//    z   h
-//   / \
-//  d   e
-//      |
-//      f
+//	   .
+//	   |
+//	   a
+//	   |
+//	   b
+//	  / \
+//	 z   h
+//	/ \
+//
+// d   e
+//
+//	|
+//	f
 func (s *IterSuite) TestNewIterFromPath(c *C) {
 	tree, err := fsnoder.New("(a(b(z(d<> e(f<>)) h<>)))")
 	c.Assert(err, IsNil)

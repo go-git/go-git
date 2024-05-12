@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-git/go-git/v5/utils/merkletrie/internal/fsnoder"
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/grahambrooks/go-git/v5/utils/merkletrie/internal/fsnoder"
+	"github.com/grahambrooks/go-git/v5/utils/merkletrie/noder"
 
 	. "gopkg.in/check.v1"
 )

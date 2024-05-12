@@ -4,9 +4,9 @@ import (
 	"errors"
 	"io"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
+	"github.com/grahambrooks/go-git/v5/plumbing"
+	"github.com/grahambrooks/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/grahambrooks/go-git/v5/plumbing/protocol/packp/sideband"
 )
 
 var (
@@ -48,6 +48,7 @@ func NewReferenceUpdateRequest() *ReferenceUpdateRequest {
 //   - ofs-delta
 //   - ref-delta
 //   - delete-refs
+//
 // It leaves up to the user to add the following capabilities later:
 //   - atomic
 //   - ofs-delta
