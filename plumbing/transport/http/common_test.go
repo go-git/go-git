@@ -76,15 +76,15 @@ func (s *ClientSuite) TestNewErrOK(c *C) {
 }
 
 func (s *ClientSuite) TestNewErrUnauthorized(c *C) {
-	s.testNewHTTPError(c, http.StatusUnauthorized, "authentication required")
+	s.testNewHTTPError(c, http.StatusUnauthorized, ".*authentication required.*")
 }
 
 func (s *ClientSuite) TestNewErrForbidden(c *C) {
-	s.testNewHTTPError(c, http.StatusForbidden, "authorization failed")
+	s.testNewHTTPError(c, http.StatusForbidden, ".*authorization failed.*")
 }
 
 func (s *ClientSuite) TestNewErrNotFound(c *C) {
-	s.testNewHTTPError(c, http.StatusNotFound, "repository not found")
+	s.testNewHTTPError(c, http.StatusNotFound, ".*repository not found.*")
 }
 
 func (s *ClientSuite) TestNewHTTPError40x(c *C) {
