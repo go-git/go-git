@@ -2,9 +2,10 @@ package transport
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"errors"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol"
@@ -38,16 +39,6 @@ type packSession struct {
 }
 
 var _ Session = &packSession{}
-
-// readStderr is a helper function that reads the stderr of a command and
-// returns an error if it's not empty.
-func readStderr(r io.Reader) error {
-	bts, err := io.ReadAll(r)
-	if err == nil && len(bts) > 0 {
-		return NewRemoteError(string(bts))
-	}
-	return nil
-}
 
 // Handshake implements Session.
 func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...string) (conn Connection, err error) {
@@ -91,21 +82,18 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 		return nil, err
 	}
 
-	c.e = stderr
+	// Some transports like Git doesn't support stderr, so we need to check if
+	// it's not nil before starting to read it.
+	if stderr != nil {
+		go io.Copy(&c.stderrBuf, stderr) // nolint: errcheck
+	}
+
+	// Check if stderr is not empty before returning.
+	defer func() { checkError(c.stderr(), &err) }()
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-
-	// If we receive an EOF error, we need to check if there is any error
-	// message in the stderr.
-	defer func() {
-		if errors.Is(err, io.EOF) {
-			if rerr := readStderr(stderr); rerr != nil {
-				err = rerr
-			}
-		}
-	}()
 
 	c.version, err = DiscoverVersion(c.r)
 	if err != nil {
@@ -141,11 +129,11 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 
 // packConnection is a convenience type that implements io.ReadWriteCloser.
 type packConnection struct {
-	st  storage.Storer
-	cmd Command
-	w   io.WriteCloser // stdin
-	r   *bufio.Reader  // stdout
-	e   io.Reader      // stderr
+	st        storage.Storer
+	cmd       Command
+	w         io.WriteCloser // stdin
+	r         *bufio.Reader  // stdout
+	stderrBuf bytes.Buffer
 
 	version protocol.Version
 	caps    *capability.List
@@ -153,6 +141,17 @@ type packConnection struct {
 }
 
 var _ Connection = &packConnection{}
+
+// stderr returns stderr of the command if it's not empty. This will always
+// return a RemoteError.
+func (p *packConnection) stderr() error {
+	s := strings.TrimSpace(p.stderrBuf.String())
+	if s == "" {
+		return nil
+	}
+
+	return NewRemoteError(s)
+}
 
 // Close implements Connection.
 func (p *packConnection) Close() error {
@@ -171,7 +170,7 @@ func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Referen
 		return nil, ErrEmptyRemoteRepository
 	}
 
-	return p.refs.References, nil
+	return p.refs.MakeReferenceSlice()
 }
 
 // Version implements Connection.
@@ -185,7 +184,7 @@ func (*packConnection) IsStatelessRPC() bool {
 }
 
 // Fetch implements Connection.
-func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) error {
+func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) (err error) {
 	shallows, err := NegotiatePack(p.st, p, p.r, p.w, req)
 	if err != nil {
 		return err
@@ -195,6 +194,14 @@ func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) error {
 }
 
 // Push implements Connection.
-func (p *packConnection) Push(ctx context.Context, req *PushRequest) error {
+func (p *packConnection) Push(ctx context.Context, req *PushRequest) (err error) {
 	return SendPack(ctx, p.st, p, p.w, io.NopCloser(p.r), req)
+}
+
+// checkError checks if the error is not nil updates the pointer with the
+// error.
+func checkError(err error, perr *error) {
+	if err != nil {
+		*perr = err
+	}
 }

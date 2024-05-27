@@ -5,11 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
-	"github.com/go-git/go-git/v5/internal/repository"
-	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
@@ -19,32 +16,27 @@ func init() {
 }
 
 // DefaultTransport is the default local client.
-var DefaultTransport = NewTransport()
+var DefaultTransport = NewTransport(nil)
 
-type runner struct{}
+type runner struct {
+	loader server.Loader
+}
 
 // NewTransport returns a new file transport that users go-git built-in server
 // implementation to serve repositories.
-func NewTransport() transport.Transport {
-	return transport.NewTransport(&runner{})
+func NewTransport(loader server.Loader) transport.Transport {
+	if loader == nil {
+		loader = server.DefaultLoader
+	}
+	return transport.NewPackTransport(&runner{loader})
 }
 
 func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-
-	var gitProtocol string
-	for _, param := range params {
-		if strings.HasPrefix("version=", param) {
-			if v, _ := strconv.Atoi(param[8:]); v > 0 {
-				gitProtocol += param
-			}
-		}
-	}
+	gitProtocol := strings.Join(params, ":")
 
 	return &command{
 		ctx:         ctx,
-		cancel:      cancel,
+		loader:      r.loader,
 		ep:          ep,
 		service:     cmd,
 		errc:        make(chan error, 1),
@@ -54,15 +46,15 @@ func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint
 
 type command struct {
 	ctx         context.Context
-	cancel      context.CancelFunc
 	ep          *transport.Endpoint
+	loader      server.Loader
 	service     string
 	gitProtocol string
 
-	stdin  io.ReadCloser
+	stdin  *io.PipeReader
 	stdinW *io.PipeWriter
-	stdout io.WriteCloser
-	stderr io.WriteCloser
+	stdout *io.PipeWriter
+	stderr *io.PipeWriter
 
 	childIOFiles  []io.Closer
 	parentIOFiles []io.Closer
@@ -72,9 +64,9 @@ type command struct {
 }
 
 func (c *command) Start() error {
-	st, _, err := repository.PlainOpen(c.ep.Path, true, false)
+	st, err := c.loader.Load(c.ep)
 	if err != nil {
-		return fmt.Errorf("failed to load repository: %w", err)
+		return err
 	}
 
 	switch c.service {
@@ -83,13 +75,17 @@ func (c *command) Start() error {
 			GitProtocol: c.gitProtocol,
 		}
 		go func() {
-			c.errc <- server.UploadPack(
+			if err := server.UploadPack(
 				c.ctx,
 				st,
 				io.NopCloser(c.stdin),
 				c.stdout,
 				opts,
-			)
+			); err != nil {
+				// Write the error to the stderr pipe and close the command.
+				_, _ = fmt.Fprintln(c.stderr, err)
+				_ = c.Close()
+			}
 		}()
 		return nil
 	case transport.ReceivePackServiceName:
@@ -97,13 +93,16 @@ func (c *command) Start() error {
 			GitProtocol: c.gitProtocol,
 		}
 		go func() {
-			c.errc <- server.ReceivePack(
+			if err := server.ReceivePack(
 				c.ctx,
 				st,
 				io.NopCloser(c.stdin),
 				c.stdout,
 				opts,
-			)
+			); err != nil {
+				_, _ = fmt.Fprintln(c.stderr, err)
+				_ = c.Close()
+			}
 		}()
 		return nil
 	}
@@ -146,10 +145,6 @@ func (c *command) Close() (err error) {
 	if c.closed {
 		return nil
 	}
-
-	// XXX: Write a flush to stdin to signal the end of the request when the
-	// client has everything it asked for.
-	err = c.stdinW.CloseWithError(pktline.WriteFlush(c.stdinW))
 
 	closeDiscriptors(c.childIOFiles)
 	closeDiscriptors(c.parentIOFiles)

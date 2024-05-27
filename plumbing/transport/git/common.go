@@ -17,7 +17,7 @@ func init() {
 }
 
 // DefaultClient is the default git client.
-var DefaultClient = transport.NewTransport(&runner{})
+var DefaultClient = transport.NewPackTransport(&runner{})
 
 const DefaultPort = 9418
 

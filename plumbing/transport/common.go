@@ -119,6 +119,7 @@ type PushRequest struct {
 	Packfile io.ReadCloser
 
 	// Commands is the list of push commands to be sent to the server.
+	// TODO: build the Commands slice in the transport package.
 	Commands []*packp.Command
 
 	// Progress is the progress sideband.
@@ -189,8 +190,8 @@ type client struct {
 	cmdr Commander
 }
 
-// NewTransport creates a new client using the given Commander.
-func NewTransport(runner Commander) Transport {
+// NewPackTransport creates a new client using the given Commander.
+func NewPackTransport(runner Commander) Transport {
 	return &client{runner}
 }
 

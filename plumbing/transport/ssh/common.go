@@ -35,7 +35,7 @@ type sshConfig interface {
 
 // NewTransport creates a new SSH client with an optional *ssh.ClientConfig.
 func NewTransport(config *ssh.ClientConfig) transport.Transport {
-	return transport.NewTransport(&runner{config: config})
+	return transport.NewPackTransport(&runner{config: config})
 }
 
 // DefaultAuthBuilder is the function used to create a default AuthMethod, when

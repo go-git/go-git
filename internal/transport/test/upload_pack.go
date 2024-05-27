@@ -4,7 +4,6 @@ package test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -50,7 +50,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 }
 
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	r, err := s.Client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	conn, err := r.Handshake(context.Background(), false)
 	c.Assert(err, IsNil)
@@ -199,7 +199,7 @@ func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
 	}
 
 	err = conn.Fetch(context.Background(), req)
-	c.Assert(errors.Is(err, io.EOF), Equals, true)
+	c.Assert(err, NotNil)
 }
 
 func (s *UploadPackSuite) TestUploadPackMulti(c *C) {

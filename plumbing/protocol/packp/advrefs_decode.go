@@ -166,11 +166,9 @@ func decodeFirstRef(l *advRefsDecoder) decoderStateFn {
 
 	if bytes.Equal(ref, []byte(head)) {
 		l.data.Head = &l.hash
+	} else {
+		l.data.References[string(ref)] = l.hash
 	}
-
-	// TODO: should we treat the HEAD ref as a special case?
-	r := plumbing.NewReferenceFromStrings(string(ref), l.hash.String())
-	l.data.References = append(l.data.References, r)
 
 	return decodeCaps
 }
@@ -199,13 +197,18 @@ func decodeOtherRefs(p *advRefsDecoder) decoderStateFn {
 		return nil
 	}
 
+	saveTo := p.data.References
+	if bytes.HasSuffix(p.line, peeled) {
+		p.line = bytes.TrimSuffix(p.line, peeled)
+		saveTo = p.data.Peeled
+	}
+
 	ref, hash, err := readRef(p.line)
 	if err != nil {
 		p.error("%s", err)
 		return nil
 	}
-	r := plumbing.NewReferenceFromStrings(ref, hash.String())
-	p.data.References = append(p.data.References, r)
+	saveTo[ref] = hash
 
 	return decodeOtherRefs
 }

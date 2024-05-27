@@ -1,6 +1,8 @@
 package server
 
 import (
+	"path/filepath"
+
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -12,7 +14,7 @@ import (
 )
 
 // DefaultLoader is a filesystem loader ignoring host and resolving paths to /.
-var DefaultLoader = NewFilesystemLoader(osfs.New(""))
+var DefaultLoader = NewFilesystemLoader(osfs.New(""), false)
 
 // Loader loads repository's storer.Storer based on an optional host and a path.
 type Loader interface {
@@ -23,25 +25,38 @@ type Loader interface {
 }
 
 type fsLoader struct {
-	base billy.Filesystem
+	base   billy.Filesystem
+	strict bool
 }
 
 // NewFilesystemLoader creates a Loader that ignores host and resolves paths
 // with a given base filesystem.
-func NewFilesystemLoader(base billy.Filesystem) Loader {
-	return &fsLoader{base}
+func NewFilesystemLoader(base billy.Filesystem, strict bool) Loader {
+	return &fsLoader{base, strict}
 }
 
 // Load looks up the endpoint's path in the base file system and returns a
 // storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
 func (l *fsLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+	return l.load(ep, false)
+}
+
+func (l *fsLoader) load(ep *transport.Endpoint, tried bool) (storage.Storer, error) {
 	fs, err := l.base.Chroot(ep.Path)
 	if err != nil {
 		return nil, err
 	}
 
 	if _, err := fs.Stat("config"); err != nil {
+		if !l.strict && !tried {
+			if _, err := fs.Stat(".git"); err == nil {
+				ep.Path = filepath.Join(ep.Path, ".git")
+			} else {
+				ep.Path = ep.Path + ".git"
+			}
+			return l.load(ep, true)
+		}
 		return nil, transport.ErrRepositoryNotFound
 	}
 

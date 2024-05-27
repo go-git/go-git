@@ -29,15 +29,6 @@ func (s *AdvRefsDecodeSuite) TestEmptyFlush(c *C) {
 	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
 }
 
-func (s *AdvRefsDecodeSuite) TestEmptyPrefixFlush(c *C) {
-	var buf bytes.Buffer
-	pktline.WriteString(&buf, "# service=git-upload-pack")
-	pktline.WriteFlush(&buf)
-	pktline.WriteFlush(&buf)
-	ar := NewAdvRefs()
-	c.Assert(ar.Decode(&buf), Equals, ErrEmptyAdvRefs)
-}
-
 func (s *AdvRefsDecodeSuite) TestShortForHash(c *C) {
 	payloads := []string{
 		"6ecf0ef2c2dffb796",
@@ -240,30 +231,6 @@ func (s *AdvRefsDecodeSuite) TestCaps(c *C) {
 				Commentf("input = %q, capability = %q", test.input, fixCap.Name))
 		}
 	}
-}
-
-func (s *AdvRefsDecodeSuite) TestWithPrefix(c *C) {
-	payloads := []string{
-		"# this is a prefix\n",
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta\n",
-		"",
-	}
-	ar := s.testDecodeOK(c, payloads)
-	c.Assert(len(ar.Prefix), Equals, 1)
-	c.Assert(ar.Prefix[0], DeepEquals, []byte("# this is a prefix"))
-}
-
-func (s *AdvRefsDecodeSuite) TestWithPrefixAndFlush(c *C) {
-	payloads := []string{
-		"# this is a prefix\n",
-		"",
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta\n",
-		"",
-	}
-	ar := s.testDecodeOK(c, payloads)
-	c.Assert(len(ar.Prefix), Equals, 2)
-	c.Assert(ar.Prefix[0], DeepEquals, []byte("# this is a prefix"))
-	c.Assert(ar.Prefix[1], DeepEquals, []byte(""))
 }
 
 func (s *AdvRefsDecodeSuite) TestOtherRefs(c *C) {

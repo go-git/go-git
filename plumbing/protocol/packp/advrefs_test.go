@@ -218,40 +218,6 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHead(c *C) {
 	s.test(c, input, expected, true)
 }
 
-func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart(c *C) {
-	input := []string{
-		"# service=git-upload-pack\n",
-		"0000000000000000000000000000000000000000 capabilities^{}\x00",
-		"",
-	}
-
-	expected := []string{
-		"# service=git-upload-pack\n",
-		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		"",
-	}
-
-	s.test(c, input, expected, true)
-}
-
-func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmartBug(c *C) {
-	input := []string{
-		"# service=git-upload-pack\n",
-		"",
-		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		"",
-	}
-
-	expected := []string{
-		"# service=git-upload-pack\n",
-		"",
-		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		"",
-	}
-
-	s.test(c, input, expected, true)
-}
-
 func (s *AdvRefsDecodeEncodeSuite) TestRefs(c *C) {
 	input := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack",
@@ -310,70 +276,6 @@ func (s *AdvRefsDecodeEncodeSuite) TestAll(c *C) {
 	}
 
 	expected := []string{
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
-		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
-		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
-		"shallow 1111111111111111111111111111111111111111\n",
-		"shallow 2222222222222222222222222222222222222222\n",
-		"",
-	}
-
-	s.test(c, input, expected, false)
-}
-
-func (s *AdvRefsDecodeEncodeSuite) TestAllSmart(c *C) {
-	input := []string{
-		"# service=git-upload-pack\n",
-		"",
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
-		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
-		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
-		"shallow 1111111111111111111111111111111111111111\n",
-		"shallow 2222222222222222222222222222222222222222\n",
-		"",
-	}
-
-	expected := []string{
-		"# service=git-upload-pack\n",
-		"",
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
-		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
-		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
-		"shallow 1111111111111111111111111111111111111111\n",
-		"shallow 2222222222222222222222222222222222222222\n",
-		"",
-	}
-
-	s.test(c, input, expected, false)
-}
-
-func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug(c *C) {
-	input := []string{
-		"# service=git-upload-pack\n",
-		"",
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
-		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
-		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
-		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
-		"7777777777777777777777777777777777777777 refs/tags/v2.6.12-tree\n",
-		"8888888888888888888888888888888888888888 refs/tags/v2.6.12-tree^{}\n",
-		"shallow 1111111111111111111111111111111111111111\n",
-		"shallow 2222222222222222222222222222222222222222\n",
-		"",
-	}
-
-	expected := []string{
-		"# service=git-upload-pack\n",
-		"",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
 		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
 		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",

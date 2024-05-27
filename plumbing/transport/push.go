@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 // buildUpdateRequests constructs a new update-requests object for the given
@@ -55,6 +56,9 @@ func SendPack(
 	reader io.ReadCloser,
 	req *PushRequest,
 ) error {
+	writer = ioutil.NewContextWriteCloser(ctx, writer)
+	reader = ioutil.NewContextReadCloser(ctx, reader)
+
 	caps := conn.Capabilities()
 	upreq := buildUpdateRequests(caps, req)
 	if err := upreq.Encode(writer); err != nil {
@@ -70,6 +74,7 @@ func SendPack(
 		if err := req.Packfile.Close(); err != nil {
 			return err
 		}
+
 	}
 
 	// Close the write pipe to signal the end of the request.

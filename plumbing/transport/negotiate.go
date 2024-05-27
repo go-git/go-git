@@ -83,7 +83,11 @@ func NegotiatePack(
 		}
 
 		// Close the writer to signal the end of the request
-		return nil, writer.Close()
+		if err := writer.Close(); err != nil {
+			return nil, fmt.Errorf("closing writer: %s", err)
+		}
+
+		return nil, ErrNoChange
 	}
 
 	// Create upload-haves

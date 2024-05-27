@@ -21,7 +21,9 @@ type AdvRefs struct {
 	// Capabilities are the capabilities.
 	Capabilities *capability.List
 	// References are the hash references.
-	References []*plumbing.Reference
+	References map[string]plumbing.Hash
+	// Peeled are the peeled hash references.
+	Peeled map[string]plumbing.Hash
 	// Shallows are the shallow object ids.
 	Shallows []plumbing.Hash
 }
@@ -30,7 +32,8 @@ type AdvRefs struct {
 func NewAdvRefs() *AdvRefs {
 	return &AdvRefs{
 		Capabilities: capability.NewList(),
-		References:   make([]*plumbing.Reference, 0),
+		References:   make(map[string]plumbing.Hash),
+		Peeled:       make(map[string]plumbing.Hash),
 		Shallows:     []plumbing.Hash{},
 	}
 }
@@ -41,7 +44,7 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 		v := fmt.Sprintf("%s:%s", r.Name().String(), r.Target().String())
 		return a.Capabilities.Add(capability.SymRef, v)
 	case plumbing.HashReference:
-		a.References = append(a.References, r)
+		a.References[r.Name().String()] = r.Hash()
 	default:
 		return plumbing.ErrInvalidType
 	}
@@ -49,8 +52,10 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	return nil
 }
 
-// AllReferences returns all references in the AdvRefs as a
-// memory.ReferenceStorage.
+// XXX: AllReferences doesn't return all the references advertised by the
+// server, instead, it only returns non-peeled references.
+// Use MakeReferenceSlice to get all the references, their peeled values, and
+// symrefs.
 func (a *AdvRefs) AllReferences() (memory.ReferenceStorage, error) {
 	s := memory.ReferenceStorage{}
 	if err := a.addRefs(s); err != nil {
@@ -61,7 +66,8 @@ func (a *AdvRefs) AllReferences() (memory.ReferenceStorage, error) {
 }
 
 func (a *AdvRefs) addRefs(s storer.ReferenceStorer) error {
-	for _, ref := range a.References {
+	for name, hash := range a.References {
+		ref := plumbing.NewReferenceFromStrings(name, hash.String())
 		if err := s.SetReference(ref); err != nil {
 			return err
 		}
@@ -190,5 +196,30 @@ func (a *AdvRefs) supportSymrefs() bool {
 func (a *AdvRefs) IsEmpty() bool {
 	return a.Head == nil &&
 		len(a.References) == 0 &&
+		len(a.Peeled) == 0 &&
 		len(a.Shallows) == 0
+}
+
+// MakeReferenceSlice returns a sorted slice with all the references, their
+// peeled values, and symrefs.
+func (a *AdvRefs) MakeReferenceSlice() ([]*plumbing.Reference, error) {
+	allRefs := make([]*plumbing.Reference, 0)
+	refs, err := a.AllReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ref := range refs {
+		allRefs = append(allRefs, ref)
+		if peeled, ok := a.Peeled[ref.Name().String()]; ok {
+			peeledRef := plumbing.NewReferenceFromStrings(ref.Name().String()+"^{}", peeled.String())
+			allRefs = append(allRefs, peeledRef)
+		}
+	}
+
+	sort.Slice(allRefs, func(i, j int) bool {
+		return allRefs[i].Name() < allRefs[j].Name()
+	})
+
+	return allRefs, nil
 }

@@ -87,7 +87,7 @@ func TestReaderCancel(t *testing.T) {
 
 	go func() {
 		n, err := r.Read(buf)
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	pipew.Write([]byte("abcdefghij"))
@@ -109,7 +109,7 @@ func TestReaderCancel(t *testing.T) {
 
 	go func() {
 		n, err := r.Read(buf)
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	cancel()
@@ -137,7 +137,7 @@ func TestWriterCancel(t *testing.T) {
 
 	go func() {
 		n, err := w.Write([]byte("abcdefghij"))
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	piper.Read(buf)
@@ -159,7 +159,7 @@ func TestWriterCancel(t *testing.T) {
 
 	go func() {
 		n, err := w.Write([]byte("abcdefghij"))
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	cancel()
@@ -187,7 +187,7 @@ func TestReadPostCancel(t *testing.T) {
 
 	go func() {
 		n, err := r.Read(buf)
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	cancel()
@@ -222,7 +222,7 @@ func TestWritePostCancel(t *testing.T) {
 
 	go func() {
 		n, err := w.Write(buf)
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	piper.Read(buf2)
@@ -244,7 +244,7 @@ func TestWritePostCancel(t *testing.T) {
 
 	go func() {
 		n, err := w.Write(buf)
-		done <- ioret{n, err}
+		done <- ioret{err, n}
 	}()
 
 	cancel()

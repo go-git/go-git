@@ -245,8 +245,6 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 	expected.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
-	packfileContent := []byte("PACKabc")
-	// expected.Packfile = io.NopCloser(bytes.NewReader(packfileContent))
 
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
@@ -261,7 +259,6 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 			c.Assert(err, IsNil)
 		}
 	}
-	buf.Write(packfileContent)
 
 	s.testDecodeOkRaw(c, expected, buf.Bytes())
 }

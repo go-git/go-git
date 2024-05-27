@@ -97,6 +97,7 @@ func (s *ClientSuite) TestNewUnexpectedError(c *C) {
 	res := &http.Response{
 		StatusCode: 500,
 		Body:       io.NopCloser(strings.NewReader("Unexpected error")),
+		Request:    &http.Request{URL: &url.URL{}},
 	}
 
 	err := checkError(res)
@@ -251,7 +252,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	s.port = l.Addr().(*net.TCPAddr).Port
 	s.base = filepath.Join(base, s.host)
 
-	err = os.MkdirAll(s.base, 0755)
+	err = os.MkdirAll(s.base, 0o755)
 	c.Assert(err, IsNil)
 
 	cmd := exec.Command("git", "--exec-path")

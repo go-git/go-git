@@ -1865,4 +1865,3 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 	})
 	return
 }
-

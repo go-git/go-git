@@ -25,6 +25,7 @@ type advRefsEncoder struct {
 	w            io.Writer     // where to write the encoded data
 	firstRefName string        // reference name to encode in the first pkt-line (HEAD if present)
 	firstRefHash plumbing.Hash // hash referenced to encode in the first pkt-line (HEAD if present)
+	sortedRefs   []string      // hash references to encode ordered by increasing order
 	err          error         // sticky error
 }
 
@@ -36,6 +37,7 @@ func newAdvRefsEncoder(w io.Writer) *advRefsEncoder {
 
 func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	e.data = v
+	e.sortRefs()
 	e.setFirstRef()
 
 	for state := encodeFirstLine; state != nil; {
@@ -45,6 +47,18 @@ func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	return e.err
 }
 
+func (e *advRefsEncoder) sortRefs() {
+	if len(e.data.References) > 0 {
+		refs := make([]string, 0, len(e.data.References))
+		for refName := range e.data.References {
+			refs = append(refs, refName)
+		}
+
+		sort.Strings(refs)
+		e.sortedRefs = refs
+	}
+}
+
 func (e *advRefsEncoder) setFirstRef() {
 	if e.data.Head != nil {
 		e.firstRefName = head
@@ -52,9 +66,10 @@ func (e *advRefsEncoder) setFirstRef() {
 		return
 	}
 
-	if len(e.data.References) > 0 {
-		e.firstRefName = e.data.References[0].Name().String()
-		e.firstRefHash = e.data.References[0].Hash()
+	if len(e.sortedRefs) > 0 {
+		refName := e.sortedRefs[0]
+		e.firstRefName = refName
+		e.firstRefHash = e.data.References[refName]
 	}
 }
 
@@ -94,14 +109,20 @@ func formatCaps(c *capability.List) string {
 // Adds the (sorted) refs: hash SP refname EOL
 // and their peeled refs if any.
 func encodeRefs(e *advRefsEncoder) encoderStateFn {
-	for _, r := range e.data.References {
-		if r.Name().String() == e.firstRefName {
+	for _, r := range e.sortedRefs {
+		if r == e.firstRefName {
 			continue
 		}
 
-		hash := r.Hash()
+		hash := e.data.References[r]
 		if _, e.err = pktline.Writef(e.w, "%s %s\n", hash.String(), r); e.err != nil {
 			return nil
+		}
+
+		if hash, ok := e.data.Peeled[r]; ok {
+			if _, e.err = pktline.Writef(e.w, "%s %s^{}\n", hash.String(), r); e.err != nil {
+				return nil
+			}
 		}
 	}
 

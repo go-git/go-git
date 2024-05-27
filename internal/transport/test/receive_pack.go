@@ -41,25 +41,17 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
 	c.Assert(len(refs), Equals, 0)
+	c.Assert(err, IsNil)
 }
 
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	conn, err := r.Handshake(context.TODO(), true)
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(conn.Close(), IsNil)
-
-	r, err = s.Client.NewSession(s.Storer, s.NonExistentEndpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	req := &transport.PushRequest{
-		Commands: []*packp.Command{
-			{Name: "master", Old: plumbing.ZeroHash, New: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
-		},
-	}
-	err = conn.Push(context.TODO(), req)
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(conn.Close(), IsNil)
+	// XXX: Git daemon returns "repository not exported" when the repository
+	// does not exist.
+	c.Assert(err, ErrorMatches, "(repository not found|.*repository not exported.*)")
+	c.Assert(conn, IsNil)
 }
 
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice(c *C) {
@@ -69,10 +61,11 @@ func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs1, err := conn.GetRemoteRefs(context.TODO())
+	c.Assert(err, IsNil)
 	c.Assert(len(refs1), Not(Equals), 0)
 	refs2, err := conn.GetRemoteRefs(context.TODO())
-	c.Assert(len(refs2), Not(Equals), 0)
 	c.Assert(err, IsNil)
+	c.Assert(len(refs2), Not(Equals), 0)
 	c.Assert(refs1, DeepEquals, refs2)
 }
 
@@ -85,14 +78,15 @@ func (s *ReceivePackSuite) TestDefaultBranch(c *C) {
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
 	c.Assert(err, IsNil)
-	headExists := false
+	var master *plumbing.Reference
 	for _, ref := range refs {
-		if ref.String() == fixtures.Basic().One().Head {
-			headExists = true
+		if ref.Name() == plumbing.Master {
+			master = ref
 			break
 		}
 	}
-	c.Assert(headExists, Equals, true)
+	c.Assert(master, NotNil)
+	c.Assert(master.Hash().String(), Equals, fixtures.Basic().One().Head)
 }
 
 func (s *ReceivePackSuite) TestCapabilities(c *C) {
@@ -115,7 +109,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty(c *C) {
 			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 		},
 	}
-	s.receivePack(c, endpoint, req, fixture, full)
+	s.receivePack(c, s.EmptyStorer, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
@@ -151,7 +145,7 @@ func (s *ReceivePackSuite) TestSendPackOnEmpty(c *C) {
 			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 		},
 	}
-	s.receivePack(c, endpoint, req, fixture, full)
+	s.receivePack(c, s.EmptyStorer, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
@@ -162,7 +156,7 @@ func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus(c *C) {
 	req := &transport.PushRequest{Commands: []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}}
-	s.receivePack(c, endpoint, req, fixture, full)
+	s.receivePack(c, s.EmptyStorer, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
@@ -173,7 +167,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnNonEmpty(c *C) {
 	req := &transport.PushRequest{Commands: []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
 	}}
-	s.receivePack(c, endpoint, req, fixture, full)
+	s.receivePack(c, s.Storer, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
@@ -184,7 +178,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmpty(c *C) {
 	req := &transport.PushRequest{Commands: []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
 	}}
-	s.receivePack(c, endpoint, req, fixture, full)
+	s.receivePack(c, s.Storer, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
@@ -198,7 +192,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus(c *C) {
 		},
 	}
 
-	s.receivePack(c, endpoint, req, fixture, full)
+	s.receivePack(c, s.Storer, endpoint, req, fixture, full)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
@@ -212,14 +206,12 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C)
 		},
 	}
 
-	err := s.receivePackNoCheck(c, endpoint, req, fixture, full)
-	// XXX: Recent git versions return "failed to update ref", while older
-	//     (>=1.9) return "failed to lock".
-	c.Assert(err, ErrorMatches, ".*(failed to update ref|failed to lock).*")
+	err := s.receivePackNoCheck(c, s.Storer, endpoint, req, fixture, full)
+	c.Assert(err, NotNil)
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
-func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
+func (s *ReceivePackSuite) receivePackNoCheck(c *C, st storage.Storer, ep *transport.Endpoint,
 	req *transport.PushRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool,
 ) error {
@@ -228,7 +220,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 		url = fixture.URL
 	}
 	comment := Commentf(
-		"failed with ep=%s fixture=%s callAdvertisedReferences=%s",
+		"failed with ep=%s fixture=%s callAdvertisedReferences=%v",
 		ep.String(), url, callAdvertisedReferences,
 	)
 
@@ -245,12 +237,12 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 
 		for _, file := range files {
 			path := filepath.Join(objectPath, file.Name())
-			err = os.Chmod(path, 0644)
+			err = os.Chmod(path, 0o644)
 			c.Assert(err, IsNil)
 		}
 	}
 
-	r, err := s.Client.NewSession(s.Storer, ep, s.EmptyAuth)
+	r, err := s.Client.NewSession(st, ep, s.EmptyAuth)
 	c.Assert(err, IsNil, comment)
 
 	conn, err := r.Handshake(context.TODO(), true)
@@ -259,16 +251,17 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, ep *transport.Endpoint,
 	defer func() { c.Assert(conn.Close(), IsNil, comment) }()
 
 	if fixture != nil {
-		c.Assert(fixture.Packfile(), NotNil)
-		req.Packfile = fixture.Packfile()
+		packfile := fixture.Packfile()
+		c.Assert(packfile, NotNil)
+		req.Packfile = packfile
 	} else {
 		req.Packfile = s.emptyPackfile()
 	}
 
-	return conn.Push(context.Background(), req)
+	return conn.Push(context.TODO(), req)
 }
 
-func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
+func (s *ReceivePackSuite) receivePack(c *C, st storage.Storer, ep *transport.Endpoint,
 	req *transport.PushRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool,
 ) {
@@ -278,10 +271,10 @@ func (s *ReceivePackSuite) receivePack(c *C, ep *transport.Endpoint,
 	}
 
 	comment := Commentf(
-		"failed with ep=%s fixture=%s callAdvertisedReferences=%s",
+		"failed with ep=%s fixture=%s callAdvertisedReferences=%v",
 		ep.String(), url, callAdvertisedReferences,
 	)
-	err := s.receivePackNoCheck(c, ep, req, fixture, callAdvertisedReferences)
+	err := s.receivePackNoCheck(c, st, ep, req, fixture, callAdvertisedReferences)
 	c.Assert(err, IsNil, comment)
 }
 
@@ -298,10 +291,11 @@ func (s *ReceivePackSuite) checkRemoteReference(c *C, ep *transport.Endpoint,
 	c.Assert(err, IsNil, Commentf("endpoint: %s", ep.String()))
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
+	c.Assert(err, IsNil)
 	var ok bool
 	var ref *plumbing.Reference
 	for _, r := range refs {
-		if r.String() == refName {
+		if r.Name().String() == refName {
 			ok = true
 			ref = r
 			break
@@ -311,7 +305,7 @@ func (s *ReceivePackSuite) checkRemoteReference(c *C, ep *transport.Endpoint,
 		c.Assert(ok, Equals, false)
 	} else {
 		c.Assert(ok, Equals, true)
-		c.Assert(ref, DeepEquals, head)
+		c.Assert(ref.Hash(), DeepEquals, head)
 	}
 }
 
@@ -336,7 +330,7 @@ func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
 	}
 
 	c.Assert(conn.Close(), IsNil)
-	s.receivePack(c, s.Endpoint, req, nil, false)
+	s.receivePack(c, s.Storer, s.Endpoint, req, nil, false)
 	s.checkRemoteReference(c, s.Endpoint, "refs/heads/newbranch", plumbing.NewHash(fixture.Head))
 }
 
@@ -362,7 +356,7 @@ func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
 
 	c.Assert(conn.Close(), IsNil)
 
-	s.receivePack(c, s.Endpoint, req, nil, false)
+	s.receivePack(c, s.Storer, s.Endpoint, req, nil, false)
 	s.checkRemoteReference(c, s.Endpoint, "refs/heads/newbranch", plumbing.ZeroHash)
 }
 

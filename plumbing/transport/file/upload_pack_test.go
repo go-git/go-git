@@ -2,9 +2,12 @@ package file
 
 import (
 	"context"
+	"testing"
 
 	"github.com/go-git/go-git/v5/internal/transport/test"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -19,50 +22,54 @@ type UploadPackSuite struct {
 var _ = Suite(&UploadPackSuite{})
 
 func (s *UploadPackSuite) SetUpSuite(c *C) {
+	// trace.SetLogger(log.Default())
+	// trace.SetTarget(trace.General | trace.Packet)
 	s.CommonSuite.SetUpSuite(c)
 
 	s.UploadPackSuite.Client = DefaultTransport
 
 	fixture := fixtures.Basic().One()
-	path := fixture.DotGit().Root()
+	dot := fixture.DotGit()
+	path := dot.Root()
 	ep, err := transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	s.Endpoint = ep
+	s.Storer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	fixture = fixtures.ByTag("empty").One()
-	path = fixture.DotGit().Root()
+	dot = fixture.DotGit()
+	path = dot.Root()
 	ep, err = transport.NewEndpoint(path)
 	c.Assert(err, IsNil)
 	s.EmptyEndpoint = ep
+	s.EmptyStorer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	ep, err = transport.NewEndpoint("non-existent")
 	c.Assert(err, IsNil)
 	s.NonExistentEndpoint = ep
+	s.NonExistentStorer = memory.NewStorage()
 }
 
-// TODO: fix test
-func (s *UploadPackSuite) TestCommandNoOutput(c *C) {
-	client := NewTransport()
-	session, err := client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	ar, err := session.Handshake(context.TODO(), false)
-	c.Assert(err, IsNil)
-	c.Assert(ar, IsNil)
-}
+func TestAFile(t *testing.T) {
+	// fixture := fixtures.Basic().One()
+	fixture := fixtures.ByTag("empty").One()
+	dot := fixture.DotGit()
+	path := dot.Root()
+	ep, err := transport.NewEndpoint(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-func (s *UploadPackSuite) TestMalformedInputNoErrors(c *C) {
-	client := NewTransport()
-	session, err := client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	ar, err := session.Handshake(context.TODO(), false)
-	c.Assert(err, NotNil)
-	c.Assert(ar, IsNil)
-}
+	// st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	st := memory.NewStorage()
 
-func (s *UploadPackSuite) TestNonExistentCommand(c *C) {
-	client := NewTransport()
-	session, err := client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
-	// Error message is OS-dependant, so do a broad check
-	c.Assert(err, ErrorMatches, ".*file.*")
-	c.Assert(session, IsNil)
+	r, err := DefaultTransport.NewSession(st, ep, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = r.Handshake(context.TODO(), false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
 }

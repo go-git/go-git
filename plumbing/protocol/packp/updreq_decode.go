@@ -93,6 +93,7 @@ type updReqDecoder struct {
 	req *UpdateRequests
 
 	payload []byte
+	length  int // length of the pktline payload
 }
 
 func (d *updReqDecoder) Decode(req *UpdateRequests) error {
@@ -102,6 +103,7 @@ func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 		d.decodeShallow,
 		d.decodeCommandAndCapabilities,
 		d.decodeCommands,
+		d.decodeFlush,
 		req.validate,
 	}
 
@@ -115,7 +117,7 @@ func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 }
 
 func (d *updReqDecoder) readLine(e error) error {
-	_, p, err := pktline.ReadLine(d.s)
+	l, p, err := pktline.ReadLine(d.s)
 	if err == io.EOF {
 		return e
 	}
@@ -124,6 +126,7 @@ func (d *updReqDecoder) readLine(e error) error {
 	}
 
 	d.payload = p
+	d.length = l
 
 	return nil
 }
@@ -175,6 +178,18 @@ func (d *updReqDecoder) decodeCommands() error {
 			return err
 		}
 	}
+}
+
+func (d *updReqDecoder) decodeFlush() error {
+	if err := d.readLine(nil); err != nil {
+		return err
+	}
+
+	if len(d.payload) != 0 || d.length != pktline.Flush {
+		return errMalformedRequest("unexpected data after flush")
+	}
+
+	return nil
 }
 
 func (d *updReqDecoder) decodeCommandAndCapabilities() error {

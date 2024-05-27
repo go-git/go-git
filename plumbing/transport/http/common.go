@@ -194,7 +194,7 @@ type session struct {
 	auth        AuthMethod
 	client      *http.Client
 	ep          *transport.Endpoint
-	advRefs     *packp.AdvRefs
+	refs        *packp.AdvRefs
 	gitProtocol string           // the Git-Protocol header to send
 	version     protocol.Version // the server's protocol version
 	useDumb     bool             // When true, the client will always use the dumb protocol
@@ -408,7 +408,7 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 		transport.ReceivePackServiceName != service {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
-	s.advRefs = ar
+	s.refs = ar
 
 	return s, nil
 }
@@ -417,7 +417,7 @@ var _ transport.Connection = &session{}
 
 // Capabilities implements transport.Connection.
 func (s *session) Capabilities() *capability.List {
-	return s.advRefs.Capabilities
+	return s.refs.Capabilities
 }
 
 // IsStatelessRPC implements transport.Connection.
@@ -446,11 +446,11 @@ func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (err e
 
 // GetRemoteRefs implements transport.Connection.
 func (s *session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
-	if s.advRefs == nil {
+	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
 
-	return s.advRefs.References, nil
+	return s.refs.MakeReferenceSlice()
 }
 
 // Push implements transport.Connection.

@@ -441,7 +441,9 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
 		}
 
-		if err := conn.Fetch(ctx, req); err != nil {
+		if err := conn.Fetch(ctx, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
+			// Note: We receive ErrNoChange when remote is the same as local. At
+			// this point, we have everything we're asking for.
 			return nil, err
 		}
 	}

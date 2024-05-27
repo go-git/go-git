@@ -218,7 +218,7 @@ func (p *Parser) indexObjects() error {
 			if !ok {
 				// can't find referenced object in this pack file
 				// this must be a "thin" pack.
-				parent = &objectInfo{ //Placeholder parent
+				parent = &objectInfo{ // Placeholder parent
 					SHA1:        oh.Reference,
 					ExternalRef: true, // mark as an external reference that must be resolved
 					Type:        plumbing.AnyObject,

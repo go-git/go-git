@@ -1,7 +1,6 @@
 package file
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,19 +19,6 @@ type ClientSuite struct {
 }
 
 var _ = Suite(&ClientSuite{})
-
-func (s *ClientSuite) TestCommand(c *C) {
-	runner := &runner{}
-	ep, err := transport.NewEndpoint(filepath.Join("fake", "repo"))
-	var emptyAuth transport.AuthMethod
-	c.Assert(err, IsNil)
-	_, err = runner.Command(context.TODO(), "git-receive-pack", ep, emptyAuth)
-	c.Assert(err, IsNil)
-
-	// Make sure we get an error for one that doesn't exist.
-	_, err = runner.Command(context.TODO(), "git-fake-command", ep, emptyAuth)
-	c.Assert(err, NotNil)
-}
 
 const bareConfig = `[core]
 repositoryformatversion = 0

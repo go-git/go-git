@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, fo
 	} else {
 		ar.Capabilities.Set(capability.Sideband)   // nolint: errcheck
 		ar.Capabilities.Set(capability.NoProgress) // nolint: errcheck
+		ar.Capabilities.Set(capability.SymRef)     // nolint: errcheck
 	}
 
 	// Set references
@@ -51,27 +53,31 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 	}
 
 	// Add references and their peeled values
-	if err := iter.ForEach(func(r *plumbing.Reference) (err error) {
-		ref := r
-		switch ref.Type() {
+	if err := iter.ForEach(func(r *plumbing.Reference) error {
+		hash, name := r.Hash(), r.Name()
+		switch r.Type() {
 		case plumbing.SymbolicReference:
-			ref, err = storer.ResolveReference(st, r.Target())
+			ref, err := storer.ResolveReference(st, r.Target())
+			if errors.Is(err, plumbing.ErrReferenceNotFound) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
+			hash = ref.Hash()
 		}
-		if ref.Name() == plumbing.HEAD {
+		if name == plumbing.HEAD {
 			if !addHead {
 				return nil
 			}
-			hash := ref.Hash()
+			// Add default branch HEAD symref
+			ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
 			ar.Head = &hash
 		}
-		ar.References = append(ar.References, ref)
-		if ref.Name().IsTag() {
-			if tag, err := object.GetTag(st, ref.Hash()); err == nil {
-				tagRef := plumbing.NewReferenceFromStrings(ref.Name().String()+"^{}", tag.Target.String())
-				ar.References = append(ar.References, tagRef)
+		ar.References[name.String()] = hash
+		if r.Name().IsTag() {
+			if tag, err := object.GetTag(st, hash); err == nil {
+				ar.Peeled[name.String()] = tag.Target
 			}
 		}
 		return nil

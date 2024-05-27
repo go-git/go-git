@@ -123,21 +123,15 @@ func (s *UpdReqEncodeSuite) TestWithPackfile(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	packfileContent := []byte("PACKabc")
-	// packfileReader := bytes.NewReader(packfileContent)
-	// packfileReadCloser := io.NopCloser(packfileReader)
-
 	r := NewUpdateRequests()
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
-	// r.Packfile = packfileReadCloser
 
 	expected := pktlines(c,
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	)
-	expected = append(expected, packfileContent...)
 
 	s.testEncode(c, r, expected)
 }

@@ -81,7 +81,6 @@ func ReceivePack(
 	}
 
 	// Receive the packfile
-	// TODO: type assert unpack error?
 	unpackErr := packfile.UpdateObjectStorage(st, rd)
 
 	// Done with the request, now close the reader
@@ -95,15 +94,27 @@ func ReceivePack(
 		return unpackErr
 	}
 
-	rs := packp.NewReportStatus()
-	rs.UnpackStatus = "ok"
 	if unpackErr != nil {
-		rs.UnpackStatus = unpackErr.Error()
+		return sendReportStatus(w, unpackErr, nil)
 	}
 
 	var firstErr error
 	cmdStatus := make(map[plumbing.ReferenceName]error)
 	updateReferences(st, updreq, cmdStatus, &firstErr)
+
+	if err := sendReportStatus(w, firstErr, cmdStatus); err != nil {
+		return err
+	}
+
+	return firstErr
+}
+
+func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
+	rs := packp.NewReportStatus()
+	rs.UnpackStatus = "ok"
+	if unpackErr != nil {
+		rs.UnpackStatus = unpackErr.Error()
+	}
 
 	for ref, err := range cmdStatus {
 		msg := "ok"
@@ -125,9 +136,7 @@ func ReceivePack(
 		return fmt.Errorf("closing writer: %s", err)
 	}
 
-	// TODO: support auto updateserverinfo
-
-	return firstErr
+	return nil
 }
 
 func setStatus(cmdStatus map[plumbing.ReferenceName]error, firstErr *error, ref plumbing.ReferenceName, err error) {
