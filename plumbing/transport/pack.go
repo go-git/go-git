@@ -66,6 +66,11 @@ func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...str
 		cmd: cmd,
 	}
 
+	// Check if the context is already done before starting the command.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

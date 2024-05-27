@@ -118,7 +118,7 @@ func (s *UploadPackSuite) TestUploadPack(c *C) {
 }
 
 func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
 	defer cancel()
 
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
