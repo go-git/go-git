@@ -301,7 +301,8 @@ func (s *RepositorySuite) TestCloneWithTags(c *C) {
 func (s *RepositorySuite) TestCloneSparse(c *C) {
 	fs := memfs.New()
 	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+		URL:        s.GetBasicLocalRepositoryURL(),
+		NoCheckout: true,
 	})
 	c.Assert(err, IsNil)
 
