@@ -335,13 +335,10 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 
 func (w *Worktree) resetIndex(t *object.Tree, dirs []string) error {
 	idx, err := w.r.Storer.Index()
-	if len(dirs) > 0 {
-		idx.SkipUnless(dirs)
-	}
-
 	if err != nil {
 		return err
 	}
+
 	b := newIndexBuilder(idx)
 
 	changes, err := w.diffTreeWithStaging(t, true)
@@ -383,6 +380,11 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string) error {
 	}
 
 	b.Write(idx)
+
+	if len(dirs) > 0 {
+		idx.SkipUnless(dirs)
+	}
+
 	return w.r.Storer.SetIndex(idx)
 }
 
@@ -1065,7 +1067,7 @@ func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 	dir := filepath.Dir(name)
 	for {
 		removed, err := removeDirIfEmpty(fs, dir)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 
