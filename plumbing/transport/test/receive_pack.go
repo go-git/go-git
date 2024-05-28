@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	. "github.com/go-git/go-git/v5/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
@@ -42,7 +43,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 	ar, err := r.AdvertisedReferences()
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
+	c.Assert(err, ErrorIs, transport.ErrRepositoryNotFound)
 	c.Assert(ar, IsNil)
 	c.Assert(r.Close(), IsNil)
 
@@ -54,7 +55,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	}
 
 	writer, err := r.ReceivePack(context.Background(), req)
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
+	c.Assert(err, ErrorIs, transport.ErrRepositoryNotFound)
 	c.Assert(writer, IsNil)
 	c.Assert(r.Close(), IsNil)
 }
