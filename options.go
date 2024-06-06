@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
@@ -199,6 +200,8 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
+	// Filter asks the server for a filter as described in git-rev-list.
+	Filter packp.Filter
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Progress is where the human readable information sent by the server is

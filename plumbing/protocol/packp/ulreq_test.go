@@ -107,3 +107,16 @@ func (s *UlReqSuite) TestValidateConflictMultiACK(c *C) {
 	err := r.Validate()
 	c.Assert(err, NotNil)
 }
+
+func (s *UlReqSuite) TestValidateFilter(c *C) {
+	r := NewUploadRequest()
+	r.Wants = append(r.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	r.Filter = "blob:none"
+
+	err := r.Validate()
+	c.Assert(err, NotNil)
+
+	r.Capabilities.Set(capability.Filter)
+	err = r.Validate()
+	c.Assert(err, IsNil)
+}

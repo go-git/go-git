@@ -1156,6 +1156,10 @@ func (r *Remote) newUploadPackRequest(o *FetchOptions,
 		}
 	}
 
+	if o.Filter != "" {
+		req.Filter = o.Filter
+	}
+
 	if o.Progress == nil && ar.Capabilities.Supports(capability.NoProgress) {
 		if err := req.Capabilities.Set(capability.NoProgress); err != nil {
 			return nil, err
