@@ -41,13 +41,9 @@ type packSession struct {
 var _ Session = &packSession{}
 
 // Handshake implements Session.
-func (p *packSession) Handshake(ctx context.Context, forPush bool, params ...string) (conn Connection, err error) {
-	service := UploadPackServiceName
-	if forPush {
-		service = ReceivePackServiceName
-	}
-
-	cmd, err := p.cmdr.Command(ctx, service, p.ep, p.auth, params...)
+func (p *packSession) Handshake(ctx context.Context, service Service, params ...string) (conn Connection, err error) {
+	forPush := service == ReceivePackService
+	cmd, err := p.cmdr.Command(ctx, service.String(), p.ep, p.auth, params...)
 	if err != nil {
 		return nil, err
 	}

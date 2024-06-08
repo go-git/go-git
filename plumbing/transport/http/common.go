@@ -325,15 +325,10 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 }
 
 // Handshake implements transport.PackSession.
-func (s *session) Handshake(ctx context.Context, forPush bool, params ...string) (transport.Connection, error) {
-	service := transport.UploadPackServiceName
-	if forPush {
-		service = transport.ReceivePackServiceName
-	}
-
+func (s *session) Handshake(ctx context.Context, service transport.Service, params ...string) (transport.Connection, error) {
 	url := s.ep.String() + infoRefsPath
 	if !s.useDumb {
-		url += "?service=" + service
+		url += "?service=" + service.String()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -345,7 +340,7 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 		s.gitProtocol = strings.Join(params, ":")
 	}
 
-	applyHeaders(req, service, s.ep, s.auth, s.gitProtocol, !s.useDumb)
+	applyHeaders(req, service.String(), s.ep, s.auth, s.gitProtocol, !s.useDumb)
 	res, err := doRequest(s.client, req)
 	if err != nil {
 		return nil, err
@@ -374,7 +369,7 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 			return nil, err
 		}
 
-		if reply.Service != service {
+		if reply.Service != service.String() {
 			return nil, fmt.Errorf("unexpected service name: %w", transport.ErrInvalidResponse)
 		}
 	}
@@ -405,7 +400,7 @@ func (s *session) Handshake(ctx context.Context, forPush bool, params ...string)
 	// This logic aligns with plumbing/transport/common/common.go.
 	if ar.IsEmpty() &&
 		// Empty repositories are valid for git-receive-pack.
-		transport.ReceivePackServiceName != service {
+		transport.ReceivePackService != service {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
 	s.refs = ar
@@ -427,7 +422,7 @@ func (*session) IsStatelessRPC() bool {
 
 // Fetch implements transport.Connection.
 func (s *session) Fetch(ctx context.Context, req *transport.FetchRequest) (err error) {
-	rwc := newRequester(ctx, s, false)
+	rwc := newRequester(ctx, s, transport.UploadPackService)
 
 	// XXX: packfile will be populated and accessible once rwc.Close() is
 	// called in NegotiatePack.
@@ -455,7 +450,7 @@ func (s *session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, err
 
 // Push implements transport.Connection.
 func (s *session) Push(ctx context.Context, req *transport.PushRequest) (err error) {
-	rwc := newRequester(ctx, s, true)
+	rwc := newRequester(ctx, s, transport.ReceivePackService)
 	return transport.SendPack(ctx, s.st, s, rwc, rwc.BodyCloser(), req)
 }
 
@@ -477,16 +472,11 @@ type requester struct {
 	service string
 }
 
-func newRequester(ctx context.Context, s *session, forPush bool) *requester {
-	service := transport.UploadPackServiceName
-	if forPush {
-		service = transport.ReceivePackServiceName
-	}
-
+func newRequester(ctx context.Context, s *session, service transport.Service) *requester {
 	return &requester{
 		ctx:     ctx,
 		session: s,
-		service: service,
+		service: service.String(),
 	}
 }
 

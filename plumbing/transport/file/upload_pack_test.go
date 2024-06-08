@@ -68,7 +68,7 @@ func TestAFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = r.Handshake(context.TODO(), false)
+	_, err = r.Handshake(context.TODO(), transport.UploadPackService)
 	if err == nil {
 		t.Fatal("expected error")
 	}

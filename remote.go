@@ -122,7 +122,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
-	conn, err := s.Handshake(ctx, true)
+	conn, err := s.Handshake(ctx, transport.ReceivePackService)
 	if err != nil {
 		return err
 	}
@@ -389,7 +389,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	conn, err := sess.Handshake(ctx, false)
+	conn, err := sess.Handshake(ctx, transport.UploadPackService)
 	if err != nil {
 		return nil, err
 	}
@@ -1236,7 +1236,7 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, err
 	}
 
-	conn, err := s.Handshake(ctx, false)
+	conn, err := s.Handshake(ctx, transport.UploadPackService)
 	if err != nil {
 		return nil, err
 	}

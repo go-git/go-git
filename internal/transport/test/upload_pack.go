@@ -31,7 +31,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	_, err = r.Handshake(context.TODO(), false)
+	_, err = r.Handshake(context.TODO(), transport.UploadPackService)
 	c.Assert(err, Equals, transport.ErrEmptyRemoteRepository)
 }
 
@@ -39,7 +39,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := r.Handshake(context.TODO(), false)
+	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
 	// TODO: assert error type
 	// It can be different for each transport. For example, the ssh transport
 	// returns a RemoteError that comes from the Stderr channel. However, the
@@ -52,7 +52,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	r, err := s.Client.NewSession(memory.NewStorage(), s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -67,7 +67,7 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 func (s *UploadPackSuite) TestDefaultBranch(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -83,18 +83,18 @@ func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported(c *C) {
 
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
 	caps := conn.Capabilities()
-	c.Assert(caps.Supports(capability.MultiACK), Equals, false)
+	c.Assert(caps.Supports(capability.MultiACK), Equals, transport.UploadPackService)
 }
 
 func (s *UploadPackSuite) TestCapabilities(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -105,7 +105,7 @@ func (s *UploadPackSuite) TestCapabilities(c *C) {
 func (s *UploadPackSuite) TestUploadPack(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -123,7 +123,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
 
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	_, err = r.Handshake(ctx, false)
+	_, err = r.Handshake(ctx, transport.UploadPackService)
 	c.Assert(err, NotNil)
 }
 
@@ -132,7 +132,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
 
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(ctx, false)
+	conn, err := r.Handshake(ctx, transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -154,7 +154,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
 func (s *UploadPackSuite) TestUploadPackFull(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -173,7 +173,7 @@ func (s *UploadPackSuite) TestUploadPackFull(c *C) {
 func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -189,7 +189,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
 func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -205,7 +205,7 @@ func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
 func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -223,7 +223,7 @@ func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
 func (s *UploadPackSuite) TestUploadPackPartial(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 
@@ -243,7 +243,7 @@ func (s *UploadPackSuite) TestUploadPackPartial(c *C) {
 func (s *UploadPackSuite) TestFetchError(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer conn.Close()
 

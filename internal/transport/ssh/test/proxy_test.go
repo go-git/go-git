@@ -76,7 +76,7 @@ func (s *ProxyEnvSuite) TestCommand(c *C) {
 	})
 	r, err := client.NewSession(st, ep, nil)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.Background(), false)
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 

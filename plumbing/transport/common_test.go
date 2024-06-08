@@ -20,7 +20,7 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
 		c.Fatalf("unexpected error: %s", err)
 	}
 
-	_, err = sess.Handshake(context.TODO(), false)
+	_, err = sess.Handshake(context.TODO(), UploadPackService)
 	c.Assert(err, NotNil)
 	if !errors.Is(err, io.EOF) {
 		c.Fatalf("unexpected error: %s", err)
@@ -43,7 +43,7 @@ remote:`
 		c.Fatalf("unexpected error: %s", err)
 	}
 
-	_, err = sess.Handshake(context.TODO(), false)
+	_, err = sess.Handshake(context.TODO(), UploadPackService)
 	c.Assert(err, NotNil)
 	if !errors.Is(err, io.EOF) {
 		c.Fatalf("expected a different error: got '%s', expected '%s'", err, io.EOF)

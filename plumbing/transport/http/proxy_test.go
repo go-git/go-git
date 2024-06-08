@@ -45,7 +45,7 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	info, err := session.Handshake(ctx, false)
+	info, err := session.Handshake(ctx, transport.UploadPackService)
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
@@ -70,7 +70,7 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 	session, err = s.u.Client.NewSession(memory.NewStorage(), endpoint, nil)
 	c.Assert(err, IsNil)
 
-	info, err = session.Handshake(context.TODO(), false)
+	info, err = session.Handshake(context.TODO(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	proxyUsed = atomic.LoadInt32(&proxiedRequests) > 0

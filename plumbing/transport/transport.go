@@ -37,12 +37,6 @@ var (
 	ErrAlreadyConnected       = errors.New("session already established")
 )
 
-// Git fetch/push service names.
-const (
-	UploadPackServiceName  = "git-upload-pack"
-	ReceivePackServiceName = "git-receive-pack"
-)
-
 // Transport can initiate git-upload-pack and git-receive-pack processes.
 // It is implemented both by the client and the server, making this a RPC.
 type Transport interface {

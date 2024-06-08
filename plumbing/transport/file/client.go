@@ -68,8 +68,8 @@ func (c *command) Start() error {
 		return err
 	}
 
-	switch c.service {
-	case transport.UploadPackServiceName:
+	switch transport.Service(c.service) {
+	case transport.UploadPackService:
 		opts := &transport.UploadPackOptions{
 			GitProtocol: c.gitProtocol,
 		}
@@ -87,7 +87,7 @@ func (c *command) Start() error {
 			}
 		}()
 		return nil
-	case transport.ReceivePackServiceName:
+	case transport.ReceivePackService:
 		opts := &transport.ReceivePackOptions{
 			GitProtocol: c.gitProtocol,
 		}

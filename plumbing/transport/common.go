@@ -144,7 +144,7 @@ type Session interface {
 	// already connected.
 	// Params are the optional extra parameters to be sent to the server. Use
 	// this to send the protocol version of the client and any other extra parameters.
-	Handshake(ctx context.Context, forPush bool, params ...string) (Connection, error)
+	Handshake(ctx context.Context, service Service, params ...string) (Connection, error)
 }
 
 // Commander creates Command instances. This is the main entry point for

@@ -57,7 +57,7 @@ func UploadPack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		if err := AdvertiseReferences(ctx, st, w, UploadPackServiceName, opts.StatelessRPC); err != nil {
+		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}

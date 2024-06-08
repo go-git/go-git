@@ -48,7 +48,7 @@ func (s *ProxySuite) TestAdvertisedReferences(c *C) {
 	client := http.DefaultTransport
 	session, err := client.NewSession(st, endpoint, nil)
 	c.Assert(err, IsNil)
-	conn, err := session.Handshake(context.Background(), false)
+	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 

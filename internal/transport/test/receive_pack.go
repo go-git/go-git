@@ -36,7 +36,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
@@ -47,7 +47,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	// XXX: Git daemon returns "repository not exported" when the repository
 	// does not exist.
 	c.Assert(err, ErrorMatches, "(repository not found|.*repository not exported.*)")
@@ -57,7 +57,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs1, err := conn.GetRemoteRefs(context.TODO())
@@ -73,7 +73,7 @@ func (s *ReceivePackSuite) TestDefaultBranch(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
@@ -93,7 +93,7 @@ func (s *ReceivePackSuite) TestCapabilities(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	caps := conn.Capabilities()
@@ -125,7 +125,7 @@ func (s *ReceivePackSuite) TestSendPackWithContext(c *C) {
 	r, err := s.Client.NewSession(s.Storer, s.EmptyEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	c.Assert(err, IsNil)
 
@@ -245,7 +245,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(c *C, st storage.Storer, ep *trans
 	r, err := s.Client.NewSession(st, ep, s.EmptyAuth)
 	c.Assert(err, IsNil, comment)
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil, comment)
 	c.Assert(conn, NotNil, comment)
 	defer func() { c.Assert(conn.Close(), IsNil, comment) }()
@@ -287,7 +287,7 @@ func (s *ReceivePackSuite) checkRemoteReference(c *C, ep *transport.Endpoint,
 ) {
 	r, err := s.Client.NewSession(s.Storer, ep, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.TODO(), false)
+	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
 	c.Assert(err, IsNil, Commentf("endpoint: %s", ep.String()))
 	defer func() { c.Assert(conn.Close(), IsNil) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
@@ -320,7 +320,7 @@ func (s *ReceivePackSuite) testSendPackAddReference(c *C) {
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil)
 
 	req := &transport.PushRequest{
@@ -340,7 +340,7 @@ func (s *ReceivePackSuite) testSendPackDeleteReference(c *C) {
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
 
-	conn, err := r.Handshake(context.TODO(), true)
+	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
 	c.Assert(err, IsNil)
 
 	req := &transport.PushRequest{

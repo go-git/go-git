@@ -54,7 +54,7 @@ func ReceivePack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		if err := AdvertiseReferences(ctx, st, w, ReceivePackServiceName, opts.StatelessRPC); err != nil {
+		if err := AdvertiseReferences(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}

@@ -38,7 +38,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
 	r, err := s.Client.NewSession(memory.NewStorage(), s.NonExistentEndpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
-	conn, err := r.Handshake(context.TODO(), false)
+	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
 	c.Assert(conn, IsNil)
 }
@@ -70,7 +70,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath(c *C) {
 	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := sess.Handshake(context.TODO(), false)
+	conn, err := sess.Handshake(context.TODO(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	c.Assert(conn, NotNil)
 	defer conn.Close()
@@ -85,7 +85,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema(c *C) {
 	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := sess.Handshake(context.TODO(), false)
+	conn, err := sess.Handshake(context.TODO(), transport.UploadPackService)
 	c.Assert(err, IsNil)
 	c.Assert(conn, NotNil)
 	defer conn.Close()
@@ -102,7 +102,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContext(c *C) {
 	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := sess.Handshake(ctx, false)
+	conn, err := sess.Handshake(ctx, transport.UploadPackService)
 	c.Assert(err, IsNil)
 	c.Assert(conn, NotNil)
 	defer conn.Close()
@@ -119,7 +119,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContextCanceled(c *C) {
 	sess, err := s.Client.NewSession(memory.NewStorage(), endpoint, s.EmptyAuth)
 	c.Assert(err, IsNil)
 
-	conn, err := sess.Handshake(ctx, false)
+	conn, err := sess.Handshake(ctx, transport.UploadPackService)
 	c.Assert(err, NotNil)
 	c.Assert(conn, IsNil)
 	c.Assert(err, DeepEquals, &url.Error{Op: "Get", URL: "http://github.com/git-fixtures/basic/info/refs?service=git-upload-pack", Err: context.Canceled})

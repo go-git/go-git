@@ -152,7 +152,7 @@ func (s *SuiteCommon) TestFailHostKeyCallback(c *C) {
 	ep := uploadPack.newEndpoint(c, "bar.git")
 	sess, err := uploadPack.Client.NewSession(memory.NewStorage(), ep, auth)
 	c.Assert(err, IsNil)
-	_, err = sess.Handshake(context.Background(), false)
+	_, err = sess.Handshake(context.Background(), transport.UploadPackService)
 	c.Assert(err, NotNil)
 }
 
@@ -193,7 +193,7 @@ func (s *SuiteCommon) TestInvalidSocks5Proxy(c *C) {
 
 	conn, err := DefaultTransport.NewSession(memory.NewStorage(), ep, auth)
 	c.Assert(err, IsNil)
-	ps, err := conn.Handshake(context.Background(), false)
+	ps, err := conn.Handshake(context.Background(), transport.UploadPackService)
 	// Since the proxy server is not running, we expect an error.
 	c.Assert(ps, IsNil)
 	c.Assert(err, NotNil)
