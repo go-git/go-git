@@ -37,6 +37,9 @@ var (
 	ErrInvalidResponse = errors.New("invalid response")
 	// ErrTimeoutExceeded is returned when the timeout is exceeded.
 	ErrTimeoutExceeded = errors.New("timeout exceeded")
+	// ErrPackedObjectsNotSupported is returned when the server does not support
+	// packed objects.
+	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
 	// stdErrSkipPattern is used for skipping lines from a command's stderr output.
 	// Any line matching this pattern will be skipped from further
 	// processing and not be returned to calling code.

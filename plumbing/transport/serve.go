@@ -1,4 +1,4 @@
-package server
+package transport
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 )
 
@@ -23,7 +22,7 @@ var ErrUpdateReference = errors.New("failed to update ref")
 // AdvertiseReferences is a server command that implements the reference
 // discovery phase of the Git transfer protocol.
 func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, service string, stateless bool) error {
-	forPush := service == transport.ReceivePackServiceName
+	forPush := service == ReceivePackServiceName
 	ar := packp.NewAdvRefs()
 
 	// Set server default capabilities

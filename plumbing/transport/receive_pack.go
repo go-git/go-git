@@ -1,4 +1,4 @@
-package server
+package transport
 
 import (
 	"bufio"
@@ -13,7 +13,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 )
 
@@ -55,7 +54,7 @@ func ReceivePack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		if err := AdvertiseReferences(ctx, st, w, transport.ReceivePackServiceName, opts.StatelessRPC); err != nil {
+		if err := AdvertiseReferences(ctx, st, w, ReceivePackServiceName, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}

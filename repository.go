@@ -31,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
@@ -62,7 +63,7 @@ var (
 	ErrWorktreeNotProvided         = errors.New("worktree should be provided")
 	ErrIsBareRepository            = errors.New("worktree not available in a bare repository")
 	ErrUnableToResolveCommit       = errors.New("unable to resolve commit")
-	ErrPackedObjectsNotSupported   = errors.New("packed objects not supported")
+	ErrPackedObjectsNotSupported   = transport.ErrPackedObjectsNotSupported
 	ErrSHA256NotSupported          = errors.New("go-git was not compiled with SHA256 support")
 	ErrAlternatePathNotSupported   = errors.New("alternate path must use the file scheme")
 	ErrUnsupportedMergeStrategy    = errors.New("unsupported merge strategy")

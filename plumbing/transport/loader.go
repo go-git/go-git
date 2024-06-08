@@ -1,11 +1,10 @@
-package server
+package transport
 
 import (
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
@@ -21,7 +20,7 @@ type Loader interface {
 	// Load loads a storer.Storer given a transport.Endpoint.
 	// Returns transport.ErrRepositoryNotFound if the repository does not
 	// exist.
-	Load(ep *transport.Endpoint) (storage.Storer, error)
+	Load(ep *Endpoint) (storage.Storer, error)
 }
 
 type fsLoader struct {
@@ -38,11 +37,11 @@ func NewFilesystemLoader(base billy.Filesystem, strict bool) Loader {
 // Load looks up the endpoint's path in the base file system and returns a
 // storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
-func (l *fsLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+func (l *fsLoader) Load(ep *Endpoint) (storage.Storer, error) {
 	return l.load(ep, false)
 }
 
-func (l *fsLoader) load(ep *transport.Endpoint, tried bool) (storage.Storer, error) {
+func (l *fsLoader) load(ep *Endpoint, tried bool) (storage.Storer, error) {
 	fs, err := l.base.Chroot(ep.Path)
 	if err != nil {
 		return nil, err
@@ -57,7 +56,7 @@ func (l *fsLoader) load(ep *transport.Endpoint, tried bool) (storage.Storer, err
 			}
 			return l.load(ep, true)
 		}
-		return nil, transport.ErrRepositoryNotFound
+		return nil, ErrRepositoryNotFound
 	}
 
 	return filesystem.NewStorage(fs, cache.NewObjectLRUDefault()), nil
@@ -70,10 +69,10 @@ type MapLoader map[string]storer.Storer
 // Load returns a storer.Storer for given a transport.Endpoint by looking it up
 // in the map. Returns transport.ErrRepositoryNotFound if the endpoint does not
 // exist.
-func (l MapLoader) Load(ep *transport.Endpoint) (storer.Storer, error) {
+func (l MapLoader) Load(ep *Endpoint) (storer.Storer, error) {
 	s, ok := l[ep.String()]
 	if !ok {
-		return nil, transport.ErrRepositoryNotFound
+		return nil, ErrRepositoryNotFound
 	}
 
 	return s, nil

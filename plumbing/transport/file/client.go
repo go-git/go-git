@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/server"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
@@ -19,14 +18,14 @@ func init() {
 var DefaultTransport = NewTransport(nil)
 
 type runner struct {
-	loader server.Loader
+	loader transport.Loader
 }
 
 // NewTransport returns a new file transport that users go-git built-in server
 // implementation to serve repositories.
-func NewTransport(loader server.Loader) transport.Transport {
+func NewTransport(loader transport.Loader) transport.Transport {
 	if loader == nil {
-		loader = server.DefaultLoader
+		loader = transport.DefaultLoader
 	}
 	return transport.NewPackTransport(&runner{loader})
 }
@@ -47,7 +46,7 @@ func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint
 type command struct {
 	ctx         context.Context
 	ep          *transport.Endpoint
-	loader      server.Loader
+	loader      transport.Loader
 	service     string
 	gitProtocol string
 
@@ -71,11 +70,11 @@ func (c *command) Start() error {
 
 	switch c.service {
 	case transport.UploadPackServiceName:
-		opts := &server.UploadPackOptions{
+		opts := &transport.UploadPackOptions{
 			GitProtocol: c.gitProtocol,
 		}
 		go func() {
-			if err := server.UploadPack(
+			if err := transport.UploadPack(
 				c.ctx,
 				st,
 				io.NopCloser(c.stdin),
@@ -89,11 +88,11 @@ func (c *command) Start() error {
 		}()
 		return nil
 	case transport.ReceivePackServiceName:
-		opts := &server.ReceivePackOptions{
+		opts := &transport.ReceivePackOptions{
 			GitProtocol: c.gitProtocol,
 		}
 		go func() {
-			if err := server.ReceivePack(
+			if err := transport.ReceivePack(
 				c.ctx,
 				st,
 				io.NopCloser(c.stdin),

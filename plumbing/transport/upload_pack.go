@@ -1,4 +1,4 @@
-package server
+package transport
 
 import (
 	"bufio"
@@ -17,7 +17,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/revlist"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 )
 
@@ -58,7 +57,7 @@ func UploadPack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		if err := AdvertiseReferences(ctx, st, w, transport.UploadPackServiceName, opts.StatelessRPC); err != nil {
+		if err := AdvertiseReferences(ctx, st, w, UploadPackServiceName, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}
