@@ -22,7 +22,7 @@ var certs embed.FS
 
 // Make sure you close the server after the test.
 func SetupProxyServer(c *C, handler http.Handler, isTls, schemaAddr bool) (string, *http.Server, net.Listener) {
-	httpListener, err := net.Listen("tcp", ":0")
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, IsNil)
 
 	schema := "http"
