@@ -6,15 +6,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/revlist"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 )
 
@@ -55,7 +58,7 @@ func UploadPack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		if err := AdvertiseReferences(ctx, st, w, false); err != nil {
+		if err := AdvertiseReferences(ctx, st, w, transport.UploadPackServiceName, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}
@@ -76,14 +79,10 @@ func UploadPack(
 
 		// TODO: implement server negotiation algorithm
 		// Receive upload request
+
 		upreq := packp.NewUploadRequest()
 		if err := upreq.Decode(rd); err != nil {
 			return err
-		}
-
-		// TODO: support depth and shallows
-		if len(upreq.Shallows) > 0 {
-			return fmt.Errorf("shallow not supported")
 		}
 
 		var (
@@ -112,6 +111,23 @@ func UploadPack(
 		// to indicate that we are done reading from it.
 		if err := r.Close(); err != nil {
 			return fmt.Errorf("closing reader: %s", err)
+		}
+
+		// TODO: support deepen, deepen-since, and deepen-not
+		var shupd packp.ShallowUpdate
+		if !upreq.Depth.IsZero() {
+			switch depth := upreq.Depth.(type) {
+			case packp.DepthCommits:
+				if err := getShallowCommits(st, upreq.Wants, int(depth), &shupd); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unsupported depth type %T", upreq.Depth)
+			}
+
+			if err := shupd.Encode(w); err != nil {
+				return err
+			}
 		}
 
 		srvupd := packp.ServerResponse{}
@@ -158,4 +174,74 @@ func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbin
 	}
 
 	return revlist.Objects(st, wants, calcHaves)
+}
+
+func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
+	var i, curDepth int
+	var commit *object.Commit
+	depths := map[*object.Commit]int{}
+	stack := []object.Object{}
+
+	for commit != nil || i < len(heads) || len(stack) > 0 {
+		if commit == nil {
+			if i < len(heads) {
+				obj, err := st.EncodedObject(plumbing.CommitObject, heads[i])
+				i++
+				if err != nil {
+					continue
+				}
+
+				commit, err = object.DecodeCommit(st, obj)
+				if err != nil {
+					commit = nil
+					continue
+				}
+
+				depths[commit] = 0
+				curDepth = 0
+			} else if len(stack) > 0 {
+				commit = stack[len(stack)-1].(*object.Commit)
+				stack = stack[:len(stack)-1]
+				curDepth = depths[commit]
+			}
+		}
+
+		curDepth++
+
+		if depth != math.MaxInt && curDepth >= depth {
+			upd.Shallows = append(upd.Shallows, commit.Hash)
+			commit = nil
+			continue
+		}
+
+		upd.Unshallows = append(upd.Unshallows, commit.Hash)
+
+		parents := commit.Parents()
+		commit = nil
+		for {
+			parent, err := parents.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+
+			if depths[parent] != 0 && curDepth >= depths[parent] {
+				continue
+			}
+
+			depths[parent] = curDepth
+
+			if _, err := parents.Next(); err == nil {
+				stack = append(stack, parent)
+			} else {
+				commit = parent
+				curDepth = depths[commit]
+			}
+		}
+
+	}
+
+	return nil
 }

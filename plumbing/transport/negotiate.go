@@ -66,9 +66,12 @@ func NegotiatePack(
 
 	upreq.Wants = req.Wants
 
-	if req.Depth != 0 {
+	if req.Depth > 0 {
+		if !caps.Supports(capability.Shallow) {
+			return nil, fmt.Errorf("server doesn't support shallow clients")
+		}
+
 		upreq.Depth = packp.DepthCommits(req.Depth)
-		upreq.Capabilities.Set(capability.Shallow) // nolint: errcheck
 		upreq.Shallows, err = st.Shallow()
 		if err != nil {
 			return nil, err
@@ -98,10 +101,6 @@ func NegotiatePack(
 		done  bool
 		srvrs packp.ServerResponse
 	)
-
-	if err := upreq.Validate(); err != nil {
-		return nil, err
-	}
 
 	var shupd packp.ShallowUpdate
 	for !done {

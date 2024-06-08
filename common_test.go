@@ -96,7 +96,6 @@ func (s *BaseSuite) NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Reposit
 	}
 
 	return r
-
 }
 
 func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
