@@ -21,7 +21,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/revlist"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
@@ -547,7 +546,7 @@ func newClient(url string, insecure bool, cabundle []byte, proxyOpts transport.P
 	ep.CaBundle = cabundle
 	ep.Proxy = proxyOpts
 
-	c, err := client.NewClient(ep)
+	c, err := transport.Get(ep.Protocol)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -15,18 +15,16 @@ func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
 		return err
 	}
 
-	e := pktline.NewEncoder(w)
-
-	if err := req.encodeShallow(e, req.Shallow); err != nil {
+	if err := req.encodeShallow(w, req.Shallow); err != nil {
 		return err
 	}
 
-	if err := req.encodeCommands(e, req.Commands, req.Capabilities); err != nil {
+	if err := req.encodeCommands(w, req.Commands, req.Capabilities); err != nil {
 		return err
 	}
 
 	if req.Capabilities.Supports(capability.PushOptions) {
-		if err := req.encodeOptions(e, req.Options); err != nil {
+		if err := req.encodeOptions(w, req.Options); err != nil {
 			return err
 		}
 	}
@@ -42,32 +40,33 @@ func (req *ReferenceUpdateRequest) Encode(w io.Writer) error {
 	return nil
 }
 
-func (req *ReferenceUpdateRequest) encodeShallow(e *pktline.Encoder,
-	h *plumbing.Hash) error {
-
+func (req *ReferenceUpdateRequest) encodeShallow(w io.Writer,
+	h *plumbing.Hash,
+) error {
 	if h == nil {
 		return nil
 	}
 
 	objId := []byte(h.String())
-	return e.Encodef("%s%s", shallow, objId)
+	_, err := pktline.Writef(w, "%s%s", shallow, objId)
+	return err
 }
 
-func (req *ReferenceUpdateRequest) encodeCommands(e *pktline.Encoder,
-	cmds []*Command, cap *capability.List) error {
-
-	if err := e.Encodef("%s\x00%s",
+func (req *ReferenceUpdateRequest) encodeCommands(w io.Writer,
+	cmds []*Command, cap *capability.List,
+) error {
+	if _, err := pktline.Writef(w, "%s\x00%s",
 		formatCommand(cmds[0]), cap.String()); err != nil {
 		return err
 	}
 
 	for _, cmd := range cmds[1:] {
-		if err := e.Encodef(formatCommand(cmd)); err != nil {
+		if _, err := pktline.Writef(w, formatCommand(cmd)); err != nil {
 			return err
 		}
 	}
 
-	return e.Flush()
+	return pktline.WriteFlush(w)
 }
 
 func formatCommand(cmd *Command) string {
@@ -76,14 +75,14 @@ func formatCommand(cmd *Command) string {
 	return fmt.Sprintf("%s %s %s", o, n, cmd.Name)
 }
 
-func (req *ReferenceUpdateRequest) encodeOptions(e *pktline.Encoder,
-	opts []*Option) error {
-
+func (req *ReferenceUpdateRequest) encodeOptions(w io.Writer,
+	opts []*Option,
+) error {
 	for _, opt := range opts {
-		if err := e.Encodef("%s=%s", opt.Key, opt.Value); err != nil {
+		if _, err := pktline.Writef(w, "%s=%s", opt.Key, opt.Value); err != nil {
 			return err
 		}
 	}
 
-	return e.Flush()
+	return pktline.WriteFlush(w)
 }

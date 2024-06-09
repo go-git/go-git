@@ -33,7 +33,6 @@ type Progress interface {
 type Demuxer struct {
 	t Type
 	r io.Reader
-	s *pktline.Scanner
 
 	max     int
 	pending []byte
@@ -53,7 +52,6 @@ func NewDemuxer(t Type, r io.Reader) *Demuxer {
 		t:   t,
 		r:   r,
 		max: max,
-		s:   pktline.NewScanner(r),
 	}
 }
 
@@ -102,15 +100,12 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return content, nil
 	}
 
-	if !d.s.Scan() {
-		if err := d.s.Err(); err != nil {
-			return nil, err
-		}
-
-		return nil, io.EOF
+	_, p, err := pktline.ReadLine(d.r)
+	if err != nil {
+		return nil, err
 	}
 
-	content = d.s.Bytes()
+	content = p
 
 	size := len(content)
 	if size == 0 {

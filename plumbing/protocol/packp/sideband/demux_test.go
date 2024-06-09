@@ -21,11 +21,10 @@ func (s *SidebandSuite) TestDecode(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
-	e.Encode(PackData.WithPayload(expected[0:8]))
-	e.Encode(ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
-	e.Encode(PackData.WithPayload(expected[8:16]))
-	e.Encode(PackData.WithPayload(expected[16:26]))
+	pktline.Write(buf, PackData.WithPayload(expected[0:8]))
+	pktline.Write(buf, ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
+	pktline.Write(buf, PackData.WithPayload(expected[8:16]))
+	pktline.Write(buf, PackData.WithPayload(expected[16:26]))
 
 	content := make([]byte, 26)
 	d := NewDemuxer(Sideband64k, buf)
@@ -39,8 +38,7 @@ func (s *SidebandSuite) TestDecodeMoreThanContain(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
-	e.Encode(PackData.WithPayload(expected))
+	pktline.Write(buf, PackData.WithPayload(expected))
 
 	content := make([]byte, 42)
 	d := NewDemuxer(Sideband64k, buf)
@@ -54,11 +52,10 @@ func (s *SidebandSuite) TestDecodeWithError(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
-	e.Encode(PackData.WithPayload(expected[0:8]))
-	e.Encode(ErrorMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
-	e.Encode(PackData.WithPayload(expected[8:16]))
-	e.Encode(PackData.WithPayload(expected[16:26]))
+	pktline.Write(buf, PackData.WithPayload(expected[0:8]))
+	pktline.Write(buf, ErrorMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
+	pktline.Write(buf, PackData.WithPayload(expected[8:16]))
+	pktline.Write(buf, PackData.WithPayload(expected[16:26]))
 
 	content := make([]byte, 26)
 	d := NewDemuxer(Sideband64k, buf)
@@ -84,11 +81,10 @@ func (s *SidebandSuite) TestDecodeWithProgress(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
 	input := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(input)
-	e.Encode(PackData.WithPayload(expected[0:8]))
-	e.Encode(ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
-	e.Encode(PackData.WithPayload(expected[8:16]))
-	e.Encode(PackData.WithPayload(expected[16:26]))
+	pktline.Write(input, PackData.WithPayload(expected[0:8]))
+	pktline.Write(input, ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
+	pktline.Write(input, PackData.WithPayload(expected[8:16]))
+	pktline.Write(input, PackData.WithPayload(expected[16:26]))
 
 	output := bytes.NewBuffer(nil)
 	content := make([]byte, 26)
@@ -109,13 +105,12 @@ func (s *SidebandSuite) TestDecodeFlushEOF(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
 	input := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(input)
-	e.Encode(PackData.WithPayload(expected[0:8]))
-	e.Encode(ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
-	e.Encode(PackData.WithPayload(expected[8:16]))
-	e.Encode(PackData.WithPayload(expected[16:26]))
-	e.Flush()
-	e.Encode(PackData.WithPayload([]byte("bar\n")))
+	pktline.Write(input, PackData.WithPayload(expected[0:8]))
+	pktline.Write(input, ProgressMessage.WithPayload([]byte{'F', 'O', 'O', '\n'}))
+	pktline.Write(input, PackData.WithPayload(expected[8:16]))
+	pktline.Write(input, PackData.WithPayload(expected[16:26]))
+	pktline.WriteFlush(input)
+	pktline.Write(input, PackData.WithPayload([]byte("bar\n")))
 
 	output := bytes.NewBuffer(nil)
 	content := bytes.NewBuffer(nil)
@@ -134,8 +129,7 @@ func (s *SidebandSuite) TestDecodeFlushEOF(c *C) {
 
 func (s *SidebandSuite) TestDecodeWithUnknownChannel(c *C) {
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
-	e.Encode([]byte{'4', 'F', 'O', 'O', '\n'})
+	pktline.Write(buf, []byte{'4', 'F', 'O', 'O', '\n'})
 
 	content := make([]byte, 26)
 	d := NewDemuxer(Sideband64k, buf)
@@ -148,10 +142,9 @@ func (s *SidebandSuite) TestDecodeWithPending(c *C) {
 	expected := []byte("abcdefghijklmnopqrstuvwxyz")
 
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
-	e.Encode(PackData.WithPayload(expected[0:8]))
-	e.Encode(PackData.WithPayload(expected[8:16]))
-	e.Encode(PackData.WithPayload(expected[16:26]))
+	pktline.Write(buf, PackData.WithPayload(expected[0:8]))
+	pktline.Write(buf, PackData.WithPayload(expected[8:16]))
+	pktline.Write(buf, PackData.WithPayload(expected[16:26]))
 
 	content := make([]byte, 13)
 	d := NewDemuxer(Sideband64k, buf)
@@ -168,8 +161,7 @@ func (s *SidebandSuite) TestDecodeWithPending(c *C) {
 
 func (s *SidebandSuite) TestDecodeErrMaxPacked(c *C) {
 	buf := bytes.NewBuffer(nil)
-	e := pktline.NewEncoder(buf)
-	e.Encode(PackData.WithPayload(bytes.Repeat([]byte{'0'}, MaxPackedSize+1)))
+	pktline.Write(buf, PackData.WithPayload(bytes.Repeat([]byte{'0'}, MaxPackedSize+1)))
 
 	content := make([]byte, 13)
 	d := NewDemuxer(Sideband, buf)

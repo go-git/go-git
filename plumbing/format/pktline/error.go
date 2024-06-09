@@ -1,10 +1,8 @@
 package pktline
 
 import (
-	"bytes"
 	"errors"
 	"io"
-	"strings"
 )
 
 var (
@@ -12,7 +10,14 @@ var (
 	// error line.
 	ErrInvalidErrorLine = errors.New("expected an error-line")
 
+	// ErrNilWriter is returned when a nil writer is passed to WritePacket.
+	ErrNilWriter = errors.New("nil writer")
+
 	errPrefix = []byte("ERR ")
+)
+
+const (
+	errPrefixSize = LenSize
 )
 
 // ErrorLine is a packet line that contains an error message.
@@ -30,22 +35,17 @@ func (e *ErrorLine) Error() string {
 
 // Encode encodes the ErrorLine into a packet line.
 func (e *ErrorLine) Encode(w io.Writer) error {
-	p := NewEncoder(w)
-	return p.Encodef("%s%s\n", string(errPrefix), e.Text)
+	_, err := Writef(w, "%s%s\n", errPrefix, e.Text)
+	return err
 }
 
 // Decode decodes a packet line into an ErrorLine.
 func (e *ErrorLine) Decode(r io.Reader) error {
-	s := NewScanner(r)
-	if !s.Scan() {
-		return s.Err()
-	}
-
-	line := s.Bytes()
-	if !bytes.HasPrefix(line, errPrefix) {
+	_, _, err := ReadLine(r)
+	var el *ErrorLine
+	if !errors.As(err, &el) {
 		return ErrInvalidErrorLine
 	}
-
-	e.Text = strings.TrimSpace(string(line[4:]))
+	e.Text = el.Text
 	return nil
 }

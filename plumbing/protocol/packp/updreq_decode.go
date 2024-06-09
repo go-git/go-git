@@ -83,14 +83,16 @@ func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
 		rc = io.NopCloser(r)
 	}
 
-	d := &updReqDecoder{r: rc, s: pktline.NewScanner(r)}
+	d := &updReqDecoder{r: rc, pr: r}
 	return d.Decode(req)
 }
 
 type updReqDecoder struct {
 	r   io.ReadCloser
-	s   *pktline.Scanner
+	pr  io.Reader
 	req *ReferenceUpdateRequest
+
+	payload []byte
 }
 
 func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
@@ -113,16 +115,26 @@ func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
 	return nil
 }
 
-func (d *updReqDecoder) scanLine() error {
-	if ok := d.s.Scan(); !ok {
-		return d.scanErrorOr(ErrEmpty)
+func (d *updReqDecoder) readLine(e error) error {
+	_, p, err := pktline.ReadLine(d.pr)
+	if err == io.EOF {
+		return e
 	}
+	if err != nil {
+		return err
+	}
+
+	d.payload = p
 
 	return nil
 }
 
+func (d *updReqDecoder) scanLine() error {
+	return d.readLine(ErrEmpty)
+}
+
 func (d *updReqDecoder) decodeShallow() error {
-	b := d.s.Bytes()
+	b := d.payload
 
 	if !bytes.HasPrefix(b, shallowNoSp) {
 		return nil
@@ -137,8 +149,8 @@ func (d *updReqDecoder) decodeShallow() error {
 		return errInvalidShallowObjId(err)
 	}
 
-	if ok := d.s.Scan(); !ok {
-		return d.scanErrorOr(errNoCommands)
+	if err := d.readLine(errNoCommands); err != nil {
+		return err
 	}
 
 	d.req.Shallow = &h
@@ -148,8 +160,8 @@ func (d *updReqDecoder) decodeShallow() error {
 
 func (d *updReqDecoder) decodeCommands() error {
 	for {
-		b := d.s.Bytes()
-		if bytes.Equal(b, pktline.Flush) {
+		b := d.payload
+		if len(b) == 0 {
 			return nil
 		}
 
@@ -160,14 +172,14 @@ func (d *updReqDecoder) decodeCommands() error {
 
 		d.req.Commands = append(d.req.Commands, c)
 
-		if ok := d.s.Scan(); !ok {
-			return d.s.Err()
+		if err := d.readLine(nil); err != nil {
+			return err
 		}
 	}
 }
 
 func (d *updReqDecoder) decodeCommandAndCapabilities() error {
-	b := d.s.Bytes()
+	b := d.payload
 	i := bytes.IndexByte(b, 0)
 	if i == -1 {
 		return errMissingCapabilitiesDelimiter
@@ -238,12 +250,4 @@ func parseHash(s string) (plumbing.Hash, error) {
 
 	h := plumbing.NewHash(s)
 	return h, nil
-}
-
-func (d *updReqDecoder) scanErrorOr(origErr error) error {
-	if err := d.s.Err(); err != nil {
-		return err
-	}
-
-	return origErr
 }

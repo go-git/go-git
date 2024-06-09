@@ -30,7 +30,7 @@ func (s *AdvRefsEncodeSuite) TestZeroValue(c *C) {
 
 	expected := pktlines(c,
 		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -44,7 +44,7 @@ func (s *AdvRefsEncodeSuite) TestHead(c *C) {
 
 	expected := pktlines(c,
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -61,7 +61,7 @@ func (s *AdvRefsEncodeSuite) TestCapsNoHead(c *C) {
 
 	expected := pktlines(c,
 		"0000000000000000000000000000000000000000 capabilities^{}\x00multi_ack ofs-delta symref=HEAD:/refs/heads/master\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -80,7 +80,7 @@ func (s *AdvRefsEncodeSuite) TestCapsWithHead(c *C) {
 
 	expected := pktlines(c,
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack ofs-delta symref=HEAD:/refs/heads/master\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -104,7 +104,7 @@ func (s *AdvRefsEncodeSuite) TestRefs(c *C) {
 		"1111111111111111111111111111111111111111 refs/tags/v2.6.12-tree\n",
 		"2222222222222222222222222222222222222222 refs/tags/v2.6.13-tree\n",
 		"3333333333333333333333333333333333333333 refs/tags/v2.7.13-tree\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -135,7 +135,7 @@ func (s *AdvRefsEncodeSuite) TestPeeled(c *C) {
 		"2222222222222222222222222222222222222222 refs/tags/v2.6.13-tree\n",
 		"3333333333333333333333333333333333333333 refs/tags/v2.7.13-tree\n",
 		"4444444444444444444444444444444444444444 refs/tags/v2.7.13-tree^{}\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -158,7 +158,7 @@ func (s *AdvRefsEncodeSuite) TestShallow(c *C) {
 		"shallow 2222222222222222222222222222222222222222\n",
 		"shallow 3333333333333333333333333333333333333333\n",
 		"shallow 4444444444444444444444444444444444444444\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
@@ -213,7 +213,7 @@ func (s *AdvRefsEncodeSuite) TestAll(c *C) {
 		"shallow 2222222222222222222222222222222222222222\n",
 		"shallow 3333333333333333333333333333333333333333\n",
 		"shallow 4444444444444444444444444444444444444444\n",
-		pktline.FlushString,
+		"",
 	)
 
 	testEncode(c, ar, expected)
