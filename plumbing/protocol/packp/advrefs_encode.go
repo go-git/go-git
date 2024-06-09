@@ -47,16 +47,21 @@ func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	return e.err
 }
 
-func (e *advRefsEncoder) sortRefs() {
-	if len(e.data.References) > 0 {
-		refs := make([]string, 0, len(e.data.References))
-		for refName := range e.data.References {
-			refs = append(refs, refName)
+func sortRefs(refs map[string]plumbing.Hash) []string {
+	if len(refs) > 0 {
+		sortedRefs := make([]string, 0, len(refs))
+		for refName := range refs {
+			sortedRefs = append(sortedRefs, refName)
 		}
 
-		sort.Strings(refs)
-		e.sortedRefs = refs
+		sort.Strings(sortedRefs)
+		return sortedRefs
 	}
+	return nil
+}
+
+func (e *advRefsEncoder) sortRefs() {
+	e.sortedRefs = sortRefs(e.data.References)
 }
 
 func (e *advRefsEncoder) setFirstRef() {
