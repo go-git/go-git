@@ -122,7 +122,8 @@ func (o *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 }
 
 func (o *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (
-	size int64, err error) {
+	size int64, err error,
+) {
 	obj, ok := o.Objects[h]
 	if !ok {
 		return 0, plumbing.ErrObjectNotFound
@@ -189,6 +190,7 @@ func (o *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 func (o *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 	return nil, nil
 }
+
 func (o *ObjectStorage) DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error {
 	return nil
 }
@@ -198,6 +200,7 @@ var errNotSupported = fmt.Errorf("not supported")
 func (o *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {
 	return time.Time{}, errNotSupported
 }
+
 func (o *ObjectStorage) DeleteLooseObject(plumbing.Hash) error {
 	return errNotSupported
 }

@@ -2,6 +2,7 @@
 package git
 
 import (
+	"context"
 	"io"
 	"net"
 	"strconv"
@@ -16,22 +17,19 @@ func init() {
 }
 
 // DefaultClient is the default git client.
-var DefaultClient = transport.NewClient(&runner{})
+var DefaultClient = transport.NewPackTransport(&runner{})
 
 const DefaultPort = 9418
 
 type runner struct{}
 
 // Command returns a new Command for the given cmd in the given Endpoint
-func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod) (transport.Command, error) {
-	// auth not allowed since git protocol doesn't support authentication
-	if auth != nil {
-		return nil, transport.ErrInvalidAuthMethod
-	}
-	c := &command{command: cmd, endpoint: ep}
+func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, _ transport.AuthMethod, params ...string) (transport.Command, error) {
+	c := &command{command: cmd, endpoint: ep, params: params}
 	if err := c.connect(); err != nil {
 		return nil, err
 	}
+
 	return c, nil
 }
 
@@ -40,6 +38,7 @@ type command struct {
 	connected bool
 	command   string
 	endpoint  *transport.Endpoint
+	params    []string
 }
 
 // Start executes the command sending the required message to the TCP connection
@@ -47,7 +46,9 @@ func (c *command) Start() error {
 	req := packp.GitProtoRequest{
 		RequestCommand: c.command,
 		Pathname:       c.endpoint.Path,
+		ExtraParams:    c.params,
 	}
+
 	host := c.endpoint.Host
 	if c.endpoint.Port != DefaultPort {
 		host = net.JoinHostPort(c.endpoint.Host, strconv.Itoa(c.endpoint.Port))

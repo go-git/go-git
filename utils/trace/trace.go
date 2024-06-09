@@ -28,6 +28,9 @@ const (
 
 	// Packet traces git packets.
 	Packet
+
+	// Pack traces git packfiles.
+	Pack
 )
 
 // SetTarget sets the tracing targets.

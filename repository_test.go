@@ -72,7 +72,6 @@ func (s *RepositorySuite) TestInitWithOptions(c *C) {
 	ref, err := r.Head()
 	c.Assert(err, IsNil)
 	c.Assert(ref.Name().String(), Equals, "refs/heads/foo")
-
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch(c *C) {
@@ -166,7 +165,6 @@ func (s *RepositorySuite) TestInitBare(c *C) {
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Core.IsBare, Equals, true)
-
 }
 
 func (s *RepositorySuite) TestInitAlreadyExists(c *C) {
@@ -281,7 +279,7 @@ func (s *RepositorySuite) TestCloneWithTags(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: NoTags})
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: plumbing.NoTags})
 	c.Assert(err, IsNil)
 
 	remotes, err := r.Remotes()
@@ -1162,7 +1160,6 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 
 	_, err = fs.Stat(dummyFile)
 	c.Assert(err, IsNil)
-
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirectory(c *C) {
@@ -2193,6 +2190,7 @@ type mockErrCommitIter struct{}
 func (m *mockErrCommitIter) Next() (*object.Commit, error) {
 	return nil, errors.New("mock next error")
 }
+
 func (m *mockErrCommitIter) ForEach(func(*object.Commit) error) error {
 	return errors.New("mock foreach error")
 }
@@ -3246,7 +3244,8 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 }
 
 func (s *RepositorySuite) testRepackObjects(
-	c *C, deleteTime time.Time, expectedPacks int) {
+	c *C, deleteTime time.Time, expectedPacks int,
+) {
 	srcFs := fixtures.ByTag("unpacked").One().DotGit()
 	var sto storage.Storer
 	var err error
@@ -3460,7 +3459,7 @@ func BenchmarkPlainClone(b *testing.B) {
 		_, err := PlainClone(b.TempDir(), true, &CloneOptions{
 			URL:          "https://github.com/go-git/go-git.git",
 			Depth:        1,
-			Tags:         NoTags,
+			Tags:         plumbing.NoTags,
 			SingleBranch: true,
 		})
 		if err != nil {

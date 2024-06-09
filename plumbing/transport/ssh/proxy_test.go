@@ -60,7 +60,7 @@ func (s *ProxySuite) TestCommand(c *C) {
 		return &Password{User: user}, nil
 	}
 
-	ep := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
+	ep, _ := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
 	c.Assert(err, IsNil)
 	ep.Proxy = transport.ProxyOptions{
 		URL:      socksProxyAddr,
@@ -73,7 +73,7 @@ func (s *ProxySuite) TestCommand(c *C) {
 			HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 		},
 	}
-	_, err = runner.Command(transport.UploadPackServiceName, ep, nil)
+	_, err = runner.Command(context.TODO(), transport.UploadPackService.String(), ep, nil)
 	c.Assert(err, IsNil)
 	proxyUsed := atomic.LoadInt32(&socksProxiedRequests) > 0
 	c.Assert(proxyUsed, Equals, true)

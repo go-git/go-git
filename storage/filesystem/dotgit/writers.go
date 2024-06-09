@@ -226,7 +226,6 @@ func (s *syncedReader) sleep() {
 		atomic.StoreUint32(&s.blocked, 1)
 		<-s.news
 	}
-
 }
 
 func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {

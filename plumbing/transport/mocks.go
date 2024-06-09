@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"io"
 
 	"github.com/go-git/go-git/v5/utils/ioutil"
@@ -30,14 +31,14 @@ func (c mockCommand) Start() error {
 }
 
 func (c mockCommand) Close() error {
-	panic("not implemented")
+	return nil
 }
 
 type mockCommander struct {
 	stderr string
 }
 
-func (c mockCommander) Command(cmd string, ep *Endpoint, auth AuthMethod) (Command, error) {
+func (c mockCommander) Command(_ context.Context, cmd string, ep *Endpoint, auth AuthMethod, _ ...string) (Command, error) {
 	return &mockCommand{
 		stderr: *bytes.NewBufferString(c.stderr),
 	}, nil

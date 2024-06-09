@@ -23,9 +23,10 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 	var (
 		p   []byte
 		err error
+		l   int
 	)
 	for {
-		_, p, err = pktline.ReadLine(reader)
+		l, p, err = pktline.ReadLine(reader)
 		if err != nil {
 			break
 		}
@@ -36,8 +37,10 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 			err = r.decodeShallowLine(line)
 		case bytes.HasPrefix(line, unshallow):
 			err = r.decodeUnshallowLine(line)
-		case len(line) == 0:
+		case l == pktline.Flush:
 			return nil
+		default:
+			err = fmt.Errorf("unexpected shallow line: %q", line)
 		}
 
 		if err != nil {

@@ -13,10 +13,3 @@ updates:
       interval: "daily"
     commit-message:
       prefix: "build"
-
-  - package-ecosystem: "gomod"
-    directory: "/cli/go-git"
-    schedule:
-      interval: "daily"
-    commit-message:
-      prefix: "build"

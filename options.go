@@ -30,9 +30,7 @@ const (
 	DefaultSubmoduleRecursionDepth SubmoduleRescursivity = 10
 )
 
-var (
-	ErrMissingURL = errors.New("URL field is required")
-)
+var ErrMissingURL = errors.New("URL field is required")
 
 // CloneOptions describes how a clone should be performed.
 type CloneOptions struct {
@@ -71,7 +69,7 @@ type CloneOptions struct {
 	Progress sideband.Progress
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is AllTags.
-	Tags TagMode
+	Tags plumbing.TagMode
 	// InsecureSkipTLS skips ssl verify if protocol is https
 	InsecureSkipTLS bool
 	// CABundle specify additional ca bundle with system cert pool
@@ -122,8 +120,8 @@ func (o *CloneOptions) Validate() error {
 		o.ReferenceName = plumbing.HEAD
 	}
 
-	if o.Tags == InvalidTagMode {
-		o.Tags = AllTags
+	if o.Tags == plumbing.InvalidTagMode {
+		o.Tags = plumbing.AllTags
 	}
 
 	return nil
@@ -174,21 +172,6 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
-type TagMode int
-
-const (
-	InvalidTagMode TagMode = iota
-	// TagFollowing any tag that points into the histories being fetched is also
-	// fetched. TagFollowing requires a server with `include-tag` capability
-	// in order to fetch the annotated tags objects.
-	TagFollowing
-	// AllTags fetch all tags from the remote (i.e., fetch remote tags
-	// refs/tags/* into local tags with the same name)
-	AllTags
-	// NoTags fetch no tags from the remote at all
-	NoTags
-)
-
 // FetchOptions describes how a fetch should be performed
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
@@ -206,8 +189,8 @@ type FetchOptions struct {
 	// no-progress, is sent to the server to avoid send this information.
 	Progress sideband.Progress
 	// Tags describe how the tags will be fetched from the remote repository,
-	// by default is TagFollowing.
-	Tags TagMode
+	// by default is plumbing.TagFollowing.
+	Tags plumbing.TagMode
 	// Force allows the fetch to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool
@@ -228,8 +211,8 @@ func (o *FetchOptions) Validate() error {
 		o.RemoteName = DefaultRemoteName
 	}
 
-	if o.Tags == InvalidTagMode {
-		o.Tags = TagFollowing
+	if o.Tags == plumbing.InvalidTagMode {
+		o.Tags = plumbing.TagFollowing
 	}
 
 	for _, r := range o.RefSpecs {
@@ -484,9 +467,7 @@ type LogOptions struct {
 	Until *time.Time
 }
 
-var (
-	ErrMissingAuthor = errors.New("author field is required")
-)
+var ErrMissingAuthor = errors.New("author field is required")
 
 // AddOptions describes how an `add` operation should be performed
 type AddOptions struct {
@@ -738,9 +719,7 @@ type GrepOptions struct {
 	PathSpecs []*regexp.Regexp
 }
 
-var (
-	ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
-)
+var ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
 
 // Validate validates the fields and sets the default values.
 //

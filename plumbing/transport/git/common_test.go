@@ -11,7 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -44,6 +48,8 @@ func (s *BaseSuite) SetUpTest(c *C) {
 
 	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
 	c.Assert(err, IsNil)
+
+	s.StartDaemon(c)
 }
 
 func (s *BaseSuite) StartDaemon(c *C) {
@@ -55,9 +61,6 @@ func (s *BaseSuite) StartDaemon(c *C) {
 		"--enable=receive-pack",
 		"--reuseaddr",
 		fmt.Sprintf("--port=%d", s.port),
-		// Unless max-connections is limited to 1, a git-receive-pack
-		// might not be seen by a subsequent operation.
-		"--max-connections=1",
 	)
 
 	// Environment must be inherited in order to acknowledge GIT_EXEC_PATH if set.
@@ -68,6 +71,10 @@ func (s *BaseSuite) StartDaemon(c *C) {
 
 	// Connections might be refused if we start sending request too early.
 	time.Sleep(time.Millisecond * 500)
+
+	go func() {
+		_ = s.daemon.Wait()
+	}()
 }
 
 func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
@@ -77,7 +84,7 @@ func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 	return ep
 }
 
-func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) (*transport.Endpoint, storage.Storer) {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
@@ -86,14 +93,14 @@ func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *t
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
 	c.Assert(err, IsNil)
+	fs = osfs.New(path)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(c, name), filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 }
 
 func (s *BaseSuite) TearDownTest(c *C) {
-	if s.daemon != nil {
+	if s.daemon != nil && s.daemon.ProcessState == nil {
 		_ = s.daemon.Process.Signal(os.Kill)
-		_ = s.daemon.Wait()
 	}
 
 	if s.base != "" {

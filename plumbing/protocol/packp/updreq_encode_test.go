@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -14,9 +13,9 @@ type UpdReqEncodeSuite struct{}
 
 var _ = Suite(&UpdReqEncodeSuite{})
 
-func (s *UpdReqEncodeSuite) testEncode(c *C, input *ReferenceUpdateRequest,
-	expected []byte) {
-
+func (s *UpdReqEncodeSuite) testEncode(c *C, input *UpdateRequests,
+	expected []byte,
+) {
 	var buf bytes.Buffer
 	c.Assert(input.Encode(&buf), IsNil)
 	obtained := buf.Bytes()
@@ -26,11 +25,11 @@ func (s *UpdReqEncodeSuite) testEncode(c *C, input *ReferenceUpdateRequest,
 }
 
 func (s *UpdReqEncodeSuite) TestZeroValue(c *C) {
-	r := &ReferenceUpdateRequest{}
+	r := &UpdateRequests{}
 	var buf bytes.Buffer
 	c.Assert(r.Encode(&buf), Equals, ErrEmptyCommands)
 
-	r = NewReferenceUpdateRequest()
+	r = NewUpdateRequests()
 	c.Assert(r.Encode(&buf), Equals, ErrEmptyCommands)
 }
 
@@ -39,7 +38,7 @@ func (s *UpdReqEncodeSuite) TestOneUpdateCommand(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
@@ -56,7 +55,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommands(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -77,7 +76,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -99,7 +98,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -124,21 +123,15 @@ func (s *UpdReqEncodeSuite) TestWithPackfile(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	packfileContent := []byte("PACKabc")
-	packfileReader := bytes.NewReader(packfileContent)
-	packfileReadCloser := io.NopCloser(packfileReader)
-
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
-	r.Packfile = packfileReadCloser
 
 	expected := pktlines(c,
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	)
-	expected = append(expected, packfileContent...)
 
 	s.testEncode(c, r, expected)
 }
@@ -148,7 +141,7 @@ func (s *UpdReqEncodeSuite) TestPushOptions(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Capabilities.Set(capability.PushOptions)
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
@@ -174,7 +167,7 @@ func (s *UpdReqEncodeSuite) TestPushAtomic(c *C) {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	r := NewReferenceUpdateRequest()
+	r := NewUpdateRequests()
 	r.Capabilities.Set(capability.Atomic)
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},

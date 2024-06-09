@@ -75,7 +75,7 @@ func errMalformedCommand(err error) error {
 }
 
 // Decode reads the next update-request message form the reader and wr
-func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
+func (req *UpdateRequests) Decode(r io.Reader) error {
 	var rc io.ReadCloser
 	var ok bool
 	rc, ok = r.(io.ReadCloser)
@@ -90,19 +90,20 @@ func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
 type updReqDecoder struct {
 	r   io.ReadCloser
 	pr  io.Reader
-	req *ReferenceUpdateRequest
+	req *UpdateRequests
 
 	payload []byte
+	length  int // length of the pktline payload
 }
 
-func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
+func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 	d.req = req
 	funcs := []func() error{
 		d.scanLine,
 		d.decodeShallow,
 		d.decodeCommandAndCapabilities,
 		d.decodeCommands,
-		d.setPackfile,
+		d.decodeFlush,
 		req.validate,
 	}
 
@@ -116,7 +117,7 @@ func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
 }
 
 func (d *updReqDecoder) readLine(e error) error {
-	_, p, err := pktline.ReadLine(d.pr)
+	l, p, err := pktline.ReadLine(d.pr)
 	if err == io.EOF {
 		return e
 	}
@@ -125,6 +126,7 @@ func (d *updReqDecoder) readLine(e error) error {
 	}
 
 	d.payload = p
+	d.length = l
 
 	return nil
 }
@@ -178,6 +180,18 @@ func (d *updReqDecoder) decodeCommands() error {
 	}
 }
 
+func (d *updReqDecoder) decodeFlush() error {
+	if err := d.readLine(nil); err != nil {
+		return err
+	}
+
+	if len(d.payload) != 0 || d.length != pktline.Flush {
+		return errMalformedRequest("unexpected data after flush")
+	}
+
+	return nil
+}
+
 func (d *updReqDecoder) decodeCommandAndCapabilities() error {
 	b := d.payload
 	i := bytes.IndexByte(b, 0)
@@ -203,12 +217,6 @@ func (d *updReqDecoder) decodeCommandAndCapabilities() error {
 	if err := d.scanLine(); err != nil {
 		return err
 	}
-
-	return nil
-}
-
-func (d *updReqDecoder) setPackfile() error {
-	d.req.Packfile = d.r
 
 	return nil
 }

@@ -61,10 +61,11 @@ func NewDemuxer(t Type, r io.Reader) *Demuxer {
 //
 // When a ProgressMessage is read, is not copy to b, instead of this is written
 // to the Progress
-func (d *Demuxer) Read(b []byte) (n int, err error) {
-	var read, req int
-
-	req = len(b)
+//
+// Read will return io.EOF when a flush packet is received after reading all
+// the PackData channel data.
+func (d *Demuxer) Read(b []byte) (read int, err error) {
+	req := len(b)
 	for read < req {
 		n, err := d.doRead(b[read:req])
 		read += n
@@ -100,17 +101,17 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return content, nil
 	}
 
-	_, p, err := pktline.ReadLine(d.r)
+	l, p, err := pktline.ReadLine(d.r)
 	if err != nil {
 		return nil, err
 	}
 
 	content = p
-
-	size := len(content)
-	if size == 0 {
+	if l == pktline.Flush {
+		// Done demultiplex sidebands. Use io.EOF to indicate the end of
+		// sideband packets.
 		return nil, io.EOF
-	} else if size > d.max {
+	} else if l > d.max {
 		return nil, ErrMaxPackedExceeded
 	}
 

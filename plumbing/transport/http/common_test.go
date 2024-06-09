@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -43,10 +44,10 @@ func (s *UploadPackSuite) TestNewClient(c *C) {
 	roundTripper := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	cl := &http.Client{Transport: roundTripper}
-	r, ok := NewClient(cl).(*client)
+	cl := &TransportOptions{Client: &http.Client{Transport: roundTripper}}
+	r, ok := NewTransport(cl).(*client)
 	c.Assert(ok, Equals, true)
-	c.Assert(r.client, Equals, cl)
+	c.Assert(r.client, Equals, cl.Client)
 }
 
 func (s *ClientSuite) TestNewBasicAuth(c *C) {
@@ -71,7 +72,7 @@ func (s *ClientSuite) TestNewTokenAuth(c *C) {
 
 func (s *ClientSuite) TestNewErrOK(c *C) {
 	res := &http.Response{StatusCode: http.StatusOK}
-	err := NewErr(res)
+	err := checkError(res)
 	c.Assert(err, IsNil)
 }
 
@@ -96,9 +97,10 @@ func (s *ClientSuite) TestNewUnexpectedError(c *C) {
 	res := &http.Response{
 		StatusCode: 500,
 		Body:       io.NopCloser(strings.NewReader("Unexpected error")),
+		Request:    &http.Request{URL: &url.URL{}},
 	}
 
-	err := NewErr(res)
+	err := checkError(res)
 	c.Assert(err, NotNil)
 	c.Assert(err, FitsTypeOf, &plumbing.UnexpectedError{})
 
@@ -110,13 +112,13 @@ func (s *ClientSuite) TestNewUnexpectedError(c *C) {
 }
 
 func (s *ClientSuite) Test_newSession(c *C) {
-	cl := NewClientWithOptions(nil, &ClientOptions{
+	cl := NewTransport(&TransportOptions{
 		CacheMaxEntries: 2,
 	}).(*client)
 
 	insecureEP := s.Endpoint
 	insecureEP.InsecureSkipTLS = true
-	session, err := newSession(cl, insecureEP, nil)
+	session, err := newSession(nil, cl, insecureEP, nil, false)
 	c.Assert(err, IsNil)
 
 	sessionTransport := session.client.Transport.(*http.Transport)
@@ -131,7 +133,7 @@ func (s *ClientSuite) Test_newSession(c *C) {
 
 	caEndpoint := insecureEP
 	caEndpoint.CaBundle = []byte("this is the way")
-	session, err = newSession(cl, caEndpoint, nil)
+	session, err = newSession(nil, cl, caEndpoint, nil, false)
 	c.Assert(err, IsNil)
 
 	sessionTransport = session.client.Transport.(*http.Transport)
@@ -146,7 +148,7 @@ func (s *ClientSuite) Test_newSession(c *C) {
 	// cached transport should be the one that's used.
 	c.Assert(sessionTransport, Equals, t)
 
-	session, err = newSession(cl, caEndpoint, nil)
+	session, err = newSession(nil, cl, caEndpoint, nil, false)
 	c.Assert(err, IsNil)
 	sessionTransport = session.client.Transport.(*http.Transport)
 	// transport that's going to be used should be cached already.
@@ -156,7 +158,7 @@ func (s *ClientSuite) Test_newSession(c *C) {
 
 	// if the cache does not exist, the transport should still be correctly configured.
 	cl.transports = nil
-	session, err = newSession(cl, insecureEP, nil)
+	session, err = newSession(nil, cl, insecureEP, nil, false)
 	c.Assert(err, IsNil)
 
 	sessionTransport = session.client.Transport.(*http.Transport)
@@ -170,16 +172,16 @@ func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 		Request:    req,
 	}
 
-	err := NewErr(res)
+	err := checkError(res)
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, msg)
 }
 
 func (s *ClientSuite) TestSetAuth(c *C) {
 	auth := &BasicAuth{}
-	r, err := DefaultClient.NewUploadPackSession(s.Endpoint, auth)
+	r, err := DefaultTransport.NewSession(memory.NewStorage(), s.Endpoint, auth)
 	c.Assert(err, IsNil)
-	c.Assert(auth, Equals, r.(*upSession).auth)
+	c.Assert(auth, Equals, r.(*session).auth)
 }
 
 type mockAuth struct{}
@@ -188,19 +190,19 @@ func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
 func (s *ClientSuite) TestSetAuthWrongType(c *C) {
-	_, err := DefaultClient.NewUploadPackSession(s.Endpoint, &mockAuth{})
+	_, err := DefaultTransport.NewSession(memory.NewStorage(), s.Endpoint, &mockAuth{})
 	c.Assert(err, Equals, transport.ErrInvalidAuthMethod)
 }
 
 func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
-	sess := &session{endpoint: nil}
+	sess := &session{ep: nil}
 	u, _ := url.Parse("https://example.com/info/refs")
 	res := &http.Response{Request: &http.Request{URL: u}}
 	c.Assert(func() {
 		sess.ModifyEndpointIfRedirect(res)
 	}, PanicMatches, ".*nil pointer dereference.*")
 
-	sess = &session{endpoint: nil}
+	sess = &session{ep: nil}
 	// no-op - should return and not panic
 	sess.ModifyEndpointIfRedirect(&http.Response{})
 
@@ -210,17 +212,21 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 		expected *transport.Endpoint
 	}{
 		{"https://example.com/foo/bar", nil, nil},
-		{"https://example.com/foo.git/info/refs",
+		{
+			"https://example.com/foo.git/info/refs",
 			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"}},
-		{"https://example.com:8080/foo.git/info/refs",
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"},
+		},
+		{
+			"https://example.com:8080/foo.git/info/refs",
 			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"}},
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"},
+		},
 	}
 
 	for _, d := range data {
 		u, _ := url.Parse(d.url)
-		sess := &session{endpoint: d.endpoint}
+		sess := &session{ep: d.endpoint}
 		sess.ModifyEndpointIfRedirect(&http.Response{
 			Request: &http.Request{URL: u},
 		})
@@ -246,7 +252,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	s.port = l.Addr().(*net.TCPAddr).Port
 	s.base = filepath.Join(base, s.host)
 
-	err = os.MkdirAll(s.base, 0755)
+	err = os.MkdirAll(s.base, 0o755)
 	c.Assert(err, IsNil)
 
 	cmd := exec.Command("git", "--exec-path")

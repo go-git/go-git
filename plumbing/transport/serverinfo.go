@@ -1,10 +1,9 @@
-package serverinfo
+package transport
 
 import (
 	"fmt"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/internal/reference"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -20,7 +19,7 @@ import (
 func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 	pos, ok := s.(storer.PackedObjectStorer)
 	if !ok {
-		return git.ErrPackedObjectsNotSupported
+		return ErrPackedObjectsNotSupported
 	}
 
 	infoRefs, err := fs.Create("info/refs")

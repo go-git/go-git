@@ -40,7 +40,7 @@ func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	e.sortRefs()
 	e.setFirstRef()
 
-	for state := encodePrefix; state != nil; {
+	for state := encodeFirstLine; state != nil; {
 		state = state(e)
 	}
 
@@ -74,22 +74,6 @@ func (e *advRefsEncoder) setFirstRef() {
 }
 
 type encoderStateFn func(*advRefsEncoder) encoderStateFn
-
-func encodePrefix(e *advRefsEncoder) encoderStateFn {
-	for _, p := range e.data.Prefix {
-		if len(p) == 0 {
-			if e.err = pktline.WriteFlush(e.w); e.err != nil {
-				return nil
-			}
-			continue
-		}
-		if _, e.err = pktline.WriteString(e.w, string(p)+"\n"); e.err != nil {
-			return nil
-		}
-	}
-
-	return encodeFirstLine
-}
 
 // Adds the first pkt-line payload: head hash, head ref and capabilities.
 // If HEAD ref is not found, the first reference ordered in increasing order will be used.
