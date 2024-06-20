@@ -31,6 +31,12 @@ var (
 	Flush = []byte{}
 	// FlushString is the payload to use with the EncodeString method to encode a flush-pkt.
 	FlushString = ""
+	// DelimPkt is the delimiter packet used in v2
+	DelimPkt = []byte{'0', '0', '0', '1'}
+	// EndPkt is the end packet used in v2
+	EndPkt = []byte{'0', '0', '0', '2'}
+	// Delim is the payload of a delimpkt
+	Delim = []byte{'0'}
 	// ErrPayloadTooLong is returned by the Encode methods when any of the
 	// provided payloads is bigger than MaxPayloadSize.
 	ErrPayloadTooLong = errors.New("payload is too long")
@@ -47,6 +53,18 @@ func NewEncoder(w io.Writer) *Encoder {
 func (e *Encoder) Flush() error {
 	defer trace.Packet.Print("packet: > 0000")
 	_, err := e.w.Write(FlushPkt)
+	return err
+}
+
+// Delim encodes a delim-pkt to the output stream.
+func (e *Encoder) Delim() error {
+	_, err := e.w.Write(DelimPkt)
+	return err
+}
+
+// End encodes an end-pkt to the output stream.
+func (e *Encoder) End() error {
+	_, err := e.w.Write(EndPkt)
 	return err
 }
 
