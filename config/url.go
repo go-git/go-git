@@ -17,7 +17,7 @@ type URL struct {
 	Name string
 	// Any URL that starts with this value will be rewritten to start, instead, with <base>.
 	// When more than one insteadOf strings match a given URL, the longest match is used.
-	InsteadOf string
+	InsteadOf []string
 
 	// raw representation of the subsection, filled by marshal or unmarshal are
 	// called.
@@ -26,7 +26,7 @@ type URL struct {
 
 // Validate validates fields of branch
 func (b *URL) Validate() error {
-	if b.InsteadOf == "" {
+	if len(b.InsteadOf) == 0 {
 		return errURLEmptyInsteadOf
 	}
 
@@ -41,7 +41,7 @@ func (u *URL) unmarshal(s *format.Subsection) error {
 	u.raw = s
 
 	u.Name = s.Name
-	u.InsteadOf = u.raw.Option(insteadOfKey)
+	u.InsteadOf = u.raw.OptionAll(insteadOfKey)
 	return nil
 }
 
@@ -51,21 +51,28 @@ func (u *URL) marshal() *format.Subsection {
 	}
 
 	u.raw.Name = u.Name
-	u.raw.SetOption(insteadOfKey, u.InsteadOf)
+	u.raw.SetOption(insteadOfKey, u.InsteadOf...)
 
 	return u.raw
 }
 
 func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
 	var longestMatch *URL
-	for _, u := range urls {
-		if !strings.HasPrefix(remoteURL, u.InsteadOf) {
-			continue
-		}
+	var longestMatchLength int
 
-		// according to spec if there is more than one match, take the logest
-		if longestMatch == nil || len(longestMatch.InsteadOf) < len(u.InsteadOf) {
-			longestMatch = u
+	for _, u := range urls {
+		for _, currentInsteadOf := range u.InsteadOf {
+			if !strings.HasPrefix(remoteURL, currentInsteadOf) {
+				continue
+			}
+
+			lengthCurrentInsteadOf := len(currentInsteadOf)
+
+			// according to spec if there is more than one match, take the longest
+			if longestMatch == nil || longestMatchLength < lengthCurrentInsteadOf {
+				longestMatch = u
+				longestMatchLength = lengthCurrentInsteadOf
+			}
 		}
 	}
 
@@ -73,9 +80,11 @@ func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
 }
 
 func (u *URL) ApplyInsteadOf(url string) string {
-	if !strings.HasPrefix(url, u.InsteadOf) {
-		return url
+	for _, j := range u.InsteadOf {
+		if strings.HasPrefix(url, j) {
+			return u.Name + url[len(j):]
+		}
 	}
 
-	return u.Name + url[len(u.InsteadOf):]
+	return url
 }
