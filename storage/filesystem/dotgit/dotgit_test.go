@@ -611,7 +611,7 @@ func (s *SuiteDotGit) TestObjectsExclusive(c *C) {
 	testObjectsWithPrefix(c, fs, dir)
 }
 
-func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
+func testObjects(c *C, _ billy.Filesystem, dir *DotGit) {
 	hashes, err := dir.Objects()
 	c.Assert(err, IsNil)
 	c.Assert(hashes, HasLen, 187)
@@ -620,7 +620,7 @@ func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
 	c.Assert(hashes[2].String(), Equals, "03db8e1fbe133a480f2867aac478fd866686d69e")
 }
 
-func testObjectsWithPrefix(c *C, fs billy.Filesystem, dir *DotGit) {
+func testObjectsWithPrefix(c *C, _ billy.Filesystem, dir *DotGit) {
 	prefix, _ := hex.DecodeString("01d5")
 	hashes, err := dir.ObjectsWithPrefix(prefix)
 	c.Assert(err, IsNil)
