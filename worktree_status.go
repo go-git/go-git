@@ -47,8 +47,45 @@ func (w *Worktree) Status() (Status, error) {
 	return w.status(hash)
 }
 
+func (w *Worktree) newStatusFromIndex() (Status, error) {
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return nil, err
+	}
+
+	idxRoot := mindex.NewRootNode(idx)
+	nodes := []noder.Noder{idxRoot}
+
+	if err != nil {
+		return nil, err
+	}
+
+	status := make(Status)
+
+	for len(nodes) > 0 {
+		var node noder.Noder
+		node, nodes = nodes[0], nodes[1:]
+		if node.IsDir() {
+			children, err := node.Children()
+			if err != nil {
+				return nil, err
+			}
+			nodes = append(nodes, children...)
+			continue
+		}
+		fs := status.File(node.Name())
+		fs.Worktree = Unmodified
+		fs.Staging = Unmodified
+	}
+
+	return status, nil
+}
+
 func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
-	s := make(Status)
+	s, err := w.newStatusFromIndex()
+	if err != nil {
+		return nil, err
+	}
 
 	left, err := w.diffCommitWithStaging(commit, false)
 	if err != nil {
