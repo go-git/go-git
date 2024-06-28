@@ -865,10 +865,11 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 	if err != nil {
 		return err
 	}
+	m := gitignore.NewMatcher([]gitignore.Pattern{})
 	return w.doClean(s, opts, root, files)
 }
 
-func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files []os.FileInfo) error {
+func (w *Worktree) doClean(status Status, matcher gitignore.Matcher, opts *CleanOptions, dir string, files []os.FileInfo) error {
 	for _, fi := range files {
 		if fi.Name() == GitDirName {
 			continue
@@ -885,12 +886,12 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files 
 			if err != nil {
 				return err
 			}
-			err = w.doClean(status, opts, path, subfiles)
+			err = w.doClean(status, matcher, opts, path, subfiles)
 			if err != nil {
 				return err
 			}
 		} else {
-			if status.IsUntracked(path) {
+			if status.IsUntracked(path) || (opts.All && matcher.Match(strings.Split(path, string(os.PathSeparator)), false)) {
 				if err := w.Filesystem.Remove(path); err != nil {
 					return err
 				}

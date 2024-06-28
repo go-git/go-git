@@ -2371,6 +2371,45 @@ func (s *WorktreeSuite) TestClean(c *C) {
 	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
 }
 
+func (s *WorktreeSuite) TestCleanAll(c *C) {
+	fs := fixtures.Basic().ByTag("worktree").One().Worktree()
+	r, err := PlainOpen(fs.Root())
+	c.Assert(err, IsNil)
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	err = util.WriteFile(w.Filesystem, ".gitignore", []byte("foo\n"), 0755)
+	c.Assert(err, IsNil)
+
+	_, err = w.Add(".")
+	c.Assert(err, IsNil)
+
+	commitOpts := &CommitOptions{Author: &object.Signature{Name: "foo", Email: "foo@foo.foo", When: time.Now()}}
+	_, err = w.Commit("Add gitignore", commitOpts)
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(len(status), Equals, 0)
+
+	err = util.WriteFile(w.Filesystem, "foo", []byte("foo\n"), 0755)
+	c.Assert(err, IsNil)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(len(status), Equals, 0)
+
+	err = w.Clean(&CleanOptions{All: true, Dir: true})
+	c.Assert(err, IsNil)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(len(status), Equals, 0)
+
+	_, err = fs.Lstat("foo")
+	c.Assert(err, ErrorMatches, ".*(no such file or directory.*|.*file does not exist)*.")
+}
+
 func (s *WorktreeSuite) TestCleanBare(c *C) {
 	storer := memory.NewStorage()
 
