@@ -225,7 +225,6 @@ func (d *Decoder) readExtensions(idx *Index) error {
 		peeked, err = d.buf.Peek(peekLen)
 		if len(peeked) < peekLen {
 			// there can't be an extension at this point, so let's bail out
-			err = nil
 			break
 		}
 		if err != nil {
