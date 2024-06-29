@@ -44,7 +44,7 @@ func main() {
 		if err != nil {
 			// After it reaches the end, continue
 			if err == io.EOF {
-				continue
+				break
 			}
 			CheckIfError(err)
 		}
