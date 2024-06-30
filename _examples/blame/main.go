@@ -21,14 +21,10 @@ func main() {
 
 	// Clone the given repository.
 	Info("git clone %s %s", url, tmp)
-	r, err := git.PlainClone(
-		tmp,
-		false,
-		&git.CloneOptions{
-			URL:  url,
-			Tags: git.NoTags,
-		},
-	)
+	r, err := git.PlainClone(tmp, &git.CloneOptions{
+		URL:  url,
+		Tags: git.NoTags,
+	})
 	CheckIfError(err)
 
 	// Retrieve the branch's HEAD, to then get the HEAD commit.
