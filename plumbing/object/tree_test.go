@@ -1648,6 +1648,7 @@ func (s *TreeSuite) TestTreeDecodeReadBug(c *C) {
 	var obtained Tree
 	err := obtained.Decode(obj)
 	c.Assert(err, IsNil)
+	c.Assert(len(obtained.Entries), Equals, len(expected.Entries))
 	c.Assert(entriesEquals(obtained.Entries, expected.Entries), Equals, true)
 }
 

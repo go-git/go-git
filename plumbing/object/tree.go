@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,9 +13,9 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/sync"
 )
 
 const (
@@ -232,41 +233,39 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	r := sync.GetBufioReader(reader)
-	defer sync.PutBufioReader(r)
+	buf := make([]byte, o.Size())
 
+	// use ReadFull to ensure we read the whole object
+	// even if multiple Read calls are needed
+	readSize, err := io.ReadFull(reader, buf)
+	if err != nil {
+		return fmt.Errorf("decoding tree object, expected to read %d bytes, got %d: %w", o.Size(), readSize, err)
+	}
+
+	myBuf := buf
 	for {
-		str, err := r.ReadString(' ')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return err
+		te := TreeEntry{}
+		endOfModeIdx := bytes.IndexByte(myBuf, ' ')
+		if endOfModeIdx == -1 {
+			// the end of the buffer has been reached
+			break
 		}
-		str = str[:len(str)-1] // strip last byte (' ')
-
-		mode, err := filemode.New(str)
+		modeStr := string(myBuf[:endOfModeIdx])
+		te.Mode, err = filemode.New(modeStr)
 		if err != nil {
 			return err
 		}
 
-		name, err := r.ReadString(0)
-		if err != nil && err != io.EOF {
-			return err
-		}
+		myBuf = myBuf[endOfModeIdx+1:]
+		endOfNameIdx := bytes.IndexByte(myBuf, 0)
+		te.Name = string(myBuf[:endOfNameIdx])
 
-		var hash plumbing.Hash
-		if _, err = io.ReadFull(r, hash[:]); err != nil {
-			return err
-		}
+		myBuf = myBuf[endOfNameIdx+1:]
 
-		baseName := name[:len(name)-1]
-		t.Entries = append(t.Entries, TreeEntry{
-			Hash: hash,
-			Mode: mode,
-			Name: baseName,
-		})
+		copy(te.Hash[:], myBuf)
+
+		t.Entries = append(t.Entries, te)
+		myBuf = myBuf[hash.Size:]
 	}
 
 	return nil
