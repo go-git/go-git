@@ -484,7 +484,8 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 func (s *WorktreeSuite) TestCheckoutSparse(c *C) {
 	fs := memfs.New()
 	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+		URL:        s.GetBasicLocalRepositoryURL(),
+		NoCheckout: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -1263,6 +1264,29 @@ func (s *WorktreeSuite) TestResetHardWithGitIgnore(c *C) {
 	status, err = w.Status()
 	c.Assert(err, IsNil)
 	c.Assert(status.IsClean(), Equals, true)
+}
+
+func (s *WorktreeSuite) TestResetSparsely(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	sparseResetDirs := []string{"php"}
+
+	err := w.ResetSparsely(&ResetOptions{Mode: HardReset}, sparseResetDirs)
+	c.Assert(err, IsNil)
+
+	files, err := fs.ReadDir("/")
+	c.Assert(err, IsNil)
+	c.Assert(files, HasLen, 1)
+	c.Assert(files[0].Name(), Equals, "php")
+
+	files, err = fs.ReadDir("/php")
+	c.Assert(err, IsNil)
+	c.Assert(files, HasLen, 1)
+	c.Assert(files[0].Name(), Equals, "crappy.php")
 }
 
 func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
