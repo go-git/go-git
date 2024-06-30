@@ -224,9 +224,6 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		return nil
 	}
 
-	t.Entries = nil
-	t.m = nil
-
 	reader, err := o.Reader()
 	if err != nil {
 		return err
@@ -241,6 +238,11 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	if err != nil {
 		return fmt.Errorf("decoding tree object, expected to read %d bytes, got %d: %w", o.Size(), readSize, err)
 	}
+
+	// estimate the amount of tree entries by counting the number of null bytes
+	entryEstimate := bytes.Count(buf[:readSize], []byte{0x00})
+	t.Entries = make([]TreeEntry, 0, entryEstimate)
+	t.m = nil
 
 	myBuf := buf
 	for {
