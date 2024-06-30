@@ -44,6 +44,8 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("ignore.crlf\r\n"))
 	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("ignore_dir\n"))
+	c.Assert(err, IsNil)
 	err = f.Close()
 	c.Assert(err, IsNil)
 
@@ -52,6 +54,17 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 	f, err = fs.Create("vendor/.gitignore")
 	c.Assert(err, IsNil)
 	_, err = f.Write([]byte("!github.com/\n"))
+	c.Assert(err, IsNil)
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	err = fs.MkdirAll("ignore_dir", os.ModePerm)
+	c.Assert(err, IsNil)
+	f, err = fs.Create("ignore_dir/.gitignore")
+	c.Assert(err, IsNil)
+	_, err = f.Write([]byte("!file\n"))
+	c.Assert(err, IsNil)
+	_, err = fs.Create("ignore_dir/file")
 	c.Assert(err, IsNil)
 	err = f.Close()
 	c.Assert(err, IsNil)
@@ -267,12 +280,13 @@ func (s *MatcherSuite) SetUpTest(c *C) {
 
 func (s *MatcherSuite) TestDir_ReadPatterns(c *C) {
 	checkPatterns := func(ps []Pattern) {
-		c.Assert(ps, HasLen, 6)
+		c.Assert(ps, HasLen, 7)
 		m := NewMatcher(ps)
 
 		c.Assert(m.Match([]string{"exclude.crlf"}, true), Equals, true)
 		c.Assert(m.Match([]string{"ignore.crlf"}, true), Equals, true)
 		c.Assert(m.Match([]string{"vendor", "gopkg.in"}, true), Equals, true)
+		c.Assert(m.Match([]string{"ignore_dir", "file"}, false), Equals, true)
 		c.Assert(m.Match([]string{"vendor", "github.com"}, true), Equals, false)
 		c.Assert(m.Match([]string{"multiple", "sub", "ignores", "first", "ignore_dir"}, true), Equals, true)
 		c.Assert(m.Match([]string{"multiple", "sub", "ignores", "second", "ignore_dir"}, true), Equals, true)
