@@ -26,6 +26,24 @@ func (s Status) IsUntracked(path string) bool {
 	return ok && stat.Worktree == Untracked
 }
 
+// IsAdded checks if file for given path is 'Added'.
+func (s Status) IsAdded(path string) bool {
+	stat, ok := (s)[filepath.ToSlash(path)]
+	return ok && stat.Worktree == Added
+}
+
+// IsModified checks if file for given path is 'Modified'.
+func (s Status) IsModified(path string) bool {
+	stat, ok := (s)[filepath.ToSlash(path)]
+	return ok && stat.Worktree == Modified
+}
+
+// IsDeleted checks if file for given path is 'Deleted'.
+func (s Status) IsDeleted(path string) bool {
+	stat, ok := (s)[filepath.ToSlash(path)]
+	return ok && stat.Worktree == Deleted
+}
+
 // IsClean returns true if all the files are in Unmodified status.
 func (s Status) IsClean() bool {
 	for _, status := range s {
