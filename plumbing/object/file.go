@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/binary"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/_examples"
 )
 
 // File represents git file objects.
@@ -99,7 +100,8 @@ func (iter *FileIter) Next() (*File, error) {
 
 		blob, err := GetBlob(iter.s, entry.Hash)
 		if err != nil {
-			return nil, err
+			examples.Warning("Object %s not found",name)
+			return NewFile(name, entry.Mode, &Blob{}), nil
 		}
 
 		return NewFile(name, entry.Mode, blob), nil
