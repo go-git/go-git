@@ -45,3 +45,5 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/kevinburke/ssh_config => github.com/iamFrancescoFerro/ssh_config v1.0.1-0.20240717115654-961aa82b9ad8

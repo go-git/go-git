@@ -186,7 +186,8 @@ func dial(network, addr string, proxyOpts transport.ProxyOptions, config *ssh.Cl
 		ctxDialer, ok := dialer.(proxy.ContextDialer)
 		if !ok {
 			return nil, fmt.Errorf("expected ssh proxy dialer to be of type %s; got %s",
-				reflect.TypeOf(ctxDialer), reflect.TypeOf(dialer))
+				reflect.TypeOf(ctxDialer), reflect.TypeOf(dialer),
+			)
 		}
 		conn, dialErr = ctxDialer.DialContext(ctx, "tcp", addr)
 	} else {
@@ -221,7 +222,7 @@ func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 	if DefaultSSHConfig == nil {
 		return
 	}
-
+	ssh_config.DefaultUserSettings.IgnoreMatchDirective = true
 	host := c.endpoint.Host
 	port := c.endpoint.Port
 
