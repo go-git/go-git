@@ -35,11 +35,11 @@ func (idx *deltaIndex) findMatch(src, tgt []byte, tgtOffset int) (srcOffset, l i
 	h := hashBlock(tgt, tgtOffset)
 	tIdx := h & idx.mask
 	eIdx := idx.table[tIdx]
-	if eIdx != 0 {
-		srcOffset = idx.entries[eIdx]
-	} else {
+	if eIdx == 0 {
 		return
 	}
+
+	srcOffset = idx.entries[eIdx]
 
 	l = matchLength(src, tgt, tgtOffset, srcOffset)
 
