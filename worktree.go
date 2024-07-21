@@ -139,7 +139,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	}
 
 	if o.RecurseSubmodules != NoRecurseSubmodules {
-		return w.updateSubmodules(&SubmoduleUpdateOptions{
+		return w.updateSubmodules(ctx, &SubmoduleUpdateOptions{
 			RecurseSubmodules: o.RecurseSubmodules,
 			Auth:              o.Auth,
 		})
@@ -148,13 +148,13 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	return nil
 }
 
-func (w *Worktree) updateSubmodules(o *SubmoduleUpdateOptions) error {
+func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	s, err := w.Submodules()
 	if err != nil {
 		return err
 	}
 	o.Init = true
-	return s.Update(o)
+	return s.UpdateContext(ctx, o)
 }
 
 // Checkout switch branches or restore working tree files.
