@@ -35,7 +35,5 @@ jobs:
     - name: Test
       run: make test-coverage
 
-    - name: Examples
-      env:
-        EXAMPLES_DIR: _examples
-      run: go test -test.v -test.run='^TestBuildExamples$'
+    - name: Test Examples
+      run: go test -timeout 30s -v -run '^TestExamples$' github.com/go-git/go-git/v5/_examples --examples
