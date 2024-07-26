@@ -18,7 +18,8 @@ import (
 type (
 	SuiteCommon struct{}
 
-	mockKnownHosts struct{}
+	mockKnownHosts         struct{}
+	mockKnownHostsWithCert struct{}
 )
 
 func (mockKnownHosts) host() string { return "github.com" }
@@ -27,6 +28,19 @@ func (mockKnownHosts) knownHosts() []byte {
 }
 func (mockKnownHosts) Network() string { return "tcp" }
 func (mockKnownHosts) String() string  { return "github.com:22" }
+func (mockKnownHosts) Algorithms() []string {
+	return []string{ssh.KeyAlgoRSA, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512}
+}
+
+func (mockKnownHostsWithCert) host() string { return "github.com" }
+func (mockKnownHostsWithCert) knownHosts() []byte {
+	return []byte(`@cert-authority github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==`)
+}
+func (mockKnownHostsWithCert) Network() string { return "tcp" }
+func (mockKnownHostsWithCert) String() string  { return "github.com:22" }
+func (mockKnownHostsWithCert) Algorithms() []string {
+	return []string{ssh.CertAlgoRSASHA512v01, ssh.CertAlgoRSASHA256v01, ssh.CertAlgoRSAv01}
+}
 
 var _ = Suite(&SuiteCommon{})
 
@@ -229,4 +243,94 @@ func (*SuiteCommon) TestNewKnownHostsCallback(c *C) {
 
 	err = clb(mock.String(), mock, hostKey)
 	c.Assert(err, IsNil)
+}
+
+func (*SuiteCommon) TestNewKnownHostsDbWithoutCert(c *C) {
+	if runtime.GOOS == "js" {
+		c.Skip("not available in wasm")
+	}
+
+	var mock = mockKnownHosts{}
+
+	f, err := util.TempFile(osfs.Default, "", "known-hosts")
+	c.Assert(err, IsNil)
+
+	_, err = f.Write(mock.knownHosts())
+	c.Assert(err, IsNil)
+
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	defer util.RemoveAll(osfs.Default, f.Name())
+
+	f, err = osfs.Default.Open(f.Name())
+	c.Assert(err, IsNil)
+
+	defer f.Close()
+
+	db, err := newKnownHostsDb(f.Name())
+	c.Assert(err, IsNil)
+
+	algos := db.HostKeyAlgorithms(mock.String())
+	c.Assert(algos, HasLen, len(mock.Algorithms()))
+
+	contains := func(container []string, value string) bool {
+		for _, inner := range container {
+			if inner == value {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, algorithm := range mock.Algorithms() {
+		if !contains(algos, algorithm) {
+			c.Error("algos does not contain ", algorithm)
+		}
+	}
+}
+
+func (*SuiteCommon) TestNewKnownHostsDbWithCert(c *C) {
+	if runtime.GOOS == "js" {
+		c.Skip("not available in wasm")
+	}
+
+	var mock = mockKnownHostsWithCert{}
+
+	f, err := util.TempFile(osfs.Default, "", "known-hosts")
+	c.Assert(err, IsNil)
+
+	_, err = f.Write(mock.knownHosts())
+	c.Assert(err, IsNil)
+
+	err = f.Close()
+	c.Assert(err, IsNil)
+
+	defer util.RemoveAll(osfs.Default, f.Name())
+
+	f, err = osfs.Default.Open(f.Name())
+	c.Assert(err, IsNil)
+
+	defer f.Close()
+
+	db, err := newKnownHostsDb(f.Name())
+	c.Assert(err, IsNil)
+
+	algos := db.HostKeyAlgorithms(mock.String())
+	c.Assert(algos, HasLen, len(mock.Algorithms()))
+
+	contains := func(container []string, value string) bool {
+		for _, inner := range container {
+			if inner == value {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, algorithm := range mock.Algorithms() {
+		if !contains(algos, algorithm) {
+			c.Error("algos does not contain ", algorithm)
+		}
+	}
 }
