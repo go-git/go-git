@@ -367,7 +367,7 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 	buf, err = cfg.Marshal()
 	c.Assert(err, IsNil)
 	if strings.Contains(string(buf), "url") {
-		c.Fatal("conifg should not contain any url sections")
+		c.Fatal("config should not contain any url sections")
 	}
 	c.Assert(err, IsNil)
 }

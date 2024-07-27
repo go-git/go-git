@@ -1048,7 +1048,7 @@ func (s *SuiteDotGit) TestDeletedRefs(c *C) {
 	c.Assert(refs[0].Name(), Equals, plumbing.ReferenceName("refs/heads/foo"))
 }
 
-// Checks that seting a reference that has been packed and checking its old value is successful
+// Checks that setting a reference that has been packed and checking its old value is successful
 func (s *SuiteDotGit) TestSetPackedRef(c *C) {
 	fs, clean := s.TemporalFilesystem()
 	defer clean()
