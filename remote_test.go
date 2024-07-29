@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
+
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -344,6 +347,38 @@ func (s *RemoteSuite) testFetch(c *C, r *Remote, o *FetchOptions, expected []*pl
 		c.Assert(err, IsNil)
 		c.Assert(exp.String(), Equals, r.String())
 	}
+}
+
+func (s *RemoteSuite) TestFetchOfMissingObjects(c *C) {
+	tmp, clean := s.TemporalDir()
+	defer clean()
+
+	// clone to a local temp folder
+	_, err := PlainClone(tmp, true, &CloneOptions{
+		URL: fixtures.Basic().One().DotGit().Root(),
+	})
+	c.Assert(err, IsNil)
+
+	// Delete the pack files
+	fsTmp := osfs.New(tmp)
+	err = util.RemoveAll(fsTmp, "objects/pack")
+	c.Assert(err, IsNil)
+
+	// Reopen the repo from the filesystem (with missing objects)
+	r, err := Open(filesystem.NewStorage(fsTmp, cache.NewObjectLRUDefault()), nil)
+	c.Assert(err, IsNil)
+
+	// Confirm we are missing a commit
+	_, err = r.CommitObject(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+
+	// Refetch to get all the missing objects
+	err = r.Fetch(&FetchOptions{})
+	c.Assert(err, IsNil)
+
+	// Confirm we now have the commit
+	_, err = r.CommitObject(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	c.Assert(err, IsNil)
 }
 
 func (s *RemoteSuite) TestFetchWithProgress(c *C) {
@@ -1220,17 +1255,20 @@ func (s *RemoteSuite) TestGetHaves(c *C) {
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	var localRefs = []*plumbing.Reference{
+		// Exists
 		plumbing.NewReferenceFromStrings(
 			"foo",
-			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+			"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 		),
+		// Exists
 		plumbing.NewReferenceFromStrings(
 			"bar",
-			"fe6cb94756faa81e5ed9240f9191b833db5f40ae",
+			"b8e471f58bcbca63b07bda20e428190409c2db47",
 		),
+		// Doesn't Exist
 		plumbing.NewReferenceFromStrings(
 			"qux",
-			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+			"0000000",
 		),
 	}
 
