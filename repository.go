@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -81,14 +80,17 @@ type InitOptions struct {
 	DefaultBranch plumbing.ReferenceName
 }
 
+func NewInitOptions() InitOptions {
+	return InitOptions{
+		DefaultBranch: plumbing.Master,
+	}
+}
+
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
 func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
-	options := InitOptions{
-		DefaultBranch: plumbing.Master,
-	}
-	return InitWithOptions(s, worktree, options)
+	return InitWithOptions(s, worktree, NewInitOptions())
 }
 
 func InitWithOptions(s storage.Storer, worktree billy.Filesystem, options InitOptions) (*Repository, error) {
@@ -548,14 +550,15 @@ func cleanUpDir(path string, all bool) error {
 
 // Config return the repository config. In a filesystem backed repository this
 // means read the `.git/config`.
-func (r *Repository) Config() (*config.Config, error) {
-	return r.Storer.Config()
+func (r *Repository) Config(o ...config.WithOptions) (*config.Config, error) {
+	return config.LocalScope.LoadFromConfigStorer(r.Storer, o...)
 }
 
-// SetConfig marshall and writes the repository config. In a filesystem backed
-// repository this means write the `.git/config`. This function should be called
-// with the result of `Repository.Config` and never with the output of
-// `Repository.ConfigScoped`.
+// SetConfig marshall and overwrites the local repository config. In a filesystem
+// backed repository this means write/overwrite the `.git/config` file. This function
+// should only be called with the result of `Repository.Config` or
+// `Repository.ConfigScoped(config.LocalScopeV6)` and never with the output of
+// any other `Repository.ConfigScoped`.
 func (r *Repository) SetConfig(cfg *config.Config) error {
 	return r.Storer.SetConfig(cfg)
 }
@@ -563,34 +566,9 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 // ConfigScoped returns the repository config, merged with requested scope and
 // lower. For example if, config.GlobalScope is given the local and global config
 // are returned merged in one config value.
-func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
+func (r *Repository) ConfigScoped(scope config.Scope, o ...config.WithOptions) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
-
-	var err error
-	system := config.NewConfig()
-	if scope >= config.SystemScope {
-		system, err = config.LoadConfig(config.SystemScope)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	global := config.NewConfig()
-	if scope >= config.GlobalScope {
-		global, err = config.LoadConfig(config.GlobalScope)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	local, err := r.Storer.Config()
-	if err != nil {
-		return nil, err
-	}
-
-	_ = mergo.Merge(global, system)
-	_ = mergo.Merge(local, global)
-	return local, nil
+	return scope.LoadFromConfigStorer(r.Storer, o...)
 }
 
 // Remote return a remote if exists

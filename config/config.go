@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"dario.cat/mergo"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -37,15 +39,102 @@ var (
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
 )
 
+// Options allows configuration of the config package
+type Options struct {
+	// fs provides a configurable entry point to the billy.Filesystem in active use for reading global and
+	// system level configuration; set using the WithFS option in a test to use a fake filesystem.
+	fs billy.Filesystem
+}
+
+func (o Options) readConfigFromFS(path string) (*Config, error) {
+	f, err := o.fs.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	defer f.Close()
+	return ReadConfig(f)
+}
+
+func NewOptions(ofns ...WithOptions) Options {
+	o := Options{
+		fs: DefaultFS(),
+	}
+
+	for _, fn := range ofns {
+		fn(&o)
+	}
+
+	return o
+}
+
+type WithOptions = func(*Options)
+
+func WithFS(fs billy.Filesystem) func(*Options) {
+	return func(o *Options) {
+		o.fs = fs
+	}
+}
+
+// DefaultFS provides a billy.Filesystem abstraction over the os filesystem (via osfs.OS) scoped to the
+// root directory / in order to enable access to global and system config files via absolute paths
+func DefaultFS() billy.Filesystem {
+	return osfs.New("")
+}
+
 // Scope defines the scope of a config file, such as local, global or system.
 type Scope int
 
-// Available ConfigScope's
+// Available ConfigScopes; those with a V6 prefix are opt-ins to preview go-git v6 config behavior which
+// more closely matches the `git config` subcommand documentation
 const (
 	LocalScope Scope = iota
 	GlobalScope
 	SystemScope
+
+	// DefaultScopeV6 is equivalent to running config commands without any explicit flags
+	DefaultScopeV6
+
+	// SystemScopeV6 is equivalent to running config commands with the --system flag
+	SystemScopeV6
+
+	// GlobalScopeV6 is equivalent to running config commands with the --global flag
+	GlobalScopeV6
+
+	// LocalScopeV6 is equivalent to running config commands with the --local flag
+	LocalScopeV6
 )
+
+func (s Scope) loadConfig(ofns ...WithOptions) (*Config, error) {
+	switch s {
+	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
+		return loadConfigV6(s, ofns...)
+	}
+	return loadConfigV5(s, ofns...)
+}
+
+func (s Scope) paths() ([]string, error) {
+	switch s {
+	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
+		return configPathsV6(s)
+	}
+	return configPathsV5(s)
+}
+
+// LoadFromConfigStorer loads a config file from the given ConfigStorer based
+// on the given Scope. If no configuration is found in the given Scope an
+// empty Config instance is returned.
+func (s Scope) LoadFromConfigStorer(storer ConfigStorer, ofns ...WithOptions) (*Config, error) {
+	switch s {
+	case DefaultScopeV6, SystemScopeV6, GlobalScopeV6, LocalScopeV6:
+		return configScopedV6(s, storer, ofns...)
+	}
+	return configScopedV5(s, storer, ofns...)
+}
 
 // Config contains the repository configuration
 // https://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
@@ -157,12 +246,11 @@ func ReadConfig(r io.Reader) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadConfig loads a config file from a given scope. The returned Config,
-// contains exclusively information from the given scope. If it couldn't find a
-// config file to the given scope, an empty one is returned.
-func LoadConfig(scope Scope) (*Config, error) {
+func loadConfigV5(scope Scope, ofns ...WithOptions) (*Config, error) {
+	o := NewOptions(ofns...)
+
 	if scope == LocalScope {
-		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer")
+		return nil, fmt.Errorf("LocalScope should be read from the a Repository.ConfigStorer")
 	}
 
 	files, err := Paths(scope)
@@ -171,28 +259,56 @@ func LoadConfig(scope Scope) (*Config, error) {
 	}
 
 	for _, file := range files {
-		f, err := osfs.Default.Open(file)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-
-			return nil, err
+		c, loadErr := o.readConfigFromFS(file)
+		if c == nil {
+			continue
+		} else if loadErr != nil {
+			return nil, loadErr
+		} else {
+			return c, nil
 		}
-
-		defer f.Close()
-		return ReadConfig(f)
 	}
 
 	return NewConfig(), nil
 }
 
+func loadConfigV6(scope Scope, ofns ...WithOptions) (*Config, error) {
+	o := NewOptions(ofns...)
+
+	files, err := Paths(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	// create a new empty config to hold merged values
+	mergedConfig := NewConfig()
+
+	for _, file := range files {
+		c, loadErr := o.readConfigFromFS(file)
+		if c == nil {
+			continue
+		} else if loadErr != nil {
+			return nil, loadErr
+		} else {
+			if err = mergo.Merge(mergedConfig, c, mergo.WithOverride); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return mergedConfig, nil
+}
+
 // Paths returns the config file location for a given scope.
 func Paths(scope Scope) ([]string, error) {
+	return scope.paths()
+}
+
+func configPathsV5(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
 	case GlobalScope:
-		xdg := os.Getenv("XDG_CONFIG_HOME")
+		xdg := os.Getenv(XdgConfigHome)
 		if xdg != "" {
 			files = append(files, filepath.Join(xdg, "git/config"))
 		}
@@ -211,6 +327,97 @@ func Paths(scope Scope) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+// configPathsV6 finds config paths to merge based on scope
+func configPathsV6(scope Scope) ([]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	systemWideConfigFiles := []string{"/etc/gitconfig"}
+	xdg := os.Getenv(XdgConfigHome)
+	if xdg == "" {
+		systemWideConfigFiles = append(systemWideConfigFiles, filepath.Join(home, ".config/git/config"))
+	} else {
+		systemWideConfigFiles = append(systemWideConfigFiles, filepath.Join(xdg, "git/config"))
+	}
+	globalConfigFiles := []string{filepath.Join(home, ".gitconfig")}
+	repoConfigFiles := make([]string, 0)
+	gitDir := os.Getenv("GIT_DIR")
+	if gitDir != "" {
+		repoConfigFiles = append(repoConfigFiles, filepath.Join(gitDir, "config"))
+	}
+
+	switch scope {
+	case DefaultScopeV6:
+		files := make([]string, 0)
+		files = append(files, systemWideConfigFiles...)
+		files = append(files, globalConfigFiles...)
+		files = append(files, repoConfigFiles...)
+		return files, nil
+	case SystemScopeV6:
+		return systemWideConfigFiles, nil
+	case GlobalScopeV6:
+		return globalConfigFiles, nil
+	case LocalScopeV6:
+		return repoConfigFiles, nil
+	}
+
+	return nil, fmt.Errorf("unrecognized V6 config scope: %v", scope)
+}
+
+func configScopedV5(scope Scope, storer ConfigStorer, ofns ...WithOptions) (*Config, error) {
+	var err error
+	system := NewConfig()
+	if scope >= SystemScope {
+		system, err = SystemScope.loadConfig(ofns...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	global := NewConfig()
+	if scope >= GlobalScope {
+		global, err = GlobalScope.loadConfig(ofns...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	local, err := storer.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	_ = mergo.Merge(global, system)
+	_ = mergo.Merge(local, global)
+	return local, nil
+}
+
+func configScopedV6(scope Scope, storer ConfigStorer, ofns ...WithOptions) (*Config, error) {
+	c, err := scope.loadConfig(ofns...)
+	if err != nil {
+		return nil, err
+	}
+
+	if scope == DefaultScopeV6 || scope == LocalScopeV6 {
+		// merge in local scope from the config storer over top of
+		// the local config which was merged in from the filesystem
+		// as the config storer may have more up-to-date config which
+		// has not yet been flushed to disk
+		local, err := storer.Config()
+		if err != nil {
+			return nil, err
+		}
+
+		if err = mergo.Merge(c, local, mergo.WithOverride); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 // Validate validates the fields and sets the default values.
@@ -269,6 +476,12 @@ const (
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
+
+	// XdgConfigHome is the name of the recognized XDG base directory
+	// as per the https://wiki.archlinux.org/title/XDG_Base_Directory
+	// specification; this is supported by git when reading system-scoped
+	// configuration from the filesystem provider.
+	XdgConfigHome = "XDG_CONFIG_HOME"
 )
 
 // Unmarshal parses a git-config file and stores it.
