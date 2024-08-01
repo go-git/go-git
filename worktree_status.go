@@ -559,9 +559,11 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 		return err
 	}
 
-	if e.Mode.IsRegular() {
-		e.Size = uint32(info.Size())
-	}
+	// The entry size must always reflect the current state, otherwise
+	// it will cause go-git's Worktree.Status() to divert from "git status".
+	// The size of a symlink is the length of the path to the target.
+	// The size of Regular and Executable files is the size of the files.
+	e.Size = uint32(info.Size())
 
 	fillSystemInfo(e, info.Sys())
 	return nil
