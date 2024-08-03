@@ -29,10 +29,23 @@ var (
 	// ErrGlobNoMatches in an AddGlob if the glob pattern does not match any
 	// files in the worktree.
 	ErrGlobNoMatches = errors.New("glob pattern did not match any files")
+	// ErrUnsupportedStatusStrategy occurs when an invalid StatusStrategy is used
+	// when processing the Worktree status.
+	ErrUnsupportedStatusStrategy = errors.New("unsupported status strategy")
 )
 
 // Status returns the working tree status.
 func (w *Worktree) Status() (Status, error) {
+	return w.StatusWithOptions(StatusOptions{Strategy: defaultStatusStrategy})
+}
+
+// StatusOptions defines the options for Worktree.StatusWithOptions().
+type StatusOptions struct {
+	Strategy StatusStrategy
+}
+
+// StatusWithOptions returns the working tree status.
+func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	var hash plumbing.Hash
 
 	ref, err := w.r.Head()
@@ -44,45 +57,11 @@ func (w *Worktree) Status() (Status, error) {
 		hash = ref.Hash()
 	}
 
-	return w.status(hash)
+	return w.status(o.Strategy, hash)
 }
 
-func (w *Worktree) newStatusFromIndex() (Status, error) {
-	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return nil, err
-	}
-
-	idxRoot := mindex.NewRootNode(idx)
-	nodes := []noder.Noder{idxRoot}
-
-	if err != nil {
-		return nil, err
-	}
-
-	status := make(Status)
-
-	for len(nodes) > 0 {
-		var node noder.Noder
-		node, nodes = nodes[0], nodes[1:]
-		if node.IsDir() {
-			children, err := node.Children()
-			if err != nil {
-				return nil, err
-			}
-			nodes = append(nodes, children...)
-			continue
-		}
-		fs := status.File(node.Name())
-		fs.Worktree = Unmodified
-		fs.Staging = Unmodified
-	}
-
-	return status, nil
-}
-
-func (w *Worktree) status(commit plumbing.Hash) (Status, error) {
-	s, err := w.newStatusFromIndex()
+func (w *Worktree) status(ss StatusStrategy, commit plumbing.Hash) (Status, error) {
+	s, err := ss.new(w)
 	if err != nil {
 		return nil, err
 	}
