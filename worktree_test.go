@@ -1058,6 +1058,33 @@ func (s *WorktreeSuite) TestStatusEmptyDirty(c *C) {
 	c.Assert(status, HasLen, 1)
 }
 
+func (s *WorktreeSuite) TestStatusUnmodified(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	status, err := w.StatusWithOptions(StatusOptions{Strategy: Preload})
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status.IsUntracked("LICENSE"), Equals, false)
+
+	c.Assert(status.File("LICENSE").Staging, Equals, Unmodified)
+	c.Assert(status.File("LICENSE").Worktree, Equals, Unmodified)
+
+	status, err = w.StatusWithOptions(StatusOptions{Strategy: Empty})
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+	c.Assert(status.IsUntracked("LICENSE"), Equals, false)
+
+	c.Assert(status.File("LICENSE").Staging, Equals, Untracked)
+	c.Assert(status.File("LICENSE").Worktree, Equals, Untracked)
+}
+
 func (s *WorktreeSuite) TestReset(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
