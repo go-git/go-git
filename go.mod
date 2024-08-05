@@ -3,6 +3,8 @@ module github.com/go-git/go-git/v5
 // go-git supports the last 3 stable Go versions.
 go 1.20
 
+replace github.com/go-git/go-billy/v5 => github.com/go-git/go-billy/v5 v5.0.0-20240804231525-dc481f5289ba
+
 require (
 	dario.cat/mergo v1.0.0
 	github.com/ProtonMail/go-crypto v1.0.0

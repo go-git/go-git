@@ -198,7 +198,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 			// faster to use a local storage layer to get the commits
 			// to ignore, when calculating the object revlist.
 			localStorer := filesystem.NewStorage(
-				osfs.New(o.RemoteURL), cache.NewObjectLRUDefault())
+				osfs.New(o.RemoteURL, osfs.WithBoundOS()), cache.NewObjectLRUDefault())
 			hashesToPush, err = revlist.ObjectsWithStorageForIgnores(
 				r.s, localStorer, objects, haves)
 		} else {
