@@ -71,7 +71,7 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	// go-git's Status diverges from "git status", so this check does not
 	// fail, even when the issue is present. As at this point "git status"
 	// reports the unstaged file was modified while "git diff" would return
-	// empy, as the files as the same but the index has the incorrect file
+	// empty, as the files are the same but the index has the incorrect file
 	// size.
 	st, err = wt.StatusWithOptions(StatusOptions{Strategy: Preload})
 	assert.NoError(t, err)
