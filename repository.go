@@ -956,7 +956,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		}
 
 		if o.RecurseSubmodules != NoRecurseSubmodules {
-			if err := w.updateSubmodules(&SubmoduleUpdateOptions{
+			if err := w.updateSubmodules(ctx, &SubmoduleUpdateOptions{
 				RecurseSubmodules: o.RecurseSubmodules,
 				Depth: func() int {
 					if o.ShallowSubmodules {
