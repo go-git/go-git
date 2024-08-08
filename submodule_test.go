@@ -28,7 +28,7 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 	var dir string
 	dir, s.clean = s.TemporalDir()
 
-	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
+	r, err := PlainClone(filepath.Join(dir, "worktree"), &CloneOptions{
 		URL: path,
 	})
 

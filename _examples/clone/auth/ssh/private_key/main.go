@@ -31,7 +31,7 @@ func main() {
 		return
 	}
 
-	r, err := git.PlainClone(directory, false, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		Auth:     publicKeys,
 		URL:      url,
 		Progress: os.Stdout,
