@@ -103,9 +103,10 @@ func createCommit(c *C, r *Repository) plumbing.Hash {
 	}
 
 	h, err := wt.Commit("test commit message", &CommitOptions{
-		All:       true,
-		Author:    &author,
-		Committer: &author,
+		All:               true,
+		Author:            &author,
+		Committer:         &author,
+		AllowEmptyCommits: true,
 	})
 	c.Assert(err, IsNil)
 	return h

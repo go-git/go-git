@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/stretchr/testify/assert"
 	. "gopkg.in/check.v1"
 )
@@ -611,7 +612,7 @@ func (s *SuiteDotGit) TestObjectsExclusive(c *C) {
 	testObjectsWithPrefix(c, fs, dir)
 }
 
-func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
+func testObjects(c *C, _ billy.Filesystem, dir *DotGit) {
 	hashes, err := dir.Objects()
 	c.Assert(err, IsNil)
 	c.Assert(hashes, HasLen, 187)
@@ -620,7 +621,7 @@ func testObjects(c *C, fs billy.Filesystem, dir *DotGit) {
 	c.Assert(hashes[2].String(), Equals, "03db8e1fbe133a480f2867aac478fd866686d69e")
 }
 
-func testObjectsWithPrefix(c *C, fs billy.Filesystem, dir *DotGit) {
+func testObjectsWithPrefix(c *C, _ billy.Filesystem, dir *DotGit) {
 	prefix, _ := hex.DecodeString("01d5")
 	hashes, err := dir.ObjectsWithPrefix(prefix)
 	c.Assert(err, IsNil)
@@ -1045,4 +1046,64 @@ func (s *SuiteDotGit) TestDeletedRefs(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(refs, HasLen, 1)
 	c.Assert(refs[0].Name(), Equals, plumbing.ReferenceName("refs/heads/foo"))
+}
+
+// Checks that seting a reference that has been packed and checking its old value is successful
+func (s *SuiteDotGit) TestSetPackedRef(c *C) {
+	fs, clean := s.TemporalFilesystem()
+	defer clean()
+
+	dir := New(fs)
+
+	err := dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	c.Assert(err, IsNil)
+
+	refs, err := dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 1)
+	looseCount, err := dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 1)
+
+	err = dir.PackRefs()
+	c.Assert(err, IsNil)
+
+	// Make sure the refs are still there, but no longer loose.
+	refs, err = dir.Refs()
+	c.Assert(err, IsNil)
+	c.Assert(refs, HasLen, 1)
+	looseCount, err = dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 0)
+
+	ref, err := dir.Ref("refs/heads/foo")
+	c.Assert(err, IsNil)
+	c.Assert(ref, NotNil)
+	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+
+	// Attempt to update the reference using an invalid old reference value
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"b8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33882",
+	))
+	c.Assert(err, Equals, storage.ErrReferenceHasChanged)
+
+	// Now update the reference and it should pass
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"b8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), plumbing.NewReferenceFromStrings(
+		"refs/heads/foo",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	))
+	c.Assert(err, IsNil)
+	looseCount, err = dir.CountLooseRefs()
+	c.Assert(err, IsNil)
+	c.Assert(looseCount, Equals, 1)
 }

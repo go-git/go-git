@@ -28,6 +28,17 @@ func (s *ChangeSuite) TestUnsupportedAction(c *C) {
 	c.Assert(a.String, PanicMatches, "unsupported action.*")
 }
 
+func (s ChangeSuite) TestEmptyChanges(c *C) {
+	ret := merkletrie.NewChanges()
+	p := noder.Path{}
+
+	err := ret.AddRecursiveInsert(p)
+	c.Assert(err, Equals, merkletrie.ErrEmptyFileName)
+
+	err = ret.AddRecursiveDelete(p)
+	c.Assert(err, Equals, merkletrie.ErrEmptyFileName)
+}
+
 func (s ChangeSuite) TestNewInsert(c *C) {
 	tree, err := fsnoder.New("(a(b(z<>)))")
 	c.Assert(err, IsNil)

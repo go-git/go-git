@@ -547,3 +547,64 @@ func BenchmarkGetObjectFromPackfile(b *testing.B) {
 		})
 	}
 }
+
+func (s *FsSuite) TestGetFromUnpackedCachesObjects(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	objectCache := cache.NewObjectLRUDefault()
+	objectStorage := NewObjectStorage(dotgit.New(fs), objectCache)
+	hash := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
+
+	// Assert the cache is empty initially
+	_, ok := objectCache.Get(hash)
+	c.Assert(ok, Equals, false)
+
+	// Load the object
+	obj, err := objectStorage.EncodedObject(plumbing.AnyObject, hash)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, hash)
+
+	// The object should've been cached during the load
+	cachedObj, ok := objectCache.Get(hash)
+	c.Assert(ok, Equals, true)
+	c.Assert(cachedObj, DeepEquals, obj)
+
+	// Assert that both objects can be read and that they both produce the same bytes
+
+	objReader, err := obj.Reader()
+	c.Assert(err, IsNil)
+	objBytes, err := io.ReadAll(objReader)
+	c.Assert(err, IsNil)
+	c.Assert(len(objBytes), Not(Equals), 0)
+	err = objReader.Close()
+	c.Assert(err, IsNil)
+
+	cachedObjReader, err := cachedObj.Reader()
+	c.Assert(err, IsNil)
+	cachedObjBytes, err := io.ReadAll(cachedObjReader)
+	c.Assert(len(cachedObjBytes), Not(Equals), 0)
+	c.Assert(err, IsNil)
+	err = cachedObjReader.Close()
+	c.Assert(err, IsNil)
+
+	c.Assert(cachedObjBytes, DeepEquals, objBytes)
+}
+
+func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects(c *C) {
+	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	objectCache := cache.NewObjectLRUDefault()
+	objectStorage := NewObjectStorageWithOptions(dotgit.New(fs), objectCache, Options{LargeObjectThreshold: 1})
+	hash := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
+
+	// Assert the cache is empty initially
+	_, ok := objectCache.Get(hash)
+	c.Assert(ok, Equals, false)
+
+	// Load the object
+	obj, err := objectStorage.EncodedObject(plumbing.AnyObject, hash)
+	c.Assert(err, IsNil)
+	c.Assert(obj.Hash(), Equals, hash)
+
+	// The object should not have been cached during the load
+	_, ok = objectCache.Get(hash)
+	c.Assert(ok, Equals, false)
+}

@@ -137,6 +137,21 @@ func ExampleRepository_References() {
 
 }
 
+func ExampleRepository_Branches() {
+	r, _ := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
+		URL: "https://github.com/git-fixtures/basic.git",
+	})
+
+	branches, _ := r.Branches()
+	branches.ForEach(func(branch *plumbing.Reference) error {
+		fmt.Println(branch.Hash().String(), branch.Name())
+		return nil
+	})
+
+	// Example Output:
+	// 6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master
+}
+
 func ExampleRepository_CreateRemote() {
 	r, _ := git.Init(memory.NewStorage(), nil)
 
