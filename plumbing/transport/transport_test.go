@@ -123,6 +123,14 @@ func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort(c *C) {
 }
 
 func (s *SuiteCommon) TestNewEndpointFileAbs(c *C) {
+	var err error
+	abs := "/foo.git"
+
+	if runtime.GOOS == "windows" {
+		abs, err = filepath.Abs(abs)
+		c.Assert(err, IsNil)
+	}
+
 	e, err := NewEndpoint("/foo.git")
 	c.Assert(err, IsNil)
 	c.Assert(e.Protocol, Equals, "file")
@@ -130,8 +138,8 @@ func (s *SuiteCommon) TestNewEndpointFileAbs(c *C) {
 	c.Assert(e.Password, Equals, "")
 	c.Assert(e.Host, Equals, "")
 	c.Assert(e.Port, Equals, 0)
-	c.Assert(e.Path, Equals, "/foo.git")
-	c.Assert(e.String(), Equals, "file:///foo.git")
+	c.Assert(e.Path, Equals, abs)
+	c.Assert(e.String(), Equals, "file://"+abs)
 }
 
 func (s *SuiteCommon) TestNewEndpointFileRel(c *C) {
