@@ -15,7 +15,7 @@ jobs:
       with:
         ascending: true
         operations-per-run: 30
-        days-before-stale: 90
+        days-before-stale: 180
         days-before-close: 30
         stale-issue-label: stale
         stale-pr-label: stale
