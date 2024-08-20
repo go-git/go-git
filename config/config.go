@@ -28,7 +28,7 @@ const (
 	// should be marshalled or not.
 	// Note that this does not need to align with the default protocol
 	// version from plumbing/protocol.
-	DefaultProtocolVersion = protocol.Unknown
+	DefaultProtocolVersion = protocol.V0 // go-git only supports V0 at the moment
 )
 
 // ConfigStorer generic storage of Config object
@@ -121,7 +121,7 @@ type Config struct {
 		// When set, clients will attempt to communicate with a server
 		// using the specified protocol version. If the server does not
 		// support it, communication falls back to version 0. If unset,
-		// the default is 2. Supported versions:
+		// the default version will be used. Supported versions:
 		//
 		//   0 - the original wire protocol.
 		//   1 - the original wire protocol with the addition of a
@@ -614,7 +614,7 @@ func (c *Config) marshalURLs() {
 
 func (c *Config) marshalProtocol() {
 	// Only marshal protocol section if a version was set.
-	if c.Protocol.Version != protocol.Unknown {
+	if c.Protocol.Version != DefaultProtocolVersion {
 		s := c.Raw.Section(protocolSection)
 		s.SetOption(versionKey, c.Protocol.Version.String())
 	}

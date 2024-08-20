@@ -11,7 +11,7 @@ var ErrUnknownProtocol = errors.New("unknown Git Wire protocol")
 type Version int
 
 const (
-	Unknown Version = -1
+	Undefined Version = -1
 	// V0 represents the original Wire protocol.
 	V0 Version = iota
 	// V1 represents the version V1 of the Wire protocol.
@@ -47,5 +47,5 @@ func Parse(v string) (Version, error) {
 		return V2, nil
 	}
 
-	return Unknown, fmt.Errorf("cannot parse %q: %w", v, ErrUnknownProtocol)
+	return Undefined, fmt.Errorf("cannot parse %q: %w", v, ErrUnknownProtocol)
 }
