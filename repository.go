@@ -34,6 +34,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -231,6 +232,15 @@ func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repos
 func CloneContext(
 	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
 ) (*Repository, error) {
+	start := time.Now()
+	defer func() {
+		url := ""
+		if o != nil {
+			url = o.URL
+		}
+		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
+	}()
+
 	r, err := Init(s, worktree)
 	if err != nil {
 		return nil, err

@@ -28,9 +28,10 @@ var (
 	// envToTarget maps what environment variables can be used
 	// to enable specific trace targets.
 	envToTarget = map[string]Target{
-		"GIT_TRACE":        General,
-		"GIT_TRACE_PACKET": Packet,
-		"GIT_TRACE_SSH":    SSH,
+		"GIT_TRACE":             General,
+		"GIT_TRACE_PACKET":      Packet,
+		"GIT_TRACE_SSH":         SSH,
+		"GIT_TRACE_PERFORMANCE": Performance,
 	}
 )
 
@@ -51,6 +52,9 @@ const (
 	// SSH traces SSH handshake operations. This does not have
 	// a direct translation to an upstream trace option.
 	SSH
+
+	// Performance traces performance of go-git components.
+	Performance
 )
 
 // SetTarget sets the tracing targets.

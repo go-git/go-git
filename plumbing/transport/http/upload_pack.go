@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 type upSession struct {
@@ -34,6 +36,11 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 func (s *upSession) UploadPack(
 	ctx context.Context, req *packp.UploadPackRequest,
 ) (*packp.UploadPackResponse, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: upload_pack", time.Since(start).Seconds())
+	}()
+
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 const (
@@ -256,6 +257,11 @@ func (s *session) handleAdvRefDecodeError(err error) error {
 // UploadPack performs a request to the server to fetch a packfile. A reader is
 // returned with the packfile content. The reader must be closed after reading.
 func (s *session) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: upload_pack", time.Since(start).Seconds())
+	}()
+
 	if req.IsEmpty() {
 		// XXX: IsEmpty means haves are a subset of wants, in that case we have
 		// everything we asked for. Close the connection and return nil.
@@ -323,6 +329,11 @@ func (s *session) onError(err error) {
 }
 
 func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: receive_pack", time.Since(start).Seconds())
+	}()
+
 	if _, err := s.AdvertisedReferences(); err != nil {
 		return nil, err
 	}
