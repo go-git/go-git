@@ -33,7 +33,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
 }
 
 // Tests server with `asClient = true`. This is recommended when using a server
-// registered directly with `client.InstallProtocol`.
+// registered directly with `transport.Register`.
 type ClientLikeUploadPackSuite struct {
 	UploadPackSuite
 }
