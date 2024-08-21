@@ -256,9 +256,9 @@ func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, err
 	var wt, dot billy.Filesystem
 
 	if opts.Bare {
-		dot = osfs.New(path)
+		dot = osfs.New(path, osfs.WithBoundOS())
 	} else {
-		wt = osfs.New(path)
+		wt = osfs.New(path, osfs.WithBoundOS())
 		dot, _ = wt.Chroot(GitDirName)
 	}
 
@@ -344,7 +344,7 @@ func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, 
 	var fs billy.Filesystem
 	var fi os.FileInfo
 	for {
-		fs = osfs.New(path)
+		fs = osfs.New(path, osfs.WithBoundOS())
 
 		pathinfo, err := fs.Stat("/")
 		if !os.IsNotExist(err) {
@@ -352,7 +352,7 @@ func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, 
 				return nil, nil, err
 			}
 			if !pathinfo.IsDir() && detect {
-				fs = osfs.New(filepath.Dir(path))
+				fs = osfs.New(filepath.Dir(path), osfs.WithBoundOS())
 			}
 		}
 
@@ -412,10 +412,10 @@ func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Files
 	gitdir := strings.Split(line[len(prefix):], "\n")[0]
 	gitdir = strings.TrimSpace(gitdir)
 	if filepath.IsAbs(gitdir) {
-		return osfs.New(gitdir), nil
+		return osfs.New(gitdir, osfs.WithBoundOS()), nil
 	}
 
-	return osfs.New(fs.Join(path, gitdir)), nil
+	return osfs.New(fs.Join(path, gitdir), osfs.WithBoundOS()), nil
 }
 
 func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err error) {
@@ -434,9 +434,9 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 	if len(b) > 0 {
 		path := strings.TrimSpace(string(b))
 		if filepath.IsAbs(path) {
-			commonDir = osfs.New(path)
+			commonDir = osfs.New(path, osfs.WithBoundOS())
 		} else {
-			commonDir = osfs.New(filepath.Join(fs.Root(), path))
+			commonDir = osfs.New(filepath.Join(fs.Root(), path), osfs.WithBoundOS())
 		}
 		if _, err := commonDir.Stat(""); err != nil {
 			if os.IsNotExist(err) {

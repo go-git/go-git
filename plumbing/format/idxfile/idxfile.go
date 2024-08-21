@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"sort"
+	"sync"
 
 	encbin "encoding/binary"
 
@@ -59,6 +60,7 @@ type MemoryIndex struct {
 
 	offsetHash       map[int64]plumbing.Hash
 	offsetHashIsFull bool
+	mu               sync.RWMutex
 }
 
 var _ Index = (*MemoryIndex)(nil)
@@ -128,10 +130,12 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 
 	if !idx.offsetHashIsFull {
 		// Save the offset for reverse lookup
+		idx.mu.Lock()
 		if idx.offsetHash == nil {
 			idx.offsetHash = make(map[int64]plumbing.Hash)
 		}
 		idx.offsetHash[int64(offset)] = h
+		idx.mu.Unlock()
 	}
 
 	return int64(offset), nil
@@ -173,11 +177,14 @@ func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
 	var hash plumbing.Hash
 	var ok bool
 
+	idx.mu.RLock()
 	if idx.offsetHash != nil {
 		if hash, ok = idx.offsetHash[o]; ok {
+			idx.mu.RUnlock()
 			return hash, nil
 		}
 	}
+	idx.mu.RUnlock()
 
 	// Lazily generate the reverse offset/hash map if required.
 	if !idx.offsetHashIsFull || idx.offsetHash == nil {
@@ -197,6 +204,9 @@ func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
 
 // genOffsetHash generates the offset/hash mapping for reverse search.
 func (idx *MemoryIndex) genOffsetHash() error {
+	defer idx.mu.Unlock()
+	idx.mu.Lock()
+
 	count, err := idx.Count()
 	if err != nil {
 		return err

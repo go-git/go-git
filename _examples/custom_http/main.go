@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	. "github.com/go-git/go-git/v5/_examples"
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// Override http(s) default protocol to use our custom client
-	client.InstallProtocol("https", githttp.NewClient(customClient))
+	transport.Register("https", githttp.NewClient(customClient))
 
 	// Clone repository using the new client if the protocol is https://
 	Info("git clone %s", url)

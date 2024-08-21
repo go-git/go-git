@@ -42,7 +42,7 @@ New filesystems (e.g. cloud based storage) could be created by implementing `go-
 
 Git supports various transport schemes, including `http`, `https`, `ssh`, `git`, `file`. `go-git` defines the [transport.Transport interface](plumbing/transport/common.go#L48) to represent them.
 
-The built-in implementations can be replaced by calling `client.InstallProtocol`.
+The built-in implementations can be replaced by calling `transport.Register`.
 
 An example of changing the built-in `https` implementation to skip TLS could look like this:
 
@@ -53,7 +53,7 @@ An example of changing the built-in `https` implementation to skip TLS could loo
 		},
 	}
 
-	client.InstallProtocol("https", githttp.NewClient(customClient))
+	transport.Register("https", githttp.NewClient(customClient))
 ```
 
 Some internal implementations enables code reuse amongst the different transport implementations. Some of these may be made public in the future (e.g. `plumbing/transport/internal/common`).
