@@ -1,7 +1,9 @@
 module github.com/go-git/go-git/v5
 
 // go-git supports the last 3 stable Go versions.
-go 1.20
+go 1.21
+
+toolchain go1.21.13
 
 // Use the v6-exp branch across go-git dependencies (gcfg and go-billy).
 replace (
