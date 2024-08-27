@@ -371,3 +371,27 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 	}
 	c.Assert(err, IsNil)
 }
+
+func (s *ConfigSuite) TestUnmarshalRemotes(c *C) {
+	input := []byte(`[core]
+	bare = true
+	worktree = foo
+	custom = ignored
+[user]
+	name = John Doe
+	email = john@example.com
+[remote "origin"]
+	url = https://git.sr.ht/~mcepl/go-git
+	pushurl = git@git.sr.ht:~mcepl/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	mirror = true
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	c.Assert(err, IsNil)
+
+	c.Assert(cfg.Remotes["origin"].URLs[0], Equals, "https://git.sr.ht/~mcepl/go-git")
+	c.Assert(cfg.Remotes["origin"].URLs[1], Equals, "git@git.sr.ht:~mcepl/go-git.git")
+}
+
