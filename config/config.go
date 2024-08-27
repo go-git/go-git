@@ -275,6 +275,7 @@ const (
 	protocolSection            = "protocol"
 	fetchKey                   = "fetch"
 	urlKey                     = "url"
+	pushurlKey                 = "pushurl"
 	bareKey                    = "bare"
 	worktreeKey                = "worktree"
 	commentCharKey             = "commentChar"
