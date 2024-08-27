@@ -275,6 +275,7 @@ const (
 	protocolSection            = "protocol"
 	fetchKey                   = "fetch"
 	urlKey                     = "url"
+	pushurlKey                 = "pushurl"
 	bareKey                    = "bare"
 	worktreeKey                = "worktree"
 	commentCharKey             = "commentChar"
@@ -688,6 +689,7 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 
 	c.Name = c.raw.Name
 	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
+	c.URLs = append([]string(nil), c.raw.Options.GetAll(pushurlKey)...)
 	c.Fetch = fetch
 	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
 
