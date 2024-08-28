@@ -332,6 +332,10 @@ func isPathInDirectory(path, directory string) bool {
 // made to the working tree files applied, or remove paths that do not exist in
 // the working tree anymore.
 func (w *Worktree) AddWithOptions(opts *AddOptions) error {
+	if opts == nil {
+		opts = &AddOptions{}
+	}
+
 	if err := opts.Validate(w.r); err != nil {
 		return err
 	}
