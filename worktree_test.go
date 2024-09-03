@@ -1241,6 +1241,44 @@ func (s *WorktreeSuite) TestResetHard(c *C) {
 	c.Assert(branch.Hash(), Equals, commit)
 }
 
+func (s *WorktreeSuite) TestResetHardSubFolders(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	c.Assert(err, IsNil)
+
+	err = fs.MkdirAll("dir", os.ModePerm)
+	c.Assert(err, IsNil)
+	tf, err := fs.Create("dir/testfile.txt")
+	c.Assert(err, IsNil)
+	_, err = tf.Write([]byte("testfile content"))
+	c.Assert(err, IsNil)
+	err = tf.Close()
+	c.Assert(err, IsNil)
+	_, err = w.Add("dir/testfile.txt")
+	c.Assert(err, IsNil)
+	_, err = w.Commit("testcommit", &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	c.Assert(err, IsNil)
+
+	err = fs.Remove("dir/testfile.txt")
+	c.Assert(err, IsNil)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, false)
+
+	err = w.Reset(&ResetOptions{Files: []string{"dir/testfile.txt"}, Mode: HardReset})
+	c.Assert(err, IsNil)
+
+	status, err = w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status.IsClean(), Equals, true)
+}
+
 func (s *WorktreeSuite) TestResetHardWithGitIgnore(c *C) {
 	fs := memfs.New()
 	w := &Worktree{
