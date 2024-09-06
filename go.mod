@@ -22,8 +22,8 @@ require (
 	github.com/skeema/knownhosts v1.3.0
 	github.com/stretchr/testify v1.9.0
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.26.0
-	golang.org/x/net v0.28.0
+	golang.org/x/crypto v0.27.0
+	golang.org/x/net v0.29.0
 	golang.org/x/sys v0.25.0
 	golang.org/x/text v0.18.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
