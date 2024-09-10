@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 var DefaultServer = NewServer(DefaultLoader)
@@ -136,6 +138,11 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: upload_pack", time.Since(start).Seconds())
+	}()
+
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -236,6 +243,11 @@ var (
 )
 
 func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: receive_pack", time.Since(start).Seconds())
+	}()
+
 	if s.caps == nil {
 		s.caps = capability.NewList()
 		if err := s.setSupportedCapabilities(s.caps); err != nil {

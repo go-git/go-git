@@ -4,8 +4,19 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync/atomic"
 )
+
+func init() {
+	var target Target
+	for k, v := range envToTarget {
+		if strings.EqualFold(os.Getenv(k), "true") {
+			target |= v
+		}
+	}
+	SetTarget(target)
+}
 
 var (
 	// logger is the logger to use for tracing.
@@ -13,6 +24,15 @@ var (
 
 	// current is the targets that are enabled for tracing.
 	current atomic.Int32
+
+	// envToTarget maps what environment variables can be used
+	// to enable specific trace targets.
+	envToTarget = map[string]Target{
+		"GIT_TRACE":             General,
+		"GIT_TRACE_PACKET":      Packet,
+		"GIT_TRACE_SSH":         SSH,
+		"GIT_TRACE_PERFORMANCE": Performance,
+	}
 )
 
 func newLogger() *log.Logger {
@@ -28,6 +48,13 @@ const (
 
 	// Packet traces git packets.
 	Packet
+
+	// SSH traces SSH handshake operations. This does not have
+	// a direct translation to an upstream trace option.
+	SSH
+
+	// Performance traces performance of go-git components.
+	Performance
 )
 
 // SetTarget sets the tracing targets.
