@@ -221,10 +221,7 @@ func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0777)
 	c.Assert(err, IsNil)
 
-	os.Setenv("XDG_CONFIG_HOME", tmp)
-	defer func() {
-		os.Setenv("XDG_CONFIG_HOME", "")
-	}()
+	defer setEnvVarWithCleanup(XdgConfigHome, tmp)()
 
 	content, err := cfg.Marshal()
 	c.Assert(err, IsNil)
@@ -233,7 +230,7 @@ func (s *ConfigSuite) TestLoadConfigXDG(c *C) {
 	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
 	c.Assert(err, IsNil)
 
-	cfg, err = LoadConfig(GlobalScope)
+	cfg, err = GlobalScope.loadConfig()
 	c.Assert(err, IsNil)
 
 	c.Assert(cfg.User.Email, Equals, "foo@foo.com")
@@ -345,9 +342,83 @@ func (s *ConfigSuite) TestRemoteConfigDefaultValues(c *C) {
 }
 
 func (s *ConfigSuite) TestLoadConfigLocalScope(c *C) {
-	cfg, err := LoadConfig(LocalScope)
+	cfg, err := LocalScope.loadConfig()
 	c.Assert(err, NotNil)
 	c.Assert(cfg, IsNil)
+}
+
+func (s *ConfigSuite) TestPathsV6DefaultScope(c *C) {
+	defer setEnvVarWithCleanup("HOME", "/home/me")()
+	defer unsetEnvVarWithCleanup(XdgConfigHome)()
+
+	pp, err := Paths(DefaultScopeV6)
+
+	c.Assert(err, IsNil)
+	c.Assert(pp, DeepEquals, []string{
+		"/etc/gitconfig",
+		"/home/me/.config/git/config",
+		"/home/me/.gitconfig",
+	})
+}
+
+func (s *ConfigSuite) TestPathsV6DefaultScopeWithXDGSet(c *C) {
+	defer setEnvVarWithCleanup("HOME", "/home/me")()
+	defer setEnvVarWithCleanup(XdgConfigHome, "/xdg")()
+
+	pp, err := Paths(DefaultScopeV6)
+
+	c.Assert(err, IsNil)
+	c.Assert(pp, DeepEquals, []string{
+		"/etc/gitconfig",
+		"/xdg/git/config",
+		"/home/me/.gitconfig",
+	})
+}
+
+func (s *ConfigSuite) TestPathsV6SystemScope(c *C) {
+	defer unsetEnvVarWithCleanup(XdgConfigHome)()
+	defer setEnvVarWithCleanup("HOME", "/home/me")()
+
+	pp, err := Paths(SystemScopeV6)
+
+	c.Assert(err, IsNil)
+	c.Assert(pp, DeepEquals, []string{
+		"/etc/gitconfig",
+		"/home/me/.config/git/config",
+	})
+}
+
+func (s *ConfigSuite) TestPathsV6SystemScopeWithXDGSet(c *C) {
+	xdgBefore := os.Getenv(XdgConfigHome)
+	defer func() {
+		os.Setenv(XdgConfigHome, xdgBefore)
+	}()
+	os.Setenv(XdgConfigHome, "/xdg")
+
+	pp, err := Paths(SystemScopeV6)
+
+	c.Assert(err, IsNil)
+	c.Assert(pp, DeepEquals, []string{
+		"/etc/gitconfig",
+		"/xdg/git/config",
+	})
+}
+
+func (s *ConfigSuite) TestPathsV6GlobalScope(c *C) {
+	defer setEnvVarWithCleanup("HOME", "/home/me")()
+
+	pp, err := Paths(GlobalScopeV6)
+	c.Assert(err, IsNil)
+	c.Assert(pp, DeepEquals, []string{"/home/me/.gitconfig"})
+}
+
+func (s *ConfigSuite) TestPathsV6LocalScope(c *C) {
+	defer setEnvVarWithCleanup("HOME", "/home/me")()
+
+	pp, err := Paths(LocalScopeV6)
+
+	c.Assert(err, IsNil)
+	c.Assert(pp, DeepEquals, []string{})
 }
 
 func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
@@ -370,4 +441,34 @@ func (s *ConfigSuite) TestRemoveUrlOptions(c *C) {
 		c.Fatal("conifg should not contain any url sections")
 	}
 	c.Assert(err, IsNil)
+}
+
+// setEnvVarWithCleanup sets an env var and returns a cleanup function that restores
+// the value of the env var to what it was before the env var was set by this function
+func setEnvVarWithCleanup(key, val string) (cleanup func()) {
+	valBefore, wasSet := os.LookupEnv(key)
+	os.Setenv(key, val)
+	cleanup = func() {
+		if wasSet {
+			os.Setenv(key, valBefore)
+		} else {
+			os.Unsetenv(key)
+		}
+	}
+	return
+}
+
+// unsetEnvVarWithCleanup unsets an env var and returns a cleanup function that restores
+// the value of the env var to what it was before the env var was unset by this function
+func unsetEnvVarWithCleanup(key string) (cleanup func()) {
+	valBefore, wasSet := os.LookupEnv(key)
+	os.Unsetenv(key)
+	cleanup = func() {
+		if wasSet {
+			os.Setenv(key, valBefore)
+		} else {
+			os.Unsetenv(key)
+		}
+	}
+	return
 }
