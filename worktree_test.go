@@ -69,8 +69,7 @@ func (s *WorktreeSuite) TestPullCheckout(c *C) {
 }
 
 func (s *WorktreeSuite) TestPullFastForward(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
@@ -79,8 +78,7 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: url,
@@ -107,8 +105,7 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 }
 
 func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
@@ -117,8 +114,7 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: url,
@@ -229,8 +225,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion(c *C) {
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, _ := PlainInit(dir, false)
 	r.CreateRemote(&config.RemoteConfig{
@@ -324,8 +319,7 @@ func (s *WorktreeSuite) TestPullDepth(c *C) {
 }
 
 func (s *WorktreeSuite) TestPullAfterShallowClone(c *C) {
-	tempDir, clean := s.TemporalDir()
-	defer clean()
+	tempDir := c.MkDir()
 	remoteURL := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
@@ -453,8 +447,7 @@ func (s *WorktreeSuite) TestCheckoutSymlink(c *C) {
 		c.Skip("git doesn't support symlinks by default in windows")
 	}
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -517,8 +510,7 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 		c.Skip("windows paths may contain non utf-8 sequences")
 	}
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
@@ -710,8 +702,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMem(c *C) {
 }
 
 func (s *WorktreeSuite) TestCheckoutIndexOS(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	w := &Worktree{
 		r:          s.Repository,
@@ -1309,8 +1300,7 @@ func (s *WorktreeSuite) TestStatusAfterCheckout(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatusModified(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	w := &Worktree{
 		r:          s.Repository,
@@ -1401,8 +1391,7 @@ func (s *WorktreeSuite) TestStatusUntracked(c *C) {
 }
 
 func (s *WorktreeSuite) TestStatusDeleted(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	w := &Worktree{
 		r:          s.Repository,
@@ -1774,8 +1763,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectoryDot(c *C) {
 }
 
 func (s *WorktreeSuite) TestAddSymlink(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -2655,8 +2643,7 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	server, err := PlainClone(dir, false, &CloneOptions{
 		URL: path,
@@ -2739,8 +2726,7 @@ func (s *WorktreeSuite) TestGrepBare(c *C) {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: path,
@@ -2788,8 +2774,7 @@ func (s *WorktreeSuite) TestGrepBare(c *C) {
 }
 
 func (s *WorktreeSuite) TestResetLingeringDirectories(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	commitOpts := &CommitOptions{Author: &object.Signature{
 		Name:  "foo",
@@ -2840,8 +2825,7 @@ func (s *WorktreeSuite) TestResetLingeringDirectories(c *C) {
 func (s *WorktreeSuite) TestAddAndCommit(c *C) {
 	expectedFiles := 2
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	repo, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -2883,8 +2867,7 @@ func (s *WorktreeSuite) TestAddAndCommit(c *C) {
 }
 
 func (s *WorktreeSuite) TestAddAndCommitEmpty(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	repo, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)

@@ -29,8 +29,8 @@ type SuiteDotGit struct {
 
 var _ = Suite(&SuiteDotGit{})
 
-func (s *SuiteDotGit) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
-	fs = osfs.New(os.TempDir())
+func (s *SuiteDotGit) TemporalFilesystem(c *C) (fs billy.Filesystem) {
+	fs = osfs.New(c.MkDir())
 	path, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
@@ -41,14 +41,11 @@ func (s *SuiteDotGit) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
 		panic(err)
 	}
 
-	return fs, func() {
-		util.RemoveAll(fs, path)
-	}
+	return fs
 }
 
 func (s *SuiteDotGit) TestInitialize(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 
@@ -69,8 +66,7 @@ func (s *SuiteDotGit) TestInitialize(c *C) {
 }
 
 func (s *SuiteDotGit) TestSetRefs(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 
@@ -78,8 +74,7 @@ func (s *SuiteDotGit) TestSetRefs(c *C) {
 }
 
 func (s *SuiteDotGit) TestSetRefsNorwfs(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(&norwfs{fs})
 
@@ -369,8 +364,7 @@ func (s *SuiteDotGit) TestConfig(c *C) {
 }
 
 func (s *SuiteDotGit) TestConfigWriteAndConfig(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 
@@ -399,8 +393,7 @@ func (s *SuiteDotGit) TestIndex(c *C) {
 }
 
 func (s *SuiteDotGit) TestIndexWriteAndIndex(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 
@@ -429,8 +422,7 @@ func (s *SuiteDotGit) TestShallow(c *C) {
 }
 
 func (s *SuiteDotGit) TestShallowWriteAndShallow(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 
@@ -573,8 +565,7 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 }
 
 func (s *SuiteDotGit) TestNewObject(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 	w, err := dir.NewObject()
@@ -636,8 +627,7 @@ func testObjectsWithPrefix(c *C, _ billy.Filesystem, dir *DotGit) {
 }
 
 func (s *SuiteDotGit) TestObjectsNoFolder(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 	hash, err := dir.Objects()
@@ -750,8 +740,7 @@ func (s *SuiteDotGit) TestSubmodules(c *C) {
 }
 
 func (s *SuiteDotGit) TestPackRefs(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 
@@ -1015,8 +1004,7 @@ func (f *notExistsFS) ReadDir(path string) ([]os.FileInfo, error) {
 }
 
 func (s *SuiteDotGit) TestDeletedRefs(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(&notExistsFS{
 		Filesystem: fs,
@@ -1050,8 +1038,7 @@ func (s *SuiteDotGit) TestDeletedRefs(c *C) {
 
 // Checks that seting a reference that has been packed and checking its old value is successful
 func (s *SuiteDotGit) TestSetPackedRef(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir := New(fs)
 

@@ -19,8 +19,7 @@ import (
 func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 	f := fixtures.Basic().One()
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dot := New(fs)
 
@@ -59,8 +58,7 @@ func (s *SuiteDotGit) TestNewObjectPack(c *C) {
 }
 
 func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dot := New(fs)
 
@@ -126,8 +124,7 @@ func (s *SuiteDotGit) TestSyncedReader(c *C) {
 }
 
 func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	w, err := newPackWrite(fs)
 	c.Assert(err, IsNil)
