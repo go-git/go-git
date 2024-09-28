@@ -113,8 +113,7 @@ func createCommit(c *C, r *Repository) plumbing.Hash {
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
@@ -139,8 +138,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit(c *C) {
 }
 
 func (s *RepositorySuite) TestInitStandardDotGit(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
@@ -638,8 +636,7 @@ func (s *RepositorySuite) TestDeleteBranch(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainInit(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
@@ -651,8 +648,7 @@ func (s *RepositorySuite) TestPlainInit(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainInitWithOptions(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInitWithOptions(dir, &PlainInitOptions{
 		InitOptions: InitOptions{
@@ -675,8 +671,7 @@ func (s *RepositorySuite) TestPlainInitWithOptions(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
@@ -688,8 +683,7 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpen(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -724,8 +718,7 @@ func (s *RepositorySuite) TestPlainOpenTildePath(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenBare(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, true)
 	c.Assert(err, IsNil)
@@ -737,8 +730,7 @@ func (s *RepositorySuite) TestPlainOpenBare(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)
@@ -750,8 +742,7 @@ func (s *RepositorySuite) TestPlainOpenNotBare(c *C) {
 }
 
 func (s *RepositorySuite) testPlainOpenGitFile(c *C, f func(string, string) string) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir, err := util.TempDir(fs, "", "plain-open")
 	c.Assert(err, IsNil)
@@ -804,8 +795,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileNoEOL(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -829,8 +819,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *
 }
 
 func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -860,8 +849,7 @@ func (s *RepositorySuite) TestPlainOpenNotExists(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -895,8 +883,7 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	opt := &PlainOpenOptions{DetectDotGit: true}
 	r, err := PlainOpenWithOptions(dir, opt)
@@ -905,8 +892,7 @@ func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainClone(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -924,8 +910,7 @@ func (s *RepositorySuite) TestPlainClone(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneBareAndShared(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	remote := s.GetBasicLocalRepositoryURL()
 
@@ -952,8 +937,7 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneShared(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	remote := s.GetBasicLocalRepositoryURL()
 
@@ -980,8 +964,7 @@ func (s *RepositorySuite) TestPlainCloneShared(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	remote := "http://somerepo"
 
@@ -993,8 +976,7 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	remote := "https://somerepo"
 
@@ -1006,8 +988,7 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	remote := "ssh://somerepo"
 
@@ -1019,8 +1000,7 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL:        s.GetBasicLocalRepositoryURL(),
@@ -1035,8 +1015,7 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(r, NotNil)
@@ -1053,8 +1032,7 @@ func (s *RepositorySuite) TestPlainCloneContextCancel(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -1068,8 +1046,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -1092,8 +1069,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	tmpDir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -1114,8 +1090,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	tmpDir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -1141,8 +1116,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	tmpDir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -1170,8 +1144,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(r, NotNil)
@@ -1189,8 +1162,7 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 		c.Skip("skipping test in short mode.")
 	}
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainClone(dir, false, &CloneOptions{
@@ -1212,8 +1184,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules(c *C) {
 		c.Skip("skipping test in short mode.")
 	}
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	mainRepo, err := PlainClone(dir, false, &CloneOptions{
@@ -1245,8 +1216,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules(c *C) {
 }
 
 func (s *RepositorySuite) TestPlainCloneNoCheckout(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainClone(dir, false, &CloneOptions{
@@ -1641,8 +1611,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag(c *C) {
 }
 
 func (s *RepositorySuite) TestPush(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -1670,8 +1639,7 @@ func (s *RepositorySuite) TestPush(c *C) {
 }
 
 func (s *RepositorySuite) TestPushContext(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -1704,8 +1672,7 @@ func installPreReceiveHook(c *C, fs billy.Filesystem, path, m string) {
 }
 
 func (s *RepositorySuite) TestPushWithProgress(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	path, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
@@ -1740,8 +1707,7 @@ func (s *RepositorySuite) TestPushWithProgress(c *C) {
 }
 
 func (s *RepositorySuite) TestPushDepth(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fixtures.Basic().One().DotGit().Root(),
@@ -2832,8 +2798,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotated(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
@@ -2880,8 +2845,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 

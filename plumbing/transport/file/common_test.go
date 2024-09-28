@@ -24,7 +24,7 @@ func (s *CommonSuite) SetUpSuite(c *C) {
 	}
 
 	var err error
-	s.tmpDir, err = os.MkdirTemp("", "")
+	s.tmpDir, err = os.MkdirTemp(c.MkDir(), "")
 	c.Assert(err, IsNil)
 	s.ReceivePackBin = filepath.Join(s.tmpDir, "git-receive-pack")
 	s.UploadPackBin = filepath.Join(s.tmpDir, "git-upload-pack")
@@ -38,5 +38,4 @@ func (s *CommonSuite) SetUpSuite(c *C) {
 
 func (s *CommonSuite) TearDownSuite(c *C) {
 	defer s.Suite.TearDownSuite(c)
-	c.Assert(os.RemoveAll(s.tmpDir), IsNil)
 }

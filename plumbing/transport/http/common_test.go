@@ -240,7 +240,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	l, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
 
-	base, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
+	base, err := os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-http-%d", s.port))
 	c.Assert(err, IsNil)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
@@ -282,9 +282,4 @@ func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
 	c.Assert(err, IsNil)
 
 	return ep
-}
-
-func (s *BaseSuite) TearDownTest(c *C) {
-	err := os.RemoveAll(s.base)
-	c.Assert(err, IsNil)
 }

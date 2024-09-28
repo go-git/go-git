@@ -7,8 +7,7 @@ import (
 )
 
 func (s *SuiteDotGit) TestRepositoryFilesystem(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	err := fs.MkdirAll("dotGit", 0777)
 	c.Assert(err, IsNil)

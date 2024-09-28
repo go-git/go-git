@@ -136,21 +136,6 @@ func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
 	return f.DotGit().Root()
 }
 
-func (s *BaseSuite) TemporalDir() (path string, clean func()) {
-	fs := osfs.New(os.TempDir())
-	relPath, err := util.TempDir(fs, "", "")
-	if err != nil {
-		panic(err)
-	}
-
-	path = fs.Join(fs.Root(), relPath)
-	clean = func() {
-		_ = util.RemoveAll(fs, relPath)
-	}
-
-	return
-}
-
 func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -171,8 +156,8 @@ func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 	return
 }
 
-func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
-	fs = osfs.New(os.TempDir())
+func (s *BaseSuite) TemporalFilesystem(c *C) (fs billy.Filesystem) {
+	fs = osfs.New(c.MkDir())
 	path, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
@@ -181,10 +166,6 @@ func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem, clean func()) {
 	fs, err = fs.Chroot(path)
 	if err != nil {
 		panic(err)
-	}
-
-	clean = func() {
-		_ = util.RemoveAll(fs, path)
 	}
 
 	return

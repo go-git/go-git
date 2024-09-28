@@ -16,8 +16,7 @@ func preReceiveHook(m string) []byte {
 }
 
 func (s *RepositorySuite) TestCloneFileUrlWindows(c *C) {
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
 	c.Assert(err, IsNil)

@@ -82,7 +82,7 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 }
 
 func (s *ParserSuite) TestThinPack(c *C) {
-	fs := osfs.New(os.TempDir())
+	fs := osfs.New(c.MkDir())
 	path, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
 
