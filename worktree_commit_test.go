@@ -514,8 +514,7 @@ func (s *WorktreeSuite) TestCommitSignBadKey(c *C) {
 }
 
 func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	_, err := Init(st, nil)
@@ -562,8 +561,7 @@ func (s *WorktreeSuite) TestCommitTreeSort(c *C) {
 
 // https://github.com/go-git/go-git/pull/224
 func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	fsDotgit, err := fs.Chroot(".git") // real fs to get modified timestamps
 	c.Assert(err, IsNil)

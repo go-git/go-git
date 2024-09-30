@@ -58,7 +58,7 @@ func (s *ProxyEnvSuite) TestCommand(c *C) {
 	}()
 
 	s.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
+	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
 	c.Assert(err, IsNil)
 
 	ggssh.DefaultAuthBuilder = func(user string) (ggssh.AuthMethod, error) {

@@ -42,7 +42,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	s.port, err = freePort()
 	c.Assert(err, IsNil)
 
-	s.base, err = os.MkdirTemp(os.TempDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
+	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
 	c.Assert(err, IsNil)
 }
 
@@ -94,11 +94,6 @@ func (s *BaseSuite) TearDownTest(c *C) {
 	if s.daemon != nil {
 		_ = s.daemon.Process.Signal(os.Kill)
 		_ = s.daemon.Wait()
-	}
-
-	if s.base != "" {
-		err := os.RemoveAll(s.base)
-		c.Assert(err, IsNil)
 	}
 }
 
