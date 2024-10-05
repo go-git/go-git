@@ -3207,3 +3207,64 @@ func (s *WorktreeSuite) TestRestoreBoth(c *C) {
 		{Worktree: Untracked, Staging: Untracked},
 	})
 }
+
+func TestFilePermissions(t *testing.T) {
+
+	// Initialize an in memory repository
+	remoteUrl := t.TempDir()
+
+	inMemoryFs := memfs.New()
+	remoteFs := osfs.New(remoteUrl)
+	remoteStorage := filesystem.NewStorage(remoteFs, cache.NewObjectLRUDefault())
+
+	remoteRepository, err := Init(remoteStorage, inMemoryFs)
+	assert.NoError(t, err)
+
+	err = util.WriteFile(inMemoryFs, "fileWithExecuteBit", []byte("Initial data"), 0755)
+	assert.NoError(t, err)
+
+	err = util.WriteFile(inMemoryFs, "regularFile", []byte("Initial data"), 0644)
+	assert.NoError(t, err)
+
+	remoteWorktree, err := remoteRepository.Worktree()
+	assert.NoError(t, err)
+
+	_, err = remoteWorktree.Add("fileWithExecuteBit")
+	assert.NoError(t, err)
+
+	_, err = remoteWorktree.Add("regularFile")
+	assert.NoError(t, err)
+
+	_, err = remoteWorktree.Commit("my commit", &CommitOptions{})
+	assert.NoError(t, err)
+
+	worktreePath := t.TempDir()
+
+	localRepo, err := PlainClone(worktreePath, false, &CloneOptions{URL: remoteUrl})
+	assert.NoError(t, err)
+
+	localWorktree, err := localRepo.Worktree()
+	assert.NoError(t, err)
+
+	idx, err := localWorktree.r.Storer.Index()
+	assert.NoError(t, err)
+
+	expectedEntries := []index.Entry{
+		{
+			Name: "fileWithExecuteBit",
+			Mode: filemode.Executable,
+		},
+		{
+			Name: "regularFile",
+			Mode: filemode.Regular,
+		},
+	}
+
+	assert.Len(t, idx.Entries, len(expectedEntries))
+
+	for i, expectedEntry := range expectedEntries {
+		assert.Equal(t, expectedEntry.Name, idx.Entries[i].Name)
+		assert.Equal(t, expectedEntry.Mode, idx.Entries[i].Mode)
+	}
+
+}
