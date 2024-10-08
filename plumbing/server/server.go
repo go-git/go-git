@@ -187,10 +187,12 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 }
 
 func (s *upSession) objectsToUpload(req *packp.UploadPackRequest) ([]plumbing.Hash, error) {
-	haves, err := revlist.Objects(s.storer, req.Haves, nil)
+	haves, err := revlist.ObjectsMissing(s.storer, req.Haves, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Haves = haves
 
 	return revlist.Objects(s.storer, req.Wants, haves)
 }
