@@ -457,7 +457,6 @@ func isRepoNotFoundError(s string) bool {
 
 // uploadPack implements the git-upload-pack protocol.
 func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) error {
-	// TODO support multi_ack mode
 	// TODO support multi_ack_detailed mode
 	// TODO support acks for common objects
 	// TODO build a proper state machine for all these processing options

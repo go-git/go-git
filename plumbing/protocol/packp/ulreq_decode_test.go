@@ -495,6 +495,8 @@ func (s *UlReqDecodeSuite) TestAll(c *C) {
 		"shallow dddddddddddddddddddddddddddddddddddddddd",
 		"deepen 1234",
 		"",
+		"have 5555555555555555555555555555555555555555",
+		"",
 	}
 	ur := s.testDecodeOK(c, payloads)
 
@@ -504,11 +506,17 @@ func (s *UlReqDecodeSuite) TestAll(c *C) {
 		plumbing.NewHash("3333333333333333333333333333333333333333"),
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
 	}
+	expectedHave := []plumbing.Hash{
+		plumbing.NewHash("5555555555555555555555555555555555555555"),
+	}
+	sort.Sort(byHash(expectedHave))
+	sort.Sort(byHash(ur.HavesUR))
+	c.Assert(ur.HavesUR, DeepEquals, expectedHave)
+	c.Assert(ur.Capabilities.Supports(capability.OFSDelta), Equals, true)
+	c.Assert(ur.Capabilities.Supports(capability.MultiACK), Equals, true)
 	sort.Sort(byHash(expectedWants))
 	sort.Sort(byHash(ur.Wants))
 	c.Assert(ur.Wants, DeepEquals, expectedWants)
-	c.Assert(ur.Capabilities.Supports(capability.OFSDelta), Equals, true)
-	c.Assert(ur.Capabilities.Supports(capability.MultiACK), Equals, true)
 
 	expectedShallows := []plumbing.Hash{
 		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),

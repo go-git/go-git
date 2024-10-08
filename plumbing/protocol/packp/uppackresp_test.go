@@ -60,10 +60,6 @@ func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
 	c.Assert(err, NotNil)
 }
 
-// multi_ack isn't fully implemented, this ensures that Decode ignores that fact,
-// as in some circumstances that's OK to assume so.
-//
-// TODO: Review as part of multi_ack implementation.
 func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 	req := NewUploadPackRequest()
 	req.Capabilities.Set(capability.MultiACK)
@@ -118,6 +114,7 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 	pf := io.NopCloser(bytes.NewBuffer([]byte("[PACK]")))
 	req := NewUploadPackRequest()
+	req.Capabilities.Set(capability.MultiACK)
 
 	res := NewUploadPackResponseWithPackfile(req, pf)
 	defer func() { c.Assert(res.Close(), IsNil) }()
@@ -127,7 +124,7 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 	}
 
 	b := bytes.NewBuffer(nil)
-	c.Assert(res.Encode(b), NotNil)
+	c.Assert(res.Encode(b), IsNil)
 }
 
 func FuzzDecoder(f *testing.F) {

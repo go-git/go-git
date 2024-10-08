@@ -24,6 +24,19 @@ func Objects(
 	return ObjectsWithStorageForIgnores(s, s, objs, ignore)
 }
 
+func ObjectsMissing(
+	s storer.EncodedObjectStorer,
+	objs,
+	ignore []plumbing.Hash,
+) ([]plumbing.Hash, error) {
+	ignore, err := objects(s, ignore, nil, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return objects(s, objs, ignore, true)
+}
+
 // ObjectsWithStorageForIgnores is the same as Objects, but a
 // secondary storage layer can be provided, to be used to finding the
 // full set of objects to be ignored while finding the reachable

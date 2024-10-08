@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -14,9 +15,13 @@ import (
 
 // Decode reads the next upload-request form its input and
 // stores it in the UploadRequest.
-func (req *UploadRequest) Decode(r io.Reader) error {
+func (req *UploadPackRequest) Decode(r io.Reader) error {
 	d := newUlReqDecoder(r)
-	return d.Decode(req)
+	if err := d.Decode(&req.UploadRequest); err != nil {
+		return err
+	}
+	req.Haves = req.HavesUR
+	return nil
 }
 
 type ulReqDecoder struct {
@@ -82,6 +87,12 @@ func (d *ulReqDecoder) decodeFirstWant() stateFn {
 		return nil
 	}
 
+	// if client send 0000 it don't want anything (already up to date after
+	// AdvertisedReferences) or ls-remote scenario
+	if len(d.line) == 0 {
+		return nil
+	}
+
 	if !bytes.HasPrefix(d.line, want) {
 		d.error("missing 'want ' prefix")
 		return nil
@@ -138,7 +149,7 @@ func (d *ulReqDecoder) decodeOtherWants() stateFn {
 	}
 
 	if len(d.line) == 0 {
-		return nil
+		return d.decodeHaves
 	}
 
 	if !bytes.HasPrefix(d.line, want) {
@@ -163,7 +174,7 @@ func (d *ulReqDecoder) decodeShallow() stateFn {
 	}
 
 	if len(d.line) == 0 {
-		return nil
+		return d.decodeHaves
 	}
 
 	if !bytes.HasPrefix(d.line, shallow) {
@@ -199,10 +210,6 @@ func (d *ulReqDecoder) decodeDeepen() stateFn {
 		return d.decodeDeepenReference
 	}
 
-	if len(d.line) == 0 {
-		return nil
-	}
-
 	d.error("unexpected deepen specification: %q", d.line)
 	return nil
 }
@@ -220,7 +227,7 @@ func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 	}
 	d.data.Depth = DepthCommits(n)
 
-	return d.decodeFlush
+	return d.decodeOtherWants
 }
 
 func (d *ulReqDecoder) decodeDeepenSince() stateFn {
@@ -234,7 +241,7 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 	t := time.Unix(secs, 0).UTC()
 	d.data.Depth = DepthSince(t)
 
-	return d.decodeFlush
+	return d.decodeOtherWants
 }
 
 func (d *ulReqDecoder) decodeDeepenReference() stateFn {
@@ -242,17 +249,32 @@ func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 
 	d.data.Depth = DepthReference(string(d.line))
 
-	return d.decodeFlush
+	return d.decodeOtherWants
 }
 
-func (d *ulReqDecoder) decodeFlush() stateFn {
+func (d *ulReqDecoder) decodeHaves() stateFn {
 	if ok := d.nextLine(); !ok {
+		if strings.Contains(d.err.Error(), "EOF") {
+			d.err = nil
+		}
 		return nil
 	}
 
-	if len(d.line) != 0 {
-		d.err = fmt.Errorf("unexpected payload while expecting a flush-pkt: %q", d.line)
+	if len(d.line) == 0 || bytes.Equal(d.line, done) {
+		return nil
 	}
 
-	return nil
+	if !bytes.HasPrefix(d.line, have) {
+		d.error("unexpected payload while expecting a have: %q", d.line)
+		return nil
+	}
+	d.line = bytes.TrimPrefix(d.line, have)
+
+	hash, ok := d.readHash()
+	if !ok {
+		return nil
+	}
+	d.data.HavesUR = append(d.data.HavesUR, hash)
+
+	return d.decodeHaves
 }

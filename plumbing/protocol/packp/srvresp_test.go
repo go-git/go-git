@@ -99,10 +99,6 @@ func (s *ServerResponseSuite) TestDecodeMalformed(c *C) {
 	c.Assert(err, NotNil)
 }
 
-// multi_ack isn't fully implemented, this ensures that Decode ignores that fact,
-// as in some circumstances that's OK to assume so.
-//
-// TODO: Review as part of multi_ack implementation.
 func (s *ServerResponseSuite) TestDecodeMultiACK(c *C) {
 	raw := "" +
 		"0031ACK 1111111111111111111111111111111111111111\n" +
