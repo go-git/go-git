@@ -309,7 +309,6 @@ func parseFile(endpoint string) (*Endpoint, bool) {
 // UnsupportedCapabilities are the capabilities not supported by any client
 // implementation
 var UnsupportedCapabilities = []capability.Capability{
-	capability.MultiACK,
 	capability.MultiACKDetailed,
 	capability.ThinPack,
 }
