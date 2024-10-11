@@ -260,6 +260,50 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 	s.testDecodeOkRaw(c, expected, buf.Bytes())
 }
 
+func (s *UpdReqDecodeSuite) TestPushOptions(c *C) {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := NewReferenceUpdateRequest()
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+	}
+	expected.Capabilities.Add("push-options")
+	expected.Options = append(expected.Options, &Option{Key: "key1", Value: "value1"})
+	expected.Options = append(expected.Options, &Option{Key: "key2", Value: "value2"})
+	expected.Options = append(expected.Options, &Option{Key: "key3", Value: ""})
+	expected.Options = append(expected.Options, &Option{Key: "key4", Value: ""})
+	expected.Packfile = io.NopCloser(bytes.NewReader([]byte{}))
+
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00push-options",
+		pktline.FlushString,
+		"key1=value1",
+		"key2=value2",
+		"key3",
+		"key4=",
+		pktline.FlushString,
+	}
+
+	s.testDecodeOkExpected(c, expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestInvalidPushOptionMissingKey(c *C) {
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00push-options",
+		pktline.FlushString,
+		"=value",
+		pktline.FlushString,
+	}
+
+	var buf bytes.Buffer
+	e := pktline.NewEncoder(&buf)
+	err := e.EncodeString(payloads...)
+	c.Assert(err, IsNil)
+
+	s.testDecoderErrorMatches(c, &buf, "^malformed request: invalid push option: empty option key")
+}
+
 func (s *UpdReqDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {
 	r := NewReferenceUpdateRequest()
 	c.Assert(r.Decode(input), ErrorMatches, pattern)

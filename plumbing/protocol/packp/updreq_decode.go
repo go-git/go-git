@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 )
 
 var (
@@ -74,6 +75,11 @@ func errMalformedCommand(err error) error {
 		"malformed command: %s", err.Error()))
 }
 
+func errInvalidPushOption(err error) error {
+	return errMalformedRequest(fmt.Sprintf(
+		"invalid push option: %s", err.Error()))
+}
+
 // Decode reads the next update-request message form the reader and wr
 func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
 	var rc io.ReadCloser
@@ -100,6 +106,7 @@ func (d *updReqDecoder) Decode(req *ReferenceUpdateRequest) error {
 		d.decodeShallow,
 		d.decodeCommandAndCapabilities,
 		d.decodeCommands,
+		d.decodePushOptions,
 		d.setPackfile,
 		req.validate,
 	}
@@ -201,6 +208,35 @@ func (d *updReqDecoder) setPackfile() error {
 	return nil
 }
 
+func (d *updReqDecoder) decodePushOptions() error {
+	if !d.req.Capabilities.Supports(capability.PushOptions) {
+		return nil
+	}
+
+	if ok := d.s.Scan(); !ok {
+		return d.s.Err()
+	}
+
+	for {
+		b := d.s.Bytes()
+
+		if bytes.Equal(b, pktline.Flush) {
+			return nil
+		}
+
+		o, err := parsePushOption(b)
+		if err != nil {
+			return err
+		}
+
+		d.req.Options = append(d.req.Options, o)
+
+		if ok := d.s.Scan(); !ok {
+			return d.s.Err()
+		}
+	}
+}
+
 func parseCommand(b []byte) (*Command, error) {
 	if len(b) < minCommandLength {
 		return nil, errInvalidCommandLineLength(len(b))
@@ -246,4 +282,18 @@ func (d *updReqDecoder) scanErrorOr(origErr error) error {
 	}
 
 	return origErr
+}
+
+func parsePushOption(b []byte) (*Option, error) {
+	i := bytes.IndexByte(b, '=')
+	if i == -1 {
+		return &Option{Key: string(b)}, nil
+	}
+	if i == 0 {
+		return nil, errInvalidPushOption(errors.New("empty option key"))
+	}
+	if i == len(b)-1 {
+		return &Option{Key: string(b[:i])}, nil
+	}
+	return &Option{Key: string(b[:i]), Value: string(b[i+1:])}, nil
 }
