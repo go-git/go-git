@@ -34,16 +34,16 @@ func NewUploadPackResponse(req *UploadPackRequest) *UploadPackResponse {
 	isMultiACK := req.Capabilities.Supports(capability.MultiACK) ||
 		req.Capabilities.Supports(capability.MultiACKDetailed)
 	acks := []plumbing.Hash{}
-	if isMultiACK {
-		for _, ch := range req.HavesUR {
-			for _, h := range req.Haves {
-				if h == ch {
-					acks = append(acks, h)
-					break
-				}
+
+	for _, ch := range req.HavesUR {
+		for _, h := range req.Haves {
+			if h == ch {
+				acks = append(acks, h)
+				break
 			}
 		}
 	}
+
 	return &UploadPackResponse{
 		isShallow:      isShallow,
 		isMultiACK:     isMultiACK,

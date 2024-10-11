@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -17,7 +18,7 @@ type ServerCommand struct {
 	Stdin  io.Reader
 }
 
-func ServeUploadPack(cmd ServerCommand, s transport.UploadPackSession) (err error) {
+func ServeUploadPack(cmd ServerCommand, s transport.UploadPackSession, storer storer.Storer) (err error) {
 	ioutil.CheckClose(cmd.Stdout, &err)
 
 	ar, err := s.AdvertisedReferences()
@@ -30,7 +31,7 @@ func ServeUploadPack(cmd ServerCommand, s transport.UploadPackSession) (err erro
 	}
 
 	req := packp.NewUploadPackRequest()
-	if err := req.Decode(cmd.Stdin); err != nil {
+	if err := req.Decode(storer, cmd.Stdin, cmd.Stdout); err != nil {
 		return err
 	}
 

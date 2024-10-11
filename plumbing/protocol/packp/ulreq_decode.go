@@ -11,12 +11,14 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/revlist"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 // Decode reads the next upload-request form its input and
 // stores it in the UploadRequest.
-func (req *UploadPackRequest) Decode(r io.Reader) error {
-	d := newUlReqDecoder(r)
+func (req *UploadPackRequest) Decode(storer storer.Storer, r io.Reader, w io.Writer) error {
+	d := newUlReqDecoder(storer, r, w)
 	if err := d.Decode(&req.UploadRequest); err != nil {
 		return err
 	}
@@ -25,16 +27,22 @@ func (req *UploadPackRequest) Decode(r io.Reader) error {
 }
 
 type ulReqDecoder struct {
-	r     io.Reader      // a pkt-line scanner from the input stream
-	line  []byte         // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine int            // current pkt-line number for debugging, begins at 1
-	err   error          // sticky error, use the parser.error() method to fill this out
-	data  *UploadRequest // parsed data is stored here
+	r      io.Reader      // a pkt-line scanner from the input stream
+	w      io.Writer      // a pkt-line writer to respond to client in multi-ack scenario
+	storer storer.Storer  //find common hash in multi-ack scenario
+	line   []byte         // current pkt-line contents, use parser.nextLine() to make it advance
+	nLine  int            // current pkt-line number for debugging, begins at 1
+	err    error          // sticky error, use the parser.error() method to fill this out
+	data   *UploadRequest // parsed data is stored here
+	have   map[plumbing.Hash]interface{}
 }
 
-func newUlReqDecoder(r io.Reader) *ulReqDecoder {
+func newUlReqDecoder(storer storer.Storer, r io.Reader, w io.Writer) *ulReqDecoder {
 	return &ulReqDecoder{
-		r: r,
+		r:      r,
+		w:      w,
+		storer: storer,
+		have:   make(map[plumbing.Hash]interface{}, 0),
 	}
 }
 
@@ -149,7 +157,7 @@ func (d *ulReqDecoder) decodeOtherWants() stateFn {
 	}
 
 	if len(d.line) == 0 {
-		return d.decodeHaves
+		return d.initHaves
 	}
 
 	if !bytes.HasPrefix(d.line, want) {
@@ -174,7 +182,7 @@ func (d *ulReqDecoder) decodeShallow() stateFn {
 	}
 
 	if len(d.line) == 0 {
-		return d.decodeHaves
+		return d.initHaves
 	}
 
 	if !bytes.HasPrefix(d.line, shallow) {
@@ -252,6 +260,17 @@ func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 	return d.decodeOtherWants
 }
 
+func (d *ulReqDecoder) initHaves() stateFn {
+	haves, err := revlist.ObjectsMissing(d.storer, d.data.Wants, nil)
+	if err != nil {
+		return nil
+	}
+	for _, h := range haves {
+		d.have[h] = 1
+	}
+	return d.decodeHaves
+}
+
 func (d *ulReqDecoder) decodeHaves() stateFn {
 	if ok := d.nextLine(); !ok {
 		if strings.Contains(d.err.Error(), "EOF") {
@@ -260,7 +279,11 @@ func (d *ulReqDecoder) decodeHaves() stateFn {
 		return nil
 	}
 
-	if len(d.line) == 0 || bytes.Equal(d.line, done) {
+	if len(d.line) == 0 {
+		return d.decodeHaves
+	}
+
+	if bytes.Equal(d.line, done) {
 		return nil
 	}
 
@@ -275,6 +298,13 @@ func (d *ulReqDecoder) decodeHaves() stateFn {
 		return nil
 	}
 	d.data.HavesUR = append(d.data.HavesUR, hash)
+	d.sendIfNeeded(hash)
 
 	return d.decodeHaves
+}
+
+func (d *ulReqDecoder) sendIfNeeded(h plumbing.Hash) {
+	if _, ok := d.have[h]; ok {
+		pktline.Writef(d.w, "%s %s continue\n", ack, h.String())
+	}
 }

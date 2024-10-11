@@ -109,6 +109,10 @@ type upSession struct {
 	session
 }
 
+func (s *upSession) GetStorer() storer.Storer {
+	return s.storer
+}
+
 func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
 }

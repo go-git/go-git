@@ -24,7 +24,7 @@ func ServeUploadPack(path string) error {
 		return fmt.Errorf("error creating session: %s", err)
 	}
 
-	return server.ServeUploadPack(srvCmd, s)
+	return server.ServeUploadPack(srvCmd, s, nil) //TODO how to get a storer here?
 }
 
 // ServeReceivePack serves a git-receive-pack request using standard output,
