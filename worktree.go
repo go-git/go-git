@@ -714,7 +714,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 			return err
 		}
 
-		return w.addIndexFromFile(name, e.Hash, idx)
+		return w.addIndexFromFile(name, e.Hash, f.Mode, idx)
 	}
 
 	return nil
@@ -797,14 +797,9 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 	return nil
 }
 
-func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *indexBuilder) error {
+func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, mode filemode.FileMode, idx *indexBuilder) error {
 	idx.Remove(name)
 	fi, err := w.Filesystem.Lstat(name)
-	if err != nil {
-		return err
-	}
-
-	mode, err := filemode.NewFromOSFileMode(fi.Mode())
 	if err != nil {
 		return err
 	}
