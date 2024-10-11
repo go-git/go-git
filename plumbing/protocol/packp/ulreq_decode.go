@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -20,7 +19,6 @@ func (req *UploadPackRequest) Decode(r io.Reader) error {
 	if err := d.Decode(&req.UploadRequest); err != nil {
 		return err
 	}
-	req.Haves = req.HavesUR
 	return nil
 }
 
@@ -54,7 +52,6 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 		"pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...),
 	)
-
 	d.err = NewErrUnexpectedData(msg, d.line)
 }
 
@@ -62,16 +59,20 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 // p.line and increments p.nLine.  A successful invocation returns true,
 // otherwise, false is returned and the sticky error is filled out
 // accordingly.  Trims eols at the end of the payloads.
-func (d *ulReqDecoder) nextLine() bool {
+func (d *ulReqDecoder) nextLine(reportError bool) bool {
 	d.nLine++
 
 	_, p, err := pktline.ReadLine(d.r)
 	if err == io.EOF {
-		d.error("EOF")
+		if reportError {
+			d.error("EOF")
+		}
 		return false
 	}
 	if err != nil {
-		d.err = err
+		if reportError {
+			d.err = err
+		}
 		return false
 	}
 
@@ -83,7 +84,7 @@ func (d *ulReqDecoder) nextLine() bool {
 
 // Expected format: want <hash>[ capabilities]
 func (d *ulReqDecoder) decodeFirstWant() stateFn {
-	if ok := d.nextLine(); !ok {
+	if ok := d.nextLine(true); !ok {
 		return nil
 	}
 
@@ -136,7 +137,7 @@ func (d *ulReqDecoder) decodeCaps() stateFn {
 
 // Expected format: want <hash>
 func (d *ulReqDecoder) decodeOtherWants() stateFn {
-	if ok := d.nextLine(); !ok {
+	if ok := d.nextLine(true); !ok {
 		return nil
 	}
 
@@ -189,7 +190,7 @@ func (d *ulReqDecoder) decodeShallow() stateFn {
 	}
 	d.data.Shallows = append(d.data.Shallows, hash)
 
-	if ok := d.nextLine(); !ok {
+	if ok := d.nextLine(true); !ok {
 		return nil
 	}
 
@@ -253,28 +254,46 @@ func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 }
 
 func (d *ulReqDecoder) decodeHaves() stateFn {
-	if ok := d.nextLine(); !ok {
-		if strings.Contains(d.err.Error(), "EOF") {
-			d.err = nil
+	go func() {
+		inBetweenHave := []plumbing.Hash{}
+		flushLineReach := false
+
+		for {
+			if ok := d.nextLine(false); !ok {
+				break
+			}
+
+			if len(d.line) == 0 {
+				flushLineReach = true
+				continue
+			}
+
+			if bytes.Equal(d.line, done) {
+				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: true}
+				break
+			}
+
+			if flushLineReach {
+				flushLineReach = false
+				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: false}
+				inBetweenHave = []plumbing.Hash{}
+			}
+
+			if !bytes.HasPrefix(d.line, have) {
+				d.error("unexpected payload while expecting a have: %q", d.line)
+				break
+			}
+			d.line = bytes.TrimPrefix(d.line, have)
+
+			hash, ok := d.readHash()
+			if !ok {
+				break
+			}
+			inBetweenHave = append(inBetweenHave, hash)
 		}
-		return nil
-	}
 
-	if len(d.line) == 0 || bytes.Equal(d.line, done) {
-		return nil
-	}
+		close(d.data.HavesUR)
+	}()
 
-	if !bytes.HasPrefix(d.line, have) {
-		d.error("unexpected payload while expecting a have: %q", d.line)
-		return nil
-	}
-	d.line = bytes.TrimPrefix(d.line, have)
-
-	hash, ok := d.readHash()
-	if !ok {
-		return nil
-	}
-	d.data.HavesUR = append(d.data.HavesUR, hash)
-
-	return d.decodeHaves
+	return nil
 }

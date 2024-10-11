@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
@@ -33,21 +32,11 @@ func NewUploadPackResponse(req *UploadPackRequest) *UploadPackResponse {
 	isShallow := !req.Depth.IsZero()
 	isMultiACK := req.Capabilities.Supports(capability.MultiACK) ||
 		req.Capabilities.Supports(capability.MultiACKDetailed)
-	acks := []plumbing.Hash{}
-	if isMultiACK {
-		for _, ch := range req.HavesUR {
-			for _, h := range req.Haves {
-				if h == ch {
-					acks = append(acks, h)
-					break
-				}
-			}
-		}
-	}
+
 	return &UploadPackResponse{
 		isShallow:      isShallow,
 		isMultiACK:     isMultiACK,
-		ServerResponse: ServerResponse{ACKs: acks},
+		ServerResponse: ServerResponse{req: req},
 	}
 }
 

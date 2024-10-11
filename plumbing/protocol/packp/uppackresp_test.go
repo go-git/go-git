@@ -89,6 +89,9 @@ func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
 	res := NewUploadPackResponseWithPackfile(req, pf)
 	defer func() { c.Assert(res.Close(), IsNil) }()
 
+	go func() {
+		close(req.UploadPackCommands)
+	}()
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
 
@@ -104,6 +107,9 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 	res := NewUploadPackResponseWithPackfile(req, pf)
 	defer func() { c.Assert(res.Close(), IsNil) }()
 
+	go func() {
+		close(req.UploadPackCommands)
+	}()
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
 
@@ -118,13 +124,23 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 
 	res := NewUploadPackResponseWithPackfile(req, pf)
 	defer func() { c.Assert(res.Close(), IsNil) }()
-	res.ACKs = []plumbing.Hash{
-		plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81"),
-		plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82"),
-	}
-
+	go func() {
+		req.UploadPackCommands <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{
+				{Hash: plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81")},
+				{Hash: plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82"), IsCommon: true},
+			}}
+		close(req.UploadPackCommands)
+	}()
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
+
+	expected := "003aACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81 continue\n" +
+		"003aACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82 continue\n" +
+		"0008NAK\n" +
+		"0031ACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82\n" +
+		"[PACK]"
+	c.Assert(b.String(), Equals, expected)
 }
 
 func FuzzDecoder(f *testing.F) {

@@ -3,11 +3,13 @@ package packp
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
@@ -16,6 +18,7 @@ const ackLineLen = 44
 // ServerResponse object acknowledgement from upload-pack service
 type ServerResponse struct {
 	ACKs []plumbing.Hash
+	req  *UploadPackRequest
 }
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
@@ -48,7 +51,7 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 		}
 	}
 
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return nil
 	}
 
@@ -59,7 +62,7 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 // read in the buffer without moving the read pointer.
 func (r *ServerResponse) stopReading(reader ioutil.ReadPeeker) (bool, error) {
 	ahead, err := reader.Peek(7)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return true, nil
 	}
 
@@ -120,11 +123,60 @@ func (r *ServerResponse) decodeACKLine(line []byte) error {
 
 // Encode encodes the ServerResponse into a writer.
 func (r *ServerResponse) Encode(w io.Writer) error {
-	if len(r.ACKs) == 0 {
-		_, err := pktline.WriteString(w, string(nak)+"\n")
-		return err
+	multiAck := r.req.Capabilities.Supports(capability.MultiACK)
+	singleAckSent := false
+	commonHash := plumbing.ZeroHash
+	for cmd := range r.req.UploadPackCommands {
+		if cmd.Done {
+			if commonHash.IsZero() {
+				for _, h := range cmd.Acks {
+					if h.IsCommon && commonHash.IsZero() {
+						commonHash = h.Hash
+					}
+				}
+			}
+			continue
+		}
+		if len(cmd.Acks) == 0 {
+			if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+				return err
+			}
+		} else {
+			if multiAck { //multi_ack
+				for _, h := range cmd.Acks {
+					if h.IsCommon && commonHash.IsZero() {
+						commonHash = h.Hash
+					}
+					if _, err := pktline.Writef(w, "%s %s continue\n", ack, h.Hash.String()); err != nil {
+						return err
+					}
+				}
+				if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+					return err
+				}
+			} else if commonHash.IsZero() { // single ack
+				for _, h := range cmd.Acks {
+					if h.IsCommon {
+						commonHash = h.Hash
+						singleAckSent = true
+						if _, err := pktline.Writef(w, "%s %s\n", ack, commonHash.String()); err != nil {
+							return err
+						}
+						break
+					}
+				}
+			}
+		}
 	}
-
-	_, err := pktline.Writef(w, "%s %s\n", ack, r.ACKs[0].String())
-	return err
+	//after done
+	if commonHash.IsZero() {
+		if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+			return err
+		}
+	} else if multiAck || !singleAckSent {
+		if _, err := pktline.Writef(w, "%s %s\n", ack, commonHash.String()); err != nil {
+			return err
+		}
+	}
+	return nil
 }

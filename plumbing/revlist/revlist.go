@@ -24,19 +24,6 @@ func Objects(
 	return ObjectsWithStorageForIgnores(s, s, objs, ignore)
 }
 
-func ObjectsMissing(
-	s storer.EncodedObjectStorer,
-	objs,
-	ignore []plumbing.Hash,
-) ([]plumbing.Hash, error) {
-	ignore, err := objects(s, ignore, nil, true)
-	if err != nil {
-		return nil, err
-	}
-
-	return objects(s, objs, ignore, true)
-}
-
 // ObjectsWithStorageForIgnores is the same as Objects, but a
 // secondary storage layer can be provided, to be used to finding the
 // full set of objects to be ignored while finding the reachable
@@ -240,4 +227,27 @@ func hashListToSet(hashes []plumbing.Hash) map[plumbing.Hash]bool {
 	}
 
 	return result
+}
+
+// ObjectsWithRef find all hashes linked to objs
+// return a map of hashes containing an array of hash objs
+func ObjectsWithRef(
+	s storer.EncodedObjectStorer,
+	objs,
+	ignore []plumbing.Hash,
+) (map[plumbing.Hash][]plumbing.Hash, error) {
+	all := map[plumbing.Hash][]plumbing.Hash{}
+	for _, obj := range objs {
+		walkerFunc := func(h plumbing.Hash) {
+			if hashes, ok := all[h]; ok {
+				all[h] = append(hashes, obj)
+			} else {
+				all[h] = []plumbing.Hash{obj}
+			}
+		}
+		if err := processObject(s, obj, map[plumbing.Hash]bool{}, map[plumbing.Hash]bool{}, ignore, walkerFunc); err != nil {
+			return nil, err
+		}
+	}
+	return all, nil
 }
