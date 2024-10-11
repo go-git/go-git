@@ -33,6 +33,7 @@ var args = map[string][]string{
 	"revision":                   {cloneRepository(defaultURL, tempFolder()), "master~2^"},
 	"sha256":                     {tempFolder()},
 	"showcase":                   {defaultURL, tempFolder()},
+	"sparse-checkout":            {defaultURL, "vendor", tempFolder()},
 	"tag":                        {cloneRepository(defaultURL, tempFolder())},
 }
 

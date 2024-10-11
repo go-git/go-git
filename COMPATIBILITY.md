@@ -34,6 +34,7 @@ compatibility status with go-git.
 | `merge`     |             | ⚠️ (partial) | Fast-forward only                       |                                                                                                 |
 | `mergetool` |             | ❌           |                                         |                                                                                                 |
 | `stash`     |             | ❌           |                                         |                                                                                                 |
+| `sparse-checkout`     |             | ✅           |                                         | - [sparse-checkout](_examples/sparse-checkout/main.go)                                                                                               |
 | `tag`       |             | ✅           |                                         | - [tag](_examples/tag/main.go) <br/> - [tag create and push](_examples/tag-create-push/main.go) |
 
 ## Sharing and updating projects
