@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/revlist"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
@@ -27,14 +27,15 @@ func (req *UploadPackRequest) Decode(storer storer.Storer, r io.Reader, w io.Wri
 }
 
 type ulReqDecoder struct {
-	r      io.Reader      // a pkt-line scanner from the input stream
-	w      io.Writer      // a pkt-line writer to respond to client in multi-ack scenario
-	storer storer.Storer  //find common hash in multi-ack scenario
-	line   []byte         // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine  int            // current pkt-line number for debugging, begins at 1
-	err    error          // sticky error, use the parser.error() method to fill this out
-	data   *UploadRequest // parsed data is stored here
-	have   map[plumbing.Hash]interface{}
+	r             io.Reader      // a pkt-line scanner from the input stream
+	w             io.Writer      // a pkt-line writer to respond to client in multi-ack scenario
+	storer        storer.Storer  //find common hash in multi-ack scenario
+	line          []byte         // current pkt-line contents, use parser.nextLine() to make it advance
+	nLine         int            // current pkt-line number for debugging, begins at 1
+	err           error          // sticky error, use the parser.error() method to fill this out
+	data          *UploadRequest // parsed data is stored here
+	have          map[plumbing.Hash]interface{}
+	singleAckSent bool
 }
 
 func newUlReqDecoder(storer storer.Storer, r io.Reader, w io.Writer) *ulReqDecoder {
@@ -272,39 +273,62 @@ func (d *ulReqDecoder) initHaves() stateFn {
 }
 
 func (d *ulReqDecoder) decodeHaves() stateFn {
-	if ok := d.nextLine(); !ok {
-		if strings.Contains(d.err.Error(), "EOF") {
-			d.err = nil
+	inBetweenHave := []plumbing.Hash{}
+	doneCalled := false
+
+	for {
+		if ok := d.nextLine(); !ok {
+			return nil
 		}
+
+		if len(d.line) == 0 {
+			break
+		}
+
+		if bytes.Equal(d.line, done) {
+			doneCalled = true
+			break
+		}
+
+		if !bytes.HasPrefix(d.line, have) {
+			d.error("unexpected payload while expecting a have: %q", d.line)
+			return nil
+		}
+		d.line = bytes.TrimPrefix(d.line, have)
+
+		hash, ok := d.readHash()
+		if !ok {
+			return nil
+		}
+		inBetweenHave = append(inBetweenHave, hash)
+	}
+
+	d.sendKnowHash(inBetweenHave)
+
+	if doneCalled || d.singleAckSent {
 		return nil
 	}
-
-	if len(d.line) == 0 {
-		return d.decodeHaves
-	}
-
-	if bytes.Equal(d.line, done) {
-		return nil
-	}
-
-	if !bytes.HasPrefix(d.line, have) {
-		d.error("unexpected payload while expecting a have: %q", d.line)
-		return nil
-	}
-	d.line = bytes.TrimPrefix(d.line, have)
-
-	hash, ok := d.readHash()
-	if !ok {
-		return nil
-	}
-	d.data.HavesUR = append(d.data.HavesUR, hash)
-	d.sendIfNeeded(hash)
-
 	return d.decodeHaves
 }
 
-func (d *ulReqDecoder) sendIfNeeded(h plumbing.Hash) {
-	if _, ok := d.have[h]; ok {
-		pktline.Writef(d.w, "%s %s continue\n", ack, h.String())
+func (d *ulReqDecoder) sendKnowHash(clientHashes []plumbing.Hash) {
+	if d.data.Capabilities.Supports(capability.MultiACK) && len(clientHashes) > 0 {
+		for _, h := range clientHashes {
+			if _, ok := d.have[h]; ok {
+				pktline.Writef(d.w, "%s %s continue\n", ack, h.String())
+				d.data.HavesUR = append(d.data.HavesUR, h)
+			}
+		}
+		pktline.Writef(d.w, "%s\n", nak)
+	} else {
+		for _, h := range clientHashes {
+			if _, ok := d.have[h]; ok {
+				d.singleAckSent = true
+				d.data.HavesUR = append(d.data.HavesUR, h)
+			}
+		}
+		if !d.singleAckSent {
+			pktline.Writef(d.w, "%s\n", nak)
+		}
 	}
 }
