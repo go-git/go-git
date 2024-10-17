@@ -27,7 +27,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 var (
@@ -83,7 +82,6 @@ type UploadPackSession interface {
 	// side of a git-upload-pack is called git-fetch-pack, although here
 	// the same interface is used to make it RPC-like.
 	UploadPack(context.Context, *packp.UploadPackRequest) (*packp.UploadPackResponse, error)
-	GetStorer() storer.Storer
 }
 
 // ReceivePackSession represents a git-receive-pack session.

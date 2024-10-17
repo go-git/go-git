@@ -19,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
-	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/go-git/go-git/v5/utils/trace"
 )
@@ -111,10 +110,6 @@ type session struct {
 	packRun       bool
 	finished      bool
 	firstErrLine  chan string
-}
-
-func (c *session) GetStorer() storer.Storer {
-	return nil
 }
 
 func (c *client) newSession(s string, ep *Endpoint, auth AuthMethod) (*session, error) {

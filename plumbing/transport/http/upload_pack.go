@@ -11,7 +11,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/go-git/go-git/v5/utils/trace"
@@ -24,10 +23,6 @@ type upSession struct {
 func newUploadPackSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
 	s, err := newSession(c, ep, auth)
 	return &upSession{s}, err
-}
-
-func (s *upSession) GetStorer() storer.Storer {
-	return nil
 }
 
 func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {

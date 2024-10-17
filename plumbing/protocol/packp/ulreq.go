@@ -18,7 +18,12 @@ type UploadRequest struct {
 	Shallows     []plumbing.Hash
 	Depth        Depth
 	Filter       Filter
-	HavesUR      []plumbing.Hash
+	HavesUR      chan UploadRequestHave
+}
+
+type UploadRequestHave struct {
+	Done  bool
+	Haves []plumbing.Hash
 }
 
 // Depth values stores the desired depth of the requested packfile: see
@@ -66,7 +71,7 @@ func NewUploadRequest() *UploadRequest {
 		Wants:        []plumbing.Hash{},
 		Shallows:     []plumbing.Hash{},
 		Depth:        DepthCommits(0),
-		HavesUR:      []plumbing.Hash{},
+		HavesUR:      make(chan UploadRequestHave),
 	}
 }
 
