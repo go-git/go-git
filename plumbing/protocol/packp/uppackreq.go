@@ -15,14 +15,26 @@ import (
 type UploadPackRequest struct {
 	UploadRequest
 	UploadHaves
+	UploadPackCommands chan UploadPackCommand
+}
+
+type UploadPackCommand struct {
+	Acks []UploadPackRequestAck
+	Done bool
+}
+
+type UploadPackRequestAck struct {
+	Hash     plumbing.Hash
+	IsCommon bool
 }
 
 // NewUploadPackRequest creates a new UploadPackRequest and returns a pointer.
 func NewUploadPackRequest() *UploadPackRequest {
 	ur := NewUploadRequest()
 	return &UploadPackRequest{
-		UploadHaves:   UploadHaves{},
-		UploadRequest: *ur,
+		UploadHaves:        UploadHaves{},
+		UploadRequest:      *ur,
+		UploadPackCommands: make(chan UploadPackCommand),
 	}
 }
 
@@ -33,8 +45,9 @@ func NewUploadPackRequest() *UploadPackRequest {
 func NewUploadPackRequestFromCapabilities(adv *capability.List) *UploadPackRequest {
 	ur := NewUploadRequestFromCapabilities(adv)
 	return &UploadPackRequest{
-		UploadHaves:   UploadHaves{},
-		UploadRequest: *ur,
+		UploadHaves:        UploadHaves{},
+		UploadRequest:      *ur,
+		UploadPackCommands: make(chan UploadPackCommand),
 	}
 }
 

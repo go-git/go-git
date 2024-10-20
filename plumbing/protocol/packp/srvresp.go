@@ -3,12 +3,13 @@ package packp
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
@@ -17,6 +18,7 @@ const ackLineLen = 44
 // ServerResponse object acknowledgement from upload-pack service
 type ServerResponse struct {
 	ACKs []plumbing.Hash
+	req  *UploadPackRequest
 }
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
@@ -50,22 +52,7 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 	}
 
 	if err == io.EOF {
-		err = nil
-	}
-
-	// isMultiACK is true when the remote server advertises the related
-	// capabilities when they are not in transport.UnsupportedCapabilities.
-	//
-	// Users may decide to remove multi_ack and multi_ack_detailed from the
-	// unsupported capabilities list, which allows them to do initial clones
-	// from Azure DevOps.
-	//
-	// Follow-up fetches may error, therefore errors are wrapped with additional
-	// information highlighting that this capabilities are not supported by go-git.
-	//
-	// TODO: Implement support for multi_ack or multi_ack_detailed responses.
-	if err != nil && isMultiACK {
-		return fmt.Errorf("multi_ack and multi_ack_detailed are not supported: %w", err)
+		return nil
 	}
 
 	return err
@@ -135,17 +122,68 @@ func (r *ServerResponse) decodeACKLine(line []byte) error {
 }
 
 // Encode encodes the ServerResponse into a writer.
-func (r *ServerResponse) Encode(w io.Writer, isMultiACK bool) error {
-	if len(r.ACKs) > 1 && !isMultiACK {
-		// For further information, refer to comments in the Decode func above.
-		return errors.New("multi_ack and multi_ack_detailed are not supported")
+func (r *ServerResponse) Encode(w io.Writer) error {
+	multiAck := r.req.Capabilities.Supports(capability.MultiACK)
+	singleAckSent := false
+	commonHash := plumbing.ZeroHash
+	for cmd := range r.req.UploadPackCommands {
+		if cmd.Done {
+			if commonHash.IsZero() {
+				for _, h := range cmd.Acks {
+					if h.IsCommon && commonHash.IsZero() {
+						commonHash = h.Hash
+					}
+				}
+			}
+			continue
+		}
+		if len(cmd.Acks) == 0 {
+			os.Stdout.WriteString("!! Send nak\n")
+			if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+				return err
+			}
+		} else {
+			if multiAck { //multi_ack
+				for _, h := range cmd.Acks {
+					if h.IsCommon && commonHash.IsZero() {
+						commonHash = h.Hash
+					}
+					os.Stdout.WriteString("!! Send ack continue\n")
+					if _, err := pktline.Writef(w, "%s %s continue\n", ack, h.Hash.String()); err != nil {
+						return err
+					}
+				}
+				os.Stdout.WriteString("!! Send nak\n")
+				if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+					return err
+				}
+			} else if commonHash.IsZero() { // single ack
+				for _, h := range cmd.Acks {
+					if h.IsCommon {
+						commonHash = h.Hash
+						singleAckSent = true
+						os.Stdout.WriteString("!! Send single ack h\n")
+						if _, err := pktline.Writef(w, "%s %s\n", ack, commonHash.String()); err != nil {
+							return err
+						}
+						break
+					}
+				}
+			}
+		}
 	}
-
-	if len(r.ACKs) == 0 {
-		_, err := pktline.WriteString(w, string(nak)+"\n")
-		return err
+	//after done
+	if commonHash.IsZero() {
+		os.Stdout.WriteString("!! Send final nak\n")
+		if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+			return err
+		}
+	} else if multiAck || !singleAckSent {
+		os.Stdout.WriteString("!! Send final ack h\n")
+		if _, err := pktline.Writef(w, "%s %s\n", ack, commonHash.String()); err != nil {
+			return err
+		}
 	}
-
-	_, err := pktline.Writef(w, "%s %s\n", ack, r.ACKs[0].String())
-	return err
+	os.Stdout.WriteString("!! Send PACK\n")
+	return nil
 }
