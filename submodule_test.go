@@ -26,8 +26,9 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
-		URL: path,
+	r, err := PlainClone(filepath.Join(dir, "worktree"), &CloneOptions{
+		IsBare: false,
+		URL:    path,
 	})
 
 	c.Assert(err, IsNil)

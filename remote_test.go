@@ -779,8 +779,9 @@ func (s *RemoteSuite) TestPushDeleteReference(c *C) {
 
 	url := c.MkDir()
 
-	r, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	r, err := PlainClone(url, &CloneOptions{
+		URL:    fs.Root(),
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -805,8 +806,9 @@ func (s *RemoteSuite) TestForcePushDeleteReference(c *C) {
 
 	url := c.MkDir()
 
-	r, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	r, err := PlainClone(url, &CloneOptions{
+		URL:    fs.Root(),
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -832,8 +834,9 @@ func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 
 	url := c.MkDir()
 
-	r, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	r, err := PlainClone(url, &CloneOptions{
+		URL:    fs.Root(),
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -1043,15 +1046,17 @@ func (s *RemoteSuite) TestPushPrune(c *C) {
 
 	url := c.MkDir()
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:    fs.Root(),
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:    url,
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -1104,15 +1109,17 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 
 	url := c.MkDir()
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:    fs.Root(),
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:    url,
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -1141,15 +1148,17 @@ func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch(c *C) {
 
 	url := c.MkDir()
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fs.Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		URL:    fs.Root(),
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:    url,
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -1638,12 +1647,13 @@ func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
 	_ = CommitNewFile(c, remote, "File2")
 
 	// Clone the repo with a depth of 1
-	repo, err := PlainClone(repoDir, false, &CloneOptions{
+	repo, err := PlainClone(repoDir, &CloneOptions{
 		URL:           remoteUrl,
 		Depth:         1,
 		Tags:          NoTags,
 		SingleBranch:  true,
 		ReferenceName: "master",
+		IsBare:        false,
 	})
 	c.Assert(err, IsNil)
 
