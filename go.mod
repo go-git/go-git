@@ -11,7 +11,7 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
-	github.com/go-git/go-billy/v5 v5.5.1-0.20240427054813-8453aa90c6ec
+	github.com/go-git/go-billy/v5 v5.6.0
 	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
@@ -33,7 +33,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
-	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
+	github.com/cyphar/filepath-securejoin v0.2.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
