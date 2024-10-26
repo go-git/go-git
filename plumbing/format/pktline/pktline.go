@@ -146,7 +146,7 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 		}
 	}
 
-	trace.Packet.Printf("packet: < %04x %s", length, p[LenSize:length])
+	maskPackDataTrace(length, p[LenSize:length])
 
 	return length, err
 }
@@ -211,7 +211,15 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 		}
 	}
 
-	trace.Packet.Printf("packet: < %04x %s", length, buf)
+	maskPackDataTrace(length, buf)
 
 	return length, buf, err
+}
+
+func maskPackDataTrace(len int, data []byte) {
+	output := []byte("[ PACKDATA ]")
+	if len < 400 {
+		output = data
+	}
+	trace.Packet.Printf("packet: < %04x %s", len, output)
 }
