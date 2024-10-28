@@ -3,11 +3,11 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/internal/common"
@@ -96,8 +96,7 @@ func (c *command) Close() error {
 	_ = c.Session.Close()
 	err := c.client.Close()
 
-	//XXX: in go1.16+ we can use errors.Is(err, net.ErrClosed)
-	if err != nil && strings.HasSuffix(err.Error(), "use of closed network connection") {
+	if errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 
