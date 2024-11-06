@@ -177,14 +177,20 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 	e := packfile.NewEncoder(pw, s.storer, false)
 	go func() {
 		allHaves := []plumbing.Hash{}
+		foundWants := map[plumbing.Hash]bool{}
 		for haves := range req.HavesUR {
 			acks := []packp.UploadPackRequestAck{}
 			for _, hu := range haves.Haves {
-				if refs, ok := havesWithRef[hu]; ok {
-					acks = append(acks, packp.UploadPackRequestAck{Hash: hu, IsCommon: len(refs) >= len(req.Wants)})
-					allHaves = append(allHaves, hu)
+				refs, ok := havesWithRef[hu]
+				if ok {
+					for _, ref := range refs {
+						foundWants[ref] = true
+					}
 				}
+				acks = append(acks, packp.UploadPackRequestAck{Hash: hu, IsCommon: ok, IsReady: ok && (len(refs) >= len(req.Wants) || len(foundWants) >= len(req.Wants))})
+				allHaves = append(allHaves, hu)
 			}
+
 			req.UploadPackCommands <- packp.UploadPackCommand{Acks: acks, Done: haves.Done}
 		}
 		close(req.UploadPackCommands)

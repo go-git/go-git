@@ -507,7 +507,6 @@ func (s *UlReqDecodeSuite) TestAll(c *C) {
 		"have 5555555555555555555555555555555555555555",
 		"",
 		"have 6666666666666666666666666666666666666666",
-		"",
 		"done",
 	}
 	ur, haves := s.testDecodeOK(c, payloads, 2)

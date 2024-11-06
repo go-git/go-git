@@ -71,7 +71,7 @@ func NewUploadRequest() *UploadRequest {
 		Wants:        []plumbing.Hash{},
 		Shallows:     []plumbing.Hash{},
 		Depth:        DepthCommits(0),
-		HavesUR:      make(chan UploadRequestHave),
+		HavesUR:      make(chan UploadRequestHave, 1),
 	}
 }
 

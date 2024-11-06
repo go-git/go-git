@@ -256,7 +256,6 @@ func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 func (d *ulReqDecoder) decodeHaves() stateFn {
 	go func() {
 		inBetweenHave := []plumbing.Hash{}
-		flushLineReach := false
 
 		for {
 			if ok := d.nextLine(false); !ok {
@@ -264,19 +263,14 @@ func (d *ulReqDecoder) decodeHaves() stateFn {
 			}
 
 			if len(d.line) == 0 {
-				flushLineReach = true
+				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: false}
+				inBetweenHave = []plumbing.Hash{}
 				continue
 			}
 
 			if bytes.Equal(d.line, done) {
 				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: true}
 				break
-			}
-
-			if flushLineReach {
-				flushLineReach = false
-				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: false}
-				inBetweenHave = []plumbing.Hash{}
 			}
 
 			if !bytes.HasPrefix(d.line, have) {

@@ -124,57 +124,70 @@ func (r *ServerResponse) decodeACKLine(line []byte) error {
 // Encode encodes the ServerResponse into a writer.
 func (r *ServerResponse) Encode(w io.Writer) error {
 	multiAck := r.req.Capabilities.Supports(capability.MultiACK)
-	singleAckSent := false
-	commonHash := plumbing.ZeroHash
+	multiAckDetailed := r.req.Capabilities.Supports(capability.MultiACKDetailed)
+	readyHash := plumbing.ZeroHash
+	finalHash := plumbing.ZeroHash
 	for cmd := range r.req.UploadPackCommands {
-		if cmd.Done {
-			if commonHash.IsZero() {
-				for _, h := range cmd.Acks {
-					if h.IsCommon && commonHash.IsZero() {
-						commonHash = h.Hash
-					}
+		if multiAck { //multi_ack
+			for _, h := range cmd.Acks {
+				if h.IsReady && readyHash.IsZero() {
+					readyHash = h.Hash
 				}
-			}
-			continue
-		}
-		if len(cmd.Acks) == 0 {
-			if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
-				return err
-			}
-		} else {
-			if multiAck { //multi_ack
-				for _, h := range cmd.Acks {
-					if h.IsCommon && commonHash.IsZero() {
-						commonHash = h.Hash
-					}
+				if h.IsCommon || !readyHash.IsZero() {
+					finalHash = h.Hash
 					if _, err := pktline.Writef(w, "%s %s continue\n", ack, h.Hash.String()); err != nil {
 						return err
 					}
 				}
+			}
+			if !cmd.Done {
 				if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
 					return err
 				}
-			} else if commonHash.IsZero() { // single ack
-				for _, h := range cmd.Acks {
-					if h.IsCommon {
-						commonHash = h.Hash
-						singleAckSent = true
-						if _, err := pktline.Writef(w, "%s %s\n", ack, commonHash.String()); err != nil {
-							return err
-						}
-						break
+			}
+		} else if multiAckDetailed { //multi_ack_detailed
+			for _, h := range cmd.Acks {
+				if h.IsReady {
+					readyHash = h.Hash
+					finalHash = h.Hash
+					if _, err := pktline.Writef(w, "%s %s ready\n", ack, h.Hash.String()); err != nil {
+						return err
 					}
+				} else if h.IsCommon {
+					finalHash = h.Hash
+					if _, err := pktline.Writef(w, "%s %s common\n", ack, h.Hash.String()); err != nil {
+						return err
+					}
+				}
+			}
+			if !cmd.Done {
+				if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+					return err
+				}
+			}
+		} else { // single ack
+			for _, h := range cmd.Acks {
+				if h.IsCommon && finalHash.IsZero() {
+					finalHash = h.Hash
+					if _, err := pktline.Writef(w, "%s %s\n", ack, finalHash.String()); err != nil {
+						return err
+					}
+					break
+				}
+			}
+			if !cmd.Done && finalHash.IsZero() {
+				if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+					return err
 				}
 			}
 		}
 	}
-	//after done
-	if commonHash.IsZero() {
-		if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
+	if !finalHash.IsZero() && (multiAck || multiAckDetailed) {
+		if _, err := pktline.Writef(w, "%s %s\n", ack, finalHash.String()); err != nil {
 			return err
 		}
-	} else if multiAck || !singleAckSent {
-		if _, err := pktline.Writef(w, "%s %s\n", ack, commonHash.String()); err != nil {
+	} else if finalHash.IsZero() {
+		if _, err := pktline.WriteString(w, string(nak)+"\n"); err != nil {
 			return err
 		}
 	}

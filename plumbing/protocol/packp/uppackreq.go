@@ -26,6 +26,7 @@ type UploadPackCommand struct {
 type UploadPackRequestAck struct {
 	Hash     plumbing.Hash
 	IsCommon bool
+	IsReady  bool
 }
 
 // NewUploadPackRequest creates a new UploadPackRequest and returns a pointer.
@@ -34,7 +35,7 @@ func NewUploadPackRequest() *UploadPackRequest {
 	return &UploadPackRequest{
 		UploadHaves:        UploadHaves{},
 		UploadRequest:      *ur,
-		UploadPackCommands: make(chan UploadPackCommand),
+		UploadPackCommands: make(chan UploadPackCommand, 1),
 	}
 }
 
@@ -47,7 +48,7 @@ func NewUploadPackRequestFromCapabilities(adv *capability.List) *UploadPackReque
 	return &UploadPackRequest{
 		UploadHaves:        UploadHaves{},
 		UploadRequest:      *ur,
-		UploadPackCommands: make(chan UploadPackCommand),
+		UploadPackCommands: make(chan UploadPackCommand, 1),
 	}
 }
 

@@ -118,6 +118,10 @@ func (s *ServerResponseSuite) TestDecodeMultiACK(c *C) {
 func (s *ServerResponseSuite) TestEncodeEmpty(c *C) {
 	haves := make(chan UploadPackCommand)
 	go func() {
+		haves <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{},
+			Done: true,
+		}
 		close(haves)
 	}()
 	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capability.NewList()}}}
@@ -174,9 +178,14 @@ func (s *ServerResponseSuite) TestEncodeMutiAck(c *C) {
 		haves <- UploadPackCommand{
 			Acks: []UploadPackRequestAck{
 				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e1")},
-				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e2"), IsCommon: true},
+				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e2"), IsCommon: true, IsReady: true},
 				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e3")},
-			}}
+			},
+		}
+		haves <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{},
+			Done: true,
+		}
 		close(haves)
 	}()
 	capabilities := capability.NewList()
@@ -187,11 +196,64 @@ func (s *ServerResponseSuite) TestEncodeMutiAck(c *C) {
 	c.Assert(err, IsNil)
 
 	lines := strings.Split(b.String(), "\n")
-	c.Assert(len(lines), Equals, 6)
-	c.Assert(lines[0], Equals, "003aACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e1 continue")
-	c.Assert(lines[1], Equals, "003aACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e2 continue")
-	c.Assert(lines[2], Equals, "003aACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e3 continue")
-	c.Assert(lines[3], Equals, "0008NAK")
-	c.Assert(lines[4], Equals, "0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e2")
-	c.Assert(lines[5], Equals, "")
+	c.Assert(len(lines), Equals, 5)
+	c.Assert(lines[0], Equals, "003aACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e2 continue")
+	c.Assert(lines[1], Equals, "003aACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e3 continue")
+	c.Assert(lines[2], Equals, "0008NAK")
+	c.Assert(lines[3], Equals, "0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e3")
+	c.Assert(lines[4], Equals, "")
+}
+
+func (s *ServerResponseSuite) TestEncodeMutiAckOnlyOneNak(c *C) {
+	haves := make(chan UploadPackCommand)
+	go func() {
+		haves <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{}, //no common hash
+			Done: true,
+		}
+		close(haves)
+	}()
+	capabilities := capability.NewList()
+	capabilities.Add(capability.MultiACK)
+	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capabilities}}}
+	b := bytes.NewBuffer(nil)
+	err := sr.Encode(b)
+	c.Assert(err, IsNil)
+
+	lines := strings.Split(b.String(), "\n")
+	c.Assert(len(lines), Equals, 2)
+	c.Assert(lines[0], Equals, "0008NAK")
+	c.Assert(lines[1], Equals, "")
+}
+
+func (s *ServerResponseSuite) TestEncodeMutiAckDetailed(c *C) {
+	haves := make(chan UploadPackCommand)
+	go func() {
+		haves <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{
+				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e1")},
+				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e2"), IsCommon: true, IsReady: true},
+				{Hash: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e3"), IsCommon: true},
+			},
+		}
+		haves <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{},
+			Done: true,
+		}
+		close(haves)
+	}()
+	capabilities := capability.NewList()
+	capabilities.Add(capability.MultiACKDetailed)
+	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capabilities}}}
+	b := bytes.NewBuffer(nil)
+	err := sr.Encode(b)
+	c.Assert(err, IsNil)
+
+	lines := strings.Split(b.String(), "\n")
+	c.Assert(len(lines), Equals, 5)
+	c.Assert(lines[0], Equals, "0037ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e2 ready")
+	c.Assert(lines[1], Equals, "0038ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e3 common")
+	c.Assert(lines[2], Equals, "0008NAK")
+	c.Assert(lines[3], Equals, "0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e3")
+	c.Assert(lines[4], Equals, "")
 }

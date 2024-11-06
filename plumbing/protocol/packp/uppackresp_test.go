@@ -90,6 +90,10 @@ func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
 	defer func() { c.Assert(res.Close(), IsNil) }()
 
 	go func() {
+		req.UploadPackCommands <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{},
+			Done: true,
+		}
 		close(req.UploadPackCommands)
 	}()
 	b := bytes.NewBuffer(nil)
@@ -108,6 +112,10 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 	defer func() { c.Assert(res.Close(), IsNil) }()
 
 	go func() {
+		req.UploadPackCommands <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{},
+			Done: true,
+		}
 		close(req.UploadPackCommands)
 	}()
 	b := bytes.NewBuffer(nil)
@@ -129,14 +137,18 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 			Acks: []UploadPackRequestAck{
 				{Hash: plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81")},
 				{Hash: plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82"), IsCommon: true},
-			}}
+			},
+		}
+		req.UploadPackCommands <- UploadPackCommand{
+			Acks: []UploadPackRequestAck{},
+			Done: true,
+		}
 		close(req.UploadPackCommands)
 	}()
 	b := bytes.NewBuffer(nil)
 	c.Assert(res.Encode(b), IsNil)
 
-	expected := "003aACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81 continue\n" +
-		"003aACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82 continue\n" +
+	expected := "003aACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82 continue\n" +
 		"0008NAK\n" +
 		"0031ACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82\n" +
 		"[PACK]"
