@@ -2,33 +2,47 @@ package commitgraph
 
 import (
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/assert"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
-func (s *CommitNodeSuite) TestCommitNodeIter(c *C) {
+func TestCommitNodeIter(t *testing.T) {
+	t.Parallel()
+
 	f := fixtures.ByTag("commit-graph-chain-2").One()
 
-	storer := unpackRepository(f)
+	storer := newUnpackRepository(f)
 
 	index, err := commitgraph.OpenChainOrFileIndex(storer.Filesystem())
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	nodeIndex := NewGraphCommitNodeIndex(index, storer)
 
 	head, err := nodeIndex.Get(plumbing.NewHash("ec6f456c0e8c7058a29611429965aa05c190b54b"))
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
-	testTopoOrder(c, head)
-	testDateOrder(c, head)
-	testAuthorDateOrder(c, head)
+	testTopoOrder(t, head)
+	testDateOrder(t, head)
+	testAuthorDateOrder(t, head)
 }
 
-func testTopoOrder(c *C, head CommitNode) {
+func newUnpackRepository(f *fixtures.Fixture) *filesystem.Storage {
+	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	p := f.Packfile()
+	defer p.Close()
+	packfile.UpdateObjectStorage(storer, p)
+	return storer
+}
+
+func testTopoOrder(t *testing.T, head CommitNode) {
 	iter := NewCommitNodeIterTopoOrder(
 		head,
 		nil,
@@ -40,7 +54,8 @@ func testTopoOrder(c *C, head CommitNode) {
 		commits = append(commits, c.ID().String())
 		return nil
 	})
-	c.Assert(commits, DeepEquals, strings.Split(`ec6f456c0e8c7058a29611429965aa05c190b54b
+
+	assert.Equal(t, commits, strings.Split(`ec6f456c0e8c7058a29611429965aa05c190b54b
 d82f291cde9987322c8a0c81a325e1ba6159684c
 3048d280d2d5b258d9e582a226ff4bbed34fd5c9
 27aa8cdd2431068606741a589383c02c149ea625
@@ -80,7 +95,7 @@ c088fd6a7e1a38e9d5a9815265cb575bb08d08ff
 5d7303c49ac984a9fec60523f2d5297682e16646`, "\n"))
 }
 
-func testDateOrder(c *C, head CommitNode) {
+func testDateOrder(t *testing.T, head CommitNode) {
 	iter := NewCommitNodeIterDateOrder(
 		head,
 		nil,
@@ -93,7 +108,7 @@ func testDateOrder(c *C, head CommitNode) {
 		return nil
 	})
 
-	c.Assert(commits, DeepEquals, strings.Split(`ec6f456c0e8c7058a29611429965aa05c190b54b
+	assert.Equal(t, commits, strings.Split(`ec6f456c0e8c7058a29611429965aa05c190b54b
 3048d280d2d5b258d9e582a226ff4bbed34fd5c9
 d82f291cde9987322c8a0c81a325e1ba6159684c
 27aa8cdd2431068606741a589383c02c149ea625
@@ -133,7 +148,7 @@ c088fd6a7e1a38e9d5a9815265cb575bb08d08ff
 5d7303c49ac984a9fec60523f2d5297682e16646`, "\n"))
 }
 
-func testAuthorDateOrder(c *C, head CommitNode) {
+func testAuthorDateOrder(t *testing.T, head CommitNode) {
 	iter := NewCommitNodeIterAuthorDateOrder(
 		head,
 		nil,
@@ -146,7 +161,7 @@ func testAuthorDateOrder(c *C, head CommitNode) {
 		return nil
 	})
 
-	c.Assert(commits, DeepEquals, strings.Split(`ec6f456c0e8c7058a29611429965aa05c190b54b
+	assert.Equal(t, commits, strings.Split(`ec6f456c0e8c7058a29611429965aa05c190b54b
 3048d280d2d5b258d9e582a226ff4bbed34fd5c9
 d82f291cde9987322c8a0c81a325e1ba6159684c
 27aa8cdd2431068606741a589383c02c149ea625

@@ -19,7 +19,7 @@ import (
 // this operation is synchronized with the write operations.
 // The packfile is written in a temp file, when Close is called this file
 // is renamed/moved (depends on the Filesystem implementation) to the final
-// location, if the PackWriter is not used, nothing is written
+// location, if the PackWriter is not used, nothing is written.
 type PackWriter struct {
 	Notify func(plumbing.Hash, *idxfile.Writer)
 
@@ -56,23 +56,19 @@ func newPackWrite(fs billy.Filesystem) (*PackWriter, error) {
 }
 
 func (w *PackWriter) buildIndex() {
-	s := packfile.NewScanner(w.synced)
 	w.writer = new(idxfile.Writer)
 	var err error
-	w.parser, err = packfile.NewParser(s, w.writer)
+
+	w.parser = packfile.NewParser(w.synced, packfile.WithScannerObservers(w.writer))
+
+	h, err := w.parser.Parse()
 	if err != nil {
 		w.result <- err
 		return
 	}
 
-	checksum, err := w.parser.Parse()
-	if err != nil {
-		w.result <- err
-		return
-	}
-
-	w.checksum = checksum
-	w.result <- err
+	w.checksum = h
+	w.result <- nil
 }
 
 // waitBuildIndex waits until buildIndex function finishes, this can terminate
