@@ -7,20 +7,19 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/sync"
 )
 
 // FSObject is an object from the packfile on the filesystem.
 type FSObject struct {
-	hash                 plumbing.Hash
-	offset               int64
-	size                 int64
-	typ                  plumbing.ObjectType
-	index                idxfile.Index
-	fs                   billy.Filesystem
-	path                 string
-	cache                cache.Object
-	largeObjectThreshold int64
+	hash   plumbing.Hash
+	offset int64
+	size   int64
+	typ    plumbing.ObjectType
+	index  idxfile.Index
+	fs     billy.Filesystem
+	path   string
+	cache  cache.Object
 }
 
 // NewFSObject creates a new filesystem object.
@@ -33,18 +32,16 @@ func NewFSObject(
 	fs billy.Filesystem,
 	path string,
 	cache cache.Object,
-	largeObjectThreshold int64,
 ) *FSObject {
 	return &FSObject{
-		hash:                 hash,
-		offset:               offset,
-		size:                 contentSize,
-		typ:                  finalType,
-		index:                index,
-		fs:                   fs,
-		path:                 path,
-		cache:                cache,
-		largeObjectThreshold: largeObjectThreshold,
+		hash:   hash,
+		offset: offset,
+		size:   contentSize,
+		typ:    finalType,
+		index:  index,
+		fs:     fs,
+		path:   path,
+		cache:  cache,
 	}
 }
 
@@ -65,32 +62,34 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	p := NewPackfileWithCache(o.index, nil, f, o.cache, o.largeObjectThreshold)
-	if o.largeObjectThreshold > 0 && o.size > o.largeObjectThreshold {
-		// We have a big object
-		h, err := p.objectHeaderAtOffset(o.offset)
-		if err != nil {
-			return nil, err
-		}
-
-		r, err := p.getReaderDirect(h)
-		if err != nil {
-			_ = f.Close()
-			return nil, err
-		}
-		return ioutil.NewReadCloserWithCloser(r, f.Close), nil
-	}
-	r, err := p.getObjectContent(o.offset)
+	_, err = f.Seek(o.offset, io.SeekStart)
 	if err != nil {
-		_ = f.Close()
 		return nil, err
 	}
 
-	if err := f.Close(); err != nil {
+	dict := sync.GetByteSlice()
+	zr := sync.NewZlibReader(dict)
+	err = zr.Reset(f)
+	if err != nil {
 		return nil, err
 	}
+	return &zlibReadCloser{zr, dict}, nil
+}
 
-	return r, nil
+type zlibReadCloser struct {
+	r    sync.ZLibReader
+	dict *[]byte
+}
+
+// Read reads up to len(p) bytes into p from the data.
+func (r *zlibReadCloser) Read(p []byte) (int, error) {
+	return r.r.Reader.Read(p)
+}
+
+func (r *zlibReadCloser) Close() error {
+	sync.PutByteSlice(r.dict)
+	sync.PutZlibReader(r.r)
+	return nil
 }
 
 // SetSize implements the plumbing.EncodedObject interface. This method

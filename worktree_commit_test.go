@@ -8,14 +8,18 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
@@ -278,17 +282,64 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit(c *C) {
 	c.Assert(amendedHash, Equals, plumbing.ZeroHash)
 }
 
-func (s *WorktreeSuite) TestAddAndCommitWithSkipStatus(c *C) {
+func TestCount(t *testing.T) {
+	f := fixtures.Basic().One()
+	r := NewRepositoryWithEmptyWorktree(f)
+
+	iter, err := r.CommitObjects()
+	require.NoError(t, err)
+
+	count := 0
+	iter.ForEach(func(c *object.Commit) error {
+		count++
+		return nil
+	})
+	assert.Equal(t, 9, count, "commits mismatch")
+
+	trees, err := r.TreeObjects()
+	require.NoError(t, err)
+
+	count = 0
+	trees.ForEach(func(c *object.Tree) error {
+		count++
+		return nil
+	})
+	assert.Equal(t, 12, count, "trees mismatch")
+
+	blobs, err := r.BlobObjects()
+	require.NoError(t, err)
+
+	count = 0
+	blobs.ForEach(func(c *object.Blob) error {
+		count++
+		return nil
+	})
+	assert.Equal(t, 10, count, "blobs mismatch")
+
+	objects, err := r.Objects()
+	require.NoError(t, err)
+
+	count = 0
+	objects.ForEach(func(c object.Object) error {
+		count++
+		return nil
+	})
+	assert.Equal(t, 31, count, "objects mismatch")
+}
+
+func TestAddAndCommitWithSkipStatus(t *testing.T) {
 	expected := plumbing.NewHash("375a3808ffde7f129cdd3c8c252fd0fe37cfd13b")
 
+	f := fixtures.Basic().One()
 	fs := memfs.New()
+	r := NewRepositoryWithEmptyWorktree(f)
 	w := &Worktree{
-		r:          s.Repository,
+		r:          r,
 		Filesystem: fs,
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
 	util.WriteFile(fs, "foo", []byte("foo"), 0644)
@@ -297,16 +348,36 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatus(c *C) {
 		Path:       "foo",
 		SkipStatus: true,
 	})
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	hash, err := w.Commit("commit foo only\n", &CommitOptions{
 		Author: defaultSignature(),
 	})
 
-	c.Assert(hash, Equals, expected)
-	c.Assert(err, IsNil)
+	assert.Equal(t, expected.String(), hash.String())
+	require.NoError(t, err)
 
-	assertStorageStatus(c, s.Repository, 13, 11, 10, expected)
+	assertStorage(t, r, 13, 11, 10, expected)
+}
+
+func assertStorage(
+	t *testing.T, r *Repository,
+	treesCount, blobCount, commitCount int, head plumbing.Hash,
+) {
+	trees, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
+	require.NoError(t, err)
+	blobs, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
+	require.NoError(t, err)
+	commits, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
+	require.NoError(t, err)
+
+	assert.Equal(t, treesCount, lenIterEncodedObjects(trees), "trees count mismatch")
+	assert.Equal(t, blobCount, lenIterEncodedObjects(blobs), "blobs count mismatch")
+	assert.Equal(t, commitCount, lenIterEncodedObjects(commits), "commits count mismatch")
+
+	ref, err := r.Head()
+	require.NoError(t, err)
+	assert.Equal(t, head.String(), ref.Hash().String())
 }
 
 func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified(c *C) {

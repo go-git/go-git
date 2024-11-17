@@ -24,10 +24,9 @@ func (s *WriterSuite) TestWriter(c *C) {
 	scanner := packfile.NewScanner(f.Packfile())
 
 	obs := new(idxfile.Writer)
-	parser, err := packfile.NewParser(scanner, obs)
-	c.Assert(err, IsNil)
+	parser := packfile.NewParser(scanner, packfile.WithScannerObservers(obs))
 
-	_, err = parser.Parse()
+	_, err := parser.Parse()
 	c.Assert(err, IsNil)
 
 	idx, err := obs.Index()

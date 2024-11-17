@@ -480,6 +480,15 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 // TODO(mcuadros): move isBare to CloneOptions in v5
 // TODO(smola): refuse upfront to clone on a non-empty directory in v5, see #1027
 func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
+	start := time.Now()
+	defer func() {
+		url := ""
+		if o != nil {
+			url = o.URL
+		}
+		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
+	}()
+
 	cleanup, cleanupParent, err := checkIfCleanupIsNeeded(path)
 	if err != nil {
 		return nil, err

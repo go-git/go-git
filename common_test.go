@@ -74,7 +74,7 @@ func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
 // NewRepositoryWithEmptyWorktree returns a new repository using the .git folder
 // from the fixture but without a empty memfs worktree, the index and the
 // modules are deleted from the .git folder.
-func (s *BaseSuite) NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
+func NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
 	dotgit := f.DotGit()
 	err := dotgit.Remove("index")
 	if err != nil {
@@ -96,7 +96,6 @@ func (s *BaseSuite) NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Reposit
 	}
 
 	return r
-
 }
 
 func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {

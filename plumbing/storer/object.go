@@ -15,12 +15,15 @@ var (
 
 // EncodedObjectStorer generic storage of objects
 type EncodedObjectStorer interface {
+	// RawObjectWriter returns a io.WriterCloser to write the object without the
+	// need of providing a plumbing.EncodedObject.
+	RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error)
 	// NewEncodedObject returns a new plumbing.EncodedObject, the real type
 	// of the object can be a custom implementation or the default one,
 	// plumbing.MemoryObject.
 	NewEncodedObject() plumbing.EncodedObject
 	// SetEncodedObject saves an object into the storage, the object should
-	// be create with the NewEncodedObject, method, and file if the type is
+	// be created with the NewEncodedObject, method, and file if the type is
 	// not supported.
 	SetEncodedObject(plumbing.EncodedObject) (plumbing.Hash, error)
 	// EncodedObject gets an object by hash with the given

@@ -11,10 +11,7 @@ var (
 	zlibInitBytes = []byte{0x78, 0x9c, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01}
 	zlibReader    = sync.Pool{
 		New: func() interface{} {
-			r, _ := zlib.NewReader(bytes.NewReader(zlibInitBytes))
-			return ZLibReader{
-				Reader: r.(zlibReadCloser),
-			}
+			return NewZlibReader(nil)
 		},
 	}
 	zlibWriter = sync.Pool{
@@ -29,9 +26,25 @@ type zlibReadCloser interface {
 	zlib.Resetter
 }
 
+func NewZlibReader(dict *[]byte) ZLibReader {
+	r, _ := zlib.NewReader(bytes.NewReader(zlibInitBytes))
+	return ZLibReader{
+		Reader: r.(zlibReadCloser),
+		dict:   dict,
+	}
+}
+
 type ZLibReader struct {
 	dict   *[]byte
 	Reader zlibReadCloser
+}
+
+func (z ZLibReader) Reset(r io.Reader) error {
+	var dict []byte
+	if z.dict != nil {
+		dict = *z.dict
+	}
+	return z.Reader.Reset(r, dict)
 }
 
 // GetZlibReader returns a ZLibReader that is managed by a sync.Pool.

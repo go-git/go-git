@@ -47,11 +47,16 @@ type Hasher struct {
 
 func NewHasher(t ObjectType, size int64) Hasher {
 	h := Hasher{hash.New(hash.CryptoType)}
+	h.Reset(t, size)
+	return h
+}
+
+func (h Hasher) Reset(t ObjectType, size int64) {
+	h.Hash.Reset()
 	h.Write(t.Bytes())
 	h.Write([]byte(" "))
 	h.Write([]byte(strconv.FormatInt(size, 10)))
 	h.Write([]byte{0})
-	return h
 }
 
 func (h Hasher) Sum() (hash Hash) {
