@@ -228,3 +228,26 @@ func hashListToSet(hashes []plumbing.Hash) map[plumbing.Hash]bool {
 
 	return result
 }
+
+// ObjectsWithRef find all hashes linked to objs
+// return a map of hashes containing an array of hash objs
+func ObjectsWithRef(
+	s storer.EncodedObjectStorer,
+	objs,
+	ignore []plumbing.Hash,
+) (map[plumbing.Hash][]plumbing.Hash, error) {
+	all := map[plumbing.Hash][]plumbing.Hash{}
+	for _, obj := range objs {
+		walkerFunc := func(h plumbing.Hash) {
+			if hashes, ok := all[h]; ok {
+				all[h] = append(hashes, obj)
+			} else {
+				all[h] = []plumbing.Hash{obj}
+			}
+		}
+		if err := processObject(s, obj, map[plumbing.Hash]bool{}, map[plumbing.Hash]bool{}, ignore, walkerFunc); err != nil {
+			return nil, err
+		}
+	}
+	return all, nil
+}

@@ -168,7 +168,7 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 		return nil, fmt.Errorf("shallow not supported")
 	}
 
-	objs, err := s.objectsToUpload(req)
+	havesWithRef, err := revlist.ObjectsWithRef(s.storer, req.Wants, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +176,30 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 	pr, pw := io.Pipe()
 	e := packfile.NewEncoder(pw, s.storer, false)
 	go func() {
-		// TODO: plumb through a pack window.
-		_, err := e.Encode(objs, 10)
+		allHaves := []plumbing.Hash{}
+		foundWants := map[plumbing.Hash]bool{}
+		for haves := range req.HavesUR {
+			acks := []packp.UploadPackRequestAck{}
+			for _, hu := range haves.Haves {
+				refs, ok := havesWithRef[hu]
+				if ok {
+					for _, ref := range refs {
+						foundWants[ref] = true
+					}
+				}
+				acks = append(acks, packp.UploadPackRequestAck{Hash: hu, IsCommon: ok, IsReady: ok && (len(refs) >= len(req.Wants) || len(foundWants) >= len(req.Wants))})
+				allHaves = append(allHaves, hu)
+			}
+
+			req.UploadPackCommands <- packp.UploadPackCommand{Acks: acks, Done: haves.Done}
+		}
+		close(req.UploadPackCommands)
+		objs, err := s.objectsToUpload(req.Wants, allHaves)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		_, err = e.Encode(objs, 10)
 		pw.CloseWithError(err)
 	}()
 
@@ -186,13 +208,8 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 	), nil
 }
 
-func (s *upSession) objectsToUpload(req *packp.UploadPackRequest) ([]plumbing.Hash, error) {
-	haves, err := revlist.Objects(s.storer, req.Haves, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return revlist.Objects(s.storer, req.Wants, haves)
+func (s *upSession) objectsToUpload(wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	return revlist.Objects(s.storer, wants, haves)
 }
 
 func (*upSession) setSupportedCapabilities(c *capability.List) error {
