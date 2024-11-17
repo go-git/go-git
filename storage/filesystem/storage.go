@@ -50,18 +50,22 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 
 // NewStorageWithOptions returns a new Storage with extra options,
 // backed by a given `fs.Filesystem` and cache.
-func NewStorageWithOptions(fs billy.Filesystem, cache cache.Object, ops Options) *Storage {
+func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
 		AlternatesFS:    ops.AlternatesFS,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
+	if c == nil {
+		c = cache.NewObjectLRUDefault()
+	}
+
 	return &Storage{
 		fs:  fs,
 		dir: dir,
 
-		ObjectStorage:    *NewObjectStorageWithOptions(dir, cache, ops),
+		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
 		IndexStorage:     IndexStorage{dir: dir},
 		ShallowStorage:   ShallowStorage{dir: dir},
