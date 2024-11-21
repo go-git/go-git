@@ -64,6 +64,21 @@ func (w *bfsCommitIterator) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
+		if storer, ok := c.s.(storer.ShallowStorer); ok {
+			shallowCommits, err := storer.Shallow()
+			if err != nil {
+				return nil, err
+			}
+
+			for _, shallowCommit := range shallowCommits {
+				if c.Hash == shallowCommit {
+					// The parents for a shallow commit are not present in the current repo
+					// so we should not traverse down the parents.
+					return c, nil
+				}
+			}
+		}
+
 		for _, h := range c.ParentHashes {
 			err := w.appendHash(c.s, h)
 			if err != nil {
