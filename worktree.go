@@ -469,8 +469,11 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		if err := w.checkoutChange(ch, t, b); err != nil {
-			return err
+		status, err := w.Status()
+		if err == nil && status.File(nameFromAction(&ch)).Worktree != Untracked {
+			if err := w.checkoutChange(ch, t, b); err != nil {
+				return err
+			}
 		}
 	}
 
