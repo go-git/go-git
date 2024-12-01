@@ -446,6 +446,11 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
+	status, err := w.Status()
+	if err != nil {
+		return err
+	}
+
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -469,8 +474,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		status, err := w.Status()
-		if err == nil && status.File(nameFromAction(&ch)).Worktree != Untracked {
+		if status.File(nameFromAction(&ch)).Worktree != Untracked {
 			if err := w.checkoutChange(ch, t, b); err != nil {
 				return err
 			}
