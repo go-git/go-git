@@ -400,6 +400,14 @@ func (s *ParserSuite) TestParseRefWithInvalidName(c *C) {
 }
 
 func FuzzParser(f *testing.F) {
+	f.Add("@{2016-12-16T21:42:47Z}")
+	f.Add("@~3")
+	f.Add("v0.99.8^{}")
+	f.Add("master:./README")
+	f.Add("HEAD^{/fix nasty bug}")
+	f.Add("HEAD^{/[A-")
+	f.Add(":/fix nasty bug")
+	f.Add(":/[A-")
 
 	f.Fuzz(func(t *testing.T, input string) {
 		parser := NewParser(bytes.NewBufferString(input))
