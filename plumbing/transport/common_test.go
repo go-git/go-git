@@ -235,6 +235,11 @@ func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
 }
 
 func FuzzNewEndpoint(f *testing.F) {
+	f.Add("http://127.0.0.1:8080/foo.git")
+	f.Add("http://[::1]:8080/foo.git")
+	f.Add("file:///foo.git")
+	f.Add("ssh://git@github.com/user/repository.git")
+	f.Add("git@github.com:user/repository.git")
 
 	f.Fuzz(func(t *testing.T, input string) {
 		NewEndpoint(input)
