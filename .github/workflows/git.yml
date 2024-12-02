@@ -22,7 +22,7 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.22.x
+        go-version: 1.23.x
 
     - name: Install build dependencies
       run: sudo apt-get update && sudo apt-get install gettext libcurl4-openssl-dev
