@@ -156,6 +156,8 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 }
 
 func FuzzDecoder(f *testing.F) {
+	f.Add([]byte("0045ACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f81\n"))
+	f.Add([]byte("003aACK5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82 \n0008NAK\n0"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		req := NewUploadPackRequest()

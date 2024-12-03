@@ -180,6 +180,9 @@ signed tag`),
 }
 
 func FuzzParseSignedBytes(f *testing.F) {
+	f.Add([]byte(openPGPSignatureFormat[0]))
+	f.Add([]byte(x509SignatureFormat[0]))
+	f.Add([]byte(sshSignatureFormat[0]))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		parseSignedBytes(input)
