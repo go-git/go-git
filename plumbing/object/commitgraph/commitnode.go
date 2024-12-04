@@ -16,6 +16,8 @@ type CommitNode interface {
 	ID() plumbing.Hash
 	// Tree returns the Tree referenced by the commit graph node.
 	Tree() (*object.Tree, error)
+	// TreeHash returns the Tree hash referenced by the commit graph node.
+	TreeHash() plumbing.Hash
 	// CommitTime returns the Committer.When time of the Commit referenced by the commit graph node.
 	CommitTime() time.Time
 	// NumParents returns the number of parents in a commit.

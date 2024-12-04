@@ -95,6 +95,7 @@ func testCommitAndTree(c *C, nodeIndex CommitNodeIndex) {
 	tree, err := merge3node.Tree()
 	c.Assert(err, IsNil)
 	c.Assert(tree.ID().String(), Equals, merge3commit.TreeHash.String())
+	c.Assert(merge3commit.Committer.When.Unix(), Equals, merge3node.CommitTime().Unix())
 }
 
 func (s *CommitNodeSuite) TestObjectGraph(c *C) {

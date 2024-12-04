@@ -95,3 +95,7 @@ func (c *objectCommitNode) GenerationV2() uint64 {
 func (c *objectCommitNode) Commit() (*object.Commit, error) {
 	return c.commit, nil
 }
+
+func (c *objectCommitNode) TreeHash() plumbing.Hash {
+	return c.commit.TreeHash
+}
