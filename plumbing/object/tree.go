@@ -39,7 +39,6 @@ type Tree struct {
 
 	s storer.EncodedObjectStorer
 	m map[string]*TreeEntry
-	t map[string]*Tree // tree path cache
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -128,27 +127,9 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
-	if t.t == nil {
-		t.t = make(map[string]*Tree)
-	}
-
 	pathParts := strings.Split(path, "/")
 	startingTree := t
 	pathCurrent := ""
-
-	// search for the longest path in the tree path cache
-	for i := len(pathParts) - 1; i > 1; i-- {
-		path := filepath.Join(pathParts[:i]...)
-
-		tree, ok := t.t[path]
-		if ok {
-			startingTree = tree
-			pathParts = pathParts[i:]
-			pathCurrent = path
-
-			break
-		}
-	}
 
 	var tree *Tree
 	var err error
@@ -158,7 +139,6 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
-		t.t[pathCurrent] = tree
 	}
 
 	return tree.entry(pathParts[0])
@@ -182,10 +162,6 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	if t.m == nil {
-		t.buildMap()
-	}
-
 	entry, ok := t.m[baseName]
 	if !ok {
 		return nil, ErrEntryNotFound
@@ -268,6 +244,8 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 			Name: baseName,
 		})
 	}
+
+	t.buildMap()
 
 	return nil
 }
