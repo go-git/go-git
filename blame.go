@@ -306,8 +306,8 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		for h := range hunks {
 			hLines := countLines(hunks[h].Text)
 			for hl := 0; hl < hLines; hl++ {
-				switch {
-				case hunks[h].Type == diffmatchpatch.DiffEqual:
+				switch hunks[h].Type {
+				case diffmatchpatch.DiffEqual:
 					prevl++
 					curl++
 					if curl == curItem.NeedsMap[need].Cur {
@@ -319,7 +319,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 							break out
 						}
 					}
-				case hunks[h].Type == diffmatchpatch.DiffInsert:
+				case diffmatchpatch.DiffInsert:
 					curl++
 					if curl == curItem.NeedsMap[need].Cur {
 						// the line we want is added, it may have been added here (or by another parent), skip it for now
@@ -328,7 +328,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 							break out
 						}
 					}
-				case hunks[h].Type == diffmatchpatch.DiffDelete:
+				case diffmatchpatch.DiffDelete:
 					prevl += hLines
 					continue out
 				default:
