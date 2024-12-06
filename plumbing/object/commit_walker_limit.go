@@ -4,6 +4,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
@@ -13,8 +14,9 @@ type commitLimitIter struct {
 }
 
 type LogLimitOptions struct {
-	Since *time.Time
-	Until *time.Time
+	Since    *time.Time
+	Until    *time.Time
+	TailHash plumbing.Hash
 }
 
 func NewCommitLimitIterFromIter(commitIter CommitIter, limitOptions LogLimitOptions) CommitIter {
@@ -36,6 +38,9 @@ func (c *commitLimitIter) Next() (*Commit, error) {
 		}
 		if c.limitOptions.Until != nil && commit.Committer.When.After(*c.limitOptions.Until) {
 			continue
+		}
+		if c.limitOptions.TailHash == commit.Hash {
+			return commit, storer.ErrStop
 		}
 		return commit, nil
 	}
