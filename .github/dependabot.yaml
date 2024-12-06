@@ -13,6 +13,10 @@ updates:
       interval: "daily"
     commit-message:
       prefix: "build"
+    groups:
+      golang.org:
+        patterns:
+          - "golang.org/*"
 
   - package-ecosystem: "gomod"
     directory: "/cli/go-git"
