@@ -37,6 +37,11 @@ func (m *Muxer) Write(p []byte) (int, error) {
 	return m.WriteChannel(PackData, p)
 }
 
+// Flush encodes a flush-pkt to the output stream
+func (m *Muxer) Flush() error {
+	return m.e.Flush()
+}
+
 // WriteChannel writes p in the given channel. This method can be used with any
 // channel, but is recommend use it only for the ProgressMessage and
 // ErrorMessage channels and use Write for the PackData channel
