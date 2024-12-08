@@ -9,8 +9,15 @@ import (
 	"github.com/go-git/go-git/v5/utils/trace"
 )
 
+type PktType int
+
 const (
 	lenSize = 4
+
+	FlushType = PktType(iota)
+	DelimType 
+	EndType
+	DataType
 )
 
 // ErrInvalidPktLen is returned by Err() when an invalid pkt-len is found.
@@ -31,6 +38,7 @@ type Scanner struct {
 	err     error         // Sticky error
 	payload []byte        // Last pkt-payload
 	len     [lenSize]byte // Last pkt-len
+	pktType PktType
 }
 
 // NewScanner returns a new Scanner to read from r.
@@ -60,6 +68,9 @@ func (s *Scanner) Scan() bool {
 	if s.err != nil {
 		return false
 	}
+	if s.pktType != DataType {
+		return true
+	}
 
 	if cap(s.payload) < l {
 		s.payload = make([]byte, 0, l)
@@ -78,6 +89,11 @@ func (s *Scanner) Scan() bool {
 		return false
 	}
 
+	if len(s.payload) != l {
+		s.err = ErrInvalidPktLen
+		return false
+	}
+
 	return true
 }
 
@@ -88,8 +104,15 @@ func (s *Scanner) Bytes() []byte {
 	return s.payload
 }
 
+// PktType returns the type of packet, use this for special cases like
+// flush, delim and end.
+func (s *Scanner) PktType() PktType {
+	return s.pktType
+}
+
 // Method readPayloadLen returns the payload length by reading the
-// pkt-len and subtracting the pkt-len size.
+// pkt-len and subtracting the pkt-len size. For special purpose tokens
+// like 0001 (delim) and 0002 (end) it returns -3 and -2.
 func (s *Scanner) readPayloadLen() (int, error) {
 	if _, err := io.ReadFull(s.r, s.len[:]); err != nil {
 		if err == io.ErrUnexpectedEOF {
@@ -106,12 +129,20 @@ func (s *Scanner) readPayloadLen() (int, error) {
 
 	switch {
 	case n == 0:
+		s.pktType = FlushType
+		return 0, nil
+	case n == 1:
+		s.pktType = DelimType
+		return 0, nil
+	case n == 2:
+		s.pktType = EndType
 		return 0, nil
 	case n <= lenSize:
 		return 0, ErrInvalidPktLen
 	case n > OversizePayloadMax+lenSize:
 		return 0, ErrInvalidPktLen
 	default:
+		s.pktType = DataType
 		return n - lenSize, nil
 	}
 }
