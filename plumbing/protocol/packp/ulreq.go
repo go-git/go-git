@@ -99,6 +99,10 @@ func NewUploadRequestFromCapabilities(adv *capability.List) *UploadRequest {
 		r.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
+	if adv.Supports(capability.Filter) {
+		r.Capabilities.Set(capability.Filter)
+	}
+
 	return r
 }
 
@@ -131,6 +135,10 @@ func (req *UploadRequest) validateRequiredCapabilities() error {
 
 	if len(req.Shallows) != 0 && !req.Capabilities.Supports(capability.Shallow) {
 		return fmt.Errorf(msg, capability.Shallow)
+	}
+
+	if req.Filter != "" && !req.Capabilities.Supports(capability.Filter) {
+		return fmt.Errorf(msg, capability.Filter)
 	}
 
 	switch req.Depth.(type) {
