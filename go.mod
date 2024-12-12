@@ -9,7 +9,7 @@ require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v0.0.0-20240618083138-03be62527ccb
 	github.com/emirpasic/gods v1.18.1
-	github.com/gliderlabs/ssh v0.3.7
+	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
 	github.com/go-git/go-billy/v5 v5.6.0
 	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399
