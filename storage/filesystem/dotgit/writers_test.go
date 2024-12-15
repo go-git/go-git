@@ -18,6 +18,21 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
+func BenchmarkNewObjectPack(b *testing.B) {
+	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
+	fs := osfs.New(b.TempDir())
+
+	for i := 0; i < b.N; i++ {
+		w, err := newPackWrite(fs)
+
+		require.NoError(b, err)
+		_, err = io.Copy(w, f.Packfile())
+
+		require.NoError(b, err)
+		require.NoError(b, w.Close())
+	}
+}
+
 func TestNewObjectPack(t *testing.T) {
 	t.Parallel()
 
