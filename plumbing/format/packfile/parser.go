@@ -81,8 +81,13 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 		p.cache.Add(oh)
 	}
 
-	p.onInflatedObjectHeader(oh.Type, oh.Size, oh.Offset)
-	p.onInflatedObjectContent(oh.Hash, oh.Offset, oh.Crc32, nil)
+	if err := p.onInflatedObjectHeader(oh.Type, oh.Size, oh.Offset); err != nil {
+		return err
+	}
+
+	if err := p.onInflatedObjectContent(oh.Hash, oh.Offset, oh.Crc32, nil); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -207,9 +212,7 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return err
 	}
 
-	p.storeOrCache(oh)
-
-	return nil
+	return p.storeOrCache(oh)
 }
 
 func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
@@ -221,11 +224,16 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 	if p.storage != nil && parent.Hash != plumbing.ZeroHash {
 		obj, err := p.storage.EncodedObject(parent.Type, parent.Hash)
 		if err == nil {
+			// Ensure that external references have the correct type and size.
+			parent.Type = obj.Type()
+			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
 				parentData := bytes.NewBuffer(make([]byte, 0, parent.Size))
 
 				_, err = io.Copy(parentData, r)
+				r.Close()
+
 				if err == nil {
 					return bytes.NewReader(parentData.Bytes()), nil
 				}

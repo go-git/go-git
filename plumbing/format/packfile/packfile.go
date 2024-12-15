@@ -270,6 +270,7 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 			oh.Size,
 			p.Index,
 			p.fs,
+			p.file,
 			p.file.Name(),
 			p.cache,
 		)
@@ -316,7 +317,7 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 
 		err = p.scanner.inflateContent(oh.ContentOffset, &oh.content)
 		if err != nil {
-			return nil, fmt.Errorf("test")
+			return nil, fmt.Errorf("cannot inflate content: %w", err)
 		}
 
 		obj.SetType(parent.Type())
