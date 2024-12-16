@@ -19,6 +19,7 @@ var (
 
 var (
 	ErrEmpty                        = errors.New("empty update-request message")
+	ErrFlushPacketRecieved          = errors.New("flush packet recieved")
 	errNoCommands                   = errors.New("unexpected EOF before any command")
 	errMissingCapabilitiesDelimiter = errors.New("capabilities delimiter not found")
 )
@@ -76,14 +77,7 @@ func errMalformedCommand(err error) error {
 
 // Decode reads the next update-request message form the reader and wr
 func (req *ReferenceUpdateRequest) Decode(r io.Reader) error {
-	var rc io.ReadCloser
-	var ok bool
-	rc, ok = r.(io.ReadCloser)
-	if !ok {
-		rc = io.NopCloser(r)
-	}
-
-	d := &updReqDecoder{r: rc, s: pktline.NewScanner(r)}
+	d := &updReqDecoder{r: io.NopCloser(r), s: pktline.NewScanner(r)}
 	return d.Decode(req)
 }
 
@@ -168,6 +162,9 @@ func (d *updReqDecoder) decodeCommands() error {
 
 func (d *updReqDecoder) decodeCommandAndCapabilities() error {
 	b := d.s.Bytes()
+	if bytes.Equal(b, pktline.Flush) {
+		return ErrFlushPacketRecieved
+	}
 	i := bytes.IndexByte(b, 0)
 	if i == -1 {
 		return errMissingCapabilitiesDelimiter
