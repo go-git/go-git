@@ -2,6 +2,7 @@ package storer
 
 import (
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -123,6 +124,10 @@ func (s *ObjectSuite) TestObjectSliceIterError(c *C) {
 
 type MockObjectStorage struct {
 	db []plumbing.EncodedObject
+}
+
+func (o *MockObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error) {
+	return nil, nil
 }
 
 func (o *MockObjectStorage) NewEncodedObject() plumbing.EncodedObject {

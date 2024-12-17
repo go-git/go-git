@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/utils/trace"
 
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
@@ -39,6 +40,7 @@ func NewClient(config *ssh.ClientConfig) transport.Transport {
 // DefaultAuthBuilder is the function used to create a default AuthMethod, when
 // the user doesn't provide any.
 var DefaultAuthBuilder = func(user string) (AuthMethod, error) {
+	trace.SSH.Printf("ssh: Using default auth builder (user: %s)", user)
 	return NewSSHAgentAuth(user)
 }
 
@@ -150,6 +152,8 @@ func (c *command) connect() error {
 		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
 	}
 
+	trace.SSH.Printf("ssh: host key algorithms %s", config.HostKeyAlgorithms)
+
 	overrideConfig(c.config, config)
 
 	c.client, err = dial("tcp", hostWithPort, c.endpoint.Proxy, config)
@@ -187,6 +191,8 @@ func dial(network, addr string, proxyOpts transport.ProxyOptions, config *ssh.Cl
 		if err != nil {
 			return nil, err
 		}
+
+		trace.SSH.Printf("ssh: using proxyURL=%s", proxyUrl)
 		dialer, err := proxy.FromURL(proxyUrl, proxy.Direct)
 		if err != nil {
 			return nil, err

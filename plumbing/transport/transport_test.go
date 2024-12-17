@@ -217,9 +217,10 @@ func (s *SuiteCommon) TestNewEndpointInvalidURL(c *C) {
 func (s *SuiteCommon) TestFilterUnsupportedCapabilities(c *C) {
 	l := capability.NewList()
 	l.Set(capability.MultiACK)
+	l.Set(capability.MultiACKDetailed)
 
 	FilterUnsupportedCapabilities(l)
-	c.Assert(l.Supports(capability.MultiACK), Equals, false)
+	c.Assert(l.Supports(capability.ThinPack), Equals, false)
 }
 
 func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
@@ -232,4 +233,16 @@ func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e.Host, Equals, "[::1]")
 	c.Assert(e.String(), Equals, "http://[::1]:8080/foo.git")
+}
+
+func FuzzNewEndpoint(f *testing.F) {
+	f.Add("http://127.0.0.1:8080/foo.git")
+	f.Add("http://[::1]:8080/foo.git")
+	f.Add("file:///foo.git")
+	f.Add("ssh://git@github.com/user/repository.git")
+	f.Add("git@github.com:user/repository.git")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		NewEndpoint(input)
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 var DefaultServer = NewServer(DefaultLoader)
@@ -136,6 +138,11 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: upload_pack", time.Since(start).Seconds())
+	}()
+
 	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
@@ -161,7 +168,7 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 		return nil, fmt.Errorf("shallow not supported")
 	}
 
-	objs, err := s.objectsToUpload(req)
+	havesWithRef, err := revlist.ObjectsWithRef(s.storer, req.Wants, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +176,30 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 	pr, pw := io.Pipe()
 	e := packfile.NewEncoder(pw, s.storer, false)
 	go func() {
-		// TODO: plumb through a pack window.
-		_, err := e.Encode(objs, 10)
+		allHaves := []plumbing.Hash{}
+		foundWants := map[plumbing.Hash]bool{}
+		for haves := range req.HavesUR {
+			acks := []packp.UploadPackRequestAck{}
+			for _, hu := range haves.Haves {
+				refs, ok := havesWithRef[hu]
+				if ok {
+					for _, ref := range refs {
+						foundWants[ref] = true
+					}
+				}
+				acks = append(acks, packp.UploadPackRequestAck{Hash: hu, IsCommon: ok, IsReady: ok && (len(refs) >= len(req.Wants) || len(foundWants) >= len(req.Wants))})
+				allHaves = append(allHaves, hu)
+			}
+
+			req.UploadPackCommands <- packp.UploadPackCommand{Acks: acks, Done: haves.Done}
+		}
+		close(req.UploadPackCommands)
+		objs, err := s.objectsToUpload(req.Wants, allHaves)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		_, err = e.Encode(objs, 10)
 		pw.CloseWithError(err)
 	}()
 
@@ -179,13 +208,8 @@ func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest
 	), nil
 }
 
-func (s *upSession) objectsToUpload(req *packp.UploadPackRequest) ([]plumbing.Hash, error) {
-	haves, err := revlist.Objects(s.storer, req.Haves, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return revlist.Objects(s.storer, req.Wants, haves)
+func (s *upSession) objectsToUpload(wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	return revlist.Objects(s.storer, wants, haves)
 }
 
 func (*upSession) setSupportedCapabilities(c *capability.List) error {
@@ -236,6 +260,11 @@ var (
 )
 
 func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: receive_pack", time.Since(start).Seconds())
+	}()
+
 	if s.caps == nil {
 		s.caps = capability.NewList()
 		if err := s.setSupportedCapabilities(s.caps); err != nil {

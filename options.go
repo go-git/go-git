@@ -16,18 +16,18 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
-// SubmoduleRescursivity defines how depth will affect any submodule recursive
+// SubmoduleRecursivity defines how depth will affect any submodule recursive
 // operation.
-type SubmoduleRescursivity uint
+type SubmoduleRecursivity uint
 
 const (
 	// DefaultRemoteName name of the default Remote, just like git command.
 	DefaultRemoteName = "origin"
 
 	// NoRecurseSubmodules disables the recursion for a submodule operation.
-	NoRecurseSubmodules SubmoduleRescursivity = 0
+	NoRecurseSubmodules SubmoduleRecursivity = 0
 	// DefaultSubmoduleRecursionDepth allow recursion in a submodule operation.
-	DefaultSubmoduleRecursionDepth SubmoduleRescursivity = 10
+	DefaultSubmoduleRecursionDepth SubmoduleRecursivity = 10
 )
 
 var (
@@ -61,7 +61,7 @@ type CloneOptions struct {
 	// RecurseSubmodules after the clone is created, initialize all submodules
 	// within, using their default settings. This option is ignored if the
 	// cloned repository does not have a worktree.
-	RecurseSubmodules SubmoduleRescursivity
+	RecurseSubmodules SubmoduleRecursivity
 	// ShallowSubmodules limit cloning submodules to the 1 level of depth.
 	// It matches the git command --shallow-submodules.
 	ShallowSubmodules bool
@@ -145,7 +145,7 @@ type PullOptions struct {
 	Auth transport.AuthMethod
 	// RecurseSubmodules controls if new commits of all populated submodules
 	// should be fetched too.
-	RecurseSubmodules SubmoduleRescursivity
+	RecurseSubmodules SubmoduleRecursivity
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
@@ -330,8 +330,8 @@ type SubmoduleUpdateOptions struct {
 	NoFetch bool
 	// RecurseSubmodules the update is performed not only in the submodules of
 	// the current repository but also in any nested submodules inside those
-	// submodules (and so on). Until the SubmoduleRescursivity is reached.
-	RecurseSubmodules SubmoduleRescursivity
+	// submodules (and so on). Until the SubmoduleRecursivity is reached.
+	RecurseSubmodules SubmoduleRecursivity
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Depth limit fetching to the specified number of commits from the tip of

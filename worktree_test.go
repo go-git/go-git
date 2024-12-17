@@ -47,7 +47,7 @@ var _ = Suite(&WorktreeSuite{})
 
 func (s *WorktreeSuite) SetUpTest(c *C) {
 	f := fixtures.Basic().One()
-	s.Repository = s.NewRepositoryWithEmptyWorktree(f)
+	s.Repository = NewRepositoryWithEmptyWorktree(f)
 }
 
 func (s *WorktreeSuite) TestPullCheckout(c *C) {
@@ -588,7 +588,7 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutSubmodule(c *C) {
 	url := "https://github.com/git-fixtures/submodule.git"
-	r := s.NewRepositoryWithEmptyWorktree(fixtures.ByURL(url).One())
+	r := NewRepositoryWithEmptyWorktree(fixtures.ByURL(url).One())
 
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
@@ -850,7 +850,7 @@ func (s *WorktreeSuite) TestCheckoutCreateInvalidBranch(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 	f := fixtures.ByTag("tags").One()
-	r := s.NewRepositoryWithEmptyWorktree(f)
+	r := NewRepositoryWithEmptyWorktree(f)
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
@@ -887,7 +887,7 @@ func (s *WorktreeSuite) TestCheckoutTag(c *C) {
 
 func (s *WorktreeSuite) TestCheckoutTagHash(c *C) {
 	f := fixtures.ByTag("tags").One()
-	r := s.NewRepositoryWithEmptyWorktree(f)
+	r := NewRepositoryWithEmptyWorktree(f)
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
 
@@ -936,7 +936,7 @@ func (s *WorktreeSuite) TestCheckoutBisectSubmodules(c *C) {
 // checking every commit over the previous commit
 func (s *WorktreeSuite) testCheckoutBisect(c *C, url string) {
 	f := fixtures.ByURL(url).One()
-	r := s.NewRepositoryWithEmptyWorktree(f)
+	r := NewRepositoryWithEmptyWorktree(f)
 
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)

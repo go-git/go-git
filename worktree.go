@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
@@ -22,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/utils/ioutil"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/sync"
+	"github.com/go-git/go-git/v5/utils/trace"
 )
 
 var (
@@ -359,6 +361,11 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
+	}()
+
 	return w.ResetSparsely(opts, nil)
 }
 

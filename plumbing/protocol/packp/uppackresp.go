@@ -34,8 +34,9 @@ func NewUploadPackResponse(req *UploadPackRequest) *UploadPackResponse {
 		req.Capabilities.Supports(capability.MultiACKDetailed)
 
 	return &UploadPackResponse{
-		isShallow:  isShallow,
-		isMultiACK: isMultiACK,
+		isShallow:      isShallow,
+		isMultiACK:     isMultiACK,
+		ServerResponse: ServerResponse{req: req},
 	}
 }
 
@@ -78,7 +79,7 @@ func (r *UploadPackResponse) Encode(w io.Writer) (err error) {
 		}
 	}
 
-	if err := r.ServerResponse.Encode(w, r.isMultiACK); err != nil {
+	if err := r.ServerResponse.Encode(w); err != nil {
 		return err
 	}
 

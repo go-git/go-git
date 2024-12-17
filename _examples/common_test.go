@@ -25,6 +25,7 @@ var args = map[string][]string{
 	"find-if-any-tag-point-head": {cloneRepository(defaultURL, tempFolder())},
 	"ls":                         {cloneRepository(defaultURL, tempFolder()), "HEAD", "vendor"},
 	"ls-remote":                  {defaultURL},
+	"memory":                     {defaultURL},
 	"merge_base":                 {cloneRepository(defaultURL, tempFolder()), "--is-ancestor", "HEAD~3", "HEAD^"},
 	"open":                       {cloneRepository(defaultURL, tempFolder())},
 	"progress":                   {defaultURL, tempFolder()},
@@ -40,7 +41,6 @@ var args = map[string][]string{
 
 // tests not working / set-up
 var ignored = map[string]bool{
-	"azure_devops":    true,
 	"ls":              true,
 	"sha256":          true,
 	"submodule":       true,
