@@ -895,8 +895,9 @@ func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit(c *C) {
 func (s *RepositorySuite) TestPlainClone(c *C) {
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:    s.GetBasicLocalRepositoryURL(),
+		IsBare: false,
 	})
 
 	c.Assert(err, IsNil)
@@ -915,9 +916,10 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared(c *C) {
 
 	remote := s.GetBasicLocalRepositoryURL()
 
-	r, err := PlainClone(dir, true, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
+		IsBare: true,
 	})
 	c.Assert(err, IsNil)
 
@@ -942,9 +944,10 @@ func (s *RepositorySuite) TestPlainCloneShared(c *C) {
 
 	remote := s.GetBasicLocalRepositoryURL()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
+		IsBare: false,
 	})
 	c.Assert(err, IsNil)
 
@@ -969,8 +972,9 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError(c *C) {
 
 	remote := "http://somerepo"
 
-	_, err := PlainClone(dir, false, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
+		IsBare: false,
 		Shared: true,
 	})
 	c.Assert(err, Equals, ErrAlternatePathNotSupported)
@@ -981,7 +985,8 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError(c *C) {
 
 	remote := "https://somerepo"
 
-	_, err := PlainClone(dir, false, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
+		IsBare: false,
 		URL:    remote,
 		Shared: true,
 	})
@@ -993,7 +998,8 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError(c *C) {
 
 	remote := "ssh://somerepo"
 
-	_, err := PlainClone(dir, false, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
+		IsBare: false,
 		URL:    remote,
 		Shared: true,
 	})
@@ -1003,7 +1009,8 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError(c *C) {
 func (s *RepositorySuite) TestPlainCloneWithRemoteName(c *C) {
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
+		IsBare:     false,
 		URL:        s.GetBasicLocalRepositoryURL(),
 		RemoteName: "test",
 	})
@@ -1022,8 +1029,9 @@ func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory(c *C) {
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
-	r, err = PlainClone(dir, false, &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+	r, err = PlainClone(dir, &CloneOptions{
+		IsBare: false,
+		URL:    s.GetBasicLocalRepositoryURL(),
 	})
 	c.Assert(r, IsNil)
 	c.Assert(err, Equals, ErrRepositoryAlreadyExists)
@@ -1035,8 +1043,9 @@ func (s *RepositorySuite) TestPlainCloneContextCancel(c *C) {
 
 	dir := c.MkDir()
 
-	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
+		IsBare: false,
+		URL:    s.GetBasicLocalRepositoryURL(),
 	})
 
 	c.Assert(r, NotNil)
@@ -1052,8 +1061,9 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir(c *C) 
 	dir, err := util.TempDir(fs, "", "")
 	c.Assert(err, IsNil)
 
-	r, err := PlainCloneContext(ctx, dir, false, &CloneOptions{
-		URL: "incorrectOnPurpose",
+	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
+		IsBare: false,
+		URL:    "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
@@ -1077,8 +1087,9 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir(c *
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
 
-	r, err := PlainCloneContext(ctx, repoDir, false, &CloneOptions{
-		URL: "incorrectOnPurpose",
+	r, err := PlainCloneContext(ctx, repoDir, &CloneOptions{
+		IsBare: false,
+		URL:    "incorrectOnPurpose",
 	})
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
@@ -1102,8 +1113,9 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(f.Close(), IsNil)
 
-	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
-		URL: "incorrectOnPurpose",
+	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
+		IsBare: false,
+		URL:    "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
 	c.Assert(err, ErrorMatches, ".*not a directory.*")
@@ -1130,8 +1142,9 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0644)
 	c.Assert(err, IsNil)
 
-	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
-		URL: "incorrectOnPurpose",
+	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
+		URL:    "incorrectOnPurpose",
+		IsBare: false,
 	})
 	c.Assert(r, NotNil)
 	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
@@ -1151,8 +1164,9 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	c.Assert(r, NotNil)
 	c.Assert(err, IsNil)
 
-	r, err = PlainCloneContext(ctx, dir, false, &CloneOptions{
-		URL: "incorrectOnPurpose",
+	r, err = PlainCloneContext(ctx, dir, &CloneOptions{
+		IsBare: false,
+		URL:    "incorrectOnPurpose",
 	})
 	c.Assert(r, IsNil)
 	c.Assert(err, Equals, ErrRepositoryAlreadyExists)
@@ -1166,7 +1180,8 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules(c *C) {
 	dir := c.MkDir()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
+		IsBare:            false,
 		URL:               path,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 	})
@@ -1188,7 +1203,8 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules(c *C) {
 	dir := c.MkDir()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	mainRepo, err := PlainClone(dir, false, &CloneOptions{
+	mainRepo, err := PlainClone(dir, &CloneOptions{
+		IsBare:            false,
 		URL:               path,
 		RecurseSubmodules: 1,
 		ShallowSubmodules: true,
@@ -1220,7 +1236,8 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout(c *C) {
 	dir := c.MkDir()
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
+		IsBare:            false,
 		URL:               path,
 		NoCheckout:        true,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
@@ -1710,8 +1727,9 @@ func (s *RepositorySuite) TestPushWithProgress(c *C) {
 func (s *RepositorySuite) TestPushDepth(c *C) {
 	url := c.MkDir()
 
-	server, err := PlainClone(url, true, &CloneOptions{
-		URL: fixtures.Basic().One().DotGit().Root(),
+	server, err := PlainClone(url, &CloneOptions{
+		IsBare: true,
+		URL:    fixtures.Basic().One().DotGit().Root(),
 	})
 
 	c.Assert(err, IsNil)
@@ -3423,7 +3441,8 @@ func BenchmarkObjects(b *testing.B) {
 func BenchmarkPlainClone(b *testing.B) {
 	b.StopTimer()
 	clone := func(b *testing.B) {
-		_, err := PlainClone(b.TempDir(), true, &CloneOptions{
+		_, err := PlainClone(b.TempDir(), &CloneOptions{
+			IsBare:       true,
 			URL:          "https://github.com/go-git/go-git.git",
 			Depth:        1,
 			Tags:         NoTags,
