@@ -7,10 +7,10 @@ import (
 // ObjectToPack is a representation of an object that is going to be into a
 // pack file.
 type ObjectToPack struct {
-	// The main object to pack, it could be any object, including deltas
+	// The main object to pack, it could be any object, including deltas.
 	Object plumbing.EncodedObject
-	// Base is the object that a delta is based on (it could be also another delta).
-	// If the main object is not a delta, Base will be null
+	// Base is the object that a delta is based on, which could also be another delta.
+	// Nil when the main object is not a delta.
 	Base *ObjectToPack
 	// Original is the object that we can generate applying the delta to
 	// Base, or the same object as Object in the case of a non-delta

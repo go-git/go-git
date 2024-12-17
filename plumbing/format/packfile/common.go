@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/ioutil"
+	"github.com/go-git/go-git/v5/utils/sync"
 	"github.com/go-git/go-git/v5/utils/trace"
 )
 
@@ -35,12 +36,9 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 		return WritePackfileToObjectStorage(pw, packfile)
 	}
 
-	p, err := NewParserWithStorage(NewScanner(packfile), s)
-	if err != nil {
-		return err
-	}
+	p := NewParser(packfile, WithStorage(s))
 
-	_, err = p.Parse()
+	_, err := p.Parse()
 	return err
 }
 
@@ -56,9 +54,12 @@ func WritePackfileToObjectStorage(
 	}
 
 	defer ioutil.CheckClose(w, &err)
-
 	var n int64
-	n, err = io.Copy(w, packfile)
+
+	buf := sync.GetByteSlice()
+	n, err = io.CopyBuffer(w, packfile, *buf)
+	sync.PutByteSlice(buf)
+
 	if err == nil && n == 0 {
 		return ErrEmptyPackfile
 	}

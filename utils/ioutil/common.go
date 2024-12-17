@@ -89,6 +89,9 @@ type writeCloser struct {
 }
 
 func (r *writeCloser) Close() error {
+	if r.closer == nil {
+		return nil
+	}
 	return r.closer.Close()
 }
 

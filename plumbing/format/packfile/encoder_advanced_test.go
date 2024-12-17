@@ -94,8 +94,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	c.Assert(err, IsNil)
 
 	w := new(idxfile.Writer)
-	parser, err := NewParser(NewScanner(f), w)
-	c.Assert(err, IsNil)
+	parser := NewParser(NewScanner(f), WithScannerObservers(w))
 
 	_, err = parser.Parse()
 	c.Assert(err, IsNil)
@@ -105,7 +104,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	_, err = f.Seek(0, io.SeekStart)
 	c.Assert(err, IsNil)
 
-	p := NewPackfile(index, fs, f, 0)
+	p := NewPackfile(f, WithIdx(index), WithFs(fs))
 
 	decodeHash, err := p.ID()
 	c.Assert(err, IsNil)

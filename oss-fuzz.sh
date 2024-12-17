@@ -21,9 +21,8 @@ go get github.com/AdamKorcz/go-118-fuzz-build/testing
 
 if [ "$SANITIZER" != "coverage" ]; then
     sed -i '/func (s \*DecoderSuite) TestDecode(/,/^}/ s/^/\/\//' plumbing/format/config/decoder_test.go
-    sed -n '35,$p' plumbing/format/packfile/common_test.go >> plumbing/format/packfile/delta_test.go
+    sed -n '29,$p' plumbing/format/packfile/common_test.go >> plumbing/format/packfile/delta_test.go
     sed -n '20,53p' plumbing/object/object_test.go >> plumbing/object/tree_test.go
-    sed -i 's|func Test|// func Test|' plumbing/transport/common_test.go
 fi
 
 compile_native_go_fuzzer $(pwd)/internal/revision                       FuzzParser              fuzz_parser

@@ -40,7 +40,6 @@ var args = map[string][]string{
 
 // tests not working / set-up
 var ignored = map[string]bool{
-	"azure_devops":    true,
 	"ls":              true,
 	"sha256":          true,
 	"submodule":       true,

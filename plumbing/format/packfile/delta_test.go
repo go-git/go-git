@@ -179,12 +179,12 @@ func (s *DeltaSuite) TestMaxCopySizeDeltaReader(c *C) {
 }
 
 func FuzzPatchDelta(f *testing.F) {
+	f.Add([]byte("some value"), []byte("\n\f\fsomenewvalue"))
+	f.Add([]byte("some value"), []byte("\n\x0e\x0evalue"))
+	f.Add([]byte("some value"), []byte("\n\x0e\x0eva"))
+	f.Add([]byte("some value"), []byte("\n\x80\x80\x80\x80\x80\x802\x7fvalue"))
 
-	f.Fuzz(func(t *testing.T, input []byte) {
-
-		input_0 := input[:len(input)/2]
-		input_1 := input[len(input)/2:]
-
-		PatchDelta(input_0, input_1)
+	f.Fuzz(func(t *testing.T, input1, input2 []byte) {
+		PatchDelta(input1, input2)
 	})
 }

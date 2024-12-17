@@ -5,88 +5,111 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"testing"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
-func (s *SuiteDotGit) TestNewObjectPack(c *C) {
+func BenchmarkNewObjectPack(b *testing.B) {
+	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
+	fs := osfs.New(b.TempDir())
+
+	for i := 0; i < b.N; i++ {
+		w, err := newPackWrite(fs)
+
+		require.NoError(b, err)
+		_, err = io.Copy(w, f.Packfile())
+
+		require.NoError(b, err)
+		require.NoError(b, w.Close())
+	}
+}
+
+func TestNewObjectPack(t *testing.T) {
+	t.Parallel()
+
 	f := fixtures.Basic().One()
 
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
-
+	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
 	w, err := dot.NewObjectPack()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	_, err = io.Copy(w, f.Packfile())
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
-	c.Assert(w.Close(), IsNil)
+	require.NoError(t, w.Close())
 
 	pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
 	idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
 
 	stat, err := fs.Stat(pfPath)
-	c.Assert(err, IsNil)
-	c.Assert(stat.Size(), Equals, int64(84794))
+	require.NoError(t, err)
+	assert.Equal(t, int64(84794), stat.Size())
 
 	stat, err = fs.Stat(idxPath)
-	c.Assert(err, IsNil)
-	c.Assert(stat.Size(), Equals, int64(1940))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1940), stat.Size())
 
 	pf, err := fs.Open(pfPath)
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
+
+	objFound := false
 	pfs := packfile.NewScanner(pf)
-	_, objects, err := pfs.Header()
-	c.Assert(err, IsNil)
-	for i := uint32(0); i < objects; i++ {
-		_, err := pfs.NextObjectHeader()
-		if err != nil {
-			c.Assert(err, IsNil)
-			break
+	for pfs.Scan() {
+		data := pfs.Data()
+		if data.Section != packfile.ObjectSection {
+			continue
 		}
+
+		objFound = true
+		assert.NotNil(t, data.Value())
 	}
-	c.Assert(pfs.Close(), IsNil)
+
+	assert.NoError(t, pf.Close())
+	assert.True(t, objFound)
 }
 
-func (s *SuiteDotGit) TestNewObjectPackUnused(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+func TestNewObjectPackUnused(t *testing.T) {
+	t.Parallel()
 
+	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
 	w, err := dot.NewObjectPack()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
-	c.Assert(w.Close(), IsNil)
+	assert.NoError(t, w.Close())
 
 	info, err := fs.ReadDir("objects/pack")
-	c.Assert(err, IsNil)
-	c.Assert(info, HasLen, 0)
+	require.NoError(t, err)
+	assert.Len(t, info, 0)
 
 	// check clean up of temporary files
 	info, err = fs.ReadDir("")
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 	for _, fi := range info {
-		c.Assert(fi.IsDir(), Equals, true)
+		assert.True(t, fi.IsDir())
 	}
 }
 
-func (s *SuiteDotGit) TestSyncedReader(c *C) {
+func TestSyncedReader(t *testing.T) {
+	t.Parallel()
+
 	tmpw, err := util.TempFile(osfs.Default, "", "example")
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	tmpr, err := osfs.Default.Open(tmpw.Name())
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	defer func() {
 		tmpw.Close()
@@ -99,42 +122,40 @@ func (s *SuiteDotGit) TestSyncedReader(c *C) {
 	go func() {
 		for i := 0; i < 281; i++ {
 			_, err := synced.Write([]byte(strconv.Itoa(i) + "\n"))
-			c.Assert(err, IsNil)
+			require.NoError(t, err)
 		}
 
 		synced.Close()
 	}()
 
 	o, err := synced.Seek(1002, io.SeekStart)
-	c.Assert(err, IsNil)
-	c.Assert(o, Equals, int64(1002))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1002), o)
 
 	head := make([]byte, 3)
 	n, err := io.ReadFull(synced, head)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
-	c.Assert(string(head), Equals, "278")
+	require.NoError(t, err)
+	assert.Equal(t, 3, n)
+	assert.Equal(t, "278", string(head))
 
 	o, err = synced.Seek(1010, io.SeekStart)
-	c.Assert(err, IsNil)
-	c.Assert(o, Equals, int64(1010))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1010), o)
 
 	n, err = io.ReadFull(synced, head)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
-	c.Assert(string(head), Equals, "280")
+	require.NoError(t, err)
+	assert.Equal(t, 3, n)
+	assert.Equal(t, "280", string(head))
 }
 
-func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
-
+func TestPackWriterUnusedNotify(t *testing.T) {
+	fs := osfs.New(t.TempDir())
 	w, err := newPackWrite(fs)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	w.Notify = func(h plumbing.Hash, idx *idxfile.Writer) {
-		c.Fatal("unexpected call to PackWriter.Notify")
+		t.Fatal("unexpected call to PackWriter.Notify")
 	}
 
-	c.Assert(w.Close(), IsNil)
+	assert.NoError(t, w.Close())
 }
