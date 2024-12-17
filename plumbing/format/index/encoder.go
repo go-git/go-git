@@ -153,7 +153,6 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 	}
 
 	return err
-
 }
 
 func (e *Encoder) encodeEntryName(entry *Entry) error {

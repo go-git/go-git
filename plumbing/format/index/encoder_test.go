@@ -110,7 +110,6 @@ func (s *IndexSuite) TestEncodeV4(c *C) {
 	c.Assert(output.Entries[2].Name, Equals, "baz/bar")
 	c.Assert(output.Entries[3].Name, Equals, "baz/bar/bar")
 	c.Assert(output.Entries[4].Name, Equals, "foo")
-
 }
 
 func (s *IndexSuite) TestEncodeUnsupportedVersion(c *C) {
