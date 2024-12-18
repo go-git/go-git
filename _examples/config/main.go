@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/go-git/go-git/v5"
 	. "github.com/go-git/go-git/v5/_examples"
 
@@ -12,8 +14,12 @@ import (
 // - Set basic local config params
 
 func main() {
+	tmp, err := os.MkdirTemp("", "go-git-example")
+	CheckIfError(err)
+	defer os.RemoveAll(tmp)
+
 	Info("git init")
-	r, err := git.PlainInit(".", false)
+	r, err := git.PlainInit(tmp, false)
 	CheckIfError(err)
 
 	// Load the configuration

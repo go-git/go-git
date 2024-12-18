@@ -19,6 +19,7 @@ var args = map[string][]string{
 	"checkout":                   {defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
 	"checkout-branch":            {defaultURL, tempFolder(), "branch"},
 	"clone":                      {defaultURL, tempFolder()},
+	"config":                     {},
 	"commit":                     {cloneRepository(defaultURL, tempFolder())},
 	"context":                    {defaultURL, tempFolder()},
 	"custom_http":                {defaultURL},
