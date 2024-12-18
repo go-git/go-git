@@ -34,3 +34,4 @@ Here you can find a list of annotated _go-git_ examples:
 - [storage](storage/README.md) - Implementing a custom storage system.
 - [sha256](sha256/main.go) - Init and committing repositories that use sha256 as object format.
 - [memory](memory/main.go) - Clone a repository into an in-memory dotgit storage and worktree.
+- [perf-clone](performance/clone/main.go) - Clone a repository with the least time and space complexity.
