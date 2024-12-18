@@ -18,7 +18,7 @@ var (
 	// x509SignatureFormat is the format of an X509 signature, which is
 	// a PKCS#7 (S/MIME) signature.
 	x509SignatureFormat = signatureFormat{
-		[]byte("-----BEGIN CERTIFICATE-----"),
+		[]byte("-----BEGIN SIGNED MESSAGE-----"),
 	}
 
 	// sshSignatureFormat is the format of an SSH signature.
