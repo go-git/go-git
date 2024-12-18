@@ -31,6 +31,7 @@ var args = map[string][]string{
 	"progress":                   {defaultURL, tempFolder()},
 	"pull":                       {createRepositoryWithRemote(tempFolder(), defaultURL)},
 	"push":                       {setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
+	"restore":                    {cloneRepository(defaultURL, tempFolder())},
 	"revision":                   {cloneRepository(defaultURL, tempFolder()), "master~2^"},
 	"sha256":                     {tempFolder()},
 	"showcase":                   {defaultURL, tempFolder()},

@@ -150,7 +150,8 @@ func TestSyncedReader(t *testing.T) {
 
 func TestPackWriterUnusedNotify(t *testing.T) {
 	fs := osfs.New(t.TempDir())
-	w, err := newPackWrite(fs)
+
+  w, err := newPackWrite(fs)
 	require.NoError(t, err)
 
 	w.Notify = func(h plumbing.Hash, idx *idxfile.Writer) {

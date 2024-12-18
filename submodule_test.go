@@ -17,7 +17,6 @@ import (
 type SubmoduleSuite struct {
 	BaseSuite
 	Worktree *Worktree
-	clean    func()
 }
 
 var _ = Suite(&SubmoduleSuite{})
@@ -25,8 +24,7 @@ var _ = Suite(&SubmoduleSuite{})
 func (s *SubmoduleSuite) SetUpTest(c *C) {
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	var dir string
-	dir, s.clean = s.TemporalDir()
+	dir := c.MkDir()
 
 	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
 		URL: path,
@@ -37,10 +35,6 @@ func (s *SubmoduleSuite) SetUpTest(c *C) {
 	s.Repository = r
 	s.Worktree, err = r.Worktree()
 	c.Assert(err, IsNil)
-}
-
-func (s *SubmoduleSuite) TearDownTest(_ *C) {
-	s.clean()
 }
 
 func (s *SubmoduleSuite) TestInit(c *C) {

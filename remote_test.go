@@ -350,8 +350,7 @@ func (s *RemoteSuite) testFetch(c *C, r *Remote, o *FetchOptions, expected []*pl
 }
 
 func (s *RemoteSuite) TestFetchOfMissingObjects(c *C) {
-	tmp, clean := s.TemporalDir()
-	defer clean()
+	tmp := c.MkDir()
 
 	// clone to a local temp folder
 	_, err := PlainClone(tmp, true, &CloneOptions{
@@ -411,8 +410,7 @@ func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
 }
 
 func (s *RemoteSuite) TestFetchWithPackfileWriter(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	mock := &mockPackfileWriter{Storer: fss}
@@ -544,8 +542,7 @@ func (s *RemoteSuite) TestFetchFastForwardMem(c *C) {
 }
 
 func (s *RemoteSuite) TestFetchFastForwardFS(c *C) {
-	fs, clean := s.TemporalFilesystem()
-	defer clean()
+	fs := s.TemporalFilesystem(c)
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
@@ -566,8 +563,7 @@ func (s *RemoteSuite) TestString(c *C) {
 }
 
 func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -605,8 +601,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository(c *C) {
 }
 
 func (s *RemoteSuite) TestPushContext(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -648,8 +643,7 @@ func eventually(c *C, condition func() bool) {
 }
 
 func (s *RemoteSuite) TestPushContextCanceled(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -678,8 +672,7 @@ func (s *RemoteSuite) TestPushContextCanceled(c *C) {
 }
 
 func (s *RemoteSuite) TestPushTags(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -707,8 +700,7 @@ func (s *RemoteSuite) TestPushTags(c *C) {
 }
 
 func (s *RemoteSuite) TestPushFollowTags(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -785,8 +777,7 @@ func (s *RemoteSuite) TestPushDeleteReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	r, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
@@ -812,8 +803,7 @@ func (s *RemoteSuite) TestForcePushDeleteReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	r, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
@@ -840,8 +830,7 @@ func (s *RemoteSuite) TestPushRejectNonFastForward(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 	server := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	r, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
@@ -1052,16 +1041,14 @@ func (s *RemoteSuite) TestPushForceWithLease_failure(c *C) {
 func (s *RemoteSuite) TestPushPrune(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
@@ -1115,16 +1102,14 @@ func (s *RemoteSuite) TestPushPrune(c *C) {
 func (s *RemoteSuite) TestPushNewReference(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
@@ -1154,16 +1139,14 @@ func (s *RemoteSuite) TestPushNewReference(c *C) {
 func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	server, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
@@ -1406,8 +1389,7 @@ func (s *RemoteSuite) TestUpdateShallows(c *C) {
 }
 
 func (s *RemoteSuite) TestUseRefDeltas(c *C) {
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	_, err := PlainInit(url, true)
 	c.Assert(err, IsNil)
@@ -1485,16 +1467,14 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs(c *C) {
 func (s *RemoteSuite) TestFetchPrune(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	_, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
@@ -1512,8 +1492,7 @@ func (s *RemoteSuite) TestFetchPrune(c *C) {
 	}})
 	c.Assert(err, IsNil)
 
-	dirSave, clean := s.TemporalDir()
-	defer clean()
+	dirSave := c.MkDir()
 
 	rSave, err := PlainClone(dirSave, true, &CloneOptions{
 		URL: url,
@@ -1543,16 +1522,14 @@ func (s *RemoteSuite) TestFetchPrune(c *C) {
 func (s *RemoteSuite) TestFetchPruneTags(c *C) {
 	fs := fixtures.Basic().One().DotGit()
 
-	url, clean := s.TemporalDir()
-	defer clean()
+	url := c.MkDir()
 
 	_, err := PlainClone(url, true, &CloneOptions{
 		URL: fs.Root(),
 	})
 	c.Assert(err, IsNil)
 
-	dir, clean := s.TemporalDir()
-	defer clean()
+	dir := c.MkDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: url,
@@ -1570,8 +1547,7 @@ func (s *RemoteSuite) TestFetchPruneTags(c *C) {
 	}})
 	c.Assert(err, IsNil)
 
-	dirSave, clean := s.TemporalDir()
-	defer clean()
+	dirSave := c.MkDir()
 
 	rSave, err := PlainClone(dirSave, true, &CloneOptions{
 		URL: url,
@@ -1599,12 +1575,12 @@ func (s *RemoteSuite) TestFetchPruneTags(c *C) {
 }
 
 func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
-	d, err := os.MkdirTemp("", "TestCanPushShasToReference")
+	d := c.MkDir()
+	d, err := os.MkdirTemp(d, "TestCanPushShasToReference")
 	c.Assert(err, IsNil)
 	if err != nil {
 		return
 	}
-	defer os.RemoveAll(d)
 
 	// remote currently forces a plain path for path based remotes inside the PushContext function.
 	// This makes it impossible, in the current state to use memfs.
@@ -1649,8 +1625,7 @@ func (s *RemoteSuite) TestCanPushShasToReference(c *C) {
 }
 
 func (s *RemoteSuite) TestFetchAfterShallowClone(c *C) {
-	tempDir, clean := s.TemporalDir()
-	defer clean()
+	tempDir := c.MkDir()
 	remoteUrl := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
