@@ -663,16 +663,19 @@ func (w *Worktree) checkoutChangeSubmodule(name string,
 ) error {
 	switch a {
 	case merkletrie.Modify:
-		sub, err := w.Submodule(name)
+		subs, err := w.Submodules()
 		if err != nil {
 			return err
 		}
-
-		if !sub.initialized {
-			return nil
+		for _, sub := range subs {
+			if sub.Config().Path == name {
+				if !sub.initialized {
+					return nil
+				}
+				return w.addIndexFromTreeEntry(name, e, idx)
+			}
 		}
-
-		return w.addIndexFromTreeEntry(name, e, idx)
+		return ErrSubmoduleNotFound
 	case merkletrie.Insert:
 		mode, err := e.Mode.ToOSFileMode()
 		if err != nil {
