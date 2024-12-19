@@ -95,6 +95,14 @@ func (r ReferenceName) IsBranch() bool {
 	return strings.HasPrefix(string(r), refHeadPrefix)
 }
 
+// BranchName returns the branch name if the reference is a branch
+func (r ReferenceName) BranchName() string {
+	if r.IsBranch() {
+		return strings.TrimPrefix(string(r), refHeadPrefix)
+	}
+	return ""
+}
+
 // IsNote check if a reference is a note
 func (r ReferenceName) IsNote() bool {
 	return strings.HasPrefix(string(r), refNotePrefix)
@@ -108,6 +116,15 @@ func (r ReferenceName) IsRemote() bool {
 // IsTag check if a reference is a tag
 func (r ReferenceName) IsTag() bool {
 	return strings.HasPrefix(string(r), refTagPrefix)
+}
+
+// TagName returns the Tag name if the reference is a tag
+func (r ReferenceName) TagName() string {
+	if r.IsTag() {
+		return strings.TrimPrefix(string(r), refTagPrefix)
+	}
+
+	return ""
 }
 
 func (r ReferenceName) String() string {
@@ -205,9 +222,14 @@ func (r ReferenceName) Validate() error {
 			return ErrInvalidReferenceName
 		}
 
-		if (isBranch || isTag) && strings.HasPrefix(part, "-") { // branches & tags can't start with -
-			return ErrInvalidReferenceName
-		}
+	}
+
+	if (isBranch) && strings.HasPrefix(r.BranchName(), "-") { // branches & tags can't start with -
+		return ErrInvalidReferenceName
+	}
+
+	if (isTag) && strings.HasPrefix(r.TagName(), "-") { // branches & tags can't start with -
+		return ErrInvalidReferenceName
 	}
 
 	return nil
