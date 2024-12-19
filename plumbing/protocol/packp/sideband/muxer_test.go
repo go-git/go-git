@@ -15,6 +15,10 @@ func (s *SidebandSuite) TestMuxerWrite(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 1998)
 	c.Assert(buf.Len(), Equals, 2008)
+
+	err = m.Flush()
+	c.Assert(err, IsNil)
+	c.Assert(buf.Len(), Equals, 2012)
 }
 
 func (s *SidebandSuite) TestMuxerWriteChannelMultipleChannels(c *C) {
@@ -34,6 +38,9 @@ func (s *SidebandSuite) TestMuxerWriteChannelMultipleChannels(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 4)
 
-	c.Assert(buf.Len(), Equals, 27)
-	c.Assert(buf.String(), Equals, "0009\x01DDDD0009\x02PPPP0009\x01DDDD")
+	err = m.Flush()
+	c.Assert(err, IsNil)
+
+	c.Assert(buf.Len(), Equals, 31)
+	c.Assert(buf.String(), Equals, "0009\x01DDDD0009\x02PPPP0009\x01DDDD0000")
 }
