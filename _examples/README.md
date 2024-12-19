@@ -12,6 +12,7 @@ Here you can find a list of annotated _go-git_ examples:
       a repository using a GitHub personal access token.
     - [ssh private key](clone/auth/ssh/private_key/main.go) - Cloning a repository using a ssh private key.
     - [ssh agent](clone/auth/ssh/ssh_agent/main.go) - Cloning a repository using ssh-agent.
+- [config](config/main.go) - Explains how to work with config files. 
 - [commit](commit/main.go) - Commit changes to the current branch to an existent repository.
 - [push](push/main.go) - Push repository to default remote (origin).
 - [pull](pull/main.go) - Pull changes from a remote repository.
@@ -34,3 +35,4 @@ Here you can find a list of annotated _go-git_ examples:
 - [storage](storage/README.md) - Implementing a custom storage system.
 - [sha256](sha256/main.go) - Init and committing repositories that use sha256 as object format.
 - [memory](memory/main.go) - Clone a repository into an in-memory dotgit storage and worktree.
+- [perf-clone](performance/clone/main.go) - Clone a repository with the least time and space complexity.
