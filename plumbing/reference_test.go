@@ -115,6 +115,8 @@ func (s *ReferenceSuite) TestValidReferenceNames(c *C) {
 		"refs/pulls/1/abc.123",
 		"refs/pulls",
 		"refs/-", // should this be allowed?
+		"refs/ab/-testing",
+		"refs/123-testing",
 	}
 	for _, v := range valid {
 		c.Assert(v.Validate(), IsNil)
