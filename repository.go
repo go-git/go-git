@@ -1283,8 +1283,8 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		it = r.logWithPathFilter(o.PathFilter, it, o.All)
 	}
 
-	if o.Since != nil || o.Until != nil {
-		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until}
+	if o.Since != nil || o.Until != nil || !o.To.IsZero() {
+		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until, TailHash: o.To}
 		it = r.logWithLimit(it, limitOptions)
 	}
 

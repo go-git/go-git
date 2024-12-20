@@ -457,6 +457,10 @@ type LogOptions struct {
 	// the default From.
 	From plumbing.Hash
 
+	// When To is set the log will go down until it reaches to the commit with the
+	// specified hash. The default value for this field in nil
+	To plumbing.Hash
+
 	// The default traversal algorithm is Depth-first search
 	// set Order=LogOrderCommitterTime for ordering by committer time (more compatible with `git log`)
 	// set Order=LogOrderBSF for Breadth-first search
