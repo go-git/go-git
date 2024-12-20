@@ -52,11 +52,11 @@ func (c *commitLimitIter) ForEach(cb func(*Commit) error) error {
 		if nextErr == io.EOF {
 			break
 		}
-		if nextErr != nil {
+		if nextErr != nil && nextErr != storer.ErrStop {
 			return nextErr
 		}
 		err := cb(commit)
-		if err == storer.ErrStop {
+		if err == storer.ErrStop || nextErr == storer.ErrStop {
 			return nil
 		} else if err != nil {
 			return err
