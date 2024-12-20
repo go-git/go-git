@@ -222,14 +222,9 @@ func (r ReferenceName) Validate() error {
 			return ErrInvalidReferenceName
 		}
 
-	}
-
-	if (isBranch) && strings.HasPrefix(r.BranchName(), "-") { // branches & tags can't start with -
-		return ErrInvalidReferenceName
-	}
-
-	if (isTag) && strings.HasPrefix(r.TagName(), "-") { // branches & tags can't start with -
-		return ErrInvalidReferenceName
+		if (isBranch || isTag) && strings.HasPrefix(part, "-") && i == 2 { // branches & tags can't start with -
+			return ErrInvalidReferenceName
+		}
 	}
 
 	return nil
