@@ -1,7 +1,12 @@
-on: [push, pull_request]
 name: Git Compatibility
-permissions:
-  contents: read
+on:
+  push:
+    branches:
+    - "master"
+    - "v6-exp"
+  pull_request:
+
+permissions: {}
 
 jobs:
   test:
@@ -14,6 +19,9 @@ jobs:
     env:
         GIT_VERSION: ${{ matrix.git[0] }}
         GIT_DIST_PATH: .git-dist/${{ matrix.git[0] }}
+
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code

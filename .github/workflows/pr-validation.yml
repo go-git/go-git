@@ -1,5 +1,4 @@
 name: 'PR Validation'
-
 on:
   pull_request:
     types:
@@ -8,13 +7,16 @@ on:
       - reopened
       - synchronize
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   check-commit-message:
     name: Check Commit Messages
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
     steps:
       - name: Check Package Prefix
         uses: gsactions/commit-message-checker@v2
