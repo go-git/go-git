@@ -20,8 +20,8 @@ var _ = Suite(&SuiteScanner{})
 
 func (s *SuiteScanner) TestInvalid(c *C) {
 	for _, test := range [...]string{
-		"0001", "0002", "0003", "0004",
-		"0001asdfsadf", "0004foo",
+		"0003", "0004",
+		"0004foo",
 		"fff5", "ffff",
 		"FFF5", "FFFF",
 		"gorka",
@@ -202,7 +202,7 @@ func (s *SuiteScanner) TestReadSomeSections(c *C) {
 	sectionCounter := 0
 	lineCounter := 0
 	for sc.Scan() {
-		if len(sc.Bytes()) == 0 {
+		if sc.PktType() == pktline.FlushType {
 			sectionCounter++
 		}
 		lineCounter++

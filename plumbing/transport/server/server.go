@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -79,6 +80,7 @@ func (h *handler) NewReceivePackSession(s storer.Storer) (transport.ReceivePackS
 }
 
 type session struct {
+	version  int
 	storer   storer.Storer
 	caps     *capability.List
 	asClient bool
@@ -111,6 +113,10 @@ func (s *upSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
 }
 
+func (s *upSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return s.AdvertisedCapabilitiesContext(context.TODO())
+}
+
 func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
 	ar := packp.NewAdvRefs()
 
@@ -133,6 +139,14 @@ func (s *upSession) AdvertisedReferencesContext(ctx context.Context) (*packp.Adv
 	}
 
 	return ar, nil
+}
+
+func (s *upSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	if s.asClient {
+		return nil, nil
+	}
+
+	return packp.NewAdvCaps(), nil
 }
 
 func (s *upSession) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
@@ -200,6 +214,86 @@ func (*upSession) setSupportedCapabilities(c *capability.List) error {
 	return nil
 }
 
+func (s *upSession) CommandHandler(ctx context.Context, req *packp.CommandRequest) (*packp.CommandResponse, error) {
+	res := &packp.CommandResponse{
+		Command:      req.Command,
+		Refs:         []*plumbing.Reference{},
+		Capabilities: capability.NewList(),
+		Args:         capability.NewList(),
+	}
+
+	switch req.Command {
+	case capability.LsRefs.String():
+		advRefs, err := s.AdvertisedReferences()
+		if err != nil {
+			return res, err
+		}
+
+		// grab wanted refs
+		refs := req.Args.Get("ref-prefix")
+		for r, h := range advRefs.References {
+			for _, ref := range refs {
+				if strings.HasPrefix(r, ref) {
+					n := plumbing.NewReferenceFromStrings(r, h.String())
+					res.Refs = append(res.Refs, n)
+				}
+			}
+		}
+	case capability.Fetch.String():
+		// done changes the response so it must be passed if present
+		if req.Args.Supports("done") {
+			res.Args.Add("done")
+		}
+
+		// grab wanted hashes
+		refs := req.Args.Get("want")
+		wants := make([]plumbing.Hash, len(refs))
+		for i, r := range refs {
+			wants[i] = plumbing.NewHash(r)
+		}
+
+		// grab wanted hashes
+		reqHaves := req.Args.Get("have")
+		haves := make([]plumbing.Hash, len(reqHaves))
+		for i, r := range reqHaves {
+			haves[i] = plumbing.NewHash(r)
+		}
+
+		var err error
+		res.Haves, err = revlist.Objects(s.storer, haves, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		res.Wants, err = revlist.Objects(s.storer, wants, res.Haves)
+		if err != nil {
+			return nil, err
+		}
+
+		// just the common haves
+		seen := map[string]struct{}{}
+		for _, h := range haves {
+			seen[h.String()] = struct{}{}
+		}
+
+
+		commons := make([]plumbing.Hash, 0, len(haves))
+		for _, h := range res.Haves {
+			if _, ok := seen[h.String()]; ok {
+				commons = append(commons, h)
+			}
+		}
+		res.Haves = commons
+
+		// pass storer (seems easier)
+		res.Storer = s.storer
+	default:
+		return nil, fmt.Errorf("unsupported command")
+	}
+
+	return res, nil
+}
+
 type rpSession struct {
 	session
 	cmdStatus map[plumbing.ReferenceName]error
@@ -209,6 +303,20 @@ type rpSession struct {
 
 func (s *rpSession) AdvertisedReferences() (*packp.AdvRefs, error) {
 	return s.AdvertisedReferencesContext(context.TODO())
+}
+
+func (s *rpSession) AdvertisedCapabilities() (*packp.AdvCaps, error) {
+	return s.AdvertisedCapabilitiesContext(context.TODO())
+}
+
+func (s *rpSession) AdvertisedCapabilitiesContext(ctx context.Context) (*packp.AdvCaps, error) {
+	ar := packp.NewAdvCaps()
+
+	if err := s.setSupportedCapabilities(ar.Capabilities); err != nil {
+		return nil, err
+	}
+
+	return ar, nil
 }
 
 func (s *rpSession) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
