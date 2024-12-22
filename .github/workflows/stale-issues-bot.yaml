@@ -3,13 +3,16 @@ on:
   schedule:
   - cron: "0 7 * * *"
 
-permissions:
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   stale-bot:
     runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      pull-requests: write
+
     steps:
     - uses: actions/stale@v9
       with:

@@ -5,6 +5,7 @@ on:
       - master
 
 permissions: {}
+
 jobs:
  Fuzzing:
    runs-on: ubuntu-latest
