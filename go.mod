@@ -23,7 +23,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
 	github.com/go-git/go-billy/v5 v5.6.0
 	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399
-	github.com/go-git/go-git-fixtures/v5 v5.0.0-00010101000000-000000000000
+	github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 	github.com/kevinburke/ssh_config v1.2.0
