@@ -689,6 +689,44 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored(c *C) {
 	c.Assert(infoLicenseSecond.ModTime(), Equals, infoLicense.ModTime()) // object of LICENSE should have the same timestamp because no additional write operation was performed
 }
 
+func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos(c *C) {
+	f := fixtures.Basic().One()
+	s.Repository = NewRepositoryWithEmptyWorktree(f)
+
+	expected := plumbing.NewHash("e8eecef2524c3a37cf0f0996603162f81e0373f1")
+
+	fs := memfs.New()
+	storage := memory.NewStorage()
+
+	r, err := Init(storage, fs)
+	c.Assert(err, IsNil)
+
+	w, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+
+	_, err = w.Add("foo")
+	c.Assert(err, IsNil)
+
+	hash, err := w.Commit("foo\n", &CommitOptions{Author: invalidSignature()})
+	c.Assert(hash, Equals, expected)
+	c.Assert(err, IsNil)
+
+	assertStorageStatus(c, r, 1, 1, 1, expected)
+
+	// Check HEAD commit contains author informations with '<', '>' and '\n' stripped
+	lr, err := r.Log(&LogOptions{})
+	c.Assert(err, IsNil)
+
+	commit, err := lr.Next()
+	c.Assert(err, IsNil)
+
+	c.Assert(commit.Author.Name, Equals, "foo bad")
+	c.Assert(commit.Author.Email, Equals, "badfoo@foo.foo")
+
+}
+
 func assertStorageStatus(
 	c *C, r *Repository,
 	treesCount, blobCount, commitCount int, head plumbing.Hash,
@@ -724,6 +762,15 @@ func defaultSignature() *object.Signature {
 	return &object.Signature{
 		Name:  "foo",
 		Email: "foo@foo.foo",
+		When:  when,
+	}
+}
+
+func invalidSignature() *object.Signature {
+	when, _ := time.Parse(object.DateFormat, "Thu May 04 00:03:43 2017 +0200")
+	return &object.Signature{
+		Name:  "foo <bad>\n",
+		Email: "<bad>\nfoo@foo.foo",
 		When:  when,
 	}
 }
