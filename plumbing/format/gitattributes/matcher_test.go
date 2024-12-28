@@ -2,11 +2,9 @@ package gitattributes
 
 import (
 	"strings"
-
-	. "gopkg.in/check.v1"
 )
 
-func (s *MatcherSuite) TestMatcher_Match(c *C) {
+func (s *MatcherSuite) TestMatcher_Match() {
 	lines := []string{
 		"[attr]binary -diff -merge -text",
 		"**/middle/v[uo]l?ano binary text eol=crlf",
@@ -15,15 +13,15 @@ func (s *MatcherSuite) TestMatcher_Match(c *C) {
 	}
 
 	ma, err := ReadAttributes(strings.NewReader(strings.Join(lines, "\n")), nil, true)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	m := NewMatcher(ma)
 	results, matched := m.Match([]string{"head", "middle", "vulkano"}, nil)
 
-	c.Assert(matched, Equals, true)
-	c.Assert(results["binary"].IsSet(), Equals, true)
-	c.Assert(results["diff"].IsUnset(), Equals, true)
-	c.Assert(results["merge"].IsUnset(), Equals, true)
-	c.Assert(results["text"].IsSet(), Equals, true)
-	c.Assert(results["eol"].Value(), Equals, "crlf")
+	s.True(matched)
+	s.True(results["binary"].IsSet())
+	s.True(results["diff"].IsUnset())
+	s.True(results["merge"].IsUnset())
+	s.True(results["text"].IsSet())
+	s.Equal("crlf", results["eol"].Value())
 }

@@ -2,15 +2,20 @@ package gitattributes
 
 import (
 	"strings"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type AttributesSuite struct{}
+type AttributesSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&AttributesSuite{})
+func TestAttributesSuite(t *testing.T) {
+	suite.Run(t, new(AttributesSuite))
+}
 
-func (s *AttributesSuite) TestAttributes_ReadAttributes(c *C) {
+func (s *AttributesSuite) TestAttributes_ReadAttributes() {
 	lines := []string{
 		"[attr]sub -a",
 		"[attr]add a",
@@ -19,49 +24,49 @@ func (s *AttributesSuite) TestAttributes_ReadAttributes(c *C) {
 	}
 
 	mas, err := ReadAttributes(strings.NewReader(strings.Join(lines, "\n")), nil, true)
-	c.Assert(err, IsNil)
-	c.Assert(len(mas), Equals, 4)
+	s.NoError(err)
+	s.Len(mas, 4)
 
-	c.Assert(mas[0].Name, Equals, "sub")
-	c.Assert(mas[0].Pattern, IsNil)
-	c.Assert(mas[0].Attributes[0].IsUnset(), Equals, true)
+	s.Equal("sub", mas[0].Name)
+	s.Nil(mas[0].Pattern)
+	s.True(mas[0].Attributes[0].IsUnset())
 
-	c.Assert(mas[1].Name, Equals, "add")
-	c.Assert(mas[1].Pattern, IsNil)
-	c.Assert(mas[1].Attributes[0].IsSet(), Equals, true)
+	s.Equal("add", mas[1].Name)
+	s.Nil(mas[1].Pattern)
+	s.True(mas[1].Attributes[0].IsSet())
 
-	c.Assert(mas[2].Name, Equals, "*")
-	c.Assert(mas[2].Pattern, NotNil)
-	c.Assert(mas[2].Attributes[0].IsSet(), Equals, true)
+	s.Equal("*", mas[2].Name)
+	s.NotNil(mas[2].Pattern)
+	s.True(mas[2].Attributes[0].IsSet())
 
-	c.Assert(mas[3].Name, Equals, "*")
-	c.Assert(mas[3].Pattern, NotNil)
-	c.Assert(mas[3].Attributes[0].IsUnspecified(), Equals, true)
-	c.Assert(mas[3].Attributes[1].IsValueSet(), Equals, true)
-	c.Assert(mas[3].Attributes[1].Value(), Equals, "bar")
-	c.Assert(mas[3].Attributes[2].IsUnset(), Equals, true)
-	c.Assert(mas[3].Attributes[3].IsSet(), Equals, true)
-	c.Assert(mas[3].Attributes[0].String(), Equals, "a: unspecified")
-	c.Assert(mas[3].Attributes[1].String(), Equals, "foo: bar")
-	c.Assert(mas[3].Attributes[2].String(), Equals, "b: unset")
-	c.Assert(mas[3].Attributes[3].String(), Equals, "c: set")
+	s.Equal("*", mas[3].Name)
+	s.NotNil(mas[3].Pattern)
+	s.True(mas[3].Attributes[0].IsUnspecified())
+	s.True(mas[3].Attributes[1].IsValueSet())
+	s.Equal("bar", mas[3].Attributes[1].Value())
+	s.True(mas[3].Attributes[2].IsUnset())
+	s.True(mas[3].Attributes[3].IsSet())
+	s.Equal("a: unspecified", mas[3].Attributes[0].String())
+	s.Equal("foo: bar", mas[3].Attributes[1].String())
+	s.Equal("b: unset", mas[3].Attributes[2].String())
+	s.Equal("c: set", mas[3].Attributes[3].String())
 }
 
-func (s *AttributesSuite) TestAttributes_ReadAttributesDisallowMacro(c *C) {
+func (s *AttributesSuite) TestAttributes_ReadAttributesDisallowMacro() {
 	lines := []string{
 		"[attr]sub -a",
 		"* a add",
 	}
 
 	_, err := ReadAttributes(strings.NewReader(strings.Join(lines, "\n")), nil, false)
-	c.Assert(err, Equals, ErrMacroNotAllowed)
+	s.ErrorIs(err, ErrMacroNotAllowed)
 }
 
-func (s *AttributesSuite) TestAttributes_ReadAttributesInvalidName(c *C) {
+func (s *AttributesSuite) TestAttributes_ReadAttributesInvalidName() {
 	lines := []string{
 		"[attr]foo!bar -a",
 	}
 
 	_, err := ReadAttributes(strings.NewReader(strings.Join(lines, "\n")), nil, true)
-	c.Assert(err, Equals, ErrInvalidAttributeName)
+	s.ErrorIs(err, ErrInvalidAttributeName)
 }
