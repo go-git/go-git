@@ -4,22 +4,30 @@ import (
 	"bytes"
 	"encoding/base64"
 	"io"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-type WriterSuite struct {
+type WriterFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&WriterSuite{})
+type WriterSuite struct {
+	suite.Suite
+	WriterFixtureSuite
+}
 
-func (s *WriterSuite) TestWriter(c *C) {
+func TestWriterSuite(t *testing.T) {
+	suite.Run(t, new(WriterSuite))
+}
+
+func (s *WriterSuite) TestWriter() {
 	f := fixtures.Basic().One()
 	scanner := packfile.NewScanner(f.Packfile())
 
@@ -27,53 +35,53 @@ func (s *WriterSuite) TestWriter(c *C) {
 	parser := packfile.NewParser(scanner, packfile.WithScannerObservers(obs))
 
 	_, err := parser.Parse()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	idx, err := obs.Index()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	idxFile := f.Idx()
 	expected, err := io.ReadAll(idxFile)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	idxFile.Close()
 
 	buf := new(bytes.Buffer)
 	encoder := idxfile.NewEncoder(buf)
 	n, err := encoder.Encode(idx)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, len(expected))
+	s.NoError(err)
+	s.Len(expected, n)
 
-	c.Assert(buf.Bytes(), DeepEquals, expected)
+	s.Equal(expected, buf.Bytes())
 }
 
-func (s *WriterSuite) TestWriterLarge(c *C) {
+func (s *WriterSuite) TestWriterLarge() {
 	writer := new(idxfile.Writer)
 	err := writer.OnHeader(uint32(len(fixture4GbEntries)))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, o := range fixture4GbEntries {
 		err = writer.OnInflatedObjectContent(plumbing.NewHash(o.hash), o.offset, o.crc, nil)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 	}
 
 	err = writer.OnFooter(fixture4GbChecksum)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	idx, err := writer.Index()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// load fixture index
 	f := bytes.NewBufferString(fixtureLarge4GB)
 	expected, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, f))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	buf := new(bytes.Buffer)
 	encoder := idxfile.NewEncoder(buf)
 	n, err := encoder.Encode(idx)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, len(expected))
+	s.NoError(err)
+	s.Len(expected, n)
 
-	c.Assert(buf.Bytes(), DeepEquals, expected)
+	s.Equal(expected, buf.Bytes())
 }
 
 var (
