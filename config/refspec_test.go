@@ -18,34 +18,34 @@ func TestRefSpecSuite(t *testing.T) {
 
 func (s *RefSpecSuite) TestRefSpecIsValid() {
 	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	s.Equal(nil, spec.Validate())
+	s.NoError(spec.Validate())
 
 	spec = RefSpec("refs/heads/*:refs/remotes/origin/")
-	s.Equal(ErrRefSpecMalformedWildcard, spec.Validate())
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec("refs/heads/master:refs/remotes/origin/master")
-	s.Equal(nil, spec.Validate())
+	s.NoError(spec.Validate())
 
 	spec = RefSpec(":refs/heads/master")
-	s.Equal(nil, spec.Validate())
+	s.NoError(spec.Validate())
 
 	spec = RefSpec(":refs/heads/*")
-	s.Equal(ErrRefSpecMalformedWildcard, spec.Validate())
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec(":*")
-	s.Equal(ErrRefSpecMalformedWildcard, spec.Validate())
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec("refs/heads/*")
-	s.Equal(ErrRefSpecMalformedSeparator, spec.Validate())
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedSeparator)
 
 	spec = RefSpec("refs/heads:")
-	s.Equal(ErrRefSpecMalformedSeparator, spec.Validate())
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedSeparator)
 
 	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/foo")
-	s.Equal(nil, spec.Validate())
+	s.NoError(spec.Validate())
 
 	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/*")
-	s.Equal(ErrRefSpecMalformedWildcard, spec.Validate())
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 }
 
 func (s *RefSpecSuite) TestRefSpecIsForceUpdate() {

@@ -265,7 +265,7 @@ func (s *ConfigSuite) TestValidateConfig() {
 		},
 	}
 
-	s.Nil(config.Validate())
+	s.NoError(config.Validate())
 }
 
 func (s *ConfigSuite) TestValidateInvalidRemote() {
@@ -300,7 +300,7 @@ func (s *ConfigSuite) TestRemoteConfigValidateMissingName() {
 
 func (s *ConfigSuite) TestRemoteConfigValidateDefault() {
 	config := &RemoteConfig{Name: "foo", URLs: []string{"http://foo/bar"}}
-	s.Nil(config.Validate())
+	s.NoError(config.Validate())
 
 	fetch := config.Fetch
 	s.Len(fetch, 1)
