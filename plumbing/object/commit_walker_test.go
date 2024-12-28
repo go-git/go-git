@@ -1,6 +1,8 @@
 package object
 
 import (
+	"time"
+
 	"github.com/go-git/go-git/v5/plumbing"
 
 	. "gopkg.in/check.v1"
@@ -55,6 +57,56 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
+func (s *CommitWalkerSuite) TestCommitLimitIterByTrailingHash(c *C) {
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+	commitIter := NewCommitPreorderIter(commit, nil, nil)
+	var commits []*Commit
+	expected := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+		"1669dce138d9b841a518c64b10914d88f5e488ea",
+		"35e85108805c84807bc66a02d91535e1e24b38b9",
+		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+		"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+	}
+	NewCommitLimitIterFromIter(commitIter, LogLimitOptions{
+		TailHash: plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+	}).ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	for i, commit := range commits {
+		c.Assert(commit.Hash.String(), Equals, expected[i])
+	}
+}
+
+func (s *CommitWalkerSuite) TestCommitLimitIterByTime(c *C) {
+	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+	commitIter := NewCommitPreorderIter(commit, nil, nil)
+	var commits []*Commit
+	expected := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+		"1669dce138d9b841a518c64b10914d88f5e488ea",
+	}
+	since, err := time.Parse(time.RFC3339, "2015-03-31T13:48:14+02:00")
+	c.Assert(err, Equals, nil)
+	NewCommitLimitIterFromIter(commitIter, LogLimitOptions{
+		Since:    &since,
+		TailHash: plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+	}).ForEach(func(c *Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
 	for i, commit := range commits {
 		c.Assert(commit.Hash.String(), Equals, expected[i])
 	}
