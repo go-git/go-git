@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -23,6 +24,10 @@ var (
 	// ErrEmptyCommit occurs when a commit is attempted using a clean
 	// working tree, with no changes to be committed.
 	ErrEmptyCommit = errors.New("cannot create empty commit: clean working tree")
+
+	// characters to be removed from user name and/or email before using them to build a commit object
+	// See https://git-scm.com/docs/git-commit#_commit_information
+	invalidCharactersRe = regexp.MustCompile(`[<>\n]`)
 )
 
 // Commit stores the current contents of the index in a new commit along with
@@ -137,8 +142,8 @@ func (w *Worktree) updateHEAD(commit plumbing.Hash) error {
 
 func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumbing.Hash) (plumbing.Hash, error) {
 	commit := &object.Commit{
-		Author:       *opts.Author,
-		Committer:    *opts.Committer,
+		Author:       w.sanitize(*opts.Author),
+		Committer:    w.sanitize(*opts.Committer),
 		Message:      msg,
 		TreeHash:     tree,
 		ParentHashes: opts.Parents,
@@ -162,6 +167,14 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		return plumbing.ZeroHash, err
 	}
 	return w.r.Storer.SetEncodedObject(obj)
+}
+
+func (w *Worktree) sanitize(signature object.Signature) object.Signature {
+	return object.Signature{
+		Name:  invalidCharactersRe.ReplaceAllString(signature.Name, ""),
+		Email: invalidCharactersRe.ReplaceAllString(signature.Email, ""),
+		When:  signature.When,
+	}
 }
 
 type gpgSigner struct {
