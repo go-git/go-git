@@ -7,11 +7,9 @@ import (
 
 	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
 	"github.com/go-git/go-git/v5/plumbing/hash"
-
-	. "gopkg.in/check.v1"
 )
 
-func (s *CommitgraphSuite) TestOpenChainFile(c *C) {
+func (s *CommitgraphSuite) TestOpenChainFile() {
 	sha1Data := []string{
 		"c336d16298a017486c4164c40f8acb28afe64e84",
 		"31eae7b619d166c366bf5df4991f04ba8cebea0a",
@@ -71,8 +69,8 @@ func (s *CommitgraphSuite) TestOpenChainFile(c *C) {
 	chainReader := strings.NewReader(chainData)
 
 	chain, err := commitgraph.OpenChainFile(chainReader)
-	c.Assert(err, IsNil)
-	c.Assert(goodShas, DeepEquals, chain)
+	s.NoError(err)
+	s.Equal(chain, goodShas)
 
 	// Test with bad shas
 	chainData = strings.Join(badShas, "\n") + "\n"
@@ -80,21 +78,21 @@ func (s *CommitgraphSuite) TestOpenChainFile(c *C) {
 	chainReader = strings.NewReader(chainData)
 
 	chain, err = commitgraph.OpenChainFile(chainReader)
-	c.Assert(err, Equals, commitgraph.ErrMalformedCommitGraphFile)
-	c.Assert(chain, IsNil)
+	s.Equal(err, commitgraph.ErrMalformedCommitGraphFile)
+	s.Nil(chain)
 
 	// Test with empty file
 	emptyChainReader := bytes.NewReader(nil)
 
 	chain, err = commitgraph.OpenChainFile(emptyChainReader)
-	c.Assert(err, IsNil)
-	c.Assert(chain, DeepEquals, []string{})
+	s.NoError(err)
+	s.Equal([]string{}, chain)
 
 	// Test with file containing only newlines
 	newlineChainData := []byte("\n\n\n")
 	newlineChainReader := bytes.NewReader(newlineChainData)
 
 	chain, err = commitgraph.OpenChainFile(newlineChainReader)
-	c.Assert(err, Equals, commitgraph.ErrMalformedCommitGraphFile)
-	c.Assert(chain, IsNil)
+	s.Equal(err, commitgraph.ErrMalformedCommitGraphFile)
+	s.Nil(chain)
 }
