@@ -63,7 +63,6 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore(c *C) {
 }
 
 func (s *CommitWalkerSuite) TestCommitLimitIterByTrailingHash(c *C) {
-
 	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 	commitIter := NewCommitPreorderIter(commit, nil, nil)
 	var commits []*Commit
