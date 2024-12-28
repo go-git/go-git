@@ -8,128 +8,133 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/commitgraph"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type CommitgraphSuite struct {
+type CommitgraphFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&CommitgraphSuite{})
+type CommitgraphSuite struct {
+	suite.Suite
+	CommitgraphFixtureSuite
+}
 
-func testDecodeHelper(c *C, fs billy.Filesystem, path string) {
+func TestCommitgraphSuite(t *testing.T) {
+	suite.Run(t, new(CommitgraphSuite))
+}
+
+func testDecodeHelper(s *CommitgraphSuite, fs billy.Filesystem, path string) {
 	reader, err := fs.Open(path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	defer reader.Close()
 	index, err := commitgraph.OpenFileIndex(reader)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Root commit
 	nodeIndex, err := index.GetIndexByHash(plumbing.NewHash("347c91919944a68e9413581a1bc15519550a3afe"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	commitData, err := index.GetCommitDataByIndex(nodeIndex)
-	c.Assert(err, IsNil)
-	c.Assert(len(commitData.ParentIndexes), Equals, 0)
-	c.Assert(len(commitData.ParentHashes), Equals, 0)
+	s.NoError(err)
+	s.Len(commitData.ParentIndexes, 0)
+	s.Len(commitData.ParentHashes, 0)
 
 	// Regular commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("e713b52d7e13807e87a002e812041f248db3f643"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	commitData, err = index.GetCommitDataByIndex(nodeIndex)
-	c.Assert(err, IsNil)
-	c.Assert(len(commitData.ParentIndexes), Equals, 1)
-	c.Assert(len(commitData.ParentHashes), Equals, 1)
-	c.Assert(commitData.ParentHashes[0].String(), Equals, "347c91919944a68e9413581a1bc15519550a3afe")
+	s.NoError(err)
+	s.Len(commitData.ParentIndexes, 1)
+	s.Len(commitData.ParentHashes, 1)
+	s.Equal("347c91919944a68e9413581a1bc15519550a3afe", commitData.ParentHashes[0].String())
 
 	// Merge commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("b29328491a0682c259bcce28741eac71f3499f7d"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	commitData, err = index.GetCommitDataByIndex(nodeIndex)
-	c.Assert(err, IsNil)
-	c.Assert(len(commitData.ParentIndexes), Equals, 2)
-	c.Assert(len(commitData.ParentHashes), Equals, 2)
-	c.Assert(commitData.ParentHashes[0].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")
-	c.Assert(commitData.ParentHashes[1].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")
+	s.NoError(err)
+	s.Len(commitData.ParentIndexes, 2)
+	s.Len(commitData.ParentHashes, 2)
+	s.Equal("e713b52d7e13807e87a002e812041f248db3f643", commitData.ParentHashes[0].String())
+	s.Equal("03d2c021ff68954cf3ef0a36825e194a4b98f981", commitData.ParentHashes[1].String())
 
 	// Octopus merge commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	commitData, err = index.GetCommitDataByIndex(nodeIndex)
-	c.Assert(err, IsNil)
-	c.Assert(len(commitData.ParentIndexes), Equals, 3)
-	c.Assert(len(commitData.ParentHashes), Equals, 3)
-	c.Assert(commitData.ParentHashes[0].String(), Equals, "ce275064ad67d51e99f026084e20827901a8361c")
-	c.Assert(commitData.ParentHashes[1].String(), Equals, "bb13916df33ed23004c3ce9ed3b8487528e655c1")
-	c.Assert(commitData.ParentHashes[2].String(), Equals, "a45273fe2d63300e1962a9e26a6b15c276cd7082")
+	s.NoError(err)
+	s.Len(commitData.ParentIndexes, 3)
+	s.Len(commitData.ParentHashes, 3)
+	s.Equal("ce275064ad67d51e99f026084e20827901a8361c", commitData.ParentHashes[0].String())
+	s.Equal("bb13916df33ed23004c3ce9ed3b8487528e655c1", commitData.ParentHashes[1].String())
+	s.Equal("a45273fe2d63300e1962a9e26a6b15c276cd7082", commitData.ParentHashes[2].String())
 
 	// Check all hashes
 	hashes := index.Hashes()
-	c.Assert(len(hashes), Equals, 11)
-	c.Assert(hashes[0].String(), Equals, "03d2c021ff68954cf3ef0a36825e194a4b98f981")
-	c.Assert(hashes[10].String(), Equals, "e713b52d7e13807e87a002e812041f248db3f643")
+	s.Len(hashes, 11)
+	s.Equal("03d2c021ff68954cf3ef0a36825e194a4b98f981", hashes[0].String())
+	s.Equal("e713b52d7e13807e87a002e812041f248db3f643", hashes[10].String())
 }
 
-func (s *CommitgraphSuite) TestDecode(c *C) {
-	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
+func (s *CommitgraphSuite) TestDecode() {
+	for _, f := range fixtures.ByTag("commit-graph") {
 		dotgit := f.DotGit()
-		testDecodeHelper(c, dotgit, dotgit.Join("objects", "info", "commit-graph"))
-	})
+		testDecodeHelper(s, dotgit, dotgit.Join("objects", "info", "commit-graph"))
+	}
 }
 
-func (s *CommitgraphSuite) TestReencode(c *C) {
-	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
+func (s *CommitgraphSuite) TestReencode() {
+	for _, f := range fixtures.ByTag("commit-graph") {
 		dotgit := f.DotGit()
 
 		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		defer reader.Close()
 		index, err := commitgraph.OpenFileIndex(reader)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
 		writer, err := util.TempFile(dotgit, "", "commit-graph")
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		tmpName := writer.Name()
 		defer os.Remove(tmpName)
 
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(index)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		writer.Close()
 
-		testDecodeHelper(c, dotgit, tmpName)
-	})
+		testDecodeHelper(s, dotgit, tmpName)
+	}
 }
 
-func (s *CommitgraphSuite) TestReencodeInMemory(c *C) {
-	fixtures.ByTag("commit-graph").Test(c, func(f *fixtures.Fixture) {
+func (s *CommitgraphSuite) TestReencodeInMemory() {
+	for _, f := range fixtures.ByTag("commit-graph") {
 		dotgit := f.DotGit()
 
 		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		index, err := commitgraph.OpenFileIndex(reader)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		memoryIndex := commitgraph.NewMemoryIndex()
 		for i, hash := range index.Hashes() {
 			commitData, err := index.GetCommitDataByIndex(i)
-			c.Assert(err, IsNil)
+			s.NoError(err)
 			memoryIndex.Add(hash, commitData)
 		}
 		reader.Close()
 
 		writer, err := util.TempFile(dotgit, "", "commit-graph")
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		tmpName := writer.Name()
 		defer os.Remove(tmpName)
 
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(memoryIndex)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		writer.Close()
 
-		testDecodeHelper(c, dotgit, tmpName)
-	})
+		testDecodeHelper(s, dotgit, tmpName)
+	}
 }
