@@ -3,11 +3,13 @@ package cache
 import (
 	"bytes"
 	"sync"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
 type BufferSuite struct {
+	suite.Suite
 	c       map[string]Buffer
 	aBuffer []byte
 	bBuffer []byte
@@ -16,9 +18,11 @@ type BufferSuite struct {
 	eBuffer []byte
 }
 
-var _ = Suite(&BufferSuite{})
+func TestBufferSuite(t *testing.T) {
+	suite.Run(t, new(BufferSuite))
+}
 
-func (s *BufferSuite) SetUpTest(c *C) {
+func (s *BufferSuite) SetupTest() {
 	s.aBuffer = []byte("a")
 	s.bBuffer = []byte("bbb")
 	s.cBuffer = []byte("c")
@@ -30,16 +34,16 @@ func (s *BufferSuite) SetUpTest(c *C) {
 	s.c["default_lru"] = NewBufferLRUDefault()
 }
 
-func (s *BufferSuite) TestPutSameBuffer(c *C) {
+func (s *BufferSuite) TestPutSameBuffer() {
 	for _, o := range s.c {
 		o.Put(1, s.aBuffer)
 		o.Put(1, s.aBuffer)
 		_, ok := o.Get(1)
-		c.Assert(ok, Equals, true)
+		s.True(ok)
 	}
 }
 
-func (s *ObjectSuite) TestPutSameBufferWithDifferentSize(c *C) {
+func (s *ObjectSuite) TestPutSameBufferWithDifferentSize() {
 	aBuffer := []byte("a")
 	bBuffer := []byte("bbb")
 	cBuffer := []byte("ccccc")
@@ -51,25 +55,25 @@ func (s *ObjectSuite) TestPutSameBufferWithDifferentSize(c *C) {
 	cache.Put(1, cBuffer)
 	cache.Put(1, dBuffer)
 
-	c.Assert(cache.MaxSize, Equals, 7*Byte)
-	c.Assert(cache.actualSize, Equals, 7*Byte)
-	c.Assert(cache.ll.Len(), Equals, 1)
+	s.Equal(7*Byte, cache.MaxSize)
+	s.Equal(7*Byte, cache.actualSize)
+	s.Equal(1, cache.ll.Len())
 
 	buf, ok := cache.Get(1)
-	c.Assert(bytes.Equal(buf, dBuffer), Equals, true)
-	c.Assert(FileSize(len(buf)), Equals, 7*Byte)
-	c.Assert(ok, Equals, true)
+	s.True(bytes.Equal(buf, dBuffer))
+	s.Equal(7*Byte, FileSize(len(buf)))
+	s.True(ok)
 }
 
-func (s *BufferSuite) TestPutBigBuffer(c *C) {
+func (s *BufferSuite) TestPutBigBuffer() {
 	for _, o := range s.c {
 		o.Put(1, s.bBuffer)
 		_, ok := o.Get(2)
-		c.Assert(ok, Equals, false)
+		s.False(ok)
 	}
 }
 
-func (s *BufferSuite) TestPutCacheOverflow(c *C) {
+func (s *BufferSuite) TestPutCacheOverflow() {
 	// this test only works with an specific size
 	o := s.c["two_bytes"]
 
@@ -78,17 +82,17 @@ func (s *BufferSuite) TestPutCacheOverflow(c *C) {
 	o.Put(3, s.dBuffer)
 
 	obj, ok := o.Get(1)
-	c.Assert(ok, Equals, false)
-	c.Assert(obj, IsNil)
+	s.False(ok)
+	s.Nil(obj)
 	obj, ok = o.Get(2)
-	c.Assert(ok, Equals, true)
-	c.Assert(obj, NotNil)
+	s.True(ok)
+	s.NotNil(obj)
 	obj, ok = o.Get(3)
-	c.Assert(ok, Equals, true)
-	c.Assert(obj, NotNil)
+	s.True(ok)
+	s.NotNil(obj)
 }
 
-func (s *BufferSuite) TestEvictMultipleBuffers(c *C) {
+func (s *BufferSuite) TestEvictMultipleBuffers() {
 	o := s.c["two_bytes"]
 
 	o.Put(1, s.cBuffer)
@@ -96,27 +100,27 @@ func (s *BufferSuite) TestEvictMultipleBuffers(c *C) {
 	o.Put(3, s.eBuffer) // this put should evict all previous objects
 
 	obj, ok := o.Get(1)
-	c.Assert(ok, Equals, false)
-	c.Assert(obj, IsNil)
+	s.False(ok)
+	s.Nil(obj)
 	obj, ok = o.Get(2)
-	c.Assert(ok, Equals, false)
-	c.Assert(obj, IsNil)
+	s.False(ok)
+	s.Nil(obj)
 	obj, ok = o.Get(3)
-	c.Assert(ok, Equals, true)
-	c.Assert(obj, NotNil)
+	s.True(ok)
+	s.NotNil(obj)
 }
 
-func (s *BufferSuite) TestClear(c *C) {
+func (s *BufferSuite) TestClear() {
 	for _, o := range s.c {
 		o.Put(1, s.aBuffer)
 		o.Clear()
 		obj, ok := o.Get(1)
-		c.Assert(ok, Equals, false)
-		c.Assert(obj, IsNil)
+		s.False(ok)
+		s.Nil(obj)
 	}
 }
 
-func (s *BufferSuite) TestConcurrentAccess(c *C) {
+func (s *BufferSuite) TestConcurrentAccess() {
 	for _, o := range s.c {
 		var wg sync.WaitGroup
 
@@ -144,8 +148,8 @@ func (s *BufferSuite) TestConcurrentAccess(c *C) {
 	}
 }
 
-func (s *BufferSuite) TestDefaultLRU(c *C) {
+func (s *BufferSuite) TestDefaultLRU() {
 	defaultLRU := s.c["default_lru"].(*BufferLRU)
 
-	c.Assert(defaultLRU.MaxSize, Equals, DefaultMaxSize)
+	s.Equal(DefaultMaxSize, defaultLRU.MaxSize)
 }
