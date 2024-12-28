@@ -3,89 +3,95 @@ package index
 import (
 	"bytes"
 	"crypto"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/binary"
 	"io"
 	"testing"
+
+	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type IndexSuite struct {
+type IndexFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&IndexSuite{})
-
-func (s *IndexSuite) TestDecode(c *C) {
-	f, err := fixtures.Basic().One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
-
-	idx := &Index{}
-	d := NewDecoder(f)
-	err = d.Decode(idx)
-	c.Assert(err, IsNil)
-
-	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.Entries, HasLen, 9)
+type IndexSuite struct {
+	suite.Suite
+	IndexFixtureSuite
 }
 
-func (s *IndexSuite) TestDecodeEntries(c *C) {
+func TestIndexSuite(t *testing.T) {
+	suite.Run(t, new(IndexSuite))
+}
+
+func (s *IndexSuite) TestDecode() {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Entries, HasLen, 9)
+	s.Equal(uint32(2), idx.Version)
+	s.Len(idx.Entries, 9)
+}
+
+func (s *IndexSuite) TestDecodeEntries() {
+	f, err := fixtures.Basic().One().DotGit().Open("index")
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
+
+	idx := &Index{}
+	d := NewDecoder(f)
+	err = d.Decode(idx)
+	s.NoError(err)
+
+	s.Len(idx.Entries, 9)
 
 	e := idx.Entries[0]
 
-	c.Assert(e.CreatedAt.Unix(), Equals, int64(1480626693))
-	c.Assert(e.CreatedAt.Nanosecond(), Equals, 498593596)
-	c.Assert(e.ModifiedAt.Unix(), Equals, int64(1480626693))
-	c.Assert(e.ModifiedAt.Nanosecond(), Equals, 498593596)
-	c.Assert(e.Dev, Equals, uint32(39))
-	c.Assert(e.Inode, Equals, uint32(140626))
-	c.Assert(e.UID, Equals, uint32(1000))
-	c.Assert(e.GID, Equals, uint32(100))
-	c.Assert(e.Size, Equals, uint32(189))
-	c.Assert(e.Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
-	c.Assert(e.Name, Equals, ".gitignore")
-	c.Assert(e.Mode, Equals, filemode.Regular)
+	s.Equal(int64(1480626693), e.CreatedAt.Unix())
+	s.Equal(498593596, e.CreatedAt.Nanosecond())
+	s.Equal(int64(1480626693), e.ModifiedAt.Unix())
+	s.Equal(498593596, e.ModifiedAt.Nanosecond())
+	s.Equal(uint32(39), e.Dev)
+	s.Equal(uint32(140626), e.Inode)
+	s.Equal(uint32(1000), e.UID)
+	s.Equal(uint32(100), e.GID)
+	s.Equal(uint32(189), e.Size)
+	s.Equal("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88", e.Hash.String())
+	s.Equal(".gitignore", e.Name)
+	s.Equal(filemode.Regular, e.Mode)
 
 	e = idx.Entries[1]
-	c.Assert(e.Name, Equals, "CHANGELOG")
+	s.Equal("CHANGELOG", e.Name)
 }
 
-func (s *IndexSuite) TestDecodeCacheTree(c *C) {
+func (s *IndexSuite) TestDecodeCacheTree() {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Entries, HasLen, 9)
-	c.Assert(idx.Cache.Entries, HasLen, 5)
+	s.Len(idx.Entries, 9)
+	s.Len(idx.Cache.Entries, 5)
 
 	for i, expected := range expectedEntries {
-		c.Assert(idx.Cache.Entries[i].Path, Equals, expected.Path)
-		c.Assert(idx.Cache.Entries[i].Entries, Equals, expected.Entries)
-		c.Assert(idx.Cache.Entries[i].Trees, Equals, expected.Trees)
-		c.Assert(idx.Cache.Entries[i].Hash.String(), Equals, expected.Hash.String())
+		s.Equal(expected.Path, idx.Cache.Entries[i].Path)
+		s.Equal(expected.Entries, idx.Cache.Entries[i].Entries)
+		s.Equal(expected.Trees, idx.Cache.Entries[i].Trees)
+		s.Equal(expected.Hash.String(), idx.Cache.Entries[i].Hash.String())
 	}
 
 }
@@ -98,18 +104,18 @@ var expectedEntries = []TreeEntry{
 	{Path: "vendor", Entries: 1, Trees: 0, Hash: plumbing.NewHash("cf4aa3b38974fb7d81f367c0830f7d78d65ab86b")},
 }
 
-func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
+func (s *IndexSuite) TestDecodeMergeConflict() {
 	f, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.Entries, HasLen, 13)
+	s.Equal(uint32(2), idx.Version)
+	s.Len(idx.Entries, 13)
 
 	expected := []struct {
 		Stage Stage
@@ -122,76 +128,76 @@ func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
 
 	// staged files
 	for i, e := range idx.Entries[4:7] {
-		c.Assert(e.Stage, Equals, expected[i].Stage)
-		c.Assert(e.CreatedAt.IsZero(), Equals, true)
-		c.Assert(e.ModifiedAt.IsZero(), Equals, true)
-		c.Assert(e.Dev, Equals, uint32(0))
-		c.Assert(e.Inode, Equals, uint32(0))
-		c.Assert(e.UID, Equals, uint32(0))
-		c.Assert(e.GID, Equals, uint32(0))
-		c.Assert(e.Size, Equals, uint32(0))
-		c.Assert(e.Hash.String(), Equals, expected[i].Hash)
-		c.Assert(e.Name, Equals, "go/example.go")
+		s.Equal(expected[i].Stage, e.Stage)
+		s.True(e.CreatedAt.IsZero())
+		s.True(e.ModifiedAt.IsZero())
+		s.Equal(uint32(0), e.Dev)
+		s.Equal(uint32(0), e.Inode)
+		s.Equal(uint32(0), e.UID)
+		s.Equal(uint32(0), e.GID)
+		s.Equal(uint32(0), e.Size)
+		s.Equal(expected[i].Hash, e.Hash.String())
+		s.Equal("go/example.go", e.Name)
 	}
 
 }
 
-func (s *IndexSuite) TestDecodeExtendedV3(c *C) {
+func (s *IndexSuite) TestDecodeExtendedV3() {
 	f, err := fixtures.Basic().ByTag("intent-to-add").One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Version, Equals, uint32(3))
-	c.Assert(idx.Entries, HasLen, 11)
+	s.Equal(uint32(3), idx.Version)
+	s.Len(idx.Entries, 11)
 
-	c.Assert(idx.Entries[6].Name, Equals, "intent-to-add")
-	c.Assert(idx.Entries[6].IntentToAdd, Equals, true)
-	c.Assert(idx.Entries[6].SkipWorktree, Equals, false)
+	s.Equal("intent-to-add", idx.Entries[6].Name)
+	s.True(idx.Entries[6].IntentToAdd)
+	s.False(idx.Entries[6].SkipWorktree)
 }
 
-func (s *IndexSuite) TestDecodeResolveUndo(c *C) {
+func (s *IndexSuite) TestDecodeResolveUndo() {
 	f, err := fixtures.Basic().ByTag("resolve-undo").One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.Entries, HasLen, 8)
+	s.Equal(uint32(2), idx.Version)
+	s.Len(idx.Entries, 8)
 
 	ru := idx.ResolveUndo
-	c.Assert(ru.Entries, HasLen, 2)
-	c.Assert(ru.Entries[0].Path, Equals, "go/example.go")
-	c.Assert(ru.Entries[0].Stages, HasLen, 3)
-	c.Assert(ru.Entries[0].Stages[AncestorMode], Not(Equals), plumbing.ZeroHash)
-	c.Assert(ru.Entries[0].Stages[OurMode], Not(Equals), plumbing.ZeroHash)
-	c.Assert(ru.Entries[0].Stages[TheirMode], Not(Equals), plumbing.ZeroHash)
-	c.Assert(ru.Entries[1].Path, Equals, "haskal/haskal.hs")
-	c.Assert(ru.Entries[1].Stages, HasLen, 2)
-	c.Assert(ru.Entries[1].Stages[OurMode], Not(Equals), plumbing.ZeroHash)
-	c.Assert(ru.Entries[1].Stages[TheirMode], Not(Equals), plumbing.ZeroHash)
+	s.Len(ru.Entries, 2)
+	s.Equal("go/example.go", ru.Entries[0].Path)
+	s.Len(ru.Entries[0].Stages, 3)
+	s.NotEqual(plumbing.ZeroHash, ru.Entries[0].Stages[AncestorMode])
+	s.NotEqual(plumbing.ZeroHash, ru.Entries[0].Stages[OurMode])
+	s.NotEqual(plumbing.ZeroHash, ru.Entries[0].Stages[TheirMode])
+	s.Equal("haskal/haskal.hs", ru.Entries[1].Path)
+	s.Len(ru.Entries[1].Stages, 2)
+	s.NotEqual(plumbing.ZeroHash, ru.Entries[1].Stages[OurMode])
+	s.NotEqual(plumbing.ZeroHash, ru.Entries[1].Stages[TheirMode])
 }
 
-func (s *IndexSuite) TestDecodeV4(c *C) {
+func (s *IndexSuite) TestDecodeV4() {
 	f, err := fixtures.Basic().ByTag("index-v4").One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Version, Equals, uint32(4))
-	c.Assert(idx.Entries, HasLen, 11)
+	s.Equal(uint32(4), idx.Version)
+	s.Len(idx.Entries, 11)
 
 	names := []string{
 		".gitignore", "CHANGELOG", "LICENSE", "binary.jpg", "go/example.go",
@@ -200,123 +206,123 @@ func (s *IndexSuite) TestDecodeV4(c *C) {
 	}
 
 	for i, e := range idx.Entries {
-		c.Assert(e.Name, Equals, names[i])
+		s.Equal(names[i], e.Name)
 	}
 
-	c.Assert(idx.Entries[6].Name, Equals, "intent-to-add")
-	c.Assert(idx.Entries[6].IntentToAdd, Equals, true)
-	c.Assert(idx.Entries[6].SkipWorktree, Equals, false)
+	s.Equal("intent-to-add", idx.Entries[6].Name)
+	s.True(idx.Entries[6].IntentToAdd)
+	s.False(idx.Entries[6].SkipWorktree)
 }
 
-func (s *IndexSuite) TestDecodeEndOfIndexEntry(c *C) {
+func (s *IndexSuite) TestDecodeEndOfIndexEntry() {
 	f, err := fixtures.Basic().ByTag("end-of-index-entry").One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.Version, Equals, uint32(2))
-	c.Assert(idx.EndOfIndexEntry, NotNil)
-	c.Assert(idx.EndOfIndexEntry.Offset, Equals, uint32(716))
-	c.Assert(idx.EndOfIndexEntry.Hash.String(), Equals, "922e89d9ffd7cefce93a211615b2053c0f42bd78")
+	s.Equal(uint32(2), idx.Version)
+	s.NotNil(idx.EndOfIndexEntry)
+	s.Equal(uint32(716), idx.EndOfIndexEntry.Offset)
+	s.Equal("922e89d9ffd7cefce93a211615b2053c0f42bd78", idx.EndOfIndexEntry.Hash.String())
 }
 
-func (s *IndexSuite) readSimpleIndex(c *C) *Index {
+func (s *IndexSuite) readSimpleIndex() *Index {
 	f, err := fixtures.Basic().One().DotGit().Open("index")
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(f.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(f.Close()) }()
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err = d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	return idx
 }
 
-func (s *IndexSuite) buildIndexWithExtension(c *C, signature string, data string) []byte {
-	idx := s.readSimpleIndex(c)
+func (s *IndexSuite) buildIndexWithExtension(signature string, data string) []byte {
+	idx := s.readSimpleIndex()
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf)
 
 	err := e.encode(idx, false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = e.encodeRawExtension(signature, []byte(data))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = e.encodeFooter()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	return buf.Bytes()
 }
 
-func (s *IndexSuite) TestDecodeUnknownOptionalExt(c *C) {
-	f := bytes.NewReader(s.buildIndexWithExtension(c, "TEST", "testdata"))
+func (s *IndexSuite) TestDecodeUnknownOptionalExt() {
+	f := bytes.NewReader(s.buildIndexWithExtension("TEST", "testdata"))
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err := d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *IndexSuite) TestDecodeUnknownMandatoryExt(c *C) {
-	f := bytes.NewReader(s.buildIndexWithExtension(c, "test", "testdata"))
+func (s *IndexSuite) TestDecodeUnknownMandatoryExt() {
+	f := bytes.NewReader(s.buildIndexWithExtension("test", "testdata"))
 
 	idx := &Index{}
 	d := NewDecoder(f)
 	err := d.Decode(idx)
-	c.Assert(err, ErrorMatches, ErrUnknownExtension.Error())
+	s.ErrorContains(err, ErrUnknownExtension.Error())
 }
 
-func (s *IndexSuite) TestDecodeTruncatedExt(c *C) {
-	idx := s.readSimpleIndex(c)
+func (s *IndexSuite) TestDecodeTruncatedExt() {
+	idx := s.readSimpleIndex()
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf)
 
 	err := e.encode(idx, false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = e.w.Write([]byte("TEST"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = binary.WriteUint32(e.w, uint32(100))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = e.w.Write([]byte("truncated"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = e.encodeFooter()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	idx = &Index{}
 	d := NewDecoder(buf)
 	err = d.Decode(idx)
-	c.Assert(err, ErrorMatches, io.EOF.Error())
+	s.ErrorContains(err, io.EOF.Error())
 }
 
-func (s *IndexSuite) TestDecodeInvalidHash(c *C) {
-	idx := s.readSimpleIndex(c)
+func (s *IndexSuite) TestDecodeInvalidHash() {
+	idx := s.readSimpleIndex()
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf)
 
 	err := e.encode(idx, false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = e.encodeRawExtension("TEST", []byte("testdata"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	h := hash.New(crypto.SHA1)
 	err = binary.Write(e.w, h.Sum(nil))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	idx = &Index{}
 	d := NewDecoder(buf)
 	err = d.Decode(idx)
-	c.Assert(err, ErrorMatches, ErrInvalidChecksum.Error())
+	s.ErrorContains(err, ErrInvalidChecksum.Error())
 }
