@@ -3,7 +3,6 @@ package plumbing
 import (
 	"bytes"
 	"io"
-	"slices"
 )
 
 // MemoryObject on memory Object implementation
@@ -38,7 +37,6 @@ func (o *MemoryObject) Size() int64 { return o.sz }
 // SetSize set the object size, a content of the given size should be written
 // afterwards
 func (o *MemoryObject) SetSize(s int64) {
-	o.cont = slices.Grow(o.cont, int(s))
 	o.sz = s
 }
 

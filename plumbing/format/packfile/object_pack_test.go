@@ -2,31 +2,35 @@ package packfile
 
 import (
 	"io"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type ObjectToPackSuite struct{}
+type ObjectToPackSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&ObjectToPackSuite{})
+func TestObjectToPackSuite(t *testing.T) {
+	suite.Run(t, new(ObjectToPackSuite))
+}
 
-func (s *ObjectToPackSuite) TestObjectToPack(c *C) {
+func (s *ObjectToPackSuite) TestObjectToPack() {
 	obj := &dummyObject{}
 	otp := newObjectToPack(obj)
-	c.Assert(obj, Equals, otp.Object)
-	c.Assert(obj, Equals, otp.Original)
-	c.Assert(otp.Base, IsNil)
-	c.Assert(otp.IsDelta(), Equals, false)
+	s.Equal(otp.Object, obj)
+	s.Equal(otp.Original, obj)
+	s.Nil(otp.Base)
+	s.False(otp.IsDelta())
 
 	original := &dummyObject{}
 	delta := &dummyObject{}
 	deltaToPack := newDeltaObjectToPack(otp, original, delta)
-	c.Assert(obj, Equals, deltaToPack.Object)
-	c.Assert(original, Equals, deltaToPack.Original)
-	c.Assert(otp, Equals, deltaToPack.Base)
-	c.Assert(deltaToPack.IsDelta(), Equals, true)
+	s.Equal(deltaToPack.Object, obj)
+	s.Equal(deltaToPack.Original, original)
+	s.Equal(deltaToPack.Base, otp)
+	s.True(deltaToPack.IsDelta())
 }
 
 type dummyObject struct{}
