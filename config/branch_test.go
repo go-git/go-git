@@ -1,16 +1,21 @@
 package config
 
 import (
-	"github.com/go-git/go-git/v5/plumbing"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/stretchr/testify/suite"
 )
 
-type BranchSuite struct{}
+type BranchSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&BranchSuite{})
+func TestBranchSuite(t *testing.T) {
+	suite.Run(t, new(BranchSuite))
+}
 
-func (b *BranchSuite) TestValidateName(c *C) {
+func (b *BranchSuite) TestValidateName() {
 	goodBranch := Branch{
 		Name:   "master",
 		Remote: "some_remote",
@@ -20,11 +25,11 @@ func (b *BranchSuite) TestValidateName(c *C) {
 		Remote: "some_remote",
 		Merge:  "refs/heads/master",
 	}
-	c.Assert(goodBranch.Validate(), IsNil)
-	c.Assert(badBranch.Validate(), NotNil)
+	b.Nil(goodBranch.Validate())
+	b.NotNil(badBranch.Validate())
 }
 
-func (b *BranchSuite) TestValidateMerge(c *C) {
+func (b *BranchSuite) TestValidateMerge() {
 	goodBranch := Branch{
 		Name:   "master",
 		Remote: "some_remote",
@@ -35,11 +40,11 @@ func (b *BranchSuite) TestValidateMerge(c *C) {
 		Remote: "some_remote",
 		Merge:  "blah",
 	}
-	c.Assert(goodBranch.Validate(), IsNil)
-	c.Assert(badBranch.Validate(), NotNil)
+	b.Nil(goodBranch.Validate())
+	b.NotNil(badBranch.Validate())
 }
 
-func (b *BranchSuite) TestMarshal(c *C) {
+func (b *BranchSuite) TestMarshal() {
 	expected := []byte(`[core]
 	bare = false
 [branch "branch-tracking-on-clone"]
@@ -57,11 +62,11 @@ func (b *BranchSuite) TestMarshal(c *C) {
 	}
 
 	actual, err := cfg.Marshal()
-	c.Assert(err, IsNil)
-	c.Assert(string(actual), Equals, string(expected))
+	b.NoError(err)
+	b.Equal(string(expected), string(actual))
 }
 
-func (b *BranchSuite) TestUnmarshal(c *C) {
+func (b *BranchSuite) TestUnmarshal() {
 	input := []byte(`[core]
 	bare = false
 [branch "branch-tracking-on-clone"]
@@ -72,10 +77,10 @@ func (b *BranchSuite) TestUnmarshal(c *C) {
 
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
-	c.Assert(err, IsNil)
+	b.NoError(err)
 	branch := cfg.Branches["branch-tracking-on-clone"]
-	c.Assert(branch.Name, Equals, "branch-tracking-on-clone")
-	c.Assert(branch.Remote, Equals, "fork")
-	c.Assert(branch.Merge, Equals, plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"))
-	c.Assert(branch.Rebase, Equals, "interactive")
+	b.Equal("branch-tracking-on-clone", branch.Name)
+	b.Equal("fork", branch.Remote)
+	b.Equal(plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"), branch.Merge)
+	b.Equal("interactive", branch.Rebase)
 }

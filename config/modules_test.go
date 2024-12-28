@@ -1,17 +1,25 @@
 package config
 
-import . "gopkg.in/check.v1"
+import (
+	"testing"
 
-type ModulesSuite struct{}
+	"github.com/stretchr/testify/suite"
+)
 
-var _ = Suite(&ModulesSuite{})
-
-func (s *ModulesSuite) TestValidateMissingURL(c *C) {
-	m := &Submodule{Path: "foo"}
-	c.Assert(m.Validate(), Equals, ErrModuleEmptyURL)
+type ModulesSuite struct {
+	suite.Suite
 }
 
-func (s *ModulesSuite) TestValidateBadPath(c *C) {
+func TestModulesSuite(t *testing.T) {
+	suite.Run(t, new(ModulesSuite))
+}
+
+func (s *ModulesSuite) TestValidateMissingURL() {
+	m := &Submodule{Path: "foo"}
+	s.Equal(ErrModuleEmptyURL, m.Validate())
+}
+
+func (s *ModulesSuite) TestValidateBadPath() {
 	input := []string{
 		`..`,
 		`../`,
@@ -30,16 +38,16 @@ func (s *ModulesSuite) TestValidateBadPath(c *C) {
 			Path: p,
 			URL:  "https://example.com/",
 		}
-		c.Assert(m.Validate(), Equals, ErrModuleBadPath)
+		s.Equal(ErrModuleBadPath, m.Validate())
 	}
 }
 
-func (s *ModulesSuite) TestValidateMissingName(c *C) {
+func (s *ModulesSuite) TestValidateMissingName() {
 	m := &Submodule{URL: "bar"}
-	c.Assert(m.Validate(), Equals, ErrModuleEmptyPath)
+	s.Equal(ErrModuleEmptyPath, m.Validate())
 }
 
-func (s *ModulesSuite) TestMarshal(c *C) {
+func (s *ModulesSuite) TestMarshal() {
 	input := []byte(`[submodule "qux"]
 	path = qux
 	url = baz
@@ -50,11 +58,11 @@ func (s *ModulesSuite) TestMarshal(c *C) {
 	cfg.Submodules["qux"] = &Submodule{Path: "qux", URL: "baz", Branch: "bar"}
 
 	output, err := cfg.Marshal()
-	c.Assert(err, IsNil)
-	c.Assert(output, DeepEquals, input)
+	s.NoError(err)
+	s.Equal(input, output)
 }
 
-func (s *ModulesSuite) TestUnmarshal(c *C) {
+func (s *ModulesSuite) TestUnmarshal() {
 	input := []byte(`[submodule "qux"]
         path = qux
         url = https://github.com/foo/qux.git
@@ -69,17 +77,17 @@ func (s *ModulesSuite) TestUnmarshal(c *C) {
 
 	cfg := NewModules()
 	err := cfg.Unmarshal(input)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(cfg.Submodules, HasLen, 2)
-	c.Assert(cfg.Submodules["qux"].Name, Equals, "qux")
-	c.Assert(cfg.Submodules["qux"].URL, Equals, "https://github.com/foo/qux.git")
-	c.Assert(cfg.Submodules["foo/bar"].Name, Equals, "foo/bar")
-	c.Assert(cfg.Submodules["foo/bar"].URL, Equals, "https://github.com/foo/bar.git")
-	c.Assert(cfg.Submodules["foo/bar"].Branch, Equals, "dev")
+	s.Len(cfg.Submodules, 2)
+	s.Equal("qux", cfg.Submodules["qux"].Name)
+	s.Equal("https://github.com/foo/qux.git", cfg.Submodules["qux"].URL)
+	s.Equal("foo/bar", cfg.Submodules["foo/bar"].Name)
+	s.Equal("https://github.com/foo/bar.git", cfg.Submodules["foo/bar"].URL)
+	s.Equal("dev", cfg.Submodules["foo/bar"].Branch)
 }
 
-func (s *ModulesSuite) TestUnmarshalMarshal(c *C) {
+func (s *ModulesSuite) TestUnmarshalMarshal() {
 	input := []byte(`[submodule "foo/bar"]
 	path = foo/bar
 	url = https://github.com/foo/bar.git
@@ -88,9 +96,9 @@ func (s *ModulesSuite) TestUnmarshalMarshal(c *C) {
 
 	cfg := NewModules()
 	err := cfg.Unmarshal(input)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	output, err := cfg.Marshal()
-	c.Assert(err, IsNil)
-	c.Assert(string(output), DeepEquals, string(input))
+	s.NoError(err)
+	s.Equal(string(input), string(output))
 }
