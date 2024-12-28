@@ -1,19 +1,22 @@
 package filemode
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type ModeSuite struct {
+	suite.Suite
+}
 
-type ModeSuite struct{}
+func TestModeSuite(t *testing.T) {
+	suite.Run(t, new(ModeSuite))
+}
 
-var _ = Suite(&ModeSuite{})
-
-func (s *ModeSuite) TestNew(c *C) {
+func (s *ModeSuite) TestNew() {
 	for _, test := range [...]struct {
 		input    string
 		expected FileMode
@@ -37,14 +40,14 @@ func (s *ModeSuite) TestNew(c *C) {
 		{input: "42", expected: FileMode(042)},
 		{input: "00000000000100644", expected: Regular},
 	} {
-		comment := Commentf("input = %q", test.input)
+		comment := fmt.Sprintf("input = %q", test.input)
 		obtained, err := New(test.input)
-		c.Assert(obtained, Equals, test.expected, comment)
-		c.Assert(err, IsNil, comment)
+		s.Equal(test.expected, obtained, comment)
+		s.NoError(err, comment)
 	}
 }
 
-func (s *ModeSuite) TestNewErrors(c *C) {
+func (s *ModeSuite) TestNewErrors() {
 	for _, input := range [...]string{
 		"0x81a4",     // Regular in hex
 		"-rw-r--r--", // Regular in default UNIX representation
@@ -56,10 +59,10 @@ func (s *ModeSuite) TestNewErrors(c *C) {
 		"-100644",
 		"+100644",
 	} {
-		comment := Commentf("input = %q", input)
+		comment := fmt.Sprintf("input = %q", input)
 		obtained, err := New(input)
-		c.Assert(obtained, Equals, Empty, comment)
-		c.Assert(err, Not(IsNil), comment)
+		s.Equal(Empty, obtained, comment)
+		s.NotNil(err, comment)
 	}
 }
 
@@ -70,18 +73,18 @@ type fixture struct {
 	err      string // error regexp, empty string for nil error
 }
 
-func (f fixture) test(c *C) {
+func (f fixture) test(s *ModeSuite) {
 	obtained, err := NewFromOSFileMode(f.input)
-	comment := Commentf("input = %s (%07o)", f.input, uint32(f.input))
-	c.Assert(obtained, Equals, f.expected, comment)
+	comment := fmt.Sprintf("input = %s (%07o)", f.input, uint32(f.input))
+	s.Equal(f.expected, obtained, comment)
 	if f.err != "" {
-		c.Assert(err, ErrorMatches, f.err, comment)
+		s.ErrorContains(err, f.err, comment)
 	} else {
-		c.Assert(err, IsNil, comment)
+		s.NoError(err, comment)
 	}
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeSimplePerms(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeSimplePerms() {
 	for _, f := range [...]fixture{
 		{os.FileMode(0755) | os.ModeDir, Dir, ""},         // drwxr-xr-x
 		{os.FileMode(0700) | os.ModeDir, Dir, ""},         // drwx------
@@ -100,106 +103,106 @@ func (s *ModeSuite) TestNewFromOsFileModeSimplePerms(c *C) {
 		{os.FileMode(0550), Executable, ""},               // -r-xr-x---
 		{os.FileMode(0777) | os.ModeSymlink, Symlink, ""}, // Lrwxrwxrwx
 	} {
-		f.test(c)
+		f.test(s)
 	}
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeAppend(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeAppend() {
 	// append files are just regular files
 	fixture{
 		input:    os.FileMode(0644) | os.ModeAppend, // arw-r--r--
 		expected: Regular, err: "",
-	}.test(c)
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeExclusive(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeExclusive() {
 	// exclusive files are just regular or executable files
 	fixture{
 		input:    os.FileMode(0644) | os.ModeExclusive, // lrw-r--r--
 		expected: Regular, err: "",
-	}.test(c)
+	}.test(s)
 
 	fixture{
 		input:    os.FileMode(0755) | os.ModeExclusive, // lrwxr-xr-x
 		expected: Executable, err: "",
-	}.test(c)
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeTemporary(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeTemporary() {
 	// temporary files are ignored
 	fixture{
 		input:    os.FileMode(0644) | os.ModeTemporary, // Trw-r--r--
-		expected: Empty, err: "no equivalent.*",
-	}.test(c)
+		expected: Empty, err: "no equivalent",
+	}.test(s)
 
 	fixture{
 		input:    os.FileMode(0755) | os.ModeTemporary, // Trwxr-xr-x
-		expected: Empty, err: "no equivalent.*",
-	}.test(c)
+		expected: Empty, err: "no equivalent",
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeDevice(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeDevice() {
 	// device files has no git equivalent
 	fixture{
 		input:    os.FileMode(0644) | os.ModeDevice, // Drw-r--r--
-		expected: Empty, err: "no equivalent.*",
-	}.test(c)
+		expected: Empty, err: "no equivalent",
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileNamedPipe(c *C) {
+func (s *ModeSuite) TestNewFromOsFileNamedPipe() {
 	// named pipes files has not git equivalent
 	fixture{
 		input:    os.FileMode(0644) | os.ModeNamedPipe, // prw-r--r--
-		expected: Empty, err: "no equivalent.*",
-	}.test(c)
+		expected: Empty, err: "no equivalent",
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeSocket(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeSocket() {
 	// sockets has no git equivalent
 	fixture{
 		input:    os.FileMode(0644) | os.ModeSocket, // Srw-r--r--
-		expected: Empty, err: "no equivalent.*",
-	}.test(c)
+		expected: Empty, err: "no equivalent",
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeSetuid(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeSetuid() {
 	// Setuid are just executables
 	fixture{
 		input:    os.FileMode(0755) | os.ModeSetuid, // urwxr-xr-x
 		expected: Executable, err: "",
-	}.test(c)
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeSetgid(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeSetgid() {
 	// Setguid are regular or executables, depending on the owner perms
 	fixture{
 		input:    os.FileMode(0644) | os.ModeSetgid, // grw-r--r--
 		expected: Regular, err: "",
-	}.test(c)
+	}.test(s)
 
 	fixture{
 		input:    os.FileMode(0755) | os.ModeSetgid, // grwxr-xr-x
 		expected: Executable, err: "",
-	}.test(c)
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeCharDevice(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeCharDevice() {
 	// char devices has no git equivalent
 	fixture{
 		input:    os.FileMode(0644) | os.ModeCharDevice, // crw-r--r--
-		expected: Empty, err: "no equivalent.*",
-	}.test(c)
+		expected: Empty, err: "no equivalent",
+	}.test(s)
 }
 
-func (s *ModeSuite) TestNewFromOsFileModeSticky(c *C) {
+func (s *ModeSuite) TestNewFromOsFileModeSticky() {
 	// dirs with the sticky bit are just dirs
 	fixture{
 		input:    os.FileMode(0755) | os.ModeDir | os.ModeSticky, // dtrwxr-xr-x
 		expected: Dir, err: "",
-	}.test(c)
+	}.test(s)
 }
 
-func (s *ModeSuite) TestByte(c *C) {
+func (s *ModeSuite) TestByte() {
 	for _, test := range [...]struct {
 		input    FileMode
 		expected []byte
@@ -218,12 +221,12 @@ func (s *ModeSuite) TestByte(c *C) {
 		{Symlink, []byte{0x00, 0xa0, 0x00, 0x00}},
 		{Submodule, []byte{0x00, 0xe0, 0x00, 0x00}},
 	} {
-		c.Assert(test.input.Bytes(), DeepEquals, test.expected,
-			Commentf("input = %s", test.input))
+		s.Equal(test.expected, test.input.Bytes(),
+			fmt.Sprintf("input = %s", test.input))
 	}
 }
 
-func (s *ModeSuite) TestIsMalformed(c *C) {
+func (s *ModeSuite) TestIsMalformed() {
 	for _, test := range [...]struct {
 		mode     FileMode
 		expected bool
@@ -242,11 +245,11 @@ func (s *ModeSuite) TestIsMalformed(c *C) {
 		{FileMode(010000), true},
 		{FileMode(0100000), true},
 	} {
-		c.Assert(test.mode.IsMalformed(), Equals, test.expected)
+		s.Equal(test.expected, test.mode.IsMalformed())
 	}
 }
 
-func (s *ModeSuite) TestString(c *C) {
+func (s *ModeSuite) TestString() {
 	for _, test := range [...]struct {
 		mode     FileMode
 		expected string
@@ -265,11 +268,11 @@ func (s *ModeSuite) TestString(c *C) {
 		{FileMode(010000), "0010000"},
 		{FileMode(0100000), "0100000"},
 	} {
-		c.Assert(test.mode.String(), Equals, test.expected)
+		s.Equal(test.expected, test.mode.String())
 	}
 }
 
-func (s *ModeSuite) TestIsRegular(c *C) {
+func (s *ModeSuite) TestIsRegular() {
 	for _, test := range [...]struct {
 		mode     FileMode
 		expected bool
@@ -288,11 +291,11 @@ func (s *ModeSuite) TestIsRegular(c *C) {
 		{FileMode(010000), false},
 		{FileMode(0100000), false},
 	} {
-		c.Assert(test.mode.IsRegular(), Equals, test.expected)
+		s.Equal(test.expected, test.mode.IsRegular())
 	}
 }
 
-func (s *ModeSuite) TestIsFile(c *C) {
+func (s *ModeSuite) TestIsFile() {
 	for _, test := range [...]struct {
 		mode     FileMode
 		expected bool
@@ -311,38 +314,38 @@ func (s *ModeSuite) TestIsFile(c *C) {
 		{FileMode(010000), false},
 		{FileMode(0100000), false},
 	} {
-		c.Assert(test.mode.IsFile(), Equals, test.expected)
+		s.Equal(test.expected, test.mode.IsFile())
 	}
 }
 
-func (s *ModeSuite) TestToOSFileMode(c *C) {
+func (s *ModeSuite) TestToOSFileMode() {
 	for _, test := range [...]struct {
 		input     FileMode
 		expected  os.FileMode
 		errRegExp string // empty string for nil error
 	}{
-		{Empty, os.FileMode(0), "malformed.*"},
+		{Empty, os.FileMode(0), "malformed"},
 		{Dir, os.ModePerm | os.ModeDir, ""},
 		{Regular, os.FileMode(0644), ""},
 		{Deprecated, os.FileMode(0644), ""},
 		{Executable, os.FileMode(0755), ""},
 		{Symlink, os.ModePerm | os.ModeSymlink, ""},
 		{Submodule, os.ModePerm | os.ModeDir, ""},
-		{FileMode(01), os.FileMode(0), "malformed.*"},
-		{FileMode(010), os.FileMode(0), "malformed.*"},
-		{FileMode(0100), os.FileMode(0), "malformed.*"},
-		{FileMode(01000), os.FileMode(0), "malformed.*"},
-		{FileMode(010000), os.FileMode(0), "malformed.*"},
-		{FileMode(0100000), os.FileMode(0), "malformed.*"},
+		{FileMode(01), os.FileMode(0), "malformed"},
+		{FileMode(010), os.FileMode(0), "malformed"},
+		{FileMode(0100), os.FileMode(0), "malformed"},
+		{FileMode(01000), os.FileMode(0), "malformed"},
+		{FileMode(010000), os.FileMode(0), "malformed"},
+		{FileMode(0100000), os.FileMode(0), "malformed"},
 	} {
 		obtained, err := test.input.ToOSFileMode()
-		comment := Commentf("input = %s", test.input)
+		comment := fmt.Sprintf("input = %s", test.input)
 		if test.errRegExp != "" {
-			c.Assert(obtained, Equals, os.FileMode(0), comment)
-			c.Assert(err, ErrorMatches, test.errRegExp, comment)
+			s.Equal(os.FileMode(0), obtained, comment)
+			s.ErrorContains(err, test.errRegExp, comment)
 		} else {
-			c.Assert(obtained, Equals, test.expected, comment)
-			c.Assert(err, IsNil, comment)
+			s.Equal(test.expected, obtained, comment)
+			s.NoError(err, comment)
 		}
 	}
 }
