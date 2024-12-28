@@ -12,53 +12,61 @@ import (
 	. "github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-type EncoderAdvancedSuite struct {
+type EncoderAdvancedFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&EncoderAdvancedSuite{})
-
-func (s *EncoderAdvancedSuite) TestEncodeDecode(c *C) {
-	if testing.Short() {
-		c.Skip("skipping test in short mode.")
-	}
-
-	fixs := fixtures.Basic().ByTag("packfile").ByTag(".git")
-	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
-		ByTag("packfile").ByTag(".git").One())
-	fixs.Test(c, func(f *fixtures.Fixture) {
-		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-		s.testEncodeDecode(c, storage, 10)
-	})
+type EncoderAdvancedSuite struct {
+	suite.Suite
+	EncoderAdvancedFixtureSuite
 }
 
-func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression(c *C) {
+func TestEncoderAdvancedSuite(t *testing.T) {
+	suite.Run(t, new(EncoderAdvancedSuite))
+}
+
+func (s *EncoderAdvancedSuite) TestEncodeDecode() {
 	if testing.Short() {
-		c.Skip("skipping test in short mode.")
+		s.T().Skip("skipping test in short mode.")
 	}
 
 	fixs := fixtures.Basic().ByTag("packfile").ByTag(".git")
 	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag("packfile").ByTag(".git").One())
-	fixs.Test(c, func(f *fixtures.Fixture) {
+
+	for _, f := range fixs {
 		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-		s.testEncodeDecode(c, storage, 0)
-	})
+		s.testEncodeDecode(storage, 10)
+	}
+}
+
+func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	fixs := fixtures.Basic().ByTag("packfile").ByTag(".git")
+	fixs = append(fixs, fixtures.ByURL("https://github.com/src-d/go-git.git").
+		ByTag("packfile").ByTag(".git").One())
+
+	for _, f := range fixs {
+		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		s.testEncodeDecode(storage, 0)
+	}
 }
 
 func (s *EncoderAdvancedSuite) testEncodeDecode(
-	c *C,
 	storage storer.Storer,
 	packWindow uint,
 ) {
 	objIter, err := storage.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expectedObjects := map[plumbing.Hash]bool{}
 	var hashes []plumbing.Hash
@@ -68,7 +76,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 		return err
 
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Shuffle hashes to avoid delta selector getting order right just because
 	// the initial order is correct.
@@ -81,54 +89,54 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	buf := bytes.NewBuffer(nil)
 	enc := NewEncoder(buf, storage, false)
 	encodeHash, err := enc.Encode(hashes, packWindow)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fs := memfs.New()
 	f, err := fs.Create("packfile")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = f.Write(buf.Bytes())
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = f.Seek(0, io.SeekStart)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	w := new(idxfile.Writer)
 	parser := NewParser(NewScanner(f), WithScannerObservers(w))
 
 	_, err = parser.Parse()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	index, err := w.Index()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = f.Seek(0, io.SeekStart)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	p := NewPackfile(f, WithIdx(index), WithFs(fs))
 
 	decodeHash, err := p.ID()
-	c.Assert(err, IsNil)
-	c.Assert(encodeHash, Equals, decodeHash)
+	s.NoError(err)
+	s.Equal(decodeHash, encodeHash)
 
 	objIter, err = p.GetAll()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	obtainedObjects := map[plumbing.Hash]bool{}
 	err = objIter.ForEach(func(o plumbing.EncodedObject) error {
 		obtainedObjects[o.Hash()] = true
 		return nil
 	})
-	c.Assert(err, IsNil)
-	c.Assert(obtainedObjects, DeepEquals, expectedObjects)
+	s.NoError(err)
+	s.Equal(expectedObjects, obtainedObjects)
 
 	for h := range obtainedObjects {
 		if !expectedObjects[h] {
-			c.Errorf("obtained unexpected object: %s", h)
+			s.T().Errorf("obtained unexpected object: %s", h)
 		}
 	}
 
 	for h := range expectedObjects {
 		if !obtainedObjects[h] {
-			c.Errorf("missing object: %s", h)
+			s.T().Errorf("missing object: %s", h)
 		}
 	}
 }
