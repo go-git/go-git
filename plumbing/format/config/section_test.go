@@ -1,14 +1,20 @@
 package config
 
 import (
-	. "gopkg.in/check.v1"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
 )
 
-type SectionSuite struct{}
+type SectionSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&SectionSuite{})
+func TestSectionSuite(t *testing.T) {
+	suite.Run(t, new(SectionSuite))
+}
 
-func (s *SectionSuite) TestSections_GoString(c *C) {
+func (s *SectionSuite) TestSections_GoString() {
 	sects := Sections{
 		&Section{
 			Options: []*Option{
@@ -25,10 +31,10 @@ func (s *SectionSuite) TestSections_GoString(c *C) {
 	}
 
 	expected := "&config.Section{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\"}, &config.Option{Key:\"key2\", Value:\"value2\"}, Subsections:}, &config.Section{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value3\"}, &config.Option{Key:\"key2\", Value:\"value4\"}, Subsections:}"
-	c.Assert(sects.GoString(), Equals, expected)
+	s.Equal(expected, sects.GoString())
 }
 
-func (s *SectionSuite) TestSubsections_GoString(c *C) {
+func (s *SectionSuite) TestSubsections_GoString() {
 	sects := Subsections{
 		&Subsection{
 			Options: []*Option{
@@ -47,19 +53,19 @@ func (s *SectionSuite) TestSubsections_GoString(c *C) {
 	}
 
 	expected := "&config.Subsection{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\"}, &config.Option{Key:\"key2\", Value:\"value2\"}, &config.Option{Key:\"key1\", Value:\"value3\"}}, &config.Subsection{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\"}, &config.Option{Key:\"key2\", Value:\"value2\"}, &config.Option{Key:\"key1\", Value:\"value3\"}}"
-	c.Assert(sects.GoString(), Equals, expected)
+	s.Equal(expected, sects.GoString())
 }
 
-func (s *SectionSuite) TestSection_IsName(c *C) {
+func (s *SectionSuite) TestSection_IsName() {
 	sect := &Section{
 		Name: "name1",
 	}
 
-	c.Assert(sect.IsName("name1"), Equals, true)
-	c.Assert(sect.IsName("Name1"), Equals, true)
+	s.True(sect.IsName("name1"))
+	s.True(sect.IsName("Name1"))
 }
 
-func (s *SectionSuite) TestSection_Subsection(c *C) {
+func (s *SectionSuite) TestSection_Subsection() {
 	subSect1 := &Subsection{
 		Name: "name1",
 		Options: Options{
@@ -72,15 +78,15 @@ func (s *SectionSuite) TestSection_Subsection(c *C) {
 		},
 	}
 
-	c.Assert(sect.Subsection("name1"), DeepEquals, subSect1)
+	s.Equal(subSect1, sect.Subsection("name1"))
 
 	subSect2 := &Subsection{
 		Name: "name2",
 	}
-	c.Assert(sect.Subsection("name2"), DeepEquals, subSect2)
+	s.Equal(subSect2, sect.Subsection("name2"))
 }
 
-func (s *SectionSuite) TestSection_HasSubsection(c *C) {
+func (s *SectionSuite) TestSection_HasSubsection() {
 	sect := &Section{
 		Subsections: Subsections{
 			&Subsection{
@@ -89,11 +95,11 @@ func (s *SectionSuite) TestSection_HasSubsection(c *C) {
 		},
 	}
 
-	c.Assert(sect.HasSubsection("name1"), Equals, true)
-	c.Assert(sect.HasSubsection("name2"), Equals, false)
+	s.True(sect.HasSubsection("name1"))
+	s.False(sect.HasSubsection("name2"))
 }
 
-func (s *SectionSuite) TestSection_RemoveSubsection(c *C) {
+func (s *SectionSuite) TestSection_RemoveSubsection() {
 	sect := &Section{
 		Subsections: Subsections{
 			&Subsection{
@@ -112,12 +118,12 @@ func (s *SectionSuite) TestSection_RemoveSubsection(c *C) {
 			},
 		},
 	}
-	c.Assert(sect.RemoveSubsection("name1"), DeepEquals, expected)
-	c.Assert(sect.HasSubsection("name1"), Equals, false)
-	c.Assert(sect.HasSubsection("name2"), Equals, true)
+	s.Equal(expected, sect.RemoveSubsection("name1"))
+	s.False(sect.HasSubsection("name1"))
+	s.True(sect.HasSubsection("name2"))
 }
 
-func (s *SectionSuite) TestSection_Option(c *C) {
+func (s *SectionSuite) TestSection_Option() {
 	sect := &Section{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -125,12 +131,12 @@ func (s *SectionSuite) TestSection_Option(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.Option("otherkey"), Equals, "")
-	c.Assert(sect.Option("key2"), Equals, "value2")
-	c.Assert(sect.Option("key1"), Equals, "value3")
+	s.Equal("", sect.Option("otherkey"))
+	s.Equal("value2", sect.Option("key2"))
+	s.Equal("value3", sect.Option("key1"))
 }
 
-func (s *SectionSuite) TestSection_OptionAll(c *C) {
+func (s *SectionSuite) TestSection_OptionAll() {
 	sect := &Section{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -138,12 +144,12 @@ func (s *SectionSuite) TestSection_OptionAll(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.OptionAll("otherkey"), DeepEquals, []string{})
-	c.Assert(sect.OptionAll("key2"), DeepEquals, []string{"value2"})
-	c.Assert(sect.OptionAll("key1"), DeepEquals, []string{"value1", "value3"})
+	s.Equal([]string{}, sect.OptionAll("otherkey"))
+	s.Equal([]string{"value2"}, sect.OptionAll("key2"))
+	s.Equal([]string{"value1", "value3"}, sect.OptionAll("key1"))
 }
 
-func (s *SectionSuite) TestSection_HasOption(c *C) {
+func (s *SectionSuite) TestSection_HasOption() {
 	sect := &Section{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -151,12 +157,12 @@ func (s *SectionSuite) TestSection_HasOption(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.HasOption("otherkey"), Equals, false)
-	c.Assert(sect.HasOption("key2"), Equals, true)
-	c.Assert(sect.HasOption("key1"), Equals, true)
+	s.False(sect.HasOption("otherkey"))
+	s.True(sect.HasOption("key2"))
+	s.True(sect.HasOption("key1"))
 }
 
-func (s *SectionSuite) TestSection_AddOption(c *C) {
+func (s *SectionSuite) TestSection_AddOption() {
 	sect := &Section{
 		Options: []*Option{
 			{"key1", "value1"},
@@ -168,7 +174,7 @@ func (s *SectionSuite) TestSection_AddOption(c *C) {
 			{"key2", "value2"},
 		},
 	}
-	c.Assert(sect.AddOption("key2", "value2"), DeepEquals, sect1)
+	s.Equal(sect1, sect.AddOption("key2", "value2"))
 
 	sect2 := &Section{
 		Options: []*Option{
@@ -177,10 +183,10 @@ func (s *SectionSuite) TestSection_AddOption(c *C) {
 			{"key1", "value3"},
 		},
 	}
-	c.Assert(sect.AddOption("key1", "value3"), DeepEquals, sect2)
+	s.Equal(sect2, sect.AddOption("key1", "value3"))
 }
 
-func (s *SectionSuite) TestSection_SetOption(c *C) {
+func (s *SectionSuite) TestSection_SetOption() {
 	sect := &Section{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -194,10 +200,10 @@ func (s *SectionSuite) TestSection_SetOption(c *C) {
 			{Key: "key1", Value: "value4"},
 		},
 	}
-	c.Assert(sect.SetOption("key1", "value4"), DeepEquals, expected)
+	s.Equal(expected, sect.SetOption("key1", "value4"))
 }
 
-func (s *SectionSuite) TestSection_RemoveOption(c *C) {
+func (s *SectionSuite) TestSection_RemoveOption() {
 	sect := &Section{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -205,26 +211,26 @@ func (s *SectionSuite) TestSection_RemoveOption(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.RemoveOption("otherkey"), DeepEquals, sect)
+	s.Equal(sect, sect.RemoveOption("otherkey"))
 
 	expected := &Section{
 		Options: []*Option{
 			{Key: "key2", Value: "value2"},
 		},
 	}
-	c.Assert(sect.RemoveOption("key1"), DeepEquals, expected)
+	s.Equal(expected, sect.RemoveOption("key1"))
 }
 
-func (s *SectionSuite) TestSubsection_IsName(c *C) {
+func (s *SectionSuite) TestSubsection_IsName() {
 	sect := &Subsection{
 		Name: "name1",
 	}
 
-	c.Assert(sect.IsName("name1"), Equals, true)
-	c.Assert(sect.IsName("Name1"), Equals, false)
+	s.True(sect.IsName("name1"))
+	s.False(sect.IsName("Name1"))
 }
 
-func (s *SectionSuite) TestSubsection_Option(c *C) {
+func (s *SectionSuite) TestSubsection_Option() {
 	sect := &Subsection{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -232,12 +238,12 @@ func (s *SectionSuite) TestSubsection_Option(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.Option("otherkey"), Equals, "")
-	c.Assert(sect.Option("key2"), Equals, "value2")
-	c.Assert(sect.Option("key1"), Equals, "value3")
+	s.Equal("", sect.Option("otherkey"))
+	s.Equal("value2", sect.Option("key2"))
+	s.Equal("value3", sect.Option("key1"))
 }
 
-func (s *SectionSuite) TestSubsection_OptionAll(c *C) {
+func (s *SectionSuite) TestSubsection_OptionAll() {
 	sect := &Subsection{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -245,12 +251,12 @@ func (s *SectionSuite) TestSubsection_OptionAll(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.OptionAll("otherkey"), DeepEquals, []string{})
-	c.Assert(sect.OptionAll("key2"), DeepEquals, []string{"value2"})
-	c.Assert(sect.OptionAll("key1"), DeepEquals, []string{"value1", "value3"})
+	s.Equal([]string{}, sect.OptionAll("otherkey"))
+	s.Equal([]string{"value2"}, sect.OptionAll("key2"))
+	s.Equal([]string{"value1", "value3"}, sect.OptionAll("key1"))
 }
 
-func (s *SectionSuite) TestSubsection_HasOption(c *C) {
+func (s *SectionSuite) TestSubsection_HasOption() {
 	sect := &Subsection{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -258,12 +264,12 @@ func (s *SectionSuite) TestSubsection_HasOption(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.HasOption("otherkey"), Equals, false)
-	c.Assert(sect.HasOption("key2"), Equals, true)
-	c.Assert(sect.HasOption("key1"), Equals, true)
+	s.False(sect.HasOption("otherkey"))
+	s.True(sect.HasOption("key2"))
+	s.True(sect.HasOption("key1"))
 }
 
-func (s *SectionSuite) TestSubsection_AddOption(c *C) {
+func (s *SectionSuite) TestSubsection_AddOption() {
 	sect := &Subsection{
 		Options: []*Option{
 			{"key1", "value1"},
@@ -275,7 +281,7 @@ func (s *SectionSuite) TestSubsection_AddOption(c *C) {
 			{"key2", "value2"},
 		},
 	}
-	c.Assert(sect.AddOption("key2", "value2"), DeepEquals, sect1)
+	s.Equal(sect1, sect.AddOption("key2", "value2"))
 
 	sect2 := &Subsection{
 		Options: []*Option{
@@ -284,10 +290,10 @@ func (s *SectionSuite) TestSubsection_AddOption(c *C) {
 			{"key1", "value3"},
 		},
 	}
-	c.Assert(sect.AddOption("key1", "value3"), DeepEquals, sect2)
+	s.Equal(sect2, sect.AddOption("key1", "value3"))
 }
 
-func (s *SectionSuite) TestSubsection_SetOption(c *C) {
+func (s *SectionSuite) TestSubsection_SetOption() {
 	sect := &Subsection{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -303,10 +309,10 @@ func (s *SectionSuite) TestSubsection_SetOption(c *C) {
 			{Key: "key1", Value: "value4"},
 		},
 	}
-	c.Assert(sect.SetOption("key1", "value1", "value4"), DeepEquals, expected)
+	s.Equal(expected, sect.SetOption("key1", "value1", "value4"))
 }
 
-func (s *SectionSuite) TestSubsection_RemoveOption(c *C) {
+func (s *SectionSuite) TestSubsection_RemoveOption() {
 	sect := &Subsection{
 		Options: []*Option{
 			{Key: "key1", Value: "value1"},
@@ -314,12 +320,12 @@ func (s *SectionSuite) TestSubsection_RemoveOption(c *C) {
 			{Key: "key1", Value: "value3"},
 		},
 	}
-	c.Assert(sect.RemoveOption("otherkey"), DeepEquals, sect)
+	s.Equal(sect, sect.RemoveOption("otherkey"))
 
 	expected := &Subsection{
 		Options: []*Option{
 			{Key: "key2", Value: "value2"},
 		},
 	}
-	c.Assert(sect.RemoveOption("key1"), DeepEquals, expected)
+	s.Equal(expected, sect.RemoveOption("key1"))
 }

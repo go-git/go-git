@@ -3,16 +3,18 @@ package config
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type CommonSuite struct {
+	suite.Suite
+}
 
-type CommonSuite struct{}
+func TestCommonSuite(t *testing.T) {
+	suite.Run(t, new(CommonSuite))
+}
 
-var _ = Suite(&CommonSuite{})
-
-func (s *CommonSuite) TestConfig_SetOption(c *C) {
+func (s *CommonSuite) TestConfig_SetOption() {
 	obtained := New().SetOption("section", NoSubsection, "key1", "value1")
 	expected := &Config{
 		Sections: []*Section{
@@ -24,9 +26,9 @@ func (s *CommonSuite) TestConfig_SetOption(c *C) {
 			},
 		},
 	}
-	c.Assert(obtained, DeepEquals, expected)
+	s.Equal(expected, obtained)
 	obtained = obtained.SetOption("section", NoSubsection, "key1", "value1")
-	c.Assert(obtained, DeepEquals, expected)
+	s.Equal(expected, obtained)
 
 	obtained = New().SetOption("section", "subsection", "key1", "value1")
 	expected = &Config{
@@ -44,12 +46,12 @@ func (s *CommonSuite) TestConfig_SetOption(c *C) {
 			},
 		},
 	}
-	c.Assert(obtained, DeepEquals, expected)
+	s.Equal(expected, obtained)
 	obtained = obtained.SetOption("section", "subsection", "key1", "value1")
-	c.Assert(obtained, DeepEquals, expected)
+	s.Equal(expected, obtained)
 }
 
-func (s *CommonSuite) TestConfig_AddOption(c *C) {
+func (s *CommonSuite) TestConfig_AddOption() {
 	obtained := New().AddOption("section", NoSubsection, "key1", "value1")
 	expected := &Config{
 		Sections: []*Section{
@@ -61,34 +63,34 @@ func (s *CommonSuite) TestConfig_AddOption(c *C) {
 			},
 		},
 	}
-	c.Assert(obtained, DeepEquals, expected)
+	s.Equal(expected, obtained)
 }
 
-func (s *CommonSuite) TestConfig_HasSection(c *C) {
+func (s *CommonSuite) TestConfig_HasSection() {
 	sect := New().
 		AddOption("section1", "sub1", "key1", "value1").
 		AddOption("section1", "sub2", "key1", "value1")
-	c.Assert(sect.HasSection("section1"), Equals, true)
-	c.Assert(sect.HasSection("section2"), Equals, false)
+	s.True(sect.HasSection("section1"))
+	s.False(sect.HasSection("section2"))
 }
 
-func (s *CommonSuite) TestConfig_RemoveSection(c *C) {
+func (s *CommonSuite) TestConfig_RemoveSection() {
 	sect := New().
 		AddOption("section1", NoSubsection, "key1", "value1").
 		AddOption("section2", NoSubsection, "key1", "value1")
 	expected := New().
 		AddOption("section1", NoSubsection, "key1", "value1")
-	c.Assert(sect.RemoveSection("other"), DeepEquals, sect)
-	c.Assert(sect.RemoveSection("section2"), DeepEquals, expected)
+	s.Equal(sect, sect.RemoveSection("other"))
+	s.Equal(expected, sect.RemoveSection("section2"))
 }
 
-func (s *CommonSuite) TestConfig_RemoveSubsection(c *C) {
+func (s *CommonSuite) TestConfig_RemoveSubsection() {
 	sect := New().
 		AddOption("section1", "sub1", "key1", "value1").
 		AddOption("section1", "sub2", "key1", "value1")
 	expected := New().
 		AddOption("section1", "sub1", "key1", "value1")
-	c.Assert(sect.RemoveSubsection("section1", "other"), DeepEquals, sect)
-	c.Assert(sect.RemoveSubsection("other", "other"), DeepEquals, sect)
-	c.Assert(sect.RemoveSubsection("section1", "sub2"), DeepEquals, expected)
+	s.Equal(sect, sect.RemoveSubsection("section1", "other"))
+	s.Equal(sect, sect.RemoveSubsection("other", "other"))
+	s.Equal(expected, sect.RemoveSubsection("section1", "sub2"))
 }
