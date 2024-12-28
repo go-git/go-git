@@ -9,55 +9,60 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	. "github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type IdxfileSuite struct {
+type IdxfileFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&IdxfileSuite{})
+type IdxfileSuite struct {
+	suite.Suite
+	IdxfileFixtureSuite
+}
 
-func (s *IdxfileSuite) TestDecode(c *C) {
+func TestIdxfileSuite(t *testing.T) {
+	suite.Run(t, new(IdxfileSuite))
+}
+
+func (s *IdxfileSuite) TestDecode() {
 	f := fixtures.Basic().One()
 
 	d := NewDecoder(f.Idx())
 	idx := new(MemoryIndex)
 	err := d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	count, _ := idx.Count()
-	c.Assert(count, Equals, int64(31))
+	s.Equal(int64(31), count)
 
 	hash := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
 	ok, err := idx.Contains(hash)
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
+	s.NoError(err)
+	s.True(ok)
 
 	offset, err := idx.FindOffset(hash)
-	c.Assert(err, IsNil)
-	c.Assert(offset, Equals, int64(615))
+	s.NoError(err)
+	s.Equal(int64(615), offset)
 
 	crc32, err := idx.FindCRC32(hash)
-	c.Assert(err, IsNil)
-	c.Assert(crc32, Equals, uint32(3645019190))
+	s.NoError(err)
+	s.Equal(uint32(3645019190), crc32)
 
-	c.Assert(fmt.Sprintf("%x", idx.IdxChecksum), Equals, "fb794f1ec720b9bc8e43257451bd99c4be6fa1c9")
-	c.Assert(fmt.Sprintf("%x", idx.PackfileChecksum), Equals, f.PackfileHash)
+	s.Equal("fb794f1ec720b9bc8e43257451bd99c4be6fa1c9", fmt.Sprintf("%x", idx.IdxChecksum))
+	s.Equal(f.PackfileHash, fmt.Sprintf("%x", idx.PackfileChecksum))
 }
 
-func (s *IdxfileSuite) TestDecode64bitsOffsets(c *C) {
+func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 	f := bytes.NewBufferString(fixtureLarge4GB)
 
 	idx := new(MemoryIndex)
 
 	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
 	err := d.Decode(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := map[string]uint64{
 		"303953e5aa461c203a324821bc1717f9b4fff895": 12,
@@ -72,7 +77,7 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets(c *C) {
 	}
 
 	iter, err := idx.Entries()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var entries int
 	for {
@@ -80,13 +85,13 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets(c *C) {
 		if err == io.EOF {
 			break
 		}
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		entries++
 
-		c.Assert(expected[e.Hash.String()], Equals, e.Offset)
+		s.Equal(e.Offset, expected[e.Hash.String()])
 	}
 
-	c.Assert(entries, Equals, len(expected))
+	s.Len(expected, entries)
 }
 
 const fixtureLarge4GB = `/3RPYwAAAAIAAAAAAAAAAAAAAAAAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEA

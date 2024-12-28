@@ -9,15 +9,15 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
 func BenchmarkFindOffset(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -33,7 +33,7 @@ func BenchmarkFindOffset(b *testing.B) {
 func BenchmarkFindCRC32(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -49,7 +49,7 @@ func BenchmarkFindCRC32(b *testing.B) {
 func BenchmarkContains(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -69,7 +69,7 @@ func BenchmarkContains(b *testing.B) {
 func BenchmarkEntries(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -98,35 +98,42 @@ func BenchmarkEntries(b *testing.B) {
 	}
 }
 
-type IndexSuite struct {
+type IndexFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&IndexSuite{})
+type IndexSuite struct {
+	suite.Suite
+	IndexFixtureSuite
+}
 
-func (s *IndexSuite) TestFindHash(c *C) {
+func TestIndexSuite(t *testing.T) {
+	suite.Run(t, new(IndexSuite))
+}
+
+func (s *IndexSuite) TestFindHash() {
 	idx, err := fixtureIndex()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for i, pos := range fixtureOffsets {
 		hash, err := idx.FindHash(pos)
-		c.Assert(err, IsNil)
-		c.Assert(hash, Equals, fixtureHashes[i])
+		s.NoError(err)
+		s.Equal(fixtureHashes[i], hash)
 	}
 }
 
-func (s *IndexSuite) TestEntriesByOffset(c *C) {
+func (s *IndexSuite) TestEntriesByOffset() {
 	idx, err := fixtureIndex()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	entries, err := idx.EntriesByOffset()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, pos := range fixtureOffsets {
 		e, err := entries.Next()
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
-		c.Assert(e.Offset, Equals, uint64(pos))
+		s.Equal(uint64(pos), e.Offset)
 	}
 }
 
