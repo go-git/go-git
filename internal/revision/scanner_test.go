@@ -4,191 +4,193 @@ import (
 	"bytes"
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type ScannerSuite struct {
+	suite.Suite
+}
 
-type ScannerSuite struct{}
+func TestScannerSuite(t *testing.T) {
+	suite.Run(t, new(ScannerSuite))
+}
 
-var _ = Suite(&ScannerSuite{})
-
-func (s *ScannerSuite) TestReadColon(c *C) {
+func (s *ScannerSuite) TestReadColon() {
 	scanner := newScanner(bytes.NewBufferString(":"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, ":")
-	c.Assert(tok, Equals, colon)
+	s.NoError(err)
+	s.Equal(":", data)
+	s.Equal(colon, tok)
 }
 
-func (s *ScannerSuite) TestReadTilde(c *C) {
+func (s *ScannerSuite) TestReadTilde() {
 	scanner := newScanner(bytes.NewBufferString("~"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "~")
-	c.Assert(tok, Equals, tilde)
+	s.NoError(err)
+	s.Equal("~", data)
+	s.Equal(tilde, tok)
 }
 
-func (s *ScannerSuite) TestReadCaret(c *C) {
+func (s *ScannerSuite) TestReadCaret() {
 	scanner := newScanner(bytes.NewBufferString("^"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "^")
-	c.Assert(tok, Equals, caret)
+	s.NoError(err)
+	s.Equal("^", data)
+	s.Equal(caret, tok)
 }
 
-func (s *ScannerSuite) TestReadDot(c *C) {
+func (s *ScannerSuite) TestReadDot() {
 	scanner := newScanner(bytes.NewBufferString("."))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, ".")
-	c.Assert(tok, Equals, dot)
+	s.NoError(err)
+	s.Equal(".", data)
+	s.Equal(dot, tok)
 }
 
-func (s *ScannerSuite) TestReadSlash(c *C) {
+func (s *ScannerSuite) TestReadSlash() {
 	scanner := newScanner(bytes.NewBufferString("/"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "/")
-	c.Assert(tok, Equals, slash)
+	s.NoError(err)
+	s.Equal("/", data)
+	s.Equal(slash, tok)
 }
 
-func (s *ScannerSuite) TestReadEOF(c *C) {
+func (s *ScannerSuite) TestReadEOF() {
 	scanner := newScanner(bytes.NewBufferString(string(rune(0))))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "")
-	c.Assert(tok, Equals, eof)
+	s.NoError(err)
+	s.Equal("", data)
+	s.Equal(eof, tok)
 }
 
-func (s *ScannerSuite) TestReadNumber(c *C) {
+func (s *ScannerSuite) TestReadNumber() {
 	scanner := newScanner(bytes.NewBufferString("1234"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "1234")
-	c.Assert(tok, Equals, number)
+	s.NoError(err)
+	s.Equal("1234", data)
+	s.Equal(number, tok)
 }
 
-func (s *ScannerSuite) TestReadSpace(c *C) {
+func (s *ScannerSuite) TestReadSpace() {
 	scanner := newScanner(bytes.NewBufferString(" "))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, " ")
-	c.Assert(tok, Equals, space)
+	s.NoError(err)
+	s.Equal(" ", data)
+	s.Equal(space, tok)
 }
 
-func (s *ScannerSuite) TestReadControl(c *C) {
+func (s *ScannerSuite) TestReadControl() {
 	scanner := newScanner(bytes.NewBufferString(""))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "\x01")
-	c.Assert(tok, Equals, control)
+	s.NoError(err)
+	s.Equal("\x01", data)
+	s.Equal(control, tok)
 }
 
-func (s *ScannerSuite) TestReadOpenBrace(c *C) {
+func (s *ScannerSuite) TestReadOpenBrace() {
 	scanner := newScanner(bytes.NewBufferString("{"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "{")
-	c.Assert(tok, Equals, obrace)
+	s.NoError(err)
+	s.Equal("{", data)
+	s.Equal(obrace, tok)
 }
 
-func (s *ScannerSuite) TestReadCloseBrace(c *C) {
+func (s *ScannerSuite) TestReadCloseBrace() {
 	scanner := newScanner(bytes.NewBufferString("}"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "}")
-	c.Assert(tok, Equals, cbrace)
+	s.NoError(err)
+	s.Equal("}", data)
+	s.Equal(cbrace, tok)
 }
 
-func (s *ScannerSuite) TestReadMinus(c *C) {
+func (s *ScannerSuite) TestReadMinus() {
 	scanner := newScanner(bytes.NewBufferString("-"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "-")
-	c.Assert(tok, Equals, minus)
+	s.NoError(err)
+	s.Equal("-", data)
+	s.Equal(minus, tok)
 }
 
-func (s *ScannerSuite) TestReadAt(c *C) {
+func (s *ScannerSuite) TestReadAt() {
 	scanner := newScanner(bytes.NewBufferString("@"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "@")
-	c.Assert(tok, Equals, at)
+	s.NoError(err)
+	s.Equal("@", data)
+	s.Equal(at, tok)
 }
 
-func (s *ScannerSuite) TestReadAntislash(c *C) {
+func (s *ScannerSuite) TestReadAntislash() {
 	scanner := newScanner(bytes.NewBufferString("\\"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "\\")
-	c.Assert(tok, Equals, aslash)
+	s.NoError(err)
+	s.Equal("\\", data)
+	s.Equal(aslash, tok)
 }
 
-func (s *ScannerSuite) TestReadQuestionMark(c *C) {
+func (s *ScannerSuite) TestReadQuestionMark() {
 	scanner := newScanner(bytes.NewBufferString("?"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "?")
-	c.Assert(tok, Equals, qmark)
+	s.NoError(err)
+	s.Equal("?", data)
+	s.Equal(qmark, tok)
 }
 
-func (s *ScannerSuite) TestReadAsterisk(c *C) {
+func (s *ScannerSuite) TestReadAsterisk() {
 	scanner := newScanner(bytes.NewBufferString("*"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "*")
-	c.Assert(tok, Equals, asterisk)
+	s.NoError(err)
+	s.Equal("*", data)
+	s.Equal(asterisk, tok)
 }
 
-func (s *ScannerSuite) TestReadOpenBracket(c *C) {
+func (s *ScannerSuite) TestReadOpenBracket() {
 	scanner := newScanner(bytes.NewBufferString("["))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "[")
-	c.Assert(tok, Equals, obracket)
+	s.NoError(err)
+	s.Equal("[", data)
+	s.Equal(obracket, tok)
 }
 
-func (s *ScannerSuite) TestReadExclamationMark(c *C) {
+func (s *ScannerSuite) TestReadExclamationMark() {
 	scanner := newScanner(bytes.NewBufferString("!"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "!")
-	c.Assert(tok, Equals, emark)
+	s.NoError(err)
+	s.Equal("!", data)
+	s.Equal(emark, tok)
 }
 
-func (s *ScannerSuite) TestReadWord(c *C) {
+func (s *ScannerSuite) TestReadWord() {
 	scanner := newScanner(bytes.NewBufferString("abcde"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "abcde")
-	c.Assert(tok, Equals, word)
+	s.NoError(err)
+	s.Equal("abcde", data)
+	s.Equal(word, tok)
 }
 
-func (s *ScannerSuite) TestReadTokenError(c *C) {
+func (s *ScannerSuite) TestReadTokenError() {
 	scanner := newScanner(bytes.NewBufferString("`"))
 	tok, data, err := scanner.scan()
 
-	c.Assert(err, Equals, nil)
-	c.Assert(data, Equals, "`")
-	c.Assert(tok, Equals, tokenError)
+	s.NoError(err)
+	s.Equal("`", data)
+	s.Equal(tokenError, tok)
 }
