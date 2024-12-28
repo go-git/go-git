@@ -86,8 +86,8 @@ func (s *CommitWalkerSuite) TestCommitLimitIterByTrailingHash(c *C) {
 	for i, commit := range commits {
 		c.Assert(commit.Hash.String(), Equals, expected[i])
 	}
-
 }
+
 func (s *CommitWalkerSuite) TestCommitLimitIterByTime(c *C) {
 	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
 	commitIter := NewCommitPreorderIter(commit, nil, nil)
