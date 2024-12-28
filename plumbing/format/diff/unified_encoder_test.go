@@ -7,24 +7,25 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/color"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type UnifiedEncoderTestSuite struct {
+	suite.Suite
+}
 
-type UnifiedEncoderTestSuite struct{}
+func TestUnifiedEncoderTestSuite(t *testing.T) {
+	suite.Run(t, new(UnifiedEncoderTestSuite))
+}
 
-var _ = Suite(&UnifiedEncoderTestSuite{})
-
-func (s *UnifiedEncoderTestSuite) TestBothFilesEmpty(c *C) {
+func (s *UnifiedEncoderTestSuite) TestBothFilesEmpty() {
 	buffer := bytes.NewBuffer(nil)
 	e := NewUnifiedEncoder(buffer, 1)
 	err := e.Encode(testPatch{filePatches: []testFilePatch{{}}})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *UnifiedEncoderTestSuite) TestBinaryFile(c *C) {
+func (s *UnifiedEncoderTestSuite) TestBinaryFile() {
 	buffer := bytes.NewBuffer(nil)
 	e := NewUnifiedEncoder(buffer, 1)
 	p := testPatch{
@@ -44,15 +45,16 @@ func (s *UnifiedEncoderTestSuite) TestBinaryFile(c *C) {
 	}
 
 	err := e.Encode(p)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(buffer.String(), Equals, `diff --git a/binary b/binary
+	s.Equal(`diff --git a/binary b/binary
 index a459bc245bdbc45e1bca99e7fe61731da5c48da4..6879395eacf3cc7e5634064ccb617ac7aa62be7d 100644
 Binary files a/binary and b/binary differ
-`)
+`,
+		buffer.String())
 }
 
-func (s *UnifiedEncoderTestSuite) TestCustomSrcDstPrefix(c *C) {
+func (s *UnifiedEncoderTestSuite) TestCustomSrcDstPrefix() {
 	buffer := bytes.NewBuffer(nil)
 	e := NewUnifiedEncoder(buffer, 1).SetSrcPrefix("source/prefix/").SetDstPrefix("dest/prefix/")
 	p := testPatch{
@@ -72,25 +74,26 @@ func (s *UnifiedEncoderTestSuite) TestCustomSrcDstPrefix(c *C) {
 	}
 
 	err := e.Encode(p)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(buffer.String(), Equals, `diff --git source/prefix/binary dest/prefix/binary
+	s.Equal(`diff --git source/prefix/binary dest/prefix/binary
 index a459bc245bdbc45e1bca99e7fe61731da5c48da4..6879395eacf3cc7e5634064ccb617ac7aa62be7d 100644
 Binary files source/prefix/binary and dest/prefix/binary differ
-`)
+`,
+		buffer.String())
 }
 
-func (s *UnifiedEncoderTestSuite) TestEncode(c *C) {
+func (s *UnifiedEncoderTestSuite) TestEncode() {
 	for _, f := range fixtures {
-		c.Log("executing: ", f.desc)
+		s.T().Log("executing: ", f.desc)
 
 		buffer := bytes.NewBuffer(nil)
 		e := NewUnifiedEncoder(buffer, f.context).SetColor(f.color)
 
 		err := e.Encode(f.patch)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
-		c.Assert(buffer.String(), Equals, f.diff)
+		s.Equal(f.diff, buffer.String())
 	}
 }
 
