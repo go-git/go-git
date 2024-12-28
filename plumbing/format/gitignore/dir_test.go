@@ -5,13 +5,15 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
 type MatcherSuite struct {
+	suite.Suite
 	GFS  billy.Filesystem // git repository root
 	RFS  billy.Filesystem // root that contains user home
 	RFSR billy.Filesystem // root that contains user home, but with relative ~/.gitignore_global
@@ -23,332 +25,334 @@ type MatcherSuite struct {
 	SFS billy.Filesystem // root that contains /etc/gitconfig
 }
 
-var _ = Suite(&MatcherSuite{})
+func TestMatcherSuite(t *testing.T) {
+	suite.Run(t, new(MatcherSuite))
+}
 
-func (s *MatcherSuite) SetUpTest(c *C) {
+func (s *MatcherSuite) SetupTest() {
 	// setup generic git repository root
 	fs := memfs.New()
 
 	err := fs.MkdirAll(".git/info", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	f, err := fs.Create(".git/info/exclude")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("exclude.crlf\r\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(".gitignore")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("vendor/g*/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("ignore.crlf\r\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("ignore_dir\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = fs.MkdirAll("vendor", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	f, err = fs.Create("vendor/.gitignore")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("!github.com/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = fs.MkdirAll("ignore_dir", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	f, err = fs.Create("ignore_dir/.gitignore")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("!file\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = fs.Create("ignore_dir/file")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = fs.MkdirAll("another", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("exclude.crlf", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("ignore.crlf", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("vendor/github.com", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("vendor/gopkg.in", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = fs.MkdirAll("multiple/sub/ignores/first", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("multiple/sub/ignores/second", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	f, err = fs.Create("multiple/sub/ignores/first/.gitignore")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("ignore_dir\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	f, err = fs.Create("multiple/sub/ignores/second/.gitignore")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("ignore_dir\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("multiple/sub/ignores/first/ignore_dir", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = fs.MkdirAll("multiple/sub/ignores/second/ignore_dir", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.GFS = fs
 
 	// setup root that contains user home
 	home, err := os.UserHomeDir()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, gitconfigFile))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("[core]\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("	excludesfile = " + strconv.Quote(fs.Join(home, ".gitignore_global")) + "\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, ".gitignore_global"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("# IntelliJ\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte(".idea/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("*.iml\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.RFS = fs
 
 	// root that contains user home, but with relative ~/.gitignore_global
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, gitconfigFile))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("[core]\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("	excludesfile = ~/.gitignore_global" + "\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, ".gitignore_global"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("# IntelliJ\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte(".idea/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("*.iml\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.RFSR = fs
 
 	// root that contains user home, but with relative ~user/.gitignore_global
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, gitconfigFile))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("[core]\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	currentUser, err := user.Current()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	// remove domain for windows
 	username := currentUser.Username[strings.Index(currentUser.Username, "\\")+1:]
 	_, err = f.Write([]byte("	excludesfile = ~" + username + "/.gitignore_global" + "\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, ".gitignore_global"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("# IntelliJ\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte(".idea/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("*.iml\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.RFSU = fs
 
 	// root that contains user home, but missing ~/.gitconfig
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, ".gitignore_global"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("# IntelliJ\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte(".idea/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("*.iml\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.MCFS = fs
 
 	// setup root that contains user home, but missing excludesfile entry
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, gitconfigFile))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("[core]\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, ".gitignore_global"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("# IntelliJ\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte(".idea/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("*.iml\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.MEFS = fs
 
 	// setup root that contains user home, but missing .gitnignore
 	fs = memfs.New()
 	err = fs.MkdirAll(home, os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(fs.Join(home, gitconfigFile))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("[core]\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("	excludesfile = " + strconv.Quote(fs.Join(home, ".gitignore_global")) + "\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.MIFS = fs
 
 	// setup root that contains user home
 	fs = memfs.New()
 	err = fs.MkdirAll("etc", os.ModePerm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create(systemFile)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("[core]\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("	excludesfile = /etc/gitignore_global\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = fs.Create("/etc/gitignore_global")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("# IntelliJ\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte(".idea/\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = f.Write([]byte("*.iml\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.SFS = fs
 }
 
-func (s *MatcherSuite) TestDir_ReadPatterns(c *C) {
+func (s *MatcherSuite) TestDir_ReadPatterns() {
 	checkPatterns := func(ps []Pattern) {
-		c.Assert(ps, HasLen, 7)
+		s.Len(ps, 7)
 		m := NewMatcher(ps)
 
-		c.Assert(m.Match([]string{"exclude.crlf"}, true), Equals, true)
-		c.Assert(m.Match([]string{"ignore.crlf"}, true), Equals, true)
-		c.Assert(m.Match([]string{"vendor", "gopkg.in"}, true), Equals, true)
-		c.Assert(m.Match([]string{"ignore_dir", "file"}, false), Equals, true)
-		c.Assert(m.Match([]string{"vendor", "github.com"}, true), Equals, false)
-		c.Assert(m.Match([]string{"multiple", "sub", "ignores", "first", "ignore_dir"}, true), Equals, true)
-		c.Assert(m.Match([]string{"multiple", "sub", "ignores", "second", "ignore_dir"}, true), Equals, true)
+		s.True(m.Match([]string{"exclude.crlf"}, true))
+		s.True(m.Match([]string{"ignore.crlf"}, true))
+		s.True(m.Match([]string{"vendor", "gopkg.in"}, true))
+		s.True(m.Match([]string{"ignore_dir", "file"}, false))
+		s.False(m.Match([]string{"vendor", "github.com"}, true))
+		s.True(m.Match([]string{"multiple", "sub", "ignores", "first", "ignore_dir"}, true))
+		s.True(m.Match([]string{"multiple", "sub", "ignores", "second", "ignore_dir"}, true))
 	}
 
 	ps, err := ReadPatterns(s.GFS, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	checkPatterns(ps)
 
 	// passing an empty slice with capacity to check we don't hit a bug where the extra capacity is reused incorrectly
 	ps, err = ReadPatterns(s.GFS, make([]string, 0, 6))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	checkPatterns(ps)
 }
 
-func (s *MatcherSuite) TestDir_ReadRelativeGlobalGitIgnore(c *C) {
+func (s *MatcherSuite) TestDir_ReadRelativeGlobalGitIgnore() {
 	for _, fs := range []billy.Filesystem{s.RFSR, s.RFSU} {
 		ps, err := LoadGlobalPatterns(fs)
-		c.Assert(err, IsNil)
-		c.Assert(ps, HasLen, 2)
+		s.NoError(err)
+		s.Len(ps, 2)
 
 		m := NewMatcher(ps)
-		c.Assert(m.Match([]string{".idea/"}, true), Equals, false)
-		c.Assert(m.Match([]string{"*.iml"}, true), Equals, true)
-		c.Assert(m.Match([]string{"IntelliJ"}, true), Equals, false)
+		s.False(m.Match([]string{".idea/"}, true))
+		s.True(m.Match([]string{"*.iml"}, true))
+		s.False(m.Match([]string{"IntelliJ"}, true))
 	}
 }
 
-func (s *MatcherSuite) TestDir_LoadGlobalPatterns(c *C) {
+func (s *MatcherSuite) TestDir_LoadGlobalPatterns() {
 	ps, err := LoadGlobalPatterns(s.RFS)
-	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 2)
+	s.NoError(err)
+	s.Len(ps, 2)
 
 	m := NewMatcher(ps)
-	c.Assert(m.Match([]string{"go-git.v4.iml"}, true), Equals, true)
-	c.Assert(m.Match([]string{".idea"}, true), Equals, true)
+	s.True(m.Match([]string{"go-git.v4.iml"}, true))
+	s.True(m.Match([]string{".idea"}, true))
 }
 
-func (s *MatcherSuite) TestDir_LoadGlobalPatternsMissingGitconfig(c *C) {
+func (s *MatcherSuite) TestDir_LoadGlobalPatternsMissingGitconfig() {
 	ps, err := LoadGlobalPatterns(s.MCFS)
-	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 0)
+	s.NoError(err)
+	s.Len(ps, 0)
 }
 
-func (s *MatcherSuite) TestDir_LoadGlobalPatternsMissingExcludesfile(c *C) {
+func (s *MatcherSuite) TestDir_LoadGlobalPatternsMissingExcludesfile() {
 	ps, err := LoadGlobalPatterns(s.MEFS)
-	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 0)
+	s.NoError(err)
+	s.Len(ps, 0)
 }
 
-func (s *MatcherSuite) TestDir_LoadGlobalPatternsMissingGitignore(c *C) {
+func (s *MatcherSuite) TestDir_LoadGlobalPatternsMissingGitignore() {
 	ps, err := LoadGlobalPatterns(s.MIFS)
-	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 0)
+	s.NoError(err)
+	s.Len(ps, 0)
 }
 
-func (s *MatcherSuite) TestDir_LoadSystemPatterns(c *C) {
+func (s *MatcherSuite) TestDir_LoadSystemPatterns() {
 	ps, err := LoadSystemPatterns(s.SFS)
-	c.Assert(err, IsNil)
-	c.Assert(ps, HasLen, 2)
+	s.NoError(err)
+	s.Len(ps, 2)
 
 	m := NewMatcher(ps)
-	c.Assert(m.Match([]string{"go-git.v4.iml"}, true), Equals, true)
-	c.Assert(m.Match([]string{".idea"}, true), Equals, true)
+	s.True(m.Match([]string{"go-git.v4.iml"}, true))
+	s.True(m.Match([]string{".idea"}, true))
 }
