@@ -2,20 +2,26 @@ package config
 
 import (
 	"bytes"
+	"fmt"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type EncoderSuite struct{}
+type EncoderSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&EncoderSuite{})
+func TestEncoderSuite(t *testing.T) {
+	suite.Run(t, new(EncoderSuite))
+}
 
-func (s *EncoderSuite) TestEncode(c *C) {
+func (s *EncoderSuite) TestEncode() {
 	for idx, fixture := range fixtures {
 		buf := &bytes.Buffer{}
 		e := NewEncoder(buf)
 		err := e.Encode(fixture.Config)
-		c.Assert(err, IsNil, Commentf("encoder error for fixture: %d", idx))
-		c.Assert(buf.String(), Equals, fixture.Text, Commentf("bad result for fixture: %d", idx))
+		s.NoError(err, fmt.Sprintf("encoder error for fixture: %d", idx))
+		s.Equal(fixture.Text, buf.String(), fmt.Sprintf("bad result for fixture: %d", idx))
 	}
 }

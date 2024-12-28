@@ -2,95 +2,100 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type DecoderSuite struct{}
+type DecoderSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&DecoderSuite{})
+func TestDecoderSuite(t *testing.T) {
+	suite.Run(t, new(DecoderSuite))
+}
 
-func (s *DecoderSuite) TestDecode(c *C) {
+func (s *DecoderSuite) TestDecode() {
 	for idx, fixture := range fixtures {
 		r := bytes.NewReader([]byte(fixture.Raw))
 		d := NewDecoder(r)
 		cfg := &Config{}
 		err := d.Decode(cfg)
-		c.Assert(err, IsNil, Commentf("decoder error for fixture: %d", idx))
+		s.NoError(err, fmt.Sprintf("decoder error for fixture: %d", idx))
 		buf := bytes.NewBuffer(nil)
 		e := NewEncoder(buf)
 		_ = e.Encode(cfg)
-		c.Assert(cfg, DeepEquals, fixture.Config, Commentf("bad result for fixture: %d, %s", idx, buf.String()))
+		s.Equal(fixture.Config, cfg, fmt.Sprintf("bad result for fixture: %d, %s", idx, buf.String()))
 	}
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithIdentBeforeSection(c *C) {
+func (s *DecoderSuite) TestDecodeFailsWithIdentBeforeSection() {
 	t := `
 	key=value
 	[section]
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithEmptySectionName(c *C) {
+func (s *DecoderSuite) TestDecodeFailsWithEmptySectionName() {
 	t := `
 	[]
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithEmptySubsectionName(c *C) {
+func (s *DecoderSuite) TestDecodeFailsWithEmptySubsectionName() {
 	t := `
 	[remote ""]
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithBadSubsectionName(c *C) {
+func (s *DecoderSuite) TestDecodeFailsWithBadSubsectionName() {
 	t := `
 	[remote origin"]
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 	t = `
 	[remote "origin]
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithTrailingGarbage(c *C) {
+func (s *DecoderSuite) TestDecodeFailsWithTrailingGarbage() {
 	t := `
 	[remote]garbage
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 	t = `
 	[remote "origin"]garbage
 	key=value
 	`
-	decodeFails(c, t)
+	decodeFails(s, t)
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithGarbage(c *C) {
-	decodeFails(c, "---")
-	decodeFails(c, "????")
-	decodeFails(c, "[sect\nkey=value")
-	decodeFails(c, "sect]\nkey=value")
-	decodeFails(c, `[section]key="value`)
-	decodeFails(c, `[section]key=value"`)
+func (s *DecoderSuite) TestDecodeFailsWithGarbage() {
+	decodeFails(s, "---")
+	decodeFails(s, "????")
+	decodeFails(s, "[sect\nkey=value")
+	decodeFails(s, "sect]\nkey=value")
+	decodeFails(s, `[section]key="value`)
+	decodeFails(s, `[section]key=value"`)
 }
 
-func decodeFails(c *C, text string) {
+func decodeFails(s *DecoderSuite, text string) {
 	r := bytes.NewReader([]byte(text))
 	d := NewDecoder(r)
 	cfg := &Config{}
 	err := d.Decode(cfg)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
 func FuzzDecoder(f *testing.F) {

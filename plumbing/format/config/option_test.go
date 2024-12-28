@@ -1,48 +1,54 @@
 package config
 
 import (
-	. "gopkg.in/check.v1"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
 )
 
-type OptionSuite struct{}
+type OptionSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&OptionSuite{})
+func TestOptionSuite(t *testing.T) {
+	suite.Run(t, new(OptionSuite))
+}
 
-func (s *OptionSuite) TestOptions_Has(c *C) {
+func (s *OptionSuite) TestOptions_Has() {
 	o := Options{
 		&Option{"k", "v"},
 		&Option{"ok", "v1"},
 		&Option{"K", "v2"},
 	}
-	c.Assert(o.Has("k"), Equals, true)
-	c.Assert(o.Has("K"), Equals, true)
-	c.Assert(o.Has("ok"), Equals, true)
-	c.Assert(o.Has("unexistant"), Equals, false)
+	s.True(o.Has("k"))
+	s.True(o.Has("K"))
+	s.True(o.Has("ok"))
+	s.False(o.Has("unexistant"))
 
 	o = Options{}
-	c.Assert(o.Has("k"), Equals, false)
+	s.False(o.Has("k"))
 }
 
-func (s *OptionSuite) TestOptions_GetAll(c *C) {
+func (s *OptionSuite) TestOptions_GetAll() {
 	o := Options{
 		&Option{"k", "v"},
 		&Option{"ok", "v1"},
 		&Option{"K", "v2"},
 	}
-	c.Assert(o.GetAll("k"), DeepEquals, []string{"v", "v2"})
-	c.Assert(o.GetAll("K"), DeepEquals, []string{"v", "v2"})
-	c.Assert(o.GetAll("ok"), DeepEquals, []string{"v1"})
-	c.Assert(o.GetAll("unexistant"), DeepEquals, []string{})
+	s.Equal([]string{"v", "v2"}, o.GetAll("k"))
+	s.Equal([]string{"v", "v2"}, o.GetAll("K"))
+	s.Equal([]string{"v1"}, o.GetAll("ok"))
+	s.Equal([]string{}, o.GetAll("unexistant"))
 
 	o = Options{}
-	c.Assert(o.GetAll("k"), DeepEquals, []string{})
+	s.Equal([]string{}, o.GetAll("k"))
 }
 
-func (s *OptionSuite) TestOption_IsKey(c *C) {
-	c.Assert((&Option{Key: "key"}).IsKey("key"), Equals, true)
-	c.Assert((&Option{Key: "key"}).IsKey("KEY"), Equals, true)
-	c.Assert((&Option{Key: "KEY"}).IsKey("key"), Equals, true)
-	c.Assert((&Option{Key: "key"}).IsKey("other"), Equals, false)
-	c.Assert((&Option{Key: "key"}).IsKey(""), Equals, false)
-	c.Assert((&Option{Key: ""}).IsKey("key"), Equals, false)
+func (s *OptionSuite) TestOption_IsKey() {
+	s.True((&Option{Key: "key"}).IsKey("key"))
+	s.True((&Option{Key: "key"}).IsKey("KEY"))
+	s.True((&Option{Key: "KEY"}).IsKey("key"))
+	s.False((&Option{Key: "key"}).IsKey("other"))
+	s.False((&Option{Key: "key"}).IsKey(""))
+	s.False((&Option{Key: ""}).IsKey("key"))
 }
