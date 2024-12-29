@@ -7,116 +7,117 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type BinarySuite struct {
+	suite.Suite
+}
 
-type BinarySuite struct{}
+func TestBinarySuite(t *testing.T) {
+	suite.Run(t, new(BinarySuite))
+}
 
-var _ = Suite(&BinarySuite{})
-
-func (s *BinarySuite) TestRead(c *C) {
+func (s *BinarySuite) TestRead() {
 	buf := bytes.NewBuffer(nil)
 	err := binary.Write(buf, binary.BigEndian, int64(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = binary.Write(buf, binary.BigEndian, int32(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var i64 int64
 	var i32 int32
 	err = Read(buf, &i64, &i32)
-	c.Assert(err, IsNil)
-	c.Assert(i64, Equals, int64(42))
-	c.Assert(i32, Equals, int32(42))
+	s.NoError(err)
+	s.Equal(int64(42), i64)
+	s.Equal(int32(42), i32)
 }
 
-func (s *BinarySuite) TestReadUntil(c *C) {
+func (s *BinarySuite) TestReadUntil() {
 	buf := bytes.NewBuffer([]byte("foo bar"))
 
 	b, err := ReadUntil(buf, ' ')
-	c.Assert(err, IsNil)
-	c.Assert(b, HasLen, 3)
-	c.Assert(string(b), Equals, "foo")
+	s.NoError(err)
+	s.Len(b, 3)
+	s.Equal("foo", string(b))
 }
 
-func (s *BinarySuite) TestReadUntilFromBufioReader(c *C) {
+func (s *BinarySuite) TestReadUntilFromBufioReader() {
 	buf := bufio.NewReader(bytes.NewBuffer([]byte("foo bar")))
 
 	b, err := ReadUntilFromBufioReader(buf, ' ')
-	c.Assert(err, IsNil)
-	c.Assert(b, HasLen, 3)
-	c.Assert(string(b), Equals, "foo")
+	s.NoError(err)
+	s.Len(b, 3)
+	s.Equal("foo", string(b))
 }
 
-func (s *BinarySuite) TestReadVariableWidthInt(c *C) {
+func (s *BinarySuite) TestReadVariableWidthInt() {
 	buf := bytes.NewBuffer([]byte{129, 110})
 
 	i, err := ReadVariableWidthInt(buf)
-	c.Assert(err, IsNil)
-	c.Assert(i, Equals, int64(366))
+	s.NoError(err)
+	s.Equal(int64(366), i)
 }
 
-func (s *BinarySuite) TestReadVariableWidthIntShort(c *C) {
+func (s *BinarySuite) TestReadVariableWidthIntShort() {
 	buf := bytes.NewBuffer([]byte{19})
 
 	i, err := ReadVariableWidthInt(buf)
-	c.Assert(err, IsNil)
-	c.Assert(i, Equals, int64(19))
+	s.NoError(err)
+	s.Equal(int64(19), i)
 }
 
-func (s *BinarySuite) TestReadUint32(c *C) {
+func (s *BinarySuite) TestReadUint32() {
 	buf := bytes.NewBuffer(nil)
 	err := binary.Write(buf, binary.BigEndian, uint32(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	i32, err := ReadUint32(buf)
-	c.Assert(err, IsNil)
-	c.Assert(i32, Equals, uint32(42))
+	s.NoError(err)
+	s.Equal(uint32(42), i32)
 }
 
-func (s *BinarySuite) TestReadUint16(c *C) {
+func (s *BinarySuite) TestReadUint16() {
 	buf := bytes.NewBuffer(nil)
 	err := binary.Write(buf, binary.BigEndian, uint16(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	i32, err := ReadUint16(buf)
-	c.Assert(err, IsNil)
-	c.Assert(i32, Equals, uint16(42))
+	s.NoError(err)
+	s.Equal(uint16(42), i32)
 }
 
-func (s *BinarySuite) TestReadHash(c *C) {
+func (s *BinarySuite) TestReadHash() {
 	expected := plumbing.NewHash("43aec75c611f22c73b27ece2841e6ccca592f285")
 	buf := bytes.NewBuffer(nil)
 	err := binary.Write(buf, binary.BigEndian, expected)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	hash, err := ReadHash(buf)
-	c.Assert(err, IsNil)
-	c.Assert(hash.String(), Equals, expected.String())
+	s.NoError(err)
+	s.Equal(expected.String(), hash.String())
 }
 
-func (s *BinarySuite) TestIsBinary(c *C) {
+func (s *BinarySuite) TestIsBinary() {
 	buf := bytes.NewBuffer(nil)
 	buf.Write(bytes.Repeat([]byte{'A'}, sniffLen))
 	buf.Write([]byte{0})
 	ok, err := IsBinary(buf)
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, false)
+	s.NoError(err)
+	s.False(ok)
 
 	buf.Reset()
 
 	buf.Write(bytes.Repeat([]byte{'A'}, sniffLen-1))
 	buf.Write([]byte{0})
 	ok, err = IsBinary(buf)
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
+	s.NoError(err)
+	s.True(ok)
 
 	buf.Reset()
 
 	buf.Write(bytes.Repeat([]byte{'A'}, 10))
 	ok, err = IsBinary(buf)
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, false)
+	s.NoError(err)
+	s.False(ok)
 }

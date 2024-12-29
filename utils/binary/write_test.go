@@ -3,57 +3,55 @@ package binary
 import (
 	"bytes"
 	"encoding/binary"
-
-	. "gopkg.in/check.v1"
 )
 
-func (s *BinarySuite) TestWrite(c *C) {
+func (s *BinarySuite) TestWrite() {
 	expected := bytes.NewBuffer(nil)
 	err := binary.Write(expected, binary.BigEndian, int64(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = binary.Write(expected, binary.BigEndian, int32(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	buf := bytes.NewBuffer(nil)
 	err = Write(buf, int64(42), int32(42))
-	c.Assert(err, IsNil)
-	c.Assert(buf, DeepEquals, expected)
+	s.NoError(err)
+	s.Equal(expected, buf)
 }
 
-func (s *BinarySuite) TestWriteUint32(c *C) {
+func (s *BinarySuite) TestWriteUint32() {
 	expected := bytes.NewBuffer(nil)
 	err := binary.Write(expected, binary.BigEndian, int32(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	buf := bytes.NewBuffer(nil)
 	err = WriteUint32(buf, 42)
-	c.Assert(err, IsNil)
-	c.Assert(buf, DeepEquals, expected)
+	s.NoError(err)
+	s.Equal(expected, buf)
 }
 
-func (s *BinarySuite) TestWriteUint16(c *C) {
+func (s *BinarySuite) TestWriteUint16() {
 	expected := bytes.NewBuffer(nil)
 	err := binary.Write(expected, binary.BigEndian, int16(42))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	buf := bytes.NewBuffer(nil)
 	err = WriteUint16(buf, 42)
-	c.Assert(err, IsNil)
-	c.Assert(buf, DeepEquals, expected)
+	s.NoError(err)
+	s.Equal(expected, buf)
 }
 
-func (s *BinarySuite) TestWriteVariableWidthInt(c *C) {
+func (s *BinarySuite) TestWriteVariableWidthInt() {
 	buf := bytes.NewBuffer(nil)
 
 	err := WriteVariableWidthInt(buf, 366)
-	c.Assert(err, IsNil)
-	c.Assert(buf.Bytes(), DeepEquals, []byte{129, 110})
+	s.NoError(err)
+	s.Equal([]byte{129, 110}, buf.Bytes())
 }
 
-func (s *BinarySuite) TestWriteVariableWidthIntShort(c *C) {
+func (s *BinarySuite) TestWriteVariableWidthIntShort() {
 	buf := bytes.NewBuffer(nil)
 
 	err := WriteVariableWidthInt(buf, 19)
-	c.Assert(err, IsNil)
-	c.Assert(buf.Bytes(), DeepEquals, []byte{19})
+	s.NoError(err)
+	s.Equal([]byte{19}, buf.Bytes())
 }
