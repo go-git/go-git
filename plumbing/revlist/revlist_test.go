@@ -8,19 +8,24 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type RevListFixtureSuite struct {
+	fixtures.Suite
+}
 
 type RevListSuite struct {
-	fixtures.Suite
+	suite.Suite
+	RevListFixtureSuite
 	Storer storer.EncodedObjectStorer
 }
 
-var _ = Suite(&RevListSuite{})
+func TestRevListSuite(t *testing.T) {
+	suite.Run(t, new(RevListSuite))
+}
 
 const (
 	initialCommit = "b029517f6300c2da0f4b651b8642506cd6aaf45d"
@@ -50,12 +55,12 @@ const (
 // |/
 // * b029517 Initial commit
 
-func (s *RevListSuite) SetUpTest(c *C) {
+func (s *RevListSuite) SetupTest() {
 	sto := filesystem.NewStorage(fixtures.Basic().One().DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
-func (s *RevListSuite) TestRevListObjects_Submodules(c *C) {
+func (s *RevListSuite) TestRevListObjects_Submodules() {
 	submodules := map[string]bool{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5": true,
 	}
@@ -63,12 +68,12 @@ func (s *RevListSuite) TestRevListObjects_Submodules(c *C) {
 	sto := filesystem.NewStorage(fixtures.ByTag("submodule").One().DotGit(), cache.NewObjectLRUDefault())
 
 	ref, err := storer.ResolveReference(sto, plumbing.HEAD)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	revList, err := Objects(sto, []plumbing.Hash{ref.Hash()}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	for _, h := range revList {
-		c.Assert(submodules[h.String()], Equals, false)
+		s.False(submodules[h.String()])
 	}
 }
 
@@ -79,7 +84,7 @@ func (s *RevListSuite) TestRevListObjects_Submodules(c *C) {
 // * | 35e8510 binary file
 // |/
 // * b029517 Initial commit
-func (s *RevListSuite) TestRevListObjects(c *C) {
+func (s *RevListSuite) TestRevListObjects() {
 	revList := map[string]bool{
 		"b8e471f58bcbca63b07bda20e428190409c2db47": true, // second commit
 		"c2d30fa8ef288618f65f6eed6e168e0d514886f4": true, // init tree
@@ -88,19 +93,19 @@ func (s *RevListSuite) TestRevListObjects(c *C) {
 
 	localHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(initialCommit)}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	remoteHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, localHist)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, h := range remoteHist {
-		c.Assert(revList[h.String()], Equals, true)
+		s.True(revList[h.String()])
 	}
-	c.Assert(len(remoteHist), Equals, len(revList))
+	s.Len(revList, len(remoteHist))
 }
 
-func (s *RevListSuite) TestRevListObjectsTagObject(c *C) {
+func (s *RevListSuite) TestRevListObjectsTagObject() {
 	sto := filesystem.NewStorage(
 		fixtures.ByTag("tags").
 			ByURL("https://github.com/git-fixtures/tags.git").One().DotGit(), cache.NewObjectLRUDefault())
@@ -113,16 +118,16 @@ func (s *RevListSuite) TestRevListObjectsTagObject(c *C) {
 	}
 
 	hist, err := Objects(sto, []plumbing.Hash{plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, h := range hist {
-		c.Assert(expected[h.String()], Equals, true)
+		s.True(expected[h.String()])
 	}
 
-	c.Assert(len(hist), Equals, len(expected))
+	s.Len(expected, len(hist))
 }
 
-func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores(c *C) {
+func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores() {
 	sto := filesystem.NewStorage(
 		fixtures.ByTag("merge-conflict").One().DotGit(),
 		cache.NewObjectLRUDefault())
@@ -139,13 +144,13 @@ func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores(c *C) {
 	}
 
 	hist, err := ObjectsWithStorageForIgnores(sto, s.Storer, []plumbing.Hash{plumbing.NewHash("1980fcf55330d9d94c34abee5ab734afecf96aba")}, []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, h := range hist {
-		c.Assert(expected[h.String()], Equals, true)
+		s.True(expected[h.String()])
 	}
 
-	c.Assert(len(hist), Equals, len(expected))
+	s.Len(expected, len(hist))
 }
 
 // ---
@@ -155,7 +160,7 @@ func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores(c *C) {
 // * | 35e8510 binary file
 // |/
 // * b029517 Initial commit
-func (s *RevListSuite) TestRevListObjectsWithBlobsAndTrees(c *C) {
+func (s *RevListSuite) TestRevListObjectsWithBlobsAndTrees() {
 	revList := map[string]bool{
 		"b8e471f58bcbca63b07bda20e428190409c2db47": true, // second commit
 	}
@@ -166,41 +171,41 @@ func (s *RevListSuite) TestRevListObjectsWithBlobsAndTrees(c *C) {
 			plumbing.NewHash("c2d30fa8ef288618f65f6eed6e168e0d514886f4"),
 			plumbing.NewHash("d3ff53e0564a9f87d8e84b6e28e5060e517008aa"),
 		}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	remoteHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, localHist)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, h := range remoteHist {
-		c.Assert(revList[h.String()], Equals, true)
+		s.True(revList[h.String()])
 	}
-	c.Assert(len(remoteHist), Equals, len(revList))
+	s.Len(revList, len(remoteHist))
 }
 
-func (s *RevListSuite) TestRevListObjectsReverse(c *C) {
+func (s *RevListSuite) TestRevListObjectsReverse() {
 
 	localHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	remoteHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(initialCommit)}, localHist)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(len(remoteHist), Equals, 0)
+	s.Len(remoteHist, 0)
 }
 
-func (s *RevListSuite) TestRevListObjectsSameCommit(c *C) {
+func (s *RevListSuite) TestRevListObjectsSameCommit() {
 	localHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	remoteHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, localHist)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(len(remoteHist), Equals, 0)
+	s.Len(remoteHist, 0)
 }
 
 // * 6ecf0ef vendor stuff
@@ -208,16 +213,16 @@ func (s *RevListSuite) TestRevListObjectsSameCommit(c *C) {
 // |/
 // * 918c48b some code
 // -----
-func (s *RevListSuite) TestRevListObjectsNewBranch(c *C) {
+func (s *RevListSuite) TestRevListObjectsNewBranch() {
 	localHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(someCommit)}, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	remoteHist, err := Objects(
 		s.Storer, []plumbing.Hash{
 			plumbing.NewHash(someCommitBranch),
 			plumbing.NewHash(someCommitOtherBranch)}, localHist)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	revList := map[string]bool{
 		"a8d315b2b1c615d43042c3a62402b8a54288cf5c": true, // init tree
@@ -230,9 +235,9 @@ func (s *RevListSuite) TestRevListObjectsNewBranch(c *C) {
 	}
 
 	for _, h := range remoteHist {
-		c.Assert(revList[h.String()], Equals, true)
+		s.True(revList[h.String()])
 	}
-	c.Assert(len(remoteHist), Equals, len(revList))
+	s.Len(revList, len(remoteHist))
 }
 
 // This tests will ensure that a5b8b09 and b8e471f will be visited even if
@@ -249,15 +254,15 @@ func (s *RevListSuite) TestRevListObjectsNewBranch(c *C) {
 // * | 35e8510 binary file
 // |/
 // * b029517 Initial commit
-func (s *RevListSuite) TestReachableObjectsNoRevisit(c *C) {
+func (s *RevListSuite) TestReachableObjectsNoRevisit() {
 	obj, err := s.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	do, err := object.DecodeObject(s.Storer, obj)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	commit, ok := do.(*object.Commit)
-	c.Assert(ok, Equals, true)
+	s.True(ok)
 
 	var visited []plumbing.Hash
 	err = reachableObjects(
@@ -271,23 +276,24 @@ func (s *RevListSuite) TestReachableObjectsNoRevisit(c *C) {
 		nil,
 		func(h plumbing.Hash) {
 			obj, err := s.Storer.EncodedObject(plumbing.AnyObject, h)
-			c.Assert(err, IsNil)
+			s.NoError(err)
 
 			do, err := object.DecodeObject(s.Storer, obj)
-			c.Assert(err, IsNil)
+			s.NoError(err)
 
 			if _, ok := do.(*object.Commit); ok {
 				visited = append(visited, h)
 			}
 		},
 	)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(visited, DeepEquals, []plumbing.Hash{
+	s.Equal([]plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
 		plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
 		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
 		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
-	})
+	}, visited,
+	)
 }
