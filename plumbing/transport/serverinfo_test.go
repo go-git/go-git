@@ -1,4 +1,4 @@
-package serverinfo
+package transport
 
 import (
 	"io"
