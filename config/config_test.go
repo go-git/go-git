@@ -275,7 +275,7 @@ func (s *ConfigSuite) TestValidateInvalidRemote() {
 		},
 	}
 
-	s.Equal(ErrRemoteConfigEmptyURL, config.Validate())
+	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyURL)
 }
 
 func (s *ConfigSuite) TestValidateInvalidRemoteKey() {
