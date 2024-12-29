@@ -1,17 +1,22 @@
 package transactional
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-var _ = Suite(&ShallowSuite{})
+func TestShallowSuite(t *testing.T) {
+	suite.Run(t, new(ShallowSuite))
+}
 
-type ShallowSuite struct{}
+type ShallowSuite struct {
+	suite.Suite
+}
 
-func (s *ShallowSuite) TestShallow(c *C) {
+func (s *ShallowSuite) TestShallow() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -21,23 +26,23 @@ func (s *ShallowSuite) TestShallow(c *C) {
 	commitB := plumbing.NewHash("aa9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
 	err := base.SetShallow([]plumbing.Hash{commitA})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = rs.SetShallow([]plumbing.Hash{commitB})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	commits, err := rs.Shallow()
-	c.Assert(err, IsNil)
-	c.Assert(commits, HasLen, 1)
-	c.Assert(commits[0], Equals, commitB)
+	s.NoError(err)
+	s.Len(commits, 1)
+	s.Equal(commitB, commits[0])
 
 	commits, err = base.Shallow()
-	c.Assert(err, IsNil)
-	c.Assert(commits, HasLen, 1)
-	c.Assert(commits[0], Equals, commitA)
+	s.NoError(err)
+	s.Len(commits, 1)
+	s.Equal(commitA, commits[0])
 }
 
-func (s *ShallowSuite) TestCommit(c *C) {
+func (s *ShallowSuite) TestCommit() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -46,18 +51,18 @@ func (s *ShallowSuite) TestCommit(c *C) {
 	commitA := plumbing.NewHash("bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	commitB := plumbing.NewHash("aa9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
-	c.Assert(base.SetShallow([]plumbing.Hash{commitA}), IsNil)
-	c.Assert(rs.SetShallow([]plumbing.Hash{commitB}), IsNil)
+	s.Nil(base.SetShallow([]plumbing.Hash{commitA}))
+	s.Nil(rs.SetShallow([]plumbing.Hash{commitB}))
 
-	c.Assert(rs.Commit(), IsNil)
+	s.Nil(rs.Commit())
 
 	commits, err := rs.Shallow()
-	c.Assert(err, IsNil)
-	c.Assert(commits, HasLen, 1)
-	c.Assert(commits[0], Equals, commitB)
+	s.NoError(err)
+	s.Len(commits, 1)
+	s.Equal(commitB, commits[0])
 
 	commits, err = base.Shallow()
-	c.Assert(err, IsNil)
-	c.Assert(commits, HasLen, 1)
-	c.Assert(commits[0], Equals, commitB)
+	s.NoError(err)
+	s.Len(commits, 1)
+	s.Equal(commitB, commits[0])
 }

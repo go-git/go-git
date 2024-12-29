@@ -1,39 +1,44 @@
 package transactional
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-var _ = Suite(&IndexSuite{})
+func TestIndexSuite(t *testing.T) {
+	suite.Run(t, new(IndexSuite))
+}
 
-type IndexSuite struct{}
+type IndexSuite struct {
+	suite.Suite
+}
 
-func (s *IndexSuite) TestSetIndexBase(c *C) {
+func (s *IndexSuite) TestSetIndexBase() {
 	idx := &index.Index{}
 	idx.Version = 2
 
 	base := memory.NewStorage()
 	err := base.SetIndex(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	temporal := memory.NewStorage()
 	cs := NewIndexStorage(base, temporal)
 
 	idx, err = cs.Index()
-	c.Assert(err, IsNil)
-	c.Assert(idx.Version, Equals, uint32(2))
+	s.NoError(err)
+	s.Equal(uint32(2), idx.Version)
 }
 
-func (s *IndexSuite) TestCommit(c *C) {
+func (s *IndexSuite) TestCommit() {
 	idx := &index.Index{}
 	idx.Version = 2
 
 	base := memory.NewStorage()
 	err := base.SetIndex(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	temporal := memory.NewStorage()
 
@@ -42,12 +47,12 @@ func (s *IndexSuite) TestCommit(c *C) {
 
 	is := NewIndexStorage(base, temporal)
 	err = is.SetIndex(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = is.Commit()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	baseIndex, err := base.Index()
-	c.Assert(err, IsNil)
-	c.Assert(baseIndex.Version, Equals, uint32(3))
+	s.NoError(err)
+	s.Equal(uint32(3), baseIndex.Version)
 }

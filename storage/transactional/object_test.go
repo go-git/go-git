@@ -1,17 +1,22 @@
 package transactional
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-var _ = Suite(&ObjectSuite{})
+func TestObjectSuite(t *testing.T) {
+	suite.Run(t, new(ObjectSuite))
+}
 
-type ObjectSuite struct{}
+type ObjectSuite struct {
+	suite.Suite
+}
 
-func (s *ObjectSuite) TestHasEncodedObject(c *C) {
+func (s *ObjectSuite) TestHasEncodedObject() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -21,27 +26,27 @@ func (s *ObjectSuite) TestHasEncodedObject(c *C) {
 	commit.SetType(plumbing.CommitObject)
 
 	ch, err := base.SetEncodedObject(commit)
-	c.Assert(ch.IsZero(), Equals, false)
-	c.Assert(err, IsNil)
+	s.False(ch.IsZero())
+	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
 	th, err := os.SetEncodedObject(tree)
-	c.Assert(th.IsZero(), Equals, false)
-	c.Assert(err, IsNil)
+	s.False(th.IsZero())
+	s.NoError(err)
 
 	err = os.HasEncodedObject(th)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = os.HasEncodedObject(ch)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = base.HasEncodedObject(th)
-	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
-func (s *ObjectSuite) TestEncodedObjectAndEncodedObjectSize(c *C) {
+func (s *ObjectSuite) TestEncodedObjectAndEncodedObjectSize() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -51,40 +56,40 @@ func (s *ObjectSuite) TestEncodedObjectAndEncodedObjectSize(c *C) {
 	commit.SetType(plumbing.CommitObject)
 
 	ch, err := base.SetEncodedObject(commit)
-	c.Assert(ch.IsZero(), Equals, false)
-	c.Assert(err, IsNil)
+	s.False(ch.IsZero())
+	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
 	th, err := os.SetEncodedObject(tree)
-	c.Assert(th.IsZero(), Equals, false)
-	c.Assert(err, IsNil)
+	s.False(th.IsZero())
+	s.NoError(err)
 
 	otree, err := os.EncodedObject(plumbing.TreeObject, th)
-	c.Assert(err, IsNil)
-	c.Assert(otree.Hash(), Equals, tree.Hash())
+	s.NoError(err)
+	s.Equal(tree.Hash(), otree.Hash())
 
 	treeSz, err := os.EncodedObjectSize(th)
-	c.Assert(err, IsNil)
-	c.Assert(treeSz, Equals, int64(0))
+	s.NoError(err)
+	s.Equal(int64(0), treeSz)
 
 	ocommit, err := os.EncodedObject(plumbing.CommitObject, ch)
-	c.Assert(err, IsNil)
-	c.Assert(ocommit.Hash(), Equals, commit.Hash())
+	s.NoError(err)
+	s.Equal(commit.Hash(), ocommit.Hash())
 
 	commitSz, err := os.EncodedObjectSize(ch)
-	c.Assert(err, IsNil)
-	c.Assert(commitSz, Equals, int64(0))
+	s.NoError(err)
+	s.Equal(int64(0), commitSz)
 
 	_, err = base.EncodedObject(plumbing.TreeObject, th)
-	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
 	_, err = base.EncodedObjectSize(th)
-	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
-func (s *ObjectSuite) TestIterEncodedObjects(c *C) {
+func (s *ObjectSuite) TestIterEncodedObjects() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -94,18 +99,18 @@ func (s *ObjectSuite) TestIterEncodedObjects(c *C) {
 	commit.SetType(plumbing.CommitObject)
 
 	ch, err := base.SetEncodedObject(commit)
-	c.Assert(ch.IsZero(), Equals, false)
-	c.Assert(err, IsNil)
+	s.False(ch.IsZero())
+	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
 	th, err := os.SetEncodedObject(tree)
-	c.Assert(th.IsZero(), Equals, false)
-	c.Assert(err, IsNil)
+	s.False(th.IsZero())
+	s.NoError(err)
 
 	iter, err := os.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var hashes []plumbing.Hash
 	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
@@ -113,13 +118,13 @@ func (s *ObjectSuite) TestIterEncodedObjects(c *C) {
 		return nil
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 2)
-	c.Assert(hashes[0], Equals, ch)
-	c.Assert(hashes[1], Equals, th)
+	s.NoError(err)
+	s.Len(hashes, 2)
+	s.Equal(ch, hashes[0])
+	s.Equal(th, hashes[1])
 }
 
-func (s *ObjectSuite) TestCommit(c *C) {
+func (s *ObjectSuite) TestCommit() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -129,19 +134,19 @@ func (s *ObjectSuite) TestCommit(c *C) {
 	commit.SetType(plumbing.CommitObject)
 
 	_, err := os.SetEncodedObject(commit)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
 	_, err = os.SetEncodedObject(tree)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = os.Commit()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	iter, err := base.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var hashes []plumbing.Hash
 	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
@@ -149,6 +154,6 @@ func (s *ObjectSuite) TestCommit(c *C) {
 		return nil
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 2)
+	s.NoError(err)
+	s.Len(hashes, 2)
 }

@@ -1,17 +1,22 @@
 package transactional
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-var _ = Suite(&ReferenceSuite{})
+func TestReferenceSuite(t *testing.T) {
+	suite.Run(t, new(ReferenceSuite))
+}
 
-type ReferenceSuite struct{}
+type ReferenceSuite struct {
+	suite.Suite
+}
 
-func (s *ReferenceSuite) TestReference(c *C) {
+func (s *ReferenceSuite) TestReference() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -21,22 +26,22 @@ func (s *ReferenceSuite) TestReference(c *C) {
 	refB := plumbing.NewReferenceFromStrings("refs/b", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
 	err := base.SetReference(refA)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = rs.SetReference(refB)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = rs.Reference("refs/a")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = rs.Reference("refs/b")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = base.Reference("refs/b")
-	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
-func (s *ReferenceSuite) TestRemoveReferenceTemporal(c *C) {
+func (s *ReferenceSuite) TestRemoveReferenceTemporal() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -44,16 +49,16 @@ func (s *ReferenceSuite) TestRemoveReferenceTemporal(c *C) {
 
 	rs := NewReferenceStorage(base, temporal)
 	err := rs.SetReference(ref)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = rs.RemoveReference("refs/a")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = rs.Reference("refs/a")
-	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
-func (s *ReferenceSuite) TestRemoveReferenceBase(c *C) {
+func (s *ReferenceSuite) TestRemoveReferenceBase() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -61,16 +66,16 @@ func (s *ReferenceSuite) TestRemoveReferenceBase(c *C) {
 
 	rs := NewReferenceStorage(base, temporal)
 	err := base.SetReference(ref)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = rs.RemoveReference("refs/a")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = rs.Reference("refs/a")
-	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
-func (s *ReferenceSuite) TestCheckAndSetReferenceInBase(c *C) {
+func (s *ReferenceSuite) TestCheckAndSetReferenceInBase() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 	rs := NewReferenceStorage(base, temporal)
@@ -78,20 +83,20 @@ func (s *ReferenceSuite) TestCheckAndSetReferenceInBase(c *C) {
 	err := base.SetReference(
 		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = rs.CheckAndSetReference(
 		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	e, err := rs.Reference(plumbing.ReferenceName("foo"))
-	c.Assert(err, IsNil)
-	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+	s.NoError(err)
+	s.Equal("bc9968d75e48de59f0870ffb71f5e160bbbdcf52", e.Hash().String())
 }
 
-func (s *ReferenceSuite) TestCommit(c *C) {
+func (s *ReferenceSuite) TestCommit() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -100,15 +105,15 @@ func (s *ReferenceSuite) TestCommit(c *C) {
 	refC := plumbing.NewReferenceFromStrings("refs/c", "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 
 	rs := NewReferenceStorage(base, temporal)
-	c.Assert(rs.SetReference(refA), IsNil)
-	c.Assert(rs.SetReference(refB), IsNil)
-	c.Assert(rs.SetReference(refC), IsNil)
+	s.Nil(rs.SetReference(refA))
+	s.Nil(rs.SetReference(refB))
+	s.Nil(rs.SetReference(refC))
 
 	err := rs.Commit()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	iter, err := base.IterReferences()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var count int
 	iter.ForEach(func(ref *plumbing.Reference) error {
@@ -116,10 +121,10 @@ func (s *ReferenceSuite) TestCommit(c *C) {
 		return nil
 	})
 
-	c.Assert(count, Equals, 3)
+	s.Equal(3, count)
 }
 
-func (s *ReferenceSuite) TestCommitDelete(c *C) {
+func (s *ReferenceSuite) TestCommitDelete() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
 
@@ -128,20 +133,20 @@ func (s *ReferenceSuite) TestCommitDelete(c *C) {
 	refC := plumbing.NewReferenceFromStrings("refs/c", "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 
 	rs := NewReferenceStorage(base, temporal)
-	c.Assert(base.SetReference(refA), IsNil)
-	c.Assert(base.SetReference(refB), IsNil)
-	c.Assert(base.SetReference(refC), IsNil)
+	s.Nil(base.SetReference(refA))
+	s.Nil(base.SetReference(refB))
+	s.Nil(base.SetReference(refC))
 
-	c.Assert(rs.RemoveReference(refA.Name()), IsNil)
-	c.Assert(rs.RemoveReference(refB.Name()), IsNil)
-	c.Assert(rs.RemoveReference(refC.Name()), IsNil)
-	c.Assert(rs.SetReference(refC), IsNil)
+	s.Nil(rs.RemoveReference(refA.Name()))
+	s.Nil(rs.RemoveReference(refB.Name()))
+	s.Nil(rs.RemoveReference(refC.Name()))
+	s.Nil(rs.SetReference(refC))
 
 	err := rs.Commit()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	iter, err := base.IterReferences()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var count int
 	iter.ForEach(func(ref *plumbing.Reference) error {
@@ -149,10 +154,10 @@ func (s *ReferenceSuite) TestCommitDelete(c *C) {
 		return nil
 	})
 
-	c.Assert(count, Equals, 1)
+	s.Equal(1, count)
 
 	ref, err := rs.Reference(refC.Name())
-	c.Assert(err, IsNil)
-	c.Assert(ref.Hash().String(), Equals, "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
+	s.NoError(err)
+	s.Equal("c3f4688a08fd86f1bf8e055724c84b7a40a09733", ref.Hash().String())
 
 }
