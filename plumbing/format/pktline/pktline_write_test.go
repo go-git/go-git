@@ -176,7 +176,7 @@ func (s *SuiteWriter) TestWritePacketStrings() {
 			}
 			s.NoError(err, comment)
 		}
-		s.Equal(string(test.expected), comment, buf.String())
+		s.Equal(string(test.expected), buf.String(), comment)
 	}
 }
 
