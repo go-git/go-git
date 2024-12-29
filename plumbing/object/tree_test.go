@@ -13,124 +13,126 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
 type TreeSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 	Tree *Tree
 }
 
-var _ = Suite(&TreeSuite{})
+func TestTreeSuite(t *testing.T) {
+	suite.Run(t, new(TreeSuite))
+}
 
-func (s *TreeSuite) SetUpSuite(c *C) {
-	s.BaseObjectsSuite.SetUpSuite(c)
+func (s *TreeSuite) SetupSuite() {
+	s.BaseObjectsSuite.SetupSuite(s.T())
 	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 
-	s.Tree = s.tree(c, hash)
+	s.Tree = s.tree(hash)
 }
 
-func (s *TreeSuite) TestDecode(c *C) {
-	c.Assert(s.Tree.Entries, HasLen, 8)
-	c.Assert(s.Tree.Entries[0].Name, Equals, ".gitignore")
-	c.Assert(s.Tree.Entries[0].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
-	c.Assert(s.Tree.Entries[0].Mode, Equals, filemode.Regular)
-	c.Assert(s.Tree.Entries[4].Name, Equals, "go")
-	c.Assert(s.Tree.Entries[4].Hash.String(), Equals, "a39771a7651f97faf5c72e08224d857fc35133db")
-	c.Assert(s.Tree.Entries[4].Mode, Equals, filemode.Dir)
+func (s *TreeSuite) TestDecode() {
+	s.Len(s.Tree.Entries, 8)
+	s.Equal(".gitignore", s.Tree.Entries[0].Name)
+	s.Equal("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88", s.Tree.Entries[0].Hash.String())
+	s.Equal(filemode.Regular, s.Tree.Entries[0].Mode)
+	s.Equal("go", s.Tree.Entries[4].Name)
+	s.Equal("a39771a7651f97faf5c72e08224d857fc35133db", s.Tree.Entries[4].Hash.String())
+	s.Equal(filemode.Dir, s.Tree.Entries[4].Mode)
 }
 
-func (s *TreeSuite) TestDecodeNonTree(c *C) {
+func (s *TreeSuite) TestDecodeNonTree() {
 	hash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
 	blob, err := s.Storer.EncodedObject(plumbing.BlobObject, hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	tree := &Tree{}
 	err = tree.Decode(blob)
-	c.Assert(err, Equals, ErrUnsupportedObject)
+	s.ErrorIs(err, ErrUnsupportedObject)
 }
 
-func (s *TreeSuite) TestType(c *C) {
-	c.Assert(s.Tree.Type(), Equals, plumbing.TreeObject)
+func (s *TreeSuite) TestType() {
+	s.Equal(plumbing.TreeObject, s.Tree.Type())
 }
 
-func (s *TreeSuite) TestTree(c *C) {
+func (s *TreeSuite) TestTree() {
 	expectedEntry, ok := s.Tree.m["vendor"]
-	c.Assert(ok, Equals, true)
+	s.True(ok)
 	expected := expectedEntry.Hash
 
 	obtainedTree, err := s.Tree.Tree("vendor")
-	c.Assert(err, IsNil)
-	c.Assert(obtainedTree.Hash, Equals, expected)
+	s.NoError(err)
+	s.Equal(expected, obtainedTree.Hash)
 }
 
-func (s *TreeSuite) TestTreeNotFound(c *C) {
+func (s *TreeSuite) TestTreeNotFound() {
 	d, err := s.Tree.Tree("not-found")
-	c.Assert(d, IsNil)
-	c.Assert(err, Equals, ErrDirectoryNotFound)
+	s.Nil(d)
+	s.ErrorIs(err, ErrDirectoryNotFound)
 }
 
-func (s *TreeSuite) TestTreeFailsWithExistingFiles(c *C) {
+func (s *TreeSuite) TestTreeFailsWithExistingFiles() {
 	_, err := s.Tree.File("LICENSE")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d, err := s.Tree.Tree("LICENSE")
-	c.Assert(d, IsNil)
-	c.Assert(err, Equals, ErrDirectoryNotFound)
+	s.Nil(d)
+	s.ErrorIs(err, ErrDirectoryNotFound)
 }
 
-func (s *TreeSuite) TestFile(c *C) {
+func (s *TreeSuite) TestFile() {
 	f, err := s.Tree.File("LICENSE")
-	c.Assert(err, IsNil)
-	c.Assert(f.Name, Equals, "LICENSE")
+	s.NoError(err)
+	s.Equal("LICENSE", f.Name)
 }
 
-func (s *TreeSuite) TestFileNotFound(c *C) {
+func (s *TreeSuite) TestFileNotFound() {
 	f, err := s.Tree.File("not-found")
-	c.Assert(f, IsNil)
-	c.Assert(err, Equals, ErrFileNotFound)
+	s.Nil(f)
+	s.ErrorIs(err, ErrFileNotFound)
 }
 
-func (s *TreeSuite) TestFileFailsWithExistingTrees(c *C) {
+func (s *TreeSuite) TestFileFailsWithExistingTrees() {
 	_, err := s.Tree.Tree("vendor")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err := s.Tree.File("vendor")
-	c.Assert(f, IsNil)
-	c.Assert(err, Equals, ErrFileNotFound)
+	s.Nil(f)
+	s.ErrorIs(err, ErrFileNotFound)
 }
 
-func (s *TreeSuite) TestSize(c *C) {
+func (s *TreeSuite) TestSize() {
 	size, err := s.Tree.Size("LICENSE")
-	c.Assert(err, IsNil)
-	c.Assert(size, Equals, int64(1072))
+	s.NoError(err)
+	s.Equal(int64(1072), size)
 }
 
-func (s *TreeSuite) TestFiles(c *C) {
+func (s *TreeSuite) TestFiles() {
 	var count int
 	err := s.Tree.Files().ForEach(func(f *File) error {
 		count++
 		return nil
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(count, Equals, 9)
+	s.NoError(err)
+	s.Equal(9, count)
 }
 
-func (s *TreeSuite) TestFindEntry(c *C) {
+func (s *TreeSuite) TestFindEntry() {
 	e, err := s.Tree.FindEntry("vendor/foo.go")
-	c.Assert(err, IsNil)
-	c.Assert(e.Name, Equals, "foo.go")
+	s.NoError(err)
+	s.Equal("foo.go", e.Name)
 }
 
-func (s *TreeSuite) TestFindEntryNotFound(c *C) {
+func (s *TreeSuite) TestFindEntryNotFound() {
 	e, err := s.Tree.FindEntry("not-found")
-	c.Assert(e, IsNil)
-	c.Assert(err, Equals, ErrEntryNotFound)
+	s.Nil(e)
+	s.ErrorIs(err, ErrEntryNotFound)
 	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
-	c.Assert(e, IsNil)
-	c.Assert(err, Equals, ErrDirectoryNotFound)
+	s.Nil(e)
+	s.ErrorIs(err, ErrDirectoryNotFound)
 }
 
 // Overrides returned plumbing.EncodedObject for given hash.
@@ -155,18 +157,18 @@ func (fe fakeEncodedObject) Reader() (io.ReadCloser, error) {
 	return nil, errors.New("Simulate encoded object can't be read")
 }
 
-func (s *TreeSuite) TestDir(c *C) {
+func (s *TreeSuite) TestDir() {
 	vendor, err := s.Tree.dir("vendor")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	t, err := GetTree(s.Tree.s, s.Tree.ID())
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	o, err := t.s.EncodedObject(plumbing.AnyObject, vendor.ID())
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	t.s = fakeStorer{t.s, vendor.ID(), fakeEncodedObject{o}}
 	_, err = t.dir("vendor")
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
 // This plumbing.EncodedObject implementation has a reader that only returns 6
@@ -221,7 +223,7 @@ func (o *SortReadCloser) Read(p []byte) (int, error) {
 	return nw, nil
 }
 
-func (s *TreeSuite) TestTreeEntriesSorted(c *C) {
+func (s *TreeSuite) TestTreeEntriesSorted() {
 	tree := &Tree{
 		Entries: []TreeEntry{
 			{"foo", filemode.Empty, plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
@@ -231,21 +233,21 @@ func (s *TreeSuite) TestTreeEntriesSorted(c *C) {
 	}
 
 	{
-		c.Assert(sort.IsSorted(TreeEntrySorter(tree.Entries)), Equals, false)
+		s.False(sort.IsSorted(TreeEntrySorter(tree.Entries)))
 		obj := &plumbing.MemoryObject{}
 		err := tree.Encode(obj)
-		c.Assert(err, Equals, ErrEntriesNotSorted)
+		s.ErrorIs(err, ErrEntriesNotSorted)
 	}
 
 	{
 		sort.Sort(TreeEntrySorter(tree.Entries))
 		obj := &plumbing.MemoryObject{}
 		err := tree.Encode(obj)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 	}
 }
 
-func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
+func (s *TreeSuite) TestTreeDecodeEncodeIdempotent() {
 	trees := []*Tree{
 		{
 			Entries: []TreeEntry{
@@ -259,45 +261,45 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 		sort.Sort(TreeEntrySorter(tree.Entries))
 		obj := &plumbing.MemoryObject{}
 		err := tree.Encode(obj)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		newTree := &Tree{}
 		err = newTree.Decode(obj)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		tree.Hash = obj.Hash()
-		c.Assert(newTree, DeepEquals, tree)
+		s.Equal(tree, newTree)
 	}
 }
 
-func (s *TreeSuite) TestTreeDiff(c *C) {
+func (s *TreeSuite) TestTreeDiff() {
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
 	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	commit, err := GetCommit(storer, plumbing.NewHash("89f8bda31d29767a6d6ba8f9d0dfb941d598e843"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	parentCommit, err := commit.Parent(0)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	parentTree, err := parentCommit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ch, err := parentTree.Diff(tree)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(ch, HasLen, 3)
-	c.Assert(ch[0].From.Name, Equals, "examples/object_storage/main.go")
-	c.Assert(ch[0].To.Name, Equals, "examples/storage/main.go")
+	s.Len(ch, 3)
+	s.Equal("examples/object_storage/main.go", ch[0].From.Name)
+	s.Equal("examples/storage/main.go", ch[0].To.Name)
 
 	ch, err = parentTree.DiffContext(context.Background(), tree)
-	c.Assert(err, IsNil)
-	c.Assert(ch, HasLen, 3)
+	s.NoError(err)
+	s.Len(ch, 3)
 }
 
-func (s *TreeSuite) TestTreeIter(c *C) {
+func (s *TreeSuite) TestTreeIter() {
 	encIter, err := s.Storer.IterEncodedObjects(plumbing.TreeObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	iter := NewTreeIter(s.Storer, encIter)
 
 	trees := []*Tree{}
@@ -307,11 +309,11 @@ func (s *TreeSuite) TestTreeIter(c *C) {
 		return nil
 	})
 
-	c.Assert(len(trees) > 0, Equals, true)
+	s.True(len(trees) > 0)
 	iter.Close()
 
 	encIter, err = s.Storer.IterEncodedObjects(plumbing.TreeObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	iter = NewTreeIter(s.Storer, encIter)
 
 	i := 0
@@ -322,19 +324,19 @@ func (s *TreeSuite) TestTreeIter(c *C) {
 		}
 
 		t.s = nil
-		c.Assert(err, IsNil)
-		c.Assert(t, DeepEquals, trees[i])
+		s.NoError(err)
+		s.Equal(trees[i], t)
 		i += 1
 	}
 
 	iter.Close()
 }
 
-func (s *TreeSuite) TestTreeWalkerNext(c *C) {
+func (s *TreeSuite) TestTreeWalkerNext() {
 	commit, err := GetCommit(s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	walker := NewTreeWalker(tree, true, nil)
 	for _, e := range treeWalkerExpects {
@@ -343,21 +345,21 @@ func (s *TreeSuite) TestTreeWalkerNext(c *C) {
 			break
 		}
 
-		c.Assert(err, IsNil)
-		c.Assert(name, Equals, e.Path)
-		c.Assert(entry.Name, Equals, e.Name)
-		c.Assert(entry.Mode, Equals, e.Mode)
-		c.Assert(entry.Hash.String(), Equals, e.Hash)
+		s.NoError(err)
+		s.Equal(e.Path, name)
+		s.Equal(e.Name, entry.Name)
+		s.Equal(e.Mode, entry.Mode)
+		s.Equal(e.Hash, entry.Hash.String())
 
-		c.Assert(walker.Tree().ID().String(), Equals, e.Tree)
+		s.Equal(e.Tree, walker.Tree().ID().String())
 	}
 }
 
-func (s *TreeSuite) TestTreeWalkerNextSkipSeen(c *C) {
+func (s *TreeSuite) TestTreeWalkerNextSkipSeen() {
 	commit, err := GetCommit(s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	seen := map[plumbing.Hash]bool{
 		plumbing.NewHash(treeWalkerExpects[0].Hash): true,
@@ -369,20 +371,20 @@ func (s *TreeSuite) TestTreeWalkerNextSkipSeen(c *C) {
 			break
 		}
 
-		c.Assert(err, IsNil)
-		c.Assert(name, Equals, e.Path)
-		c.Assert(entry.Name, Equals, e.Name)
-		c.Assert(entry.Mode, Equals, e.Mode)
-		c.Assert(entry.Hash.String(), Equals, e.Hash)
+		s.NoError(err)
+		s.Equal(e.Path, name)
+		s.Equal(e.Name, entry.Name)
+		s.Equal(e.Mode, entry.Mode)
+		s.Equal(e.Hash, entry.Hash.String())
 
-		c.Assert(walker.Tree().ID().String(), Equals, e.Tree)
+		s.Equal(e.Tree, walker.Tree().ID().String())
 	}
 }
 
-func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
-	commit := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+func (s *TreeSuite) TestTreeWalkerNextNonRecursive() {
+	commit := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var count int
 	walker := NewTreeWalker(tree, false, nil)
@@ -392,39 +394,39 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive(c *C) {
 			break
 		}
 
-		c.Assert(err, IsNil)
-		c.Assert(name, Not(Equals), "")
-		c.Assert(entry, NotNil)
+		s.NoError(err)
+		s.NotEqual("", name)
+		s.NotNil(entry)
 
-		c.Assert(walker.Tree().ID().String(), Equals, "a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+		s.Equal("a8d315b2b1c615d43042c3a62402b8a54288cf5c", walker.Tree().ID().String())
 
 		count++
 	}
 
-	c.Assert(count, Equals, 8)
+	s.Equal(8, count)
 }
 
-func (s *TreeSuite) TestPatchContext_ToNil(c *C) {
-	commit := s.commit(c, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+func (s *TreeSuite) TestPatchContext_ToNil() {
+	commit := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	patch, err := tree.PatchContext(context.Background(), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(len(patch.String()), Equals, 242971)
+	s.Equal(242971, len(patch.String()))
 }
 
-func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
+func (s *TreeSuite) TestTreeWalkerNextSubmodule() {
 	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := []string{
 		".gitmodules",
@@ -443,14 +445,14 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule(c *C) {
 			break
 		}
 
-		c.Assert(err, IsNil)
-		c.Assert(entry, NotNil)
-		c.Assert(name, Equals, expected[count])
+		s.NoError(err)
+		s.NotNil(entry)
+		s.Equal(expected[count], name)
 
 		count++
 	}
 
-	c.Assert(count, Equals, 4)
+	s.Equal(4, count)
 }
 
 var treeWalkerExpects = []struct {
@@ -531,7 +533,7 @@ func entriesEquals(a, b []TreeEntry) bool {
 //
 // This tests is performed with that object but using a SortReadObject to
 // simulate incomplete reads on all platforms and operating systems.
-func (s *TreeSuite) TestTreeDecodeReadBug(c *C) {
+func (s *TreeSuite) TestTreeDecodeReadBug() {
 	cont := []byte{
 		0x31, 0x30, 0x30, 0x36, 0x34, 0x34, 0x20, 0x61, 0x6c, 0x74,
 		0x65, 0x72, 0x2e, 0x63, 0x0, 0xa4, 0x9d, 0x33, 0x49, 0xd7,
@@ -1647,8 +1649,8 @@ func (s *TreeSuite) TestTreeDecodeReadBug(c *C) {
 
 	var obtained Tree
 	err := obtained.Decode(obj)
-	c.Assert(err, IsNil)
-	c.Assert(entriesEquals(obtained.Entries, expected.Entries), Equals, true)
+	s.NoError(err)
+	s.True(entriesEquals(obtained.Entries, expected.Entries))
 }
 
 func FuzzDecode(f *testing.F) {

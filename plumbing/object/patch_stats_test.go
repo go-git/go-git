@@ -1,6 +1,7 @@
 package object_test
 
 import (
+	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -8,47 +9,54 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-type PatchStatsSuite struct {
+type PatchStatsFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&PatchStatsSuite{})
+type PatchStatsSuite struct {
+	suite.Suite
+	PatchStatsFixtureSuite
+}
 
-func (s *PatchStatsSuite) TestStatsWithRename(c *C) {
+func TestPatchStatsSuite(t *testing.T) {
+	suite.Run(t, new(PatchStatsSuite))
+}
+
+func (s *PatchStatsSuite) TestStatsWithRename() {
 	cm := &git.CommitOptions{
 		Author: &object.Signature{Name: "Foo", Email: "foo@example.local", When: time.Now()},
 	}
 
 	fs := memfs.New()
 	r, err := git.Init(memory.NewStorage(), fs)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	w, err := r.Worktree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo\nbar\n"), 0644)
 
 	_, err = w.Add("foo")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = w.Commit("foo\n", cm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = w.Move("foo", "bar")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	hash, err := w.Commit("rename foo to bar", cm)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	commit, err := r.CommitObject(hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fileStats, err := commit.Stats()
-	c.Assert(err, IsNil)
-	c.Assert(fileStats[0].Name, Equals, "foo => bar")
+	s.NoError(err)
+	s.Equal("foo => bar", fileStats[0].Name)
 }

@@ -3,6 +3,7 @@ package object
 import (
 	"context"
 	"sort"
+	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -12,32 +13,38 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type ChangeSuite struct {
+type ChangeFixtureSuite struct {
 	fixtures.Suite
+}
+
+type ChangeSuite struct {
+	suite.Suite
+	ChangeFixtureSuite
 	Storer  storer.EncodedObjectStorer
 	Fixture *fixtures.Fixture
 }
 
-func (s *ChangeSuite) SetUpSuite(c *C) {
+func (s *ChangeSuite) SetupSuite() {
 	s.Fixture = fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag(".git").One()
 	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
-func (s *ChangeSuite) tree(c *C, h plumbing.Hash) *Tree {
+func (s *ChangeSuite) tree(h plumbing.Hash) *Tree {
 	t, err := GetTree(s.Storer, h)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return t
 }
 
-var _ = Suite(&ChangeSuite{})
+func TestChangeSuite(t *testing.T) {
+	suite.Run(t, new(ChangeSuite))
+}
 
-func (s *ChangeSuite) TestInsert(c *C) {
+func (s *ChangeSuite) TestInsert() {
 	// Commit a5078b19f08f63e7948abd0a5e2fb7d319d3a565 of the go-git
 	// fixture inserted "examples/clone/main.go".
 	//
@@ -57,7 +64,7 @@ func (s *ChangeSuite) TestInsert(c *C) {
 		From: empty,
 		To: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, tree),
+			Tree: s.tree(tree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -67,32 +74,32 @@ func (s *ChangeSuite) TestInsert(c *C) {
 	}
 
 	action, err := change.Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Insert)
+	s.NoError(err)
+	s.Equal(merkletrie.Insert, action)
 
 	from, to, err := change.Files()
-	c.Assert(err, IsNil)
-	c.Assert(from, IsNil)
-	c.Assert(to.Name, Equals, name)
-	c.Assert(to.Blob.Hash, Equals, blob)
+	s.NoError(err)
+	s.Nil(from)
+	s.Equal(name, to.Name)
+	s.Equal(blob, to.Blob.Hash)
 
 	p, err := change.Patch()
-	c.Assert(err, IsNil)
-	c.Assert(len(p.FilePatches()), Equals, 1)
-	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
-	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Add)
+	s.NoError(err)
+	s.Equal(1, len(p.FilePatches()))
+	s.Equal(1, len(p.FilePatches()[0].Chunks()))
+	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[0].Type())
 
 	p, err = change.PatchContext(context.Background())
-	c.Assert(err, IsNil)
-	c.Assert(len(p.FilePatches()), Equals, 1)
-	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
-	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Add)
+	s.NoError(err)
+	s.Equal(1, len(p.FilePatches()))
+	s.Equal(1, len(p.FilePatches()[0].Chunks()))
+	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[0].Type())
 
 	str := change.String()
-	c.Assert(str, Equals, "<Action: Insert, Path: examples/clone/main.go>")
+	s.Equal("<Action: Insert, Path: examples/clone/main.go>", str)
 }
 
-func (s *ChangeSuite) TestDelete(c *C) {
+func (s *ChangeSuite) TestDelete() {
 	// Commit f6011d65d57c2a866e231fc21a39cb618f86f9ea of the go-git
 	// fixture deleted "utils/difftree/difftree.go".
 	//
@@ -114,7 +121,7 @@ func (s *ChangeSuite) TestDelete(c *C) {
 	change := &Change{
 		From: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, tree),
+			Tree: s.tree(tree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -125,32 +132,32 @@ func (s *ChangeSuite) TestDelete(c *C) {
 	}
 
 	action, err := change.Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Delete)
+	s.NoError(err)
+	s.Equal(merkletrie.Delete, action)
 
 	from, to, err := change.Files()
-	c.Assert(err, IsNil)
-	c.Assert(to, IsNil)
-	c.Assert(from.Name, Equals, name)
-	c.Assert(from.Blob.Hash, Equals, blob)
+	s.NoError(err)
+	s.Nil(to)
+	s.Equal(name, from.Name)
+	s.Equal(blob, from.Blob.Hash)
 
 	p, err := change.Patch()
-	c.Assert(err, IsNil)
-	c.Assert(len(p.FilePatches()), Equals, 1)
-	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
-	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Delete)
+	s.NoError(err)
+	s.Equal(1, len(p.FilePatches()))
+	s.Equal(1, len(p.FilePatches()[0].Chunks()))
+	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[0].Type())
 
 	p, err = change.PatchContext(context.Background())
-	c.Assert(err, IsNil)
-	c.Assert(len(p.FilePatches()), Equals, 1)
-	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 1)
-	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Delete)
+	s.NoError(err)
+	s.Equal(1, len(p.FilePatches()))
+	s.Equal(1, len(p.FilePatches()[0].Chunks()))
+	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[0].Type())
 
 	str := change.String()
-	c.Assert(str, Equals, "<Action: Delete, Path: utils/difftree/difftree.go>")
+	s.Equal("<Action: Delete, Path: utils/difftree/difftree.go>", str)
 }
 
-func (s *ChangeSuite) TestModify(c *C) {
+func (s *ChangeSuite) TestModify() {
 	// Commit 7beaad711378a4daafccc2c04bc46d36df2a0fd1 of the go-git
 	// fixture modified "examples/latest/latest.go".
 	// the "examples/latest" tree is
@@ -176,7 +183,7 @@ func (s *ChangeSuite) TestModify(c *C) {
 	change := &Change{
 		From: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, fromTree),
+			Tree: s.tree(fromTree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -185,7 +192,7 @@ func (s *ChangeSuite) TestModify(c *C) {
 		},
 		To: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, toTree),
+			Tree: s.tree(toTree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -195,71 +202,71 @@ func (s *ChangeSuite) TestModify(c *C) {
 	}
 
 	action, err := change.Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Modify)
+	s.NoError(err)
+	s.Equal(merkletrie.Modify, action)
 
 	from, to, err := change.Files()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(from.Name, Equals, name)
-	c.Assert(from.Blob.Hash, Equals, fromBlob)
-	c.Assert(to.Name, Equals, name)
-	c.Assert(to.Blob.Hash, Equals, toBlob)
+	s.Equal(name, from.Name)
+	s.Equal(fromBlob, from.Blob.Hash)
+	s.Equal(name, to.Name)
+	s.Equal(toBlob, to.Blob.Hash)
 
 	p, err := change.Patch()
-	c.Assert(err, IsNil)
-	c.Assert(len(p.FilePatches()), Equals, 1)
-	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 7)
-	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Equal)
-	c.Assert(p.FilePatches()[0].Chunks()[1].Type(), Equals, diff.Delete)
-	c.Assert(p.FilePatches()[0].Chunks()[2].Type(), Equals, diff.Add)
-	c.Assert(p.FilePatches()[0].Chunks()[3].Type(), Equals, diff.Equal)
-	c.Assert(p.FilePatches()[0].Chunks()[4].Type(), Equals, diff.Delete)
-	c.Assert(p.FilePatches()[0].Chunks()[5].Type(), Equals, diff.Add)
-	c.Assert(p.FilePatches()[0].Chunks()[6].Type(), Equals, diff.Equal)
+	s.NoError(err)
+	s.Equal(1, len(p.FilePatches()))
+	s.Equal(7, len(p.FilePatches()[0].Chunks()))
+	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[0].Type())
+	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[1].Type())
+	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[2].Type())
+	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[3].Type())
+	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[4].Type())
+	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[5].Type())
+	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[6].Type())
 
 	p, err = change.PatchContext(context.Background())
-	c.Assert(err, IsNil)
-	c.Assert(len(p.FilePatches()), Equals, 1)
-	c.Assert(len(p.FilePatches()[0].Chunks()), Equals, 7)
-	c.Assert(p.FilePatches()[0].Chunks()[0].Type(), Equals, diff.Equal)
-	c.Assert(p.FilePatches()[0].Chunks()[1].Type(), Equals, diff.Delete)
-	c.Assert(p.FilePatches()[0].Chunks()[2].Type(), Equals, diff.Add)
-	c.Assert(p.FilePatches()[0].Chunks()[3].Type(), Equals, diff.Equal)
-	c.Assert(p.FilePatches()[0].Chunks()[4].Type(), Equals, diff.Delete)
-	c.Assert(p.FilePatches()[0].Chunks()[5].Type(), Equals, diff.Add)
-	c.Assert(p.FilePatches()[0].Chunks()[6].Type(), Equals, diff.Equal)
+	s.NoError(err)
+	s.Equal(1, len(p.FilePatches()))
+	s.Equal(7, len(p.FilePatches()[0].Chunks()))
+	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[0].Type())
+	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[1].Type())
+	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[2].Type())
+	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[3].Type())
+	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[4].Type())
+	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[5].Type())
+	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[6].Type())
 
 	str := change.String()
-	c.Assert(str, Equals, "<Action: Modify, Path: utils/difftree/difftree.go>")
+	s.Equal("<Action: Modify, Path: utils/difftree/difftree.go>", str)
 }
 
-func (s *ChangeSuite) TestEmptyChangeFails(c *C) {
+func (s *ChangeSuite) TestEmptyChangeFails() {
 	change := &Change{}
 
 	_, err := change.Action()
-	c.Assert(err, ErrorMatches, "malformed.*")
+	s.ErrorContains(err, "malformed")
 
 	_, _, err = change.Files()
-	c.Assert(err, ErrorMatches, "malformed.*")
+	s.ErrorContains(err, "malformed")
 
 	str := change.String()
-	c.Assert(str, Equals, "malformed change")
+	s.Equal("malformed change", str)
 }
 
 // test reproducing bug #317
-func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
+func (s *ChangeSuite) TestNoFileFilemodes() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One()
 
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
 	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	var commits []*Commit
 	iter.ForEach(func(o plumbing.EncodedObject) error {
 		if o.Type() == plumbing.CommitObject {
 			commit, err := GetCommit(sto, o.Hash())
-			c.Assert(err, IsNil)
+			s.NoError(err)
 			commits = append(commits, commit)
 
 		}
@@ -267,7 +274,7 @@ func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
 		return nil
 	})
 
-	c.Assert(len(commits), Not(Equals), 0)
+	s.NotEqual(0, len(commits))
 
 	var prev *Commit
 	for _, commit := range commits {
@@ -276,21 +283,21 @@ func (s *ChangeSuite) TestNoFileFilemodes(c *C) {
 			continue
 		}
 		tree, err := commit.Tree()
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		prevTree, err := prev.Tree()
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		changes, err := DiffTree(tree, prevTree)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		for _, change := range changes {
 			_, _, err := change.Files()
-			c.Assert(err, IsNil)
+			s.NoError(err)
 		}
 
 		prev = commit
 	}
 }
 
-func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
+func (s *ChangeSuite) TestErrorsFindingChildsAreDetected() {
 	// Commit 7beaad711378a4daafccc2c04bc46d36df2a0fd1 of the go-git
 	// fixture modified "examples/latest/latest.go".
 	// the "examples/latest" tree is
@@ -316,7 +323,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 	change := &Change{
 		From: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, fromTree),
+			Tree: s.tree(fromTree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -327,13 +334,13 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 	}
 
 	_, _, err := change.Files()
-	c.Assert(err, ErrorMatches, "object not found")
+	s.ErrorContains(err, "object not found")
 
 	change = &Change{
 		From: empty,
 		To: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, toTree),
+			Tree: s.tree(toTree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -343,14 +350,14 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected(c *C) {
 	}
 
 	_, _, err = change.Files()
-	c.Assert(err, ErrorMatches, "object not found")
+	s.ErrorContains(err, "object not found")
 }
 
-func (s *ChangeSuite) TestChangesString(c *C) {
+func (s *ChangeSuite) TestChangesString() {
 	expected := "[]"
 	changes := Changes{}
 	obtained := changes.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 
 	expected = "[<Action: Modify, Path: bla>]"
 	changes = make([]*Change, 1)
@@ -359,7 +366,7 @@ func (s *ChangeSuite) TestChangesString(c *C) {
 	changes[0].To.Name = "bla"
 
 	obtained = changes.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 
 	expected = "[<Action: Modify, Path: bla>, <Action: Delete, Path: foo/bar>]"
 	changes = make([]*Change, 2)
@@ -369,10 +376,10 @@ func (s *ChangeSuite) TestChangesString(c *C) {
 	changes[1] = &Change{}
 	changes[1].From.Name = "foo/bar"
 	obtained = changes.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 }
 
-func (s *ChangeSuite) TestChangesSort(c *C) {
+func (s *ChangeSuite) TestChangesSort() {
 	changes := make(Changes, 3)
 	changes[0] = &Change{}
 	changes[0].From.Name = "z"
@@ -387,10 +394,10 @@ func (s *ChangeSuite) TestChangesSort(c *C) {
 		"<Action: Modify, Path: z>]"
 
 	sort.Sort(changes)
-	c.Assert(changes.String(), Equals, expected)
+	s.Equal(expected, changes.String())
 }
 
-func (s *ChangeSuite) TestCancel(c *C) {
+func (s *ChangeSuite) TestCancel() {
 	// Commit a5078b19f08f63e7948abd0a5e2fb7d319d3a565 of the go-git
 	// fixture inserted "examples/clone/main.go".
 	//
@@ -410,7 +417,7 @@ func (s *ChangeSuite) TestCancel(c *C) {
 		From: empty,
 		To: ChangeEntry{
 			Name: path,
-			Tree: s.tree(c, tree),
+			Tree: s.tree(tree),
 			TreeEntry: TreeEntry{
 				Name: name,
 				Mode: mode,
@@ -422,6 +429,6 @@ func (s *ChangeSuite) TestCancel(c *C) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	p, err := change.PatchContext(ctx)
-	c.Assert(p, IsNil)
-	c.Assert(err, ErrorMatches, "operation canceled")
+	s.Nil(p)
+	s.ErrorContains(err, "operation canceled")
 }

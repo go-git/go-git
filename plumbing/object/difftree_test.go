@@ -1,7 +1,9 @@
 package object
 
 import (
+	"fmt"
 	"sort"
+	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -12,29 +14,33 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type DiffTreeSuite struct {
+type DiffTreeFixtureSuite struct {
 	fixtures.Suite
+}
+
+type DiffTreeSuite struct {
+	suite.Suite
+	DiffTreeFixtureSuite
 	Storer  storer.EncodedObjectStorer
 	Fixture *fixtures.Fixture
 	cache   map[string]storer.EncodedObjectStorer
 }
 
-func (s *DiffTreeSuite) SetUpSuite(c *C) {
+func (s *DiffTreeSuite) SetupSuite() {
 	s.Fixture = fixtures.Basic().One()
 	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 	s.cache = make(map[string]storer.EncodedObjectStorer)
 }
 
-func (s *DiffTreeSuite) commitFromStorer(c *C, sto storer.EncodedObjectStorer,
+func (s *DiffTreeSuite) commitFromStorer(sto storer.EncodedObjectStorer,
 	h plumbing.Hash) *Commit {
 
 	commit, err := GetCommit(sto, h)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return commit
 }
 
@@ -57,34 +63,36 @@ func (s *DiffTreeSuite) storageFromPackfile(f *fixtures.Fixture) storer.EncodedO
 	return storer
 }
 
-var _ = Suite(&DiffTreeSuite{})
+func TestDiffTreeSuite(t *testing.T) {
+	suite.Run(t, new(DiffTreeSuite))
+}
 
 type expectChange struct {
 	Action merkletrie.Action
 	Name   string
 }
 
-func assertChanges(a Changes, c *C) {
+func assertChanges(a Changes, s *DiffTreeSuite) {
 	for _, changes := range a {
 		action, err := changes.Action()
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		switch action {
 		case merkletrie.Insert:
-			c.Assert(changes.From.Tree, IsNil)
-			c.Assert(changes.To.Tree, NotNil)
+			s.Nil(changes.From.Tree)
+			s.NotNil(changes.To.Tree)
 		case merkletrie.Delete:
-			c.Assert(changes.From.Tree, NotNil)
-			c.Assert(changes.To.Tree, IsNil)
+			s.NotNil(changes.From.Tree)
+			s.Nil(changes.To.Tree)
 		case merkletrie.Modify:
-			c.Assert(changes.From.Tree, NotNil)
-			c.Assert(changes.To.Tree, NotNil)
+			s.NotNil(changes.From.Tree)
+			s.NotNil(changes.To.Tree)
 		default:
-			c.Fatalf("unknown action: %d", action)
+			s.Fail("unknown action:", action)
 		}
 	}
 }
 
-func equalChanges(a Changes, b []expectChange, c *C) bool {
+func equalChanges(a Changes, b []expectChange, s *DiffTreeSuite) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -94,7 +102,7 @@ func equalChanges(a Changes, b []expectChange, c *C) bool {
 	for i, va := range a {
 		vb := b[i]
 		action, err := va.Action()
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		if action != vb.Action || va.name() != vb.Name {
 			return false
 		}
@@ -103,7 +111,7 @@ func equalChanges(a Changes, b []expectChange, c *C) bool {
 	return true
 }
 
-func (s *DiffTreeSuite) TestDiffTree(c *C) {
+func (s *DiffTreeSuite) TestDiffTree() {
 	for i, t := range []struct {
 		repository string         // the repo name as in localRepos
 		commit1    string         // the commit of the first tree
@@ -318,37 +326,37 @@ func (s *DiffTreeSuite) TestDiffTree(c *C) {
 		var tree1, tree2 *Tree
 		var err error
 		if t.commit1 != "" {
-			tree1, err = s.commitFromStorer(c, sto,
+			tree1, err = s.commitFromStorer(sto,
 				plumbing.NewHash(t.commit1)).Tree()
-			c.Assert(err, IsNil,
-				Commentf("subtest %d: unable to retrieve tree from commit %s and repo %s: %s", i, t.commit1, t.repository, err))
+			s.NoError(err,
+				fmt.Sprintf("subtest %d: unable to retrieve tree from commit %s and repo %s: %s", i, t.commit1, t.repository, err))
 		}
 
 		if t.commit2 != "" {
-			tree2, err = s.commitFromStorer(c, sto,
+			tree2, err = s.commitFromStorer(sto,
 				plumbing.NewHash(t.commit2)).Tree()
-			c.Assert(err, IsNil,
-				Commentf("subtest %d: unable to retrieve tree from commit %s and repo %s", i, t.commit2, t.repository, err))
+			s.NoError(err,
+				fmt.Sprintf("subtest %d: unable to retrieve tree from commit %s and repo %s", i, t.commit2, t.repository))
 		}
 
 		obtained, err := DiffTree(tree1, tree2)
-		c.Assert(err, IsNil,
-			Commentf("subtest %d: unable to calculate difftree: %s", i, err))
+		s.NoError(err,
+			fmt.Sprintf("subtest %d: unable to calculate difftree: %s", i, err))
 		obtainedFromMethod, err := tree1.Diff(tree2)
-		c.Assert(err, IsNil,
-			Commentf("subtest %d: unable to calculate difftree: %s. Result calling Diff method from Tree object returns an error", i, err))
+		s.NoError(err,
+			fmt.Sprintf("subtest %d: unable to calculate difftree: %s. Result calling Diff method from Tree object returns an error", i, err))
 
-		c.Assert(obtained, DeepEquals, obtainedFromMethod)
+		s.Equal(obtainedFromMethod, obtained)
 
-		c.Assert(equalChanges(obtained, t.expected, c), Equals, true,
-			Commentf("subtest:%d\nrepo=%s\ncommit1=%s\ncommit2=%s\nexpected=%s\nobtained=%s",
+		s.True(equalChanges(obtained, t.expected, s),
+			fmt.Sprintf("subtest:%d\nrepo=%s\ncommit1=%s\ncommit2=%s\nexpected=%s\nobtained=%s",
 				i, t.repository, t.commit1, t.commit2, t.expected, obtained))
 
-		assertChanges(obtained, c)
+		assertChanges(obtained, s)
 	}
 }
 
-func (s *DiffTreeSuite) TestIssue279(c *C) {
+func (s *DiffTreeSuite) TestIssue279() {
 	// treeNoders should have the same hash when their mode is
 	// filemode.Deprecated and filemode.Regular.
 	a := &treeNoder{
@@ -359,17 +367,17 @@ func (s *DiffTreeSuite) TestIssue279(c *C) {
 		hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		mode: filemode.Deprecated,
 	}
-	c.Assert(a.Hash(), DeepEquals, b.Hash())
+	s.Equal(b.Hash(), a.Hash())
 
 	// yet, they should have different hashes if their contents change.
 	aa := &treeNoder{
 		hash: plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
 		mode: filemode.Regular,
 	}
-	c.Assert(a.Hash(), Not(DeepEquals), aa.Hash())
+	s.NotEqual(aa.Hash(), a.Hash())
 	bb := &treeNoder{
 		hash: plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
 		mode: filemode.Deprecated,
 	}
-	c.Assert(b.Hash(), Not(DeepEquals), bb.Hash())
+	s.NotEqual(bb.Hash(), b.Hash())
 }

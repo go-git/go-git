@@ -3,20 +3,24 @@ package object
 import (
 	"path/filepath"
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/storage/memory"
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
 type RenameSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 }
 
-var _ = Suite(&RenameSuite{})
+func TestRenameSuite(t *testing.T) {
+	suite.Run(t, new(RenameSuite))
+}
 
-func (s *RenameSuite) TestNameSimilarityScore(c *C) {
+func (s *RenameSuite) TestNameSimilarityScore() {
 	testCases := []struct {
 		a, b  string
 		score int
@@ -31,7 +35,7 @@ func (s *RenameSuite) TestNameSimilarityScore(c *C) {
 	}
 
 	for _, tt := range testCases {
-		c.Assert(nameSimilarityScore(tt.a, tt.b), Equals, tt.score)
+		s.Equal(tt.score, nameSimilarityScore(tt.a, tt.b))
 	}
 }
 
@@ -42,299 +46,306 @@ const (
 	pathQ = "src/Q"
 )
 
-func (s *RenameSuite) TestExactRename_OneRename(c *C) {
-	a := makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo"))
-	b := makeDelete(c, makeFile(c, pathQ, filemode.Regular, "foo"))
+func (s *RenameSuite) TestExactRename_OneRename() {
+	a := makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo"))
+	b := makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo"))
 
-	result := detectRenames(c, Changes{a, b}, nil, 1)
-	assertRename(c, b, a, result[0])
+	result := detectRenames(s, Changes{a, b}, nil, 1)
+	assertRename(s, b, a, result[0])
 }
 
-func (s *RenameSuite) TestExactRename_DifferentObjects(c *C) {
-	a := makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo"))
-	h := makeAdd(c, makeFile(c, pathH, filemode.Regular, "foo"))
-	q := makeDelete(c, makeFile(c, pathQ, filemode.Regular, "bar"))
+func (s *RenameSuite) TestExactRename_DifferentObjects() {
+	a := makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo"))
+	h := makeAdd(s, makeFile(s, pathH, filemode.Regular, "foo"))
+	q := makeDelete(s, makeFile(s, pathQ, filemode.Regular, "bar"))
 
-	result := detectRenames(c, Changes{a, h, q}, nil, 3)
-	c.Assert(result[0], DeepEquals, a)
-	c.Assert(result[1], DeepEquals, h)
-	c.Assert(result[2], DeepEquals, q)
+	result := detectRenames(s, Changes{a, h, q}, nil, 3)
+	s.Equal(a, result[0])
+	s.Equal(h, result[1])
+	s.Equal(q, result[2])
 }
 
-func (s *RenameSuite) TestExactRename_OneRenameOneModify(c *C) {
-	c1 := makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo"))
-	c2 := makeDelete(c, makeFile(c, pathQ, filemode.Regular, "foo"))
-	c3 := makeChange(c,
-		makeFile(c, pathH, filemode.Regular, "bar"),
-		makeFile(c, pathH, filemode.Regular, "bar"),
+func (s *RenameSuite) TestExactRename_OneRenameOneModify() {
+	c1 := makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo"))
+	c2 := makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo"))
+	c3 := makeChange(s,
+		makeFile(s, pathH, filemode.Regular, "bar"),
+		makeFile(s, pathH, filemode.Regular, "bar"),
 	)
 
-	result := detectRenames(c, Changes{c1, c2, c3}, nil, 2)
-	c.Assert(result[0], DeepEquals, c3)
-	assertRename(c, c2, c1, result[1])
+	result := detectRenames(s, Changes{c1, c2, c3}, nil, 2)
+	s.Equal(c3, result[0])
+	assertRename(s, c2, c1, result[1])
 }
 
-func (s *RenameSuite) TestExactRename_ManyRenames(c *C) {
-	c1 := makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo"))
-	c2 := makeDelete(c, makeFile(c, pathQ, filemode.Regular, "foo"))
-	c3 := makeAdd(c, makeFile(c, pathH, filemode.Regular, "bar"))
-	c4 := makeDelete(c, makeFile(c, pathB, filemode.Regular, "bar"))
+func (s *RenameSuite) TestExactRename_ManyRenames() {
+	c1 := makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo"))
+	c2 := makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo"))
+	c3 := makeAdd(s, makeFile(s, pathH, filemode.Regular, "bar"))
+	c4 := makeDelete(s, makeFile(s, pathB, filemode.Regular, "bar"))
 
-	result := detectRenames(c, Changes{c1, c2, c3, c4}, nil, 2)
-	assertRename(c, c4, c3, result[0])
-	assertRename(c, c2, c1, result[1])
+	result := detectRenames(s, Changes{c1, c2, c3, c4}, nil, 2)
+	assertRename(s, c4, c3, result[0])
+	assertRename(s, c2, c1, result[1])
 }
 
-func (s *RenameSuite) TestExactRename_MultipleIdenticalDeletes(c *C) {
+func (s *RenameSuite) TestExactRename_MultipleIdenticalDeletes() {
 	changes := Changes{
-		makeDelete(c, makeFile(c, pathA, filemode.Regular, "foo")),
-		makeDelete(c, makeFile(c, pathB, filemode.Regular, "foo")),
-		makeDelete(c, makeFile(c, pathH, filemode.Regular, "foo")),
-		makeAdd(c, makeFile(c, pathQ, filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, pathA, filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, pathB, filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, pathH, filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, pathQ, filemode.Regular, "foo")),
 	}
 
-	result := detectRenames(c, changes, nil, 3)
-	assertRename(c, changes[0], changes[3], result[0])
-	c.Assert(result[1], DeepEquals, changes[1])
-	c.Assert(result[2], DeepEquals, changes[2])
+	result := detectRenames(s, changes, nil, 3)
+	assertRename(s, changes[0], changes[3], result[0])
+	s.Equal(changes[1], result[1])
+	s.Equal(changes[2], result[2])
 }
 
-func (s *RenameSuite) TestRenameExact_PathBreaksTie(c *C) {
+func (s *RenameSuite) TestRenameExact_PathBreaksTie() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, "src/com/foo/a.java", filemode.Regular, "foo")),
-		makeDelete(c, makeFile(c, "src/com/foo/b.java", filemode.Regular, "foo")),
-		makeAdd(c, makeFile(c, "c.txt", filemode.Regular, "foo")),
-		makeDelete(c, makeFile(c, "d.txt", filemode.Regular, "foo")),
-		makeAdd(c, makeFile(c, "the_e_file.txt", filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, "src/com/foo/a.java", filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, "src/com/foo/b.java", filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, "c.txt", filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, "d.txt", filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, "the_e_file.txt", filemode.Regular, "foo")),
 	}
 
 	// Add out of order to avoid first-match succeeding
-	result := detectRenames(c, Changes{
+	result := detectRenames(s, Changes{
 		changes[0],
 		changes[3],
 		changes[4],
 		changes[1],
 		changes[2],
 	}, nil, 3)
-	assertRename(c, changes[3], changes[2], result[0])
-	assertRename(c, changes[1], changes[0], result[1])
-	c.Assert(result[2], DeepEquals, changes[4])
+	assertRename(s, changes[3], changes[2], result[0])
+	assertRename(s, changes[1], changes[0], result[1])
+	s.Equal(changes[4], result[2])
 }
 
-func (s *RenameSuite) TestExactRename_OneDeleteManyAdds(c *C) {
+func (s *RenameSuite) TestExactRename_OneDeleteManyAdds() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, "src/com/foo/a.java", filemode.Regular, "foo")),
-		makeAdd(c, makeFile(c, "src/com/foo/b.java", filemode.Regular, "foo")),
-		makeAdd(c, makeFile(c, "c.txt", filemode.Regular, "foo")),
-		makeDelete(c, makeFile(c, "d.txt", filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, "src/com/foo/a.java", filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, "src/com/foo/b.java", filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, "c.txt", filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, "d.txt", filemode.Regular, "foo")),
 	}
 
-	result := detectRenames(c, changes, nil, 3)
-	assertRename(c, changes[3], changes[2], result[0])
-	c.Assert(result[1], DeepEquals, changes[0])
-	c.Assert(result[2], DeepEquals, changes[1])
+	result := detectRenames(s, changes, nil, 3)
+	assertRename(s, changes[3], changes[2], result[0])
+	s.Equal(changes[0], result[1])
+	s.Equal(changes[1], result[2])
 }
 
-func (s *RenameSuite) TestExactRename_UnstagedFile(c *C) {
+func (s *RenameSuite) TestExactRename_UnstagedFile() {
 	changes := Changes{
-		makeDelete(c, makeFile(c, pathA, filemode.Regular, "foo")),
-		makeAdd(c, makeFile(c, pathB, filemode.Regular, "foo")),
+		makeDelete(s, makeFile(s, pathA, filemode.Regular, "foo")),
+		makeAdd(s, makeFile(s, pathB, filemode.Regular, "foo")),
 	}
-	result := detectRenames(c, changes, nil, 1)
-	assertRename(c, changes[0], changes[1], result[0])
+	result := detectRenames(s, changes, nil, 1)
+	assertRename(s, changes[0], changes[1], result[0])
 }
 
-func (s *RenameSuite) TestContentRename_OnePair(c *C) {
+func (s *RenameSuite) TestContentRename_OnePair() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo\nbar\nbaz\nblarg\n")),
-		makeDelete(c, makeFile(c, pathA, filemode.Regular, "foo\nbar\nbaz\nblah\n")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo\nbar\nbaz\nblarg\n")),
+		makeDelete(s, makeFile(s, pathA, filemode.Regular, "foo\nbar\nbaz\nblah\n")),
 	}
 
-	result := detectRenames(c, changes, nil, 1)
-	assertRename(c, changes[1], changes[0], result[0])
+	result := detectRenames(s, changes, nil, 1)
+	assertRename(s, changes[1], changes[0], result[0])
 }
 
-func (s *RenameSuite) TestContentRename_OneRenameTwoUnrelatedFiles(c *C) {
+func (s *RenameSuite) TestContentRename_OneRenameTwoUnrelatedFiles() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo\nbar\nbaz\nblarg\n")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, "foo\nbar\nbaz\nblah\n")),
-		makeAdd(c, makeFile(c, pathB, filemode.Regular, "some\nsort\nof\ntext\n")),
-		makeDelete(c, makeFile(c, pathH, filemode.Regular, "completely\nunrelated\ntext\n")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo\nbar\nbaz\nblarg\n")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo\nbar\nbaz\nblah\n")),
+		makeAdd(s, makeFile(s, pathB, filemode.Regular, "some\nsort\nof\ntext\n")),
+		makeDelete(s, makeFile(s, pathH, filemode.Regular, "completely\nunrelated\ntext\n")),
 	}
 
-	result := detectRenames(c, changes, nil, 3)
-	c.Assert(result[0], DeepEquals, changes[2])
-	c.Assert(result[1], DeepEquals, changes[3])
-	assertRename(c, changes[1], changes[0], result[2])
+	result := detectRenames(s, changes, nil, 3)
+	s.Equal(changes[2], result[0])
+	s.Equal(changes[3], result[1])
+	assertRename(s, changes[1], changes[0], result[2])
 }
 
-func (s *RenameSuite) TestContentRename_LastByteDifferent(c *C) {
+func (s *RenameSuite) TestContentRename_LastByteDifferent() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo\nbar\na")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, "foo\nbar\nb")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo\nbar\na")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo\nbar\nb")),
 	}
 
-	result := detectRenames(c, changes, nil, 1)
-	assertRename(c, changes[1], changes[0], result[0])
+	result := detectRenames(s, changes, nil, 1)
+	assertRename(s, changes[1], changes[0], result[0])
 }
 
-func (s *RenameSuite) TestContentRename_NewlinesOnly(c *C) {
+func (s *RenameSuite) TestContentRename_NewlinesOnly() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, strings.Repeat("\n", 3))),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, strings.Repeat("\n", 4))),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, strings.Repeat("\n", 3))),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, strings.Repeat("\n", 4))),
 	}
 
-	result := detectRenames(c, changes, nil, 1)
-	assertRename(c, changes[1], changes[0], result[0])
+	result := detectRenames(s, changes, nil, 1)
+	assertRename(s, changes[1], changes[0], result[0])
 }
 
-func (s *RenameSuite) TestContentRename_SameContentMultipleTimes(c *C) {
+func (s *RenameSuite) TestContentRename_SameContentMultipleTimes() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "a\na\na\na\n")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, "a\na\na\n")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "a\na\na\na\n")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, "a\na\na\n")),
 	}
 
-	result := detectRenames(c, changes, nil, 1)
-	assertRename(c, changes[1], changes[0], result[0])
+	result := detectRenames(s, changes, nil, 1)
+	assertRename(s, changes[1], changes[0], result[0])
 }
 
-func (s *RenameSuite) TestContentRename_OnePairRenameScore50(c *C) {
+func (s *RenameSuite) TestContentRename_OnePairRenameScore50() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "ab\nab\nab\nac\nad\nae\n")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, "ac\nab\nab\nab\naa\na0\na1\n")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "ab\nab\nab\nac\nad\nae\n")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, "ac\nab\nab\nab\naa\na0\na1\n")),
 	}
 
-	result := detectRenames(c, changes, &DiffTreeOptions{RenameScore: 50}, 1)
-	assertRename(c, changes[1], changes[0], result[0])
+	result := detectRenames(s, changes, &DiffTreeOptions{RenameScore: 50}, 1)
+	assertRename(s, changes[1], changes[0], result[0])
 }
 
-func (s *RenameSuite) TestNoRenames_SingleByteFiles(c *C) {
+func (s *RenameSuite) TestNoRenames_SingleByteFiles() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "a")),
-		makeAdd(c, makeFile(c, pathQ, filemode.Regular, "b")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "a")),
+		makeAdd(s, makeFile(s, pathQ, filemode.Regular, "b")),
 	}
 
-	result := detectRenames(c, changes, nil, 2)
-	c.Assert(result[0], DeepEquals, changes[0])
-	c.Assert(result[1], DeepEquals, changes[1])
+	result := detectRenames(s, changes, nil, 2)
+	s.Equal(changes[0], result[0])
+	s.Equal(changes[1], result[1])
 }
 
-func (s *RenameSuite) TestNoRenames_EmptyFile(c *C) {
+func (s *RenameSuite) TestNoRenames_EmptyFile() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "")),
 	}
-	result := detectRenames(c, changes, nil, 1)
-	c.Assert(result[0], DeepEquals, changes[0])
+	result := detectRenames(s, changes, nil, 1)
+	s.Equal(changes[0], result[0])
 }
 
-func (s *RenameSuite) TestNoRenames_EmptyFile2(c *C) {
+func (s *RenameSuite) TestNoRenames_EmptyFile2() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, "blah")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, "blah")),
 	}
-	result := detectRenames(c, changes, nil, 2)
-	c.Assert(result[0], DeepEquals, changes[0])
-	c.Assert(result[1], DeepEquals, changes[1])
+	result := detectRenames(s, changes, nil, 2)
+	s.Equal(changes[0], result[0])
+	s.Equal(changes[1], result[1])
 }
 
-func (s *RenameSuite) TestNoRenames_SymlinkAndFile(c *C) {
+func (s *RenameSuite) TestNoRenames_SymlinkAndFile() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "src/dest")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Symlink, "src/dest")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "src/dest")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Symlink, "src/dest")),
 	}
-	result := detectRenames(c, changes, nil, 2)
-	c.Assert(result[0], DeepEquals, changes[0])
-	c.Assert(result[1], DeepEquals, changes[1])
+	result := detectRenames(s, changes, nil, 2)
+	s.Equal(changes[0], result[0])
+	s.Equal(changes[1], result[1])
 }
 
-func (s *RenameSuite) TestNoRenames_SymlinkAndFileSamePath(c *C) {
+func (s *RenameSuite) TestNoRenames_SymlinkAndFileSamePath() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "src/dest")),
-		makeDelete(c, makeFile(c, pathA, filemode.Symlink, "src/dest")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "src/dest")),
+		makeDelete(s, makeFile(s, pathA, filemode.Symlink, "src/dest")),
 	}
-	result := detectRenames(c, changes, nil, 2)
-	c.Assert(result[0], DeepEquals, changes[0])
-	c.Assert(result[1], DeepEquals, changes[1])
+	result := detectRenames(s, changes, nil, 2)
+	s.Equal(changes[0], result[0])
+	s.Equal(changes[1], result[1])
 }
 
-func (s *RenameSuite) TestRenameLimit(c *C) {
+func (s *RenameSuite) TestRenameLimit() {
 	changes := Changes{
-		makeAdd(c, makeFile(c, pathA, filemode.Regular, "foo\nbar\nbaz\nblarg\n")),
-		makeDelete(c, makeFile(c, pathB, filemode.Regular, "foo\nbar\nbaz\nblah\n")),
-		makeAdd(c, makeFile(c, pathH, filemode.Regular, "a\nb\nc\nd\n")),
-		makeDelete(c, makeFile(c, pathQ, filemode.Regular, "a\nb\nc\n")),
+		makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo\nbar\nbaz\nblarg\n")),
+		makeDelete(s, makeFile(s, pathB, filemode.Regular, "foo\nbar\nbaz\nblah\n")),
+		makeAdd(s, makeFile(s, pathH, filemode.Regular, "a\nb\nc\nd\n")),
+		makeDelete(s, makeFile(s, pathQ, filemode.Regular, "a\nb\nc\n")),
 	}
 
-	result := detectRenames(c, changes, &DiffTreeOptions{RenameLimit: 1}, 4)
+	result := detectRenames(s, changes, &DiffTreeOptions{RenameLimit: 1}, 4)
 	for i, res := range result {
-		c.Assert(res, DeepEquals, changes[i])
+		s.Equal(changes[i], res)
 	}
 }
 
-func (s *RenameSuite) TestRenameExactManyAddsManyDeletesNoGaps(c *C) {
+func (s *RenameSuite) TestRenameExactManyAddsManyDeletesNoGaps() {
 	content := "a"
 	detector := &renameDetector{
 		added: []*Change{
-			makeAdd(c, makeFile(c, pathA, filemode.Regular, content)),
-			makeAdd(c, makeFile(c, pathQ, filemode.Regular, content)),
-			makeAdd(c, makeFile(c, "something", filemode.Regular, content)),
+			makeAdd(s, makeFile(s, pathA, filemode.Regular, content)),
+			makeAdd(s, makeFile(s, pathQ, filemode.Regular, content)),
+			makeAdd(s, makeFile(s, "something", filemode.Regular, content)),
 		},
 		deleted: []*Change{
-			makeDelete(c, makeFile(c, pathA, filemode.Regular, content)),
-			makeDelete(c, makeFile(c, pathB, filemode.Regular, content)),
-			makeDelete(c, makeFile(c, "foo/bar/other", filemode.Regular, content)),
+			makeDelete(s, makeFile(s, pathA, filemode.Regular, content)),
+			makeDelete(s, makeFile(s, pathB, filemode.Regular, content)),
+			makeDelete(s, makeFile(s, "foo/bar/other", filemode.Regular, content)),
 		},
 	}
 
 	detector.detectExactRenames()
 
 	for _, added := range detector.added {
-		c.Assert(added, NotNil)
+		s.NotNil(added)
 	}
 
 	for _, deleted := range detector.deleted {
-		c.Assert(deleted, NotNil)
+		s.NotNil(deleted)
 	}
 }
 
-func detectRenames(c *C, changes Changes, opts *DiffTreeOptions, expectedResults int) Changes {
+func detectRenames(s *RenameSuite, changes Changes, opts *DiffTreeOptions, expectedResults int) Changes {
 	result, err := DetectRenames(changes, opts)
-	c.Assert(err, IsNil)
-	c.Assert(result, HasLen, expectedResults)
+	s.NoError(err)
+	s.Len(result, expectedResults)
 	return result
 }
 
-func assertRename(c *C, from, to *Change, rename *Change) {
-	c.Assert(&Change{From: from.From, To: to.To}, DeepEquals, rename)
+func assertRename(s *RenameSuite, from, to *Change, rename *Change) {
+	s.Equal(rename, &Change{From: from.From, To: to.To})
 }
 
 type SimilarityIndexSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 }
 
-var _ = Suite(&SimilarityIndexSuite{})
+func TestSimilarityIndexSuite(t *testing.T) {
+	suite.Run(t, new(SimilarityIndexSuite))
+}
 
-func (s *SimilarityIndexSuite) TestScoreFiles(c *C) {
-	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+func (s *SimilarityIndexSuite) SetupSuite() {
+	s.BaseObjectsSuite.SetupSuite(s.T())
+}
+
+func (s *SimilarityIndexSuite) TestScoreFiles() {
+	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 	binary, err := tree.File("binary.jpg")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	binIndex, err := fileSimilarityIndex(binary)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	long, err := tree.File("json/long.json")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	longIndex, err := fileSimilarityIndex(long)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	short, err := tree.File("json/short.json")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	shortIndex, err := fileSimilarityIndex(short)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	php, err := tree.File("php/crappy.php")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	phpIndex, err := fileSimilarityIndex(php)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	testCases := []struct {
 		src, dst      *similarityIndex
@@ -349,95 +360,95 @@ func (s *SimilarityIndexSuite) TestScoreFiles(c *C) {
 
 	for _, tt := range testCases {
 		score := tt.src.score(tt.dst, 10000)
-		c.Assert(score, Equals, tt.expectedScore)
+		s.Equal(tt.expectedScore, score)
 	}
 }
 
-func (s *SimilarityIndexSuite) TestHashContent(c *C) {
-	idx := textIndex(c, "A\n"+
+func (s *SimilarityIndexSuite) TestHashContent() {
+	idx := textIndex(s, "A\n"+
 		"B\n"+
 		"D\n"+
 		"B\n")
 
-	keyA := keyFor(c, "A\n")
-	keyB := keyFor(c, "B\n")
-	keyD := keyFor(c, "D\n")
+	keyA := keyFor(s, "A\n")
+	keyB := keyFor(s, "B\n")
+	keyD := keyFor(s, "D\n")
 
-	c.Assert(keyA, Not(Equals), keyB)
-	c.Assert(keyA, Not(Equals), keyD)
-	c.Assert(keyD, Not(Equals), keyB)
+	s.NotEqual(keyB, keyA)
+	s.NotEqual(keyD, keyA)
+	s.NotEqual(keyB, keyD)
 
-	c.Assert(idx.numHashes, Equals, 3)
-	c.Assert(idx.hashes[findIndex(idx, keyA)].count(), Equals, uint64(2))
-	c.Assert(idx.hashes[findIndex(idx, keyB)].count(), Equals, uint64(4))
-	c.Assert(idx.hashes[findIndex(idx, keyD)].count(), Equals, uint64(2))
+	s.Equal(3, idx.numHashes)
+	s.Equal(uint64(2), idx.hashes[findIndex(idx, keyA)].count())
+	s.Equal(uint64(4), idx.hashes[findIndex(idx, keyB)].count())
+	s.Equal(uint64(2), idx.hashes[findIndex(idx, keyD)].count())
 }
 
-func (s *SimilarityIndexSuite) TestCommonSameFiles(c *C) {
+func (s *SimilarityIndexSuite) TestCommonSameFiles() {
 	content := "A\n" +
 		"B\n" +
 		"D\n" +
 		"B\n"
 
-	src := textIndex(c, content)
-	dst := textIndex(c, content)
+	src := textIndex(s, content)
+	dst := textIndex(s, content)
 
-	c.Assert(src.common(dst), Equals, uint64(8))
-	c.Assert(dst.common(src), Equals, uint64(8))
+	s.Equal(uint64(8), src.common(dst))
+	s.Equal(uint64(8), dst.common(src))
 
-	c.Assert(src.score(dst, 100), Equals, 100)
-	c.Assert(dst.score(src, 100), Equals, 100)
+	s.Equal(100, src.score(dst, 100))
+	s.Equal(100, dst.score(src, 100))
 }
 
-func (s *SimilarityIndexSuite) TestCommonSameFilesCR(c *C) {
+func (s *SimilarityIndexSuite) TestCommonSameFilesCR() {
 	content := "A\r\n" +
 		"B\r\n" +
 		"D\r\n" +
 		"B\r\n"
 
-	src := textIndex(c, content)
-	dst := textIndex(c, strings.ReplaceAll(content, "\r", ""))
+	src := textIndex(s, content)
+	dst := textIndex(s, strings.ReplaceAll(content, "\r", ""))
 
-	c.Assert(src.common(dst), Equals, uint64(8))
-	c.Assert(dst.common(src), Equals, uint64(8))
+	s.Equal(uint64(8), src.common(dst))
+	s.Equal(uint64(8), dst.common(src))
 
-	c.Assert(src.score(dst, 100), Equals, 100)
-	c.Assert(dst.score(src, 100), Equals, 100)
+	s.Equal(100, src.score(dst, 100))
+	s.Equal(100, dst.score(src, 100))
 }
 
-func (s *SimilarityIndexSuite) TestCommonEmptyFiles(c *C) {
-	src := textIndex(c, "")
-	dst := textIndex(c, "")
+func (s *SimilarityIndexSuite) TestCommonEmptyFiles() {
+	src := textIndex(s, "")
+	dst := textIndex(s, "")
 
-	c.Assert(src.common(dst), Equals, uint64(0))
-	c.Assert(dst.common(src), Equals, uint64(0))
+	s.Equal(uint64(0), src.common(dst))
+	s.Equal(uint64(0), dst.common(src))
 }
 
-func (s *SimilarityIndexSuite) TestCommonTotallyDifferentFiles(c *C) {
-	src := textIndex(c, "A\n")
-	dst := textIndex(c, "D\n")
+func (s *SimilarityIndexSuite) TestCommonTotallyDifferentFiles() {
+	src := textIndex(s, "A\n")
+	dst := textIndex(s, "D\n")
 
-	c.Assert(src.common(dst), Equals, uint64(0))
-	c.Assert(dst.common(src), Equals, uint64(0))
+	s.Equal(uint64(0), src.common(dst))
+	s.Equal(uint64(0), dst.common(src))
 }
 
-func (s *SimilarityIndexSuite) TestSimilarity75(c *C) {
-	src := textIndex(c, "A\nB\nC\nD\n")
-	dst := textIndex(c, "A\nB\nC\nQ\n")
+func (s *SimilarityIndexSuite) TestSimilarity75() {
+	src := textIndex(s, "A\nB\nC\nD\n")
+	dst := textIndex(s, "A\nB\nC\nQ\n")
 
-	c.Assert(src.common(dst), Equals, uint64(6))
-	c.Assert(dst.common(src), Equals, uint64(6))
+	s.Equal(uint64(6), src.common(dst))
+	s.Equal(uint64(6), dst.common(src))
 
-	c.Assert(src.score(dst, 100), Equals, 75)
-	c.Assert(dst.score(src, 100), Equals, 75)
+	s.Equal(75, src.score(dst, 100))
+	s.Equal(75, dst.score(src, 100))
 }
 
-func keyFor(c *C, line string) int {
+func keyFor(s *SimilarityIndexSuite, line string) int {
 	idx := newSimilarityIndex()
 	err := idx.hashContent(strings.NewReader(line), int64(len(line)), false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(idx.numHashes, Equals, 1)
+	s.Equal(1, idx.numHashes)
 	for _, h := range idx.hashes {
 		if h != 0 {
 			return h.key()
@@ -447,10 +458,10 @@ func keyFor(c *C, line string) int {
 	return -1
 }
 
-func textIndex(c *C, content string) *similarityIndex {
+func textIndex(s *SimilarityIndexSuite, content string) *similarityIndex {
 	idx := newSimilarityIndex()
 	err := idx.hashContent(strings.NewReader(content), int64(len(content)), false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return idx
 }
 
@@ -463,11 +474,11 @@ func findIndex(idx *similarityIndex, key int) int {
 	return -1
 }
 
-func makeFile(c *C, name string, mode filemode.FileMode, content string) *File {
+func makeFile(s *RenameSuite, name string, mode filemode.FileMode, content string) *File {
 	obj := new(plumbing.MemoryObject)
 	obj.SetType(plumbing.BlobObject)
 	_, err := obj.Write([]byte(content))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return &File{
 		Name: name,
 		Mode: mode,
@@ -491,15 +502,15 @@ func makeChangeEntry(f *File) ChangeEntry {
 	}
 }
 
-func makeAdd(c *C, f *File) *Change {
-	return makeChange(c, nil, f)
+func makeAdd(s *RenameSuite, f *File) *Change {
+	return makeChange(s, nil, f)
 }
 
-func makeDelete(c *C, f *File) *Change {
-	return makeChange(c, f, nil)
+func makeDelete(s *RenameSuite, f *File) *Change {
+	return makeChange(s, f, nil)
 }
 
-func makeChange(c *C, from *File, to *File) *Change {
+func makeChange(s *RenameSuite, from *File, to *File) *Change {
 	if from == nil {
 		return &Change{To: makeChangeEntry(to)}
 	}
@@ -509,7 +520,7 @@ func makeChange(c *C, from *File, to *File) *Change {
 	}
 
 	if from == nil && to == nil {
-		c.Error("cannot make change without from or to")
+		s.Fail("cannot make change without from or to")
 	}
 
 	return &Change{From: makeChangeEntry(from), To: makeChangeEntry(to)}

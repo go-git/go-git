@@ -3,13 +3,14 @@ package object
 import (
 	"fmt"
 	"sort"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
 func alphabeticSortCommits(commits []*Commit) {
@@ -60,13 +61,16 @@ passed   result
  M, N     false     Commits with unrelated history, will return false
 */
 
-var _ = Suite(&mergeBaseSuite{})
+func TestmergeBaseSuite(t *testing.T) {
+	suite.Run(t, new(mergeBaseSuite))
+}
 
 type mergeBaseSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 }
 
-func (s *mergeBaseSuite) SetUpSuite(c *C) {
+func (s *mergeBaseSuite) SetupSuite() {
 	s.Fixture = fixtures.ByTag("merge-base").One()
 	s.Storer = filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 }
@@ -96,7 +100,7 @@ var revisionIndex = map[string]plumbing.Hash{
 	"N^":      plumbing.NewHash("b6e1fc8dad4f1068fb42774ec5fc65c065b2c312"),
 }
 
-func (s *mergeBaseSuite) commitsFromRevs(c *C, revs []string) ([]*Commit, error) {
+func (s *mergeBaseSuite) commitsFromRevs(revs []string) ([]*Commit, error) {
 	var commits []*Commit
 	for _, rev := range revs {
 		hash, ok := revisionIndex[rev]
@@ -104,7 +108,7 @@ func (s *mergeBaseSuite) commitsFromRevs(c *C, revs []string) ([]*Commit, error)
 			return nil, fmt.Errorf("Revision not found '%s'", rev)
 		}
 
-		commits = append(commits, s.commit(c, hash))
+		commits = append(commits, s.commit(hash))
 	}
 
 	return commits, nil
@@ -112,211 +116,211 @@ func (s *mergeBaseSuite) commitsFromRevs(c *C, revs []string) ([]*Commit, error)
 
 // AssertMergeBase validates that the merge-base of the passed revs,
 // matches the expected result
-func (s *mergeBaseSuite) AssertMergeBase(c *C, revs, expectedRevs []string) {
-	c.Assert(revs, HasLen, 2)
+func (s *mergeBaseSuite) AssertMergeBase(revs, expectedRevs []string) {
+	s.Len(revs, 2)
 
-	commits, err := s.commitsFromRevs(c, revs)
-	c.Assert(err, IsNil)
+	commits, err := s.commitsFromRevs(revs)
+	s.NoError(err)
 
 	results, err := commits[0].MergeBase(commits[1])
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	expected, err := s.commitsFromRevs(c, expectedRevs)
-	c.Assert(err, IsNil)
+	expected, err := s.commitsFromRevs(expectedRevs)
+	s.NoError(err)
 
-	c.Assert(results, HasLen, len(expected))
+	s.Len(results, len(expected))
 
 	alphabeticSortCommits(results)
 	alphabeticSortCommits(expected)
 	for i, commit := range results {
-		c.Assert(commit.Hash.String(), Equals, expected[i].Hash.String())
+		s.Equal(expected[i].Hash.String(), commit.Hash.String())
 	}
 }
 
 // AssertIndependents validates the independent commits of the passed list
-func (s *mergeBaseSuite) AssertIndependents(c *C, revs, expectedRevs []string) {
-	commits, err := s.commitsFromRevs(c, revs)
-	c.Assert(err, IsNil)
+func (s *mergeBaseSuite) AssertIndependents(revs, expectedRevs []string) {
+	commits, err := s.commitsFromRevs(revs)
+	s.NoError(err)
 
 	results, err := Independents(commits)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	expected, err := s.commitsFromRevs(c, expectedRevs)
-	c.Assert(err, IsNil)
+	expected, err := s.commitsFromRevs(expectedRevs)
+	s.NoError(err)
 
-	c.Assert(results, HasLen, len(expected))
+	s.Len(results, len(expected))
 
 	alphabeticSortCommits(results)
 	alphabeticSortCommits(expected)
 	for i, commit := range results {
-		c.Assert(commit.Hash.String(), Equals, expected[i].Hash.String())
+		s.Equal(expected[i].Hash.String(), commit.Hash.String())
 	}
 }
 
 // AssertAncestor validates if the first rev is ancestor of the second one
-func (s *mergeBaseSuite) AssertAncestor(c *C, revs []string, shouldBeAncestor bool) {
-	c.Assert(revs, HasLen, 2)
+func (s *mergeBaseSuite) AssertAncestor(revs []string, shouldBeAncestor bool) {
+	s.Len(revs, 2)
 
-	commits, err := s.commitsFromRevs(c, revs)
-	c.Assert(err, IsNil)
+	commits, err := s.commitsFromRevs(revs)
+	s.NoError(err)
 
 	isAncestor, err := commits[0].IsAncestor(commits[1])
-	c.Assert(err, IsNil)
-	c.Assert(isAncestor, Equals, shouldBeAncestor)
+	s.NoError(err)
+	s.Equal(shouldBeAncestor, isAncestor)
 }
 
 // TestNoAncestorsWhenNoCommonHistory validates that merge-base returns no commits
 // when there is no common history (M, N -> none)
-func (s *mergeBaseSuite) TestNoAncestorsWhenNoCommonHistory(c *C) {
+func (s *mergeBaseSuite) TestNoAncestorsWhenNoCommonHistory() {
 	revs := []string{"M", "N"}
 	nothing := []string{}
-	s.AssertMergeBase(c, revs, nothing)
+	s.AssertMergeBase(revs, nothing)
 }
 
 // TestCommonAncestorInMergedOrphans validates that merge-base returns a common
 // ancestor in orphan branches when they where merged (A, B -> AB)
-func (s *mergeBaseSuite) TestCommonAncestorInMergedOrphans(c *C) {
+func (s *mergeBaseSuite) TestCommonAncestorInMergedOrphans() {
 	revs := []string{"A", "B"}
 	expectedRevs := []string{"AB"}
-	s.AssertMergeBase(c, revs, expectedRevs)
+	s.AssertMergeBase(revs, expectedRevs)
 }
 
 // TestMergeBaseWithSelf validates that merge-base between equal commits, returns
 // the same commit (A, A -> A)
-func (s *mergeBaseSuite) TestMergeBaseWithSelf(c *C) {
+func (s *mergeBaseSuite) TestMergeBaseWithSelf() {
 	revs := []string{"A", "A"}
 	expectedRevs := []string{"A"}
-	s.AssertMergeBase(c, revs, expectedRevs)
+	s.AssertMergeBase(revs, expectedRevs)
 }
 
 // TestMergeBaseWithAncestor validates that merge-base between a commit an its
 // ancestor returns the ancestor (Q, N -> N)
-func (s *mergeBaseSuite) TestMergeBaseWithAncestor(c *C) {
+func (s *mergeBaseSuite) TestMergeBaseWithAncestor() {
 	revs := []string{"Q", "N"}
 	expectedRevs := []string{"N"}
-	s.AssertMergeBase(c, revs, expectedRevs)
+	s.AssertMergeBase(revs, expectedRevs)
 }
 
 // TestDoubleCommonAncestorInCrossMerge validates that merge-base returns two
 // common ancestors when there are cross merges (C, D -> CD1, CD2)
-func (s *mergeBaseSuite) TestDoubleCommonAncestorInCrossMerge(c *C) {
+func (s *mergeBaseSuite) TestDoubleCommonAncestorInCrossMerge() {
 	revs := []string{"C", "D"}
 	expectedRevs := []string{"CD1", "CD2"}
-	s.AssertMergeBase(c, revs, expectedRevs)
+	s.AssertMergeBase(revs, expectedRevs)
 }
 
 // TestDoubleCommonInSubFeatureBranches validates that merge-base returns two
 // common ancestors when two branches where partially merged (G, Q -> GQ1, GQ2)
-func (s *mergeBaseSuite) TestDoubleCommonInSubFeatureBranches(c *C) {
+func (s *mergeBaseSuite) TestDoubleCommonInSubFeatureBranches() {
 	revs := []string{"G", "Q"}
 	expectedRevs := []string{"GQ1", "GQ2"}
-	s.AssertMergeBase(c, revs, expectedRevs)
+	s.AssertMergeBase(revs, expectedRevs)
 }
 
 // TestIndependentOnlyOne validates that Independents for one commit returns
 // that same commit (A -> A)
-func (s *mergeBaseSuite) TestIndependentOnlyOne(c *C) {
+func (s *mergeBaseSuite) TestIndependentOnlyOne() {
 	revs := []string{"A"}
 	expectedRevs := []string{"A"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentOnlyRepeated validates that Independents for one repeated commit
 // returns that same commit (A, A, A -> A)
-func (s *mergeBaseSuite) TestIndependentOnlyRepeated(c *C) {
+func (s *mergeBaseSuite) TestIndependentOnlyRepeated() {
 	revs := []string{"A", "A", "A"}
 	expectedRevs := []string{"A"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentWithRepeatedAncestors validates that Independents works well
 // when there are repeated ancestors (A, A, M, M, N -> A, N)
-func (s *mergeBaseSuite) TestIndependentWithRepeatedAncestors(c *C) {
+func (s *mergeBaseSuite) TestIndependentWithRepeatedAncestors() {
 	revs := []string{"A", "A", "M", "M", "N"}
 	expectedRevs := []string{"A", "N"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentBeyondShortcut validates that Independents does not stop walking
 // in all paths when one of them is known (S, G, P -> S, G)
-func (s *mergeBaseSuite) TestIndependentBeyondShortcut(c *C) {
+func (s *mergeBaseSuite) TestIndependentBeyondShortcut() {
 	revs := []string{"S", "G", "P"}
 	expectedRevs := []string{"S", "G"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentBeyondShortcutBis validates that Independents does not stop walking
 // in all paths when one of them is known (CD1, CD2, M, N -> CD1, CD2)
-func (s *mergeBaseSuite) TestIndependentBeyondShortcutBis(c *C) {
+func (s *mergeBaseSuite) TestIndependentBeyondShortcutBis() {
 	revs := []string{"CD1", "CD2", "M", "N"}
 	expectedRevs := []string{"CD1", "CD2"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentWithPairOfAncestors validates that Independents excluded all
 // the ancestors (C, D, M, N -> C, D)
-func (s *mergeBaseSuite) TestIndependentWithPairOfAncestors(c *C) {
+func (s *mergeBaseSuite) TestIndependentWithPairOfAncestors() {
 	revs := []string{"C", "D", "M", "N"}
 	expectedRevs := []string{"C", "D"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentAcrossCrossMerges validates that Independents works well
 // along cross merges (C, G, dev, M -> C, G, dev)
-func (s *mergeBaseSuite) TestIndependentAcrossCrossMerges(c *C) {
+func (s *mergeBaseSuite) TestIndependentAcrossCrossMerges() {
 	revs := []string{"C", "G", "dev", "M", "N"}
 	expectedRevs := []string{"C", "G", "dev"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentChangingOrderRepetition validates that Independents works well
 // when the order and repetition is tricky (A, A^, A, N, N^ -> A, N)
-func (s *mergeBaseSuite) TestIndependentChangingOrderRepetition(c *C) {
+func (s *mergeBaseSuite) TestIndependentChangingOrderRepetition() {
 	revs := []string{"A", "A^", "A", "N", "N^"}
 	expectedRevs := []string{"A", "N"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestIndependentChangingOrder validates that Independents works well
 // when the order is tricky (A^^^, A^, A^^, A, N -> A, N)
-func (s *mergeBaseSuite) TestIndependentChangingOrder(c *C) {
+func (s *mergeBaseSuite) TestIndependentChangingOrder() {
 	revs := []string{"A^^^", "A^", "A^^", "A", "N"}
 	expectedRevs := []string{"A", "N"}
-	s.AssertIndependents(c, revs, expectedRevs)
+	s.AssertIndependents(revs, expectedRevs)
 }
 
 // TestAncestor validates that IsAncestor returns true if walking from first
 // commit, through its parents, it can be reached the second ( A^^, A -> true )
-func (s *mergeBaseSuite) TestAncestor(c *C) {
+func (s *mergeBaseSuite) TestAncestor() {
 	revs := []string{"A^^", "A"}
-	s.AssertAncestor(c, revs, true)
+	s.AssertAncestor(revs, true)
 
 	revs = []string{"A", "A^^"}
-	s.AssertAncestor(c, revs, false)
+	s.AssertAncestor(revs, false)
 }
 
 // TestAncestorBeyondMerges validates that IsAncestor returns true also if first can be
 // be reached from first one even crossing merge commits in between ( M, G -> true )
-func (s *mergeBaseSuite) TestAncestorBeyondMerges(c *C) {
+func (s *mergeBaseSuite) TestAncestorBeyondMerges() {
 	revs := []string{"M", "G"}
-	s.AssertAncestor(c, revs, true)
+	s.AssertAncestor(revs, true)
 
 	revs = []string{"G", "M"}
-	s.AssertAncestor(c, revs, false)
+	s.AssertAncestor(revs, false)
 }
 
 // TestAncestorSame validates that IsAncestor returns both are the same ( A, A -> true )
-func (s *mergeBaseSuite) TestAncestorSame(c *C) {
+func (s *mergeBaseSuite) TestAncestorSame() {
 	revs := []string{"A", "A"}
-	s.AssertAncestor(c, revs, true)
+	s.AssertAncestor(revs, true)
 }
 
 // TestAncestorUnrelated validates that IsAncestor returns false when the passed commits
 // does not share any history, no matter the order used ( M, N -> false )
-func (s *mergeBaseSuite) TestAncestorUnrelated(c *C) {
+func (s *mergeBaseSuite) TestAncestorUnrelated() {
 	revs := []string{"M", "N"}
-	s.AssertAncestor(c, revs, false)
+	s.AssertAncestor(revs, false)
 
 	revs = []string{"N", "M"}
-	s.AssertAncestor(c, revs, false)
+	s.AssertAncestor(revs, false)
 }

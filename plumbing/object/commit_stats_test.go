@@ -2,93 +2,101 @@ package object_test
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-type CommitStatsSuite struct {
+type CommitStatsFixtureSuite struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&CommitStatsSuite{})
+type CommitStatsSuite struct {
+	suite.Suite
+	CommitStatsFixtureSuite
+}
 
-func (s *CommitStatsSuite) TestStats(c *C) {
-	r, hash := s.writeHistory(c, []byte("foo\n"), []byte("foo\nbar\n"))
+func TestCommitStatsSuite(t *testing.T) {
+	suite.Run(t, new(CommitStatsSuite))
+}
+
+func (s *CommitStatsSuite) TestStats() {
+	r, hash := s.writeHistory([]byte("foo\n"), []byte("foo\nbar\n"))
 
 	aCommit, err := r.CommitObject(hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fileStats, err := aCommit.StatsContext(context.Background())
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(fileStats[0].Name, Equals, "foo")
-	c.Assert(fileStats[0].Addition, Equals, 1)
-	c.Assert(fileStats[0].Deletion, Equals, 0)
-	c.Assert(fileStats[0].String(), Equals, " foo | 1 +\n")
+	s.Equal("foo", fileStats[0].Name)
+	s.Equal(1, fileStats[0].Addition)
+	s.Equal(0, fileStats[0].Deletion)
+	s.Equal(" foo | 1 +\n", fileStats[0].String())
 }
 
-func (s *CommitStatsSuite) TestStats_RootCommit(c *C) {
-	r, hash := s.writeHistory(c, []byte("foo\n"))
+func (s *CommitStatsSuite) TestStats_RootCommit() {
+	r, hash := s.writeHistory([]byte("foo\n"))
 
 	aCommit, err := r.CommitObject(hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fileStats, err := aCommit.Stats()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(fileStats, HasLen, 1)
-	c.Assert(fileStats[0].Name, Equals, "foo")
-	c.Assert(fileStats[0].Addition, Equals, 1)
-	c.Assert(fileStats[0].Deletion, Equals, 0)
-	c.Assert(fileStats[0].String(), Equals, " foo | 1 +\n")
+	s.Len(fileStats, 1)
+	s.Equal("foo", fileStats[0].Name)
+	s.Equal(1, fileStats[0].Addition)
+	s.Equal(0, fileStats[0].Deletion)
+	s.Equal(" foo | 1 +\n", fileStats[0].String())
 }
 
-func (s *CommitStatsSuite) TestStats_WithoutNewLine(c *C) {
-	r, hash := s.writeHistory(c, []byte("foo\nbar"), []byte("foo\nbar\n"))
+func (s *CommitStatsSuite) TestStats_WithoutNewLine() {
+	r, hash := s.writeHistory([]byte("foo\nbar"), []byte("foo\nbar\n"))
 
 	aCommit, err := r.CommitObject(hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fileStats, err := aCommit.Stats()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(fileStats[0].Name, Equals, "foo")
-	c.Assert(fileStats[0].Addition, Equals, 1)
-	c.Assert(fileStats[0].Deletion, Equals, 1)
-	c.Assert(fileStats[0].String(), Equals, " foo | 2 +-\n")
+	s.Equal("foo", fileStats[0].Name)
+	s.Equal(1, fileStats[0].Addition)
+	s.Equal(1, fileStats[0].Deletion)
+	s.Equal(" foo | 2 +-\n", fileStats[0].String())
 }
 
-func (s *CommitStatsSuite) writeHistory(c *C, files ...[]byte) (*git.Repository, plumbing.Hash) {
+func (s *CommitStatsSuite) writeHistory(files ...[]byte) (*git.Repository, plumbing.Hash) {
 	cm := &git.CommitOptions{
 		Author: &object.Signature{Name: "Foo", Email: "foo@example.local", When: time.Now()},
 	}
 
 	fs := memfs.New()
 	r, err := git.Init(memory.NewStorage(), fs)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	w, err := r.Worktree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	var hash plumbing.Hash
 	for _, content := range files {
 		util.WriteFile(fs, "foo", content, 0644)
 
 		_, err = w.Add("foo")
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
 		hash, err = w.Commit("foo\n", cm)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
 	}
 

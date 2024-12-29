@@ -1,32 +1,37 @@
 package object
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
 type PatchSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 }
 
-var _ = Suite(&PatchSuite{})
+func TestPatchSuite(t *testing.T) {
+	suite.Run(t, new(PatchSuite))
+}
 
-func (s *PatchSuite) TestStatsWithSubmodules(c *C) {
+func (s *PatchSuite) TestStatsWithSubmodules() {
 	storer := filesystem.NewStorage(
 		fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit(), cache.NewObjectLRUDefault())
 
 	commit, err := GetCommit(storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	e, err := tree.entry("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ch := &Change{
 		From: ChangeEntry{
@@ -42,11 +47,11 @@ func (s *PatchSuite) TestStatsWithSubmodules(c *C) {
 	}
 
 	p, err := getPatch("", ch)
-	c.Assert(err, IsNil)
-	c.Assert(p, NotNil)
+	s.NoError(err)
+	s.NotNil(p)
 }
 
-func (s *PatchSuite) TestFileStatsString(c *C) {
+func (s *PatchSuite) TestFileStatsString() {
 	testCases := []struct {
 		description string
 		input       FileStats
@@ -151,7 +156,7 @@ func (s *PatchSuite) TestFileStatsString(c *C) {
 	}
 
 	for _, tc := range testCases {
-		c.Log("Executing test cases:", tc.description)
-		c.Assert(printStat(tc.input), Equals, tc.expected)
+		s.T().Log("Executing test cases:", tc.description)
+		s.Equal(tc.expected, printStat(tc.input))
 	}
 }

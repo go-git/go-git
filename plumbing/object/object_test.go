@@ -11,87 +11,97 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type BaseObjectsFixtureSuite struct {
+}
 
 type BaseObjectsSuite struct {
 	fixtures.Suite
 	Storer  storer.EncodedObjectStorer
 	Fixture *fixtures.Fixture
+	t       *testing.T
 }
 
-func (s *BaseObjectsSuite) SetUpSuite(c *C) {
+func (s *BaseObjectsSuite) SetupSuite(t *testing.T) {
 	s.Fixture = fixtures.Basic().One()
 	storer := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = storer
+	s.t = t
 }
 
-func (s *BaseObjectsSuite) tag(c *C, h plumbing.Hash) *Tag {
+func (s *BaseObjectsSuite) tag(h plumbing.Hash) *Tag {
 	t, err := GetTag(s.Storer, h)
-	c.Assert(err, IsNil)
+	assert.NoError(s.t, err)
 	return t
 }
 
-func (s *BaseObjectsSuite) tree(c *C, h plumbing.Hash) *Tree {
+func (s *BaseObjectsSuite) tree(h plumbing.Hash) *Tree {
 	t, err := GetTree(s.Storer, h)
-	c.Assert(err, IsNil)
+	assert.NoError(s.t, err)
 	return t
 }
 
-func (s *BaseObjectsSuite) commit(c *C, h plumbing.Hash) *Commit {
+func (s *BaseObjectsSuite) commit(h plumbing.Hash) *Commit {
 	commit, err := GetCommit(s.Storer, h)
-	c.Assert(err, IsNil)
+	assert.NoError(s.t, err)
 	return commit
 }
 
 type ObjectsSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 }
 
-var _ = Suite(&ObjectsSuite{})
+func TestObjectsSuite(t *testing.T) {
+	suite.Run(t, new(ObjectsSuite))
+}
 
-func (s *ObjectsSuite) TestNewCommit(c *C) {
+func (s *ObjectsSuite) SetupSuite() {
+	s.BaseObjectsSuite.SetupSuite(s.T())
+}
+
+func (s *ObjectsSuite) TestNewCommit() {
 	hash := plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
-	commit := s.commit(c, hash)
+	commit := s.commit(hash)
 
-	c.Assert(commit.Hash, Equals, commit.ID())
-	c.Assert(commit.Hash.String(), Equals, "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	s.Equal(commit.ID(), commit.Hash)
+	s.Equal("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69", commit.Hash.String())
 
 	tree, err := commit.Tree()
-	c.Assert(err, IsNil)
-	c.Assert(tree.Hash.String(), Equals, "c2d30fa8ef288618f65f6eed6e168e0d514886f4")
+	s.NoError(err)
+	s.Equal("c2d30fa8ef288618f65f6eed6e168e0d514886f4", tree.Hash.String())
 
 	parents := commit.Parents()
 	parentCommit, err := parents.Next()
-	c.Assert(err, IsNil)
-	c.Assert(parentCommit.Hash.String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
+	s.NoError(err)
+	s.Equal("b029517f6300c2da0f4b651b8642506cd6aaf45d", parentCommit.Hash.String())
 
 	parentCommit, err = parents.Next()
-	c.Assert(err, IsNil)
-	c.Assert(parentCommit.Hash.String(), Equals, "b8e471f58bcbca63b07bda20e428190409c2db47")
+	s.NoError(err)
+	s.Equal("b8e471f58bcbca63b07bda20e428190409c2db47", parentCommit.Hash.String())
 
-	c.Assert(commit.Author.Email, Equals, "mcuadros@gmail.com")
-	c.Assert(commit.Author.Name, Equals, "Máximo Cuadros")
-	c.Assert(commit.Author.When.Format(time.RFC3339), Equals, "2015-03-31T13:47:14+02:00")
-	c.Assert(commit.Committer.Email, Equals, "mcuadros@gmail.com")
-	c.Assert(commit.Message, Equals, "Merge pull request #1 from dripolles/feature\n\nCreating changelog")
+	s.Equal("mcuadros@gmail.com", commit.Author.Email)
+	s.Equal("Máximo Cuadros", commit.Author.Name)
+	s.Equal("2015-03-31T13:47:14+02:00", commit.Author.When.Format(time.RFC3339))
+	s.Equal("mcuadros@gmail.com", commit.Committer.Email)
+	s.Equal("Merge pull request #1 from dripolles/feature\n\nCreating changelog", commit.Message)
 }
 
-func (s *ObjectsSuite) TestParseTree(c *C) {
+func (s *ObjectsSuite) TestParseTree() {
 	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 	tree, err := GetTree(s.Storer, hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(tree.Entries, HasLen, 8)
+	s.Len(tree.Entries, 8)
 
 	tree.buildMap()
-	c.Assert(tree.m, HasLen, 8)
-	c.Assert(tree.m[".gitignore"].Name, Equals, ".gitignore")
-	c.Assert(tree.m[".gitignore"].Mode, Equals, filemode.Regular)
-	c.Assert(tree.m[".gitignore"].Hash.String(), Equals, "32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+	s.Len(tree.m, 8)
+	s.Equal(".gitignore", tree.m[".gitignore"].Name)
+	s.Equal(filemode.Regular, tree.m[".gitignore"].Mode)
+	s.Equal("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88", tree.m[".gitignore"].Hash.String())
 
 	count := 0
 	iter := tree.Files()
@@ -100,17 +110,17 @@ func (s *ObjectsSuite) TestParseTree(c *C) {
 		count++
 		if f.Name == "go/example.go" {
 			reader, err := f.Reader()
-			c.Assert(err, IsNil)
-			defer func() { c.Assert(reader.Close(), IsNil) }()
+			s.NoError(err)
+			defer func() { s.Nil(reader.Close()) }()
 			content, _ := io.ReadAll(reader)
-			c.Assert(content, HasLen, 2780)
+			s.Len(content, 2780)
 		}
 	}
 
-	c.Assert(count, Equals, 9)
+	s.Equal(9, count)
 }
 
-func (s *ObjectsSuite) TestParseSignature(c *C) {
+func (s *ObjectsSuite) TestParseSignature() {
 	cases := map[string]Signature{
 		`Foo Bar <foo@bar.com> 1257894000 +0100`: {
 			Name:  "Foo Bar",
@@ -163,15 +173,15 @@ func (s *ObjectsSuite) TestParseSignature(c *C) {
 		got := &Signature{}
 		got.Decode([]byte(raw))
 
-		c.Assert(got.Name, Equals, exp.Name)
-		c.Assert(got.Email, Equals, exp.Email)
-		c.Assert(got.When.Format(time.RFC3339), Equals, exp.When.Format(time.RFC3339))
+		s.Equal(exp.Name, got.Name)
+		s.Equal(exp.Email, got.Email)
+		s.Equal(exp.When.Format(time.RFC3339), got.When.Format(time.RFC3339))
 	}
 }
 
-func (s *ObjectsSuite) TestObjectIter(c *C) {
+func (s *ObjectsSuite) TestObjectIter() {
 	encIter, err := s.Storer.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	iter := NewObjectIter(s.Storer, encIter)
 
 	objects := []Object{}
@@ -180,11 +190,11 @@ func (s *ObjectsSuite) TestObjectIter(c *C) {
 		return nil
 	})
 
-	c.Assert(len(objects) > 0, Equals, true)
+	s.True(len(objects) > 0)
 	iter.Close()
 
 	encIter, err = s.Storer.IterEncodedObjects(plumbing.AnyObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	iter = NewObjectIter(s.Storer, encIter)
 
 	i := 0
@@ -194,9 +204,9 @@ func (s *ObjectsSuite) TestObjectIter(c *C) {
 			break
 		}
 
-		c.Assert(err, IsNil)
-		c.Assert(o.ID(), Equals, objects[i].ID())
-		c.Assert(o.Type(), Equals, objects[i].Type())
+		s.NoError(err)
+		s.Equal(objects[i].ID(), o.ID())
+		s.Equal(objects[i].Type(), o.Type())
 		i++
 	}
 
