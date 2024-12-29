@@ -290,7 +290,7 @@ func (s *ConfigSuite) TestValidateInvalidRemoteKey() {
 
 func (s *ConfigSuite) TestRemoteConfigValidateMissingURL() {
 	config := &RemoteConfig{Name: "foo"}
-	s.Equal(ErrRemoteConfigEmptyURL, config.Validate())
+	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyURL)
 }
 
 func (s *ConfigSuite) TestRemoteConfigValidateMissingName() {
