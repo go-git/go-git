@@ -89,7 +89,7 @@ func (s *SuiteWriter) TestEncode() {
 			s.NoError(err, comment)
 		}
 
-		s.Equal(string(test.expected), comment, buf.String())
+		s.Equal(string(test.expected), buf.String(), comment)
 	}
 }
 
