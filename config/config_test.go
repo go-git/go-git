@@ -337,7 +337,7 @@ func (s *ConfigSuite) TestValidateInvalidBranch() {
 		},
 	}
 
-	s.Equal(errBranchInvalidMerge, config.Validate())
+	s.ErrorIs(config.Validate(), errBranchInvalidMerge)
 }
 
 func (s *ConfigSuite) TestRemoteConfigDefaultValues() {
