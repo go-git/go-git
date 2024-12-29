@@ -1,39 +1,44 @@
 package transactional
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-var _ = Suite(&ConfigSuite{})
+func TestConfigSuite(t *testing.T) {
+	suite.Run(t, new(ConfigSuite))
+}
 
-type ConfigSuite struct{}
+type ConfigSuite struct {
+	suite.Suite
+}
 
-func (s *ConfigSuite) TestSetConfigBase(c *C) {
+func (s *ConfigSuite) TestSetConfigBase() {
 	cfg := config.NewConfig()
 	cfg.Core.Worktree = "foo"
 
 	base := memory.NewStorage()
 	err := base.SetConfig(cfg)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	temporal := memory.NewStorage()
 	cs := NewConfigStorage(base, temporal)
 
 	cfg, err = cs.Config()
-	c.Assert(err, IsNil)
-	c.Assert(cfg.Core.Worktree, Equals, "foo")
+	s.NoError(err)
+	s.Equal("foo", cfg.Core.Worktree)
 }
 
-func (s *ConfigSuite) TestSetConfigTemporal(c *C) {
+func (s *ConfigSuite) TestSetConfigTemporal() {
 	cfg := config.NewConfig()
 	cfg.Core.Worktree = "foo"
 
 	base := memory.NewStorage()
 	err := base.SetConfig(cfg)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	temporal := memory.NewStorage()
 
@@ -42,28 +47,28 @@ func (s *ConfigSuite) TestSetConfigTemporal(c *C) {
 
 	cs := NewConfigStorage(base, temporal)
 	err = cs.SetConfig(cfg)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	baseCfg, err := base.Config()
-	c.Assert(err, IsNil)
-	c.Assert(baseCfg.Core.Worktree, Equals, "foo")
+	s.NoError(err)
+	s.Equal("foo", baseCfg.Core.Worktree)
 
 	temporalCfg, err := temporal.Config()
-	c.Assert(err, IsNil)
-	c.Assert(temporalCfg.Core.Worktree, Equals, "bar")
+	s.NoError(err)
+	s.Equal("bar", temporalCfg.Core.Worktree)
 
 	cfg, err = cs.Config()
-	c.Assert(err, IsNil)
-	c.Assert(cfg.Core.Worktree, Equals, "bar")
+	s.NoError(err)
+	s.Equal("bar", cfg.Core.Worktree)
 }
 
-func (s *ConfigSuite) TestCommit(c *C) {
+func (s *ConfigSuite) TestCommit() {
 	cfg := config.NewConfig()
 	cfg.Core.Worktree = "foo"
 
 	base := memory.NewStorage()
 	err := base.SetConfig(cfg)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	temporal := memory.NewStorage()
 
@@ -72,12 +77,12 @@ func (s *ConfigSuite) TestCommit(c *C) {
 
 	cs := NewConfigStorage(base, temporal)
 	err = cs.SetConfig(cfg)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = cs.Commit()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	baseCfg, err := base.Config()
-	c.Assert(err, IsNil)
-	c.Assert(baseCfg.Core.Worktree, Equals, "bar")
+	s.NoError(err)
+	s.Equal("bar", baseCfg.Core.Worktree)
 }
