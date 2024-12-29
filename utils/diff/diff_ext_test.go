@@ -1,19 +1,22 @@
 package diff_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5/utils/diff"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type suiteCommon struct {
+	suite.Suite
+}
 
-type suiteCommon struct{}
-
-var _ = Suite(&suiteCommon{})
+func TestSuiteCommon(t *testing.T) {
+	suite.Run(t, new(suiteCommon))
+}
 
 var diffTests = [...]struct {
 	src string // the src string to diff
@@ -40,13 +43,13 @@ var diffTests = [...]struct {
 	{"a\nbbbbb\n\tccc\ndd\n\tfffffffff\n", "bbbbb\n\tccc\n\tDD\n\tffff\n"},
 }
 
-func (s *suiteCommon) TestAll(c *C) {
+func (s *suiteCommon) TestAll() {
 	for i, t := range diffTests {
 		diffs := diff.Do(t.src, t.dst)
 		src := diff.Src(diffs)
 		dst := diff.Dst(diffs)
-		c.Assert(src, Equals, t.src, Commentf("subtest %d, src=%q, dst=%q, bad calculated src", i, t.src, t.dst))
-		c.Assert(dst, Equals, t.dst, Commentf("subtest %d, src=%q, dst=%q, bad calculated dst", i, t.src, t.dst))
+		s.Equal(t.src, src, fmt.Sprintf("subtest %d, src=%q, dst=%q, bad calculated src", i, t.src, t.dst))
+		s.Equal(t.dst, dst, fmt.Sprintf("subtest %d, src=%q, dst=%q, bad calculated dst", i, t.src, t.dst))
 	}
 }
 
@@ -132,9 +135,9 @@ var doTests = [...]struct {
 	},
 }
 
-func (s *suiteCommon) TestDo(c *C) {
+func (s *suiteCommon) TestDo() {
 	for i, t := range doTests {
 		diffs := diff.Do(t.src, t.dst)
-		c.Assert(diffs, DeepEquals, t.exp, Commentf("subtest %d", i))
+		s.Equal(t.exp, diffs, fmt.Sprintf("subtest %d", i))
 	}
 }
