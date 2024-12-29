@@ -1,115 +1,118 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type RefSpecSuite struct{}
+type RefSpecSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&RefSpecSuite{})
+func TestRefSpecSuite(t *testing.T) {
+	suite.Run(t, new(RefSpecSuite))
+}
 
-func Test(t *testing.T) { TestingT(t) }
-
-func (s *RefSpecSuite) TestRefSpecIsValid(c *C) {
+func (s *RefSpecSuite) TestRefSpecIsValid() {
 	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Validate(), Equals, nil)
+	s.NoError(spec.Validate())
 
 	spec = RefSpec("refs/heads/*:refs/remotes/origin/")
-	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.Validate(), Equals, nil)
+	s.NoError(spec.Validate())
 
 	spec = RefSpec(":refs/heads/master")
-	c.Assert(spec.Validate(), Equals, nil)
+	s.NoError(spec.Validate())
 
 	spec = RefSpec(":refs/heads/*")
-	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec(":*")
-	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 
 	spec = RefSpec("refs/heads/*")
-	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedSeparator)
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedSeparator)
 
 	spec = RefSpec("refs/heads:")
-	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedSeparator)
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedSeparator)
 
 	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/foo")
-	c.Assert(spec.Validate(), Equals, nil)
+	s.NoError(spec.Validate())
 
 	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/*")
-	c.Assert(spec.Validate(), Equals, ErrRefSpecMalformedWildcard)
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
 }
 
-func (s *RefSpecSuite) TestRefSpecIsForceUpdate(c *C) {
+func (s *RefSpecSuite) TestRefSpecIsForceUpdate() {
 	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsForceUpdate(), Equals, true)
+	s.True(spec.IsForceUpdate())
 
 	spec = RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsForceUpdate(), Equals, false)
+	s.False(spec.IsForceUpdate())
 }
 
-func (s *RefSpecSuite) TestRefSpecIsDelete(c *C) {
+func (s *RefSpecSuite) TestRefSpecIsDelete() {
 	spec := RefSpec(":refs/heads/master")
-	c.Assert(spec.IsDelete(), Equals, true)
+	s.True(spec.IsDelete())
 
 	spec = RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsDelete(), Equals, false)
+	s.False(spec.IsDelete())
 
 	spec = RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.IsDelete(), Equals, false)
+	s.False(spec.IsDelete())
 }
 
-func (s *RefSpecSuite) TestRefSpecIsExactSHA1(c *C) {
+func (s *RefSpecSuite) TestRefSpecIsExactSHA1() {
 	spec := RefSpec("foo:refs/heads/master")
-	c.Assert(spec.IsExactSHA1(), Equals, false)
+	s.False(spec.IsExactSHA1())
 
 	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/foo")
-	c.Assert(spec.IsExactSHA1(), Equals, true)
+	s.True(spec.IsExactSHA1())
 }
 
-func (s *RefSpecSuite) TestRefSpecSrc(c *C) {
+func (s *RefSpecSuite) TestRefSpecSrc() {
 	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Src(), Equals, "refs/heads/*")
+	s.Equal("refs/heads/*", spec.Src())
 
 	spec = RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	c.Assert(spec.Src(), Equals, "refs/heads/*")
+	s.Equal("refs/heads/*", spec.Src())
 
 	spec = RefSpec(":refs/heads/master")
-	c.Assert(spec.Src(), Equals, "")
+	s.Equal("", spec.Src())
 
 	spec = RefSpec("refs/heads/love+hate:refs/heads/love+hate")
-	c.Assert(spec.Src(), Equals, "refs/heads/love+hate")
+	s.Equal("refs/heads/love+hate", spec.Src())
 
 	spec = RefSpec("+refs/heads/love+hate:refs/heads/love+hate")
-	c.Assert(spec.Src(), Equals, "refs/heads/love+hate")
+	s.Equal("refs/heads/love+hate", spec.Src())
 }
 
-func (s *RefSpecSuite) TestRefSpecMatch(c *C) {
+func (s *RefSpecSuite) TestRefSpecMatch() {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, false)
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/master")), Equals, true)
+	s.False(spec.Match(plumbing.ReferenceName("refs/heads/foo")))
+	s.True(spec.Match(plumbing.ReferenceName("refs/heads/master")))
 
 	spec = RefSpec("+refs/heads/master:refs/remotes/origin/master")
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/foo")), Equals, false)
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/master")), Equals, true)
+	s.False(spec.Match(plumbing.ReferenceName("refs/heads/foo")))
+	s.True(spec.Match(plumbing.ReferenceName("refs/heads/master")))
 
 	spec = RefSpec(":refs/heads/master")
-	c.Assert(spec.Match(plumbing.ReferenceName("")), Equals, true)
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/master")), Equals, false)
+	s.True(spec.Match(plumbing.ReferenceName("")))
+	s.False(spec.Match(plumbing.ReferenceName("refs/heads/master")))
 
 	spec = RefSpec("refs/heads/love+hate:heads/love+hate")
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/love+hate")), Equals, true)
+	s.True(spec.Match(plumbing.ReferenceName("refs/heads/love+hate")))
 
 	spec = RefSpec("+refs/heads/love+hate:heads/love+hate")
-	c.Assert(spec.Match(plumbing.ReferenceName("refs/heads/love+hate")), Equals, true)
+	s.True(spec.Match(plumbing.ReferenceName("refs/heads/love+hate")))
 }
 
-func (s *RefSpecSuite) TestRefSpecMatchGlob(c *C) {
+func (s *RefSpecSuite) TestRefSpecMatchGlob() {
 	tests := map[string]map[string]bool{
 		"refs/heads/*:refs/remotes/origin/*": {
 			"refs/tag/foo":   false,
@@ -135,24 +138,21 @@ func (s *RefSpecSuite) TestRefSpecMatchGlob(c *C) {
 	for specStr, data := range tests {
 		spec := RefSpec(specStr)
 		for ref, matches := range data {
-			c.Assert(spec.Match(plumbing.ReferenceName(ref)),
-				Equals,
-				matches,
-				Commentf("while matching spec %q against ref %q", specStr, ref),
+			s.Equal(matches,
+				spec.Match(plumbing.ReferenceName(ref)),
+				fmt.Sprintf("while matching spec %q against ref %q", specStr, ref),
 			)
 		}
 	}
 }
 
-func (s *RefSpecSuite) TestRefSpecDst(c *C) {
+func (s *RefSpecSuite) TestRefSpecDst() {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
-	c.Assert(
-		spec.Dst(plumbing.ReferenceName("refs/heads/master")).String(), Equals,
-		"refs/remotes/origin/master",
-	)
+	s.Equal("refs/remotes/origin/master",
+		spec.Dst(plumbing.ReferenceName("refs/heads/master")).String())
 }
 
-func (s *RefSpecSuite) TestRefSpecDstBlob(c *C) {
+func (s *RefSpecSuite) TestRefSpecDstBlob() {
 	ref := "refs/heads/abc"
 	tests := map[string]string{
 		"refs/heads/*:refs/remotes/origin/*":       "refs/remotes/origin/abc",
@@ -174,29 +174,25 @@ func (s *RefSpecSuite) TestRefSpecDstBlob(c *C) {
 
 	for specStr, dst := range tests {
 		spec := RefSpec(specStr)
-		c.Assert(spec.Dst(plumbing.ReferenceName(ref)).String(),
-			Equals,
-			dst,
-			Commentf("while getting dst from spec %q with ref %q", specStr, ref),
+		s.Equal(dst,
+			spec.Dst(plumbing.ReferenceName(ref)).String(),
+			fmt.Sprintf("while getting dst from spec %q with ref %q", specStr, ref),
 		)
 	}
 }
 
-func (s *RefSpecSuite) TestRefSpecReverse(c *C) {
+func (s *RefSpecSuite) TestRefSpecReverse() {
 	spec := RefSpec("refs/heads/*:refs/remotes/origin/*")
-	c.Assert(
-		spec.Reverse(), Equals,
-		RefSpec("refs/remotes/origin/*:refs/heads/*"),
-	)
+	s.Equal(RefSpec("refs/remotes/origin/*:refs/heads/*"), spec.Reverse())
 }
 
-func (s *RefSpecSuite) TestMatchAny(c *C) {
+func (s *RefSpecSuite) TestMatchAny() {
 	specs := []RefSpec{
 		"refs/heads/bar:refs/remotes/origin/foo",
 		"refs/heads/foo:refs/remotes/origin/bar",
 	}
 
-	c.Assert(MatchAny(specs, plumbing.ReferenceName("refs/heads/foo")), Equals, true)
-	c.Assert(MatchAny(specs, plumbing.ReferenceName("refs/heads/bar")), Equals, true)
-	c.Assert(MatchAny(specs, plumbing.ReferenceName("refs/heads/master")), Equals, false)
+	s.True(MatchAny(specs, plumbing.ReferenceName("refs/heads/foo")))
+	s.True(MatchAny(specs, plumbing.ReferenceName("refs/heads/bar")))
+	s.False(MatchAny(specs, plumbing.ReferenceName("refs/heads/master")))
 }
