@@ -3,17 +3,21 @@ package storer
 import (
 	"errors"
 	"io"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type ReferenceSuite struct{}
+type ReferenceSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&ReferenceSuite{})
+func TestReferenceSuite(t *testing.T) {
+	suite.Run(t, new(ReferenceSuite))
+}
 
-func (s *ReferenceSuite) TestReferenceSliceIterNext(c *C) {
+func (s *ReferenceSuite) TestReferenceSliceIterNext() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -21,19 +25,19 @@ func (s *ReferenceSuite) TestReferenceSliceIterNext(c *C) {
 
 	i := NewReferenceSliceIter(slice)
 	foo, err := i.Next()
-	c.Assert(err, IsNil)
-	c.Assert(foo == slice[0], Equals, true)
+	s.NoError(err)
+	s.True(foo == slice[0])
 
 	bar, err := i.Next()
-	c.Assert(err, IsNil)
-	c.Assert(bar == slice[1], Equals, true)
+	s.NoError(err)
+	s.True(bar == slice[1])
 
 	empty, err := i.Next()
-	c.Assert(err, Equals, io.EOF)
-	c.Assert(empty, IsNil)
+	s.ErrorIs(err, io.EOF)
+	s.Nil(empty)
 }
 
-func (s *ReferenceSuite) TestReferenceSliceIterForEach(c *C) {
+func (s *ReferenceSuite) TestReferenceSliceIterForEach() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -42,15 +46,15 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEach(c *C) {
 	i := NewReferenceSliceIter(slice)
 	var count int
 	i.ForEach(func(r *plumbing.Reference) error {
-		c.Assert(r == slice[count], Equals, true)
+		s.True(r == slice[count])
 		count++
 		return nil
 	})
 
-	c.Assert(count, Equals, 2)
+	s.Equal(2, count)
 }
 
-func (s *ReferenceSuite) TestReferenceSliceIterForEachError(c *C) {
+func (s *ReferenceSuite) TestReferenceSliceIterForEachError() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -60,7 +64,7 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachError(c *C) {
 	var count int
 	exampleErr := errors.New("SOME ERROR")
 	err := i.ForEach(func(r *plumbing.Reference) error {
-		c.Assert(r == slice[count], Equals, true)
+		s.True(r == slice[count])
 		count++
 		if count == 2 {
 			return exampleErr
@@ -69,11 +73,11 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachError(c *C) {
 		return nil
 	})
 
-	c.Assert(err, Equals, exampleErr)
-	c.Assert(count, Equals, 2)
+	s.ErrorIs(err, exampleErr)
+	s.Equal(2, count)
 }
 
-func (s *ReferenceSuite) TestReferenceSliceIterForEachStop(c *C) {
+func (s *ReferenceSuite) TestReferenceSliceIterForEachStop() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -83,15 +87,15 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachStop(c *C) {
 
 	var count int
 	i.ForEach(func(r *plumbing.Reference) error {
-		c.Assert(r == slice[count], Equals, true)
+		s.True(r == slice[count])
 		count++
 		return ErrStop
 	})
 
-	c.Assert(count, Equals, 1)
+	s.Equal(1, count)
 }
 
-func (s *ReferenceSuite) TestReferenceFilteredIterNext(c *C) {
+func (s *ReferenceSuite) TestReferenceFilteredIterNext() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -101,16 +105,16 @@ func (s *ReferenceSuite) TestReferenceFilteredIterNext(c *C) {
 		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
 	foo, err := i.Next()
-	c.Assert(err, IsNil)
-	c.Assert(foo == slice[0], Equals, false)
-	c.Assert(foo == slice[1], Equals, true)
+	s.NoError(err)
+	s.False(foo == slice[0])
+	s.True(foo == slice[1])
 
 	empty, err := i.Next()
-	c.Assert(err, Equals, io.EOF)
-	c.Assert(empty, IsNil)
+	s.ErrorIs(err, io.EOF)
+	s.Nil(empty)
 }
 
-func (s *ReferenceSuite) TestReferenceFilteredIterForEach(c *C) {
+func (s *ReferenceSuite) TestReferenceFilteredIterForEach() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -121,15 +125,15 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEach(c *C) {
 	}, NewReferenceSliceIter(slice))
 	var count int
 	i.ForEach(func(r *plumbing.Reference) error {
-		c.Assert(r == slice[1], Equals, true)
+		s.True(r == slice[1])
 		count++
 		return nil
 	})
 
-	c.Assert(count, Equals, 1)
+	s.Equal(1, count)
 }
 
-func (s *ReferenceSuite) TestReferenceFilteredIterError(c *C) {
+func (s *ReferenceSuite) TestReferenceFilteredIterError() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -141,7 +145,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterError(c *C) {
 	var count int
 	exampleErr := errors.New("SOME ERROR")
 	err := i.ForEach(func(r *plumbing.Reference) error {
-		c.Assert(r == slice[1], Equals, true)
+		s.True(r == slice[1])
 		count++
 		if count == 1 {
 			return exampleErr
@@ -150,11 +154,11 @@ func (s *ReferenceSuite) TestReferenceFilteredIterError(c *C) {
 		return nil
 	})
 
-	c.Assert(err, Equals, exampleErr)
-	c.Assert(count, Equals, 1)
+	s.ErrorIs(err, exampleErr)
+	s.Equal(1, count)
 }
 
-func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop(c *C) {
+func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop() {
 	slice := []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("foo", "foo"),
 		plumbing.NewReferenceFromStrings("bar", "bar"),
@@ -166,15 +170,15 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop(c *C) {
 
 	var count int
 	i.ForEach(func(r *plumbing.Reference) error {
-		c.Assert(r == slice[1], Equals, true)
+		s.True(r == slice[1])
 		count++
 		return ErrStop
 	})
 
-	c.Assert(count, Equals, 1)
+	s.Equal(1, count)
 }
 
-func (s *ReferenceSuite) TestMultiReferenceIterForEach(c *C) {
+func (s *ReferenceSuite) TestMultiReferenceIterForEach() {
 	i := NewMultiReferenceIter(
 		[]ReferenceIter{
 			NewReferenceSliceIter([]*plumbing.Reference{
@@ -192,7 +196,7 @@ func (s *ReferenceSuite) TestMultiReferenceIterForEach(c *C) {
 		return nil
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(result, HasLen, 2)
-	c.Assert(result, DeepEquals, []string{"foo", "bar"})
+	s.NoError(err)
+	s.Len(result, 2)
+	s.Equal([]string{"foo", "bar"}, result)
 }
