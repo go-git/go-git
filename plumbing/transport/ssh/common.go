@@ -3,6 +3,7 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -18,11 +19,11 @@ import (
 )
 
 func init() {
-	transport.Register("ssh", DefaultClient)
+	transport.Register("ssh", DefaultTransport)
 }
 
-// DefaultClient is the default SSH client.
-var DefaultClient = NewClient(nil)
+// DefaultTransport is the default SSH client.
+var DefaultTransport = NewTransport(nil)
 
 // DefaultSSHConfig is the reader used to access parameters stored in the
 // system's ssh_config files. If nil all the ssh_config are ignored.
@@ -32,9 +33,9 @@ type sshConfig interface {
 	Get(alias, key string) string
 }
 
-// NewClient creates a new SSH client with an optional *ssh.ClientConfig.
-func NewClient(config *ssh.ClientConfig) transport.Transport {
-	return transport.NewClient(&runner{config: config})
+// NewTransport creates a new SSH client with an optional *ssh.ClientConfig.
+func NewTransport(config *ssh.ClientConfig) transport.Transport {
+	return transport.NewPackTransport(&runner{config: config})
 }
 
 // DefaultAuthBuilder is the function used to create a default AuthMethod, when
@@ -50,7 +51,7 @@ type runner struct {
 	config *ssh.ClientConfig
 }
 
-func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod) (transport.Command, error) {
+func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
 	c := &command{command: cmd, endpoint: ep, config: r.config}
 	if auth != nil {
 		if err := c.setAuth(auth); err != nil {
@@ -58,9 +59,15 @@ func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.Auth
 		}
 	}
 
-	if err := c.connect(); err != nil {
+	gitProtocol := strings.Join(params, ":")
+	if err := c.connect(ctx); err != nil {
 		return nil, err
 	}
+
+	if gitProtocol != "" {
+		c.Session.Setenv("GIT_PROTOCOL", gitProtocol)
+	}
+
 	return c, nil
 }
 
@@ -85,7 +92,8 @@ func (c *command) setAuth(auth transport.AuthMethod) error {
 }
 
 func (c *command) Start() error {
-	return c.Session.Start(endpointToCommand(c.command, c.endpoint))
+	cmd := endpointToCommand(c.command, c.endpoint)
+	return c.Session.Start(cmd)
 }
 
 // Close closes the SSH session and connection.
@@ -96,13 +104,11 @@ func (c *command) Close() error {
 
 	c.connected = false
 
-	//XXX: If did read the full packfile, then the session might be already
+	// XXX: If did read the full packfile, then the session might be already
 	//     closed.
 	_ = c.Session.Close()
 	err := c.client.Close()
-
-	//XXX: in go1.16+ we can use errors.Is(err, net.ErrClosed)
-	if err != nil && strings.HasSuffix(err.Error(), "use of closed network connection") {
+	if errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 
@@ -113,7 +119,7 @@ func (c *command) Close() error {
 // SetAuth method, by default uses an auth method based on PublicKeysCallback,
 // it connects to a SSH agent, using the address stored in the SSH_AUTH_SOCK
 // environment var.
-func (c *command) connect() error {
+func (c *command) connect(ctx context.Context) error {
 	if c.connected {
 		return transport.ErrAlreadyConnected
 	}
@@ -156,7 +162,7 @@ func (c *command) connect() error {
 
 	overrideConfig(c.config, config)
 
-	c.client, err = dial("tcp", hostWithPort, c.endpoint.Proxy, config)
+	c.client, err = dial(ctx, "tcp", hostWithPort, c.endpoint.Proxy, config)
 	if err != nil {
 		return err
 	}
@@ -171,11 +177,8 @@ func (c *command) connect() error {
 	return nil
 }
 
-func dial(network, addr string, proxyOpts transport.ProxyOptions, config *ssh.ClientConfig) (*ssh.Client, error) {
-	var (
-		ctx    = context.Background()
-		cancel context.CancelFunc
-	)
+func dial(ctx context.Context, network, addr string, proxyOpts transport.ProxyOptions, config *ssh.ClientConfig) (*ssh.Client, error) {
+	var cancel context.CancelFunc
 	if config.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, config.Timeout)
 	} else {

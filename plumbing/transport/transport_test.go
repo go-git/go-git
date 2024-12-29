@@ -3,12 +3,7 @@ package transport
 import (
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
-
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 
 	. "gopkg.in/check.v1"
 )
@@ -47,7 +42,6 @@ func (s *SuiteCommon) TestNewEndpointPorts(c *C) {
 	e, err = NewEndpoint("git://github.com:9418/user/repository.git?foo#bar")
 	c.Assert(err, IsNil)
 	c.Assert(e.String(), Equals, "git://github.com/user/repository.git?foo#bar")
-
 }
 
 func (s *SuiteCommon) TestNewEndpointSSH(c *C) {
@@ -123,14 +117,6 @@ func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort(c *C) {
 }
 
 func (s *SuiteCommon) TestNewEndpointFileAbs(c *C) {
-	var err error
-	abs := "/foo.git"
-
-	if runtime.GOOS == "windows" {
-		abs, err = filepath.Abs(abs)
-		c.Assert(err, IsNil)
-	}
-
 	e, err := NewEndpoint("/foo.git")
 	c.Assert(err, IsNil)
 	c.Assert(e.Protocol, Equals, "file")
@@ -138,14 +124,11 @@ func (s *SuiteCommon) TestNewEndpointFileAbs(c *C) {
 	c.Assert(e.Password, Equals, "")
 	c.Assert(e.Host, Equals, "")
 	c.Assert(e.Port, Equals, 0)
-	c.Assert(e.Path, Equals, abs)
-	c.Assert(e.String(), Equals, "file://"+abs)
+	c.Assert(e.Path, Equals, "/foo.git")
+	c.Assert(e.String(), Equals, "file:///foo.git")
 }
 
 func (s *SuiteCommon) TestNewEndpointFileRel(c *C) {
-	abs, err := filepath.Abs("foo.git")
-	c.Assert(err, IsNil)
-
 	e, err := NewEndpoint("foo.git")
 	c.Assert(err, IsNil)
 	c.Assert(e.Protocol, Equals, "file")
@@ -153,20 +136,11 @@ func (s *SuiteCommon) TestNewEndpointFileRel(c *C) {
 	c.Assert(e.Password, Equals, "")
 	c.Assert(e.Host, Equals, "")
 	c.Assert(e.Port, Equals, 0)
-	c.Assert(e.Path, Equals, abs)
-	c.Assert(e.String(), Equals, "file://"+abs)
+	c.Assert(e.Path, Equals, "foo.git")
+	c.Assert(e.String(), Equals, "file://foo.git")
 }
 
 func (s *SuiteCommon) TestNewEndpointFileWindows(c *C) {
-	abs := "C:\\foo.git"
-
-	if runtime.GOOS != "windows" {
-		cwd, err := os.Getwd()
-		c.Assert(err, IsNil)
-
-		abs = filepath.Join(cwd, "C:\\foo.git")
-	}
-
 	e, err := NewEndpoint("C:\\foo.git")
 	c.Assert(err, IsNil)
 	c.Assert(e.Protocol, Equals, "file")
@@ -174,8 +148,8 @@ func (s *SuiteCommon) TestNewEndpointFileWindows(c *C) {
 	c.Assert(e.Password, Equals, "")
 	c.Assert(e.Host, Equals, "")
 	c.Assert(e.Port, Equals, 0)
-	c.Assert(e.Path, Equals, abs)
-	c.Assert(e.String(), Equals, "file://"+abs)
+	c.Assert(e.Path, Equals, "C:\\foo.git")
+	c.Assert(e.String(), Equals, "file://C:\\foo.git")
 }
 
 func (s *SuiteCommon) TestNewEndpointFileURL(c *C) {
@@ -214,15 +188,6 @@ func (s *SuiteCommon) TestNewEndpointInvalidURL(c *C) {
 	c.Assert(e, IsNil)
 }
 
-func (s *SuiteCommon) TestFilterUnsupportedCapabilities(c *C) {
-	l := capability.NewList()
-	l.Set(capability.MultiACK)
-	l.Set(capability.MultiACKDetailed)
-
-	FilterUnsupportedCapabilities(l)
-	c.Assert(l.Supports(capability.ThinPack), Equals, false)
-}
-
 func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
 	// see issue https://github.com/go-git/go-git/issues/740
 	//
@@ -233,16 +198,4 @@ func (s *SuiteCommon) TestNewEndpointIPv6(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e.Host, Equals, "[::1]")
 	c.Assert(e.String(), Equals, "http://[::1]:8080/foo.git")
-}
-
-func FuzzNewEndpoint(f *testing.F) {
-	f.Add("http://127.0.0.1:8080/foo.git")
-	f.Add("http://[::1]:8080/foo.git")
-	f.Add("file:///foo.git")
-	f.Add("ssh://git@github.com/user/repository.git")
-	f.Add("git@github.com:user/repository.git")
-
-	f.Fuzz(func(t *testing.T, input string) {
-		NewEndpoint(input)
-	})
 }

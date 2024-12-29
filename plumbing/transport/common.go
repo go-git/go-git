@@ -6,21 +6,17 @@
 package transport
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"regexp"
-	"strings"
-	"time"
 
-	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/go-git/go-git/v5/storage"
 )
 
 const (
@@ -28,22 +24,134 @@ const (
 )
 
 var (
+	// ErrUnsupportedVersion is returned when the protocol version is not
+	// supported.
+	ErrUnsupportedVersion = errors.New("unsupported protocol version")
+	// ErrUnsupportedService is returned when the service is not supported.
+	ErrUnsupportedService = errors.New("unsupported service")
+	// ErrInvalidResponse is returned when the response is invalid.
+	ErrInvalidResponse = errors.New("invalid response")
+	// ErrTimeoutExceeded is returned when the timeout is exceeded.
 	ErrTimeoutExceeded = errors.New("timeout exceeded")
+	// ErrPackedObjectsNotSupported is returned when the server does not support
+	// packed objects.
+	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
 	// stdErrSkipPattern is used for skipping lines from a command's stderr output.
 	// Any line matching this pattern will be skipped from further
 	// processing and not be returned to calling code.
 	stdErrSkipPattern = regexp.MustCompile("^remote:( =*){0,1}$")
 )
 
+// RemoteError represents an error returned by the remote.
+// TODO: embed error
+type RemoteError struct {
+	Reason string
+}
+
+// Error implements the error interface.
+func (e *RemoteError) Error() string {
+	return e.Reason
+}
+
+// NewRemoteError creates a new RemoteError.
+func NewRemoteError(reason string) error {
+	return &RemoteError{Reason: reason}
+}
+
+// Connection represents a session endpoint connection.
+type Connection interface {
+	// Close closes the connection.
+	Close() error
+
+	// Capabilities returns the list of capabilities supported by the server.
+	Capabilities() *capability.List
+
+	// Version returns the Git protocol version the server supports.
+	Version() protocol.Version
+
+	// StatelessRPC indicates that the connection is a half-duplex connection
+	// and should operate in half-duplex mode i.e. performs a single read-write
+	// cycle. This fits with the HTTP POST request process where session may
+	// read the request, write a response, and exit.
+	StatelessRPC() bool
+
+	// GetRemoteRefs returns the references advertised by the remote.
+	// Using protocol v0 or v1, this returns the references advertised by the
+	// remote during the handshake. Using protocol v2, this runs the ls-refs
+	// command on the remote.
+	// This will error if the session is not already established using
+	// Handshake.
+	GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error)
+
+	// Fetch sends a fetch-pack request to the server.
+	Fetch(ctx context.Context, req *FetchRequest) error
+
+	// Push sends a send-pack request to the server.
+	Push(ctx context.Context, req *PushRequest) error
+}
+
+var _ io.Closer = Connection(nil)
+
+// FetchRequest contains the parameters for a fetch-pack request.
+// This is used during the pack negotiation phase of the fetch operation.
+// See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
+type FetchRequest struct {
+	// Progress is the progress sideband.
+	Progress sideband.Progress
+
+	// Wants is the list of references to fetch.
+	Wants []plumbing.Hash
+
+	// Haves is the list of references the client already has.
+	Haves []plumbing.Hash
+
+	// Depth is the depth of the fetch.
+	Depth int
+
+	// IncludeTags indicates whether tags should be fetched.
+	IncludeTags bool
+}
+
+// PushRequest contains the parameters for a push request.
+type PushRequest struct {
+	// Packfile is the packfile reader.
+	Packfile io.ReadCloser
+
+	// Commands is the list of push commands to be sent to the server.
+	// TODO: build the Commands slice in the transport package.
+	Commands []*packp.Command
+
+	// Progress is the progress sideband.
+	Progress sideband.Progress
+
+	// Options is a set of push-options to be sent to the server during push.
+	Options map[string]string
+
+	// Atomic indicates an atomic push.
+	// If the server supports atomic push, it will update the refs in one
+	// atomic transaction. Either all refs are updated or none.
+	Atomic bool
+}
+
+// Session is a Git protocol transfer session.
+// This is used by all protocols.
+type Session interface {
+	// Handshake starts the negotiation with the remote to get version if not
+	// already connected.
+	// Params are the optional extra parameters to be sent to the server. Use
+	// this to send the protocol version of the client and any other extra parameters.
+	Handshake(ctx context.Context, service Service, params ...string) (Connection, error)
+}
+
 // Commander creates Command instances. This is the main entry point for
 // transport implementations.
 type Commander interface {
-	// Command creates a new Command for the given git command and
+	// Connect creates a new Command for the given git command and
 	// endpoint. cmd can be git-upload-pack or git-receive-pack. An
 	// error should be returned if the endpoint is not supported or the
 	// command cannot be created (e.g. binary does not exist, connection
 	// cannot be established).
-	Command(cmd string, ep *Endpoint, auth AuthMethod) (Command, error)
+	Command(ctx context.Context, cmd string, ep *Endpoint, auth AuthMethod, params ...string) (Command, error)
 }
 
 // Command is used for a single command execution.
@@ -81,417 +189,21 @@ type client struct {
 	cmdr Commander
 }
 
-// NewClient creates a new client using the given Commander.
-func NewClient(runner Commander) Transport {
+// NewPackTransport creates a new client using the given Commander.
+func NewPackTransport(runner Commander) Transport {
 	return &client{runner}
 }
 
-// NewUploadPackSession creates a new UploadPackSession.
-func (c *client) NewUploadPackSession(ep *Endpoint, auth AuthMethod) (
-	UploadPackSession, error,
-) {
-	return c.newSession(UploadPackServiceName, ep, auth)
+// NewSession returns a new session for an endpoint.
+func (c *client) NewSession(st storage.Storer, ep *Endpoint, auth AuthMethod) (Session, error) {
+	return NewPackSession(st, ep, auth, c.cmdr)
 }
 
-// NewReceivePackSession creates a new ReceivePackSession.
-func (c *client) NewReceivePackSession(ep *Endpoint, auth AuthMethod) (
-	ReceivePackSession, error,
-) {
-	return c.newSession(ReceivePackServiceName, ep, auth)
-}
-
-type session struct {
-	Stdin   io.WriteCloser
-	Stdout  io.Reader
-	Command Command
-
-	isReceivePack bool
-	advRefs       *packp.AdvRefs
-	packRun       bool
-	finished      bool
-	firstErrLine  chan string
-}
-
-func (c *client) newSession(s string, ep *Endpoint, auth AuthMethod) (*session, error) {
-	cmd, err := c.cmdr.Command(s, ep, auth)
-	if err != nil {
-		return nil, err
+// SupportedProtocols returns a list of supported Git protocol versions by
+// the transport client.
+func (c *client) SupportedProtocols() []protocol.Version {
+	return []protocol.Version{
+		protocol.V0,
+		protocol.V1,
 	}
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
-	return &session{
-		Stdin:         stdin,
-		Stdout:        stdout,
-		Command:       cmd,
-		firstErrLine:  c.listenFirstError(stderr),
-		isReceivePack: s == ReceivePackServiceName,
-	}, nil
-}
-
-func (c *client) listenFirstError(r io.Reader) chan string {
-	if r == nil {
-		return nil
-	}
-
-	errLine := make(chan string, 1)
-	go func() {
-		s := bufio.NewScanner(r)
-		for {
-			if s.Scan() {
-				line := s.Text()
-				if !stdErrSkipPattern.MatchString(line) {
-					errLine <- line
-					break
-				}
-			} else {
-				close(errLine)
-				break
-			}
-		}
-
-		_, _ = io.Copy(io.Discard, r)
-	}()
-
-	return errLine
-}
-
-func (s *session) AdvertisedReferences() (*packp.AdvRefs, error) {
-	return s.AdvertisedReferencesContext(context.TODO())
-}
-
-// AdvertisedReferences retrieves the advertised references from the server.
-func (s *session) AdvertisedReferencesContext(ctx context.Context) (*packp.AdvRefs, error) {
-	if s.advRefs != nil {
-		return s.advRefs, nil
-	}
-
-	ar := packp.NewAdvRefs()
-	if err := ar.Decode(s.StdoutContext(ctx)); err != nil {
-		if err := s.handleAdvRefDecodeError(err); err != nil {
-			return nil, err
-		}
-	}
-
-	// Some servers like jGit, announce capabilities instead of returning an
-	// packp message with a flush. This verifies that we received a empty
-	// adv-refs, even it contains capabilities.
-	if !s.isReceivePack && ar.IsEmpty() {
-		return nil, ErrEmptyRemoteRepository
-	}
-
-	FilterUnsupportedCapabilities(ar.Capabilities)
-	s.advRefs = ar
-	return ar, nil
-}
-
-func (s *session) handleAdvRefDecodeError(err error) error {
-	var errLine *pktline.ErrorLine
-	if errors.As(err, &errLine) {
-		if isRepoNotFoundError(errLine.Text) {
-			return ErrRepositoryNotFound
-		}
-
-		return errLine
-	}
-
-	// If repository is not found, we get empty stdout and server writes an
-	// error to stderr.
-	if errors.Is(err, packp.ErrEmptyInput) {
-		// TODO:(v6): handle this error in a better way.
-		// Instead of checking the stderr output for a specific error message,
-		// define an ExitError and embed the stderr output and exit (if one
-		// exists) in the error struct. Just like exec.ExitError.
-		s.finished = true
-		if err := s.checkNotFoundError(); err != nil {
-			return err
-		}
-
-		return io.ErrUnexpectedEOF
-	}
-
-	// For empty (but existing) repositories, we get empty advertised-references
-	// message. But valid. That is, it includes at least a flush.
-	if err == packp.ErrEmptyAdvRefs {
-		// Empty repositories are valid for git-receive-pack.
-		if s.isReceivePack {
-			return nil
-		}
-
-		if err := s.finish(); err != nil {
-			return err
-		}
-
-		return ErrEmptyRemoteRepository
-	}
-
-	// Some server sends the errors as normal content (git protocol), so when
-	// we try to decode it fails, we need to check the content of it, to detect
-	// not found errors
-	if uerr, ok := err.(*packp.ErrUnexpectedData); ok {
-		if isRepoNotFoundError(string(uerr.Data)) {
-			return ErrRepositoryNotFound
-		}
-	}
-
-	return err
-}
-
-// UploadPack performs a request to the server to fetch a packfile. A reader is
-// returned with the packfile content. The reader must be closed after reading.
-func (s *session) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: upload_pack", time.Since(start).Seconds())
-	}()
-
-	if req.IsEmpty() {
-		// XXX: IsEmpty means haves are a subset of wants, in that case we have
-		// everything we asked for. Close the connection and return nil.
-		if err := s.finish(); err != nil {
-			return nil, err
-		}
-		// TODO:(v6) return nil here
-		return nil, ErrEmptyUploadPackRequest
-	}
-
-	if err := req.Validate(); err != nil {
-		return nil, err
-	}
-
-	if _, err := s.AdvertisedReferencesContext(ctx); err != nil {
-		return nil, err
-	}
-
-	s.packRun = true
-
-	in := s.StdinContext(ctx)
-	out := s.StdoutContext(ctx)
-
-	if err := uploadPack(in, out, req); err != nil {
-		return nil, err
-	}
-
-	r, err := ioutil.NonEmptyReader(out)
-	if err == ioutil.ErrEmptyReader {
-		if c, ok := s.Stdout.(io.Closer); ok {
-			_ = c.Close()
-		}
-
-		return nil, ErrEmptyUploadPackRequest
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	rc := ioutil.NewReadCloser(r, s)
-	return DecodeUploadPackResponse(rc, req)
-}
-
-func (s *session) StdinContext(ctx context.Context) io.WriteCloser {
-	return ioutil.NewWriteCloserOnError(
-		ioutil.NewContextWriteCloser(ctx, s.Stdin),
-		s.onError,
-	)
-}
-
-func (s *session) StdoutContext(ctx context.Context) io.Reader {
-	return ioutil.NewReaderOnError(
-		ioutil.NewContextReader(ctx, s.Stdout),
-		s.onError,
-	)
-}
-
-func (s *session) onError(err error) {
-	if k, ok := s.Command.(CommandKiller); ok {
-		_ = k.Kill()
-	}
-
-	_ = s.Close()
-}
-
-func (s *session) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: receive_pack", time.Since(start).Seconds())
-	}()
-
-	if _, err := s.AdvertisedReferences(); err != nil {
-		return nil, err
-	}
-
-	s.packRun = true
-
-	w := s.StdinContext(ctx)
-	if err := req.Encode(w); err != nil {
-		return nil, err
-	}
-
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-
-	if !req.Capabilities.Supports(capability.ReportStatus) {
-		// If we don't have report-status, we can only
-		// check return value error.
-		return nil, s.Command.Close()
-	}
-
-	r := s.StdoutContext(ctx)
-
-	var d *sideband.Demuxer
-	if req.Capabilities.Supports(capability.Sideband64k) {
-		d = sideband.NewDemuxer(sideband.Sideband64k, r)
-	} else if req.Capabilities.Supports(capability.Sideband) {
-		d = sideband.NewDemuxer(sideband.Sideband, r)
-	}
-	if d != nil {
-		d.Progress = req.Progress
-		r = d
-	}
-
-	report := packp.NewReportStatus()
-	if err := report.Decode(r); err != nil {
-		return nil, err
-	}
-
-	if err := report.Error(); err != nil {
-		defer s.Close()
-		return report, err
-	}
-
-	return report, s.Command.Close()
-}
-
-func (s *session) finish() error {
-	if s.finished {
-		return nil
-	}
-
-	s.finished = true
-
-	// If we did not run a upload/receive-pack, we close the connection
-	// gracefully by sending a flush packet to the server. If the server
-	// operates correctly, it will exit with status 0.
-	if !s.packRun {
-		return pktline.WriteFlush(s.Stdin)
-	}
-
-	return nil
-}
-
-func (s *session) Close() (err error) {
-	err = s.finish()
-
-	defer ioutil.CheckClose(s.Command, &err)
-	return
-}
-
-func (s *session) checkNotFoundError() error {
-	t := time.NewTicker(time.Second * readErrorSecondsTimeout)
-	defer t.Stop()
-
-	select {
-	case <-t.C:
-		return ErrTimeoutExceeded
-	case line, ok := <-s.firstErrLine:
-		if !ok || len(line) == 0 {
-			return nil
-		}
-
-		if isRepoNotFoundError(line) {
-			return ErrRepositoryNotFound
-		}
-
-		return fmt.Errorf("unknown error: %s", line)
-	}
-}
-
-const (
-	githubRepoNotFoundErr      = "Repository not found."
-	bitbucketRepoNotFoundErr   = "repository does not exist."
-	localRepoNotFoundErr       = "does not appear to be a git repository"
-	gitProtocolNotFoundErr     = "Repository not found."
-	gitProtocolNoSuchErr       = "no such repository"
-	gitProtocolAccessDeniedErr = "access denied"
-	gogsAccessDeniedErr        = "Repository does not exist or you do not have access"
-	gitlabRepoNotFoundErr      = "The project you were looking for could not be found"
-)
-
-func isRepoNotFoundError(s string) bool {
-	for _, err := range []string{
-		githubRepoNotFoundErr,
-		bitbucketRepoNotFoundErr,
-		localRepoNotFoundErr,
-		gitProtocolNotFoundErr,
-		gitProtocolNoSuchErr,
-		gitProtocolAccessDeniedErr,
-		gogsAccessDeniedErr,
-		gitlabRepoNotFoundErr,
-	} {
-		if strings.Contains(s, err) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// uploadPack implements the git-upload-pack protocol.
-func uploadPack(w io.WriteCloser, _ io.Reader, req *packp.UploadPackRequest) error {
-	// TODO support acks for common objects
-	// TODO build a proper state machine for all these processing options
-
-	if err := req.UploadRequest.Encode(w); err != nil {
-		return fmt.Errorf("sending upload-req message: %s", err)
-	}
-
-	if err := req.UploadHaves.Encode(w, true); err != nil {
-		return fmt.Errorf("sending haves message: %s", err)
-	}
-
-	if err := sendDone(w); err != nil {
-		return fmt.Errorf("sending done message: %s", err)
-	}
-
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("closing input: %s", err)
-	}
-
-	return nil
-}
-
-func sendDone(w io.Writer) error {
-	_, err := pktline.Writef(w, "done\n")
-	return err
-}
-
-// DecodeUploadPackResponse decodes r into a new packp.UploadPackResponse
-func DecodeUploadPackResponse(r io.ReadCloser, req *packp.UploadPackRequest) (
-	*packp.UploadPackResponse, error,
-) {
-	res := packp.NewUploadPackResponse(req)
-	if err := res.Decode(r); err != nil {
-		return nil, fmt.Errorf("error decoding upload-pack response: %s", err)
-	}
-
-	return res, nil
 }
