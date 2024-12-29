@@ -295,7 +295,7 @@ func (s *ConfigSuite) TestRemoteConfigValidateMissingURL() {
 
 func (s *ConfigSuite) TestRemoteConfigValidateMissingName() {
 	config := &RemoteConfig{}
-	s.Equal(ErrRemoteConfigEmptyName, config.Validate())
+	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyName)
 }
 
 func (s *ConfigSuite) TestRemoteConfigValidateDefault() {
