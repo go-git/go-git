@@ -318,7 +318,7 @@ func (s *ConfigSuite) TestValidateInvalidBranchKey() {
 		},
 	}
 
-	s.Equal(ErrInvalid, config.Validate())
+	s.ErrorIs(config.Validate(), ErrInvalid)
 }
 
 func (s *ConfigSuite) TestValidateInvalidBranch() {
