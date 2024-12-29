@@ -1,33 +1,41 @@
 package plumbing
 
-import . "gopkg.in/check.v1"
+import (
+	"testing"
 
-type ObjectSuite struct{}
+	"github.com/stretchr/testify/suite"
+)
 
-var _ = Suite(&ObjectSuite{})
-
-func (s *ObjectSuite) TestObjectTypeString(c *C) {
-	c.Assert(CommitObject.String(), Equals, "commit")
-	c.Assert(TreeObject.String(), Equals, "tree")
-	c.Assert(BlobObject.String(), Equals, "blob")
-	c.Assert(TagObject.String(), Equals, "tag")
-	c.Assert(REFDeltaObject.String(), Equals, "ref-delta")
-	c.Assert(OFSDeltaObject.String(), Equals, "ofs-delta")
-	c.Assert(AnyObject.String(), Equals, "any")
-	c.Assert(ObjectType(42).String(), Equals, "unknown")
+type ObjectSuite struct {
+	suite.Suite
 }
 
-func (s *ObjectSuite) TestObjectTypeBytes(c *C) {
-	c.Assert(CommitObject.Bytes(), DeepEquals, []byte("commit"))
+func TestObjectSuite(t *testing.T) {
+	suite.Run(t, new(ObjectSuite))
 }
 
-func (s *ObjectSuite) TestObjectTypeValid(c *C) {
-	c.Assert(CommitObject.Valid(), Equals, true)
-	c.Assert(ObjectType(42).Valid(), Equals, false)
+func (s *ObjectSuite) TestObjectTypeString() {
+	s.Equal("commit", CommitObject.String())
+	s.Equal("tree", TreeObject.String())
+	s.Equal("blob", BlobObject.String())
+	s.Equal("tag", TagObject.String())
+	s.Equal("ref-delta", REFDeltaObject.String())
+	s.Equal("ofs-delta", OFSDeltaObject.String())
+	s.Equal("any", AnyObject.String())
+	s.Equal("unknown", ObjectType(42).String())
 }
 
-func (s *ObjectSuite) TestParseObjectType(c *C) {
-	for s, e := range map[string]ObjectType{
+func (s *ObjectSuite) TestObjectTypeBytes() {
+	s.Equal([]byte("commit"), CommitObject.Bytes())
+}
+
+func (s *ObjectSuite) TestObjectTypeValid() {
+	s.True(CommitObject.Valid())
+	s.False(ObjectType(42).Valid())
+}
+
+func (s *ObjectSuite) TestParseObjectType() {
+	for st, e := range map[string]ObjectType{
 		"commit":    CommitObject,
 		"tree":      TreeObject,
 		"blob":      BlobObject,
@@ -35,12 +43,12 @@ func (s *ObjectSuite) TestParseObjectType(c *C) {
 		"ref-delta": REFDeltaObject,
 		"ofs-delta": OFSDeltaObject,
 	} {
-		t, err := ParseObjectType(s)
-		c.Assert(err, IsNil)
-		c.Assert(e, Equals, t)
+		t, err := ParseObjectType(st)
+		s.NoError(err)
+		s.Equal(t, e)
 	}
 
 	t, err := ParseObjectType("foo")
-	c.Assert(err, Equals, ErrInvalidType)
-	c.Assert(t, Equals, InvalidObject)
+	s.ErrorIs(err, ErrInvalidType)
+	s.Equal(InvalidObject, t)
 }

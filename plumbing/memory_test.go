@@ -2,61 +2,66 @@ package plumbing
 
 import (
 	"io"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type MemoryObjectSuite struct{}
+type MemoryObjectSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&MemoryObjectSuite{})
+func TestMemoryObjectSuite(t *testing.T) {
+	suite.Run(t, new(MemoryObjectSuite))
+}
 
-func (s *MemoryObjectSuite) TestHash(c *C) {
+func (s *MemoryObjectSuite) TestHash() {
 	o := &MemoryObject{}
 	o.SetType(BlobObject)
 	o.SetSize(14)
 
 	_, err := o.Write([]byte("Hello, World!\n"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(o.Hash().String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
+	s.Equal("8ab686eafeb1f44702738c8b0f24f2567c36da6d", o.Hash().String())
 
 	o.SetType(CommitObject)
-	c.Assert(o.Hash().String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
+	s.Equal("8ab686eafeb1f44702738c8b0f24f2567c36da6d", o.Hash().String())
 }
 
-func (s *MemoryObjectSuite) TestHashNotFilled(c *C) {
+func (s *MemoryObjectSuite) TestHashNotFilled() {
 	o := &MemoryObject{}
 	o.SetType(BlobObject)
 	o.SetSize(14)
 
-	c.Assert(o.Hash(), Equals, ZeroHash)
+	s.Equal(ZeroHash, o.Hash())
 }
 
-func (s *MemoryObjectSuite) TestType(c *C) {
+func (s *MemoryObjectSuite) TestType() {
 	o := &MemoryObject{}
 	o.SetType(BlobObject)
-	c.Assert(o.Type(), Equals, BlobObject)
+	s.Equal(BlobObject, o.Type())
 }
 
-func (s *MemoryObjectSuite) TestSize(c *C) {
+func (s *MemoryObjectSuite) TestSize() {
 	o := &MemoryObject{}
 	o.SetSize(42)
-	c.Assert(o.Size(), Equals, int64(42))
+	s.Equal(int64(42), o.Size())
 }
 
-func (s *MemoryObjectSuite) TestReader(c *C) {
+func (s *MemoryObjectSuite) TestReader() {
 	o := &MemoryObject{cont: []byte("foo")}
 
 	reader, err := o.Reader()
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(reader.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(reader.Close()) }()
 
 	b, err := io.ReadAll(reader)
-	c.Assert(err, IsNil)
-	c.Assert(b, DeepEquals, []byte("foo"))
+	s.NoError(err)
+	s.Equal([]byte("foo"), b)
 }
 
-func (s *MemoryObjectSuite) TestSeekableReader(c *C) {
+func (s *MemoryObjectSuite) TestSeekableReader() {
 	const pageSize = 4096
 	const payload = "foo"
 	content := make([]byte, pageSize+len(payload))
@@ -65,34 +70,34 @@ func (s *MemoryObjectSuite) TestSeekableReader(c *C) {
 	o := &MemoryObject{cont: content}
 
 	reader, err := o.Reader()
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(reader.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(reader.Close()) }()
 
 	rs, ok := reader.(io.ReadSeeker)
-	c.Assert(ok, Equals, true)
+	s.True(ok)
 
 	_, err = rs.Seek(pageSize, io.SeekStart)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	b, err := io.ReadAll(rs)
-	c.Assert(err, IsNil)
-	c.Assert(b, DeepEquals, []byte(payload))
+	s.NoError(err)
+	s.Equal([]byte(payload), b)
 
 	// Check that our Reader isn't also accidentally writable
 	_, ok = reader.(io.WriteSeeker)
-	c.Assert(ok, Equals, false)
+	s.False(ok)
 }
 
-func (s *MemoryObjectSuite) TestWriter(c *C) {
+func (s *MemoryObjectSuite) TestWriter() {
 	o := &MemoryObject{}
 
 	writer, err := o.Writer()
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(writer.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(writer.Close()) }()
 
 	n, err := writer.Write([]byte("foo"))
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 3)
+	s.NoError(err)
+	s.Equal(3, n)
 
-	c.Assert(o.cont, DeepEquals, []byte("foo"))
+	s.Equal([]byte("foo"), o.cont)
 }

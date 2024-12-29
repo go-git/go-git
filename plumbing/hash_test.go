@@ -3,45 +3,47 @@ package plumbing
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type HashSuite struct {
+	suite.Suite
+}
 
-type HashSuite struct{}
+func TestHashSuite(t *testing.T) {
+	suite.Run(t, new(HashSuite))
+}
 
-var _ = Suite(&HashSuite{})
-
-func (s *HashSuite) TestComputeHash(c *C) {
+func (s *HashSuite) TestComputeHash() {
 	hash := ComputeHash(BlobObject, []byte(""))
-	c.Assert(hash.String(), Equals, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+	s.Equal("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", hash.String())
 
 	hash = ComputeHash(BlobObject, []byte("Hello, World!\n"))
-	c.Assert(hash.String(), Equals, "8ab686eafeb1f44702738c8b0f24f2567c36da6d")
+	s.Equal("8ab686eafeb1f44702738c8b0f24f2567c36da6d", hash.String())
 }
 
-func (s *HashSuite) TestNewHash(c *C) {
+func (s *HashSuite) TestNewHash() {
 	hash := ComputeHash(BlobObject, []byte("Hello, World!\n"))
 
-	c.Assert(hash, Equals, NewHash(hash.String()))
+	s.Equal(NewHash(hash.String()), hash)
 }
 
-func (s *HashSuite) TestIsZero(c *C) {
+func (s *HashSuite) TestIsZero() {
 	hash := NewHash("foo")
-	c.Assert(hash.IsZero(), Equals, true)
+	s.True(hash.IsZero())
 
 	hash = NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")
-	c.Assert(hash.IsZero(), Equals, false)
+	s.False(hash.IsZero())
 }
 
-func (s *HashSuite) TestNewHasher(c *C) {
+func (s *HashSuite) TestNewHasher() {
 	content := "hasher test sample"
 	hasher := NewHasher(BlobObject, int64(len(content)))
 	hasher.Write([]byte(content))
-	c.Assert(hasher.Sum().String(), Equals, "dc42c3cc80028d0ec61f0a6b24cadd1c195c4dfc")
+	s.Equal("dc42c3cc80028d0ec61f0a6b24cadd1c195c4dfc", hasher.Sum().String())
 }
 
-func (s *HashSuite) TestHashesSort(c *C) {
+func (s *HashSuite) TestHashesSort() {
 	i := []Hash{
 		NewHash("2222222222222222222222222222222222222222"),
 		NewHash("1111111111111111111111111111111111111111"),
@@ -49,12 +51,12 @@ func (s *HashSuite) TestHashesSort(c *C) {
 
 	HashesSort(i)
 
-	c.Assert(i[0], Equals, NewHash("1111111111111111111111111111111111111111"))
-	c.Assert(i[1], Equals, NewHash("2222222222222222222222222222222222222222"))
+	s.Equal(NewHash("1111111111111111111111111111111111111111"), i[0])
+	s.Equal(NewHash("2222222222222222222222222222222222222222"), i[1])
 }
 
-func (s *HashSuite) TestIsHash(c *C) {
-	c.Assert(IsHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"), Equals, true)
-	c.Assert(IsHash("foo"), Equals, false)
-	c.Assert(IsHash("zab686eafeb1f44702738c8b0f24f2567c36da6d"), Equals, false)
+func (s *HashSuite) TestIsHash() {
+	s.True(IsHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"))
+	s.False(IsHash("foo"))
+	s.False(IsHash("zab686eafeb1f44702738c8b0f24f2567c36da6d"))
 }
