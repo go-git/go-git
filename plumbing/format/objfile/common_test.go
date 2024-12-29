@@ -2,11 +2,8 @@ package objfile
 
 import (
 	"encoding/base64"
-	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-
-	. "gopkg.in/check.v1"
 )
 
 type objfileFixture struct {
@@ -66,5 +63,3 @@ var objfileFixtures = []objfileFixture{
 		"eAGtjksOgjAUAF33FO8CktZ+aBNjTNy51Qs8Xl8FAjSh5f4SvILLmcVkKM/zUOEi3amuzMDBxE6mkBKhMZHaDiM71DaoZI1RXutgsSWBW+3zCs9c+g3hNeY4LB+4jgc35cf3QiNO04ALcUN5voEy1lmtrNdwll5Ksdt9oPIfUuLNpcLjCIov3ApFmQ==",
 	},
 }
-
-func Test(t *testing.T) { TestingT(t) }

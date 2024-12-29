@@ -5,63 +5,68 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-type SuiteReader struct{}
+type SuiteReader struct {
+	suite.Suite
+}
 
-var _ = Suite(&SuiteReader{})
+func TestSuiteReader(t *testing.T) {
+	suite.Run(t, new(SuiteReader))
+}
 
-func (s *SuiteReader) TestReadObjfile(c *C) {
+func (s *SuiteReader) TestReadObjfile() {
 	for k, fixture := range objfileFixtures {
 		com := fmt.Sprintf("test %d: ", k)
 		hash := plumbing.NewHash(fixture.hash)
 		content, _ := base64.StdEncoding.DecodeString(fixture.content)
 		data, _ := base64.StdEncoding.DecodeString(fixture.data)
 
-		testReader(c, bytes.NewReader(data), hash, fixture.t, content, com)
+		testReader(s.T(), bytes.NewReader(data), hash, fixture.t, content, com)
 	}
 }
 
-func testReader(c *C, source io.Reader, hash plumbing.Hash, t plumbing.ObjectType, content []byte, com string) {
+func testReader(t *testing.T, source io.Reader, hash plumbing.Hash, o plumbing.ObjectType, content []byte, com string) {
 	r, err := NewReader(source)
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	typ, size, err := r.Header()
-	c.Assert(err, IsNil)
-	c.Assert(typ, Equals, t)
-	c.Assert(content, HasLen, int(size))
+	assert.NoError(t, err)
+	assert.Equal(t, typ, o)
+	assert.Len(t, content, int(size))
 
 	rc, err := io.ReadAll(r)
-	c.Assert(err, IsNil)
-	c.Assert(rc, DeepEquals, content, Commentf("%scontent=%s, expected=%s", base64.StdEncoding.EncodeToString(rc), base64.StdEncoding.EncodeToString(content)))
+	assert.NoError(t, err)
+	assert.Equal(t, content, rc, fmt.Sprintf("content=%s, expected=%s", base64.StdEncoding.EncodeToString(rc), base64.StdEncoding.EncodeToString(content)))
 
-	c.Assert(r.Hash(), Equals, hash) // Test Hash() before close
-	c.Assert(r.Close(), IsNil)
+	assert.Equal(t, hash, r.Hash()) // Test Hash() before close
+	assert.NoError(t, r.Close())
 
 }
 
-func (s *SuiteReader) TestReadEmptyObjfile(c *C) {
+func (s *SuiteReader) TestReadEmptyObjfile() {
 	source := bytes.NewReader([]byte{})
 	_, err := NewReader(source)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *SuiteReader) TestReadGarbage(c *C) {
+func (s *SuiteReader) TestReadGarbage() {
 	source := bytes.NewReader([]byte("!@#$RO!@NROSADfinq@o#irn@oirfn"))
 	_, err := NewReader(source)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *SuiteReader) TestReadCorruptZLib(c *C) {
+func (s *SuiteReader) TestReadCorruptZLib() {
 	data, _ := base64.StdEncoding.DecodeString("eAFLysaalPUjBgAAAJsAHw")
 	source := bytes.NewReader(data)
 	r, err := NewReader(source)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, _, err = r.Header()
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
