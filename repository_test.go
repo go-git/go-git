@@ -72,7 +72,6 @@ func (s *RepositorySuite) TestInitWithOptions(c *C) {
 	ref, err := r.Head()
 	c.Assert(err, IsNil)
 	c.Assert(ref.Name().String(), Equals, "refs/heads/foo")
-
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch(c *C) {
@@ -165,7 +164,6 @@ func (s *RepositorySuite) TestInitBare(c *C) {
 	cfg, err := r.Config()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.Core.IsBare, Equals, true)
-
 }
 
 func (s *RepositorySuite) TestInitAlreadyExists(c *C) {
@@ -280,7 +278,7 @@ func (s *RepositorySuite) TestCloneWithTags(c *C) {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: NoTags})
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: plumbing.NoTags})
 	c.Assert(err, IsNil)
 
 	remotes, err := r.Remotes()
@@ -757,7 +755,7 @@ func (s *RepositorySuite) testPlainOpenGitFile(c *C, f func(string, string) stri
 
 	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
 		[]byte(f(fs.Join(fs.Root(), dir), fs.Join(fs.Root(), altDir))),
-		0644,
+		0o644,
 	)
 
 	c.Assert(err, IsNil)
@@ -810,7 +808,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage(c *
 
 	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
 		[]byte(fmt.Sprintf("gitdir: %s\nTRAILING", fs.Join(fs.Root(), altDir))),
-		0644,
+		0o644,
 	)
 	c.Assert(err, IsNil)
 
@@ -834,7 +832,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix(c *C) {
 
 	err = util.WriteFile(fs, fs.Join(altDir, ".git"), []byte(
 		fmt.Sprintf("xgitdir: %s\n", fs.Join(fs.Root(), dir)),
-	), 0644)
+	), 0o644)
 
 	c.Assert(err, IsNil)
 
@@ -856,7 +854,7 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit(c *C) {
 	c.Assert(err, IsNil)
 
 	subdir := filepath.Join(dir, "a", "b")
-	err = fs.MkdirAll(subdir, 0755)
+	err = fs.MkdirAll(subdir, 0o755)
 	c.Assert(err, IsNil)
 
 	file := fs.Join(subdir, "file.txt")
@@ -1123,11 +1121,11 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 	c.Assert(err, IsNil)
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
-	err = fs.MkdirAll(repoDir, 0777)
+	err = fs.MkdirAll(repoDir, 0o777)
 	c.Assert(err, IsNil)
 
 	dummyFile := filepath.Join(repoDir, "dummyFile")
-	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0644)
+	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0o644)
 	c.Assert(err, IsNil)
 
 	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
@@ -1138,7 +1136,6 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir(c *C) 
 
 	_, err = fs.Stat(dummyFile)
 	c.Assert(err, IsNil)
-
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirectory(c *C) {
@@ -1665,10 +1662,10 @@ func (s *RepositorySuite) TestPushContext(c *C) {
 // successfully.
 func installPreReceiveHook(c *C, fs billy.Filesystem, path, m string) {
 	hooks := fs.Join(path, "hooks")
-	err := fs.MkdirAll(hooks, 0777)
+	err := fs.MkdirAll(hooks, 0o777)
 	c.Assert(err, IsNil)
 
-	err = util.WriteFile(fs, fs.Join(hooks, "pre-receive"), preReceiveHook(m), 0777)
+	err = util.WriteFile(fs, fs.Join(hooks, "pre-receive"), preReceiveHook(m), 0o777)
 	c.Assert(err, IsNil)
 }
 
@@ -1722,7 +1719,7 @@ func (s *RepositorySuite) TestPushDepth(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	err = util.WriteFile(r.wt, "foo", nil, 0755)
+	err = util.WriteFile(r.wt, "foo", nil, 0o755)
 	c.Assert(err, IsNil)
 
 	w, err := r.Worktree()
@@ -2161,6 +2158,7 @@ type mockErrCommitIter struct{}
 func (m *mockErrCommitIter) Next() (*object.Commit, error) {
 	return nil, errors.New("mock next error")
 }
+
 func (m *mockErrCommitIter) ForEach(func(*object.Commit) error) error {
 	return errors.New("mock foreach error")
 }
@@ -3212,7 +3210,8 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors(c *C) {
 }
 
 func (s *RepositorySuite) testRepackObjects(
-	c *C, deleteTime time.Time, expectedPacks int) {
+	c *C, deleteTime time.Time, expectedPacks int,
+) {
 	srcFs := fixtures.ByTag("unpacked").One().DotGit()
 	var sto storage.Storer
 	var err error
@@ -3426,7 +3425,7 @@ func BenchmarkPlainClone(b *testing.B) {
 		_, err := PlainClone(b.TempDir(), true, &CloneOptions{
 			URL:          "https://github.com/go-git/go-git.git",
 			Depth:        1,
-			Tags:         NoTags,
+			Tags:         plumbing.NoTags,
 			SingleBranch: true,
 		})
 		if err != nil {
