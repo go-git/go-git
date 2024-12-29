@@ -1,109 +1,114 @@
 package plumbing
 
 import (
+	"fmt"
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type ReferenceSuite struct{}
+type ReferenceSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&ReferenceSuite{})
+func TestReferenceSuite(t *testing.T) {
+	suite.Run(t, new(ReferenceSuite))
+}
 
 const (
 	ExampleReferenceName ReferenceName = "refs/heads/v4"
 )
 
-func (s *ReferenceSuite) TestReferenceTypeString(c *C) {
-	c.Assert(SymbolicReference.String(), Equals, "symbolic-reference")
+func (s *ReferenceSuite) TestReferenceTypeString() {
+	s.Equal("symbolic-reference", SymbolicReference.String())
 }
 
-func (s *ReferenceSuite) TestReferenceNameShort(c *C) {
-	c.Assert(ExampleReferenceName.Short(), Equals, "v4")
+func (s *ReferenceSuite) TestReferenceNameShort() {
+	s.Equal("v4", ExampleReferenceName.Short())
 }
 
-func (s *ReferenceSuite) TestReferenceNameWithSlash(c *C) {
+func (s *ReferenceSuite) TestReferenceNameWithSlash() {
 	r := ReferenceName("refs/remotes/origin/feature/AllowSlashes")
-	c.Assert(r.Short(), Equals, "origin/feature/AllowSlashes")
+	s.Equal("origin/feature/AllowSlashes", r.Short())
 }
 
-func (s *ReferenceSuite) TestReferenceNameNote(c *C) {
+func (s *ReferenceSuite) TestReferenceNameNote() {
 	r := ReferenceName("refs/notes/foo")
-	c.Assert(r.Short(), Equals, "notes/foo")
+	s.Equal("notes/foo", r.Short())
 }
 
-func (s *ReferenceSuite) TestNewReferenceFromStrings(c *C) {
+func (s *ReferenceSuite) TestNewReferenceFromStrings() {
 	r := NewReferenceFromStrings("refs/heads/v4", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	c.Assert(r.Type(), Equals, HashReference)
-	c.Assert(r.Name(), Equals, ExampleReferenceName)
-	c.Assert(r.Hash(), Equals, NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	s.Equal(HashReference, r.Type())
+	s.Equal(ExampleReferenceName, r.Name())
+	s.Equal(NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), r.Hash())
 
 	r = NewReferenceFromStrings("HEAD", "ref: refs/heads/v4")
-	c.Assert(r.Type(), Equals, SymbolicReference)
-	c.Assert(r.Name(), Equals, HEAD)
-	c.Assert(r.Target(), Equals, ExampleReferenceName)
+	s.Equal(SymbolicReference, r.Type())
+	s.Equal(HEAD, r.Name())
+	s.Equal(ExampleReferenceName, r.Target())
 }
 
-func (s *ReferenceSuite) TestNewSymbolicReference(c *C) {
+func (s *ReferenceSuite) TestNewSymbolicReference() {
 	r := NewSymbolicReference(HEAD, ExampleReferenceName)
-	c.Assert(r.Type(), Equals, SymbolicReference)
-	c.Assert(r.Name(), Equals, HEAD)
-	c.Assert(r.Target(), Equals, ExampleReferenceName)
+	s.Equal(SymbolicReference, r.Type())
+	s.Equal(HEAD, r.Name())
+	s.Equal(ExampleReferenceName, r.Target())
 }
 
-func (s *ReferenceSuite) TestNewHashReference(c *C) {
+func (s *ReferenceSuite) TestNewHashReference() {
 	r := NewHashReference(ExampleReferenceName, NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	c.Assert(r.Type(), Equals, HashReference)
-	c.Assert(r.Name(), Equals, ExampleReferenceName)
-	c.Assert(r.Hash(), Equals, NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	s.Equal(HashReference, r.Type())
+	s.Equal(ExampleReferenceName, r.Name())
+	s.Equal(NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), r.Hash())
 }
 
-func (s *ReferenceSuite) TestNewBranchReferenceName(c *C) {
+func (s *ReferenceSuite) TestNewBranchReferenceName() {
 	r := NewBranchReferenceName("foo")
-	c.Assert(r.String(), Equals, "refs/heads/foo")
+	s.Equal("refs/heads/foo", r.String())
 }
 
-func (s *ReferenceSuite) TestNewNoteReferenceName(c *C) {
+func (s *ReferenceSuite) TestNewNoteReferenceName() {
 	r := NewNoteReferenceName("foo")
-	c.Assert(r.String(), Equals, "refs/notes/foo")
+	s.Equal("refs/notes/foo", r.String())
 }
 
-func (s *ReferenceSuite) TestNewRemoteReferenceName(c *C) {
+func (s *ReferenceSuite) TestNewRemoteReferenceName() {
 	r := NewRemoteReferenceName("bar", "foo")
-	c.Assert(r.String(), Equals, "refs/remotes/bar/foo")
+	s.Equal("refs/remotes/bar/foo", r.String())
 }
 
-func (s *ReferenceSuite) TestNewRemoteHEADReferenceName(c *C) {
+func (s *ReferenceSuite) TestNewRemoteHEADReferenceName() {
 	r := NewRemoteHEADReferenceName("foo")
-	c.Assert(r.String(), Equals, "refs/remotes/foo/HEAD")
+	s.Equal("refs/remotes/foo/HEAD", r.String())
 }
 
-func (s *ReferenceSuite) TestNewTagReferenceName(c *C) {
+func (s *ReferenceSuite) TestNewTagReferenceName() {
 	r := NewTagReferenceName("foo")
-	c.Assert(r.String(), Equals, "refs/tags/foo")
+	s.Equal("refs/tags/foo", r.String())
 }
 
-func (s *ReferenceSuite) TestIsBranch(c *C) {
+func (s *ReferenceSuite) TestIsBranch() {
 	r := ExampleReferenceName
-	c.Assert(r.IsBranch(), Equals, true)
+	s.True(r.IsBranch())
 }
 
-func (s *ReferenceSuite) TestIsNote(c *C) {
+func (s *ReferenceSuite) TestIsNote() {
 	r := ReferenceName("refs/notes/foo")
-	c.Assert(r.IsNote(), Equals, true)
+	s.True(r.IsNote())
 }
 
-func (s *ReferenceSuite) TestIsRemote(c *C) {
+func (s *ReferenceSuite) TestIsRemote() {
 	r := ReferenceName("refs/remotes/origin/master")
-	c.Assert(r.IsRemote(), Equals, true)
+	s.True(r.IsRemote())
 }
 
-func (s *ReferenceSuite) TestIsTag(c *C) {
+func (s *ReferenceSuite) TestIsTag() {
 	r := ReferenceName("refs/tags/v3.1.")
-	c.Assert(r.IsTag(), Equals, true)
+	s.True(r.IsTag())
 }
 
-func (s *ReferenceSuite) TestValidReferenceNames(c *C) {
+func (s *ReferenceSuite) TestValidReferenceNames() {
 	valid := []ReferenceName{
 		"refs/heads/master",
 		"refs/notes/commits",
@@ -119,7 +124,7 @@ func (s *ReferenceSuite) TestValidReferenceNames(c *C) {
 		"refs/123-testing",
 	}
 	for _, v := range valid {
-		c.Assert(v.Validate(), IsNil)
+		s.Nil(v.Validate())
 	}
 
 	invalid := []ReferenceName{
@@ -158,9 +163,9 @@ func (s *ReferenceSuite) TestValidReferenceNames(c *C) {
 	}
 
 	for i, v := range invalid {
-		comment := Commentf("invalid reference name case %d: %s", i, v)
-		c.Assert(v.Validate(), NotNil, comment)
-		c.Assert(v.Validate(), ErrorMatches, "invalid reference name", comment)
+		comment := fmt.Sprintf("invalid reference name case %d: %s", i, v)
+		s.Error(v.Validate(), comment)
+		s.ErrorContains(v.Validate(), "invalid reference name", comment)
 	}
 }
 
