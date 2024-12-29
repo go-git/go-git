@@ -14,12 +14,9 @@ import (
 
 // Decode reads the next upload-request form its input and
 // stores it in the UploadRequest.
-func (req *UploadPackRequest) Decode(r io.Reader) error {
+func (req *UploadRequest) Decode(r io.Reader) error {
 	d := newUlReqDecoder(r)
-	if err := d.Decode(&req.UploadRequest); err != nil {
-		return err
-	}
-	return nil
+	return d.Decode(req)
 }
 
 type ulReqDecoder struct {
@@ -52,6 +49,7 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 		"pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...),
 	)
+
 	d.err = NewErrUnexpectedData(msg, d.line)
 }
 
@@ -59,20 +57,16 @@ func (d *ulReqDecoder) error(format string, a ...interface{}) {
 // p.line and increments p.nLine.  A successful invocation returns true,
 // otherwise, false is returned and the sticky error is filled out
 // accordingly.  Trims eols at the end of the payloads.
-func (d *ulReqDecoder) nextLine(reportError bool) bool {
+func (d *ulReqDecoder) nextLine() bool {
 	d.nLine++
 
 	_, p, err := pktline.ReadLine(d.r)
 	if err == io.EOF {
-		if reportError {
-			d.error("EOF")
-		}
+		d.error("EOF")
 		return false
 	}
 	if err != nil {
-		if reportError {
-			d.err = err
-		}
+		d.err = err
 		return false
 	}
 
@@ -84,13 +78,7 @@ func (d *ulReqDecoder) nextLine(reportError bool) bool {
 
 // Expected format: want <hash>[ capabilities]
 func (d *ulReqDecoder) decodeFirstWant() stateFn {
-	if ok := d.nextLine(true); !ok {
-		return nil
-	}
-
-	// if client send 0000 it don't want anything (already up to date after
-	// AdvertisedReferences) or ls-remote scenario
-	if len(d.line) == 0 {
+	if ok := d.nextLine(); !ok {
 		return nil
 	}
 
@@ -137,7 +125,7 @@ func (d *ulReqDecoder) decodeCaps() stateFn {
 
 // Expected format: want <hash>
 func (d *ulReqDecoder) decodeOtherWants() stateFn {
-	if ok := d.nextLine(true); !ok {
+	if ok := d.nextLine(); !ok {
 		return nil
 	}
 
@@ -150,7 +138,7 @@ func (d *ulReqDecoder) decodeOtherWants() stateFn {
 	}
 
 	if len(d.line) == 0 {
-		return d.decodeHaves
+		return nil
 	}
 
 	if !bytes.HasPrefix(d.line, want) {
@@ -175,7 +163,7 @@ func (d *ulReqDecoder) decodeShallow() stateFn {
 	}
 
 	if len(d.line) == 0 {
-		return d.decodeHaves
+		return nil
 	}
 
 	if !bytes.HasPrefix(d.line, shallow) {
@@ -190,7 +178,7 @@ func (d *ulReqDecoder) decodeShallow() stateFn {
 	}
 	d.data.Shallows = append(d.data.Shallows, hash)
 
-	if ok := d.nextLine(true); !ok {
+	if ok := d.nextLine(); !ok {
 		return nil
 	}
 
@@ -211,6 +199,10 @@ func (d *ulReqDecoder) decodeDeepen() stateFn {
 		return d.decodeDeepenReference
 	}
 
+	if len(d.line) == 0 {
+		return nil
+	}
+
 	d.error("unexpected deepen specification: %q", d.line)
 	return nil
 }
@@ -228,7 +220,7 @@ func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 	}
 	d.data.Depth = DepthCommits(n)
 
-	return d.decodeOtherWants
+	return d.decodeFlush
 }
 
 func (d *ulReqDecoder) decodeDeepenSince() stateFn {
@@ -242,7 +234,7 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 	t := time.Unix(secs, 0).UTC()
 	d.data.Depth = DepthSince(t)
 
-	return d.decodeOtherWants
+	return d.decodeFlush
 }
 
 func (d *ulReqDecoder) decodeDeepenReference() stateFn {
@@ -250,44 +242,17 @@ func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 
 	d.data.Depth = DepthReference(string(d.line))
 
-	return d.decodeOtherWants
+	return d.decodeFlush
 }
 
-func (d *ulReqDecoder) decodeHaves() stateFn {
-	go func() {
-		inBetweenHave := []plumbing.Hash{}
+func (d *ulReqDecoder) decodeFlush() stateFn {
+	if ok := d.nextLine(); !ok {
+		return nil
+	}
 
-		for {
-			if ok := d.nextLine(false); !ok {
-				break
-			}
-
-			if len(d.line) == 0 {
-				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: false}
-				inBetweenHave = []plumbing.Hash{}
-				continue
-			}
-
-			if bytes.Equal(d.line, done) {
-				d.data.HavesUR <- UploadRequestHave{Haves: inBetweenHave, Done: true}
-				break
-			}
-
-			if !bytes.HasPrefix(d.line, have) {
-				d.error("unexpected payload while expecting a have: %q", d.line)
-				break
-			}
-			d.line = bytes.TrimPrefix(d.line, have)
-
-			hash, ok := d.readHash()
-			if !ok {
-				break
-			}
-			inBetweenHave = append(inBetweenHave, hash)
-		}
-
-		close(d.data.HavesUR)
-	}()
+	if len(d.line) != 0 {
+		d.err = fmt.Errorf("unexpected payload while expecting a flush-pkt: %q", d.line)
+	}
 
 	return nil
 }

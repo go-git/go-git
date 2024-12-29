@@ -44,7 +44,7 @@ func newAdvRefsDecoder(r io.Reader) *advRefsDecoder {
 func (d *advRefsDecoder) Decode(v *AdvRefs) error {
 	d.data = v
 
-	for state := decodePrefix; state != nil; {
+	for state := decodeFirstHash; state != nil; {
 		state = state(d)
 	}
 
@@ -92,43 +92,14 @@ func (d *advRefsDecoder) nextLine() bool {
 	return true
 }
 
-// The HTTP smart prefix is often followed by a flush-pkt.
-func decodePrefix(d *advRefsDecoder) decoderStateFn {
-	if ok := d.nextLine(); !ok {
-		return nil
-	}
-
-	if !isPrefix(d.line) {
-		return decodeFirstHash
-	}
-
-	tmp := make([]byte, len(d.line))
-	copy(tmp, d.line)
-	d.data.Prefix = append(d.data.Prefix, tmp)
-	if ok := d.nextLine(); !ok {
-		return nil
-	}
-
-	if !isFlush(d.line) {
-		return decodeFirstHash
-	}
-
-	d.data.Prefix = append(d.data.Prefix, []byte{}) // empty slice for flush-pkt
-	if ok := d.nextLine(); !ok {
-		return nil
-	}
-
-	return decodeFirstHash
-}
-
-func isPrefix(payload []byte) bool {
-	return len(payload) > 0 && payload[0] == '#'
-}
-
 // If the first hash is zero, then a no-refs is coming. Otherwise, a
 // list-of-refs is coming, and the hash will be followed by the first
 // advertised ref.
 func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
+	if ok := p.nextLine(); !ok {
+		return nil
+	}
+
 	// If the repository is empty, we receive a flush here (HTTP).
 	if isFlush(p.line) {
 		p.err = ErrEmptyAdvRefs
