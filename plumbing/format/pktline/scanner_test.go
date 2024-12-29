@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -53,7 +52,7 @@ func (s *SuiteScanner) TestDecodeOversizePktLines() {
 	}
 }
 
-func TestValidPktSizes(t *testing.T) {
+func (s *SuiteScanner) TestValidPktSizes() {
 	for _, test := range [...]string{
 		"01fe" + strings.Repeat("a", 0x01fe-4),
 		"01FE" + strings.Repeat("a", 0x01fe-4),
@@ -65,9 +64,9 @@ func TestValidPktSizes(t *testing.T) {
 		hasPayload := sc.Scan()
 		obtained := fmt.Sprintf("%04x%s", sc.Len(), sc.Bytes())
 
-		assert.True(t, hasPayload)
-		assert.NoError(t, sc.Err())
-		assert.Equal(t, strings.ToLower(test), obtained)
+		s.True(hasPayload)
+		s.NoError(sc.Err())
+		s.Equal(strings.ToLower(test), obtained)
 	}
 }
 
