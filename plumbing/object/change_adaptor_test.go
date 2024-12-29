@@ -2,6 +2,7 @@ package object
 
 import (
 	"sort"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -10,30 +11,37 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-type ChangeAdaptorSuite struct {
+type ChangeAdaptorFixtureSuite struct {
 	fixtures.Suite
+}
+
+type ChangeAdaptorSuite struct {
+	suite.Suite
+	ChangeAdaptorFixtureSuite
 	Storer  storer.EncodedObjectStorer
 	Fixture *fixtures.Fixture
 }
 
-func (s *ChangeAdaptorSuite) SetUpSuite(c *C) {
+func (s *ChangeAdaptorSuite) SetupSuite() {
 	s.Fixture = fixtures.Basic().One()
 	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
-func (s *ChangeAdaptorSuite) tree(c *C, h plumbing.Hash) *Tree {
+func (s *ChangeAdaptorSuite) tree(h plumbing.Hash) *Tree {
 	t, err := GetTree(s.Storer, h)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return t
 }
 
-var _ = Suite(&ChangeAdaptorSuite{})
+func TestChangeAdaptorSuite(t *testing.T) {
+	suite.Run(t, new(ChangeAdaptorSuite))
+}
 
 // utility function to build Noders from a tree and an tree entry.
 func newNoder(t *Tree, e TreeEntry) noder.Noder {
@@ -48,7 +56,7 @@ func newNoder(t *Tree, e TreeEntry) noder.Noder {
 // utility function to build Paths
 func newPath(nn ...noder.Noder) noder.Path { return noder.Path(nn) }
 
-func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode(c *C) {
+func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode() {
 	hash := plumbing.NewHash("aaaa")
 	mode := filemode.Regular
 
@@ -66,10 +74,10 @@ func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode(c *C) {
 	}
 	expected = append(expected, filemode.Regular.Bytes()...)
 
-	c.Assert(treeNoder.Hash(), DeepEquals, expected)
+	s.Equal(expected, treeNoder.Hash())
 }
 
-func (s *ChangeAdaptorSuite) TestNewChangeInsert(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChangeInsert() {
 	tree := &Tree{}
 	entry := TreeEntry{
 		Name: "name",
@@ -79,7 +87,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeInsert(c *C) {
 	path := newPath(newNoder(tree, entry))
 
 	expectedTo, err := newChangeEntry(path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	src := merkletrie.Change{
 		From: nil,
@@ -87,15 +95,15 @@ func (s *ChangeAdaptorSuite) TestNewChangeInsert(c *C) {
 	}
 
 	obtained, err := newChange(src)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	action, err := obtained.Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Insert)
-	c.Assert(obtained.From, Equals, ChangeEntry{})
-	c.Assert(obtained.To, Equals, expectedTo)
+	s.NoError(err)
+	s.Equal(merkletrie.Insert, action)
+	s.Equal(ChangeEntry{}, obtained.From)
+	s.Equal(expectedTo, obtained.To)
 }
 
-func (s *ChangeAdaptorSuite) TestNewChangeDelete(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChangeDelete() {
 	tree := &Tree{}
 	entry := TreeEntry{
 		Name: "name",
@@ -105,7 +113,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeDelete(c *C) {
 	path := newPath(newNoder(tree, entry))
 
 	expectedFrom, err := newChangeEntry(path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	src := merkletrie.Change{
 		From: path,
@@ -113,15 +121,15 @@ func (s *ChangeAdaptorSuite) TestNewChangeDelete(c *C) {
 	}
 
 	obtained, err := newChange(src)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	action, err := obtained.Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Delete)
-	c.Assert(obtained.From, Equals, expectedFrom)
-	c.Assert(obtained.To, Equals, ChangeEntry{})
+	s.NoError(err)
+	s.Equal(merkletrie.Delete, action)
+	s.Equal(expectedFrom, obtained.From)
+	s.Equal(ChangeEntry{}, obtained.To)
 }
 
-func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChangeModify() {
 	treeA := &Tree{}
 	entryA := TreeEntry{
 		Name: "name",
@@ -130,7 +138,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
 	}
 	pathA := newPath(newNoder(treeA, entryA))
 	expectedFrom, err := newChangeEntry(pathA)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	treeB := &Tree{}
 	entryB := TreeEntry{
@@ -140,7 +148,7 @@ func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
 	}
 	pathB := newPath(newNoder(treeB, entryB))
 	expectedTo, err := newChangeEntry(pathB)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	src := merkletrie.Change{
 		From: pathA,
@@ -148,67 +156,67 @@ func (s *ChangeAdaptorSuite) TestNewChangeModify(c *C) {
 	}
 
 	obtained, err := newChange(src)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	action, err := obtained.Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Modify)
-	c.Assert(obtained.From, Equals, expectedFrom)
-	c.Assert(obtained.To, Equals, expectedTo)
+	s.NoError(err)
+	s.Equal(merkletrie.Modify, action)
+	s.Equal(expectedFrom, obtained.From)
+	s.Equal(expectedTo, obtained.To)
 }
 
-func (s *ChangeAdaptorSuite) TestEmptyChangeFails(c *C) {
+func (s *ChangeAdaptorSuite) TestEmptyChangeFails() {
 	change := &Change{
 		From: empty,
 		To:   empty,
 	}
 	_, err := change.Action()
-	c.Assert(err, ErrorMatches, "malformed change.*")
+	s.ErrorContains(err, "malformed change")
 
 	_, _, err = change.Files()
-	c.Assert(err, ErrorMatches, "malformed change.*")
+	s.ErrorContains(err, "malformed change")
 
 	str := change.String()
-	c.Assert(str, Equals, "malformed change")
+	s.Equal("malformed change", str)
 }
 
 type noderMock struct{ noder.Noder }
 
-func (s *ChangeAdaptorSuite) TestNewChangeFailsWithChangesFromOtherNoders(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChangeFailsWithChangesFromOtherNoders() {
 	src := merkletrie.Change{
 		From: newPath(noderMock{}),
 		To:   nil,
 	}
 	_, err := newChange(src)
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 
 	src = merkletrie.Change{
 		From: nil,
 		To:   newPath(noderMock{}),
 	}
 	_, err = newChange(src)
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeStringFrom(c *C) {
+func (s *ChangeAdaptorSuite) TestChangeStringFrom() {
 	expected := "<Action: Delete, Path: foo>"
 	change := Change{}
 	change.From.Name = "foo"
 
 	obtained := change.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeStringTo(c *C) {
+func (s *ChangeAdaptorSuite) TestChangeStringTo() {
 	expected := "<Action: Insert, Path: foo>"
 	change := Change{}
 	change.To.Name = "foo"
 
 	obtained := change.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeFilesInsert(c *C) {
-	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+func (s *ChangeAdaptorSuite) TestChangeFilesInsert() {
+	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := Change{}
 	change.To.Name = "json/long.json"
@@ -217,13 +225,13 @@ func (s *ChangeAdaptorSuite) TestChangeFilesInsert(c *C) {
 	change.To.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 
 	from, to, err := change.Files()
-	c.Assert(err, IsNil)
-	c.Assert(from, IsNil)
-	c.Assert(to.ID(), Equals, change.To.TreeEntry.Hash)
+	s.NoError(err)
+	s.Nil(from)
+	s.Equal(change.To.TreeEntry.Hash, to.ID())
 }
 
-func (s *ChangeAdaptorSuite) TestChangeFilesInsertNotFound(c *C) {
-	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+func (s *ChangeAdaptorSuite) TestChangeFilesInsertNotFound() {
+	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := Change{}
 	change.To.Name = "json/long.json"
@@ -233,11 +241,11 @@ func (s *ChangeAdaptorSuite) TestChangeFilesInsertNotFound(c *C) {
 	change.To.TreeEntry.Hash = plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	_, _, err := change.Files()
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeFilesDelete(c *C) {
-	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+func (s *ChangeAdaptorSuite) TestChangeFilesDelete() {
+	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := Change{}
 	change.From.Name = "json/long.json"
@@ -246,13 +254,13 @@ func (s *ChangeAdaptorSuite) TestChangeFilesDelete(c *C) {
 	change.From.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 
 	from, to, err := change.Files()
-	c.Assert(err, IsNil)
-	c.Assert(to, IsNil)
-	c.Assert(from.ID(), Equals, change.From.TreeEntry.Hash)
+	s.NoError(err)
+	s.Nil(to)
+	s.Equal(change.From.TreeEntry.Hash, from.ID())
 }
 
-func (s *ChangeAdaptorSuite) TestChangeFilesDeleteNotFound(c *C) {
-	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+func (s *ChangeAdaptorSuite) TestChangeFilesDeleteNotFound() {
+	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := Change{}
 	change.From.Name = "json/long.json"
@@ -262,11 +270,11 @@ func (s *ChangeAdaptorSuite) TestChangeFilesDeleteNotFound(c *C) {
 	change.From.TreeEntry.Hash = plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	_, _, err := change.Files()
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeFilesModify(c *C) {
-	tree := s.tree(c, plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
+func (s *ChangeAdaptorSuite) TestChangeFilesModify() {
+	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
 
 	change := Change{}
 	change.To.Name = "json/long.json"
@@ -279,24 +287,24 @@ func (s *ChangeAdaptorSuite) TestChangeFilesModify(c *C) {
 	change.From.TreeEntry.Hash = plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
 
 	from, to, err := change.Files()
-	c.Assert(err, IsNil)
-	c.Assert(to.ID(), Equals, change.To.TreeEntry.Hash)
-	c.Assert(from.ID(), Equals, change.From.TreeEntry.Hash)
+	s.NoError(err)
+	s.Equal(change.To.TreeEntry.Hash, to.ID())
+	s.Equal(change.From.TreeEntry.Hash, from.ID())
 }
 
-func (s *ChangeAdaptorSuite) TestChangeEntryFailsWithOtherNoders(c *C) {
+func (s *ChangeAdaptorSuite) TestChangeEntryFailsWithOtherNoders() {
 	path := noder.Path{noderMock{}}
 	_, err := newChangeEntry(path)
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeEntryFromNilIsZero(c *C) {
+func (s *ChangeAdaptorSuite) TestChangeEntryFromNilIsZero() {
 	obtained, err := newChangeEntry(nil)
-	c.Assert(err, IsNil)
-	c.Assert(obtained, Equals, ChangeEntry{})
+	s.NoError(err)
+	s.Equal(ChangeEntry{}, obtained)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeEntryFromSortPath(c *C) {
+func (s *ChangeAdaptorSuite) TestChangeEntryFromSortPath() {
 	tree := &Tree{}
 	entry := TreeEntry{
 		Name: "name",
@@ -306,14 +314,14 @@ func (s *ChangeAdaptorSuite) TestChangeEntryFromSortPath(c *C) {
 	path := newPath(newNoder(tree, entry))
 
 	obtained, err := newChangeEntry(path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(obtained.Name, Equals, entry.Name)
-	c.Assert(obtained.Tree, Equals, tree)
-	c.Assert(obtained.TreeEntry, DeepEquals, entry)
+	s.Equal(entry.Name, obtained.Name)
+	s.Equal(tree, obtained.Tree)
+	s.Equal(entry, obtained.TreeEntry)
 }
 
-func (s *ChangeAdaptorSuite) TestChangeEntryFromLongPath(c *C) {
+func (s *ChangeAdaptorSuite) TestChangeEntryFromLongPath() {
 	treeA := &Tree{}
 	entryA := TreeEntry{
 		Name: "nameA",
@@ -334,28 +342,28 @@ func (s *ChangeAdaptorSuite) TestChangeEntryFromLongPath(c *C) {
 	)
 
 	obtained, err := newChangeEntry(path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(obtained.Name, Equals, entryA.Name+"/"+entryB.Name)
-	c.Assert(obtained.Tree, Equals, treeB)
-	c.Assert(obtained.TreeEntry, Equals, entryB)
+	s.Equal(entryA.Name+"/"+entryB.Name, obtained.Name)
+	s.Equal(treeB, obtained.Tree)
+	s.Equal(entryB, obtained.TreeEntry)
 }
 
-func (s *ChangeAdaptorSuite) TestNewChangesEmpty(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChangesEmpty() {
 	expected := "[]"
 	changes, err := newChanges(nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	obtained := changes.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 
 	expected = "[]"
 	changes, err = newChanges(merkletrie.Changes{})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	obtained = changes.String()
-	c.Assert(obtained, Equals, expected)
+	s.Equal(expected, obtained)
 }
 
-func (s *ChangeAdaptorSuite) TestNewChanges(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChanges() {
 	treeA := &Tree{}
 	entryA := TreeEntry{Name: "nameA"}
 	pathA := newPath(newNoder(treeA, entryA))
@@ -374,19 +382,19 @@ func (s *ChangeAdaptorSuite) TestNewChanges(c *C) {
 	src := merkletrie.Changes{changeA, changeB}
 
 	changes, err := newChanges(src)
-	c.Assert(err, IsNil)
-	c.Assert(len(changes), Equals, 2)
+	s.NoError(err)
+	s.Len(changes, 2)
 	action, err := changes[0].Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Insert)
-	c.Assert(changes[0].To.Name, Equals, "nameA")
+	s.NoError(err)
+	s.Equal(merkletrie.Insert, action)
+	s.Equal("nameA", changes[0].To.Name)
 	action, err = changes[1].Action()
-	c.Assert(err, IsNil)
-	c.Assert(action, Equals, merkletrie.Delete)
-	c.Assert(changes[1].From.Name, Equals, "nameB")
+	s.NoError(err)
+	s.Equal(merkletrie.Delete, action)
+	s.Equal("nameB", changes[1].From.Name)
 }
 
-func (s *ChangeAdaptorSuite) TestNewChangesFailsWithOtherNoders(c *C) {
+func (s *ChangeAdaptorSuite) TestNewChangesFailsWithOtherNoders() {
 	change := merkletrie.Change{
 		From: nil,
 		To:   newPath(noderMock{}),
@@ -394,10 +402,10 @@ func (s *ChangeAdaptorSuite) TestNewChangesFailsWithOtherNoders(c *C) {
 	src := merkletrie.Changes{change}
 
 	_, err := newChanges(src)
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *ChangeAdaptorSuite) TestSortChanges(c *C) {
+func (s *ChangeAdaptorSuite) TestSortChanges() {
 	c1 := &Change{}
 	c1.To.Name = "1"
 
@@ -411,7 +419,7 @@ func (s *ChangeAdaptorSuite) TestSortChanges(c *C) {
 	changes := Changes{c3, c1, c2}
 	sort.Sort(changes)
 
-	c.Assert(changes[0].String(), Equals, "<Action: Insert, Path: 1>")
-	c.Assert(changes[1].String(), Equals, "<Action: Modify, Path: 2>")
-	c.Assert(changes[2].String(), Equals, "<Action: Delete, Path: 3>")
+	s.Equal("<Action: Insert, Path: 1>", changes[0].String())
+	s.Equal("<Action: Modify, Path: 2>", changes[1].String())
+	s.Equal("<Action: Delete, Path: 3>", changes[2].String())
 }

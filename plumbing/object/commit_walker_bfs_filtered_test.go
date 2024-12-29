@@ -3,16 +3,19 @@ package object
 import (
 	"fmt"
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-var _ = Suite(&filterCommitIterSuite{})
+func TestfilterCommitIterSuite(t *testing.T) {
+	suite.Run(t, new(filterCommitIterSuite))
+}
 
 type filterCommitIterSuite struct {
+	suite.Suite
 	BaseObjectsSuite
 }
 
@@ -26,7 +29,7 @@ func commitsFromIter(iter CommitIter) ([]*Commit, error) {
 	return commits, err
 }
 
-func assertHashes(c *C, commits []*Commit, hashes []string) {
+func assertHashes(s *filterCommitIterSuite, commits []*Commit, hashes []string) {
 	if len(commits) != len(hashes) {
 		var expected []string
 		expected = append(expected, hashes...)
@@ -38,9 +41,9 @@ func assertHashes(c *C, commits []*Commit, hashes []string) {
 		fmt.Println("     got:", strings.Join(got, ", "))
 	}
 
-	c.Assert(commits, HasLen, len(hashes))
+	s.Len(commits, len(hashes))
 	for i, commit := range commits {
-		c.Assert(hashes[i], Equals, commit.Hash.String())
+		s.Equal(commit.Hash.String(), hashes[i])
 	}
 }
 
@@ -81,11 +84,11 @@ func not(filter CommitFilter) CommitFilter {
 // TestFilterCommitIter asserts that FilterCommitIter returns all commits from
 // history, but e8d3ffab552895c19b9fcf7aa264d277cde33881, that is not reachable
 // from HEAD
-func (s *filterCommitIterSuite) TestFilterCommitIter(c *C) {
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+func (s *filterCommitIterSuite) TestFilterCommitIter() {
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	commits, err := commitsFromIter(NewFilterCommitIter(from, nil, nil))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -98,35 +101,35 @@ func (s *filterCommitIterSuite) TestFilterCommitIter(c *C) {
 		"b8e471f58bcbca63b07bda20e428190409c2db47",
 	}
 
-	assertHashes(c, commits, expected)
+	assertHashes(s, commits, expected)
 }
 
 // TestFilterCommitIterWithValid asserts that FilterCommitIter returns only commits
 // that matches the passed isValid filter; in this testcase, it was filtered out
 // all commits but one from history
-func (s *filterCommitIterSuite) TestFilterCommitIterWithValid(c *C) {
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+func (s *filterCommitIterSuite) TestFilterCommitIterWithValid() {
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIf, nil))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := []string{
 		"35e85108805c84807bc66a02d91535e1e24b38b9",
 	}
 
-	assertHashes(c, commits, expected)
+	assertHashes(s, commits, expected)
 }
 
 // that matches the passed isValid filter; in this testcase, it was filtered out
 // only one commit from history
-func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalid(c *C) {
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalid() {
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	validIfNot := not(validIf)
 	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIfNot, nil))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -138,28 +141,28 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalid(c *C) {
 		"b8e471f58bcbca63b07bda20e428190409c2db47",
 	}
 
-	assertHashes(c, commits, expected)
+	assertHashes(s, commits, expected)
 }
 
 // TestFilterCommitIterWithNoValidCommits asserts that FilterCommitIter returns
 // no commits if the passed isValid filter does not allow any commit
-func (s *filterCommitIterSuite) TestFilterCommitIterWithNoValidCommits(c *C) {
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+func (s *filterCommitIterSuite) TestFilterCommitIterWithNoValidCommits() {
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("THIS_COMMIT_DOES_NOT_EXIST"))
 	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIf, nil))
-	c.Assert(err, IsNil)
-	c.Assert(commits, HasLen, 0)
+	s.NoError(err)
+	s.Len(commits, 0)
 }
 
 // TestFilterCommitIterWithStopAt asserts that FilterCommitIter returns only commits
 // are not beyond a isLimit filter
-func (s *filterCommitIterSuite) TestFilterCommitIterWithStopAt(c *C) {
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+func (s *filterCommitIterSuite) TestFilterCommitIterWithStopAt() {
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	stopAtRule := validIfCommit(plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"))
 	commits, err := commitsFromIter(NewFilterCommitIter(from, nil, &stopAtRule))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -171,19 +174,19 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithStopAt(c *C) {
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 	}
 
-	assertHashes(c, commits, expected)
+	assertHashes(s, commits, expected)
 }
 
 // TestFilterCommitIterWithStopAt asserts that FilterCommitIter works properly
 // with isValid and isLimit filters
-func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt(c *C) {
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt() {
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	stopAtRule := validIfCommit(plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"))
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	validIfNot := not(validIf)
 	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIfNot, &stopAtRule))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -194,7 +197,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt(c *C) {
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 	}
 
-	assertHashes(c, commits, expected)
+	assertHashes(s, commits, expected)
 }
 
 // TestIteratorForEachCallbackReturn that ForEach callback does not cause
@@ -208,7 +211,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt(c *C) {
 //   - a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
 //   - b029517f6300c2da0f4b651b8642506cd6aaf45d
 //   - b8e471f58bcbca63b07bda20e428190409c2db47
-func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn(c *C) {
+func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn() {
 
 	var visited []*Commit
 	errUnexpected := fmt.Errorf("Could not continue")
@@ -224,26 +227,26 @@ func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn(c *C) {
 		return nil
 	}
 
-	from := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	iter := NewFilterCommitIter(from, nil, nil)
 	err := iter.ForEach(cb)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	}
-	assertHashes(c, visited, expected)
+	assertHashes(s, visited, expected)
 
 	err = iter.ForEach(cb)
-	c.Assert(err, Equals, errUnexpected)
+	s.ErrorIs(err, errUnexpected)
 	expected = []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
 	}
-	assertHashes(c, visited, expected)
+	assertHashes(s, visited, expected)
 
 	err = iter.ForEach(cb)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected = []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
@@ -252,5 +255,5 @@ func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn(c *C) {
 		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
 		"b8e471f58bcbca63b07bda20e428190409c2db47",
 	}
-	assertHashes(c, visited, expected)
+	assertHashes(s, visited, expected)
 }
