@@ -7,14 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type CommonSuite struct {
+	suite.Suite
+}
 
-type CommonSuite struct{}
-
-var _ = Suite(&CommonSuite{})
+func TestCommonSuite(t *testing.T) {
+	suite.Run(t, new(CommonSuite))
+}
 
 type closer struct {
 	called int
@@ -25,38 +27,38 @@ func (c *closer) Close() error {
 	return nil
 }
 
-func (s *CommonSuite) TestNonEmptyReader_Empty(c *C) {
+func (s *CommonSuite) TestNonEmptyReader_Empty() {
 	var buf bytes.Buffer
 	r, err := NonEmptyReader(&buf)
-	c.Assert(err, Equals, ErrEmptyReader)
-	c.Assert(r, IsNil)
+	s.ErrorIs(err, ErrEmptyReader)
+	s.Nil(r)
 }
 
-func (s *CommonSuite) TestNonEmptyReader_NonEmpty(c *C) {
+func (s *CommonSuite) TestNonEmptyReader_NonEmpty() {
 	buf := bytes.NewBuffer([]byte("1"))
 	r, err := NonEmptyReader(buf)
-	c.Assert(err, IsNil)
-	c.Assert(r, NotNil)
+	s.NoError(err)
+	s.NotNil(r)
 
 	read, err := io.ReadAll(r)
-	c.Assert(err, IsNil)
-	c.Assert(string(read), Equals, "1")
+	s.NoError(err)
+	s.Equal("1", string(read))
 }
 
-func (s *CommonSuite) TestNewReadCloser(c *C) {
+func (s *CommonSuite) TestNewReadCloser() {
 	buf := bytes.NewBuffer([]byte("1"))
 	closer := &closer{}
 	r := NewReadCloser(buf, closer)
 
 	read, err := io.ReadAll(r)
-	c.Assert(err, IsNil)
-	c.Assert(string(read), Equals, "1")
+	s.NoError(err)
+	s.Equal("1", string(read))
 
-	c.Assert(r.Close(), IsNil)
-	c.Assert(closer.called, Equals, 1)
+	s.NoError(r.Close())
+	s.Equal(1, closer.called)
 }
 
-func (s *CommonSuite) TestNewContextReader(c *C) {
+func (s *CommonSuite) TestNewContextReader() {
 	buf := bytes.NewBuffer([]byte("12"))
 	ctx, close := context.WithCancel(context.Background())
 
@@ -64,16 +66,16 @@ func (s *CommonSuite) TestNewContextReader(c *C) {
 
 	b := make([]byte, 1)
 	n, err := r.Read(b)
-	c.Assert(n, Equals, 1)
-	c.Assert(err, IsNil)
+	s.Equal(1, n)
+	s.NoError(err)
 
 	close()
 	n, err = r.Read(b)
-	c.Assert(n, Equals, 0)
-	c.Assert(err, NotNil)
+	s.Equal(0, n)
+	s.NotNil(err)
 }
 
-func (s *CommonSuite) TestNewContextReadCloser(c *C) {
+func (s *CommonSuite) TestNewContextReadCloser() {
 	buf := NewReadCloser(bytes.NewBuffer([]byte("12")), &closer{})
 	ctx, close := context.WithCancel(context.Background())
 
@@ -81,52 +83,52 @@ func (s *CommonSuite) TestNewContextReadCloser(c *C) {
 
 	b := make([]byte, 1)
 	n, err := r.Read(b)
-	c.Assert(n, Equals, 1)
-	c.Assert(err, IsNil)
+	s.Equal(1, n)
+	s.NoError(err)
 
 	close()
 	n, err = r.Read(b)
-	c.Assert(n, Equals, 0)
-	c.Assert(err, NotNil)
+	s.Equal(0, n)
+	s.NotNil(err)
 
-	c.Assert(r.Close(), IsNil)
+	s.NoError(r.Close())
 }
 
-func (s *CommonSuite) TestNewContextWriter(c *C) {
+func (s *CommonSuite) TestNewContextWriter() {
 	buf := bytes.NewBuffer(nil)
 	ctx, close := context.WithCancel(context.Background())
 
 	r := NewContextWriter(ctx, buf)
 
 	n, err := r.Write([]byte("1"))
-	c.Assert(n, Equals, 1)
-	c.Assert(err, IsNil)
+	s.Equal(1, n)
+	s.NoError(err)
 
 	close()
 	n, err = r.Write([]byte("1"))
-	c.Assert(n, Equals, 0)
-	c.Assert(err, NotNil)
+	s.Equal(0, n)
+	s.NotNil(err)
 }
 
-func (s *CommonSuite) TestNewContextWriteCloser(c *C) {
+func (s *CommonSuite) TestNewContextWriteCloser() {
 	buf := NewWriteCloser(bytes.NewBuffer(nil), &closer{})
 	ctx, close := context.WithCancel(context.Background())
 
 	w := NewContextWriteCloser(ctx, buf)
 
 	n, err := w.Write([]byte("1"))
-	c.Assert(n, Equals, 1)
-	c.Assert(err, IsNil)
+	s.Equal(1, n)
+	s.NoError(err)
 
 	close()
 	n, err = w.Write([]byte("1"))
-	c.Assert(n, Equals, 0)
-	c.Assert(err, NotNil)
+	s.Equal(0, n)
+	s.NotNil(err)
 
-	c.Assert(w.Close(), IsNil)
+	s.NoError(w.Close())
 }
 
-func (s *CommonSuite) TestNewWriteCloserOnError(c *C) {
+func (s *CommonSuite) TestNewWriteCloserOnError() {
 	buf := NewWriteCloser(bytes.NewBuffer(nil), &closer{})
 
 	ctx, close := context.WithCancel(context.Background())
@@ -139,10 +141,10 @@ func (s *CommonSuite) TestNewWriteCloserOnError(c *C) {
 	close()
 	w.Write(nil)
 
-	c.Assert(called, NotNil)
+	s.NotNil(called)
 }
 
-func (s *CommonSuite) TestNewReadCloserOnError(c *C) {
+func (s *CommonSuite) TestNewReadCloserOnError() {
 	buf := NewReadCloser(bytes.NewBuffer(nil), &closer{})
 	ctx, close := context.WithCancel(context.Background())
 
@@ -154,7 +156,7 @@ func (s *CommonSuite) TestNewReadCloserOnError(c *C) {
 	close()
 	w.Read(nil)
 
-	c.Assert(called, NotNil)
+	s.NotNil(called)
 }
 func ExampleCheckClose() {
 	// CheckClose is commonly used with named return values
