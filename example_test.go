@@ -51,8 +51,9 @@ func ExamplePlainClone() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
-		URL: "https://github.com/git-fixtures/basic.git",
+	_, err = git.PlainClone(dir, &git.CloneOptions{
+		URL:    "https://github.com/git-fixtures/basic.git",
+		IsBare: false,
 	})
 
 	if err != nil {
@@ -79,8 +80,9 @@ func ExamplePlainClone_usernamePassword() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
-		URL: "https://github.com/git-fixtures/basic.git",
+	_, err = git.PlainClone(dir, &git.CloneOptions{
+		URL:    "https://github.com/git-fixtures/basic.git",
+		IsBare: false,
 		Auth: &http.BasicAuth{
 			Username: "username",
 			Password: "password",
@@ -102,8 +104,9 @@ func ExamplePlainClone_accessToken() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
-		URL: "https://github.com/git-fixtures/basic.git",
+	_, err = git.PlainClone(dir, &git.CloneOptions{
+		URL:    "https://github.com/git-fixtures/basic.git",
+		IsBare: false,
 		Auth: &http.BasicAuth{
 			Username: "abc123", // anything except an empty string
 			Password: "github_access_token",
