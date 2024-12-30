@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
 type BlameSuite struct {
@@ -80,7 +79,7 @@ func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) 
 	s.NoError(err)
 	lines, err := f.Lines()
 	s.NoError(err)
-	s.Len(t.blames, len(lines), Commentf(
+	s.Len(t.blames, len(lines), fmt.Sprintf(
 		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
 
 	blamedLines := make([]*Line, 0, len(t.blames))

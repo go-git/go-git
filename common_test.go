@@ -40,10 +40,6 @@ func (s *BaseSuite) SetupSuite() {
 	s.cache = make(map[string]*Repository)
 }
 
-// func (s *BaseSuite) TearDownSuite() {
-// 	s.Suite.TearDownSuite(c)
-// }
-
 func (s *BaseSuite) buildBasicRepository() {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)

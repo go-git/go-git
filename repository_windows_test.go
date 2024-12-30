@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/storage/memory"
-	. "gopkg.in/check.v1"
 )
 
 // preReceiveHook returns the bytes of a pre-receive hook script
@@ -16,7 +15,7 @@ func preReceiveHook(m string) []byte {
 }
 
 func (s *RepositorySuite) TestCloneFileUrlWindows() {
-	dir := c.MkDir()
+	dir := s.T().TempDir()
 
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -37,7 +36,7 @@ func (s *RepositorySuite) TestCloneFileUrlWindows() {
 	s.NoError(err)
 
 	url := "file:///" + strings.ReplaceAll(dir, "\\", "/")
-	c.Assert(url, Matches, "file:///[A-Za-z]:/.*")
+	s.Regexp("file:///[A-Za-z]:/.*", url)
 	_, err = Clone(memory.NewStorage(), nil, &CloneOptions{
 		URL: url,
 	})

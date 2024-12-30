@@ -169,9 +169,8 @@ func (s *RepositorySuite) TestInitBare() {
 	s.NotNil(r)
 
 	cfg, err := r.Config()
-	c.Assert(err, IsNil)
-	c.Assert(cfg.Core.IsBare, Equals, true)
-
+	s.NoError(err)
+	s.True(cfg.Core.IsBare)
 }
 
 func (s *RepositorySuite) TestInitAlreadyExists() {
@@ -287,7 +286,7 @@ func (s *RepositorySuite) TestCloneWithTags() {
 	)
 
 	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: NoTags})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	remotes, err := r.Remotes()
 	s.NoError(err)
@@ -346,7 +345,7 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote() {
 
 	alt, err := r.Remote("foo")
 	s.NoError(err)
-	s.NotEqual(remote, alt)
+	s.NotSame(remote, alt)
 	s.Equal("foo", alt.Config().Name)
 }
 
@@ -869,7 +868,7 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 
 	subdir := filepath.Join(dir, "a", "b")
 	err = fs.MkdirAll(subdir, 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	file := fs.Join(subdir, "file.txt")
 	f, err := fs.Create(file)
@@ -1146,11 +1145,11 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir() {
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
 	err = fs.MkdirAll(repoDir, 0777)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	dummyFile := filepath.Join(repoDir, "dummyFile")
 	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0644)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
 		URL: "incorrectOnPurpose",
@@ -1159,7 +1158,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir() {
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(dummyFile)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 }
 
@@ -1694,10 +1693,10 @@ func (s *RepositorySuite) TestPushContext() {
 func installPreReceiveHook(s *RepositorySuite, fs billy.Filesystem, path, m string) {
 	hooks := fs.Join(path, "hooks")
 	err := fs.MkdirAll(hooks, 0777)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = util.WriteFile(fs, fs.Join(hooks, "pre-receive"), preReceiveHook(m), 0777)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
 func (s *RepositorySuite) TestPushWithProgress() {
@@ -1752,7 +1751,7 @@ func (s *RepositorySuite) TestPushDepth() {
 	s.NoError(err)
 
 	err = util.WriteFile(r.wt, "foo", nil, 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	w, err := r.Worktree()
 	s.NoError(err)
@@ -3240,8 +3239,7 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 	}
 }
 
-func (s *RepositorySuite) testRepackObjects(
-	c *C, deleteTime time.Time, expectedPacks int) {
+func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks int) {
 	srcFs := fixtures.ByTag("unpacked").One().DotGit()
 	var sto storage.Storer
 	var err error

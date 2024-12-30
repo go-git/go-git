@@ -1527,7 +1527,7 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	s.Len(idx.Entries, 9)
 
 	err = util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	hash, err := w.Add("foo")
 	s.Equal("d96c7efbfec2814ae0301ad054dc8d9fc416c9b5", hash.String())
@@ -2457,10 +2457,7 @@ func (s *WorktreeSuite) TestClean() {
 
 	// An empty dir should be deleted, as well.
 	_, err = fs.Lstat("pkgA")
-	if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "file does not exist") {
-		s.Fail(`error shall contain "no such file or directory" or "file does not exist"`)
-	}
-
+	s.ErrorIs(err, os.ErrNotExist)
 }
 
 func (s *WorktreeSuite) TestCleanBare() {
@@ -3178,9 +3175,9 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 
 	// Add secondary changes to a file to make sure we only restore the staged file
 	err = util.WriteFile(fs, names[1], []byte("Foo Bar:11"), 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = util.WriteFile(fs, names[2], []byte("Foo Bar:22"), 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	verifyStatus(s, "Secondary Edits", w, names, []FileStatus{
 		{Worktree: Unmodified, Staging: Added},
