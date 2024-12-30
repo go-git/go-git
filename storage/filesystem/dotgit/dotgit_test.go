@@ -18,19 +18,27 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/stretchr/testify/assert"
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type SuiteDotGit struct {
+type SuiteDotGitFixture struct {
 	fixtures.Suite
 }
 
-var _ = Suite(&SuiteDotGit{})
+type SuiteDotGit struct {
+	suite.Suite
+	SuiteDotGitFixture
+}
 
-func (s *SuiteDotGit) TemporalFilesystem(c *C) (fs billy.Filesystem) {
-	fs = osfs.New(c.MkDir())
+func TestSuiteDotGit(t *testing.T) {
+	suite.Run(t, new(SuiteDotGit))
+}
+
+func (s *SuiteDotGit) TemporalFilesystem() (fs billy.Filesystem) {
+	tmpDir, err := os.MkdirTemp("", "")
+	s.NoError(err)
+
+	fs = osfs.New(tmpDir)
 	path, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
@@ -44,122 +52,122 @@ func (s *SuiteDotGit) TemporalFilesystem(c *C) (fs billy.Filesystem) {
 	return fs
 }
 
-func (s *SuiteDotGit) TestInitialize(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestInitialize() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
 	err := dir.Initialize()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = fs.Stat(fs.Join("objects", "info"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = fs.Stat(fs.Join("objects", "pack"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = fs.Stat(fs.Join("refs", "heads"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = fs.Stat(fs.Join("refs", "tags"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SuiteDotGit) TestSetRefs(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestSetRefs() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
-	testSetRefs(c, dir)
+	testSetRefs(s, dir)
 }
 
-func (s *SuiteDotGit) TestSetRefsNorwfs(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestSetRefsNorwfs() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(&norwfs{fs})
 
-	testSetRefs(c, dir)
+	testSetRefs(s, dir)
 }
 
-func (s *SuiteDotGit) TestRefsHeadFirst(c *C) {
+func (s *SuiteDotGit) TestRefsHeadFirst() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(len(refs), Not(Equals), 0)
-	c.Assert(refs[0].Name().String(), Equals, "HEAD")
+	s.NoError(err)
+	s.NotEqual(0, len(refs))
+	s.Equal("HEAD", refs[0].Name().String())
 }
 
-func testSetRefs(c *C, dir *DotGit) {
+func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 	firstFoo := plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	)
 	err := dir.SetRef(firstFoo, nil)
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/symbolic",
 		"ref: refs/heads/foo",
 	), nil)
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"bar",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/feature/baz",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 3)
+	s.NoError(err)
+	s.Len(refs, 3)
 
 	ref := findReference(refs, "refs/heads/foo")
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NotNil(ref)
+	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
 	ref = findReference(refs, "refs/heads/symbolic")
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Target().String(), Equals, "refs/heads/foo")
+	s.NotNil(ref)
+	s.Equal("refs/heads/foo", ref.Target().String())
 
 	ref = findReference(refs, "bar")
-	c.Assert(ref, IsNil)
+	s.Nil(ref)
 
 	_, err = dir.readReferenceFile(".", "refs/heads/feature/baz")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = dir.readReferenceFile(".", "refs/heads/feature")
-	c.Assert(err, Equals, ErrIsDir)
+	s.ErrorIs(err, ErrIsDir)
 
 	ref, err = dir.Ref("refs/heads/foo")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
 	ref, err = dir.Ref("refs/heads/symbolic")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Target().String(), Equals, "refs/heads/foo")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("refs/heads/foo", ref.Target().String())
 
 	ref, err = dir.Ref("bar")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
 	// Check that SetRef with a non-nil `old` works.
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	), firstFoo)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// `firstFoo` is no longer the right `old` reference, so this
 	// should fail.
@@ -167,32 +175,32 @@ func testSetRefs(c *C, dir *DotGit) {
 		"refs/heads/foo",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	), firstFoo)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *SuiteDotGit) TestRefsFromPackedRefs(c *C) {
+func (s *SuiteDotGit) TestRefsFromPackedRefs() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref := findReference(refs, "refs/remotes/origin/branch")
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NotNil(ref)
+	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 }
 
-func (s *SuiteDotGit) TestRefsFromReferenceFile(c *C) {
+func (s *SuiteDotGit) TestRefsFromReferenceFile() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref := findReference(refs, "refs/remotes/origin/HEAD")
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Type(), Equals, plumbing.SymbolicReference)
-	c.Assert(string(ref.Target()), Equals, "refs/remotes/origin/master")
+	s.NotNil(ref)
+	s.Equal(plumbing.SymbolicReference, ref.Type())
+	s.Equal("refs/remotes/origin/master", string(ref.Target()))
 }
 
 func BenchmarkRefMultipleTimes(b *testing.B) {
@@ -213,39 +221,40 @@ func BenchmarkRefMultipleTimes(b *testing.B) {
 	}
 }
 
-func (s *SuiteDotGit) TestRemoveRefFromReferenceFile(c *C) {
+func (s *SuiteDotGit) TestRemoveRefFromReferenceFile() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	name := plumbing.ReferenceName("refs/remotes/origin/HEAD")
 	err := dir.RemoveRef(name)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref := findReference(refs, string(name))
-	c.Assert(ref, IsNil)
+	s.Nil(ref)
 }
 
-func (s *SuiteDotGit) TestRemoveRefFromPackedRefs(c *C) {
+func (s *SuiteDotGit) TestRemoveRefFromPackedRefs() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	name := plumbing.ReferenceName("refs/remotes/origin/master")
 	err := dir.RemoveRef(name)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	b, err := util.ReadFile(fs, packedRefsPath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(string(b), Equals, ""+
+	s.Equal(""+
 		"# pack-refs with: peeled fully-peeled \n"+
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"+
-		"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/remotes/origin/branch\n")
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/remotes/origin/branch\n",
+		string(b))
 }
 
-func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs(c *C) {
+func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
@@ -254,191 +263,192 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs(c *C) {
 		"refs/remotes/origin/branch",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Make sure it only appears once in the refs list.
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	found := false
 	for _, ref := range refs {
 		if ref.Name() == "refs/remotes/origin/branch" {
-			c.Assert(found, Equals, false)
+			s.False(found)
 			found = true
 		}
 	}
 
 	name := plumbing.ReferenceName("refs/remotes/origin/branch")
 	err = dir.RemoveRef(name)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	b, err := util.ReadFile(fs, packedRefsPath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(string(b), Equals, ""+
+	s.Equal(""+
 		"# pack-refs with: peeled fully-peeled \n"+
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"+
-		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master\n")
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master\n",
+		string(b))
 
 	refs, err = dir.Refs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref := findReference(refs, string(name))
-	c.Assert(ref, IsNil)
+	s.Nil(ref)
 }
 
-func (s *SuiteDotGit) TestRemoveRefNonExistent(c *C) {
+func (s *SuiteDotGit) TestRemoveRefNonExistent() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	before, err := util.ReadFile(fs, packedRefsPath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
 	err = dir.RemoveRef(name)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	after, err := util.ReadFile(fs, packedRefsPath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(string(before), Equals, string(after))
+	s.Equal(string(after), string(before))
 }
 
-func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs(c *C) {
+func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	brokenContent := "BROKEN STUFF REALLY BROKEN"
 
 	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0755))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
 	err = dir.RemoveRef(name)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 
 	after, err := util.ReadFile(fs, packedRefsPath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(brokenContent, Equals, string(after))
+	s.Equal(string(after), brokenContent)
 }
 
-func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2(c *C) {
+func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	brokenContent := strings.Repeat("a", bufio.MaxScanTokenSize*2)
 
 	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0755))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
 	err = dir.RemoveRef(name)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 
 	after, err := util.ReadFile(fs, packedRefsPath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(brokenContent, Equals, string(after))
+	s.Equal(string(after), brokenContent)
 }
 
-func (s *SuiteDotGit) TestRefsFromHEADFile(c *C) {
+func (s *SuiteDotGit) TestRefsFromHEADFile() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref := findReference(refs, "HEAD")
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Type(), Equals, plumbing.SymbolicReference)
-	c.Assert(string(ref.Target()), Equals, "refs/heads/master")
+	s.NotNil(ref)
+	s.Equal(plumbing.SymbolicReference, ref.Type())
+	s.Equal("refs/heads/master", string(ref.Target()))
 }
 
-func (s *SuiteDotGit) TestConfig(c *C) {
+func (s *SuiteDotGit) TestConfig() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	file, err := dir.Config()
-	c.Assert(err, IsNil)
-	c.Assert(filepath.Base(file.Name()), Equals, "config")
+	s.NoError(err)
+	s.Equal("config", filepath.Base(file.Name()))
 }
 
-func (s *SuiteDotGit) TestConfigWriteAndConfig(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestConfigWriteAndConfig() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
 	f, err := dir.ConfigWriter()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = f.Write([]byte("foo"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = dir.Config()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	cnt, err := io.ReadAll(f)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(string(cnt), Equals, "foo")
+	s.Equal("foo", string(cnt))
 }
 
-func (s *SuiteDotGit) TestIndex(c *C) {
+func (s *SuiteDotGit) TestIndex() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	idx, err := dir.Index()
-	c.Assert(err, IsNil)
-	c.Assert(idx, NotNil)
+	s.NoError(err)
+	s.NotNil(idx)
 }
 
-func (s *SuiteDotGit) TestIndexWriteAndIndex(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestIndexWriteAndIndex() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
 	f, err := dir.IndexWriter()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = f.Write([]byte("foo"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = dir.Index()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	cnt, err := io.ReadAll(f)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(string(cnt), Equals, "foo")
+	s.Equal("foo", string(cnt))
 }
 
-func (s *SuiteDotGit) TestShallow(c *C) {
+func (s *SuiteDotGit) TestShallow() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	file, err := dir.Shallow()
-	c.Assert(err, IsNil)
-	c.Assert(file, IsNil)
+	s.NoError(err)
+	s.Nil(file)
 }
 
-func (s *SuiteDotGit) TestShallowWriteAndShallow(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestShallowWriteAndShallow() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
 	f, err := dir.ShallowWriter()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = f.Write([]byte("foo"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err = dir.Shallow()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	cnt, err := io.ReadAll(f)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(string(cnt), Equals, "foo")
+	s.Equal("foo", string(cnt))
 }
 
 func findReference(refs []*plumbing.Reference, name string) *plumbing.Reference {
@@ -452,199 +462,198 @@ func findReference(refs []*plumbing.Reference, name string) *plumbing.Reference 
 	return nil
 }
 
-func (s *SuiteDotGit) TestObjectPacks(c *C) {
+func (s *SuiteDotGit) TestObjectPacks() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
 
-	testObjectPacks(c, fs, dir, f)
+	testObjectPacks(s, fs, dir, f)
 }
 
-func (s *SuiteDotGit) TestObjectPacksExclusive(c *C) {
+func (s *SuiteDotGit) TestObjectPacksExclusive() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
 
-	testObjectPacks(c, fs, dir, f)
+	testObjectPacks(s, fs, dir, f)
 }
 
-func testObjectPacks(c *C, fs billy.Filesystem, dir *DotGit, f *fixtures.Fixture) {
+func testObjectPacks(s *SuiteDotGit, fs billy.Filesystem, dir *DotGit, f *fixtures.Fixture) {
 	hashes, err := dir.ObjectPacks()
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 1)
-	c.Assert(hashes[0], Equals, plumbing.NewHash(f.PackfileHash))
+	s.NoError(err)
+	s.Len(hashes, 1)
+	s.Equal(plumbing.NewHash(f.PackfileHash), hashes[0])
 
 	// Make sure that a random file in the pack directory doesn't
 	// break everything.
 	badFile, err := fs.Create("objects/pack/OOPS_THIS_IS_NOT_RIGHT.pack")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = badFile.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	// temporary file generated by git gc
 	tmpFile, err := fs.Create("objects/pack/.tmp-11111-pack-58rf8y4wm1b1k52bpe0kdlx6lpreg6ahso8n3ylc.pack")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = tmpFile.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	hashes2, err := dir.ObjectPacks()
-	c.Assert(err, IsNil)
-	c.Assert(hashes2, HasLen, 1)
-	c.Assert(hashes[0], Equals, hashes2[0])
+	s.NoError(err)
+	s.Len(hashes2, 1)
+	s.Equal(hashes2[0], hashes[0])
 }
 
-func (s *SuiteDotGit) TestObjectPack(c *C) {
+func (s *SuiteDotGit) TestObjectPack() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
 
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	c.Assert(err, IsNil)
-	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
+	s.NoError(err)
+	s.Equal(".pack", filepath.Ext(pack.Name()))
 }
 
-func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors(c *C) {
+func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
 
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	c.Assert(err, IsNil)
-	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
+	s.NoError(err)
+	s.Equal(".pack", filepath.Ext(pack.Name()))
 
 	// Move to an specific offset
 	pack.Seek(42, io.SeekStart)
 
 	pack2, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// If the file is the same the offset should be the same
 	offset, err := pack2.Seek(0, io.SeekCurrent)
-	c.Assert(err, IsNil)
-	c.Assert(offset, Equals, int64(42))
+	s.NoError(err)
+	s.Equal(int64(42), offset)
 
 	err = dir.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	pack2, err = dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// If the file is opened again its offset should be 0
 	offset, err = pack2.Seek(0, io.SeekCurrent)
-	c.Assert(err, IsNil)
-	c.Assert(offset, Equals, int64(0))
+	s.NoError(err)
+	s.Equal(int64(0), offset)
 
 	err = pack2.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = dir.Close()
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *SuiteDotGit) TestObjectPackIdx(c *C) {
+func (s *SuiteDotGit) TestObjectPackIdx() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs := f.DotGit()
 	dir := New(fs)
 
 	idx, err := dir.ObjectPackIdx(plumbing.NewHash(f.PackfileHash))
-	c.Assert(err, IsNil)
-	c.Assert(filepath.Ext(idx.Name()), Equals, ".idx")
-	c.Assert(idx.Close(), IsNil)
+	s.NoError(err)
+	s.Equal(".idx", filepath.Ext(idx.Name()))
+	s.Nil(idx.Close())
 }
 
-func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
+func (s *SuiteDotGit) TestObjectPackNotFound() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 
 	pack, err := dir.ObjectPack(plumbing.ZeroHash)
-	c.Assert(err, Equals, ErrPackfileNotFound)
-	c.Assert(pack, IsNil)
+	s.ErrorIs(err, ErrPackfileNotFound)
+	s.Nil(pack)
 
 	idx, err := dir.ObjectPackIdx(plumbing.ZeroHash)
-	c.Assert(err, Equals, ErrPackfileNotFound)
-	c.Assert(idx, IsNil)
+	s.ErrorIs(err, ErrPackfileNotFound)
+	s.Nil(idx)
 }
 
-func (s *SuiteDotGit) TestNewObject(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestNewObject() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 	w, err := dir.NewObject()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = w.WriteHeader(plumbing.BlobObject, 14)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	n, err := w.Write([]byte("this is a test"))
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 14)
+	s.NoError(err)
+	s.Equal(14, n)
 
-	c.Assert(w.Hash().String(), Equals, "a8a940627d132695a9769df883f85992f0ff4a43")
+	s.Equal("a8a940627d132695a9769df883f85992f0ff4a43", w.Hash().String())
 
 	err = w.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	i, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
-	c.Assert(err, IsNil)
-	c.Assert(i.Size(), Equals, int64(34))
+	s.NoError(err)
+	s.Equal(int64(34), i.Size())
 }
 
-func (s *SuiteDotGit) TestObjects(c *C) {
+func (s *SuiteDotGit) TestObjects() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
-	testObjects(c, fs, dir)
-	testObjectsWithPrefix(c, fs, dir)
+	testObjects(s, fs, dir)
+	testObjectsWithPrefix(s, fs, dir)
 }
 
-func (s *SuiteDotGit) TestObjectsExclusive(c *C) {
+func (s *SuiteDotGit) TestObjectsExclusive() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
 
-	testObjects(c, fs, dir)
-	testObjectsWithPrefix(c, fs, dir)
+	testObjects(s, fs, dir)
+	testObjectsWithPrefix(s, fs, dir)
 }
 
-func testObjects(c *C, _ billy.Filesystem, dir *DotGit) {
+func testObjects(s *SuiteDotGit, _ billy.Filesystem, dir *DotGit) {
 	hashes, err := dir.Objects()
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 187)
-	c.Assert(hashes[0].String(), Equals, "0097821d427a3c3385898eb13b50dcbc8702b8a3")
-	c.Assert(hashes[1].String(), Equals, "01d5fa556c33743006de7e76e67a2dfcd994ca04")
-	c.Assert(hashes[2].String(), Equals, "03db8e1fbe133a480f2867aac478fd866686d69e")
+	s.NoError(err)
+	s.Len(hashes, 187)
+	s.Equal("0097821d427a3c3385898eb13b50dcbc8702b8a3", hashes[0].String())
+	s.Equal("01d5fa556c33743006de7e76e67a2dfcd994ca04", hashes[1].String())
+	s.Equal("03db8e1fbe133a480f2867aac478fd866686d69e", hashes[2].String())
 }
 
-func testObjectsWithPrefix(c *C, _ billy.Filesystem, dir *DotGit) {
+func testObjectsWithPrefix(s *SuiteDotGit, _ billy.Filesystem, dir *DotGit) {
 	prefix, _ := hex.DecodeString("01d5")
 	hashes, err := dir.ObjectsWithPrefix(prefix)
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 1)
-	c.Assert(hashes[0].String(), Equals, "01d5fa556c33743006de7e76e67a2dfcd994ca04")
+	s.NoError(err)
+	s.Len(hashes, 1)
+	s.Equal("01d5fa556c33743006de7e76e67a2dfcd994ca04", hashes[0].String())
 
 	// Empty prefix should yield all objects.
 	// (subset of testObjects)
 	hashes, err = dir.ObjectsWithPrefix(nil)
-	c.Assert(err, IsNil)
-	c.Assert(hashes, HasLen, 187)
+	s.NoError(err)
+	s.Len(hashes, 187)
 }
 
-func (s *SuiteDotGit) TestObjectsNoFolder(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestObjectsNoFolder() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 	hash, err := dir.Objects()
-	c.Assert(err, IsNil)
-	c.Assert(hash, HasLen, 0)
+	s.NoError(err)
+	s.Len(hash, 0)
 }
 
-func (s *SuiteDotGit) TestObject(c *C) {
+func (s *SuiteDotGit) TestObject() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	file, err := dir.Object(hash)
-	c.Assert(err, IsNil)
-	c.Assert(strings.HasSuffix(
+	s.NoError(err)
+	s.True(strings.HasSuffix(
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
-		Equals, true,
 	)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
@@ -653,19 +662,18 @@ func (s *SuiteDotGit) TestObject(c *C) {
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SuiteDotGit) TestPreGit235Object(c *C) {
+func (s *SuiteDotGit) TestPreGit235Object() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	file, err := dir.Object(hash)
-	c.Assert(err, IsNil)
-	c.Assert(strings.HasSuffix(
+	s.NoError(err)
+	s.True(strings.HasSuffix(
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
-		Equals, true,
 	)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "incoming-123456")
@@ -674,16 +682,16 @@ func (s *SuiteDotGit) TestPreGit235Object(c *C) {
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SuiteDotGit) TestObjectStat(c *C) {
+func (s *SuiteDotGit) TestObjectStat() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	_, err := dir.ObjectStat(hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
@@ -691,16 +699,16 @@ func (s *SuiteDotGit) TestObjectStat(c *C) {
 	fs.Create(incomingFilePath)
 
 	_, err = dir.ObjectStat(plumbing.NewHash(incomingHash))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SuiteDotGit) TestObjectDelete(c *C) {
+func (s *SuiteDotGit) TestObjectDelete() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	err := dir.ObjectDelete(hash)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
@@ -708,39 +716,39 @@ func (s *SuiteDotGit) TestObjectDelete(c *C) {
 	incomingFilePath := fs.Join(incomingSubDirPath, incomingHash[2:40])
 
 	err = fs.MkdirAll(incomingSubDirPath, os.FileMode(0755))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f, err := fs.Create(incomingFilePath)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = f.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = dir.ObjectDelete(plumbing.NewHash(incomingHash))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SuiteDotGit) TestObjectNotFound(c *C) {
+func (s *SuiteDotGit) TestObjectNotFound() {
 	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	dir := New(fs)
 
 	hash := plumbing.NewHash("not-found-object")
 	file, err := dir.Object(hash)
-	c.Assert(err, NotNil)
-	c.Assert(file, IsNil)
+	s.NotNil(err)
+	s.Nil(file)
 }
 
-func (s *SuiteDotGit) TestSubmodules(c *C) {
+func (s *SuiteDotGit) TestSubmodules() {
 	fs := fixtures.ByTag("submodule").One().DotGit()
 	dir := New(fs)
 
 	m, err := dir.Module("basic")
-	c.Assert(err, IsNil)
-	c.Assert(strings.HasSuffix(m.Root(), m.Join(".git", "modules", "basic")), Equals, true)
+	s.NoError(err)
+	s.True(strings.HasSuffix(m.Root(), m.Join(".git", "modules", "basic")))
 }
 
-func (s *SuiteDotGit) TestPackRefs(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestPackRefs() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
@@ -748,64 +756,64 @@ func (s *SuiteDotGit) TestPackRefs(c *C) {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/bar",
 		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	s.NoError(err)
+	s.Len(refs, 2)
 	looseCount, err := dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 2)
+	s.NoError(err)
+	s.Equal(2, looseCount)
 
 	err = dir.PackRefs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	s.NoError(err)
+	s.Len(refs, 2)
 	looseCount, err = dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 0)
+	s.NoError(err)
+	s.Equal(0, looseCount)
 
 	ref, err := dir.Ref("refs/heads/foo")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 	ref, err = dir.Ref("refs/heads/bar")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "a8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("a8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
 	// Now update one of them, re-pack, and check again.
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/foo",
 		"b8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	looseCount, err = dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 1)
+	s.NoError(err)
+	s.Equal(1, looseCount)
 	err = dir.PackRefs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 2)
+	s.NoError(err)
+	s.Len(refs, 2)
 	looseCount, err = dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 0)
+	s.NoError(err)
+	s.Equal(0, looseCount)
 
 	ref, err = dir.Ref("refs/heads/foo")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "b8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("b8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 }
 
 func TestAlternatesDefault(t *testing.T) {
@@ -951,7 +959,7 @@ func (f *norwfs) Capabilities() billy.Capability {
 	return billy.Capabilities(f.Filesystem) &^ billy.ReadAndWriteCapability
 }
 
-func (s *SuiteDotGit) TestIncBytes(c *C) {
+func (s *SuiteDotGit) TestIncBytes() {
 	tests := []struct {
 		in       []byte
 		out      []byte
@@ -964,8 +972,8 @@ func (s *SuiteDotGit) TestIncBytes(c *C) {
 	}
 	for _, test := range tests {
 		out, overflow := incBytes(test.in)
-		c.Assert(out, DeepEquals, test.out)
-		c.Assert(overflow, Equals, test.overflow)
+		s.Equal(test.out, out)
+		s.Equal(test.overflow, overflow)
 	}
 }
 
@@ -1003,8 +1011,8 @@ func (f *notExistsFS) ReadDir(path string) ([]os.FileInfo, error) {
 	return f.Filesystem.ReadDir(path)
 }
 
-func (s *SuiteDotGit) TestDeletedRefs(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestDeletedRefs() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(&notExistsFS{
 		Filesystem: fs,
@@ -1018,27 +1026,27 @@ func (s *SuiteDotGit) TestDeletedRefs(c *C) {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/bar",
 		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/baz/baz",
 		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 1)
-	c.Assert(refs[0].Name(), Equals, plumbing.ReferenceName("refs/heads/foo"))
+	s.NoError(err)
+	s.Len(refs, 1)
+	s.Equal(plumbing.ReferenceName("refs/heads/foo"), refs[0].Name())
 }
 
 // Checks that setting a reference that has been packed and checking its old value is successful
-func (s *SuiteDotGit) TestSetPackedRef(c *C) {
-	fs := s.TemporalFilesystem(c)
+func (s *SuiteDotGit) TestSetPackedRef() {
+	fs := s.TemporalFilesystem()
 
 	dir := New(fs)
 
@@ -1046,30 +1054,30 @@ func (s *SuiteDotGit) TestSetPackedRef(c *C) {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	refs, err := dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 1)
+	s.NoError(err)
+	s.Len(refs, 1)
 	looseCount, err := dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 1)
+	s.NoError(err)
+	s.Equal(1, looseCount)
 
 	err = dir.PackRefs()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
-	c.Assert(err, IsNil)
-	c.Assert(refs, HasLen, 1)
+	s.NoError(err)
+	s.Len(refs, 1)
 	looseCount, err = dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 0)
+	s.NoError(err)
+	s.Equal(0, looseCount)
 
 	ref, err := dir.Ref("refs/heads/foo")
-	c.Assert(err, IsNil)
-	c.Assert(ref, NotNil)
-	c.Assert(ref.Hash().String(), Equals, "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.NoError(err)
+	s.NotNil(ref)
+	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
 	// Attempt to update the reference using an invalid old reference value
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
@@ -1079,7 +1087,7 @@ func (s *SuiteDotGit) TestSetPackedRef(c *C) {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33882",
 	))
-	c.Assert(err, Equals, storage.ErrReferenceHasChanged)
+	s.ErrorIs(err, storage.ErrReferenceHasChanged)
 
 	// Now update the reference and it should pass
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
@@ -1089,8 +1097,8 @@ func (s *SuiteDotGit) TestSetPackedRef(c *C) {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	looseCount, err = dir.CountLooseRefs()
-	c.Assert(err, IsNil)
-	c.Assert(looseCount, Equals, 1)
+	s.NoError(err)
+	s.Equal(1, looseCount)
 }
