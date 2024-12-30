@@ -25,7 +25,6 @@ require (
 	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399
 	github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
-	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 	github.com/kevinburke/ssh_config v1.2.0
 	github.com/pjbgf/sha1cd v0.3.0
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
