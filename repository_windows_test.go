@@ -15,26 +15,26 @@ func preReceiveHook(m string) []byte {
 	return []byte(fmt.Sprintf("#!C:/Program\\ Files/Git/usr/bin/sh.exe\nprintf '%s'\n", m))
 }
 
-func (s *RepositorySuite) TestCloneFileUrlWindows(c *C) {
+func (s *RepositorySuite) TestCloneFileUrlWindows() {
 	dir := c.MkDir()
 
 	r, err := PlainInit(dir, false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = util.WriteFile(r.wt, "foo", nil, 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	w, err := r.Worktree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = w.Add("foo")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = w.Commit("foo", &CommitOptions{
 		Author:    defaultSignature(),
 		Committer: defaultSignature(),
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	url := "file:///" + strings.ReplaceAll(dir, "\\", "/")
 	c.Assert(url, Matches, "file:///[A-Za-z]:/.*")
@@ -42,5 +42,5 @@ func (s *RepositorySuite) TestCloneFileUrlWindows(c *C) {
 		URL: url,
 	})
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }

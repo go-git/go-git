@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -9,101 +10,105 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
 type SubmoduleSuite struct {
+	suite.Suite
 	BaseSuite
 	Worktree *Worktree
 }
 
-var _ = Suite(&SubmoduleSuite{})
+func TestSubmoduleSuite(t *testing.T) {
+	suite.Run(t, new(SubmoduleSuite))
+}
 
-func (s *SubmoduleSuite) SetUpTest(c *C) {
+func (s *SubmoduleSuite) SetupTest() {
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	dir := c.MkDir()
+	dir, err := os.MkdirTemp("", "")
+	s.NoError(err)
 
 	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
 		URL: path,
 	})
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.Repository = r
 	s.Worktree, err = r.Worktree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SubmoduleSuite) TestInit(c *C) {
+func (s *SubmoduleSuite) TestInit() {
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(sm.initialized, Equals, false)
+	s.False(sm.initialized)
 	err = sm.Init()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(sm.initialized, Equals, true)
+	s.True(sm.initialized)
 
 	cfg, err := s.Repository.Config()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(cfg.Submodules, HasLen, 1)
-	c.Assert(cfg.Submodules["basic"], NotNil)
+	s.Len(cfg.Submodules, 1)
+	s.NotNil(cfg.Submodules["basic"])
 
 	status, err := sm.Status()
-	c.Assert(err, IsNil)
-	c.Assert(status.IsClean(), Equals, false)
+	s.NoError(err)
+	s.False(status.IsClean())
 }
 
-func (s *SubmoduleSuite) TestUpdate(c *C) {
+func (s *SubmoduleSuite) TestUpdate() {
 	if testing.Short() {
-		c.Skip("skipping test in short mode.")
+		s.T().Skip("skipping test in short mode.")
 	}
 
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init: true,
 	})
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	r, err := sm.Repository()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref, err := r.Reference(plumbing.HEAD, true)
-	c.Assert(err, IsNil)
-	c.Assert(ref.Hash().String(), Equals, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	s.NoError(err)
+	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", ref.Hash().String())
 
 	status, err := sm.Status()
-	c.Assert(err, IsNil)
-	c.Assert(status.IsClean(), Equals, true)
+	s.NoError(err)
+	s.True(status.IsClean())
 }
 
-func (s *SubmoduleSuite) TestRepositoryWithoutInit(c *C) {
+func (s *SubmoduleSuite) TestRepositoryWithoutInit() {
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	r, err := sm.Repository()
-	c.Assert(err, Equals, ErrSubmoduleNotInitialized)
-	c.Assert(r, IsNil)
+	s.ErrorIs(err, ErrSubmoduleNotInitialized)
+	s.Nil(r)
 }
 
-func (s *SubmoduleSuite) TestUpdateWithoutInit(c *C) {
+func (s *SubmoduleSuite) TestUpdateWithoutInit() {
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{})
-	c.Assert(err, Equals, ErrSubmoduleNotInitialized)
+	s.ErrorIs(err, ErrSubmoduleNotInitialized)
 }
 
-func (s *SubmoduleSuite) TestUpdateWithNotFetch(c *C) {
+func (s *SubmoduleSuite) TestUpdateWithNotFetch() {
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init:    true,
@@ -111,44 +116,44 @@ func (s *SubmoduleSuite) TestUpdateWithNotFetch(c *C) {
 	})
 
 	// Since we are not fetching, the object is not there
-	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
-func (s *SubmoduleSuite) TestUpdateWithRecursion(c *C) {
+func (s *SubmoduleSuite) TestUpdateWithRecursion() {
 	if testing.Short() {
-		c.Skip("skipping test in short mode.")
+		s.T().Skip("skipping test in short mode.")
 	}
 
 	sm, err := s.Worktree.Submodule("itself")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init:              true,
 		RecurseSubmodules: 2,
 	})
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	fs := s.Worktree.Filesystem
 	_, err = fs.Stat(fs.Join("itself", "basic", "LICENSE"))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate(c *C) {
+func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
 	if testing.Short() {
-		c.Skip("skipping test in short mode.")
+		s.T().Skip("skipping test in short mode.")
 	}
 
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init: true,
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	idx, err := s.Repository.Storer.Index()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for i, e := range idx.Entries {
 		if e.Name == "basic" {
@@ -159,104 +164,104 @@ func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate(c *C) {
 	}
 
 	err = s.Repository.Storer.SetIndex(idx)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	r, err := sm.Repository()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ref, err := r.Reference(plumbing.HEAD, true)
-	c.Assert(err, IsNil)
-	c.Assert(ref.Hash().String(), Equals, "b029517f6300c2da0f4b651b8642506cd6aaf45d")
+	s.NoError(err)
+	s.Equal("b029517f6300c2da0f4b651b8642506cd6aaf45d", ref.Hash().String())
 
 }
 
-func (s *SubmoduleSuite) TestSubmodulesInit(c *C) {
+func (s *SubmoduleSuite) TestSubmodulesInit() {
 	sm, err := s.Worktree.Submodules()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Init()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	sm, err = s.Worktree.Submodules()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for _, m := range sm {
-		c.Assert(m.initialized, Equals, true)
+		s.True(m.initialized)
 	}
 }
 
-func (s *SubmoduleSuite) TestGitSubmodulesSymlink(c *C) {
+func (s *SubmoduleSuite) TestGitSubmodulesSymlink() {
 	f, err := s.Worktree.Filesystem.Create("badfile")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	defer func() { _ = f.Close() }()
 
 	err = s.Worktree.Filesystem.Remove(gitmodulesFile)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = s.Worktree.Filesystem.Symlink("badfile", gitmodulesFile)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = s.Worktree.Submodules()
-	c.Assert(err, Equals, ErrGitModulesSymlink)
+	s.ErrorIs(err, ErrGitModulesSymlink)
 }
 
-func (s *SubmoduleSuite) TestSubmodulesStatus(c *C) {
+func (s *SubmoduleSuite) TestSubmodulesStatus() {
 	sm, err := s.Worktree.Submodules()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	status, err := sm.Status()
-	c.Assert(err, IsNil)
-	c.Assert(status, HasLen, 2)
+	s.NoError(err)
+	s.Len(status, 2)
 }
 
-func (s *SubmoduleSuite) TestSubmodulesUpdateContext(c *C) {
+func (s *SubmoduleSuite) TestSubmodulesUpdateContext() {
 	if testing.Short() {
-		c.Skip("skipping test in short mode.")
+		s.T().Skip("skipping test in short mode.")
 	}
 
 	sm, err := s.Worktree.Submodules()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err = sm.UpdateContext(ctx, &SubmoduleUpdateOptions{Init: true})
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *SubmoduleSuite) TestSubmodulesFetchDepth(c *C) {
+func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 	if testing.Short() {
-		c.Skip("skipping test in short mode.")
+		s.T().Skip("skipping test in short mode.")
 	}
 
 	sm, err := s.Worktree.Submodule("basic")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init:  true,
 		Depth: 1,
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	r, err := sm.Repository()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	lr, err := r.Log(&LogOptions{})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	commitCount := 0
 	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
 		commitCount++
 	}
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(commitCount, Equals, 1)
+	s.Equal(1, commitCount)
 }
 
-func (s *SubmoduleSuite) TestSubmoduleParseScp(c *C) {
+func (s *SubmoduleSuite) TestSubmoduleParseScp() {
 	repo := &Repository{
 		Storer: memory.NewStorage(),
 		wt:     memfs.New(),
@@ -276,5 +281,5 @@ func (s *SubmoduleSuite) TestSubmoduleParseScp(c *C) {
 	}
 
 	_, err := submodule.Repository()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }

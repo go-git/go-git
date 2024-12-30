@@ -1,42 +1,49 @@
 package git
 
 import (
+	"fmt"
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
 )
 
 type BlameSuite struct {
+	suite.Suite
 	BaseSuite
 }
 
-var _ = Suite(&BlameSuite{})
+func TestBlameSuite(t *testing.T) {
+	suite.Run(t, new(BlameSuite))
+}
 
-func (s *BlameSuite) TestNewLines(c *C) {
+func (s *BlameSuite) TestNewLines() {
 	h := plumbing.NewHash("ce9f123d790717599aaeb76bc62510de437761be")
 	lines, err := newLines([]string{"foo"}, []*object.Commit{{
 		Hash:    h,
 		Message: "foo",
 	}})
 
-	c.Assert(err, IsNil)
-	c.Assert(lines, HasLen, 1)
-	c.Assert(lines[0].Text, Equals, "foo")
-	c.Assert(lines[0].Hash, Equals, h)
+	s.NoError(err)
+	s.Len(lines, 1)
+	s.Equal("foo", lines[0].Text)
+	s.Equal(h, lines[0].Hash)
 }
 
-func (s *BlameSuite) TestNewLinesWithNewLine(c *C) {
+func (s *BlameSuite) TestNewLinesWithNewLine() {
 	lines, err := newLines([]string{"foo", ""}, []*object.Commit{
 		{Message: "foo"},
 		{Message: "bar"},
 	})
 
-	c.Assert(err, IsNil)
-	c.Assert(lines, HasLen, 2)
-	c.Assert(lines[0].Text, Equals, "foo")
-	c.Assert(lines[1].Text, Equals, "")
+	s.NoError(err)
+	s.Len(lines, 2)
+	s.Equal("foo", lines[0].Text)
+	s.Equal("", lines[1].Text)
 }
 
 type blameTest struct {
@@ -47,39 +54,39 @@ type blameTest struct {
 }
 
 // run a blame on all the suite's tests
-func (s *BlameSuite) TestBlame(c *C) {
+func (s *BlameSuite) TestBlame() {
 	for _, t := range blameTests {
 		r := s.NewRepositoryFromPackfile(fixtures.ByURL(t.repo).One())
 
-		exp := s.mockBlame(c, t, r)
+		exp := s.mockBlame(t, r)
 		commit, err := r.CommitObject(plumbing.NewHash(t.rev))
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
 		obt, err := Blame(commit, t.path)
-		c.Assert(err, IsNil)
-		c.Assert(obt, DeepEquals, exp)
+		s.NoError(err)
+		s.Equal(exp, obt)
 
 		for i, l := range obt.Lines {
-			c.Assert(l.Hash.String(), Equals, t.blames[i])
+			s.Equal(t.blames[i], l.Hash.String())
 		}
 	}
 }
 
-func (s *BlameSuite) mockBlame(c *C, t blameTest, r *Repository) (blame *BlameResult) {
+func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) {
 	commit, err := r.CommitObject(plumbing.NewHash(t.rev))
-	c.Assert(err, IsNil, Commentf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
+	s.NoError(err, fmt.Sprintf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
 
 	f, err := commit.File(t.path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	lines, err := f.Lines()
-	c.Assert(err, IsNil)
-	c.Assert(len(t.blames), Equals, len(lines), Commentf(
+	s.NoError(err)
+	s.Len(t.blames, len(lines), Commentf(
 		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
 
 	blamedLines := make([]*Line, 0, len(t.blames))
 	for i := range t.blames {
 		commit, err := r.CommitObject(plumbing.NewHash(t.blames[i]))
-		c.Assert(err, IsNil)
+		s.NoError(err)
 		l := &Line{
 			Author:     commit.Author.Email,
 			AuthorName: commit.Author.Name,

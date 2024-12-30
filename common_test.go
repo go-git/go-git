@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -11,35 +12,39 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type BaseFixtureSuite struct {
+	fixtures.Suite
+}
 
 type BaseSuite struct {
-	fixtures.Suite
+	suite.Suite
+	BaseFixtureSuite
 	Repository *Repository
 
 	cache map[string]*Repository
 }
 
-func (s *BaseSuite) SetUpSuite(c *C) {
-	s.buildBasicRepository(c)
+func (s *BaseSuite) SetupSuite() {
+	s.buildBasicRepository()
 
 	s.cache = make(map[string]*Repository)
 }
 
-func (s *BaseSuite) TearDownSuite(c *C) {
-	s.Suite.TearDownSuite(c)
-}
+// func (s *BaseSuite) TearDownSuite() {
+// 	s.Suite.TearDownSuite(c)
+// }
 
-func (s *BaseSuite) buildBasicRepository(_ *C) {
+func (s *BaseSuite) buildBasicRepository() {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)
 }
@@ -155,8 +160,12 @@ func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 	return
 }
 
-func (s *BaseSuite) TemporalFilesystem(c *C) (fs billy.Filesystem) {
-	fs = osfs.New(c.MkDir())
+func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem) {
+	tmpDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		panic(err)
+	}
+	fs = osfs.New(tmpDir)
 	path, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
@@ -170,9 +179,13 @@ func (s *BaseSuite) TemporalFilesystem(c *C) (fs billy.Filesystem) {
 	return
 }
 
-type SuiteCommon struct{}
+type SuiteCommon struct {
+	suite.Suite
+}
 
-var _ = Suite(&SuiteCommon{})
+func TestSuiteCommon(t *testing.T) {
+	suite.Run(t, new(SuiteCommon))
+}
 
 var countLinesTests = [...]struct {
 	i string // the string we want to count lines from
@@ -189,47 +202,47 @@ var countLinesTests = [...]struct {
 	{"first line\n\tsecond line\nthird line\n", 3},
 }
 
-func (s *SuiteCommon) TestCountLines(c *C) {
+func (s *SuiteCommon) TestCountLines() {
 	for i, t := range countLinesTests {
 		o := countLines(t.i)
-		c.Assert(o, Equals, t.e, Commentf("subtest %d, input=%q", i, t.i))
+		s.Equal(t.e, o, fmt.Sprintf("subtest %d, input=%q", i, t.i))
 	}
 }
 
-func AssertReferences(c *C, r *Repository, expected map[string]string) {
+func AssertReferences(t *testing.T, r *Repository, expected map[string]string) {
 	for name, target := range expected {
 		expected := plumbing.NewReferenceFromStrings(name, target)
 
 		obtained, err := r.Reference(expected.Name(), true)
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 
-		c.Assert(obtained, DeepEquals, expected)
+		assert.Equal(t, expected, obtained)
 	}
 }
 
-func AssertReferencesMissing(c *C, r *Repository, expected []string) {
+func AssertReferencesMissing(t *testing.T, r *Repository, expected []string) {
 	for _, name := range expected {
 		_, err := r.Reference(plumbing.ReferenceName(name), false)
-		c.Assert(err, NotNil)
-		c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 	}
 }
 
-func CommitNewFile(c *C, repo *Repository, fileName string) plumbing.Hash {
+func CommitNewFile(t *testing.T, repo *Repository, fileName string) plumbing.Hash {
 	wt, err := repo.Worktree()
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	fd, err := wt.Filesystem.Create(fileName)
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	_, err = fd.Write([]byte("# test file"))
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	err = fd.Close()
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	_, err = wt.Add(fileName)
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	sha, err := wt.Commit("test commit", &CommitOptions{
 		Author: &object.Signature{
@@ -243,7 +256,7 @@ func CommitNewFile(c *C, repo *Repository, fileName string) plumbing.Hash {
 			When:  time.Now(),
 		},
 	})
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	return sha
 }
