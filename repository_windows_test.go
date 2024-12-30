@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/storage/memory"
-	. "gopkg.in/check.v1"
 )
 
 // preReceiveHook returns the bytes of a pre-receive hook script
@@ -15,32 +14,32 @@ func preReceiveHook(m string) []byte {
 	return []byte(fmt.Sprintf("#!C:/Program\\ Files/Git/usr/bin/sh.exe\nprintf '%s'\n", m))
 }
 
-func (s *RepositorySuite) TestCloneFileUrlWindows(c *C) {
-	dir := c.MkDir()
+func (s *RepositorySuite) TestCloneFileUrlWindows() {
+	dir := s.T().TempDir()
 
 	r, err := PlainInit(dir, false)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = util.WriteFile(r.wt, "foo", nil, 0755)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	w, err := r.Worktree()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = w.Add("foo")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = w.Commit("foo", &CommitOptions{
 		Author:    defaultSignature(),
 		Committer: defaultSignature(),
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	url := "file:///" + strings.ReplaceAll(dir, "\\", "/")
-	c.Assert(url, Matches, "file:///[A-Za-z]:/.*")
+	s.Regexp("file:///[A-Za-z]:/.*", url)
 	_, err = Clone(memory.NewStorage(), nil, &CloneOptions{
 		URL: url,
 	})
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
