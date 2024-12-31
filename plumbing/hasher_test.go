@@ -1,4 +1,4 @@
-package hasher_test
+package plumbing
 
 import (
 	"bytes"
@@ -9,8 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	. "github.com/go-git/go-git/v5/exp/plumbing/hasher"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/pjbgf/sha1cd"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,19 +19,19 @@ func TestHasher(t *testing.T) {
 	tests := []struct {
 		name    string
 		h       hash.Hash
-		ot      plumbing.ObjectType
+		ot      ObjectType
 		content []byte
 		want    string
 	}{
 		{
 			"blob object sha1", crypto.SHA1.New(),
-			plumbing.BlobObject,
+			BlobObject,
 			[]byte("hash object sample"),
 			"9f361d484fcebb869e1919dc7467b82ac6ca5fad",
 		},
 		{
 			"blob object sha256", crypto.SHA256.New(),
-			plumbing.BlobObject,
+			BlobObject,
 			[]byte("hash object sample"),
 			"2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677",
 		},
@@ -57,7 +55,7 @@ func TestMultipleHashes(t *testing.T) {
 	tests := []struct {
 		name     string
 		h        hash.Hash
-		ot       plumbing.ObjectType
+		ot       ObjectType
 		content1 []byte
 		content2 []byte
 		want1    string
@@ -65,7 +63,7 @@ func TestMultipleHashes(t *testing.T) {
 	}{
 		{
 			"reuse sha1 hasher instance for two ops", crypto.SHA1.New(),
-			plumbing.BlobObject,
+			BlobObject,
 			[]byte("hash object sample"),
 			[]byte("other object content"),
 			"9f361d484fcebb869e1919dc7467b82ac6ca5fad",
@@ -73,7 +71,7 @@ func TestMultipleHashes(t *testing.T) {
 		},
 		{
 			"reuse sha256 hasher instance for two ops", crypto.SHA256.New(),
-			plumbing.BlobObject,
+			BlobObject,
 			[]byte("hash object sample"),
 			[]byte("other object content"),
 			"2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677",
@@ -103,21 +101,21 @@ func TestThreadSatefy(t *testing.T) {
 	tests := []struct {
 		name    string
 		h       hash.Hash
-		ot      plumbing.ObjectType
+		ot      ObjectType
 		content []byte
 		count   int
 		want    string
 	}{
 		{
 			"thread safety sha1", crypto.SHA1.New(),
-			plumbing.BlobObject,
+			BlobObject,
 			bytes.Repeat([]byte{2}, 500),
 			20,
 			"147979c263be42345f0721a22c5339492aadd0bf",
 		},
 		{
 			"thread safety sha256", crypto.SHA256.New(),
-			plumbing.BlobObject,
+			BlobObject,
 			bytes.Repeat([]byte{2}, 500),
 			20,
 			"43196946e1d64387caaac746132f22c2be6f9a16914dad0231b479e16b9c3a01",
@@ -167,7 +165,7 @@ func benchmarkHasher(b *testing.B, sz int64) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h := plumbing.NewHasher(plumbing.BlobObject, sz)
+		h := NewHasher(BlobObject, sz)
 		_, _ = h.Write([]byte(content))
 		b.SetBytes(sz)
 	}
@@ -180,7 +178,7 @@ func benchmarkObjectHash(b *testing.B, h hash.Hash, sz int64) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = oh.Compute(plumbing.BlobObject, content)
+		_, _ = oh.Compute(BlobObject, content)
 		b.SetBytes(sz)
 	}
 }

@@ -1,4 +1,4 @@
-package hasher
+package plumbing
 
 import (
 	"crypto"
@@ -6,14 +6,13 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/hash"
 
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
 )
 
 // ObjectHasher computes hashes for Git objects. A few differences
-// it has when compared to plumbing.Hasher:
+// it has when compared to Hasher:
 //
 //   - ObjectType awareness: produces either SHA1 or SHA256 hashes
 //     depending on the format needed.
@@ -25,7 +24,7 @@ type ObjectHasher interface {
 	// Compute calculates the hash of a Git object. The process involves
 	// first writing the object header, which contains the object type
 	// and content size, followed by the content itself.
-	Compute(ot plumbing.ObjectType, d []byte) (ImmutableHash, error)
+	Compute(ot ObjectType, d []byte) (ImmutableHash, error)
 }
 
 // FromObjectFormat returns the correct ObjectHasher for the given
@@ -71,7 +70,7 @@ type objectHasherSHA1 struct {
 	m      sync.Mutex
 }
 
-func (h *objectHasherSHA1) Compute(ot plumbing.ObjectType, d []byte) (ImmutableHash, error) {
+func (h *objectHasherSHA1) Compute(ot ObjectType, d []byte) (ImmutableHash, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 
@@ -103,7 +102,7 @@ type objectHasherSHA256 struct {
 	m      sync.Mutex
 }
 
-func (h *objectHasherSHA256) Compute(ot plumbing.ObjectType, d []byte) (ImmutableHash, error) {
+func (h *objectHasherSHA256) Compute(ot ObjectType, d []byte) (ImmutableHash, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 
@@ -124,7 +123,7 @@ func (h *objectHasherSHA256) Size() int {
 	return h.hasher.Size()
 }
 
-func writeHeader(h hash.Hash, ot plumbing.ObjectType, sz int64) {
+func writeHeader(h hash.Hash, ot ObjectType, sz int64) {
 	// TODO: Optimise hasher.Write calls.
 	// Writing into hash in amounts smaller than oh.BlockSize() is
 	// sub-optimal.

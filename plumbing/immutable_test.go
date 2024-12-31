@@ -1,4 +1,4 @@
-package hasher_test
+package plumbing
 
 import (
 	"crypto"
@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	. "github.com/go-git/go-git/v5/exp/plumbing/hasher"
-	"github.com/go-git/go-git/v5/plumbing"
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/pjbgf/sha1cd"
 	"github.com/stretchr/testify/assert"
@@ -161,7 +159,7 @@ func BenchmarkHashFromHex(b *testing.B) {
 
 func benchmarkHashParse(b *testing.B, in string) {
 	for i := 0; i < b.N; i++ {
-		_ = plumbing.NewHash(in)
+		_ = NewHash(in)
 		b.SetBytes(int64(len(in)))
 	}
 }

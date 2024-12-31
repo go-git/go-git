@@ -2,7 +2,6 @@ package plumbing
 
 import (
 	"crypto"
-	"encoding/hex"
 	"strconv"
 
 	"github.com/go-git/go-git/v6/plumbing/hash"
@@ -10,27 +9,18 @@ import (
 
 // NewHash return a new Hash256 from a hexadecimal hash representation.
 func NewHash256(s string) Hash256 {
-	b, _ := hex.DecodeString(s)
-
-	var h Hash256
-	copy(h[:], b)
-
-	return h
+	h, _ := FromHex(s)
+	return h.(immutableHashSHA256)
 }
 
 // Hash256 represents SHA256 hashed content.
-type Hash256 [32]byte
+type Hash256 = immutableHashSHA256
 
 // ZeroHash is Hash256 with value zero.
-var ZeroHash256 Hash256
+var ZeroHash256 immutableHashSHA256
 
 func (h Hash256) IsZero() bool {
-	var empty Hash256
-	return h == empty
-}
-
-func (h Hash256) String() string {
-	return hex.EncodeToString(h[:])
+	return h.Empty()
 }
 
 // ComputeHash compute the hash for a given ObjectType and content.

@@ -10,10 +10,10 @@ import (
 )
 
 // Hash SHA1 hashed content
-type Hash [hash.Size]byte
+type Hash = immutableHashSHA1
 
 // ZeroHash is Hash with value zero
-var ZeroHash Hash
+var ZeroHash immutableHashSHA1
 
 // ComputeHash compute the hash for a given ObjectType and content
 func ComputeHash(t ObjectType, content []byte) Hash {
@@ -24,21 +24,12 @@ func ComputeHash(t ObjectType, content []byte) Hash {
 
 // NewHash return a new Hash from a hexadecimal hash representation
 func NewHash(s string) Hash {
-	b, _ := hex.DecodeString(s)
-
-	var h Hash
-	copy(h[:], b)
-
-	return h
+	h, _ := FromHex(s)
+	return h.(immutableHashSHA1)
 }
 
 func (h Hash) IsZero() bool {
-	var empty Hash
-	return h == empty
-}
-
-func (h Hash) String() string {
-	return hex.EncodeToString(h[:])
+	return h.Empty()
 }
 
 type Hasher struct {

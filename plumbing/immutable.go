@@ -1,4 +1,4 @@
-package hasher
+package plumbing
 
 import (
 	"bytes"
@@ -20,6 +20,7 @@ type ImmutableHash interface {
 	String() string
 	// Sum returns the slice of bytes containing the hash.
 	Sum() []byte
+	HasPrefix([]byte) bool
 }
 
 // FromHex parses a hexadecimal string and returns an ImmutableHash
@@ -132,6 +133,10 @@ func (ih immutableHashSHA1) Compare(in []byte) int {
 	return bytes.Compare(ih[:], in)
 }
 
+func (ih immutableHashSHA1) HasPrefix(prefix []byte) bool {
+	return bytes.HasPrefix(ih[:], prefix)
+}
+
 type immutableHashSHA256 [hash.SHA256Size]byte
 
 func (ih immutableHashSHA256) Size() int {
@@ -154,3 +159,20 @@ func (ih immutableHashSHA256) Sum() []byte {
 func (ih immutableHashSHA256) Compare(in []byte) int {
 	return bytes.Compare(ih[:], in)
 }
+
+func (ih immutableHashSHA256) HasPrefix(prefix []byte) bool {
+	return bytes.HasPrefix(ih[:], prefix)
+}
+
+// ImmutableHashesSort sorts a slice of ImmutableHashes in increasing order.
+// func ImmutableHashesSort(a []ImmutableHash) {
+// 	sort.Sort(HashSlice(a))
+// }
+
+// // HashSlice attaches the methods of sort.Interface to []Hash, sorting in
+// // increasing order.
+// type HashSlice []ImmutableHash
+
+// func (p HashSlice) Len() int           { return len(p) }
+// func (p HashSlice) Less(i, j int) bool { return p[i].Compare(p[j].Sum()) <= 0 }
+// func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
