@@ -17,7 +17,7 @@ func Write(w io.Writer, p []byte) (n int, err error) {
 
 	defer func() {
 		if err == nil {
-			trace.Packet.Printf("packet: > %04x %s", n, p)
+			maskPackDataTrace(true, n, p)
 		}
 	}()
 
@@ -146,7 +146,7 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 		}
 	}
 
-	maskPackDataTrace(length, p[LenSize:length])
+	maskPackDataTrace(false, length, p[LenSize:length])
 
 	return length, err
 }
@@ -211,15 +211,23 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 		}
 	}
 
-	maskPackDataTrace(length, buf)
+	maskPackDataTrace(false, length, buf)
 
 	return length, buf, err
 }
 
-func maskPackDataTrace(len int, data []byte) {
+func maskPackDataTrace(out bool, l int, data []byte) {
+	if !trace.Packet.Enabled() {
+		return
+	}
+
 	output := []byte("[ PACKDATA ]")
-	if len < 400 {
+	if l < 400 && len(data) > 0 && data[0] != 1 { // [sideband.PackData]
 		output = data
 	}
-	trace.Packet.Printf("packet: < %04x %s", len, output)
+	arrow := '<'
+	if out {
+		arrow = '>'
+	}
+	trace.Packet.Printf("packet: %c %04x %q", arrow, l, output)
 }
