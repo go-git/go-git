@@ -240,9 +240,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	l, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, IsNil)
 
-	base, err := os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-http-%d", s.port))
-	c.Assert(err, IsNil)
-
+	base := c.MkDir()
 	s.port = l.Addr().(*net.TCPAddr).Port
 	s.base = filepath.Join(base, s.host)
 

@@ -42,8 +42,7 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	s.port, err = freePort()
 	c.Assert(err, IsNil)
 
-	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
-	c.Assert(err, IsNil)
+	s.base = c.MkDir()
 }
 
 func (s *BaseSuite) StartDaemon(c *C) {

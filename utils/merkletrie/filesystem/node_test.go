@@ -205,9 +205,7 @@ func (s *NoderSuite) TestSocket(c *C) {
 		c.Skip("socket files do not exist on windows")
 	}
 
-	td, err := os.MkdirTemp(c.MkDir(), "socket-test")
-	c.Assert(err, IsNil)
-
+	td := c.MkDir()
 	sock, err := net.ListenUnix("unix", &net.UnixAddr{Name: fmt.Sprintf("%s/socket", td), Net: "unix"})
 	c.Assert(err, IsNil)
 	defer sock.Close()

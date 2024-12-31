@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"sync/atomic"
 
 	"github.com/armon/go-socks5"
@@ -53,8 +52,7 @@ func (s *ProxySuite) TestCommand(c *C) {
 	}()
 
 	s.u.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.u.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-ssh-%d", s.u.port))
-	c.Assert(err, IsNil)
+	s.u.base = c.MkDir()
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil

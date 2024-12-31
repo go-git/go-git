@@ -23,9 +23,7 @@ func (s *CommonSuite) SetUpSuite(c *C) {
 		c.Skip("git command not found")
 	}
 
-	var err error
-	s.tmpDir, err = os.MkdirTemp(c.MkDir(), "")
-	c.Assert(err, IsNil)
+	s.tmpDir = c.MkDir()
 	s.ReceivePackBin = filepath.Join(s.tmpDir, "git-receive-pack")
 	s.UploadPackBin = filepath.Join(s.tmpDir, "git-upload-pack")
 	bin := filepath.Join(s.tmpDir, "go-git")
