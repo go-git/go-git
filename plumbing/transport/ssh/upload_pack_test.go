@@ -42,8 +42,7 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
-	c.Assert(err, IsNil)
+	s.base = c.MkDir()
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil

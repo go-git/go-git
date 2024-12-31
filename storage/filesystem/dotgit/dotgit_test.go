@@ -35,10 +35,7 @@ func TestSuiteDotGit(t *testing.T) {
 }
 
 func (s *SuiteDotGit) TemporalFilesystem() (fs billy.Filesystem) {
-	tmpDir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	fs = osfs.New(tmpDir)
+	fs = osfs.New(s.T().TempDir())
 	path, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
