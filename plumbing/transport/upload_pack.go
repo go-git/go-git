@@ -2,7 +2,6 @@ package transport
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -89,21 +88,98 @@ func UploadPack(
 			caps  = upreq.Capabilities
 		)
 
-		for {
-			// TODO: support multi_ack & multi_ack_detailed
-			_, p, err := pktline.PeekLine(rd)
-			if err != nil {
+		// Find common commits/objects
+		havesWithRef, err := revlist.ObjectsWithRef(st, wants, nil)
+		if err != nil {
+			return err
+		}
+
+		var writer io.Writer = w
+		if !caps.Supports(capability.NoProgress) {
+			if caps.Supports(capability.Sideband) {
+				writer = sideband.NewMuxer(sideband.Sideband, w)
+			}
+			if caps.Supports(capability.Sideband64k) {
+				writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			}
+		}
+
+		// Encode objects to packfile and write to client
+		multiAck := caps.Supports(capability.MultiACK)
+		multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
+		e := packfile.NewEncoder(writer, st, false)
+
+		var done bool
+		var haves []plumbing.Hash
+		for !done {
+			var uphav packp.UploadHaves
+			if err := uphav.Decode(rd); err != nil {
 				return err
 			}
 
-			if bytes.Equal(p, []byte("done\n")) {
-				// consume the "done" line
-				pktline.ReadLine(rd) // nolint: errcheck
-				break
+			haves = append(haves, uphav.Haves...)
+			done = uphav.Done
+
+			common := map[plumbing.Hash]struct{}{}
+			var ack packp.ACK
+			var acks []packp.ACK
+			for _, hu := range uphav.Haves {
+				refs, ok := havesWithRef[hu]
+				if ok {
+					for _, ref := range refs {
+						common[ref] = struct{}{}
+					}
+				}
+
+				var status packp.ACKStatus
+				if multiAckDetailed {
+					status = packp.ACKCommon
+					if !ok {
+						status = packp.ACKReady
+					}
+				} else if multiAck {
+					status = packp.ACKContinue
+				}
+
+				if ok || multiAck || multiAckDetailed {
+					ack = packp.ACK{Hash: hu, Status: status}
+					acks = append(acks, ack)
+					if !multiAck && !multiAckDetailed {
+						break
+					}
+				}
 			}
 
-			// Consume line
-			pktline.ReadLine(rd) // nolint: errcheck
+			if len(haves) > 0 {
+				// Encode ACKs to client when we have haves
+				srvrsp := packp.ServerResponse{ACKs: acks}
+				if err := srvrsp.Encode(w); err != nil {
+					return err
+				}
+			}
+
+			if !done {
+				if multiAck || multiAckDetailed {
+					// Encode a NAK for multi-ack
+					srvrsp := packp.ServerResponse{}
+					if err := srvrsp.Encode(w); err != nil {
+						return err
+					}
+				}
+			} else if !ack.Hash.IsZero() && (multiAck || multiAckDetailed) {
+				// We're done, send the final ACK
+				ack.Status = 0
+				srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
+				if err := srvrsp.Encode(w); err != nil {
+					return err
+				}
+			} else if ack.Hash.IsZero() {
+				// We don't have multi-ack and there are no haves. Encode a NAK.
+				srvrsp := packp.ServerResponse{}
+				if err := srvrsp.Encode(w); err != nil {
+					return err
+				}
+			}
 		}
 
 		// Done with the request, now close the reader
@@ -129,29 +205,12 @@ func UploadPack(
 			}
 		}
 
-		srvupd := packp.ServerResponse{}
-		if err := srvupd.Encode(w); err != nil {
-			return err
-		}
-
-		// Find common commits/objects
-		objs, err := objectsToUpload(st, wants, nil)
+		objs, err := objectsToUpload(st, wants, haves)
 		if err != nil {
+			w.Close() //nolint:errcheck
 			return err
 		}
 
-		var writer io.Writer = w
-		if !caps.Supports(capability.NoProgress) {
-			if caps.Supports(capability.Sideband64k) {
-				writer = sideband.NewMuxer(sideband.Sideband64k, w)
-			} else if caps.Supports(capability.Sideband) {
-				writer = sideband.NewMuxer(sideband.Sideband, w)
-			}
-		}
-
-		// Encode objects to packfile and write to client
-		// TODO: implement send sideband progress messages
-		e := packfile.NewEncoder(writer, st, false)
 		_, err = e.Encode(objs, 10)
 		if err != nil {
 			return err
@@ -166,12 +225,7 @@ func UploadPack(
 }
 
 func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
-	calcHaves, err := revlist.Objects(st, haves, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return revlist.Objects(st, wants, calcHaves)
+	return revlist.Objects(st, wants, haves)
 }
 
 func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {

@@ -460,9 +460,11 @@ type fakePublicKey struct{}
 func (fakePublicKey) Type() string {
 	return "fake-public-key"
 }
+
 func (fakePublicKey) Marshal() []byte {
 	return []byte("fake public key")
 }
+
 func (fakePublicKey) Verify(_ []byte, _ *ssh.Signature) error {
 	return errors.New("Verify called on placeholder key")
 }
