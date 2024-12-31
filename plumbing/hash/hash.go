@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	SHA1_Size      = 20
-	SHA1_HexSize   = SHA1_Size * 2
-	SHA256_Size    = 32
-	SHA256_HexSize = SHA256_Size * 2
+	SHA1Size      = 20
+	SHA1HexSize   = SHA1Size * 2
+	SHA256Size    = 32
+	SHA256HexSize = SHA256Size * 2
 )
 
 var (

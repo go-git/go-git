@@ -51,9 +51,9 @@ func FromObjectFormat(f format.ObjectFormat) (ObjectHasher, error) {
 // error is returned.
 func FromHash(h hash.Hash) (ObjectHasher, error) {
 	switch h.Size() {
-	case hash.SHA1_Size:
+	case hash.SHA1Size:
 		return newHasherSHA1(), nil
-	case hash.SHA256_Size:
+	case hash.SHA256Size:
 		return newHasherSHA256(), nil
 	default:
 		return nil, hash.ErrUnsupportedHashFunction

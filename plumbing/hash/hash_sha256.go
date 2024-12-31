@@ -9,7 +9,7 @@ const (
 	// CryptoType defines what hash algorithm is being used.
 	CryptoType = crypto.SHA256
 	// Size defines the amount of bytes the hash yields.
-	Size = SHA256_Size
+	Size = SHA256Size
 	// HexSize defines the strings size of the hash when represented in hexadecimal.
-	HexSize = SHA256_HexSize
+	HexSize = SHA256HexSize
 )

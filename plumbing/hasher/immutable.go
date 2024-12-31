@@ -30,8 +30,8 @@ type ImmutableHash interface {
 // If the operation was not successful, the resulting hash is nil
 // instead of a zeroed hash.
 func FromHex(in string) (ImmutableHash, bool) {
-	if len(in) < hash.SHA1_HexSize ||
-		len(in) > hash.SHA256_HexSize {
+	if len(in) < hash.SHA1HexSize ||
+		len(in) > hash.SHA256HexSize {
 		return nil, false
 	}
 
@@ -41,12 +41,12 @@ func FromHex(in string) (ImmutableHash, bool) {
 	}
 
 	switch len(in) {
-	case hash.SHA1_HexSize:
+	case hash.SHA1HexSize:
 		h := immutableHashSHA1{}
 		copy(h[:], b)
 		return h, true
 
-	case hash.SHA256_HexSize:
+	case hash.SHA256HexSize:
 		h := immutableHashSHA256{}
 		copy(h[:], b)
 		return h, true
@@ -64,18 +64,18 @@ func FromHex(in string) (ImmutableHash, bool) {
 // If the operation was not successful, the resulting hash is nil
 // instead of a zeroed hash.
 func FromBytes(in []byte) (ImmutableHash, bool) {
-	if len(in) < hash.SHA1_Size ||
-		len(in) > hash.SHA256_Size {
+	if len(in) < hash.SHA1Size ||
+		len(in) > hash.SHA256Size {
 		return nil, false
 	}
 
 	switch len(in) {
-	case hash.SHA1_Size:
+	case hash.SHA1Size:
 		h := immutableHashSHA1{}
 		copy(h[:], in)
 		return h, true
 
-	case hash.SHA256_Size:
+	case hash.SHA256Size:
 		h := immutableHashSHA256{}
 		copy(h[:], in)
 		return h, true
@@ -90,7 +90,7 @@ func FromBytes(in []byte) (ImmutableHash, bool) {
 // Defaults to SHA1-sized hash if the provided hash is not supported.
 func ZeroFromHash(h hash.Hash) ImmutableHash {
 	switch h.Size() {
-	case hash.SHA256_Size:
+	case hash.SHA256Size:
 		return immutableHashSHA256{}
 	default:
 		return immutableHashSHA1{}
@@ -109,7 +109,7 @@ func ZeroFromObjectFormat(f format.ObjectFormat) ImmutableHash {
 	}
 }
 
-type immutableHashSHA1 [hash.SHA1_Size]byte
+type immutableHashSHA1 [hash.SHA1Size]byte
 
 func (ih immutableHashSHA1) Size() int {
 	return len(ih)
@@ -132,7 +132,7 @@ func (ih immutableHashSHA1) Compare(in []byte) int {
 	return bytes.Compare(ih[:], in)
 }
 
-type immutableHashSHA256 [hash.SHA256_Size]byte
+type immutableHashSHA256 [hash.SHA256Size]byte
 
 func (ih immutableHashSHA256) Size() int {
 	return len(ih)
