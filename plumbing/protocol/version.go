@@ -11,13 +11,14 @@ var ErrUnknownProtocol = errors.New("unknown Git Wire protocol")
 type Version int
 
 const (
-	Undefined Version = -1
 	// V0 represents the original Wire protocol.
 	V0 Version = iota
 	// V1 represents the version V1 of the Wire protocol.
 	V1
 	// V2 represents the version V2 of the Wire protocol.
 	V2
+
+	Undefined Version = -1
 )
 
 // String converts a Version into string.
