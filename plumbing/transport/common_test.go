@@ -2,95 +2,100 @@ package transport
 
 import (
 	"fmt"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type CommonSuite struct{}
+func TestCommonSuite(t *testing.T) {
+	suite.Run(t, new(CommonSuite))
+}
 
-var _ = Suite(&CommonSuite{})
+type CommonSuite struct {
+	suite.Suite
+}
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForUnknownSource(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForUnknownSource() {
 	msg := "unknown system is complaining of something very sad :("
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, false)
+	s.False(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundError(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundError() {
 	msg := "no such repository : some error stuf"
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGithub(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForGithub() {
 	msg := fmt.Sprintf("%s : some error stuf", githubRepoNotFoundErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForBitBucket(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForBitBucket() {
 	msg := fmt.Sprintf("%s : some error stuf", bitbucketRepoNotFoundErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForLocal(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForLocal() {
 	msg := fmt.Sprintf("some error stuf : %s", localRepoNotFoundErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolNotFound(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolNotFound() {
 	msg := fmt.Sprintf("%s : some error stuf", gitProtocolNotFoundErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolNoSuch(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolNoSuch() {
 	msg := fmt.Sprintf("%s : some error stuf", gitProtocolNoSuchErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolAccessDenied(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolAccessDenied() {
 	msg := fmt.Sprintf("%s : some error stuf", gitProtocolAccessDeniedErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGogsAccessDenied(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForGogsAccessDenied() {
 	msg := fmt.Sprintf("%s : some error stuf", gogsAccessDeniedErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitlab(c *C) {
+func (s *CommonSuite) TestIsRepoNotFoundErrorForGitlab() {
 	msg := fmt.Sprintf("%s : some error stuf", gitlabRepoNotFoundErr)
 
 	isRepoNotFound := isRepoNotFoundError(msg)
 
-	c.Assert(isRepoNotFound, Equals, true)
+	s.True(isRepoNotFound)
 }
 
-func (s *CommonSuite) TestCheckNotFoundError(c *C) {
+func (s *CommonSuite) TestCheckNotFoundError() {
 	firstErrLine := make(chan string, 1)
 
 	session := session{
@@ -101,10 +106,10 @@ func (s *CommonSuite) TestCheckNotFoundError(c *C) {
 
 	err := session.checkNotFoundError()
 
-	c.Assert(err, IsNil)
+	s.Nil(err)
 }
 
-func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
+func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError() {
 	var (
 		stderr  = "something"
 		wantErr = fmt.Errorf("unknown error: something")
@@ -113,7 +118,7 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
 	client := NewClient(mockCommander{stderr: stderr})
 	sess, err := client.NewUploadPackSession(nil, nil)
 	if err != nil {
-		c.Fatalf("unexpected error: %s", err)
+		s.T().Fatalf("unexpected error: %s", err)
 	}
 
 	_, err = sess.AdvertisedReferences()
@@ -121,15 +126,15 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError(c *C) {
 	if wantErr != nil {
 		if wantErr != err {
 			if wantErr.Error() != err.Error() {
-				c.Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
+				s.T().Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
 			}
 		}
 	} else if err != nil {
-		c.Fatalf("unexpected error: %s", err)
+		s.T().Fatalf("unexpected error: %s", err)
 	}
 }
 
-func (s *CommonSuite) TestAdvertisedReferencesWithRemoteNotFoundError(c *C) {
+func (s *CommonSuite) TestAdvertisedReferencesWithRemoteNotFoundError() {
 	var (
 		stderr = `remote:
 remote: ========================================================================
@@ -145,7 +150,7 @@ remote:`
 	client := NewClient(mockCommander{stderr: stderr})
 	sess, err := client.NewUploadPackSession(nil, nil)
 	if err != nil {
-		c.Fatalf("unexpected error: %s", err)
+		s.T().Fatalf("unexpected error: %s", err)
 	}
 
 	_, err = sess.AdvertisedReferences()
@@ -153,10 +158,10 @@ remote:`
 	if wantErr != nil {
 		if wantErr != err {
 			if wantErr.Error() != err.Error() {
-				c.Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
+				s.T().Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
 			}
 		}
 	} else if err != nil {
-		c.Fatalf("unexpected error: %s", err)
+		s.T().Fatalf("unexpected error: %s", err)
 	}
 }

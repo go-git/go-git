@@ -206,9 +206,9 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	req.Capabilities.Set(capability.ReportStatus)
 
 	report, err := s.receivePackNoCheck(endpoint, req, fixture, full)
-	//XXX: Recent git versions return "failed to update ref", while older
+	// XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
-	s.ErrorContains(err, ".*(failed to update ref|failed to lock).*")
+	s.Regexp(regexp.MustCompile(".*(failed to update ref|failed to lock).*"), err)
 	s.Equal("ok", report.UnpackStatus)
 	s.Len(report.CommandStatuses, 1)
 	s.Equal(plumbing.ReferenceName("refs/heads/master"), report.CommandStatuses[0].ReferenceName)
@@ -218,7 +218,8 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 
 func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
-	callAdvertisedReferences bool) (*packp.ReportStatus, error) {
+	callAdvertisedReferences bool,
+) (*packp.ReportStatus, error) {
 	url := ""
 	if fixture != nil {
 		url = fixture.URL
@@ -241,7 +242,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 
 		for _, file := range files {
 			path := filepath.Join(objectPath, file.Name())
-			err = os.Chmod(path, 0644)
+			err = os.Chmod(path, 0o644)
 			s.NoError(err)
 		}
 	}
@@ -268,7 +269,8 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 
 func (s *ReceivePackSuite) receivePack(ep *transport.Endpoint,
 	req *packp.ReferenceUpdateRequest, fixture *fixtures.Fixture,
-	callAdvertisedReferences bool) {
+	callAdvertisedReferences bool,
+) {
 	url := ""
 	if fixture != nil {
 		url = fixture.URL
@@ -293,8 +295,8 @@ func (s *ReceivePackSuite) checkRemoteHead(ep *transport.Endpoint, head plumbing
 }
 
 func (s *ReceivePackSuite) checkRemoteReference(ep *transport.Endpoint,
-	refName string, head plumbing.Hash) {
-
+	refName string, head plumbing.Hash,
+) {
 	r, err := s.Client.NewUploadPackSession(ep, s.EmptyAuth)
 	s.NoError(err)
 	defer func() { s.Nil(r.Close()) }()
