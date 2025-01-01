@@ -3,16 +3,18 @@ package url
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type URLSuite struct {
+	suite.Suite
+}
 
-type URLSuite struct{}
+func TestURLSuite(t *testing.T) {
+	suite.Run(t, new(URLSuite))
+}
 
-var _ = Suite(&URLSuite{})
-
-func (s *URLSuite) TestMatchesScpLike(c *C) {
+func (s *URLSuite) TestMatchesScpLike() {
 	// See https://github.com/git/git/blob/master/Documentation/urls.txt#L37
 	examples := []string{
 		// Most-extended case
@@ -37,11 +39,11 @@ func (s *URLSuite) TestMatchesScpLike(c *C) {
 	}
 
 	for _, url := range examples {
-		c.Check(MatchesScpLike(url), Equals, true)
+		s.True(MatchesScpLike(url))
 	}
 }
 
-func (s *URLSuite) TestFindScpLikeComponents(c *C) {
+func (s *URLSuite) TestFindScpLikeComponents() {
 	testCases := []struct {
 		url, user, host, port, path string
 	}{
@@ -94,16 +96,9 @@ func (s *URLSuite) TestFindScpLikeComponents(c *C) {
 	for _, tc := range testCases {
 		user, host, port, path := FindScpLikeComponents(tc.url)
 
-		logf := func(ok bool) {
-			if ok {
-				return
-			}
-			c.Logf("%q check failed", tc.url)
-		}
-
-		logf(c.Check(user, Equals, tc.user))
-		logf(c.Check(host, Equals, tc.host))
-		logf(c.Check(port, Equals, tc.port))
-		logf(c.Check(path, Equals, tc.path))
+		s.Equal(tc.user, user, tc.url)
+		s.Equal(tc.host, host, tc.url)
+		s.Equal(tc.port, port, tc.url)
+		s.Equal(tc.path, path, tc.url)
 	}
 }
