@@ -49,7 +49,7 @@ func (l *fsLoader) load(ep *Endpoint, tried bool) (storage.Storer, error) {
 
 	if _, err := fs.Stat("config"); err != nil {
 		if !l.strict && !tried {
-			if _, err := fs.Stat(".git"); err == nil {
+			if fi, err := fs.Stat(".git"); err == nil && fi.IsDir() {
 				ep.Path = filepath.Join(ep.Path, ".git")
 			} else {
 				ep.Path = ep.Path + ".git"

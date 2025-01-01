@@ -450,7 +450,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if err := conn.Close(); err != nil {
-		return nil, fmt.Errorf("error closing connection: %v", err)
+		return nil, fmt.Errorf("error closing connection: %w", err)
 	}
 
 	var updatedPrune bool

@@ -35,7 +35,6 @@ func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, se
 	} else {
 		// TODO: support multi_ack and multi_ack_detailed caps
 		// TODO: support include-tag
-		// TODO: support shallow
 		// TODO: support deepen
 		// TODO: support deepen-since
 		ar.Capabilities.Set(capability.Sideband)   //nolint:errcheck

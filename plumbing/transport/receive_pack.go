@@ -86,7 +86,7 @@ func ReceivePack(
 	// Done with the request, now close the reader
 	// to indicate that we are done reading from it.
 	if err := r.Close(); err != nil {
-		return fmt.Errorf("closing reader: %s", err)
+		return fmt.Errorf("closing reader: %w", err)
 	}
 
 	// Report status if the client supports it
@@ -133,7 +133,7 @@ func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.
 	}
 
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("closing writer: %s", err)
+		return fmt.Errorf("closing writer: %w", err)
 	}
 
 	return nil

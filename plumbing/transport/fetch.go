@@ -25,11 +25,10 @@ func FetchPack(
 	var demuxer *sideband.Demuxer
 	var reader io.Reader = packf
 	caps := conn.Capabilities()
-	if caps.Supports(capability.Sideband) {
-		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
-	}
 	if caps.Supports(capability.Sideband64k) {
 		demuxer = sideband.NewDemuxer(sideband.Sideband64k, reader)
+	} else if caps.Supports(capability.Sideband) {
+		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
 	}
 
 	if demuxer != nil && req.Progress != nil {

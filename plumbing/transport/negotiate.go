@@ -105,13 +105,13 @@ func NegotiatePack(
 	var shupd packp.ShallowUpdate
 	for !done {
 		if err := upreq.Encode(writer); err != nil {
-			return nil, fmt.Errorf("sending upload-request: %s", err)
+			return nil, fmt.Errorf("sending upload-request: %w", err)
 		}
 
 		// Encode upload-haves
 		// TODO: support multi_ack and multi_ack_detailed caps
 		if err := uphav.Encode(writer); err != nil {
-			return nil, fmt.Errorf("sending upload-haves: %s", err)
+			return nil, fmt.Errorf("sending upload-haves: %w", err)
 		}
 
 		// Note: Stateless RPC servers don't expect a flush-pkt after the
@@ -119,18 +119,18 @@ func NegotiatePack(
 		// return.
 		if !conn.StatelessRPC() && len(uphav.Haves) > 0 {
 			if err := pktline.WriteFlush(writer); err != nil {
-				return nil, fmt.Errorf("sending flush-pkt after haves: %s", err)
+				return nil, fmt.Errorf("sending flush-pkt after haves: %w", err)
 			}
 		}
 
 		// Let the server know we're done
 		if _, err := pktline.Writeln(writer, "done"); err != nil {
-			return nil, fmt.Errorf("sending done: %s", err)
+			return nil, fmt.Errorf("sending done: %w", err)
 		}
 
 		// Close the writer to signal the end of the request
 		if err := writer.Close(); err != nil {
-			return nil, fmt.Errorf("closing writer: %s", err)
+			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 
 		// TODO: handle server-response to support incremental fetch i.e.
@@ -143,7 +143,7 @@ func NegotiatePack(
 		// server.
 		if req.Depth != 0 {
 			if err := shupd.Decode(reader); err != nil {
-				return nil, fmt.Errorf("decoding shallow-update: %s", err)
+				return nil, fmt.Errorf("decoding shallow-update: %w", err)
 			}
 		}
 
@@ -152,12 +152,12 @@ func NegotiatePack(
 		var acks bytes.Buffer
 		tee := io.TeeReader(reader, &acks)
 		if l, p, err := pktline.ReadLine(tee); err != nil {
-			return nil, fmt.Errorf("reading server-response, len: %d, pkt: %q: %s", l, p, err)
+			return nil, fmt.Errorf("reading server-response, len: %d, pkt: %q: %w", l, p, err)
 		}
 
 		// Decode server-response final ACK/NAK
 		if err := srvrs.Decode(&acks); err != nil {
-			return nil, fmt.Errorf("decoding server-response: %s", err)
+			return nil, fmt.Errorf("decoding server-response: %w", err)
 		}
 
 	}

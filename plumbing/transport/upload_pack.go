@@ -109,7 +109,7 @@ func UploadPack(
 		// Done with the request, now close the reader
 		// to indicate that we are done reading from it.
 		if err := r.Close(); err != nil {
-			return fmt.Errorf("closing reader: %s", err)
+			return fmt.Errorf("closing reader: %w", err)
 		}
 
 		// TODO: support deepen, deepen-since, and deepen-not
@@ -142,11 +142,10 @@ func UploadPack(
 
 		var writer io.Writer = w
 		if !caps.Supports(capability.NoProgress) {
-			if caps.Supports(capability.Sideband) {
-				writer = sideband.NewMuxer(sideband.Sideband, w)
-			}
 			if caps.Supports(capability.Sideband64k) {
 				writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			} else if caps.Supports(capability.Sideband) {
+				writer = sideband.NewMuxer(sideband.Sideband, w)
 			}
 		}
 
@@ -159,7 +158,7 @@ func UploadPack(
 		}
 
 		if err := w.Close(); err != nil {
-			return fmt.Errorf("closing writer: %s", err)
+			return fmt.Errorf("closing writer: %w", err)
 		}
 	}
 
