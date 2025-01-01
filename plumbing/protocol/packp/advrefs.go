@@ -15,20 +15,6 @@ import (
 // advertised-refs message.  Values from this type are not zero-value
 // safe, use the New function instead.
 type AdvRefs struct {
-	// Prefix stores prefix payloads.
-	//
-	// When using this message over (smart) HTTP, you have to add a pktline
-	// before the whole thing with the following payload:
-	//
-	// '# service=$servicename" LF
-	//
-	// Moreover, some (all) git HTTP smart servers will send a flush-pkt
-	// just after the first pkt-line.
-	//
-	// To accommodate both situations, the Prefix field allow you to store
-	// any data you want to send before the actual pktlines.  It will also
-	// be filled up with whatever is found on the line.
-	Prefix [][]byte
 	// Head stores the resolved HEAD reference if present.
 	// This can be present with git-upload-pack, not with git-receive-pack.
 	Head *plumbing.Hash
@@ -45,7 +31,6 @@ type AdvRefs struct {
 // NewAdvRefs returns a pointer to a new AdvRefs value, ready to be used.
 func NewAdvRefs() *AdvRefs {
 	return &AdvRefs{
-		Prefix:       [][]byte{},
 		Capabilities: capability.NewList(),
 		References:   make(map[string]plumbing.Hash),
 		Peeled:       make(map[string]plumbing.Hash),
@@ -67,6 +52,10 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	return nil
 }
 
+// XXX: AllReferences doesn't return all the references advertised by the
+// server, instead, it only returns non-peeled references.
+// Use MakeReferenceSlice to get all the references, their peeled values, and
+// symrefs.
 func (a *AdvRefs) AllReferences() (memory.ReferenceStorage, error) {
 	s := memory.ReferenceStorage{}
 	if err := a.addRefs(s); err != nil {
@@ -167,7 +156,8 @@ func (a *AdvRefs) resolveHead(s storer.ReferenceStorer) error {
 
 func (a *AdvRefs) createHeadIfCorrectReference(
 	reference *plumbing.Reference,
-	s storer.ReferenceStorer) (bool, error) {
+	s storer.ReferenceStorer,
+) (bool, error) {
 	if reference.Hash() == *a.Head {
 		headRef := plumbing.NewSymbolicReference(plumbing.HEAD, reference.Name())
 		if err := s.SetReference(headRef); err != nil {
@@ -208,4 +198,28 @@ func (a *AdvRefs) IsEmpty() bool {
 		len(a.References) == 0 &&
 		len(a.Peeled) == 0 &&
 		len(a.Shallows) == 0
+}
+
+// MakeReferenceSlice returns a sorted slice with all the references, their
+// peeled values, and symrefs.
+func (a *AdvRefs) MakeReferenceSlice() ([]*plumbing.Reference, error) {
+	refs, err := a.AllReferences()
+	if err != nil {
+		return nil, err
+	}
+	allRefs := make([]*plumbing.Reference, 0, len(refs))
+
+	for _, ref := range refs {
+		allRefs = append(allRefs, ref)
+		if peeled, ok := a.Peeled[ref.Name().String()]; ok {
+			peeledRef := plumbing.NewReferenceFromStrings(ref.Name().String()+"^{}", peeled.String())
+			allRefs = append(allRefs, peeledRef)
+		}
+	}
+
+	sort.Slice(allRefs, func(i, j int) bool {
+		return allRefs[i].Name() < allRefs[j].Name()
+	})
+
+	return allRefs, nil
 }
