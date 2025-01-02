@@ -2,175 +2,158 @@
 package file
 
 import (
-	"bufio"
-	"errors"
+	"context"
+	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"golang.org/x/sys/execabs"
 )
 
 func init() {
-	transport.Register("file", DefaultClient)
+	transport.Register("file", DefaultTransport)
 }
 
-// DefaultClient is the default local client.
-var DefaultClient = NewClient(
-	transport.UploadPackServiceName,
-	transport.ReceivePackServiceName,
-)
+// DefaultTransport is the default local client.
+var DefaultTransport = NewTransport(nil)
 
 type runner struct {
-	UploadPackBin  string
-	ReceivePackBin string
+	loader transport.Loader
 }
 
-// NewClient returns a new local client using the given git-upload-pack and
-// git-receive-pack binaries.
-func NewClient(uploadPackBin, receivePackBin string) transport.Transport {
-	return transport.NewClient(&runner{
-		UploadPackBin:  uploadPackBin,
-		ReceivePackBin: receivePackBin,
-	})
+// NewTransport returns a new file transport that users go-git built-in server
+// implementation to serve repositories.
+func NewTransport(loader transport.Loader) transport.Transport {
+	if loader == nil {
+		loader = transport.DefaultLoader
+	}
+	return transport.NewPackTransport(&runner{loader})
 }
 
-func prefixExecPath(cmd string) (string, error) {
-	// Use `git --exec-path` to find the exec path.
-	execCmd := execabs.Command("git", "--exec-path")
+func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
+	gitProtocol := strings.Join(params, ":")
 
-	stdout, err := execCmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	stdoutBuf := bufio.NewReader(stdout)
-
-	err = execCmd.Start()
-	if err != nil {
-		return "", err
-	}
-
-	execPathBytes, isPrefix, err := stdoutBuf.ReadLine()
-	if err != nil {
-		return "", err
-	}
-	if isPrefix {
-		return "", errors.New("couldn't read exec-path line all at once")
-	}
-
-	err = execCmd.Wait()
-	if err != nil {
-		return "", err
-	}
-	execPath := string(execPathBytes)
-	execPath = strings.TrimSpace(execPath)
-	cmd = filepath.Join(execPath, cmd)
-
-	// Make sure it actually exists.
-	_, err = execabs.LookPath(cmd)
-	if err != nil {
-		return "", err
-	}
-	return cmd, nil
-}
-
-func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod,
-) (transport.Command, error) {
-
-	switch cmd {
-	case transport.UploadPackServiceName:
-		cmd = r.UploadPackBin
-	case transport.ReceivePackServiceName:
-		cmd = r.ReceivePackBin
-	}
-
-	_, err := execabs.LookPath(cmd)
-	if err != nil {
-		if e, ok := err.(*execabs.Error); ok && e.Err == execabs.ErrNotFound {
-			cmd, err = prefixExecPath(cmd)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
-
-	return &command{cmd: execabs.Command(cmd, adjustPathForWindows(ep.Path))}, nil
-}
-
-func isDriveLetter(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-// On Windows, the path that results from a file: URL has a leading slash. This
-// has to be removed if there's a drive letter
-func adjustPathForWindows(p string) string {
-	if runtime.GOOS != "windows" {
-		return p
-	}
-	if len(p) >= 3 && p[0] == '/' && isDriveLetter(p[1]) && p[2] == ':' {
-		return p[1:]
-	}
-	return p
+	return &command{
+		ctx:         ctx,
+		loader:      r.loader,
+		ep:          ep,
+		service:     cmd,
+		errc:        make(chan error, 1),
+		gitProtocol: gitProtocol,
+	}, nil
 }
 
 type command struct {
-	cmd          *execabs.Cmd
-	stderrCloser io.Closer
-	closed       bool
+	ctx         context.Context
+	ep          *transport.Endpoint
+	loader      transport.Loader
+	service     string
+	gitProtocol string
+
+	stdin  *io.PipeReader
+	stdinW *io.PipeWriter
+	stdout *io.PipeWriter
+	stderr *io.PipeWriter
+
+	childIOFiles  []io.Closer
+	parentIOFiles []io.Closer
+
+	closed bool
+	errc   chan error
 }
 
 func (c *command) Start() error {
-	return c.cmd.Start()
+	st, err := c.loader.Load(c.ep)
+	if err != nil {
+		return err
+	}
+
+	switch transport.Service(c.service) {
+	case transport.UploadPackService:
+		opts := &transport.UploadPackOptions{
+			GitProtocol: c.gitProtocol,
+		}
+		go func() {
+			if err := transport.UploadPack(
+				c.ctx,
+				st,
+				io.NopCloser(c.stdin),
+				c.stdout,
+				opts,
+			); err != nil {
+				// Write the error to the stderr pipe and close the command.
+				_, _ = fmt.Fprintln(c.stderr, err)
+				_ = c.Close()
+			}
+		}()
+		return nil
+	case transport.ReceivePackService:
+		opts := &transport.ReceivePackOptions{
+			GitProtocol: c.gitProtocol,
+		}
+		go func() {
+			if err := transport.ReceivePack(
+				c.ctx,
+				st,
+				io.NopCloser(c.stdin),
+				c.stdout,
+				opts,
+			); err != nil {
+				_, _ = fmt.Fprintln(c.stderr, err)
+				_ = c.Close()
+			}
+		}()
+		return nil
+	}
+	return fmt.Errorf("unsupported service: %s", c.service)
 }
 
 func (c *command) StderrPipe() (io.Reader, error) {
-	// Pipe returned by Command.StderrPipe has a race with Read + Command.Wait.
-	// We use an io.Pipe and close it after the command finishes.
-	r, w := io.Pipe()
-	c.cmd.Stderr = w
-	c.stderrCloser = r
-	return r, nil
+	pr, pw := io.Pipe()
+
+	c.stderr = pw
+	c.childIOFiles = append(c.childIOFiles, pw)
+	c.parentIOFiles = append(c.parentIOFiles, pr)
+
+	return pr, nil
 }
 
 func (c *command) StdinPipe() (io.WriteCloser, error) {
-	return c.cmd.StdinPipe()
+	pr, pw := io.Pipe()
+
+	c.stdin = pr
+	c.stdinW = pw
+	c.childIOFiles = append(c.childIOFiles, pr)
+	c.parentIOFiles = append(c.parentIOFiles, pw)
+
+	return pw, nil
 }
 
 func (c *command) StdoutPipe() (io.Reader, error) {
-	return c.cmd.StdoutPipe()
-}
+	pr, pw := io.Pipe()
 
-func (c *command) Kill() error {
-	c.cmd.Process.Kill()
-	return c.Close()
+	c.stdout = pw
+	c.childIOFiles = append(c.childIOFiles, pw)
+	c.parentIOFiles = append(c.parentIOFiles, pr)
+
+	return pr, nil
 }
 
 // Close waits for the command to exit.
-func (c *command) Close() error {
+func (c *command) Close() (err error) {
 	if c.closed {
 		return nil
 	}
 
-	defer func() {
-		c.closed = true
-		_ = c.stderrCloser.Close()
+	closeDiscriptors(c.childIOFiles)
+	closeDiscriptors(c.parentIOFiles)
+	c.closed = true
 
-	}()
+	return
+}
 
-	err := c.cmd.Wait()
-	if _, ok := err.(*os.PathError); ok {
-		return nil
+func closeDiscriptors(fds []io.Closer) {
+	for _, fd := range fds {
+		fd.Close()
 	}
-
-	// When a repository does not exist, the command exits with code 128.
-	if _, ok := err.(*execabs.ExitError); ok {
-		return nil
-	}
-
-	return err
 }
