@@ -38,11 +38,11 @@ func (u *UploadHaves) Encode(w io.Writer) error {
 
 	if u.Done {
 		if _, err := pktline.Writeln(w, "done"); err != nil {
-			return fmt.Errorf("sending done: %s", err)
+			return fmt.Errorf("sending done: %w", err)
 		}
 	} else {
 		if err := pktline.WriteFlush(w); err != nil {
-			return fmt.Errorf("sending flush-pkt: %s", err)
+			return fmt.Errorf("sending flush-pkt: %w", err)
 		}
 	}
 	return nil
@@ -59,7 +59,7 @@ func (u *UploadHaves) Decode(r io.Reader) error {
 				break
 			}
 
-			return fmt.Errorf("decoding haves: %s", err)
+			return fmt.Errorf("decoding haves: %w", err)
 		}
 
 		if l == pktline.Flush {

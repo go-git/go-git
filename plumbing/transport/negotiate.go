@@ -99,7 +99,7 @@ func NegotiatePack(
 	common := map[plumbing.Hash]struct{}{}
 	localRefs, err := reference.References(st)
 	if err != nil {
-		return nil, fmt.Errorf("getting local references: %s", err)
+		return nil, fmt.Errorf("getting local references: %w", err)
 	}
 
 	var pending []*object.Commit
@@ -122,7 +122,7 @@ func NegotiatePack(
 		if firstRound || conn.StatelessRPC() {
 			firstRound = false
 			if err := upreq.Encode(writer); err != nil {
-				return nil, fmt.Errorf("sending upload-request: %s", err)
+				return nil, fmt.Errorf("sending upload-request: %w", err)
 			}
 		}
 
@@ -138,7 +138,7 @@ func NegotiatePack(
 				pending = append(pending, p)
 				return nil
 			}); err != nil {
-				return nil, fmt.Errorf("getting parents: %s", err)
+				return nil, fmt.Errorf("getting parents: %w", err)
 			}
 
 			uphav.Haves = append(uphav.Haves, c.Hash)
@@ -158,14 +158,14 @@ func NegotiatePack(
 		// Close the writer to signal the end of the request
 		if conn.StatelessRPC() {
 			if err := writer.Close(); err != nil {
-				return nil, fmt.Errorf("closing writer: %s", err)
+				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 		}
 
 		if done || len(uphav.Haves) > 0 {
 			var srvrs packp.ServerResponse
 			if err := srvrs.Decode(reader); err != nil {
-				return nil, fmt.Errorf("decoding server-response: %s", err)
+				return nil, fmt.Errorf("decoding server-response: %w", err)
 			}
 
 			for _, ack := range srvrs.ACKs {
@@ -191,7 +191,7 @@ func NegotiatePack(
 	var shupd packp.ShallowUpdate
 	if req.Depth != 0 {
 		if err := shupd.Decode(reader); err != nil {
-			return nil, fmt.Errorf("decoding shallow-update: %s", err)
+			return nil, fmt.Errorf("decoding shallow-update: %w", err)
 		}
 	}
 
