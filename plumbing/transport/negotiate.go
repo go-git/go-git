@@ -1,12 +1,14 @@
 package transport
 
 import (
-	"bytes"
 	"fmt"
 	"io"
+	"sort"
 
+	"github.com/go-git/go-git/v5/internal/reference"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/storage"
@@ -14,7 +16,6 @@ import (
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
-// TODO: make it return only shallows.
 func NegotiatePack(
 	st storage.Storer,
 	conn Connection,
@@ -30,12 +31,13 @@ func NegotiatePack(
 
 	// Create upload-request
 	upreq := packp.NewUploadRequest()
-	// TODO: support multi_ack and multi_ack_detailed caps
-	// if caps.Supports(capability.MultiACKDetailed) {
-	// 	upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
-	// } else if caps.Supports(capability.MultiACK) {
-	// 	upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
-	// }
+	multiAck := caps.Supports(capability.MultiACK)
+	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
+	if multiAckDetailed {
+		upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
+	} else if multiAck {
+		upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
+	}
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
@@ -94,72 +96,103 @@ func NegotiatePack(
 	}
 
 	// Create upload-haves
-	var uphav packp.UploadHaves
-	uphav.Haves = req.Haves
+	common := map[plumbing.Hash]struct{}{}
+	localRefs, err := reference.References(st)
+	if err != nil {
+		return nil, fmt.Errorf("getting local references: %w", err)
+	}
 
-	var (
-		done  bool
-		srvrs packp.ServerResponse
-	)
+	var pending []*object.Commit
+	for _, r := range localRefs {
+		c, err := object.GetCommit(st, r.Hash())
+		if err == nil {
+			pending = append(pending, c)
+		}
+	}
 
-	var shupd packp.ShallowUpdate
+	sort.Slice(pending, func(i, j int) bool {
+		return pending[i].Committer.When.Before(pending[j].Committer.When)
+	})
+
+	var inVein int
+	var done bool
+	var gotContinue bool // whether we got a continue from the server
+	firstRound := true
 	for !done {
-		if err := upreq.Encode(writer); err != nil {
-			return nil, fmt.Errorf("sending upload-request: %w", err)
+		if firstRound || conn.StatelessRPC() {
+			firstRound = false
+			if err := upreq.Encode(writer); err != nil {
+				return nil, fmt.Errorf("sending upload-request: %w", err)
+			}
 		}
 
+		// Pop the last 32 have commits from the pending list and insert their
+		// parents into the pending list.
+		var uphav packp.UploadHaves
+		uphav.Haves = []plumbing.Hash{}
+		for i := 0; i < 32 && len(pending) > 0; i++ {
+			c := pending[len(pending)-1]
+			pending = pending[:len(pending)-1]
+			parents := c.Parents()
+			if err := parents.ForEach(func(p *object.Commit) error {
+				pending = append(pending, p)
+				return nil
+			}); err != nil {
+				return nil, fmt.Errorf("getting parents: %w", err)
+			}
+
+			uphav.Haves = append(uphav.Haves, c.Hash)
+			inVein++
+		}
+
+		// Let the server know we're done
+		const maxInVein = 256
+		done = len(pending) == 0 || (gotContinue && inVein >= maxInVein)
+		uphav.Done = done
+
 		// Encode upload-haves
-		// TODO: support multi_ack and multi_ack_detailed caps
 		if err := uphav.Encode(writer); err != nil {
 			return nil, fmt.Errorf("sending upload-haves: %w", err)
 		}
 
-		// Note: Stateless RPC servers don't expect a flush-pkt after the
-		// haves. Sending one might result in a response without a packfile in
-		// return.
-		if !conn.StatelessRPC() && len(uphav.Haves) > 0 {
-			if err := pktline.WriteFlush(writer); err != nil {
-				return nil, fmt.Errorf("sending flush-pkt after haves: %w", err)
+		// Close the writer to signal the end of the request
+		if conn.StatelessRPC() {
+			if err := writer.Close(); err != nil {
+				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 		}
 
-		// Let the server know we're done
-		if _, err := pktline.Writeln(writer, "done"); err != nil {
-			return nil, fmt.Errorf("sending done: %w", err)
-		}
+		if done || len(uphav.Haves) > 0 {
+			var srvrs packp.ServerResponse
+			if err := srvrs.Decode(reader); err != nil {
+				return nil, fmt.Errorf("decoding server-response: %w", err)
+			}
 
-		// Close the writer to signal the end of the request
+			for _, ack := range srvrs.ACKs {
+				if !gotContinue && ack.Status > 0 {
+					gotContinue = true
+				}
+				if ack.Status == packp.ACKCommon {
+					common[ack.Hash] = struct{}{}
+				}
+			}
+		}
+	}
+
+	if !conn.StatelessRPC() {
 		if err := writer.Close(); err != nil {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
+	}
 
-		// TODO: handle server-response to support incremental fetch i.e.
-		// multi_ack and multi_ack_detailed modes.
-
-		done = true
-
-		// Decode shallow-update
-		// If depth is not zero, then we expect a shallow update from the
-		// server.
-		if req.Depth != 0 {
-			if err := shupd.Decode(reader); err != nil {
-				return nil, fmt.Errorf("decoding shallow-update: %w", err)
-			}
+	// Decode shallow-update
+	// If depth is not zero, then we expect a shallow update from the
+	// server.
+	var shupd packp.ShallowUpdate
+	if req.Depth != 0 {
+		if err := shupd.Decode(reader); err != nil {
+			return nil, fmt.Errorf("decoding shallow-update: %w", err)
 		}
-
-		// The server replies with one last NAK/ACK after the client is
-		// done sending the request.
-		var acks bytes.Buffer
-		tee := io.TeeReader(reader, &acks)
-		if l, p, err := pktline.ReadLine(tee); err != nil {
-			return nil, fmt.Errorf("reading server-response, len: %d, pkt: %q: %w", l, p, err)
-		}
-
-		// Decode server-response final ACK/NAK
-		if err := srvrs.Decode(&acks); err != nil {
-			return nil, fmt.Errorf("decoding server-response: %w", err)
-		}
-
 	}
 
 	return shupd.Shallows, nil

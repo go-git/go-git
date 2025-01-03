@@ -33,14 +33,15 @@ func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, se
 		ar.Capabilities.Set(capability.ReportStatus) //nolint:errcheck
 		ar.Capabilities.Set(capability.PushOptions)  //nolint:errcheck
 	} else {
-		// TODO: support multi_ack and multi_ack_detailed caps
 		// TODO: support include-tag
 		// TODO: support deepen
 		// TODO: support deepen-since
-		ar.Capabilities.Set(capability.Sideband)   //nolint:errcheck
-		ar.Capabilities.Set(capability.NoProgress) //nolint:errcheck
-		ar.Capabilities.Set(capability.SymRef)     //nolint:errcheck
-		ar.Capabilities.Set(capability.Shallow)    //nolint:errcheck
+		ar.Capabilities.Set(capability.MultiACK)         //nolint:errcheck
+		ar.Capabilities.Set(capability.MultiACKDetailed) //nolint:errcheck
+		ar.Capabilities.Set(capability.Sideband)         //nolint:errcheck
+		ar.Capabilities.Set(capability.NoProgress)       //nolint:errcheck
+		ar.Capabilities.Set(capability.SymRef)           //nolint:errcheck
+		ar.Capabilities.Set(capability.Shallow)          //nolint:errcheck
 	}
 
 	// Set references

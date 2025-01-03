@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -13,25 +14,52 @@ import (
 const ackLineLen = 44
 
 // ServerResponse object acknowledgement from upload-pack service
-// TODO: support multi_ack and multi_ack_detailed capabilities
 type ServerResponse struct {
-	ACKs []plumbing.Hash
+	ACKs []ACK
 }
 
-// Decode decodes the response into the struct, isMultiACK should be true, if
-// the request was done with multi_ack or multi_ack_detailed capabilities.
+// ACKStatus represents the status of an object acknowledgement.
+type ACKStatus byte
+
+// String returns the string representation of the ACKStatus.
+func (s ACKStatus) String() string {
+	switch s {
+	case ACKContinue:
+		return "continue"
+	case ACKCommon:
+		return "common"
+	case ACKReady:
+		return "ready"
+	}
+
+	return ""
+}
+
+// ACKStatus values
+const (
+	ACKContinue ACKStatus = iota + 1
+	ACKCommon
+	ACKReady
+)
+
+// ACK represents an object acknowledgement. A status can be zero when the
+// response doesn't support multi_ack and multi_ack_detailed capabilities.
+type ACK struct {
+	Hash   plumbing.Hash
+	Status ACKStatus
+}
+
+// Decode decodes the response into the struct.
 func (r *ServerResponse) Decode(reader io.Reader) error {
 	var err error
-	for {
+	for err == nil {
 		var p []byte
 		_, p, err = pktline.ReadLine(reader)
 		if err != nil {
 			break
 		}
 
-		if err := r.decodeLine(p); err != nil {
-			return err
-		}
+		err = r.decodeLine(p)
 	}
 
 	if errors.Is(err, io.EOF) {
@@ -52,31 +80,71 @@ func (r *ServerResponse) decodeLine(line []byte) error {
 		}
 
 		if bytes.Equal(line[0:3], nak) {
-			return nil
+			return io.EOF
 		}
 	}
 
 	return fmt.Errorf("unexpected content %q", string(line))
 }
 
-func (r *ServerResponse) decodeACKLine(line []byte) error {
-	if len(line) < ackLineLen {
+func (r *ServerResponse) decodeACKLine(line []byte) (err error) {
+	parts := bytes.Split(line, []byte(" "))
+	if len(line) < ackLineLen || len(parts) < 2 {
 		return fmt.Errorf("malformed ACK %q", line)
 	}
 
-	sp := bytes.Index(line, []byte(" "))
-	h := plumbing.NewHash(string(line[sp+1 : sp+41]))
-	r.ACKs = append(r.ACKs, h)
-	return nil
+	var ack ACK
+	// TODO: Dynamic hash size and sha256 support
+	ack.Hash = plumbing.NewHash(string(parts[1]))
+	err = io.EOF
+
+	if len(parts) > 2 {
+		err = nil
+		switch status := strings.TrimSpace(string(parts[2])); status {
+		case "continue":
+			ack.Status = ACKContinue
+		case "common":
+			ack.Status = ACKCommon
+		case "ready":
+			ack.Status = ACKReady
+		}
+	}
+
+	r.ACKs = append(r.ACKs, ack)
+	return
 }
 
 // Encode encodes the ServerResponse into a writer.
 func (r *ServerResponse) Encode(w io.Writer) error {
-	if len(r.ACKs) == 0 {
+	return encodeServerResponse(w, r.ACKs)
+}
+
+// encodeServerResponse encodes the ServerResponse into a writer.
+func encodeServerResponse(w io.Writer, acks []ACK) error {
+	if len(acks) == 0 {
 		_, err := pktline.WriteString(w, string(nak)+"\n")
 		return err
 	}
 
-	_, err := pktline.Writef(w, "%s %s\n", ack, r.ACKs[0].String())
-	return err
+	var multiAck bool
+	for _, a := range acks {
+		var err error
+		if a.Status > 0 {
+			_, err = pktline.Writef(w, "%s %s %s\n", ack, a.Hash, a.Status)
+			if !multiAck {
+				multiAck = true
+			}
+		} else {
+			_, err = pktline.Writef(w, "%s %s\n", ack, acks[0].Hash)
+		}
+		if err != nil {
+			return err
+		}
+
+		if !multiAck {
+			break
+		}
+	}
+
+	return nil
 }
