@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -23,14 +24,14 @@ import (
 
 func (s *HTTPSession) fetchDumb(ctx context.Context, req *transport.FetchRequest) error {
 	if req.Depth != 0 {
-		return fmt.Errorf("dumb http protocol does not support shallow capabilities")
+		return errors.New("dumb http protocol does not support shallow capabilities")
 	}
 
 	fsi, ok := s.st.(interface {
 		Filesystem() billy.Filesystem
 	})
 	if !ok {
-		return fmt.Errorf("dumb http protocol requires a filesystem")
+		return errors.New("dumb http protocol requires a filesystem")
 	}
 
 	repoFs := fsi.Filesystem()
@@ -66,8 +67,8 @@ func newFetchWalker(s *HTTPSession, ctx context.Context, fs billy.Filesystem) *f
 }
 
 func (r *fetchWalker) getInfoPacks() ([]string, error) {
-	url := fmt.Sprintf("%s/objects/info/packs", r.ep.String())
-	req, err := http.NewRequestWithContext(r.ctx, "GET", url, nil)
+	url := path.Join(r.ep.String(), "objects", "info", "packs")
+	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -101,9 +102,9 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 }
 
 // downloadFile downloads a file from the server and saves it to the filesystem.
-func (r *fetchWalker) downloadFile(path string) error {
-	url := fmt.Sprintf("%s/%s", r.ep.String(), path)
-	req, err := http.NewRequestWithContext(r.ctx, "GET", url, nil)
+func (r *fetchWalker) downloadFile(fp string) error {
+	url := path.Join(r.ep.String(), fp)
+	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -118,28 +119,40 @@ func (r *fetchWalker) downloadFile(path string) error {
 		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
 
-	f, err := r.fs.TempFile(filepath.Dir(path), filepath.Base(path)+".temp")
+	copy := func(w io.Writer) error {
+		if _, err := io.Copy(w, res.Body); err != nil {
+			return err
+		}
+
+		if err := res.Body.Close(); err != nil {
+			return err
+		}
+
+		if closer, ok := w.(io.Closer); ok {
+			return closer.Close()
+		}
+
+		return nil
+	}
+
+	f, err := r.fs.TempFile(filepath.Dir(fp), filepath.Base(fp)+".temp")
 	if err != nil {
+		copy(io.Discard)
 		return err
 	}
 
-	if _, err := io.Copy(f, res.Body); err != nil {
-		_ = f.Close()
-		return err
-	}
-
-	if err := f.Close(); err != nil {
+	if err := copy(f); err != nil {
 		return err
 	}
 
 	// TODO: support hardlinks and "core.createobject" configuration
-	return r.fs.Rename(f.Name(), path)
+	return r.fs.Rename(f.Name(), fp)
 }
 
 // getHead returns the HEAD reference from the server.
 func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
-	url := fmt.Sprintf("%s/HEAD", r.ep.String())
-	req, err := http.NewRequestWithContext(r.ctx, "GET", url, nil)
+	url := path.Join(r.ep.String(), "HEAD")
+	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +231,7 @@ func (r *fetchWalker) process() error {
 		// XXX: we need to check if the index file exists. Currently, there is
 		// no way to do so using the storer interfaces except useing
 		// HasEncodedObject which might be an expensive operation.
-		packIdx := fmt.Sprintf("objects/pack/pack-%s.idx", hash)
+		packIdx := path.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", hash))
 		if _, err := r.fs.Stat(packIdx); errors.Is(err, fs.ErrExist) {
 			r.packIdx[h] = packIdx
 		} else {
@@ -253,8 +266,8 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 	}
 
 	h := hash.String()
-	url := fmt.Sprintf("%s/objects/%s/%s", r.ep.String(), h[:2], h[2:])
-	req, err := http.NewRequestWithContext(r.ctx, "GET", url, nil)
+	url := path.Join(r.ep.String(), "objects", h[:2], h[2:])
+	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -344,7 +357,7 @@ LOOP:
 				}
 
 				indicies = append(indicies, idx)
-				packPath := fmt.Sprintf("objects/pack/pack-%s.pack", packHash.String())
+				packPath := path.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", packHash.String()))
 				if ok, err := idx.Contains(objHash); err == nil && ok {
 					processed[objHash.String()] = struct{}{}
 					if _, ok := packs[packPath]; ok {

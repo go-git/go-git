@@ -47,6 +47,7 @@ func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	return e.err
 }
 
+// sortRefs returns a sorted slice of reference names by name.
 func sortRefs(refs map[string]plumbing.Hash) []string {
 	if len(refs) > 0 {
 		sortedRefs := make([]string, 0, len(refs))
