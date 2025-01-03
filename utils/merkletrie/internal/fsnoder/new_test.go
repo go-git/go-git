@@ -1,288 +1,294 @@
 package fsnoder
 
 import (
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"fmt"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/stretchr/testify/suite"
 )
 
-type FSNoderSuite struct{}
+type FSNoderSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&FSNoderSuite{})
+func TestFSNoderSuite(t *testing.T) {
+	suite.Run(t, new(FSNoderSuite))
+}
 
-func check(c *C, input string, expected *dir) {
+func check(s *FSNoderSuite, input string, expected *dir) {
 	obtained, err := New(input)
-	c.Assert(err, IsNil, Commentf("input = %s", input))
+	s.NoError(err, fmt.Sprintf("input = %s", input))
 
-	comment := Commentf("\n   input = %s\n"+
+	comment := fmt.Sprintf("\n   input = %s\n"+
 		"expected = %s\nobtained = %s",
 		input, expected, obtained)
-	c.Assert(obtained.Hash(), DeepEquals, expected.Hash(), comment)
+	s.Equal(expected.Hash(), obtained.Hash(), comment)
 }
 
-func (s *FSNoderSuite) TestNoDataFails(c *C) {
+func (s *FSNoderSuite) TestNoDataFails() {
 	_, err := New("")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 
 	_, err = New(" 	") // SPC + TAB
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *FSNoderSuite) TestUnnamedRootFailsIfNotRoot(c *C) {
+func (s *FSNoderSuite) TestUnnamedRootFailsIfNotRoot() {
 	_, err := decodeDir([]byte("()"), false)
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *FSNoderSuite) TestUnnamedInnerFails(c *C) {
+func (s *FSNoderSuite) TestUnnamedInnerFails() {
 	_, err := New("(())")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("((a<>))")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *FSNoderSuite) TestMalformedFile(c *C) {
+func (s *FSNoderSuite) TestMalformedFile() {
 	_, err := New("(4<>)")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("(4<1>)")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("(4?1>)")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("(4<a>)")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("(4<a?)")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 
 	_, err = decodeFile([]byte("a?1>"))
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = decodeFile([]byte("a<a>"))
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = decodeFile([]byte("a<1?"))
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 
 	_, err = decodeFile([]byte("a?>"))
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = decodeFile([]byte("1<>"))
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = decodeFile([]byte("a<?"))
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *FSNoderSuite) TestMalformedRootFails(c *C) {
+func (s *FSNoderSuite) TestMalformedRootFails() {
 	_, err := New(")")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("(")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("(a<>")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 	_, err = New("a<>")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *FSNoderSuite) TestUnnamedEmptyRoot(c *C) {
+func (s *FSNoderSuite) TestUnnamedEmptyRoot() {
 	input := "()"
 
 	expected, err := newDir("", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestNamedEmptyRoot(c *C) {
+func (s *FSNoderSuite) TestNamedEmptyRoot() {
 	input := "a()"
 
 	expected, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestEmptyFile(c *C) {
+func (s *FSNoderSuite) TestEmptyFile() {
 	input := "(a<>)"
 
 	a1, err := newFile("a", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestNonEmptyFile(c *C) {
+func (s *FSNoderSuite) TestNonEmptyFile() {
 	input := "(a<1>)"
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestTwoFilesSameContents(c *C) {
+func (s *FSNoderSuite) TestTwoFilesSameContents() {
 	input := "(b<1> a<1>)"
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	b1, err := newFile("b", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{a1, b1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestTwoFilesDifferentContents(c *C) {
+func (s *FSNoderSuite) TestTwoFilesDifferentContents() {
 	input := "(b<2> a<1>)"
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	b2, err := newFile("b", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{a1, b2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestManyFiles(c *C) {
+func (s *FSNoderSuite) TestManyFiles() {
 	input := "(e<1> b<2> a<1> c<1> d<3> f<4>)"
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	b2, err := newFile("b", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	c1, err := newFile("c", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	d3, err := newFile("d", "3")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	e1, err := newFile("e", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	f4, err := newFile("f", "4")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{e1, b2, a1, c1, d3, f4})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestEmptyDir(c *C) {
+func (s *FSNoderSuite) TestEmptyDir() {
 	input := "(A())"
 
 	A, err := newDir("A", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithEmptyFile(c *C) {
+func (s *FSNoderSuite) TestDirWithEmptyFile() {
 	input := "(A(a<>))"
 
 	a, err := newFile("a", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{a})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithEmptyFileSameName(c *C) {
+func (s *FSNoderSuite) TestDirWithEmptyFileSameName() {
 	input := "(A(A<>))"
 
 	f, err := newFile("A", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{f})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithFileLongContents(c *C) {
+func (s *FSNoderSuite) TestDirWithFileLongContents() {
 	input := "(A(a<12>))"
 
 	a1, err := newFile("a", "12")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithFileLongName(c *C) {
+func (s *FSNoderSuite) TestDirWithFileLongName() {
 	input := "(A(abc<12>))"
 
 	a1, err := newFile("abc", "12")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithFile(c *C) {
+func (s *FSNoderSuite) TestDirWithFile() {
 	input := "(A(a<1>))"
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithEmptyDirSameName(c *C) {
+func (s *FSNoderSuite) TestDirWithEmptyDirSameName() {
 	input := "(A(A()))"
 
 	A2, err := newDir("A", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A1, err := newDir("A", []noder.Noder{A2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithEmptyDir(c *C) {
+func (s *FSNoderSuite) TestDirWithEmptyDir() {
 	input := "(A(B()))"
 
 	B, err := newDir("B", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{B})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestDirWithTwoFiles(c *C) {
+func (s *FSNoderSuite) TestDirWithTwoFiles() {
 	input := "(A(a<1> b<2>))"
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	b2, err := newFile("b", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	A, err := newDir("A", []noder.Noder{b2, a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	expected, err := newDir("", []noder.Noder{A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestCrazy(c *C) {
+func (s *FSNoderSuite) TestCrazy() {
 	//           ""
 	//            |
 	//   -------------------------
@@ -297,58 +303,58 @@ func (s *FSNoderSuite) TestCrazy(c *C) {
 	input := "(d<2> b(c<1> b() a() x(a<1>)) a<1> c<1> e(e(e(e<1>))))"
 
 	e1, err := newFile("e", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	E, err := newDir("e", []noder.Noder{e1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	E, err = newDir("e", []noder.Noder{E})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	E, err = newDir("e", []noder.Noder{E})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	A, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	B, err := newDir("b", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	X, err := newDir("x", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	c1, err := newFile("c", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	B, err = newDir("b", []noder.Noder{c1, B, X, A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	a1, err = newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	c1, err = newFile("c", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	d2, err := newFile("d", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expected, err := newDir("", []noder.Noder{a1, d2, E, B, c1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	check(c, input, expected)
+	check(s, input, expected)
 }
 
-func (s *FSNoderSuite) TestHashEqual(c *C) {
+func (s *FSNoderSuite) TestHashEqual() {
 	input1 := "(A(a<1> b<2>))"
 	input2 := "(A(a<1> b<2>))"
 	input3 := "(A(a<> b<2>))"
 
 	t1, err := New(input1)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	t2, err := New(input2)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	t3, err := New(input3)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(HashEqual(t1, t2), Equals, true)
-	c.Assert(HashEqual(t2, t1), Equals, true)
+	s.True(HashEqual(t1, t2))
+	s.True(HashEqual(t2, t1))
 
-	c.Assert(HashEqual(t2, t3), Equals, false)
-	c.Assert(HashEqual(t3, t2), Equals, false)
+	s.False(HashEqual(t2, t3))
+	s.False(HashEqual(t3, t2))
 
-	c.Assert(HashEqual(t3, t1), Equals, false)
-	c.Assert(HashEqual(t1, t3), Equals, false)
+	s.False(HashEqual(t3, t1))
+	s.False(HashEqual(t1, t3))
 }

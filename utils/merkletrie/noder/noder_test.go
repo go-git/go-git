@@ -3,14 +3,16 @@ package noder
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type NoderSuite struct {
+	suite.Suite
+}
 
-type NoderSuite struct{}
-
-var _ = Suite(&NoderSuite{})
+func TestNoderSuite(t *testing.T) {
+	suite.Run(t, new(NoderSuite))
+}
 
 type noderMock struct {
 	name     string
@@ -30,12 +32,13 @@ func (n noderMock) Skip() bool                 { return false }
 // Returns a sequence with the noders 3, 2, and 1 from the
 // following diagram:
 //
-//   3
-//   |
-//   2
-//   |
-//   1
-//  / \
+//	 3
+//	 |
+//	 2
+//	 |
+//	 1
+//	/ \
+//
 // c1  c2
 //
 // This is also the path of "1".
@@ -63,25 +66,25 @@ func pathFixture() Path {
 	return Path(nodersFixture())
 }
 
-func (s *NoderSuite) TestString(c *C) {
-	c.Assert(pathFixture().String(), Equals, "3/2/1")
+func (s *NoderSuite) TestString() {
+	s.Equal("3/2/1", pathFixture().String())
 }
 
-func (s *NoderSuite) TestLast(c *C) {
-	c.Assert(pathFixture().Last().Name(), Equals, "1")
+func (s *NoderSuite) TestLast() {
+	s.Equal("1", pathFixture().Last().Name())
 }
 
-func (s *NoderSuite) TestPathImplementsNoder(c *C) {
+func (s *NoderSuite) TestPathImplementsNoder() {
 	p := pathFixture()
-	c.Assert(p.Name(), Equals, "1")
-	c.Assert(p.Hash(), DeepEquals, []byte{0x00, 0x01, 0x02})
-	c.Assert(p.IsDir(), Equals, true)
+	s.Equal("1", p.Name())
+	s.Equal([]byte{0x00, 0x01, 0x02}, p.Hash())
+	s.True(p.IsDir())
 
 	children, err := p.Children()
-	c.Assert(err, IsNil)
-	c.Assert(children, DeepEquals, childrenFixture())
+	s.NoError(err)
+	s.Equal(childrenFixture(), children)
 
 	numChildren, err := p.NumChildren()
-	c.Assert(err, IsNil)
-	c.Assert(numChildren, Equals, 2)
+	s.NoError(err)
+	s.Equal(2, numChildren)
 }

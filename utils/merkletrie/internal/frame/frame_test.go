@@ -6,83 +6,84 @@ import (
 
 	"github.com/go-git/go-git/v5/utils/merkletrie/internal/fsnoder"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type FrameSuite struct{}
-
-var _ = Suite(&FrameSuite{})
-
-func (s *FrameSuite) TestNewFrameFromEmptyDir(c *C) {
-	A, err := fsnoder.New("A()")
-	c.Assert(err, IsNil)
-
-	frame, err := New(A)
-	c.Assert(err, IsNil)
-
-	expectedString := `[]`
-	c.Assert(frame.String(), Equals, expectedString)
-
-	first, ok := frame.First()
-	c.Assert(first, IsNil)
-	c.Assert(ok, Equals, false)
-
-	first, ok = frame.First()
-	c.Assert(first, IsNil)
-	c.Assert(ok, Equals, false)
-
-	l := frame.Len()
-	c.Assert(l, Equals, 0)
+type FrameSuite struct {
+	suite.Suite
 }
 
-func (s *FrameSuite) TestNewFrameFromNonEmpty(c *C) {
+func TestFrameSuite(t *testing.T) {
+	suite.Run(t, new(FrameSuite))
+}
+
+func (s *FrameSuite) TestNewFrameFromEmptyDir() {
+	A, err := fsnoder.New("A()")
+	s.NoError(err)
+
+	frame, err := New(A)
+	s.NoError(err)
+
+	expectedString := `[]`
+	s.Equal(expectedString, frame.String())
+
+	first, ok := frame.First()
+	s.Nil(first)
+	s.False(ok)
+
+	first, ok = frame.First()
+	s.Nil(first)
+	s.False(ok)
+
+	l := frame.Len()
+	s.Equal(0, l)
+}
+
+func (s *FrameSuite) TestNewFrameFromNonEmpty() {
 	//        _______A/________
 	//        |     /  \       |
 	//        x    y    B/     C/
 	//                         |
 	//                         z
 	root, err := fsnoder.New("A(x<> y<> B() C(z<>))")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	frame, err := New(root)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	expectedString := `["B", "C", "x", "y"]`
-	c.Assert(frame.String(), Equals, expectedString)
+	s.Equal(expectedString, frame.String())
 
 	l := frame.Len()
-	c.Assert(l, Equals, 4)
+	s.Equal(4, l)
 
-	checkFirstAndDrop(c, frame, "B", true)
+	checkFirstAndDrop(s, frame, "B", true)
 	l = frame.Len()
-	c.Assert(l, Equals, 3)
+	s.Equal(3, l)
 
-	checkFirstAndDrop(c, frame, "C", true)
+	checkFirstAndDrop(s, frame, "C", true)
 	l = frame.Len()
-	c.Assert(l, Equals, 2)
+	s.Equal(2, l)
 
-	checkFirstAndDrop(c, frame, "x", true)
+	checkFirstAndDrop(s, frame, "x", true)
 	l = frame.Len()
-	c.Assert(l, Equals, 1)
+	s.Equal(1, l)
 
-	checkFirstAndDrop(c, frame, "y", true)
+	checkFirstAndDrop(s, frame, "y", true)
 	l = frame.Len()
-	c.Assert(l, Equals, 0)
+	s.Equal(0, l)
 
-	checkFirstAndDrop(c, frame, "", false)
+	checkFirstAndDrop(s, frame, "", false)
 	l = frame.Len()
-	c.Assert(l, Equals, 0)
+	s.Equal(0, l)
 
-	checkFirstAndDrop(c, frame, "", false)
+	checkFirstAndDrop(s, frame, "", false)
 }
 
-func checkFirstAndDrop(c *C, f *Frame, expectedNodeName string, expectedOK bool) {
+func checkFirstAndDrop(s *FrameSuite, f *Frame, expectedNodeName string, expectedOK bool) {
 	first, ok := f.First()
-	c.Assert(ok, Equals, expectedOK)
+	s.Equal(expectedOK, ok)
 	if expectedOK {
-		c.Assert(first.Name(), Equals, expectedNodeName)
+		s.Equal(expectedNodeName, first.Name())
 	}
 
 	f.Drop()
@@ -95,7 +96,7 @@ func (e *errorNoder) Children() ([]noder.Noder, error) {
 	return nil, fmt.Errorf("mock error")
 }
 
-func (s *FrameSuite) TestNewFrameErrors(c *C) {
+func (s *FrameSuite) TestNewFrameErrors() {
 	_, err := New(&errorNoder{})
-	c.Assert(err, ErrorMatches, "mock error")
+	s.ErrorContains(err, "mock error")
 }

@@ -1,243 +1,215 @@
 package fsnoder
 
 import (
-	"reflect"
 	"sort"
+	"testing"
 
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-type DirSuite struct{}
+type DirSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&DirSuite{})
+func TestDirSuite(t *testing.T) {
+	suite.Run(t, new(DirSuite))
+}
 
-func (s *DirSuite) TestIsDir(c *C) {
+func (s *DirSuite) TestIsDir() {
 	noName, err := newDir("", nil)
-	c.Assert(err, IsNil)
-	c.Assert(noName.IsDir(), Equals, true)
+	s.NoError(err)
+	s.True(noName.IsDir())
 
 	empty, err := newDir("empty", nil)
-	c.Assert(err, IsNil)
-	c.Assert(empty.IsDir(), Equals, true)
+	s.NoError(err)
+	s.True(empty.IsDir())
 
 	root, err := newDir("foo", []noder.Noder{empty})
-	c.Assert(err, IsNil)
-	c.Assert(root.IsDir(), Equals, true)
+	s.NoError(err)
+	s.True(root.IsDir())
 }
 
-func assertChildren(c *C, n noder.Noder, expected []noder.Noder) {
+func assertChildren(t *testing.T, n noder.Noder, expected []noder.Noder) {
 	numChildren, err := n.NumChildren()
-	c.Assert(err, IsNil)
-	c.Assert(numChildren, Equals, len(expected))
+	assert.NoError(t, err)
+	assert.Len(t, expected, numChildren)
 
 	children, err := n.Children()
-	c.Assert(err, IsNil)
-	c.Assert(children, sortedSliceEquals, expected)
+	assert.NoError(t, err)
+	sort.Sort(byName(children))
+	sort.Sort(byName(expected))
+	assert.Equal(t, expected, children)
 }
 
-type sortedSliceEqualsChecker struct {
-	*CheckerInfo
-}
-
-var sortedSliceEquals Checker = &sortedSliceEqualsChecker{
-	&CheckerInfo{
-		Name:   "sortedSliceEquals",
-		Params: []string{"obtained", "expected"},
-	},
-}
-
-func (checker *sortedSliceEqualsChecker) Check(
-	params []interface{}, names []string) (result bool, error string) {
-	a, ok := params[0].([]noder.Noder)
-	if !ok {
-		return false, "first parameter must be a []noder.Noder"
-	}
-	b, ok := params[1].([]noder.Noder)
-	if !ok {
-		return false, "second parameter must be a []noder.Noder"
-	}
-	sort.Sort(byName(a))
-	sort.Sort(byName(b))
-
-	return reflect.DeepEqual(a, b), ""
-}
-
-func (s *DirSuite) TestNewDirectoryNoNameAndEmpty(c *C) {
+func (s *DirSuite) TestNewDirectoryNoNameAndEmpty() {
 	root, err := newDir("", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0xca, 0x40, 0xf8, 0x67, 0x57, 0x8c, 0x32, 0x1c})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, noder.NoChildren)
-	c.Assert(root.String(), Equals, "()")
+	s.Equal([]byte{0xca, 0x40, 0xf8, 0x67, 0x57, 0x8c, 0x32, 0x1c}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, noder.NoChildren)
+	s.Equal("()", root.String())
 }
 
-func (s *DirSuite) TestNewDirectoryEmpty(c *C) {
+func (s *DirSuite) TestNewDirectoryEmpty() {
 	root, err := newDir("root", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0xca, 0x40, 0xf8, 0x67, 0x57, 0x8c, 0x32, 0x1c})
-	c.Assert(root.Name(), Equals, "root")
-	assertChildren(c, root, noder.NoChildren)
-	c.Assert(root.String(), Equals, "root()")
+	s.Equal([]byte{0xca, 0x40, 0xf8, 0x67, 0x57, 0x8c, 0x32, 0x1c}, root.Hash())
+	s.Equal("root", root.Name())
+	assertChildren(s.T(), root, noder.NoChildren)
+	s.Equal("root()", root.String())
 }
 
-func (s *DirSuite) TestEmptyDirsHaveSameHash(c *C) {
+func (s *DirSuite) TestEmptyDirsHaveSameHash() {
 	d1, err := newDir("foo", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d2, err := newDir("bar", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(d1.Hash(), DeepEquals, d2.Hash())
+	s.Equal(d2.Hash(), d1.Hash())
 }
 
-func (s *DirSuite) TestNewDirWithEmptyDir(c *C) {
+func (s *DirSuite) TestNewDirWithEmptyDir() {
 	empty, err := newDir("empty", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	root, err := newDir("", []noder.Noder{empty})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0x39, 0x25, 0xa8, 0x99, 0x16, 0x47, 0x6a, 0x75})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, []noder.Noder{empty})
-	c.Assert(root.String(), Equals, "(empty())")
+	s.Equal([]byte{0x39, 0x25, 0xa8, 0x99, 0x16, 0x47, 0x6a, 0x75}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, []noder.Noder{empty})
+	s.Equal("(empty())", root.String())
 }
 
-func (s *DirSuite) TestNewDirWithOneEmptyFile(c *C) {
+func (s *DirSuite) TestNewDirWithOneEmptyFile() {
 	empty, err := newFile("name", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	root, err := newDir("", []noder.Noder{empty})
-	c.Assert(err, IsNil)
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0xd, 0x4e, 0x23, 0x1d, 0xf5, 0x2e, 0xfa, 0xc2})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, []noder.Noder{empty})
-	c.Assert(root.String(), Equals, "(name<>)")
+	s.NoError(err)
+	s.Equal([]byte{0xd, 0x4e, 0x23, 0x1d, 0xf5, 0x2e, 0xfa, 0xc2}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, []noder.Noder{empty})
+	s.Equal("(name<>)", root.String())
 }
 
-func (s *DirSuite) TestNewDirWithOneFile(c *C) {
+func (s *DirSuite) TestNewDirWithOneFile() {
 	a, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	root, err := newDir("", []noder.Noder{a})
-	c.Assert(err, IsNil)
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0x96, 0xab, 0x29, 0x54, 0x2, 0x9e, 0x89, 0x28})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, []noder.Noder{a})
-	c.Assert(root.String(), Equals, "(a<1>)")
+	s.NoError(err)
+	s.Equal([]byte{0x96, 0xab, 0x29, 0x54, 0x2, 0x9e, 0x89, 0x28}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, []noder.Noder{a})
+	s.Equal("(a<1>)", root.String())
 }
 
-func (s *DirSuite) TestDirsWithSameFileHaveSameHash(c *C) {
+func (s *DirSuite) TestDirsWithSameFileHaveSameHash() {
 	f1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r1, err := newDir("", []noder.Noder{f1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r2, err := newDir("", []noder.Noder{f2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(r1.Hash(), DeepEquals, r2.Hash())
+	s.Equal(r2.Hash(), r1.Hash())
 }
 
-func (s *DirSuite) TestDirsWithDifferentFileContentHaveDifferentHash(c *C) {
+func (s *DirSuite) TestDirsWithDifferentFileContentHaveDifferentHash() {
 	f1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r1, err := newDir("", []noder.Noder{f1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("a", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r2, err := newDir("", []noder.Noder{f2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(r1.Hash(), Not(DeepEquals), r2.Hash())
+	s.NotEqual(r2.Hash(), r1.Hash())
 }
 
-func (s *DirSuite) TestDirsWithDifferentFileNameHaveDifferentHash(c *C) {
+func (s *DirSuite) TestDirsWithDifferentFileNameHaveDifferentHash() {
 	f1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r1, err := newDir("", []noder.Noder{f1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("b", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r2, err := newDir("", []noder.Noder{f2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(r1.Hash(), Not(DeepEquals), r2.Hash())
+	s.NotEqual(r2.Hash(), r1.Hash())
 }
 
-func (s *DirSuite) TestDirsWithDifferentFileHaveDifferentHash(c *C) {
+func (s *DirSuite) TestDirsWithDifferentFileHaveDifferentHash() {
 	f1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r1, err := newDir("", []noder.Noder{f1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("b", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r2, err := newDir("", []noder.Noder{f2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(r1.Hash(), Not(DeepEquals), r2.Hash())
+	s.NotEqual(r2.Hash(), r1.Hash())
 }
 
-func (s *DirSuite) TestDirWithEmptyDirHasDifferentHashThanEmptyDir(c *C) {
+func (s *DirSuite) TestDirWithEmptyDirHasDifferentHashThanEmptyDir() {
 	f, err := newFile("a", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r1, err := newDir("", []noder.Noder{f})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	r2, err := newDir("", []noder.Noder{d})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(r1.Hash(), Not(DeepEquals), r2.Hash())
+	s.NotEqual(r2.Hash(), r1.Hash())
 }
 
-func (s *DirSuite) TestNewDirWithTwoFilesSameContent(c *C) {
+func (s *DirSuite) TestNewDirWithTwoFilesSameContent() {
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	b1, err := newFile("b", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	root, err := newDir("", []noder.Noder{a1, b1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0xc7, 0xc4, 0xbf, 0x70, 0x33, 0xb9, 0x57, 0xdb})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, []noder.Noder{b1, a1})
-	c.Assert(root.String(), Equals, "(a<1> b<1>)")
+	s.Equal([]byte{0xc7, 0xc4, 0xbf, 0x70, 0x33, 0xb9, 0x57, 0xdb}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, []noder.Noder{b1, a1})
+	s.Equal("(a<1> b<1>)", root.String())
 }
 
-func (s *DirSuite) TestNewDirWithTwoFilesDifferentContent(c *C) {
+func (s *DirSuite) TestNewDirWithTwoFilesDifferentContent() {
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	b2, err := newFile("b", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	root, err := newDir("", []noder.Noder{a1, b2})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0x94, 0x8a, 0x9d, 0x8f, 0x6d, 0x98, 0x34, 0x55})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, []noder.Noder{b2, a1})
+	s.Equal([]byte{0x94, 0x8a, 0x9d, 0x8f, 0x6d, 0x98, 0x34, 0x55}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, []noder.Noder{b2, a1})
 }
 
-func (s *DirSuite) TestCrazy(c *C) {
+func (s *DirSuite) TestCrazy() {
 	//           ""
 	//            |
 	//   -------------------------
@@ -250,115 +222,113 @@ func (s *DirSuite) TestCrazy(c *C) {
 	//           |               |
 	//          a1               e1
 	e1, err := newFile("e", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	E, err := newDir("e", []noder.Noder{e1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	E, err = newDir("e", []noder.Noder{E})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	E, err = newDir("e", []noder.Noder{E})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	A, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	B, err := newDir("b", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	X, err := newDir("x", []noder.Noder{a1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	c1, err := newFile("c", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	B, err = newDir("b", []noder.Noder{c1, B, X, A})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	a1, err = newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	c1, err = newFile("c", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	d2, err := newFile("d", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	root, err := newDir("", []noder.Noder{a1, d2, E, B, c1})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(root.Hash(), DeepEquals,
-		[]byte{0xc3, 0x72, 0x9d, 0xf1, 0xcc, 0xec, 0x6d, 0xbb})
-	c.Assert(root.Name(), Equals, "")
-	assertChildren(c, root, []noder.Noder{E, c1, B, a1, d2})
-	c.Assert(root.String(), Equals,
-		"(a<1> b(a() b() c<1> x(a<1>)) c<1> d<2> e(e(e(e<1>))))")
+	s.Equal([]byte{0xc3, 0x72, 0x9d, 0xf1, 0xcc, 0xec, 0x6d, 0xbb}, root.Hash())
+	s.Equal("", root.Name())
+	assertChildren(s.T(), root, []noder.Noder{E, c1, B, a1, d2})
+	s.Equal("(a<1> b(a() b() c<1> x(a<1>)) c<1> d<2> e(e(e(e<1>))))", root.String())
 }
 
-func (s *DirSuite) TestDirCannotHaveDirWithNoName(c *C) {
+func (s *DirSuite) TestDirCannotHaveDirWithNoName() {
 	noName, err := newDir("", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = newDir("", []noder.Noder{noName})
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *DirSuite) TestDirCannotHaveDuplicatedFiles(c *C) {
+func (s *DirSuite) TestDirCannotHaveDuplicatedFiles() {
 	f1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = newDir("", []noder.Noder{f1, f2})
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *DirSuite) TestDirCannotHaveDuplicatedFileNames(c *C) {
+func (s *DirSuite) TestDirCannotHaveDuplicatedFileNames() {
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	a2, err := newFile("a", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = newDir("", []noder.Noder{a1, a2})
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *DirSuite) TestDirCannotHaveDuplicatedDirNames(c *C) {
+func (s *DirSuite) TestDirCannotHaveDuplicatedDirNames() {
 	d1, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d2, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = newDir("", []noder.Noder{d1, d2})
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *DirSuite) TestDirCannotHaveDirAndFileWithSameName(c *C) {
+func (s *DirSuite) TestDirCannotHaveDirAndFileWithSameName() {
 	f, err := newFile("a", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d, err := newDir("a", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = newDir("", []noder.Noder{f, d})
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *DirSuite) TestUnsortedString(c *C) {
+func (s *DirSuite) TestUnsortedString() {
 	b, err := newDir("b", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	z, err := newDir("z", nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	a1, err := newFile("a", "1")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	c2, err := newFile("c", "2")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d3, err := newFile("d", "3")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d, err := newDir("d", []noder.Noder{c2, z, d3, a1, b})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(d.String(), Equals, "d(a<1> b() c<2> d<3> z())")
+	s.Equal("d(a<1> b() c<2> d<3> z())", d.String())
 }

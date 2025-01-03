@@ -1,34 +1,40 @@
 package noder
 
 import (
+	"testing"
+
+	"github.com/stretchr/testify/suite"
 	"golang.org/x/text/unicode/norm"
-	. "gopkg.in/check.v1"
 )
 
-type PathSuite struct{}
+type PathSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&PathSuite{})
+func TestPathSuite(t *testing.T) {
+	suite.Run(t, new(PathSuite))
+}
 
-func (s *PathSuite) TestShortFile(c *C) {
+func (s *PathSuite) TestShortFile() {
 	f := &noderMock{
 		name:  "1",
 		isDir: false,
 	}
 	p := Path([]Noder{f})
-	c.Assert(p.String(), Equals, "1")
+	s.Equal("1", p.String())
 }
 
-func (s *PathSuite) TestShortDir(c *C) {
+func (s *PathSuite) TestShortDir() {
 	d := &noderMock{
 		name:     "1",
 		isDir:    true,
 		children: NoChildren,
 	}
 	p := Path([]Noder{d})
-	c.Assert(p.String(), Equals, "1")
+	s.Equal("1", p.String())
 }
 
-func (s *PathSuite) TestLongFile(c *C) {
+func (s *PathSuite) TestLongFile() {
 	n3 := &noderMock{
 		name:  "3",
 		isDir: false,
@@ -44,10 +50,10 @@ func (s *PathSuite) TestLongFile(c *C) {
 		children: []Noder{n2},
 	}
 	p := Path([]Noder{n1, n2, n3})
-	c.Assert(p.String(), Equals, "1/2/3")
+	s.Equal("1/2/3", p.String())
 }
 
-func (s *PathSuite) TestLongDir(c *C) {
+func (s *PathSuite) TestLongDir() {
 	n3 := &noderMock{
 		name:     "3",
 		isDir:    true,
@@ -64,27 +70,27 @@ func (s *PathSuite) TestLongDir(c *C) {
 		children: []Noder{n2},
 	}
 	p := Path([]Noder{n1, n2, n3})
-	c.Assert(p.String(), Equals, "1/2/3")
+	s.Equal("1/2/3", p.String())
 }
 
-func (s *PathSuite) TestCompareDepth1(c *C) {
+func (s *PathSuite) TestCompareDepth1() {
 	p1 := Path([]Noder{&noderMock{name: "a"}})
 	p2 := Path([]Noder{&noderMock{name: "b"}})
-	c.Assert(p1.Compare(p2), Equals, -1)
-	c.Assert(p2.Compare(p1), Equals, 1)
+	s.Equal(-1, p1.Compare(p2))
+	s.Equal(1, p2.Compare(p1))
 
 	p1 = Path([]Noder{&noderMock{name: "a"}})
 	p2 = Path([]Noder{&noderMock{name: "a"}})
-	c.Assert(p1.Compare(p2), Equals, 0)
-	c.Assert(p2.Compare(p1), Equals, 0)
+	s.Equal(0, p1.Compare(p2))
+	s.Equal(0, p2.Compare(p1))
 
 	p1 = Path([]Noder{&noderMock{name: "a.go"}})
 	p2 = Path([]Noder{&noderMock{name: "a"}})
-	c.Assert(p1.Compare(p2), Equals, 1)
-	c.Assert(p2.Compare(p1), Equals, -1)
+	s.Equal(1, p1.Compare(p2))
+	s.Equal(-1, p2.Compare(p1))
 }
 
-func (s *PathSuite) TestCompareDepth2(c *C) {
+func (s *PathSuite) TestCompareDepth2() {
 	p1 := Path([]Noder{
 		&noderMock{name: "a"},
 		&noderMock{name: "b"},
@@ -93,8 +99,8 @@ func (s *PathSuite) TestCompareDepth2(c *C) {
 		&noderMock{name: "b"},
 		&noderMock{name: "a"},
 	})
-	c.Assert(p1.Compare(p2), Equals, -1)
-	c.Assert(p2.Compare(p1), Equals, 1)
+	s.Equal(-1, p1.Compare(p2))
+	s.Equal(1, p2.Compare(p1))
 
 	p1 = Path([]Noder{
 		&noderMock{name: "a"},
@@ -104,8 +110,8 @@ func (s *PathSuite) TestCompareDepth2(c *C) {
 		&noderMock{name: "a"},
 		&noderMock{name: "b"},
 	})
-	c.Assert(p1.Compare(p2), Equals, 0)
-	c.Assert(p2.Compare(p1), Equals, 0)
+	s.Equal(0, p1.Compare(p2))
+	s.Equal(0, p2.Compare(p1))
 
 	p1 = Path([]Noder{
 		&noderMock{name: "a"},
@@ -115,51 +121,51 @@ func (s *PathSuite) TestCompareDepth2(c *C) {
 		&noderMock{name: "a"},
 		&noderMock{name: "a"},
 	})
-	c.Assert(p1.Compare(p2), Equals, 1)
-	c.Assert(p2.Compare(p1), Equals, -1)
+	s.Equal(1, p1.Compare(p2))
+	s.Equal(-1, p2.Compare(p1))
 }
 
-func (s *PathSuite) TestCompareMixedDepths(c *C) {
+func (s *PathSuite) TestCompareMixedDepths() {
 	p1 := Path([]Noder{
 		&noderMock{name: "a"},
 		&noderMock{name: "b"},
 	})
 	p2 := Path([]Noder{&noderMock{name: "b"}})
-	c.Assert(p1.Compare(p2), Equals, -1)
-	c.Assert(p2.Compare(p1), Equals, 1)
+	s.Equal(-1, p1.Compare(p2))
+	s.Equal(1, p2.Compare(p1))
 
 	p1 = Path([]Noder{
 		&noderMock{name: "b"},
 		&noderMock{name: "b"},
 	})
 	p2 = Path([]Noder{&noderMock{name: "b"}})
-	c.Assert(p1.Compare(p2), Equals, 1)
-	c.Assert(p2.Compare(p1), Equals, -1)
+	s.Equal(1, p1.Compare(p2))
+	s.Equal(-1, p2.Compare(p1))
 
 	p1 = Path([]Noder{&noderMock{name: "a.go"}})
 	p2 = Path([]Noder{
 		&noderMock{name: "a"},
 		&noderMock{name: "a.go"},
 	})
-	c.Assert(p1.Compare(p2), Equals, 1)
-	c.Assert(p2.Compare(p1), Equals, -1)
+	s.Equal(1, p1.Compare(p2))
+	s.Equal(-1, p2.Compare(p1))
 
 	p1 = Path([]Noder{&noderMock{name: "b.go"}})
 	p2 = Path([]Noder{
 		&noderMock{name: "a"},
 		&noderMock{name: "a.go"},
 	})
-	c.Assert(p1.Compare(p2), Equals, 1)
-	c.Assert(p2.Compare(p1), Equals, -1)
+	s.Equal(1, p1.Compare(p2))
+	s.Equal(-1, p2.Compare(p1))
 }
 
-func (s *PathSuite) TestCompareNormalization(c *C) {
+func (s *PathSuite) TestCompareNormalization() {
 	p1 := Path([]Noder{&noderMock{name: norm.NFKC.String("페")}})
 	p2 := Path([]Noder{&noderMock{name: norm.NFKD.String("페")}})
-	c.Assert(p1.Compare(p2), Equals, 1)
-	c.Assert(p2.Compare(p1), Equals, -1)
+	s.Equal(1, p1.Compare(p2))
+	s.Equal(-1, p2.Compare(p1))
 	p1 = Path([]Noder{&noderMock{name: "TestAppWithUnicodéPath"}})
 	p2 = Path([]Noder{&noderMock{name: "TestAppWithUnicodéPath"}})
-	c.Assert(p1.Compare(p2), Equals, -1)
-	c.Assert(p2.Compare(p1), Equals, 1)
+	s.Equal(-1, p1.Compare(p2))
+	s.Equal(1, p2.Compare(p1))
 }
