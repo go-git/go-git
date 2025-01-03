@@ -2,50 +2,56 @@ package packp
 
 import (
 	"bytes"
+	"fmt"
+	"regexp"
 	"runtime"
+	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type UlReqEncodeSuite struct{}
+type UlReqEncodeSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&UlReqEncodeSuite{})
+func TestUlReqEncodeSuite(t *testing.T) {
+	suite.Run(t, new(UlReqEncodeSuite))
+}
 
-func testUlReqEncode(c *C, ur *UploadRequest, expectedPayloads []string) {
+func testUlReqEncode(s *UlReqEncodeSuite, ur *UploadRequest, expectedPayloads []string) {
 	var buf bytes.Buffer
 	e := newUlReqEncoder(&buf)
 
 	err := e.Encode(ur)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	obtained := buf.Bytes()
 
-	expected := pktlines(c, expectedPayloads...)
+	expected := pktlines(s.T(), expectedPayloads...)
 
-	comment := Commentf("\nobtained = %s\nexpected = %s\n", string(obtained), string(expected))
+	comment := fmt.Sprintf("\nobtained = %s\nexpected = %s\n", string(obtained), string(expected))
 
-	c.Assert(obtained, DeepEquals, expected, comment)
+	s.Equal(expected, obtained, comment)
 }
 
-func testUlReqEncodeError(c *C, ur *UploadRequest, expectedErrorRegEx string) {
+func testUlReqEncodeError(s *UlReqEncodeSuite, ur *UploadRequest, expectedErrorRegEx string) {
 	var buf bytes.Buffer
 	e := newUlReqEncoder(&buf)
 
 	err := e.Encode(ur)
-	c.Assert(err, ErrorMatches, expectedErrorRegEx)
+	s.Regexp(regexp.MustCompile(expectedErrorRegEx), err)
 }
 
-func (s *UlReqEncodeSuite) TestZeroValue(c *C) {
+func (s *UlReqEncodeSuite) TestZeroValue() {
 	ur := NewUploadRequest()
 	expectedErrorRegEx := ".*empty wants.*"
 
-	testUlReqEncodeError(c, ur, expectedErrorRegEx)
+	testUlReqEncodeError(s, ur, expectedErrorRegEx)
 }
 
-func (s *UlReqEncodeSuite) TestOneWant(c *C) {
+func (s *UlReqEncodeSuite) TestOneWant() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
@@ -54,10 +60,10 @@ func (s *UlReqEncodeSuite) TestOneWant(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestOneWantWithCapabilities(c *C) {
+func (s *UlReqEncodeSuite) TestOneWantWithCapabilities() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
@@ -71,10 +77,10 @@ func (s *UlReqEncodeSuite) TestOneWantWithCapabilities(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestWants(c *C) {
+func (s *UlReqEncodeSuite) TestWants() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
@@ -93,10 +99,10 @@ func (s *UlReqEncodeSuite) TestWants(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestWantsDuplicates(c *C) {
+func (s *UlReqEncodeSuite) TestWantsDuplicates() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
@@ -115,10 +121,10 @@ func (s *UlReqEncodeSuite) TestWantsDuplicates(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
+func (s *UlReqEncodeSuite) TestWantsWithCapabilities() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
@@ -143,10 +149,10 @@ func (s *UlReqEncodeSuite) TestWantsWithCapabilities(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestShallow(c *C) {
+func (s *UlReqEncodeSuite) TestShallow() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
@@ -158,10 +164,10 @@ func (s *UlReqEncodeSuite) TestShallow(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
+func (s *UlReqEncodeSuite) TestManyShallows() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
@@ -181,10 +187,10 @@ func (s *UlReqEncodeSuite) TestManyShallows(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestShallowsDuplicate(c *C) {
+func (s *UlReqEncodeSuite) TestShallowsDuplicate() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
@@ -203,10 +209,10 @@ func (s *UlReqEncodeSuite) TestShallowsDuplicate(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestDepthCommits(c *C) {
+func (s *UlReqEncodeSuite) TestDepthCommits() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthCommits(1234)
@@ -217,10 +223,10 @@ func (s *UlReqEncodeSuite) TestDepthCommits(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestDepthSinceUTC(c *C) {
+func (s *UlReqEncodeSuite) TestDepthSinceUTC() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
@@ -232,18 +238,18 @@ func (s *UlReqEncodeSuite) TestDepthSinceUTC(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestDepthSinceNonUTC(c *C) {
+func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 	if runtime.GOOS == "js" {
-		c.Skip("time.LoadLocation not supported in wasm")
+		s.T().Skip("time.LoadLocation not supported in wasm")
 	}
 
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	berlin, err := time.LoadLocation("Europe/Berlin")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, berlin)
 	// since value is 2015-01-02 03:04:05 +0100 UTC (Europe/Berlin) or
 	// 2015-01-02 02:04:05 +0000 UTC, which is 1420164245 Unix seconds.
@@ -255,10 +261,10 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestDepthReference(c *C) {
+func (s *UlReqEncodeSuite) TestDepthReference() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthReference("refs/heads/feature-foo")
@@ -269,10 +275,10 @@ func (s *UlReqEncodeSuite) TestDepthReference(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestFilter(c *C) {
+func (s *UlReqEncodeSuite) TestFilter() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Filter = FilterTreeDepth(0)
@@ -283,10 +289,10 @@ func (s *UlReqEncodeSuite) TestFilter(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }
 
-func (s *UlReqEncodeSuite) TestAll(c *C) {
+func (s *UlReqEncodeSuite) TestAll() {
 	ur := NewUploadRequest()
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
@@ -324,5 +330,5 @@ func (s *UlReqEncodeSuite) TestAll(c *C) {
 		"",
 	}
 
-	testUlReqEncode(c, ur, expected)
+	testUlReqEncode(s, ur, expected)
 }

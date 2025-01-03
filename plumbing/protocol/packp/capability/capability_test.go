@@ -3,20 +3,16 @@ package capability
 import (
 	"fmt"
 	"os"
-
-	check "gopkg.in/check.v1"
 )
 
-var _ = check.Suite(&SuiteCapabilities{})
-
-func (s *SuiteCapabilities) TestDefaultAgent(c *check.C) {
+func (s *SuiteCapabilities) TestDefaultAgent() {
 	os.Unsetenv("GO_GIT_USER_AGENT_EXTRA")
 	ua := DefaultAgent()
-	c.Assert(ua, check.Equals, userAgent)
+	s.Equal(userAgent, ua)
 }
 
-func (s *SuiteCapabilities) TestEnvAgent(c *check.C) {
+func (s *SuiteCapabilities) TestEnvAgent() {
 	os.Setenv("GO_GIT_USER_AGENT_EXTRA", "abc xyz")
 	ua := DefaultAgent()
-	c.Assert(ua, check.Equals, fmt.Sprintf("%s %s", userAgent, "abc xyz"))
+	s.Equal(fmt.Sprintf("%s %s", userAgent, "abc xyz"), ua)
 }
