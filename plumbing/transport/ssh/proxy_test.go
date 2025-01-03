@@ -15,21 +15,17 @@ import (
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	stdssh "golang.org/x/crypto/ssh"
-	. "gopkg.in/check.v1"
 )
 
 type ProxySuite struct {
-	u UploadPackSuite
-	fixtures.Suite
+	UploadPackSuite
 }
-
-var _ = Suite(&ProxySuite{})
 
 var socksProxiedRequests int32
 
-func (s *ProxySuite) TestCommand(c *C) {
+func (s *ProxySuite) TestCommand() {
 	socksListener, err := net.Listen("tcp", "localhost:0")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	socksServer, err := socks5.New(&socks5.Config{
 		AuthMethods: []socks5.Authenticator{socks5.UserPassAuthenticator{
@@ -39,29 +35,29 @@ func (s *ProxySuite) TestCommand(c *C) {
 		}},
 		Rules: TestProxyRule{},
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	go func() {
 		socksServer.Serve(socksListener)
 	}()
 	socksProxyAddr := fmt.Sprintf("socks5://localhost:%d", socksListener.Addr().(*net.TCPAddr).Port)
 
 	sshListener, err := net.Listen("tcp", "localhost:0")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	sshServer := &ssh.Server{Handler: test.HandlerSSH}
 	go func() {
 		log.Fatal(sshServer.Serve(sshListener))
 	}()
 
-	s.u.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.u.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-ssh-%d", s.u.port))
-	c.Assert(err, IsNil)
+	s.port = sshListener.Addr().(*net.TCPAddr).Port
+	s.base, err = os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
+	s.NoError(err)
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
 	}
 
-	ep := s.u.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	c.Assert(err, IsNil)
+	ep := s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	s.NoError(err)
 	ep.Proxy = transport.ProxyOptions{
 		URL:      socksProxyAddr,
 		Username: "user",
@@ -74,9 +70,9 @@ func (s *ProxySuite) TestCommand(c *C) {
 		},
 	}
 	_, err = runner.Command(transport.UploadPackServiceName, ep, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	proxyUsed := atomic.LoadInt32(&socksProxiedRequests) > 0
-	c.Assert(proxyUsed, Equals, true)
+	s.True(proxyUsed)
 }
 
 type TestProxyRule struct{}

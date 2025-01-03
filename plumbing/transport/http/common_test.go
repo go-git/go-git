@@ -17,99 +17,100 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+func TestClientSuite(t *testing.T) {
+	suite.Run(t, new(ClientSuite))
+}
 
 type ClientSuite struct {
+	suite.Suite
 	Endpoint  *transport.Endpoint
 	EmptyAuth transport.AuthMethod
 }
 
-var _ = Suite(&ClientSuite{})
-
-func (s *ClientSuite) SetUpSuite(c *C) {
+func (s *ClientSuite) SetupSuite() {
 	var err error
 	s.Endpoint, err = transport.NewEndpoint(
 		"https://github.com/git-fixtures/basic",
 	)
-	c.Assert(err, IsNil)
+	s.Nil(err)
 }
 
-func (s *UploadPackSuite) TestNewClient(c *C) {
+func (s *UploadPackSuite) TestNewClient() {
 	roundTripper := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	cl := &http.Client{Transport: roundTripper}
 	r, ok := NewClient(cl).(*client)
-	c.Assert(ok, Equals, true)
-	c.Assert(r.client, Equals, cl)
+	s.Equal(true, ok)
+	s.Equal(cl, r.client)
 }
 
-func (s *ClientSuite) TestNewBasicAuth(c *C) {
+func (s *ClientSuite) TestNewBasicAuth() {
 	a := &BasicAuth{"foo", "qux"}
 
-	c.Assert(a.Name(), Equals, "http-basic-auth")
-	c.Assert(a.String(), Equals, "http-basic-auth - foo:*******")
+	s.Equal("http-basic-auth", a.Name())
+	s.Equal("http-basic-auth - foo:*******", a.String())
 }
 
-func (s *ClientSuite) TestNewTokenAuth(c *C) {
+func (s *ClientSuite) TestNewTokenAuth() {
 	a := &TokenAuth{"OAUTH-TOKEN-TEXT"}
 
-	c.Assert(a.Name(), Equals, "http-token-auth")
-	c.Assert(a.String(), Equals, "http-token-auth - *******")
+	s.Equal("http-token-auth", a.Name())
+	s.Equal("http-token-auth - *******", a.String())
 
 	// Check header is set correctly
 	req, err := http.NewRequest("GET", "https://github.com/git-fixtures/basic", nil)
-	c.Assert(err, Equals, nil)
+	s.NoError(err)
 	a.SetAuth(req)
-	c.Assert(req.Header.Get("Authorization"), Equals, "Bearer OAUTH-TOKEN-TEXT")
+	s.Equal("Bearer OAUTH-TOKEN-TEXT", req.Header.Get("Authorization"))
 }
 
-func (s *ClientSuite) TestNewErrOK(c *C) {
+func (s *ClientSuite) TestNewErrOK() {
 	res := &http.Response{StatusCode: http.StatusOK}
 	err := NewErr(res)
-	c.Assert(err, IsNil)
+	s.Nil(err)
 }
 
-func (s *ClientSuite) TestNewErrUnauthorized(c *C) {
-	s.testNewHTTPError(c, http.StatusUnauthorized, ".*authentication required.*")
+func (s *ClientSuite) TestNewErrUnauthorized() {
+	s.testNewHTTPError(http.StatusUnauthorized, ".*authentication required.*")
 }
 
-func (s *ClientSuite) TestNewErrForbidden(c *C) {
-	s.testNewHTTPError(c, http.StatusForbidden, ".*authorization failed.*")
+func (s *ClientSuite) TestNewErrForbidden() {
+	s.testNewHTTPError(http.StatusForbidden, ".*authorization failed.*")
 }
 
-func (s *ClientSuite) TestNewErrNotFound(c *C) {
-	s.testNewHTTPError(c, http.StatusNotFound, ".*repository not found.*")
+func (s *ClientSuite) TestNewErrNotFound() {
+	s.testNewHTTPError(http.StatusNotFound, ".*repository not found.*")
 }
 
-func (s *ClientSuite) TestNewHTTPError40x(c *C) {
-	s.testNewHTTPError(c, http.StatusPaymentRequired,
+func (s *ClientSuite) TestNewHTTPError40x() {
+	s.testNewHTTPError(http.StatusPaymentRequired,
 		"unexpected client error.*")
 }
 
-func (s *ClientSuite) TestNewUnexpectedError(c *C) {
+func (s *ClientSuite) TestNewUnexpectedError() {
 	res := &http.Response{
 		StatusCode: 500,
 		Body:       io.NopCloser(strings.NewReader("Unexpected error")),
 	}
 
 	err := NewErr(res)
-	c.Assert(err, NotNil)
-	c.Assert(err, FitsTypeOf, &plumbing.UnexpectedError{})
+	s.Error(err)
+	s.IsType(&plumbing.UnexpectedError{}, err)
 
 	unexpectedError, _ := err.(*plumbing.UnexpectedError)
-	c.Assert(unexpectedError.Err, FitsTypeOf, &Err{})
+	s.IsType(&Err{}, unexpectedError.Err)
 
 	httpError, _ := unexpectedError.Err.(*Err)
-	c.Assert(httpError.Reason, Equals, "Unexpected error")
+	s.Equal("Unexpected error", httpError.Reason)
 }
 
-func (s *ClientSuite) Test_newSession(c *C) {
+func (s *ClientSuite) Test_newSession() {
 	cl := NewClientWithOptions(nil, &ClientOptions{
 		CacheMaxEntries: 2,
 	}).(*client)
@@ -117,53 +118,53 @@ func (s *ClientSuite) Test_newSession(c *C) {
 	insecureEP := s.Endpoint
 	insecureEP.InsecureSkipTLS = true
 	session, err := newSession(cl, insecureEP, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	sessionTransport := session.client.Transport.(*http.Transport)
-	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
+	s.True(sessionTransport.TLSClientConfig.InsecureSkipVerify)
 	t, ok := cl.fetchTransport(transportOptions{
 		insecureSkipTLS: true,
 	})
 	// transport should be cached.
-	c.Assert(ok, Equals, true)
+	s.True(ok)
 	// cached transport should be the one that's used.
-	c.Assert(sessionTransport, Equals, t)
+	s.Equal(sessionTransport, t)
 
 	caEndpoint := insecureEP
 	caEndpoint.CaBundle = []byte("this is the way")
 	session, err = newSession(cl, caEndpoint, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	sessionTransport = session.client.Transport.(*http.Transport)
-	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
-	c.Assert(sessionTransport.TLSClientConfig.RootCAs, NotNil)
+	s.True(sessionTransport.TLSClientConfig.InsecureSkipVerify)
+	s.NotNil(sessionTransport.TLSClientConfig.RootCAs)
 	t, ok = cl.fetchTransport(transportOptions{
 		insecureSkipTLS: true,
 		caBundle:        "this is the way",
 	})
 	// transport should be cached.
-	c.Assert(ok, Equals, true)
+	s.True(ok)
 	// cached transport should be the one that's used.
-	c.Assert(sessionTransport, Equals, t)
+	s.Equal(sessionTransport, t)
 
 	session, err = newSession(cl, caEndpoint, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	sessionTransport = session.client.Transport.(*http.Transport)
 	// transport that's going to be used should be cached already.
-	c.Assert(sessionTransport, Equals, t)
+	s.Equal(sessionTransport, t)
 	// no new transport got cached.
-	c.Assert(cl.transports.Len(), Equals, 2)
+	s.Equal(2, cl.transports.Len())
 
 	// if the cache does not exist, the transport should still be correctly configured.
 	cl.transports = nil
 	session, err = newSession(cl, insecureEP, nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	sessionTransport = session.client.Transport.(*http.Transport)
-	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
+	s.True(sessionTransport.TLSClientConfig.InsecureSkipVerify)
 }
 
-func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
+func (s *ClientSuite) testNewHTTPError(code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
 	res := &http.Response{
 		StatusCode: code,
@@ -171,15 +172,15 @@ func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 	}
 
 	err := NewErr(res)
-	c.Assert(err, NotNil)
-	c.Assert(err, ErrorMatches, msg)
+	s.NotNil(err)
+	s.Regexp(msg, err.Error())
 }
 
-func (s *ClientSuite) TestSetAuth(c *C) {
+func (s *ClientSuite) TestSetAuth() {
 	auth := &BasicAuth{}
 	r, err := DefaultClient.NewUploadPackSession(s.Endpoint, auth)
-	c.Assert(err, IsNil)
-	c.Assert(auth, Equals, r.(*upSession).auth)
+	s.NoError(err)
+	s.Equal(auth, r.(*upSession).auth)
 }
 
 type mockAuth struct{}
@@ -187,18 +188,18 @@ type mockAuth struct{}
 func (*mockAuth) Name() string   { return "" }
 func (*mockAuth) String() string { return "" }
 
-func (s *ClientSuite) TestSetAuthWrongType(c *C) {
+func (s *ClientSuite) TestSetAuthWrongType() {
 	_, err := DefaultClient.NewUploadPackSession(s.Endpoint, &mockAuth{})
-	c.Assert(err, Equals, transport.ErrInvalidAuthMethod)
+	s.Equal(transport.ErrInvalidAuthMethod, err)
 }
 
-func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
+func (s *ClientSuite) TestModifyEndpointIfRedirect() {
 	sess := &session{endpoint: nil}
 	u, _ := url.Parse("https://example.com/info/refs")
 	res := &http.Response{Request: &http.Request{URL: u}}
-	c.Assert(func() {
+	s.PanicsWithError("runtime error: invalid memory address or nil pointer dereference", func() {
 		sess.ModifyEndpointIfRedirect(res)
-	}, PanicMatches, ".*nil pointer dereference.*")
+	})
 
 	sess = &session{endpoint: nil}
 	// no-op - should return and not panic
@@ -210,12 +211,16 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 		expected *transport.Endpoint
 	}{
 		{"https://example.com/foo/bar", nil, nil},
-		{"https://example.com/foo.git/info/refs",
+		{
+			"https://example.com/foo.git/info/refs",
 			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"}},
-		{"https://example.com:8080/foo.git/info/refs",
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"},
+		},
+		{
+			"https://example.com:8080/foo.git/info/refs",
 			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"}},
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"},
+		},
 	}
 
 	for _, d := range data {
@@ -224,34 +229,34 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 		sess.ModifyEndpointIfRedirect(&http.Response{
 			Request: &http.Request{URL: u},
 		})
-		c.Assert(d.endpoint, DeepEquals, d.expected)
+		s.Equal(d.expected, d.endpoint)
 	}
 }
 
 type BaseSuite struct {
-	fixtures.Suite
+	suite.Suite
 
 	base string
 	host string
 	port int
 }
 
-func (s *BaseSuite) SetUpTest(c *C) {
+func (s *BaseSuite) SetupTest() {
 	l, err := net.Listen("tcp", "localhost:0")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	base, err := os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-http-%d", s.port))
-	c.Assert(err, IsNil)
+	base, err := os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
+	s.NoError(err)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
 	s.base = filepath.Join(base, s.host)
 
-	err = os.MkdirAll(s.base, 0755)
-	c.Assert(err, IsNil)
+	err = os.MkdirAll(s.base, 0o755)
+	s.NoError(err)
 
 	cmd := exec.Command("git", "--exec-path")
 	out, err := cmd.CombinedOutput()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	server := &http.Server{
 		Handler: &cgi.Handler{
@@ -264,22 +269,22 @@ func (s *BaseSuite) SetUpTest(c *C) {
 	}()
 }
 
-func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *BaseSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(name)
 }
 
-func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
+func (s *BaseSuite) newEndpoint(name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	return ep
 }

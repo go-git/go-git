@@ -8,45 +8,46 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
 type BaseSuite struct {
-	fixtures.Suite
+	suite.Suite
 
 	base   string
 	port   int
 	daemon *exec.Cmd
 }
 
-func (s *BaseSuite) SetUpTest(c *C) {
+func (s *BaseSuite) TearDownSuite() {
+	fixtures.Clean()
+}
+
+func (s *BaseSuite) SetupTest() {
 	if runtime.GOOS == "windows" {
-		c.Skip(`git for windows has issues with write operations through git:// protocol.
+		s.T().Skip(`git for windows has issues with write operations through git:// protocol.
 		See https://github.com/git-for-windows/git/issues/907`)
 	}
 
 	cmd := exec.Command("git", "daemon", "--help")
 	output, err := cmd.CombinedOutput()
 	if err != nil && bytes.Contains(output, []byte("'daemon' is not a git command")) {
-		c.Fatal("git daemon cannot be found")
+		s.T().Fatal("git daemon cannot be found")
 	}
 
 	s.port, err = freePort()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
-	c.Assert(err, IsNil)
+	s.base, err = os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
+	s.NoError(err)
 }
 
-func (s *BaseSuite) StartDaemon(c *C) {
+func (s *BaseSuite) StartDaemon() {
 	s.daemon = exec.Command(
 		"git",
 		"daemon",
@@ -64,33 +65,33 @@ func (s *BaseSuite) StartDaemon(c *C) {
 	s.daemon.Env = os.Environ()
 
 	err := s.daemon.Start()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// Connections might be refused if we start sending request too early.
 	time.Sleep(time.Millisecond * 500)
 }
 
-func (s *BaseSuite) newEndpoint(c *C, name string) *transport.Endpoint {
+func (s *BaseSuite) newEndpoint(name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf("git://localhost:%d/%s", s.port, name))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	return ep
 }
 
-func (s *BaseSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *BaseSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(name)
 }
 
-func (s *BaseSuite) TearDownTest(c *C) {
+func (s *BaseSuite) TearDownTest() {
 	if s.daemon != nil {
 		_ = s.daemon.Process.Signal(os.Kill)
 		_ = s.daemon.Wait()

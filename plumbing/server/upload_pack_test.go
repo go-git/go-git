@@ -1,35 +1,42 @@
 package server_test
 
 import (
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/stretchr/testify/suite"
 )
+
+func TestUploadPackSuite(t *testing.T) {
+	suite.Run(t, new(UploadPackSuite))
+}
 
 type UploadPackSuite struct {
 	BaseSuite
 }
 
-var _ = Suite(&UploadPackSuite{})
-
-func (s *UploadPackSuite) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
+func (s *UploadPackSuite) SetupSuite() {
+	s.BaseSuite.SetupSuite()
 	s.Client = s.client
 }
 
-func (s *UploadPackSuite) SetUpTest(c *C) {
-	s.prepareRepositories(c)
+func (s *UploadPackSuite) SetupTest() {
+	s.prepareRepositories()
 }
 
 // Overwritten, server returns error earlier.
-func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
+func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(r, IsNil)
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+	s.Nil(r)
 }
 
-func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
-	c.Skip("UploadPack cannot be canceled on server")
+func (s *UploadPackSuite) TestUploadPackWithContext() {
+	s.T().Skip("UploadPack cannot be canceled on server")
+}
+
+func TestClientLikeUploadPackSuite(t *testing.T) {
+	suite.Run(t, new(ClientLikeUploadPackSuite))
 }
 
 // Tests server with `asClient = true`. This is recommended when using a server
@@ -38,13 +45,11 @@ type ClientLikeUploadPackSuite struct {
 	UploadPackSuite
 }
 
-var _ = Suite(&ClientLikeUploadPackSuite{})
-
-func (s *ClientLikeUploadPackSuite) SetUpSuite(c *C) {
+func (s *ClientLikeUploadPackSuite) SetupSuite() {
 	s.asClient = true
-	s.UploadPackSuite.SetUpSuite(c)
+	s.UploadPackSuite.SetupSuite()
 }
 
-func (s *ClientLikeUploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
-	s.UploadPackSuite.TestAdvertisedReferencesEmpty(c)
+func (s *ClientLikeUploadPackSuite) TestAdvertisedReferencesEmpty() {
+	s.UploadPackSuite.TestAdvertisedReferencesEmpty()
 }

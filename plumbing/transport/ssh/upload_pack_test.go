@@ -19,31 +19,30 @@ import (
 	"github.com/gliderlabs/ssh"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	stdssh "golang.org/x/crypto/ssh"
-	. "gopkg.in/check.v1"
 )
 
 type UploadPackSuite struct {
 	test.UploadPackSuite
-	fixtures.Suite
 	opts []ssh.Option
 
 	port int
 	base string
 }
 
-var _ = Suite(&UploadPackSuite{})
+func (s *UploadPackSuite) TearDownSuite() {
+	fixtures.Clean()
+}
 
-func (s *UploadPackSuite) SetUpSuite(c *C) {
+func (s *UploadPackSuite) SetupSuite() {
 	if runtime.GOOS == "js" {
-		c.Skip("tcp connections are not available in wasm")
+		s.T().Skip("tcp connections are not available in wasm")
 	}
 
 	l, err := net.Listen("tcp", "localhost:0")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
-	c.Assert(err, IsNil)
+	s.base = s.T().TempDir()
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
@@ -53,9 +52,9 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
 
-	s.UploadPackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
-	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
+	s.UploadPackSuite.Endpoint = s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(fixtures.ByTag("empty").One(), "empty.git")
+	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint("non-existent.git")
 
 	server := &ssh.Server{Handler: testutils.HandlerSSH}
 	for _, opt := range s.opts {
@@ -66,25 +65,25 @@ func (s *UploadPackSuite) SetUpSuite(c *C) {
 	}()
 }
 
-func (s *UploadPackSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *UploadPackSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(name)
 }
 
-func (s *UploadPackSuite) newEndpoint(c *C, name string) *transport.Endpoint {
+func (s *UploadPackSuite) newEndpoint(name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf(
 		"ssh://git@localhost:%d/%s/%s", s.port, filepath.ToSlash(s.base), name,
 	))
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return ep
 }
 

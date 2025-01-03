@@ -14,11 +14,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
 type UploadPackSuite struct {
+	suite.Suite
 	Endpoint            *transport.Endpoint
 	EmptyEndpoint       *transport.Endpoint
 	NonExistentEndpoint *transport.Endpoint
@@ -26,163 +26,163 @@ type UploadPackSuite struct {
 	Client              transport.Transport
 }
 
-func (s *UploadPackSuite) TestAdvertisedReferencesEmpty(c *C) {
+func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	r, err := s.Client.NewUploadPackSession(s.EmptyEndpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	ar, err := r.AdvertisedReferences()
-	c.Assert(err, Equals, transport.ErrEmptyRemoteRepository)
-	c.Assert(ar, IsNil)
+	s.Equal(err, transport.ErrEmptyRemoteRepository)
+	s.Nil(ar)
 }
 
-func (s *UploadPackSuite) TestAdvertisedReferencesNotExists(c *C) {
+func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	ar, err := r.AdvertisedReferences()
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(ar, IsNil)
+	s.Equal(err, transport.ErrRepositoryNotFound)
+	s.Nil(ar)
 
 	r, err = s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(reader, IsNil)
+	s.Equal(err, transport.ErrRepositoryNotFound)
+	s.Nil(reader)
 }
 
-func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice(c *C) {
+func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	ar1, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(ar1, NotNil)
+	s.NoError(err)
+	s.NotNil(ar1)
 	ar2, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(ar2, DeepEquals, ar1)
+	s.NoError(err)
+	s.Equal(ar1, ar2)
 }
 
-func (s *UploadPackSuite) TestDefaultBranch(c *C) {
+func (s *UploadPackSuite) TestDefaultBranch() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	symrefs := info.Capabilities.Get(capability.SymRef)
-	c.Assert(symrefs, HasLen, 1)
-	c.Assert(symrefs[0], Equals, "HEAD:refs/heads/master")
+	s.Len(symrefs, 1)
+	s.Equal("HEAD:refs/heads/master", symrefs[0])
 }
 
-func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported(c *C) {
+func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(info.Capabilities.Supports(capability.MultiACK), Equals, true)
+	s.NoError(err)
+	s.True(info.Capabilities.Supports(capability.MultiACK))
 }
 
-func (s *UploadPackSuite) TestCapabilities(c *C) {
+func (s *UploadPackSuite) TestCapabilities() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(info.Capabilities.Get(capability.Agent), HasLen, 1)
+	s.NoError(err)
+	s.Len(info.Capabilities.Get(capability.Agent), 1)
 }
 
-func (s *UploadPackSuite) TestUploadPack(c *C) {
+func (s *UploadPackSuite) TestUploadPack() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	s.checkObjectNumber(c, reader, 28)
+	s.checkObjectNumber(reader, 28)
 }
 
-func (s *UploadPackSuite) TestUploadPackWithContext(c *C) {
+func (s *UploadPackSuite) TestUploadPackWithContext() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	s.NoError(err)
+	s.NotNil(info)
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.UploadPack(ctx, req)
-	c.Assert(err, NotNil)
-	c.Assert(reader, IsNil)
+	s.NotNil(err)
+	s.Nil(reader)
 }
 
-func (s *UploadPackSuite) TestUploadPackWithContextOnRead(c *C) {
+func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	s.NoError(err)
+	s.NotNil(info)
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.UploadPack(ctx, req)
-	c.Assert(err, IsNil)
-	c.Assert(reader, NotNil)
+	s.NoError(err)
+	s.NotNil(reader)
 
 	cancel()
 
 	_, err = io.Copy(io.Discard, reader)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 
 	err = reader.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	err = r.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *UploadPackSuite) TestUploadPackFull(c *C) {
+func (s *UploadPackSuite) TestUploadPackFull() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	s.NoError(err)
+	s.NotNil(info)
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	s.checkObjectNumber(c, reader, 28)
+	s.checkObjectNumber(reader, 28)
 }
 
-func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
+func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
@@ -190,74 +190,74 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq(c *C) {
 	req.Capabilities.Set(capability.Sideband64k)
 
 	_, err = r.UploadPack(context.Background(), req)
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *UploadPackSuite) TestUploadPackNoChanges(c *C) {
+func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, Equals, transport.ErrEmptyUploadPackRequest)
-	c.Assert(reader, IsNil)
+	s.Equal(err, transport.ErrEmptyUploadPackRequest)
+	s.Nil(reader)
 }
 
-func (s *UploadPackSuite) TestUploadPackMulti(c *C) {
+func (s *UploadPackSuite) TestUploadPackMulti() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	s.checkObjectNumber(c, reader, 31)
+	s.checkObjectNumber(reader, 31)
 }
 
-func (s *UploadPackSuite) TestUploadPackPartial(c *C) {
+func (s *UploadPackSuite) TestUploadPackPartial() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	s.checkObjectNumber(c, reader, 4)
+	s.checkObjectNumber(reader, 4)
 }
 
-func (s *UploadPackSuite) TestFetchError(c *C) {
+func (s *UploadPackSuite) TestFetchError() {
 	r, err := s.Client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	req := packp.NewUploadPackRequest()
 	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	reader, err := r.UploadPack(context.Background(), req)
-	c.Assert(err, NotNil)
-	c.Assert(reader, IsNil)
+	s.NotNil(err)
+	s.Nil(reader)
 
 	//XXX: We do not test Close error, since implementations might return
 	//     different errors if a previous error was found.
 }
 
-func (s *UploadPackSuite) checkObjectNumber(c *C, r io.Reader, n int) {
+func (s *UploadPackSuite) checkObjectNumber(r io.Reader, n int) {
 	b, err := io.ReadAll(r)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	buf := bytes.NewBuffer(b)
 	storage := memory.NewStorage()
 	err = packfile.UpdateObjectStorage(storage, buf)
-	c.Assert(err, IsNil)
-	c.Assert(len(storage.Objects), Equals, n)
+	s.NoError(err)
+	s.Len(storage.Objects, n)
 }
