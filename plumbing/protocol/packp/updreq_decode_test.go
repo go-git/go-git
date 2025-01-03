@@ -3,151 +3,156 @@ package packp
 import (
 	"bytes"
 	"io"
+	"regexp"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type UpdReqDecodeSuite struct{}
+type UpdReqDecodeSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&UpdReqDecodeSuite{})
+func TestUpdReqDecodeSuite(t *testing.T) {
+	suite.Run(t, new(UpdReqDecodeSuite))
+}
 
-func (s *UpdReqDecodeSuite) TestEmpty(c *C) {
+func (s *UpdReqDecodeSuite) TestEmpty() {
 	r := NewReferenceUpdateRequest()
 	var buf bytes.Buffer
-	c.Assert(r.Decode(&buf), Equals, ErrEmpty)
-	c.Assert(r, DeepEquals, NewReferenceUpdateRequest())
+	s.Equal(ErrEmpty, r.Decode(&buf))
+	s.Equal(NewReferenceUpdateRequest(), r)
 }
 
-func (s *UpdReqDecodeSuite) TestInvalidPktlines(c *C) {
+func (s *UpdReqDecodeSuite) TestInvalidPktlines() {
 	r := NewReferenceUpdateRequest()
 	input := bytes.NewReader([]byte("xxxxxxxxxx"))
-	c.Assert(r.Decode(input), ErrorMatches, "invalid pkt-len found")
+	s.Regexp(regexp.MustCompile("invalid pkt-len found"), r.Decode(input))
 }
 
-func (s *UpdReqDecodeSuite) TestInvalidShadow(c *C) {
+func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 	payloads := []string{
 		"shallow",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid shallow line length: expected 48, got 7$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 7$")
 
 	payloads = []string{
 		"shallow ",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid shallow line length: expected 48, got 8$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 8$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec65",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid shallow line length: expected 48, got 44$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 44$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e54",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid shallow line length: expected 48, got 49$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 49$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584eu",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid shallow object id: invalid hash: .*")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow object id: invalid hash: .*")
 }
 
-func (s *UpdReqDecodeSuite) TestMalformedCommand(c *C) {
+func (s *UpdReqDecodeSuite) TestMalformedCommand() {
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5x2ecf0ef2c2dffb796033e5a02219af86ec6584e5xmyref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: malformed command: EOF$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: malformed command: EOF$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5x2ecf0ef2c2dffb796033e5a02219af86ec6584e5xmyref",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: malformed command: EOF$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: malformed command: EOF$")
 }
 
-func (s *UpdReqDecodeSuite) TestInvalidCommandInvalidHash(c *C) {
+func (s *UpdReqDecodeSuite) TestInvalidCommandInvalidHash() {
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid old object id: invalid hash size: expected 40, got 39$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid old object id: invalid hash size: expected 40, got 39$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid new object id: invalid hash size: expected 40, got 39$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash size: expected 40, got 39$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86e 2ecf0ef2c2dffb796033e5a02219af86ec6 m\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid command and capabilities line length: expected at least 84, got 72$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid command and capabilities line length: expected at least 84, got 72$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584eu 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid old object id: invalid hash: .*$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid old object id: invalid hash: .*$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584eu myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid new object id: invalid hash: .*$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash: .*$")
 }
 
-func (s *UpdReqDecodeSuite) TestInvalidCommandMissingNullDelimiter(c *C) {
+func (s *UpdReqDecodeSuite) TestInvalidCommandMissingNullDelimiter() {
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "capabilities delimiter not found")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "capabilities delimiter not found")
 }
 
-func (s *UpdReqDecodeSuite) TestInvalidCommandMissingName(c *C) {
+func (s *UpdReqDecodeSuite) TestInvalidCommandMissingName() {
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid command and capabilities line length: expected at least 84, got 82$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid command and capabilities line length: expected at least 84, got 82$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 \x00",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid command and capabilities line length: expected at least 84, got 83$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid command and capabilities line length: expected at least 84, got 83$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid command line length: expected at least 83, got 81$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid command line length: expected at least 83, got 81$")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 ",
 		"",
 	}
-	s.testDecoderErrorMatches(c, toPktLines(c, payloads), "^malformed request: invalid command line length: expected at least 83, got 82$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid command line length: expected at least 83, got 82$")
 }
 
-func (s *UpdReqDecodeSuite) TestOneUpdateCommand(c *C) {
+func (s *UpdReqDecodeSuite) TestOneUpdateCommand() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
@@ -163,10 +168,10 @@ func (s *UpdReqDecodeSuite) TestOneUpdateCommand(c *C) {
 		"",
 	}
 
-	s.testDecodeOkExpected(c, expected, payloads)
+	s.testDecodeOkExpected(expected, payloads)
 }
 
-func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
+func (s *UpdReqDecodeSuite) TestMultipleCommands() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
@@ -185,10 +190,10 @@ func (s *UpdReqDecodeSuite) TestMultipleCommands(c *C) {
 		"",
 	}
 
-	s.testDecodeOkExpected(c, expected, payloads)
+	s.testDecodeOkExpected(expected, payloads)
 }
 
-func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
+func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
@@ -208,10 +213,10 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities(c *C) {
 		"",
 	}
 
-	s.testDecodeOkExpected(c, expected, payloads)
+	s.testDecodeOkExpected(expected, payloads)
 }
 
-func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
+func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
@@ -233,10 +238,10 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow(c *C) {
 		"",
 	}
 
-	s.testDecodeOkExpected(c, expected, payloads)
+	s.testDecodeOkExpected(expected, payloads)
 }
 
-func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
+func (s *UpdReqDecodeSuite) TestWithPackfile() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
@@ -255,64 +260,64 @@ func (s *UpdReqDecodeSuite) TestWithPackfile(c *C) {
 	var buf bytes.Buffer
 	for _, p := range payloads {
 		if p == "" {
-			c.Assert(pktline.WriteFlush(&buf), IsNil)
+			s.Nil(pktline.WriteFlush(&buf))
 		} else {
 			_, err := pktline.WriteString(&buf, p)
-			c.Assert(err, IsNil)
+			s.NoError(err)
 		}
 	}
 	buf.Write(packfileContent)
 
-	s.testDecodeOkRaw(c, expected, buf.Bytes())
+	s.testDecodeOkRaw(expected, buf.Bytes())
 }
 
-func (s *UpdReqDecodeSuite) testDecoderErrorMatches(c *C, input io.Reader, pattern string) {
+func (s *UpdReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
 	r := NewReferenceUpdateRequest()
-	c.Assert(r.Decode(input), ErrorMatches, pattern)
+	s.Regexp(regexp.MustCompile(pattern), r.Decode(input))
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOK(c *C, payloads []string) *ReferenceUpdateRequest {
+func (s *UpdReqDecodeSuite) testDecodeOK(payloads []string) *ReferenceUpdateRequest {
 	var buf bytes.Buffer
 	for _, p := range payloads {
 		if p == "" {
-			c.Assert(pktline.WriteFlush(&buf), IsNil)
+			s.NoError(pktline.WriteFlush(&buf))
 		} else {
 			_, err := pktline.WriteString(&buf, p)
-			c.Assert(err, IsNil)
+			s.NoError(err)
 		}
 	}
 
 	r := NewReferenceUpdateRequest()
-	c.Assert(r.Decode(&buf), IsNil)
+	s.Nil(r.Decode(&buf))
 
 	return r
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOkRaw(c *C, expected *ReferenceUpdateRequest, raw []byte) {
+func (s *UpdReqDecodeSuite) testDecodeOkRaw(expected *ReferenceUpdateRequest, raw []byte) {
 	req := NewReferenceUpdateRequest()
-	c.Assert(req.Decode(bytes.NewBuffer(raw)), IsNil)
-	c.Assert(req.Packfile, NotNil)
-	s.compareReaders(c, req.Packfile, expected.Packfile)
+	s.Nil(req.Decode(bytes.NewBuffer(raw)))
+	s.NotNil(req.Packfile)
+	s.compareReaders(req.Packfile, expected.Packfile)
 	req.Packfile = nil
 	expected.Packfile = nil
-	c.Assert(req, DeepEquals, expected)
+	s.Equal(expected, req)
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOkExpected(c *C, expected *ReferenceUpdateRequest, payloads []string) {
-	req := s.testDecodeOK(c, payloads)
-	c.Assert(req.Packfile, NotNil)
-	s.compareReaders(c, req.Packfile, expected.Packfile)
+func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *ReferenceUpdateRequest, payloads []string) {
+	req := s.testDecodeOK(payloads)
+	s.NotNil(req.Packfile)
+	s.compareReaders(req.Packfile, expected.Packfile)
 	req.Packfile = nil
 	expected.Packfile = nil
-	c.Assert(req, DeepEquals, expected)
+	s.Equal(expected, req)
 }
 
-func (s *UpdReqDecodeSuite) compareReaders(c *C, a io.ReadCloser, b io.ReadCloser) {
+func (s *UpdReqDecodeSuite) compareReaders(a io.ReadCloser, b io.ReadCloser) {
 	pba, err := io.ReadAll(a)
-	c.Assert(err, IsNil)
-	c.Assert(a.Close(), IsNil)
+	s.NoError(err)
+	s.NoError(a.Close())
 	pbb, err := io.ReadAll(b)
-	c.Assert(err, IsNil)
-	c.Assert(b.Close(), IsNil)
-	c.Assert(pba, DeepEquals, pbb)
+	s.NoError(err)
+	s.NoError(b.Close())
+	s.Equal(pbb, pba)
 }

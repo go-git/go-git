@@ -2,17 +2,21 @@ package packp
 
 import (
 	"bytes"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type ShallowUpdateSuite struct{}
+type ShallowUpdateSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&ShallowUpdateSuite{})
+func TestShallowUpdateSuite(t *testing.T) {
+	suite.Run(t, new(ShallowUpdateSuite))
+}
 
-func (s *ShallowUpdateSuite) TestDecodeWithLF(c *C) {
+func (s *ShallowUpdateSuite) TestDecodeWithLF() {
 	raw := "" +
 		"0035shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
 		"0035shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" +
@@ -20,19 +24,19 @@ func (s *ShallowUpdateSuite) TestDecodeWithLF(c *C) {
 
 	su := &ShallowUpdate{}
 	err := su.Decode(bytes.NewBufferString(raw))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	plumbing.HashesSort(su.Shallows)
 
-	c.Assert(su.Unshallows, HasLen, 0)
-	c.Assert(su.Shallows, HasLen, 2)
-	c.Assert(su.Shallows, DeepEquals, []plumbing.Hash{
+	s.Len(su.Unshallows, 0)
+	s.Len(su.Shallows, 2)
+	s.Equal([]plumbing.Hash{
 		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-	})
+	}, su.Shallows)
 }
 
-func (s *ShallowUpdateSuite) TestDecode(c *C) {
+func (s *ShallowUpdateSuite) TestDecode() {
 	raw := "" +
 		"0034shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
 		"0034shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" +
@@ -40,19 +44,19 @@ func (s *ShallowUpdateSuite) TestDecode(c *C) {
 
 	su := &ShallowUpdate{}
 	err := su.Decode(bytes.NewBufferString(raw))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	plumbing.HashesSort(su.Shallows)
 
-	c.Assert(su.Unshallows, HasLen, 0)
-	c.Assert(su.Shallows, HasLen, 2)
-	c.Assert(su.Shallows, DeepEquals, []plumbing.Hash{
+	s.Len(su.Unshallows, 0)
+	s.Len(su.Shallows, 2)
+	s.Equal([]plumbing.Hash{
 		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-	})
+	}, su.Shallows)
 }
 
-func (s *ShallowUpdateSuite) TestDecodeUnshallow(c *C) {
+func (s *ShallowUpdateSuite) TestDecodeUnshallow() {
 	raw := "" +
 		"0036unshallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
 		"0036unshallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" +
@@ -60,36 +64,36 @@ func (s *ShallowUpdateSuite) TestDecodeUnshallow(c *C) {
 
 	su := &ShallowUpdate{}
 	err := su.Decode(bytes.NewBufferString(raw))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	plumbing.HashesSort(su.Unshallows)
 
-	c.Assert(su.Shallows, HasLen, 0)
-	c.Assert(su.Unshallows, HasLen, 2)
-	c.Assert(su.Unshallows, DeepEquals, []plumbing.Hash{
+	s.Len(su.Shallows, 0)
+	s.Len(su.Unshallows, 2)
+	s.Equal([]plumbing.Hash{
 		plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-	})
+	}, su.Unshallows)
 }
 
-func (s *ShallowUpdateSuite) TestDecodeMalformed(c *C) {
+func (s *ShallowUpdateSuite) TestDecodeMalformed() {
 	raw := "" +
 		"0035unshallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
 		"0000"
 
 	su := &ShallowUpdate{}
 	err := su.Decode(bytes.NewBufferString(raw))
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *ShallowUpdateSuite) TestEncodeEmpty(c *C) {
+func (s *ShallowUpdateSuite) TestEncodeEmpty() {
 	su := &ShallowUpdate{}
 	buf := bytes.NewBuffer(nil)
-	c.Assert(su.Encode(buf), IsNil)
-	c.Assert(buf.String(), Equals, "0000")
+	s.Nil(su.Encode(buf))
+	s.Equal("0000", buf.String())
 }
 
-func (s *ShallowUpdateSuite) TestEncode(c *C) {
+func (s *ShallowUpdateSuite) TestEncode() {
 	su := &ShallowUpdate{
 		Shallows: []plumbing.Hash{
 			plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -101,7 +105,7 @@ func (s *ShallowUpdateSuite) TestEncode(c *C) {
 		},
 	}
 	buf := bytes.NewBuffer(nil)
-	c.Assert(su.Encode(buf), IsNil)
+	s.Nil(su.Encode(buf))
 
 	expected := "" +
 		"0035shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
@@ -110,10 +114,10 @@ func (s *ShallowUpdateSuite) TestEncode(c *C) {
 		"0037unshallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" +
 		"0000"
 
-	c.Assert(buf.String(), Equals, expected)
+	s.Equal(expected, buf.String())
 }
 
-func (s *ShallowUpdateSuite) TestEncodeShallow(c *C) {
+func (s *ShallowUpdateSuite) TestEncodeShallow() {
 	su := &ShallowUpdate{
 		Shallows: []plumbing.Hash{
 			plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -121,17 +125,17 @@ func (s *ShallowUpdateSuite) TestEncodeShallow(c *C) {
 		},
 	}
 	buf := bytes.NewBuffer(nil)
-	c.Assert(su.Encode(buf), IsNil)
+	s.Nil(su.Encode(buf))
 
 	expected := "" +
 		"0035shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
 		"0035shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" +
 		"0000"
 
-	c.Assert(buf.String(), Equals, expected)
+	s.Equal(expected, buf.String())
 }
 
-func (s *ShallowUpdateSuite) TestEncodeUnshallow(c *C) {
+func (s *ShallowUpdateSuite) TestEncodeUnshallow() {
 	su := &ShallowUpdate{
 		Unshallows: []plumbing.Hash{
 			plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -139,12 +143,12 @@ func (s *ShallowUpdateSuite) TestEncodeUnshallow(c *C) {
 		},
 	}
 	buf := bytes.NewBuffer(nil)
-	c.Assert(su.Encode(buf), IsNil)
+	s.Nil(su.Encode(buf))
 
 	expected := "" +
 		"0037unshallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
 		"0037unshallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" +
 		"0000"
 
-	c.Assert(buf.String(), Equals, expected)
+	s.Equal(expected, buf.String())
 }
