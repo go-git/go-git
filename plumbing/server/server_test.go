@@ -1,8 +1,6 @@
 package server_test
 
 import (
-	"testing"
-
 	"github.com/go-git/go-git/v5/internal/transport/test"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/server"
@@ -12,13 +10,9 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
 type BaseSuite struct {
-	fixtures.Suite
 	test.ReceivePackSuite
 
 	loader       server.MapLoader
@@ -27,7 +21,7 @@ type BaseSuite struct {
 	asClient     bool
 }
 
-func (s *BaseSuite) SetUpSuite(c *C) {
+func (s *BaseSuite) SetupSuite() {
 	s.loader = server.MapLoader{}
 	if s.asClient {
 		s.client = server.NewClient(s.loader)
@@ -39,26 +33,27 @@ func (s *BaseSuite) SetUpSuite(c *C) {
 	transport.Register("file", s.client)
 }
 
-func (s *BaseSuite) TearDownSuite(c *C) {
+func (s *BaseSuite) TearDownSuite() {
 	if s.clientBackup == nil {
 		transport.Unregister("file")
 	} else {
 		transport.Register("file", s.clientBackup)
 	}
+	fixtures.Clean()
 }
 
-func (s *BaseSuite) prepareRepositories(c *C) {
+func (s *BaseSuite) prepareRepositories() {
 	var err error
 
 	fs := fixtures.Basic().One().DotGit()
 	s.Endpoint, err = transport.NewEndpoint(fs.Root())
-	c.Assert(err, IsNil)
+	s.Nil(err)
 	s.loader[s.Endpoint.String()] = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	s.EmptyEndpoint, err = transport.NewEndpoint("/empty.git")
-	c.Assert(err, IsNil)
+	s.Nil(err)
 	s.loader[s.EmptyEndpoint.String()] = memory.NewStorage()
 
 	s.NonExistentEndpoint, err = transport.NewEndpoint("/non-existent.git")
-	c.Assert(err, IsNil)
+	s.Nil(err)
 }

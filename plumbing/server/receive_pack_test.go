@@ -2,42 +2,40 @@ package server_test
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
 type ReceivePackSuite struct {
 	BaseSuite
 }
 
-var _ = Suite(&ReceivePackSuite{})
-
-func (s *ReceivePackSuite) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpSuite(c)
+func (s *ReceivePackSuite) SetupSuite() {
+	s.BaseSuite.SetupSuite()
 	s.ReceivePackSuite.Client = s.client
 }
 
-func (s *ReceivePackSuite) SetUpTest(c *C) {
-	s.prepareRepositories(c)
+func (s *ReceivePackSuite) SetupTest() {
+	s.prepareRepositories()
 }
 
-func (s *ReceivePackSuite) TearDownTest(c *C) {
-	s.Suite.TearDownSuite(c)
+func (s *ReceivePackSuite) TearDownTest() {
+	s.BaseSuite.TearDownSuite()
 }
 
 // Overwritten, server returns error earlier.
-func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists(c *C) {
+func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewReceivePackSession(s.NonExistentEndpoint, s.EmptyAuth)
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(r, IsNil)
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+	s.Nil(r)
 }
 
-func (s *ReceivePackSuite) TestReceivePackWithNilPackfile(c *C) {
+func (s *ReceivePackSuite) TestReceivePackWithNilPackfile() {
 	endpoint := s.Endpoint
 	auth := s.EmptyAuth
 
@@ -49,16 +47,16 @@ func (s *ReceivePackSuite) TestReceivePackWithNilPackfile(c *C) {
 	// default is already nil, but be explicit since this is what the test is for
 	req.Packfile = nil
 
-	comment := Commentf(
+	comment := fmt.Sprintf(
 		"failed with ep=%s fixture=%s",
 		endpoint.String(), fixture.URL,
 	)
 
 	r, err := s.Client.NewReceivePackSession(endpoint, auth)
-	c.Assert(err, IsNil, comment)
-	defer func() { c.Assert(r.Close(), IsNil, comment) }()
+	s.Nil(err, comment)
+	defer func() { s.Nil(r.Close(), comment) }()
 
 	report, err := r.ReceivePack(context.Background(), req)
-	c.Assert(report, IsNil, comment)
-	c.Assert(err, NotNil, comment)
+	s.Nil(report, comment)
+	s.NotNil(err, comment)
 }
