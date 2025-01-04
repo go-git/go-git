@@ -1,30 +1,35 @@
 package git
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/internal/transport/test"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
+func TestReceivePackSuite(t *testing.T) {
+	suite.Run(t, new(ReceivePackSuite))
+}
+
 type ReceivePackSuite struct {
-	test.ReceivePackSuite
+	rps test.ReceivePackSuite
 	BaseSuite
 }
 
-var _ = Suite(&ReceivePackSuite{})
+func (s *ReceivePackSuite) SetupTest() {
+	s.BaseSuite.SetupTest()
 
-func (s *ReceivePackSuite) SetUpTest(c *C) {
-	s.BaseSuite.SetUpTest(c)
+	s.rps.SetS(s)
+	s.rps.Client = DefaultClient
+	s.rps.Endpoint = s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	s.rps.EmptyEndpoint = s.prepareRepository(fixtures.ByTag("empty").One(), "empty.git")
+	s.rps.NonExistentEndpoint = s.newEndpoint("non-existent.git")
 
-	s.ReceivePackSuite.Client = DefaultClient
-	s.ReceivePackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	s.ReceivePackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
-	s.ReceivePackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
-
-	s.StartDaemon(c)
+	s.StartDaemon()
 }
 
-func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty(c *C) {
-	//This test from BaseSuite is flaky, so it's disabled until we figure out a solution.
+func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
+	// This test from BaseSuite is flaky, so it's disabled until we figure out a solution.
 }

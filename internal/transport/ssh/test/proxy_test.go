@@ -14,35 +14,40 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	ggssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	stdssh "golang.org/x/crypto/ssh"
-	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type ProxyEnvFixtureSuite struct {
+	fixtures.Suite
+}
 
 type ProxyEnvSuite struct {
-	fixtures.Suite
+	suite.Suite
+	ProxyEnvFixtureSuite
 	port int
 	base string
 }
 
-var _ = Suite(&ProxyEnvSuite{})
+func TestProxyEnvSuite(t *testing.T) {
+	suite.Run(t, new(ProxyEnvSuite))
+}
 
 var socksProxiedRequests int32
 
 // This test tests proxy support via an env var, i.e. `ALL_PROXY`.
 // Its located in a separate package because golang caches the value
 // of proxy env vars leading to misleading/unexpected test results.
-func (s *ProxyEnvSuite) TestCommand(c *C) {
+func (s *ProxyEnvSuite) TestCommand() {
 	socksListener, err := net.Listen("tcp", "localhost:0")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	socksServer, err := socks5.New(&socks5.Config{
 		Rules: TestProxyRule{},
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	go func() {
 		socksServer.Serve(socksListener)
 	}()
@@ -51,56 +56,56 @@ func (s *ProxyEnvSuite) TestCommand(c *C) {
 	defer os.Unsetenv("ALL_PROXY")
 
 	sshListener, err := net.Listen("tcp", "localhost:0")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	sshServer := &ssh.Server{Handler: HandlerSSH}
 	go func() {
 		log.Fatal(sshServer.Serve(sshListener))
 	}()
 
 	s.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp(c.MkDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
-	c.Assert(err, IsNil)
+	s.base, err = os.MkdirTemp("", fmt.Sprintf("go-git-ssh-%d", s.port))
+	s.NoError(err)
 
 	ggssh.DefaultAuthBuilder = func(user string) (ggssh.AuthMethod, error) {
 		return &ggssh.Password{User: user}, nil
 	}
 
-	ep := s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	c.Assert(err, IsNil)
+	ep := s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	s.NoError(err)
 
 	client := ggssh.NewClient(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
 	r, err := client.NewUploadPackSession(ep, nil)
-	c.Assert(err, IsNil)
-	defer func() { c.Assert(r.Close(), IsNil) }()
+	s.NoError(err)
+	defer func() { s.Nil(r.Close()) }()
 
 	info, err := r.AdvertisedReferences()
-	c.Assert(err, IsNil)
-	c.Assert(info, NotNil)
+	s.NoError(err)
+	s.NotNil(info)
 	proxyUsed := atomic.LoadInt32(&socksProxiedRequests) > 0
-	c.Assert(proxyUsed, Equals, true)
+	s.True(proxyUsed)
 }
 
-func (s *ProxyEnvSuite) prepareRepository(c *C, f *fixtures.Fixture, name string) *transport.Endpoint {
+func (s *ProxyEnvSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	path := filepath.Join(s.base, name)
 	err = os.Rename(fs.Root(), path)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	return s.newEndpoint(c, name)
+	return s.newEndpoint(name)
 }
 
-func (s *ProxyEnvSuite) newEndpoint(c *C, name string) *transport.Endpoint {
+func (s *ProxyEnvSuite) newEndpoint(name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf(
 		"ssh://git@localhost:%d/%s/%s", s.port, filepath.ToSlash(s.base), name,
 	))
 
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return ep
 }
 
