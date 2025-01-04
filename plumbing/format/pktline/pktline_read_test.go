@@ -11,8 +11,6 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/stretchr/testify/suite"
-
-	. "gopkg.in/check.v1"
 )
 
 type SuiteReader struct {
@@ -145,7 +143,7 @@ func (s *SuiteReader) TestSkip() {
 			fmt.Sprintf("scan error = %s", err))
 
 		s.Equal(test.expected, p,
-			Commentf("\nin = %.20q\nout = %.20q\nexp = %.20q",
+			fmt.Sprintf("\nin = %.20q\nout = %.20q\nexp = %.20q",
 				test.input, p, test.expected))
 	}
 }
