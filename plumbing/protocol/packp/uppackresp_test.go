@@ -7,15 +7,18 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type UploadPackResponseSuite struct{}
+type UploadPackResponseSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&UploadPackResponseSuite{})
+func TestUploadPackResponseSuite(t *testing.T) {
+	suite.Run(t, new(UploadPackResponseSuite))
+}
 
-func (s *UploadPackResponseSuite) TestDecodeNAK(c *C) {
+func (s *UploadPackResponseSuite) TestDecodeNAK() {
 	raw := "0008NAK\nPACK"
 
 	req := NewUploadPackRequest()
@@ -23,14 +26,14 @@ func (s *UploadPackResponseSuite) TestDecodeNAK(c *C) {
 	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	pack, err := io.ReadAll(res)
-	c.Assert(err, IsNil)
-	c.Assert(pack, DeepEquals, []byte("PACK"))
+	s.NoError(err)
+	s.Equal([]byte("PACK"), pack)
 }
 
-func (s *UploadPackResponseSuite) TestDecodeDepth(c *C) {
+func (s *UploadPackResponseSuite) TestDecodeDepth() {
 	raw := "00000008NAK\nPACK"
 
 	req := NewUploadPackRequest()
@@ -40,14 +43,14 @@ func (s *UploadPackResponseSuite) TestDecodeDepth(c *C) {
 	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	pack, err := io.ReadAll(res)
-	c.Assert(err, IsNil)
-	c.Assert(pack, DeepEquals, []byte("PACK"))
+	s.NoError(err)
+	s.Equal([]byte("PACK"), pack)
 }
 
-func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
+func (s *UploadPackResponseSuite) TestDecodeMalformed() {
 	raw := "00000008ACK\nPACK"
 
 	req := NewUploadPackRequest()
@@ -57,10 +60,10 @@ func (s *UploadPackResponseSuite) TestDecodeMalformed(c *C) {
 	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBufferString(raw)))
-	c.Assert(err, NotNil)
+	s.NotNil(err)
 }
 
-func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
+func (s *UploadPackResponseSuite) TestDecodeMultiACK() {
 	req := NewUploadPackRequest()
 	req.Capabilities.Set(capability.MultiACK)
 
@@ -68,10 +71,10 @@ func (s *UploadPackResponseSuite) TestDecodeMultiACK(c *C) {
 	defer res.Close()
 
 	err := res.Decode(io.NopCloser(bytes.NewBuffer(nil)))
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func (s *UploadPackResponseSuite) TestReadNoDecode(c *C) {
+func (s *UploadPackResponseSuite) TestReadNoDecode() {
 	req := NewUploadPackRequest()
 	req.Capabilities.Set(capability.MultiACK)
 
@@ -79,15 +82,15 @@ func (s *UploadPackResponseSuite) TestReadNoDecode(c *C) {
 	defer res.Close()
 
 	n, err := res.Read(nil)
-	c.Assert(err, Equals, ErrUploadPackResponseNotDecoded)
-	c.Assert(n, Equals, 0)
+	s.ErrorIs(err, ErrUploadPackResponseNotDecoded)
+	s.Equal(0, n)
 }
 
-func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
+func (s *UploadPackResponseSuite) TestEncodeNAK() {
 	pf := io.NopCloser(bytes.NewBuffer([]byte("[PACK]")))
 	req := NewUploadPackRequest()
 	res := NewUploadPackResponseWithPackfile(req, pf)
-	defer func() { c.Assert(res.Close(), IsNil) }()
+	defer func() { s.Nil(res.Close()) }()
 
 	go func() {
 		req.UploadPackCommands <- UploadPackCommand{
@@ -97,19 +100,19 @@ func (s *UploadPackResponseSuite) TestEncodeNAK(c *C) {
 		close(req.UploadPackCommands)
 	}()
 	b := bytes.NewBuffer(nil)
-	c.Assert(res.Encode(b), IsNil)
+	s.Nil(res.Encode(b))
 
 	expected := "0008NAK\n[PACK]"
-	c.Assert(b.String(), Equals, expected)
+	s.Equal(expected, b.String())
 }
 
-func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
+func (s *UploadPackResponseSuite) TestEncodeDepth() {
 	pf := io.NopCloser(bytes.NewBuffer([]byte("PACK")))
 	req := NewUploadPackRequest()
 	req.Depth = DepthCommits(1)
 
 	res := NewUploadPackResponseWithPackfile(req, pf)
-	defer func() { c.Assert(res.Close(), IsNil) }()
+	defer func() { s.Nil(res.Close()) }()
 
 	go func() {
 		req.UploadPackCommands <- UploadPackCommand{
@@ -119,19 +122,19 @@ func (s *UploadPackResponseSuite) TestEncodeDepth(c *C) {
 		close(req.UploadPackCommands)
 	}()
 	b := bytes.NewBuffer(nil)
-	c.Assert(res.Encode(b), IsNil)
+	s.Nil(res.Encode(b))
 
 	expected := "00000008NAK\nPACK"
-	c.Assert(b.String(), Equals, expected)
+	s.Equal(expected, b.String())
 }
 
-func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
+func (s *UploadPackResponseSuite) TestEncodeMultiACK() {
 	pf := io.NopCloser(bytes.NewBuffer([]byte("[PACK]")))
 	req := NewUploadPackRequest()
 	req.Capabilities.Set(capability.MultiACK)
 
 	res := NewUploadPackResponseWithPackfile(req, pf)
-	defer func() { c.Assert(res.Close(), IsNil) }()
+	defer func() { s.Nil(res.Close()) }()
 	go func() {
 		req.UploadPackCommands <- UploadPackCommand{
 			Acks: []UploadPackRequestAck{
@@ -146,13 +149,13 @@ func (s *UploadPackResponseSuite) TestEncodeMultiACK(c *C) {
 		close(req.UploadPackCommands)
 	}()
 	b := bytes.NewBuffer(nil)
-	c.Assert(res.Encode(b), IsNil)
+	s.Nil(res.Encode(b))
 
 	expected := "003aACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82 continue\n" +
 		"0008NAK\n" +
 		"0031ACK 5dc01c595e6c6ec9ccda4f6f69c131c0dd945f82\n" +
 		"[PACK]"
-	c.Assert(b.String(), Equals, expected)
+	s.Equal(expected, b.String())
 }
 
 func FuzzDecoder(f *testing.F) {
