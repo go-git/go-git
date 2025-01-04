@@ -2007,6 +2007,66 @@ func (s *WorktreeSuite) TestAddGlob(c *C) {
 	c.Assert(file.Worktree, Equals, Unmodified)
 }
 
+func (s *WorktreeSuite) TestAddFilenameStartingWithDot(c *C) {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	c.Assert(err, IsNil)
+
+	idx, err := w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 9)
+
+	err = util.WriteFile(w.Filesystem, "qux", []byte("QUX"), 0o755)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(w.Filesystem, "baz", []byte("BAZ"), 0o755)
+	c.Assert(err, IsNil)
+	err = util.WriteFile(w.Filesystem, "foo/bar/baz", []byte("BAZ"), 0o755)
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("./qux")
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("./baz")
+	c.Assert(err, IsNil)
+
+	_, err = w.Add("foo/bar/../bar/./baz")
+	c.Assert(err, IsNil)
+
+	idx, err = w.r.Storer.Index()
+	c.Assert(err, IsNil)
+	c.Assert(idx.Entries, HasLen, 12)
+
+	e, err := idx.Entry("qux")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	e, err = idx.Entry("baz")
+	c.Assert(err, IsNil)
+	c.Assert(e.Mode, Equals, filemode.Executable)
+
+	status, err := w.Status()
+	c.Assert(err, IsNil)
+	c.Assert(status, HasLen, 3)
+
+	file := status.File("qux")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+
+	file = status.File("baz")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+
+	file = status.File("foo/bar/baz")
+	c.Assert(file.Staging, Equals, Added)
+	c.Assert(file.Worktree, Equals, Unmodified)
+
+}
+
 func (s *WorktreeSuite) TestAddGlobErrorNoMatches(c *C) {
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	w, _ := r.Worktree()
