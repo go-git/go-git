@@ -4,17 +4,22 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/internal/fsnoder"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-type IterSuite struct{}
+type IterSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&IterSuite{})
+func TestIterSuite(t *testing.T) {
+	suite.Run(t, new(IterSuite))
+}
 
 // A test is a list of operations we want to perform on an iterator and
 // their expected results.
@@ -30,10 +35,10 @@ var _ = Suite(&IterSuite{})
 //
 // For instance:
 //
-//     t := test{
-//         operations: "ns",
-//         expected:   "a a/b"
-//     }
+//	t := test{
+//	    operations: "ns",
+//	    expected:   "a a/b"
+//	}
 //
 // means:
 //
@@ -50,7 +55,7 @@ type test struct {
 // Runs a test on the provided iterator, checking that the names of the
 // returned values are correct.  If not, the treeDescription value is
 // printed along with information about mismatch.
-func (t test) run(c *C, iter *merkletrie.Iter,
+func (t test) run(s *IterSuite, iter *merkletrie.Iter,
 	treeDescription string, testNumber int) {
 
 	expectedChunks := strings.Split(t.expected, " ")
@@ -59,38 +64,38 @@ func (t test) run(c *C, iter *merkletrie.Iter,
 	}
 
 	if len(t.operations) < len(expectedChunks) {
-		c.Fatalf("malformed test %d: not enough operations", testNumber)
+		s.T().Logf("malformed test %d: not enough operations", testNumber)
 		return
 	}
 
 	var obtained noder.Path
 	var err error
 	for i, b := range t.operations {
-		comment := Commentf("\ntree: %q\ntest #%d (%q)\noperation #%d (%q)",
+		comment := fmt.Sprintf("\ntree: %q\ntest #%d (%q)\noperation #%d (%q)",
 			treeDescription, testNumber, t.operations, i, t.operations[i])
 
 		switch t.operations[i] {
 		case 'n':
 			obtained, err = iter.Next()
 			if err != io.EOF {
-				c.Assert(err, IsNil)
+				s.NoError(err)
 			}
 		case 's':
 			obtained, err = iter.Step()
 			if err != io.EOF {
-				c.Assert(err, IsNil)
+				s.NoError(err)
 			}
 		default:
-			c.Fatalf("unknown operation at test %d, operation %d (%c)\n",
+			s.T().Errorf("unknown operation at test %d, operation %d (%c)\n",
 				testNumber, i, b)
 		}
 		if i >= len(expectedChunks) {
-			c.Assert(err, Equals, io.EOF, comment)
+			s.Equal(io.EOF, err, comment)
 			continue
 		}
 
-		c.Assert(err, IsNil, comment)
-		c.Assert(obtained.String(), Equals, expectedChunks[i], comment)
+		s.NoError(err, comment)
+		s.Equal(expectedChunks[i], obtained.String(), comment)
 	}
 }
 
@@ -99,21 +104,21 @@ func (t test) run(c *C, iter *merkletrie.Iter,
 //
 // Example:
 //
-//            .
-//            |
-//        ---------
-//        |   |   |
-//        a   b   c
-//            |
-//            z
+//	           .
+//	           |
+//	       ---------
+//	       |   |   |
+//	       a   b   c
+//	           |
+//	           z
 //
-//    var foo testCollection = {
-// 	      tree: "(a<> b(z<>) c<>)"
-//     	  tests: []test{
-//            {operations: "nns", expected: "a b b/z"},
-//            {operations: "nnn", expected: "a b c"},
-//		  },
-//    }
+//	   var foo testCollection = {
+//		      tree: "(a<> b(z<>) c<>)"
+//	    	  tests: []test{
+//	           {operations: "nns", expected: "a b b/z"},
+//	           {operations: "nnn", expected: "a b c"},
+//			  },
+//	   }
 //
 // A new iterator will be build for each test.
 type testsCollection struct {
@@ -122,18 +127,18 @@ type testsCollection struct {
 }
 
 // Executes all the tests in a testsCollection.
-func (tc testsCollection) run(c *C) {
+func (tc testsCollection) run(s *IterSuite) {
 	root, err := fsnoder.New(tc.tree)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	for i, t := range tc.tests {
 		iter, err := merkletrie.NewIter(root)
-		c.Assert(err, IsNil)
-		t.run(c, iter, root.String(), i)
+		s.NoError(err)
+		t.run(s, iter, root.String(), i)
 	}
 }
 
-func (s *IterSuite) TestEmptyNamedDir(c *C) {
+func (s *IterSuite) TestEmptyNamedDir() {
 	tc := testsCollection{
 		tree: "A()",
 		tests: []test{
@@ -149,10 +154,10 @@ func (s *IterSuite) TestEmptyNamedDir(c *C) {
 			{operations: "sssnnsnssn", expected: ""},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-func (s *IterSuite) TestEmptyUnnamedDir(c *C) {
+func (s *IterSuite) TestEmptyUnnamedDir() {
 	tc := testsCollection{
 		tree: "()",
 		tests: []test{
@@ -168,10 +173,10 @@ func (s *IterSuite) TestEmptyUnnamedDir(c *C) {
 			{operations: "sssnnsnssn", expected: ""},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-func (s *IterSuite) TestOneFile(c *C) {
+func (s *IterSuite) TestOneFile() {
 	tc := testsCollection{
 		tree: "(a<>)",
 		tests: []test{
@@ -187,13 +192,15 @@ func (s *IterSuite) TestOneFile(c *C) {
 			{operations: "sssnnsnssn", expected: "a"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//     root
-//      / \
-//     a   b
-func (s *IterSuite) TestTwoFiles(c *C) {
+// root
+//
+//	/ \
+//
+// a   b
+func (s *IterSuite) TestTwoFiles() {
 	tc := testsCollection{
 		tree: "(a<> b<>)",
 		tests: []test{
@@ -207,15 +214,16 @@ func (s *IterSuite) TestTwoFiles(c *C) {
 			{operations: "sss", expected: "a b"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//     root
-//      |
-//      a
-//      |
-//      b
-func (s *IterSuite) TestDirWithFile(c *C) {
+// root
+//
+//	|
+//	a
+//	|
+//	b
+func (s *IterSuite) TestDirWithFile() {
 	tc := testsCollection{
 		tree: "(a(b<>))",
 		tests: []test{
@@ -229,13 +237,15 @@ func (s *IterSuite) TestDirWithFile(c *C) {
 			{operations: "sss", expected: "a a/b"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//     root
-//      /|\
-//     c a b
-func (s *IterSuite) TestThreeSiblings(c *C) {
+// root
+//
+//	/|\
+//
+// c a b
+func (s *IterSuite) TestThreeSiblings() {
 	tc := testsCollection{
 		tree: "(c<> a<> b<>)",
 		tests: []test{
@@ -257,17 +267,18 @@ func (s *IterSuite) TestThreeSiblings(c *C) {
 			{operations: "ssss", expected: "a b c"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//     root
-//      |
-//      b
-//      |
-//      c
-//      |
-//      a
-func (s *IterSuite) TestThreeVertical(c *C) {
+// root
+//
+//	|
+//	b
+//	|
+//	c
+//	|
+//	a
+func (s *IterSuite) TestThreeVertical() {
 	tc := testsCollection{
 		tree: "(b(c(a())))",
 		tests: []test{
@@ -289,15 +300,17 @@ func (s *IterSuite) TestThreeVertical(c *C) {
 			{operations: "ssss", expected: "b b/c b/c/a"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//     root
-//      / \
-//     c   a
-//     |
-//     b
-func (s *IterSuite) TestThreeMix1(c *C) {
+// root
+//
+//	/ \
+//
+// c   a
+// |
+// b
+func (s *IterSuite) TestThreeMix1() {
 	tc := testsCollection{
 		tree: "(c(b<>) a<>)",
 		tests: []test{
@@ -319,15 +332,18 @@ func (s *IterSuite) TestThreeMix1(c *C) {
 			{operations: "ssss", expected: "a c c/b"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//     root
-//      / \
-//     b   a
-//         |
-//         c
-func (s *IterSuite) TestThreeMix2(c *C) {
+// root
+//
+//	/ \
+//
+// b   a
+//
+//	|
+//	c
+func (s *IterSuite) TestThreeMix2() {
 	tc := testsCollection{
 		tree: "(b() a(c<>))",
 		tests: []test{
@@ -349,22 +365,24 @@ func (s *IterSuite) TestThreeMix2(c *C) {
 			{operations: "ssss", expected: "a a/c b"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//      root
-//      / | \
-//     /  |  ----
-//    f   d      h --------
-//   /\         /  \      |
-//  e   a      j   b/      g
-//  |  / \     |
-//  l  n  k    icm
-//     |
-//     o
-//     |
-//     p/
-func (s *IterSuite) TestCrazy(c *C) {
+//	   root
+//	   / | \
+//	  /  |  ----
+//	 f   d      h --------
+//	/\         /  \      |
+//
+// e   a      j   b/      g
+// |  / \     |
+// l  n  k    icm
+//
+//	|
+//	o
+//	|
+//	p/
+func (s *IterSuite) TestCrazy() {
 	tc := testsCollection{
 		tree: "(f(e(l<>) a(n(o(p())) k<>)) d<> h(j(i<> c<> m<>) b() g<>))",
 		tests: []test{
@@ -383,55 +401,57 @@ func (s *IterSuite) TestCrazy(c *C) {
 			{operations: "nssnn", expected: "d f f/a f/e h"},
 		},
 	}
-	tc.run(c)
+	tc.run(s)
 }
 
-//      .
-//      |
-//      a
-//      |
-//      b
-//     / \
-//    z   h
-//   / \
-//  d   e
-//      |
-//      f
-func (s *IterSuite) TestNewIterFromPath(c *C) {
+//	   .
+//	   |
+//	   a
+//	   |
+//	   b
+//	  / \
+//	 z   h
+//	/ \
+//
+// d   e
+//
+//	|
+//	f
+func (s *IterSuite) TestNewIterFromPath() {
 	tree, err := fsnoder.New("(a(b(z(d<> e(f<>)) h<>)))")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	z := find(c, tree, "z")
+	z := find(s.T(), tree, "z")
 
 	iter, err := merkletrie.NewIterFromPath(z)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	n, err := iter.Next()
-	c.Assert(err, IsNil)
-	c.Assert(n.String(), Equals, "a/b/z/d")
+	s.NoError(err)
+	s.Equal("a/b/z/d", n.String())
 
 	n, err = iter.Next()
-	c.Assert(err, IsNil)
-	c.Assert(n.String(), Equals, "a/b/z/e")
+	s.NoError(err)
+	s.Equal("a/b/z/e", n.String())
 
 	n, err = iter.Step()
-	c.Assert(err, IsNil)
-	c.Assert(n.String(), Equals, "a/b/z/e/f")
+	s.NoError(err)
+	s.Equal("a/b/z/e/f", n.String())
 
 	_, err = iter.Step()
-	c.Assert(err, Equals, io.EOF)
+	s.ErrorIs(err, io.EOF)
 }
 
-func find(c *C, tree noder.Noder, name string) noder.Path {
+func find(t *testing.T, tree noder.Noder, name string) noder.Path {
 	iter, err := merkletrie.NewIter(tree)
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	for {
 		current, err := iter.Step()
 		if err != io.EOF {
-			c.Assert(err, IsNil)
+			assert.NoError(t, err)
 		} else {
-			c.Fatalf("node %s not found in tree %s", name, tree)
+			t.Fatalf("node %s not found in tree %s", name, tree)
 		}
 
 		if current.Name() == name {
@@ -446,14 +466,14 @@ func (e *errorNoder) Children() ([]noder.Noder, error) {
 	return nil, fmt.Errorf("mock error")
 }
 
-func (s *IterSuite) TestNewIterNil(c *C) {
+func (s *IterSuite) TestNewIterNil() {
 	i, err := merkletrie.NewIter(nil)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = i.Next()
-	c.Assert(err, Equals, io.EOF)
+	s.ErrorIs(err, io.EOF)
 }
 
-func (s *IterSuite) TestNewIterFailsOnChildrenErrors(c *C) {
+func (s *IterSuite) TestNewIterFailsOnChildrenErrors() {
 	_, err := merkletrie.NewIter(&errorNoder{})
-	c.Assert(err, ErrorMatches, "mock error")
+	s.ErrorContains(err, "mock error")
 }

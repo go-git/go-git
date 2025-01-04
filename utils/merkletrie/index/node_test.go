@@ -9,17 +9,18 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type NoderSuite struct {
+	suite.Suite
+}
 
-type NoderSuite struct{}
+func TestNoderSuite(t *testing.T) {
+	suite.Run(t, new(NoderSuite))
+}
 
-var _ = Suite(&NoderSuite{})
-
-func (s *NoderSuite) TestDiff(c *C) {
+func (s *NoderSuite) TestDiff() {
 	indexA := &index.Index{
 		Entries: []*index.Entry{
 			{Name: "foo", Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d")},
@@ -39,11 +40,11 @@ func (s *NoderSuite) TestDiff(c *C) {
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
-	c.Assert(err, IsNil)
-	c.Assert(ch, HasLen, 0)
+	s.NoError(err)
+	s.Len(ch, 0)
 }
 
-func (s *NoderSuite) TestDiffChange(c *C) {
+func (s *NoderSuite) TestDiffChange() {
 	indexA := &index.Index{
 		Entries: []*index.Entry{{
 			Name: filepath.Join("bar", "baz", "bar"),
@@ -59,11 +60,11 @@ func (s *NoderSuite) TestDiffChange(c *C) {
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
-	c.Assert(err, IsNil)
-	c.Assert(ch, HasLen, 2)
+	s.NoError(err)
+	s.Len(ch, 2)
 }
 
-func (s *NoderSuite) TestDiffDir(c *C) {
+func (s *NoderSuite) TestDiffDir() {
 	indexA := &index.Index{
 		Entries: []*index.Entry{{
 			Name: "foo",
@@ -79,11 +80,11 @@ func (s *NoderSuite) TestDiffDir(c *C) {
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
-	c.Assert(err, IsNil)
-	c.Assert(ch, HasLen, 2)
+	s.NoError(err)
+	s.Len(ch, 2)
 }
 
-func (s *NoderSuite) TestDiffSameRoot(c *C) {
+func (s *NoderSuite) TestDiffSameRoot() {
 	indexA := &index.Index{
 		Entries: []*index.Entry{
 			{Name: "foo.go", Hash: plumbing.NewHash("aab686eafeb1f44702738c8b0f24f2567c36da6d")},
@@ -99,8 +100,8 @@ func (s *NoderSuite) TestDiffSameRoot(c *C) {
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
-	c.Assert(err, IsNil)
-	c.Assert(ch, HasLen, 1)
+	s.NoError(err)
+	s.Len(ch, 1)
 }
 
 var empty = make([]byte, 24)
