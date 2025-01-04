@@ -2027,6 +2027,65 @@ func (s *WorktreeSuite) TestAddGlob() {
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddFilenameStartingWithDot() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 9)
+
+	err = util.WriteFile(w.Filesystem, "qux", []byte("QUX"), 0o755)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "baz", []byte("BAZ"), 0o755)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "foo/bar/baz", []byte("BAZ"), 0o755)
+	s.NoError(err)
+
+	_, err = w.Add("./qux")
+	s.NoError(err)
+
+	_, err = w.Add("./baz")
+	s.NoError(err)
+
+	_, err = w.Add("foo/bar/../bar/./baz")
+	s.NoError(err)
+
+	idx, err = w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 12)
+
+	e, err := idx.Entry("qux")
+	s.NoError(err)
+	s.Equal(filemode.Executable, e.Mode)
+
+	e, err = idx.Entry("baz")
+	s.NoError(err)
+	s.Equal(filemode.Executable, e.Mode)
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.Len(status, 3)
+
+	file := status.File("qux")
+	s.Equal(Added, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
+
+	file = status.File("baz")
+	s.Equal(Added, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
+
+	file = status.File("foo/bar/baz")
+	s.Equal(Added, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
+}
+
 func (s *WorktreeSuite) TestAddGlobErrorNoMatches() {
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	w, _ := r.Worktree()
