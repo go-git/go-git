@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/internal/reference"
 	"github.com/go-git/go-git/v5/internal/repository"
 	"github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -170,7 +171,7 @@ func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remote
 		}
 	}
 
-	localRefs, err := r.references()
+	localRefs, err := reference.References(r.s)
 	if err != nil {
 		return err
 	}
@@ -401,7 +402,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	remoteRefs := referenceStorageFromRefs(rRefs, true)
-	localRefs, err := r.references()
+	localRefs, err := reference.References(r.s)
 	if err != nil {
 		return nil, err
 	}
@@ -768,30 +769,6 @@ func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Co
 	}
 
 	return nil
-}
-
-func (r *Remote) references() ([]*plumbing.Reference, error) {
-	var localRefs []*plumbing.Reference
-
-	iter, err := r.s.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		ref, err := iter.Next()
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		localRefs = append(localRefs, ref)
-	}
-
-	return localRefs, nil
 }
 
 func getRemoteRefsFromStorer(remoteRefStorer storer.ReferenceStorer) (
