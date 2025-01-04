@@ -850,9 +850,15 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		openFlags |= os.O_CREATE
 	}
 
+	start := time.Now()
 	// Keep trying to open and lock the file until we're sure the file
 	// didn't change between the open and the lock.
 	for {
+		// The arbitrary timeout should eventually be replaced with
+		// context-based check.
+		if time.Since(start) > 15*time.Second {
+			return nil, errors.New("timeout trying to lock packed refs")
+		}
 		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0600)
 		if err != nil {
 			if os.IsNotExist(err) && !doCreate {

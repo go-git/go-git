@@ -11,19 +11,19 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"testing"
 
 	"github.com/elazarl/goproxy"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
 )
 
 //go:embed testdata/certs/*
 var certs embed.FS
 
 // Make sure you close the server after the test.
-func SetupProxyServer(c *C, handler http.Handler, isTls, schemaAddr bool) (string, *http.Server, net.Listener) {
+func SetupProxyServer(t *testing.T, handler http.Handler, isTls, schemaAddr bool) (string, *http.Server, net.Listener) {
 	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
-	c.Assert(err, IsNil)
+	assert.NoError(t, err)
 
 	schema := "http"
 	if isTls {
@@ -42,17 +42,17 @@ func SetupProxyServer(c *C, handler http.Handler, isTls, schemaAddr bool) (strin
 	}
 	if isTls {
 		certf, err := certs.Open("testdata/certs/server.crt")
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 		defer certf.Close()
 		keyf, err := certs.Open("testdata/certs/server.key")
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 		defer keyf.Close()
 		cert, err := io.ReadAll(certf)
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 		key, err := io.ReadAll(keyf)
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 		keyPair, err := tls.X509KeyPair(cert, key)
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 		cfg := &tls.Config{
 			NextProtos:   []string{"http/1.1"},
 			Certificates: []tls.Certificate{keyPair},

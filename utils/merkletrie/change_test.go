@@ -1,87 +1,92 @@
 package merkletrie_test
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/internal/fsnoder"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-type ChangeSuite struct{}
+type ChangeSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&ChangeSuite{})
+func TestChangeSuite(t *testing.T) {
+	suite.Run(t, new(ChangeSuite))
+}
 
-func (s *ChangeSuite) TestActionString(c *C) {
+func (s *ChangeSuite) TestActionString() {
 	action := merkletrie.Insert
-	c.Assert(action.String(), Equals, "Insert")
+	s.Equal("Insert", action.String())
 
 	action = merkletrie.Delete
-	c.Assert(action.String(), Equals, "Delete")
+	s.Equal("Delete", action.String())
 
 	action = merkletrie.Modify
-	c.Assert(action.String(), Equals, "Modify")
+	s.Equal("Modify", action.String())
 }
 
-func (s *ChangeSuite) TestUnsupportedAction(c *C) {
+func (s *ChangeSuite) TestUnsupportedAction() {
 	a := merkletrie.Action(42)
-	c.Assert(a.String, PanicMatches, "unsupported action.*")
+	s.Panics(func() { _ = a.String() })
 }
 
-func (s ChangeSuite) TestEmptyChanges(c *C) {
+func (s *ChangeSuite) TestEmptyChanges() {
 	ret := merkletrie.NewChanges()
 	p := noder.Path{}
 
 	err := ret.AddRecursiveInsert(p)
-	c.Assert(err, Equals, merkletrie.ErrEmptyFileName)
+	s.ErrorIs(err, merkletrie.ErrEmptyFileName)
 
 	err = ret.AddRecursiveDelete(p)
-	c.Assert(err, Equals, merkletrie.ErrEmptyFileName)
+	s.ErrorIs(err, merkletrie.ErrEmptyFileName)
 }
 
-func (s ChangeSuite) TestNewInsert(c *C) {
+func (s *ChangeSuite) TestNewInsert() {
 	tree, err := fsnoder.New("(a(b(z<>)))")
-	c.Assert(err, IsNil)
-	path := find(c, tree, "z")
+	s.NoError(err)
+	path := find(s.T(), tree, "z")
 	change := merkletrie.NewInsert(path)
-	c.Assert(change.String(), Equals, "<Insert a/b/z>")
+	s.Equal("<Insert a/b/z>", change.String())
 
 	shortPath := noder.Path([]noder.Noder{path.Last()})
 	change = merkletrie.NewInsert(shortPath)
-	c.Assert(change.String(), Equals, "<Insert z>")
+	s.Equal("<Insert z>", change.String())
 }
 
-func (s ChangeSuite) TestNewDelete(c *C) {
+func (s *ChangeSuite) TestNewDelete() {
 	tree, err := fsnoder.New("(a(b(z<>)))")
-	c.Assert(err, IsNil)
-	path := find(c, tree, "z")
+	s.NoError(err)
+	path := find(s.T(), tree, "z")
 	change := merkletrie.NewDelete(path)
-	c.Assert(change.String(), Equals, "<Delete a/b/z>")
+	s.Equal("<Delete a/b/z>", change.String())
 
 	shortPath := noder.Path([]noder.Noder{path.Last()})
 	change = merkletrie.NewDelete(shortPath)
-	c.Assert(change.String(), Equals, "<Delete z>")
+	s.Equal("<Delete z>", change.String())
 }
 
-func (s ChangeSuite) TestNewModify(c *C) {
+func (s *ChangeSuite) TestNewModify() {
 	tree1, err := fsnoder.New("(a(b(z<>)))")
-	c.Assert(err, IsNil)
-	path1 := find(c, tree1, "z")
+	s.NoError(err)
+	path1 := find(s.T(), tree1, "z")
 
 	tree2, err := fsnoder.New("(a(b(z<1>)))")
-	c.Assert(err, IsNil)
-	path2 := find(c, tree2, "z")
+	s.NoError(err)
+	path2 := find(s.T(), tree2, "z")
 
 	change := merkletrie.NewModify(path1, path2)
-	c.Assert(change.String(), Equals, "<Modify a/b/z>")
+	s.Equal("<Modify a/b/z>", change.String())
 
 	shortPath1 := noder.Path([]noder.Noder{path1.Last()})
 	shortPath2 := noder.Path([]noder.Noder{path2.Last()})
 	change = merkletrie.NewModify(shortPath1, shortPath2)
-	c.Assert(change.String(), Equals, "<Modify z>")
+	s.Equal("<Modify z>", change.String())
 }
 
-func (s ChangeSuite) TestMalformedChange(c *C) {
+func (s *ChangeSuite) TestMalformedChange() {
 	change := merkletrie.Change{}
-	c.Assert(change.String, PanicMatches, "malformed change.*")
+	s.PanicsWithError("malformed change: nil from and to", func() { _ = change.String() })
 }
