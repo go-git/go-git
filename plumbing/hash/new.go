@@ -38,7 +38,7 @@ func ValidHex(in string) bool {
 	return true
 }
 
-// FromHex parses a hexadecimal string and returns an ImmutableHash
+// FromHex parses a hexadecimal string and returns an ObjectID
 // and a boolean confirming whether the operation was successful.
 // The hash (and object format) is inferred from the length of the
 // input.

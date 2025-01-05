@@ -109,11 +109,17 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 		&e.UID,
 		&e.GID,
 		&e.Size,
-		&e.Hash,
-		&flags,
 	}
 
 	if err := binary.Read(d.r, flow...); err != nil {
+		return nil, err
+	}
+
+	var err error
+	if e.Hash, err = binary.ReadHash(d.r); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(d.r, &flags); err != nil {
 		return nil, err
 	}
 

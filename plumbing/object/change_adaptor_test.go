@@ -2,6 +2,7 @@ package object
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -57,7 +58,7 @@ func newNoder(t *Tree, e TreeEntry) noder.Noder {
 func newPath(nn ...noder.Noder) noder.Path { return noder.Path(nn) }
 
 func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode() {
-	hash := plumbing.NewHash("aaaa")
+	hash := plumbing.NewHash("aaaa" + strings.Repeat("0", 36))
 	mode := filemode.Regular
 
 	treeNoder := &treeNoder{

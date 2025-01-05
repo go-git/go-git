@@ -1,10 +1,6 @@
 package plumbing
 
 import (
-	"bytes"
-	"encoding/hex"
-	"fmt"
-	"io"
 	"sort"
 	"strconv"
 
@@ -12,7 +8,7 @@ import (
 )
 
 // Hash SHA1 hashed content
-type Hash [hash.Size]byte
+type Hash = hash.SHA1Hash
 
 // ZeroHash is Hash with value zero
 var ZeroHash Hash
@@ -26,53 +22,10 @@ func ComputeHash(t ObjectType, content []byte) Hash {
 
 // NewHash return a new Hash from a hexadecimal hash representation
 func NewHash(s string) Hash {
-	b, _ := hex.DecodeString(s)
-
-	var h Hash
-	copy(h[:], b)
-
-	return h
-}
-
-func (h Hash) IsZero() bool {
-	var empty Hash
-	return h == empty
-}
-
-func (h Hash) String() string {
-	return hex.EncodeToString(h[:])
-}
-
-func (h Hash) Bytes() []byte {
-	return h[:]
-}
-
-func (h Hash) Compare(in []byte) int {
-	return bytes.Compare(h[:], in)
-}
-
-func (h *Hash) Write(in []byte) (int, error) {
-	if len(in) != h.Size() {
-		err := fmt.Errorf("invalid write size: incoming %d bytes should be %d instead", len(in), h.Size())
-		return 0, err
+	if h, ok := hash.FromHex(s); ok {
+		return h.(Hash)
 	}
-	return copy(h[:], in), nil
-}
-
-func (h Hash) HasPrefix(prefix []byte) bool {
-	return bytes.HasPrefix(h[:], prefix)
-}
-
-func (h *Hash) FromReaderAt(r io.ReaderAt, off int64) (int, error) {
-	return r.ReadAt(h[:], off)
-}
-
-func (h *Hash) FromReader(r io.Reader) (int, error) {
-	return io.ReadFull(r, h[:])
-}
-
-func (h Hash) Size() int {
-	return len(h)
+	return ZeroHash
 }
 
 type Hasher struct {
@@ -94,7 +47,7 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 }
 
 func (h Hasher) Sum() (hash Hash) {
-	copy(hash[:], h.Hash.Sum(nil))
+	hash.Write(h.Hash.Sum(nil))
 	return
 }
 
@@ -108,5 +61,5 @@ func HashesSort(a []Hash) {
 type HashSlice []Hash
 
 func (p HashSlice) Len() int           { return len(p) }
-func (p HashSlice) Less(i, j int) bool { return bytes.Compare(p[i][:], p[j][:]) < 0 }
+func (p HashSlice) Less(i, j int) bool { return p[i].Compare(p[j].Bytes()) < 0 }
 func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
