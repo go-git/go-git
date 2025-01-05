@@ -76,7 +76,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	fanout = make([]uint32, 256)
 	for i, hash := range hashes {
 		hashToIndex[hash] = uint32(i)
-		fanout[hash[0]]++
+		fanout[hash.Bytes()[0]]++
 	}
 
 	// Convert the fanout to cumulative values
@@ -136,7 +136,7 @@ func (e *Encoder) encodeFanout(fanout []uint32) (err error) {
 
 func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 	for _, hash := range hashes {
-		if _, err = e.Write(hash[:]); err != nil {
+		if _, err = e.Write(hash.Bytes()); err != nil {
 			return err
 		}
 	}
@@ -147,7 +147,7 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 	for _, hash := range hashes {
 		origIndex, _ := idx.GetIndexByHash(hash)
 		commitData, _ := idx.GetCommitDataByIndex(origIndex)
-		if _, err = e.Write(commitData.TreeHash[:]); err != nil {
+		if _, err = e.Write(commitData.TreeHash.Bytes()); err != nil {
 			return
 		}
 

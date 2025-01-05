@@ -159,19 +159,20 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (int, error) {
 
 	// Find the hash in the oid lookup table
 	var low int
-	if h[0] == 0 {
+	first := h.Bytes()[0]
+	if first == 0 {
 		low = 0
 	} else {
-		low = fi.fanout[h[0]-1]
+		low = fi.fanout[first-1]
 	}
-	high := fi.fanout[h[0]]
+	high := fi.fanout[first]
 	for low < high {
 		mid := (low + high) >> 1
 		offset := fi.oidLookupOffset + int64(mid)*hash.Size
-		if _, err := fi.reader.ReadAt(oid[:], offset); err != nil {
+		if _, err := oid.FromReaderAt(fi.reader, offset); err != nil {
 			return 0, err
 		}
-		cmp := bytes.Compare(h[:], oid[:])
+		cmp := h.Compare(oid.Bytes())
 		if cmp < 0 {
 			high = mid
 		} else if cmp == 0 {
@@ -257,7 +258,7 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []int) ([]plumbing.Hash, error
 		}
 
 		offset := fi.oidLookupOffset + int64(idx)*hash.Size
-		if _, err := fi.reader.ReadAt(hashes[i][:], offset); err != nil {
+		if _, err := hashes[i].FromReaderAt(fi.reader, offset); err != nil {
 			return nil, err
 		}
 	}
@@ -270,7 +271,7 @@ func (fi *fileIndex) Hashes() []plumbing.Hash {
 	hashes := make([]plumbing.Hash, fi.fanout[0xff])
 	for i := 0; i < fi.fanout[0xff]; i++ {
 		offset := fi.oidLookupOffset + int64(i)*hash.Size
-		if n, err := fi.reader.ReadAt(hashes[i][:], offset); err != nil || n < hash.Size {
+		if n, err := hashes[i].FromReaderAt(fi.reader, offset); err != nil || n < hash.Size {
 			return nil
 		}
 	}
