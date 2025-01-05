@@ -1253,7 +1253,7 @@ func (s *WorktreeSuite) TestResetHardSubFolders(c *C) {
 
 	err = fs.MkdirAll("dir", os.ModePerm)
 	c.Assert(err, IsNil)
-	tf, err := fs.Create("dir/testfile.txt")
+	tf, err := fs.Create("./dir/testfile.txt")
 	c.Assert(err, IsNil)
 	_, err = tf.Write([]byte("testfile content"))
 	c.Assert(err, IsNil)
@@ -3196,7 +3196,7 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 	c.Assert(err, Equals, ErrNoRestorePaths)
 
 	// Restore Staged files in 2 groups and confirm status
-	opts.Files = []string{names[0], names[1]}
+	opts.Files = []string{names[0], "./" + names[1]}
 	err = w.Restore(&opts)
 	c.Assert(err, IsNil)
 	verifyStatus(c, "Restored First", w, names, []FileStatus{
@@ -3211,7 +3211,7 @@ func (s *WorktreeSuite) TestRestoreStaged(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(string(contents), Equals, "Foo Bar:11")
 
-	opts.Files = []string{names[2], names[3]}
+	opts.Files = []string{"./" + names[2], names[3]}
 	err = w.Restore(&opts)
 	c.Assert(err, IsNil)
 	verifyStatus(c, "Restored Second", w, names, []FileStatus{
