@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/stretchr/testify/suite"
 )
@@ -140,9 +139,7 @@ type byHash []plumbing.Hash
 func (a byHash) Len() int      { return len(a) }
 func (a byHash) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a byHash) Less(i, j int) bool {
-	ii := [hash.Size]byte(a[i])
-	jj := [hash.Size]byte(a[j])
-	return bytes.Compare(ii[:], jj[:]) < 0
+	return a[i].Compare(a[j].Bytes()) < 0
 }
 
 func (s *UlReqDecodeSuite) TestManyWantsBadWant() {

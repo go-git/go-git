@@ -2,13 +2,13 @@ package packp
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 )
 
 // Decode reads the next advertised-refs message form its input and
@@ -141,11 +141,13 @@ func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
 		return nil
 	}
 
-	if _, err := hex.Decode(p.hash[:], p.line[:hashSize]); err != nil {
-		p.error("invalid hash text: %s", err)
+	in := string(p.line[:hashSize])
+	if !hash.ValidHex(in) {
+		p.error("invalid hash text: %s", in)
 		return nil
 	}
 
+	p.hash = plumbing.NewHash(in)
 	p.line = p.line[hashSize:]
 
 	if p.hash.IsZero() {
@@ -271,12 +273,12 @@ func decodeShallow(p *advRefsDecoder) decoderStateFn {
 	}
 
 	text := p.line[:hashSize]
-	var h plumbing.Hash
-	if _, err := hex.Decode(h[:], text); err != nil {
-		p.error("invalid hash text: %s", err)
+	if !hash.ValidHex(string(text)) {
+		p.error("invalid hash text: %s", text)
 		return nil
 	}
 
+	h := plumbing.NewHash(string(text))
 	p.data.Shallows = append(p.data.Shallows, h)
 
 	if ok := p.nextLine(); !ok {

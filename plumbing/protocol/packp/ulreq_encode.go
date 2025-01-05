@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"time"
@@ -69,7 +68,7 @@ func (e *ulReqEncoder) encodeFirstWant() stateFn {
 func (e *ulReqEncoder) encodeAdditionalWants() stateFn {
 	last := e.data.Wants[0]
 	for _, w := range e.data.Wants[1:] {
-		if bytes.Equal(last[:], w[:]) {
+		if last.Compare(w.Bytes()) == 0 {
 			continue
 		}
 
@@ -89,7 +88,7 @@ func (e *ulReqEncoder) encodeShallows() stateFn {
 
 	var last plumbing.Hash
 	for _, s := range e.data.Shallows {
-		if bytes.Equal(last[:], s[:]) {
+		if last.Compare(s.Bytes()) == 0 {
 			continue
 		}
 

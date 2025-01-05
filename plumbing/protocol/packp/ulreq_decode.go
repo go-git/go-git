@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 )
 
 // Decode reads the next upload-request form its input and
@@ -115,14 +115,16 @@ func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 		return plumbing.ZeroHash, false
 	}
 
-	var hash plumbing.Hash
-	if _, err := hex.Decode(hash[:], d.line[:hashSize]); err != nil {
-		d.error("invalid hash text: %s", err)
+	in := string(d.line[:hashSize])
+	if !hash.ValidHex(in) {
+		d.error("invalid hash text: %s", in)
 		return plumbing.ZeroHash, false
 	}
-	d.line = d.line[hashSize:]
 
-	return hash, true
+	d.line = d.line[hashSize:]
+	h := plumbing.NewHash(in)
+
+	return h, true
 }
 
 // Expected format: sp cap1 sp cap2 sp cap3...
