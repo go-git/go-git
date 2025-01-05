@@ -1716,14 +1716,14 @@ func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
 	if hashStr == "" {
 		return nil
 	}
-	if len(hashStr) == len(plumbing.ZeroHash)*2 {
+	if len(hashStr) == plumbing.ZeroHash.Size()*2 {
 		// Only a full hash is possible.
 		hexb, err := hex.DecodeString(hashStr)
 		if err != nil {
 			return nil
 		}
 		var h plumbing.Hash
-		copy(h[:], hexb)
+		h.Write(hexb)
 		return []plumbing.Hash{h}
 	}
 
