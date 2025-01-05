@@ -1,13 +1,14 @@
 package server
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
 type loaderSuiteRepo struct {
@@ -17,76 +18,82 @@ type loaderSuiteRepo struct {
 }
 
 type LoaderSuite struct {
+	suite.Suite
 	Repos map[string]loaderSuiteRepo
 }
 
-var _ = Suite(&LoaderSuite{
-	Repos: map[string]loaderSuiteRepo{
-		"repo": {path: "repo.git"},
-		"bare": {path: "bare.git", bare: true},
-	},
-})
+func TestLoaderSuite(t *testing.T) {
+	suite.Run(t,
+		&LoaderSuite{
+			Repos: map[string]loaderSuiteRepo{
+				"repo": {path: "repo.git"},
+				"bare": {path: "bare.git", bare: true},
+			},
+		},
+	)
+}
 
-func (s *LoaderSuite) SetUpSuite(c *C) {
+func (s *LoaderSuite) SetupSuite() {
 	if err := exec.Command("git", "--version").Run(); err != nil {
-		c.Skip("git command not found")
+		s.T().Skip("git command not found")
 	}
 
-	dir := c.MkDir()
+	dir, err := os.MkdirTemp("", "")
+	s.NoError(err)
 
 	for key, repo := range s.Repos {
 		repo.path = filepath.Join(dir, repo.path)
 		if repo.bare {
-			c.Assert(exec.Command("git", "init", "--bare", repo.path).Run(), IsNil)
+			s.Nil(exec.Command("git", "init", "--bare", repo.path).Run())
 		} else {
-			c.Assert(exec.Command("git", "init", repo.path).Run(), IsNil)
+			s.Nil(exec.Command("git", "init", repo.path).Run())
 		}
 		s.Repos[key] = repo
 	}
 
 }
 
-func (s *LoaderSuite) endpoint(c *C, url string) *transport.Endpoint {
+func (s *LoaderSuite) endpoint(url string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(url)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	return ep
 }
 
-func (s *LoaderSuite) TestLoadNonExistent(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, "does-not-exist"))
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(sto, IsNil)
+func (s *LoaderSuite) TestLoadNonExistent() {
+	sto, err := DefaultLoader.Load(s.endpoint("does-not-exist"))
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+	s.Nil(sto)
 }
 
-func (s *LoaderSuite) TestLoadNonExistentIgnoreHost(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, "https://github.com/does-not-exist"))
-	c.Assert(err, Equals, transport.ErrRepositoryNotFound)
-	c.Assert(sto, IsNil)
+func (s *LoaderSuite) TestLoadNonExistentIgnoreHost() {
+	sto, err := DefaultLoader.Load(s.endpoint("https://github.com/does-not-exist"))
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+	s.Nil(sto)
 }
 
-func (s *LoaderSuite) TestLoad(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, s.Repos["repo"].path))
-	c.Assert(err, IsNil)
-	c.Assert(sto, NotNil)
+func (s *LoaderSuite) TestLoad() {
+	sto, err := DefaultLoader.Load(s.endpoint(s.Repos["repo"].path))
+	s.NoError(err)
+	s.NotNil(sto)
 }
 
-func (s *LoaderSuite) TestLoadBare(c *C) {
-	sto, err := DefaultLoader.Load(s.endpoint(c, s.Repos["bare"].path))
-	c.Assert(err, IsNil)
-	c.Assert(sto, NotNil)
+func (s *LoaderSuite) TestLoadBare() {
+	sto, err := DefaultLoader.Load(s.endpoint(s.Repos["bare"].path))
+	s.NoError(err)
+	s.NotNil(sto)
 }
 
-func (s *LoaderSuite) TestMapLoader(c *C) {
+func (s *LoaderSuite) TestMapLoader() {
 	ep, err := transport.NewEndpoint("file://test")
 	sto := memory.NewStorage()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	loader := MapLoader{ep.String(): sto}
 
 	ep, err = transport.NewEndpoint("file://test")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	loaderSto, err := loader.Load(ep)
-	c.Assert(err, IsNil)
-	c.Assert(sto, Equals, loaderSto)
+	s.NoError(err)
+	s.Equal(loaderSto, sto)
 }
