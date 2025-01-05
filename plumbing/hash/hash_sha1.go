@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/hex"
+	"io"
 )
 
 const (
@@ -46,4 +47,12 @@ func (ih SHA1Hash) HasPrefix(prefix []byte) bool {
 
 func (ih *SHA1Hash) Write(in []byte) (int, error) {
 	return copy(ih.hash[:], in), nil
+}
+
+func (ih *SHA1Hash) FromReaderAt(r io.ReaderAt, off int64) (int, error) {
+	return r.ReadAt(ih.hash[:], off)
+}
+
+func (ih *SHA1Hash) FromReader(r io.Reader) (int, error) {
+	return r.Read(ih.hash[:])
 }

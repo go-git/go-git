@@ -19,8 +19,11 @@ type ObjectID interface {
 }
 
 // LazyObjectID represents an object hash which may not be known at the time
-// the object is created.
+// the object is created. Or an objectID which changes during its lifetime.
 type LazyObjectID interface {
 	ObjectID
+
 	io.Writer
+	FromReaderAt(r io.ReaderAt, off int64) (int, error)
+	FromReader(r io.Reader) (int, error)
 }

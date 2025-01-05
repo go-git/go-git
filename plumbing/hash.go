@@ -3,6 +3,8 @@ package plumbing
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"sort"
 	"strconv"
 
@@ -50,7 +52,27 @@ func (h Hash) Compare(in []byte) int {
 }
 
 func (h *Hash) Write(in []byte) (int, error) {
+	if len(in) != h.Size() {
+		err := fmt.Errorf("invalid write size: incoming %d bytes should be %d instead", len(in), h.Size())
+		return 0, err
+	}
 	return copy(h[:], in), nil
+}
+
+func (h Hash) HasPrefix(prefix []byte) bool {
+	return bytes.HasPrefix(h[:], prefix)
+}
+
+func (h *Hash) FromReaderAt(r io.ReaderAt, off int64) (int, error) {
+	return r.ReadAt(h[:], off)
+}
+
+func (h *Hash) FromReader(r io.Reader) (int, error) {
+	return r.Read(h[:])
+}
+
+func (h Hash) Size() int {
+	return len(h)
 }
 
 type Hasher struct {

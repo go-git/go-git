@@ -110,7 +110,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 	last := -1
 	bucket := -1
 	for i, o := range w.objects {
-		fan := o.Hash[0]
+		fan := o.Hash.Bytes()[0]
 
 		// fill the gaps between fans
 		for j := last + 1; j < int(fan); j++ {
@@ -132,7 +132,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 			idx.CRC32 = append(idx.CRC32, make([]byte, 0))
 		}
 
-		idx.Names[bucket] = append(idx.Names[bucket], o.Hash[:]...)
+		idx.Names[bucket] = append(idx.Names[bucket], o.Hash.Bytes()...)
 
 		offset := o.Offset
 		if offset > math.MaxInt32 {
@@ -184,7 +184,7 @@ func (o objects) Len() int {
 }
 
 func (o objects) Less(i int, j int) bool {
-	cmp := bytes.Compare(o[i].Hash[:], o[j].Hash[:])
+	cmp := o[i].Hash.Compare(o[j].Hash.Bytes())
 	return cmp < 0
 }
 

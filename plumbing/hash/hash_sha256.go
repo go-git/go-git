@@ -3,6 +3,7 @@ package hash
 import (
 	"bytes"
 	"encoding/hex"
+	"io"
 )
 
 type SHA256Hash struct {
@@ -36,4 +37,12 @@ func (ih SHA256Hash) HasPrefix(prefix []byte) bool {
 
 func (ih *SHA256Hash) Write(in []byte) (int, error) {
 	return copy(ih.hash[:], in), nil
+}
+
+func (ih *SHA256Hash) FromReaderAt(r io.ReaderAt, off int64) (int, error) {
+	return r.ReadAt(ih.hash[:], off)
+}
+
+func (ih *SHA256Hash) FromReader(r io.Reader) (int, error) {
+	return r.Read(ih.hash[:])
 }

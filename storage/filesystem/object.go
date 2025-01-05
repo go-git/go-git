@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -593,7 +592,7 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 			} else if err != nil {
 				return nil, err
 			}
-			if bytes.HasPrefix(e.Hash[:], prefix) {
+			if e.Hash.HasPrefix(prefix) {
 				if _, ok := seen[e.Hash]; ok {
 					continue
 				}

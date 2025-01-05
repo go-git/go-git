@@ -385,7 +385,7 @@ func (d *DotGit) ObjectsWithPrefix(prefix []byte) ([]plumbing.Hash, error) {
 	var n int
 	err := d.ForEachObjectHash(func(hash plumbing.Hash) error {
 		n++
-		if bytes.HasPrefix(hash[:], prefix) {
+		if hash.HasPrefix(prefix) {
 			objects = append(objects, hash)
 		}
 		return nil

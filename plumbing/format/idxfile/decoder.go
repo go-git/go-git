@@ -166,11 +166,11 @@ func readOffsets(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readChecksums(idx *MemoryIndex, r io.Reader) error {
-	if _, err := io.ReadFull(r, idx.PackfileChecksum[:]); err != nil {
+	if _, err := idx.PackfileChecksum.FromReader(r); err != nil {
 		return err
 	}
 
-	if _, err := io.ReadFull(r, idx.IdxChecksum[:]); err != nil {
+	if _, err := idx.IdxChecksum.FromReader(r); err != nil {
 		return err
 	}
 
