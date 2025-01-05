@@ -426,7 +426,7 @@ func (s *FsSuite) TestHashesWithPrefixFromPackfile() {
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 		// Only pass the first 8 bytes
-		hashes, err := o.HashesWithPrefix(expected[:8])
+		hashes, err := o.HashesWithPrefix(expected.Bytes()[:8])
 		s.NoError(err)
 		s.Len(hashes, 1)
 		s.Equal(expected, hashes[0])
