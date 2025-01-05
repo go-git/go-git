@@ -448,7 +448,7 @@ func packFooter(r *Scanner) (stateFn, error) {
 		return nil, fmt.Errorf("cannot read PACK checksum: %w", ErrMalformedPackfile)
 	}
 
-	if !bytes.Equal(actual, checksum[:]) {
+	if checksum.Compare(actual) != 0 {
 		return nil, fmt.Errorf("checksum mismatch expected %q but found %q: %w",
 			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
 	}
