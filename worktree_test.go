@@ -1283,7 +1283,7 @@ func (s *WorktreeSuite) TestResetHardSubFolders() {
 	s.NoError(err)
 	s.False(status.IsClean())
 
-	err = w.Reset(&ResetOptions{Files: []string{"dir/testfile.txt"}, Mode: HardReset})
+	err = w.Reset(&ResetOptions{Files: []string{"./dir/testfile.txt"}, Mode: HardReset})
 	s.NoError(err)
 
 	status, err = w.Status()
@@ -3212,7 +3212,7 @@ func (s *WorktreeSuite) TestRestoreStaged() {
 	s.ErrorIs(err, ErrNoRestorePaths)
 
 	// Restore Staged files in 2 groups and confirm status
-	opts.Files = []string{names[0], names[1]}
+	opts.Files = []string{names[0], "./" + names[1]}
 	err = w.Restore(&opts)
 	s.NoError(err)
 	verifyStatus(s, "Restored First", w, names, []FileStatus{
@@ -3227,7 +3227,7 @@ func (s *WorktreeSuite) TestRestoreStaged() {
 	s.NoError(err)
 	s.Equal("Foo Bar:11", string(contents))
 
-	opts.Files = []string{names[2], names[3]}
+	opts.Files = []string{"./" + names[2], names[3]}
 	err = w.Restore(&opts)
 	s.NoError(err)
 	verifyStatus(s, "Restored Second", w, names, []FileStatus{
