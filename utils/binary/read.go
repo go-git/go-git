@@ -80,10 +80,9 @@ func ReadUntilFromBufioReader(r *bufio.Reader, delim byte) ([]byte, error) {
 //
 // This is how the offset is saved in C:
 //
-//     dheader[pos] = ofs & 127;
-//     while (ofs >>= 7)
-//         dheader[--pos] = 128 | (--ofs & 127);
-//
+//	dheader[pos] = ofs & 127;
+//	while (ofs >>= 7)
+//	    dheader[--pos] = 128 | (--ofs & 127);
 func ReadVariableWidthInt(r io.Reader) (int64, error) {
 	var c byte
 	if err := Read(r, &c); err != nil {
@@ -142,7 +141,12 @@ func ReadUint16(r io.Reader) (uint16, error) {
 // ReadHash reads a plumbing.Hash from r
 func ReadHash(r io.Reader) (plumbing.Hash, error) {
 	var h plumbing.Hash
-	if err := binary.Read(r, binary.BigEndian, h[:]); err != nil {
+	b := make([]byte, h.Size())
+	if err := binary.Read(r, binary.BigEndian, b[:]); err != nil {
+		return h, err
+	}
+
+	if _, err := h.Write(b); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
