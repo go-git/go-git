@@ -93,6 +93,6 @@ func (s *CommitgraphSuite) TestOpenChainFile() {
 	newlineChainReader := bytes.NewReader(newlineChainData)
 
 	chain, err = commitgraph.OpenChainFile(newlineChainReader)
-	s.Equal(err, commitgraph.ErrMalformedCommitGraphFile)
+	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile)
 	s.Nil(chain)
 }

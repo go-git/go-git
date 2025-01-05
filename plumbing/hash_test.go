@@ -54,9 +54,3 @@ func (s *HashSuite) TestHashesSort() {
 	s.Equal(NewHash("1111111111111111111111111111111111111111"), i[0])
 	s.Equal(NewHash("2222222222222222222222222222222222222222"), i[1])
 }
-
-func (s *HashSuite) TestIsHash() {
-	s.True(IsHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"))
-	s.False(IsHash("foo"))
-	s.False(IsHash("zab686eafeb1f44702738c8b0f24f2567c36da6d"))
-}

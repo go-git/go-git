@@ -23,6 +23,21 @@ func MustFromBytes(in []byte) ObjectID {
 	return h
 }
 
+// ValidHex returns true if the given string is a valid hex hash.
+func ValidHex(in string) bool {
+	if len(in) != SHA1HexSize &&
+		len(in) != SHA256HexSize {
+		return false
+	}
+
+	_, err := hex.DecodeString(in)
+	if err != nil {
+		return false
+	}
+
+	return true
+}
+
 // FromHex parses a hexadecimal string and returns an ImmutableHash
 // and a boolean confirming whether the operation was successful.
 // The hash (and object format) is inferred from the length of the

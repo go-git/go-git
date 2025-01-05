@@ -110,14 +110,3 @@ type HashSlice []Hash
 func (p HashSlice) Len() int           { return len(p) }
 func (p HashSlice) Less(i, j int) bool { return bytes.Compare(p[i][:], p[j][:]) < 0 }
 func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-
-// IsHash returns true if the given string is a valid hash.
-func IsHash(s string) bool {
-	switch len(s) {
-	case hash.HexSize:
-		_, err := hex.DecodeString(s)
-		return err == nil
-	default:
-		return false
-	}
-}

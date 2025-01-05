@@ -6,7 +6,7 @@ import (
 	"path"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 )
 
 // OpenChainFile reads a commit chain file and returns a slice of the hashes within it
@@ -31,7 +31,7 @@ func OpenChainFile(r io.Reader) ([]string, error) {
 		}
 
 		hashStr := string(line[:len(line)-1])
-		if !plumbing.IsHash(hashStr) {
+		if !hash.ValidHex(hashStr) || len(hashStr) != hash.SHA1HexSize {
 			return nil, ErrMalformedCommitGraphFile
 		}
 		chain = append(chain, hashStr)

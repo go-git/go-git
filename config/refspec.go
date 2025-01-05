@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 )
 
 const (
@@ -61,7 +62,7 @@ func (s RefSpec) IsDelete() bool {
 
 // IsExactSHA1 returns true if the source is a SHA1 hash.
 func (s RefSpec) IsExactSHA1() bool {
-	return plumbing.IsHash(s.Src())
+	return hash.ValidHex(s.Src())
 }
 
 // Src returns the src side.
