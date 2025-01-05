@@ -44,5 +44,5 @@ func (ih *SHA256Hash) FromReaderAt(r io.ReaderAt, off int64) (int, error) {
 }
 
 func (ih *SHA256Hash) FromReader(r io.Reader) (int, error) {
-	return r.Read(ih.hash[:])
+	return io.ReadFull(r, ih.hash[:])
 }

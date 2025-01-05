@@ -68,7 +68,7 @@ func (h *Hash) FromReaderAt(r io.ReaderAt, off int64) (int, error) {
 }
 
 func (h *Hash) FromReader(r io.Reader) (int, error) {
-	return r.Read(h[:])
+	return io.ReadFull(r, h[:])
 }
 
 func (h Hash) Size() int {
