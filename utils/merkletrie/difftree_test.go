@@ -4,7 +4,6 @@ import (
 	"bytes"
 	ctx "context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -12,15 +11,16 @@ import (
 
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/internal/fsnoder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type DiffTreeSuite struct {
+	suite.Suite
+}
 
-type DiffTreeSuite struct{}
-
-var _ = Suite(&DiffTreeSuite{})
+func TestDiffTreeSuite(t *testing.T) {
+	suite.Run(t, new(DiffTreeSuite))
+}
 
 type diffTreeTest struct {
 	from     string
@@ -28,79 +28,83 @@ type diffTreeTest struct {
 	expected string
 }
 
-func (t diffTreeTest) innerRun(c *C, context string, reverse bool) {
-	comment := Commentf("\n%s", context)
+func (t diffTreeTest) innerRun(s *DiffTreeSuite, context string, reverse bool) {
+	comment := fmt.Sprintf("\n%s", context)
 	if reverse {
-		comment = Commentf("%s [REVERSED]", comment.CheckCommentString())
+		comment = fmt.Sprintf("%s [REVERSED]", comment)
 	}
 
 	a, err := fsnoder.New(t.from)
-	c.Assert(err, IsNil, comment)
-	comment = Commentf("%s\n\t    from = %s", comment.CheckCommentString(), a)
+	s.NoError(err, comment)
+	comment = fmt.Sprintf("%s\n\t    from = %s", comment, a)
 
 	b, err := fsnoder.New(t.to)
-	c.Assert(err, IsNil, comment)
-	comment = Commentf("%s\n\t      to = %s", comment.CheckCommentString(), b)
+	s.NoError(err, comment)
+	comment = fmt.Sprintf("%s\n\t      to = %s", comment, b)
 
 	expected, err := newChangesFromString(t.expected)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
 	if reverse {
 		a, b = b, a
 		expected = expected.reverse()
 	}
-	comment = Commentf("%s\n\texpected = %s", comment.CheckCommentString(), expected)
+	comment = fmt.Sprintf("%s\n\texpected = %s", comment, expected)
 
 	results, err := merkletrie.DiffTree(a, b, fsnoder.HashEqual)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
 	obtained, err := newChanges(results)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
-	comment = Commentf("%s\n\tobtained = %s", comment.CheckCommentString(), obtained)
+	comment = fmt.Sprintf("%s\n\tobtained = %s", comment, obtained)
 
-	c.Assert(obtained, changesEquals, expected, comment)
+	sort.Sort(obtained)
+	sort.Sort(expected)
+	s.Equal(expected, obtained, comment)
 }
 
-func (t diffTreeTest) innerRunCtx(c *C, context string, reverse bool) {
-	comment := Commentf("\n%s", context)
+func (t diffTreeTest) innerRunCtx(s *DiffTreeSuite, context string, reverse bool) {
+	comment := fmt.Sprintf("\n%s", context)
 	if reverse {
-		comment = Commentf("%s [REVERSED]", comment.CheckCommentString())
+		comment = fmt.Sprintf("%s [REVERSED]", comment)
 	}
 
 	a, err := fsnoder.New(t.from)
-	c.Assert(err, IsNil, comment)
-	comment = Commentf("%s\n\t    from = %s", comment.CheckCommentString(), a)
+	s.NoError(err, comment)
+	comment = fmt.Sprintf("%s\n\t    from = %s", comment, a)
 
 	b, err := fsnoder.New(t.to)
-	c.Assert(err, IsNil, comment)
-	comment = Commentf("%s\n\t      to = %s", comment.CheckCommentString(), b)
+	s.NoError(err, comment)
+	comment = fmt.Sprintf("%s\n\t      to = %s", comment, b)
 
 	expected, err := newChangesFromString(t.expected)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
 	if reverse {
 		a, b = b, a
 		expected = expected.reverse()
 	}
-	comment = Commentf("%s\n\texpected = %s", comment.CheckCommentString(), expected)
+	comment = fmt.Sprintf("%s\n\texpected = %s", comment, expected)
 
 	results, err := merkletrie.DiffTreeContext(ctx.Background(), a, b, fsnoder.HashEqual)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
 	obtained, err := newChanges(results)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
-	comment = Commentf("%s\n\tobtained = %s", comment.CheckCommentString(), obtained)
+	comment = fmt.Sprintf("%s\n\tobtained = %s", comment, obtained)
 
-	c.Assert(obtained, changesEquals, expected, comment)
+	sort.Sort(obtained)
+	sort.Sort(expected)
+	s.Equal(expected, obtained, comment)
 }
 
-func (t diffTreeTest) run(c *C, context string) {
-	t.innerRun(c, context, false)
-	t.innerRun(c, context, true)
-	t.innerRunCtx(c, context, false)
-	t.innerRunCtx(c, context, true)
+func (t diffTreeTest) run(s *DiffTreeSuite, context string) {
+	t.innerRun(s, context, false)
+	t.innerRun(s, context, true)
+	t.innerRunCtx(s, context, false)
+	t.innerRunCtx(s, context, true)
 }
 
 type change struct {
@@ -229,12 +233,6 @@ func (cc changes) Len() int           { return len(cc) }
 func (cc changes) Swap(i, j int)      { cc[i], cc[j] = cc[j], cc[i] }
 func (cc changes) Less(i, j int) bool { return strings.Compare(cc[i].String(), cc[j].String()) < 0 }
 
-func (cc changes) equals(other changes) bool {
-	sort.Sort(cc)
-	sort.Sort(other)
-	return reflect.DeepEqual(cc, other)
-}
-
 func (cc changes) String() string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "len(%d) [", len(cc))
@@ -256,35 +254,14 @@ func (cc changes) reverse() changes {
 	return ret
 }
 
-type changesEqualsChecker struct {
-	*CheckerInfo
-}
-
-var changesEquals Checker = &changesEqualsChecker{
-	&CheckerInfo{Name: "changesEquals", Params: []string{"obtained", "expected"}},
-}
-
-func (checker *changesEqualsChecker) Check(params []interface{}, names []string) (result bool, error string) {
-	a, ok := params[0].(changes)
-	if !ok {
-		return false, "first parameter must be a changes"
-	}
-	b, ok := params[1].(changes)
-	if !ok {
-		return false, "second parameter must be a changes"
-	}
-
-	return a.equals(b), ""
-}
-
-func do(c *C, list []diffTreeTest) {
+func do(s *DiffTreeSuite, list []diffTreeTest) {
 	for i, t := range list {
-		t.run(c, fmt.Sprintf("test #%d:", i))
+		t.run(s, fmt.Sprintf("test #%d:", i))
 	}
 }
 
-func (s *DiffTreeSuite) TestEmptyVsEmpty(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestEmptyVsEmpty() {
+	do(s, []diffTreeTest{
 		{"()", "()", ""},
 		{"A()", "A()", ""},
 		{"A()", "()", ""},
@@ -292,8 +269,8 @@ func (s *DiffTreeSuite) TestEmptyVsEmpty(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestBasicCases(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestBasicCases() {
+	do(s, []diffTreeTest{
 		{"()", "()", ""},
 		{"()", "(a<>)", "+a"},
 		{"()", "(a<1>)", "+a"},
@@ -344,8 +321,8 @@ func (s *DiffTreeSuite) TestBasicCases(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestHorizontals(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestHorizontals() {
+	do(s, []diffTreeTest{
 		{"()", "(a<> b<>)", "+a +b"},
 		{"()", "(a<> b<1>)", "+a +b"},
 		{"()", "(a<> b())", "+a"},
@@ -361,8 +338,8 @@ func (s *DiffTreeSuite) TestHorizontals(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestVerticals(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestVerticals() {
+	do(s, []diffTreeTest{
 		{"()", "(z<>)", "+z"},
 		{"()", "(a(z<>))", "+a/z"},
 		{"()", "(a(b(z<>)))", "+a/b/z"},
@@ -372,8 +349,8 @@ func (s *DiffTreeSuite) TestVerticals(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestSingleInserts(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestSingleInserts() {
+	do(s, []diffTreeTest{
 		{"()", "(z<>)", "+z"},
 		{"(a())", "(a(z<>))", "+a/z"},
 		{"(a())", "(a(b(z<>)))", "+a/b/z"},
@@ -386,27 +363,29 @@ func (s *DiffTreeSuite) TestSingleInserts(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestDebug(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestDebug() {
+	do(s, []diffTreeTest{
 		{"(a(b<>) f<>)", "(a(b<> z<>) f<>)", "+a/z"},
 	})
 }
 
-//      root
-//      / | \
-//     /  |  ----
-//    f   d      h --------
-//   /\         /  \      |
-//  e   a      j   b/      g
-//  |  / \     |
-//  l  n  k    icm
-//     |
-//     o
-//     |
-//     p/
-func (s *DiffTreeSuite) TestCrazy(c *C) {
+//	   root
+//	   / | \
+//	  /  |  ----
+//	 f   d      h --------
+//	/\         /  \      |
+//
+// e   a      j   b/      g
+// |  / \     |
+// l  n  k    icm
+//
+//	|
+//	o
+//	|
+//	p/
+func (s *DiffTreeSuite) TestCrazy() {
 	crazy := "(f(e(l<1>) a(n(o(p())) k<1>)) d<1> h(j(i<1> c<2> m<>) b() g<>))"
-	do(c, []diffTreeTest{
+	do(s, []diffTreeTest{
 		{
 			crazy,
 			"()",
@@ -447,8 +426,8 @@ func (s *DiffTreeSuite) TestCrazy(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestSameNames(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestSameNames() {
+	do(s, []diffTreeTest{
 		{
 			"(a(a(a<>)))",
 			"(a(a(a<1>)))",
@@ -465,8 +444,8 @@ func (s *DiffTreeSuite) TestSameNames(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestIssue275(c *C) {
-	do(c, []diffTreeTest{
+func (s *DiffTreeSuite) TestIssue275() {
+	do(s, []diffTreeTest{
 		{
 			"(a(b(c.go<1>) b.go<2>))",
 			"(a(b(c.go<1> d.go<3>) b.go<2>))",
@@ -475,11 +454,11 @@ func (s *DiffTreeSuite) TestIssue275(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestIssue1057(c *C) {
+func (s *DiffTreeSuite) TestIssue1057() {
 	p1 := "TestAppWithUnicodéPath"
 	p2 := "TestAppWithUnicodéPath"
-	c.Assert(p1 == p2, Equals, false)
-	do(c, []diffTreeTest{
+	s.False(p1 == p2)
+	do(s, []diffTreeTest{
 		{
 			fmt.Sprintf("(%s(x.go<1>))", p1),
 			fmt.Sprintf("(%s(x.go<1>) %s(x.go<1>))", p1, p2),
@@ -487,7 +466,7 @@ func (s *DiffTreeSuite) TestIssue1057(c *C) {
 		},
 	})
 	// swap p1 with p2
-	do(c, []diffTreeTest{
+	do(s, []diffTreeTest{
 		{
 			fmt.Sprintf("(%s(x.go<1>))", p2),
 			fmt.Sprintf("(%s(x.go<1>) %s(x.go<1>))", p1, p2),
@@ -496,26 +475,26 @@ func (s *DiffTreeSuite) TestIssue1057(c *C) {
 	})
 }
 
-func (s *DiffTreeSuite) TestCancel(c *C) {
+func (s *DiffTreeSuite) TestCancel() {
 	t := diffTreeTest{"()", "(a<> b<1> c() d<> e<2> f())", "+a +b +d +e"}
-	comment := Commentf("\n%s", "test cancel:")
+	comment := fmt.Sprintf("\n%s", "test cancel:")
 
 	a, err := fsnoder.New(t.from)
-	c.Assert(err, IsNil, comment)
-	comment = Commentf("%s\n\t    from = %s", comment.CheckCommentString(), a)
+	s.NoError(err, comment)
+	comment = fmt.Sprintf("%s\n\t    from = %s", comment, a)
 
 	b, err := fsnoder.New(t.to)
-	c.Assert(err, IsNil, comment)
-	comment = Commentf("%s\n\t      to = %s", comment.CheckCommentString(), b)
+	s.NoError(err, comment)
+	comment = fmt.Sprintf("%s\n\t      to = %s", comment, b)
 
 	expected, err := newChangesFromString(t.expected)
-	c.Assert(err, IsNil, comment)
+	s.NoError(err, comment)
 
-	comment = Commentf("%s\n\texpected = %s", comment.CheckCommentString(), expected)
+	comment = fmt.Sprintf("%s\n\texpected = %s", comment, expected)
 	context, cancel := ctx.WithCancel(ctx.Background())
 	cancel()
 	results, err := merkletrie.DiffTreeContext(context, a, b, fsnoder.HashEqual)
-	c.Assert(results, IsNil, comment)
-	c.Assert(err, ErrorMatches, "operation canceled")
+	s.Nil(results, comment)
+	s.ErrorContains(err, "operation canceled")
 
 }

@@ -4,64 +4,65 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
-
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/suite"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+type FileSuite struct {
+	suite.Suite
+}
 
-type FileSuite struct{}
-
-var _ = Suite(&FileSuite{})
+func TestFileSuite(t *testing.T) {
+	suite.Run(t, new(FileSuite))
+}
 
 var (
 	HashOfEmptyFile = []byte{0xcb, 0xf2, 0x9c, 0xe4, 0x84, 0x22, 0x23, 0x25} // fnv64 basis offset
 	HashOfContents  = []byte{0xee, 0x7e, 0xf3, 0xd0, 0xc2, 0xb5, 0xef, 0x83} // hash of "contents"
 )
 
-func (s *FileSuite) TestNewFileEmpty(c *C) {
+func (s *FileSuite) TestNewFileEmpty() {
 	f, err := newFile("name", "")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(f.Hash(), DeepEquals, HashOfEmptyFile)
-	c.Assert(f.Name(), Equals, "name")
-	c.Assert(f.IsDir(), Equals, false)
-	assertChildren(c, f, noder.NoChildren)
-	c.Assert(f.String(), Equals, "name<>")
+	s.Equal(HashOfEmptyFile, f.Hash())
+	s.Equal("name", f.Name())
+	s.False(f.IsDir())
+	assertChildren(s.T(), f, noder.NoChildren)
+	s.Equal("name<>", f.String())
 }
 
-func (s *FileSuite) TestNewFileWithContents(c *C) {
+func (s *FileSuite) TestNewFileWithContents() {
 	f, err := newFile("name", "contents")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(f.Hash(), DeepEquals, HashOfContents)
-	c.Assert(f.Name(), Equals, "name")
-	c.Assert(f.IsDir(), Equals, false)
-	assertChildren(c, f, noder.NoChildren)
-	c.Assert(f.String(), Equals, "name<contents>")
+	s.Equal(HashOfContents, f.Hash())
+	s.Equal("name", f.Name())
+	s.False(f.IsDir())
+	assertChildren(s.T(), f, noder.NoChildren)
+	s.Equal("name<contents>", f.String())
 }
 
-func (s *FileSuite) TestNewfileErrorEmptyName(c *C) {
+func (s *FileSuite) TestNewfileErrorEmptyName() {
 	_, err := newFile("", "contents")
-	c.Assert(err, Not(IsNil))
+	s.Error(err)
 }
 
-func (s *FileSuite) TestDifferentContentsHaveDifferentHash(c *C) {
+func (s *FileSuite) TestDifferentContentsHaveDifferentHash() {
 	f1, err := newFile("name", "contents")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("name", "foo")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(f1.Hash(), Not(DeepEquals), f2.Hash())
+	s.NotEqual(f2.Hash(), f1.Hash())
 }
 
-func (s *FileSuite) TestSameContentsHaveSameHash(c *C) {
+func (s *FileSuite) TestSameContentsHaveSameHash() {
 	f1, err := newFile("name1", "contents")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	f2, err := newFile("name2", "contents")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(f1.Hash(), DeepEquals, f2.Hash())
+	s.Equal(f2.Hash(), f1.Hash())
 }

@@ -2,38 +2,36 @@ package sideband
 
 import (
 	"bytes"
-
-	. "gopkg.in/check.v1"
 )
 
-func (s *SidebandSuite) TestMuxerWrite(c *C) {
+func (s *SidebandSuite) TestMuxerWrite() {
 	buf := bytes.NewBuffer(nil)
 
 	m := NewMuxer(Sideband, buf)
 
 	n, err := m.Write(bytes.Repeat([]byte{'F'}, (MaxPackedSize-1)*2))
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 1998)
-	c.Assert(buf.Len(), Equals, 2008)
+	s.NoError(err)
+	s.Equal(1998, n)
+	s.Equal(2008, buf.Len())
 }
 
-func (s *SidebandSuite) TestMuxerWriteChannelMultipleChannels(c *C) {
+func (s *SidebandSuite) TestMuxerWriteChannelMultipleChannels() {
 	buf := bytes.NewBuffer(nil)
 
 	m := NewMuxer(Sideband, buf)
 
 	n, err := m.WriteChannel(PackData, bytes.Repeat([]byte{'D'}, 4))
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 4)
+	s.NoError(err)
+	s.Equal(4, n)
 
 	n, err = m.WriteChannel(ProgressMessage, bytes.Repeat([]byte{'P'}, 4))
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 4)
+	s.NoError(err)
+	s.Equal(4, n)
 
 	n, err = m.WriteChannel(PackData, bytes.Repeat([]byte{'D'}, 4))
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 4)
+	s.NoError(err)
+	s.Equal(4, n)
 
-	c.Assert(buf.Len(), Equals, 27)
-	c.Assert(buf.String(), Equals, "0009\x01DDDD0009\x02PPPP0009\x01DDDD")
+	s.Equal(27, buf.Len())
+	s.Equal("0009\x01DDDD0009\x02PPPP0009\x01DDDD", buf.String())
 }

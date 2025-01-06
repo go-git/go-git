@@ -1,16 +1,21 @@
 package packp
 
 import (
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/stretchr/testify/suite"
 )
 
-type UpdReqSuite struct{}
+type UpdReqSuite struct {
+	suite.Suite
+}
 
-var _ = Suite(&UpdReqSuite{})
+func TestUpdReqSuite(t *testing.T) {
+	suite.Run(t, new(UpdReqSuite))
+}
 
-func (s *UpdReqSuite) TestNewReferenceUpdateRequestFromCapabilities(c *C) {
+func (s *UpdReqSuite) TestNewReferenceUpdateRequestFromCapabilities() {
 	cap := capability.NewList()
 	cap.Set(capability.Sideband)
 	cap.Set(capability.Sideband64k)
@@ -22,18 +27,18 @@ func (s *UpdReqSuite) TestNewReferenceUpdateRequestFromCapabilities(c *C) {
 	cap.Set(capability.Agent, "foo")
 
 	r := NewReferenceUpdateRequestFromCapabilities(cap)
-	c.Assert(r.Capabilities.String(), Equals,
-		"agent=go-git/5.x report-status",
+	s.Equal("agent=go-git/5.x report-status",
+		r.Capabilities.String(),
 	)
 
 	cap = capability.NewList()
 	cap.Set(capability.Agent, "foo")
 
 	r = NewReferenceUpdateRequestFromCapabilities(cap)
-	c.Assert(r.Capabilities.String(), Equals, "agent=go-git/5.x")
+	s.Equal("agent=go-git/5.x", r.Capabilities.String())
 
 	cap = capability.NewList()
 
 	r = NewReferenceUpdateRequestFromCapabilities(cap)
-	c.Assert(r.Capabilities.String(), Equals, "")
+	s.Equal("", r.Capabilities.String())
 }

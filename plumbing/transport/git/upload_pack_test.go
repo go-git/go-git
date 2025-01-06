@@ -1,26 +1,31 @@
 package git
 
 import (
+	"testing"
+
 	"github.com/go-git/go-git/v5/internal/transport/test"
+	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
+func TestUploadPackSuite(t *testing.T) {
+	suite.Run(t, new(UploadPackSuite))
+}
+
 type UploadPackSuite struct {
-	test.UploadPackSuite
+	ups test.UploadPackSuite
 	BaseSuite
 }
 
-var _ = Suite(&UploadPackSuite{})
+func (s *UploadPackSuite) SetupSuite() {
+	s.BaseSuite.SetupTest()
 
-func (s *UploadPackSuite) SetUpSuite(c *C) {
-	s.BaseSuite.SetUpTest(c)
+	s.ups.SetS(s)
+	s.ups.Client = DefaultClient
+	s.ups.Endpoint = s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	s.ups.EmptyEndpoint = s.prepareRepository(fixtures.ByTag("empty").One(), "empty.git")
+	s.ups.NonExistentEndpoint = s.newEndpoint("non-existent.git")
 
-	s.UploadPackSuite.Client = DefaultClient
-	s.UploadPackSuite.Endpoint = s.prepareRepository(c, fixtures.Basic().One(), "basic.git")
-	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(c, fixtures.ByTag("empty").One(), "empty.git")
-	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint(c, "non-existent.git")
-
-	s.StartDaemon(c)
+	s.StartDaemon()
 }
