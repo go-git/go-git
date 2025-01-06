@@ -35,7 +35,6 @@ var args = map[string][]string{
 	"push":                       {setEmptyRemote(cloneRepository(defaultURL, tempFolder()))},
 	"restore":                    {cloneRepository(defaultURL, tempFolder())},
 	"revision":                   {cloneRepository(defaultURL, tempFolder()), "master~2^"},
-	"sha256":                     {tempFolder()},
 	"showcase":                   {defaultURL, tempFolder()},
 	"sparse-checkout":            {defaultURL, "vendor", tempFolder()},
 	"tag":                        {cloneRepository(defaultURL, tempFolder())},
@@ -44,7 +43,6 @@ var args = map[string][]string{
 // tests not working / set-up
 var ignored = map[string]bool{
 	"ls":              true,
-	"sha256":          true,
 	"submodule":       true,
 	"tag-create-push": true,
 }
