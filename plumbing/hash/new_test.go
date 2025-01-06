@@ -1,16 +1,11 @@
 package hash_test
 
 import (
-	"crypto"
 	"fmt"
-	"hash"
-	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	format "github.com/go-git/go-git/v5/plumbing/format/config"
 	. "github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/pjbgf/sha1cd"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,47 +36,6 @@ func TestFromHex(t *testing.T) {
 			} else {
 				assert.Nil(t, h)
 			}
-		})
-	}
-}
-
-func TestZeroFromHash(t *testing.T) {
-	tests := []struct {
-		name string
-		h    hash.Hash
-		want string
-	}{
-		{"valid sha1", crypto.SHA1.New(), strings.Repeat("0", 40)},
-		{"valid sha1cd", sha1cd.New(), strings.Repeat("0", 40)},
-		{"valid sha256", crypto.SHA256.New(), strings.Repeat("0", 64)},
-		{"unsupported hash", crypto.SHA384.New(), strings.Repeat("0", 40)},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ZeroFromHash(tc.h)
-			assert.Equal(t, tc.want, got.String())
-			assert.True(t, got.IsZero(), "should be empty")
-		})
-	}
-}
-
-func TestZeroFromObjectFormat(t *testing.T) {
-	tests := []struct {
-		name string
-		of   format.ObjectFormat
-		want string
-	}{
-		{"valid sha1", format.SHA1, strings.Repeat("0", 40)},
-		{"valid sha256", format.SHA256, strings.Repeat("0", 64)},
-		{"invalid format", "invalid", strings.Repeat("0", 40)},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ZeroFromObjectFormat(tc.of)
-			assert.Equal(t, tc.want, got.String())
-			assert.True(t, got.IsZero(), "should be empty")
 		})
 	}
 }

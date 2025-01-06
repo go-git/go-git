@@ -2,9 +2,6 @@ package hash
 
 import (
 	"encoding/hex"
-	"hash"
-
-	format "github.com/go-git/go-git/v5/plumbing/format/config"
 )
 
 func MustFromHex(in string) ObjectID {
@@ -98,29 +95,5 @@ func FromBytes(in []byte) (ObjectID, bool) {
 
 	default:
 		return nil, false
-	}
-}
-
-// ZeroFromHash returns a zeroed hash based on the given hash.Hash.
-//
-// Defaults to SHA1-sized hash if the provided hash is not supported.
-func ZeroFromHash(h hash.Hash) ObjectID {
-	switch h.Size() {
-	case SHA256Size:
-		return SHA256Hash{}
-	default:
-		return SHA1Hash{}
-	}
-}
-
-// ZeroFromHash returns a zeroed hash based on the given ObjectFormat.
-//
-// Defaults to SHA1-sized hash if the provided format is not supported.
-func ZeroFromObjectFormat(f format.ObjectFormat) ObjectID {
-	switch f {
-	case format.SHA256:
-		return SHA256Hash{}
-	default:
-		return SHA1Hash{}
 	}
 }

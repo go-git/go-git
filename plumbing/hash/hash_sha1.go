@@ -25,8 +25,7 @@ func (ih SHA1Hash) Size() int {
 }
 
 func (ih SHA1Hash) IsZero() bool {
-	var empty SHA1Hash
-	return ih == empty
+	return ih == zeroSHA1
 }
 
 func (ih SHA1Hash) String() string {
