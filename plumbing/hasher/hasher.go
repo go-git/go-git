@@ -13,11 +13,6 @@ import (
 	format "github.com/go-git/go-git/v5/plumbing/format/config"
 )
 
-type ObjectID interface {
-	String() string
-	Bytes() []byte
-}
-
 // ObjectHasher computes hashes for Git objects. A few differences
 // it has when compared to Hasher:
 //
@@ -31,7 +26,7 @@ type ObjectHasher interface {
 	// Compute calculates the hash of a Git object. The process involves
 	// first writing the object header, which contains the object type
 	// and content size, followed by the content itself.
-	Compute(ot plumbing.ObjectType, d []byte) (ObjectID, error)
+	Compute(ot plumbing.ObjectType, d []byte) (hash.ObjectID, error)
 }
 
 // FromObjectFormat returns the correct ObjectHasher for the given
@@ -81,7 +76,7 @@ type objectHasherSHA1 struct {
 	buf bytes.Buffer
 }
 
-func (h *objectHasherSHA1) Compute(ot plumbing.ObjectType, d []byte) (ObjectID, error) {
+func (h *objectHasherSHA1) Compute(ot plumbing.ObjectType, d []byte) (hash.ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 	h.buf.Reset()
@@ -122,7 +117,7 @@ type objectHasherSHA256 struct {
 	buf bytes.Buffer
 }
 
-func (h *objectHasherSHA256) Compute(ot plumbing.ObjectType, d []byte) (ObjectID, error) {
+func (h *objectHasherSHA256) Compute(ot plumbing.ObjectType, d []byte) (hash.ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 	h.buf.Reset()
