@@ -7,7 +7,7 @@ require (
 	dario.cat/mergo v1.0.0
 	github.com/ProtonMail/go-crypto v1.1.3
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/elazarl/goproxy v1.2.3
+	github.com/elazarl/goproxy v1.2.7
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
@@ -22,8 +22,8 @@ require (
 	github.com/skeema/knownhosts v1.3.0
 	github.com/stretchr/testify v1.10.0
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.31.0
-	golang.org/x/net v0.33.0
+	golang.org/x/crypto v0.32.0
+	golang.org/x/net v0.34.0
 	golang.org/x/sys v0.29.0
 	golang.org/x/text v0.21.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
