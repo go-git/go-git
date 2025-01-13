@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
@@ -85,6 +86,9 @@ type CloneOptions struct {
 	//
 	// [Reference]: https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
 	Shared bool
+	// Filter requests that the server to send only a subset of the objects.
+	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
+	Filter packp.Filter
 }
 
 // MergeOptions describes how a merge should be performed.
@@ -220,6 +224,9 @@ type FetchOptions struct {
 	// Prune specify that local refs that match given RefSpecs and that do
 	// not exist remotely will be removed.
 	Prune bool
+	// Filter requests that the server to send only a subset of the objects.
+	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
+	Filter packp.Filter
 }
 
 // Validate validates the fields and sets the default values.
