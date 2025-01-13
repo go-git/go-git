@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	gofs "io/fs"
 	"os"
 	"strings"
 
@@ -12,7 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
-	gioutil "github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 const (
@@ -31,57 +30,67 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 	ignoreFile, _ = pathutil.ReplaceTildeWithHome(ignoreFile)
 
 	f, err := fs.Open(fs.Join(append(path, ignoreFile)...))
-	if err == nil {
-		defer func() { _ = f.Close() }()
-
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			s := scanner.Text()
-			if !strings.HasPrefix(s, commentPrefix) && len(strings.TrimSpace(s)) > 0 {
-				ps = append(ps, ParsePattern(s, path))
-			}
-		}
-	} else if !os.IsNotExist(err) {
+	if err != nil {
 		return nil, err
 	}
 
-	return ps, err
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		s := scanner.Text()
+		if !strings.HasPrefix(s, commentPrefix) && len(strings.TrimSpace(s)) > 0 {
+			ps = append(ps, ParsePattern(s, path))
+		}
+	}
+	return ps, scanner.Err()
 }
 
 // ReadPatterns reads the .git/info/exclude and then the gitignore patterns
 // recursively traversing through the directory structure. The result is in
 // the ascending order of priority (last higher).
 func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) {
-	ps, _ = readIgnoreFile(fs, path, infoExcludeFile)
+	return extendPatterns(fs, nil, path)
+}
 
-	subps, _ := readIgnoreFile(fs, path, gitignoreFile)
-	ps = append(ps, subps...)
+func extendPatterns(fs billy.Filesystem, start []Pattern, path []string) (ps []Pattern, err error) {
+	gitignore, err := readIgnoreFile(fs, path, gitignoreFile)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	infoExclude, err := readIgnoreFile(fs, path, infoExcludeFile)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
 
-	var fis []gofs.DirEntry
-	fis, err = fs.ReadDir(fs.Join(path...))
+	foundPatterns := append(gitignore, infoExclude...)
+
+	ignorePatterns := append(start, foundPatterns...)
+	ignoreMatcher := NewMatcher(ignorePatterns)
+
+	fis, err := fs.ReadDir(fs.Join(path...))
 	if err != nil {
-		return ps, err
+		return nil, err
 	}
 
 	for _, fi := range fis {
 		if fi.IsDir() && fi.Name() != gitDir {
-			if NewMatcher(ps).Match(append(path, fi.Name()), true) {
+			if ignoreMatcher.Match(append(path, fi.Name()), true) {
 				continue
 			}
 
-			var subps []Pattern
-			subps, err = ReadPatterns(fs, append(path, fi.Name()))
+			subPatterns, err := extendPatterns(fs, ignorePatterns, append(path, fi.Name()))
 			if err != nil {
-				return ps, err
+				return nil, err
 			}
 
-			if len(subps) > 0 {
-				ps = append(ps, subps...)
+			if len(subPatterns) > 0 {
+				foundPatterns = append(foundPatterns, subPatterns...)
 			}
 		}
 	}
 
-	return ps, err
+	return foundPatterns, err
 }
 
 func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
@@ -93,7 +102,7 @@ func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
 		return nil, err
 	}
 
-	defer gioutil.CheckClose(f, &err)
+	defer ioutil.CheckClose(f, &err)
 
 	b, err := io.ReadAll(f)
 	if err != nil {
