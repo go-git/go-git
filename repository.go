@@ -951,6 +951,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		InsecureSkipTLS: o.InsecureSkipTLS,
 		CABundle:        o.CABundle,
 		ProxyOptions:    o.ProxyOptions,
+		Filter:          o.Filter,
 	}, o.ReferenceName)
 	if err != nil {
 		return err
