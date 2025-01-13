@@ -28,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
@@ -1297,6 +1298,36 @@ func (s *RepositorySuite) TestFetchContext() {
 	s.NotNil(r.FetchContext(ctx, &FetchOptions{}))
 }
 
+func (s *RepositorySuite) TestFetchWithFilters() {
+	r, _ := Init(memory.NewStorage(), nil)
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+	s.NoError(err)
+
+	err = r.Fetch(&FetchOptions{
+		Filter: packp.FilterBlobNone(),
+	})
+	s.ErrorIs(err, ErrFilterNotSupported)
+
+}
+func (s *RepositorySuite) TestFetchWithFiltersReal() {
+	r, _ := Init(memory.NewStorage(), nil)
+	_, err := r.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{"https://github.com/git-fixtures/basic.git"},
+	})
+	s.NoError(err)
+	err = r.Fetch(&FetchOptions{
+		Filter: packp.FilterBlobNone(),
+	})
+	s.NoError(err)
+	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
+	s.NotNil(err)
+	s.Nil(blob)
+
+}
 func (s *RepositorySuite) TestCloneWithProgress() {
 	s.T().Skip("Currently, go-git server-side implementation does not support writing" +
 		"progress and sideband messages to the client. This means any tests that" +
@@ -1642,6 +1673,18 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 	s.Equal(7, count)
 }
 
+func (s *RepositorySuite) TestCloneWithFilter() {
+	r, _ := Init(memory.NewStorage(), nil)
+
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:    "https://github.com/git-fixtures/basic.git",
+		Filter: packp.FilterTreeDepth(0),
+	})
+	s.NoError(err)
+	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
+	s.NotNil(err)
+	s.Nil(blob)
+}
 func (s *RepositorySuite) TestPush() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)

@@ -35,6 +35,7 @@ var (
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
+	ErrFilterNotSupported    = errors.New("server does not support filters")
 )
 
 type NoMatchingRefSpecError struct {
