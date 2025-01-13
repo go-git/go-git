@@ -48,7 +48,9 @@ func (s *MatcherSuite) SetupTest() {
 	s.NoError(err)
 	_, err = f.Write([]byte("ignore.crlf\r\n"))
 	s.NoError(err)
-	_, err = f.Write([]byte("ignore_dir\n"))
+	_, err = f.Write([]byte("/ignore_dir\n"))
+	s.NoError(err)
+	_, err = f.Write([]byte("nested/ignore_dir\n"))
 	s.NoError(err)
 	err = f.Close()
 	s.NoError(err)
@@ -71,6 +73,17 @@ func (s *MatcherSuite) SetupTest() {
 	_, err = fs.Create("ignore_dir/file")
 	s.NoError(err)
 	err = f.Close()
+	s.NoError(err)
+
+	err = fs.MkdirAll("nested/ignore_dir", os.ModePerm)
+	s.NoError(err)
+	f, err = fs.Create("nested/ignore_dir/.gitignore")
+	s.NoError(err)
+	_, err = f.Write([]byte("!file\n"))
+	s.NoError(err)
+	err = f.Close()
+	s.NoError(err)
+	_, err = fs.Create("nested/ignore_dir/file")
 	s.NoError(err)
 
 	err = fs.MkdirAll("another", os.ModePerm)
@@ -284,13 +297,14 @@ func (s *MatcherSuite) SetupTest() {
 
 func (s *MatcherSuite) TestDir_ReadPatterns() {
 	checkPatterns := func(ps []Pattern) {
-		s.Len(ps, 7)
+		s.Len(ps, 8)
 		m := NewMatcher(ps)
 
 		s.True(m.Match([]string{"exclude.crlf"}, true))
 		s.True(m.Match([]string{"ignore.crlf"}, true))
 		s.True(m.Match([]string{"vendor", "gopkg.in"}, true))
 		s.True(m.Match([]string{"ignore_dir", "file"}, false))
+		s.True(m.Match([]string{"nested", "ignore_dir", "file"}, false))
 		s.False(m.Match([]string{"vendor", "github.com"}, true))
 		s.True(m.Match([]string{"multiple", "sub", "ignores", "first", "ignore_dir"}, true))
 		s.True(m.Match([]string{"multiple", "sub", "ignores", "second", "ignore_dir"}, true))
