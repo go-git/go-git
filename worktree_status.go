@@ -370,8 +370,10 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		}
 	}
 
+	path = filepath.Clean(path)
+
 	if err != nil || !fi.IsDir() {
-		added, h, err = w.doAddFile(idx, s, filepath.Clean(path), ignorePattern)
+		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
 	} else {
 		added, err = w.doAddDirectory(idx, s, path, ignorePattern)
 	}
