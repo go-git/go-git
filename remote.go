@@ -34,6 +34,7 @@ var (
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
+	ErrFilterNotSupported    = errors.New("server does not support filters")
 )
 
 type NoMatchingRefSpecError struct {
@@ -1168,6 +1169,16 @@ func (r *Remote) newUploadPackRequest(o *FetchOptions,
 		}
 	}
 
+	if o.Filter != "" {
+		if ar.Capabilities.Supports(capability.Filter) {
+			req.Filter = o.Filter
+			if err := req.Capabilities.Set(capability.Filter); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, ErrFilterNotSupported
+		}
+	}
 	isWildcard := true
 	for _, s := range o.RefSpecs {
 		if !s.IsWildcard() {
