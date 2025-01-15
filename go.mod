@@ -8,7 +8,7 @@ toolchain go1.22.6
 // Use the v6-exp branch across go-git dependencies.
 replace (
 	github.com/go-git/gcfg => github.com/go-git/gcfg v1.5.1-0.20240812080926-1b398f6213c9
-	github.com/go-git/go-billy/v5 => github.com/go-git/go-billy/v5 v5.0.0-20240804231525-dc481f5289ba
+	github.com/go-git/go-billy/v5 => github.com/go-git/go-billy/v5 v5.5.1-0.20250112183528-18f878617b0e
 	github.com/go-git/go-git-fixtures/v5 => github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 )
 
@@ -32,7 +32,7 @@ require (
 	golang.org/x/crypto v0.31.0
 	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e
 	golang.org/x/net v0.32.0
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.29.0
 	golang.org/x/text v0.21.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
@@ -40,7 +40,7 @@ require (
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/cloudflare/circl v1.5.0 // indirect
-	github.com/cyphar/filepath-securejoin v0.3.5 // indirect
+	github.com/cyphar/filepath-securejoin v0.3.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
