@@ -5,7 +5,7 @@ go 1.21
 
 require (
 	dario.cat/mergo v1.0.0
-	github.com/ProtonMail/go-crypto v1.1.4
+	github.com/ProtonMail/go-crypto v1.1.5
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v1.4.0
 	github.com/emirpasic/gods v1.18.1
