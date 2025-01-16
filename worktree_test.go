@@ -74,8 +74,7 @@ func (s *WorktreeSuite) TestPullCheckout() {
 }
 
 func (s *WorktreeSuite) TestPullFastForward() {
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	url := s.T().TempDir()
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
@@ -84,8 +83,7 @@ func (s *WorktreeSuite) TestPullFastForward() {
 	})
 	s.NoError(err)
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: url,
@@ -112,8 +110,7 @@ func (s *WorktreeSuite) TestPullFastForward() {
 }
 
 func (s *WorktreeSuite) TestPullNonFastForward() {
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	url := s.T().TempDir()
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
@@ -122,8 +119,7 @@ func (s *WorktreeSuite) TestPullNonFastForward() {
 	})
 	s.NoError(err)
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainClone(dir, false, &CloneOptions{
 		URL: url,
@@ -234,8 +230,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion() {
 
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, _ := PlainInit(dir, false)
 	r.CreateRemote(&config.RemoteConfig{
@@ -329,8 +324,7 @@ func (s *WorktreeSuite) TestPullDepth() {
 }
 
 func (s *WorktreeSuite) TestPullAfterShallowClone() {
-	tempDir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	tempDir := s.T().TempDir()
 	remoteURL := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
@@ -458,8 +452,7 @@ func (s *WorktreeSuite) TestCheckoutSymlink() {
 		s.T().Skip("git doesn't support symlinks by default in windows")
 	}
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -523,8 +516,7 @@ func (s *WorktreeSuite) TestFilenameNormalization() {
 		s.T().Skip("windows paths may contain non utf-8 sequences")
 	}
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	url := s.T().TempDir()
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
@@ -1837,8 +1829,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectoryDot() {
 }
 
 func (s *WorktreeSuite) TestAddSymlink() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -2776,8 +2767,7 @@ func (s *WorktreeSuite) TestGrep() {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	server, err := PlainClone(dir, false, &CloneOptions{
 		URL: path,
@@ -2860,8 +2850,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainClone(dir, true, &CloneOptions{
 		URL: path,
@@ -2909,8 +2898,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 }
 
 func (s *WorktreeSuite) TestResetLingeringDirectories() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	commitOpts := &CommitOptions{Author: &object.Signature{
 		Name:  "foo",
@@ -2961,8 +2949,7 @@ func (s *WorktreeSuite) TestResetLingeringDirectories() {
 func (s *WorktreeSuite) TestAddAndCommit() {
 	expectedFiles := 2
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	repo, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -3004,8 +2991,7 @@ func (s *WorktreeSuite) TestAddAndCommit() {
 }
 
 func (s *WorktreeSuite) TestAddAndCommitEmpty() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	repo, err := PlainInit(dir, false)
 	s.NoError(err)
