@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
@@ -72,9 +73,8 @@ func SendPack(
 		}
 
 		if err := req.Packfile.Close(); err != nil {
-			return err
+			return fmt.Errorf("closing packfile: %w", err)
 		}
-
 	}
 
 	// Close the write pipe to signal the end of the request.
@@ -103,11 +103,11 @@ func SendPack(
 
 	report := packp.NewReportStatus()
 	if err := report.Decode(r); err != nil {
-		return err
+		return fmt.Errorf("decode report-status: %w", err)
 	}
 
 	if err := reader.Close(); err != nil {
-		return err
+		return fmt.Errorf("closing reader: %w", err)
 	}
 
 	return report.Error()

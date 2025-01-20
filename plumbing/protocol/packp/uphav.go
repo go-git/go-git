@@ -66,7 +66,7 @@ func (u *UploadHaves) Decode(r io.Reader) error {
 			break
 		}
 
-		if bytes.Equal(line, []byte("done\n")) {
+		if bytes.HasPrefix(line, []byte("done")) {
 			u.Done = true
 			break
 		}
