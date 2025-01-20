@@ -3,6 +3,7 @@
 package revlist
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -61,7 +62,7 @@ func objects(
 
 	for _, h := range objects {
 		if err := processObject(s, h, seen, visited, ignore, walkerFunc); err != nil {
-			if allowMissingObjects && err == plumbing.ErrObjectNotFound {
+			if allowMissingObjects && errors.Is(err, plumbing.ErrObjectNotFound) {
 				continue
 			}
 
@@ -87,12 +88,12 @@ func processObject(
 
 	o, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
-		return err
+		return fmt.Errorf("getting object: %w", err)
 	}
 
 	do, err := object.DecodeObject(s, o)
 	if err != nil {
-		return err
+		return fmt.Errorf("decoding object: %w", err)
 	}
 
 	switch do := do.(type) {

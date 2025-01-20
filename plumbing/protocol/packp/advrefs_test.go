@@ -3,6 +3,7 @@ package packp
 import (
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -168,10 +169,16 @@ func TestAdvRefsDecodeEncodeSuite(t *testing.T) {
 }
 
 func (s *AdvRefsDecodeEncodeSuite) test(in []string, exp []string, isEmpty bool) {
+	s.T().Helper()
+
 	var input io.Reader
+	var isSmart bool
 	{
 		var buf bytes.Buffer
 		for _, l := range in {
+			if !isSmart && strings.Contains(l, "# service=") {
+				isSmart = true
+			}
 			if l == "" {
 				s.NoError(pktline.WriteFlush(&buf))
 			} else {
@@ -199,12 +206,22 @@ func (s *AdvRefsDecodeEncodeSuite) test(in []string, exp []string, isEmpty bool)
 
 	var obtained []byte
 	{
+		var smart SmartReply
+		if isSmart {
+			// Consume the smart service line
+			s.NoError(smart.Decode(input))
+		}
+
 		ar := NewAdvRefs()
-		s.Nil(ar.Decode(input))
+		s.NoError(ar.Decode(input))
 		s.Equal(isEmpty, ar.IsEmpty())
 
 		var buf bytes.Buffer
-		s.Nil(ar.Encode(&buf))
+		if isSmart {
+			s.NoError(smart.Encode(&buf))
+		}
+
+		s.NoError(ar.Encode(&buf))
 
 		obtained = buf.Bytes()
 	}
@@ -229,12 +246,14 @@ func (s *AdvRefsDecodeEncodeSuite) TestNoHead() {
 func (s *AdvRefsDecodeEncodeSuite) TestNoHeadSmart() {
 	input := []string{
 		"# service=git-upload-pack\n",
+		"",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00",
 		"",
 	}
 
 	expected := []string{
 		"# service=git-upload-pack\n",
+		"",
 		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
 		"",
 	}

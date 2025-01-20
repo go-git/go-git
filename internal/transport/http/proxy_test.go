@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/internal/transport/http/test"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -39,17 +40,20 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	os.Setenv("HTTPS_PROXY", fmt.Sprintf("https://user:pass@%s", httpsProxyAddr))
 	defer os.Unsetenv("HTTPS_PROXY")
 
+	st := memory.NewStorage()
 	endpoint, err := transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
 	s.NoError(err)
 	endpoint.InsecureSkipTLS = true
 
-	client := http.DefaultClient
-	session, err := client.NewUploadPackSession(endpoint, nil)
+	client := http.DefaultTransport
+	session, err := client.NewSession(st, endpoint, nil)
+	s.NoError(err)
+	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
 	s.NoError(err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	info, err := session.AdvertisedReferencesContext(ctx)
+	info, err := conn.GetRemoteRefs(ctx)
 	s.NoError(err)
 	s.NotNil(info)
 	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
