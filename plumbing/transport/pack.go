@@ -44,6 +44,12 @@ var _ Session = &PackSession{}
 // Handshake implements Session.
 func (p *PackSession) Handshake(ctx context.Context, service Service, params ...string) (conn Connection, err error) {
 	forPush := service == ReceivePackService
+	switch service {
+	case UploadPackService, ReceivePackService:
+		// do nothing
+	default:
+		return nil, ErrUnsupportedService
+	}
 	cmd, err := p.cmdr.Command(ctx, service.String(), p.ep, p.auth, params...)
 	if err != nil {
 		return nil, err
