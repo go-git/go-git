@@ -12,8 +12,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 // ReceivePackOptions is a set of options for the ReceivePack service.
@@ -80,8 +82,24 @@ func ReceivePack(
 		return err
 	}
 
+	var (
+		caps         = updreq.Capabilities
+		needPackfile bool
+	)
+
+	// Should we expect a packfile?
+	for _, cmd := range updreq.Commands {
+		if cmd.New != plumbing.ZeroHash {
+			needPackfile = true
+			break
+		}
+	}
+
 	// Receive the packfile
-	unpackErr := packfile.UpdateObjectStorage(st, rd)
+	var unpackErr error
+	if needPackfile {
+		unpackErr = packfile.UpdateObjectStorage(st, rd)
+	}
 
 	// Done with the request, now close the reader
 	// to indicate that we are done reading from it.
@@ -94,15 +112,25 @@ func ReceivePack(
 		return unpackErr
 	}
 
+	var writer io.Writer = w
+	if !caps.Supports(capability.NoProgress) {
+		if caps.Supports(capability.Sideband64k) {
+			writer = sideband.NewMuxer(sideband.Sideband64k, w)
+		} else if caps.Supports(capability.Sideband) {
+			writer = sideband.NewMuxer(sideband.Sideband, w)
+		}
+	}
+
+	writeCloser := ioutil.NewWriteCloser(writer, w)
 	if unpackErr != nil {
-		return sendReportStatus(w, unpackErr, nil)
+		return sendReportStatus(writeCloser, unpackErr, nil)
 	}
 
 	var firstErr error
 	cmdStatus := make(map[plumbing.ReferenceName]error)
 	updateReferences(st, updreq, cmdStatus, &firstErr)
 
-	if err := sendReportStatus(w, firstErr, cmdStatus); err != nil {
+	if err := sendReportStatus(writeCloser, firstErr, cmdStatus); err != nil {
 		return err
 	}
 
