@@ -1,9 +1,9 @@
-name: "CodeQL"
+name: CodeQL
 on:
   push:
     branches:
-    - "master"
-    - "v6-exp"
+    - releases/v5.x
+    - main
   pull_request:
 
   schedule:
