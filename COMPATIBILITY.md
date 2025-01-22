@@ -142,7 +142,7 @@ compatibility status with go-git.
 | `diff-index`    |                                       | ❌           |                                                     |                                              |
 | `for-each-ref`  |                                       | ✅           |                                                     |                                              |
 | `hash-object`   |                                       | ✅           |                                                     |                                              |
-| `ls-files`      |                                       | ✅           |                                                     |                                              |
+| `ls-files`      |                                       | ✅           |                                                     | - [ls-files](_examples/ls-files/main.go)     |
 | `ls-remote`     |                                       | ✅           |                                                     | - [ls-remote](_examples/ls-remote/main.go)   |
 | `merge-base`    | `--independent` <br/> `--is-ancestor` | ⚠️ (partial) | Calculates the merge-base only between two commits. | - [merge-base](_examples/merge_base/main.go) |
 | `merge-base`    | `--fork-point` <br/> `--octopus`      | ❌           |                                                     |                                              |
