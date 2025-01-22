@@ -74,15 +74,17 @@ func (s *WorktreeSuite) TestPullFastForward(c *C) {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	server, err := PlainClone(url, false, &CloneOptions{
-		URL: path,
+	server, err := PlainClone(url, &CloneOptions{
+		IsBare: false,
+		URL:    path,
 	})
 	c.Assert(err, IsNil)
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		IsBare: false,
+		URL:    url,
 	})
 	c.Assert(err, IsNil)
 
@@ -110,15 +112,17 @@ func (s *WorktreeSuite) TestPullNonFastForward(c *C) {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	server, err := PlainClone(url, false, &CloneOptions{
-		URL: path,
+	server, err := PlainClone(url, &CloneOptions{
+		IsBare: false,
+		URL:    path,
 	})
 	c.Assert(err, IsNil)
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, false, &CloneOptions{
-		URL: url,
+	r, err := PlainClone(dir, &CloneOptions{
+		IsBare: false,
+		URL:    url,
 	})
 	c.Assert(err, IsNil)
 
@@ -331,7 +335,8 @@ func (s *WorktreeSuite) TestPullAfterShallowClone(c *C) {
 	_ = CommitNewFile(c, remote, "File1")
 	_ = CommitNewFile(c, remote, "File2")
 
-	repo, err := PlainClone(repoDir, false, &CloneOptions{
+	repo, err := PlainClone(repoDir, &CloneOptions{
+		IsBare:        false,
 		URL:           remoteURL,
 		Depth:         1,
 		Tags:          NoTags,
@@ -516,8 +521,9 @@ func (s *WorktreeSuite) TestFilenameNormalization(c *C) {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	server, err := PlainClone(url, false, &CloneOptions{
-		URL: path,
+	server, err := PlainClone(url, &CloneOptions{
+		IsBare: false,
+		URL:    path,
 	})
 	c.Assert(err, IsNil)
 
@@ -2708,8 +2714,9 @@ func (s *WorktreeSuite) TestGrep(c *C) {
 
 	dir := c.MkDir()
 
-	server, err := PlainClone(dir, false, &CloneOptions{
-		URL: path,
+	server, err := PlainClone(dir, &CloneOptions{
+		IsBare: false,
+		URL:    path,
 	})
 	c.Assert(err, IsNil)
 
@@ -2791,8 +2798,9 @@ func (s *WorktreeSuite) TestGrepBare(c *C) {
 
 	dir := c.MkDir()
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: path,
+	r, err := PlainClone(dir, &CloneOptions{
+		IsBare: true,
+		URL:    path,
 	})
 	c.Assert(err, IsNil)
 
