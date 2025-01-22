@@ -59,7 +59,7 @@ The format can be described more formally as follows:
 <package>: <subpackage>, <what changed>. [Fixes #<issue-number>]
 ```
 
-[discord server]: https://discord.gg/6CG7M6wF
+[discord server]: https://discord.gg/8hrxYEVPE5
 [StackOverflow go-git tag]: https://stackoverflow.com/questions/tagged/go-git
 [Issues]: https://github.com/go-git/go-git/issues
 [official git implementation]: https://github.com/git/git
