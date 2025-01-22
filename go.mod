@@ -15,7 +15,7 @@ replace (
 require (
 	dario.cat/mergo v1.0.1
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/ProtonMail/go-crypto v1.1.3
+	github.com/ProtonMail/go-crypto v1.1.5
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v0.0.0-20241214220532-033b654b53fa
 	github.com/emirpasic/gods v1.18.1
@@ -34,7 +34,6 @@ require (
 	golang.org/x/net v0.32.0
 	golang.org/x/sys v0.28.0
 	golang.org/x/text v0.21.0
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
 
 require (
@@ -46,5 +45,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
