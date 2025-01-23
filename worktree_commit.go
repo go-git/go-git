@@ -33,6 +33,10 @@ var (
 // Commit stores the current contents of the index in a new commit along with
 // a log message from the user describing the changes.
 func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error) {
+	if opts == nil {
+		opts = &CommitOptions{}
+	}
+
 	if err := opts.Validate(w.r); err != nil {
 		return plumbing.ZeroHash, err
 	}

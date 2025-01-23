@@ -160,6 +160,10 @@ func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptio
 
 // Checkout switch branches or restore working tree files.
 func (w *Worktree) Checkout(opts *CheckoutOptions) error {
+	if opts == nil {
+		opts = &CheckoutOptions{}
+	}
+
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -279,6 +283,10 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 }
 
 func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
+	if opts == nil {
+		opts = &ResetOptions{}
+	}
+
 	if err := opts.Validate(w.r); err != nil {
 		return err
 	}
@@ -925,6 +933,10 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 // Clean the worktree by removing untracked files.
 // An empty dir could be removed - this is what  `git clean -f -d .` does.
 func (w *Worktree) Clean(opts *CleanOptions) error {
+	if opts == nil {
+		opts = &CleanOptions{}
+	}
+
 	s, err := w.Status()
 	if err != nil {
 		return err
@@ -995,6 +1007,10 @@ func (gr GrepResult) String() string {
 
 // Grep performs grep on a repository.
 func (r *Repository) Grep(opts *GrepOptions) ([]GrepResult, error) {
+	if opts == nil {
+		opts = &GrepOptions{}
+	}
+
 	if err := opts.validate(r); err != nil {
 		return nil, err
 	}
