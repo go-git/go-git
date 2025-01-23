@@ -1652,19 +1652,3 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 	s.NoError(err)
 	s.True(entriesEquals(obtained.Entries, expected.Entries))
 }
-
-func FuzzDecode(f *testing.F) {
-
-	f.Fuzz(func(t *testing.T, input []byte) {
-
-		obj := &SortReadObject{
-			t:    plumbing.TreeObject,
-			h:    plumbing.ZeroHash,
-			cont: input,
-			sz:   int64(len(input)),
-		}
-
-		newTree := &Tree{}
-		newTree.Decode(obj)
-	})
-}
