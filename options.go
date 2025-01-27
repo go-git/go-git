@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
-	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // SubmoduleRecursivity defines how depth will affect any submodule recursive
@@ -89,6 +89,9 @@ type CloneOptions struct {
 	// Filter requests that the server to send only a subset of the objects.
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
+	// Bare determines whether the repository will have a worktree (non-bare)
+	// or not (bare).
+	Bare bool
 }
 
 // MergeOptions describes how a merge should be performed.
@@ -175,10 +178,6 @@ func (o *PullOptions) Validate() error {
 
 	return nil
 }
-
-// TagMode defines how the tags will be fetched from the remote repository.
-// TODO: delete for V6
-type TagMode = plumbing.TagMode
 
 const (
 	InvalidTagMode = plumbing.InvalidTagMode

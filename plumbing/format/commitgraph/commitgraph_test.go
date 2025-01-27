@@ -6,8 +6,12 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/commitgraph"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -26,13 +30,16 @@ func TestCommitgraphSuite(t *testing.T) {
 	suite.Run(t, new(CommitgraphSuite))
 }
 
-func testDecodeHelper(s *CommitgraphSuite, fs billy.Filesystem, path string) {
+func testReadIndex(s *CommitgraphSuite, fs billy.Filesystem, path string) commitgraph.Index {
 	reader, err := fs.Open(path)
 	s.NoError(err)
-	defer reader.Close()
 	index, err := commitgraph.OpenFileIndex(reader)
 	s.NoError(err)
+	s.NotNil(index)
+	return index
+}
 
+func testDecodeHelper(s *CommitgraphSuite, index commitgraph.Index) {
 	// Root commit
 	nodeIndex, err := index.GetIndexByHash(plumbing.NewHash("347c91919944a68e9413581a1bc15519550a3afe"))
 	s.NoError(err)
@@ -78,10 +85,61 @@ func testDecodeHelper(s *CommitgraphSuite, fs billy.Filesystem, path string) {
 	s.Equal("e713b52d7e13807e87a002e812041f248db3f643", hashes[10].String())
 }
 
+func (s *CommitgraphSuite) TestDecodeMultiChain() {
+	for _, f := range fixtures.ByTag("commit-graph-chain-2") {
+		dotgit := f.DotGit()
+		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
+		s.NoError(err)
+		defer index.Close()
+		storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		p := f.Packfile()
+		defer p.Close()
+		packfile.UpdateObjectStorage(storer, p)
+
+		for idx, hash := range index.Hashes() {
+			idx2, err := index.GetIndexByHash(hash)
+			s.NoError(err)
+			s.Equal(uint32(idx), idx2)
+			hash2, err := index.GetHashByIndex(idx2)
+			s.NoError(err)
+			s.Equal(hash.String(), hash2.String())
+
+			commitData, err := index.GetCommitDataByIndex(uint32(idx))
+			s.NoError(err)
+			commit, err := object.GetCommit(storer, hash)
+			s.NoError(err)
+
+			for i, parent := range commit.ParentHashes {
+				s.Equal(hash.String()+":"+commitData.ParentHashes[i].String(), hash.String()+":"+parent.String())
+			}
+		}
+	}
+}
+
 func (s *CommitgraphSuite) TestDecode() {
 	for _, f := range fixtures.ByTag("commit-graph") {
 		dotgit := f.DotGit()
-		testDecodeHelper(s, dotgit, dotgit.Join("objects", "info", "commit-graph"))
+		index := testReadIndex(s, dotgit, dotgit.Join("objects", "info", "commit-graph"))
+		defer index.Close()
+		testDecodeHelper(s, index)
+	}
+}
+
+func (s *CommitgraphSuite) TestDecodeChain() {
+	for _, f := range fixtures.ByTag("commit-graph") {
+		dotgit := f.DotGit()
+		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
+		s.NoError(err)
+		defer index.Close()
+		testDecodeHelper(s, index)
+	}
+
+	for _, f := range fixtures.ByTag("commit-graph-chain") {
+		dotgit := f.DotGit()
+		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
+		s.NoError(err)
+		defer index.Close()
+		testDecodeHelper(s, index)
 	}
 }
 
@@ -94,6 +152,7 @@ func (s *CommitgraphSuite) TestReencode() {
 		defer reader.Close()
 		index, err := commitgraph.OpenFileIndex(reader)
 		s.NoError(err)
+		defer index.Close()
 
 		writer, err := util.TempFile(dotgit, "", "commit-graph")
 		s.NoError(err)
@@ -105,7 +164,9 @@ func (s *CommitgraphSuite) TestReencode() {
 		s.NoError(err)
 		writer.Close()
 
-		testDecodeHelper(s, dotgit, tmpName)
+		tmpIndex := testReadIndex(s, dotgit, tmpName)
+		defer tmpIndex.Close()
+		testDecodeHelper(s, tmpIndex)
 	}
 }
 
@@ -117,13 +178,15 @@ func (s *CommitgraphSuite) TestReencodeInMemory() {
 		s.NoError(err)
 		index, err := commitgraph.OpenFileIndex(reader)
 		s.NoError(err)
+
 		memoryIndex := commitgraph.NewMemoryIndex()
+		defer memoryIndex.Close()
 		for i, hash := range index.Hashes() {
-			commitData, err := index.GetCommitDataByIndex(i)
+			commitData, err := index.GetCommitDataByIndex(uint32(i))
 			s.NoError(err)
 			memoryIndex.Add(hash, commitData)
 		}
-		reader.Close()
+		index.Close()
 
 		writer, err := util.TempFile(dotgit, "", "commit-graph")
 		s.NoError(err)
@@ -135,6 +198,8 @@ func (s *CommitgraphSuite) TestReencodeInMemory() {
 		s.NoError(err)
 		writer.Close()
 
-		testDecodeHelper(s, dotgit, tmpName)
+		tmpIndex := testReadIndex(s, dotgit, tmpName)
+		defer tmpIndex.Close()
+		testDecodeHelper(s, tmpIndex)
 	}
 }

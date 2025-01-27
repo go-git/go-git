@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-git/go-git/v5"
-	. "github.com/go-git/go-git/v5/_examples"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/go-git/go-git/v6"
+	. "github.com/go-git/go-git/v6/_examples"
+	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // Expands the Basic example focusing in performance.
@@ -38,7 +38,7 @@ func main() {
 	//   GIT_TRACE_PERFORMANCE=true
 	trace.SetTarget(trace.Performance)
 
-	r, err := git.PlainClone(directory, false, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		URL: url,
 		// Differently than the git CLI, by default go-git downloads
 		// all tags and its related objects. To avoid unnecessary

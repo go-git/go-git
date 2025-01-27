@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-git/go-git/v5"
-	. "github.com/go-git/go-git/v5/_examples"
+	"github.com/go-git/go-git/v6"
+	. "github.com/go-git/go-git/v6/_examples"
 )
 
 // Basic example of how to blame a repository.
@@ -23,7 +23,6 @@ func main() {
 	Info("git clone %s %s", url, tmp)
 	r, err := git.PlainClone(
 		tmp,
-		false,
 		&git.CloneOptions{
 			URL:  url,
 			Tags: git.NoTags,

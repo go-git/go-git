@@ -3,7 +3,7 @@ package objfile
 import (
 	"encoding/base64"
 
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type objfileFixture struct {

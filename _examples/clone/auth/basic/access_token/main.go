@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	git "github.com/go-git/go-git/v5"
-	. "github.com/go-git/go-git/v5/_examples"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	git "github.com/go-git/go-git/v6"
+	. "github.com/go-git/go-git/v6/_examples"
+	"github.com/go-git/go-git/v6/plumbing/transport/http"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
 
-	r, err := git.PlainClone(directory, false, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		// The intended use of a GitHub personal access token is in replace of your password
 		// because access tokens can easily be revoked.
 		// https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/

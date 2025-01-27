@@ -3,7 +3,7 @@ package packfile
 import (
 	"bytes"
 
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type Version uint32

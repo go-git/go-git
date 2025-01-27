@@ -1,4 +1,4 @@
-module github.com/go-git/go-git/v5
+module github.com/go-git/go-git/v6
 
 // go-git supports the last 3 stable Go versions.
 go 1.22.0

@@ -12,10 +12,10 @@ import (
 	"strconv"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/internal/url"
-	"github.com/go-git/go-git/v5/plumbing"
-	format "github.com/go-git/go-git/v5/plumbing/format/config"
-	"github.com/go-git/go-git/v5/plumbing/protocol"
+	"github.com/go-git/go-git/v6/internal/url"
+	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 )
 
 const (

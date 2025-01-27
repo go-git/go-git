@@ -15,15 +15,15 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
-	"github.com/go-git/go-git/v5/plumbing/format/index"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
@@ -79,7 +79,7 @@ func (s *WorktreeSuite) TestPullFastForward() {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	server, err := PlainClone(url, false, &CloneOptions{
+	server, err := PlainClone(url, &CloneOptions{
 		URL: path,
 	})
 	s.NoError(err)
@@ -87,7 +87,7 @@ func (s *WorktreeSuite) TestPullFastForward() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL: url,
 	})
 	s.NoError(err)
@@ -117,7 +117,7 @@ func (s *WorktreeSuite) TestPullNonFastForward() {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	server, err := PlainClone(url, false, &CloneOptions{
+	server, err := PlainClone(url, &CloneOptions{
 		URL: path,
 	})
 	s.NoError(err)
@@ -125,7 +125,7 @@ func (s *WorktreeSuite) TestPullNonFastForward() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, false, &CloneOptions{
+	r, err := PlainClone(dir, &CloneOptions{
 		URL: url,
 	})
 	s.NoError(err)
@@ -341,7 +341,7 @@ func (s *WorktreeSuite) TestPullAfterShallowClone() {
 	_ = CommitNewFile(s.T(), remote, "File1")
 	_ = CommitNewFile(s.T(), remote, "File2")
 
-	repo, err := PlainClone(repoDir, false, &CloneOptions{
+	repo, err := PlainClone(repoDir, &CloneOptions{
 		URL:           remoteURL,
 		Depth:         1,
 		Tags:          plumbing.NoTags,
@@ -528,7 +528,7 @@ func (s *WorktreeSuite) TestFilenameNormalization() {
 
 	path := fixtures.Basic().ByTag("worktree").One().Worktree().Root()
 
-	server, err := PlainClone(url, false, &CloneOptions{
+	server, err := PlainClone(url, &CloneOptions{
 		URL: path,
 	})
 	s.NoError(err)
@@ -2779,7 +2779,7 @@ func (s *WorktreeSuite) TestGrep() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	server, err := PlainClone(dir, false, &CloneOptions{
+	server, err := PlainClone(dir, &CloneOptions{
 		URL: path,
 	})
 	s.NoError(err)
@@ -2863,8 +2863,9 @@ func (s *WorktreeSuite) TestGrepBare() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(dir, true, &CloneOptions{
-		URL: path,
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:  path,
+		Bare: true,
 	})
 	s.NoError(err)
 

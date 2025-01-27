@@ -1,7 +1,7 @@
 package ssh
 
 import (
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
