@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
-	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph/v2"
+	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/assert"
