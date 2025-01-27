@@ -7,8 +7,8 @@ import (
 
 	"github.com/elazarl/goproxy"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	"github.com/go-git/go-git/v5/internal/transport/http/test"
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v6/internal/transport/http/test"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/stretchr/testify/suite"
 )
 

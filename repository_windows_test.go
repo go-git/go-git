@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 // preReceiveHook returns the bytes of a pre-receive hook script

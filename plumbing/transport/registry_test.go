@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	_ "github.com/go-git/go-git/v5/plumbing/transport/ssh" // ssh transport
+	_ "github.com/go-git/go-git/v6/plumbing/transport/ssh" // ssh transport
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 func TestSuiteCommon(t *testing.T) {

@@ -32,7 +32,7 @@ import (
 	"sync"
 
 	"github.com/Microsoft/go-winio"
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/go-git/go-git/v6/utils/trace"
 	"golang.org/x/crypto/ssh/agent"
 )
 

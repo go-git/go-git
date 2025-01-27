@@ -6,12 +6,12 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 )

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/utils/binary"
 )
 
 var (
