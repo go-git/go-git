@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"io"
 
-	. "github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 )

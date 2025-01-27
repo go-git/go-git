@@ -4,11 +4,11 @@ import (
 	"path"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
-	"github.com/go-git/go-git/v5/plumbing/format/packfile"
-	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph/v2"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"

@@ -6,7 +6,7 @@ import (
 	"path"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // OpenChainFile reads a commit chain file and returns a slice of the hashes within it

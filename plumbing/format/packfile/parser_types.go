@@ -1,7 +1,7 @@
 package packfile
 
 import (
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // Observer interface is implemented by index encoders.
