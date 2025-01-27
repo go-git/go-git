@@ -50,7 +50,7 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 	}
 
 	Info("git clone %s", url)
-	r, err := git.PlainClone(dir, false, &git.CloneOptions{
+	r, err := git.PlainClone(dir, &git.CloneOptions{
 		Progress: os.Stdout,
 		URL:      url,
 		Auth:     auth,

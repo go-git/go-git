@@ -38,7 +38,7 @@ func main() {
 	//   GIT_TRACE_PERFORMANCE=true
 	trace.SetTarget(trace.Performance)
 
-	r, err := git.PlainClone(directory, false, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		URL: url,
 		// Differently than the git CLI, by default go-git downloads
 		// all tags and its related objects. To avoid unnecessary

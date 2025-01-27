@@ -31,7 +31,7 @@ func (s *SubmoduleSuite) SetupTest() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainClone(filepath.Join(dir, "worktree"), false, &CloneOptions{
+	r, err := PlainClone(filepath.Join(dir, "worktree"), &CloneOptions{
 		URL: path,
 	})
 

@@ -23,7 +23,6 @@ func main() {
 	Info("git clone %s %s", url, tmp)
 	r, err := git.PlainClone(
 		tmp,
-		false,
 		&git.CloneOptions{
 			URL:  url,
 			Tags: git.NoTags,

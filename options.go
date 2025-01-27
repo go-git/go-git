@@ -89,6 +89,9 @@ type CloneOptions struct {
 	// Filter requests that the server to send only a subset of the objects.
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
+	// Bare determines whether the repository will have a worktree (non-bare)
+	// or not (bare).
+	Bare bool
 }
 
 // MergeOptions describes how a merge should be performed.
