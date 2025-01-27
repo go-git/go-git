@@ -28,7 +28,7 @@ func main() {
 	// and fetching the objects, exactly as:
 	Info("git clone %s %s", url, path)
 
-	r, err := git.PlainClone(path, false, &git.CloneOptions{URL: url})
+	r, err := git.PlainClone(path, &git.CloneOptions{URL: url})
 	CheckIfError(err)
 
 	// Getting the latest commit on the current branch
