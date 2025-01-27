@@ -43,8 +43,8 @@ func ValidHex(in string) bool {
 // If the operation was not successful, the resulting hash is nil
 // instead of a zeroed hash.
 func FromHex(in string) (ObjectID, bool) {
-	if len(in) < SHA1HexSize ||
-		len(in) > SHA256HexSize {
+	if len(in) != SHA1HexSize &&
+		len(in) != SHA256HexSize {
 		return nil, false
 	}
 
@@ -77,8 +77,8 @@ func FromHex(in string) (ObjectID, bool) {
 // If the operation was not successful, the resulting hash is nil
 // instead of a zeroed hash.
 func FromBytes(in []byte) (ObjectID, bool) {
-	if len(in) < SHA1Size ||
-		len(in) > SHA256Size {
+	if len(in) != SHA1Size &&
+		len(in) != SHA256Size {
 		return nil, false
 	}
 
