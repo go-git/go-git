@@ -64,7 +64,7 @@ func FromHash(h hash.Hash) (ObjectHasher, error) {
 func newHasherSHA1() *objectHasherSHA1 {
 	return &objectHasherSHA1{
 		hasher: hash.New(crypto.SHA1),
-		buf:    *bytes.NewBuffer(make([]byte, 32)),
+		buf:    *bytes.NewBuffer(make([]byte, hash.SHA1Size)),
 	}
 }
 
@@ -72,7 +72,7 @@ type objectHasherSHA1 struct {
 	hasher hash.Hash
 	m      sync.Mutex
 	// both fields below are allocation optimisations.
-	b   [20]byte
+	b   [hash.SHA1Size]byte
 	buf bytes.Buffer
 }
 
@@ -105,7 +105,7 @@ func (h *objectHasherSHA1) Write(p []byte) (int, error) {
 func newHasherSHA256() *objectHasherSHA256 {
 	return &objectHasherSHA256{
 		hasher: hash.New(crypto.SHA256),
-		buf:    *bytes.NewBuffer(make([]byte, 32)),
+		buf:    *bytes.NewBuffer(make([]byte, hash.SHA256Size)),
 	}
 }
 
@@ -113,7 +113,7 @@ type objectHasherSHA256 struct {
 	hasher hash.Hash
 	m      sync.Mutex
 	// both fields below are allocation optimisations.
-	b   [32]byte
+	b   [hash.SHA256Size]byte
 	buf bytes.Buffer
 }
 
