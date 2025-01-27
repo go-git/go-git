@@ -176,10 +176,6 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
-// TagMode defines how the tags will be fetched from the remote repository.
-// TODO: delete for V6
-type TagMode = plumbing.TagMode
-
 const (
 	InvalidTagMode = plumbing.InvalidTagMode
 	// TagFollowing any tag that points into the histories being fetched is also
