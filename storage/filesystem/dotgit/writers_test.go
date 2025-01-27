@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -151,7 +151,7 @@ func TestSyncedReader(t *testing.T) {
 func TestPackWriterUnusedNotify(t *testing.T) {
 	fs := osfs.New(t.TempDir())
 
-  w, err := newPackWrite(fs)
+	w, err := newPackWrite(fs)
 	require.NoError(t, err)
 
 	w.Notify = func(h plumbing.Hash, idx *idxfile.Writer) {

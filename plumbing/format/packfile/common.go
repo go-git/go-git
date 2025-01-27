@@ -4,10 +4,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/sync"
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 var signature = []byte{'P', 'A', 'C', 'K'}

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-git/go-git/v5/utils/merkletrie/internal/frame"
-	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
+	"github.com/go-git/go-git/v6/utils/merkletrie/internal/frame"
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
 // Iter is an iterator for merkletries (only the trie part of the
@@ -17,15 +17,14 @@ import (
 // This is the kind of traversal you will expect when listing ordinary
 // files and directories recursively, for example:
 //
-//          Trie           Traversal order
-//          ----           ---------------
-//           .
-//         / | \           c
-//        /  |  \          d/
-//       d   c   z   ===>  d/a
-//      / \                d/b
-//     b   a               z
-//
+//	     Trie           Traversal order
+//	     ----           ---------------
+//	      .
+//	    / | \           c
+//	   /  |  \          d/
+//	  d   c   z   ===>  d/a
+//	 / \                d/b
+//	b   a               z
 //
 // This iterator is somewhat especial as you can chose to skip whole
 // "directories" when iterating:

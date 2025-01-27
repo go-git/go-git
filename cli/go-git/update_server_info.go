@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/serverinfo"
-	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/serverinfo"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
 // CmdUpdateServerInfo command updates the server info files in the repository.

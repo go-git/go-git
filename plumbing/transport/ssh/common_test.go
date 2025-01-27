@@ -3,8 +3,8 @@ package ssh
 import (
 	"context"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"

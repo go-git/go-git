@@ -5,8 +5,8 @@ import (
 	"crypto"
 	"strings"
 
-	commitgraph "github.com/go-git/go-git/v5/plumbing/format/commitgraph/v2"
-	"github.com/go-git/go-git/v5/plumbing/hash"
+	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph/v2"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func (s *CommitgraphSuite) TestOpenChainFile() {

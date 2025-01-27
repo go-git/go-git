@@ -2,8 +2,8 @@ package packfile
 
 import (
 	billy "github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )
 
 type PackfileOption func(*Packfile)
