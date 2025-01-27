@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph/v2"
+	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
