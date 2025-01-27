@@ -48,7 +48,7 @@ A basic example that mimics the standard `git clone` command
 // Clone the given repository to the given directory
 Info("git clone https://github.com/go-git/go-git")
 
-_, err := git.PlainClone("/tmp/foo", false, &git.CloneOptions{
+_, err := git.PlainClone("/tmp/foo", &git.CloneOptions{
     URL:      "https://github.com/go-git/go-git",
     Progress: os.Stdout,
 })
