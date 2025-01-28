@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -1651,20 +1651,4 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 	err := obtained.Decode(obj)
 	s.NoError(err)
 	s.True(entriesEquals(obtained.Entries, expected.Entries))
-}
-
-func FuzzDecode(f *testing.F) {
-
-	f.Fuzz(func(t *testing.T, input []byte) {
-
-		obj := &SortReadObject{
-			t:    plumbing.TreeObject,
-			h:    plumbing.ZeroHash,
-			cont: input,
-			sz:   int64(len(input)),
-		}
-
-		newTree := &Tree{}
-		newTree.Decode(obj)
-	})
 }

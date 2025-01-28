@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/go-git/go-git/v5"
-	. "github.com/go-git/go-git/v5/_examples"
+	"github.com/go-git/go-git/v6"
+	. "github.com/go-git/go-git/v6/_examples"
 )
 
 // Example of how to show the progress when you do a basic clone operation.
@@ -16,7 +16,7 @@ func main() {
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
 
-	_, err := git.PlainClone(directory, false, &git.CloneOptions{
+	_, err := git.PlainClone(directory, &git.CloneOptions{
 		URL:   url,
 		Depth: 1,
 

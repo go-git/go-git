@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/utils/trace"
 
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"

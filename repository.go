@@ -19,22 +19,22 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/internal/path_util"
-	"github.com/go-git/go-git/v5/internal/revision"
-	"github.com/go-git/go-git/v5/internal/url"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
-	"github.com/go-git/go-git/v5/plumbing/format/packfile"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
-	"github.com/go-git/go-git/v5/utils/ioutil"
-	"github.com/go-git/go-git/v5/utils/trace"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/path_util"
+	"github.com/go-git/go-git/v6/internal/revision"
+	"github.com/go-git/go-git/v6/internal/url"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
+	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -463,10 +463,8 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 // PlainClone a repository into the path with the given options, isBare defines
 // if the new repository will be bare or normal. If the path is not empty
 // ErrRepositoryAlreadyExists is returned.
-//
-// TODO(mcuadros): move isBare to CloneOptions in v5
-func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) {
-	return PlainCloneContext(context.Background(), path, isBare, o)
+func PlainClone(path string, o *CloneOptions) (*Repository, error) {
+	return PlainCloneContext(context.Background(), path, o)
 }
 
 // PlainCloneContext a repository into the path with the given options, isBare
@@ -477,9 +475,8 @@ func PlainClone(path string, isBare bool, o *CloneOptions) (*Repository, error) 
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 //
-// TODO(mcuadros): move isBare to CloneOptions in v5
 // TODO(smola): refuse upfront to clone on a non-empty directory in v5, see #1027
-func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOptions) (*Repository, error) {
+func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repository, error) {
 	start := time.Now()
 	defer func() {
 		url := ""
@@ -494,6 +491,7 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 		return nil, err
 	}
 
+	isBare := o.Bare
 	if o.Mirror {
 		isBare = true
 	}
@@ -951,6 +949,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		InsecureSkipTLS: o.InsecureSkipTLS,
 		CABundle:        o.CABundle,
 		ProxyOptions:    o.ProxyOptions,
+		Filter:          o.Filter,
 	}, o.ReferenceName)
 	if err != nil {
 		return err

@@ -6,15 +6,18 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	. "gopkg.in/check.v1"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/stretchr/testify/suite"
 )
 
 type DeltaSuite struct {
+	suite.Suite
 	testCases []deltaTest
 }
 
-var _ = Suite(&DeltaSuite{})
+func TestDeltaSuite(t *testing.T) {
+	suite.Run(t, new(DeltaSuite))
+}
 
 type deltaTest struct {
 	description string
@@ -22,7 +25,7 @@ type deltaTest struct {
 	target      []piece
 }
 
-func (s *DeltaSuite) SetUpSuite(c *C) {
+func (s *DeltaSuite) SetupSuite() {
 	s.testCases = []deltaTest{{
 		description: "distinct file",
 		base:        []piece{{"0", 300}},
@@ -88,20 +91,20 @@ func randStringBytes(n int) string {
 	return string(randBytes(n))
 }
 
-func (s *DeltaSuite) TestAddDelta(c *C) {
+func (s *DeltaSuite) TestAddDelta() {
 	for _, t := range s.testCases {
 		baseBuf := genBytes(t.base)
 		targetBuf := genBytes(t.target)
 		delta := DiffDelta(baseBuf, targetBuf)
 		result, err := PatchDelta(baseBuf, delta)
 
-		c.Log("Executing test case:", t.description)
-		c.Assert(err, IsNil)
-		c.Assert(result, DeepEquals, targetBuf)
+		s.T().Log("Executing test case:", t.description)
+		s.NoError(err)
+		s.Equal(targetBuf, result)
 	}
 }
 
-func (s *DeltaSuite) TestAddDeltaReader(c *C) {
+func (s *DeltaSuite) TestAddDeltaReader() {
 	for _, t := range s.testCases {
 		baseBuf := genBytes(t.base)
 		baseObj := &plumbing.MemoryObject{}
@@ -112,51 +115,51 @@ func (s *DeltaSuite) TestAddDeltaReader(c *C) {
 		delta := DiffDelta(baseBuf, targetBuf)
 		deltaRC := io.NopCloser(bytes.NewReader(delta))
 
-		c.Log("Executing test case:", t.description)
+		s.T().Log("Executing test case:", t.description)
 
 		resultRC, err := ReaderFromDelta(baseObj, deltaRC)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
 		result, err := io.ReadAll(resultRC)
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
 		err = resultRC.Close()
-		c.Assert(err, IsNil)
+		s.NoError(err)
 
-		c.Assert(result, DeepEquals, targetBuf)
+		s.Equal(targetBuf, result)
 	}
 }
 
-func (s *DeltaSuite) TestIncompleteDelta(c *C) {
+func (s *DeltaSuite) TestIncompleteDelta() {
 	for _, t := range s.testCases {
-		c.Log("Incomplete delta on:", t.description)
+		s.T().Log("Incomplete delta on:", t.description)
 		baseBuf := genBytes(t.base)
 		targetBuf := genBytes(t.target)
 		delta := DiffDelta(baseBuf, targetBuf)
 		delta = delta[:len(delta)-2]
 		result, err := PatchDelta(baseBuf, delta)
-		c.Assert(err, NotNil)
-		c.Assert(result, IsNil)
+		s.NotNil(err)
+		s.Nil(result)
 	}
 
 	// check nil input too
 	result, err := PatchDelta(nil, nil)
-	c.Assert(err, NotNil)
-	c.Assert(result, IsNil)
+	s.NotNil(err)
+	s.Nil(result)
 }
 
-func (s *DeltaSuite) TestMaxCopySizeDelta(c *C) {
+func (s *DeltaSuite) TestMaxCopySizeDelta() {
 	baseBuf := randBytes(maxCopySize)
 	targetBuf := baseBuf[0:]
 	targetBuf = append(targetBuf, byte(1))
 
 	delta := DiffDelta(baseBuf, targetBuf)
 	result, err := PatchDelta(baseBuf, delta)
-	c.Assert(err, IsNil)
-	c.Assert(result, DeepEquals, targetBuf)
+	s.NoError(err)
+	s.Equal(targetBuf, result)
 }
 
-func (s *DeltaSuite) TestMaxCopySizeDeltaReader(c *C) {
+func (s *DeltaSuite) TestMaxCopySizeDeltaReader() {
 	baseBuf := randBytes(maxCopySize)
 	baseObj := &plumbing.MemoryObject{}
 	baseObj.Write(baseBuf)
@@ -168,14 +171,14 @@ func (s *DeltaSuite) TestMaxCopySizeDeltaReader(c *C) {
 	deltaRC := io.NopCloser(bytes.NewReader(delta))
 
 	resultRC, err := ReaderFromDelta(baseObj, deltaRC)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	result, err := io.ReadAll(resultRC)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = resultRC.Close()
-	c.Assert(err, IsNil)
-	c.Assert(result, DeepEquals, targetBuf)
+	s.NoError(err)
+	s.Equal(targetBuf, result)
 }
 
 func FuzzPatchDelta(f *testing.F) {

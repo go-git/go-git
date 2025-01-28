@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/transport/http"
+	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/go-git/go-billy/v5/memfs"
 )
@@ -51,7 +51,7 @@ func ExamplePlainClone() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
+	_, err = git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 
@@ -79,7 +79,7 @@ func ExamplePlainClone_usernamePassword() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
+	_, err = git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 		Auth: &http.BasicAuth{
 			Username: "username",
@@ -102,7 +102,7 @@ func ExamplePlainClone_accessToken() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
+	_, err = git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 		Auth: &http.BasicAuth{
 			Username: "abc123", // anything except an empty string

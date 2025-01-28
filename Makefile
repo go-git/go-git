@@ -14,6 +14,10 @@ GIT_REPOSITORY = http://github.com/git/git.git
 COVERAGE_REPORT = coverage.out
 COVERAGE_MODE = count
 
+# Defines the maximum time each fuzz target will be executed for.
+FUZZ_TIME ?= 10s
+FUZZ_PKGS = $(shell grep -r --include='**_test.go' --files-with-matches 'func Fuzz' . | xargs -I{} dirname {})
+
 build-git:
 	@if [ -f $(GIT_DIST_PATH)/git ]; then \
 		echo "nothing to do, using cache $(GIT_DIST_PATH)"; \
@@ -45,10 +49,6 @@ clean:
 	rm -rf $(GIT_DIST_PATH)
 
 fuzz:
-	@go test -fuzz=FuzzParser				$(PWD)/internal/revision
-	@go test -fuzz=FuzzDecoder				$(PWD)/plumbing/format/config
-	@go test -fuzz=FuzzPatchDelta			$(PWD)/plumbing/format/packfile
-	@go test -fuzz=FuzzParseSignedBytes		$(PWD)/plumbing/object
-	@go test -fuzz=FuzzDecode				$(PWD)/plumbing/object
-	@go test -fuzz=FuzzDecoder				$(PWD)/plumbing/protocol/packp
-	@go test -fuzz=FuzzNewEndpoint			$(PWD)/plumbing/transport
+	@for path in $(FUZZ_PKGS); do \
+		go test -fuzz=Fuzz -fuzztime=$(FUZZ_TIME) $$path; \
+	done
