@@ -165,8 +165,8 @@ func (s *ConfigSuite) TestMarshal() {
 	}
 
 	cfg.URLs["ssh://git@github.com/"] = &URL{
-		Name:      "ssh://git@github.com/",
-		InsteadOf: "https://github.com/",
+		Name:       "ssh://git@github.com/",
+		InsteadOfs: []string{"https://github.com/"},
 	}
 
 	b, err := cfg.Marshal()
