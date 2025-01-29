@@ -229,6 +229,7 @@ func (s *UploadPackSuite) TestUploadPackMulti() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
+	s.NoError(err)
 	defer func() { s.Nil(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
@@ -245,6 +246,7 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
+	s.NoError(err)
 	defer func() { s.Nil(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
@@ -261,6 +263,7 @@ func (s *UploadPackSuite) TestFetchError() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
+	s.NoError(err)
 	defer func() { s.Nil(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
