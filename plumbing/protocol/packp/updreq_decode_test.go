@@ -238,6 +238,8 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow() {
 }
 
 /*
+* TODO: Implement packfile tests in plumbing/transport/push_test.go and
+* [transport.SendPack].
 func (s *UpdReqDecodeSuite) TestWithPackfile() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -294,6 +296,7 @@ func (s *UpdReqDecodeSuite) testDecodeOK(payloads []string) *UpdateRequests {
 func (s *UpdReqDecodeSuite) testDecodeOkRaw(expected *UpdateRequests, raw []byte) {
 	req := NewUpdateRequests()
 	s.Nil(req.Decode(bytes.NewBuffer(raw)))
+	// TODO: Add packfile comparison tests to [transport.SendPack].
 	// s.NotNil(req.Packfile)
 	// s.compareReaders(req.Packfile, expected.Packfile)
 	// req.Packfile = nil

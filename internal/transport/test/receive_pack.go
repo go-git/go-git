@@ -239,6 +239,9 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	// XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
 	s.Regexp(regexp.MustCompile(".*(failed to update ref|failed to lock).*"), err)
+	// TODO: We no longer return a [packp.ReportStatus] when we receive a
+	// pack using [transport.SendPack].
+	// We should move this test to [transport.SendPack] tests.
 	// s.Equal("ok", report.UnpackStatus)
 	// s.Len(report.CommandStatuses, 1)
 	// s.Equal(plumbing.ReferenceName("refs/heads/master"), report.CommandStatuses[0].ReferenceName)
