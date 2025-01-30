@@ -61,13 +61,13 @@ func (s *UlReqDecodeSuite) TestInvalidFirstHash() {
 
 func (s *UlReqDecodeSuite) TestWantOK() {
 	payloads := []string{
-		"want 1111111111111111111111111111111111111111",
+		"want 1111111111111111111111111111111111111111\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
 
 	s.Equal([]plumbing.Hash{
-		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("1111111111111111111111111111111111111111\n"),
 	}, ur.Wants)
 }
 
@@ -89,9 +89,17 @@ func (s *UlReqDecodeSuite) testDecodeOK(payloads []string, expectedHaveCalls int
 
 	haves := []plumbing.Hash{}
 	nbCall := 0
-	for h := range ur.HavesUR {
-		nbCall++
-		haves = append(haves, h.Haves...)
+
+	for {
+		var hav UploadHaves
+		s.NoError(hav.Decode(&buf))
+		if len(hav.Haves) > 0 {
+			nbCall += len(hav.Haves)
+			haves = append(haves, hav.Haves...)
+		}
+		if hav.Done || len(hav.Haves) == 0 {
+			break
+		}
 	}
 
 	s.Equal(expectedHaveCalls, nbCall)
@@ -101,7 +109,7 @@ func (s *UlReqDecodeSuite) testDecodeOK(payloads []string, expectedHaveCalls int
 
 func (s *UlReqDecodeSuite) TestWantWithCapabilities() {
 	payloads := []string{
-		"want 1111111111111111111111111111111111111111 ofs-delta multi_ack",
+		"want 1111111111111111111111111111111111111111 ofs-delta multi_ack\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -115,10 +123,10 @@ func (s *UlReqDecodeSuite) TestWantWithCapabilities() {
 
 func (s *UlReqDecodeSuite) TestManyWantsNoCapabilities() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333",
-		"want 4444444444444444444444444444444444444444",
-		"want 1111111111111111111111111111111111111111",
-		"want 2222222222222222222222222222222222222222",
+		"want 3333333333333333333333333333333333333333\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"want 1111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -147,10 +155,10 @@ func (a byHash) Less(i, j int) bool {
 
 func (s *UlReqDecodeSuite) TestManyWantsBadWant() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333",
-		"want 4444444444444444444444444444444444444444",
-		"foo",
-		"want 2222222222222222222222222222222222222222",
+		"want 3333333333333333333333333333333333333333\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"foo\n",
+		"want 2222222222222222222222222222222222222222\n",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
@@ -159,10 +167,10 @@ func (s *UlReqDecodeSuite) TestManyWantsBadWant() {
 
 func (s *UlReqDecodeSuite) TestManyWantsInvalidHash() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333",
-		"want 4444444444444444444444444444444444444444",
-		"want 1234567890abcdef",
-		"want 2222222222222222222222222222222222222222",
+		"want 3333333333333333333333333333333333333333\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"want 1234567890abcdef\n",
+		"want 2222222222222222222222222222222222222222\n",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
@@ -171,10 +179,10 @@ func (s *UlReqDecodeSuite) TestManyWantsInvalidHash() {
 
 func (s *UlReqDecodeSuite) TestManyWantsWithCapabilities() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"want 4444444444444444444444444444444444444444",
-		"want 1111111111111111111111111111111111111111",
-		"want 2222222222222222222222222222222222222222",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"want 1111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -196,8 +204,8 @@ func (s *UlReqDecodeSuite) TestManyWantsWithCapabilities() {
 
 func (s *UlReqDecodeSuite) TestSingleShallowSingleWant() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -219,11 +227,11 @@ func (s *UlReqDecodeSuite) TestSingleShallowSingleWant() {
 
 func (s *UlReqDecodeSuite) TestSingleShallowManyWants() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"want 4444444444444444444444444444444444444444",
-		"want 1111111111111111111111111111111111111111",
-		"want 2222222222222222222222222222222222222222",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"want 1111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -250,11 +258,11 @@ func (s *UlReqDecodeSuite) TestSingleShallowManyWants() {
 
 func (s *UlReqDecodeSuite) TestManyShallowSingleWant() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		"shallow cccccccccccccccccccccccccccccccccccccccc",
-		"shallow dddddddddddddddddddddddddddddddddddddddd",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
+		"shallow dddddddddddddddddddddddddddddddddddddddd\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -281,14 +289,14 @@ func (s *UlReqDecodeSuite) TestManyShallowSingleWant() {
 
 func (s *UlReqDecodeSuite) TestManyShallowManyWants() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"want 4444444444444444444444444444444444444444",
-		"want 1111111111111111111111111111111111111111",
-		"want 2222222222222222222222222222222222222222",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		"shallow cccccccccccccccccccccccccccccccccccccccc",
-		"shallow dddddddddddddddddddddddddddddddddddddddd",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"want 1111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
+		"shallow dddddddddddddddddddddddddddddddddddddddd\n",
 		"",
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
@@ -320,8 +328,8 @@ func (s *UlReqDecodeSuite) TestManyShallowManyWants() {
 
 func (s *UlReqDecodeSuite) TestMalformedShallow() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"shalow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"shalow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
@@ -330,8 +338,8 @@ func (s *UlReqDecodeSuite) TestMalformedShallow() {
 
 func (s *UlReqDecodeSuite) TestMalformedShallowHash() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
@@ -340,10 +348,10 @@ func (s *UlReqDecodeSuite) TestMalformedShallowHash() {
 
 func (s *UlReqDecodeSuite) TestMalformedShallowManyShallows() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		"shalow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		"shallow cccccccccccccccccccccccccccccccccccccccc",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+		"shalow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
@@ -500,19 +508,19 @@ func (s *UlReqDecodeSuite) TestDeepenReference() {
 
 func (s *UlReqDecodeSuite) TestAll() {
 	payloads := []string{
-		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
-		"want 4444444444444444444444444444444444444444",
-		"want 1111111111111111111111111111111111111111",
-		"want 2222222222222222222222222222222222222222",
-		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		"shallow cccccccccccccccccccccccccccccccccccccccc",
-		"shallow dddddddddddddddddddddddddddddddddddddddd",
-		"deepen 1234",
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
+		"want 4444444444444444444444444444444444444444\n",
+		"want 1111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222\n",
+		"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+		"shallow bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+		"shallow cccccccccccccccccccccccccccccccccccccccc\n",
+		"shallow dddddddddddddddddddddddddddddddddddddddd\n",
+		"deepen 1234\n",
 		"",
-		"have 5555555555555555555555555555555555555555",
+		"have 5555555555555555555555555555555555555555\n",
 		"",
-		"have 6666666666666666666666666666666666666666",
+		"have 6666666666666666666666666666666666666666\n",
 		"done",
 	}
 	ur, haves := s.testDecodeOK(payloads, 2)

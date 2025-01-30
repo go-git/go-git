@@ -14,6 +14,7 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	ggssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -70,17 +71,20 @@ func (s *ProxyEnvSuite) TestCommand() {
 		return &ggssh.Password{User: user}, nil
 	}
 
+	st := memory.NewStorage()
 	ep := s.prepareRepository(fixtures.Basic().One(), "basic.git")
 	s.NoError(err)
 
-	client := ggssh.NewClient(&stdssh.ClientConfig{
+	client := ggssh.NewTransport(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
-	r, err := client.NewUploadPackSession(ep, nil)
+	r, err := client.NewSession(st, ep, nil)
 	s.NoError(err)
-	defer func() { s.Nil(r.Close()) }()
+	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
+	s.NoError(err)
+	defer func() { s.Nil(conn.Close()) }()
 
-	info, err := r.AdvertisedReferences()
+	info, err := conn.GetRemoteRefs(context.TODO())
 	s.NoError(err)
 	s.NotNil(info)
 	proxyUsed := atomic.LoadInt32(&socksProxiedRequests) > 0

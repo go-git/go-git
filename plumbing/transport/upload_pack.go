@@ -57,7 +57,7 @@ func UploadPack(
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
 		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
-			return err
+			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
 
@@ -65,7 +65,7 @@ func UploadPack(
 	if !opts.AdvertiseRefs {
 		l, _, err := pktline.PeekLine(rd)
 		if err != nil {
-			return err
+			return fmt.Errorf("peeking line: %w", err)
 		}
 
 		// In case the client has nothing to send, it sends a flush packet to
@@ -80,7 +80,28 @@ func UploadPack(
 
 		upreq := packp.NewUploadRequest()
 		if err := upreq.Decode(rd); err != nil {
-			return err
+			return fmt.Errorf("decoding upload-request: %w", err)
+		}
+
+		if err := r.Close(); err != nil {
+			return fmt.Errorf("closing reader: %w", err)
+		}
+
+		// TODO: support deepen-since, and deepen-not
+		var shupd packp.ShallowUpdate
+		if !upreq.Depth.IsZero() {
+			switch depth := upreq.Depth.(type) {
+			case packp.DepthCommits:
+				if err := getShallowCommits(st, upreq.Wants, int(depth), &shupd); err != nil {
+					return fmt.Errorf("getting shallow commits: %w", err)
+				}
+			default:
+				return fmt.Errorf("unsupported depth type %T", upreq.Depth)
+			}
+
+			if err := shupd.Encode(w); err != nil {
+				return fmt.Errorf("sending shallow-update: %w", err)
+			}
 		}
 
 		var (
@@ -91,29 +112,19 @@ func UploadPack(
 		// Find common commits/objects
 		havesWithRef, err := revlist.ObjectsWithRef(st, wants, nil)
 		if err != nil {
-			return err
-		}
-
-		var writer io.Writer = w
-		if !caps.Supports(capability.NoProgress) {
-			if caps.Supports(capability.Sideband64k) {
-				writer = sideband.NewMuxer(sideband.Sideband64k, w)
-			} else if caps.Supports(capability.Sideband) {
-				writer = sideband.NewMuxer(sideband.Sideband, w)
-			}
+			return fmt.Errorf("getting objects with ref: %w", err)
 		}
 
 		// Encode objects to packfile and write to client
 		multiAck := caps.Supports(capability.MultiACK)
 		multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
-		e := packfile.NewEncoder(writer, st, false)
 
 		var done bool
 		var haves []plumbing.Hash
 		for !done {
 			var uphav packp.UploadHaves
 			if err := uphav.Decode(rd); err != nil {
-				return err
+				return fmt.Errorf("decoding upload-haves: %w", err)
 			}
 
 			haves = append(haves, uphav.Haves...)
@@ -153,7 +164,7 @@ func UploadPack(
 				// Encode ACKs to client when we have haves
 				srvrsp := packp.ServerResponse{ACKs: acks}
 				if err := srvrsp.Encode(w); err != nil {
-					return err
+					return fmt.Errorf("sending acks server-response: %w", err)
 				}
 			}
 
@@ -162,7 +173,7 @@ func UploadPack(
 					// Encode a NAK for multi-ack
 					srvrsp := packp.ServerResponse{}
 					if err := srvrsp.Encode(w); err != nil {
-						return err
+						return fmt.Errorf("sending nak server-response: %w", err)
 					}
 				}
 			} else if !ack.Hash.IsZero() && (multiAck || multiAckDetailed) {
@@ -170,13 +181,13 @@ func UploadPack(
 				ack.Status = 0
 				srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
 				if err := srvrsp.Encode(w); err != nil {
-					return err
+					return fmt.Errorf("sending final ack server-response: %w", err)
 				}
 			} else if ack.Hash.IsZero() {
 				// We don't have multi-ack and there are no haves. Encode a NAK.
 				srvrsp := packp.ServerResponse{}
 				if err := srvrsp.Encode(w); err != nil {
-					return err
+					return fmt.Errorf("sending final nak server-response: %w", err)
 				}
 			}
 		}
@@ -187,32 +198,25 @@ func UploadPack(
 			return fmt.Errorf("closing reader: %w", err)
 		}
 
-		// TODO: support deepen, deepen-since, and deepen-not
-		var shupd packp.ShallowUpdate
-		if !upreq.Depth.IsZero() {
-			switch depth := upreq.Depth.(type) {
-			case packp.DepthCommits:
-				if err := getShallowCommits(st, upreq.Wants, int(depth), &shupd); err != nil {
-					return err
-				}
-			default:
-				return fmt.Errorf("unsupported depth type %T", upreq.Depth)
-			}
-
-			if err := shupd.Encode(w); err != nil {
-				return err
-			}
-		}
-
 		objs, err := objectsToUpload(st, wants, haves)
 		if err != nil {
 			w.Close() //nolint:errcheck
-			return err
+			return fmt.Errorf("getting objects to upload: %w", err)
 		}
 
+		var writer io.Writer = w
+		if !caps.Supports(capability.NoProgress) {
+			if caps.Supports(capability.Sideband64k) {
+				writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			} else if caps.Supports(capability.Sideband) {
+				writer = sideband.NewMuxer(sideband.Sideband, w)
+			}
+		}
+
+		e := packfile.NewEncoder(writer, st, false)
 		_, err = e.Encode(objs, 10)
 		if err != nil {
-			return err
+			return fmt.Errorf("encoding packfile: %w", err)
 		}
 
 		if err := w.Close(); err != nil {

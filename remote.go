@@ -1006,7 +1006,7 @@ func getWants(localStorer storage.Storer, refs memory.ReferenceStorage, depth in
 
 func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
 	_, err := s.EncodedObject(plumbing.AnyObject, h)
-	if err == plumbing.ErrObjectNotFound {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		return false, nil
 	}
 
@@ -1194,7 +1194,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 		}
 
 		_, err := r.s.EncodedObject(plumbing.AnyObject, ref.Hash())
-		if err == plumbing.ErrObjectNotFound {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			continue
 		}
 

@@ -80,7 +80,7 @@ func (t *Tree) File(path string) (*File, error) {
 
 	blob, err := GetBlob(t.s, e.Hash)
 	if err != nil {
-		if err == plumbing.ErrObjectNotFound {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			return nil, ErrFileNotFound
 		}
 		return nil, err
@@ -109,7 +109,7 @@ func (t *Tree) Tree(path string) (*Tree, error) {
 	}
 
 	tree, err := GetTree(t.s, e.Hash)
-	if err == plumbing.ErrObjectNotFound {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		return nil, ErrDirectoryNotFound
 	}
 
