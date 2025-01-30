@@ -75,56 +75,75 @@ func UploadPack(
 			return nil
 		}
 
-		// TODO: implement server negotiation algorithm
-		// Receive upload request
-
-		upreq := packp.NewUploadRequest()
-		if err := upreq.Decode(rd); err != nil {
-			return fmt.Errorf("decoding upload-request: %w", err)
-		}
-
-		if err := r.Close(); err != nil {
-			return fmt.Errorf("closing reader: %w", err)
-		}
-
-		// TODO: support deepen-since, and deepen-not
-		var shupd packp.ShallowUpdate
-		if !upreq.Depth.IsZero() {
-			switch depth := upreq.Depth.(type) {
-			case packp.DepthCommits:
-				if err := getShallowCommits(st, upreq.Wants, int(depth), &shupd); err != nil {
-					return fmt.Errorf("getting shallow commits: %w", err)
-				}
-			default:
-				return fmt.Errorf("unsupported depth type %T", upreq.Depth)
-			}
-
-			if err := shupd.Encode(w); err != nil {
-				return fmt.Errorf("sending shallow-update: %w", err)
-			}
-		}
-
-		var (
-			wants = upreq.Wants
-			caps  = upreq.Capabilities
-		)
-
-		// Find common commits/objects
-		havesWithRef, err := revlist.ObjectsWithRef(st, wants, nil)
-		if err != nil {
-			return fmt.Errorf("getting objects with ref: %w", err)
-		}
-
-		// Encode objects to packfile and write to client
-		multiAck := caps.Supports(capability.MultiACK)
-		multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
-
 		var done bool
 		var haves []plumbing.Hash
+		var upreq *packp.UploadRequest
+		var havesWithRef map[plumbing.Hash][]plumbing.Hash
+		var multiAck, multiAckDetailed bool
+		var caps *capability.List
+		var wants []plumbing.Hash
+		firstRound := true
 		for !done {
+			writec := make(chan error)
+			if firstRound || opts.StatelessRPC {
+				upreq = packp.NewUploadRequest()
+				if err := upreq.Decode(rd); err != nil {
+					return fmt.Errorf("decoding upload-request: %w", err)
+				}
+
+				wants = upreq.Wants
+				caps = upreq.Capabilities
+
+				if err := r.Close(); err != nil {
+					return fmt.Errorf("closing reader: %w", err)
+				}
+
+				// Find common commits/objects
+				havesWithRef, err = revlist.ObjectsWithRef(st, wants, nil)
+				if err != nil {
+					return fmt.Errorf("getting objects with ref: %w", err)
+				}
+
+				// Encode objects to packfile and write to client
+				multiAck = caps.Supports(capability.MultiACK)
+				multiAckDetailed = caps.Supports(capability.MultiACKDetailed)
+
+				go func() {
+					// TODO: support deepen-since, and deepen-not
+					var shupd packp.ShallowUpdate
+					if !upreq.Depth.IsZero() {
+						switch depth := upreq.Depth.(type) {
+						case packp.DepthCommits:
+							if err := getShallowCommits(st, upreq.Wants, int(depth), &shupd); err != nil {
+								writec <- fmt.Errorf("getting shallow commits: %w", err)
+								return
+							}
+						default:
+							writec <- fmt.Errorf("unsupported depth type %T", upreq.Depth)
+							return
+						}
+
+						if err := shupd.Encode(w); err != nil {
+							writec <- fmt.Errorf("sending shallow-update: %w", err)
+							return
+						}
+					}
+
+					writec <- nil
+				}()
+			}
+
+			if err := <-writec; err != nil {
+				return err
+			}
+
 			var uphav packp.UploadHaves
 			if err := uphav.Decode(rd); err != nil {
 				return fmt.Errorf("decoding upload-haves: %w", err)
+			}
+
+			if err := r.Close(); err != nil {
+				return fmt.Errorf("closing reader: %w", err)
 			}
 
 			haves = append(haves, uphav.Haves...)
@@ -160,36 +179,52 @@ func UploadPack(
 				}
 			}
 
-			if len(haves) > 0 {
-				// Encode ACKs to client when we have haves
-				srvrsp := packp.ServerResponse{ACKs: acks}
-				if err := srvrsp.Encode(w); err != nil {
-					return fmt.Errorf("sending acks server-response: %w", err)
-				}
-			}
+			go func() {
+				defer close(writec)
 
-			if !done {
-				if multiAck || multiAckDetailed {
-					// Encode a NAK for multi-ack
-					srvrsp := packp.ServerResponse{}
+				if len(haves) > 0 {
+					// Encode ACKs to client when we have haves
+					srvrsp := packp.ServerResponse{ACKs: acks}
 					if err := srvrsp.Encode(w); err != nil {
-						return fmt.Errorf("sending nak server-response: %w", err)
+						writec <- fmt.Errorf("sending acks server-response: %w", err)
+						return
 					}
 				}
-			} else if !ack.Hash.IsZero() && (multiAck || multiAckDetailed) {
-				// We're done, send the final ACK
-				ack.Status = 0
-				srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
-				if err := srvrsp.Encode(w); err != nil {
-					return fmt.Errorf("sending final ack server-response: %w", err)
+
+				if !done {
+					if multiAck || multiAckDetailed {
+						// Encode a NAK for multi-ack
+						srvrsp := packp.ServerResponse{}
+						if err := srvrsp.Encode(w); err != nil {
+							writec <- fmt.Errorf("sending nak server-response: %w", err)
+							return
+						}
+					}
+				} else if !ack.Hash.IsZero() && (multiAck || multiAckDetailed) {
+					// We're done, send the final ACK
+					ack.Status = 0
+					srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
+					if err := srvrsp.Encode(w); err != nil {
+						writec <- fmt.Errorf("sending final ack server-response: %w", err)
+						return
+					}
+				} else if ack.Hash.IsZero() {
+					// We don't have multi-ack and there are no haves. Encode a NAK.
+					srvrsp := packp.ServerResponse{}
+					if err := srvrsp.Encode(w); err != nil {
+						writec <- fmt.Errorf("sending final nak server-response: %w", err)
+						return
+					}
 				}
-			} else if ack.Hash.IsZero() {
-				// We don't have multi-ack and there are no haves. Encode a NAK.
-				srvrsp := packp.ServerResponse{}
-				if err := srvrsp.Encode(w); err != nil {
-					return fmt.Errorf("sending final nak server-response: %w", err)
-				}
+
+				writec <- nil
+			}()
+
+			if err := <-writec; err != nil {
+				return err
 			}
+
+			firstRound = false
 		}
 
 		// Done with the request, now close the reader

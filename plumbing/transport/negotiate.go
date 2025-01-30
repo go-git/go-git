@@ -120,40 +120,6 @@ func NegotiatePack(
 	var gotContinue bool // whether we got a continue from the server
 	firstRound := true
 	for !done {
-		// Begin the upload-pack negotiation
-		if firstRound || conn.StatelessRPC() {
-			if err := upreq.Encode(writer); err != nil {
-				return nil, fmt.Errorf("sending upload-request: %w", err)
-			}
-		}
-
-		// Decode shallow-update
-		// If depth is not zero, then we expect a shallow update from the
-		// server.
-		if (firstRound || conn.StatelessRPC()) && req.Depth > 0 {
-			// Close the writer to signal the end of the request
-			if firstRound && conn.StatelessRPC() {
-				if err := writer.Close(); err != nil {
-					return nil, fmt.Errorf("closing writer: %w", err)
-				}
-			}
-
-			var shupd packp.ShallowUpdate
-			if err := shupd.Decode(reader); err != nil {
-				return nil, fmt.Errorf("decoding shallow-update: %w", err)
-			}
-
-			if shallowInfo == nil {
-				// Only return the first shallow update
-				shallowInfo = &shupd
-			}
-
-			if firstRound && conn.StatelessRPC() {
-				firstRound = false
-				continue
-			}
-		}
-
 		// Pop the last 32 have commits from the pending list and insert their
 		// parents into the pending list.
 		var uphav packp.UploadHaves
@@ -182,6 +148,18 @@ func NegotiatePack(
 		done = len(pending) == 0 || (gotContinue && inVein >= maxInVein)
 		uphav.Done = done
 
+		// Begin the upload-pack negotiation
+		if firstRound || conn.StatelessRPC() {
+			if err := upreq.Encode(writer); err != nil {
+				return nil, fmt.Errorf("sending upload-request: %w", err)
+			}
+		}
+
+		readc := make(chan error)
+		if !conn.StatelessRPC() {
+			go func() { readc <- readShallows(conn, reader, req, &shallowInfo, firstRound) }()
+		}
+
 		// Encode upload-haves
 		if err := uphav.Encode(writer); err != nil {
 			return nil, fmt.Errorf("sending upload-haves: %w", err)
@@ -192,30 +170,43 @@ func NegotiatePack(
 			if err := writer.Close(); err != nil {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
+
+			if err := readShallows(conn, reader, req, &shallowInfo, firstRound); err != nil {
+				return nil, err
+			}
+		} else {
+			// Wait for the read channel to be closed
+			if err := <-readc; err != nil {
+				return nil, err
+			}
 		}
 
-		if done || len(uphav.Haves) > 0 {
-			if !firstRound && conn.StatelessRPC() {
-				// Consume the server response on later rounds
-				var shupd packp.ShallowUpdate
-				if err := shupd.Decode(reader); err != nil {
-					return nil, fmt.Errorf("decoding shallow-update: %w", err)
+		go func() {
+			defer close(readc)
+
+			if done || len(uphav.Haves) > 0 {
+				var srvrs packp.ServerResponse
+				if err := srvrs.Decode(reader); err != nil {
+					readc <- fmt.Errorf("decoding server-response: %w", err)
+					return
+				}
+
+				for _, ack := range srvrs.ACKs {
+					if !gotContinue && ack.Status > 0 {
+						gotContinue = true
+					}
+					if ack.Status == packp.ACKCommon {
+						common[ack.Hash] = struct{}{}
+					}
 				}
 			}
 
-			var srvrs packp.ServerResponse
-			if err := srvrs.Decode(reader); err != nil {
-				return nil, fmt.Errorf("decoding server-response: %w", err)
-			}
+			readc <- nil
+		}()
 
-			for _, ack := range srvrs.ACKs {
-				if !gotContinue && ack.Status > 0 {
-					gotContinue = true
-				}
-				if ack.Status == packp.ACKCommon {
-					common[ack.Hash] = struct{}{}
-				}
-			}
+		// Wait for the read channel to be closed
+		if err := <-readc; err != nil {
+			return nil, err
 		}
 
 		firstRound = false
@@ -246,4 +237,30 @@ func isSubset(needle []plumbing.Hash, haystack []plumbing.Hash) bool {
 	}
 
 	return true
+}
+
+func readShallows(
+	conn Connection,
+	r io.Reader,
+	req *FetchRequest,
+	shallowInfo **packp.ShallowUpdate,
+	firstRound bool,
+) error {
+	// Decode shallow-update
+	// If depth is not zero, then we expect a shallow update from the
+	// server.
+	if (firstRound || conn.StatelessRPC()) && req.Depth > 0 {
+		var shupd packp.ShallowUpdate
+		if err := shupd.Decode(r); err != nil {
+			return fmt.Errorf("decoding shallow-update: %w", err)
+		}
+
+		// Only return the first shallow update
+		if shallowInfo == nil {
+			shallowInfo = new(*packp.ShallowUpdate)
+			*shallowInfo = &shupd
+		}
+	}
+
+	return nil
 }
