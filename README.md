@@ -10,7 +10,7 @@ It's being actively developed since 2015 and is being used extensively by [Keyba
 Project Status
 --------------
 
-After the legal issues with the [`src-d`](https://github.com/src-d) organization, the lack of update for four months and the requirement to make a hard fork, the project is **now back to normality**.
+After the [legal issues](https://github.com/src-d/go-git/issues/1295#issuecomment-592965250) with the [`src-d`](https://github.com/src-d) organization, the lack of update for four months and the requirement to make a hard fork, the project is **now back to normality**.
 
 The project is currently actively maintained by individual contributors, including several of the original authors, but also backed by a new company, [gitsight](https://github.com/gitsight), where `go-git` is a critical component used at scale.
 
