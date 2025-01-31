@@ -117,7 +117,6 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 
 		case ObjectSection:
 			oh := data.Value().(ObjectHeader)
-
 			if oh.Type.IsDelta() {
 				if oh.Type == plumbing.OFSDeltaObject {
 					pendingDeltas = append(pendingDeltas, &oh)
@@ -138,14 +137,14 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, ErrEmptyPackfile
 	}
 
-	for _, oh := range pendingDeltas {
+	for _, oh := range pendingDeltaREFs {
 		err := p.processDelta(oh)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
 	}
 
-	for _, oh := range pendingDeltaREFs {
+	for _, oh := range pendingDeltas {
 		err := p.processDelta(oh)
 		if err != nil {
 			return plumbing.ZeroHash, err
@@ -248,7 +247,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 	// If the parent is not an external ref and we don't have the
 	// content offset, we won't be able to inflate via seeking through
 	// the packfile.
-	if parent.externalRef && parent.ContentOffset == 0 {
+	if !parent.externalRef && parent.ContentOffset == 0 {
 		return nil, plumbing.ErrObjectNotFound
 	}
 

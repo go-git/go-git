@@ -98,7 +98,7 @@ func TestThinPack(t *testing.T) {
 	assert.NoError(t, err)
 
 	_, err = parser.Parse()
-	assert.Equal(t, err, plumbing.ErrObjectNotFound)
+	assert.Equal(t, err, packfile.ErrReferenceDeltaNotFound)
 
 	// start over with a clean repo
 	r, err = git.PlainInit(t.TempDir(), true)
