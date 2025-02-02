@@ -9,6 +9,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/internal/transport/http/test"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -32,20 +33,25 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	defer httpListener.Close()
 	defer proxyServer.Close()
 
-	endpoint := s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	fixture := fixtures.Basic().One()
+	dot := fixture.DotGit()
+	st := filesystem.NewStorage(dot, nil)
+	endpoint := s.prepareRepository(fixture, "basic.git")
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpProxyAddr,
 		Username: "user",
 		Password: "pass",
 	}
 
-	s.ups.Client = NewClient(nil)
-	session, err := s.ups.Client.NewUploadPackSession(endpoint, nil)
+	s.ups.Client = NewTransport(nil)
+	session, err := s.ups.Client.NewSession(st, endpoint, nil)
 	s.Nil(err)
+	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
+	s.NoError(err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	info, err := session.AdvertisedReferencesContext(ctx)
+	info, err := conn.GetRemoteRefs(ctx)
 	s.Nil(err)
 	s.NotNil(info)
 	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
@@ -67,10 +73,12 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	}
 	endpoint.InsecureSkipTLS = true
 
-	session, err = s.ups.Client.NewUploadPackSession(endpoint, nil)
+	session, err = s.ups.Client.NewSession(st, endpoint, nil)
 	s.Nil(err)
+	conn, err = session.Handshake(context.Background(), transport.UploadPackService)
+	s.NoError(err)
 
-	info, err = session.AdvertisedReferencesContext(ctx)
+	info, err = conn.GetRemoteRefs(ctx)
 	s.Nil(err)
 	s.NotNil(info)
 	proxyUsed = atomic.LoadInt32(&proxiedRequests) > 0

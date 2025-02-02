@@ -267,7 +267,7 @@ func (s *Submodule) fetchAndCheckout(
 				RefSpecs: []config.RefSpec{refSpec},
 				Depth:    o.Depth,
 			})
-			if err != nil && errors.Is(err, NoErrAlreadyUpToDate) && errors.Is(err, ErrExactSHA1NotSupported) {
+			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) && !errors.Is(err, ErrExactSHA1NotSupported) {
 				return err
 			}
 		}

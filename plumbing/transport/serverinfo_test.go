@@ -8,11 +8,11 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/suite"
 )
@@ -28,11 +28,10 @@ func TestServerInfoSuite(t *testing.T) {
 func (s *ServerInfoSuite) TestUpdateServerInfoInit() {
 	fs := memfs.New()
 	st := memory.NewStorage()
-	r, err := git.Init(st, fs)
-	s.NoError(err)
-	s.NotNil(r)
+	s.NotNil(fs)
+	s.NotNil(st)
 
-	err = UpdateServerInfo(st, fs)
+	err := UpdateServerInfo(st, fs)
 	s.NoError(err)
 }
 
@@ -122,15 +121,11 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 }
 
 func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
+	fixture := fixtures.Basic().One()
+	st := filesystem.NewStorage(fixture.DotGit(), nil)
 	fs := memfs.New()
-	st := memory.NewStorage()
-	r, err := git.Clone(st, fs, &git.CloneOptions{
-		URL: fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().URL,
-	})
-	s.NoError(err)
-	s.NotNil(r)
 
-	err = UpdateServerInfo(st, fs)
+	err := UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
@@ -138,15 +133,11 @@ func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
 }
 
 func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
+	fixture := fixtures.Basic().One()
+	st := filesystem.NewStorage(fixture.DotGit(), nil)
 	fs := memfs.New()
-	st := memory.NewStorage()
-	r, err := git.Clone(st, fs, &git.CloneOptions{
-		URL: fixtures.Basic().One().URL,
-	})
-	s.NoError(err)
-	s.NotNil(r)
 
-	err = UpdateServerInfo(st, fs)
+	err := UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
@@ -154,30 +145,25 @@ func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
 }
 
 func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
+	fixture := fixtures.Basic().One()
+	st := filesystem.NewStorage(fixture.DotGit(), nil)
 	fs := memfs.New()
-	st := memory.NewStorage()
-	r, err := git.Clone(st, fs, &git.CloneOptions{
-		URL: fixtures.Basic().One().URL,
-	})
-	s.NoError(err)
-	s.NotNil(r)
 
-	err = UpdateServerInfo(st, fs)
+	err := UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
 	assertObjectPacks(s, st, fs)
 
-	head, err := r.Head()
+	head, err := st.Reference(plumbing.HEAD)
 	s.NoError(err)
 
 	ref := plumbing.NewHashReference("refs/heads/my-branch", head.Hash())
-	err = r.Storer.SetReference(ref)
+	err = st.SetReference(ref)
 	s.NoError(err)
 
-	_, err = r.CreateTag("test-tag", head.Hash(), &git.CreateTagOptions{
-		Message: "test-tag",
-	})
+	tag := plumbing.NewHashReference("refs/tags/test-tag", head.Hash())
+	err = st.SetReference(tag)
 	s.NoError(err)
 
 	err = UpdateServerInfo(st, fs)

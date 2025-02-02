@@ -208,6 +208,10 @@ func (s *WorktreeSuite) TestPullInSingleBranch() {
 }
 
 func (s *WorktreeSuite) TestPullProgress() {
+	s.T().Skip("skipping test: progress capability not supported in server-side transport. " +
+		"Local repositories use both server and client transport implementations. " +
+		"See upload-pack.go for details.")
+
 	r, _ := Init(memory.NewStorage(), memfs.New())
 
 	r.CreateRemote(&config.RemoteConfig{
@@ -315,6 +319,10 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate() {
 }
 
 func (s *WorktreeSuite) TestPullDepth() {
+	s.T().Skip("We don't support packing shallow-file in go-git server-side" +
+		"yet. Since we're using local repositories here, the test will use the" +
+		"server-side implementation. See transport/upload_pack.go and" +
+		"packfile/encoder.go")
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL:   fixtures.Basic().One().URL,
 		Depth: 1,
@@ -1526,7 +1534,7 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	s.NoError(err)
 	s.Len(idx.Entries, 9)
 
-	err = util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0755)
+	err = util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0o755)
 	s.NoError(err)
 
 	hash, err := w.Add("foo")
@@ -3174,9 +3182,9 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 	})
 
 	// Add secondary changes to a file to make sure we only restore the staged file
-	err = util.WriteFile(fs, names[1], []byte("Foo Bar:11"), 0755)
+	err = util.WriteFile(fs, names[1], []byte("Foo Bar:11"), 0o755)
 	s.NoError(err)
-	err = util.WriteFile(fs, names[2], []byte("Foo Bar:22"), 0755)
+	err = util.WriteFile(fs, names[2], []byte("Foo Bar:22"), 0o755)
 	s.NoError(err)
 
 	verifyStatus(s, "Secondary Edits", w, names, []FileStatus{

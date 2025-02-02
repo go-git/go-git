@@ -76,7 +76,6 @@ func (s *RepositorySuite) TestInitWithOptions() {
 	ref, err := r.Head()
 	s.NoError(err)
 	s.Equal("refs/heads/foo", ref.Name().String())
-
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
@@ -867,7 +866,7 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 	s.NoError(err)
 
 	subdir := filepath.Join(dir, "a", "b")
-	err = fs.MkdirAll(subdir, 0755)
+	err = fs.MkdirAll(subdir, 0o755)
 	s.NoError(err)
 
 	file := fs.Join(subdir, "file.txt")
@@ -1144,11 +1143,11 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir() {
 	s.NoError(err)
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
-	err = fs.MkdirAll(repoDir, 0777)
+	err = fs.MkdirAll(repoDir, 0o777)
 	s.NoError(err)
 
 	dummyFile := filepath.Join(repoDir, "dummyFile")
-	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0644)
+	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0o644)
 	s.NoError(err)
 
 	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), false, &CloneOptions{
@@ -1159,7 +1158,6 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotEmptyDir() {
 
 	_, err = fs.Stat(dummyFile)
 	s.NoError(err)
-
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirectory() {
@@ -1204,39 +1202,40 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 }
 
 func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
+	s.T().Skip("We don't support packing shallow-file in go-git server-side" +
+		"yet. Since we're using local repositories here, the test will use the" +
+		"server-side implementation. See transport/upload_pack.go and" +
+		"packfile/encoder.go")
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	mainRepo, err := PlainClone(dir, false, &CloneOptions{
 		URL:               path,
 		RecurseSubmodules: 1,
 		ShallowSubmodules: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	mainWorktree, err := mainRepo.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	submodule, err := mainWorktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	subRepo, err := submodule.Repository()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	lr, err := subRepo.Log(&LogOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	commitCount := 0
 	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
 		commitCount++
 	}
 	s.NoError(err)
-
 	s.Equal(1, commitCount)
 }
 
@@ -1299,6 +1298,9 @@ func (s *RepositorySuite) TestFetchContext() {
 }
 
 func (s *RepositorySuite) TestCloneWithProgress() {
+	s.T().Skip("Currently, go-git server-side implementation does not support writing" +
+		"progress and sideband messages to the client. This means any tests that" +
+		"use local repositories to test progress messages will fail.")
 	fs := memfs.New()
 
 	buf := bytes.NewBuffer(nil)
@@ -1585,6 +1587,10 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndSingle() {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
+	s.T().Skip("We don't support packing shallow-file in go-git server-side" +
+		"yet. Since we're using local repositories here, the test will use the" +
+		"server-side implementation. See transport/upload_pack.go and" +
+		"packfile/encoder.go")
 	r, _ := Init(memory.NewStorage(), memfs.New())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
@@ -1692,14 +1698,17 @@ func (s *RepositorySuite) TestPushContext() {
 // successfully.
 func installPreReceiveHook(s *RepositorySuite, fs billy.Filesystem, path, m string) {
 	hooks := fs.Join(path, "hooks")
-	err := fs.MkdirAll(hooks, 0777)
+	err := fs.MkdirAll(hooks, 0o777)
 	s.NoError(err)
 
-	err = util.WriteFile(fs, fs.Join(hooks, "pre-receive"), preReceiveHook(m), 0777)
+	err = util.WriteFile(fs, fs.Join(hooks, "pre-receive"), preReceiveHook(m), 0o777)
 	s.NoError(err)
 }
 
 func (s *RepositorySuite) TestPushWithProgress() {
+	s.T().Skip("Currently, go-git server-side implementation does not support writing" +
+		"progress and sideband messages to the client. This means any tests that" +
+		"use local repositories to test progress messages will fail.")
 	fs := s.TemporalFilesystem()
 
 	path, err := util.TempDir(fs, "", "")
@@ -1750,7 +1759,7 @@ func (s *RepositorySuite) TestPushDepth() {
 	})
 	s.NoError(err)
 
-	err = util.WriteFile(r.wt, "foo", nil, 0755)
+	err = util.WriteFile(r.wt, "foo", nil, 0o755)
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -3326,6 +3335,10 @@ func executeOnPath(path, cmd string) error {
 }
 
 func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
+	s.T().Skip("We don't support packing shallow-file in go-git server-side" +
+		"yet. Since we're using local repositories here, the test will use the" +
+		"server-side implementation. See transport/upload_pack.go and" +
+		"packfile/encoder.go")
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,

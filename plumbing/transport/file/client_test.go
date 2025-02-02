@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -17,22 +20,37 @@ func TestClientSuite(t *testing.T) {
 }
 
 type ClientSuite struct {
-	CommonSuite
+	suite.Suite
+}
+
+type testLoader struct {
+	repos map[*transport.Endpoint]storage.Storer
+}
+
+func (l *testLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+	repo, ok := l.repos[ep]
+	if !ok {
+		return nil, transport.ErrRepositoryNotFound
+	}
+	return repo, nil
 }
 
 func (s *ClientSuite) TestCommand() {
-	runner := &runner{
-		UploadPackBin:  transport.UploadPackServiceName,
-		ReceivePackBin: transport.ReceivePackServiceName,
-	}
 	ep, err := transport.NewEndpoint(filepath.Join("fake", "repo"))
 	s.Nil(err)
+	runner := &runner{
+		loader: &testLoader{
+			repos: map[*transport.Endpoint]storage.Storer{
+				ep: memory.NewStorage(),
+			},
+		},
+	}
 	var emptyAuth transport.AuthMethod
-	_, err = runner.Command("git-receive-pack", ep, emptyAuth)
+	_, err = runner.Command(context.TODO(), "git-receive-pack", ep, emptyAuth)
 	s.Nil(err)
 
 	// Make sure we get an error for one that doesn't exist.
-	_, err = runner.Command("git-fake-command", ep, emptyAuth)
+	_, err = runner.Command(context.TODO(), "git-fake-command", ep, emptyAuth)
 	s.NotNil(err)
 }
 

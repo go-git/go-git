@@ -69,7 +69,7 @@ func (s *ProxySuite) TestCommand() {
 			HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 		},
 	}
-	_, err = runner.Command(transport.UploadPackServiceName, ep, nil)
+	_, err = runner.Command(context.TODO(), transport.UploadPackService.String(), ep, nil)
 	s.NoError(err)
 	proxyUsed := atomic.LoadInt32(&socksProxiedRequests) > 0
 	s.True(proxyUsed)

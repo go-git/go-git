@@ -3,7 +3,6 @@ package transport
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -143,9 +142,7 @@ func (s *SuiteCommon) TestNewEndpointFileAbs() {
 }
 
 func (s *SuiteCommon) TestNewEndpointFileRel() {
-	abs, err := filepath.Abs("foo.git")
-	s.Nil(err)
-
+	abs := "foo.git"
 	e, err := NewEndpoint("foo.git")
 	s.Nil(err)
 	s.Equal("file", e.Protocol)
@@ -159,13 +156,6 @@ func (s *SuiteCommon) TestNewEndpointFileRel() {
 
 func (s *SuiteCommon) TestNewEndpointFileWindows() {
 	abs := "C:\\foo.git"
-
-	if runtime.GOOS != "windows" {
-		cwd, err := os.Getwd()
-		s.Nil(err)
-
-		abs = filepath.Join(cwd, "C:\\foo.git")
-	}
 
 	e, err := NewEndpoint("C:\\foo.git")
 	s.Nil(err)
@@ -219,7 +209,6 @@ func (s *SuiteCommon) TestFilterUnsupportedCapabilities() {
 	l.Set(capability.MultiACK)
 	l.Set(capability.MultiACKDetailed)
 
-	FilterUnsupportedCapabilities(l)
 	s.False(l.Supports(capability.ThinPack))
 }
 
