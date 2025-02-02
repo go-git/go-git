@@ -396,6 +396,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	if err := r.isSupportedRefSpec(o.RefSpecs, conn.Capabilities()); err != nil {
+		return nil, err
+	}
+
 	rRefs, err := conn.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
@@ -419,20 +423,20 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
+	isWildcard := true
+	for _, s := range o.RefSpecs {
+		if !s.IsWildcard() {
+			isWildcard = false
+			break
+		}
+	}
+
 	var haves []plumbing.Hash
 	wants, _ := getWants(r.s, refs, o.Depth)
 	if len(wants) > 0 {
 		haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
 		if err != nil {
 			return nil, err
-		}
-
-		isWildcard := true
-		for _, s := range o.RefSpecs {
-			if !s.IsWildcard() {
-				isWildcard = false
-				break
-			}
 		}
 
 		req := &transport.FetchRequest{
@@ -475,7 +479,18 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if !updated && !updatedPrune {
-		return remoteRefs, NoErrAlreadyUpToDate
+		// No references updated, but may have fetched new objects, check if we now have any of our wants
+		for _, hash := range wants {
+			exists, _ := objectExists(r.s, hash)
+			if exists {
+				updated = true
+				break
+			}
+		}
+
+		if !updated {
+			return remoteRefs, NoErrAlreadyUpToDate
+		}
 	}
 
 	return remoteRefs, nil
@@ -1072,7 +1087,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash, earlies
 	return found, err
 }
 
-func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, ar *packp.AdvRefs) error {
+func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List) error {
 	var containsIsExact bool
 	for _, ref := range refs {
 		if ref.IsExactSHA1() {
@@ -1084,8 +1099,8 @@ func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, ar *packp.AdvRefs) er
 		return nil
 	}
 
-	if ar.Capabilities.Supports(capability.AllowReachableSHA1InWant) ||
-		ar.Capabilities.Supports(capability.AllowTipSHA1InWant) {
+	if caps.Supports(capability.AllowReachableSHA1InWant) ||
+		caps.Supports(capability.AllowTipSHA1InWant) {
 		return nil
 	}
 
@@ -1264,24 +1279,20 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, err
 	}
 
-	refs := storer.NewReferenceSliceIter(allRefs)
-
 	var resultRefs []*plumbing.Reference
-	if o.PeelingOption == AppendPeeled || o.PeelingOption == IgnorePeeled {
-		err = refs.ForEach(func(ref *plumbing.Reference) error {
-			resultRefs = append(resultRefs, ref)
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if o.PeelingOption == AppendPeeled || o.PeelingOption == OnlyPeeled {
-		for _, ref := range allRefs {
-			if strings.HasSuffix(ref.Name().String(), "^{}") {
+	for _, ref := range allRefs {
+		isPeeled := strings.HasSuffix(ref.Name().String(), peeledSuffix)
+		switch o.PeelingOption {
+		case IgnorePeeled:
+			if !isPeeled {
 				resultRefs = append(resultRefs, ref)
 			}
+		case OnlyPeeled:
+			if isPeeled {
+				resultRefs = append(resultRefs, ref)
+			}
+		case AppendPeeled:
+			resultRefs = append(resultRefs, ref)
 		}
 	}
 
