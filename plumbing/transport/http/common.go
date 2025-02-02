@@ -42,11 +42,12 @@ func applyHeaders(
 	useSmart bool,
 ) {
 	// Add headers
-	req.Header.Add("User-Agent", capability.DefaultAgent())
-	req.Header.Add("Host", ep.Host) // host:port
+	req.Header.Set("User-Agent", capability.DefaultAgent())
+	req.Header.Set("Host", ep.Host) // host:port
 
 	if useSmart {
-		req.Header.Add("Accept", fmt.Sprintf("application/x-%s-result", service)) // smart protocol
+		req.Header.Set("Content-Type", fmt.Sprintf("application/x-%s-request", service))
+		req.Header.Set("Accept", fmt.Sprintf("application/x-%s-result", service)) // smart protocol
 	}
 
 	if protocol != "" {
@@ -461,7 +462,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 	// XXX: packfile will be populated and accessible once rwc.Close() is
 	// called in NegotiatePack.
 	packfile := rwc.BodyCloser()
-	shallows, err := transport.NegotiatePack(s.st, s, packfile, rwc, req)
+	shallows, err := transport.NegotiatePack(ctx, s.st, s, packfile, rwc, req)
 	if err != nil {
 		if rwc.res != nil {
 			// Make sure the response body is closed.

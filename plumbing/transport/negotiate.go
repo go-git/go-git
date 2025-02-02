@@ -1,15 +1,12 @@
 package transport
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"io"
-	"sort"
 
-	"github.com/go-git/go-git/v5/internal/reference"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/storage"
@@ -18,16 +15,13 @@ import (
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
 func NegotiatePack(
+	ctx context.Context,
 	st storage.Storer,
 	conn Connection,
 	reader io.Reader,
 	writer io.WriteCloser,
 	req *FetchRequest,
 ) (shallowInfo *packp.ShallowUpdate, err error) {
-	if len(req.Wants) == 0 {
-		return nil, fmt.Errorf("no wants specified")
-	}
-
 	caps := conn.Capabilities()
 
 	// Create upload-request
@@ -67,6 +61,8 @@ func NegotiatePack(
 		upreq.Capabilities.Set(capability.IncludeTag) // nolint: errcheck
 	}
 
+	// TODO: Support filter
+
 	upreq.Wants = req.Wants
 
 	if req.Depth > 0 {
@@ -98,55 +94,42 @@ func NegotiatePack(
 
 	// Create upload-haves
 	common := map[plumbing.Hash]struct{}{}
-	localRefs, err := reference.References(st)
-	if err != nil {
-		return nil, fmt.Errorf("getting local references: %w", err)
-	}
-
-	var pending []*object.Commit
-	for _, r := range localRefs {
-		c, err := object.GetCommit(st, r.Hash())
-		if err == nil {
-			pending = append(pending, c)
-		}
-	}
-
-	sort.Slice(pending, func(i, j int) bool {
-		return pending[i].Committer.When.Before(pending[j].Committer.When)
-	})
 
 	var inVein int
 	var done bool
 	var gotContinue bool // whether we got a continue from the server
 	firstRound := true
 	for !done {
-		// Pop the last 32 have commits from the pending list and insert their
-		// parents into the pending list.
+		// Pop the last 32 or depth have commits from the pending list and
+		// insert their parents into the pending list.
+		// TODO: Properly build and implement haves negotiation, and move it
+		// from remote.go to this package.
 		var uphav packp.UploadHaves
-		uphav.Haves = []plumbing.Hash{}
-		for i := 0; i < 32 && len(pending) > 0; i++ {
-			c := pending[len(pending)-1]
-			pending = pending[:len(pending)-1]
-			parents := c.Parents()
-			if err := parents.ForEach(func(p *object.Commit) error {
-				pending = append(pending, p)
-				return nil
-			}); err != nil {
-				// Ignore commits not found errors
-				if errors.Is(err, plumbing.ErrObjectNotFound) {
-					continue
-				}
-				return nil, err
-			}
-
-			uphav.Haves = append(uphav.Haves, c.Hash)
+		for i := 0; i < 32 && len(req.Haves) > 0; i++ {
+			uphav.Haves = append(uphav.Haves, req.Haves[len(req.Haves)-1])
+			req.Haves = req.Haves[:len(req.Haves)-1]
 			inVein++
 		}
 
 		// Let the server know we're done
 		const maxInVein = 256
-		done = len(pending) == 0 || (gotContinue && inVein >= maxInVein)
+		done = len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
 		uphav.Done = done
+
+		// Note: empty request means haves are a subset of wants, in that case we have
+		// everything we asked for. Close the connection and return nil.
+		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
+			if err := pktline.WriteFlush(writer); err != nil {
+				return nil, err
+			}
+
+			// Close the writer to signal the end of the request
+			if err := writer.Close(); err != nil {
+				return nil, fmt.Errorf("closing writer: %s", err)
+			}
+
+			return nil, ErrNoChange
+		}
 
 		// Begin the upload-pack negotiation
 		if firstRound || conn.StatelessRPC() {
