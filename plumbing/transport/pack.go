@@ -188,7 +188,7 @@ func (*packConnection) StatelessRPC() bool {
 
 // Fetch implements Connection.
 func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) (err error) {
-	shallows, err := NegotiatePack(p.st, p, p.r, p.w, req)
+	shallows, err := NegotiatePack(ctx, p.st, p, p.r, p.w, req)
 	if err != nil {
 		return err
 	}

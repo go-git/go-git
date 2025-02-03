@@ -31,6 +31,12 @@ func NewTransport(loader transport.Loader) transport.Transport {
 }
 
 func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, auth transport.AuthMethod, params ...string) (transport.Command, error) {
+	switch transport.Service(cmd) {
+	case transport.UploadPackService, transport.ReceivePackService:
+		// do nothing
+	default:
+		return nil, transport.ErrUnsupportedService
+	}
 	gitProtocol := strings.Join(params, ":")
 
 	return &command{

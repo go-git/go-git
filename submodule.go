@@ -267,7 +267,7 @@ func (s *Submodule) fetchAndCheckout(
 				RefSpecs: []config.RefSpec{refSpec},
 				Depth:    o.Depth,
 			})
-			if err != nil && err != NoErrAlreadyUpToDate && err != ErrExactSHA1NotSupported {
+			if err != nil && errors.Is(err, NoErrAlreadyUpToDate) && errors.Is(err, ErrExactSHA1NotSupported) {
 				return err
 			}
 		}
@@ -376,7 +376,7 @@ func (s *SubmoduleStatus) IsClean() bool {
 // the SHA-1 found in the index of the containing repository.
 func (s *SubmoduleStatus) String() string {
 	var extra string
-	var status = ' '
+	status := ' '
 
 	if s.Current.IsZero() {
 		status = '-'

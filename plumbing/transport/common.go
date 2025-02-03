@@ -100,9 +100,11 @@ type FetchRequest struct {
 	Progress sideband.Progress
 
 	// Wants is the list of references to fetch.
+	// TODO: Build this slice in the transport package.
 	Wants []plumbing.Hash
 
 	// Haves is the list of references the client already has.
+	// TODO: Build this slice in the transport package.
 	Haves []plumbing.Hash
 
 	// Depth is the depth of the fetch.
