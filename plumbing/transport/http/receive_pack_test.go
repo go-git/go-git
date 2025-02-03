@@ -22,7 +22,7 @@ func (s *ReceivePackSuite) SetupTest() {
 	s.BaseSuite.SetupTest()
 
 	s.rps.SetS(s)
-	s.rps.Client = DefaultClient
+	s.rps.Client = DefaultTransport
 	s.rps.Endpoint = s.prepareRepository(fixtures.Basic().One(), "basic.git")
 	s.rps.EmptyEndpoint = s.prepareRepository(fixtures.ByTag("empty").One(), "empty.git")
 	s.rps.NonExistentEndpoint = s.newEndpoint("non-existent.git")

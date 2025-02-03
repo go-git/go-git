@@ -157,6 +157,7 @@ func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 }
 
 func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem) {
+	// TODO: Use s.T().TempDir() here, but it fails. Investigate why.
 	tmpDir, err := os.MkdirTemp("", "")
 	if err != nil {
 		panic(err)

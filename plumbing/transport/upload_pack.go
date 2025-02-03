@@ -114,7 +114,7 @@ func UploadPack(
 					if !upreq.Depth.IsZero() {
 						switch depth := upreq.Depth.(type) {
 						case packp.DepthCommits:
-							if err := getShallowCommits(st, upreq.Wants, int(depth), &shupd); err != nil {
+							if err := getShallowCommits(st, wants, int(depth), &shupd); err != nil {
 								writec <- fmt.Errorf("getting shallow commits: %w", err)
 								return
 							}
@@ -248,6 +248,8 @@ func UploadPack(
 			}
 		}
 
+		// TODO: Support shallow-file
+		// TODO: Support thin-pack
 		e := packfile.NewEncoder(writer, st, false)
 		_, err = e.Encode(objs, 10)
 		if err != nil {

@@ -1,7 +1,10 @@
 package ssh
 
 import (
+	"context"
+
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
@@ -99,13 +102,14 @@ func (s *SuiteCommon) TestIgnoreHostKeyCallback() {
 	uploadPack.Suite = s.Suite
 	uploadPack.SetupSuite()
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
+	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	s.Nil(err)
 	s.NotNil(auth)
 	auth.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
 	ep := uploadPack.newEndpoint("bar.git")
-	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
+	st := memory.NewStorage()
+	ps, err := uploadPack.Client.NewSession(st, ep, auth)
 	s.Nil(err)
 	s.NotNil(ps)
 }
@@ -121,13 +125,14 @@ func (s *SuiteCommon) TestFixedHostKeyCallback() {
 	uploadPack.Suite = s.Suite
 	uploadPack.SetupSuite()
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
+	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	s.Nil(err)
 	s.NotNil(auth)
 	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
 	ep := uploadPack.newEndpoint("bar.git")
-	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
+	st := memory.NewStorage()
+	ps, err := uploadPack.Client.NewSession(st, ep, auth)
 	s.Nil(err)
 	s.NotNil(ps)
 }
@@ -141,12 +146,15 @@ func (s *SuiteCommon) TestFailHostKeyCallback() {
 	uploadPack.Suite = s.Suite
 	uploadPack.SetupSuite()
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
+	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	s.Nil(err)
 	s.NotNil(auth)
 	ep := uploadPack.newEndpoint("bar.git")
-	_, err = uploadPack.Client.NewUploadPackSession(ep, auth)
+	st := memory.NewStorage()
+	sess, err := uploadPack.Client.NewSession(st, ep, auth)
+	s.NoError(err)
+	_, err = sess.Handshake(context.TODO(), transport.UploadPackService)
 	s.NotNil(err)
 }
 
@@ -162,7 +170,7 @@ func (s *SuiteCommon) TestIssue70() {
 		config: config,
 	}
 
-	cmd, err := r.Command("command", uploadPack.newEndpoint("endpoint"), uploadPack.EmptyAuth)
+	cmd, err := r.Command(context.TODO(), "command", uploadPack.newEndpoint("endpoint"), uploadPack.EmptyAuth)
 	s.NoError(err)
 
 	s.NoError(cmd.(*command).client.Close())
@@ -172,6 +180,7 @@ func (s *SuiteCommon) TestIssue70() {
 }
 
 func (s *SuiteCommon) TestInvalidSocks5Proxy() {
+	st := memory.NewStorage()
 	ep, err := transport.NewEndpoint("git@github.com:foo/bar.git")
 	s.NoError(err)
 	ep.Proxy.URL = "socks5://127.0.0.1:1080"
@@ -180,9 +189,12 @@ func (s *SuiteCommon) TestInvalidSocks5Proxy() {
 	s.NoError(err)
 	s.NotNil(auth)
 
-	ps, err := DefaultClient.NewUploadPackSession(ep, auth)
+	ps, err := DefaultTransport.NewSession(st, ep, auth)
+	s.NoError(err)
+	s.NotNil(ps)
+	conn, err := ps.Handshake(context.TODO(), transport.UploadPackService)
 	// Since the proxy server is not running, we expect an error.
-	s.Nil(ps)
+	s.Nil(conn)
 	s.Error(err)
 	s.Regexp("socks connect .* dial tcp 127.0.0.1:1080: .*", err.Error())
 }
@@ -214,7 +226,7 @@ func (s *UploadPackSuite) TestCommandWithInvalidAuthMethod() {
 	r := &runner{}
 	auth := &invalidAuthMethod{}
 
-	_, err := r.Command("command", s.newEndpoint("endpoint"), auth)
+	_, err := r.Command(context.TODO(), "command", s.newEndpoint("endpoint"), auth)
 
 	s.Error(err)
 	s.Equal("invalid auth method", err.Error())
