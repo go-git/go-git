@@ -35,10 +35,7 @@ func TestSuiteDotGit(t *testing.T) {
 }
 
 func (s *SuiteDotGit) TemporalFilesystem() (fs billy.Filesystem) {
-	tmpDir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	fs = osfs.New(tmpDir)
+	fs = osfs.New(s.T().TempDir())
 	path, err := util.TempDir(fs, "", "")
 	if err != nil {
 		panic(err)
@@ -383,12 +380,14 @@ func (s *SuiteDotGit) TestConfigWriteAndConfig() {
 
 	_, err = f.Write([]byte("foo"))
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	f, err = dir.Config()
 	s.NoError(err)
 
 	cnt, err := io.ReadAll(f)
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	s.Equal("foo", string(cnt))
 }
@@ -412,12 +411,14 @@ func (s *SuiteDotGit) TestIndexWriteAndIndex() {
 
 	_, err = f.Write([]byte("foo"))
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	f, err = dir.Index()
 	s.NoError(err)
 
 	cnt, err := io.ReadAll(f)
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	s.Equal("foo", string(cnt))
 }
@@ -441,12 +442,14 @@ func (s *SuiteDotGit) TestShallowWriteAndShallow() {
 
 	_, err = f.Write([]byte("foo"))
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	f, err = dir.Shallow()
 	s.NoError(err)
 
 	cnt, err := io.ReadAll(f)
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	s.Equal("foo", string(cnt))
 }
