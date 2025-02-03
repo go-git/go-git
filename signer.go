@@ -28,6 +28,5 @@ func signObject(signer Signer, obj signableObject) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return signer.Sign(r)
 }
