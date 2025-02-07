@@ -266,6 +266,7 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent() {
 		err = newTree.Decode(obj)
 		s.NoError(err)
 		tree.Hash = obj.Hash()
+		tree.buildMap()
 		s.Equal(tree, newTree)
 	}
 }
