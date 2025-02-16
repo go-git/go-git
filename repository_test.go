@@ -67,9 +67,9 @@ func (s *RepositorySuite) TestInit() {
 }
 
 func (s *RepositorySuite) TestInitWithOptions() {
-	r, err := InitWithOptions(memory.NewStorage(), memfs.New(), InitOptions{
-		DefaultBranch: "refs/heads/foo",
-	})
+	r, err := InitWithOptions(memory.NewStorage(), memfs.New(),
+		WithDefaultBranch("refs/heads/foo"),
+	)
 	s.NoError(err)
 	s.NotNil(r)
 	createCommit(s, r)
@@ -81,9 +81,9 @@ func (s *RepositorySuite) TestInitWithOptions() {
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
-	_, err := InitWithOptions(memory.NewStorage(), memfs.New(), InitOptions{
-		DefaultBranch: "foo",
-	})
+	_, err := InitWithOptions(memory.NewStorage(), memfs.New(),
+		WithDefaultBranch("foo"),
+	)
 	s.NotNil(err)
 }
 
@@ -659,12 +659,12 @@ func (s *RepositorySuite) TestPlainInitWithOptions() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainInitWithOptions(dir, &PlainInitOptions{
-		InitOptions: InitOptions{
-			DefaultBranch: "refs/heads/foo",
-		},
-		Bare: false,
-	})
+	r, err := PlainInitWithOptions(dir,
+		WithInitOptions(
+			WithDefaultBranch("refs/heads/foo"),
+		),
+		WithWorkTree(true),
+	)
 	s.NoError(err)
 	s.NotNil(r)
 
