@@ -23,7 +23,7 @@ func main() {
 	os.RemoveAll(directory)
 
 	// Init a new repository using the ObjectFormat SHA256.
-	r, err := git.PlainInitWithOptions(directory, &git.PlainInitOptions{ObjectFormat: config.SHA256})
+	r, err := git.PlainInit(directory, false, git.WithObjectFormat(config.SHA256))
 	CheckIfError(err)
 
 	w, err := r.Worktree()
