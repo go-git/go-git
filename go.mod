@@ -2,8 +2,7 @@ module github.com/go-git/go-git/v5
 
 // go-git supports the last 3 stable Go versions.
 go 1.22.0
-
-toolchain go1.22.6
+toolchain go1.23.6
 
 // Use the v6-exp branch across go-git dependencies.
 replace (
@@ -29,7 +28,7 @@ require (
 	github.com/pjbgf/sha1cd v0.3.2
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.34.0
 	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e
 	golang.org/x/net v0.35.0
 	golang.org/x/sys v0.30.0
