@@ -61,7 +61,7 @@ passed   result
  M, N     false     Commits with unrelated history, will return false
 */
 
-func TestmergeBaseSuite(t *testing.T) {
+func TestMergeBaseSuite(t *testing.T) {
 	suite.Run(t, new(mergeBaseSuite))
 }
 
