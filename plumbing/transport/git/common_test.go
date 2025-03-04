@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func (h *CommonSuiteHelper) TearDown() {
 	fixtures.Clean()
 
 	if h.daemon != nil {
-		_ = h.daemon.Process.Signal(os.Kill)
+		_ = syscall.Kill(-h.daemon.Process.Pid, syscall.SIGINT)
 		_ = h.daemon.Wait()
 	}
 }
@@ -66,6 +67,9 @@ func (h *CommonSuiteHelper) startDaemon(t *testing.T) {
 		// might not be seen by a subsequent operation.
 		"--max-connections=1",
 	)
+
+	// new PGID should be set in order to kill the child process spawned by the command.
+	h.daemon.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Environment must be inherited in order to acknowledge GIT_EXEC_PATH if set.
 	h.daemon.Env = os.Environ()
