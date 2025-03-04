@@ -2,6 +2,8 @@ package git
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -76,8 +78,11 @@ func (h *CommonSuiteHelper) startDaemon(t *testing.T) {
 
 	assert.NoError(t, h.daemon.Start())
 
-	// Connections might be refused if we start sending request too early.
-	time.Sleep(time.Millisecond * 500)
+	// Wait until daemon is ready.
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
+	defer cancel()
+
+	assert.NoError(t, waitForPort(ctx, h.port))
 }
 
 func (h *CommonSuiteHelper) newEndpoint(t *testing.T, name string) *transport.Endpoint {
@@ -111,4 +116,18 @@ func freePort() (int, error) {
 	}
 
 	return l.Addr().(*net.TCPAddr).Port, l.Close()
+}
+
+func waitForPort(ctx context.Context, port int) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("context canceled before the port is connectable")
+		case <-time.After(10 * time.Millisecond):
+			conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+			if err == nil {
+				return conn.Close()
+			}
+		}
+	}
 }
