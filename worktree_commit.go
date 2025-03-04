@@ -53,10 +53,7 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 			return plumbing.ZeroHash, err
 		}
 
-		opts.Parents = nil
-		if len(headCommit.ParentHashes) != 0 {
-			opts.Parents = []plumbing.Hash{headCommit.ParentHashes[0]}
-		}
+		opts.Parents = headCommit.ParentHashes
 	}
 
 	idx, err := w.r.Storer.Index()
