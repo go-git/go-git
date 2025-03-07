@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -45,7 +46,7 @@ func (s *ClientSuite) SetupSuite() {
 	s.Storer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 }
 
-func (s *UploadPackSuite) TestNewClient() {
+func (s *ClientSuite) TestNewClient() {
 	roundTripper := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -218,35 +219,31 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect() {
 	}
 }
 
-type BaseSuite struct {
-	suite.Suite
-
+type CommonSuiteHelper struct {
 	base string
 	host string
 	port int
 }
 
-func (s *BaseSuite) SetupTest() {
+func (h *CommonSuiteHelper) Setup(t *testing.T) {
 	l, err := net.Listen("tcp", "localhost:0")
-	s.NoError(err)
+	assert.NoError(t, err)
+	h.port = l.Addr().(*net.TCPAddr).Port
 
-	base, err := os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
-	s.NoError(err)
+	base, err := os.MkdirTemp(t.TempDir(), fmt.Sprintf("go-git-http-%d", h.port))
+	assert.NoError(t, err)
+	h.base = filepath.Join(base, h.host)
 
-	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base = filepath.Join(base, s.host)
-
-	err = os.MkdirAll(s.base, 0o755)
-	s.NoError(err)
+	assert.NoError(t, os.MkdirAll(h.base, 0o755))
 
 	cmd := exec.Command("git", "--exec-path")
 	out, err := cmd.CombinedOutput()
-	s.NoError(err)
+	assert.NoError(t, err)
 
 	server := &http.Server{
 		Handler: &cgi.Handler{
 			Path: filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend"),
-			Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", s.base)},
+			Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", h.base)},
 		},
 	}
 	go func() {
@@ -254,22 +251,25 @@ func (s *BaseSuite) SetupTest() {
 	}()
 }
 
-func (s *BaseSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
+func (h *CommonSuiteHelper) TearDown() {
+
+}
+
+func (h *CommonSuiteHelper) prepareRepository(t *testing.T, f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
-	s.NoError(err)
+	assert.NoError(t, err)
 
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.NoError(err)
+	path := filepath.Join(h.base, name)
+	assert.NoError(t, os.Rename(fs.Root(), path))
 
-	return s.newEndpoint(name)
+	return h.newEndpoint(t, name)
 }
 
-func (s *BaseSuite) newEndpoint(name string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
-	s.NoError(err)
+func (h *CommonSuiteHelper) newEndpoint(t *testing.T, name string) *transport.Endpoint {
+	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", h.port, name))
+	assert.NoError(t, err)
 
 	return ep
 }

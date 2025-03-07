@@ -20,35 +20,30 @@ func TestReceivePackSuite(t *testing.T) {
 }
 
 type ReceivePackSuite struct {
-	suite.Suite
-	rps test.ReceivePackSuite
+	test.ReceivePackSuite
+	helper CommonSuiteHelper
 }
 
 func (s *ReceivePackSuite) SetupSuite() {
-	s.rps.SetS(s)
-	s.rps.Client = DefaultTransport
+	s.Client = DefaultTransport
 }
 
 func (s *ReceivePackSuite) SetupTest() {
 	fixture := fixtures.Basic().One()
-	dot := fixture.DotGit()
-	path := dot.Root()
-	s.rps.Endpoint = prepareRepo(s.T(), path)
-	s.rps.Storer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s.Endpoint = s.helper.prepareRepository(s.T(), fixture)
+	s.Storer = filesystem.NewStorage(fixture.DotGit(), cache.NewObjectLRUDefault())
 
 	fixture = fixtures.ByTag("empty").One()
-	dot = fixture.DotGit()
-	path = dot.Root()
-	s.rps.EmptyEndpoint = prepareRepo(s.T(), path)
-	s.rps.EmptyStorer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s.EmptyEndpoint = s.helper.prepareRepository(s.T(), fixture)
+	s.EmptyStorer = filesystem.NewStorage(fixture.DotGit(), cache.NewObjectLRUDefault())
 
-	s.rps.NonExistentEndpoint = prepareRepo(s.T(), "/non-existent")
-	s.rps.NonExistentStorer = memory.NewStorage()
+	s.NonExistentEndpoint = s.helper.newEndpoint(s.T(), "/non-existent")
+	s.NonExistentStorer = memory.NewStorage()
 }
 
 func (s *ReceivePackSuite) TestNonExistentCommand() {
 	client := DefaultTransport
-	session, err := client.NewSession(s.rps.Storer, s.rps.Endpoint, s.rps.EmptyAuth)
+	session, err := client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := session.Handshake(context.TODO(), transport.Service("git-fake-command"))
 	s.Regexp(regexp.MustCompile(".*(no such file or directory|file does not exist)*."), err)

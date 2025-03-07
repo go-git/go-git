@@ -52,28 +52,8 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists() {
 	s.NoError(err)
 
 	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
-
-	refs, err := conn.GetRemoteRefs(context.TODO())
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
-	s.Nil(refs)
-
-	// Test receive pack also fails
-	r2, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
-	s.NoError(err)
-
-	conn2, err := r2.Handshake(context.TODO(), transport.ReceivePackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn2.Close()) }()
-
-	req := &transport.PushRequest{}
-	req.Commands = []*packp.Command{
-		{Name: "master", Old: plumbing.ZeroHash, New: plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
-	}
-
-	err = conn2.Push(context.Background(), req)
-	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+	s.Nil(conn)
 }
 
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice() {
@@ -113,7 +93,7 @@ func (s *ReceivePackSuite) TestDefaultBranch() {
 		}
 	}
 	s.True(ok)
-	s.Equal(fixtures.Basic().One().Head, ref.String())
+	s.Equal(fixtures.Basic().One().Head, ref.Hash().String())
 }
 
 func (s *ReceivePackSuite) TestCapabilities() {
@@ -351,7 +331,7 @@ func (s *ReceivePackSuite) checkRemoteReference(ep *transport.Endpoint,
 		s.False(ok)
 	} else {
 		s.True(ok)
-		s.Equal(head, ref)
+		s.Equal(head, ref.Hash())
 	}
 }
 

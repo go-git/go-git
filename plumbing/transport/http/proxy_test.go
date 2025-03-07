@@ -24,7 +24,6 @@ type ProxySuite struct {
 func (s *ProxySuite) TestAdvertisedReferences() {
 	var proxiedRequests int32
 
-	s.SetupTest()
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = true
 	test.SetupHTTPProxy(proxy, &proxiedRequests)
@@ -36,15 +35,15 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	fixture := fixtures.Basic().One()
 	dot := fixture.DotGit()
 	st := filesystem.NewStorage(dot, nil)
-	endpoint := s.prepareRepository(fixture, "basic.git")
+	endpoint := s.helper.prepareRepository(s.T(), fixture, "basic.git")
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpProxyAddr,
 		Username: "user",
 		Password: "pass",
 	}
 
-	s.ups.Client = NewTransport(nil)
-	session, err := s.ups.Client.NewSession(st, endpoint, nil)
+	s.Client = NewTransport(nil)
+	session, err := s.Client.NewSession(st, endpoint, nil)
 	s.Nil(err)
 	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
 	s.NoError(err)
@@ -52,7 +51,7 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	info, err := conn.GetRemoteRefs(ctx)
-	s.Nil(err)
+	s.NoError(err)
 	s.NotNil(info)
 	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
 	s.Equal(true, proxyUsed)
@@ -65,7 +64,7 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	defer tlsProxyServer.Close()
 
 	endpoint, err = transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
-	s.Nil(err)
+	s.NoError(err)
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpsProxyAddr,
 		Username: "user",
@@ -73,13 +72,13 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	}
 	endpoint.InsecureSkipTLS = true
 
-	session, err = s.ups.Client.NewSession(st, endpoint, nil)
+	session, err = s.Client.NewSession(st, endpoint, nil)
 	s.Nil(err)
 	conn, err = session.Handshake(context.Background(), transport.UploadPackService)
 	s.NoError(err)
 
 	info, err = conn.GetRemoteRefs(ctx)
-	s.Nil(err)
+	s.NoError(err)
 	s.NotNil(info)
 	proxyUsed = atomic.LoadInt32(&proxiedRequests) > 0
 	s.Equal(true, proxyUsed)

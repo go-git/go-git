@@ -2,12 +2,10 @@ package file
 
 import (
 	"context"
-	"io"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -21,6 +19,7 @@ func TestClientSuite(t *testing.T) {
 
 type ClientSuite struct {
 	suite.Suite
+	helper CommonSuiteHelper
 }
 
 type testLoader struct {
@@ -36,8 +35,7 @@ func (l *testLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 }
 
 func (s *ClientSuite) TestCommand() {
-	ep, err := transport.NewEndpoint(filepath.Join("fake", "repo"))
-	s.Nil(err)
+	ep := s.helper.newEndpoint(s.T(), filepath.Join("fake", "repo"))
 	runner := &runner{
 		loader: &testLoader{
 			repos: map[*transport.Endpoint]storage.Storer{
@@ -46,34 +44,28 @@ func (s *ClientSuite) TestCommand() {
 		},
 	}
 	var emptyAuth transport.AuthMethod
-	_, err = runner.Command(context.TODO(), "git-receive-pack", ep, emptyAuth)
-	s.Nil(err)
+	_, err := runner.Command(context.TODO(), "git-receive-pack", ep, emptyAuth)
+	s.NoError(err)
 
 	// Make sure we get an error for one that doesn't exist.
 	_, err = runner.Command(context.TODO(), "git-fake-command", ep, emptyAuth)
-	s.NotNil(err)
+	s.Error(err)
 }
 
-const bareConfig = `[core]
-repositoryformatversion = 0
-filemode = true
-bare = true`
+type CommonSuiteHelper struct{}
 
-func prepareRepo(t *testing.T, path string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(path)
-	assert.Nil(t, err)
-
-	// git-receive-pack refuses to update refs/heads/master on non-bare repo
-	// so we ensure bare repo config.
-	config := filepath.Join(path, "config")
-	if _, err := os.Stat(config); err == nil {
-		f, err := os.OpenFile(config, os.O_TRUNC|os.O_WRONLY, 0)
-		assert.Nil(t, err)
-		content := strings.NewReader(bareConfig)
-		_, err = io.Copy(f, content)
-		assert.Nil(t, err)
-		assert.Nil(t, f.Close())
-	}
+func (h *CommonSuiteHelper) newEndpoint(t *testing.T, name string) *transport.Endpoint {
+	ep, err := transport.NewEndpoint(name)
+	assert.NoError(t, err)
 
 	return ep
+}
+
+func (h *CommonSuiteHelper) prepareRepository(t *testing.T, f *fixtures.Fixture) *transport.Endpoint {
+	fs := f.DotGit()
+
+	err := fixtures.EnsureIsBare(fs)
+	assert.NoError(t, err)
+
+	return h.newEndpoint(t, fs.Root())
 }
