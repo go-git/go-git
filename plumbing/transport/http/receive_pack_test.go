@@ -39,5 +39,5 @@ func (s *ReceivePackSuite) SetupTest() {
 }
 
 func (s *ReceivePackSuite) TearDownTest() {
-	s.helper.TearDown()
+	s.helper.TearDown(s.T())
 }

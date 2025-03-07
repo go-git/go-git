@@ -42,7 +42,7 @@ func (s *UploadPackSuite) SetupTest() {
 }
 
 func (s *UploadPackSuite) TearDownTest() {
-	s.helper.TearDown()
+	s.helper.TearDown(s.T())
 }
 
 // Overwritten, different behaviour for HTTP.
