@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
 
@@ -44,45 +43,18 @@ func (h *CommonSuiteHelper) Setup(t *testing.T) {
 	h.base, err = os.MkdirTemp(t.TempDir(), fmt.Sprintf("go-git-protocol-%d", h.port))
 	assert.NoError(t, err)
 
-	h.startDaemon(t)
+	daemon, err := startGitDaemon(h.base, h.port)
+	assert.NoError(t, err)
+	h.daemon = daemon
 }
 
 func (h *CommonSuiteHelper) TearDown() {
 	fixtures.Clean()
 
 	if h.daemon != nil {
-		_ = syscall.Kill(-h.daemon.Process.Pid, syscall.SIGINT)
+		_ = killDaemon(h.daemon)
 		_ = h.daemon.Wait()
 	}
-}
-
-func (h *CommonSuiteHelper) startDaemon(t *testing.T) {
-	h.daemon = exec.Command(
-		"git",
-		"daemon",
-		fmt.Sprintf("--base-path=%s", h.base),
-		"--export-all",
-		"--enable=receive-pack",
-		"--reuseaddr",
-		fmt.Sprintf("--port=%d", h.port),
-		// Unless max-connections is limited to 1, a git-receive-pack
-		// might not be seen by a subsequent operation.
-		"--max-connections=1",
-	)
-
-	// new PGID should be set in order to kill the child process spawned by the command.
-	h.daemon.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	// Environment must be inherited in order to acknowledge GIT_EXEC_PATH if set.
-	h.daemon.Env = os.Environ()
-
-	assert.NoError(t, h.daemon.Start())
-
-	// Wait until daemon is ready.
-	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
-	defer cancel()
-
-	assert.NoError(t, waitForPort(ctx, h.port))
 }
 
 func (h *CommonSuiteHelper) newEndpoint(t *testing.T, name string) *transport.Endpoint {
@@ -118,7 +90,10 @@ func freePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, l.Close()
 }
 
-func waitForPort(ctx context.Context, port int) error {
+func waitForPort(port int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
+	defer cancel()
+
 	for {
 		select {
 		case <-ctx.Done():
