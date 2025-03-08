@@ -15,84 +15,65 @@ type CommonSuite struct {
 	suite.Suite
 }
 
-func (s *CommonSuite) TestIsRepoNotFoundErrorForUnknownSource() {
-	msg := "unknown system is complaining of something very sad :("
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.False(isRepoNotFound)
-}
-
 func (s *CommonSuite) TestIsRepoNotFoundError() {
-	msg := "no such repository : some error stuf"
+	tests := []struct {
+		name     string
+		msg      string
+		expected bool
+	}{
+		{
+			name:     "unknown source",
+			msg:      "unknown system is complaining of something very sad :(",
+			expected: false,
+		},
+		{
+			name:     "github",
+			msg:      fmt.Sprintf("%s : some error stuf", githubRepoNotFoundErr),
+			expected: true,
+		},
+		{
+			name:     "bitbucket",
+			msg:      fmt.Sprintf("%s : some error stuf", bitbucketRepoNotFoundErr),
+			expected: true,
+		},
+		{
+			name:     "local",
+			msg:      fmt.Sprintf("some error stuf : %s", localRepoNotFoundErr),
+			expected: true,
+		},
+		{
+			name:     "git protocol not found",
+			msg:      fmt.Sprintf("%s : some error stuf", gitProtocolNotFoundErr),
+			expected: true,
+		},
+		{
+			name:     "git protocol no such",
+			msg:      fmt.Sprintf("%s : some error stuf", gitProtocolNoSuchErr),
+			expected: true,
+		},
+		{
+			name:     "git protocol access denied",
+			msg:      fmt.Sprintf("%s : some error stuf", gitProtocolAccessDeniedErr),
+			expected: true,
+		},
+		{
+			name:     "gogs access denied",
+			msg:      fmt.Sprintf("%s : some error stuf", gogsAccessDeniedErr),
+			expected: true,
+		},
+		{
+			name:     "gitlab",
+			msg:      fmt.Sprintf("%s : some error stuf", gitlabRepoNotFoundErr),
+			expected: true,
+		},
+	}
 
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGithub() {
-	msg := fmt.Sprintf("%s : some error stuf", githubRepoNotFoundErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForBitBucket() {
-	msg := fmt.Sprintf("%s : some error stuf", bitbucketRepoNotFoundErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForLocal() {
-	msg := fmt.Sprintf("some error stuf : %s", localRepoNotFoundErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolNotFound() {
-	msg := fmt.Sprintf("%s : some error stuf", gitProtocolNotFoundErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolNoSuch() {
-	msg := fmt.Sprintf("%s : some error stuf", gitProtocolNoSuchErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitProtocolAccessDenied() {
-	msg := fmt.Sprintf("%s : some error stuf", gitProtocolAccessDeniedErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGogsAccessDenied() {
-	msg := fmt.Sprintf("%s : some error stuf", gogsAccessDeniedErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
-}
-
-func (s *CommonSuite) TestIsRepoNotFoundErrorForGitlab() {
-	msg := fmt.Sprintf("%s : some error stuf", gitlabRepoNotFoundErr)
-
-	isRepoNotFound := isRepoNotFoundError(msg)
-
-	s.True(isRepoNotFound)
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			isRepoNotFound := isRepoNotFoundError(tt.msg)
+			s.Equal(tt.expected, isRepoNotFound)
+		})
+	}
 }
 
 func (s *CommonSuite) TestCheckNotFoundError() {
@@ -104,9 +85,7 @@ func (s *CommonSuite) TestCheckNotFoundError() {
 
 	firstErrLine <- ""
 
-	err := session.checkNotFoundError()
-
-	s.Nil(err)
+	s.NoError(session.checkNotFoundError())
 }
 
 func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError() {
@@ -117,21 +96,10 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError() {
 
 	client := NewClient(mockCommander{stderr: stderr})
 	sess, err := client.NewUploadPackSession(nil, nil)
-	if err != nil {
-		s.T().Fatalf("unexpected error: %s", err)
-	}
+	s.Require().NoError(err)
 
 	_, err = sess.AdvertisedReferences()
-
-	if wantErr != nil {
-		if wantErr != err {
-			if wantErr.Error() != err.Error() {
-				s.T().Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
-			}
-		}
-	} else if err != nil {
-		s.T().Fatalf("unexpected error: %s", err)
-	}
+	s.Equal(wantErr, err)
 }
 
 func (s *CommonSuite) TestAdvertisedReferencesWithRemoteNotFoundError() {
@@ -149,19 +117,8 @@ remote:`
 
 	client := NewClient(mockCommander{stderr: stderr})
 	sess, err := client.NewUploadPackSession(nil, nil)
-	if err != nil {
-		s.T().Fatalf("unexpected error: %s", err)
-	}
+	s.Require().NoError(err)
 
 	_, err = sess.AdvertisedReferences()
-
-	if wantErr != nil {
-		if wantErr != err {
-			if wantErr.Error() != err.Error() {
-				s.T().Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
-			}
-		}
-	} else if err != nil {
-		s.T().Fatalf("unexpected error: %s", err)
-	}
+	s.Equal(wantErr, err)
 }

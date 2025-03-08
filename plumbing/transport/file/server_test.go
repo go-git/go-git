@@ -16,14 +16,15 @@ func TestServerSuite(t *testing.T) {
 }
 
 type ServerSuite struct {
-	CommonSuite
+	suite.Suite
+	helper     CommonSuiteHelper
 	RemoteName string
 	SrcPath    string
 	DstPath    string
 }
 
 func (s *ServerSuite) SetupSuite() {
-	s.CommonSuite.SetupSuite()
+	s.helper.Setup(s.T())
 
 	s.RemoteName = "test"
 
@@ -35,7 +36,11 @@ func (s *ServerSuite) SetupSuite() {
 
 	cmd := exec.Command("git", "remote", "add", s.RemoteName, s.DstPath)
 	cmd.Dir = s.SrcPath
-	s.Nil(cmd.Run())
+	s.NoError(cmd.Run())
+}
+
+func (s *ServerSuite) TearDownSuite() {
+	s.helper.TearDown()
 }
 
 func (s *ServerSuite) TestPush() {
@@ -45,14 +50,15 @@ func (s *ServerSuite) TestPush() {
 
 	// git <2.0 cannot push to an empty repository without a refspec.
 	cmd := exec.Command("git", "push",
-		"--receive-pack", s.ReceivePackBin,
+		"--receive-pack", s.helper.ReceivePackBin,
 		s.RemoteName, "refs/heads/*:refs/heads/*",
 	)
 	cmd.Dir = s.SrcPath
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "GIT_TRACE=true", "GIT_TRACE_PACKET=true")
+
 	out, err := cmd.CombinedOutput()
-	s.Nil(err, fmt.Sprintf("combined stdout and stderr:\n%s\n", out))
+	s.NoError(err, fmt.Sprintf("combined stdout and stderr:\n%s\n", out))
 }
 
 func (s *ServerSuite) TestClone() {
@@ -63,18 +69,19 @@ func (s *ServerSuite) TestClone() {
 	pathToClone := s.T().TempDir()
 
 	cmd := exec.Command("git", "clone",
-		"--upload-pack", s.UploadPackBin,
+		"--upload-pack", s.helper.UploadPackBin,
 		s.SrcPath, pathToClone,
 	)
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "GIT_TRACE=true", "GIT_TRACE_PACKET=true")
+
 	out, err := cmd.CombinedOutput()
 	s.Nil(err, fmt.Sprintf("combined stdout and stderr:\n%s\n", out))
 }
 
 func (s *ServerSuite) checkExecPerm(t *testing.T) bool {
 	const userExecPermMask = 0o100
-	info, err := os.Stat(s.ReceivePackBin)
-	assert.Nil(t, err)
+	info, err := os.Stat(s.helper.ReceivePackBin)
+	assert.NoError(t, err)
 	return (info.Mode().Perm() & userExecPermMask) == userExecPermMask
 }

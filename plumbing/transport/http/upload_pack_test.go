@@ -2,11 +2,8 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/url"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-git/v5/internal/transport/test"
@@ -23,23 +20,28 @@ func TestUploadPackSuite(t *testing.T) {
 }
 
 type UploadPackSuite struct {
-	ups test.UploadPackSuite
-	BaseSuite
+	test.UploadPackSuite
+	helper CommonSuiteHelper
 }
 
-func (s *UploadPackSuite) SetupSuite() {
-	s.BaseSuite.SetupTest()
-	s.ups.SetS(s)
-	s.ups.Client = DefaultClient
-	s.ups.Endpoint = s.prepareRepository(fixtures.Basic().One(), "basic.git")
-	s.ups.EmptyEndpoint = s.prepareRepository(fixtures.ByTag("empty").One(), "empty.git")
-	s.ups.NonExistentEndpoint = s.newEndpoint("non-existent.git")
+func (s *UploadPackSuite) SetupTest() {
+	s.helper.Setup(s.T())
+
+	s.Client = DefaultClient
+	s.Endpoint = s.helper.prepareRepository(s.T(), fixtures.Basic().One(), "basic.git")
+	s.EmptyEndpoint = s.helper.prepareRepository(s.T(), fixtures.ByTag("empty").One(), "empty.git")
+	s.NonExistentEndpoint = s.helper.newEndpoint(s.T(), "non-existent.git")
+}
+
+func (s *UploadPackSuite) TearDownTest() {
+	s.helper.TearDown(s.T())
 }
 
 // Overwritten, different behaviour for HTTP.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
-	r, err := s.ups.Client.NewUploadPackSession(s.ups.NonExistentEndpoint, s.ups.EmptyAuth)
-	s.Nil(err)
+	r, err := s.Client.NewUploadPackSession(s.NonExistentEndpoint, s.EmptyAuth)
+	s.NoError(err)
+
 	info, err := r.AdvertisedReferences()
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 	s.Nil(info)
@@ -52,7 +54,8 @@ func (s *UploadPackSuite) TestuploadPackRequestToReader() {
 	r.Haves = append(r.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	sr, err := uploadPackRequestToReader(r)
-	s.Nil(err)
+	s.NoError(err)
+
 	b, _ := io.ReadAll(sr)
 	s.Equal(string(b),
 		"0032want 2b41ef280fdb67a9b250678686a0c3e03b0a9989\n"+
@@ -62,30 +65,10 @@ func (s *UploadPackSuite) TestuploadPackRequestToReader() {
 	)
 }
 
-func (s *UploadPackSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
-	fs := f.DotGit()
-
-	err := fixtures.EnsureIsBare(fs)
-	s.Nil(err)
-
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.Nil(err)
-
-	return s.newEndpoint(name)
-}
-
-func (s *UploadPackSuite) newEndpoint(name string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
-	s.Nil(err)
-
-	return ep
-}
-
 func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath() {
 	endpoint, _ := transport.NewEndpoint("https://gitlab.com/gitlab-org/gitter/webapp")
 
-	session, err := s.ups.Client.NewUploadPackSession(endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
 
 	info, err := session.AdvertisedReferences()
@@ -99,7 +82,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath() {
 func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema() {
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.ups.Client.NewUploadPackSession(endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
 
 	info, err := session.AdvertisedReferences()
@@ -115,7 +98,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContext() {
 	defer cancel()
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.ups.Client.NewUploadPackSession(endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
 
 	info, err := session.AdvertisedReferencesContext(ctx)
@@ -131,7 +114,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContextCanceled() {
 	cancel()
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.ups.Client.NewUploadPackSession(endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewUploadPackSession(endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
 
 	info, err := session.AdvertisedReferencesContext(ctx)

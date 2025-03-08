@@ -16,26 +16,23 @@ func TestReceivePackSuite(t *testing.T) {
 }
 
 type ReceivePackSuite struct {
-	CommonSuite
-	rps test.ReceivePackSuite
+	test.ReceivePackSuite
+	helper CommonSuiteHelper
 }
 
 func (s *ReceivePackSuite) SetupSuite() {
-	s.CommonSuite.SetupSuite()
-	s.rps.SetS(s)
-	s.rps.Client = DefaultClient
+	s.helper.Setup(s.T())
+	s.Client = DefaultClient
+}
+
+func (s *ReceivePackSuite) TearDownSuite() {
+	s.helper.TearDown()
 }
 
 func (s *ReceivePackSuite) SetupTest() {
-	fixture := fixtures.Basic().One()
-	path := fixture.DotGit().Root()
-	s.rps.Endpoint = prepareRepo(s.T(), path)
-
-	fixture = fixtures.ByTag("empty").One()
-	path = fixture.DotGit().Root()
-	s.rps.EmptyEndpoint = prepareRepo(s.T(), path)
-
-	s.rps.NonExistentEndpoint = prepareRepo(s.T(), "/non-existent")
+	s.Endpoint = s.helper.prepareRepository(s.T(), fixtures.Basic().One())
+	s.EmptyEndpoint = s.helper.prepareRepository(s.T(), fixtures.ByTag("empty").One())
+	s.NonExistentEndpoint = s.helper.newEndpoint(s.T(), "/non-existent")
 }
 
 // TODO: fix test
@@ -47,10 +44,11 @@ func (s *ReceivePackSuite) TestCommandNoOutput() {
 	}
 
 	client := NewClient("true", "true")
-	session, err := client.NewReceivePackSession(s.rps.Endpoint, s.rps.EmptyAuth)
-	s.Nil(err)
+	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	s.NoError(err)
+
 	ar, err := session.AdvertisedReferences()
-	s.Nil(err)
+	s.NoError(err)
 	s.Nil(ar)
 }
 
@@ -60,17 +58,22 @@ func (s *ReceivePackSuite) TestMalformedInputNoErrors() {
 	}
 
 	client := NewClient("yes", "yes")
-	session, err := client.NewReceivePackSession(s.rps.Endpoint, s.rps.EmptyAuth)
-	s.Nil(err)
+	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	s.NoError(err)
+
 	ar, err := session.AdvertisedReferences()
-	s.NotNil(err)
+	s.Error(err)
 	s.Nil(ar)
 }
 
 func (s *ReceivePackSuite) TestNonExistentCommand() {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
-	session, err := client.NewReceivePackSession(s.rps.Endpoint, s.rps.EmptyAuth)
-	s.Regexp(regexp.MustCompile(".*(no such file or directory|file does not exist)*."), err)
+
+	session, err := client.NewReceivePackSession(s.Endpoint, s.EmptyAuth)
+	s.Error(err)
 	s.Nil(session)
+
+	regex := regexp.MustCompile(".*(no such file or directory|file does not exist)*.")
+	s.Regexp(regex, err.Error())
 }

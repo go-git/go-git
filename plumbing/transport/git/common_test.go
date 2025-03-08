@@ -2,100 +2,78 @@ package git
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 )
 
-type BaseSuite struct {
-	suite.Suite
-
+type CommonSuiteHelper struct {
 	base   string
 	port   int
 	daemon *exec.Cmd
 }
 
-func (s *BaseSuite) TearDownSuite() {
-	fixtures.Clean()
-}
-
-func (s *BaseSuite) SetupTest() {
+func (h *CommonSuiteHelper) Setup(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		s.T().Skip(`git for windows has issues with write operations through git:// protocol.
+		t.Skip(`git for windows has issues with write operations through git:// protocol.
 		See https://github.com/git-for-windows/git/issues/907`)
 	}
 
 	cmd := exec.Command("git", "daemon", "--help")
 	output, err := cmd.CombinedOutput()
 	if err != nil && bytes.Contains(output, []byte("'daemon' is not a git command")) {
-		s.T().Fatal("git daemon cannot be found")
+		t.Fatal("git daemon cannot be found")
 	}
 
-	s.port, err = freePort()
-	s.NoError(err)
+	h.port, err = freePort()
+	assert.NoError(t, err)
 
-	s.base, err = os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-protocol-%d", s.port))
-	s.NoError(err)
+	h.base, err = os.MkdirTemp(t.TempDir(), fmt.Sprintf("go-git-protocol-%d", h.port))
+	assert.NoError(t, err)
+
+	daemon, err := startGitDaemon(h.base, h.port)
+	assert.NoError(t, err)
+	h.daemon = daemon
 }
 
-func (s *BaseSuite) StartDaemon() {
-	s.daemon = exec.Command(
-		"git",
-		"daemon",
-		fmt.Sprintf("--base-path=%s", s.base),
-		"--export-all",
-		"--enable=receive-pack",
-		"--reuseaddr",
-		fmt.Sprintf("--port=%d", s.port),
-		// Unless max-connections is limited to 1, a git-receive-pack
-		// might not be seen by a subsequent operation.
-		"--max-connections=1",
-	)
+func (h *CommonSuiteHelper) TearDown() {
+	fixtures.Clean()
 
-	// Environment must be inherited in order to acknowledge GIT_EXEC_PATH if set.
-	s.daemon.Env = os.Environ()
-
-	err := s.daemon.Start()
-	s.NoError(err)
-
-	// Connections might be refused if we start sending request too early.
-	time.Sleep(time.Millisecond * 500)
+	if h.daemon != nil {
+		_ = killDaemon(h.daemon)
+		_ = h.daemon.Wait()
+	}
 }
 
-func (s *BaseSuite) newEndpoint(name string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("git://localhost:%d/%s", s.port, name))
-	s.NoError(err)
+func (h *CommonSuiteHelper) newEndpoint(t *testing.T, name string) *transport.Endpoint {
+	ep, err := transport.NewEndpoint(fmt.Sprintf("git://localhost:%d/%s", h.port, name))
+	assert.NoError(t, err)
 
 	return ep
 }
 
-func (s *BaseSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
+func (h *CommonSuiteHelper) prepareRepository(t *testing.T, f *fixtures.Fixture, name string) *transport.Endpoint {
 	fs := f.DotGit()
 
 	err := fixtures.EnsureIsBare(fs)
-	s.NoError(err)
+	assert.NoError(t, err)
 
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.NoError(err)
+	path := filepath.Join(h.base, name)
+	assert.NoError(t, os.Rename(fs.Root(), path))
 
-	return s.newEndpoint(name)
-}
-
-func (s *BaseSuite) TearDownTest() {
-	if s.daemon != nil {
-		_ = s.daemon.Process.Signal(os.Kill)
-		_ = s.daemon.Wait()
-	}
+	return h.newEndpoint(t, name)
 }
 
 func freePort() (int, error) {
@@ -110,4 +88,21 @@ func freePort() (int, error) {
 	}
 
 	return l.Addr().(*net.TCPAddr).Port, l.Close()
+}
+
+func waitForPort(port int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("context canceled before the port is connectable")
+		case <-time.After(10 * time.Millisecond):
+			conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+			if err == nil {
+				return conn.Close()
+			}
+		}
+	}
 }

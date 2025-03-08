@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/internal/transport/test"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -16,31 +15,22 @@ func TestUploadPackSuite(t *testing.T) {
 }
 
 type UploadPackSuite struct {
-	CommonSuite
-	ups test.UploadPackSuite
+	test.UploadPackSuite
+	helper CommonSuiteHelper
 }
 
 func (s *UploadPackSuite) SetupSuite() {
-	s.CommonSuite.SetupSuite()
+	s.helper.Setup(s.T())
 
-	s.ups.SetS(s)
-	s.ups.Client = DefaultClient
+	s.Client = DefaultClient
 
-	fixture := fixtures.Basic().One()
-	path := fixture.DotGit().Root()
-	ep, err := transport.NewEndpoint(path)
-	s.Nil(err)
-	s.ups.Endpoint = ep
+	s.Endpoint = s.helper.prepareRepository(s.T(), fixtures.Basic().One())
+	s.EmptyEndpoint = s.helper.prepareRepository(s.T(), fixtures.ByTag("empty").One())
+	s.NonExistentEndpoint = s.helper.newEndpoint(s.T(), "/non-existent")
+}
 
-	fixture = fixtures.ByTag("empty").One()
-	path = fixture.DotGit().Root()
-	ep, err = transport.NewEndpoint(path)
-	s.Nil(err)
-	s.ups.EmptyEndpoint = ep
-
-	ep, err = transport.NewEndpoint("non-existent")
-	s.Nil(err)
-	s.ups.NonExistentEndpoint = ep
+func (s *UploadPackSuite) TearDownSuite() {
+	s.helper.TearDown()
 }
 
 // TODO: fix test
@@ -52,10 +42,12 @@ func (s *UploadPackSuite) TestCommandNoOutput() {
 	}
 
 	client := NewClient("true", "true")
-	session, err := client.NewUploadPackSession(s.ups.Endpoint, s.ups.EmptyAuth)
-	s.Nil(err)
+
+	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
+	s.NoError(err)
+
 	ar, err := session.AdvertisedReferences()
-	s.Nil(err)
+	s.NoError(err)
 	s.Nil(ar)
 }
 
@@ -65,17 +57,19 @@ func (s *UploadPackSuite) TestMalformedInputNoErrors() {
 	}
 
 	client := NewClient("yes", "yes")
-	session, err := client.NewUploadPackSession(s.ups.Endpoint, s.ups.EmptyAuth)
-	s.Nil(err)
+	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
+	s.NoError(err)
+
 	ar, err := session.AdvertisedReferences()
-	s.NotNil(err)
+	s.Error(err)
 	s.Nil(ar)
 }
 
 func (s *UploadPackSuite) TestNonExistentCommand() {
 	cmd := "/non-existent-git"
 	client := NewClient(cmd, cmd)
-	session, err := client.NewUploadPackSession(s.ups.Endpoint, s.ups.EmptyAuth)
+
+	session, err := client.NewUploadPackSession(s.Endpoint, s.EmptyAuth)
 	// Error message is OS-dependant, so do a broad check
 	s.ErrorContains(err, "file")
 	s.Nil(session)
