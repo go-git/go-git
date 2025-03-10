@@ -53,7 +53,7 @@ type fileIndex struct {
 }
 
 // OpenFileIndex opens a serialized commit graph file in the format described at
-// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.txt
+// https://github.com/git/git/blob/master/Documentation/technical/commit-graph.adoc
 //
 // Deprecated: This package uses the wrong types for Generation and Index in CommitData.
 // Use the v2 package instead.
