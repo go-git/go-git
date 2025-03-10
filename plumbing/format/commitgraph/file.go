@@ -60,13 +60,13 @@ type ReaderAtCloser interface {
 }
 
 // OpenFileIndex opens a serialized commit graph file in the format described at
-// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.txt
+// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.adoc
 func OpenFileIndex(reader ReaderAtCloser) (Index, error) {
 	return OpenFileIndexWithParent(reader, nil)
 }
 
 // OpenFileIndexWithParent opens a serialized commit graph file in the format described at
-// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.txt
+// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.adoc
 func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error) {
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
