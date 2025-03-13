@@ -830,8 +830,10 @@ func getHavesFromRef(
 
 	commit, err := object.GetCommit(s, h)
 	if err != nil {
-		// Ignore the error if this isn't a commit.
-		haves[ref.Hash()] = true
+		if !errors.Is(err, plumbing.ErrObjectNotFound) {
+			// Ignore the error if this isn't a commit.
+			haves[ref.Hash()] = true
+		}
 		return nil
 	}
 
