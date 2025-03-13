@@ -648,14 +648,14 @@ func (s *RemoteSuite) TestPushContext() {
 func eventually(s *RemoteSuite, condition func() bool) {
 	select {
 	case <-time.After(5 * time.Second):
+		s.Fail("failed to meet eventual condition")
 	default:
-		if condition() {
+		if v := condition(); v {
+			s.True(v)
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-
-	s.True(condition())
 }
 
 func (s *RemoteSuite) TestPushContextCanceled() {
