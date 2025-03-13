@@ -365,7 +365,7 @@ func (s *RemoteSuite) TestFetchOfMissingObjects() {
 	tmp := s.T().TempDir()
 
 	// clone to a local temp folder
-	_, err = PlainClone(tmp, &CloneOptions{
+	_, err := PlainClone(tmp, &CloneOptions{
 		URL:  fixtures.Basic().One().DotGit().Root(),
 		Bare: true,
 	})
