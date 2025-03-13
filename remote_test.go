@@ -125,6 +125,7 @@ func (s *RemoteSuite) TestFetchWildcardTags() {
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
+		Tags: AllTags,
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
@@ -356,7 +357,7 @@ func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing
 	for _, exp := range expected {
 		r, err := r.s.Reference(exp.Name())
 		s.Require().NoError(err)
-		s.Equal(r.String(), exp.String())
+		s.Equal(exp.String(), r.String())
 	}
 }
 
