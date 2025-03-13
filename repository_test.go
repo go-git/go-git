@@ -1300,6 +1300,9 @@ func (s *RepositorySuite) TestFetchContext() {
 }
 
 func (s *RepositorySuite) TestFetchWithFilters() {
+	// TODO: Re-enable test when filter support is reintroduced
+	s.T().SkipNow()
+
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -1314,6 +1317,9 @@ func (s *RepositorySuite) TestFetchWithFilters() {
 
 }
 func (s *RepositorySuite) TestFetchWithFiltersReal() {
+	// TODO: Re-enable test when filter support is reintroduced
+	s.T().SkipNow()
+
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -1675,17 +1681,21 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 }
 
 func (s *RepositorySuite) TestCloneWithFilter() {
+	// TODO: Re-enable test when filter support is reintroduced
+	s.T().SkipNow()
+
 	r, _ := Init(memory.NewStorage(), nil)
 
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:    "https://github.com/git-fixtures/basic.git",
 		Filter: packp.FilterTreeDepth(0),
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
-	s.NotNil(err)
+	s.Require().Error(err)
 	s.Nil(blob)
 }
+
 func (s *RepositorySuite) TestPush() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
