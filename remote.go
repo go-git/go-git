@@ -821,13 +821,6 @@ func getHavesFromRef(
 		return nil
 	}
 
-	// No need to load the commit if we know the remote already
-	// has this hash.
-	if remoteRefs[h] {
-		haves[h] = true
-		return nil
-	}
-
 	commit, err := object.GetCommit(s, h)
 	if err != nil {
 		if !errors.Is(err, plumbing.ErrObjectNotFound) {
