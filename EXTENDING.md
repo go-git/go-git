@@ -53,7 +53,7 @@ An example of changing the built-in `https` implementation to skip TLS could loo
 		},
 	}
 
-	transport.Register("https", githttp.NewClient(customClient))
+	transport.Register("https", githttp.NewTransport(&githttp.TransportOptions{Client: customClient}))
 ```
 
 Some internal implementations enables code reuse amongst the different transport implementations. Some of these may be made public in the future (e.g. `plumbing/transport/internal/common`).

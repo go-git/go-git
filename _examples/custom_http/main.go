@@ -36,7 +36,8 @@ func main() {
 	}
 
 	// Override http(s) default protocol to use our custom client
-	transport.Register("https", githttp.NewClient(customClient))
+	transport.Register("https",
+		githttp.NewTransport(&githttp.TransportOptions{Client: customClient}))
 
 	// Clone repository using the new client if the protocol is https://
 	Info("git clone %s", url)
