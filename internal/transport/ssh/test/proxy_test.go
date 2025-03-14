@@ -12,9 +12,9 @@ import (
 
 	"github.com/armon/go-socks5"
 	"github.com/gliderlabs/ssh"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	ggssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	ggssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"

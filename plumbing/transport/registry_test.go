@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/protocol"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/stretchr/testify/suite"
 )
 

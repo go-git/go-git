@@ -1,9 +1,10 @@
 package packp
 
 import (
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFilterBlobNone(t *testing.T) {

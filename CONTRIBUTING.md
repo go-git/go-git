@@ -1,21 +1,22 @@
 # Contributing Guidelines
 
-source{d} go-git project is [Apache 2.0 licensed](LICENSE) and accepts
-contributions via GitHub pull requests.  This document outlines some of the
+The go-git project is [Apache 2.0 licensed](LICENSE) and accepts
+contributions via GitHub pull requests. This document outlines some of the
 conventions on development workflow, commit message formatting, contact points,
 and other resources to make it easier to get your contribution accepted.
 
 ## Support Channels
 
-The official support channels, for both users and contributors, are:
+The official support channels, for users are:
 
-- [StackOverflow go-git tag](https://stackoverflow.com/questions/tagged/go-git) for user questions.
-- GitHub [Issues](https://github.com/src-d/go-git/issues)* for bug reports and feature requests.
+- [StackOverflow go-git tag] for user questions.
+- GitHub [Issues]* for bug reports and feature requests.
 
 *Before opening a new issue or submitting a new pull request, it's helpful to
 search the project - it's likely that another user has already reported the
 issue you're facing, or it's a known issue that we're already aware of.
 
+In addition to the channels above, contributors are also able to join the go-git [discord server].
 
 ## How to Contribute
 
@@ -23,9 +24,9 @@ Pull Requests (PRs) are the main and exclusive way to contribute to the official
 In order for a PR to be accepted it needs to pass a list of requirements:
 
 - You should be able to run the same query using `git`. We don't accept features that are not implemented in the official git implementation.
-- The expected behavior must match the [official git implementation](https://github.com/git/git).
+- The expected behavior must match the [official git implementation].
 - The actual behavior must be correctly explained with natural language and providing a minimum working example in Go that reproduces it.
-- All PRs must be written in idiomatic Go, formatted according to [gofmt](https://golang.org/cmd/gofmt/), and without any warnings from [go lint](https://github.com/golang/lint) nor [go vet](https://golang.org/cmd/vet/).
+- All PRs must be written in idiomatic Go, formatted according to [gofmt], and without any warnings from [go vet].
 - They should in general include tests, and those shall pass.
 - If the PR is a bug fix, it has to include a suite of unit tests for the new functionality.
 - If the PR is a new feature, it has to come with a suite of unit tests, that tests the new functionality.
@@ -33,10 +34,16 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 
 ### Branches
 
-The `master` branch is currently used for maintaining the `v5` major release only. The accepted changes would
-be dependency bumps, bug fixes and small changes that aren't needed for `v6`. New development should target the
-`v6-exp` branch, and if agreed with at least one go-git maintainer, it can be back ported to `v5` by creating 
-a new PR that targets `master`.
+The development branch is `main`, where all development takes place.
+All new features and bug fixes should target it. This was formely known as `v6-exp`,
+as it contains all the changes for `v6` - the next major release.
+
+The `releases/v5.x` branch is the branch for changes to the `v5` version,
+which is now in maintaince mode. To avoid having to divert efforts from `v6`,
+we will only be accepting bug fixes or CVE related dependency bumps for the
+`v5` release.
+
+Bug fixes that also impact `main`, should be fixed there first, and then backported to `v5`.
 
 ### Format of the commit message
 
@@ -51,3 +58,10 @@ The format can be described more formally as follows:
 ```
 <package>: <subpackage>, <what changed>. [Fixes #<issue-number>]
 ```
+
+[discord server]: https://discord.gg/8hrxYEVPE5
+[StackOverflow go-git tag]: https://stackoverflow.com/questions/tagged/go-git
+[Issues]: https://github.com/go-git/go-git/issues
+[official git implementation]: https://github.com/git/git
+[gofmt]: https://golang.org/cmd/gofmt/
+[go vet]: https://golang.org/cmd/vet/

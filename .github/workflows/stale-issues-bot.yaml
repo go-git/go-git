@@ -1,4 +1,4 @@
-name: "stale issues bot"
+name: stale issues bot
 on:
   schedule:
   - cron: "0 7 * * *"

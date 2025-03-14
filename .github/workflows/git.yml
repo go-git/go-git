@@ -2,8 +2,8 @@ name: Git Compatibility
 on:
   push:
     branches:
-    - "master"
-    - "v6-exp"
+    - releases/v5.x
+    - main
   pull_request:
 
 permissions: {}
@@ -30,7 +30,7 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.23.x
+        go-version: stable
 
     - name: Install build dependencies
       run: sudo apt-get update && sudo apt-get install gettext libcurl4-openssl-dev

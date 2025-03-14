@@ -3,7 +3,7 @@ package http
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v5/internal/transport/test"
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"

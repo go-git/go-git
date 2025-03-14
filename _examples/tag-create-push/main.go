@@ -5,11 +5,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/go-git/go-git/v5"
-	. "github.com/go-git/go-git/v5/_examples"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v6"
+	. "github.com/go-git/go-git/v6/_examples"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 )
 
 // Example of how create a tag and push it to a remote.
@@ -50,7 +50,7 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 	}
 
 	Info("git clone %s", url)
-	r, err := git.PlainClone(dir, false, &git.CloneOptions{
+	r, err := git.PlainClone(dir, &git.CloneOptions{
 		Progress: os.Stdout,
 		URL:      url,
 		Auth:     auth,

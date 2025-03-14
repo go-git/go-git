@@ -5,9 +5,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -61,7 +61,7 @@ passed   result
  M, N     false     Commits with unrelated history, will return false
 */
 
-func TestmergeBaseSuite(t *testing.T) {
+func TestMergeBaseSuite(t *testing.T) {
 	suite.Run(t, new(mergeBaseSuite))
 }
 

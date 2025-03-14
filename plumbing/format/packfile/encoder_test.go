@@ -3,35 +3,43 @@ package packfile
 import (
 	"bytes"
 	"io"
+	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
-	. "gopkg.in/check.v1"
 )
 
-type EncoderSuite struct {
+type EncoderFixtureSuite struct {
 	fixtures.Suite
+}
+
+type EncoderSuite struct {
+	suite.Suite
+	EncoderFixtureSuite
 	buf   *bytes.Buffer
 	store *memory.Storage
 	enc   *Encoder
 }
 
-var _ = Suite(&EncoderSuite{})
+func TestEncoderSuite(t *testing.T) {
+	suite.Run(t, new(EncoderSuite))
+}
 
-func (s *EncoderSuite) SetUpTest(c *C) {
+func (s *EncoderSuite) SetupTest() {
 	s.buf = bytes.NewBuffer(nil)
 	s.store = memory.NewStorage()
 	s.enc = NewEncoder(s.buf, s.store, false)
 }
 
-func (s *EncoderSuite) TestCorrectPackHeader(c *C) {
+func (s *EncoderSuite) TestCorrectPackHeader() {
 	h, err := s.enc.Encode([]plumbing.Hash{}, 10)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	hb := [hash.Size]byte(h)
 
@@ -41,18 +49,18 @@ func (s *EncoderSuite) TestCorrectPackHeader(c *C) {
 
 	result := s.buf.Bytes()
 
-	c.Assert(result, DeepEquals, expectedResult)
+	s.Equal(expectedResult, result)
 }
 
-func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
+func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 	o := &plumbing.MemoryObject{}
 	o.SetType(plumbing.CommitObject)
 	o.SetSize(0)
 	_, err := s.store.SetEncodedObject(o)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	h, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	// PACK + VERSION(2) + OBJECT NUMBER(1)
 	expectedResult := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 1}
@@ -69,99 +77,99 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
 
 	result := s.buf.Bytes()
 
-	c.Assert(result, DeepEquals, expectedResult)
+	s.Equal(expectedResult, result)
 }
 
-func (s *EncoderSuite) TestMaxObjectSize(c *C) {
+func (s *EncoderSuite) TestMaxObjectSize() {
 	o := s.store.NewEncodedObject()
 	o.SetSize(9223372036854775807)
 	o.SetType(plumbing.CommitObject)
 	_, err := s.store.SetEncodedObject(o)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	hash, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
-	c.Assert(err, IsNil)
-	c.Assert(hash.IsZero(), Not(Equals), true)
+	s.NoError(err)
+	s.NotEqual(true, hash.IsZero())
 }
 
-func (s *EncoderSuite) TestHashNotFound(c *C) {
+func (s *EncoderSuite) TestHashNotFound() {
 	h, err := s.enc.Encode([]plumbing.Hash{plumbing.NewHash("BAD")}, 10)
-	c.Assert(h, Equals, plumbing.ZeroHash)
-	c.Assert(err, NotNil)
-	c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+	s.Equal(plumbing.ZeroHash, h)
+	s.NotNil(err)
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
-func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeREF(c *C) {
+func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeREF() {
 	s.enc = NewEncoder(s.buf, s.store, true)
-	s.simpleDeltaTest(c)
+	s.simpleDeltaTest()
 }
 
-func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeOFS(c *C) {
+func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeOFS() {
 	s.enc = NewEncoder(s.buf, s.store, false)
-	s.simpleDeltaTest(c)
+	s.simpleDeltaTest()
 }
 
-func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeREF(c *C) {
+func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeREF() {
 	s.enc = NewEncoder(s.buf, s.store, true)
-	s.deltaOverDeltaTest(c)
+	s.deltaOverDeltaTest()
 }
 
-func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeOFS(c *C) {
+func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeOFS() {
 	s.enc = NewEncoder(s.buf, s.store, false)
-	s.deltaOverDeltaTest(c)
+	s.deltaOverDeltaTest()
 }
 
-func (s *EncoderSuite) TestDecodeEncodeWithCycleREF(c *C) {
+func (s *EncoderSuite) TestDecodeEncodeWithCycleREF() {
 	s.enc = NewEncoder(s.buf, s.store, true)
-	s.deltaOverDeltaCyclicTest(c)
+	s.deltaOverDeltaCyclicTest()
 }
 
-func (s *EncoderSuite) TestDecodeEncodeWithCycleOFS(c *C) {
+func (s *EncoderSuite) TestDecodeEncodeWithCycleOFS() {
 	s.enc = NewEncoder(s.buf, s.store, false)
-	s.deltaOverDeltaCyclicTest(c)
+	s.deltaOverDeltaCyclicTest()
 }
 
-func (s *EncoderSuite) simpleDeltaTest(c *C) {
+func (s *EncoderSuite) simpleDeltaTest() {
 	srcObject := newObject(plumbing.BlobObject, []byte("0"))
 	targetObject := newObject(plumbing.BlobObject, []byte("01"))
 
 	deltaObject, err := GetDelta(srcObject, targetObject)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	srcToPack := newObjectToPack(srcObject)
 	encHash, err := s.enc.encode([]*ObjectToPack{
 		srcToPack,
 		newDeltaObjectToPack(srcToPack, targetObject, deltaObject),
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	p, cleanup := packfileFromReader(c, s.buf)
+	p, cleanup := packfileFromReader(s, s.buf)
 	defer cleanup()
 	decHash, err := p.ID()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(encHash, Equals, decHash)
+	s.Equal(decHash, encHash)
 
 	decSrc, err := p.Get(srcObject.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decSrc, srcObject)
+	s.NoError(err)
+	objectsEqual(s, decSrc, srcObject)
 
 	decTarget, err := p.Get(targetObject.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decTarget, targetObject)
+	s.NoError(err)
+	objectsEqual(s, decTarget, targetObject)
 }
 
-func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
+func (s *EncoderSuite) deltaOverDeltaTest() {
 	srcObject := newObject(plumbing.BlobObject, []byte("0"))
 	targetObject := newObject(plumbing.BlobObject, []byte("01"))
 	otherTargetObject := newObject(plumbing.BlobObject, []byte("011111"))
 
 	deltaObject, err := GetDelta(srcObject, targetObject)
-	c.Assert(err, IsNil)
-	c.Assert(deltaObject.Hash(), Not(Equals), plumbing.ZeroHash)
+	s.NoError(err)
+	s.NotEqual(plumbing.ZeroHash, deltaObject.Hash())
 
 	otherDeltaObject, err := GetDelta(targetObject, otherTargetObject)
-	c.Assert(err, IsNil)
-	c.Assert(otherDeltaObject.Hash(), Not(Equals), plumbing.ZeroHash)
+	s.NoError(err)
+	s.NotEqual(plumbing.ZeroHash, otherDeltaObject.Hash())
 
 	srcToPack := newObjectToPack(srcObject)
 	targetToPack := newObjectToPack(targetObject)
@@ -171,51 +179,51 @@ func (s *EncoderSuite) deltaOverDeltaTest(c *C) {
 		newDeltaObjectToPack(srcToPack, targetObject, deltaObject),
 		newDeltaObjectToPack(targetToPack, otherTargetObject, otherDeltaObject),
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	p, cleanup := packfileFromReader(c, s.buf)
+	p, cleanup := packfileFromReader(s, s.buf)
 	defer cleanup()
 	decHash, err := p.ID()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(encHash, Equals, decHash)
+	s.Equal(decHash, encHash)
 
 	decSrc, err := p.Get(srcObject.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decSrc, srcObject)
+	s.NoError(err)
+	objectsEqual(s, decSrc, srcObject)
 
 	decTarget, err := p.Get(targetObject.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decTarget, targetObject)
+	s.NoError(err)
+	objectsEqual(s, decTarget, targetObject)
 
 	decOtherTarget, err := p.Get(otherTargetObject.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decOtherTarget, otherTargetObject)
+	s.NoError(err)
+	objectsEqual(s, decOtherTarget, otherTargetObject)
 }
 
-func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
+func (s *EncoderSuite) deltaOverDeltaCyclicTest() {
 	o1 := newObject(plumbing.BlobObject, []byte("0"))
 	o2 := newObject(plumbing.BlobObject, []byte("01"))
 	o3 := newObject(plumbing.BlobObject, []byte("011111"))
 	o4 := newObject(plumbing.BlobObject, []byte("01111100000"))
 
 	_, err := s.store.SetEncodedObject(o1)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = s.store.SetEncodedObject(o2)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = s.store.SetEncodedObject(o3)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 	_, err = s.store.SetEncodedObject(o4)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d2, err := GetDelta(o1, o2)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d3, err := GetDelta(o4, o3)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	d4, err := GetDelta(o3, o4)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	po1 := newObjectToPack(o1)
 	pd2 := newDeltaObjectToPack(po1, o2, d2)
@@ -243,68 +251,68 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest(c *C) {
 		pd3,
 		pd4,
 	})
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	p, cleanup := packfileFromReader(c, s.buf)
+	p, cleanup := packfileFromReader(s, s.buf)
 	defer cleanup()
 	decHash, err := p.ID()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(encHash, Equals, decHash)
+	s.Equal(decHash, encHash)
 
 	decSrc, err := p.Get(o1.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decSrc, o1)
+	s.NoError(err)
+	objectsEqual(s, decSrc, o1)
 
 	decTarget, err := p.Get(o2.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decTarget, o2)
+	s.NoError(err)
+	objectsEqual(s, decTarget, o2)
 
 	decOtherTarget, err := p.Get(o3.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decOtherTarget, o3)
+	s.NoError(err)
+	objectsEqual(s, decOtherTarget, o3)
 
 	decAnotherTarget, err := p.Get(o4.Hash())
-	c.Assert(err, IsNil)
-	objectsEqual(c, decAnotherTarget, o4)
+	s.NoError(err)
+	objectsEqual(s, decAnotherTarget, o4)
 }
 
-func objectsEqual(c *C, o1, o2 plumbing.EncodedObject) {
-	c.Assert(o1.Type(), Equals, o2.Type())
-	c.Assert(o1.Hash(), Equals, o2.Hash())
-	c.Assert(o1.Size(), Equals, o2.Size())
+func objectsEqual(s *EncoderSuite, o1, o2 plumbing.EncodedObject) {
+	s.Equal(o2.Type(), o1.Type())
+	s.Equal(o2.Hash(), o1.Hash())
+	s.Equal(o2.Size(), o1.Size())
 
 	r1, err := o1.Reader()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	b1, err := io.ReadAll(r1)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	r2, err := o2.Reader()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	b2, err := io.ReadAll(r2)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
-	c.Assert(bytes.Compare(b1, b2), Equals, 0)
+	s.Equal(0, bytes.Compare(b1, b2))
 
 	err = r2.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	err = r1.Close()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 }
 
-func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
+func packfileFromReader(s *EncoderSuite, buf *bytes.Buffer) (*Packfile, func()) {
 	fs := memfs.New()
 	file, err := fs.Create("packfile")
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = file.Write(buf.Bytes())
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	_, err = file.Seek(0, io.SeekStart)
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	scanner := NewScanner(file)
 
@@ -312,12 +320,15 @@ func packfileFromReader(c *C, buf *bytes.Buffer) (*Packfile, func()) {
 	p := NewParser(scanner, WithScannerObservers(w))
 
 	_, err = p.Parse()
-	c.Assert(err, IsNil)
+	s.NoError(err)
 
 	index, err := w.Index()
-	c.Assert(err, IsNil)
+	s.NoError(err)
+
+	_, err = file.Seek(0, io.SeekStart)
+	s.NoError(err)
 
 	return NewPackfile(file, WithIdx(index), WithFs(fs)), func() {
-		c.Assert(file.Close(), IsNil)
+		s.NoError(file.Close())
 	}
 }

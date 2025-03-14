@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"strconv"
 
-	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // NewHash return a new Hash256 from a hexadecimal hash representation.

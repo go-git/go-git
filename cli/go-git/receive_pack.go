@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/file"
+	"github.com/go-git/go-git/v6/plumbing/transport/file"
 )
 
 type CmdReceivePack struct {
