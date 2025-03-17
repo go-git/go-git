@@ -243,7 +243,7 @@ const (
 	Filter Capability = "filter"
 )
 
-const userAgent = "go-git/5.x"
+const userAgent = "go-git/6.x"
 
 // DefaultAgent provides the user agent string.
 func DefaultAgent() string {

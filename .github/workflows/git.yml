@@ -1,5 +1,6 @@
 name: Git Compatibility
 on:
+  workflow_dispatch:
   push:
     branches:
     - releases/v5.x
