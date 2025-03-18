@@ -3,8 +3,6 @@ package transport
 import (
 	"fmt"
 	"net/url"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
@@ -124,11 +122,6 @@ func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort() {
 func (s *SuiteCommon) TestNewEndpointFileAbs() {
 	var err error
 	abs := "/foo.git"
-
-	if runtime.GOOS == "windows" {
-		abs, err = filepath.Abs(abs)
-		s.Nil(err)
-	}
 
 	e, err := NewEndpoint("/foo.git")
 	s.Nil(err)

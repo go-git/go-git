@@ -1,11 +1,18 @@
+//go:build !plan9 && !unix && windows
+// +build !plan9,!unix,windows
+
 package git
 
 import (
 	"fmt"
-	"strings"
+	"path/filepath"
+	"regexp"
+	"testing"
 
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // preReceiveHook returns the bytes of a pre-receive hook script
@@ -14,32 +21,47 @@ func preReceiveHook(m string) []byte {
 	return []byte(fmt.Sprintf("#!C:/Program\\ Files/Git/usr/bin/sh.exe\nprintf '%s'\n", m))
 }
 
-func (s *RepositorySuite) TestCloneFileUrlWindows() {
-	dir := s.T().TempDir()
+func TestCloneFileUrlWindows(t *testing.T) {
+	dir := t.TempDir()
 
 	r, err := PlainInit(dir, false)
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = util.WriteFile(r.wt, "foo", nil, 0755)
-	s.NoError(err)
+	require.NoError(t, err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	require.NoError(t, err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	require.NoError(t, err)
 
 	_, err = w.Commit("foo", &CommitOptions{
 		Author:    defaultSignature(),
 		Committer: defaultSignature(),
 	})
-	s.NoError(err)
+	require.NoError(t, err)
 
-	url := "file:///" + strings.ReplaceAll(dir, "\\", "/")
-	s.Regexp("file:///[A-Za-z]:/.*", url)
-	_, err = Clone(memory.NewStorage(), nil, &CloneOptions{
-		URL: url,
-	})
+	tests := []struct {
+		url     string
+		pattern string
+	}{
+		{
+			url:     "file://" + filepath.ToSlash(dir),
+			pattern: `^file://[A-Z]:/(?:[^/]+/)*\d+$`,
+		},
+		{
+			url:     "file:///" + filepath.ToSlash(dir),
+			pattern: `^file:///[A-Z]:/(?:[^/]+/)*\d+$`,
+		},
+	}
 
-	s.NoError(err)
+	for _, tc := range tests {
+		assert.Regexp(t, regexp.MustCompile(tc.pattern), tc.url)
+		_, err = Clone(memory.NewStorage(), nil, &CloneOptions{
+			URL: tc.url,
+		})
+
+		assert.NoError(t, err, "url: %q", tc.url)
+	}
 }

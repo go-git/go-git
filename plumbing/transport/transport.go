@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -166,6 +167,13 @@ func NewEndpoint(endpoint string) (*Endpoint, error) {
 }
 
 func parseURL(endpoint string) (*Endpoint, error) {
+	if runtime.GOOS == "windows" && strings.HasPrefix(endpoint, "file://") {
+		return &Endpoint{
+			Protocol: "file",
+			Path:     strings.TrimPrefix(endpoint, "file://"),
+		}, nil
+	}
+
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
