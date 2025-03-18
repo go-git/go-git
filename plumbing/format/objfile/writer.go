@@ -25,6 +25,8 @@ type Writer struct {
 
 	closed  bool
 	pending int64 // number of unwritten bytes
+
+	closeErr error
 }
 
 // NewWriter returns a new Writer writing to w.
@@ -101,9 +103,17 @@ func (w *Writer) Hash() plumbing.Hash {
 //
 // Calling Close does not close the wrapped io.Writer originally passed to
 // NewWriter.
+//
+// It returns an error, if any. Close will return the same error if called
+// multiple times.
 func (w *Writer) Close() error {
+	if w.closed {
+		return w.closeErr
+	}
+
 	defer sync.PutZlibWriter(w.zlib)
 	if err := w.zlib.Close(); err != nil {
+		w.closeErr = err
 		return err
 	}
 
