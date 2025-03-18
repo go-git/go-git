@@ -1,213 +1,152 @@
-package transport
+package transport_test
 
 import (
 	"fmt"
 	"net/url"
+	"runtime"
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/suite"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestSuiteCommon(t *testing.T) {
-	suite.Run(t, new(SuiteCommon))
+func TestNewEndpoint(t *testing.T) {
+	type tt struct {
+		input   string
+		want    string
+		wantErr string
+	}
+
+	tests := []tt{
+		{
+			input: "http://git:pass@github.com:8080/user/repository.git?foo#bar",
+			want:  "http://git:pass@github.com:8080/user/repository.git?foo#bar",
+		},
+		{
+			input: "https://git:pass@github.com:443/user/repository.git?foo#bar",
+			want:  "https://git:pass@github.com/user/repository.git?foo#bar",
+		},
+		{
+			input: "http://git:pass@github.com/user/repository.git?foo#bar",
+			want:  "http://git:pass@github.com/user/repository.git?foo#bar",
+		},
+		{
+			input: fmt.Sprintf("http://%s:%s@github.com/user/repository.git",
+				url.PathEscape("person@mail.com"),
+				url.PathEscape(" !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"),
+			),
+			want: "http://person@mail.com:%20%21%22%23$%25&%27%28%29%2A+%2C-.%2F:%3B%3C=%3E%3F@%5B%5C%5D%5E_%60%7B%7C%7D~@github.com/user/repository.git",
+		},
+		{
+			input: "http://[::1]:8080/foo.git",
+			want:  "http://[::1]:8080/foo.git",
+		},
+		{
+			input: "ssh://git:pass@github.com:22/user/repository.git?foo#bar",
+			want:  "ssh://git:pass@github.com/user/repository.git?foo#bar",
+		},
+		{
+			input: "ssh://git@github.com/user/repository.git",
+			want:  "ssh://git@github.com/user/repository.git",
+		},
+		{
+			input: "ssh://github.com/user/repository.git",
+			want:  "ssh://github.com/user/repository.git",
+		},
+		{
+			input: "ssh://git@github.com:777/user/repository.git",
+			want:  "ssh://git@github.com:777/user/repository.git",
+		},
+		{
+			input: "git@github.com:user/repository.git",
+			want:  "ssh://git@github.com/user/repository.git",
+		},
+		{
+			input: "git@github.com:9999/user/repository.git",
+			want:  "ssh://git@github.com/9999/user/repository.git",
+		},
+		{
+			input: "git@github.com:8080:9999/user/repository.git",
+			want:  "ssh://git@github.com:8080/9999/user/repository.git",
+		},
+		{
+			input: "git://github.com:9418/user/repository.git?foo#bar",
+			want:  "git://github.com/user/repository.git?foo#bar",
+		},
+		{
+			input: "/foo.git",
+			want:  "file:///foo.git",
+		},
+		{
+			input: "foo.git",
+			want:  "file://foo.git",
+		},
+		{
+			input: "C:\\foo.git",
+			want:  "file://C:\\foo.git",
+		},
+		{
+			input: "C:\\\\foo.git",
+			want:  "file://C:\\\\foo.git",
+		},
+		{
+			input: "file:///foo.git",
+			want:  "file:///foo.git",
+		}, {
+			input: "file:///path/to/repo",
+			want:  "file:///path/to/repo",
+		},
+		{
+			input: "file://C:/path/to/repo",
+			want:  "file://C:/path/to/repo",
+		},
+		{
+			input: "file://C:\\path\\to\\repo",
+			want:  "file://C:\\path\\to\\repo",
+		},
+		{
+			input:   "http://\\",
+			wantErr: "invalid character",
+		},
+	}
+
+	if runtime.GOOS == "windows" {
+		tests = append(tests, []tt{{
+			input: "file:///C:/path/to/repo",
+			want:  "file://C:/path/to/repo",
+		}, {
+			input: "file:///c:\\foo.git",
+			want:  "file://c:\\foo.git",
+		}}...)
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			ep, err := transport.NewEndpoint(tc.input)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, ep.String())
+			}
+		})
+	}
 }
 
-type SuiteCommon struct {
-	suite.Suite
-}
-
-func (s *SuiteCommon) TestNewEndpointHTTP() {
-	e, err := NewEndpoint("http://git:pass@github.com/user/repository.git?foo#bar")
-	s.Nil(err)
-	s.Equal("http", e.Protocol)
-	s.Equal("git", e.User)
-	s.Equal("pass", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal("/user/repository.git?foo#bar", e.Path)
-	s.Equal("http://git:pass@github.com/user/repository.git?foo#bar", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointPorts() {
-	e, err := NewEndpoint("http://git:pass@github.com:8080/user/repository.git?foo#bar")
-	s.Nil(err)
-	s.Equal("http://git:pass@github.com:8080/user/repository.git?foo#bar", e.String())
-
-	e, err = NewEndpoint("https://git:pass@github.com:443/user/repository.git?foo#bar")
-	s.Nil(err)
-	s.Equal("https://git:pass@github.com/user/repository.git?foo#bar", e.String())
-
-	e, err = NewEndpoint("ssh://git:pass@github.com:22/user/repository.git?foo#bar")
-	s.Nil(err)
-	s.Equal("ssh://git:pass@github.com/user/repository.git?foo#bar", e.String())
-
-	e, err = NewEndpoint("git://github.com:9418/user/repository.git?foo#bar")
-	s.Nil(err)
-	s.Equal("git://github.com/user/repository.git?foo#bar", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointSSH() {
-	e, err := NewEndpoint("ssh://git@github.com/user/repository.git")
-	s.Nil(err)
-	s.Equal("ssh", e.Protocol)
-	s.Equal("git", e.User)
-	s.Equal("", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal("/user/repository.git", e.Path)
-	s.Equal("ssh://git@github.com/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointSSHNoUser() {
-	e, err := NewEndpoint("ssh://github.com/user/repository.git")
-	s.Nil(err)
-	s.Equal("ssh", e.Protocol)
-	s.Equal("", e.User)
-	s.Equal("", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal("/user/repository.git", e.Path)
-	s.Equal("ssh://github.com/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointSSHWithPort() {
-	e, err := NewEndpoint("ssh://git@github.com:777/user/repository.git")
-	s.Nil(err)
-	s.Equal("ssh", e.Protocol)
-	s.Equal("git", e.User)
-	s.Equal("", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(777, e.Port)
-	s.Equal("/user/repository.git", e.Path)
-	s.Equal("ssh://git@github.com:777/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointSCPLike() {
-	e, err := NewEndpoint("git@github.com:user/repository.git")
-	s.Nil(err)
-	s.Equal("ssh", e.Protocol)
-	s.Equal("git", e.User)
-	s.Equal("", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(22, e.Port)
-	s.Equal("user/repository.git", e.Path)
-	s.Equal("ssh://git@github.com/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointSCPLikeWithNumericPath() {
-	e, err := NewEndpoint("git@github.com:9999/user/repository.git")
-	s.Nil(err)
-	s.Equal("ssh", e.Protocol)
-	s.Equal("git", e.User)
-	s.Equal("", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(22, e.Port)
-	s.Equal("9999/user/repository.git", e.Path)
-	s.Equal("ssh://git@github.com/9999/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointSCPLikeWithPort() {
-	e, err := NewEndpoint("git@github.com:8080:9999/user/repository.git")
-	s.Nil(err)
-	s.Equal("ssh", e.Protocol)
-	s.Equal("git", e.User)
-	s.Equal("", e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal(8080, e.Port)
-	s.Equal("9999/user/repository.git", e.Path)
-	s.Equal("ssh://git@github.com:8080/9999/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointFileAbs() {
-	var err error
-	abs := "/foo.git"
-
-	e, err := NewEndpoint("/foo.git")
-	s.Nil(err)
-	s.Equal("file", e.Protocol)
-	s.Equal("", e.User)
-	s.Equal("", e.Password)
-	s.Equal("", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal(abs, e.Path)
-	s.Equal("file://"+abs, e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointFileRel() {
-	abs := "foo.git"
-	e, err := NewEndpoint("foo.git")
-	s.Nil(err)
-	s.Equal("file", e.Protocol)
-	s.Equal("", e.User)
-	s.Equal("", e.Password)
-	s.Equal("", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal(abs, e.Path)
-	s.Equal("file://"+abs, e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointFileWindows() {
-	abs := "C:\\foo.git"
-
-	e, err := NewEndpoint("C:\\foo.git")
-	s.Nil(err)
-	s.Equal("file", e.Protocol)
-	s.Equal("", e.User)
-	s.Equal("", e.Password)
-	s.Equal("", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal(abs, e.Path)
-	s.Equal("file://"+abs, e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointFileURL() {
-	e, err := NewEndpoint("file:///foo.git")
-	s.Nil(err)
-	s.Equal("file", e.Protocol)
-	s.Equal("", e.User)
-	s.Equal("", e.Password)
-	s.Equal("", e.Host)
-	s.Equal(0, e.Port)
-	s.Equal("/foo.git", e.Path)
-	s.Equal("file:///foo.git", e.String())
-}
-
-func (s *SuiteCommon) TestValidEndpoint() {
-	user := "person@mail.com"
-	pass := " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
-	e, err := NewEndpoint(fmt.Sprintf(
-		"http://%s:%s@github.com/user/repository.git",
-		url.PathEscape(user),
-		url.PathEscape(pass),
-	))
-	s.Nil(err)
-	s.NotNil(e)
-	s.Equal(user, e.User)
-	s.Equal(pass, e.Password)
-	s.Equal("github.com", e.Host)
-	s.Equal("/user/repository.git", e.Path)
-
-	s.Equal("http://person@mail.com:%20%21%22%23$%25&%27%28%29%2A+%2C-.%2F:%3B%3C=%3E%3F@%5B%5C%5D%5E_%60%7B%7C%7D~@github.com/user/repository.git", e.String())
-}
-
-func (s *SuiteCommon) TestNewEndpointInvalidURL() {
-	e, err := NewEndpoint("http://\\")
-	s.NotNil(err)
-	s.Nil(e)
-}
-
-func (s *SuiteCommon) TestFilterUnsupportedCapabilities() {
+func TestFilterUnsupportedCapabilities(t *testing.T) {
 	l := capability.NewList()
 	l.Set(capability.MultiACK)
 	l.Set(capability.MultiACKDetailed)
 
-	s.False(l.Supports(capability.ThinPack))
+	assert.False(t, l.Supports(capability.ThinPack))
 }
 
-func (s *SuiteCommon) TestNewEndpointIPv6() {
-	e, err := NewEndpoint("http://[::1]:8080/foo.git")
-	s.Nil(err)
-	s.Equal("[::1]", e.Host)
-	s.Equal("http://[::1]:8080/foo.git", e.String())
+func FuzzNewEndpoint(f *testing.F) {
+	f.Fuzz(func(_ *testing.T, input string) {
+		transport.NewEndpoint(input)
+	})
 }

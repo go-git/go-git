@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -113,6 +114,8 @@ var defaultPorts = map[string]int{
 	"ssh":   22,
 }
 
+var fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
+
 // String returns a string representation of the Git URL.
 func (u *Endpoint) String() string {
 	var buf bytes.Buffer
@@ -167,10 +170,18 @@ func NewEndpoint(endpoint string) (*Endpoint, error) {
 }
 
 func parseURL(endpoint string) (*Endpoint, error) {
-	if runtime.GOOS == "windows" && strings.HasPrefix(endpoint, "file://") {
+	if strings.HasPrefix(endpoint, "file://") {
+		endpoint = strings.TrimPrefix(endpoint, "file://")
+
+		// When triple / is used, the path in Windows may end up having an
+		// additional / resulting in "/C:/Dir".
+		if runtime.GOOS == "windows" &&
+			fileIssueWindows.MatchString(endpoint) {
+			endpoint = endpoint[1:]
+		}
 		return &Endpoint{
 			Protocol: "file",
-			Path:     strings.TrimPrefix(endpoint, "file://"),
+			Path:     endpoint,
 		}, nil
 	}
 
