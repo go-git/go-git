@@ -1300,9 +1300,6 @@ func (s *RepositorySuite) TestFetchContext() {
 }
 
 func (s *RepositorySuite) TestFetchWithFilters() {
-	// TODO: Re-enable test when filter support is reintroduced
-	s.T().SkipNow()
-
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -1313,13 +1310,10 @@ func (s *RepositorySuite) TestFetchWithFilters() {
 	err = r.Fetch(&FetchOptions{
 		Filter: packp.FilterBlobNone(),
 	})
-	s.ErrorIs(err, ErrFilterNotSupported)
+	s.ErrorIs(err, transport.ErrFilterNotSupported)
 
 }
 func (s *RepositorySuite) TestFetchWithFiltersReal() {
-	// TODO: Re-enable test when filter support is reintroduced
-	s.T().SkipNow()
-
 	r, _ := Init(memory.NewStorage(), nil)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -1681,9 +1675,6 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 }
 
 func (s *RepositorySuite) TestCloneWithFilter() {
-	// TODO: Re-enable test when filter support is reintroduced
-	s.T().SkipNow()
-
 	r, _ := Init(memory.NewStorage(), nil)
 
 	err := r.clone(context.Background(), &CloneOptions{

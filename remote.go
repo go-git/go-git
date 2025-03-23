@@ -35,7 +35,6 @@ var (
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
-	ErrFilterNotSupported    = errors.New("server does not support filters")
 )
 
 type NoMatchingRefSpecError struct {
@@ -446,6 +445,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			Depth:       o.Depth,
 			Progress:    o.Progress,
 			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
+			Filter:      o.Filter,
 		}
 
 		if err := conn.Fetch(ctx, req); err != nil && !errors.Is(err, transport.ErrNoChange) {

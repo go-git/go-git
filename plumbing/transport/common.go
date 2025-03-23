@@ -110,6 +110,10 @@ type FetchRequest struct {
 	// Depth is the depth of the fetch.
 	Depth int
 
+	// Filter holds the filters to be applied when deciding what
+	// objects will be added to the packfile.
+	Filter packp.Filter
+
 	// IncludeTags indicates whether tags should be fetched.
 	IncludeTags bool
 }
