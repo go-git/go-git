@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"io"
 	"time"
 
@@ -52,11 +53,11 @@ func (c *commitLimitIter) ForEach(cb func(*Commit) error) error {
 		if nextErr == io.EOF {
 			break
 		}
-		if nextErr != nil && nextErr != storer.ErrStop {
+		if nextErr != nil && !errors.Is(nextErr, storer.ErrStop) {
 			return nextErr
 		}
 		err := cb(commit)
-		if err == storer.ErrStop || nextErr == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) || errors.Is(nextErr, storer.ErrStop) {
 			return nil
 		} else if err != nil {
 			return err

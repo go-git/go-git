@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -148,7 +149,7 @@ func (iter *commitNodeIteratorTopological) ForEach(cb func(CommitNode) error) er
 		}
 
 		if err := cb(obj); err != nil {
-			if err == storer.ErrStop {
+			if errors.Is(err, storer.ErrStop) {
 				return nil
 			}
 
