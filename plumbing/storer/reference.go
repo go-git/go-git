@@ -80,7 +80,7 @@ func (iter *referenceFilteredIter) ForEach(cb func(*plumbing.Reference) error) e
 		}
 
 		if err := cb(r); err != nil {
-			if err == ErrStop {
+			if errors.Is(err, ErrStop) {
 				break
 			}
 
@@ -152,7 +152,7 @@ func forEachReferenceIter(iter bareReferenceIterator, cb func(*plumbing.Referenc
 		}
 
 		if err := cb(obj); err != nil {
-			if err == ErrStop {
+			if errors.Is(err, ErrStop) {
 				return nil
 			}
 

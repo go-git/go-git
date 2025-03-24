@@ -2,6 +2,7 @@ package pktline
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
@@ -115,7 +116,7 @@ func WriteResponseEnd(w io.Writer) (err error) {
 func Read(r io.Reader, p []byte) (l int, err error) {
 	_, err = io.ReadFull(r, p[:LenSize])
 	if err != nil {
-		if err == io.ErrUnexpectedEOF {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
 			return Err, ErrInvalidPktLen
 		}
 		return Err, err

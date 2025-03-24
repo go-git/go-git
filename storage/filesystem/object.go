@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -310,7 +311,7 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (
 		if ok {
 			return obj.Size(), nil
 		}
-	} else if err != nil && err != plumbing.ErrObjectNotFound {
+	} else if err != nil && !errors.Is(err, plumbing.ErrObjectNotFound) {
 		return 0, err
 	}
 
@@ -331,7 +332,7 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (
 func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (
 	size int64, err error) {
 	size, err = s.encodedObjectSizeFromUnpacked(h)
-	if err != nil && err != plumbing.ErrObjectNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrObjectNotFound) {
 		return 0, err
 	} else if err == nil {
 		return size, nil
@@ -348,19 +349,19 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 
 	if s.index != nil {
 		obj, err = s.getFromPackfile(h, false)
-		if err == plumbing.ErrObjectNotFound {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			obj, err = s.getFromUnpacked(h)
 		}
 	} else {
 		obj, err = s.getFromUnpacked(h)
-		if err == plumbing.ErrObjectNotFound {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			obj, err = s.getFromPackfile(h, false)
 		}
 	}
 
 	// If the error is still object not found, check if it's a shared object
 	// repository.
-	if err == plumbing.ErrObjectNotFound {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		dotgits, e := s.dir.Alternates()
 		if e == nil {
 			// Create a new object storage with the DotGit(s) and check for the
@@ -392,7 +393,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 func (s *ObjectStorage) DeltaObject(t plumbing.ObjectType,
 	h plumbing.Hash) (plumbing.EncodedObject, error) {
 	obj, err := s.getFromUnpacked(h)
-	if err == plumbing.ErrObjectNotFound {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		obj, err = s.getFromPackfile(h, true)
 	}
 
@@ -689,7 +690,7 @@ func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]struct{} {
 
 func (s *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 	err := s.dir.ForEachObjectHash(fun)
-	if err == storer.ErrStop {
+	if errors.Is(err, storer.ErrStop) {
 		return nil
 	}
 	return err

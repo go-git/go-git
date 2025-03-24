@@ -1,6 +1,7 @@
 package packp
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -121,7 +122,7 @@ func (a *AdvRefs) resolveHead(s storer.ReferenceStorer) error {
 		}
 	}
 
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
