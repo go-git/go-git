@@ -30,35 +30,16 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
-
-	ar, err := conn.GetRemoteRefs(context.TODO())
-	s.Equal(err, transport.ErrEmptyRemoteRepository)
-	s.Nil(ar)
+	s.ErrorIs(err, transport.ErrEmptyRemoteRepository)
+	s.Nil(conn)
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
-
-	ar, err := conn.GetRemoteRefs(context.TODO())
-	s.Equal(err, transport.ErrRepositoryNotFound)
-	s.Nil(ar)
-
-	r, err = s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
-	s.NoError(err)
-	conn, err = r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
-
-	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	err = conn.Fetch(context.Background(), req)
-	s.Equal(err, transport.ErrRepositoryNotFound)
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+	s.Nil(conn)
 }
 
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
@@ -172,7 +153,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 
 	cancel()
 	err = conn.Fetch(ctx, req)
-	s.NotNil(err)
+	s.Error(err)
 }
 
 func (s *UploadPackSuite) TestUploadPackFull() {
@@ -222,7 +203,7 @@ func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.Equal(err, transport.ErrEmptyUploadPackRequest)
+	s.ErrorIs(err, transport.ErrEmptyUploadPackRequest)
 }
 
 func (s *UploadPackSuite) TestUploadPackMulti() {
@@ -270,7 +251,7 @@ func (s *UploadPackSuite) TestFetchError() {
 	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.NotNil(err)
+	s.Error(err)
 
 	// XXX: We do not test Close error, since implementations might return
 	//     different errors if a previous error was found.
@@ -286,5 +267,5 @@ func (s *UploadPackSuite) checkObjectNumber(st storage.Storer, n int) {
 		return nil
 	})
 	s.NoError(err)
-	s.Len(objs, n)
+	s.Equal(n, objs)
 }
