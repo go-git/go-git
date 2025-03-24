@@ -4,6 +4,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -60,7 +61,7 @@ func advertisedReferences(ctx context.Context, s *session, serviceName string) (
 
 	ar := packp.NewAdvRefs()
 	if err = ar.Decode(res.Body); err != nil {
-		if err == packp.ErrEmptyAdvRefs {
+		if errors.Is(err, packp.ErrEmptyAdvRefs) {
 			err = transport.ErrEmptyRemoteRepository
 		}
 

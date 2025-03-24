@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -136,7 +137,7 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 	err := r.Push(po)
 
 	if err != nil {
-		if err == git.NoErrAlreadyUpToDate {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			log.Print("origin remote was up to date, no push done")
 			return nil
 		}

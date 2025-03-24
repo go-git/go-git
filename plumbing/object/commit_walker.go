@@ -2,6 +2,7 @@ package object
 
 import (
 	"container/list"
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -103,7 +104,7 @@ func (w *commitPreIterator) ForEach(cb func(*Commit) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {
@@ -171,7 +172,7 @@ func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {
@@ -201,7 +202,7 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 		err = addReference(repoStorer, commitIterFunc, head, commitsPath, commitsLookup)
 	}
 
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, err
 	}
 
@@ -218,7 +219,7 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 			break
 		}
 
-		if err == plumbing.ErrReferenceNotFound {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			continue
 		}
 
@@ -311,7 +312,7 @@ func (it *commitAllIterator) ForEach(cb func(*Commit) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {

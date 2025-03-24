@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -28,7 +29,8 @@ func main() {
 
 	_, err := parser.Parse()
 	if err != nil {
-		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrCommandRequired {
+		var e *flags.Error
+		if errors.As(err, &e) && e.Type == flags.ErrCommandRequired {
 			parser.WriteHelp(os.Stdout)
 		}
 

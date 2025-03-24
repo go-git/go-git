@@ -1,6 +1,8 @@
 package transactional
 
 import (
+	"errors"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
@@ -41,7 +43,7 @@ func (r *ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) er
 	}
 
 	tmp, err := r.temporal.Reference(old.Name())
-	if err == plumbing.ErrReferenceNotFound {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		tmp, err = r.ReferenceStorer.Reference(old.Name())
 	}
 
@@ -63,7 +65,7 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 	}
 
 	ref, err := r.temporal.Reference(n)
-	if err == plumbing.ErrReferenceNotFound {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return r.ReferenceStorer.Reference(n)
 	}
 

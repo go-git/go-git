@@ -232,7 +232,7 @@ func (d *Decoder) readExtensions(idx *Index) error {
 		}
 	}
 
-	if err != errUnknownExtension {
+	if !errors.Is(err, errUnknownExtension) {
 		return err
 	}
 

@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -83,7 +84,7 @@ func (w *commitNodeIteratorByCTime) Next() (CommitNode, error) {
 func (w *commitNodeIteratorByCTime) ForEach(cb func(CommitNode) error) error {
 	for {
 		c, err := w.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -91,7 +92,7 @@ func (w *commitNodeIteratorByCTime) ForEach(cb func(CommitNode) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {

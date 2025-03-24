@@ -278,7 +278,7 @@ func ForEachIterator(iter bareIterator, cb func(plumbing.EncodedObject) error) e
 		}
 
 		if err := cb(obj); err != nil {
-			if err == ErrStop {
+			if errors.Is(err, ErrStop) {
 				return nil
 			}
 

@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync/atomic"
@@ -79,7 +80,7 @@ func (w *PackWriter) buildIndex() {
 // ignore the error
 func (w *PackWriter) waitBuildIndex() error {
 	err := <-w.result
-	if err == packfile.ErrEmptyPackfile {
+	if errors.Is(err, packfile.ErrEmptyPackfile) {
 		return nil
 	}
 

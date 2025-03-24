@@ -372,7 +372,7 @@ func (*rpSession) setSupportedCapabilities(c *capability.List) error {
 
 func setHEAD(s storer.Storer, ar *packp.AdvRefs) error {
 	ref, err := s.Reference(plumbing.HEAD)
-	if err == plumbing.ErrReferenceNotFound {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil
 	}
 
@@ -386,7 +386,7 @@ func setHEAD(s storer.Storer, ar *packp.AdvRefs) error {
 		}
 
 		ref, err = storer.ResolveReference(s, ref.Target())
-		if err == plumbing.ErrReferenceNotFound {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return nil
 		}
 
@@ -424,7 +424,7 @@ func setReferences(s storer.Storer, ar *packp.AdvRefs) error {
 
 func referenceExists(s storer.ReferenceStorer, n plumbing.ReferenceName) (bool, error) {
 	_, err := s.Reference(n)
-	if err == plumbing.ErrReferenceNotFound {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return false, nil
 	}
 

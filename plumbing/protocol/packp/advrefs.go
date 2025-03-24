@@ -1,6 +1,7 @@
 package packp
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -97,7 +98,7 @@ func (a *AdvRefs) addRefs(s storer.ReferenceStorer) error {
 // Git versions prior to 1.8.4.3 has an special procedure to get
 // the reference where is pointing to HEAD:
 // - Check if a reference called master exists. If exists and it
-//	 has the same hash as HEAD hash, we can say that HEAD is pointing to master
+//   has the same hash as HEAD hash, we can say that HEAD is pointing to master
 // - If master does not exists or does not have the same hash as HEAD,
 //   order references and check in that order if that reference has the same
 //   hash than HEAD. If yes, set HEAD pointing to that branch hash
@@ -121,7 +122,7 @@ func (a *AdvRefs) resolveHead(s storer.ReferenceStorer) error {
 		}
 	}
 
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 

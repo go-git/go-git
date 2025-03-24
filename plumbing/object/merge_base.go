@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -21,7 +22,7 @@ func (c *Commit) MergeBase(other *Commit) ([]*Commit, error) {
 	older := sorted[1]
 
 	newerHistory, err := ancestorsIndex(older, newer)
-	if err == errIsReachable {
+	if errors.Is(err, errIsReachable) {
 		return []*Commit{older}, nil
 	}
 

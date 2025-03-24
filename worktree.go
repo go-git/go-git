@@ -82,7 +82,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	})
 
 	updated := true
-	if err == NoErrAlreadyUpToDate {
+	if errors.Is(err, NoErrAlreadyUpToDate) {
 		updated = false
 	} else if err != nil {
 		return err
@@ -114,7 +114,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		}
 	}
 
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
@@ -194,7 +194,7 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 		return fmt.Errorf("a branch named %q already exists", opts.Branch)
 	}
 
-	if err != plumbing.ErrReferenceNotFound {
+	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 

@@ -2,6 +2,7 @@ package object
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 
@@ -123,7 +124,7 @@ func (iter *FileIter) ForEach(cb func(*File) error) error {
 		}
 
 		if err := cb(f); err != nil {
-			if err == storer.ErrStop {
+			if errors.Is(err, storer.ErrStop) {
 				return nil
 			}
 

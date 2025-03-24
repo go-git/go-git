@@ -86,13 +86,12 @@ func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.Auth
 
 	_, err := execabs.LookPath(cmd)
 	if err != nil {
-		if e, ok := err.(*execabs.Error); ok && e.Err == execabs.ErrNotFound {
+		var e *execabs.Error
+		if errors.As(err, &e) && errors.Is(e.Err, execabs.ErrNotFound) {
 			cmd, err = prefixExecPath(cmd)
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			return nil, err
 		}
 	}
 

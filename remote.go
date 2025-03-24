@@ -692,7 +692,7 @@ func (r *Remote) addCommit(rs config.RefSpec,
 		}
 
 		cmd.Old = remoteRef.Hash()
-	} else if err != plumbing.ErrReferenceNotFound {
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 	if cmd.Old == cmd.New {
@@ -734,7 +734,7 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 		}
 
 		cmd.Old = remoteRef.Hash()
-	} else if err != plumbing.ErrReferenceNotFound {
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
@@ -1011,7 +1011,7 @@ func getWants(localStorer storage.Storer, refs memory.ReferenceStorage) ([]plumb
 
 func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
 	_, err := s.EncodedObject(plumbing.AnyObject, h)
-	if err == plumbing.ErrObjectNotFound {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		return false, nil
 	}
 
@@ -1021,7 +1021,7 @@ func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
 func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.ReferenceStorer, cmd *packp.Command) error {
 	if cmd.Old == plumbing.ZeroHash {
 		_, err := remoteRefs.Reference(cmd.Name)
-		if err == plumbing.ErrReferenceNotFound {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return nil
 		}
 
@@ -1219,7 +1219,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 		}
 
 		_, err := r.s.EncodedObject(plumbing.AnyObject, ref.Hash())
-		if err == plumbing.ErrObjectNotFound {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			continue
 		}
 

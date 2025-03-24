@@ -491,7 +491,7 @@ func (o *CommitOptions) Validate(r *Repository) error {
 
 	if len(o.Parents) == 0 {
 		head, err := r.Head()
-		if err != nil && err != plumbing.ErrReferenceNotFound {
+		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return err
 		}
 

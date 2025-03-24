@@ -69,7 +69,7 @@ func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
 	}
 
 	e, err := idx.Entry(s.c.Path)
-	if err != nil && err != index.ErrEntryNotFound {
+	if err != nil && !errors.Is(err, index.ErrEntryNotFound) {
 		return nil, err
 	}
 
@@ -91,7 +91,7 @@ func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
 		status.Current = head.Hash()
 	}
 
-	if err != nil && err == plumbing.ErrReferenceNotFound {
+	if err != nil && errors.Is(err, plumbing.ErrReferenceNotFound) {
 		err = nil
 	}
 
@@ -110,7 +110,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 	}
 
 	_, err = storer.Reference(plumbing.HEAD)
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, err
 	}
 
@@ -244,7 +244,7 @@ func (s *Submodule) fetchAndCheckout(
 ) error {
 	if !o.NoFetch {
 		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth})
-		if err != nil && err != NoErrAlreadyUpToDate {
+		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 			return err
 		}
 	}
@@ -266,7 +266,7 @@ func (s *Submodule) fetchAndCheckout(
 				Auth:     o.Auth,
 				RefSpecs: []config.RefSpec{refSpec},
 			})
-			if err != nil && err != NoErrAlreadyUpToDate && err != ErrExactSHA1NotSupported {
+			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) && !errors.Is(err, ErrExactSHA1NotSupported) {
 				return err
 			}
 		}
