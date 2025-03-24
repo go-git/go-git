@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -10,6 +11,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
+)
+
+var (
+	ErrFilterNotSupported = errors.New("server does not support filters")
 )
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
@@ -61,7 +66,16 @@ func NegotiatePack(
 		upreq.Capabilities.Set(capability.IncludeTag) // nolint: errcheck
 	}
 
-	// TODO: Support filter
+	if req.Filter != "" {
+		if caps.Supports(capability.Filter) {
+			upreq.Filter = req.Filter
+			if err := upreq.Capabilities.Set(capability.Filter); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, ErrFilterNotSupported
+		}
+	}
 
 	upreq.Wants = req.Wants
 
