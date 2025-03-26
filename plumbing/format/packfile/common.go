@@ -58,11 +58,15 @@ func WritePackfileToObjectStorage(
 
 	buf := sync.GetByteSlice()
 	n, err = io.CopyBuffer(w, packfile, *buf)
-	sync.PutByteSlice(buf)
+	if err != nil {
+		return err
+	}
 
-	if err == nil && n == 0 {
+	if n == 0 {
 		return ErrEmptyPackfile
 	}
 
-	return err
+	sync.PutByteSlice(buf)
+
+	return nil
 }
