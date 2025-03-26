@@ -215,8 +215,11 @@ func (iter *MultiReferenceIter) Close() {
 // ResolveReference resolves a SymbolicReference to a HashReference.
 func ResolveReference(s ReferenceStorer, n plumbing.ReferenceName) (*plumbing.Reference, error) {
 	r, err := s.Reference(n)
-	if err != nil || r == nil {
-		return r, err
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, plumbing.ErrReferenceNotFound
 	}
 	return resolveReference(s, r, 0)
 }
