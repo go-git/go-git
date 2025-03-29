@@ -3,7 +3,7 @@ module github.com/go-git/go-git/v5
 // go-git supports the last 3 stable Go versions.
 go 1.23.0
 
-toolchain go1.23.6
+toolchain go1.24.1
 
 // Use the v6-exp branch across go-git dependencies.
 replace (
@@ -31,7 +31,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.36.0
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 	golang.org/x/sys v0.31.0
 	golang.org/x/text v0.23.0
 )
