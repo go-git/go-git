@@ -189,7 +189,7 @@ func (iter *ObjectIter) Next() (Object, error) {
 		}
 
 		o, err := iter.toObject(obj)
-		if err == plumbing.ErrInvalidType {
+		if errors.Is(err, plumbing.ErrInvalidType) {
 			continue
 		}
 
@@ -207,7 +207,7 @@ func (iter *ObjectIter) Next() (Object, error) {
 func (iter *ObjectIter) ForEach(cb func(Object) error) error {
 	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
 		o, err := iter.toObject(obj)
-		if err == plumbing.ErrInvalidType {
+		if errors.Is(err, plumbing.ErrInvalidType) {
 			return nil
 		}
 

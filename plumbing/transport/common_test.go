@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -124,7 +125,7 @@ func (s *CommonSuite) TestAdvertisedReferencesWithRemoteUnknownError() {
 	_, err = sess.AdvertisedReferences()
 
 	if wantErr != nil {
-		if wantErr != err {
+		if !errors.Is(err, wantErr) {
 			if wantErr.Error() != err.Error() {
 				s.T().Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
 			}
@@ -156,7 +157,7 @@ remote:`
 	_, err = sess.AdvertisedReferences()
 
 	if wantErr != nil {
-		if wantErr != err {
+		if !errors.Is(err, wantErr) {
 			if wantErr.Error() != err.Error() {
 				s.T().Fatalf("expected a different error: got '%s', expected '%s'", err, wantErr)
 			}

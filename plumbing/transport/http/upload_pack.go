@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -66,7 +67,7 @@ func (s *upSession) UploadPack(
 
 	r, err := ioutil.NonEmptyReader(res.Body)
 	if err != nil {
-		if err == ioutil.ErrEmptyReader || err == io.ErrUnexpectedEOF {
+		if errors.Is(err, ioutil.ErrEmptyReader) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, transport.ErrEmptyUploadPackRequest
 		}
 
