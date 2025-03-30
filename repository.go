@@ -77,31 +77,45 @@ type Repository struct {
 	wt billy.Filesystem
 }
 
-type InitOptions struct {
-	// The default branch (e.g. "refs/heads/master")
-	DefaultBranch plumbing.ReferenceName
+type initOptions struct {
+	defaultBranch plumbing.ReferenceName
+}
+
+func newInitOptions() initOptions {
+	return initOptions{
+		defaultBranch: plumbing.Master,
+	}
+}
+
+type InitOption func(*initOptions)
+
+// WithDefaultBranch sets the  default branch for the new repo (e.g. "refs/heads/master").
+func WithDefaultBranch(b plumbing.ReferenceName) InitOption {
+	return func(o *initOptions) {
+		o.defaultBranch = b
+	}
 }
 
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
 func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
-	options := InitOptions{
-		DefaultBranch: plumbing.Master,
-	}
-	return InitWithOptions(s, worktree, options)
+	return InitWithOptions(s, worktree,
+		WithDefaultBranch(plumbing.Master),
+	)
 }
 
-func InitWithOptions(s storage.Storer, worktree billy.Filesystem, options InitOptions) (*Repository, error) {
+func InitWithOptions(s storage.Storer, worktree billy.Filesystem, opts ...InitOption) (*Repository, error) {
+	options := newInitOptions()
+	for _, oFn := range opts {
+		oFn(&options)
+	}
+
 	if err := initStorer(s); err != nil {
 		return nil, err
 	}
 
-	if options.DefaultBranch == "" {
-		options.DefaultBranch = plumbing.Master
-	}
-
-	if err := options.DefaultBranch.Validate(); err != nil {
+	if err := options.defaultBranch.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -115,7 +129,7 @@ func InitWithOptions(s storage.Storer, worktree billy.Filesystem, options InitOp
 		return nil, err
 	}
 
-	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.DefaultBranch)
+	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
 	if err := s.SetReference(h); err != nil {
 		return nil, err
 	}
@@ -253,19 +267,20 @@ func CloneContext(
 // if the repository will have worktree (non-bare) or not (bare), if the path
 // is not empty ErrRepositoryAlreadyExists is returned.
 func PlainInit(path string, isBare bool) (*Repository, error) {
-	return PlainInitWithOptions(path, &PlainInitOptions{
-		Bare: isBare,
-	})
+	return PlainInitWithOptions(path,
+		WithWorkTree(!isBare),
+	)
 }
 
-func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, error) {
-	if opts == nil {
-		opts = &PlainInitOptions{}
+func PlainInitWithOptions(path string, opts ...PlainInitOption) (*Repository, error) {
+	options := newPlainInitOptions()
+	for _, oFn := range opts {
+		oFn(&options)
 	}
 
 	var wt, dot billy.Filesystem
 
-	if opts.Bare {
+	if options.bare {
 		dot = osfs.New(path, osfs.WithBoundOS())
 	} else {
 		wt = osfs.New(path, osfs.WithBoundOS())
@@ -274,7 +289,7 @@ func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, err
 
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
-	r, err := InitWithOptions(s, wt, opts.InitOptions)
+	r, err := InitWithOptions(s, wt, options.initOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -284,13 +299,13 @@ func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, err
 		return nil, err
 	}
 
-	if opts.ObjectFormat != "" {
-		if opts.ObjectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
+	if options.objectFormat != "" {
+		if options.objectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
 			return nil, ErrSHA256NotSupported
 		}
 
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
-		cfg.Extensions.ObjectFormat = opts.ObjectFormat
+		cfg.Extensions.ObjectFormat = options.objectFormat
 	}
 
 	err = r.Storer.SetConfig(cfg)
