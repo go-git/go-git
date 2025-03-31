@@ -107,10 +107,7 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 		b.lineToCommit[i] = needsMap[i].Commit
 	}
 
-	lines, err := newLines(finalLines, b.lineToCommit)
-	if err != nil {
-		return nil, err
-	}
+	lines := newLines(finalLines, b.lineToCommit)
 
 	return &BlameResult{
 		Path:  path,
@@ -143,7 +140,7 @@ func newLine(author, authorName, text string, date time.Time, hash plumbing.Hash
 	}
 }
 
-func newLines(contents []string, commits []*object.Commit) ([]*Line, error) {
+func newLines(contents []string, commits []*object.Commit) []*Line {
 	result := make([]*Line, 0, len(contents))
 	for i := range contents {
 		result = append(result, newLine(
@@ -152,7 +149,7 @@ func newLines(contents []string, commits []*object.Commit) ([]*Line, error) {
 		))
 	}
 
-	return result, nil
+	return result
 }
 
 // this struct is internally used by the blame function to hold its

@@ -22,24 +22,22 @@ func TestBlameSuite(t *testing.T) {
 
 func (s *BlameSuite) TestNewLines() {
 	h := plumbing.NewHash("ce9f123d790717599aaeb76bc62510de437761be")
-	lines, err := newLines([]string{"foo"}, []*object.Commit{{
+	lines := newLines([]string{"foo"}, []*object.Commit{{
 		Hash:    h,
 		Message: "foo",
 	}})
 
-	s.NoError(err)
 	s.Len(lines, 1)
 	s.Equal("foo", lines[0].Text)
 	s.Equal(h, lines[0].Hash)
 }
 
 func (s *BlameSuite) TestNewLinesWithNewLine() {
-	lines, err := newLines([]string{"foo", ""}, []*object.Commit{
+	lines := newLines([]string{"foo", ""}, []*object.Commit{
 		{Message: "foo"},
 		{Message: "bar"},
 	})
 
-	s.NoError(err)
 	s.Len(lines, 2)
 	s.Equal("foo", lines[0].Text)
 	s.Equal("", lines[1].Text)
