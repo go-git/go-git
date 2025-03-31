@@ -651,10 +651,29 @@ func (w *Worktree) doRemoveFile(idx *index.Index, path string) (plumbing.Hash, e
 func (w *Worktree) deleteFromIndex(idx *index.Index, path string) (plumbing.Hash, error) {
 	e, err := idx.Remove(path)
 	if err != nil {
+		if errors.Is(err, index.ErrEntryNotFound) {
+			return plumbing.ZeroHash, w.deleteFilesFromIndex(idx, path)
+		}
 		return plumbing.ZeroHash, err
 	}
 
 	return e.Hash, nil
+}
+
+// when adding a deleted directory, you cannot process it through idx.Remove, need to traverse and process the index entry under the directory
+func (w *Worktree) deleteFilesFromIndex(idx *index.Index, path string) error {
+	path = filepath.ToSlash(path)
+	count := 0
+	for index, e := range idx.Entries {
+		if strings.HasPrefix(e.Name, path) {
+			idx.Entries = append(idx.Entries[:index], idx.Entries[index+1:]...)
+			count++
+		}
+	}
+	if count == 0 {
+		return index.ErrEntryNotFound
+	}
+	return nil
 }
 
 func (w *Worktree) deleteFromFilesystem(path string) error {
