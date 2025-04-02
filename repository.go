@@ -1358,6 +1358,10 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 		return func(c *object.Commit) object.CommitIter {
 			return object.NewCommitIterCTime(c, nil, nil)
 		}
+	case LogOrderDFSPostNoMerge:
+		return func(c *object.Commit) object.CommitIter {
+			return object.NewCommitPostorderIterNoMerge(c, nil)
+		}
 	}
 	return nil
 }
