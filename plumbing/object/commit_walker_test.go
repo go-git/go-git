@@ -193,7 +193,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore() {
 }
 
 func (s *CommitWalkerSuite) TestCommitPostIteratorNoMerge(c *C) {
-	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitPostorderIterNoMerge(commit, nil).ForEach(func(c *Commit) error {
@@ -201,7 +201,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorNoMerge(c *C) {
 		return nil
 	})
 
-	c.Assert(commits, HasLen, 6)
+	s.Len(commits, 6)
 
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -213,12 +213,12 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorNoMerge(c *C) {
 	}
 
 	for i, commit := range commits {
-		c.Assert(commit.Hash.String(), Equals, expected[i])
+		s.Equal(expected[i], commit.Hash.String())
 	}
 }
 
 func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreNoMerge(c *C) {
-	commit := s.commit(c, plumbing.NewHash(s.Fixture.Head))
+	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
 	NewCommitPostorderIterNoMerge(commit, []plumbing.Hash{
@@ -228,14 +228,14 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreNoMerge(c *C) {
 		return nil
 	})
 
-	c.Assert(commits, HasLen, 2)
+	s.Len(commits, 2)
 
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"918c48b83bd081e863dbe1b80f8998f058cd8294",
 	}
 	for i, commit := range commits {
-		c.Assert(commit.Hash.String(), Equals, expected[i])
+		s.Equal(expected[i], commit.Hash.String())
 	}
 }
 
