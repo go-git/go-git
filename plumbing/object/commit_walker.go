@@ -222,7 +222,7 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 		w.seen[c.Hash] = true
 
 		return c, c.Parents().ForEach(func(p *Commit) error {
-			if p.Hash == c.ParentHashes[0] {
+			if len(c.ParentHashes) > 0 && p.Hash == c.ParentHashes[0] {
 				w.stack = append(w.stack, p)
 			}
 			return nil
