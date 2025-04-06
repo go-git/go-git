@@ -1358,9 +1358,9 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 		return func(c *object.Commit) object.CommitIter {
 			return object.NewCommitIterCTime(c, nil, nil)
 		}
-	case LogOrderDFSPostNoMerge:
+	case LogOrderDFSPostFirstParent:
 		return func(c *object.Commit) object.CommitIter {
-			return object.NewCommitPostorderIterNoMerge(c, nil)
+			return object.NewCommitPostorderIterFirstParent(c, nil)
 		}
 	}
 	return nil

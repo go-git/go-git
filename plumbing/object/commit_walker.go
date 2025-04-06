@@ -184,7 +184,7 @@ func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
 
 func (w *commitPostIterator) Close() {}
 
-type commitPostIteratorNM struct {
+type commitPostIteratorFirstParent struct {
 	stack []*Commit
 	seen  map[plumbing.Hash]bool
 }
@@ -194,19 +194,19 @@ type commitPostIteratorNM struct {
 // walking a merge commit, the merged commit will be walked before the base
 // it was merged on. This can be useful if you wish to see the history in
 // chronological order. Ignore allows to skip some commits from being iterated.
-func NewCommitPostorderIterNoMerge(c *Commit, ignore []plumbing.Hash) CommitIter {
+func NewCommitPostorderIterFirstParent(c *Commit, ignore []plumbing.Hash) CommitIter {
 	seen := make(map[plumbing.Hash]bool)
 	for _, h := range ignore {
 		seen[h] = true
 	}
 
-	return &commitPostIteratorNM{
+	return &commitPostIteratorFirstParent{
 		stack: []*Commit{c},
 		seen:  seen,
 	}
 }
 
-func (w *commitPostIteratorNM) Next() (*Commit, error) {
+func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 	for {
 		if len(w.stack) == 0 {
 			return nil, io.EOF
@@ -230,7 +230,7 @@ func (w *commitPostIteratorNM) Next() (*Commit, error) {
 	}
 }
 
-func (w *commitPostIteratorNM) ForEach(cb func(*Commit) error) error {
+func (w *commitPostIteratorFirstParent) ForEach(cb func(*Commit) error) error {
 	for {
 		c, err := w.Next()
 		if err == io.EOF {
@@ -252,7 +252,7 @@ func (w *commitPostIteratorNM) ForEach(cb func(*Commit) error) error {
 	return nil
 }
 
-func (w *commitPostIteratorNM) Close() {}
+func (w *commitPostIteratorFirstParent) Close() {}
 
 // commitAllIterator stands for commit iterator for all refs.
 type commitAllIterator struct {

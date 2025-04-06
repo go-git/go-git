@@ -192,11 +192,11 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore() {
 	}
 }
 
-func (s *CommitWalkerSuite) TestCommitPostIteratorNoMerge(c *C) {
+func (s *CommitWalkerSuite) TestCommitPostIteratorFirstParent(c *C) {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitPostorderIterNoMerge(commit, nil).ForEach(func(c *Commit) error {
+	NewCommitPostorderIterFirstParent(commit, nil).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -217,11 +217,11 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorNoMerge(c *C) {
 	}
 }
 
-func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreNoMerge(c *C) {
+func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreFirstParent(c *C) {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitPostorderIterNoMerge(commit, []plumbing.Hash{
+	NewCommitPostorderIterFirstParent(commit, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 	}).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
