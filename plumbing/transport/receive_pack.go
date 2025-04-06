@@ -42,26 +42,25 @@ func ReceivePack(
 		opts = &ReceivePackOptions{}
 	}
 
-	switch version := ProtocolVersion(opts.GitProtocol); version {
-	case protocol.V2:
-		// XXX: version 2 is not implemented yet, ignore and use version 0
-	case protocol.V1:
-		if _, err := pktline.Writef(w, "version=%s\n", version.String()); err != nil {
-			return err
-		}
-		fallthrough
-	case protocol.V0:
-	default:
-		return fmt.Errorf("unknown protocol version %q", version)
-	}
-
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
+		switch version := ProtocolVersion(opts.GitProtocol); version {
+		case protocol.V1:
+			if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
+				return err
+			}
+		case protocol.V0:
+		default:
+			// TODO: support version 2
+			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
+		}
+
 		if err := AdvertiseReferences(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}
 
 	if opts.AdvertiseRefs {
+		// Done, there's nothing else to do
 		return nil
 	}
 
