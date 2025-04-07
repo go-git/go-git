@@ -286,7 +286,7 @@ type PushOptions struct {
 	// ForceWithLease allows a force push as long as the remote ref adheres to a "lease"
 	ForceWithLease *ForceWithLease
 	// PushOptions sets options to be transferred to the server during push.
-	Options map[string]string
+	Options []string
 	// Atomic sets option to be an atomic push
 	Atomic bool
 	// ProxyOptions provides info required for connecting to a proxy.

@@ -149,32 +149,6 @@ func (s *UpdReqEncodeSuite) TestWithPackfile() {
 }
 */
 
-func (s *UpdReqEncodeSuite) TestPushOptions() {
-	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	name := plumbing.ReferenceName("myref")
-
-	r := NewUpdateRequests()
-	r.Capabilities.Set(capability.PushOptions)
-	r.Commands = []*Command{
-		{Name: name, Old: hash1, New: hash2},
-	}
-	r.Options = []*Option{
-		{Key: "SomeKey", Value: "SomeValue"},
-		{Key: "AnotherKey", Value: "AnotherValue"},
-	}
-
-	expected := pktlines(s.T(),
-		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00push-options",
-		"",
-		"SomeKey=SomeValue",
-		"AnotherKey=AnotherValue",
-		"",
-	)
-
-	s.testEncode(r, expected)
-}
-
 func (s *UpdReqEncodeSuite) TestPushAtomic() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")

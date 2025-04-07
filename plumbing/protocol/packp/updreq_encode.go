@@ -23,12 +23,6 @@ func (req *UpdateRequests) Encode(w io.Writer) error {
 		return err
 	}
 
-	if req.Capabilities.Supports(capability.PushOptions) {
-		if err := req.encodeOptions(w, req.Options); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -65,16 +59,4 @@ func formatCommand(cmd *Command) string {
 	o := cmd.Old.String()
 	n := cmd.New.String()
 	return fmt.Sprintf("%s %s %s", o, n, cmd.Name)
-}
-
-func (req *UpdateRequests) encodeOptions(w io.Writer,
-	opts []*Option,
-) error {
-	for _, opt := range opts {
-		if _, err := pktline.Writef(w, "%s=%s", opt.Key, opt.Value); err != nil {
-			return err
-		}
-	}
-
-	return pktline.WriteFlush(w)
 }
