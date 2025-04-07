@@ -370,7 +370,13 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		}
 	}
 
+	// Relative paths only; see: https://github.com/go-git/go-git/issues/1460
+	// filepath.IsAbs is hilariously bugged on Windows, check by hand
 	path = filepath.Clean(path)
+	if string(path[0]) == string(filepath.Separator) {
+		root := w.Filesystem.Root()
+		path, _ = filepath.Rel(root, filepath.Join(root, ".", path))
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
