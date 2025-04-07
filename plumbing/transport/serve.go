@@ -28,6 +28,7 @@ func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, se
 	ar.Capabilities.Set(capability.Sideband64k)                      //nolint:errcheck
 	if forPush {
 		// TODO: support thin-pack
+		ar.Capabilities.Set(capability.NoThin) //nolint:errcheck
 		// TODO: support atomic
 		ar.Capabilities.Set(capability.DeleteRefs)   //nolint:errcheck
 		ar.Capabilities.Set(capability.ReportStatus) //nolint:errcheck
