@@ -146,6 +146,10 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 			}
 			matched = true
 			path = path[1:]
+			// files matching dir globs, don't match
+			if len(path) == 0 && i < len(p.pattern)-1 {
+				matched = false
+			}
 		}
 	}
 	if matched && p.dirOnly && !isDir && len(path) == 0 {

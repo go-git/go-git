@@ -221,7 +221,7 @@ func (s *PatternSuite) TestGlobMatch_tailingAsterisks() {
 func (s *PatternSuite) TestGlobMatch_tailingAsterisks_exactMatch() {
 	p := ParsePattern("/*lue/vol?ano/**", nil)
 	r := p.Match([]string{"value", "volcano"}, false)
-	s.Equal(Exclude, r)
+	s.Equal(NoMatch, r)
 }
 
 func (s *PatternSuite) TestGlobMatch_middleAsterisks_emptyMatch() {
@@ -288,4 +288,16 @@ func (s *PatternSuite) TestGlobMatch_issue_923() {
 	p := ParsePattern("**/android/**/GeneratedPluginRegistrant.java", nil)
 	r := p.Match([]string{"packages", "flutter_tools", "lib", "src", "android", "gradle.dart"}, false)
 	s.Equal(NoMatch, r)
+}
+
+func (s *PatternSuite) TestGlobMatch_folderVersusFile() {
+	p := ParsePattern("/a*/**", nil)
+	r := p.Match([]string{"ab"}, false)
+	s.Equal(NoMatch, r)
+}
+
+func (s *PatternSuite) TestGlobMatch_folderVersusFileAgain() {
+	p := ParsePattern("/a*/**/a*", nil)
+	r := p.Match([]string{"ab", "ab"}, false)
+	s.Equal(Exclude, r)
 }
