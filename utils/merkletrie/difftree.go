@@ -321,8 +321,14 @@ func DiffTreeContext(ctx context.Context, fromTree, toTree noder.Noder,
 				if err = ret.AddRecursiveDelete(from); err != nil {
 					return nil, err
 				}
-				if err := ii.nextBoth(); err != nil {
-					return nil, err
+				if from.Name() == to.Name() {
+					if err := ii.nextBoth(); err != nil {
+						return nil, err
+					}
+				} else {
+					if err := ii.nextFrom(); err != nil {
+						return nil, err
+					}
 				}
 				break
 			}
@@ -330,8 +336,14 @@ func DiffTreeContext(ctx context.Context, fromTree, toTree noder.Noder,
 				if err = ret.AddRecursiveDelete(to); err != nil {
 					return nil, err
 				}
-				if err := ii.nextBoth(); err != nil {
-					return nil, err
+				if from.Name() == to.Name() {
+					if err := ii.nextBoth(); err != nil {
+						return nil, err
+					}
+				} else {
+					if err := ii.nextTo(); err != nil {
+						return nil, err
+					}
 				}
 				break
 			}
