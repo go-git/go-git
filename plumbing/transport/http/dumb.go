@@ -157,7 +157,7 @@ func (r *fetchWalker) downloadFile(fp string) error {
 }
 
 // getHead returns the HEAD reference from the server.
-func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
+func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 	url, err := url.JoinPath(r.ep.String(), "HEAD")
 	if err != nil {
 		return nil, err
@@ -173,7 +173,12 @@ func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
 		return nil, err
 	}
 
-	defer res.Body.Close()
+	defer func() {
+		bodyErr := res.Body.Close()
+		if err == nil {
+			err = bodyErr
+		}
+	}()
 	switch res.StatusCode {
 	case http.StatusOK:
 		// continue
@@ -185,7 +190,11 @@ func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
 
 	s := bufio.NewScanner(res.Body)
 	if !s.Scan() {
-		return nil, s.Err()
+		if err := s.Err(); err != nil {
+			return nil, err
+		}
+		// EOF, no data
+		return nil, transport.ErrRepositoryNotFound
 	}
 
 	line := s.Text()
@@ -354,7 +363,7 @@ LOOP:
 
 		obj := r.st.NewEncodedObject()
 		err := r.fetchObject(objHash, obj)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// TODO: support http-alternates
 			for packHash, packIdxPath := range r.packIdx {
 				idxFile, err := r.fs.Open(packIdxPath)
