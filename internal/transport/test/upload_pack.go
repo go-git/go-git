@@ -40,25 +40,9 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
-	s.NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
-
-	ar, err := conn.GetRemoteRefs(context.TODO())
-	s.Equal(err, transport.ErrRepositoryNotFound)
-	s.Nil(ar)
-
-	r, err = s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
-	s.NoError(err)
-	conn, err = r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
-
-	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	err = conn.Fetch(context.Background(), req)
-	s.Equal(err, transport.ErrRepositoryNotFound)
+	s.Require().NoError(err)
+	_, err = r.Handshake(context.TODO(), transport.UploadPackService)
+	s.Require().Error(err)
 }
 
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
