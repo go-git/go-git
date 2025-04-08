@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -55,7 +56,10 @@ func (s *UploadPackSuite) SetupTest() {
 	s.Storer = filesystem.NewStorage(basic, nil)
 	s.EmptyStorer = filesystem.NewStorage(empty, nil)
 
-	startServer(s.T(), s.port, s.opts...)
+	server := startServer(s.T(), s.port, s.opts...)
+	s.T().Cleanup(func() {
+		server.Close()
+	})
 }
 
 func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {
@@ -66,8 +70,12 @@ func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {
 	}
 	server.Addr = fmt.Sprintf(":%d", port)
 	go func() {
-		log.Fatal(server.ListenAndServe())
+		err := server.ListenAndServe()
+		if !errors.Is(err, ssh.ErrServerClosed) {
+			log.Fatal(err)
+		}
 	}()
+
 	return server
 }
 
