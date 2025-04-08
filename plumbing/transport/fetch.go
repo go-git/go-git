@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // FetchPack fetches a packfile from the remote connection into the given
@@ -21,6 +22,8 @@ func FetchPack(
 	shallowInfo *packp.ShallowUpdate,
 	req *FetchRequest,
 ) (err error) {
+	packf = ioutil.NewContextReadCloser(ctx, packf)
+
 	// Do we have sideband enabled?
 	var demuxer *sideband.Demuxer
 	var reader io.Reader = packf
