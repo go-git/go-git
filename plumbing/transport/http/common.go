@@ -25,6 +25,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 	"github.com/golang/groupcache/lru"
 )
 
@@ -66,16 +67,25 @@ func doRequest(
 	client *http.Client,
 	req *http.Request,
 ) (*http.Response, error) {
+	traceHTTP := trace.HTTP.Enabled()
+	if traceHTTP {
+		trace.HTTP.Printf("requesting %s %s %v", req.Method, req.URL.String(), req.Header)
+	}
+
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if traceHTTP {
+		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, res.Request.URL.String(), res.Header)
 	}
 
 	if res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices {
 		return res, nil
 	}
 
-	return nil, checkError(res)
+	return res, checkError(res)
 }
 
 // modifyRedirect modifies the endpoint based on the redirect response.
