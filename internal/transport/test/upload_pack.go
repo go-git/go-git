@@ -47,74 +47,78 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	ar1, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(ar1)
+	s.Require().NoError(err)
+	s.Require().NotNil(ar1)
 	ar2, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.Equal(ar1, ar2)
+	s.Require().NoError(err)
+	s.Require().Equal(ar1, ar2)
 }
 
 func (s *UploadPackSuite) TestDefaultBranch() {
+	ctx := context.TODO()
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	conn, err := r.Handshake(ctx, transport.UploadPackService)
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(info)
+	info, err := conn.GetRemoteRefs(ctx)
+	s.Require().NoError(err)
+	s.Require().NotNil(info)
 	symrefs := conn.Capabilities().Get(capability.SymRef)
-	s.Len(symrefs, 1)
-	s.Equal("HEAD:refs/heads/master", symrefs[0])
+	s.Require().Len(symrefs, 1)
+	s.Require().Equal("HEAD:refs/heads/master", symrefs[0])
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(info)
-	s.True(conn.Capabilities().Supports(capability.MultiACK))
+	s.Require().NoError(err)
+	s.Require().NotNil(info)
+	s.Require().True(conn.Capabilities().Supports(capability.MultiACK))
 }
 
 func (s *UploadPackSuite) TestCapabilities() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(info)
-	s.Len(conn.Capabilities().Get(capability.Agent), 1)
+	s.Require().NoError(err)
+	s.Require().NotNil(info)
+	s.Require().Len(conn.Capabilities().Get(capability.Agent), 1)
 }
 
 func (s *UploadPackSuite) TestUploadPack() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
+	beforeCount := s.coundObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.NoError(err)
+	s.Require().NoError(err)
 
-	s.checkObjectNumber(s.Storer, 28)
+	afterCount := s.coundObjects(s.Storer)
+
+	s.Require().Equal(28, afterCount-beforeCount)
 }
 
 func (s *UploadPackSuite) TestUploadPackWithContext() {
@@ -122,153 +126,172 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	defer cancel()
 
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(info)
+	s.Require().NoError(err)
+	s.Require().NotNil(info)
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(ctx, req)
-	s.NotNil(err)
+	s.Require().NotNil(err)
 }
 
 func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(info)
+	s.Require().NoError(err)
+	s.Require().NotNil(info)
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	cancel()
 	err = conn.Fetch(ctx, req)
-	s.NotNil(err)
+	s.Require().NotNil(err)
 }
 
 func (s *UploadPackSuite) TestUploadPackFull() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
-	s.NoError(err)
-	s.NotNil(info)
+	s.Require().NoError(err)
+	s.Require().NotNil(info)
 
+	beforeCount := s.coundObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.NoError(err)
+	s.Require().NoError(err)
 
-	s.checkObjectNumber(s.Storer, 28)
+	afterCount := s.coundObjects(s.Storer)
+	s.Require().Equal(28, afterCount-beforeCount)
 }
 
 func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	// Invalid capabilities are now handled by the transport layer
 
 	err = conn.Fetch(context.Background(), req)
-	s.NoError(err) // Should succeed as invalid capabilities are handled internally
+	s.Require().NoError(err) // Should succeed as invalid capabilities are handled internally
 }
 
 func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.Equal(err, transport.ErrEmptyUploadPackRequest)
+	s.Require().ErrorIs(err, transport.ErrNoChange)
 }
 
 func (s *UploadPackSuite) TestUploadPackMulti() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
+	beforeCount := s.coundObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.NoError(err)
+	s.Require().NoError(err)
 
-	s.checkObjectNumber(s.Storer, 31)
+	afterCount := s.coundObjects(s.Storer)
+	s.Require().Equal(31, afterCount-beforeCount)
 }
 
 func (s *UploadPackSuite) TestUploadPackPartial() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
+	beforeCount := s.coundObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.NoError(err)
+	s.Require().NoError(err)
 
-	s.checkObjectNumber(s.Storer, 4)
+	afterCount := s.coundObjects(s.Storer)
+	s.Require().Equal(4, afterCount-beforeCount)
 }
 
 func (s *UploadPackSuite) TestFetchError() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	err = conn.Fetch(context.Background(), req)
-	s.NotNil(err)
+	s.Require().NotNil(err)
 
 	// XXX: We do not test Close error, since implementations might return
 	//     different errors if a previous error was found.
 }
 
+func (s *UploadPackSuite) coundObjects(st storage.Storer) int {
+	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
+	s.Require().NoError(err)
+	defer iter.Close()
+	var count int
+	err = iter.ForEach(func(plumbing.EncodedObject) error {
+		count++
+		return nil
+	})
+	s.Require().NoError(err)
+	return count
+}
+
 func (s *UploadPackSuite) checkObjectNumber(st storage.Storer, n int) {
 	los, ok := st.(storer.LooseObjectStorer)
-	s.True(ok)
+	s.Require().True(ok)
 
 	var objs int
 	err := los.ForEachObjectHash(func(plumbing.Hash) error {
 		objs++
 		return nil
 	})
-	s.NoError(err)
-	s.Len(objs, n)
+	s.Require().NoError(err)
+	s.Require().Equal(n, objs)
 }
