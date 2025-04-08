@@ -36,18 +36,7 @@ func TestUploadPackSuite(t *testing.T) {
 }
 
 func (s *UploadPackSuite) SetupTest() {
-	var err error
-	s.port, err = test.FreePort()
-	s.Require().NoError(err)
-	s.base = s.T().TempDir()
-
-	sshconfig := &stdssh.ClientConfig{
-		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
-	}
-
-	r := &runner{config: sshconfig}
-	s.Client = transport.NewPackTransport(r)
-
+	s.base, s.port, s.Client = setupTest(s.T())
 	s.Endpoint = newEndpoint(s.T(), s.base, s.port, "basic.git")
 	s.EmptyEndpoint = newEndpoint(s.T(), s.base, s.port, "empty.git")
 	s.NonExistentEndpoint = newEndpoint(s.T(), s.base, s.port, "non-existent.git")
@@ -55,11 +44,26 @@ func (s *UploadPackSuite) SetupTest() {
 	empty := test.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), s.base, "empty.git")
 	s.Storer = filesystem.NewStorage(basic, nil)
 	s.EmptyStorer = filesystem.NewStorage(empty, nil)
+}
 
-	server := startServer(s.T(), s.port, s.opts...)
-	s.T().Cleanup(func() {
+func setupTest(t testing.TB, opts ...ssh.Option) (base string, port int, client transport.Transport) {
+	var err error
+	port, err = test.FreePort()
+	require.NoError(t, err)
+	base = t.TempDir()
+
+	sshconfig := &stdssh.ClientConfig{
+		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+	}
+
+	r := &runner{config: sshconfig}
+	client = transport.NewPackTransport(r)
+
+	server := startServer(t, port, opts...)
+	t.Cleanup(func() {
 		server.Close()
 	})
+	return
 }
 
 func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {

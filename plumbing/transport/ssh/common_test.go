@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
@@ -95,122 +95,75 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard() {
 	s.Equal("github.com:22", cmd.getHostWithPort())
 }
 
-type IgnoreHostKeyCallbackSuite struct {
-	UploadPackSuite
-}
-
 func TestIgnoreHostKeyCallback(t *testing.T) {
-	suite.Run(t, new(IgnoreHostKeyCallbackSuite))
-}
-
-func (s *IgnoreHostKeyCallbackSuite) SetupTest() {
-	s.opts = []ssh.Option{
+	opts := []ssh.Option{
 		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
+	base, port, _ := setupTest(t, opts...)
 	// Use the default client, which does not have a host key callback
-	s.Client = DefaultTransport
-	s.UploadPackSuite.SetupTest()
-}
-
-func (s *IgnoreHostKeyCallbackSuite) TestIgnoreHostKeyCallback() {
+	client := DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
-	s.Nil(err)
-	s.NotNil(auth)
+	require.NoError(t, err)
+	require.NotNil(t, auth)
 	auth.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
-	ep := newEndpoint(s.T(), s.base, s.port, "bar.git")
+	ep := newEndpoint(t, base, port, "bar.git")
 	st := memory.NewStorage()
-	ps, err := s.Client.NewSession(st, ep, auth)
-	s.Nil(err)
-	s.NotNil(ps)
-}
-
-type FixedHostKeyCallbackSuite struct {
-	UploadPackSuite
+	ps, err := client.NewSession(st, ep, auth)
+	require.NoError(t, err)
+	require.NotNil(t, ps)
 }
 
 func TestFixedHostKeyCallback(t *testing.T) {
-	suite.Run(t, new(FixedHostKeyCallbackSuite))
-}
-
-func (s *FixedHostKeyCallbackSuite) SetupTest() {
-	s.opts = []ssh.Option{
+	opts := []ssh.Option{
 		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
+	base, port, _ := setupTest(t, opts...)
 	// Use the default client, which does not have a host key callback
-	s.Client = DefaultTransport
-	s.UploadPackSuite.SetupTest()
-}
-
-func (s *FixedHostKeyCallbackSuite) TestFixedHostKeyCallback() {
+	client := DefaultTransport
 	hostKey, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
-	s.Nil(err)
+	require.NoError(t, err)
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
-	s.Nil(err)
-	s.NotNil(auth)
+	require.NoError(t, err)
+	require.NotNil(t, auth)
 	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
-	ep := newEndpoint(s.T(), s.base, s.port, "bar.git")
+	ep := newEndpoint(t, base, port, "bar.git")
 	st := memory.NewStorage()
-	ps, err := s.Client.NewSession(st, ep, auth)
-	s.Nil(err)
-	s.NotNil(ps)
-}
-
-type FailHostKeyCallbackSuite struct {
-	UploadPackSuite
+	ps, err := client.NewSession(st, ep, auth)
+	require.NoError(t, err)
+	require.NotNil(t, ps)
 }
 
 func TestFailHostKeyCallback(t *testing.T) {
-	suite.Run(t, new(FailHostKeyCallbackSuite))
-}
-
-func (s *FailHostKeyCallbackSuite) SetupTest() {
-	s.opts = []ssh.Option{
+	opts := []ssh.Option{
 		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
+	base, port, _ := setupTest(t, opts...)
 	// Use the default client, which does not have a host key callback
-	s.Client = DefaultTransport
-	s.UploadPackSuite.SetupTest()
-}
-
-func (s *FailHostKeyCallbackSuite) TestFailHostKeyCallback() {
+	client := DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
-	s.Nil(err)
-	s.NotNil(auth)
-	ep := newEndpoint(s.T(), s.base, s.port, "bar.git")
+	require.NoError(t, err)
+	require.NotNil(t, auth)
+	ep := newEndpoint(t, base, port, "bar.git")
 	st := memory.NewStorage()
-	sess, err := s.Client.NewSession(st, ep, auth)
-	s.NoError(err)
+	sess, err := client.NewSession(st, ep, auth)
+	require.NoError(t, err)
 	_, err = sess.Handshake(context.TODO(), transport.UploadPackService)
-	s.NotNil(err)
-}
-
-type Issue70Suite struct {
-	UploadPackSuite
+	require.Error(t, err)
 }
 
 func TestIssue70Suite(t *testing.T) {
-	suite.Run(t, new(Issue70Suite))
-}
-
-func (s *Issue70Suite) SetupTest() {
-	s.UploadPackSuite.SetupTest()
-}
-
-func (s *Issue70Suite) TestIssue70() {
 	config := &stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
 	r := &runner{
 		config: config,
 	}
-
-	cmd, err := r.Command(context.TODO(), "command", newEndpoint(s.T(), s.base, s.port, "endpoint"), s.EmptyAuth)
-	s.Require().NoError(err)
-
-	s.Require().NoError(cmd.(*command).client.Close())
-
-	err = cmd.Close()
-	s.Require().NoError(err)
+	base, port, _ := setupTest(t)
+	var emptyAuth AuthMethod
+	cmd, err := r.Command(context.TODO(), "command", newEndpoint(t, base, port, "endpoint"), emptyAuth)
+	require.NoError(t, err)
+	require.NoError(t, cmd.(*command).client.Close())
+	require.NoError(t, cmd.Close())
 }
 
 func (s *SuiteCommon) TestInvalidSocks5Proxy() {
