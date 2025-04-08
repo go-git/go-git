@@ -21,7 +21,6 @@ import (
 
 type UploadPackSuite struct {
 	test.UploadPackSuite
-	srv  *ssh.Server
 	opts []ssh.Option
 
 	port int
@@ -57,7 +56,7 @@ func (s *UploadPackSuite) SetupTest() {
 	s.Storer = filesystem.NewStorage(basic, nil)
 	s.EmptyStorer = filesystem.NewStorage(empty, nil)
 
-	s.srv = startServer(s.T(), s.port, s.opts...)
+	startServer(s.T(), s.port, s.opts...)
 }
 
 func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {
