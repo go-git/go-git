@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,10 @@ func newFetchWalker(s *HTTPSession, ctx context.Context, fs billy.Filesystem) *f
 }
 
 func (r *fetchWalker) getInfoPacks() ([]string, error) {
-	url := path.Join(r.ep.String(), "objects", "info", "packs")
+	url, err := url.JoinPath(r.ep.String(), "objects", "info", "packs")
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -103,7 +107,10 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 
 // downloadFile downloads a file from the server and saves it to the filesystem.
 func (r *fetchWalker) downloadFile(fp string) error {
-	url := path.Join(r.ep.String(), fp)
+	url, err := url.JoinPath(r.ep.String(), fp)
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -151,7 +158,10 @@ func (r *fetchWalker) downloadFile(fp string) error {
 
 // getHead returns the HEAD reference from the server.
 func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
-	url := path.Join(r.ep.String(), "HEAD")
+	url, err := url.JoinPath(r.ep.String(), "HEAD")
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -266,7 +276,10 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 	}
 
 	h := hash.String()
-	url := path.Join(r.ep.String(), "objects", h[:2], h[2:])
+	url, err := url.JoinPath(r.ep.String(), "objects", h[:2], h[2:])
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err

@@ -327,7 +327,10 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 
 // Handshake implements transport.PackSession.
 func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, params ...string) (transport.Connection, error) {
-	url := s.ep.String() + infoRefsPath
+	url, err := url.JoinPath(s.ep.String(), infoRefsPath)
+	if err != nil {
+		return nil, err
+	}
 	if !s.useDumb {
 		url += "?service=" + service.String()
 	}
