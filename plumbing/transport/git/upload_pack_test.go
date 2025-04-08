@@ -13,6 +13,10 @@ import (
 )
 
 func TestUploadPackSuite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`git for windows has issues with write operations through git:// protocol.
+		See https://github.com/git-for-windows/git/issues/907`)
+	}
 	suite.Run(t, new(UploadPackSuite))
 }
 
@@ -22,11 +26,6 @@ type UploadPackSuite struct {
 }
 
 func (s *UploadPackSuite) SetupTest() {
-	if runtime.GOOS == "windows" {
-		s.T().Skip(`git for windows has issues with write operations through git:// protocol.
-		See https://github.com/git-for-windows/git/issues/907`)
-	}
-
 	base, port := setupTest(s.T())
 	s.Client = DefaultClient
 

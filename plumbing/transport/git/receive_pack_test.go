@@ -2,6 +2,7 @@ package git
 
 import (
 	"os/exec"
+	"runtime"
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
@@ -12,6 +13,10 @@ import (
 )
 
 func TestReceivePackSuite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`git for windows has issues with write operations through git:// protocol.
+		See https://github.com/git-for-windows/git/issues/907`)
+	}
 	suite.Run(t, new(ReceivePackSuite))
 }
 

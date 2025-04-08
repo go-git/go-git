@@ -40,13 +40,12 @@ func (s *UploadPackSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.base = s.T().TempDir()
 
-	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
-		return &Password{User: user}, nil
+	sshconfig := &stdssh.ClientConfig{
+		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
 
-	s.Client = NewTransport(&stdssh.ClientConfig{
-		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
-	})
+	r := &runner{config: sshconfig}
+	s.Client = transport.NewPackTransport(r)
 
 	s.Endpoint = newEndpoint(s.T(), s.base, s.port, "basic.git")
 	s.EmptyEndpoint = newEndpoint(s.T(), s.base, s.port, "empty.git")
