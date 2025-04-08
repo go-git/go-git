@@ -2,9 +2,11 @@ package ssh
 
 import (
 	"context"
+	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
@@ -93,76 +95,108 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard() {
 	s.Equal("github.com:22", cmd.getHostWithPort())
 }
 
-func (s *SuiteCommon) TestIgnoreHostKeyCallback() {
-	uploadPack := &UploadPackSuite{
-		opts: []ssh.Option{
-			ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
-		},
+type IgnoreHostKeyCallbackSuite struct {
+	UploadPackSuite
+}
+
+func TestIgnoreHostKeyCallback(t *testing.T) {
+	suite.Run(t, new(IgnoreHostKeyCallbackSuite))
+}
+
+func (s *IgnoreHostKeyCallbackSuite) SetupTest() {
+	s.opts = []ssh.Option{
+		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
-	uploadPack.Suite = s.Suite
-	uploadPack.SetupSuite()
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultTransport
+	s.Client = DefaultTransport
+	s.UploadPackSuite.SetupTest()
+}
+
+func (s *IgnoreHostKeyCallbackSuite) TestIgnoreHostKeyCallback() {
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	s.Nil(err)
 	s.NotNil(auth)
 	auth.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
-	ep := uploadPack.newEndpoint("bar.git")
+	ep := newEndpoint(s.T(), s.base, s.port, "bar.git")
 	st := memory.NewStorage()
-	ps, err := uploadPack.Client.NewSession(st, ep, auth)
+	ps, err := s.Client.NewSession(st, ep, auth)
 	s.Nil(err)
 	s.NotNil(ps)
 }
 
-func (s *SuiteCommon) TestFixedHostKeyCallback() {
+type FixedHostKeyCallbackSuite struct {
+	UploadPackSuite
+}
+
+func TestFixedHostKeyCallback(t *testing.T) {
+	suite.Run(t, new(FixedHostKeyCallbackSuite))
+}
+
+func (s *FixedHostKeyCallbackSuite) SetupTest() {
+	s.opts = []ssh.Option{
+		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
+	}
+	// Use the default client, which does not have a host key callback
+	s.Client = DefaultTransport
+	s.UploadPackSuite.SetupTest()
+}
+
+func (s *FixedHostKeyCallbackSuite) TestFixedHostKeyCallback() {
 	hostKey, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
 	s.Nil(err)
-	uploadPack := &UploadPackSuite{
-		opts: []ssh.Option{
-			ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
-		},
-	}
-	uploadPack.Suite = s.Suite
-	uploadPack.SetupSuite()
-	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultTransport
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	s.Nil(err)
 	s.NotNil(auth)
 	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
-	ep := uploadPack.newEndpoint("bar.git")
+	ep := newEndpoint(s.T(), s.base, s.port, "bar.git")
 	st := memory.NewStorage()
-	ps, err := uploadPack.Client.NewSession(st, ep, auth)
+	ps, err := s.Client.NewSession(st, ep, auth)
 	s.Nil(err)
 	s.NotNil(ps)
 }
 
-func (s *SuiteCommon) TestFailHostKeyCallback() {
-	uploadPack := &UploadPackSuite{
-		opts: []ssh.Option{
-			ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
-		},
+type FailHostKeyCallbackSuite struct {
+	UploadPackSuite
+}
+
+func TestFailHostKeyCallback(t *testing.T) {
+	suite.Run(t, new(FailHostKeyCallbackSuite))
+}
+
+func (s *FailHostKeyCallbackSuite) SetupTest() {
+	s.opts = []ssh.Option{
+		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
-	uploadPack.Suite = s.Suite
-	uploadPack.SetupSuite()
 	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultTransport
+	s.Client = DefaultTransport
+	s.UploadPackSuite.SetupTest()
+}
+
+func (s *FailHostKeyCallbackSuite) TestFailHostKeyCallback() {
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
 	s.Nil(err)
 	s.NotNil(auth)
-	ep := uploadPack.newEndpoint("bar.git")
+	ep := newEndpoint(s.T(), s.base, s.port, "bar.git")
 	st := memory.NewStorage()
-	sess, err := uploadPack.Client.NewSession(st, ep, auth)
+	sess, err := s.Client.NewSession(st, ep, auth)
 	s.NoError(err)
 	_, err = sess.Handshake(context.TODO(), transport.UploadPackService)
 	s.NotNil(err)
 }
 
-func (s *SuiteCommon) TestIssue70() {
-	uploadPack := &UploadPackSuite{}
-	uploadPack.Suite = s.Suite
-	uploadPack.SetupSuite()
+type Issue70Suite struct {
+	UploadPackSuite
+}
 
+func TestIssue70Suite(t *testing.T) {
+	suite.Run(t, new(Issue70Suite))
+}
+
+func (s *Issue70Suite) SetupTest() {
+	s.UploadPackSuite.SetupTest()
+}
+
+func (s *Issue70Suite) TestIssue70() {
 	config := &stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
@@ -170,33 +204,33 @@ func (s *SuiteCommon) TestIssue70() {
 		config: config,
 	}
 
-	cmd, err := r.Command(context.TODO(), "command", uploadPack.newEndpoint("endpoint"), uploadPack.EmptyAuth)
-	s.NoError(err)
+	cmd, err := r.Command(context.TODO(), "command", newEndpoint(s.T(), s.base, s.port, "endpoint"), s.EmptyAuth)
+	s.Require().NoError(err)
 
-	s.NoError(cmd.(*command).client.Close())
+	s.Require().NoError(cmd.(*command).client.Close())
 
 	err = cmd.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SuiteCommon) TestInvalidSocks5Proxy() {
 	st := memory.NewStorage()
 	ep, err := transport.NewEndpoint("git@github.com:foo/bar.git")
-	s.NoError(err)
+	s.Require().NoError(err)
 	ep.Proxy.URL = "socks5://127.0.0.1:1080"
 
 	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
-	s.NoError(err)
-	s.NotNil(auth)
+	s.Require().NoError(err)
+	s.Require().NotNil(auth)
 
 	ps, err := DefaultTransport.NewSession(st, ep, auth)
-	s.NoError(err)
-	s.NotNil(ps)
+	s.Require().NoError(err)
+	s.Require().NotNil(ps)
 	conn, err := ps.Handshake(context.TODO(), transport.UploadPackService)
 	// Since the proxy server is not running, we expect an error.
-	s.Nil(conn)
-	s.Error(err)
-	s.Regexp("socks connect .* dial tcp 127.0.0.1:1080: .*", err.Error())
+	s.Require().Nil(conn)
+	s.Require().Error(err)
+	s.Require().Regexp("socks connect .* dial tcp 127.0.0.1:1080: .*", err.Error())
 }
 
 type mockSSHConfig struct {
@@ -226,7 +260,7 @@ func (s *UploadPackSuite) TestCommandWithInvalidAuthMethod() {
 	r := &runner{}
 	auth := &invalidAuthMethod{}
 
-	_, err := r.Command(context.TODO(), "command", s.newEndpoint("endpoint"), auth)
+	_, err := r.Command(context.TODO(), "command", newEndpoint(s.T(), s.base, s.port, "endpoint"), auth)
 
 	s.Error(err)
 	s.Equal("invalid auth method", err.Error())

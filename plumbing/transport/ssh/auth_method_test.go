@@ -21,7 +21,7 @@ func TestSuiteCommon(t *testing.T) {
 
 type (
 	SuiteCommon struct {
-		suite.Suite
+		UploadPackSuite
 	}
 
 	mockKnownHosts         struct{}

@@ -2,152 +2,81 @@ package ssh
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"net"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
-	"sync"
+	"testing"
 
 	testutils "github.com/go-git/go-git/v6/internal/transport/ssh/test"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/gliderlabs/ssh"
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	stdssh "golang.org/x/crypto/ssh"
 )
 
 type UploadPackSuite struct {
 	test.UploadPackSuite
+	srv  *ssh.Server
 	opts []ssh.Option
 
 	port int
 	base string
 }
 
-func (s *UploadPackSuite) TearDownSuite() {
-	fixtures.Clean()
+func TestUploadPackSuite(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("tcp connections are not available in wasm")
+	}
+	suite.Run(t, new(UploadPackSuite))
 }
 
-func (s *UploadPackSuite) SetupSuite() {
-	if runtime.GOOS == "js" {
-		s.T().Skip("tcp connections are not available in wasm")
-	}
-
-	l, err := net.Listen("tcp", "localhost:0")
-	s.NoError(err)
-
-	s.port = l.Addr().(*net.TCPAddr).Port
+func (s *UploadPackSuite) SetupTest() {
+	var err error
+	s.port, err = test.FreePort()
+	s.Require().NoError(err)
 	s.base = s.T().TempDir()
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
 	}
 
-	s.UploadPackSuite.Client = NewTransport(&stdssh.ClientConfig{
+	s.Client = NewTransport(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
 
-	s.UploadPackSuite.Endpoint = s.prepareRepository(fixtures.Basic().One(), "basic.git")
-	s.UploadPackSuite.EmptyEndpoint = s.prepareRepository(fixtures.ByTag("empty").One(), "empty.git")
-	s.UploadPackSuite.NonExistentEndpoint = s.newEndpoint("non-existent.git")
+	s.Endpoint = newEndpoint(s.T(), s.base, s.port, "basic.git")
+	s.EmptyEndpoint = newEndpoint(s.T(), s.base, s.port, "empty.git")
+	s.NonExistentEndpoint = newEndpoint(s.T(), s.base, s.port, "non-existent.git")
+	basic := test.PrepareRepository(s.T(), fixtures.Basic().One(), s.base, "basic.git")
+	empty := test.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), s.base, "empty.git")
+	s.Storer = filesystem.NewStorage(basic, nil)
+	s.EmptyStorer = filesystem.NewStorage(empty, nil)
 
+	s.srv = startServer(s.T(), s.port, s.opts...)
+}
+
+func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {
+	t.Helper()
 	server := &ssh.Server{Handler: testutils.HandlerSSH}
-	for _, opt := range s.opts {
+	for _, opt := range opts {
 		opt(server)
 	}
+	server.Addr = fmt.Sprintf(":%d", port)
 	go func() {
-		log.Fatal(server.Serve(l))
+		log.Fatal(server.ListenAndServe())
 	}()
+	return server
 }
 
-func (s *UploadPackSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
-	fs := f.DotGit()
-
-	err := fixtures.EnsureIsBare(fs)
-	s.NoError(err)
-
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.NoError(err)
-
-	return s.newEndpoint(name)
-}
-
-func (s *UploadPackSuite) newEndpoint(name string) *transport.Endpoint {
+func newEndpoint(t testing.TB, base string, port int, name string) *transport.Endpoint {
 	ep, err := transport.NewEndpoint(fmt.Sprintf(
-		"ssh://git@localhost:%d/%s/%s", s.port, filepath.ToSlash(s.base), name,
+		"ssh://git@localhost:%d/%s/%s", port, filepath.ToSlash(base), name,
 	))
-
-	s.NoError(err)
+	require.NoError(t, err)
 	return ep
-}
-
-func handlerSSH(s ssh.Session) {
-	cmd, stdin, stderr, stdout, err := buildCommand(s.Command())
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	go func() {
-		defer stdin.Close()
-		io.Copy(stdin, s)
-	}()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(s.Stderr(), stderr)
-	}()
-
-	go func() {
-		defer wg.Done()
-		io.Copy(s, stdout)
-	}()
-
-	wg.Wait()
-
-	if err := cmd.Wait(); err != nil {
-		return
-	}
-}
-
-func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdout io.ReadCloser, err error) {
-	if len(c) != 2 {
-		err = fmt.Errorf("invalid command")
-		return
-	}
-
-	// fix for Windows environments
-	path := strings.Replace(c[1], "/C:/", "C:/", 1)
-
-	cmd = exec.Command(c[0], path)
-	stdout, err = cmd.StdoutPipe()
-	if err != nil {
-		return
-	}
-
-	stdin, err = cmd.StdinPipe()
-	if err != nil {
-		return
-	}
-
-	stderr, err = cmd.StderrPipe()
-	if err != nil {
-		return
-	}
-
-	return
 }
