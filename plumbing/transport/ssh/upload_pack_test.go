@@ -24,8 +24,9 @@ type UploadPackSuite struct {
 	test.UploadPackSuite
 	opts []ssh.Option
 
-	port int
-	base string
+	authBuilder func(string) (AuthMethod, error)
+	port        int
+	base        string
 }
 
 func TestUploadPackSuite(t *testing.T) {
@@ -33,6 +34,17 @@ func TestUploadPackSuite(t *testing.T) {
 		t.Skip("tcp connections are not available in wasm")
 	}
 	suite.Run(t, new(UploadPackSuite))
+}
+
+func (s *UploadPackSuite) SetupSuite() {
+	s.authBuilder = DefaultAuthBuilder
+	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
+		return &Password{User: user}, nil
+	}
+}
+
+func (s *UploadPackSuite) TearDownSuite() {
+	DefaultAuthBuilder = s.authBuilder
 }
 
 func (s *UploadPackSuite) SetupTest() {

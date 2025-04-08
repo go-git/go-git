@@ -152,6 +152,13 @@ func TestFailHostKeyCallback(t *testing.T) {
 }
 
 func TestIssue70Suite(t *testing.T) {
+	authBuilder := DefaultAuthBuilder
+	defer func() {
+		DefaultAuthBuilder = authBuilder
+	}()
+	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
+		return &Password{User: user}, nil
+	}
 	config := &stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
