@@ -28,14 +28,14 @@ type UploadPackSuite struct {
 
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
-	s.NoError(err)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.NoError(err)
-	defer func() { s.Nil(conn.Close()) }()
+	s.Require().NoError(err)
+	defer func() { s.Require().Nil(conn.Close()) }()
 
 	ar, err := conn.GetRemoteRefs(context.TODO())
-	s.Equal(err, transport.ErrEmptyRemoteRepository)
-	s.Nil(ar)
+	s.Require().ErrorIs(err, transport.ErrEmptyRemoteRepository)
+	s.Require().Nil(ar)
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
