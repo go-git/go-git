@@ -256,6 +256,13 @@ func UploadPack(
 			return fmt.Errorf("encoding packfile: %w", err)
 		}
 
+		if !caps.Supports(capability.NoProgress) && (caps.Supports(capability.Sideband64k) || caps.Supports(capability.Sideband)) {
+			err := pktline.WriteFlush(w)
+			if err != nil {
+				return fmt.Errorf("error flushing content: %w", err)
+			}
+		}
+
 		if err := w.Close(); err != nil {
 			return fmt.Errorf("closing writer: %w", err)
 		}

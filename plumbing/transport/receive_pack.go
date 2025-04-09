@@ -134,6 +134,17 @@ func ReceivePack(
 		return err
 	}
 
+	if !caps.Supports(capability.NoProgress) && (caps.Supports(capability.Sideband64k) || caps.Supports(capability.Sideband)) {
+		err := pktline.WriteFlush(w)
+		if err != nil {
+			return fmt.Errorf("error flushing content: %w", err)
+		}
+	}
+
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("closing writer: %w", err)
+	}
+
 	return firstErr
 }
 
@@ -158,10 +169,6 @@ func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.
 
 	if err := rs.Encode(w); err != nil {
 		return err
-	}
-
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("closing writer: %w", err)
 	}
 
 	return nil
