@@ -118,6 +118,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ctx = context.WithValue(ctx, contextKey("endpoint"), ep)
 
 			service.handler(w, r.WithContext(ctx))
+			return
 		}
 	}
 }
