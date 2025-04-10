@@ -205,7 +205,7 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if nr != nw {
-			logf(errorLog, "error writing response: %v", err)
+			logf(errorLog, "mismatched bytes written: expected %d, wrote %d", nr, nw)
 			renderStatusError(w, http.StatusInternalServerError)
 			return
 		}
