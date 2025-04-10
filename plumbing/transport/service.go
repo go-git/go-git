@@ -16,6 +16,7 @@ func (s Service) Name() string {
 
 // Git service names.
 const (
-	UploadPackService  Service = "git-upload-pack"
-	ReceivePackService Service = "git-receive-pack"
+	UploadPackService    Service = "git-upload-pack"
+	UploadArchiveService Service = "git-upload-archive"
+	ReceivePackService   Service = "git-receive-pack"
 )
