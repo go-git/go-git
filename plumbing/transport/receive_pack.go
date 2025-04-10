@@ -34,7 +34,7 @@ func ReceivePack(
 	w io.WriteCloser,
 	opts *ReceivePackOptions,
 ) error {
-	if r == nil || w == nil {
+	if w == nil {
 		return fmt.Errorf("nil reader or writer")
 	}
 
@@ -63,6 +63,10 @@ func ReceivePack(
 
 	if opts.AdvertiseRefs {
 		return nil
+	}
+
+	if r == nil {
+		return fmt.Errorf("nil reader")
 	}
 
 	rd := bufio.NewReader(r)
