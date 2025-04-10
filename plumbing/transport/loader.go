@@ -23,7 +23,10 @@ type Loader interface {
 	Load(ep *Endpoint) (storage.Storer, error)
 }
 
-type fsLoader struct {
+// FilesystemLoader is a Loader that uses a billy.Filesystem to load
+// repositories from the file system. It ignores the host and resolves paths to
+// the given base filesystem.
+type FilesystemLoader struct {
 	base   billy.Filesystem
 	strict bool
 }
@@ -31,17 +34,17 @@ type fsLoader struct {
 // NewFilesystemLoader creates a Loader that ignores host and resolves paths
 // with a given base filesystem.
 func NewFilesystemLoader(base billy.Filesystem, strict bool) Loader {
-	return &fsLoader{base, strict}
+	return &FilesystemLoader{base, strict}
 }
 
 // Load looks up the endpoint's path in the base file system and returns a
 // storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
-func (l *fsLoader) Load(ep *Endpoint) (storage.Storer, error) {
+func (l *FilesystemLoader) Load(ep *Endpoint) (storage.Storer, error) {
 	return l.load(ep, false)
 }
 
-func (l *fsLoader) load(ep *Endpoint, tried bool) (storage.Storer, error) {
+func (l *FilesystemLoader) load(ep *Endpoint, tried bool) (storage.Storer, error) {
 	fs, err := l.base.Chroot(ep.Path)
 	if err != nil {
 		return nil, err
