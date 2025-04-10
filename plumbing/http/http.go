@@ -41,9 +41,10 @@ var services = map[string]service{
 	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  {http.MethodGet, getIdxFile, ""},
 	"(.*?)/objects/pack/pack-[0-9a-f]{64}\\.idx$":  {http.MethodGet, getIdxFile, ""},
 
-	"(.*?)/git-upload-pack$":    {http.MethodPost, serviceRpc, transport.UploadPackService},
-	"(.*?)/git-upload-archive$": {http.MethodPost, serviceRpc, transport.UploadArchiveService},
-	"(.*?)/git-receive-pack$":   {http.MethodPost, serviceRpc, transport.ReceivePackService},
+	// TODO: Support git-upload-archive
+	// "(.*?)/git-upload-archive$": {http.MethodPost, serviceRpc, transport.UploadArchiveService},
+	"(.*?)/git-upload-pack$":  {http.MethodPost, serviceRpc, transport.UploadPackService},
+	"(.*?)/git-receive-pack$": {http.MethodPost, serviceRpc, transport.ReceivePackService},
 }
 
 // DefaultLoader is the default loader used to load repositories from storage.
