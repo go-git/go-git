@@ -175,6 +175,11 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 				AdvertiseRefs: false,
 				StatelessRPC:  true,
 			})
+	default:
+		// TODO: Support git-upload-archive
+		logf(errorLog, "unknown service: %s", svc.Name())
+		renderStatusError(w, http.StatusBadRequest)
+		return
 	}
 	if err != nil {
 		logf(errorLog, "error processing request: %v", err)
