@@ -18,7 +18,19 @@ var ErrUpdateReference = errors.New("failed to update ref")
 
 // AdvertiseReferences is a server command that implements the reference
 // discovery phase of the Git transfer protocol.
-func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, service Service, stateless bool) error {
+func AdvertiseReferences(
+	ctx context.Context,
+	st storage.Storer,
+	w io.Writer,
+	service Service,
+	smart bool,
+) error {
+	switch service {
+	case UploadPackService, ReceivePackService:
+	default:
+		return fmt.Errorf("%w: %s", ErrUnsupportedService, service)
+	}
+
 	forPush := service == ReceivePackService
 	ar := packp.NewAdvRefs()
 
@@ -50,7 +62,7 @@ func AdvertiseReferences(ctx context.Context, st storage.Storer, w io.Writer, se
 		return err
 	}
 
-	if stateless {
+	if smart {
 		smartReply := packp.SmartReply{
 			Service: service.String(),
 		}
