@@ -34,8 +34,8 @@ func UploadPack(
 	w io.WriteCloser,
 	opts *UploadPackOptions,
 ) error {
-	if r == nil || w == nil {
-		return fmt.Errorf("nil reader or writer")
+	if w == nil {
+		return fmt.Errorf("nil writer")
 	}
 
 	if opts == nil {
@@ -62,6 +62,10 @@ func UploadPack(
 	if opts.AdvertiseRefs {
 		// Done, there's nothing else to do
 		return nil
+	}
+
+	if r == nil {
+		return fmt.Errorf("nil reader")
 	}
 
 	rd := bufio.NewReader(r)

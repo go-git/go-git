@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v6/internal/reference"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 )
@@ -27,7 +25,7 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 		return err
 	}
 
-	defer infoRefs.Close()
+	defer infoRefs.Close() //nolint:errcheck
 
 	refsIter, err := s.IterReferences()
 	if err != nil {
@@ -36,39 +34,8 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 
 	defer refsIter.Close()
 
-	var refs []*plumbing.Reference
-	if err := refsIter.ForEach(func(ref *plumbing.Reference) error {
-		refs = append(refs, ref)
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	reference.Sort(refs)
-	for _, ref := range refs {
-		name := ref.Name()
-		hash := ref.Hash()
-		switch ref.Type() {
-		case plumbing.SymbolicReference:
-			if name == plumbing.HEAD {
-				continue
-			}
-			ref, err := s.Reference(ref.Target())
-			if err != nil {
-				return err
-			}
-
-			hash = ref.Hash()
-			fallthrough
-		case plumbing.HashReference:
-			fmt.Fprintf(infoRefs, "%s\t%s\n", hash, name)
-			if name.IsTag() {
-				tag, err := object.GetTag(s, hash)
-				if err == nil {
-					fmt.Fprintf(infoRefs, "%s\t%s^{}\n", tag.Target, name)
-				}
-			}
-		}
+	if err := repository.WriteInfoRefs(infoRefs, s); err != nil {
+		return fmt.Errorf("failed to write info/refs: %w", err)
 	}
 
 	infoPacks, err := fs.Create("objects/info/packs")
@@ -76,18 +43,11 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 		return err
 	}
 
-	defer infoPacks.Close()
+	defer infoPacks.Close() //nolint:errcheck
 
-	packs, err := pos.ObjectPacks()
-	if err != nil {
-		return err
+	if err := repository.WriteObjectsInfoPacks(infoPacks, pos); err != nil {
+		return fmt.Errorf("failed to write objects/info/packs: %w", err)
 	}
-
-	for _, p := range packs {
-		fmt.Fprintf(infoPacks, "P pack-%s.pack\n", p)
-	}
-
-	fmt.Fprintln(infoPacks)
 
 	return nil
 }
