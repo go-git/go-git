@@ -17,8 +17,8 @@ var (
 type UpdateRequests struct {
 	Capabilities *capability.List
 	Commands     []*Command
-	Options      []*Option
 	Shallow      *plumbing.Hash
+	// TODO: Support push-cert
 }
 
 // NewUpdateRequests returns a new UpdateRequests.
@@ -80,9 +80,4 @@ func (c *Command) validate() error {
 	}
 
 	return nil
-}
-
-type Option struct {
-	Key   string
-	Value string
 }

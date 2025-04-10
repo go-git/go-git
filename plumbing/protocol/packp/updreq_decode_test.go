@@ -22,7 +22,7 @@ func TestUpdReqDecodeSuite(t *testing.T) {
 func (s *UpdReqDecodeSuite) TestEmpty() {
 	r := NewUpdateRequests()
 	var buf bytes.Buffer
-	s.Equal(ErrEmpty, r.Decode(&buf))
+	s.ErrorIs(r.Decode(&buf), ErrEmpty)
 	s.Equal(NewUpdateRequests(), r)
 }
 

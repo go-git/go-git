@@ -21,6 +21,7 @@ var (
 	ErrEmpty                        = errors.New("empty update-request message")
 	errNoCommands                   = errors.New("unexpected EOF before any command")
 	errMissingCapabilitiesDelimiter = errors.New("capabilities delimiter not found")
+	errNoFlush                      = errors.New("unexpected EOF before flush line")
 )
 
 func errMalformedRequest(reason string) error {
@@ -101,7 +102,6 @@ func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 	funcs := []func() error{
 		d.scanLine,
 		d.decodeShallow,
-		d.decodeCommandAndCapabilities,
 		d.decodeCommands,
 		d.decodeFlush,
 		req.validate,
@@ -118,7 +118,7 @@ func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 
 func (d *updReqDecoder) readLine(e error) error {
 	l, p, err := pktline.ReadLine(d.pr)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return e
 	}
 	if err != nil {
@@ -161,61 +161,53 @@ func (d *updReqDecoder) decodeShallow() error {
 }
 
 func (d *updReqDecoder) decodeCommands() error {
-	for {
-		b := d.payload
-		if len(b) == 0 {
-			return nil
-		}
+	// Process the first line which contains both command and capabilities
+	payload := d.payload
 
-		c, err := parseCommand(b)
+	// The first line must contain capabilities separated by a null byte
+	sep := bytes.IndexByte(payload, 0)
+	if sep == -1 {
+		return errMissingCapabilitiesDelimiter
+	}
+
+	if len(payload) < minCommandAndCapsLength {
+		return errInvalidCommandCapabilitiesLineLength(len(payload))
+	}
+
+	// Extract and decode capabilities (everything after the null byte)
+	if err := d.req.Capabilities.Decode(payload[sep+1:]); err != nil {
+		return err
+	}
+
+	// Extract the command (everything before the null byte)
+	payload = payload[:sep]
+
+	// Read and process commands
+	for {
+		// Parse and add the command
+		cmd, err := parseCommand(payload)
 		if err != nil {
 			return err
 		}
+		d.req.Commands = append(d.req.Commands, cmd)
 
-		d.req.Commands = append(d.req.Commands, c)
-
-		if err := d.readLine(nil); err != nil {
+		// Read the next line
+		if err := d.readLine(errNoFlush); err != nil {
 			return err
+		}
+		payload = d.payload
+
+		// Stop reading once we reach the flush line
+		if d.length == pktline.Flush {
+			return nil
 		}
 	}
 }
 
 func (d *updReqDecoder) decodeFlush() error {
-	if err := d.readLine(nil); err != nil {
-		return err
-	}
-
+	// We should always have a flush line at the end of the request.
 	if len(d.payload) != 0 || d.length != pktline.Flush {
 		return errMalformedRequest("unexpected data after flush")
-	}
-
-	return nil
-}
-
-func (d *updReqDecoder) decodeCommandAndCapabilities() error {
-	b := d.payload
-	i := bytes.IndexByte(b, 0)
-	if i == -1 {
-		return errMissingCapabilitiesDelimiter
-	}
-
-	if len(b) < minCommandAndCapsLength {
-		return errInvalidCommandCapabilitiesLineLength(len(b))
-	}
-
-	cmd, err := parseCommand(b[:i])
-	if err != nil {
-		return err
-	}
-
-	d.req.Commands = append(d.req.Commands, cmd)
-
-	if err := d.req.Capabilities.Decode(b[i+1:]); err != nil {
-		return err
-	}
-
-	if err := d.scanLine(); err != nil {
-		return err
 	}
 
 	return nil

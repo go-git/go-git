@@ -84,7 +84,15 @@ func ReceivePack(
 	var (
 		caps         = updreq.Capabilities
 		needPackfile bool
+		pushOpts     packp.PushOptions
 	)
+
+	// TODO: Pass the options to the server-side hooks.
+	if updreq.Capabilities.Supports(capability.PushOptions) {
+		if err := pushOpts.Decode(rd); err != nil {
+			return fmt.Errorf("decoding push-options: %w", err)
+		}
+	}
 
 	// Should we expect a packfile?
 	for _, cmd := range updreq.Commands {

@@ -33,12 +33,6 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 	} else if caps.Supports(capability.NoProgress) {
 		upreq.Capabilities.Set(capability.NoProgress) // nolint: errcheck
 	}
-	if caps.Supports(capability.PushOptions) {
-		upreq.Capabilities.Set(capability.PushOptions) // nolint: errcheck
-		for k, v := range req.Options {
-			upreq.Options = append(upreq.Options, &packp.Option{Key: k, Value: v})
-		}
-	}
 	if req.Atomic && caps.Supports(capability.Atomic) {
 		upreq.Capabilities.Set(capability.Atomic) // nolint: errcheck
 	}
@@ -62,8 +56,21 @@ func SendPack(
 
 	caps := conn.Capabilities()
 	upreq := buildUpdateRequests(caps, req)
+	usePushOptions := len(req.Options) > 0 && caps.Supports(capability.PushOptions)
+	if usePushOptions {
+		upreq.Capabilities.Set(capability.PushOptions) //nolint:errcheck
+	}
+
 	if err := upreq.Encode(writer); err != nil {
 		return err
+	}
+
+	if usePushOptions {
+		var opts packp.PushOptions
+		opts.Options = req.Options
+		if err := opts.Encode(writer); err != nil {
+			return fmt.Errorf("encoding push-options: %w", err)
+		}
 	}
 
 	// Send the packfile.

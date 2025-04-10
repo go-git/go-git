@@ -647,6 +647,29 @@ func (s *RemoteSuite) TestPushContext() {
 	})
 }
 
+func (s *RemoteSuite) TestPushPushOptions() {
+	url := s.T().TempDir()
+	_, err := PlainInit(url, true)
+	s.Require().NoError(err)
+
+	fs := fixtures.Basic().One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	// TODO: Validate the push options was received by the server and implement
+	// server-side hooks.
+	err = r.Push(&PushOptions{
+		Options: []string{
+			"iam-a-push-option",
+		},
+	})
+	s.Require().NoError(err)
+}
+
 func eventually(s *RemoteSuite, condition func() bool) {
 	select {
 	case <-time.After(5 * time.Second):
