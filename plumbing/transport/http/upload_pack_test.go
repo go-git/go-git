@@ -2,10 +2,7 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
@@ -14,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 func TestUploadPackSuite(t *testing.T) {
@@ -22,27 +19,25 @@ func TestUploadPackSuite(t *testing.T) {
 }
 
 type UploadPackSuite struct {
-	ups test.UploadPackSuite
-	BaseSuite
+	test.UploadPackSuite
 }
 
-func (s *UploadPackSuite) SetupSuite() {
-	s.BaseSuite.SetupTest()
-	s.ups.SetS(s)
-	s.ups.Client = DefaultTransport
-	basic := fixtures.Basic().One()
-	empty := fixtures.ByTag("empty").One()
-	s.ups.Endpoint = s.prepareRepository(basic, "basic.git")
-	s.ups.EmptyEndpoint = s.prepareRepository(empty, "empty.git")
-	s.ups.NonExistentEndpoint = s.newEndpoint("non-existent.git")
-	s.ups.Storer = filesystem.NewStorage(basic.DotGit(), nil)
-	s.ups.EmptyStorer = filesystem.NewStorage(empty.DotGit(), nil)
-	s.ups.NonExistentStorer = memory.NewStorage()
+func (s *UploadPackSuite) SetupTest() {
+	base, port := setupServer(s.T(), true)
+	s.Client = DefaultTransport
+	basic := test.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
+	empty := test.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), base, "empty.git")
+	s.Endpoint = newEndpoint(s.T(), port, "basic.git")
+	s.EmptyEndpoint = newEndpoint(s.T(), port, "empty.git")
+	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
+	s.Storer = filesystem.NewStorage(basic, nil)
+	s.EmptyStorer = filesystem.NewStorage(empty, nil)
+	s.NonExistentStorer = memory.NewStorage()
 }
 
 // Overwritten, different behaviour for HTTP.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
-	r, err := s.ups.Client.NewSession(s.ups.Storer, s.ups.NonExistentEndpoint, s.ups.EmptyAuth)
+	r, err := s.Client.NewSession(s.Storer, s.NonExistentEndpoint, s.EmptyAuth)
 	s.Nil(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
 	s.Error(err)
@@ -66,30 +61,10 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 // 	)
 // }
 
-func (s *UploadPackSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
-	fs := f.DotGit()
-
-	err := fixtures.EnsureIsBare(fs)
-	s.Nil(err)
-
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.Nil(err)
-
-	return s.newEndpoint(name)
-}
-
-func (s *UploadPackSuite) newEndpoint(name string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
-	s.Nil(err)
-
-	return ep
-}
-
 func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath() {
 	endpoint, _ := transport.NewEndpoint("https://gitlab.com/gitlab-org/gitter/webapp")
 
-	session, err := s.ups.Client.NewSession(s.ups.Storer, endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewSession(s.Storer, endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := session.Handshake(context.TODO(), transport.UploadPackService)
 	s.NoError(err)
@@ -106,7 +81,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesRedirectPath() {
 func (s *UploadPackSuite) TestAdvertisedReferencesRedirectSchema() {
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.ups.Client.NewSession(s.ups.Storer, endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewSession(s.Storer, endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := session.Handshake(context.TODO(), transport.UploadPackService)
 	s.NoError(err)
@@ -125,7 +100,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContext() {
 	defer cancel()
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.ups.Client.NewSession(s.ups.Storer, endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewSession(s.Storer, endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := session.Handshake(ctx, transport.UploadPackService)
 	s.NoError(err)
@@ -144,7 +119,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesContextCanceled() {
 	cancel()
 	endpoint, _ := transport.NewEndpoint("http://github.com/git-fixtures/basic")
 
-	session, err := s.ups.Client.NewSession(s.ups.Storer, endpoint, s.ups.EmptyAuth)
+	session, err := s.Client.NewSession(s.Storer, endpoint, s.EmptyAuth)
 	s.NoError(err)
 	conn, err := session.Handshake(ctx, transport.UploadPackService)
 	s.Error(err)

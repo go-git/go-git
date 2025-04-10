@@ -25,6 +25,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 	"github.com/golang/groupcache/lru"
 )
 
@@ -66,16 +67,25 @@ func doRequest(
 	client *http.Client,
 	req *http.Request,
 ) (*http.Response, error) {
+	traceHTTP := trace.HTTP.Enabled()
+	if traceHTTP {
+		trace.HTTP.Printf("requesting %s %s %v", req.Method, req.URL.String(), req.Header)
+	}
+
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if traceHTTP {
+		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, res.Request.URL.String(), res.Header)
 	}
 
 	if res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices {
 		return res, nil
 	}
 
-	return nil, checkError(res)
+	return res, checkError(res)
 }
 
 // modifyRedirect modifies the endpoint based on the redirect response.
@@ -196,10 +206,11 @@ type HTTPSession struct {
 	client      *http.Client
 	ep          *transport.Endpoint
 	refs        *packp.AdvRefs
-	gitProtocol string           // the Git-Protocol header to send
-	version     protocol.Version // the server's protocol version
-	useDumb     bool             // When true, the client will always use the dumb protocol
-	isSmart     bool             // This is true if the session is using the smart protocol
+	svc         transport.Service // the service we're using for this session
+	gitProtocol string            // the Git-Protocol header to send
+	version     protocol.Version  // the server's protocol version
+	useDumb     bool              // When true, the client will always use the dumb protocol
+	isSmart     bool              // This is true if the session is using the smart protocol
 }
 
 // IsSmart returns true if the session is using the smart protocol.
@@ -327,11 +338,15 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 
 // Handshake implements transport.PackSession.
 func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, params ...string) (transport.Connection, error) {
-	url := s.ep.String() + infoRefsPath
+	url, err := url.JoinPath(s.ep.String(), infoRefsPath)
+	if err != nil {
+		return nil, err
+	}
 	if !s.useDumb {
 		url += "?service=" + service.String()
 	}
 
+	s.svc = service
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -424,16 +439,6 @@ func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, 
 		ar.Head = &hash
 	}
 
-	// Git 2.41+ returns a zero-id plus capabilities when an empty
-	// repository is being cloned. This skips the existing logic within
-	// advrefs_decode.decodeFirstHash, which expects a flush-pkt instead.
-	//
-	// This logic aligns with plumbing/transport/common/common.go.
-	if ar.IsEmpty() &&
-		// Empty repositories are valid for git-receive-pack.
-		transport.ReceivePackService != service {
-		return nil, transport.ErrEmptyRemoteRepository
-	}
 	s.refs = ar
 
 	return s, nil
@@ -477,6 +482,17 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 // GetRemoteRefs implements transport.Connection.
 func (s *HTTPSession) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
+		return nil, transport.ErrEmptyRemoteRepository
+	}
+
+	// Git 2.41+ returns a zero-id plus capabilities when an empty
+	// repository is being cloned. This skips the existing logic within
+	// advrefs_decode.decodeFirstHash, which expects a flush-pkt instead.
+	//
+	// This logic aligns with plumbing/transport/common/common.go.
+	forPush := s.svc == transport.ReceivePackService
+	if s.refs.IsEmpty() && !forPush {
+		// Empty repositories are valid for git-receive-pack.
 		return nil, transport.ErrEmptyRemoteRepository
 	}
 

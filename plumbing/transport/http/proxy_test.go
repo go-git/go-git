@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	"github.com/elazarl/goproxy"
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/go-git/go-git/v6/internal/transport/http/test"
+	ttest "github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
@@ -24,7 +25,6 @@ type ProxySuite struct {
 func (s *ProxySuite) TestAdvertisedReferences() {
 	var proxiedRequests int32
 
-	s.SetupTest()
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = true
 	test.SetupHTTPProxy(proxy, &proxiedRequests)
@@ -33,18 +33,18 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	defer httpListener.Close()
 	defer proxyServer.Close()
 
-	fixture := fixtures.Basic().One()
-	dot := fixture.DotGit()
-	st := filesystem.NewStorage(dot, nil)
-	endpoint := s.prepareRepository(fixture, "basic.git")
+	base, port := setupServer(s.T(), true)
+	endpoint := newEndpoint(s.T(), port, "basic.git")
+	dotgit := ttest.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpProxyAddr,
 		Username: "user",
 		Password: "pass",
 	}
 
-	s.ups.Client = NewTransport(nil)
-	session, err := s.ups.Client.NewSession(st, endpoint, nil)
+	st := filesystem.NewStorage(dotgit, nil)
+	s.Client = NewTransport(nil)
+	session, err := s.Client.NewSession(st, endpoint, nil)
 	s.Nil(err)
 	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
 	s.NoError(err)
@@ -73,7 +73,7 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	}
 	endpoint.InsecureSkipTLS = true
 
-	session, err = s.ups.Client.NewSession(st, endpoint, nil)
+	session, err = s.Client.NewSession(st, endpoint, nil)
 	s.Nil(err)
 	conn, err = session.Handshake(context.Background(), transport.UploadPackService)
 	s.NoError(err)

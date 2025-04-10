@@ -35,6 +35,9 @@ const (
 
 	// Performance traces performance of go-git components.
 	Performance
+
+	// HTTP traces HTTP operations and requests.
+	HTTP
 )
 
 // SetTarget sets the tracing targets.
@@ -64,4 +67,9 @@ func (t Target) Printf(format string, args ...interface{}) {
 // Enabled returns true if the target is enabled.
 func (t Target) Enabled() bool {
 	return int32(t)&current.Load() != 0
+}
+
+// GetTarget returns the current tracing target.
+func GetTarget() Target {
+	return Target(current.Load())
 }
