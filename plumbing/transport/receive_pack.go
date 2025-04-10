@@ -35,7 +35,7 @@ func ReceivePack(
 	opts *ReceivePackOptions,
 ) error {
 	if w == nil {
-		return fmt.Errorf("nil reader or writer")
+		return fmt.Errorf("nil writer")
 	}
 
 	if opts == nil {
