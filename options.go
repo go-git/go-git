@@ -383,7 +383,7 @@ func (o *CheckoutOptions) Validate() error {
 		return ErrCreateRequiresBranch
 	}
 
-	if o.Branch == "" && o.Hash.IsZero() {
+	if o.Branch == "" && o.Hash.IsZero() && o.Create {
 		o.Branch = plumbing.Master
 	}
 
