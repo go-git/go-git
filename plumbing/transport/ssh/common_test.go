@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
@@ -218,4 +219,68 @@ func (s *UploadPackSuite) TestCommandWithInvalidAuthMethod() {
 
 	s.Error(err)
 	s.Equal("invalid auth method", err.Error())
+}
+
+type legacyAuthMethod struct {
+	called bool
+}
+
+func (a *legacyAuthMethod) Name() string {
+	return "legacy"
+}
+
+func (a *legacyAuthMethod) String() string {
+	return "legacy"
+}
+
+func (a *legacyAuthMethod) ClientConfig() (*stdssh.ClientConfig, error) {
+	a.called = true
+	return &stdssh.ClientConfig{
+		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+	}, nil
+}
+
+func (s *UploadPackSuite) TestCommandWithLegacyAuthMethod() {
+	r := &runner{}
+	auth := &legacyAuthMethod{}
+
+	_, err := r.Command("command", s.newEndpoint("endpoint"), auth)
+
+	s.NoError(err)
+	s.True(auth.called)
+}
+
+type authMethod struct {
+	called    bool
+	assertion *assert.Assertions
+}
+
+func (a *authMethod) Name() string {
+	return "legacy"
+}
+
+func (a *authMethod) String() string {
+	return "legacy"
+}
+
+func (a *authMethod) ClientConfig(user, host string) (*stdssh.ClientConfig, error) {
+	a.assertion.Equal("git", user)
+	a.assertion.Equal("localhost", host)
+	a.called = true
+
+	return &stdssh.ClientConfig{
+		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+	}, nil
+}
+
+func (s *UploadPackSuite) TestCommandWithAuthMethod() {
+	r := &runner{}
+	auth := &authMethod{
+		assertion: s.Assertions,
+	}
+
+	_, err := r.Command("command", s.newEndpoint("endpoint"), auth)
+
+	s.NoError(err)
+	s.True(auth.called)
 }
