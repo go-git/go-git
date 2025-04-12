@@ -241,12 +241,17 @@ func UploadPack(
 		return fmt.Errorf("getting objects to upload: %w", err)
 	}
 
-	var writer io.Writer = w
+	var (
+		useSideband bool
+		writer      io.Writer = w
+	)
 	if !caps.Supports(capability.NoProgress) {
 		if caps.Supports(capability.Sideband64k) {
 			writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			useSideband = true
 		} else if caps.Supports(capability.Sideband) {
 			writer = sideband.NewMuxer(sideband.Sideband, w)
+			useSideband = true
 		}
 	}
 
@@ -256,6 +261,12 @@ func UploadPack(
 	_, err = e.Encode(objs, 10)
 	if err != nil {
 		return fmt.Errorf("encoding packfile: %w", err)
+	}
+
+	if useSideband {
+		if err := pktline.WriteFlush(w); err != nil {
+			return fmt.Errorf("flushing sideband: %w", err)
+		}
 	}
 
 	if err := w.Close(); err != nil {

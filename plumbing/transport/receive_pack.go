@@ -111,18 +111,25 @@ func ReceivePack(
 		return unpackErr
 	}
 
-	var writer io.Writer = w
+	var (
+		useSideband bool
+		writer      io.Writer = w
+	)
 	if !caps.Supports(capability.NoProgress) {
 		if caps.Supports(capability.Sideband64k) {
 			writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			useSideband = true
 		} else if caps.Supports(capability.Sideband) {
 			writer = sideband.NewMuxer(sideband.Sideband, w)
+			useSideband = true
 		}
 	}
 
 	writeCloser := ioutil.NewWriteCloser(writer, w)
 	if unpackErr != nil {
-		return sendReportStatus(writeCloser, unpackErr, nil)
+		res := sendReportStatus(writeCloser, unpackErr, nil)
+		closeWriter(w)
+		return res
 	}
 
 	var firstErr error
@@ -133,7 +140,22 @@ func ReceivePack(
 		return err
 	}
 
-	return firstErr
+	if useSideband {
+		if err := pktline.WriteFlush(w); err != nil {
+			return fmt.Errorf("flushing sideband: %w", err)
+		}
+	}
+	if firstErr != nil {
+		return firstErr
+	}
+	return closeWriter(w)
+}
+
+func closeWriter(w io.WriteCloser) error {
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("closing writer: %w", err)
+	}
+	return nil
 }
 
 func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
@@ -157,10 +179,6 @@ func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.
 
 	if err := rs.Encode(w); err != nil {
 		return err
-	}
-
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("closing writer: %w", err)
 	}
 
 	return nil
