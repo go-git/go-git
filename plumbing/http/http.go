@@ -179,7 +179,7 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 	default:
 		// TODO: Support git-upload-archive
 		logf(errorLog, "unknown service: %s", svc.Name())
-		renderStatusError(w, http.StatusBadRequest)
+		renderStatusError(w, http.StatusNotFound)
 		return
 	}
 	if err != nil {
