@@ -22,28 +22,29 @@ import (
 type contextKey string
 
 type service struct {
+	pattern  *regexp.Regexp
 	method  string
 	handler http.HandlerFunc
 	svc     transport.Service
 }
 
-var services = map[string]service{
-	"(.*?)/HEAD$":                                  {http.MethodGet, getTextFile, ""},
-	"(.*?)/info/refs$":                             {http.MethodGet, getInfoRefs, ""},
-	"(.*?)/objects/info/alternates$":               {http.MethodGet, getTextFile, ""},
-	"(.*?)/objects/info/http-alternates$":          {http.MethodGet, getTextFile, ""},
-	"(.*?)/objects/info/packs$":                    {http.MethodGet, getInfoPacks, ""},
-	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$":      {http.MethodGet, getLooseObject, ""},
-	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{62}$":      {http.MethodGet, getLooseObject, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$": {http.MethodGet, getPackFile, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{64}\\.pack$": {http.MethodGet, getPackFile, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  {http.MethodGet, getIdxFile, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{64}\\.idx$":  {http.MethodGet, getIdxFile, ""},
+var services = []service{
+	{regexp.MustCompile("(.*?)/HEAD$"), http.MethodGet, getTextFile, ""},
+	{regexp.MustCompile("(.*?)/info/refs$"), http.MethodGet, getInfoRefs, ""},
+	{regexp.MustCompile("(.*?)/objects/info/alternates$"), http.MethodGet, getTextFile, ""},
+	{regexp.MustCompile("(.*?)/objects/info/http-alternates$"), http.MethodGet, getTextFile, ""},
+	{regexp.MustCompile("(.*?)/objects/info/packs$"), http.MethodGet, getInfoPacks, ""},
+	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$"), http.MethodGet, getLooseObject, ""},
+	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{62}$"), http.MethodGet, getLooseObject, ""},
+	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$"), http.MethodGet, getPackFile, ""},
+	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{64}\\.pack$"), http.MethodGet, getPackFile, ""},
+	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$"), http.MethodGet, getIdxFile, ""},
+	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{64}\\.idx$"), http.MethodGet, getIdxFile, ""},
 
 	// TODO: Support git-upload-archive
-	// "(.*?)/git-upload-archive$": {http.MethodPost, serviceRpc, transport.UploadArchiveService},
-	"(.*?)/git-upload-pack$":  {http.MethodPost, serviceRpc, transport.UploadPackService},
-	"(.*?)/git-receive-pack$": {http.MethodPost, serviceRpc, transport.ReceivePackService},
+	// {regexp.MustCompile("(.*?)/git-upload-archive$"), http.MethodPost, serviceRpc, transport.UploadArchiveService},
+	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, serviceRpc, transport.UploadPackService},
+	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRpc, transport.ReceivePackService},
 }
 
 // DefaultLoader is the default loader used to load repositories from storage.
@@ -85,10 +86,9 @@ func logf(logger *log.Logger, format string, v ...interface{}) {
 // It uses the given loader to load the repositories from storage.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.init()
-	for pattern, service := range services {
-		pat := regexp.MustCompile(pattern)
-		if m := pat.FindStringSubmatch(r.URL.Path); m != nil {
-			if r.Method != service.method {
+	for _, s := range services {
+		if m := s.pattern.FindStringSubmatch(r.URL.Path); m != nil {
+			if r.Method != s.method {
 				renderStatusError(w, http.StatusMethodNotAllowed)
 				return
 			}
@@ -113,11 +113,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ctx = context.WithValue(ctx, contextKey("errorLog"), h.ErrorLog)
 			ctx = context.WithValue(ctx, contextKey("repo"), m[1])
 			ctx = context.WithValue(ctx, contextKey("file"), file)
-			ctx = context.WithValue(ctx, contextKey("service"), service.svc)
+			ctx = context.WithValue(ctx, contextKey("service"), s.svc)
 			ctx = context.WithValue(ctx, contextKey("storer"), st)
 			ctx = context.WithValue(ctx, contextKey("endpoint"), ep)
 
-			service.handler(w, r.WithContext(ctx))
+			s.handler(w, r.WithContext(ctx))
 			return
 		}
 	}
