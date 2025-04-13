@@ -190,11 +190,12 @@ type commitPostIteratorFirstParent struct {
 	seen  map[plumbing.Hash]bool
 }
 
-// NewCommitPostorderIter returns a CommitIter that walks the commit
-// history like WalkCommitHistory but in post-order. This means that after
-// walking a merge commit, the merged commit will be walked before the base
-// it was merged on. This can be useful if you wish to see the history in
-// chronological order. Ignore allows to skip some commits from being iterated.
+// NewCommitPostorderIterFirstParent returns a CommitIter that walks the commit
+// history like WalkCommitHistory but in post-order.
+//
+// This option acts like the git log --first-parent flag, skipping intermediate
+// commits that were brought in via a merge commit.
+// Ignore allows to skip some commits from being iterated.
 func NewCommitPostorderIterFirstParent(c *Commit, ignore []plumbing.Hash) CommitIter {
 	seen := make(map[plumbing.Hash]bool)
 	for _, h := range ignore {
