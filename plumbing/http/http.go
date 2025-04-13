@@ -1,7 +1,6 @@
 package http
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -154,7 +153,6 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	var in bytes.Buffer
 	var reader io.ReadCloser
 	var err error
 	switch r.Header.Get("Content-Encoding") {
@@ -170,19 +168,18 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 		reader = r.Body
 	}
 
-	tee := io.TeeReader(reader, &in)
 	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog}
 
 	switch svc {
 	case transport.UploadPackService:
-		err = transport.UploadPack(ctx, st, io.NopCloser(tee), frw,
+		err = transport.UploadPack(ctx, st, reader, frw,
 			&transport.UploadPackOptions{
 				GitProtocol:   version,
 				AdvertiseRefs: false,
 				StatelessRPC:  true,
 			})
 	case transport.ReceivePackService:
-		err = transport.ReceivePack(ctx, st, io.NopCloser(tee), frw,
+		err = transport.ReceivePack(ctx, st, reader, frw,
 			&transport.ReceivePackOptions{
 				GitProtocol:   version,
 				AdvertiseRefs: false,
