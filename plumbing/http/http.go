@@ -256,7 +256,7 @@ func getInfoRefs(w http.ResponseWriter, r *http.Request) {
 		renderStatusError(w, http.StatusInternalServerError)
 		return
 	}
-	service := transport.Service(r.FormValue("service"))
+	service := transport.Service(r.URL.Query().Get("service"))
 	version := r.Header.Get("Git-Protocol")
 
 	if service != "" {
