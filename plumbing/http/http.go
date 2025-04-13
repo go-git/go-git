@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -158,19 +157,19 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 		reader = r.Body
 	}
 
-	io.Copy(&in, reader) //nolint:errcheck
+	tee := io.TeeReader(reader, &in)
+	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog}
 
-	var out bytes.Buffer
 	switch svc {
 	case transport.UploadPackService:
-		err = transport.UploadPack(ctx, st, io.NopCloser(&in), ioutil.WriteNopCloser(&out),
+		err = transport.UploadPack(ctx, st, io.NopCloser(tee), frw,
 			&transport.UploadPackOptions{
 				GitProtocol:   version,
 				AdvertiseRefs: false,
 				StatelessRPC:  true,
 			})
 	case transport.ReceivePackService:
-		err = transport.ReceivePack(ctx, st, io.NopCloser(&in), ioutil.WriteNopCloser(&out),
+		err = transport.ReceivePack(ctx, st, io.NopCloser(tee), frw,
 			&transport.ReceivePackOptions{
 				GitProtocol:   version,
 				AdvertiseRefs: false,
@@ -186,36 +185,6 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 		logf(errorLog, "error processing request: %v", err)
 		renderStatusError(w, http.StatusInternalServerError)
 		return
-	}
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		logf(errorLog, "http writer must implement http.Flusher interface")
-		// The writer must implement the Flusher interface which the default
-		// http.ResponseWriter does.
-		renderStatusError(w, http.StatusBadRequest)
-		return
-	}
-
-	// Write the response to the client in chunks.
-	p := make([]byte, 1024)
-	for {
-		nr, err := out.Read(p)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		nw, err := w.Write(p[:nr])
-		if err != nil {
-			logf(errorLog, "error writing response: %v", err)
-			renderStatusError(w, http.StatusInternalServerError)
-			return
-		}
-		if nr != nw {
-			logf(errorLog, "mismatched bytes written: expected %d, wrote %d", nr, nw)
-			renderStatusError(w, http.StatusInternalServerError)
-			return
-		}
-		flusher.Flush()
 	}
 }
 
