@@ -735,6 +735,13 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	return c.raw
 }
 
+// IsAnonymous returns true if c represents an anonymous remote (i.e.,
+// one that was created from an explicit URL rather than from the
+// gitconfig).
+func (c *RemoteConfig) IsAnonymous() bool {
+	return c.Name == AnonymousRemoteName
+}
+
 func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }
