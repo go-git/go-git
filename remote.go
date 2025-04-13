@@ -74,6 +74,13 @@ func NewRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
+// IsAnonymous returns true if the remote is anonymous; i.e., if it
+// was created directly from a URL and isn't defined in the git
+// config.
+func (r *Remote) IsAnonymous() bool {
+	return r.c.IsAnonymous()
+}
+
 // Config returns the RemoteConfig object used to instantiate this Remote.
 func (r *Remote) Config() *config.RemoteConfig {
 	return r.c

@@ -366,6 +366,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymous() {
 
 	s.NoError(err)
 	s.Equal("anonymous", remote.Config().Name)
+	s.True(remote.Config().IsAnonymous())
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
