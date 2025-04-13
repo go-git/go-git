@@ -260,7 +260,9 @@ func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*
 			}
 
 			transport = tr.Clone()
-			configureTransport(transport, ep)
+			if err := configureTransport(transport, ep); err != nil {
+				return nil, err
+			}
 		} else {
 			transportOpts := transportOptions{
 				clientCert:      string(ep.ClientCert),
@@ -280,7 +282,9 @@ func newSession(c *client, ep *transport.Endpoint, auth transport.AuthMethod) (*
 
 			if !found {
 				transport = c.client.Transport.(*http.Transport).Clone()
-				configureTransport(transport, ep)
+				if err := configureTransport(transport, ep); err != nil {
+					return nil, err
+				}
 				c.addTransport(transportOpts, transport)
 			}
 		}
