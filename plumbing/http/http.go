@@ -123,11 +123,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+
 func serviceRpc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st := ctx.Value(contextKey("storer")).(storage.Storer)
-	svc := ctx.Value(contextKey("service")).(transport.Service)
-	errorLog := ctx.Value(contextKey("errorLog")).(*log.Logger)
+	st, ok := ctx.Value(contextKey("storer")).(storage.Storer)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
+	svc, ok := ctx.Value(contextKey("service")).(transport.Service)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
+	errorLog, ok := ctx.Value(contextKey("errorLog")).(*log.Logger)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
 	version := r.Header.Get("Git-Protocol")
 	contentType := r.Header.Get("Content-Type")
 
@@ -190,14 +203,22 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 
 func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 	ctx := r.Context()
-	st := ctx.Value(contextKey("storer")).(storage.Storer)
+	st, ok := ctx.Value(contextKey("storer")).(storage.Storer)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
 	fss, ok := st.(storer.FilesystemStorer)
 	if !ok {
 		renderStatusError(w, http.StatusNotFound)
 		return
 	}
 
-	file := ctx.Value(contextKey("file")).(string)
+	file, ok := ctx.Value(contextKey("file")).(string)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
 	fs := fss.Filesystem()
 	f, err := fs.Open(file)
 	if err != nil {
@@ -225,8 +246,16 @@ func getTextFile(w http.ResponseWriter, r *http.Request) {
 
 func getInfoRefs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st := ctx.Value(contextKey("storer")).(storage.Storer)
-	errorLog := ctx.Value(contextKey("errorLog")).(*log.Logger)
+	st, ok := ctx.Value(contextKey("storer")).(storage.Storer)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
+	errorLog, ok := ctx.Value(contextKey("errorLog")).(*log.Logger)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
 	service := transport.Service(r.FormValue("service"))
 	version := r.Header.Get("Git-Protocol")
 
