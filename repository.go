@@ -1247,9 +1247,21 @@ func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 		return err
 	}
 
-	remote, err := r.Remote(o.RemoteName)
-	if err != nil {
-		return err
+	var remote *Remote
+	if o.RemoteName == config.AnonymousRemoteName {
+		var err error
+		remote, err = r.CreateRemoteAnonymous(
+			config.NewAnonymousRemoteConfig(o.RemoteURL),
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		var err error
+		remote, err = r.Remote(o.RemoteName)
+		if err != nil {
+			return err
+		}
 	}
 
 	return remote.PushContext(ctx, o)

@@ -1717,6 +1717,39 @@ func (s *RepositorySuite) TestPush() {
 	})
 }
 
+func (s *RepositorySuite) TestPushAnonymous() {
+	url := s.T().TempDir()
+
+	server, err := PlainInit(url, true)
+	s.NoError(err)
+
+	// Make sure that there is an "origin" remote. It will _not_ be
+	// used, but we want to make sure that its remote-tracking
+	// branches are not incorrectly updated by the push.
+	c, err := s.Repository.Config()
+	s.NoError(err)
+	if _, ok := c.Remotes["origin"]; !ok {
+		// Create an "origin" remote.
+		_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+			Name: "origin",
+			URLs: []string{filepath.Join(url, "origin-not-used")},
+		})
+		s.NoError(err)
+	}
+
+	err = s.Repository.Push(&PushOptions{
+		RemoteURL: url,
+	})
+	s.NoError(err)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/heads/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"refs/heads/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	})
+
+	AssertReferences(s.T(), s.Repository, map[string]string{})
+}
+
 func (s *RepositorySuite) TestPushContext() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
