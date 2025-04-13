@@ -233,7 +233,7 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 func (w *commitPostIteratorFirstParent) ForEach(cb func(*Commit) error) error {
 	for {
 		c, err := w.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
