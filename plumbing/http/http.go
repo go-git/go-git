@@ -141,9 +141,10 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version := r.Header.Get("Git-Protocol")
-	contentType := r.Header.Get("Content-Type")
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 
-	if contentType != fmt.Sprintf("application/x-git-%s-request", svc.Name()) {
+	expectedContentType := fmt.Sprintf("application/x-git-%s-request", svc.Name())
+	if contentType != expectedContentType {
 		renderStatusError(w, http.StatusForbidden)
 		return
 	}
