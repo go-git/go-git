@@ -48,9 +48,9 @@ func UploadPack(
 			if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
 				return err
 			}
-		case protocol.V0:
+		// TODO: support version 2
+		case protocol.V0, protocol.V2:
 		default:
-			// TODO: support version 2
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
 		}
 
