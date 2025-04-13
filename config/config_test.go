@@ -299,6 +299,14 @@ func (s *ConfigSuite) TestAnonymousRemoteConfig() {
 	s.True(config.IsAnonymous())
 }
 
+func (s *ConfigSuite) TestNewAnonymousRemoteConfig() {
+	config := NewAnonymousRemoteConfig("http://foo/bar")
+
+	s.NoError(config.Validate())
+	s.Equal("anonymous", config.Name)
+	s.True(config.IsAnonymous())
+}
+
 func (s *ConfigSuite) TestRemoteConfigValidateMissingURL() {
 	config := &RemoteConfig{Name: "foo"}
 	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyURL)
