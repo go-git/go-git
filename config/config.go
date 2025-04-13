@@ -655,6 +655,13 @@ type RemoteConfig struct {
 	raw *format.Subsection
 }
 
+func NewAnonymousRemoteConfig(url string) *RemoteConfig {
+	return &RemoteConfig{
+		Name: AnonymousRemoteName,
+		URLs: []string{url},
+	}
+}
+
 // Validate validates the fields and sets the default values.
 func (c *RemoteConfig) Validate() error {
 	if c.Name == "" {
