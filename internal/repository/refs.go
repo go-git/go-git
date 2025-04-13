@@ -63,11 +63,15 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 			hash = ref.Hash()
 			fallthrough
 		case plumbing.HashReference:
-			fmt.Fprintf(w, "%s\t%s\n", hash, name) //nolint:errcheck
+			if _, err :=fmt.Fprintf(w, "%s\t%s\n", hash, name); err != nil {
+				return fmt.Errorf("writing info reference: %w", err)
+			}
 			if name.IsTag() {
 				tag, err := object.GetTag(s, hash)
 				if err == nil {
-					fmt.Fprintf(w, "%s\t%s^{}\n", tag.Target, name) //nolint:errcheck
+					if _, err := fmt.Fprintf(w, "%s\t%s^{}\n", tag.Target, name); err != nil {
+						return fmt.Errorf("writing info tag reference: %w", err)
+					}
 				}
 			}
 		}
@@ -87,9 +91,13 @@ func WriteObjectsInfoPacks(w io.Writer, s storer.PackedObjectStorer) error {
 	}
 
 	for _, p := range packs {
-		fmt.Fprintf(w, "P pack-%s.pack\n", p) //nolint:errcheck
+		if _, err := fmt.Fprintf(w, "P pack-%s.pack\n", p); err != nil {
+			return fmt.Errorf("writing pack line reference: %w", err)
+		}
 	}
 
-	fmt.Fprintln(w) //nolint:errcheck
+	if _, err := fmt.Fprintln(w); err != nil {
+		return fmt.Errorf("writing pack line final newline: %w", err)
+	}
 	return nil
 }
