@@ -131,7 +131,7 @@ type PushRequest struct {
 	Progress sideband.Progress
 
 	// Options is a set of push-options to be sent to the server during push.
-	Options map[string]string
+	Options []string
 
 	// Atomic indicates an atomic push.
 	// If the server supports atomic push, it will update the refs in one
