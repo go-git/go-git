@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
 
@@ -315,5 +319,102 @@ func (*SuiteCommon) TestNewKnownHostsDbWithCert(c *C) {
 		if !slices.Contains(algos, algorithm) {
 			c.Error("algos does not contain ", algorithm)
 		}
+	}
+}
+
+func TestHostKeyCallbackHelper(t *testing.T) {
+	cb1 := ssh.FixedHostKey(nil)
+	tests := []struct {
+		name     string
+		cb       ssh.HostKeyCallback
+		algos    []string
+		fallback func(files ...string) (ssh.HostKeyCallback, error)
+		cc       *ssh.ClientConfig
+		want     *ssh.ClientConfig
+		wantErr  string
+	}{
+		{
+			name: "keep existing callback if set",
+			cb:   cb1,
+			cc:   &ssh.ClientConfig{},
+			want: &ssh.ClientConfig{
+				HostKeyCallback: cb1,
+			},
+		},
+		{
+			name: "create new client config is one isn't provided",
+			cb:   cb1,
+			cc:   nil,
+			want: &ssh.ClientConfig{
+				HostKeyCallback: cb1,
+			},
+		},
+		{
+			name:  "respect pre-set algos",
+			cb:    cb1,
+			algos: []string{"foo"},
+			cc:    &ssh.ClientConfig{},
+			want: &ssh.ClientConfig{
+				HostKeyCallback:   cb1,
+				HostKeyAlgorithms: []string{"foo"},
+			},
+		},
+		{
+			name: "no callback is set, call fallback",
+			cc:   &ssh.ClientConfig{},
+			fallback: func(files ...string) (ssh.HostKeyCallback, error) {
+				return cb1, nil
+			},
+			want: &ssh.ClientConfig{
+				HostKeyCallback: cb1,
+			},
+		},
+		{
+			name: "no callback is set with nil client config",
+			fallback: func(files ...string) (ssh.HostKeyCallback, error) {
+				return cb1, nil
+			},
+			want: &ssh.ClientConfig{
+				HostKeyCallback: cb1,
+			},
+		},
+		{
+			name:  "algos with no callback, call fallback",
+			algos: []string{"bar"},
+			cc:    &ssh.ClientConfig{},
+			fallback: func(files ...string) (ssh.HostKeyCallback, error) {
+				return cb1, nil
+			},
+			want: &ssh.ClientConfig{
+				HostKeyCallback:   cb1,
+				HostKeyAlgorithms: []string{"bar"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			helper := HostKeyCallbackHelper{
+				HostKeyCallback:   tc.cb,
+				HostKeyAlgorithms: tc.algos,
+				fallback:          tc.fallback,
+			}
+
+			got, gotErr := helper.SetHostKeyCallback(tc.cc)
+
+			if tc.wantErr == "" {
+				require.NoError(t, gotErr)
+				require.NotNil(t, got)
+
+				wantFunc := runtime.FuncForPC(reflect.ValueOf(tc.want.HostKeyCallback).Pointer()).Name()
+				gotFunc := runtime.FuncForPC(reflect.ValueOf(got.HostKeyCallback).Pointer()).Name()
+				assert.Equal(t, wantFunc, gotFunc)
+
+				assert.Equal(t, tc.want.HostKeyAlgorithms, got.HostKeyAlgorithms)
+			} else {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+				assert.Nil(t, got)
+			}
+		})
 	}
 }

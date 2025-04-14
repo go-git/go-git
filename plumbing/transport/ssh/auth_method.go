@@ -231,7 +231,10 @@ func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
 //	/etc/ssh/ssh_known_hosts
 func NewKnownHostsCallback(files ...string) (ssh.HostKeyCallback, error) {
 	kh, err := NewKnownHostsDb(files...)
-	return kh.HostKeyCallback(), err
+	if err != nil {
+		return nil, err
+	}
+	return kh.HostKeyCallback(), nil
 }
 
 // NewKnownHostsDb returns knownhosts.HostKeyDB based on a file based on a
@@ -311,13 +314,40 @@ type HostKeyCallbackHelper struct {
 	// HostKeyAlgorithms is a list of supported host key algorithms that will
 	// be used for host key verification.
 	HostKeyAlgorithms []string
+
+	// fallback allows for injecting the fallback call, which is called
+	// when a HostKeyCallback is not set.
+	fallback func(files ...string) (ssh.HostKeyCallback, error)
 }
 
 // SetHostKeyCallbackAndAlgorithms sets the field HostKeyCallback and HostKeyAlgorithms in the given cfg.
 // If the host key callback or algorithms is empty it is left empty. It will be handled by the dial method,
 // falling back to knownhosts.
 func (m *HostKeyCallbackHelper) SetHostKeyCallbackAndAlgorithms(cfg *ssh.ClientConfig) (*ssh.ClientConfig, error) {
+	if cfg == nil {
+		cfg = &ssh.ClientConfig{}
+	}
+
+	if m.HostKeyCallback == nil {
+		if m.fallback == nil {
+			m.fallback = NewKnownHostsCallback
+		}
+
+		hkcb, err := m.fallback()
+		if err != nil {
+			return nil, fmt.Errorf("cannot create known hosts callback: %w", err)
+		}
+
+		cfg.HostKeyCallback = hkcb
+		cfg.HostKeyAlgorithms = m.HostKeyAlgorithms
+		return cfg, err
+	}
+
 	cfg.HostKeyCallback = m.HostKeyCallback
 	cfg.HostKeyAlgorithms = m.HostKeyAlgorithms
 	return cfg, nil
+}
+
+func (m *HostKeyCallbackHelper) SetHostKeyCallback(cfg *ssh.ClientConfig) (*ssh.ClientConfig, error) {
+	return m.SetHostKeyCallbackAndAlgorithms(cfg)
 }
