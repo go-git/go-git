@@ -742,6 +742,95 @@ func (s *RemoteSuite) TestPushTags() {
 	})
 }
 
+func (s *RemoteSuite) TestPushTagsByOID() {
+	url := s.T().TempDir()
+
+	server, err := PlainInit(url, true)
+	s.NoError(err)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{
+			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f:refs/tags/lightweight-tag-copy",
+			"b742a2a9fa0afcfa9a6fad080980fbc26b007c69:refs/tags/annotated-tag-copy",
+			"ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc:refs/tags/commit-tag-copy",
+			"fe6cb94756faa81e5ed9240f9191b833db5f40ae:refs/tags/blob-tag-copy",
+			"152175bf7e5580299fa1f0ba41ef6474cc043b70:refs/tags/tree-tag-copy",
+		},
+		FollowTags: false,
+	})
+	s.NoError(err)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/tags/lightweight-tag-copy": "f7b877701fbf855b44c0a9e86f3fdce2c298b07f",
+		"refs/tags/annotated-tag-copy":   "b742a2a9fa0afcfa9a6fad080980fbc26b007c69",
+		"refs/tags/commit-tag-copy":      "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc",
+		"refs/tags/blob-tag-copy":        "fe6cb94756faa81e5ed9240f9191b833db5f40ae",
+		"refs/tags/tree-tag-copy":        "152175bf7e5580299fa1f0ba41ef6474cc043b70",
+	})
+}
+
+func (s *RemoteSuite) TestPushBlobByOID() {
+	url := s.T().TempDir()
+
+	server, err := PlainInit(url, true)
+	s.NoError(err)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{
+			"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391:refs/misc/myblob",
+		},
+		FollowTags: false,
+	})
+	s.NoError(err)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/misc/myblob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+	})
+}
+
+func (s *RemoteSuite) TestPushTreeByOID() {
+	url := s.T().TempDir()
+
+	server, err := PlainInit(url, true)
+	s.NoError(err)
+
+	fs := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{
+			"70846e9a10ef7b41064b40f07713d5b8b9a8fc73:refs/misc/mytree",
+		},
+		FollowTags: false,
+	})
+	s.NoError(err)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/misc/mytree": "70846e9a10ef7b41064b40f07713d5b8b9a8fc73",
+	})
+}
+
 func (s *RemoteSuite) TestPushFollowTags() {
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)

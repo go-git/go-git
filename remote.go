@@ -618,9 +618,9 @@ func (r *Remote) addOrUpdateReferences(
 	if !rs.IsWildcard() {
 		ref, ok := refsDict[rs.Src()]
 		if !ok {
-			commit, err := object.GetCommit(r.s, plumbing.NewHash(rs.Src()))
+			object, err := object.GetObject(r.s, plumbing.NewHash(rs.Src()))
 			if err == nil {
-				return r.addCommit(rs, remoteRefs, commit.Hash, cmds)
+				return r.addObject(rs, remoteRefs, object.ID(), cmds)
 			}
 			return nil
 		}
@@ -677,8 +677,8 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 	})
 }
 
-func (r *Remote) addCommit(rs config.RefSpec,
-	remoteRefs storer.ReferenceStorer, localCommit plumbing.Hash,
+func (r *Remote) addObject(rs config.RefSpec,
+	remoteRefs storer.ReferenceStorer, localObject plumbing.Hash,
 	cmds *[]*packp.Command,
 ) error {
 	if rs.IsWildcard() {
@@ -688,7 +688,7 @@ func (r *Remote) addCommit(rs config.RefSpec,
 	cmd := &packp.Command{
 		Name: rs.Dst(""),
 		Old:  plumbing.ZeroHash,
-		New:  localCommit,
+		New:  localObject,
 	}
 	remoteRef, err := remoteRefs.Reference(cmd.Name)
 	if err == nil {
