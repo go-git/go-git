@@ -1547,7 +1547,7 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	err = util.WriteFile(w.Filesystem, "foo", []byte("FOO"), 0755)
 	s.NoError(err)
 
-	hash, err := w.Add("foo")
+	hash, err := w.Add("/foo")
 	s.Equal("d96c7efbfec2814ae0301ad054dc8d9fc416c9b5", hash.String())
 	s.NoError(err)
 

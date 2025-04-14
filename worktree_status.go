@@ -370,7 +370,12 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		}
 	}
 
+	// Relative paths only; see: https://github.com/go-git/go-git/issues/1460
 	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		root := w.Filesystem.Root()
+		path, _ = filepath.Rel(root, filepath.Join(root, ".", path))
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
