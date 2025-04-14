@@ -77,6 +77,12 @@ type command struct {
 func (c *command) setAuth(auth transport.AuthMethod) error {
 	a, ok := auth.(AuthMethod)
 	if !ok {
+		if legacy, ok := auth.(LegacyAuthMethod); ok {
+			c.auth = &legacyAuthMethodAdapter{
+				LegacyAuthMethod: legacy,
+			}
+			return nil
+		}
 		return transport.ErrInvalidAuthMethod
 	}
 
@@ -125,7 +131,7 @@ func (c *command) connect() error {
 	}
 
 	var err error
-	config, err := c.auth.ClientConfig()
+	config, err := c.auth.ClientConfig(c.endpoint.User, c.endpoint.Host)
 	if err != nil {
 		return err
 	}
