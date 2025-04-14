@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,7 +51,7 @@ func (s *rpSession) ReceivePack(ctx context.Context, req *packp.ReferenceUpdateR
 	}
 
 	r, err := ioutil.NonEmptyReader(res.Body)
-	if err == ioutil.ErrEmptyReader {
+	if errors.Is(err, ioutil.ErrEmptyReader) {
 		return nil, nil
 	}
 

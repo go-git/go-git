@@ -478,7 +478,7 @@ outerLoop:
 			if s == nil {
 				s, err = fileSimilarityIndex(from)
 				if err != nil {
-					if err == errIndexFull {
+					if errors.Is(err, errIndexFull) {
 						continue outerLoop
 					}
 					return nil, err
@@ -494,7 +494,7 @@ outerLoop:
 
 			di, err := fileSimilarityIndex(to)
 			if err != nil {
-				if err == errIndexFull {
+				if errors.Is(err, errIndexFull) {
 					dstTooLarge[dstIdx] = true
 				}
 
@@ -605,7 +605,7 @@ func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error
 				ptr = 0
 				var err error
 				cnt, err = io.ReadFull(r, buf)
-				if err != nil && err != io.ErrUnexpectedEOF {
+				if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 					return err
 				}
 

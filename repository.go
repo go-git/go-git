@@ -107,9 +107,9 @@ func InitWithOptions(s storage.Storer, worktree billy.Filesystem, options InitOp
 
 	r := newRepository(s, worktree)
 	_, err := r.Reference(plumbing.HEAD, false)
-	switch err {
-	case plumbing.ErrReferenceNotFound:
-	case nil:
+	switch {
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+	case err == nil:
 		return nil, ErrRepositoryAlreadyExists
 	default:
 		return nil, err
@@ -204,7 +204,7 @@ func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error 
 // ErrWorktreeNotProvided is returned
 func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 	_, err := s.Reference(plumbing.HEAD)
-	if err == plumbing.ErrReferenceNotFound {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, ErrRepositoryNotExists
 	}
 
@@ -503,7 +503,7 @@ func PlainCloneContext(ctx context.Context, path string, isBare bool, o *CloneOp
 	}
 
 	err = r.clone(ctx, o)
-	if err != nil && err != ErrRepositoryAlreadyExists {
+	if err != nil && !errors.Is(err, ErrRepositoryAlreadyExists) {
 		if cleanup {
 			_ = cleanUpDir(path, cleanupParent)
 		}
@@ -755,11 +755,11 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagO
 	}
 
 	_, err := r.Storer.Reference(rname)
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		// Tag exists, this is an error
 		return nil, ErrTagExists
-	case plumbing.ErrReferenceNotFound:
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
 		// Tag missing, available for creation, pass this
 	default:
 		// Some other error
@@ -860,7 +860,7 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
 	if err != nil {
-		if err == plumbing.ErrReferenceNotFound {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			// Return a friendly error for this one, versus just ReferenceNotFound.
 			return nil, ErrTagNotFound
 		}
@@ -1088,9 +1088,9 @@ func (r *Repository) fetchAndUpdateReferences(
 
 	objsUpdated := true
 	remoteRefs, err := remote.fetch(ctx, o)
-	if err == NoErrAlreadyUpToDate {
+	if errors.Is(err, NoErrAlreadyUpToDate) {
 		objsUpdated = false
-	} else if err == packfile.ErrEmptyPackfile {
+	} else if errors.Is(err, packfile.ErrEmptyPackfile) {
 		return nil, ErrFetching
 	} else if err != nil {
 		return nil, err
@@ -1164,7 +1164,7 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 
 		name = rs.Dst(name)
 		_, err := r.Storer.Reference(name)
-		if err == plumbing.ErrReferenceNotFound {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			refs = append(refs, plumbing.NewHashReference(name, resolvedHead.Hash()))
 		}
 	}
@@ -1176,12 +1176,12 @@ func checkAndUpdateReferenceStorerIfNeeded(
 	s storer.ReferenceStorer, r, old *plumbing.Reference) (
 	updated bool, err error) {
 	p, err := s.Reference(r.Name())
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return false, err
 	}
 
 	// we use the string method to compare references, is the easiest way
-	if err == plumbing.ErrReferenceNotFound || r.String() != p.String() {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) || r.String() != p.String() {
 		if err := s.CheckAndSetReference(r, old); err != nil {
 			return false, err
 		}

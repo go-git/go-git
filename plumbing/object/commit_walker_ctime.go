@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"io"
 
 	"github.com/emirpasic/gods/trees/binaryheap"
@@ -89,7 +90,7 @@ func (w *commitIteratorByCTime) ForEach(cb func(*Commit) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {
