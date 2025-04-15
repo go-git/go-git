@@ -120,6 +120,31 @@ func (s *OptionsSuite) writeGlobalConfig(cfg *config.Config) func() {
 
 	return func() {
 		os.Setenv("XDG_CONFIG_HOME", "")
-
 	}
+}
+
+func (s *OptionsSuite) TestCheckoutOptionsValidate() {
+	checkoutOpts := CheckoutOptions{}
+	err := checkoutOpts.Validate()
+	s.NotNil(err)
+	s.Equal(ErrBranchHashExclusive, err)
+
+	checkoutOpts.Create = true
+	err = checkoutOpts.Validate()
+	s.Nil(err)
+	s.Equal(plumbing.Master, checkoutOpts.Branch)
+
+	checkoutOpts.Branch = ""
+	checkoutOpts.Hash = plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd")
+	err = checkoutOpts.Validate()
+	s.NotNil(err)
+	s.Equal(ErrCreateRequiresBranch, err)
+
+	checkoutOpts.Branch = "test"
+	checkoutOpts.Force = true
+	checkoutOpts.Keep = true
+
+	err = checkoutOpts.Validate()
+	s.NotNil(err)
+	s.Equal(ErrForceKeepExclusive, err)
 }
