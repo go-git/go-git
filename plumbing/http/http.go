@@ -120,6 +120,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// If no service matched, return 404.
+	renderStatusError(w, http.StatusNotFound)
 }
 
 
