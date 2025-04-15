@@ -67,13 +67,6 @@ type Handler struct {
 	ErrorLog *log.Logger
 }
 
-// init initializes the handler by setting the default loader.
-func (h *Handler) init() {
-	if h.Loader == nil {
-		h.Loader = DefaultLoader
-	}
-}
-
 // logf logs the given message to the error log if it is set.
 func logf(logger *log.Logger, format string, v ...interface{}) {
 	if logger != nil {
@@ -84,7 +77,10 @@ func logf(logger *log.Logger, format string, v ...interface{}) {
 // Handler returns a new HTTP handler that serves git repositories over HTTP.
 // It uses the given loader to load the repositories from storage.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.init()
+	loader := h.Loader
+	if loader == nil {
+		loader = DefaultLoader
+	}
 	for _, s := range services {
 		if m := s.pattern.FindStringSubmatch(r.URL.Path); m != nil {
 			if r.Method != s.method {
@@ -101,7 +97,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			st, err := h.Loader.Load(ep)
+			st, err := loader.Load(ep)
 			if err != nil {
 				logf(h.ErrorLog, "error loading repository: %v", err)
 				renderStatusError(w, http.StatusNotFound)
