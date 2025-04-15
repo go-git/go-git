@@ -11,9 +11,11 @@ import (
 	"github.com/armon/go-socks5"
 	"github.com/gliderlabs/ssh"
 	"github.com/go-git/go-git/v6/internal/transport/ssh/test"
+	ttest "github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	stdssh "golang.org/x/crypto/ssh"
 )
 
@@ -56,7 +58,9 @@ func (s *ProxySuite) TestCommand() {
 		return &Password{User: user}, nil
 	}
 
-	ep := s.prepareRepository(fixtures.Basic().One(), "basic.git")
+	ep := newEndpoint(s.T(), s.base, s.port, "basic.git")
+	basic := ttest.PrepareRepository(s.T(), fixtures.Basic().One(), s.base, "basic.git")
+	s.Storer = filesystem.NewStorage(basic, nil)
 	s.NoError(err)
 	ep.Proxy = transport.ProxyOptions{
 		URL:      socksProxyAddr,

@@ -11,11 +11,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-var (
-	ErrFilterNotSupported = errors.New("server does not support filters")
-)
+var ErrFilterNotSupported = errors.New("server does not support filters")
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
@@ -27,6 +26,8 @@ func NegotiatePack(
 	writer io.WriteCloser,
 	req *FetchRequest,
 ) (shallowInfo *packp.ShallowUpdate, err error) {
+	reader = ioutil.NewContextReader(ctx, reader)
+	writer = ioutil.NewContextWriteCloser(ctx, writer)
 	caps := conn.Capabilities()
 
 	// Create upload-request
