@@ -74,6 +74,13 @@ func NewRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
+// IsAnonymous returns true if the remote is anonymous; i.e., if it
+// was created directly from a URL and isn't defined in the git
+// config.
+func (r *Remote) IsAnonymous() bool {
+	return r.c.IsAnonymous()
+}
+
 // Config returns the RemoteConfig object used to instantiate this Remote.
 func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
@@ -314,9 +321,18 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 	return nil
 }
 
+// updateRemoteReferenceStorage updates the remote references
+// corresponding to the references that were just pushed to the
+// remote, if needed.
 func (r *Remote) updateRemoteReferenceStorage(
 	cmds []*packp.Command,
 ) error {
+	if r.IsAnonymous() {
+		// If the remote is anonymous, then there are no
+		// remote-tracking references corresponding to it.
+		return nil
+	}
+
 	for _, spec := range r.c.Fetch {
 		for _, c := range cmds {
 			if !spec.Match(c.Name) {

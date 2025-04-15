@@ -309,7 +309,11 @@ type ForceWithLease struct {
 // Validate validates the fields and sets the default values.
 func (o *PushOptions) Validate() error {
 	if o.RemoteName == "" {
-		o.RemoteName = DefaultRemoteName
+		if o.RemoteURL != "" {
+			o.RemoteName = config.AnonymousRemoteName
+		} else {
+			o.RemoteName = DefaultRemoteName
+		}
 	}
 
 	if len(o.RefSpecs) == 0 {

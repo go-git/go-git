@@ -664,14 +664,16 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 	return remote, r.Storer.SetConfig(cfg)
 }
 
-// CreateRemoteAnonymous creates a new anonymous remote. c.Name must be "anonymous".
-// It's used like 'git fetch git@github.com:src-d/go-git.git master:master'.
+// CreateRemoteAnonymous creates a new anonymous remote. c.Name must
+// be config.AnonymousRemoteName. It's used for the equivalent of
+//
+//	git fetch git@github.com:src-d/go-git.git master:master
 func (r *Repository) CreateRemoteAnonymous(c *config.RemoteConfig) (*Remote, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 
-	if c.Name != "anonymous" {
+	if c.Name != config.AnonymousRemoteName {
 		return nil, ErrAnonymousRemoteName
 	}
 
@@ -1245,9 +1247,21 @@ func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 		return err
 	}
 
-	remote, err := r.Remote(o.RemoteName)
-	if err != nil {
-		return err
+	var remote *Remote
+	if o.RemoteName == config.AnonymousRemoteName {
+		var err error
+		remote, err = r.CreateRemoteAnonymous(
+			config.NewAnonymousRemoteConfig(o.RemoteURL),
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		var err error
+		remote, err = r.Remote(o.RemoteName)
+		if err != nil {
+			return err
+		}
 	}
 
 	return remote.PushContext(ctx, o)
