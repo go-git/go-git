@@ -102,5 +102,5 @@
 //	H-byte HASH-checksum of all of the above.
 //
 // Source:
-// https://raw.githubusercontent.com/git/git/master/Documentation/technical/commit-graph-format.txt
+// https://raw.githubusercontent.com/git/git/master/Documentation/technical/commit-graph.adoc
 package commitgraph

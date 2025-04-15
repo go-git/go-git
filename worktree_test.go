@@ -1381,6 +1381,24 @@ func (s *WorktreeSuite) TestStatusAfterCheckout() {
 	s.True(status.IsClean())
 }
 
+func (s *WorktreeSuite) TestStatusAfterSparseCheckout() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{
+		SparseCheckoutDirectories: []string{"php"},
+		Force:                     true,
+	})
+	s.Require().NoError(err)
+
+	status, err := w.Status()
+	s.Require().NoError(err)
+	s.True(status.IsClean(), status)
+}
+
 func (s *WorktreeSuite) TestStatusModified() {
 	fs := s.TemporalFilesystem()
 

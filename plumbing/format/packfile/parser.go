@@ -190,7 +190,10 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 
 	var deltaData bytes.Buffer
 	if oh.content.Len() > 0 {
-		oh.content.WriteTo(&deltaData)
+		_, err = oh.content.WriteTo(&deltaData)
+		if err != nil {
+			return err
+		}
 	} else {
 		deltaData = *bytes.NewBuffer(make([]byte, 0, oh.Size))
 		err = p.scanner.inflateContent(oh.ContentOffset, &deltaData)

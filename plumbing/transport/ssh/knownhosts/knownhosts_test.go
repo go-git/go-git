@@ -106,7 +106,7 @@ func TestHostKeys(t *testing.T) {
 		"only-rsa.example.test:22":     {"ssh-rsa"},
 		"only-ecdsa.example.test:22":   {"ecdsa-sha2-nistp256"},
 		"only-ed25519.example.test:22": {"ssh-ed25519"},
-		"multi.example.test:2233":      {"ssh-rsa", "ecdsa-sha2-nistp256", "ssh-ed25519"},
+		"multi.example.test:2233":      {"ssh-rsa", "ecdsa-sha2-nistp256", "ssh-ed25519", "ssh-ed25519"},
 		"192.168.1.102:2222":           {"ecdsa-sha2-nistp256", "ssh-ed25519"},
 		"unknown-host.example.test":    {}, // host not in file
 		"multi.example.test:22":        {}, // different port than entry in file

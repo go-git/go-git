@@ -14,13 +14,13 @@ replace (
 require (
 	dario.cat/mergo v1.0.1
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/ProtonMail/go-crypto v1.1.6
+	github.com/ProtonMail/go-crypto v1.2.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/elazarl/goproxy v1.7.2
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.1
-	github.com/go-git/go-billy/v5 v5.6.0
+	github.com/go-git/go-billy/v5 v5.6.2
 	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399
 	github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
@@ -28,16 +28,16 @@ require (
 	github.com/pjbgf/sha1cd v0.3.2
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/crypto v0.36.0
-	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
-	golang.org/x/net v0.37.0
-	golang.org/x/sys v0.31.0
-	golang.org/x/text v0.23.0
+	golang.org/x/crypto v0.37.0
+	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
+	golang.org/x/net v0.39.0
+	golang.org/x/sys v0.32.0
+	golang.org/x/text v0.24.0
 )
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
-	github.com/cloudflare/circl v1.6.0 // indirect
+	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
