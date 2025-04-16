@@ -514,7 +514,7 @@ func (w *Worktree) fillEncodedObjectFromFile(dst io.Writer, path string, _ os.Fi
 
 	defer ioutil.CheckClose(src, &err)
 
-	if _, err := io.Copy(dst, src); err != nil {
+	if _, err := ioutil.Copy(dst, src); err != nil {
 		return err
 	}
 

@@ -25,7 +25,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
-	"github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
@@ -787,10 +786,7 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 		return
 	}
 
-	defer ioutil.CheckClose(to, &err)
-	buf := sync.GetByteSlice()
-	_, err = io.CopyBuffer(to, from, *buf)
-	sync.PutByteSlice(buf)
+	_, err = ioutil.Copy(to, from)
 	return
 }
 
