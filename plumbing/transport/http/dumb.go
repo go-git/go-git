@@ -127,7 +127,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 	}
 
 	copy := func(w io.Writer) error {
-		if _, err := io.Copy(w, res.Body); err != nil {
+		if _, err := ioutil.Copy(w, res.Body); err != nil {
 			return err
 		}
 
@@ -344,7 +344,7 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 
 	ioutil.CheckClose(w, &err)
 
-	if _, err := io.Copy(w, rd); err != nil {
+	if _, err := ioutil.Copy(w, rd); err != nil {
 		return err
 	}
 
