@@ -56,7 +56,7 @@ func (s *WorktreeSuite) SetupTest() {
 
 func (s *WorktreeSuite) TestPullCheckout() {
 	fs := memfs.New()
-	r, _ := Init(memory.NewStorage(), fs)
+	r, _ := Init(memory.NewStorage(), WithWorkTree(fs))
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -151,7 +151,7 @@ func (s *WorktreeSuite) TestPullNonFastForward() {
 }
 
 func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded() {
-	r, _ := Init(memory.NewStorage(), memfs.New())
+	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -182,7 +182,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded() {
 }
 
 func (s *WorktreeSuite) TestPullInSingleBranch() {
-	r, _ := Init(memory.NewStorage(), memfs.New())
+	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:          s.GetBasicLocalRepositoryURL(),
 		SingleBranch: true,
@@ -208,7 +208,7 @@ func (s *WorktreeSuite) TestPullInSingleBranch() {
 }
 
 func (s *WorktreeSuite) TestPullProgress() {
-	r, _ := Init(memory.NewStorage(), memfs.New())
+	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 
 	r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -986,7 +986,7 @@ func (s *WorktreeSuite) TestStatusEmpty() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -1002,7 +1002,7 @@ func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -1051,7 +1051,7 @@ func (s *WorktreeSuite) TestStatusEmptyDirty() {
 
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -1912,7 +1912,7 @@ func (s *WorktreeSuite) TestAddDirectory() {
 }
 
 func (s *WorktreeSuite) TestAddDirectoryErrorNotFound() {
-	r, _ := Init(memory.NewStorage(), memfs.New())
+	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	w, _ := r.Worktree()
 
 	h, err := w.Add("foo")
@@ -2079,7 +2079,7 @@ func (s *WorktreeSuite) TestAddFilenameStartingWithDot() {
 }
 
 func (s *WorktreeSuite) TestAddGlobErrorNoMatches() {
-	r, _ := Init(memory.NewStorage(), memfs.New())
+	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	w, _ := r.Worktree()
 
 	err := w.AddGlob("foo")
@@ -2522,7 +2522,7 @@ func (s *WorktreeSuite) TestClean() {
 func (s *WorktreeSuite) TestCleanBare() {
 	storer := memory.NewStorage()
 
-	r, err := Init(storer, nil)
+	r, err := Init(storer)
 	s.NoError(err)
 	s.NotNil(r)
 

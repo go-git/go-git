@@ -79,36 +79,57 @@ type Repository struct {
 
 type initOptions struct {
 	defaultBranch plumbing.ReferenceName
+	workTree      billy.Filesystem
+	objectFormat  formatcfg.ObjectFormat
 }
 
 func newInitOptions() initOptions {
 	return initOptions{
 		defaultBranch: plumbing.Master,
+		workTree:      nil,
+		objectFormat:  "",
 	}
 }
 
 type InitOption func(*initOptions)
 
-// WithDefaultBranch sets the  default branch for the new repo (e.g. "refs/heads/master").
+// WithDefaultBranch sets the default branch for the new repo (e.g. "refs/heads/master").
 func WithDefaultBranch(b plumbing.ReferenceName) InitOption {
 	return func(o *initOptions) {
 		o.defaultBranch = b
 	}
 }
 
+// WithWorkTree sets the internal worktree for the new repo.
+func WithWorkTree(worktree billy.Filesystem) InitOption {
+	return func(o *initOptions) {
+		o.workTree = worktree
+	}
+}
+
+// WithBare is for backwards compatibility and is the opposite of WithWorkTree; a bare repo sets the worktree to nil.
+func WithBare() InitOption {
+	return func(o *initOptions) {
+		o.workTree = nil
+	}
+}
+
+// WithObjectFormat sets the object format when invoking PlainInitWithOptions.
+func WithObjectFormat(of formatcfg.ObjectFormat) InitOption {
+	return func(o *initOptions) {
+		o.objectFormat = of
+	}
+}
+
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
-func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
-	return InitWithOptions(s, worktree,
-		WithDefaultBranch(plumbing.Master),
-	)
-}
-
-func InitWithOptions(s storage.Storer, worktree billy.Filesystem, opts ...InitOption) (*Repository, error) {
+func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	options := newInitOptions()
 	for _, oFn := range opts {
-		oFn(&options)
+		if oFn != nil {
+			oFn(&options)
+		}
 	}
 
 	if err := initStorer(s); err != nil {
@@ -119,7 +140,7 @@ func InitWithOptions(s storage.Storer, worktree billy.Filesystem, opts ...InitOp
 		return nil, err
 	}
 
-	r := newRepository(s, worktree)
+	r := newRepository(s, options.workTree)
 	_, err := r.Reference(plumbing.HEAD, false)
 	switch err {
 	case plumbing.ErrReferenceNotFound:
@@ -134,12 +155,12 @@ func InitWithOptions(s storage.Storer, worktree billy.Filesystem, opts ...InitOp
 		return nil, err
 	}
 
-	if worktree == nil {
+	if options.workTree == nil {
 		_ = r.setIsBare(true)
 		return r, nil
 	}
 
-	return r, setWorktreeAndStoragePaths(r, worktree)
+	return r, setWorktreeAndStoragePaths(r, options.workTree)
 }
 
 func initStorer(s storer.Storer) error {
@@ -255,7 +276,9 @@ func CloneContext(
 		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
 	}()
 
-	r, err := Init(s, worktree)
+	r, err := Init(s,
+		WithWorkTree(worktree),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -266,30 +289,32 @@ func CloneContext(
 // PlainInit create an empty git repository at the given path. isBare defines
 // if the repository will have worktree (non-bare) or not (bare), if the path
 // is not empty ErrRepositoryAlreadyExists is returned.
-func PlainInit(path string, isBare bool) (*Repository, error) {
-	return PlainInitWithOptions(path,
-		WithWorkTree(!isBare),
-	)
-}
+func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, error) {
+	var wt, dot billy.Filesystem
+	var initFn func(s *filesystem.Storage) (*Repository, error)
 
-func PlainInitWithOptions(path string, opts ...PlainInitOption) (*Repository, error) {
-	options := newPlainInitOptions()
-	for _, oFn := range opts {
-		oFn(&options)
+	o := newInitOptions()
+	for _, oFn := range options {
+		oFn(&o)
 	}
 
-	var wt, dot billy.Filesystem
-
-	if options.bare {
+	if isBare {
 		dot = osfs.New(path, osfs.WithBoundOS())
+		initFn = func(s *filesystem.Storage) (*Repository, error) {
+			return Init(s, options...)
+		}
 	} else {
 		wt = osfs.New(path, osfs.WithBoundOS())
 		dot, _ = wt.Chroot(GitDirName)
+		initFn = func(s *filesystem.Storage) (*Repository, error) {
+			oo := []InitOption{WithWorkTree(wt)}
+			oo = append(oo, options...)
+			return Init(s, oo...)
+		}
 	}
-
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	r, err := initFn(s)
 
-	r, err := InitWithOptions(s, wt, options.initOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -299,13 +324,13 @@ func PlainInitWithOptions(path string, opts ...PlainInitOption) (*Repository, er
 		return nil, err
 	}
 
-	if options.objectFormat != "" {
-		if options.objectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
+	if o.objectFormat != "" {
+		if o.objectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
 			return nil, ErrSHA256NotSupported
 		}
 
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
-		cfg.Extensions.ObjectFormat = options.objectFormat
+		cfg.Extensions.ObjectFormat = o.objectFormat
 	}
 
 	err = r.Storer.SetConfig(cfg)

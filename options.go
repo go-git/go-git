@@ -10,7 +10,6 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
@@ -790,55 +789,6 @@ type PlainOpenOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
-
-type plainInitOptions struct {
-	initOptions []InitOption
-
-	bare         bool
-	objectFormat formatcfg.ObjectFormat
-}
-
-type PlainInitOption func(*plainInitOptions)
-
-// newPlainInitOptions creates a new instance of plainInitOptions with default settings.
-func newPlainInitOptions() plainInitOptions {
-	return plainInitOptions{
-		initOptions:  make([]InitOption, 0),
-		bare:         false,
-		objectFormat: "",
-	}
-}
-
-// WithInitOptions passes a set of general InitOption functions through to the shared initOptions.
-func WithInitOptions(opts ...InitOption) PlainInitOption {
-	return func(o *plainInitOptions) {
-		o.initOptions = opts
-	}
-}
-
-// WithWorkTree determines if the repository will have a worktree (non-bare) or not (bare).
-func WithWorkTree(hasWorkTree bool) PlainInitOption {
-	return func(o *plainInitOptions) {
-		o.bare = !hasWorkTree
-	}
-}
-
-// WithBare is for backwards compatibility and is the opposite of WithWorkTree; a bare repo has no worktree.
-func WithBare(isBare bool) PlainInitOption {
-	return func(o *plainInitOptions) {
-		o.bare = isBare
-	}
-}
-
-// WithObjectFormat sets the object format when invoking PlainInitWithOptions.
-func WithObjectFormat(of formatcfg.ObjectFormat) PlainInitOption {
-	return func(o *plainInitOptions) {
-		o.objectFormat = of
-	}
-}
-
-// Validate validates the fields and sets the default values.
-func (o *plainInitOptions) Validate() error { return nil }
 
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 
