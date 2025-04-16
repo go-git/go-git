@@ -190,8 +190,8 @@ func (r *Scanner) SeekFromStart(offset int64) error {
 }
 
 func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
-	if oh.content.Len() > 0 {
-		_, err := ioutil.Copy(writer, &oh.content)
+	if oh.content != nil && oh.content.Len() > 0 {
+		_, err := ioutil.Copy(writer, oh.content)
 		return err
 	}
 

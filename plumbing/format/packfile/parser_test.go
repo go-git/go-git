@@ -98,7 +98,7 @@ func TestThinPack(t *testing.T) {
 	assert.NoError(t, err)
 
 	_, err = parser.Parse()
-	assert.Equal(t, err, packfile.ErrReferenceDeltaNotFound)
+	assert.ErrorIs(t, err, packfile.ErrReferenceDeltaNotFound)
 
 	// start over with a clean repo
 	r, err = git.PlainInit(t.TempDir(), true)
@@ -135,7 +135,7 @@ func TestResolveExternalRefsInThinPack(t *testing.T) {
 
 	checksum, err := parser.Parse()
 	assert.NoError(t, err)
-	assert.NotEqual(t, plumbing.ZeroHash, checksum)
+	assert.NotEqual(t, checksum, plumbing.ZeroHash)
 }
 
 func TestResolveExternalRefs(t *testing.T) {

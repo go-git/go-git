@@ -54,7 +54,7 @@ var sizes = []offset{
 }
 
 // ApplyDelta writes to target the result of applying the modification deltas in delta to base.
-func ApplyDelta(target, base plumbing.EncodedObject, delta bytes.Buffer) (err error) {
+func ApplyDelta(target, base plumbing.EncodedObject, delta *bytes.Buffer) (err error) {
 	r, err := base.Reader()
 	if err != nil {
 		return err
