@@ -345,19 +345,6 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 	return obj, nil
 }
 
-// isInvalid checks whether an error is an os.PathError with an os.ErrInvalid
-// error inside. It also checks for the windows error, which is different from
-// os.ErrInvalid.
-func isInvalid(err error) bool {
-	pe, ok := err.(*os.PathError)
-	if !ok {
-		return false
-	}
-
-	errstr := pe.Err.Error()
-	return errstr == errInvalidUnix || errstr == errInvalidWindows
-}
-
 // errInvalidWindows is the Windows equivalent to os.ErrInvalid
 const errInvalidWindows = "The parameter is incorrect."
 
