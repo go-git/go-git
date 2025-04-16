@@ -184,20 +184,18 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return fmt.Errorf("unsupported delta type: %v", oh.Type)
 	}
 
-	parentContents, err := p.parentReader(oh.parent)
-	if err != nil {
-		return err
-	}
+	bufp := sync.GetBytesBuffer()
+	deltaData := *bufp
+	defer sync.PutBytesBuffer(bufp)
 
-	var deltaData bytes.Buffer
 	if oh.content.Len() > 0 {
 		_, err = oh.content.WriteTo(&deltaData)
 		if err != nil {
 			return err
 		}
 	} else {
-		deltaData = *bytes.NewBuffer(make([]byte, 0, oh.Size))
-		err = p.scanner.inflateContent(oh.ContentOffset, &deltaData)
+		deltaData.Grow(int(oh.Size))
+		err := p.scanner.inflateContent(oh.ContentOffset, &deltaData)
 		if err != nil {
 			return err
 		}
@@ -210,7 +208,7 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 
 	defer w.Close()
 
-	err = applyPatchBaseHeader(oh, parentContents, &deltaData, w, nil)
+	err = p.applyPatchBaseHeader(oh, &deltaData, w, nil)
 	if err != nil {
 		return err
 	}
@@ -218,12 +216,25 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 	return p.storeOrCache(oh)
 }
 
-func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
+var clearNoOp = func() {}
+
+// parentReader returns a [io.ReaderAt] for the decompressed contents
+// of the parent.
+// 
+// The caller is responsible for returning the buffer used back to the
+// sync pool. That can be done by calling the clear func - second
+// returned arg.
+func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, func(), error) {
+	parentData := sync.GetBytesBuffer()
+	parentData.Grow(int(parent.Size))
+	clear := func() {
+		sync.PutBytesBuffer(parentData)
+	}
+
 	// If parent is a Delta object, the inflated object must come
 	// from either cache or storage, else we would need to inflate
 	// it to then inflate the current object, which could go on
 	// indefinitely.
-
 	if p.storage != nil && parent.Hash != plumbing.ZeroHash {
 		obj, err := p.storage.EncodedObject(parent.Type, parent.Hash)
 		if err == nil {
@@ -232,57 +243,62 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
-				parentData := bytes.NewBuffer(make([]byte, 0, parent.Size))
-
-				_, err = io.Copy(parentData, r)
-				r.Close()
-
+				_, err = ioutil.Copy(parentData, r)
 				if err == nil {
-					return bytes.NewReader(parentData.Bytes()), nil
+					return bytes.NewReader(parentData.Bytes()), clear, nil
 				}
+			}
+
+			if err = r.Close(); err != nil {
+				return nil, clearNoOp, fmt.Errorf("close parent obj reader: %w", err)
 			}
 		}
 	}
 
 	if p.cache != nil && parent.content.Len() > 0 {
-		return bytes.NewReader(parent.content.Bytes()), nil
+		return bytes.NewReader(parent.content.Bytes()), clearNoOp, nil
 	}
 
 	// If the parent is not an external ref and we don't have the
 	// content offset, we won't be able to inflate via seeking through
 	// the packfile.
 	if !parent.externalRef && parent.ContentOffset == 0 {
-		return nil, plumbing.ErrObjectNotFound
+		return nil, clearNoOp, plumbing.ErrObjectNotFound
 	}
 
 	// Not a seeker data source, so avoid seeking the content.
 	if p.scanner.seeker == nil {
-		return nil, plumbing.ErrObjectNotFound
+		return nil, clearNoOp, plumbing.ErrObjectNotFound
 	}
 
-	parentData := bytes.NewBuffer(make([]byte, 0, parent.Size))
 	err := p.scanner.inflateContent(parent.ContentOffset, parentData)
 	if err != nil {
-		return nil, ErrReferenceDeltaNotFound
+		return nil, clearNoOp, ErrReferenceDeltaNotFound
 	}
-	return bytes.NewReader(parentData.Bytes()), nil
+	return bytes.NewReader(parentData.Bytes()), clear, nil
 }
 
 func (p *Parser) cacheWriter(oh *ObjectHeader) (io.WriteCloser, error) {
 	return ioutil.NewWriteCloser(&oh.content, nil), nil
 }
 
-func applyPatchBaseHeader(ota *ObjectHeader, base io.ReaderAt, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
+func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
 	if target == nil {
 		return fmt.Errorf("cannot apply patch against nil target")
 	}
+
+	parentContents, clear, err := p.parentReader(ota.parent)
+	if err != nil {
+		return err
+	}
+	defer clear()
 
 	typ := ota.Type
 	if ota.Hash == plumbing.ZeroHash {
 		typ = ota.parent.Type
 	}
 
-	sz, h, err := patchDeltaWriter(target, base, delta, typ, wh)
+	sz, h, err := patchDeltaWriter(target, parentContents, delta, typ, wh)
 	if err != nil {
 		return err
 	}
