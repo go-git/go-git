@@ -21,6 +21,7 @@ func TestParserHashes(t *testing.T) {
 	tests := []struct {
 		name    string
 		storage storer.Storer
+		option  packfile.ParserOption
 	}{
 		{
 			name: "without storage",
@@ -28,6 +29,15 @@ func TestParserHashes(t *testing.T) {
 		{
 			name:    "with storage",
 			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
+		},
+		{
+			name:   "without storage and high memory usage",
+			option: packfile.WithHighMemoryUsage(),
+		},
+		{
+			name:    "with storage and high memory usage",
+			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
+			option:  packfile.WithHighMemoryUsage(),
 		},
 	}
 
@@ -37,7 +47,7 @@ func TestParserHashes(t *testing.T) {
 
 			obs := new(testObserver)
 			parser := packfile.NewParser(f.Packfile(), packfile.WithScannerObservers(obs),
-				packfile.WithStorage(tc.storage))
+				packfile.WithStorage(tc.storage), tc.option)
 
 			commit := plumbing.CommitObject
 			blob := plumbing.BlobObject
@@ -98,7 +108,7 @@ func TestThinPack(t *testing.T) {
 	assert.NoError(t, err)
 
 	_, err = parser.Parse()
-	assert.Equal(t, err, packfile.ErrReferenceDeltaNotFound)
+	assert.ErrorIs(t, err, packfile.ErrReferenceDeltaNotFound)
 
 	// start over with a clean repo
 	r, err = git.PlainInit(t.TempDir(), true)
@@ -135,7 +145,7 @@ func TestResolveExternalRefsInThinPack(t *testing.T) {
 
 	checksum, err := parser.Parse()
 	assert.NoError(t, err)
-	assert.NotEqual(t, plumbing.ZeroHash, checksum)
+	assert.NotEqual(t, checksum, plumbing.ZeroHash)
 }
 
 func TestResolveExternalRefs(t *testing.T) {

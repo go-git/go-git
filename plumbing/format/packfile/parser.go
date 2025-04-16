@@ -11,6 +11,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 var (
@@ -29,8 +30,9 @@ var (
 // Parser decodes a packfile and calls any observer associated to it. Is used
 // to generate indexes.
 type Parser struct {
-	storage storer.EncodedObjectStorer
-	cache   *parserCache
+	storage   storer.EncodedObjectStorer
+	cache     *parserCache
+	lowMemory bool
 
 	scanner   *Scanner
 	observers []Observer
@@ -45,10 +47,13 @@ type Parser struct {
 // are parsed.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
-		hasher: plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
+		hasher:    plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
+		lowMemory: true,
 	}
 	for _, opt := range opts {
-		opt(p)
+		if opt != nil {
+			opt(p)
+		}
 	}
 
 	p.scanner = NewScanner(data)
@@ -72,13 +77,23 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 
 		defer w.Close()
 
-		_, err = io.Copy(w, bytes.NewReader(oh.content.Bytes()))
+		_, err = ioutil.Copy(w, oh.content)
 		if err != nil {
 			return err
 		}
 	}
 
 	if p.cache != nil {
+		o := oh
+		for p.lowMemory && o.content != nil {
+			sync.PutBytesBuffer(o.content)
+			o.content = nil
+
+			if o.parent == nil || o.parent.content == nil {
+				break
+			}
+			o = o.parent
+		}
 		p.cache.Add(oh)
 	}
 
@@ -126,6 +141,10 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 				}
 				continue
 			} else {
+				if p.lowMemory && oh.content != nil {
+					sync.PutBytesBuffer(oh.content)
+					oh.content = nil
+				}
 				p.storeOrCache(&oh)
 			}
 
@@ -141,18 +160,62 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 	for _, oh := range pendingDeltaREFs {
 		err := p.processDelta(oh)
 		if err != nil {
-			return plumbing.ZeroHash, err
+			return plumbing.ZeroHash, fmt.Errorf("processing ref-delta at offset %v: %w", oh.Offset, err)
 		}
 	}
 
 	for _, oh := range pendingDeltas {
 		err := p.processDelta(oh)
 		if err != nil {
-			return plumbing.ZeroHash, err
+			return plumbing.ZeroHash, fmt.Errorf("processing ofs-delta at offset %v: %w", oh.Offset, err)
 		}
 	}
 
 	return p.checksum, p.onFooter(p.checksum)
+}
+
+func (p *Parser) ensureContent(oh *ObjectHeader) error {
+	// Skip if this object already has the correct content.
+	if oh.content != nil && oh.content.Len() == int(oh.Size) {
+		return nil
+	}
+
+	// if there is no parent, or it is not a delta object,
+	// there is nothing to be done, as we can simply inflate
+	// the object by its offset.
+	if oh.parent != nil && oh.parent.diskType.IsDelta() {
+		// for delta objects, if their content is empty or their size
+		// is not correct, ensure that its contents, and its parents,
+		// have their content and it is correctly inflated.
+		//
+		// Note that a drift between size and content size indicates that
+		// the object may have been previously hydrated, and the content
+		// may have later been overwritten by its compressed version.
+		if oh.parent.content == nil || oh.parent.content.Len() != int(oh.parent.Size) {
+			err := p.ensureContent(oh.parent)
+			if err != nil {
+				return fmt.Errorf("ensure parent content at offset %v: %w", oh.Offset, err)
+			}
+		}
+	}
+
+	deltaData := sync.GetBytesBuffer()
+	defer sync.PutBytesBuffer(deltaData)
+
+	err := p.scanner.inflateContent(oh.ContentOffset, deltaData)
+	if err != nil {
+		return fmt.Errorf("inflating content at offset %v: %w", oh.ContentOffset, err)
+	}
+
+	if oh.content == nil {
+		oh.content = sync.GetBytesBuffer()
+	}
+
+	err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
+	if err != nil {
+		return fmt.Errorf("apply delta patch: %w", err)
+	}
+	return nil
 }
 
 func (p *Parser) processDelta(oh *ObjectHeader) error {
@@ -184,51 +247,18 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return fmt.Errorf("unsupported delta type: %v", oh.Type)
 	}
 
-	bufp := sync.GetBytesBuffer()
-	deltaData := *bufp
-	defer sync.PutBytesBuffer(bufp)
-
-	if oh.content.Len() > 0 {
-		_, err = oh.content.WriteTo(&deltaData)
-		if err != nil {
-			return err
-		}
-	} else {
-		deltaData.Grow(int(oh.Size))
-		err := p.scanner.inflateContent(oh.ContentOffset, &deltaData)
-		if err != nil {
-			return err
-		}
-	}
-
-	w, err := p.cacheWriter(oh)
-	if err != nil {
-		return err
-	}
-
-	defer w.Close()
-
-	err = p.applyPatchBaseHeader(oh, &deltaData, w, nil)
-	if err != nil {
+	if err := p.ensureContent(oh); err != nil {
 		return err
 	}
 
 	return p.storeOrCache(oh)
 }
 
-var clearNoOp = func() {}
-
 // parentReader returns a [io.ReaderAt] for the decompressed contents
 // of the parent.
-// 
-// The caller is responsible for returning the buffer used back to the
-// sync pool. That can be done by calling the clear func - second
-// returned arg.
-func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, func(), error) {
-	parentData := sync.GetBytesBuffer()
-	parentData.Grow(int(parent.Size))
-	clear := func() {
-		sync.PutBytesBuffer(parentData)
+func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
+	if parent.content != nil && parent.content.Len() > 0 {
+		return bytes.NewReader(parent.content.Bytes()), nil
 	}
 
 	// If parent is a Delta object, the inflated object must come
@@ -243,43 +273,45 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, func(), error)
 			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
-				_, err = ioutil.Copy(parentData, r)
+				if parent.content == nil {
+					parent.content = sync.GetBytesBuffer()
+				}
+				parent.content.Grow(int(parent.Size))
+
+				_, err = ioutil.Copy(parent.content, r)
 				if err == nil {
-					return bytes.NewReader(parentData.Bytes()), clear, nil
+					return bytes.NewReader(parent.content.Bytes()), nil
 				}
 			}
 
 			if err = r.Close(); err != nil {
-				return nil, clearNoOp, fmt.Errorf("close parent obj reader: %w", err)
+				return nil, fmt.Errorf("close parent obj reader: %w", err)
 			}
 		}
-	}
-
-	if p.cache != nil && parent.content.Len() > 0 {
-		return bytes.NewReader(parent.content.Bytes()), clearNoOp, nil
 	}
 
 	// If the parent is not an external ref and we don't have the
 	// content offset, we won't be able to inflate via seeking through
 	// the packfile.
 	if !parent.externalRef && parent.ContentOffset == 0 {
-		return nil, clearNoOp, plumbing.ErrObjectNotFound
+		return nil, plumbing.ErrObjectNotFound
 	}
 
 	// Not a seeker data source, so avoid seeking the content.
 	if p.scanner.seeker == nil {
-		return nil, clearNoOp, plumbing.ErrObjectNotFound
+		return nil, plumbing.ErrObjectNotFound
 	}
 
-	err := p.scanner.inflateContent(parent.ContentOffset, parentData)
+	if parent.content == nil {
+		parent.content = sync.GetBytesBuffer()
+	}
+	parent.content.Grow(int(parent.Size))
+
+	err := p.scanner.inflateContent(parent.ContentOffset, parent.content)
 	if err != nil {
-		return nil, clearNoOp, ErrReferenceDeltaNotFound
+		return nil, ErrReferenceDeltaNotFound
 	}
-	return bytes.NewReader(parentData.Bytes()), clear, nil
-}
-
-func (p *Parser) cacheWriter(oh *ObjectHeader) (io.WriteCloser, error) {
-	return ioutil.NewWriteCloser(&oh.content, nil), nil
+	return bytes.NewReader(parent.content.Bytes()), nil
 }
 
 func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
@@ -287,11 +319,10 @@ func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target
 		return fmt.Errorf("cannot apply patch against nil target")
 	}
 
-	parentContents, clear, err := p.parentReader(ota.parent)
+	parentContents, err := p.parentReader(ota.parent)
 	if err != nil {
 		return err
 	}
-	defer clear()
 
 	typ := ota.Type
 	if ota.Hash == plumbing.ZeroHash {

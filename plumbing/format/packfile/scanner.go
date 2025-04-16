@@ -16,6 +16,7 @@ import (
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
@@ -197,8 +198,8 @@ func (r *Scanner) SeekFromStart(offset int64) error {
 }
 
 func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
-	if oh.content.Len() > 0 {
-		_, err := io.Copy(writer, bytes.NewReader(oh.content.Bytes()))
+	if oh.content != nil && oh.content.Len() > 0 {
+		_, err := ioutil.Copy(writer, oh.content)
 		return err
 	}
 

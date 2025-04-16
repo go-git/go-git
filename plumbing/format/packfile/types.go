@@ -34,7 +34,7 @@ type ObjectHeader struct {
 	Hash            plumbing.Hash
 	Hash256         *plumbing.Hash
 
-	content     bytes.Buffer
+	content     *bytes.Buffer
 	parent      *ObjectHeader
 	diskType    plumbing.ObjectType
 	externalRef bool

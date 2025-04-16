@@ -25,3 +25,14 @@ func WithScannerObservers(ob ...Observer) ParserOption {
 		p.observers = ob
 	}
 }
+
+// WithHighMemoryUsage makes the parser optimise for speed rather than
+// for memory consumption. This is disabled by default.
+//
+// When enabled the inflated content of all delta objects (ofs and ref)
+// will be loaded into cache, making it faster to navigate through them.
+func WithHighMemoryUsage() ParserOption {
+	return func(p *Parser) {
+		p.lowMemory = false
+	}
+}
