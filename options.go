@@ -10,7 +10,6 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	formatcfg "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
@@ -790,16 +789,6 @@ type PlainOpenOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
-
-type PlainInitOptions struct {
-	InitOptions
-	// Determines if the repository will have a worktree (non-bare) or not (bare).
-	Bare         bool
-	ObjectFormat formatcfg.ObjectFormat
-}
-
-// Validate validates the fields and sets the default values.
-func (o *PlainInitOptions) Validate() error { return nil }
 
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 

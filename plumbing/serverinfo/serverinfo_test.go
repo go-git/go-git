@@ -28,7 +28,7 @@ func TestServerInfoSuite(t *testing.T) {
 func (s *ServerInfoSuite) TestUpdateServerInfoInit() {
 	fs := memfs.New()
 	st := memory.NewStorage()
-	r, err := git.Init(st, fs)
+	r, err := git.Init(st, git.WithWorkTree(fs))
 	s.NoError(err)
 	s.NotNil(r)
 

@@ -31,7 +31,7 @@ import (
 
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), fs)
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -57,7 +57,7 @@ func (s *WorktreeSuite) TestCommitInitial() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -78,7 +78,7 @@ func (s *WorktreeSuite) TestCommitInitial() {
 func (s *WorktreeSuite) TestNothingToCommit() {
 	expected := plumbing.NewHash("838ea833ce893e8555907e5ef224aa076f5e274a")
 
-	r, err := Init(memory.NewStorage(), memfs.New())
+	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -95,7 +95,7 @@ func (s *WorktreeSuite) TestNothingToCommit() {
 
 func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo() {
 	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), fs)
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -118,7 +118,7 @@ func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo() {
 
 func (s *WorktreeSuite) TestRemoveAndCommitToMakeEmptyRepo() {
 	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), fs)
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -532,7 +532,7 @@ func (s *WorktreeSuite) TestCommitSign() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -568,7 +568,7 @@ func (s *WorktreeSuite) TestCommitSignBadKey() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -588,7 +588,7 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	_, err := Init(st, nil)
+	_, err := Init(st)
 	s.NoError(err)
 
 	r, _ := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
@@ -638,7 +638,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	s.NoError(err)
 	storage := filesystem.NewStorage(fsDotgit, cache.NewObjectLRUDefault())
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
@@ -698,7 +698,7 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, fs)
+	r, err := Init(storage, WithWorkTree(fs))
 	s.NoError(err)
 
 	w, err := r.Worktree()
