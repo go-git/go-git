@@ -161,7 +161,7 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (h plumbing.H
 		return plumbing.ZeroHash, err
 	}
 
-	if _, err = io.Copy(ow, or); err != nil {
+	if _, err = ioutil.Copy(ow, or); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
