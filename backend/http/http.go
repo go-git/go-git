@@ -337,9 +337,9 @@ func hdrNocache(w http.ResponseWriter) {
 }
 
 func hdrCacheForever(w http.ResponseWriter) {
-	now := time.Now().Unix()
-	expires := now + 31536000
-	w.Header().Set("Date", fmt.Sprintf("%d", now))
-	w.Header().Set("Expires", fmt.Sprintf("%d", expires))
+	now := time.Now()
+	expires := now.Add(365 * 24 * time.Hour)
+	w.Header().Set("Date", now.Format(http.TimeFormat))
+	w.Header().Set("Expires", expires.Format(http.TimeFormat))
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
 }
