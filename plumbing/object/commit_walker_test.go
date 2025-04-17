@@ -192,7 +192,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore() {
 	}
 }
 
-func (s *CommitWalkerSuite) TestCommitPostIteratorFirstParent(c *C) {
+func (s *CommitWalkerSuite) TestCommitPostIteratorFirstParent() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
@@ -217,7 +217,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorFirstParent(c *C) {
 	}
 }
 
-func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreFirstParent(c *C) {
+func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreFirstParent() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
