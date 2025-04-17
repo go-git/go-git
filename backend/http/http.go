@@ -234,6 +234,7 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 	}
 
 	defer f.Close() //nolint:errcheck
+
 	stat, err := fs.Stat(file)
 	if err != nil {
 		renderStatusError(w, http.StatusNotFound)
@@ -269,6 +270,7 @@ func getInfoRefs(w http.ResponseWriter, r *http.Request) {
 		renderStatusError(w, http.StatusInternalServerError)
 		return
 	}
+
 	service := transport.Service(r.URL.Query().Get("service"))
 	version := r.Header.Get("Git-Protocol")
 
