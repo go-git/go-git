@@ -65,6 +65,9 @@ type Handler struct {
 	Loader transport.Loader
 	// ErrorLog is the logger used to log errors. If nil, no errors are logged.
 	ErrorLog *log.Logger
+	// Prefix is a path prefix that will be stripped from the URL path before
+	// matching the service patterns.
+	Prefix string
 }
 
 // logf logs the given message to the error log if it is set.
@@ -81,15 +84,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if loader == nil {
 		loader = DefaultLoader
 	}
+	urlPath := r.URL.Path
+	urlPath = strings.TrimPrefix(urlPath, h.Prefix)
 	for _, s := range services {
-		if m := s.pattern.FindStringSubmatch(r.URL.Path); m != nil {
+		if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
 			if r.Method != s.method {
 				renderStatusError(w, http.StatusMethodNotAllowed)
 				return
 			}
 
 			repo := strings.TrimPrefix(m[1], "/")
-			file := strings.Replace(r.URL.Path, repo+"/", "", 1)
+			file := strings.Replace(urlPath, repo+"/", "", 1)
 			ep, err := transport.NewEndpoint(repo)
 			if err != nil {
 				logf(h.ErrorLog, "error creating endpoint: %v", err)
