@@ -17,6 +17,28 @@ type commitPreIterator struct {
 	start        *Commit
 }
 
+
+func forEachCommit(next func() (*Commit, error), cb func(*Commit) error) error {
+	for {
+		c, err := next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		err = cb(c)
+		if err == storer.ErrStop {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // NewCommitPreorderIter returns a CommitIter that walks the commit history,
 // starting at the given commit and visiting its parents in pre-order.
 // The given callback will be called for each visited commit. Each commit will
@@ -94,25 +116,7 @@ func filteredParentIter(c *Commit, seen map[plumbing.Hash]bool) CommitIter {
 }
 
 func (w *commitPreIterator) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := w.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(w.Next, cb)
 }
 
 func (w *commitPreIterator) Close() {}
@@ -162,25 +166,7 @@ func (w *commitPostIterator) Next() (*Commit, error) {
 }
 
 func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := w.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(w.Next, cb)
 }
 
 func (w *commitPostIterator) Close() {}
@@ -233,25 +219,7 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 }
 
 func (w *commitPostIteratorFirstParent) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := w.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(w.Next, cb)
 }
 
 func (w *commitPostIteratorFirstParent) Close() {}
@@ -373,25 +341,7 @@ func (it *commitAllIterator) Next() (*Commit, error) {
 }
 
 func (it *commitAllIterator) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := it.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(it.Next, cb)
 }
 
 func (it *commitAllIterator) Close() {
