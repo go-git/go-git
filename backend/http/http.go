@@ -215,6 +215,11 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 		renderStatusError(w, http.StatusNotFound)
 		return
 	}
+	errorLog, ok := ctx.Value(contextKey("errorLog")).(*log.Logger)
+	if !ok {
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
 
 	file, ok := ctx.Value(contextKey("file")).(string)
 	if !ok {
@@ -238,7 +243,13 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
 	w.Header().Set("Last-Modified", stat.ModTime().Format(http.TimeFormat))
-	io.Copy(w, f) //nolint:errcheck
+
+	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog}
+	if _, err := io.Copy(frw, f); err != nil {
+		logf(errorLog, "error writing response: %v", err)
+		renderStatusError(w, http.StatusInternalServerError)
+		return
+	}
 }
 
 func getTextFile(w http.ResponseWriter, r *http.Request) {
