@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -21,7 +20,7 @@ import (
 type contextKey string
 
 type service struct {
-	pattern  *regexp.Regexp
+	pattern *regexp.Regexp
 	method  string
 	handler http.HandlerFunc
 	svc     transport.Service
@@ -46,13 +45,8 @@ var services = []service{
 	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRpc, transport.ReceivePackService},
 }
 
-// DefaultLoader is the default loader used to load repositories from storage.
-// It will use the current working directory as the base path for the
-// repositories.
-var DefaultLoader = transport.NewFilesystemLoader(osfs.New("."), false)
-
-// HandlerOptions represents a set of options for the Git HTTP handler.
-type HandlerOptions struct {
+// BackendOptions represents a set of options for the Git HTTP handler.
+type BackendOptions struct {
 	// ErrorLog is the logger used to log errors. If nil, no errors are logged.
 	ErrorLog *log.Logger
 	// Prefix is a path prefix that will be stripped from the URL path before
@@ -60,7 +54,7 @@ type HandlerOptions struct {
 	Prefix string
 }
 
-// NewHandler returns a Git HTTP handler that serves git repositories over
+// NewBackend returns a Git HTTP handler that serves git repositories over
 // HTTP.
 //
 // It supports serving repositories using both the Smart-HTTP and the Dumb-HTTP
@@ -69,12 +63,12 @@ type HandlerOptions struct {
 // repositories that wish to be server using the Dumb-HTTP protocol must update
 // the server info files. This can be done by using
 // [transport.UpdateServerInfo] before serving the repository.
-func NewHandler(loader transport.Loader, opts *HandlerOptions) http.HandlerFunc {
+func NewBackend(loader transport.Loader, opts *BackendOptions) http.HandlerFunc {
 	if loader == nil {
-		loader = DefaultLoader
+		loader = transport.DefaultLoader
 	}
 	if opts == nil {
-		opts = &HandlerOptions{}
+		opts = &BackendOptions{}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		urlPath := r.URL.Path
