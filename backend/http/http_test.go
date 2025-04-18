@@ -30,7 +30,7 @@ func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 }
 
 func TestNilLoaderHandler(t *testing.T) {
-	h := &Handler{}
+	h := NewHandler(nil, nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -53,9 +53,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 00486ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master
 003e6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/tags/v1.0.0
 0000`
-	h := &Handler{
-		Loader: &fixturesLoader{t},
-	}
+	h := NewHandler(&fixturesLoader{t}, nil)
 
 	urlPath := "/basic.git/info/refs"
 	if isSmart {

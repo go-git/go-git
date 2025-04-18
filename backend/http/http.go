@@ -51,7 +51,17 @@ var services = []service{
 // repositories.
 var DefaultLoader = transport.NewFilesystemLoader(osfs.New("."), false)
 
-// Handler is a Git HTTP handler that serves git repositories over HTTP.
+// HandlerOptions represents a set of options for the Git HTTP handler.
+type HandlerOptions struct {
+	// ErrorLog is the logger used to log errors. If nil, no errors are logged.
+	ErrorLog *log.Logger
+	// Prefix is a path prefix that will be stripped from the URL path before
+	// matching the service patterns.
+	Prefix string
+}
+
+// NewHandler returns a Git HTTP handler that serves git repositories over
+// HTTP.
 //
 // It supports serving repositories using both the Smart-HTTP and the Dumb-HTTP
 // protocols. When the Dumb-HTTP protocol is used, the repository store must
@@ -59,15 +69,55 @@ var DefaultLoader = transport.NewFilesystemLoader(osfs.New("."), false)
 // repositories that wish to be server using the Dumb-HTTP protocol must update
 // the server info files. This can be done by using
 // [transport.UpdateServerInfo] before serving the repository.
-type Handler struct {
-	// Loader is the loader used to load repositories from storage. If nil, the
-	// default loader is used.
-	Loader transport.Loader
-	// ErrorLog is the logger used to log errors. If nil, no errors are logged.
-	ErrorLog *log.Logger
-	// Prefix is a path prefix that will be stripped from the URL path before
-	// matching the service patterns.
-	Prefix string
+func NewHandler(loader transport.Loader, opts *HandlerOptions) http.HandlerFunc {
+	if loader == nil {
+		loader = DefaultLoader
+	}
+	if opts == nil {
+		opts = &HandlerOptions{}
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		urlPath := r.URL.Path
+		urlPath = strings.TrimPrefix(urlPath, opts.Prefix)
+		for _, s := range services {
+			if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
+				if r.Method != s.method {
+					renderStatusError(w, http.StatusMethodNotAllowed)
+					return
+				}
+
+				repo := strings.TrimPrefix(m[1], "/")
+				file := strings.Replace(urlPath, repo+"/", "", 1)
+				ep, err := transport.NewEndpoint(repo)
+				if err != nil {
+					logf(opts.ErrorLog, "error creating endpoint: %v", err)
+					renderStatusError(w, http.StatusBadRequest)
+					return
+				}
+
+				st, err := loader.Load(ep)
+				if err != nil {
+					logf(opts.ErrorLog, "error loading repository: %v", err)
+					renderStatusError(w, http.StatusNotFound)
+					return
+				}
+
+				ctx := r.Context()
+				ctx = context.WithValue(ctx, contextKey("errorLog"), opts.ErrorLog)
+				ctx = context.WithValue(ctx, contextKey("repo"), m[1])
+				ctx = context.WithValue(ctx, contextKey("file"), file)
+				ctx = context.WithValue(ctx, contextKey("service"), s.svc)
+				ctx = context.WithValue(ctx, contextKey("storer"), st)
+				ctx = context.WithValue(ctx, contextKey("endpoint"), ep)
+
+				s.handler(w, r.WithContext(ctx))
+				return
+			}
+		}
+
+		// If no service matched, return 404.
+		renderStatusError(w, http.StatusNotFound)
+	}
 }
 
 // logf logs the given message to the error log if it is set.
@@ -76,56 +126,6 @@ func logf(logger *log.Logger, format string, v ...interface{}) {
 		logger.Printf(format, v...)
 	}
 }
-
-// Handler returns a new HTTP handler that serves git repositories over HTTP.
-// It uses the given loader to load the repositories from storage.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	loader := h.Loader
-	if loader == nil {
-		loader = DefaultLoader
-	}
-	urlPath := r.URL.Path
-	urlPath = strings.TrimPrefix(urlPath, h.Prefix)
-	for _, s := range services {
-		if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
-			if r.Method != s.method {
-				renderStatusError(w, http.StatusMethodNotAllowed)
-				return
-			}
-
-			repo := strings.TrimPrefix(m[1], "/")
-			file := strings.Replace(urlPath, repo+"/", "", 1)
-			ep, err := transport.NewEndpoint(repo)
-			if err != nil {
-				logf(h.ErrorLog, "error creating endpoint: %v", err)
-				renderStatusError(w, http.StatusBadRequest)
-				return
-			}
-
-			st, err := loader.Load(ep)
-			if err != nil {
-				logf(h.ErrorLog, "error loading repository: %v", err)
-				renderStatusError(w, http.StatusNotFound)
-				return
-			}
-
-			ctx := r.Context()
-			ctx = context.WithValue(ctx, contextKey("errorLog"), h.ErrorLog)
-			ctx = context.WithValue(ctx, contextKey("repo"), m[1])
-			ctx = context.WithValue(ctx, contextKey("file"), file)
-			ctx = context.WithValue(ctx, contextKey("service"), s.svc)
-			ctx = context.WithValue(ctx, contextKey("storer"), st)
-			ctx = context.WithValue(ctx, contextKey("endpoint"), ep)
-
-			s.handler(w, r.WithContext(ctx))
-			return
-		}
-	}
-
-	// If no service matched, return 404.
-	renderStatusError(w, http.StatusNotFound)
-}
-
 
 func serviceRpc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
