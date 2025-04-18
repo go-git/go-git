@@ -235,8 +235,8 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 
 	defer f.Close() //nolint:errcheck
 
-	stat, err := fs.Stat(file)
-	if err != nil {
+	stat, err := fs.Lstat(file)
+	if err != nil || !stat.Mode().IsRegular() {
 		renderStatusError(w, http.StatusNotFound)
 		return
 	}
