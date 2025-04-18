@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type fixturesLoader struct{
+type fixturesLoader struct {
 	testing.TB
 }
 
@@ -29,8 +29,8 @@ func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 	return st, nil
 }
 
-func TestNilLoaderHandler(t *testing.T) {
-	h := NewHandler(nil, nil)
+func TestNilLoaderBackend(t *testing.T) {
+	h := NewBackend(nil, nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -45,7 +45,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 6ecf0ef2c2dffb796033e5a02219af86ec6584e5	refs/remotes/origin/master
 `
 	expectedSmart := `001e# service=git-upload-pack
-000000b46ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD`+"\x00"+`agent=`+capability.DefaultAgent()+` ofs-delta side-band-64k multi_ack multi_ack_detailed side-band no-progress shallow symref=HEAD:refs/heads/master
+000000b46ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD` + "\x00" + `agent=` + capability.DefaultAgent() + ` ofs-delta side-band-64k multi_ack multi_ack_detailed side-band no-progress shallow symref=HEAD:refs/heads/master
 003fe8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/branch
 003f6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master
 00466ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/HEAD
@@ -53,7 +53,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 00486ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master
 003e6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/tags/v1.0.0
 0000`
-	h := NewHandler(&fixturesLoader{t}, nil)
+	h := NewBackend(&fixturesLoader{t}, nil)
 
 	urlPath := "/basic.git/info/refs"
 	if isSmart {
