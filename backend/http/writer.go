@@ -8,8 +8,8 @@ import (
 	"net/http"
 )
 
-// chunkSize is the default chunk size for the flushResponseWriter.
-const chunkSize = 4096
+// defaultChunkSize is the default chunk size for the flushResponseWriter.
+const defaultChunkSize = 4096
 
 // flushResponseWriter is a wrapper around http.ResponseWriter that handles
 // buffered output. It chunks the output and flushes it to the client. It
@@ -20,6 +20,7 @@ const chunkSize = 4096
 type flushResponseWriter struct {
 	http.ResponseWriter
 	log *log.Logger
+	chunkSize int
 }
 
 // ReadFrom implements io.ReaderFrom interface.
@@ -27,7 +28,7 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	flusher := http.NewResponseController(f.ResponseWriter) // nolint: bodyclose
 
 	var n int64
-	p := make([]byte, chunkSize)
+	p := make([]byte, f.chunkSize)
 	for {
 		nr, err := r.Read(p)
 		if errors.Is(err, io.EOF) {

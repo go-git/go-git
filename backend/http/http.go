@@ -173,7 +173,7 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 		reader = r.Body
 	}
 
-	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog}
+	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog, chunkSize: defaultChunkSize}
 
 	switch svc {
 	case transport.UploadPackService:
@@ -245,7 +245,7 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
 	w.Header().Set("Last-Modified", stat.ModTime().Format(http.TimeFormat))
 
-	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog}
+	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog, chunkSize: defaultChunkSize}
 	if _, err := io.Copy(frw, f); err != nil {
 		logf(errorLog, "error writing response: %v", err)
 		renderStatusError(w, http.StatusInternalServerError)
