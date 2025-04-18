@@ -1,5 +1,7 @@
 package transport
 
+import "strings"
+
 // Service represents a Git transport service.
 // All services are prefixed with "git-".
 type Service string
@@ -11,11 +13,12 @@ func (s Service) String() string {
 
 // Name returns the name of the service without the "git-" prefix.
 func (s Service) Name() string {
-	return string(s)[4:]
+	return strings.TrimPrefix(string(s), "git-")
 }
 
 // Git service names.
 const (
-	UploadPackService  Service = "git-upload-pack"
-	ReceivePackService Service = "git-receive-pack"
+	UploadPackService    Service = "git-upload-pack"
+	UploadArchiveService Service = "git-upload-archive"
+	ReceivePackService   Service = "git-receive-pack"
 )
