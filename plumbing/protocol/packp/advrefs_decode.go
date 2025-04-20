@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -112,11 +111,13 @@ func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
 		return nil
 	}
 
-	if _, err := hex.Decode(p.hash[:], p.line[:hashSize]); err != nil {
-		p.error("invalid hash text: %s", err)
+	h, ok := plumbing.FromBytes(p.line[:hashSize])
+	if !ok {
+		p.error("invalid hash text: %s", p.line[:hashSize])
 		return nil
 	}
 
+	p.hash = h.(plumbing.Hash)
 	p.line = p.line[hashSize:]
 
 	if p.hash.IsZero() {
@@ -242,13 +243,13 @@ func decodeShallow(p *advRefsDecoder) decoderStateFn {
 	}
 
 	text := p.line[:hashSize]
-	var h plumbing.Hash
-	if _, err := hex.Decode(h[:], text); err != nil {
-		p.error("invalid hash text: %s", err)
+	h, ok := plumbing.FromBytes(text)
+	if !ok {
+		p.error("invalid hash text: %s", string(text))
 		return nil
 	}
 
-	p.data.Shallows = append(p.data.Shallows, h)
+	p.data.Shallows = append(p.data.Shallows, h.(plumbing.ObjectID))
 
 	if ok := p.nextLine(); !ok {
 		return nil
