@@ -154,11 +154,11 @@ func (n *node) calculateHash() {
 	}
 	mode, err := filemode.NewFromOSFileMode(n.mode)
 	if err != nil {
-		n.hash = plumbing.ZeroHash[:]
+		n.hash = plumbing.ZeroHash.Bytes()
 		return
 	}
 	if submoduleHash, isSubmodule := n.submodules[n.path]; isSubmodule {
-		n.hash = append(submoduleHash[:], filemode.Submodule.Bytes()...)
+		n.hash = append(submoduleHash.Bytes(), filemode.Submodule.Bytes()...)
 		return
 	}
 	var hash plumbing.Hash
@@ -167,7 +167,7 @@ func (n *node) calculateHash() {
 	} else {
 		hash = n.doCalculateHashForRegular()
 	}
-	n.hash = append(hash[:], mode.Bytes()...)
+	n.hash = append(hash.Bytes(), mode.Bytes()...)
 }
 
 func (n *node) doCalculateHashForRegular() plumbing.Hash {
