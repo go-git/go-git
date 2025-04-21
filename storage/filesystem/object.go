@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -83,7 +83,7 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
-	idxf := idxfile.NewMemoryIndex()
+	idxf := idxfile.NewMemoryIndex(h.Size())
 	d := idxfile.NewDecoder(f)
 	if err = d.Decode(idxf); err != nil {
 		return err
@@ -235,6 +235,7 @@ func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfi
 		packfile.WithIdx(idx),
 		packfile.WithFs(s.dir.Fs()),
 		packfile.WithCache(s.objectCache),
+		packfile.WithObjectIDSize(pack.Size()),
 	)
 	return p, s.storePackfileInCache(pack, p)
 }
@@ -586,7 +587,7 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 			} else if err != nil {
 				return nil, err
 			}
-			if bytes.HasPrefix(e.Hash[:], prefix) {
+			if e.Hash.HasPrefix(prefix) {
 				if _, ok := seen[e.Hash]; ok {
 					continue
 				}
@@ -644,7 +645,7 @@ func (s *ObjectStorage) buildPackfileIters(
 			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, s.index[h],
-				s.objectCache, s.options.KeepDescriptors,
+				s.objectCache, s.options.KeepDescriptors, hash.SHA1Size,
 			)
 		},
 	}, nil
