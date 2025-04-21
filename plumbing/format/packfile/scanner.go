@@ -73,6 +73,8 @@ type Scanner struct {
 	// packhash hashes the pack contents so that at the end it is able to
 	// validate the packfile's footer checksum against the calculated hash.
 	packhash gogithash.Hash
+	// objectIdSize holds the object ID size.
+	objectIDSize int
 
 	// next holds what state function should be executed on the next
 	// call to Scan().
@@ -107,6 +109,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		crc:           crc,
 		packhash:      packhash,
 		nextFn:        packHeaderSignature,
+		objectIDSize:  gogithash.SHA1Size,
 	}
 
 	for _, opt := range opts {
@@ -365,11 +368,10 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 			oh.OffsetReference = oh.Offset - no
 		} else {
-			ref, err := binary.ReadHash(r.scannerReader)
+			err := oh.Reference.ReadFrom(r.scannerReader, r.objectIDSize)
 			if err != nil {
 				return nil, err
 			}
-			oh.Reference = ref
 		}
 	}
 
@@ -407,7 +409,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		oh.Hash = r.hasher.Sum()
 		if r.hasher256 != nil {
 			h := r.hasher256.Sum()
-			oh.Hash256 = &h
+			h1 := plumbing.NewObjectIDFromBytes(h.Bytes())
+			oh.Hash256 = &h1
 		}
 	} else {
 		// If data source is not io.Seeker, keep the content
@@ -441,14 +444,16 @@ func objectEntry(r *Scanner) (stateFn, error) {
 // returned.
 func packFooter(r *Scanner) (stateFn, error) {
 	r.scannerReader.Flush()
+
 	actual := r.packhash.Sum(nil)
 
-	checksum, err := binary.ReadHash(r.scannerReader)
+	var checksum plumbing.Hash
+	err := checksum.ReadFrom(r.scannerReader, gogithash.SHA1Size)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read PACK checksum: %w", ErrMalformedPackfile)
 	}
 
-	if !bytes.Equal(actual, checksum[:]) {
+	if !bytes.Equal(checksum.RawBytes(), actual) {
 		return nil, fmt.Errorf("checksum mismatch expected %q but found %q: %w",
 			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
 	}

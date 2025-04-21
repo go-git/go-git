@@ -1,6 +1,9 @@
 package packfile
 
-import "github.com/go-git/go-git/v6/plumbing"
+import (
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/hash"
+)
 
 type ScannerOption func(*Scanner)
 
@@ -8,6 +11,7 @@ type ScannerOption func(*Scanner)
 func WithSHA256() ScannerOption {
 	return func(s *Scanner) {
 		h := plumbing.NewHasher256(plumbing.AnyObject, 0)
+		s.objectIDSize = hash.SHA256Size
 		s.hasher256 = &h
 	}
 }

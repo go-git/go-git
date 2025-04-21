@@ -10,8 +10,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -33,8 +33,9 @@ type Packfile struct {
 
 	cache cache.Object
 
-	id plumbing.Hash
-	m  sync.Mutex
+	id           plumbing.Hash
+	m            sync.Mutex
+	objectIdSize int
 
 	once    sync.Once
 	onceErr error
@@ -49,7 +50,8 @@ func NewPackfile(
 	opts ...PackfileOption,
 ) *Packfile {
 	p := &Packfile{
-		file: file,
+		file:         file,
+		objectIdSize: hash.SHA1Size,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -134,6 +136,7 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 //
 // Deprecated: this will be removed in future versions of the packfile package
 // to avoid exposing the package internals and to improve its thread-safety.
+// TODO: Remove Scanner method
 func (p *Packfile) Scanner() (*Scanner, error) {
 	if err := p.init(); err != nil {
 		return nil, err
@@ -201,20 +204,26 @@ func (p *Packfile) init() error {
 			return
 		}
 
-		p.scanner = NewScanner(p.file)
+		var opts []ScannerOption
+		if p.objectIdSize == hash.SHA256Size {
+			opts = append(opts, WithSHA256())
+		}
+
+		p.scanner = NewScanner(p.file, opts...)
 		// Validate packfile signature.
 		if !p.scanner.Scan() {
 			p.onceErr = p.scanner.Error()
 			return
 		}
 
-		_, err := p.scanner.Seek(-20, io.SeekEnd)
+		_, err := p.scanner.Seek(-int64(p.objectIdSize), io.SeekEnd)
 		if err != nil {
 			p.onceErr = err
 			return
 		}
 
-		id, err := binary.ReadHash(p.scanner)
+		var id plumbing.Hash
+		err = id.ReadFrom(p.scanner, p.objectIdSize)
 		if err != nil {
 			p.onceErr = err
 		}
@@ -264,7 +273,7 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 	// This avoids having to inflate the object more than once.
 	if !oh.Type.IsDelta() && p.fs != nil {
 		fs := NewFSObject(
-			oh.Hash,
+			oh.ID(),
 			oh.Type,
 			oh.ContentOffset,
 			oh.Size,
