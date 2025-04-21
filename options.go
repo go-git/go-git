@@ -308,12 +308,12 @@ type ForceWithLease struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PushOptions) Validate() error {
-	if o.RemoteName == "" {
-		if o.RemoteURL != "" {
-			o.RemoteName = config.AnonymousRemoteName
-		} else {
-			o.RemoteName = DefaultRemoteName
-		}
+	if o.RemoteName != "" && o.RemoteURL != "" {
+		return errors.New("remote name and URL cannot be used together")
+	}
+
+	if o.RemoteName == "" && o.RemoteURL == "" {
+		o.RemoteName = DefaultRemoteName
 	}
 
 	if len(o.RefSpecs) == 0 {

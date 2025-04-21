@@ -54,10 +54,6 @@ const (
 	SystemScope
 )
 
-// AnonymousRemoteName is the name that is used for anonymous remotes
-// (i.e., remotes that are not defined in the git config).
-const AnonymousRemoteName = "anonymous"
-
 // Config contains the repository configuration
 // https://www.kernel.org/pub/software/scm/git/docs/git-config.html#FILES
 type Config struct {
@@ -655,13 +651,6 @@ type RemoteConfig struct {
 	raw *format.Subsection
 }
 
-func NewAnonymousRemoteConfig(url string) *RemoteConfig {
-	return &RemoteConfig{
-		Name: AnonymousRemoteName,
-		URLs: []string{url},
-	}
-}
-
 // Validate validates the fields and sets the default values.
 func (c *RemoteConfig) Validate() error {
 	if c.Name == "" {
@@ -740,13 +729,6 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	}
 
 	return c.raw
-}
-
-// IsAnonymous returns true if c represents an anonymous remote (i.e.,
-// one that was created from an explicit URL rather than from the
-// gitconfig).
-func (c *RemoteConfig) IsAnonymous() bool {
-	return c.Name == AnonymousRemoteName
 }
 
 func (c *RemoteConfig) IsFirstURLLocal() bool {

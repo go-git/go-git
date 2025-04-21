@@ -288,23 +288,14 @@ func (s *ConfigSuite) TestValidateInvalidRemoteKey() {
 	s.ErrorIs(config.Validate(), ErrInvalid)
 }
 
-func (s *ConfigSuite) TestAnonymousRemoteConfig() {
+func (s *ConfigSuite) TestEphemeralRemoteConfig() {
 	config := &RemoteConfig{
-		Name: "anonymous",
 		URLs: []string{"http://foo/bar"},
 	}
 
 	s.NoError(config.Validate())
-	s.Equal("anonymous", config.Name)
-	s.True(config.IsAnonymous())
-}
-
-func (s *ConfigSuite) TestNewAnonymousRemoteConfig() {
-	config := NewAnonymousRemoteConfig("http://foo/bar")
-
-	s.NoError(config.Validate())
-	s.Equal("anonymous", config.Name)
-	s.True(config.IsAnonymous())
+	s.Empty(config.Name)
+	s.Len(config.URLs, 1)
 }
 
 func (s *ConfigSuite) TestRemoteConfigValidateMissingURL() {
