@@ -66,7 +66,7 @@ func (s *UlReqDecodeSuite) TestWantOK() {
 	ur, _ := s.testDecodeOK(payloads, 0)
 
 	s.Equal([]plumbing.Hash{
-		plumbing.NewHash("1111111111111111111111111111111111111111\n"),
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
 	}, ur.Wants)
 }
 

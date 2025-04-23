@@ -95,7 +95,7 @@ func (r *ServerResponse) decodeACKLine(line []byte) (err error) {
 
 	var ack ACK
 	// TODO: Dynamic hash size and sha256 support
-	ack.Hash = plumbing.NewHash(string(parts[1]))
+	ack.Hash = plumbing.NewHash(string(bytes.TrimSuffix(parts[1], []byte("\n"))))
 	err = io.EOF
 
 	if len(parts) > 2 {

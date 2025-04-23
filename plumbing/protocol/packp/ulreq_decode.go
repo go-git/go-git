@@ -102,14 +102,14 @@ func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 		return plumbing.ZeroHash, false
 	}
 
-	h, ok := plumbing.FromBytes(d.line[:hashSize])
+	h, ok := plumbing.FromHex(string(d.line[:hashSize]))
 	if !ok {
 		d.error("invalid hash text: %s", d.line[:hashSize])
 		return plumbing.ZeroHash, false
 	}
 	d.line = d.line[hashSize:]
 
-	return h.(plumbing.Hash), true
+	return h, true
 }
 
 // Expected format: sp cap1 sp cap2 sp cap3...

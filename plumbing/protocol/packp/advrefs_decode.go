@@ -111,13 +111,13 @@ func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
 		return nil
 	}
 
-	h, ok := plumbing.FromBytes(p.line[:hashSize])
+	h, ok := plumbing.FromHex(string(p.line[:hashSize]))
 	if !ok {
 		p.error("invalid hash text: %s", p.line[:hashSize])
 		return nil
 	}
 
-	p.hash = h.(plumbing.Hash)
+	p.hash = h
 	p.line = p.line[hashSize:]
 
 	if p.hash.IsZero() {
@@ -243,13 +243,13 @@ func decodeShallow(p *advRefsDecoder) decoderStateFn {
 	}
 
 	text := p.line[:hashSize]
-	h, ok := plumbing.FromBytes(text)
+	h, ok := plumbing.FromHex(string(text))
 	if !ok {
 		p.error("invalid hash text: %s", string(text))
 		return nil
 	}
 
-	p.data.Shallows = append(p.data.Shallows, h.(plumbing.ObjectID))
+	p.data.Shallows = append(p.data.Shallows, h)
 
 	if ok := p.nextLine(); !ok {
 		return nil
