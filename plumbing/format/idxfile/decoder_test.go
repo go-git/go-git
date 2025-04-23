@@ -3,7 +3,6 @@ package idxfile_test
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"testing"
 
@@ -51,8 +50,8 @@ func (s *IdxfileSuite) TestDecode() {
 	s.NoError(err)
 	s.Equal(uint32(3645019190), crc32)
 
-	s.Equal("fb794f1ec720b9bc8e43257451bd99c4be6fa1c9", fmt.Sprintf("%x", idx.IdxChecksum))
-	s.Equal(f.PackfileHash, fmt.Sprintf("%x", idx.PackfileChecksum))
+	s.Equal("fb794f1ec720b9bc8e43257451bd99c4be6fa1c9", idx.IdxChecksum.String())
+	s.Equal(f.PackfileHash, idx.PackfileChecksum.String())
 }
 
 func (s *IdxfileSuite) TestDecode64bitsOffsets() {

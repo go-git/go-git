@@ -162,7 +162,8 @@ func (e *Encoder) writeDeltaHeader(o *ObjectToPack) error {
 }
 
 func (e *Encoder) writeRefDeltaHeader(base plumbing.Hash) error {
-	return binary.Write(e.w, base)
+	_, err := base.WriteTo(e.w)
+	return err
 }
 
 func (e *Encoder) writeOfsDeltaHeader(o *ObjectToPack) error {
@@ -198,7 +199,8 @@ func (e *Encoder) entryHead(typeNum plumbing.ObjectType, size int64) error {
 
 func (e *Encoder) footer() (plumbing.Hash, error) {
 	h := e.hasher.Sum()
-	return h, binary.Write(e.w, h)
+	_, err := h.WriteTo(e.w)
+	return h, err
 }
 
 type offsetWriter struct {

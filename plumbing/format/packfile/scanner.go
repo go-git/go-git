@@ -368,7 +368,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 			oh.OffsetReference = oh.Offset - no
 		} else {
-			err := oh.Reference.ReadFrom(r.scannerReader, r.objectIDSize)
+			oh.Reference.ResetBySize(r.objectIDSize)
+			_, err := oh.Reference.ReadFrom(r.scannerReader)
 			if err != nil {
 				return nil, err
 			}
@@ -448,12 +449,12 @@ func packFooter(r *Scanner) (stateFn, error) {
 	actual := r.packhash.Sum(nil)
 
 	var checksum plumbing.Hash
-	err := checksum.ReadFrom(r.scannerReader, gogithash.SHA1Size)
+	_, err := checksum.ReadFrom(r.scannerReader)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read PACK checksum: %w", ErrMalformedPackfile)
 	}
 
-	if !bytes.Equal(checksum.RawBytes(), actual) {
+	if checksum.Compare(actual) != 0 {
 		return nil, fmt.Errorf("checksum mismatch expected %q but found %q: %w",
 			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
 	}

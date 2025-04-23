@@ -222,12 +222,11 @@ func (p *Packfile) init() error {
 			return
 		}
 
-		var id plumbing.Hash
-		err = id.ReadFrom(p.scanner, p.objectIdSize)
+		p.id.ResetBySize(p.objectIdSize)
+		_, err = p.id.ReadFrom(p.scanner)
 		if err != nil {
 			p.onceErr = err
 		}
-		p.id = id
 
 		if p.cache == nil {
 			p.cache = cache.NewObjectLRUDefault()
