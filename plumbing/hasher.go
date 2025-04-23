@@ -3,12 +3,14 @@ package plumbing
 import (
 	"crypto"
 	"fmt"
+	"io"
 	"strconv"
 	"sync"
 
-	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 
-	format "github.com/go-git/go-git/v5/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 // ObjectHasher computes hashes for Git objects. A few differences
@@ -24,7 +26,8 @@ type ObjectHasher interface {
 	// Compute calculates the hash of a Git object. The process involves
 	// first writing the object header, which contains the object type
 	// and content size, followed by the content itself.
-	Compute(ot ObjectType, d []byte) (ImmutableHash, error)
+	Compute(ot ObjectType, d []byte) (ObjectID, error)
+	io.Writer
 }
 
 // FromObjectFormat returns the correct ObjectHasher for the given
@@ -70,25 +73,29 @@ type objectHasherSHA1 struct {
 	m      sync.Mutex
 }
 
-func (h *objectHasherSHA1) Compute(ot ObjectType, d []byte) (ImmutableHash, error) {
+func (h *objectHasherSHA1) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 
+	out := ObjectID{format: config.SHA1}
 	writeHeader(h.hasher, ot, int64(len(d)))
 	_, err := h.hasher.Write(d)
 	if err != nil {
 		h.m.Unlock()
-		return nil, fmt.Errorf("failed to compute hash: %w", err)
+		return out, fmt.Errorf("failed to compute hash: %w", err)
 	}
 
-	var out immutableHashSHA1
-	copy(out[:], h.hasher.Sum(out[:0]))
+	copy(out.hash[:], h.hasher.Sum(out.hash[:0]))
 	h.m.Unlock()
 	return out, nil
 }
 
 func (h *objectHasherSHA1) Size() int {
 	return h.hasher.Size()
+}
+
+func (h *objectHasherSHA1) Write(p []byte) (int, error) {
+	return h.hasher.Write(p)
 }
 
 func newHasherSHA256() *objectHasherSHA256 {
@@ -102,25 +109,29 @@ type objectHasherSHA256 struct {
 	m      sync.Mutex
 }
 
-func (h *objectHasherSHA256) Compute(ot ObjectType, d []byte) (ImmutableHash, error) {
+func (h *objectHasherSHA256) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 
+	out := ObjectID{format: config.SHA256}
 	writeHeader(h.hasher, ot, int64(len(d)))
 	_, err := h.hasher.Write(d)
 	if err != nil {
 		h.m.Unlock()
-		return nil, fmt.Errorf("failed to compute hash: %w", err)
+		return out, fmt.Errorf("failed to compute hash: %w", err)
 	}
 
-	out := immutableHashSHA256{}
-	copy(out[:], h.hasher.Sum(out[:0]))
+	copy(out.hash[:], h.hasher.Sum(out.hash[:0]))
 	h.m.Unlock()
 	return out, nil
 }
 
 func (h *objectHasherSHA256) Size() int {
 	return h.hasher.Size()
+}
+
+func (h *objectHasherSHA256) Write(p []byte) (int, error) {
+	return h.hasher.Write(p)
 }
 
 func writeHeader(h hash.Hash, ot ObjectType, sz int64) {

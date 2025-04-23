@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"fmt"
 	"hash"
-	"strings"
 	"sync"
 	"testing"
 
@@ -148,26 +147,12 @@ func BenchmarkHasher(b *testing.B) {
 	qtds := []int64{100, 5000}
 
 	for _, q := range qtds {
-		b.Run(fmt.Sprintf("hasher-sha1-%dB", q), func(b *testing.B) {
-			benchmarkHasher(b, q)
-		})
 		b.Run(fmt.Sprintf("objecthash-sha1-%dB", q), func(b *testing.B) {
 			benchmarkObjectHash(b, sha1cd.New(), q)
 		})
 		b.Run(fmt.Sprintf("objecthash-sha256-%dB", q), func(b *testing.B) {
 			benchmarkObjectHash(b, crypto.SHA256.New(), q)
 		})
-	}
-}
-
-func benchmarkHasher(b *testing.B, sz int64) {
-	content := strings.Repeat("s", int(sz))
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		h := NewHasher(BlobObject, sz)
-		_, _ = h.Write([]byte(content))
-		b.SetBytes(sz)
 	}
 }
 

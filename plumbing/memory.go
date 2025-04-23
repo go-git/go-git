@@ -18,8 +18,12 @@ type MemoryObject struct {
 // if the type or the content have changed. The Hash is only generated if the
 // size of the content is exactly the object size.
 func (o *MemoryObject) Hash() Hash {
-	if o.h == ZeroHash && int64(len(o.cont)) == o.sz {
+	if o.h.IsZero() && int64(len(o.cont)) == o.sz {
 		o.h = ComputeHash(o.t, o.cont)
+	}
+
+	if o.h.IsZero() {
+		return ZeroHash
 	}
 
 	return o.h

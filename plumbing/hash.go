@@ -1,7 +1,6 @@
 package plumbing
 
 import (
-	"bytes"
 	"encoding/hex"
 	"sort"
 	"strconv"
@@ -10,26 +9,24 @@ import (
 )
 
 // Hash SHA1 hashed content
-type Hash = immutableHashSHA1
+type Hash = ObjectID
 
-// ZeroHash is Hash with value zero
-var ZeroHash immutableHashSHA1
+// ZeroHash is an ObjectID with value zero.
+var ZeroHash ObjectID
 
 // ComputeHash compute the hash for a given ObjectType and content
 func ComputeHash(t ObjectType, content []byte) Hash {
-	h := NewHasher(t, int64(len(content)))
-	h.Write(content)
-	return h.Sum()
+	h, _ := newHasherSHA1().Compute(t, content)
+	return h
 }
 
-// NewHash return a new Hash from a hexadecimal hash representation
+// NewHash return a new Hash based on a hexadecimal hash representation.
+// Invalid input results into an empty hash.
+//
+// deprecated: Use the new FromHex instead.
 func NewHash(s string) Hash {
 	h, _ := FromHex(s)
-	return h.(immutableHashSHA1)
-}
-
-func (h Hash) IsZero() bool {
-	return h.Empty()
+	return h
 }
 
 type Hasher struct {
@@ -51,7 +48,7 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 }
 
 func (h Hasher) Sum() (hash Hash) {
-	copy(hash[:], h.Hash.Sum(nil))
+	hash.Write(h.Hash.Sum(nil))
 	return
 }
 
@@ -65,7 +62,7 @@ func HashesSort(a []Hash) {
 type HashSlice []Hash
 
 func (p HashSlice) Len() int           { return len(p) }
-func (p HashSlice) Less(i, j int) bool { return bytes.Compare(p[i][:], p[j][:]) < 0 }
+func (p HashSlice) Less(i, j int) bool { return p[i].Compare(p[j].Bytes()) < 0 }
 func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 // IsHash returns true if the given string is a valid hash.

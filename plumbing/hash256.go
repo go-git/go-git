@@ -4,27 +4,12 @@ import (
 	"crypto"
 	"strconv"
 
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
-// NewHash return a new Hash256 from a hexadecimal hash representation.
-func NewHash256(s string) Hash256 {
-	h, _ := FromHex(s)
-	return h.(immutableHashSHA256)
-}
-
-// Hash256 represents SHA256 hashed content.
-type Hash256 = immutableHashSHA256
-
-// ZeroHash is Hash256 with value zero.
-var ZeroHash256 immutableHashSHA256
-
-func (h Hash256) IsZero() bool {
-	return h.Empty()
-}
-
 // ComputeHash compute the hash for a given ObjectType and content.
-func ComputeHash256(t ObjectType, content []byte) Hash256 {
+func ComputeHash256(t ObjectType, content []byte) ObjectID {
 	h := NewHasher256(t, int64(len(content)))
 	h.Write(content)
 	return h.Sum()
@@ -48,7 +33,8 @@ func (h Hasher256) Reset(t ObjectType, size int64) {
 	h.Write([]byte{0})
 }
 
-func (h Hasher256) Sum() (hash Hash256) {
-	copy(hash[:], h.Hash.Sum(nil))
+func (h Hasher256) Sum() (id ObjectID) {
+	id.format = config.SHA256
+	copy(id.hash[:], h.Hash.Sum(nil))
 	return
 }
