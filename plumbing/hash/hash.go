@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"hash"
 
-	format "github.com/go-git/go-git/v5/plumbing/format/config"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/pjbgf/sha1cd"
 )
 
