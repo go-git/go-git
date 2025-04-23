@@ -257,7 +257,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		}
 
 		var hash plumbing.Hash
-		if _, err = io.ReadFull(r, hash[:]); err != nil {
+		if _, err = hash.ReadFrom(r); err != nil {
 			return err
 		}
 
@@ -321,7 +321,7 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 			return err
 		}
 
-		if _, err = w.Write(entry.Hash[:]); err != nil {
+		if _, err = entry.Hash.WriteTo(w); err != nil {
 			return err
 		}
 	}
