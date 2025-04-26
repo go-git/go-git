@@ -32,9 +32,9 @@ func TestCommitgraphSuite(t *testing.T) {
 
 func testReadIndex(s *CommitgraphSuite, fs billy.Filesystem, path string) commitgraph.Index {
 	reader, err := fs.Open(path)
-	s.NoError(err)
+	s.Require().NoError(err)
 	index, err := commitgraph.OpenFileIndex(reader)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(index)
 	return index
 }
@@ -42,26 +42,26 @@ func testReadIndex(s *CommitgraphSuite, fs billy.Filesystem, path string) commit
 func testDecodeHelper(s *CommitgraphSuite, index commitgraph.Index) {
 	// Root commit
 	nodeIndex, err := index.GetIndexByHash(plumbing.NewHash("347c91919944a68e9413581a1bc15519550a3afe"))
-	s.NoError(err)
+	s.Require().NoError(err)
 	commitData, err := index.GetCommitDataByIndex(nodeIndex)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(commitData.ParentIndexes, 0)
 	s.Len(commitData.ParentHashes, 0)
 
 	// Regular commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("e713b52d7e13807e87a002e812041f248db3f643"))
-	s.NoError(err)
+	s.Require().NoError(err)
 	commitData, err = index.GetCommitDataByIndex(nodeIndex)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(commitData.ParentIndexes, 1)
 	s.Len(commitData.ParentHashes, 1)
 	s.Equal("347c91919944a68e9413581a1bc15519550a3afe", commitData.ParentHashes[0].String())
 
 	// Merge commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("b29328491a0682c259bcce28741eac71f3499f7d"))
-	s.NoError(err)
+	s.Require().NoError(err)
 	commitData, err = index.GetCommitDataByIndex(nodeIndex)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(commitData.ParentIndexes, 2)
 	s.Len(commitData.ParentHashes, 2)
 	s.Equal("e713b52d7e13807e87a002e812041f248db3f643", commitData.ParentHashes[0].String())
@@ -69,9 +69,9 @@ func testDecodeHelper(s *CommitgraphSuite, index commitgraph.Index) {
 
 	// Octopus merge commit
 	nodeIndex, err = index.GetIndexByHash(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
-	s.NoError(err)
+	s.Require().NoError(err)
 	commitData, err = index.GetCommitDataByIndex(nodeIndex)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(commitData.ParentIndexes, 3)
 	s.Len(commitData.ParentHashes, 3)
 	s.Equal("ce275064ad67d51e99f026084e20827901a8361c", commitData.ParentHashes[0].String())
@@ -89,25 +89,27 @@ func (s *CommitgraphSuite) TestDecodeMultiChain() {
 	for _, f := range fixtures.ByTag("commit-graph-chain-2") {
 		dotgit := f.DotGit()
 		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
-		s.NoError(err)
+		s.Require().NoError(err)
 		defer index.Close()
 		storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 		p := f.Packfile()
 		defer p.Close()
-		packfile.UpdateObjectStorage(storer, p)
+
+		err = packfile.UpdateObjectStorage(storer, p)
+		s.Require().NoError(err)
 
 		for idx, hash := range index.Hashes() {
 			idx2, err := index.GetIndexByHash(hash)
-			s.NoError(err)
-			s.Equal(uint32(idx), idx2)
+			s.Require().NoError(err)
+			s.Require().Equal(uint32(idx), idx2)
 			hash2, err := index.GetHashByIndex(idx2)
-			s.NoError(err)
+			s.Require().NoError(err)
 			s.Equal(hash.String(), hash2.String())
 
 			commitData, err := index.GetCommitDataByIndex(uint32(idx))
-			s.NoError(err)
+			s.Require().NoError(err)
 			commit, err := object.GetCommit(storer, hash)
-			s.NoError(err)
+			s.Require().NoError(err)
 
 			for i, parent := range commit.ParentHashes {
 				s.Equal(hash.String()+":"+commitData.ParentHashes[i].String(), hash.String()+":"+parent.String())
@@ -129,7 +131,7 @@ func (s *CommitgraphSuite) TestDecodeChain() {
 	for _, f := range fixtures.ByTag("commit-graph") {
 		dotgit := f.DotGit()
 		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
-		s.NoError(err)
+		s.Require().NoError(err)
 		defer index.Close()
 		testDecodeHelper(s, index)
 	}
@@ -137,7 +139,7 @@ func (s *CommitgraphSuite) TestDecodeChain() {
 	for _, f := range fixtures.ByTag("commit-graph-chain") {
 		dotgit := f.DotGit()
 		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
-		s.NoError(err)
+		s.Require().NoError(err)
 		defer index.Close()
 		testDecodeHelper(s, index)
 	}
@@ -148,20 +150,20 @@ func (s *CommitgraphSuite) TestReencode() {
 		dotgit := f.DotGit()
 
 		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
-		s.NoError(err)
+		s.Require().NoError(err)
 		defer reader.Close()
 		index, err := commitgraph.OpenFileIndex(reader)
-		s.NoError(err)
+		s.Require().NoError(err)
 		defer index.Close()
 
 		writer, err := util.TempFile(dotgit, "", "commit-graph")
-		s.NoError(err)
+		s.Require().NoError(err)
 		tmpName := writer.Name()
 		defer os.Remove(tmpName)
 
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(index)
-		s.NoError(err)
+		s.Require().NoError(err)
 		writer.Close()
 
 		tmpIndex := testReadIndex(s, dotgit, tmpName)
@@ -175,27 +177,27 @@ func (s *CommitgraphSuite) TestReencodeInMemory() {
 		dotgit := f.DotGit()
 
 		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
-		s.NoError(err)
+		s.Require().NoError(err)
 		index, err := commitgraph.OpenFileIndex(reader)
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		memoryIndex := commitgraph.NewMemoryIndex()
 		defer memoryIndex.Close()
 		for i, hash := range index.Hashes() {
 			commitData, err := index.GetCommitDataByIndex(uint32(i))
-			s.NoError(err)
+			s.Require().NoError(err)
 			memoryIndex.Add(hash, commitData)
 		}
 		index.Close()
 
 		writer, err := util.TempFile(dotgit, "", "commit-graph")
-		s.NoError(err)
+		s.Require().NoError(err)
 		tmpName := writer.Name()
 		defer os.Remove(tmpName)
 
 		encoder := commitgraph.NewEncoder(writer)
 		err = encoder.Encode(memoryIndex)
-		s.NoError(err)
+		s.Require().NoError(err)
 		writer.Close()
 
 		tmpIndex := testReadIndex(s, dotgit, tmpName)

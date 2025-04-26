@@ -199,7 +199,7 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 	for low < high {
 		mid := (low + high) >> 1
 		offset := fi.offsets[OIDLookupChunk] + int64(mid)*hash.Size
-		if _, err := fi.reader.ReadAt(oid.Bytes(), offset); err != nil {
+		if _, err := oid.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(oid.Size()))); err != nil {
 			return 0, err
 		}
 		cmp := h.Compare(oid.Bytes())
@@ -347,7 +347,7 @@ func (fi *fileIndex) GetHashByIndex(idx uint32) (found plumbing.Hash, err error)
 	}
 
 	offset := fi.offsets[OIDLookupChunk] + int64(idx)*hash.Size
-	if _, err := fi.reader.ReadAt(found.Bytes(), offset); err != nil {
+	if _, err := found.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(found.Size()))); err != nil {
 		return found, err
 	}
 
@@ -377,7 +377,7 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 		}
 
 		offset := fi.offsets[OIDLookupChunk] + int64(idx)*hash.Size
-		if _, err := fi.reader.ReadAt(hashes[i].Bytes(), offset); err != nil {
+		if _, err := hashes[i].ReadFrom(io.NewSectionReader(fi.reader, offset, int64(hashes[i].Size()))); err != nil {
 			return nil, err
 		}
 	}
@@ -397,8 +397,10 @@ func (fi *fileIndex) Hashes() []plumbing.Hash {
 	}
 
 	for i := uint32(0); i < fi.fanout[0xff]; i++ {
-		offset := fi.offsets[OIDLookupChunk] + int64(i)*hash.Size
-		if n, err := fi.reader.ReadAt(hashes[i+fi.minimumNumberOfHashes].Bytes(), offset); err != nil || n < hash.Size {
+		h := &hashes[i+fi.minimumNumberOfHashes]
+		offset := fi.offsets[OIDLookupChunk] + int64(i)*int64(h.Size())
+		n, err := h.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(h.Size())))
+		if err != nil || n < int64(h.Size()) {
 			return nil
 		}
 	}
