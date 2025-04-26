@@ -14,7 +14,10 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-var ErrFilterNotSupported = errors.New("server does not support filters")
+var (
+	ErrFilterNotSupported  = errors.New("server does not support filters")
+	ErrShallowNotSupported = errors.New("server does not support shallow clients")
+)
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
@@ -82,7 +85,7 @@ func NegotiatePack(
 
 	if req.Depth > 0 {
 		if !caps.Supports(capability.Shallow) {
-			return nil, fmt.Errorf("server doesn't support shallow clients")
+			return nil, ErrShallowNotSupported
 		}
 
 		upreq.Depth = packp.DepthCommits(req.Depth)
