@@ -106,7 +106,7 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 }
 
 // downloadFile downloads a file from the server and saves it to the filesystem.
-func (r *fetchWalker) downloadFile(fp string) error {
+func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 	url, err := url.JoinPath(r.ep.String(), fp)
 	if err != nil {
 		return err
@@ -147,6 +147,12 @@ func (r *fetchWalker) downloadFile(fp string) error {
 		copy(io.Discard)
 		return err
 	}
+
+	defer func() {
+		if err := f.Close(); err != nil {
+			rErr = err
+		}
+	}()
 
 	if err := copy(f); err != nil {
 		return err
