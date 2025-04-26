@@ -109,14 +109,14 @@ func (s *UploadPackSuite) TestUploadPack() {
 	s.Require().NoError(err)
 	defer func() { s.Require().Nil(conn.Close()) }()
 
-	beforeCount := s.coundObjects(s.Storer)
+	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), req)
 	s.Require().NoError(err)
 
-	afterCount := s.coundObjects(s.Storer)
+	afterCount := s.countObjects(s.Storer)
 
 	s.Require().Equal(28, afterCount-beforeCount)
 }
@@ -174,14 +174,14 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
-	beforeCount := s.coundObjects(s.Storer)
+	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), req)
 	s.Require().NoError(err)
 
-	afterCount := s.coundObjects(s.Storer)
+	afterCount := s.countObjects(s.Storer)
 	s.Require().Equal(28, afterCount-beforeCount)
 }
 
@@ -222,7 +222,7 @@ func (s *UploadPackSuite) TestUploadPackMulti() {
 	s.Require().NoError(err)
 	defer func() { s.Require().Nil(conn.Close()) }()
 
-	beforeCount := s.coundObjects(s.Storer)
+	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
@@ -230,7 +230,7 @@ func (s *UploadPackSuite) TestUploadPackMulti() {
 	err = conn.Fetch(context.Background(), req)
 	s.Require().NoError(err)
 
-	afterCount := s.coundObjects(s.Storer)
+	afterCount := s.countObjects(s.Storer)
 	s.Require().Equal(31, afterCount-beforeCount)
 }
 
@@ -241,7 +241,7 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 	s.Require().NoError(err)
 	defer func() { s.Require().Nil(conn.Close()) }()
 
-	beforeCount := s.coundObjects(s.Storer)
+	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
@@ -249,7 +249,7 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 	err = conn.Fetch(context.Background(), req)
 	s.Require().NoError(err)
 
-	afterCount := s.coundObjects(s.Storer)
+	afterCount := s.countObjects(s.Storer)
 	s.Require().Equal(4, afterCount-beforeCount)
 }
 
@@ -270,7 +270,7 @@ func (s *UploadPackSuite) TestFetchError() {
 	//     different errors if a previous error was found.
 }
 
-func (s *UploadPackSuite) coundObjects(st storage.Storer) int {
+func (s *UploadPackSuite) countObjects(st storage.Storer) int {
 	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
 	s.Require().NoError(err)
 	defer iter.Close()
