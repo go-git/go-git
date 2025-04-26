@@ -180,6 +180,9 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 	}
 
 	defer func() {
+		if res.Body == nil {
+				return
+		}
 		bodyErr := res.Body.Close()
 		if err == nil {
 			err = bodyErr
