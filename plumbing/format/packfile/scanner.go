@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -67,7 +68,7 @@ type Scanner struct {
 	// hasher is used to hash non-delta objects.
 	hasher plumbing.Hasher
 	// hasher256 is optional and used to hash the non-delta objects using SHA256.
-	hasher256 *plumbing.Hasher256
+	hasher256 *plumbing.Hasher
 	// crc is used to generate the CRC-32 checksum of each object's content.
 	crc hash.Hash32
 	// packhash hashes the pack contents so that at the end it is able to
@@ -105,7 +106,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		scannerReader: newScannerReader(rs, io.MultiWriter(crc, packhash)),
 		zr:            gogitsync.NewZlibReader(&dict),
 		objIndex:      -1,
-		hasher:        plumbing.NewHasher(plumbing.AnyObject, 0),
+		hasher:        plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 		crc:           crc,
 		packhash:      packhash,
 		nextFn:        packHeaderSignature,

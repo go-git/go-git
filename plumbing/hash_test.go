@@ -3,6 +3,7 @@ package plumbing
 import (
 	"testing"
 
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -37,7 +38,9 @@ func (s *HashSuite) TestIsZero() {
 
 func (s *HashSuite) TestNewHasher() {
 	content := "hasher test sample"
-	hash, err := newHasherSHA1().Compute(BlobObject, []byte(content))
+	hasher, err := newHasher(format.SHA1)
+	s.Require().NoError(err)
+	hash, err := hasher.Compute(BlobObject, []byte(content))
 	s.NoError(err)
 	s.Equal("dc42c3cc80028d0ec61f0a6b24cadd1c195c4dfc", hash.String())
 }

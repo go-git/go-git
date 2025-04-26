@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
@@ -309,7 +310,8 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 }
 
 func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
-	typ plumbing.ObjectType, writeHeader objectHeaderWriter) (uint, plumbing.Hash, error) {
+	typ plumbing.ObjectType, writeHeader objectHeaderWriter,
+) (uint, plumbing.Hash, error) {
 	deltaBuf := bufio.NewReaderSize(delta, 1024)
 	srcSz, err := decodeLEB128ByteReader(deltaBuf)
 	if err != nil {
@@ -343,7 +345,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 
 	remainingTargetSz := targetSz
 
-	hasher := plumbing.NewHasher(typ, int64(targetSz))
+	hasher := plumbing.NewHasher(format.SHA1, typ, int64(targetSz))
 	mw := io.MultiWriter(dst, hasher)
 
 	bufp := sync.GetByteSlice()

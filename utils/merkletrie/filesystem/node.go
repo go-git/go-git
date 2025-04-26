@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 
 	"github.com/go-git/go-billy/v5"
@@ -178,7 +179,7 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 
 	defer f.Close()
 
-	h := plumbing.NewHasher(plumbing.BlobObject, n.size)
+	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
 	if _, err := io.Copy(h, f); err != nil {
 		return plumbing.ZeroHash
 	}
@@ -192,7 +193,7 @@ func (n *node) doCalculateHashForSymlink() plumbing.Hash {
 		return plumbing.ZeroHash
 	}
 
-	h := plumbing.NewHasher(plumbing.BlobObject, n.size)
+	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
 	if _, err := h.Write([]byte(target)); err != nil {
 		return plumbing.ZeroHash
 	}

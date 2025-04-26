@@ -2,19 +2,17 @@ package plumbing
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
 
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/pjbgf/sha1cd"
 )
 
-var (
-	empty = make([]byte, hash.SHA256Size)
-)
+var empty = make([]byte, sha256.Size)
 
 // FromHex parses a hexadecimal string and returns an ObjectID
 // and a boolean confirming whether the operation was successful.
@@ -26,7 +24,7 @@ func FromHex(in string) (ObjectID, bool) {
 	var id ObjectID
 
 	switch len(in) {
-	case hash.SHA256HexSize:
+	case SHA256HexSize:
 		id.format = format.SHA256
 	}
 
@@ -49,10 +47,11 @@ func FromBytes(in []byte) (ObjectID, bool) {
 	var id ObjectID
 
 	switch len(in) {
-	case hash.SHA1Size:
+	case sha1cd.Size:
+		id.format = format.SHA1
 
-	case hash.SHA256Size:
-		id.format = config.SHA256
+	case sha256.Size:
+		id.format = format.SHA256
 
 	default:
 		return id, false
@@ -65,8 +64,8 @@ func FromBytes(in []byte) (ObjectID, bool) {
 // ObjectID represents the ID of a Git object. The object data is kept
 // in its hexadecimal form.
 type ObjectID struct {
-	hash   [hash.SHA256Size]byte
-	format config.ObjectFormat
+	hash   [sha256.Size]byte
+	format format.ObjectFormat
 }
 
 func (s ObjectID) HexSize() int {
@@ -75,10 +74,10 @@ func (s ObjectID) HexSize() int {
 
 // Size returns the length of the resulting hash.
 func (s ObjectID) Size() int {
-	if s.format == config.SHA256 {
-		return hash.SHA256Size
+	if s.format == format.SHA256 {
+		return sha256.Size
 	}
-	return hash.SHA1Size
+	return sha1cd.Size
 }
 
 // Compare compares the hash's sum with a slice of bytes.
@@ -137,10 +136,10 @@ func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (s *ObjectID) ResetBySize(idSize int) {
-	if idSize == hash.SHA256Size {
-		s.format = config.SHA256
+	if idSize == sha256.Size {
+		s.format = format.SHA256
 	} else {
-		s.format = config.SHA1
+		s.format = format.SHA1
 	}
 	copy(s.hash[:], s.hash[:0])
 }

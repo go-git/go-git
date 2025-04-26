@@ -1,11 +1,15 @@
 package plumbing
 
 import (
+	"crypto"
+	"crypto/sha256"
 	"encoding/hex"
+	"hash"
 	"sort"
 	"strconv"
 
-	"github.com/go-git/go-git/v6/plumbing/hash"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/pjbgf/sha1cd"
 )
 
 // Hash SHA1 hashed content
@@ -16,7 +20,11 @@ var ZeroHash ObjectID
 
 // ComputeHash compute the hash for a given ObjectType and content
 func ComputeHash(t ObjectType, content []byte) Hash {
-	h, _ := newHasherSHA1().Compute(t, content)
+	ha, err := newHasher(format.SHA1)
+	if err != nil {
+		return ZeroHash
+	}
+	h, _ := ha.Compute(t, content)
 	return h
 }
 
@@ -33,8 +41,16 @@ type Hasher struct {
 	hash.Hash
 }
 
-func NewHasher(t ObjectType, size int64) Hasher {
-	h := Hasher{hash.New(hash.CryptoType)}
+func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
+	var h Hasher
+	switch f {
+	case format.SHA256:
+		h.Hash = crypto.SHA256.New()
+	default:
+		// Use SHA1 by default
+		// TODO: return error when format is not supported
+		h.Hash = sha1cd.New()
+	}
 	h.Reset(t, size)
 	return h
 }
@@ -68,10 +84,22 @@ func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 // IsHash returns true if the given string is a valid hash.
 func IsHash(s string) bool {
 	switch len(s) {
-	case hash.HexSize:
+	case SHA1HexSize, SHA256HexSize:
 		_, err := hex.DecodeString(s)
 		return err == nil
 	default:
 		return false
 	}
 }
+
+const (
+	// SHA1HexSize   is the SHA1 hex size.
+	SHA1HexSize = sha1cd.Size * 2
+	// SHA256HexSize is the SHA256 hex size.
+	SHA256HexSize = sha256.Size * 2
+)
+
+// HexSize is the SHA1 hex size.
+//
+// Deprecated: Use [SHA1HexSize] instead.
+const HexSize = SHA1HexSize
