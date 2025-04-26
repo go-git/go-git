@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/stretchr/testify/suite"
@@ -281,17 +280,4 @@ func (s *UploadPackSuite) countObjects(st storage.Storer) int {
 	})
 	s.Require().NoError(err)
 	return count
-}
-
-func (s *UploadPackSuite) checkObjectNumber(st storage.Storer, n int) {
-	los, ok := st.(storer.LooseObjectStorer)
-	s.Require().True(ok)
-
-	var objs int
-	err := los.ForEachObjectHash(func(plumbing.Hash) error {
-		objs++
-		return nil
-	})
-	s.Require().NoError(err)
-	s.Require().Equal(n, objs)
 }
