@@ -2,17 +2,15 @@ package plumbing
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
 
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/pjbgf/sha1cd"
 )
 
-var empty = make([]byte, sha256.Size)
+var empty = make([]byte, format.SHA256Size)
 
 // FromHex parses a hexadecimal string and returns an ObjectID
 // and a boolean confirming whether the operation was successful.
@@ -24,7 +22,7 @@ func FromHex(in string) (ObjectID, bool) {
 	var id ObjectID
 
 	switch len(in) {
-	case SHA256HexSize:
+	case format.SHA256HexSize:
 		id.format = format.SHA256
 	}
 
@@ -47,10 +45,10 @@ func FromBytes(in []byte) (ObjectID, bool) {
 	var id ObjectID
 
 	switch len(in) {
-	case sha1cd.Size:
+	case format.SHA1Size:
 		id.format = format.SHA1
 
-	case sha256.Size:
+	case format.SHA256Size:
 		id.format = format.SHA256
 
 	default:
@@ -64,20 +62,17 @@ func FromBytes(in []byte) (ObjectID, bool) {
 // ObjectID represents the ID of a Git object. The object data is kept
 // in its hexadecimal form.
 type ObjectID struct {
-	hash   [sha256.Size]byte
+	hash   [format.SHA256Size]byte
 	format format.ObjectFormat
 }
 
 func (s ObjectID) HexSize() int {
-	return s.Size() * 2
+	return s.format.HexSize()
 }
 
 // Size returns the length of the resulting hash.
 func (s ObjectID) Size() int {
-	if s.format == format.SHA256 {
-		return sha256.Size
-	}
-	return sha1cd.Size
+	return s.format.Size()
 }
 
 // Compare compares the hash's sum with a slice of bytes.
@@ -136,7 +131,7 @@ func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (s *ObjectID) ResetBySize(idSize int) {
-	if idSize == sha256.Size {
+	if idSize == format.SHA256Size {
 		s.format = format.SHA256
 	} else {
 		s.format = format.SHA1

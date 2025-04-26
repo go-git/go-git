@@ -66,5 +66,40 @@ func (f ObjectFormat) String() string {
 	}
 }
 
+// Size returns the hash size of the ObjectFormat.
+func (f ObjectFormat) Size() int {
+	switch f {
+	case SHA1:
+		return SHA1Size
+	case SHA256:
+		return SHA256Size
+	default:
+		return 0
+	}
+}
+
+// HexSize returns the hash size in hexadecimal format of the ObjectFormat.
+func (f ObjectFormat) HexSize() int {
+	switch f {
+	case SHA1:
+		return SHA1HexSize
+	case SHA256:
+		return SHA256HexSize
+	default:
+		return 0
+	}
+}
+
 // ErrInvalidObjectFormat is returned when an invalid ObjectFormat is used.
 var ErrInvalidObjectFormat = errors.New("invalid object format")
+
+const (
+	// SHA1Size is the size of SHA1 hash.
+	SHA1Size = 20
+	// SHA256Size is the size of SHA256 hash.
+	SHA256Size = 32
+	// SHA1HexSize is the size of SHA1 hash in hexadecimal format.
+	SHA1HexSize = SHA1Size * 2
+	// SHA256HexSize is the size of SHA256 hash in hexadecimal format.
+	SHA256HexSize = SHA256Size * 2
+)

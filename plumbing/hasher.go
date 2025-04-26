@@ -2,13 +2,10 @@ package plumbing
 
 import (
 	"crypto"
-	"crypto/sha256"
 	"fmt"
 	"hash"
 	"strconv"
 	"sync"
-
-	"github.com/pjbgf/sha1cd"
 
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
@@ -57,7 +54,7 @@ func newHasher(f format.ObjectFormat) (*ObjectHasher, error) {
 	var hasher hash.Hash
 	switch f {
 	case format.SHA1:
-		hasher = sha1cd.New()
+		hasher = crypto.SHA1.New()
 	case format.SHA256:
 		hasher = crypto.SHA256.New()
 	default:
@@ -89,14 +86,16 @@ func FromObjectFormat(f format.ObjectFormat) (*ObjectHasher, error) {
 // If the hash type is not recognised, an ErrUnsupportedHashFunction
 // error is returned.
 func FromHash(h hash.Hash) (*ObjectHasher, error) {
+	var f format.ObjectFormat
 	switch h.Size() {
-	case sha1cd.Size:
-		return newHasher(format.SHA1)
-	case sha256.Size:
-		return newHasher(format.SHA256)
+	case format.SHA1Size:
+		f = format.SHA1
+	case format.SHA256Size:
+		f = format.SHA256
 	default:
 		return nil, fmt.Errorf("unsupported hash function: %T", h)
 	}
+	return newHasher(f)
 }
 
 func writeHeader(h hash.Hash, ot ObjectType, sz int64) {
