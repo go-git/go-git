@@ -127,7 +127,7 @@ func (s *OptionsSuite) TestCheckoutOptionsValidate() {
 	checkoutOpts := CheckoutOptions{}
 	err := checkoutOpts.Validate()
 	s.NotNil(err)
-	s.Equal(ErrBranchHashExclusive, err)
+	s.ErrorIs(ErrBranchHashExclusive, err)
 
 	checkoutOpts.Create = true
 	err = checkoutOpts.Validate()
@@ -138,7 +138,7 @@ func (s *OptionsSuite) TestCheckoutOptionsValidate() {
 	checkoutOpts.Hash = plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd")
 	err = checkoutOpts.Validate()
 	s.NotNil(err)
-	s.Equal(ErrCreateRequiresBranch, err)
+	s.ErrorIs(ErrCreateRequiresBranch, err)
 
 	checkoutOpts.Branch = "test"
 	checkoutOpts.Force = true
@@ -146,5 +146,5 @@ func (s *OptionsSuite) TestCheckoutOptionsValidate() {
 
 	err = checkoutOpts.Validate()
 	s.NotNil(err)
-	s.Equal(ErrForceKeepExclusive, err)
+	s.ErrorIs(ErrForceKeepExclusive, err)
 }
