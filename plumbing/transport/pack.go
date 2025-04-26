@@ -169,7 +169,7 @@ func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Referen
 
 	// Some servers like jGit, announce capabilities instead of returning an
 	// packp message with a flush. This verifies that we received a empty
-	// adv-refs, even it contains capabilities.
+	// adv-refs, even if it contains capabilities.
 	forPush := p.svc == ReceivePackService
 	if !forPush && p.refs.IsEmpty() {
 		return nil, ErrEmptyRemoteRepository
