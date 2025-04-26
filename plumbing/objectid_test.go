@@ -23,7 +23,7 @@ func BenchmarkReadFrom(b *testing.B) {
 
 	b.Run("sha1", func(b *testing.B) {
 		r.Reset(raw)
-		id := &ObjectID{format: config.SHA1}
+		id := &ObjectID{}
 		for i := 0; i < b.N; i++ {
 			_, err = id.ReadFrom(r)
 			require.NoError(b, err)

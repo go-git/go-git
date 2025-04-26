@@ -28,8 +28,6 @@ func FromHex(in string) (ObjectID, bool) {
 	switch len(in) {
 	case hash.SHA256HexSize:
 		id.format = format.SHA256
-	default:
-		id.format = format.SHA1
 	}
 
 	out, err := hex.DecodeString(in)
@@ -52,7 +50,6 @@ func FromBytes(in []byte) (ObjectID, bool) {
 
 	switch len(in) {
 	case hash.SHA1Size:
-		id.format = config.SHA1
 
 	case hash.SHA256Size:
 		id.format = config.SHA256
@@ -118,20 +115,12 @@ func (s ObjectID) String() string {
 }
 
 func (s *ObjectID) Write(in []byte) (int, error) {
-	if s.format == "" {
-		s.format = config.SHA1
-	}
-
 	n := copy(s.hash[:], in[:])
 	return n, nil
 }
 
 // ReadFrom loads the ObjectID from [r].
 func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
-	if s.format == "" {
-		s.format = config.SHA1
-	}
-
 	err := binary.Read(r, binary.BigEndian, s.hash[:s.Size()])
 	if err != nil {
 		return 0, fmt.Errorf("read hash from binary: %w", err)
@@ -151,7 +140,7 @@ func (s *ObjectID) ResetBySize(idSize int) {
 	if idSize == hash.SHA256Size {
 		s.format = config.SHA256
 	} else {
-		s.format = config.SHA1
+		s.format = ""
 	}
 	copy(s.hash[:], s.hash[:0])
 }

@@ -77,7 +77,7 @@ func (h *objectHasherSHA1) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()
 
-	out := ObjectID{format: config.SHA1}
+	out := ObjectID{}
 	writeHeader(h.hasher, ot, int64(len(d)))
 	_, err := h.hasher.Write(d)
 	if err != nil {
