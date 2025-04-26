@@ -46,7 +46,7 @@ func BenchmarkObjectIDComparison(b *testing.B) {
 	id2, _ := hex.DecodeString("43aec75c611f22c73b27ece2841e6ccca592f1")
 
 	b.Run("compare", func(b *testing.B) {
-		first := NewObjectIDFromBytes(id1)
+		first, _ := FromBytes(id1)
 
 		for i := 0; i < b.N; i++ {
 			first.Compare(id2)
@@ -54,8 +54,8 @@ func BenchmarkObjectIDComparison(b *testing.B) {
 	})
 
 	b.Run("compare + bytes()", func(b *testing.B) {
-		first := NewObjectIDFromBytes(id1)
-		second := NewObjectIDFromBytes(id2)
+		first, _ := FromBytes(id1)
+		second, _ := FromBytes(id2)
 
 		for i := 0; i < b.N; i++ {
 			_ = first.Compare(second.Bytes())
@@ -63,8 +63,8 @@ func BenchmarkObjectIDComparison(b *testing.B) {
 	})
 
 	b.Run("equal", func(b *testing.B) {
-		first := NewObjectIDFromBytes(id1)
-		second := NewObjectIDFromBytes(id2)
+		first, _ := FromBytes(id1)
+		second, _ := FromBytes(id2)
 
 		for i := 0; i < b.N; i++ {
 			_ = first.Equal(second)

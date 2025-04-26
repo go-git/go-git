@@ -1060,570 +1060,570 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 		Entries: []TreeEntry{
 			{
 				Name: "alter.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("a49d3349d7e23fb581194f4cb59ac0d51b21f78"),
+				Hash: plumbing.NewHash("a49d3349d7e23fb581194f4cb59ac0d51b21f78"),
 			},
 			{
 				Name: "analyze.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("9a3e9597dbb32077c91d969d22c6273f702ac"),
+				Hash: plumbing.NewHash("9a3e9597dbb32077c91d969d22c6273f702ac"),
 			},
 			{
 				Name: "attach.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b8e12199b57de811eae0d06142d5ac4fd430b1d8"),
+				Hash: plumbing.NewHash("b8e12199b57de811eae0d06142d5ac4fd430b1d8"),
 			},
 			{
 				Name: "auth.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d38bb836a784fbfab6ab7b3d4e6dd43edc41fa7"),
+				Hash: plumbing.NewHash("d38bb836a784fbfab6ab7b3d4e6dd43edc41fa7"),
 			},
 			{
 				Name: "backup.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("252f61cfcaa8fcf3137e8ed6847dcfe1dc1de54"),
+				Hash: plumbing.NewHash("252f61cfcaa8fcf3137e8ed6847dcfe1dc1de54"),
 			},
 			{
 				Name: "bitvec.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("52184aa964ce1898f35d1b3d87871c2def4c53d"),
+				Hash: plumbing.NewHash("52184aa964ce1898f35d1b3d87871c2def4c53d"),
 			},
 			{
 				Name: "btmutex.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d87d4d5feeb6307aecdc9a83111489ab30c678c3"),
+				Hash: plumbing.NewHash("d87d4d5feeb6307aecdc9a83111489ab30c678c3"),
 			},
 			{
 				Name: "btree.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("3ca6583e3c8e3120f973e0e9c4536258b26439"),
+				Hash: plumbing.NewHash("3ca6583e3c8e3120f973e0e9c4536258b26439"),
 			},
 			{
 				Name: "btree.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("ace0f8cd217770a2f66b2eb871bbc5fdc6fc2b68"),
+				Hash: plumbing.NewHash("ace0f8cd217770a2f66b2eb871bbc5fdc6fc2b68"),
 			},
 			{
 				Name: "btreeInt.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("ce3c5493f8cad0bc548ae8e44e512831d8fac431"),
+				Hash: plumbing.NewHash("ce3c5493f8cad0bc548ae8e44e512831d8fac431"),
 			},
 			{
 				Name: "build.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("3c91cdcfdb7b17cbc2d5c29571a9827de071e6"),
+				Hash: plumbing.NewHash("3c91cdcfdb7b17cbc2d5c29571a9827de071e6"),
 			},
 			{
 				Name: "callback.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d4c65cb924580296ad069a04bf9c9e9534ecaa7"),
+				Hash: plumbing.NewHash("d4c65cb924580296ad069a04bf9c9e9534ecaa7"),
 			},
 			{
 				Name: "complete.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("9e914085c046ed3bf6f4485220692dca1743c5"),
+				Hash: plumbing.NewHash("9e914085c046ed3bf6f4485220692dca1743c5"),
 			},
 			{
 				Name: "crypto.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("2551e6ba239f85a357796a8dda8ca3e297093f8"),
+				Hash: plumbing.NewHash("2551e6ba239f85a357796a8dda8ca3e297093f8"),
 			},
 			{
 				Name: "crypto.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f71f532cdc448fa1dd5c6eff5fbd33a9155aa97"),
+				Hash: plumbing.NewHash("f71f532cdc448fa1dd5c6eff5fbd33a9155aa97"),
 			},
 			{
 				Name: "crypto_cc.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("537df7e3b36ab5cfdd6fca4028ebcae18687d64d"),
+				Hash: plumbing.NewHash("537df7e3b36ab5cfdd6fca4028ebcae18687d64d"),
 			},
 			{
 				Name: "crypto_impl.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("a58927c76ef6205677be5c1a8e80c98356b3a9d3"),
+				Hash: plumbing.NewHash("a58927c76ef6205677be5c1a8e80c98356b3a9d3"),
 			},
 			{
 				Name: "crypto_libtomcrypt.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("1a3383e01a72111c3f6619222b065f4bd1be1"),
+				Hash: plumbing.NewHash("1a3383e01a72111c3f6619222b065f4bd1be1"),
 			},
 			{
 				Name: "crypto_openssl.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d019813b476c52d020e2c0acd524e9ea3dfb9fe"),
+				Hash: plumbing.NewHash("d019813b476c52d020e2c0acd524e9ea3dfb9fe"),
 			},
 			{
 				Name: "ctime.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("60595ff88d92f78264fbd9df9afea16ae86ff"),
+				Hash: plumbing.NewHash("60595ff88d92f78264fbd9df9afea16ae86ff"),
 			},
 			{
 				Name: "date.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("758dd7c89bca3937a9d706ea982ce3acf11d183"),
+				Hash: plumbing.NewHash("758dd7c89bca3937a9d706ea982ce3acf11d183"),
 			},
 			{
 				Name: "delete.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("634e115563ae12ba6558ccc512aed631c066bad8"),
+				Hash: plumbing.NewHash("634e115563ae12ba6558ccc512aed631c066bad8"),
 			},
 			{
 				Name: "expr.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("66397e078ae48b2e7175e3385677819722ddd6c"),
+				Hash: plumbing.NewHash("66397e078ae48b2e7175e3385677819722ddd6c"),
 			},
 			{
 				Name: "fault.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("c328c4f936edf96712dbe73a07662f0a26b1da"),
+				Hash: plumbing.NewHash("c328c4f936edf96712dbe73a07662f0a26b1da"),
 			},
 			{
 				Name: "fkey.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("ac35bc194cdeb127989b94035cee06f57376f5e"),
+				Hash: plumbing.NewHash("ac35bc194cdeb127989b94035cee06f57376f5e"),
 			},
 			{
 				Name: "func.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("c02f96adad5bce9ac83d35ff469d6f6d43be5"),
+				Hash: plumbing.NewHash("c02f96adad5bce9ac83d35ff469d6f6d43be5"),
 			},
 			{
 				Name: "global.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("7b2cf2130e0d1a7b889d844ccc828f7b67bf9"),
+				Hash: plumbing.NewHash("7b2cf2130e0d1a7b889d844ccc828f7b67bf9"),
 			},
 			{
 				Name: "hash.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e81dcf95e43848fa7086b7f781c090adc7e6ca8e"),
+				Hash: plumbing.NewHash("e81dcf95e43848fa7086b7f781c090adc7e6ca8e"),
 			},
 			{
 				Name: "hash.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("82b7c58c719b547e101742aa951739ff2eee7"),
+				Hash: plumbing.NewHash("82b7c58c719b547e101742aa951739ff2eee7"),
 			},
 			{
 				Name: "hwtime.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b8bc5a295be3fac8351fa9f08a77579d59c9a8e4"),
+				Hash: plumbing.NewHash("b8bc5a295be3fac8351fa9f08a77579d59c9a8e4"),
 			},
 			{
 				Name: "insert.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("9a5661f59a72952be6c167a0c2db159b91b71fae"),
+				Hash: plumbing.NewHash("9a5661f59a72952be6c167a0c2db159b91b71fae"),
 			},
 			{
 				Name: "journal.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("fed27be3e38055d2204395cde6ffc94589fbf5e8"),
+				Hash: plumbing.NewHash("fed27be3e38055d2204395cde6ffc94589fbf5e8"),
 			},
 			{
 				Name: "legacy.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("94649ae75ab9385108dd887af0759289fb23cb"),
+				Hash: plumbing.NewHash("94649ae75ab9385108dd887af0759289fb23cb"),
 			},
 			{
 				Name: "lempar.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("2afaa6cea6d829602c2786c1f8a37f567cf6fd53"),
+				Hash: plumbing.NewHash("2afaa6cea6d829602c2786c1f8a37f567cf6fd53"),
 			},
 			{
 				Name: "loadext.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("cdcf6a93b8c4f914b9424ef14cb4a3a37eca1"),
+				Hash: plumbing.NewHash("cdcf6a93b8c4f914b9424ef14cb4a3a37eca1"),
 			},
 			{
 				Name: "main.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("39f6421e681277cc3dba09abe7cf790d528f5c3"),
+				Hash: plumbing.NewHash("39f6421e681277cc3dba09abe7cf790d528f5c3"),
 			},
 			{
 				Name: "malloc.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("35a44e5f61c2e44c481c6251bdaae7acda4deb"),
+				Hash: plumbing.NewHash("35a44e5f61c2e44c481c6251bdaae7acda4deb"),
 			},
 			{
 				Name: "mem0.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("db6667d6a955a696df6289b49178969343aa"),
+				Hash: plumbing.NewHash("db6667d6a955a696df6289b49178969343aa"),
 			},
 			{
 				Name: "mem1.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("3578496f3337b231dfb53cc2e1c6b323d791e"),
+				Hash: plumbing.NewHash("3578496f3337b231dfb53cc2e1c6b323d791e"),
 			},
 			{
 				Name: "mem2.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("26448ea8aae0366af0541afea479b42f4a69b5a"),
+				Hash: plumbing.NewHash("26448ea8aae0366af0541afea479b42f4a69b5a"),
 			},
 			{
 				Name: "mem3.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("1a1b791f28f8cf3ce4f9a35cdad7b7107568c715"),
+				Hash: plumbing.NewHash("1a1b791f28f8cf3ce4f9a35cdad7b7107568c715"),
 			},
 			{
 				Name: "mem5.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("783cef6176c59cbf3091463195a1a54f4e42e8"),
+				Hash: plumbing.NewHash("783cef6176c59cbf3091463195a1a54f4e42e8"),
 			},
 			{
 				Name: "memjournal.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("5725948f65d427b7f7f929aca3ff224b1753df"),
+				Hash: plumbing.NewHash("5725948f65d427b7f7f929aca3ff224b1753df"),
 			},
 			{
 				Name: "mutex.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b567e7c27ef241086afe0f69666e27bf598a59"),
+				Hash: plumbing.NewHash("b567e7c27ef241086afe0f69666e27bf598a59"),
 			},
 			{
 				Name: "mutex.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("9788122527789a9c36c24d41f6114d64c06db3"),
+				Hash: plumbing.NewHash("9788122527789a9c36c24d41f6114d64c06db3"),
 			},
 			{
 				Name: "mutex_noop.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("456e82a25e271b614e7f4f83c228553b7fa158"),
+				Hash: plumbing.NewHash("456e82a25e271b614e7f4f83c228553b7fa158"),
 			},
 			{
 				Name: "mutex_unix.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("eca7295831c2f0ee48ba54d062914d6a1dd8ebe"),
+				Hash: plumbing.NewHash("eca7295831c2f0ee48ba54d062914d6a1dd8ebe"),
 			},
 			{
 				Name: "mutex_w32.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("27d1af5bd331bdb973f6145b74f72b67cfc46e"),
+				Hash: plumbing.NewHash("27d1af5bd331bdb973f6145b74f72b67cfc46e"),
 			},
 			{
 				Name: "notify.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("fcab5bfaf0198d3de93fa88b5eae9e96ca3c8e8"),
+				Hash: plumbing.NewHash("fcab5bfaf0198d3de93fa88b5eae9e96ca3c8e8"),
 			},
 			{
 				Name: "os.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("be2ea4cfc0195993a340c92aeddf1be4b8ed73a"),
+				Hash: plumbing.NewHash("be2ea4cfc0195993a340c92aeddf1be4b8ed73a"),
 			},
 			{
 				Name: "os.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("7a2ddd17f771f98ff8ccd6f033bdacc5e9f6c"),
+				Hash: plumbing.NewHash("7a2ddd17f771f98ff8ccd6f033bdacc5e9f6c"),
 			},
 			{
 				Name: "os_common.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f6c3e7ff89463086401822f481e7e3b87b2c78c7"),
+				Hash: plumbing.NewHash("f6c3e7ff89463086401822f481e7e3b87b2c78c7"),
 			},
 			{
 				Name: "os_unix.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("abc23a452e72f71c76afa9983c3ad9d425616c6d"),
+				Hash: plumbing.NewHash("abc23a452e72f71c76afa9983c3ad9d425616c6d"),
 			},
 			{
 				Name: "os_win.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("aeb08814b3dabe81b84cda918582b0ffd86e487"),
+				Hash: plumbing.NewHash("aeb08814b3dabe81b84cda918582b0ffd86e487"),
 			},
 			{
 				Name: "pager.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("61727faa9cf3d566265be7eec5b2a35f6a4bc9f"),
+				Hash: plumbing.NewHash("61727faa9cf3d566265be7eec5b2a35f6a4bc9f"),
 			},
 			{
 				Name: "pager.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("6f659136e27679da43a2e39e1b68637ecadcf68"),
+				Hash: plumbing.NewHash("6f659136e27679da43a2e39e1b68637ecadcf68"),
 			},
 			{
 				Name: "parse.y", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("8310b26989b05bed1e1b3da80f5c0a52e9ad1d2"),
+				Hash: plumbing.NewHash("8310b26989b05bed1e1b3da80f5c0a52e9ad1d2"),
 			},
 			{
 				Name: "pcache.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("482a188bee1991bc8adac96a193a53e5462a8c10"),
+				Hash: plumbing.NewHash("482a188bee1991bc8adac96a193a53e5462a8c10"),
 			},
 			{
 				Name: "pcache.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f4d4ad71c1d78c6dabde25215cd415a76148ca"),
+				Hash: plumbing.NewHash("f4d4ad71c1d78c6dabde25215cd415a76148ca"),
 			},
 			{
 				Name: "pcache1.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("4147d2eff55bdd9ff7c686c60181020166c5f50"),
+				Hash: plumbing.NewHash("4147d2eff55bdd9ff7c686c60181020166c5f50"),
 			},
 			{
 				Name: "pragma.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("22977169617d4922b3993f769d90fa7bc441ea50"),
+				Hash: plumbing.NewHash("22977169617d4922b3993f769d90fa7bc441ea50"),
 			},
 			{
 				Name: "prepare.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d78d83cbd87897f573303f9f57ab8de024a6e3f8"),
+				Hash: plumbing.NewHash("d78d83cbd87897f573303f9f57ab8de024a6e3f8"),
 			},
 			{
 				Name: "printf.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("9f68d24ffdc9f3d427f80a8239a7fa3a98aecbd"),
+				Hash: plumbing.NewHash("9f68d24ffdc9f3d427f80a8239a7fa3a98aecbd"),
 			},
 			{
 				Name: "random.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("234ebdf658f436cc7c68f027c48be1b9ba34e98"),
+				Hash: plumbing.NewHash("234ebdf658f436cc7c68f027c48be1b9ba34e98"),
 			},
 			{
 				Name: "resolve.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("91efcaa1a16bfc98fb35d85cad156b93533e4e6"),
+				Hash: plumbing.NewHash("91efcaa1a16bfc98fb35d85cad156b93533e4e6"),
 			},
 			{
 				Name: "rowset.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("5761f98550b176cce11dcbcec93899a075bb64fd"),
+				Hash: plumbing.NewHash("5761f98550b176cce11dcbcec93899a075bb64fd"),
 			},
 			{
 				Name: "select.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f3f149963955b8ed0c9fe6e1eec836c1a5294b4"),
+				Hash: plumbing.NewHash("f3f149963955b8ed0c9fe6e1eec836c1a5294b4"),
 			},
 			{
 				Name: "shell.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("1be2871fed9a1fdf1df7198e1125360ecba76cc"),
+				Hash: plumbing.NewHash("1be2871fed9a1fdf1df7198e1125360ecba76cc"),
 			},
 			{
 				Name: "sqlcipher.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("82753095cd1723c5ff4f1115e4975591ee34f5ce"),
+				Hash: plumbing.NewHash("82753095cd1723c5ff4f1115e4975591ee34f5ce"),
 			},
 			{
 				Name: "sqlite.h.in", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("668823175de5b6ad378fdbc3818b6ab4fbf8e"),
+				Hash: plumbing.NewHash("668823175de5b6ad378fdbc3818b6ab4fbf8e"),
 			},
 			{
 				Name: "sqlite3.rc", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("969876da1e57143de0b4d1c7629fd3356f2e1c96"),
+				Hash: plumbing.NewHash("969876da1e57143de0b4d1c7629fd3356f2e1c96"),
 			},
 			{
 				Name: "sqlite3ext.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("928bb3bad9dd643c301dd2b0ac22287a81284884"),
+				Hash: plumbing.NewHash("928bb3bad9dd643c301dd2b0ac22287a81284884"),
 			},
 			{
 				Name: "sqliteInt.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("5950f237d9f9f2d3ef6bd8be342dcf6489225142"),
+				Hash: plumbing.NewHash("5950f237d9f9f2d3ef6bd8be342dcf6489225142"),
 			},
 			{
 				Name: "sqliteLimit.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("c7aee53cebca94da51e71a822ea5a6deb9385df"),
+				Hash: plumbing.NewHash("c7aee53cebca94da51e71a822ea5a6deb9385df"),
 			},
 			{
 				Name: "status.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("28349e6d3d2088e003b76f8a8954faec5930ba"),
+				Hash: plumbing.NewHash("28349e6d3d2088e003b76f8a8954faec5930ba"),
 			},
 			{
 				Name: "table.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("26bbfb4f456c42982529ea1a63a01751dd3ee95a"),
+				Hash: plumbing.NewHash("26bbfb4f456c42982529ea1a63a01751dd3ee95a"),
 			},
 			{
 				Name: "tclsqlite.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f1bb2921dac68a4f1c8e15cf566b233e92a519f"),
+				Hash: plumbing.NewHash("f1bb2921dac68a4f1c8e15cf566b233e92a519f"),
 			},
 			{
 				Name: "test1.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("a638e480addf14439cdfa4ee164dc31b79f8bcac"),
+				Hash: plumbing.NewHash("a638e480addf14439cdfa4ee164dc31b79f8bcac"),
 			},
 			{
 				Name: "test2.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d130e9d01b7024a5ec6d73592ee4d1fb02cfdb4"),
+				Hash: plumbing.NewHash("d130e9d01b7024a5ec6d73592ee4d1fb02cfdb4"),
 			},
 			{
 				Name: "test3.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e3ed31c814fe3621cebbf51d114518d4fac"),
+				Hash: plumbing.NewHash("e3ed31c814fe3621cebbf51d114518d4fac"),
 			},
 			{
 				Name: "test4.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("a6375c7cc43f6caab7e959533e3db1ff75ae4"),
+				Hash: plumbing.NewHash("a6375c7cc43f6caab7e959533e3db1ff75ae4"),
 			},
 			{
 				Name: "test5.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("303d125b22628423d986f71e27c7cf714a745a6"),
+				Hash: plumbing.NewHash("303d125b22628423d986f71e27c7cf714a745a6"),
 			},
 			{
 				Name: "test6.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("c151ea42989bbe24ee4b9a4be378b4f636db641"),
+				Hash: plumbing.NewHash("c151ea42989bbe24ee4b9a4be378b4f636db641"),
 			},
 			{
 				Name: "test7.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("3cd4a224d7e8e16bd7cbe49e2d3e94ce9b17bd76"),
+				Hash: plumbing.NewHash("3cd4a224d7e8e16bd7cbe49e2d3e94ce9b17bd76"),
 			},
 			{
 				Name: "test8.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("c5739332d46e57121da27c3e88fde75aeb8710f7"),
+				Hash: plumbing.NewHash("c5739332d46e57121da27c3e88fde75aeb8710f7"),
 			},
 			{
 				Name: "test9.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e5993e8ff78f61c2435b6f97a3b463e227c767ac"),
+				Hash: plumbing.NewHash("e5993e8ff78f61c2435b6f97a3b463e227c767ac"),
 			},
 			{
 				Name: "test_async.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b0b943185bfc23c17fd08f55768cac12a9f56951"),
+				Hash: plumbing.NewHash("b0b943185bfc23c17fd08f55768cac12a9f56951"),
 			},
 			{
 				Name: "test_autoext.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b513f3173a2176e2d9fcaa99193036bfc37e91"),
+				Hash: plumbing.NewHash("b513f3173a2176e2d9fcaa99193036bfc37e91"),
 			},
 			{
 				Name: "test_backup.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e967424a29f738aecfdac578e9b87a4c4ae8d7f"),
+				Hash: plumbing.NewHash("e967424a29f738aecfdac578e9b87a4c4ae8d7f"),
 			},
 			{
 				Name: "test_btree.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("db72889b2afb6272828dda866dccf122a49a7299"),
+				Hash: plumbing.NewHash("db72889b2afb6272828dda866dccf122a49a7299"),
 			},
 			{
 				Name: "test_config.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("534727a08042b6cad67e267e87b43a41a73b299"),
+				Hash: plumbing.NewHash("534727a08042b6cad67e267e87b43a41a73b299"),
 			},
 			{
 				Name: "test_demovfs.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("63762771d9e28f4b3451bbbddf88d1a9120f8"),
+				Hash: plumbing.NewHash("63762771d9e28f4b3451bbbddf88d1a9120f8"),
 			},
 			{
 				Name: "test_devsym.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("21f0f684d861116770defcdecd532ba3eeaba975"),
+				Hash: plumbing.NewHash("21f0f684d861116770defcdecd532ba3eeaba975"),
 			},
 			{
 				Name: "test_fs.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("478cad80b16a909b23bd3c2dad8b449a74587a1"),
+				Hash: plumbing.NewHash("478cad80b16a909b23bd3c2dad8b449a74587a1"),
 			},
 			{
 				Name: "test_func.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("6f9bb03dc88a21d658bf9999baf66dc1d52ebc54"),
+				Hash: plumbing.NewHash("6f9bb03dc88a21d658bf9999baf66dc1d52ebc54"),
 			},
 			{
 				Name: "test_hexio.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b2b5ce730ab7fa80d2d0cc38c77275593ebdbb"),
+				Hash: plumbing.NewHash("b2b5ce730ab7fa80d2d0cc38c77275593ebdbb"),
 			},
 			{
 				Name: "test_init.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e3724d8be314db9eea84b9ddfc8a8beee2291"),
+				Hash: plumbing.NewHash("e3724d8be314db9eea84b9ddfc8a8beee2291"),
 			},
 			{
 				Name: "test_intarray.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f5c3d9e459a16567347e43a92117999697b93"),
+				Hash: plumbing.NewHash("f5c3d9e459a16567347e43a92117999697b93"),
 			},
 			{
 				Name: "test_intarray.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("691337d1aed63715d62e76266ff3b508b1a34"),
+				Hash: plumbing.NewHash("691337d1aed63715d62e76266ff3b508b1a34"),
 			},
 			{
 				Name: "test_journal.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e8701a4eeadb8ead169d606407d54a898592d70"),
+				Hash: plumbing.NewHash("e8701a4eeadb8ead169d606407d54a898592d70"),
 			},
 			{
 				Name: "test_loadext.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("1137e3a9aae9296b8289f6c3daa61f0d070f55a"),
+				Hash: plumbing.NewHash("1137e3a9aae9296b8289f6c3daa61f0d070f55a"),
 			},
 			{
 				Name: "test_malloc.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("cf98a8fb2182c0baf5ad57979b675bb707a93b0"),
+				Hash: plumbing.NewHash("cf98a8fb2182c0baf5ad57979b675bb707a93b0"),
 			},
 			{
 				Name: "test_multiplex.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("624541b32a10d21a2fd1a35ee6632bdac552d41"),
+				Hash: plumbing.NewHash("624541b32a10d21a2fd1a35ee6632bdac552d41"),
 			},
 			{
 				Name: "test_multiplex.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("b7e1afea5fd78b8758265f84c81612cbd25baf"),
+				Hash: plumbing.NewHash("b7e1afea5fd78b8758265f84c81612cbd25baf"),
 			},
 			{
 				Name: "test_mutex.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("c9b4a29ab75c77ea5f36b5193256d7fe658e95"),
+				Hash: plumbing.NewHash("c9b4a29ab75c77ea5f36b5193256d7fe658e95"),
 			},
 			{
 				Name: "test_onefile.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("69867441b8cc9a621af32413fc63da80993764f4"),
+				Hash: plumbing.NewHash("69867441b8cc9a621af32413fc63da80993764f4"),
 			},
 			{
 				Name: "test_osinst.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("531433313ee36c7eb21c02f3115cb7a37486c79"),
+				Hash: plumbing.NewHash("531433313ee36c7eb21c02f3115cb7a37486c79"),
 			},
 			{
 				Name: "test_pcache.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("8fcfe7e26e3ff17496b840f5d63c75783aff8162"),
+				Hash: plumbing.NewHash("8fcfe7e26e3ff17496b840f5d63c75783aff8162"),
 			},
 			{
 				Name: "test_quota.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e590996ca4b8574ab1e4185d577756664ad2495f"),
+				Hash: plumbing.NewHash("e590996ca4b8574ab1e4185d577756664ad2495f"),
 			},
 			{Name: "test_quota.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("2d767a19ab7c3a421cdba6a349204367c22c81"),
+				Hash: plumbing.NewHash("2d767a19ab7c3a421cdba6a349204367c22c81"),
 			},
 			{
 				Name: "test_rtree.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f54ae9b063bb73712fcfc1c6832e2a50f62a97e7"),
+				Hash: plumbing.NewHash("f54ae9b063bb73712fcfc1c6832e2a50f62a97e7"),
 			},
 			{
 				Name: "test_schema.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("12644467647d51394a1f9fa60376298185466fd"),
+				Hash: plumbing.NewHash("12644467647d51394a1f9fa60376298185466fd"),
 			},
 			{
 				Name: "test_server.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("ed818e6f65f27282dc7b1c190ec188c893302b"),
+				Hash: plumbing.NewHash("ed818e6f65f27282dc7b1c190ec188c893302b"),
 			},
 			{
 				Name: "test_sqllog.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("4aa68b7c429323b8eebe6c9c2d7fc66d8d47c9"),
+				Hash: plumbing.NewHash("4aa68b7c429323b8eebe6c9c2d7fc66d8d47c9"),
 			},
 			{
 				Name: "test_stat.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d4c92b5ea111ad58a737112c28f038434c85c0"),
+				Hash: plumbing.NewHash("d4c92b5ea111ad58a737112c28f038434c85c0"),
 			},
 			{
 				Name: "test_superlock.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("936fcad0c56f6bc8589742f6ae1c1eeb8b7d2f1"),
+				Hash: plumbing.NewHash("936fcad0c56f6bc8589742f6ae1c1eeb8b7d2f1"),
 			},
 			{
 				Name: "test_syscall.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("7c873c16d84322f3e2db9459fa29975ea5e68"),
+				Hash: plumbing.NewHash("7c873c16d84322f3e2db9459fa29975ea5e68"),
 			},
 			{
 				Name: "test_tclvar.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("121919c30fd5ec7a3c5848f33843d2eee15"),
+				Hash: plumbing.NewHash("121919c30fd5ec7a3c5848f33843d2eee15"),
 			},
 			{
 				Name: "test_thread.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("2f9363b7501e511981fe32831ff2e8fd2f30c493"),
+				Hash: plumbing.NewHash("2f9363b7501e511981fe32831ff2e8fd2f30c493"),
 			},
 			{
 				Name: "test_vfs.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("fcd577439cfd6c72dde48358921420cf6ef1f86d"),
+				Hash: plumbing.NewHash("fcd577439cfd6c72dde48358921420cf6ef1f86d"),
 			},
 			{
 				Name: "test_vfstrace.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("aacc01fe42e77feb858e4bed0cb7e4a435b210"),
+				Hash: plumbing.NewHash("aacc01fe42e77feb858e4bed0cb7e4a435b210"),
 			},
 			{
 				Name: "test_wsd.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("99e4a056581f58f4536fdb5a5df75c74698a8162"),
+				Hash: plumbing.NewHash("99e4a056581f58f4536fdb5a5df75c74698a8162"),
 			},
 			{
 				Name: "tokenize.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("faea5f26c79c5e188fa87f2fdf6ff76a7a606c5"),
+				Hash: plumbing.NewHash("faea5f26c79c5e188fa87f2fdf6ff76a7a606c5"),
 			},
 			{
 				Name: "trigger.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f1ff766e202a4518ec10e52712cd3e83fbd034"),
+				Hash: plumbing.NewHash("f1ff766e202a4518ec10e52712cd3e83fbd034"),
 			},
 			{
 				Name: "update.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("3ab1ab2a4b65da3f198c1584d54d36f18ca1214a"),
+				Hash: plumbing.NewHash("3ab1ab2a4b65da3f198c1584d54d36f18ca1214a"),
 			},
 			{
 				Name: "utf.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("6d5b1bfe40c3748aa70a3b2fd5eeac5fc04de2"),
+				Hash: plumbing.NewHash("6d5b1bfe40c3748aa70a3b2fd5eeac5fc04de2"),
 			},
 			{
 				Name: "util.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("d83a6315fd87dcc4fb44166fabf2e9bc9671eb8"),
+				Hash: plumbing.NewHash("d83a6315fd87dcc4fb44166fabf2e9bc9671eb8"),
 			},
 			{
 				Name: "vacuum.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("4afb2cca64dd607611222c7932d12eacfa2c22"),
+				Hash: plumbing.NewHash("4afb2cca64dd607611222c7932d12eacfa2c22"),
 			},
 			{
 				Name: "vdbe.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("f343e13d4e91784b158810c5b7d44684dfbfa2a5"),
+				Hash: plumbing.NewHash("f343e13d4e91784b158810c5b7d44684dfbfa2a5"),
 			},
 			{
 				Name: "vdbe.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("fa7b31b727a90d4f637365afcc9bda1d1b1e1d6"),
+				Hash: plumbing.NewHash("fa7b31b727a90d4f637365afcc9bda1d1b1e1d6"),
 			},
 			{
 				Name: "vdbeInt.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("3a5b4028bbd6c95610d7cce369dfcd607aa90"),
+				Hash: plumbing.NewHash("3a5b4028bbd6c95610d7cce369dfcd607aa90"),
 			},
 			{
 				Name: "vdbeapi.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("7c861e2d47218c9163317777c372199e9b4280"),
+				Hash: plumbing.NewHash("7c861e2d47218c9163317777c372199e9b4280"),
 			},
 			{
 				Name: "vdbeaux.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("2c4269a59e6dbce8671c474f346190be2ae1851"),
+				Hash: plumbing.NewHash("2c4269a59e6dbce8671c474f346190be2ae1851"),
 			},
 			{
 				Name: "vdbeblob.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("2e8fd8ee7447e64646e3494b4c41d3a4abb885"),
+				Hash: plumbing.NewHash("2e8fd8ee7447e64646e3494b4c41d3a4abb885"),
 			},
 			{
 				Name: "vdbemem.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("8fc222e2de20501450ecea9d4ebfaac9814aae59"),
+				Hash: plumbing.NewHash("8fc222e2de20501450ecea9d4ebfaac9814aae59"),
 			},
 			{
 				Name: "vdbesort.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("fdfc4a79ddc96e599b1beebacbdb845c63813b2"),
+				Hash: plumbing.NewHash("fdfc4a79ddc96e599b1beebacbdb845c63813b2"),
 			},
 			{
 				Name: "vdbetrace.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("356277e8d23bcadb676b59d1a4dcf842fdc4c972"),
+				Hash: plumbing.NewHash("356277e8d23bcadb676b59d1a4dcf842fdc4c972"),
 			},
 			{
 				Name: "vtab.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("95822c31e2415b60f1a8af7441afac3fbb1c"),
+				Hash: plumbing.NewHash("95822c31e2415b60f1a8af7441afac3fbb1c"),
 			},
 			{
 				Name: "wal.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e642ea215b5c54af358896269ab75cbef8ff2"),
+				Hash: plumbing.NewHash("e642ea215b5c54af358896269ab75cbef8ff2"),
 			},
 			{
 				Name: "wal.h", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("92546354b34c0ab3d2056a7f8a8a52e4d0b5f5"),
+				Hash: plumbing.NewHash("92546354b34c0ab3d2056a7f8a8a52e4d0b5f5"),
 			},
 			{
 				Name: "walker.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e71ed2ac484c916c1cc107e5e5da471cb49599"),
+				Hash: plumbing.NewHash("e71ed2ac484c916c1cc107e5e5da471cb49599"),
 			},
 			{
 				Name: "where.c", Mode: filemode.Regular,
-				Hash: plumbing.NewObjectIDFromHex("e614f4a6d864e7ec4328dbdb254e3ac9f0d287"),
+				Hash: plumbing.NewHash("e614f4a6d864e7ec4328dbdb254e3ac9f0d287"),
 			},
 		},
 		Hash: plumbing.ZeroHash,

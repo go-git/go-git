@@ -65,33 +65,6 @@ func FromBytes(in []byte) (ObjectID, bool) {
 	return id, true
 }
 
-func NewObjectIDFromHex(in string) ObjectID {
-	format := config.SHA1
-	if len(in) == hash.SHA256HexSize {
-		format = config.SHA256
-	}
-
-	v, _ := hex.DecodeString(in)
-	id := ObjectID{
-		format: format,
-	}
-	copy(id.hash[:], v)
-	return id
-}
-
-func NewObjectIDFromBytes(in []byte) ObjectID {
-	format := config.SHA1
-	if len(in) == hash.SHA256Size {
-		format = config.SHA256
-	}
-
-	id := ObjectID{
-		format: format,
-	}
-	copy(id.hash[:], in)
-	return id
-}
-
 // ObjectID represents the ID of a Git object. The object data is kept
 // in its hexadecimal form.
 type ObjectID struct {
