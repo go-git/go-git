@@ -41,18 +41,30 @@ const (
 )
 
 // ObjectFormat defines the object format.
-type ObjectFormat string
+type ObjectFormat int
 
 const (
 	// SHA1 represents the object format used for SHA1.
-	SHA1 ObjectFormat = "sha1"
+	SHA1 ObjectFormat = iota
 
 	// SHA256 represents the object format used for SHA256.
-	SHA256 ObjectFormat = "sha256"
+	SHA256
 
 	// DefaultObjectFormat holds the default object format.
 	DefaultObjectFormat = SHA1
 )
+
+// String returns the string representation of the ObjectFormat.
+func (f ObjectFormat) String() string {
+	switch f {
+	case SHA1:
+		return "sha1"
+	case SHA256:
+		return "sha256"
+	default:
+		return ""
+	}
+}
 
 // ErrInvalidObjectFormat is returned when an invalid ObjectFormat is used.
 var ErrInvalidObjectFormat = errors.New("invalid object format")

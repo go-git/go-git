@@ -140,7 +140,7 @@ func (s *ObjectID) ResetBySize(idSize int) {
 	if idSize == hash.SHA256Size {
 		s.format = config.SHA256
 	} else {
-		s.format = ""
+		s.format = config.SHA1
 	}
 	copy(s.hash[:], s.hash[:0])
 }

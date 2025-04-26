@@ -87,7 +87,7 @@ func newInitOptions() initOptions {
 	return initOptions{
 		defaultBranch: plumbing.Master,
 		workTree:      nil,
-		objectFormat:  "",
+		objectFormat:  formatcfg.SHA1,
 	}
 }
 
@@ -318,7 +318,7 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		return nil, err
 	}
 
-	if o.objectFormat != "" {
+	if o.objectFormat != formatcfg.SHA1 {
 		if o.objectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
 			return nil, ErrSHA256NotSupported
 		}
@@ -1108,7 +1108,6 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 func (r *Repository) fetchAndUpdateReferences(
 	ctx context.Context, o *FetchOptions, ref plumbing.ReferenceName,
 ) (*plumbing.Reference, error) {
-
 	if err := o.Validate(); err != nil {
 		return nil, err
 	}
@@ -1146,8 +1145,8 @@ func (r *Repository) fetchAndUpdateReferences(
 }
 
 func (r *Repository) updateReferences(spec []config.RefSpec,
-	resolvedRef *plumbing.Reference) (updated bool, err error) {
-
+	resolvedRef *plumbing.Reference,
+) (updated bool, err error) {
 	if !resolvedRef.Name().IsBranch() {
 		// Detached HEAD mode
 		h, err := r.resolveToCommitHash(resolvedRef.Hash())
@@ -1182,8 +1181,8 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 }
 
 func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
-	resolvedHead *plumbing.Reference) []*plumbing.Reference {
-
+	resolvedHead *plumbing.Reference,
+) []*plumbing.Reference {
 	var refs []*plumbing.Reference
 
 	// Create resolved HEAD reference with remote prefix if it does not
@@ -1206,7 +1205,8 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 
 func checkAndUpdateReferenceStorerIfNeeded(
 	s storer.ReferenceStorer, r, old *plumbing.Reference) (
-	updated bool, err error) {
+	updated bool, err error,
+) {
 	p, err := s.Reference(r.Name())
 	if err != nil && err != plumbing.ErrReferenceNotFound {
 		return false, err
@@ -1225,7 +1225,8 @@ func checkAndUpdateReferenceStorerIfNeeded(
 }
 
 func updateReferenceStorerIfNeeded(
-	s storer.ReferenceStorer, r *plumbing.Reference) (updated bool, err error) {
+	s storer.ReferenceStorer, r *plumbing.Reference,
+) (updated bool, err error) {
 	return checkAndUpdateReferenceStorerIfNeeded(s, r, nil)
 }
 
@@ -1552,8 +1553,8 @@ func (r *Repository) Head() (*plumbing.Reference, error) {
 // Reference returns the reference for a given reference name. If resolved is
 // true, any symbolic reference will be resolved.
 func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
-	*plumbing.Reference, error) {
-
+	*plumbing.Reference, error,
+) {
 	if resolved {
 		return storer.ResolveReference(r.Storer, name)
 	}
@@ -1606,7 +1607,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 	p := revision.NewParserFromString(rev)
 	items, err := p.Parse()
-
 	if err != nil {
 		return nil, err
 	}
@@ -1670,7 +1670,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			iter := commit.Parents()
 
 			c, err := iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1682,7 +1681,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			}
 
 			c, err = iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1691,7 +1689,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 		case revision.TildePath:
 			for i := 0; i < item.Depth; i++ {
 				c, err := commit.Parents().Next()
-
 				if err != nil {
 					return &plumbing.ZeroHash, err
 				}
