@@ -11,10 +11,12 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 var (
-	ErrFilterNotSupported = errors.New("server does not support filters")
+	ErrFilterNotSupported  = errors.New("server does not support filters")
+	ErrShallowNotSupported = errors.New("server does not support shallow clients")
 )
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
@@ -27,6 +29,8 @@ func NegotiatePack(
 	writer io.WriteCloser,
 	req *FetchRequest,
 ) (shallowInfo *packp.ShallowUpdate, err error) {
+	reader = ioutil.NewContextReader(ctx, reader)
+	writer = ioutil.NewContextWriteCloser(ctx, writer)
 	caps := conn.Capabilities()
 
 	// Create upload-request
@@ -81,7 +85,7 @@ func NegotiatePack(
 
 	if req.Depth > 0 {
 		if !caps.Supports(capability.Shallow) {
-			return nil, fmt.Errorf("server doesn't support shallow clients")
+			return nil, ErrShallowNotSupported
 		}
 
 		upreq.Depth = packp.DepthCommits(req.Depth)

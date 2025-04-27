@@ -14,6 +14,7 @@ var envToTarget = map[string]trace.Target{
 	"GIT_TRACE_PACKET":      trace.Packet,
 	"GIT_TRACE_SSH":         trace.SSH,
 	"GIT_TRACE_PERFORMANCE": trace.Performance,
+	"GIT_TRACE_HTTP":        trace.HTTP,
 }
 
 // ReadEnv reads the environment variables and sets the trace targets.
@@ -21,7 +22,8 @@ var envToTarget = map[string]trace.Target{
 func ReadEnv() {
 	var target trace.Target
 	for k, v := range envToTarget {
-		if val, _ := strconv.ParseBool(os.Getenv(k)); val {
+		env := os.Getenv(k)
+		if val, _ := strconv.ParseBool(env); val {
 			target |= v
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,10 @@ func newFetchWalker(s *HTTPSession, ctx context.Context, fs billy.Filesystem) *f
 }
 
 func (r *fetchWalker) getInfoPacks() ([]string, error) {
-	url := path.Join(r.ep.String(), "objects", "info", "packs")
+	url, err := url.JoinPath(r.ep.String(), "objects", "info", "packs")
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -102,8 +106,11 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 }
 
 // downloadFile downloads a file from the server and saves it to the filesystem.
-func (r *fetchWalker) downloadFile(fp string) error {
-	url := path.Join(r.ep.String(), fp)
+func (r *fetchWalker) downloadFile(fp string) (rErr error) {
+	url, err := url.JoinPath(r.ep.String(), fp)
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -141,6 +148,12 @@ func (r *fetchWalker) downloadFile(fp string) error {
 		return err
 	}
 
+	defer func() {
+		if err := f.Close(); err != nil {
+			rErr = err
+		}
+	}()
+
 	if err := copy(f); err != nil {
 		return err
 	}
@@ -150,8 +163,11 @@ func (r *fetchWalker) downloadFile(fp string) error {
 }
 
 // getHead returns the HEAD reference from the server.
-func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
-	url := path.Join(r.ep.String(), "HEAD")
+func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
+	url, err := url.JoinPath(r.ep.String(), "HEAD")
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -163,7 +179,15 @@ func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
 		return nil, err
 	}
 
-	defer res.Body.Close()
+	defer func() {
+		if res.Body == nil {
+				return
+		}
+		bodyErr := res.Body.Close()
+		if err == nil {
+			err = bodyErr
+		}
+	}()
 	switch res.StatusCode {
 	case http.StatusOK:
 		// continue
@@ -175,7 +199,11 @@ func (r *fetchWalker) getHead() (*plumbing.Reference, error) {
 
 	s := bufio.NewScanner(res.Body)
 	if !s.Scan() {
-		return nil, s.Err()
+		if err := s.Err(); err != nil {
+			return nil, err
+		}
+		// EOF, no data
+		return nil, transport.ErrRepositoryNotFound
 	}
 
 	line := s.Text()
@@ -266,7 +294,10 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 	}
 
 	h := hash.String()
-	url := path.Join(r.ep.String(), "objects", h[:2], h[2:])
+	url, err := url.JoinPath(r.ep.String(), "objects", h[:2], h[2:])
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -341,7 +372,7 @@ LOOP:
 
 		obj := r.st.NewEncodedObject()
 		err := r.fetchObject(objHash, obj)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// TODO: support http-alternates
 			for packHash, packIdxPath := range r.packIdx {
 				idxFile, err := r.fs.Open(packIdxPath)

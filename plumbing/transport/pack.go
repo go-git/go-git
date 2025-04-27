@@ -43,7 +43,6 @@ var _ Session = &PackSession{}
 
 // Handshake implements Session.
 func (p *PackSession) Handshake(ctx context.Context, service Service, params ...string) (conn Connection, err error) {
-	forPush := service == ReceivePackService
 	switch service {
 	case UploadPackService, ReceivePackService:
 		// do nothing
@@ -58,6 +57,7 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	c := &packConnection{
 		st:  p.st,
 		cmd: cmd,
+		svc: service,
 	}
 
 	// Check if the context is already done before starting the command.
@@ -120,13 +120,6 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	c.refs = ar
 	c.caps = ar.Capabilities
 
-	// Some servers like jGit, announce capabilities instead of returning an
-	// packp message with a flush. This verifies that we received a empty
-	// adv-refs, even it contains capabilities.
-	if !forPush && ar.IsEmpty() {
-		return nil, ErrEmptyRemoteRepository
-	}
-
 	return c, nil
 }
 
@@ -134,6 +127,7 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 type packConnection struct {
 	st        storage.Storer
 	cmd       Command
+	svc       Service
 	w         io.WriteCloser // stdin
 	r         *bufio.Reader  // stdout
 	stderrBuf bytes.Buffer
@@ -170,6 +164,14 @@ func (p *packConnection) Capabilities() *capability.List {
 func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
 	if p.refs == nil {
 		// TODO: return appropriate error
+		return nil, ErrEmptyRemoteRepository
+	}
+
+	// Some servers like jGit, announce capabilities instead of returning an
+	// packp message with a flush. This verifies that we received a empty
+	// adv-refs, even if it contains capabilities.
+	forPush := p.svc == ReceivePackService
+	if !forPush && p.refs.IsEmpty() {
 		return nil, ErrEmptyRemoteRepository
 	}
 

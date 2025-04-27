@@ -3,7 +3,6 @@ package http
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/http/cgi"
@@ -19,9 +18,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 func TestClientSuite(t *testing.T) {
@@ -41,7 +41,7 @@ func (s *ClientSuite) SetupSuite() {
 		"https://github.com/git-fixtures/basic",
 	)
 	s.Nil(err)
-	dot := fixtures.Basic().One().DotGit()
+	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Storer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 }
 
@@ -218,58 +218,45 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect() {
 	}
 }
 
-type BaseSuite struct {
-	suite.Suite
+func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
+	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", port, name))
+	require.NoError(t, err)
 
-	base string
-	host string
-	port int
+	return ep
 }
 
-func (s *BaseSuite) SetupTest() {
+func setupServer(t testing.TB, smart bool) (base string, port int) {
 	l, err := net.Listen("tcp", "localhost:0")
-	s.NoError(err)
+	require.NoError(t, err)
 
-	base, err := os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-http-%d", s.port))
-	s.NoError(err)
-
-	s.port = l.Addr().(*net.TCPAddr).Port
-	s.base = filepath.Join(base, s.host)
-
-	err = os.MkdirAll(s.base, 0o755)
-	s.NoError(err)
+	port = l.Addr().(*net.TCPAddr).Port
+	base = filepath.Join(t.TempDir(), fmt.Sprintf("go-git-http-%d", port))
+	require.NoError(t, err)
+	err = os.MkdirAll(base, 0o755)
+	require.NoError(t, err)
 
 	cmd := exec.Command("git", "--exec-path")
 	out, err := cmd.CombinedOutput()
-	s.NoError(err)
+	require.NoError(t, err)
 
-	server := &http.Server{
-		Handler: &cgi.Handler{
-			Path: filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend"),
-			Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", s.base)},
-		},
+	var server *http.Server
+	if smart {
+		server = &http.Server{
+			// TODO: Implement a go-git middleware and use it here.
+			Handler: &cgi.Handler{
+				Path: filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend"),
+				Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", base)},
+			},
+		}
+	} else {
+		server = &http.Server{
+			Handler: http.FileServer(http.Dir(base)),
+		}
 	}
+
 	go func() {
-		log.Fatal(server.Serve(l))
+		t.Fatalf("error http starting server: %v", server.Serve(l))
 	}()
-}
 
-func (s *BaseSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
-	fs := f.DotGit()
-
-	err := fixtures.EnsureIsBare(fs)
-	s.NoError(err)
-
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.NoError(err)
-
-	return s.newEndpoint(name)
-}
-
-func (s *BaseSuite) newEndpoint(name string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(fmt.Sprintf("http://localhost:%d/%s", s.port, name))
-	s.NoError(err)
-
-	return ep
+	return
 }

@@ -194,7 +194,7 @@ func (a *AdvRefs) supportSymrefs() bool {
 
 // IsEmpty returns true if doesn't contain any reference.
 func (a *AdvRefs) IsEmpty() bool {
-	return a.Head == nil &&
+	return (a.Head == nil || a.Head.IsZero()) &&
 		len(a.References) == 0 &&
 		len(a.Peeled) == 0 &&
 		len(a.Shallows) == 0
