@@ -381,13 +381,13 @@ func (o *CheckoutOptions) Validate() error {
 		return ErrBranchHashExclusive
 	}
 
-	// if create with branch not provided but hash is provided, ask for branch name?
-	if o.Create && o.Branch == "" && !o.Hash.IsZero() {
+	// if create with branch not provided but hash is provided, ask for branch name
+	if o.Create && o.Branch == "" {
 		return ErrCreateRequiresBranch
 	}
 
-	// if create with both branch and hash are not provided, set branch to master
-	if o.Create && o.Branch == "" && o.Hash.IsZero() {
+	// if both branch and hash are not provided, set branch to master
+	if o.Branch == "" && o.Hash.IsZero() {
 		o.Branch = plumbing.Master
 	}
 

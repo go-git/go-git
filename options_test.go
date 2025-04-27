@@ -124,27 +124,39 @@ func (s *OptionsSuite) writeGlobalConfig(cfg *config.Config) func() {
 }
 
 func (s *OptionsSuite) TestCheckoutOptionsValidate() {
-	checkoutOpts := CheckoutOptions{}
+	checkoutOpts := CheckoutOptions{
+		Branch: "test-checkout-branch",
+		Hash:   plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd"),
+	}
 	err := checkoutOpts.Validate()
 	s.NotNil(err)
 	s.ErrorIs(ErrBranchHashExclusive, err)
 
-	checkoutOpts.Create = true
-	err = checkoutOpts.Validate()
-	s.Nil(err)
-	s.Equal(plumbing.Master, checkoutOpts.Branch)
-
-	checkoutOpts.Branch = ""
-	checkoutOpts.Hash = plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd")
+	checkoutOpts = CheckoutOptions{
+		Create: true,
+		Hash:   plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd"),
+	}
 	err = checkoutOpts.Validate()
 	s.NotNil(err)
 	s.ErrorIs(ErrCreateRequiresBranch, err)
 
-	checkoutOpts.Branch = "test"
-	checkoutOpts.Force = true
-	checkoutOpts.Keep = true
+	checkoutOpts = CheckoutOptions{}
+	err = checkoutOpts.Validate()
+	s.Nil(err)
+	s.Equal(checkoutOpts.Branch, plumbing.Master)
 
+	checkoutOpts = CheckoutOptions{
+		Branch: "test-checkout-branch",
+		Force:  true,
+		Keep:   true,
+	}
 	err = checkoutOpts.Validate()
 	s.NotNil(err)
 	s.ErrorIs(ErrForceKeepExclusive, err)
+
+	checkoutOpts = CheckoutOptions{
+		Hash: plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd"),
+	}
+	err = checkoutOpts.Validate()
+	s.Nil(err)
 }
