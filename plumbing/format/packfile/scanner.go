@@ -411,11 +411,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		oh.Hash = r.hasher.Sum()
 		if r.hasher256 != nil {
 			h := r.hasher256.Sum()
-			h1, ok := plumbing.FromBytes(h.Bytes())
-			if !ok {
-				return nil, fmt.Errorf("invalid sha256 hash")
-			}
-			oh.Hash256 = &h1
+			oh.Hash256 = &h
 		}
 	} else {
 		// If data source is not io.Seeker, keep the content

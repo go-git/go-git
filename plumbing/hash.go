@@ -37,10 +37,11 @@ func NewHash(s string) Hash {
 
 type Hasher struct {
 	hash.Hash
+	format format.ObjectFormat
 }
 
 func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
-	var h Hasher
+	h := Hasher{format: f}
 	switch f {
 	case format.SHA256:
 		h.Hash = crypto.SHA256.New()
@@ -62,6 +63,7 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 }
 
 func (h Hasher) Sum() (hash Hash) {
+	hash.format = h.format
 	hash.Write(h.Hash.Sum(nil))
 	return
 }
