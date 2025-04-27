@@ -1,6 +1,7 @@
 package git
 
 import (
-	_ "crypto/sha1"   // Support SHA1 hashing
-	_ "crypto/sha256" // Support SHA256 hashing
+	_ "crypto/sha256" // Register Go's SHA256 implementation.
+
+	_ "github.com/pjbgf/sha1cd" // Register sha1cd implementation.
 )
