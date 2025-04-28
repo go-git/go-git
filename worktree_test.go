@@ -1352,7 +1352,7 @@ func (s *WorktreeSuite) TestResetSparsely() {
 
 	sparseResetDirs := []string{"php"}
 
-	err := w.ResetSparsely(&ResetOptions{Mode: HardReset}, sparseResetDirs)
+	err := w.Reset(&ResetOptions{Mode: HardReset, SparseDirs: sparseResetDirs})
 	s.NoError(err)
 
 	files, err := fs.ReadDir("/")
@@ -1376,27 +1376,33 @@ func (s *WorktreeSuite) TestResetSparselyInvalidDir() {
 	tests := []struct {
 		name    string
 		opts    ResetOptions
-		dirs    []string
 		wantErr bool
 	}{
 		{
 			name:    "non existent directory",
-			opts:    ResetOptions{},
-			dirs:    []string{"non-existent"},
+			opts:    ResetOptions{SparseDirs: []string{"non-existent"}},
 			wantErr: true,
 		},
 		{
 			name:    "exists but is not directory",
-			opts:    ResetOptions{},
-			dirs:    []string{"php/crappy.php"},
+			opts:    ResetOptions{SparseDirs: []string{"php/crappy.php"}},
 			wantErr: true,
+		},
+		{
+			name:    "skip validation for non existent directory",
+			opts:    ResetOptions{SparseDirs: []string{"non-existent"}, SkipSparseDirValidation: true},
+			wantErr: false,
 		},
 	}
 
 	for _, test := range tests {
 		s.Run(test.name, func() {
-			err := w.ResetSparsely(&test.opts, test.dirs)
-			s.Require().ErrorIs(err, ErrSparseResetDirectoryNotFound)
+			err := w.Reset(&test.opts)
+			if test.wantErr {
+				s.Require().ErrorIs(err, ErrSparseResetDirectoryNotFound)
+				return
+			}
+			s.Require().NoError(err)
 		})
 	}
 }

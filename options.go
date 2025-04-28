@@ -425,6 +425,13 @@ type ResetOptions struct {
 	// Files, if not empty will constrain the reseting the index to only files
 	// specified in this list.
 	Files []string
+
+	// SparseDirs specifies which directories should be checked out.
+	// Directories not listed here will not appear in the worktree.
+	SparseDirs []string
+
+	// SkipSparseDirValidation will skip the validation for SparseDirs.
+	SkipSparseDirValidation bool
 }
 
 // Validate validates the fields and sets the default values.
