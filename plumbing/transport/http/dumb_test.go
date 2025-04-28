@@ -1,6 +1,7 @@
 package http
 
 import (
+	"net/http"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -17,6 +18,7 @@ import (
 
 type DumbSuite struct {
 	test.UploadPackSuite
+	server *http.Server
 }
 
 func TestDumbSuite(t *testing.T) {
@@ -25,26 +27,34 @@ func TestDumbSuite(t *testing.T) {
 }
 
 func (s *DumbSuite) SetupTest() {
-	base, port := setupServer(s.T(), false)
+	server, base, port := setupServer(s.T(), false)
+	s.server = server
+
 	s.Client = NewTransport(&TransportOptions{
 		// Set to true to use the dumb transport.
 		UseDumb: true,
 	})
-	s.Endpoint = newEndpoint(s.T(), port, "basic.git")
-	s.EmptyEndpoint = newEndpoint(s.T(), port, "empty.git")
+
 	basic := test.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
 	empty := test.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), base, "empty.git")
+
 	s.Endpoint = newEndpoint(s.T(), port, "basic.git")
-	s.EmptyEndpoint = newEndpoint(s.T(), port, "empty.git")
-	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
 	s.Storer = filesystem.NewStorage(basic, nil)
+
+	s.EmptyEndpoint = newEndpoint(s.T(), port, "empty.git")
 	s.EmptyStorer = filesystem.NewStorage(empty, nil)
+
+	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
 	s.NonExistentStorer = memory.NewStorage()
 
 	err := transport.UpdateServerInfo(s.Storer, basic)
 	s.Require().NoError(err)
 	err = transport.UpdateServerInfo(s.EmptyStorer, empty)
 	s.Require().NoError(err)
+}
+
+func (s *DumbSuite) TearDownTest() {
+	s.Require().NoError(s.server.Close())
 }
 
 // The following tests are not applicable to the dumb transport as it does not

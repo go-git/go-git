@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"testing"
 
@@ -20,19 +21,30 @@ func TestUploadPackSuite(t *testing.T) {
 
 type UploadPackSuite struct {
 	test.UploadPackSuite
+	server *http.Server
 }
 
 func (s *UploadPackSuite) SetupTest() {
-	base, port := setupServer(s.T(), true)
+	server, base, port := setupServer(s.T(), true)
+	s.server = server
+
 	s.Client = DefaultTransport
+
 	basic := test.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
 	empty := test.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), base, "empty.git")
+
 	s.Endpoint = newEndpoint(s.T(), port, "basic.git")
-	s.EmptyEndpoint = newEndpoint(s.T(), port, "empty.git")
-	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
 	s.Storer = filesystem.NewStorage(basic, nil)
+
+	s.EmptyEndpoint = newEndpoint(s.T(), port, "empty.git")
 	s.EmptyStorer = filesystem.NewStorage(empty, nil)
+
+	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
 	s.NonExistentStorer = memory.NewStorage()
+}
+
+func (s *UploadPackSuite) TearDownTest() {
+	s.Require().NoError(s.server.Close())
 }
 
 // Overwritten, different behaviour for HTTP.
