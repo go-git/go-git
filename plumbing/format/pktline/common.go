@@ -1,6 +1,8 @@
 package pktline
 
-import "errors"
+import (
+	"errors"
+)
 
 const (
 	// Err is returned when the pktline has encountered an error.
