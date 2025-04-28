@@ -115,6 +115,10 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return nil, ErrMaxPackedExceeded
 	}
 
+	if len(content) < 1 {
+		return nil, fmt.Errorf("invalid sideband pktline %04x %q", l, content)
+	}
+
 	switch Channel(content[0]) {
 	case PackData:
 		return content[1:], nil

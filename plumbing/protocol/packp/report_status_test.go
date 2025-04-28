@@ -34,6 +34,9 @@ func (s *ReportStatusSuite) TestError() {
 	cs.Status = "ok"
 	s.NoError(rs.Error())
 	cs.Status = "OK"
+	// According to git protocol, if unpack status is "ok", the overall status
+	// is ok even if some command statuses have errors. However, canonical Git
+	// still errors on the first received command-status error.
 	s.Regexp(regexp.MustCompile("command error on ref: OK"), rs.Error())
 	cs.Status = ""
 	s.Regexp(regexp.MustCompile("command error on ref: "), rs.Error())
@@ -142,6 +145,33 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferencesFailed() {
 		"ok refs/heads/b\n",
 		"",
 	)
+}
+
+func (s *ReportStatusSuite) TestEncodeDecodeOkUnpackWithFailedCommands() {
+	rs := NewReportStatus()
+	rs.UnpackStatus = "ok"
+	rs.CommandStatuses = []*CommandStatus{{
+		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
+		Status:        "ok",
+	}, {
+		ReferenceName: plumbing.ReferenceName("refs/heads/a"),
+		Status:        "command error",
+	}, {
+		ReferenceName: plumbing.ReferenceName("refs/heads/b"),
+		Status:        "ok",
+	}}
+
+	s.testEncodeDecodeOk(rs,
+		"unpack ok\n",
+		"ok refs/heads/master\n",
+		"ng refs/heads/a command error\n",
+		"ok refs/heads/b\n",
+		"",
+	)
+
+	// Verify that Error() returns an error.
+	s.Error(rs.Error())
+	s.ErrorAs(rs.Error(), &CommandStatusErr{})
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferences() {
@@ -258,4 +288,27 @@ func (s *ReportStatusSuite) TestDecodeErrorPrematureFlush() {
 	s.testDecodeError("premature flush",
 		"",
 	)
+}
+
+func (s *ReportStatusSuite) TestCommandStatusError() {
+	// Test that individual CommandStatus objects still report errors correctly
+	cs := &CommandStatus{ReferenceName: plumbing.ReferenceName("refs/heads/master")}
+
+	cs.Status = "ok"
+	s.NoError(cs.Error())
+
+	cs.Status = "command error"
+	s.Error(cs.Error())
+	s.Regexp(regexp.MustCompile("command error on refs/heads/master: command error"), cs.Error())
+
+	// Create a ReportStatus with a failed command but ok unpack status
+	rs := NewReportStatus()
+	rs.UnpackStatus = "ok"
+	rs.CommandStatuses = append(rs.CommandStatuses, cs)
+
+	// Verify that ReportStatus.Error() returns a [CommandStatusErr] error.
+	s.Error(rs.Error())
+	s.ErrorAs(rs.Error(), &CommandStatusErr{})
+	s.Error(cs.Error())
+	s.ErrorAs(cs.Error(), &CommandStatusErr{})
 }
