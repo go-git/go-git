@@ -1138,7 +1138,16 @@ func (s *WorktreeSuite) TestResetWithUntracked() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.True(status.IsClean())
+	for file, st := range status {
+		if file == "foo" {
+			s.Equal(Untracked, st.Worktree)
+			s.Equal(Untracked, st.Staging)
+			continue
+		}
+		if st.Worktree != Unmodified || st.Staging != Unmodified {
+			s.Fail("file %s not unmodified", file)
+		}
+	}
 }
 
 func (s *WorktreeSuite) TestResetSoft() {
