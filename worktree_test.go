@@ -1130,11 +1130,15 @@ func (s *WorktreeSuite) TestResetWithUntracked() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", nil, 0o755)
+	err = util.WriteFile(fs, "foo", []byte("bar"), 0o755)
 	s.NoError(err)
 
 	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commit})
 	s.NoError(err)
+
+	contents, err := util.ReadFile(fs, "foo")
+	s.NoError(err)
+	s.Equal("bar", string(contents))
 
 	status, err := w.Status()
 	s.NoError(err)
