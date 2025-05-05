@@ -316,8 +316,14 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 		}
 	}
 
-	if opts.Mode == MergeReset || opts.Mode == HardReset {
+	if opts.Mode == MergeReset && len(removedFiles) > 0 {
 		if err := w.resetWorktree(t, removedFiles); err != nil {
+			return err
+		}
+	}
+
+	if opts.Mode == HardReset {
+		if err := w.resetWorktree(t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -457,11 +463,6 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
-	status, err := w.Status()
-	if err != nil {
-		return err
-	}
-
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -485,13 +486,8 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		// only checkout an untracked file if it is in the list of files
-		// a reset should leave untracked files alone
-		file := nameFromAction(&ch)
-		if status.File(file).Worktree != Untracked || inFiles(files, file) {
-			if err := w.checkoutChange(ch, t, b); err != nil {
-				return err
-			}
+		if err := w.checkoutChange(ch, t, b); err != nil {
+			return err
 		}
 	}
 

@@ -1149,7 +1149,7 @@ func (s *WorktreeSuite) TestResetWithUntracked() {
 			continue
 		}
 		if st.Worktree != Unmodified || st.Staging != Unmodified {
-			s.Fail("file %s not unmodified", file)
+			s.Failf("file %s not unmodified", file)
 		}
 	}
 }
