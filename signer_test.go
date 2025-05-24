@@ -26,7 +26,7 @@ func (b64signer) Sign(message io.Reader) ([]byte, error) {
 }
 
 func ExampleSigner() {
-	repo, err := Init(memory.NewStorage(), memfs.New())
+	repo, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	if err != nil {
 		panic(err)
 	}

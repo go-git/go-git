@@ -51,7 +51,7 @@ func TestRepositorySuite(t *testing.T) {
 }
 
 func (s *RepositorySuite) TestInit() {
-	r, err := Init(memory.NewStorage(), memfs.New())
+	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -67,9 +67,9 @@ func (s *RepositorySuite) TestInit() {
 }
 
 func (s *RepositorySuite) TestInitWithOptions() {
-	r, err := InitWithOptions(memory.NewStorage(), memfs.New(), InitOptions{
-		DefaultBranch: "refs/heads/foo",
-	})
+	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()),
+		WithDefaultBranch("refs/heads/foo"),
+	)
 	s.NoError(err)
 	s.NotNil(r)
 	createCommit(s, r)
@@ -80,9 +80,9 @@ func (s *RepositorySuite) TestInitWithOptions() {
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
-	_, err := InitWithOptions(memory.NewStorage(), memfs.New(), InitOptions{
-		DefaultBranch: "foo",
-	})
+	_, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()),
+		WithDefaultBranch("foo"),
+	)
 	s.NotNil(err)
 }
 
@@ -125,7 +125,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit() {
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	wt, _ := fs.Chroot("worktree")
-	r, err := Init(st, wt)
+	r, err := Init(st, WithWorkTree(wt))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -150,7 +150,7 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 	dot, _ := fs.Chroot(".git")
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
-	r, err := Init(st, fs)
+	r, err := Init(st, WithWorkTree(fs))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -164,7 +164,7 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 }
 
 func (s *RepositorySuite) TestInitBare() {
-	r, err := Init(memory.NewStorage(), nil)
+	r, err := Init(memory.NewStorage())
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -176,11 +176,11 @@ func (s *RepositorySuite) TestInitBare() {
 func (s *RepositorySuite) TestInitAlreadyExists() {
 	st := memory.NewStorage()
 
-	r, err := Init(st, nil)
+	r, err := Init(st)
 	s.NoError(err)
 	s.NotNil(r)
 
-	r, err = Init(st, nil)
+	r, err = Init(st)
 	s.ErrorIs(err, ErrRepositoryAlreadyExists)
 	s.Nil(r)
 }
@@ -188,7 +188,7 @@ func (s *RepositorySuite) TestInitAlreadyExists() {
 func (s *RepositorySuite) TestOpen() {
 	st := memory.NewStorage()
 
-	r, err := Init(st, memfs.New())
+	r, err := Init(st, WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -200,7 +200,7 @@ func (s *RepositorySuite) TestOpen() {
 func (s *RepositorySuite) TestOpenBare() {
 	st := memory.NewStorage()
 
-	r, err := Init(st, nil)
+	r, err := Init(st)
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -212,7 +212,7 @@ func (s *RepositorySuite) TestOpenBare() {
 func (s *RepositorySuite) TestOpenBareMissingWorktree() {
 	st := memory.NewStorage()
 
-	r, err := Init(st, memfs.New())
+	r, err := Init(st, WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -334,7 +334,7 @@ func (s *RepositorySuite) TestCloneSparse() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAndRemote() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	remote, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
@@ -350,7 +350,7 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteInvalid() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	remote, err := r.CreateRemote(&config.RemoteConfig{})
 
 	s.ErrorIs(err, config.ErrRemoteConfigEmptyName)
@@ -358,7 +358,7 @@ func (s *RepositorySuite) TestCreateRemoteInvalid() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymous() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
 		Name: "anonymous",
 		URLs: []string{"http://foo/foo.git"},
@@ -369,7 +369,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymous() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
 		Name: "not_anonymous",
 		URLs: []string{"http://foo/foo.git"},
@@ -380,7 +380,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{})
 
 	s.ErrorIs(err, config.ErrRemoteConfigEmptyName)
@@ -388,7 +388,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid() {
 }
 
 func (s *RepositorySuite) TestDeleteRemote() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
@@ -405,14 +405,14 @@ func (s *RepositorySuite) TestDeleteRemote() {
 }
 
 func (s *RepositorySuite) TestEmptyCreateBranch() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.CreateBranch(&config.Branch{})
 
 	s.NotNil(err)
 }
 
 func (s *RepositorySuite) TestInvalidCreateBranch() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.CreateBranch(&config.Branch{
 		Name: "-foo",
 	})
@@ -421,7 +421,7 @@ func (s *RepositorySuite) TestInvalidCreateBranch() {
 }
 
 func (s *RepositorySuite) TestCreateBranchAndBranch() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	testBranch := &config.Branch{
 		Name:   "foo",
 		Remote: "origin",
@@ -446,7 +446,7 @@ func (s *RepositorySuite) TestCreateBranchAndBranch() {
 }
 
 func (s *RepositorySuite) TestMergeFF() {
-	r, err := Init(memory.NewStorage(), memfs.New())
+	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -493,7 +493,7 @@ func (s *RepositorySuite) TestMergeFF() {
 }
 
 func (s *RepositorySuite) TestMergeFF_Invalid() {
-	r, err := Init(memory.NewStorage(), memfs.New())
+	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -552,7 +552,7 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 }
 
 func (s *RepositorySuite) TestCreateBranchUnmarshal() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	expected := []byte(`[core]
 	bare = true
@@ -595,7 +595,7 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 }
 
 func (s *RepositorySuite) TestBranchInvalid() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	branch, err := r.Branch("foo")
 
 	s.NotNil(err)
@@ -603,7 +603,7 @@ func (s *RepositorySuite) TestBranchInvalid() {
 }
 
 func (s *RepositorySuite) TestCreateBranchInvalid() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.CreateBranch(&config.Branch{})
 
 	s.NotNil(err)
@@ -620,7 +620,7 @@ func (s *RepositorySuite) TestCreateBranchInvalid() {
 }
 
 func (s *RepositorySuite) TestDeleteBranch() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	testBranch := &config.Branch{
 		Name:   "foo",
 		Remote: "origin",
@@ -658,12 +658,10 @@ func (s *RepositorySuite) TestPlainInitWithOptions() {
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
-	r, err := PlainInitWithOptions(dir, &PlainInitOptions{
-		InitOptions: InitOptions{
-			DefaultBranch: "refs/heads/foo",
-		},
-		Bare: false,
-	})
+	r, err := PlainInit(dir,
+		false,
+		WithDefaultBranch("refs/heads/foo"),
+	)
 	s.NoError(err)
 	s.NotNil(r)
 
@@ -1263,7 +1261,7 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 }
 
 func (s *RepositorySuite) TestFetch() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -1286,7 +1284,7 @@ func (s *RepositorySuite) TestFetch() {
 }
 
 func (s *RepositorySuite) TestFetchContext() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -1300,7 +1298,7 @@ func (s *RepositorySuite) TestFetchContext() {
 }
 
 func (s *RepositorySuite) TestFetchWithFilters() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -1314,7 +1312,7 @@ func (s *RepositorySuite) TestFetchWithFilters() {
 
 }
 func (s *RepositorySuite) TestFetchWithFiltersReal() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
@@ -1347,7 +1345,7 @@ func (s *RepositorySuite) TestCloneWithProgress() {
 
 func (s *RepositorySuite) TestCloneDeep() {
 	fs := memfs.New()
-	r, _ := Init(memory.NewStorage(), fs)
+	r, _ := Init(memory.NewStorage(), WithWorkTree(fs))
 
 	head, err := r.Head()
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
@@ -1386,7 +1384,7 @@ func (s *RepositorySuite) TestCloneDeep() {
 }
 
 func (s *RepositorySuite) TestCloneConfig() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	head, err := r.Head()
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
@@ -1418,7 +1416,7 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEADAndNonFull() {
 }
 
 func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	head, err := r.Head()
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
@@ -1462,7 +1460,7 @@ func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	head, err := r.Head()
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
@@ -1505,7 +1503,7 @@ func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranch() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	head, err := r.Head()
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
@@ -1542,7 +1540,7 @@ func (s *RepositorySuite) TestCloneSingleBranch() {
 }
 
 func (s *RepositorySuite) TestCloneSingleTag() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
@@ -1568,7 +1566,7 @@ func (s *RepositorySuite) TestCloneSingleTag() {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEAD() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
@@ -1593,7 +1591,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD() {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEADAndSingle() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
@@ -1623,7 +1621,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
-	r, _ := Init(memory.NewStorage(), memfs.New())
+	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
 		ReferenceName: plumbing.ReferenceName("refs/tags/v1.0.0"),
@@ -1650,7 +1648,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
 		ReferenceName: plumbing.ReferenceName("refs/tags/annotated-tag"),
@@ -1675,7 +1673,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 }
 
 func (s *RepositorySuite) TestCloneWithFilter() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:    "https://github.com/git-fixtures/basic.git",
@@ -1844,7 +1842,7 @@ func (s *RepositorySuite) TestPushNonExistentRemote() {
 }
 
 func (s *RepositorySuite) TestLog() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -1872,7 +1870,7 @@ func (s *RepositorySuite) TestLog() {
 }
 
 func (s *RepositorySuite) TestLogAll() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -1917,7 +1915,7 @@ func (s *RepositorySuite) TestLogAll() {
 }
 
 func (s *RepositorySuite) TestLogAllMissingReferences() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -1969,7 +1967,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 }
 
 func (s *RepositorySuite) TestLogAllOrderByTime() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2005,7 +2003,7 @@ func (s *RepositorySuite) TestLogAllOrderByTime() {
 }
 
 func (s *RepositorySuite) TestLogHead() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2037,7 +2035,7 @@ func (s *RepositorySuite) TestLogHead() {
 }
 
 func (s *RepositorySuite) TestLogError() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2051,7 +2049,7 @@ func (s *RepositorySuite) TestLogError() {
 }
 
 func (s *RepositorySuite) TestLogFileNext() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2077,7 +2075,7 @@ func (s *RepositorySuite) TestLogFileNext() {
 }
 
 func (s *RepositorySuite) TestLogFileForEach() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2105,7 +2103,7 @@ func (s *RepositorySuite) TestLogFileForEach() {
 }
 
 func (s *RepositorySuite) TestLogNonHeadFile() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2122,7 +2120,7 @@ func (s *RepositorySuite) TestLogNonHeadFile() {
 }
 
 func (s *RepositorySuite) TestLogAllFileForEach() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2150,7 +2148,7 @@ func (s *RepositorySuite) TestLogAllFileForEach() {
 }
 
 func (s *RepositorySuite) TestLogInvalidFile() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2168,7 +2166,7 @@ func (s *RepositorySuite) TestLogInvalidFile() {
 }
 
 func (s *RepositorySuite) TestLogFileInitialCommit() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2198,7 +2196,7 @@ func (s *RepositorySuite) TestLogFileInitialCommit() {
 }
 
 func (s *RepositorySuite) TestLogFileWithOtherParamsFail() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2218,7 +2216,7 @@ func (s *RepositorySuite) TestLogFileWithOtherParamsFail() {
 }
 
 func (s *RepositorySuite) TestLogFileWithOtherParamsPass() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2296,7 +2294,7 @@ func (s *RepositorySuite) TestLogPathFilterRegexp() {
 		return pathRE.MatchString(path)
 	}
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2326,7 +2324,7 @@ func (s *RepositorySuite) TestLogPathFilterRegexp() {
 }
 
 func (s *RepositorySuite) TestLogLimitNext() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2352,7 +2350,7 @@ func (s *RepositorySuite) TestLogLimitNext() {
 }
 
 func (s *RepositorySuite) TestLogLimitForEach() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2381,7 +2379,7 @@ func (s *RepositorySuite) TestLogLimitForEach() {
 }
 
 func (s *RepositorySuite) TestLogAllLimitForEach() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2411,7 +2409,7 @@ func (s *RepositorySuite) TestLogAllLimitForEach() {
 }
 
 func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2431,7 +2429,7 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
 }
 
 func (s *RepositorySuite) TestLogLimitWithOtherParamsPass() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2455,7 +2453,7 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsPass() {
 }
 
 func (s *RepositorySuite) TestConfigScoped() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2471,7 +2469,7 @@ func (s *RepositorySuite) TestConfigScoped() {
 }
 
 func (s *RepositorySuite) TestCommit() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2495,7 +2493,7 @@ func (s *RepositorySuite) TestCommit() {
 }
 
 func (s *RepositorySuite) TestCommits() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -2518,7 +2516,7 @@ func (s *RepositorySuite) TestCommits() {
 }
 
 func (s *RepositorySuite) TestBlob() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -2540,7 +2538,7 @@ func (s *RepositorySuite) TestBlob() {
 }
 
 func (s *RepositorySuite) TestBlobs() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -2567,7 +2565,7 @@ func (s *RepositorySuite) TestTagObject() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2585,7 +2583,7 @@ func (s *RepositorySuite) TestTags() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2608,7 +2606,7 @@ func (s *RepositorySuite) TestCreateTagLightweight() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2630,7 +2628,7 @@ func (s *RepositorySuite) TestCreateTagLightweightExists() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2647,7 +2645,7 @@ func (s *RepositorySuite) TestCreateTagAnnotated() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2679,7 +2677,7 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadOpts() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2698,7 +2696,7 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadHash() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2715,7 +2713,7 @@ func (s *RepositorySuite) TestCreateTagSigned() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2756,7 +2754,7 @@ func (s *RepositorySuite) TestCreateTagSignedBadKey() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2777,7 +2775,7 @@ func (s *RepositorySuite) TestCreateTagCanonicalize() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2821,7 +2819,7 @@ func (s *RepositorySuite) TestTagLightweight() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2839,7 +2837,7 @@ func (s *RepositorySuite) TestTagLightweightMissingTag() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2853,7 +2851,7 @@ func (s *RepositorySuite) TestDeleteTag() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2869,7 +2867,7 @@ func (s *RepositorySuite) TestDeleteTagMissingTag() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2886,7 +2884,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotated() {
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, _ := Init(fss, nil)
+	r, _ := Init(fss)
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2933,7 +2931,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked() {
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, _ := Init(fss, nil)
+	r, _ := Init(fss)
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -2977,7 +2975,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked() {
 }
 
 func (s *RepositorySuite) TestInvalidTagName() {
-	r, err := Init(memory.NewStorage(), nil)
+	r, err := Init(memory.NewStorage())
 	s.NoError(err)
 	for i, name := range []string{
 		"",
@@ -3016,7 +3014,7 @@ func (s *RepositorySuite) TestNotes() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -3035,7 +3033,7 @@ func (s *RepositorySuite) TestNotes() {
 }
 
 func (s *RepositorySuite) TestTree() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -3058,7 +3056,7 @@ func (s *RepositorySuite) TestTree() {
 }
 
 func (s *RepositorySuite) TestTrees() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3086,7 +3084,7 @@ func (s *RepositorySuite) TestTagObjects() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -3111,7 +3109,7 @@ func (s *RepositorySuite) TestTagObjects() {
 }
 
 func (s *RepositorySuite) TestCommitIterClosePanic() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3121,7 +3119,7 @@ func (s *RepositorySuite) TestCommitIterClosePanic() {
 }
 
 func (s *RepositorySuite) TestRef() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3135,7 +3133,7 @@ func (s *RepositorySuite) TestRef() {
 }
 
 func (s *RepositorySuite) TestRefs() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3147,7 +3145,7 @@ func (s *RepositorySuite) TestRefs() {
 }
 
 func (s *RepositorySuite) TestObject() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3160,7 +3158,7 @@ func (s *RepositorySuite) TestObject() {
 }
 
 func (s *RepositorySuite) TestObjects() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3182,7 +3180,7 @@ func (s *RepositorySuite) TestObjects() {
 }
 
 func (s *RepositorySuite) TestObjectNotFound() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
@@ -3194,14 +3192,14 @@ func (s *RepositorySuite) TestObjectNotFound() {
 
 func (s *RepositorySuite) TestWorktree() {
 	def := memfs.New()
-	r, _ := Init(memory.NewStorage(), def)
+	r, _ := Init(memory.NewStorage(), WithWorkTree(def))
 	w, err := r.Worktree()
 	s.NoError(err)
 	s.Equal(def, w.Filesystem)
 }
 
 func (s *RepositorySuite) TestWorktreeBare() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	w, err := r.Worktree()
 	s.ErrorIs(err, ErrIsBareRepository)
 	s.Nil(w)
@@ -3269,7 +3267,7 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
@@ -3385,7 +3383,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -3453,7 +3451,7 @@ func (s *RepositorySuite) TestDotGitToOSFilesystemsInvalidPath() {
 }
 
 func (s *RepositorySuite) TestIssue674() {
-	r, _ := Init(memory.NewStorage(), nil)
+	r, _ := Init(memory.NewStorage())
 	h, err := r.ResolveRevision(plumbing.Revision(""))
 
 	s.NotNil(err)
