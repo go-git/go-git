@@ -2,6 +2,7 @@ package object
 
 import (
 	"container/list"
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -14,6 +15,28 @@ type commitPreIterator struct {
 	seen         map[plumbing.Hash]bool
 	stack        []CommitIter
 	start        *Commit
+}
+
+
+func forEachCommit(next func() (*Commit, error), cb func(*Commit) error) error {
+	for {
+		c, err := next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		err = cb(c)
+		if err == storer.ErrStop {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // NewCommitPreorderIter returns a CommitIter that walks the commit history,
@@ -93,25 +116,7 @@ func filteredParentIter(c *Commit, seen map[plumbing.Hash]bool) CommitIter {
 }
 
 func (w *commitPreIterator) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := w.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(w.Next, cb)
 }
 
 func (w *commitPreIterator) Close() {}
@@ -161,28 +166,63 @@ func (w *commitPostIterator) Next() (*Commit, error) {
 }
 
 func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := w.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(w.Next, cb)
 }
 
 func (w *commitPostIterator) Close() {}
+
+type commitPostIteratorFirstParent struct {
+	stack []*Commit
+	seen  map[plumbing.Hash]bool
+}
+
+// NewCommitPostorderIterFirstParent returns a CommitIter that walks the commit
+// history like WalkCommitHistory but in post-order.
+//
+// This option acts like the git log --first-parent flag, skipping intermediate
+// commits that were brought in via a merge commit.
+// Ignore allows to skip some commits from being iterated.
+func NewCommitPostorderIterFirstParent(c *Commit, ignore []plumbing.Hash) CommitIter {
+	seen := make(map[plumbing.Hash]bool)
+	for _, h := range ignore {
+		seen[h] = true
+	}
+
+	return &commitPostIteratorFirstParent{
+		stack: []*Commit{c},
+		seen:  seen,
+	}
+}
+
+func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
+	for {
+		if len(w.stack) == 0 {
+			return nil, io.EOF
+		}
+
+		c := w.stack[len(w.stack)-1]
+		w.stack = w.stack[:len(w.stack)-1]
+
+		if w.seen[c.Hash] {
+			continue
+		}
+
+		w.seen[c.Hash] = true
+
+		return c, c.Parents().ForEach(func(p *Commit) error {
+			if len(c.ParentHashes) > 0 && p.Hash == c.ParentHashes[0] {
+				w.stack = append(w.stack, p)
+			}
+			return nil
+		})
+	}
+}
+
+func (w *commitPostIteratorFirstParent) ForEach(cb func(*Commit) error) error {
+	return forEachCommit(w.Next, cb)
+}
+
+func (w *commitPostIteratorFirstParent) Close() {}
 
 // commitAllIterator stands for commit iterator for all refs.
 type commitAllIterator struct {
@@ -301,25 +341,7 @@ func (it *commitAllIterator) Next() (*Commit, error) {
 }
 
 func (it *commitAllIterator) ForEach(cb func(*Commit) error) error {
-	for {
-		c, err := it.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = cb(c)
-		if err == storer.ErrStop {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forEachCommit(it.Next, cb)
 }
 
 func (it *commitAllIterator) Close() {
