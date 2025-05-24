@@ -3167,6 +3167,50 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	}
 }
 
+func TestTreeContainsDirs(t *testing.T) {
+	tree := &object.Tree{
+		Entries: []object.TreeEntry{
+			{Name: "foo", Mode: filemode.Dir},
+			{Name: "bar", Mode: filemode.Dir},
+			{Name: "baz", Mode: filemode.Dir},
+			{Name: "this-is-regular", Mode: filemode.Regular},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		dirs     []string
+		expected bool
+	}{
+		{
+			name:     "example",
+			dirs:     []string{"foo", "baz"},
+			expected: true,
+		},
+		{
+			name:     "empty directories",
+			dirs:     []string{},
+			expected: false,
+		},
+		{
+			name:     "non existent directory",
+			dirs:     []string{"foobarbaz"},
+			expected: false,
+		},
+		{
+			name:     "exists but is not directory",
+			dirs:     []string{"this-is-regular"},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, treeContainsDirs(tree, test.dirs))
+		})
+	}
+}
+
 func TestValidPath(t *testing.T) {
 	type testcase struct {
 		path    string
