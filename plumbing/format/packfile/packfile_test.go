@@ -28,8 +28,8 @@ func TestGet(t *testing.T) {
 	for h := range expectedEntries {
 		obj, err := p.Get(h)
 
-		assert.NoError(t, err)
-		assert.NotNil(t, obj)
+		require.NoError(t, err)
+		require.NotNil(t, obj)
 		assert.Equal(t, h.String(), obj.Hash().String())
 	}
 
@@ -37,7 +37,7 @@ func TestGet(t *testing.T) {
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 
 	id, err := p.ID()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, f.PackfileHash, id.String())
 }
 
@@ -53,8 +53,8 @@ func TestGetByOffset(t *testing.T) {
 
 	for h, o := range expectedEntries {
 		obj, err := p.GetByOffset(o)
-		assert.NoError(t, err)
-		assert.NotNil(t, obj)
+		require.NoError(t, err)
+		require.NotNil(t, obj)
 		assert.Equal(t, h.String(), obj.Hash().String())
 	}
 
@@ -73,7 +73,7 @@ func TestGetAll(t *testing.T) {
 		packfile.WithFs(fixtures.Filesystem))
 
 	iter, err := p.GetAll()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var objects int
 	for {
@@ -81,7 +81,7 @@ func TestGetAll(t *testing.T) {
 		if err == io.EOF {
 			break
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		objects++
 		h := o.Hash()
@@ -92,7 +92,7 @@ func TestGetAll(t *testing.T) {
 	assert.Len(t, expectedEntries, objects)
 
 	iter.Close()
-	assert.NoError(t, p.Close())
+	require.NoError(t, p.Close())
 }
 
 func TestDecode(t *testing.T) {
@@ -112,12 +112,12 @@ func TestDecode(t *testing.T) {
 		for _, h := range expectedHashes {
 			h := h
 			obj, err := p.Get(plumbing.NewHash(h))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, obj.Hash().String(), h)
 		}
 
 		err := p.Close()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -132,7 +132,7 @@ func TestDecodeByTypeRefDelta(t *testing.T) {
 		packfile.WithIdx(index), packfile.WithFs(fixtures.Filesystem))
 
 	iter, err := packfile.GetByType(plumbing.CommitObject)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var count int
 	for {
@@ -142,13 +142,13 @@ func TestDecodeByTypeRefDelta(t *testing.T) {
 		}
 
 		count++
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, obj.Type(), plumbing.CommitObject)
 	}
 
 	err = packfile.Close()
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Greater(t, count, 0)
 }
 
@@ -174,13 +174,13 @@ func TestDecodeByType(t *testing.T) {
 			defer packfile.Close()
 
 			iter, err := packfile.GetByType(typ)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			err = iter.ForEach(func(obj plumbing.EncodedObject) error {
 				assert.Equal(t, typ, obj.Type())
 				return nil
 			})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 	}
 }
@@ -232,17 +232,17 @@ func TestSize(t *testing.T) {
 
 	// Get the size of binary.jpg, which is not delta-encoded.
 	offset, err := packfile.FindOffset(plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	size, err := packfile.GetSizeByOffset(offset)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, int64(76110), size)
 
 	// Get the size of the root commit, which is delta-encoded.
 	offset, err = packfile.FindOffset(plumbing.NewHash(f.Head))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	size, err = packfile.GetSizeByOffset(offset)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, int64(245), size)
 }
 
