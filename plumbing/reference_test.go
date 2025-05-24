@@ -179,7 +179,7 @@ func BenchmarkReferenceStringSymbolic(b *testing.B) {
 	benchMarkReferenceString(NewSymbolicReference("v3.1.1", "refs/tags/v3.1.1"), b)
 }
 
-func BenchmarkReferenceStringHash(b *testing.B) {
+func BenchmarkReferenceObjectID(b *testing.B) {
 	benchMarkReferenceString(NewHashReference("v3.1.1", NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")), b)
 }
 

@@ -490,7 +490,7 @@ func (c *Config) marshalExtensions() {
 	// ignore them otherwise.
 	if c.Core.RepositoryFormatVersion == format.Version_1 {
 		s := c.Raw.Section(extensionsSection)
-		s.SetOption(objectFormat, string(c.Extensions.ObjectFormat))
+		s.SetOption(objectFormat, c.Extensions.ObjectFormat.String())
 	}
 }
 

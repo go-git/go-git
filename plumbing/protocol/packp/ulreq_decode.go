@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"strconv"
@@ -103,14 +102,14 @@ func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 		return plumbing.ZeroHash, false
 	}
 
-	var hash plumbing.Hash
-	if _, err := hex.Decode(hash[:], d.line[:hashSize]); err != nil {
-		d.error("invalid hash text: %s", err)
+	h, ok := plumbing.FromHex(string(d.line[:hashSize]))
+	if !ok {
+		d.error("invalid hash text: %s", d.line[:hashSize])
 		return plumbing.ZeroHash, false
 	}
 	d.line = d.line[hashSize:]
 
-	return hash, true
+	return h, true
 }
 
 // Expected format: sp cap1 sp cap2 sp cap3...

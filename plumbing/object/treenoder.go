@@ -52,9 +52,9 @@ func (t *treeNoder) String() string {
 
 func (t *treeNoder) Hash() []byte {
 	if t.mode == filemode.Deprecated {
-		return append(t.hash[:], filemode.Regular.Bytes()...)
+		return append(t.hash.Bytes(), filemode.Regular.Bytes()...)
 	}
-	return append(t.hash[:], t.mode.Bytes()...)
+	return append(t.hash.Bytes(), t.mode.Bytes()...)
 }
 
 func (t *treeNoder) Name() string {

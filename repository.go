@@ -284,14 +284,12 @@ func PlainInitWithOptions(path string, opts *PlainInitOptions) (*Repository, err
 		return nil, err
 	}
 
-	if opts.ObjectFormat != "" {
-		if opts.ObjectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
-			return nil, ErrSHA256NotSupported
-		}
-
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
-		cfg.Extensions.ObjectFormat = opts.ObjectFormat
+	if opts.ObjectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
+		return nil, ErrSHA256NotSupported
 	}
+
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
+	cfg.Extensions.ObjectFormat = opts.ObjectFormat
 
 	err = r.Storer.SetConfig(cfg)
 	if err != nil {
@@ -1074,7 +1072,6 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 func (r *Repository) fetchAndUpdateReferences(
 	ctx context.Context, o *FetchOptions, ref plumbing.ReferenceName,
 ) (*plumbing.Reference, error) {
-
 	if err := o.Validate(); err != nil {
 		return nil, err
 	}
@@ -1112,8 +1109,8 @@ func (r *Repository) fetchAndUpdateReferences(
 }
 
 func (r *Repository) updateReferences(spec []config.RefSpec,
-	resolvedRef *plumbing.Reference) (updated bool, err error) {
-
+	resolvedRef *plumbing.Reference,
+) (updated bool, err error) {
 	if !resolvedRef.Name().IsBranch() {
 		// Detached HEAD mode
 		h, err := r.resolveToCommitHash(resolvedRef.Hash())
@@ -1148,8 +1145,8 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 }
 
 func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
-	resolvedHead *plumbing.Reference) []*plumbing.Reference {
-
+	resolvedHead *plumbing.Reference,
+) []*plumbing.Reference {
 	var refs []*plumbing.Reference
 
 	// Create resolved HEAD reference with remote prefix if it does not
@@ -1172,7 +1169,8 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 
 func checkAndUpdateReferenceStorerIfNeeded(
 	s storer.ReferenceStorer, r, old *plumbing.Reference) (
-	updated bool, err error) {
+	updated bool, err error,
+) {
 	p, err := s.Reference(r.Name())
 	if err != nil && err != plumbing.ErrReferenceNotFound {
 		return false, err
@@ -1191,7 +1189,8 @@ func checkAndUpdateReferenceStorerIfNeeded(
 }
 
 func updateReferenceStorerIfNeeded(
-	s storer.ReferenceStorer, r *plumbing.Reference) (updated bool, err error) {
+	s storer.ReferenceStorer, r *plumbing.Reference,
+) (updated bool, err error) {
 	return checkAndUpdateReferenceStorerIfNeeded(s, r, nil)
 }
 
@@ -1518,8 +1517,8 @@ func (r *Repository) Head() (*plumbing.Reference, error) {
 // Reference returns the reference for a given reference name. If resolved is
 // true, any symbolic reference will be resolved.
 func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
-	*plumbing.Reference, error) {
-
+	*plumbing.Reference, error,
+) {
 	if resolved {
 		return storer.ResolveReference(r.Storer, name)
 	}
@@ -1572,7 +1571,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 	p := revision.NewParserFromString(rev)
 	items, err := p.Parse()
-
 	if err != nil {
 		return nil, err
 	}
@@ -1636,7 +1634,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			iter := commit.Parents()
 
 			c, err := iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1648,7 +1645,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			}
 
 			c, err = iter.Next()
-
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1657,7 +1653,6 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 		case revision.TildePath:
 			for i := 0; i < item.Depth; i++ {
 				c, err := commit.Parents().Next()
-
 				if err != nil {
 					return &plumbing.ZeroHash, err
 				}
@@ -1714,14 +1709,11 @@ func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
 	if hashStr == "" {
 		return nil
 	}
-	if len(hashStr) == len(plumbing.ZeroHash)*2 {
-		// Only a full hash is possible.
-		hexb, err := hex.DecodeString(hashStr)
-		if err != nil {
+	if len(hashStr) == plumbing.ZeroHash.HexSize() {
+		h, ok := plumbing.FromHex(hashStr)
+		if !ok {
 			return nil
 		}
-		var h plumbing.Hash
-		copy(h[:], hexb)
 		return []plumbing.Hash{h}
 	}
 
@@ -1895,7 +1887,7 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 	}
 	iter.ForEach(func(obj plumbing.EncodedObject) error {
 		h := obj.Hash()
-		if bytes.HasPrefix(h[:], prefix) {
+		if h.HasPrefix(prefix) {
 			hashes = append(hashes, h)
 		}
 		return nil

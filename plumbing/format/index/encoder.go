@@ -118,7 +118,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		entry.UID,
 		entry.GID,
 		entry.Size,
-		entry.Hash[:],
+		entry.Hash.Bytes(),
 	}
 
 	flagsFlow := []interface{}{flags}

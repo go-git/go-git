@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
@@ -89,7 +90,7 @@ func (r *Reader) readUntil(delim byte) ([]byte, error) {
 }
 
 func (r *Reader) prepareForRead(t plumbing.ObjectType, size int64) {
-	r.hasher = plumbing.NewHasher(t, size)
+	r.hasher = plumbing.NewHasher(format.SHA1, t, size)
 	r.multi = io.TeeReader(r.zlib, r.hasher)
 }
 

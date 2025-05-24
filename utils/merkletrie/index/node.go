@@ -83,7 +83,7 @@ func (n *node) Hash() []byte {
 		return make([]byte, 24)
 	}
 
-	return append(n.entry.Hash[:], n.entry.Mode.Bytes()...)
+	return append(n.entry.Hash.Bytes(), n.entry.Mode.Bytes()...)
 }
 
 func (n *node) Name() string {

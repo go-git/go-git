@@ -121,7 +121,7 @@ func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToOtherThanMaster() {
 
 	head, err := storage.Reference(plumbing.HEAD)
 	s.NoError(err)
-	s.Equal(ref2.Hash(), head.Hash())
+	s.Equal(ref2.Hash().String(), head.Hash().String())
 }
 
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoRef() {

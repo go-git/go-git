@@ -128,12 +128,15 @@ func (e *Encoder) encodeOffsets(idx *MemoryIndex) (int, error) {
 }
 
 func (e *Encoder) encodeChecksums(idx *MemoryIndex) (int, error) {
-	if _, err := e.Write(idx.PackfileChecksum[:]); err != nil {
+	if _, err := e.Write(idx.PackfileChecksum.Bytes()); err != nil {
 		return 0, err
 	}
 
-	copy(idx.IdxChecksum[:], e.hash.Sum(nil)[:hash.Size])
-	if _, err := e.Write(idx.IdxChecksum[:]); err != nil {
+	if _, err := idx.IdxChecksum.Write(e.hash.Sum(nil)[:hash.Size]); err != nil {
+		return 0, err
+	}
+
+	if _, err := e.Write(idx.IdxChecksum.Bytes()); err != nil {
 		return 0, err
 	}
 

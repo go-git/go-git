@@ -439,7 +439,7 @@ func (c *Commit) Less(rhs *Commit) bool {
 	return c.Committer.When.Before(rhs.Committer.When) ||
 		(c.Committer.When.Equal(rhs.Committer.When) &&
 			(c.Author.When.Before(rhs.Author.When) ||
-				(c.Author.When.Equal(rhs.Author.When) && bytes.Compare(c.Hash[:], rhs.Hash[:]) < 0)))
+				(c.Author.When.Equal(rhs.Author.When) && c.Hash.Compare(rhs.Hash.Bytes()) < 0)))
 }
 
 func indent(t string) string {

@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -33,8 +32,8 @@ func errInvalidHashSize(got int) error {
 		hashSize, got)
 }
 
-func errInvalidHash(err error) error {
-	return fmt.Errorf("invalid hash: %s", err.Error())
+func errInvalidHash(hash string) error {
+	return fmt.Errorf("invalid hash: %s", hash)
 }
 
 func errInvalidShallowLineLength(got int) error {
@@ -244,10 +243,10 @@ func parseHash(s string) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, errInvalidHashSize(len(s))
 	}
 
-	if _, err := hex.DecodeString(s); err != nil {
-		return plumbing.ZeroHash, errInvalidHash(err)
+	h, ok := plumbing.FromHex(s)
+	if !ok {
+		return plumbing.ZeroHash, errInvalidHash(s)
 	}
 
-	h := plumbing.NewHash(s)
 	return h, nil
 }

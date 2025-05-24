@@ -78,8 +78,9 @@ func NewPackfileIter(
 	t plumbing.ObjectType,
 	keepPack bool,
 	largeObjectThreshold int64,
+	objectIDSize int,
 ) (storer.EncodedObjectIter, error) {
-	idx := idxfile.NewMemoryIndex()
+	idx := idxfile.NewMemoryIndex(objectIDSize)
 	if err := idxfile.NewDecoder(idxFile).Decode(idx); err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func NewPackfileIter(
 	}
 
 	seen := make(map[plumbing.Hash]struct{})
-	return newPackfileIter(fs, f, t, seen, idx, nil, keepPack)
+	return newPackfileIter(fs, f, t, seen, idx, nil, keepPack, objectIDSize)
 }
 
 func newPackfileIter(
@@ -100,11 +101,13 @@ func newPackfileIter(
 	index idxfile.Index,
 	cache cache.Object,
 	keepPack bool,
+	objectIDSize int,
 ) (storer.EncodedObjectIter, error) {
 	p := packfile.NewPackfile(f,
 		packfile.WithFs(fs),
 		packfile.WithCache(cache),
 		packfile.WithIdx(index),
+		packfile.WithObjectIDSize(objectIDSize),
 	)
 
 	iter, err := p.GetByType(t)

@@ -2,15 +2,72 @@ package commitgraph_test
 
 import (
 	"bytes"
-	"crypto"
 	"strings"
+	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing/format/commitgraph"
-	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func (s *CommitgraphSuite) TestOpenChainFile() {
-	sha1Data := []string{
+func TestOpenChainFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		goodShas []string
+		badShas  []string
+	}{
+		{
+			name:     "sha1",
+			goodShas: sha1Data,
+			badShas:  sha1Invalid,
+		},
+		{
+			name:     "sha256",
+			goodShas: sha256Data,
+			badShas:  sha256Invalid,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			chainData := strings.Join(tc.goodShas, "\n") + "\n"
+			chainReader := strings.NewReader(chainData)
+
+			chain, err := commitgraph.OpenChainFile(chainReader)
+			require.NoError(t, err)
+			assert.Equal(t, chain, tc.goodShas)
+
+			// Test with bad shas
+			chainData = strings.Join(tc.badShas, "\n") + "\n"
+
+			chainReader = strings.NewReader(chainData)
+
+			chain, err = commitgraph.OpenChainFile(chainReader)
+			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
+			assert.Nil(t, chain)
+
+			// Test with empty file
+			emptyChainReader := bytes.NewReader(nil)
+
+			chain, err = commitgraph.OpenChainFile(emptyChainReader)
+			require.NoError(t, err)
+			assert.Equal(t, []string{}, chain)
+
+			// Test with file containing only newlines
+			newlineChainData := []byte("\n\n\n")
+			newlineChainReader := bytes.NewReader(newlineChainData)
+
+			chain, err = commitgraph.OpenChainFile(newlineChainReader)
+			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
+			assert.Nil(t, chain)
+		})
+	}
+}
+
+var (
+	sha1Data = []string{
 		"c336d16298a017486c4164c40f8acb28afe64e84",
 		"31eae7b619d166c366bf5df4991f04ba8cebea0a",
 		"b977a025ca21e3b5ca123d8093bd7917694f6da7",
@@ -23,7 +80,11 @@ func (s *CommitgraphSuite) TestOpenChainFile() {
 		"5d7303c49ac984a9fec60523f2d5297682e16646",
 	}
 
-	sha256Data := []string{
+	sha1Invalid = []string{
+		"5d7303c49ac984a9fec60523f2d5297682e1664x",
+	}
+
+	sha256Data = []string{
 		"b9efda7160f2647e0974ca623f8a8f8e25fb6944f1b8f78f4db1bf07932de8eb",
 		"7095c59f8bf46e12c21d2d9da344cfe383fae18d26f3ae4d4ab7b71e3d0ddfae",
 		"25a395cb62f7656294e40a001ee19fefcdf3013d265dfcf4b744cd2549891dec",
@@ -58,41 +119,7 @@ func (s *CommitgraphSuite) TestOpenChainFile() {
 		"3a00a29e08d29454b5197662f70ccab5699b0ce8c85af7fbf511b8915d97cfd0",
 	}
 
-	goodShas := sha1Data
-	badShas := sha256Data
-	if hash.CryptoType == crypto.SHA256 {
-		goodShas = sha256Data
-		badShas = sha1Data
+	sha256Invalid = []string{
+		"3a00a29e08d29454b5197662f70ccab5699b0ce8c85af7fbf511b8915d97cfdx",
 	}
-	chainData := strings.Join(goodShas, "\n") + "\n"
-
-	chainReader := strings.NewReader(chainData)
-
-	chain, err := commitgraph.OpenChainFile(chainReader)
-	s.NoError(err)
-	s.Equal(chain, goodShas)
-
-	// Test with bad shas
-	chainData = strings.Join(badShas, "\n") + "\n"
-
-	chainReader = strings.NewReader(chainData)
-
-	chain, err = commitgraph.OpenChainFile(chainReader)
-	s.Equal(err, commitgraph.ErrMalformedCommitGraphFile)
-	s.Nil(chain)
-
-	// Test with empty file
-	emptyChainReader := bytes.NewReader(nil)
-
-	chain, err = commitgraph.OpenChainFile(emptyChainReader)
-	s.NoError(err)
-	s.Equal([]string{}, chain)
-
-	// Test with file containing only newlines
-	newlineChainData := []byte("\n\n\n")
-	newlineChainReader := bytes.NewReader(newlineChainData)
-
-	chain, err = commitgraph.OpenChainFile(newlineChainReader)
-	s.Equal(err, commitgraph.ErrMalformedCommitGraphFile)
-	s.Nil(chain)
-}
+)

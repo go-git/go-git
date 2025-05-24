@@ -7,12 +7,11 @@ import (
 	"strconv"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
-var (
-	ErrOverflow = errors.New("objfile: declared data length exceeded (overflow)")
-)
+var ErrOverflow = errors.New("objfile: declared data length exceeded (overflow)")
 
 // Writer writes and encodes data in compressed objfile format to a provided
 // io.Writer. Close should be called when finished with the Writer. Close will
@@ -66,7 +65,7 @@ func (w *Writer) WriteHeader(t plumbing.ObjectType, size int64) error {
 func (w *Writer) prepareForWrite(t plumbing.ObjectType, size int64) {
 	w.pending = size
 
-	w.hasher = plumbing.NewHasher(t, size)
+	w.hasher = plumbing.NewHasher(format.SHA1, t, size)
 	w.multi = io.MultiWriter(w.zlib, w.hasher)
 }
 

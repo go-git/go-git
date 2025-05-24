@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -208,7 +209,7 @@ func TestDecodeByTypeConstructor(t *testing.T) {
 func getIndexFromIdxFile(r io.ReadCloser) idxfile.Index {
 	defer r.Close()
 
-	idx := idxfile.NewMemoryIndex()
+	idx := idxfile.NewMemoryIndex(hash.SHA1Size)
 	if err := idxfile.NewDecoder(r).Decode(idx); err != nil {
 		panic(err)
 	}
@@ -247,7 +248,7 @@ func TestSize(t *testing.T) {
 
 func BenchmarkGetByOffset(b *testing.B) {
 	f := fixtures.Basic().One()
-	idx := idxfile.NewMemoryIndex()
+	idx := idxfile.NewMemoryIndex(hash.SHA1Size)
 
 	cache := cache.NewObjectLRUDefault()
 	err := idxfile.NewDecoder(f.Idx()).Decode(idx)

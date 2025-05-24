@@ -8,6 +8,7 @@ import (
 	stdsync "sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -44,7 +45,7 @@ type Parser struct {
 // are parsed.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
-		hasher: plumbing.NewHasher(plumbing.AnyObject, 0),
+		hasher: plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -168,7 +169,7 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		if !ok {
 			// can't find referenced object in this pack file
 			// this must be a "thin" pack.
-			oh.parent = &ObjectHeader{ //Placeholder parent
+			oh.parent = &ObjectHeader{ // Placeholder parent
 				Hash:        oh.Reference,
 				externalRef: true, // mark as an external reference that must be resolved
 				Type:        plumbing.AnyObject,

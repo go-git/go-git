@@ -30,3 +30,13 @@ func WithFs(fs billy.Filesystem) PackfileOption {
 		p.fs = fs
 	}
 }
+
+// WithObjectIDSize sets the size of the object IDs inside the packfile.
+// Valid options are hash.SHA1Size and hash.SHA256Size.
+//
+// When no object ID size is set, hash.SHA1Size will be used.
+func WithObjectIDSize(sz int) PackfileOption {
+	return func(p *Packfile) {
+		p.objectIdSize = sz
+	}
+}

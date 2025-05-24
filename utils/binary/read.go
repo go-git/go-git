@@ -6,8 +6,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
-
-	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // Read reads structured binary data from r into data. Bytes are read and
@@ -136,16 +134,6 @@ func ReadUint16(r io.Reader) (uint16, error) {
 	}
 
 	return v, nil
-}
-
-// ReadHash reads a plumbing.Hash from r
-func ReadHash(r io.Reader) (plumbing.Hash, error) {
-	var h plumbing.Hash
-	if err := binary.Read(r, binary.BigEndian, h[:]); err != nil {
-		return plumbing.ZeroHash, err
-	}
-
-	return h, nil
 }
 
 const sniffLen = 8000
