@@ -1,7 +1,10 @@
 package git
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,8 +51,11 @@ func startDaemon(t testing.TB, base string, port int) *exec.Cmd {
 
 	require.NoError(t, daemon.Start())
 
-	// Connections might be refused if we start sending request too early.
-	time.Sleep(time.Millisecond * 500)
+	// Wait until daemon is ready.
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
+	defer cancel()
+
+	assert.NoError(t, waitForPort(ctx, port))
 
 	return daemon
 }
@@ -69,4 +76,18 @@ func stopDaemon(t testing.TB, cmd *exec.Cmd) {
 	// Using [os.Process.Kill] won't work here because it won't terminate
 	// the child processes.
 	cmd.Process.Signal(os.Interrupt) //nolint:errcheck
+}
+
+func waitForPort(ctx context.Context, port int) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("context canceled before the port is connectable")
+		case <-time.After(10 * time.Millisecond):
+			conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+			if err == nil {
+				return conn.Close()
+			}
+		}
+	}
 }
