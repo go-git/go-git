@@ -88,8 +88,8 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) (err error) {
 	target.SetSize(int64(dst.Len()))
 
 	b := sync.GetByteSlice()
-	_, err = io.CopyBuffer(w, dst, *b)
-	sync.PutByteSlice(b)
+	n, err := io.CopyBuffer(w, dst, *b)
+	sync.PutByteSlice(b, int(n))
 	return err
 }
 
@@ -349,7 +349,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 	mw := io.MultiWriter(dst, hasher)
 
 	bufp := sync.GetByteSlice()
-	defer sync.PutByteSlice(bufp)
+	defer sync.PutByteSlice(bufp, 0)
 
 	sr := io.NewSectionReader(base, int64(0), int64(srcSz))
 	// Keep both the io.LimitedReader types, so we can reset N.

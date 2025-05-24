@@ -30,8 +30,22 @@ func GetByteSlice() *[]byte {
 }
 
 // PutByteSlice puts buf back into its sync.Pool.
-func PutByteSlice(buf *[]byte) {
-	byteSlice.Put(buf)
+func PutByteSlice(buf *[]byte, used int) {
+	if buf == nil {
+		return
+	}
+
+	b := *buf
+	if used <= 0 {
+		used = cap(b)
+	}
+
+	n := min(int(used), cap(b))
+	for i := 0; i < n; i++ {
+		b[i] = 0
+	}
+
+	byteSlice.Put(&b)
 }
 
 // GetBytesBuffer returns a *bytes.Buffer that is managed by a sync.Pool.
@@ -47,5 +61,8 @@ func GetBytesBuffer() *bytes.Buffer {
 
 // PutBytesBuffer puts buf back into its sync.Pool.
 func PutBytesBuffer(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
 	bytesBuffer.Put(buf)
 }

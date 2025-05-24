@@ -100,7 +100,7 @@ func (r *zlibReadCloser) Read(p []byte) (int, error) {
 }
 
 func (r *zlibReadCloser) Close() error {
-	sync.PutByteSlice(r.dict)
+	sync.PutByteSlice(r.dict, 0)
 	sync.PutZlibReader(r.r)
 	if r.f != nil {
 		r.f.Close()

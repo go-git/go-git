@@ -40,7 +40,7 @@ func TestGetAndPutByteSlice(t *testing.T) {
 	}
 
 	newByteSlice := make([]byte, wanted*2)
-	PutByteSlice(&newByteSlice)
+	PutByteSlice(&newByteSlice, 0)
 
 	newSlice := GetByteSlice()
 	if len(*newSlice) != len(newByteSlice) {

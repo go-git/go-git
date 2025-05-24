@@ -789,8 +789,8 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 
 	defer ioutil.CheckClose(to, &err)
 	buf := sync.GetByteSlice()
-	_, err = io.CopyBuffer(to, from, *buf)
-	sync.PutByteSlice(buf)
+	n, err := io.CopyBuffer(to, from, *buf)
+	sync.PutByteSlice(buf, int(n))
 	return
 }
 
