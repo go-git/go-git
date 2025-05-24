@@ -2,13 +2,14 @@ package sync
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetAndPutBytesBuffer(t *testing.T) {
 	buf := GetBytesBuffer()
-	if buf == nil {
-		t.Error("nil was not expected")
-	}
+	require.NotNil(t, buf)
 
 	initialLen := buf.Len()
 	buf.Grow(initialLen * 2)
@@ -17,33 +18,38 @@ func TestGetAndPutBytesBuffer(t *testing.T) {
 	PutBytesBuffer(buf)
 
 	buf = GetBytesBuffer()
-	if buf.Len() != grownLen {
-		t.Error("bytes buffer was not reused")
-	}
+	assert.Equal(t, buf.Len(), grownLen)
+	PutBytesBuffer(buf)
 
 	buf2 := GetBytesBuffer()
-	if buf2.Len() != initialLen {
-		t.Errorf("new bytes buffer length: wanted %d got %d", initialLen, buf2.Len())
-	}
+	assert.Equal(t, buf2.Len(), initialLen)
+	PutBytesBuffer(buf2)
 }
 
 func TestGetAndPutByteSlice(t *testing.T) {
 	slice := GetByteSlice()
-	if slice == nil {
-		t.Error("nil was not expected")
-	}
+	require.NotNil(t, slice)
 
-	wanted := 16 * 1024
-	got := len(*slice)
-	if wanted != got {
-		t.Errorf("byte slice length: wanted %d got %d", wanted, got)
-	}
+	wantLen := 32 * 1024
+	assert.Len(t, *slice, wantLen)
 
-	newByteSlice := make([]byte, wanted*2)
-	PutByteSlice(&newByteSlice, 0)
+	truncated := *slice
+	truncated = truncated[:0]
 
-	newSlice := GetByteSlice()
-	if len(*newSlice) != len(newByteSlice) {
-		t.Error("byte slice was not reused")
-	}
+	PutByteSlice(&truncated)
+
+	// ensure the truncated slice is not returned
+	slice = GetByteSlice()
+	assert.Len(t, *slice, wantLen)
+
+	values := *slice
+	values[0] = 1
+
+	PutByteSlice(&values)
+
+	slice = GetByteSlice()
+	values = *slice
+	assert.Len(t, values, wantLen)
+	// ensure that values
+	assert.Equal(t, uint8(0), values[0])
 }

@@ -11,8 +11,9 @@ import (
 // of a new buffer per call.
 func Copy(dst io.Writer, src io.Reader) (n int64, err error) {
 	buf := sync.GetByteSlice()
+	defer sync.PutByteSlice(buf)
+
 	n, err = io.CopyBuffer(dst, src, *buf)
-	sync.PutByteSlice(buf, int(n))
 
 	return
 }
