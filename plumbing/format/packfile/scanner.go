@@ -234,7 +234,7 @@ func (s *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
 		return fmt.Errorf("zlib reset error: %s", err)
 	}
 
-	_, err = io.Copy(writer, s.zr.Reader)
+	_, err = ioutil.Copy(writer, s.zr.Reader)
 	if err != nil {
 		return err
 	}
@@ -414,7 +414,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		}
 
 		// For non delta objects, simply calculate the hash of each object.
-		_, err = io.CopyBuffer(mw, r.zr.Reader, r.buf.Bytes())
+		_, err = ioutil.Copy(mw, r.zr.Reader)
 		if err != nil {
 			return nil, err
 		}
@@ -436,7 +436,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		} else {
 			// We don't know the compressed length, so we can't seek to
 			// the next object, we must discard the data instead.
-			_, err = io.Copy(io.Discard, r.zr.Reader)
+			_, err = ioutil.Copy(io.Discard, r.zr.Reader)
 			if err != nil {
 				return nil, err
 			}

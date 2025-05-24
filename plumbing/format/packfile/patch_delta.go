@@ -87,9 +87,7 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta *bytes.Buffer) (err e
 
 	target.SetSize(int64(dst.Len()))
 
-	b := sync.GetByteSlice()
-	n, err := io.CopyBuffer(w, dst, *b)
-	sync.PutByteSlice(b, int(n))
+	_, err = ioutil.Copy(w, dst)
 	return err
 }
 
@@ -202,7 +200,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					basePos += uint(n)
 					discard -= uint(n)
 				}
-				if _, err := io.Copy(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+				if _, err := ioutil.Copy(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -215,7 +213,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				if _, err := io.Copy(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+				if _, err := ioutil.Copy(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -354,7 +352,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 	mw := io.MultiWriter(dst, hasher)
 
 	bufp := sync.GetByteSlice()
-	defer sync.PutByteSlice(bufp, 0)
+	defer sync.PutByteSlice(bufp)
 
 	sr := io.NewSectionReader(base, int64(0), int64(srcSz))
 	// Keep both the io.LimitedReader types, so we can reset N.
