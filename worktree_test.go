@@ -764,6 +764,39 @@ func (s *WorktreeSuite) TestCheckoutBranch() {
 	s.True(status.IsClean())
 }
 
+func (s *WorktreeSuite) TestCheckoutBranchUntracked() {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	uf, err := w.Filesystem.Create("untracked_file")
+	s.NoError(err)
+	_, err = uf.Write([]byte("don't delete me"))
+	s.NoError(err)
+
+	err = w.Checkout(&CheckoutOptions{
+		Branch: "refs/heads/branch",
+	})
+	s.NoError(err)
+
+	head, err := w.r.Head()
+	s.NoError(err)
+	s.Equal("refs/heads/branch", head.Name().String())
+
+	status, err := w.Status()
+	s.NoError(err)
+	// The untracked file should still be there, so it's not clean
+	s.False(status.IsClean())
+	s.True(status.IsUntracked("untracked_file"))
+	err = w.Filesystem.Remove("untracked_file")
+	s.NoError(err)
+	status, err = w.Status()
+	s.NoError(err)
+	// After deleting the untracked file it should now be clean
+	s.True(status.IsClean())
+}
+
 func (s *WorktreeSuite) TestCheckoutCreateWithHash() {
 	w := &Worktree{
 		r:          s.Repository,
