@@ -216,8 +216,7 @@ func (s *RemoteSuite) TestFetchNonExistentReference() {
 		},
 	})
 
-	s.ErrorContains(err, "couldn't find remote ref")
-	s.True(errors.Is(err, NoMatchingRefSpecError{}))
+	s.True(errors.Is(err, ErrRemoteRefNotFound))
 }
 
 func (s *RemoteSuite) TestFetchContext() {
