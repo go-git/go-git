@@ -58,6 +58,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
 		AlternatesFS:    ops.AlternatesFS,
+		KeepDescriptors: ops.KeepDescriptors,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
