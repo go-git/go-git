@@ -35,20 +35,8 @@ var (
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
+	ErrRemoteRefNotFound     = errors.New("couldn't find remote ref")
 )
-
-type NoMatchingRefSpecError struct {
-	refSpec config.RefSpec
-}
-
-func (e NoMatchingRefSpecError) Error() string {
-	return fmt.Sprintf("couldn't find remote ref %q", e.refSpec.Src())
-}
-
-func (e NoMatchingRefSpecError) Is(target error) bool {
-	_, ok := target.(NoMatchingRefSpecError)
-	return ok
-}
 
 const (
 	// This describes the maximum number of commits to walk when
@@ -978,7 +966,7 @@ func doCalculateRefs(
 	}
 
 	if !matched && !s.IsWildcard() {
-		return nil, NoMatchingRefSpecError{refSpec: s}
+		return nil, fmt.Errorf("%w: %s", ErrRemoteRefNotFound, s.Src())
 	}
 
 	return refList, ret
