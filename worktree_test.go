@@ -1352,7 +1352,7 @@ func (s *WorktreeSuite) TestResetSparsely() {
 
 	sparseResetDirs := []string{"php"}
 
-	err := w.ResetSparsely(&ResetOptions{Mode: HardReset}, sparseResetDirs)
+	err := w.Reset(&ResetOptions{Mode: HardReset, SparseDirs: sparseResetDirs})
 	s.NoError(err)
 
 	files, err := fs.ReadDir("/")
@@ -1364,6 +1364,47 @@ func (s *WorktreeSuite) TestResetSparsely() {
 	s.NoError(err)
 	s.Len(files, 1)
 	s.Equal("crappy.php", files[0].Name())
+}
+
+func (s *WorktreeSuite) TestResetSparselyInvalidDir() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	tests := []struct {
+		name    string
+		opts    ResetOptions
+		wantErr bool
+	}{
+		{
+			name:    "non existent directory",
+			opts:    ResetOptions{SparseDirs: []string{"non-existent"}},
+			wantErr: true,
+		},
+		{
+			name:    "exists but is not directory",
+			opts:    ResetOptions{SparseDirs: []string{"php/crappy.php"}},
+			wantErr: true,
+		},
+		{
+			name:    "skip validation for non existent directory",
+			opts:    ResetOptions{SparseDirs: []string{"non-existent"}, SkipSparseDirValidation: true},
+			wantErr: false,
+		},
+	}
+
+	for _, test := range tests {
+		s.Run(test.name, func() {
+			err := w.Reset(&test.opts)
+			if test.wantErr {
+				s.Require().ErrorIs(err, ErrSparseResetDirectoryNotFound)
+				return
+			}
+			s.Require().NoError(err)
+		})
+	}
 }
 
 func (s *WorktreeSuite) TestStatusAfterCheckout() {
@@ -3123,6 +3164,50 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 		s.NoError(err)
 		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
 		s.ErrorIs(err, ErrRepositoryIncomplete)
+	}
+}
+
+func TestTreeContainsDirs(t *testing.T) {
+	tree := &object.Tree{
+		Entries: []object.TreeEntry{
+			{Name: "foo", Mode: filemode.Dir},
+			{Name: "bar", Mode: filemode.Dir},
+			{Name: "baz", Mode: filemode.Dir},
+			{Name: "this-is-regular", Mode: filemode.Regular},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		dirs     []string
+		expected bool
+	}{
+		{
+			name:     "example",
+			dirs:     []string{"foo", "baz"},
+			expected: true,
+		},
+		{
+			name:     "empty directories",
+			dirs:     []string{},
+			expected: false,
+		},
+		{
+			name:     "non existent directory",
+			dirs:     []string{"foobarbaz"},
+			expected: false,
+		},
+		{
+			name:     "exists but is not directory",
+			dirs:     []string{"this-is-regular"},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, treeContainsDirs(tree, test.dirs))
+		})
 	}
 }
 

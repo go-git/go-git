@@ -33,6 +33,7 @@ var (
 	ErrGitModulesSymlink               = errors.New(gitmodulesFile + " is a symlink")
 	ErrNonFastForwardUpdate            = errors.New("non-fast-forward update")
 	ErrRestoreWorktreeOnlyNotSupported = errors.New("worktree only is not supported")
+	ErrSparseResetDirectoryNotFound    = errors.New("sparse-reset directory not found on commit")
 )
 
 // Worktree represents a git worktree.
@@ -177,7 +178,11 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		return err
 	}
 
-	ro := &ResetOptions{Commit: c, Mode: MergeReset}
+	ro := &ResetOptions{
+		Commit:     c,
+		Mode:       MergeReset,
+		SparseDirs: opts.SparseCheckoutDirectories,
+	}
 	if opts.Force {
 		ro.Mode = HardReset
 	} else if opts.Keep {
@@ -192,10 +197,6 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 
 	if err != nil {
 		return err
-	}
-
-	if len(opts.SparseCheckoutDirectories) > 0 {
-		return w.ResetSparsely(ro, opts.SparseCheckoutDirectories)
 	}
 
 	return w.Reset(ro)
@@ -280,7 +281,13 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	return w.r.Storer.SetReference(head)
 }
 
-func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
+// Reset the worktree to a specified state.
+func (w *Worktree) Reset(opts *ResetOptions) error {
+	start := time.Now()
+	defer func() {
+		trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
+	}()
+
 	if err := opts.Validate(w.r); err != nil {
 		return err
 	}
@@ -296,12 +303,8 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 		}
 	}
 
-	if err := w.setHEADCommit(opts.Commit); err != nil {
-		return err
-	}
-
 	if opts.Mode == SoftReset {
-		return nil
+		return w.setHEADCommit(opts.Commit)
 	}
 
 	t, err := w.r.getTreeFromCommitHash(opts.Commit)
@@ -309,8 +312,18 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 		return err
 	}
 
+	if len(opts.SparseDirs) > 0 && !opts.SkipSparseDirValidation {
+		if !treeContainsDirs(t, opts.SparseDirs) {
+			return ErrSparseResetDirectoryNotFound
+		}
+	}
+
+	if err := w.setHEADCommit(opts.Commit); err != nil {
+		return err
+	}
+
 	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset {
-		if err := w.resetIndex(t, dirs, opts.Files); err != nil {
+		if err := w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -322,6 +335,26 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 	}
 
 	return nil
+}
+
+// treeContainsDirs checks if the given tree contains all the directories.
+// if dirs is empty, it returns false.
+func treeContainsDirs(tree *object.Tree, dirs []string) bool {
+	if len(dirs) == 0 {
+		return false
+	}
+
+	for _, dir := range dirs {
+		entry, err := tree.FindEntry(dir)
+		if err != nil {
+			return false
+		}
+		if entry.Mode != filemode.Dir {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Restore restores specified files in the working tree or stage with contents from
@@ -357,16 +390,6 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 	}
 
 	return ErrRestoreWorktreeOnlyNotSupported
-}
-
-// Reset the worktree to a specified state.
-func (w *Worktree) Reset(opts *ResetOptions) error {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
-	}()
-
-	return w.ResetSparsely(opts, nil)
 }
 
 func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) error {
