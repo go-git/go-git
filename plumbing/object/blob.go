@@ -84,7 +84,7 @@ func (b *Blob) Encode(o plumbing.EncodedObject) (err error) {
 
 	defer ioutil.CheckClose(r, &err)
 
-	_, err = io.Copy(w, r)
+	_, err = ioutil.Copy(w, r)
 	return err
 }
 

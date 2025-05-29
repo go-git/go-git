@@ -25,3 +25,23 @@ func WithScannerObservers(ob ...Observer) ParserOption {
 		p.observers = ob
 	}
 }
+
+// WithHighMemoryMode optimises the parser for speed rather than
+// for memory consumption, making the Parser faster from an execution
+// time perspective, but yielding much more allocations, which in the
+// long run could make the application slower due to GC pressure.
+//
+// When the parser is being used without a storage, this is enabled
+// automatically, as it can't operate without it. Some storage types
+// may no support low memory mode (i.e. memory storage), for storage
+// types that do support it, this becomes an opt-in feature.
+//
+// When enabled the inflated content of all delta objects (ofs and ref)
+// will be loaded into cache, making it faster to navigate through them.
+// If the reader provided to the parser does not implement io.Seeker,
+// full objects may also be loaded into memory.
+func WithHighMemoryMode() ParserOption {
+	return func(p *Parser) {
+		p.lowMemoryMode = false
+	}
+}
