@@ -2,6 +2,7 @@ package packfile_test
 
 import (
 	"io"
+	"reflect"
 	"testing"
 
 	billy "github.com/go-git/go-billy/v6"
@@ -20,21 +21,22 @@ import (
 
 func TestParserHashes(t *testing.T) {
 	tests := []struct {
-		name    string
-		storage storer.Storer
-		option  packfile.ParserOption
+		name              string
+		storage           storer.Storer
+		option            packfile.ParserOption
+		wantLowMemoryMode bool
 	}{
 		{
 			name: "without storage (implicit high memory mode)",
 		},
 		{
-			name:    "with filesystem storage",
-			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
+			name:              "with filesystem storage",
+			storage:           filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
+			wantLowMemoryMode: true,
 		},
 		{
-			name:    "with storage and high memory mode",
-			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
-			option:  packfile.WithHighMemoryMode(),
+			name:    "with storage and high memory mode (opt-in from storage)",
+			storage: filesystem.NewStorageWithOptions(osfs.New(t.TempDir()), cache.NewObjectLRUDefault(), filesystem.Options{HighMemoryMode: true}),
 		},
 		{
 			name:    "with memory storage (implicit high memory)",
@@ -54,6 +56,10 @@ func TestParserHashes(t *testing.T) {
 			obs := new(testObserver)
 			parser := packfile.NewParser(f.Packfile(), packfile.WithScannerObservers(obs),
 				packfile.WithStorage(tc.storage), tc.option)
+
+			field := reflect.ValueOf(*parser).FieldByName("lowMemoryMode")
+			got := field.Bool()
+			assert.Equal(t, tc.wantLowMemoryMode, got)
 
 			commit := plumbing.CommitObject
 			blob := plumbing.BlobObject
