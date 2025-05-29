@@ -308,7 +308,7 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 
 func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 	typ plumbing.ObjectType, writeHeader objectHeaderWriter) (uint, plumbing.Hash, error) {
-	deltaBuf := bufio.NewReaderSize(delta, 1024)
+	deltaBuf := bufio.NewReader(delta)
 	srcSz, err := decodeLEB128ByteReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
@@ -327,6 +327,12 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			return 0, plumbing.ZeroHash, ErrInvalidDelta
 		}
 		return 0, plumbing.ZeroHash, err
+	}
+
+	// Avoid several iteractions expanding the buffer, which can be quite
+	// inefficient on large deltas.
+	if b, ok := dst.(*bytes.Buffer); ok {
+		b.Grow(int(targetSz))
 	}
 
 	// If header still needs to be written, caller will provide
