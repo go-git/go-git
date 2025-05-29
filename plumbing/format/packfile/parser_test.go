@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParserHashes(t *testing.T) {
@@ -24,20 +25,25 @@ func TestParserHashes(t *testing.T) {
 		option  packfile.ParserOption
 	}{
 		{
-			name: "without storage",
+			name: "without storage (implicit high memory mode)",
 		},
 		{
-			name:    "with storage",
+			name:    "with filesystem storage",
 			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
 		},
 		{
-			name:   "without storage and high memory usage",
-			option: packfile.WithHighMemoryUsage(),
+			name:    "with storage and high memory mode",
+			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
+			option:  packfile.WithHighMemoryMode(),
 		},
 		{
-			name:    "with storage and high memory usage",
-			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
-			option:  packfile.WithHighMemoryUsage(),
+			name:    "with memory storage (implicit high memory)",
+			storage: memory.NewStorage(),
+		},
+		{
+			name:    "with memory storage and high memory mode (no-op)",
+			storage: memory.NewStorage(),
+			option:  packfile.WithHighMemoryMode(),
 		},
 	}
 
@@ -88,7 +94,7 @@ func TestParserHashes(t *testing.T) {
 			}
 
 			_, err := parser.Parse()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			assert.Equal(t, "a3fed42da1e8189a077c0e6846c040dcf73fc9dd", obs.checksum)
 			assert.Equal(t, objs, obs.objects)

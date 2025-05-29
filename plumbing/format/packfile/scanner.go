@@ -95,8 +95,8 @@ type Scanner struct {
 	storage storer.EncodedObjectStorer
 
 	*scannerReader
-	zr  gogitsync.ZLibReader
-	buf bytes.Buffer
+	zr            gogitsync.ZLibReader
+	lowMemoryMode bool
 }
 
 // NewScanner creates a new instance of Scanner.
@@ -401,6 +401,13 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			mw = io.MultiWriter(r.hasher, w)
 		}
 
+		// If the reader isn't seekable, and low memory mode
+		// isn't supported, keep the contents of the objects in
+		// memory.
+		if !r.lowMemoryMode && r.seeker == nil {
+			oh.content = gogitsync.GetBytesBuffer()
+			mw = io.MultiWriter(mw, oh.content)
+		}
 		if r.hasher256 != nil {
 			r.hasher256.Reset(oh.Type, oh.Size)
 			mw = io.MultiWriter(mw, r.hasher256)
@@ -420,7 +427,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	} else {
 		// If data source is not io.Seeker, keep the content
 		// in the cache, so that it can be accessed by the Parser.
-		if r.scannerReader.seeker == nil {
+		if !r.lowMemoryMode {
+			oh.content = gogitsync.GetBytesBuffer()
 			_, err = oh.content.ReadFrom(r.zr.Reader)
 			if err != nil {
 				return nil, err

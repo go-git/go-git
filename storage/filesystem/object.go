@@ -51,9 +51,15 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 }
 
 func (s *ObjectStorage) requireIndex() error {
+	s.muI.RLock()
 	if s.index != nil {
+		s.muI.RUnlock()
 		return nil
 	}
+	s.muI.RUnlock()
+
+	s.muI.Lock()
+	defer s.muI.Unlock()
 
 	s.index = make(map[plumbing.Hash]idxfile.Index)
 	packs, err := s.dir.ObjectPacks()
@@ -448,14 +454,14 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 
 	defer ioutil.CheckClose(w, &err)
 
-	bufp := copyBufferPool.Get().(*[]byte)
-	buf := *bufp
-	_, err = io.CopyBuffer(w, r, buf)
-	copyBufferPool.Put(bufp)
+	_, err = ioutil.Copy(w, r)
+	if err != nil {
+		return nil, err
+	}
 
 	s.objectCache.Put(obj)
 
-	return obj, err
+	return obj, nil
 }
 
 var copyBufferPool = sync.Pool{

@@ -30,9 +30,9 @@ var (
 // Parser decodes a packfile and calls any observer associated to it. Is used
 // to generate indexes.
 type Parser struct {
-	storage   storer.EncodedObjectStorer
-	cache     *parserCache
-	lowMemory bool
+	storage       storer.EncodedObjectStorer
+	cache         *parserCache
+	lowMemoryMode bool
 
 	scanner   *Scanner
 	observers []Observer
@@ -42,13 +42,20 @@ type Parser struct {
 	m        stdsync.Mutex
 }
 
+// LowMemoryCapable is implemented by storage types that are capable of
+// operating in low-memory mode.
+type LowMemoryCapable interface {
+	// LowMemoryMode defines whether the storage is able and willing for
+	// the parser to operate in low-memory mode.
+	LowMemoryMode() bool
+}
+
 // NewParser creates a new Parser.
 // When a storage is set, the objects are written to storage as they
 // are parsed.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
-		hasher:    plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
-		lowMemory: true,
+		hasher: plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -60,7 +67,15 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 
 	if p.storage != nil {
 		p.scanner.storage = p.storage
+
+		lm, ok := p.storage.(LowMemoryCapable)
+		p.lowMemoryMode = ok && lm.LowMemoryMode()
+
+		if p.scanner.seeker == nil {
+			p.lowMemoryMode = false
+		}
 	}
+	p.scanner.lowMemoryMode = p.lowMemoryMode
 	p.cache = newParserCache()
 
 	return p
@@ -85,7 +100,7 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 
 	if p.cache != nil {
 		o := oh
-		for p.lowMemory && o.content != nil {
+		for p.lowMemoryMode && o.content != nil {
 			sync.PutBytesBuffer(o.content)
 			o.content = nil
 
@@ -140,13 +155,14 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 					pendingDeltaREFs = append(pendingDeltaREFs, &oh)
 				}
 				continue
-			} else {
-				if p.lowMemory && oh.content != nil {
-					sync.PutBytesBuffer(oh.content)
-					oh.content = nil
-				}
-				p.storeOrCache(&oh)
 			}
+
+			if p.lowMemoryMode && oh.content != nil {
+				sync.PutBytesBuffer(oh.content)
+				oh.content = nil
+			}
+
+			p.storeOrCache(&oh)
 
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
@@ -171,47 +187,51 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		}
 	}
 
+	// Return to pool all objects used.
+	go func() {
+		for _, oh := range p.cache.oi {
+			if oh.content != nil {
+				sync.PutBytesBuffer(oh.content)
+				oh.content = nil
+			}
+		}
+	}()
+
 	return p.checksum, p.onFooter(p.checksum)
 }
 
 func (p *Parser) ensureContent(oh *ObjectHeader) error {
 	// Skip if this object already has the correct content.
-	if oh.content != nil && oh.content.Len() == int(oh.Size) {
+	if oh.content != nil && oh.content.Len() == int(oh.Size) && !oh.Hash.IsZero() {
 		return nil
-	}
-
-	// if there is no parent, or it is not a delta object,
-	// there is nothing to be done, as we can simply inflate
-	// the object by its offset.
-	if oh.parent != nil && oh.parent.diskType.IsDelta() {
-		// for delta objects, if their content is empty or their size
-		// is not correct, ensure that its contents, and its parents,
-		// have their content and it is correctly inflated.
-		//
-		// Note that a drift between size and content size indicates that
-		// the object may have been previously hydrated, and the content
-		// may have later been overwritten by its compressed version.
-		if oh.parent.content == nil || oh.parent.content.Len() != int(oh.parent.Size) {
-			err := p.ensureContent(oh.parent)
-			if err != nil {
-				return fmt.Errorf("ensure parent content at offset %v: %w", oh.Offset, err)
-			}
-		}
-	}
-
-	deltaData := sync.GetBytesBuffer()
-	defer sync.PutBytesBuffer(deltaData)
-
-	err := p.scanner.inflateContent(oh.ContentOffset, deltaData)
-	if err != nil {
-		return fmt.Errorf("inflating content at offset %v: %w", oh.ContentOffset, err)
 	}
 
 	if oh.content == nil {
 		oh.content = sync.GetBytesBuffer()
 	}
 
-	err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
+	var err error
+	if !p.lowMemoryMode && oh.content != nil && oh.content.Len() > 0 {
+		source := oh.content
+		oh.content = sync.GetBytesBuffer()
+
+		defer sync.PutBytesBuffer(source)
+
+		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
+	} else if p.scanner.scannerReader.seeker != nil {
+		deltaData := sync.GetBytesBuffer()
+		defer sync.PutBytesBuffer(deltaData)
+
+		err = p.scanner.inflateContent(oh.ContentOffset, deltaData)
+		if err != nil {
+			return fmt.Errorf("inflating content at offset %v: %w", oh.ContentOffset, err)
+		}
+
+		err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
+	} else {
+		return fmt.Errorf("can't ensure content: %w", plumbing.ErrObjectNotFound)
+	}
+
 	if err != nil {
 		return fmt.Errorf("apply delta patch: %w", err)
 	}
