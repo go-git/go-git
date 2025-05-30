@@ -62,19 +62,32 @@ func NewRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
+// isEphemeral returns true if this is an ad hoc remote; i.e., if it
+// was created directly from a URL and isn't defined in the git
+// config.
+func (r *Remote) isEphemeral() bool {
+	return r.c.Name == ""
+}
+
 // Config returns the RemoteConfig object used to instantiate this Remote.
 func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
 }
 
 func (r *Remote) String() string {
+	var name string
+	if r.c.Name != "" {
+		name = r.c.Name
+	} else {
+		name = "<unnamed>"
+	}
 	var fetch, push string
 	if len(r.c.URLs) > 0 {
 		fetch = r.c.URLs[0]
 		push = r.c.URLs[len(r.c.URLs)-1]
 	}
 
-	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
+	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", name, fetch, push)
 }
 
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
@@ -302,9 +315,19 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 	return nil
 }
 
+// updateRemoteReferenceStorage updates the remote references
+// corresponding to the references that were just pushed to the
+// remote, if needed.
 func (r *Remote) updateRemoteReferenceStorage(
 	cmds []*packp.Command,
 ) error {
+	if r.isEphemeral() {
+		// If the remote is ephemeral (i.e., not configured in
+		// gitconfig), then there are no remote-tracking references
+		// corresponding to it.
+		return nil
+	}
+
 	for _, spec := range r.c.Fetch {
 		for _, c := range cmds {
 			if !spec.Match(c.Name) {

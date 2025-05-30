@@ -288,6 +288,16 @@ func (s *ConfigSuite) TestValidateInvalidRemoteKey() {
 	s.ErrorIs(config.Validate(), ErrInvalid)
 }
 
+func (s *ConfigSuite) TestEphemeralRemoteConfig() {
+	config := &RemoteConfig{
+		URLs: []string{"http://foo/bar"},
+	}
+
+	s.NoError(config.Validate())
+	s.Empty(config.Name)
+	s.Len(config.URLs, 1)
+}
+
 func (s *ConfigSuite) TestRemoteConfigValidateMissingURL() {
 	config := &RemoteConfig{Name: "foo"}
 	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyURL)
