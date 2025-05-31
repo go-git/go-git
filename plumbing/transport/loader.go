@@ -41,23 +41,24 @@ func NewFilesystemLoader(base billy.Filesystem, strict bool) Loader {
 // storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
 func (l *FilesystemLoader) Load(ep *Endpoint) (storage.Storer, error) {
-	return l.load(ep, false)
+	return l.load(ep.Path, false)
 }
 
-func (l *FilesystemLoader) load(ep *Endpoint, tried bool) (storage.Storer, error) {
-	fs, err := l.base.Chroot(ep.Path)
+func (l *FilesystemLoader) load(path string, tried bool) (storage.Storer, error) {
+	fs, err := l.base.Chroot(path)
 	if err != nil {
 		return nil, err
 	}
 
 	if _, err := fs.Stat("config"); err != nil {
 		if !l.strict && !tried {
+			tried = true
 			if fi, err := fs.Stat(".git"); err == nil && fi.IsDir() {
-				ep.Path = filepath.Join(ep.Path, ".git")
+				path = filepath.Join(path, ".git")
 			} else {
-				ep.Path = ep.Path + ".git"
+				path = path + ".git"
 			}
-			return l.load(ep, true)
+			return l.load(path, tried)
 		}
 		return nil, ErrRepositoryNotFound
 	}
