@@ -45,8 +45,11 @@ var services = []service{
 	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRpc, transport.ReceivePackService},
 }
 
-// BackendOptions represents a set of options for the Git HTTP handler.
-type BackendOptions struct {
+// Backend represents a Git HTTP handler.
+type Backend struct {
+	// Loader is used to load repositories from the given endpoint. If nil,
+	// [Transport.DefaultLoader] is used.
+	Loader transport.Loader
 	// ErrorLog is the logger used to log errors. If nil, no errors are logged.
 	ErrorLog *log.Logger
 	// Prefix is a path prefix that will be stripped from the URL path before
@@ -63,55 +66,57 @@ type BackendOptions struct {
 // repositories that wish to be server using the Dumb-HTTP protocol must update
 // the server info files. This can be done by using
 // [transport.UpdateServerInfo] before serving the repository.
-func NewBackend(loader transport.Loader, opts *BackendOptions) http.HandlerFunc {
+func NewBackend(loader transport.Loader) *Backend {
 	if loader == nil {
 		loader = transport.DefaultLoader
 	}
-	if opts == nil {
-		opts = &BackendOptions{}
+	return &Backend{
+		Loader: loader,
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		urlPath := r.URL.Path
-		urlPath = strings.TrimPrefix(urlPath, opts.Prefix)
-		for _, s := range services {
-			if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
-				if r.Method != s.method {
-					renderStatusError(w, http.StatusMethodNotAllowed)
-					return
-				}
+}
 
-				repo := strings.TrimPrefix(m[1], "/")
-				file := strings.Replace(urlPath, repo+"/", "", 1)
-				ep, err := transport.NewEndpoint(repo)
-				if err != nil {
-					logf(opts.ErrorLog, "error creating endpoint: %v", err)
-					renderStatusError(w, http.StatusBadRequest)
-					return
-				}
-
-				st, err := loader.Load(ep)
-				if err != nil {
-					logf(opts.ErrorLog, "error loading repository: %v", err)
-					renderStatusError(w, http.StatusNotFound)
-					return
-				}
-
-				ctx := r.Context()
-				ctx = context.WithValue(ctx, contextKey("errorLog"), opts.ErrorLog)
-				ctx = context.WithValue(ctx, contextKey("repo"), m[1])
-				ctx = context.WithValue(ctx, contextKey("file"), file)
-				ctx = context.WithValue(ctx, contextKey("service"), s.svc)
-				ctx = context.WithValue(ctx, contextKey("storer"), st)
-				ctx = context.WithValue(ctx, contextKey("endpoint"), ep)
-
-				s.handler(w, r.WithContext(ctx))
+// ServeHTTP implements the [http.Handler] interface.
+func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	urlPath := r.URL.Path
+	urlPath = strings.TrimPrefix(urlPath, b.Prefix)
+	for _, s := range services {
+		if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
+			if r.Method != s.method {
+				renderStatusError(w, http.StatusMethodNotAllowed)
 				return
 			}
-		}
 
-		// If no service matched, return 404.
-		renderStatusError(w, http.StatusNotFound)
+			repo := strings.TrimPrefix(m[1], "/")
+			file := strings.Replace(urlPath, repo+"/", "", 1)
+			ep, err := transport.NewEndpoint(repo)
+			if err != nil {
+				logf(b.ErrorLog, "error creating endpoint: %v", err)
+				renderStatusError(w, http.StatusBadRequest)
+				return
+			}
+
+			st, err := b.Loader.Load(ep)
+			if err != nil {
+				logf(b.ErrorLog, "error loading repository: %v", err)
+				renderStatusError(w, http.StatusNotFound)
+				return
+			}
+
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, contextKey("errorLog"), b.ErrorLog)
+			ctx = context.WithValue(ctx, contextKey("repo"), m[1])
+			ctx = context.WithValue(ctx, contextKey("file"), file)
+			ctx = context.WithValue(ctx, contextKey("service"), s.svc)
+			ctx = context.WithValue(ctx, contextKey("storer"), st)
+			ctx = context.WithValue(ctx, contextKey("endpoint"), ep)
+
+			s.handler(w, r.WithContext(ctx))
+			return
+		}
 	}
+
+	// If no service matched, return 404.
+	renderStatusError(w, http.StatusNotFound)
 }
 
 // logf logs the given message to the error log if it is set.
