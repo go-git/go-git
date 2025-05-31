@@ -117,7 +117,7 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 	_, err = io.ReadFull(r, p[:LenSize])
 	if err != nil {
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return Err, fmt.Errorf("%w: short pkt-line %q", ErrInvalidPktLen, len(p[:LenSize]))
+			return Err, fmt.Errorf("%w: short pkt-line %d", ErrInvalidPktLen, len(p[:LenSize]))
 		}
 		return Err, err
 	}

@@ -7,7 +7,7 @@ import "fmt"
 // it will return an error.
 func ParseLength(b []byte) (int, error) {
 	if b == nil {
-		return Err, fmt.Errorf("%w: pkt-line does not exist", ErrInvalidPktLen)
+		return Err, fmt.Errorf("%w: missing pkt-line", ErrInvalidPktLen)
 	}
 
 	n, err := hexDecode(b)
