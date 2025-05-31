@@ -15,7 +15,6 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 
-	// Create a push request
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -26,7 +25,6 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 		},
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify ReportStatus capability is set
@@ -43,7 +41,6 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 	// Create capabilities without ReportStatus
 	caps := capability.NewList()
 
-	// Create a push request
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -54,7 +51,6 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 		},
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify ReportStatus capability is not set
@@ -66,7 +62,6 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 	caps := capability.NewList()
 	caps.Add(capability.Sideband64k)
 
-	// Create a push request with progress
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -78,7 +73,6 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 		Progress: &mockWriter{},
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify Sideband64k capability is set
@@ -92,7 +86,6 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 	caps := capability.NewList()
 	caps.Add(capability.Sideband)
 
-	// Create a push request with progress
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -104,7 +97,6 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 		Progress: &mockWriter{},
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify Sideband capability is set but not Sideband64k
@@ -118,7 +110,6 @@ func TestBuildUpdateRequestsWithNoProgress(t *testing.T) {
 	caps := capability.NewList()
 	caps.Add(capability.NoProgress)
 
-	// Create a push request without progress
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -129,7 +120,6 @@ func TestBuildUpdateRequestsWithNoProgress(t *testing.T) {
 		},
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify NoProgress capability is set
@@ -137,11 +127,9 @@ func TestBuildUpdateRequestsWithNoProgress(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
-	// Create capabilities with Atomic
 	caps := capability.NewList()
 	caps.Add(capability.Atomic)
 
-	// Create a push request with Atomic
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -153,10 +141,8 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 		Atomic: true,
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
-	// Verify Atomic capability is set
 	assert.True(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
@@ -164,7 +150,6 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 	// Create capabilities without Atomic
 	caps := capability.NewList()
 
-	// Create a push request with Atomic
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -176,7 +161,6 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 		Atomic: true,
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify Atomic capability is not set
@@ -188,7 +172,6 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 	caps := capability.NewList()
 	caps.Set(capability.Agent, capability.DefaultAgent())
 
-	// Create a push request
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -199,7 +182,6 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 		},
 	}
 
-	// Build update requests
 	upreq := buildUpdateRequests(caps, req)
 
 	// Verify Agent capability is set

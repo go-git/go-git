@@ -88,7 +88,6 @@ func (rw *mockReadWriteCloser) Close() error {
 
 // TestSendPackWithReportStatus tests the SendPack function with ReportStatus capability
 func TestSendPackWithReportStatus(t *testing.T) {
-	// Create a mock connection with ReportStatus capability
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
@@ -102,7 +101,6 @@ func TestSendPackWithReportStatus(t *testing.T) {
 	reader := newMockRWC([]byte(reportStatusResponse))
 	writer := newMockRWC(nil)
 
-	// Create a push request
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -113,11 +111,9 @@ func TestSendPackWithReportStatus(t *testing.T) {
 		},
 	}
 
-	// Call SendPack
 	storer := memory.NewStorage()
 	err := SendPack(context.TODO(), storer, conn, writer, reader, req)
 
-	// Verify no error was returned
 	assert.NoError(t, err)
 
 	// Verify the reader and writer were closed
@@ -127,7 +123,6 @@ func TestSendPackWithReportStatus(t *testing.T) {
 
 // TestSendPackWithReportStatusError tests the SendPack function with an error in the report status
 func TestSendPackWithReportStatusError(t *testing.T) {
-	// Create a mock connection with ReportStatus capability
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
@@ -140,7 +135,6 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 	reader := newMockRWC([]byte(reportStatusResponse))
 	writer := newMockRWC(nil)
 
-	// Create a push request
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -157,7 +151,6 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 
 	// Verify an error was returned
 	assert.Error(t, err)
-	t.Logf("error is %q", err)
 	assert.Contains(t, err.Error(), "unpack error: failed")
 
 	// Verify the reader and writer were closed
@@ -174,7 +167,6 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 	reader := newMockRWC(nil)
 	writer := newMockRWC(nil)
 
-	// Create a push request
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -185,11 +177,9 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 		},
 	}
 
-	// Call SendPack
 	storer := memory.NewStorage()
 	err := SendPack(context.Background(), storer, conn, writer, reader, req)
 
-	// Verify no error was returned
 	assert.NoError(t, err)
 
 	// Verify the writer was closed but not the reader (since we don't read without ReportStatus)
@@ -201,9 +191,7 @@ func init() {
 	trace.SetTarget(trace.General | trace.Packet)
 }
 
-// TestSendPackWithProgress tests the SendPack function with progress reporting
 func TestSendPackWithProgress(t *testing.T) {
-	// Create a mock connection with ReportStatus and Sideband64k capabilities
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	caps.Add(capability.Sideband64k)
@@ -228,7 +216,6 @@ func TestSendPackWithProgress(t *testing.T) {
 	// Create a progress buffer to capture progress messages
 	progressBuf := &bytes.Buffer{}
 
-	// Create a push request with progress
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -240,11 +227,9 @@ func TestSendPackWithProgress(t *testing.T) {
 		Progress: progressBuf,
 	}
 
-	// Call SendPack
 	storer := memory.NewStorage()
 	err := SendPack(context.Background(), storer, conn, writer, reader, req)
 
-	// Verify no error was returned
 	assert.NoError(t, err)
 
 	// Verify progress was captured
@@ -253,7 +238,6 @@ func TestSendPackWithProgress(t *testing.T) {
 
 // TestSendPackWithPackfile tests the SendPack function with a packfile
 func TestSendPackWithPackfile(t *testing.T) {
-	// Create a mock connection with ReportStatus capability
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
@@ -283,11 +267,9 @@ func TestSendPackWithPackfile(t *testing.T) {
 		Packfile: packfile,
 	}
 
-	// Call SendPack
 	storer := memory.NewStorage()
 	err := SendPack(context.Background(), storer, conn, writer, reader, req)
 
-	// Verify no error was returned
 	assert.NoError(t, err)
 
 	// Verify the packfile was written

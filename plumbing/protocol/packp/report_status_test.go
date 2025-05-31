@@ -169,7 +169,6 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkUnpackWithFailedCommands() {
 		"",
 	)
 
-	// Verify that Error() returns an error.
 	s.Error(rs.Error())
 	s.ErrorAs(rs.Error(), &CommandStatusErr{})
 }
