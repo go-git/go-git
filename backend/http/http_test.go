@@ -30,7 +30,7 @@ func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 }
 
 func TestNilLoaderBackend(t *testing.T) {
-	h := NewBackend(nil, nil)
+	h := NewBackend(nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -53,7 +53,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 00486ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master
 003e6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/tags/v1.0.0
 0000`
-	h := NewBackend(&fixturesLoader{t}, nil)
+	h := NewBackend(&fixturesLoader{t})
 
 	urlPath := "/basic.git/info/refs"
 	if isSmart {
