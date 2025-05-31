@@ -2,6 +2,7 @@ package pktline
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
@@ -45,7 +46,7 @@ func Writef(w io.Writer, format string, a ...interface{}) (n int, err error) {
 	if len(a) == 0 {
 		return Write(w, []byte(format))
 	}
-	return Write(w, []byte(fmt.Sprintf(format, a...)))
+	return Write(w, fmt.Appendf(nil, format, a...))
 }
 
 // Writeln writes a pktline packet from a string and appends a newline.
@@ -115,8 +116,8 @@ func WriteResponseEnd(w io.Writer) (err error) {
 func Read(r io.Reader, p []byte) (l int, err error) {
 	_, err = io.ReadFull(r, p[:LenSize])
 	if err != nil {
-		if err == io.ErrUnexpectedEOF {
-			return Err, ErrInvalidPktLen
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return Err, fmt.Errorf("%w: short pkt-line %d", ErrInvalidPktLen, len(p[:LenSize]))
 		}
 		return Err, err
 	}

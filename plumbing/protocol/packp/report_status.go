@@ -15,6 +15,27 @@ const (
 	ok = "ok"
 )
 
+// UnpackStatusErr is the error returned when the report status is not ok.
+type UnpackStatusErr struct {
+	Status string
+}
+
+// Error implements the error interface.
+func (e UnpackStatusErr) Error() string {
+	return fmt.Sprintf("unpack error: %s", e.Status)
+}
+
+// CommandStatusErr is the error returned when the command status is not ok.
+type CommandStatusErr struct {
+	ReferenceName plumbing.ReferenceName
+	Status        string
+}
+
+// Error implements the error interface.
+func (e CommandStatusErr) Error() string {
+	return fmt.Sprintf("command error on %s: %s", e.ReferenceName.String(), e.Status)
+}
+
 // ReportStatus is a report status message, as used in the git-receive-pack
 // process whenever the 'report-status' capability is negotiated.
 type ReportStatus struct {
@@ -30,11 +51,13 @@ func NewReportStatus() *ReportStatus {
 // Error returns the first error if any.
 func (s *ReportStatus) Error() error {
 	if s.UnpackStatus != ok {
-		return fmt.Errorf("unpack error: %s", s.UnpackStatus)
+		return UnpackStatusErr{s.UnpackStatus}
 	}
 
-	for _, s := range s.CommandStatuses {
-		if err := s.Error(); err != nil {
+	for _, cs := range s.CommandStatuses {
+		if err := cs.Error(); err != nil {
+			// XXX: Here, we only return the first error following canonical
+			// Git behavior.
 			return err
 		}
 	}
@@ -88,10 +111,13 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 	}
 
 	if !flushed {
-		return fmt.Errorf("missing flush")
+		return fmt.Errorf("missing flush: %w", err)
 	}
 
 	if err != nil && !errors.Is(err, io.EOF) {
+		// TODO: We should not ignore EOF errors here. Decoding a report-status
+		// message ends with a flush-pkt, an EOF indicates that the flush-pkt
+		// was not received.
 		return err
 	}
 
@@ -160,8 +186,10 @@ func (s *CommandStatus) Error() error {
 		return nil
 	}
 
-	return fmt.Errorf("command error on %s: %s",
-		s.ReferenceName.String(), s.Status)
+	return CommandStatusErr{
+		ReferenceName: s.ReferenceName,
+		Status:        s.Status,
+	}
 }
 
 func (s *CommandStatus) encode(w io.Writer) error {
