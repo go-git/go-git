@@ -1,11 +1,13 @@
 package pktline
 
+import "fmt"
+
 // ParseLength parses a four digit hexadecimal number from the given byte slice
 // into its integer representation. If the byte slice contains non-hexadecimal,
 // it will return an error.
 func ParseLength(b []byte) (int, error) {
 	if b == nil {
-		return Err, ErrInvalidPktLen
+		return Err, fmt.Errorf("%w: missing pkt-line", ErrInvalidPktLen)
 	}
 
 	n, err := hexDecode(b)
@@ -14,14 +16,14 @@ func ParseLength(b []byte) (int, error) {
 	}
 
 	if n == 3 {
-		return Err, ErrInvalidPktLen
+		return Err, fmt.Errorf("%w: %04x", ErrInvalidPktLen, n)
 	}
 
 	// Limit the maximum size of a pkt-line to 65520 bytes.
 	// Fixes: b4177b89c08b (plumbing: format: pktline, Accept oversized pkt-lines up to 65524 bytes)
 	// See https://github.com/git/git/commit/7841c4801ce51f1f62d376d164372e8677c6bc94
 	if n > MaxSize {
-		return Err, ErrInvalidPktLen
+		return Err, fmt.Errorf("%w: %04x is too big", ErrInvalidPktLen, n)
 	}
 
 	return n, nil
@@ -33,14 +35,14 @@ func ParseLength(b []byte) (int, error) {
 // GC.
 func hexDecode(buf []byte) (int, error) {
 	if len(buf) < 4 {
-		return 0, ErrInvalidPktLen
+		return 0, fmt.Errorf("%w: small pkt-line buffer", ErrInvalidPktLen)
 	}
 
 	var ret int
 	for i := 0; i < LenSize; i++ {
 		n, err := asciiHexToByte(buf[i])
 		if err != nil {
-			return 0, ErrInvalidPktLen
+			return 0, fmt.Errorf("%w: %w", ErrInvalidPktLen, err)
 		}
 		ret = 16*ret + int(n)
 	}
@@ -58,7 +60,7 @@ func asciiHexToByte(b byte) (byte, error) {
 	case b >= 'A' && b <= 'F':
 		return b - 'A' + 10, nil
 	default:
-		return 0, ErrInvalidPktLen
+		return 0, fmt.Errorf("not a hexadecimal byte %q", b)
 	}
 }
 
