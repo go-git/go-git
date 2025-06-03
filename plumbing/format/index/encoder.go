@@ -33,6 +33,7 @@ type Encoder struct {
 
 // NewEncoder returns a new encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
+	// TODO: Support passing an ObjectFormat (sha256)
 	h := hash.New(crypto.SHA1)
 	mw := io.MultiWriter(w, h)
 	return &Encoder{mw, h, nil}

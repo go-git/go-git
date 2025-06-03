@@ -50,6 +50,7 @@ type Decoder struct {
 
 // NewDecoder returns a new decoder that reads from r.
 func NewDecoder(r io.Reader) *Decoder {
+	// TODO: Support passing an ObjectFormat (sha256)
 	h := hash.New(crypto.SHA1)
 	buf := bufio.NewReader(r)
 	return &Decoder{
