@@ -35,12 +35,11 @@ func FromHex(in string) (ObjectID, bool) {
 	return id, true
 }
 
-// FromBytes creates an ObjectID based off raw bytes.
+// FromBytes creates an ObjectID based off its hex representation in bytes.
 // The object format is inferred from the length of the input.
 //
 // If the size of [in] does not match the supported object formats,
 // an empty ObjectID will be returned.
-// Note that
 func FromBytes(in []byte) (ObjectID, bool) {
 	var id ObjectID
 
@@ -66,6 +65,8 @@ type ObjectID struct {
 	format format.ObjectFormat
 }
 
+// HexSize returns the size for the hex representation of the current
+// object.
 func (s ObjectID) HexSize() int {
 	return s.format.HexSize()
 }
@@ -80,11 +81,12 @@ func (s ObjectID) Compare(b []byte) int {
 	return bytes.Compare(s.hash[:s.Size()], b)
 }
 
+// Equal returns true if [in] equals the current object.
 func (s ObjectID) Equal(in ObjectID) bool {
 	return bytes.Equal(s.hash[:], in.hash[:])
 }
 
-// Bytes returns the slice of bytes containing the hash.
+// Bytes returns the slice of bytes representing the hash in hexadecimal.
 func (s ObjectID) Bytes() []byte {
 	if len(s.hash) == 0 {
 		v := make([]byte, s.Size())
@@ -93,6 +95,7 @@ func (s ObjectID) Bytes() []byte {
 	return s.hash[:s.Size()]
 }
 
+// HasPrefix checks whether the ObjectID starts with [prefix].
 func (s ObjectID) HasPrefix(prefix []byte) bool {
 	return bytes.HasPrefix(s.hash[:s.Size()], prefix)
 }
@@ -108,12 +111,15 @@ func (s ObjectID) String() string {
 	return hex.EncodeToString(val)
 }
 
+// Write writes the hexadecimal representation of the ObjectID from [in]
+// directly into the current object.
 func (s *ObjectID) Write(in []byte) (int, error) {
 	n := copy(s.hash[:], in[:])
 	return n, nil
 }
 
-// ReadFrom loads the ObjectID from [r].
+// ReadFrom reads the Big Endian representation of the ObjectID from
+// reader [r].
 func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
 	err := binary.Read(r, binary.BigEndian, s.hash[:s.Size()])
 	if err != nil {
@@ -122,6 +128,8 @@ func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
 	return int64(s.Size()), nil
 }
 
+// WriteTo writes the Big Endian representation of the ObjectID
+// into the writer [w].
 func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 	err := binary.Write(w, binary.BigEndian, s.hash[:s.Size()])
 	if err != nil {
@@ -130,6 +138,12 @@ func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 	return int64(s.Size()), nil
 }
 
+// ResetBySize resets the current ObjectID. It sets the
+// underlying format based on the [idSize], which defaults
+// to SHA1 for backwards compatibility.
+//
+// This enable complete reuse of this object without needing
+// to create a new instance of ObjectID.
 func (s *ObjectID) ResetBySize(idSize int) {
 	if idSize == format.SHA256Size {
 		s.format = format.SHA256
