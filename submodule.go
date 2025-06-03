@@ -128,7 +128,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return Open(storer, worktree)
 	}
 
-	r, err := Init(storer, worktree)
+	r, err := Init(storer, WithWorkTree(worktree))
 	if err != nil {
 		return nil, err
 	}

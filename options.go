@@ -797,16 +797,6 @@ type PlainOpenOptions struct {
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
 
-type PlainInitOptions struct {
-	InitOptions
-	// Determines if the repository will have a worktree (non-bare) or not (bare).
-	Bare         bool
-	ObjectFormat formatcfg.ObjectFormat
-}
-
-// Validate validates the fields and sets the default values.
-func (o *PlainInitOptions) Validate() error { return nil }
-
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 
 // RestoreOptions describes how a restore should be performed.

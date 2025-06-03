@@ -20,7 +20,7 @@ import (
 func main() {
 	// Create a new repository
 	Info("git init")
-	r, err := git.Init(memory.NewStorage(), nil)
+	r, err := git.Init(memory.NewStorage())
 	CheckIfError(err)
 
 	// Add a new remote, with the default fetch refspec
