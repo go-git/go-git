@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"crypto"
 	"fmt"
 	"io"
 	"os"
@@ -9,8 +10,8 @@ import (
 	billy "github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -51,7 +52,7 @@ func NewPackfile(
 ) *Packfile {
 	p := &Packfile{
 		file:         file,
-		objectIdSize: hash.SHA1Size,
+		objectIdSize: crypto.SHA1.Size(),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -205,7 +206,7 @@ func (p *Packfile) init() error {
 		}
 
 		var opts []ScannerOption
-		if p.objectIdSize == hash.SHA256Size {
+		if p.objectIdSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
 		}
 

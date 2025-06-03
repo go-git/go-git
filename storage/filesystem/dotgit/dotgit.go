@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 
@@ -564,7 +563,7 @@ func (d *DotGit) hasPack(h plumbing.Hash) error {
 
 func (d *DotGit) objectPath(h plumbing.Hash) string {
 	hex := h.String()
-	return d.fs.Join(objectsPath, hex[0:2], hex[2:hash.HexSize])
+	return d.fs.Join(objectsPath, hex[0:2], hex[2:h.HexSize()])
 }
 
 // incomingObjectPath is intended to add support for a git pre-receive hook
@@ -580,10 +579,10 @@ func (d *DotGit) incomingObjectPath(h plumbing.Hash) string {
 	hString := h.String()
 
 	if d.incomingDirName == "" {
-		return d.fs.Join(objectsPath, hString[0:2], hString[2:hash.HexSize])
+		return d.fs.Join(objectsPath, hString[0:2], hString[2:h.HexSize()])
 	}
 
-	return d.fs.Join(objectsPath, d.incomingDirName, hString[0:2], hString[2:hash.HexSize])
+	return d.fs.Join(objectsPath, d.incomingDirName, hString[0:2], hString[2:h.HexSize()])
 }
 
 // hasIncomingObjects searches for an incoming directory and keeps its name

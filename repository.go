@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -27,7 +26,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -319,10 +317,6 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	}
 
 	if o.objectFormat != formatcfg.SHA1 {
-		if o.objectFormat == formatcfg.SHA256 && hash.CryptoType != crypto.SHA256 {
-			return nil, ErrSHA256NotSupported
-		}
-
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
 		cfg.Extensions.ObjectFormat = o.objectFormat
 	}

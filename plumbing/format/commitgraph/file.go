@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -51,6 +51,7 @@ type fileIndex struct {
 	parent                Index
 	hasGenerationV2       bool
 	minimumNumberOfHashes uint32
+	objSize               int
 }
 
 // ReaderAtCloser is an interface that combines io.ReaderAt and io.Closer.
@@ -71,7 +72,7 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
 	}
-	fi := &fileIndex{reader: reader, parent: parent}
+	fi := &fileIndex{reader: reader, parent: parent, objSize: config.SHA1Size}
 
 	if err := fi.verifyFileHeader(); err != nil {
 		return nil, err
@@ -128,8 +129,8 @@ func (fi *fileIndex) verifyFileHeader() error {
 	if header[0] != 1 {
 		return ErrUnsupportedVersion
 	}
-	if !(hash.CryptoType == crypto.SHA1 && header[1] == 1) &&
-		!(hash.CryptoType == crypto.SHA256 && header[1] == 2) {
+	if !(fi.objSize == crypto.SHA1.Size() && header[1] == 1) &&
+		!(fi.objSize == crypto.SHA256.Size() && header[1] == 2) {
 		// Unknown hash type / unsupported hash type
 		return ErrUnsupportedHash
 	}
@@ -198,7 +199,7 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 	high := fi.fanout[h.Bytes()[0]]
 	for low < high {
 		mid := (low + high) >> 1
-		offset := fi.offsets[OIDLookupChunk] + int64(mid)*hash.Size
+		offset := fi.offsets[OIDLookupChunk] + int64(mid)*int64(fi.objSize)
 		if _, err := oid.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(oid.Size()))); err != nil {
 			return 0, err
 		}
@@ -241,8 +242,8 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 		return nil, plumbing.ErrObjectNotFound
 	}
 
-	offset := fi.offsets[CommitDataChunk] + int64(idx)*(hash.Size+szCommitData)
-	commitDataReader := io.NewSectionReader(fi.reader, offset, hash.Size+szCommitData)
+	offset := fi.offsets[CommitDataChunk] + int64(idx)*int64(fi.objSize+szCommitData)
+	commitDataReader := io.NewSectionReader(fi.reader, offset, int64(fi.objSize+szCommitData))
 
 	// TODO: Add support for SHA256
 	var treeHash plumbing.Hash
@@ -346,7 +347,7 @@ func (fi *fileIndex) GetHashByIndex(idx uint32) (found plumbing.Hash, err error)
 		return found, ErrMalformedCommitGraphFile
 	}
 
-	offset := fi.offsets[OIDLookupChunk] + int64(idx)*hash.Size
+	offset := fi.offsets[OIDLookupChunk] + int64(idx)*int64(fi.objSize)
 	if _, err := found.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(found.Size()))); err != nil {
 		return found, err
 	}
@@ -376,7 +377,7 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 			return nil, ErrMalformedCommitGraphFile
 		}
 
-		offset := fi.offsets[OIDLookupChunk] + int64(idx)*hash.Size
+		offset := fi.offsets[OIDLookupChunk] + int64(idx)*int64(fi.objSize)
 		if _, err := hashes[i].ReadFrom(io.NewSectionReader(fi.reader, offset, int64(hashes[i].Size()))); err != nil {
 			return nil, err
 		}

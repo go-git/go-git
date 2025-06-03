@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"compress/zlib"
+	"crypto"
 	"fmt"
 	"io"
 
@@ -28,7 +29,7 @@ type Encoder struct {
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
 	h := plumbing.Hasher{
-		Hash: hash.New(hash.CryptoType),
+		Hash: hash.New(crypto.SHA1),
 	}
 	mw := io.MultiWriter(w, h)
 	ow := newOffsetWriter(mw)

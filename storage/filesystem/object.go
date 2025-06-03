@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -645,7 +645,7 @@ func (s *ObjectStorage) buildPackfileIters(
 			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, s.index[h],
-				s.objectCache, s.options.KeepDescriptors, hash.SHA1Size,
+				s.objectCache, s.options.KeepDescriptors, crypto.SHA1.Size(),
 			)
 		},
 	}, nil

@@ -1,6 +1,7 @@
 package idxfile
 
 import (
+	"crypto"
 	"io"
 	"sort"
 	"sync"
@@ -8,7 +9,6 @@ import (
 	encbin "encoding/binary"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 const (
@@ -276,7 +276,7 @@ func (idx *MemoryIndex) idSize() int {
 	if idx.objectIDSize != 0 {
 		return idx.objectIDSize
 	}
-	return hash.SHA1Size
+	return crypto.SHA1.Size()
 }
 
 // EntryIter is an iterator that will return the entries in a packfile index.

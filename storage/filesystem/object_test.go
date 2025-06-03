@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"crypto"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -12,7 +13,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/stretchr/testify/suite"
 
@@ -277,7 +277,7 @@ func (s *FsSuite) TestPackfileIter() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, hash.SHA1Size)
+				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
 				s.NoError(err)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -362,7 +362,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, hash.SHA1Size)
+				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, crypto.SHA1.Size())
 				s.NoError(err)
 
 				if err != nil {
@@ -460,7 +460,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, hash.SHA1Size)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -508,7 +508,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, hash.SHA1Size)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
 						if err != nil {
 							b.Fatal(err)
 						}

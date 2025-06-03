@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -32,7 +33,7 @@ type Encoder struct {
 
 // NewEncoder returns a new encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
-	h := hash.New(hash.CryptoType)
+	h := hash.New(crypto.SHA1)
 	mw := io.MultiWriter(w, h)
 	return &Encoder{mw, h, nil}
 }

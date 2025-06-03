@@ -2,8 +2,10 @@ package packfile
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/hex"
 	"fmt"
+
 	"hash"
 	"hash/crc32"
 	"io"
@@ -100,7 +102,7 @@ type Scanner struct {
 func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	dict := make([]byte, 16*1024)
 	crc := crc32.NewIEEE()
-	packhash := gogithash.New(gogithash.CryptoType)
+	packhash := gogithash.New(crypto.SHA1)
 
 	r := &Scanner{
 		scannerReader: newScannerReader(rs, io.MultiWriter(crc, packhash)),
@@ -110,7 +112,8 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		crc:           crc,
 		packhash:      packhash,
 		nextFn:        packHeaderSignature,
-		objectIDSize:  gogithash.SHA1Size,
+		// Set the default size, which can be overriden by opts.
+		objectIDSize: packhash.Size(),
 	}
 
 	for _, opt := range opts {
