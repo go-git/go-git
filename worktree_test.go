@@ -764,6 +764,39 @@ func (s *WorktreeSuite) TestCheckoutBranch() {
 	s.True(status.IsClean())
 }
 
+func (s *WorktreeSuite) TestCheckoutBranchUntracked() {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	uf, err := w.Filesystem.Create("untracked_file")
+	s.NoError(err)
+	_, err = uf.Write([]byte("don't delete me"))
+	s.NoError(err)
+
+	err = w.Checkout(&CheckoutOptions{
+		Branch: "refs/heads/branch",
+	})
+	s.NoError(err)
+
+	head, err := w.r.Head()
+	s.NoError(err)
+	s.Equal("refs/heads/branch", head.Name().String())
+
+	status, err := w.Status()
+	s.NoError(err)
+	// The untracked file should still be there, so it's not clean
+	s.False(status.IsClean())
+	s.True(status.IsUntracked("untracked_file"))
+	err = w.Filesystem.Remove("untracked_file")
+	s.NoError(err)
+	status, err = w.Status()
+	s.NoError(err)
+	// After deleting the untracked file it should now be clean
+	s.True(status.IsClean())
+}
+
 func (s *WorktreeSuite) TestCheckoutCreateWithHash() {
 	w := &Worktree{
 		r:          s.Repository,
@@ -1130,15 +1163,28 @@ func (s *WorktreeSuite) TestResetWithUntracked() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", nil, 0o755)
+	err = util.WriteFile(fs, "foo", []byte("bar"), 0o755)
 	s.NoError(err)
 
 	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commit})
 	s.NoError(err)
 
+	contents, err := util.ReadFile(fs, "foo")
+	s.NoError(err)
+	s.Equal("bar", string(contents))
+
 	status, err := w.Status()
 	s.NoError(err)
-	s.True(status.IsClean())
+	for file, st := range status {
+		if file == "foo" {
+			s.Equal(Untracked, st.Worktree)
+			s.Equal(Untracked, st.Staging)
+			continue
+		}
+		if st.Worktree != Unmodified || st.Staging != Unmodified {
+			s.Failf("file %s not unmodified", file)
+		}
+	}
 }
 
 func (s *WorktreeSuite) TestResetSoft() {
