@@ -357,33 +357,22 @@ func (s *RepositorySuite) TestCreateRemoteInvalid() {
 	s.Nil(remote)
 }
 
-func (s *RepositorySuite) TestCreateRemoteAnonymous() {
+func (s *RepositorySuite) TestCreateRemoteEphemeral() {
 	r, _ := Init(memory.NewStorage(), nil)
-	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
-		Name: "anonymous",
+	remote := NewRemote(r.Storer, &config.RemoteConfig{
 		URLs: []string{"http://foo/foo.git"},
 	})
 
-	s.NoError(err)
-	s.Equal("anonymous", remote.Config().Name)
+	s.Equal("", remote.Config().Name)
 }
 
-func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
+func (s *RepositorySuite) TestCreateRemoteEphemeralInvalidName() {
 	r, _ := Init(memory.NewStorage(), nil)
-	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
+	remote := NewRemote(r.Storer, &config.RemoteConfig{
 		Name: "not_anonymous",
 		URLs: []string{"http://foo/foo.git"},
 	})
 
-	s.ErrorIs(err, ErrAnonymousRemoteName)
-	s.Nil(remote)
-}
-
-func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid() {
-	r, _ := Init(memory.NewStorage(), nil)
-	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{})
-
-	s.ErrorIs(err, config.ErrRemoteConfigEmptyName)
 	s.Nil(remote)
 }
 
@@ -1713,6 +1702,47 @@ func (s *RepositorySuite) TestPush() {
 	AssertReferences(s.T(), s.Repository, map[string]string{
 		"refs/remotes/test/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 		"refs/remotes/test/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	})
+}
+
+func (s *RepositorySuite) TestPushEphemeral() {
+	url := s.T().TempDir()
+
+	server, err := PlainInit(url, true)
+	s.NoError(err)
+
+	// Make sure that there is an "origin" remote. It will _not_ be
+	// used, but we want to make sure that its remote-tracking
+	// branches are not incorrectly updated by the push.
+	c, err := s.Repository.Config()
+	s.NoError(err)
+	if _, ok := c.Remotes["origin"]; !ok {
+		// Create an "origin" remote.
+		_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+			Name: "origin",
+			URLs: []string{filepath.Join(url, "origin-not-used")},
+		})
+		s.NoError(err)
+	}
+
+	err = s.Repository.Push(&PushOptions{
+		RemoteURL: url,
+	})
+	s.NoError(err)
+
+	s.Len(c.Remotes, 1)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/heads/master": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"refs/heads/branch": "e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	})
+
+	// Make sure that remote-tracking references were _not_ created.
+	refs, err := s.Repository.References()
+	s.NoError(err)
+	refs.ForEach(func(r *plumbing.Reference) error {
+		s.False(strings.HasPrefix(r.Name().String(), "refs/remotes/"))
+		return nil
 	})
 }
 
