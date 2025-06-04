@@ -322,13 +322,20 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		return err
 	}
 
+	var removedFiles []string
 	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset {
-		if err := w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
+		if removedFiles, err = w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
 
-	if opts.Mode == MergeReset || opts.Mode == HardReset {
+	if opts.Mode == MergeReset && len(removedFiles) > 0 {
+		if err := w.resetWorktree(t, removedFiles); err != nil {
+			return err
+		}
+	}
+
+	if opts.Mode == HardReset {
 		if err := w.resetWorktree(t, opts.Files); err != nil {
 			return err
 		}
@@ -392,23 +399,24 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 	return ErrRestoreWorktreeOnlyNotSupported
 }
 
-func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) error {
+func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]string, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	b := newIndexBuilder(idx)
 
 	changes, err := w.diffTreeWithStaging(t, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var removedFiles []string
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		var name string
@@ -419,7 +427,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) err
 			name = ch.To.String()
 			e, err = t.FindEntry(name)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		case merkletrie.Delete:
 			name = ch.From.String()
@@ -433,6 +441,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) err
 		}
 
 		b.Remove(name)
+		removedFiles = append(removedFiles, name)
 		if e == nil {
 			continue
 		}
@@ -451,7 +460,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) err
 		idx.SkipUnless(dirs)
 	}
 
-	return w.r.Storer.SetIndex(idx)
+	return removedFiles, w.r.Storer.SetIndex(idx)
 }
 
 func inFiles(files []string, v string) bool {
