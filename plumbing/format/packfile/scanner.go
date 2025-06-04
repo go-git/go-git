@@ -13,6 +13,7 @@ import (
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
@@ -89,8 +90,8 @@ type Scanner struct {
 	storage storer.EncodedObjectStorer
 
 	*scannerReader
-	zr  gogitsync.ZLibReader
-	buf bytes.Buffer
+	zr            gogitsync.ZLibReader
+	lowMemoryMode bool
 }
 
 // NewScanner creates a new instance of Scanner.
@@ -190,8 +191,8 @@ func (r *Scanner) SeekFromStart(offset int64) error {
 }
 
 func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
-	if oh.content.Len() > 0 {
-		_, err := io.Copy(writer, bytes.NewReader(oh.content.Bytes()))
+	if oh.content != nil && oh.content.Len() > 0 {
+		_, err := ioutil.Copy(writer, oh.content)
 		return err
 	}
 
@@ -226,7 +227,7 @@ func (s *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
 		return fmt.Errorf("zlib reset error: %s", err)
 	}
 
-	_, err = io.Copy(writer, s.zr.Reader)
+	_, err = ioutil.Copy(writer, s.zr.Reader)
 	if err != nil {
 		return err
 	}
@@ -393,13 +394,20 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			mw = io.MultiWriter(r.hasher, w)
 		}
 
+		// If the reader isn't seekable, and low memory mode
+		// isn't supported, keep the contents of the objects in
+		// memory.
+		if !r.lowMemoryMode && r.seeker == nil {
+			oh.content = gogitsync.GetBytesBuffer()
+			mw = io.MultiWriter(mw, oh.content)
+		}
 		if r.hasher256 != nil {
 			r.hasher256.Reset(oh.Type, oh.Size)
 			mw = io.MultiWriter(mw, r.hasher256)
 		}
 
 		// For non delta objects, simply calculate the hash of each object.
-		_, err = io.CopyBuffer(mw, r.zr.Reader, r.buf.Bytes())
+		_, err = ioutil.Copy(mw, r.zr.Reader)
 		if err != nil {
 			return nil, err
 		}
@@ -412,7 +420,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	} else {
 		// If data source is not io.Seeker, keep the content
 		// in the cache, so that it can be accessed by the Parser.
-		if r.scannerReader.seeker == nil {
+		if !r.lowMemoryMode {
+			oh.content = gogitsync.GetBytesBuffer()
 			_, err = oh.content.ReadFrom(r.zr.Reader)
 			if err != nil {
 				return nil, err
@@ -420,7 +429,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		} else {
 			// We don't know the compressed length, so we can't seek to
 			// the next object, we must discard the data instead.
-			_, err = io.Copy(io.Discard, r.zr.Reader)
+			_, err = ioutil.Copy(io.Discard, r.zr.Reader)
 			if err != nil {
 				return nil, err
 			}
