@@ -5,14 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"os/user"
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -3511,5 +3515,116 @@ func BenchmarkPlainClone(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		clone(b)
+	}
+}
+
+func benchmarkPrepareRepo(b *testing.B, dir string) {
+	b.Helper()
+	_, err := PlainClone(dir, true, &CloneOptions{
+		URL:          "https://github.com/go-git/go-git.git",
+		Depth:        1,
+		Tags:         plumbing.NoTags,
+		SingleBranch: true,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+}
+
+func benchmarkPrepareTree(b *testing.B, dir string) *object.Tree {
+	repo, err := PlainOpen(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+	rev, err := repo.ResolveRevision(plumbing.Revision(plumbing.HEAD))
+	if err != nil {
+		b.Fatal(err)
+	}
+	commit, err := repo.CommitObject(*rev)
+	if err != nil {
+		b.Fatal(err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		b.Fatal(err)
+	}
+	return tree
+}
+
+func listFilesFromNoder(node noder.Noder, path []string) ([]string, error) {
+	if !node.IsDir() {
+		return []string{strings.Join(append(path[1:], node.Name()), "/")}, nil
+	}
+
+	thisName := node.Name()
+	children, err := node.Children()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, child := range children {
+		childFiles, err := listFilesFromNoder(child, append(path, thisName))
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, childFiles...)
+	}
+	return files, nil
+}
+
+func BenchmarkTree_FindEntry(b *testing.B) {
+	b.StopTimer()
+	tempDir := b.TempDir()
+	benchmarkPrepareRepo(b, tempDir)
+	tree := benchmarkPrepareTree(b, tempDir)
+	ndr := object.NewTreeRootNode(tree)
+	filenames, err := listFilesFromNoder(ndr, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		tree = benchmarkPrepareTree(b, tempDir) // Prevent the tree cache from warming up
+		for _, filename := range filenames {
+			_, err = tree.FindEntry(filename)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
+func BenchmarkTree_FindEntry_Parallel(b *testing.B) {
+	b.StopTimer()
+	tempDir := b.TempDir()
+	benchmarkPrepareRepo(b, tempDir)
+	tree := benchmarkPrepareTree(b, tempDir)
+	ndr := object.NewTreeRootNode(tree)
+	filenames, err := listFilesFromNoder(ndr, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		tree = benchmarkPrepareTree(b, tempDir) // Prevent the tree cache from warming up
+		var wg sync.WaitGroup
+		perCore := int(math.Ceil(float64(len(filenames)) / float64(runtime.NumCPU())))
+		for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
+			wg.Add(1)
+			go func(cpu int) {
+				startIdx := perCore * cpu
+				endIdx := min(perCore*(cpu+1), len(filenames))
+				for fileIdx := startIdx; fileIdx < endIdx; fileIdx++ {
+					_, err = tree.FindEntry(filenames[fileIdx])
+					if err != nil {
+						b.Errorf("error reading %s: %s", filenames[fileIdx], err)
+					}
+				}
+				wg.Done()
+			}(cpu)
+		}
+		wg.Wait()
 	}
 }
