@@ -1,6 +1,7 @@
 package packfile_test
 
 import (
+	"crypto"
 	"io"
 	"math"
 	"testing"
@@ -208,7 +209,7 @@ func TestDecodeByTypeConstructor(t *testing.T) {
 func getIndexFromIdxFile(r io.ReadCloser) idxfile.Index {
 	defer r.Close()
 
-	idx := idxfile.NewMemoryIndex()
+	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
 	if err := idxfile.NewDecoder(r).Decode(idx); err != nil {
 		panic(err)
 	}
@@ -247,7 +248,7 @@ func TestSize(t *testing.T) {
 
 func BenchmarkGetByOffset(b *testing.B) {
 	f := fixtures.Basic().One()
-	idx := idxfile.NewMemoryIndex()
+	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
 
 	cache := cache.NewObjectLRUDefault()
 	err := idxfile.NewDecoder(f.Idx()).Decode(idx)

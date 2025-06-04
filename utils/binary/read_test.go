@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -85,17 +84,6 @@ func (s *BinarySuite) TestReadUint16() {
 	i32, err := ReadUint16(buf)
 	s.NoError(err)
 	s.Equal(uint16(42), i32)
-}
-
-func (s *BinarySuite) TestReadHash() {
-	expected := plumbing.NewHash("43aec75c611f22c73b27ece2841e6ccca592f285")
-	buf := bytes.NewBuffer(nil)
-	err := binary.Write(buf, binary.BigEndian, expected)
-	s.NoError(err)
-
-	hash, err := ReadHash(buf)
-	s.NoError(err)
-	s.Equal(expected.String(), hash.String())
 }
 
 func (s *BinarySuite) TestIsBinary() {

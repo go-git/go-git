@@ -1,5 +1,7 @@
 package config
 
+import "errors"
+
 // RepositoryFormatVersion represents the repository format version,
 // as per defined at:
 //
@@ -39,15 +41,65 @@ const (
 )
 
 // ObjectFormat defines the object format.
-type ObjectFormat string
+type ObjectFormat int
 
 const (
 	// SHA1 represents the object format used for SHA1.
-	SHA1 ObjectFormat = "sha1"
+	SHA1 ObjectFormat = iota
 
 	// SHA256 represents the object format used for SHA256.
-	SHA256 ObjectFormat = "sha256"
+	SHA256
 
 	// DefaultObjectFormat holds the default object format.
 	DefaultObjectFormat = SHA1
+)
+
+// String returns the string representation of the ObjectFormat.
+func (f ObjectFormat) String() string {
+	switch f {
+	case SHA1:
+		return "sha1"
+	case SHA256:
+		return "sha256"
+	default:
+		return ""
+	}
+}
+
+// Size returns the hash size of the ObjectFormat.
+func (f ObjectFormat) Size() int {
+	switch f {
+	case SHA1:
+		return SHA1Size
+	case SHA256:
+		return SHA256Size
+	default:
+		return 0
+	}
+}
+
+// HexSize returns the hash size in hexadecimal format of the ObjectFormat.
+func (f ObjectFormat) HexSize() int {
+	switch f {
+	case SHA1:
+		return SHA1HexSize
+	case SHA256:
+		return SHA256HexSize
+	default:
+		return 0
+	}
+}
+
+// ErrInvalidObjectFormat is returned when an invalid ObjectFormat is used.
+var ErrInvalidObjectFormat = errors.New("invalid object format")
+
+const (
+	// SHA1Size is the size of SHA1 hash.
+	SHA1Size = 20
+	// SHA256Size is the size of SHA256 hash.
+	SHA256Size = 32
+	// SHA1HexSize is the size of SHA1 hash in hexadecimal format.
+	SHA1HexSize = SHA1Size * 2
+	// SHA256HexSize is the size of SHA256 hash in hexadecimal format.
+	SHA256HexSize = SHA256Size * 2
 )

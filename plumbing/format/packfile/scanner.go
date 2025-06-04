@@ -2,14 +2,17 @@ package packfile
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/hex"
 	"fmt"
+
 	"hash"
 	"hash/crc32"
 	"io"
 	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -67,12 +70,14 @@ type Scanner struct {
 	// hasher is used to hash non-delta objects.
 	hasher plumbing.Hasher
 	// hasher256 is optional and used to hash the non-delta objects using SHA256.
-	hasher256 *plumbing.Hasher256
+	hasher256 *plumbing.Hasher
 	// crc is used to generate the CRC-32 checksum of each object's content.
 	crc hash.Hash32
 	// packhash hashes the pack contents so that at the end it is able to
 	// validate the packfile's footer checksum against the calculated hash.
 	packhash gogithash.Hash
+	// objectIdSize holds the object ID size.
+	objectIDSize int
 
 	// next holds what state function should be executed on the next
 	// call to Scan().
@@ -97,16 +102,18 @@ type Scanner struct {
 func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	dict := make([]byte, 16*1024)
 	crc := crc32.NewIEEE()
-	packhash := gogithash.New(gogithash.CryptoType)
+	packhash := gogithash.New(crypto.SHA1)
 
 	r := &Scanner{
 		scannerReader: newScannerReader(rs, io.MultiWriter(crc, packhash)),
 		zr:            gogitsync.NewZlibReader(&dict),
 		objIndex:      -1,
-		hasher:        plumbing.NewHasher(plumbing.AnyObject, 0),
+		hasher:        plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 		crc:           crc,
 		packhash:      packhash,
 		nextFn:        packHeaderSignature,
+		// Set the default size, which can be overriden by opts.
+		objectIDSize: packhash.Size(),
 	}
 
 	for _, opt := range opts {
@@ -365,11 +372,11 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 			oh.OffsetReference = oh.Offset - no
 		} else {
-			ref, err := binary.ReadHash(r.scannerReader)
+			oh.Reference.ResetBySize(r.objectIDSize)
+			_, err := oh.Reference.ReadFrom(r.scannerReader)
 			if err != nil {
 				return nil, err
 			}
-			oh.Reference = ref
 		}
 	}
 
@@ -441,14 +448,16 @@ func objectEntry(r *Scanner) (stateFn, error) {
 // returned.
 func packFooter(r *Scanner) (stateFn, error) {
 	r.scannerReader.Flush()
+
 	actual := r.packhash.Sum(nil)
 
-	checksum, err := binary.ReadHash(r.scannerReader)
+	var checksum plumbing.Hash
+	_, err := checksum.ReadFrom(r.scannerReader)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read PACK checksum: %w", ErrMalformedPackfile)
 	}
 
-	if !bytes.Equal(actual, checksum[:]) {
+	if checksum.Compare(actual) != 0 {
 		return nil, fmt.Errorf("checksum mismatch expected %q but found %q: %w",
 			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
 	}

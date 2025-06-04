@@ -18,7 +18,8 @@ type Encoder struct {
 
 // NewEncoder returns a new stream encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
-	h := hash.New(hash.CryptoType)
+	// TODO: Support passing an ObjectFormat (sha256)
+	h := hash.New(crypto.SHA1)
 	mw := io.MultiWriter(w, h)
 	return &Encoder{mw, h}
 }
@@ -32,7 +33,7 @@ func (e *Encoder) Encode(idx Index) error {
 	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{OIDFanoutChunk.Signature(), OIDLookupChunk.Signature(), CommitDataChunk.Signature()}
-	chunkSizes := []uint64{szUint32 * lenFanout, uint64(len(hashes)) * hash.Size, uint64(len(hashes)) * (hash.Size + szCommitData)}
+	chunkSizes := []uint64{szUint32 * lenFanout, uint64(len(hashes) * e.hash.Size()), uint64(len(hashes) * (e.hash.Size() + szCommitData))}
 	if extraEdgesCount > 0 {
 		chunkSignatures = append(chunkSignatures, ExtraEdgeListChunk.Signature())
 		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*szUint32)
@@ -86,7 +87,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	fanout = make([]uint32, lenFanout)
 	for i, hash := range hashes {
 		hashToIndex[hash] = uint32(i)
-		fanout[hash[0]]++
+		fanout[hash.Bytes()[0]]++
 	}
 
 	// Convert the fanout to cumulative values
@@ -113,7 +114,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 	if _, err = e.Write(commitFileSignature); err == nil {
 		version := byte(1)
-		if hash.CryptoType == crypto.SHA256 {
+		if crypto.Hash(e.hash.Size()) == crypto.Hash(crypto.SHA256.Size()) {
 			version = byte(2)
 		}
 		_, err = e.Write([]byte{1, version, byte(chunkCount), 0})
@@ -150,7 +151,7 @@ func (e *Encoder) encodeFanout(fanout []uint32) (err error) {
 
 func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 	for _, hash := range hashes {
-		if _, err = e.Write(hash[:]); err != nil {
+		if _, err = e.Write(hash.Bytes()); err != nil {
 			return err
 		}
 	}
@@ -164,7 +165,7 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 	for _, hash := range hashes {
 		origIndex, _ := idx.GetIndexByHash(hash)
 		commitData, _ := idx.GetCommitDataByIndex(origIndex)
-		if _, err = e.Write(commitData.TreeHash[:]); err != nil {
+		if _, err = e.Write(commitData.TreeHash.Bytes()); err != nil {
 			return
 		}
 
@@ -245,6 +246,6 @@ func (e *Encoder) encodeGenerationV2Overflow(overflows []uint64) (err error) {
 }
 
 func (e *Encoder) encodeChecksum() error {
-	_, err := e.Write(e.hash.Sum(nil)[:hash.Size])
+	_, err := e.Write(e.hash.Sum(nil)[:e.hash.Size()])
 	return err
 }

@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"crypto"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -276,7 +277,7 @@ func (s *FsSuite) TestPackfileIter() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0)
+				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
 				s.NoError(err)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -361,7 +362,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0)
+				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, crypto.SHA1.Size())
 				s.NoError(err)
 
 				if err != nil {
@@ -426,7 +427,7 @@ func (s *FsSuite) TestHashesWithPrefixFromPackfile() {
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 		// Only pass the first 8 bytes
-		hashes, err := o.HashesWithPrefix(expected[:8])
+		hashes, err := o.HashesWithPrefix(expected.Bytes()[:8])
 		s.NoError(err)
 		s.Len(hashes, 1)
 		s.Equal(expected, hashes[0])
@@ -459,7 +460,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -507,7 +508,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0)
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
 						if err != nil {
 							b.Fatal(err)
 						}

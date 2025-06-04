@@ -25,7 +25,7 @@ func (u *UploadHaves) Encode(w io.Writer) error {
 
 	var last plumbing.Hash
 	for _, have := range u.Haves {
-		if bytes.Equal(last[:], have[:]) {
+		if last.Compare(have.Bytes()) == 0 {
 			continue
 		}
 
