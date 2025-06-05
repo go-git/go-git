@@ -24,8 +24,9 @@ func (s *SuiteDotGit) TestRepositoryFilesystem() {
 	s.NoError(err)
 	s.Equal(repositoryFs.Join(dotGitFs.Root(), "somedir"), somedir.Root())
 
-	_, err = repositoryFs.Create("somefile")
+	f, err := repositoryFs.Create("somefile")
 	s.NoError(err)
+	s.NoError(f.Close())
 
 	_, err = repositoryFs.Stat("somefile")
 	s.NoError(err)
@@ -52,6 +53,7 @@ func (s *SuiteDotGit) TestRepositoryFilesystem() {
 	tempDir, err := repositoryFs.TempFile("tmp", "myprefix")
 	s.NoError(err)
 	s.Equal(repositoryFs.Join(dotGitFs.Root(), "tmp", tempDir.Name()), repositoryFs.Join(repositoryFs.Root(), "tmp", tempDir.Name()))
+	s.NoError(tempDir.Close())
 
 	err = repositoryFs.Symlink("newfile", "somelink")
 	s.NoError(err)
@@ -81,8 +83,9 @@ func (s *SuiteDotGit) TestRepositoryFilesystem() {
 
 	exceptionsPaths := []string{repositoryFs.Join(logsPath, "HEAD"), repositoryFs.Join(refsPath, "bisect"), repositoryFs.Join(refsPath, "rewritten"), repositoryFs.Join(refsPath, "worktree")}
 	for _, path := range exceptionsPaths {
-		_, err := repositoryFs.Create(path)
+		f, err := repositoryFs.Create(path)
 		s.NoError(err)
+		s.NoError(f.Close())
 		_, err = commonDotGitFs.Stat(path)
 		s.True(os.IsNotExist(err))
 		_, err = dotGitFs.Stat(path)
