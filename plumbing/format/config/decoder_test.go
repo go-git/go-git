@@ -47,12 +47,12 @@ func (s *DecoderSuite) TestDecodeFailsWithEmptySectionName() {
 	decodeFails(s, t)
 }
 
-func (s *DecoderSuite) TestDecodeFailsWithEmptySubsectionName() {
+func (s *DecoderSuite) TestDecodeSucceedsWithEmptySubsectionName() {
 	t := `
 	[remote ""]
 	key=value
 	`
-	decodeFails(s, t)
+	decodeSucceeds(s, t)
 }
 
 func (s *DecoderSuite) TestDecodeFailsWithBadSubsectionName() {
@@ -98,10 +98,21 @@ func decodeFails(s *DecoderSuite, text string) {
 	s.NotNil(err)
 }
 
+func decodeSucceeds(s *DecoderSuite, text string) {
+	r := bytes.NewReader([]byte(text))
+	d := NewDecoder(r)
+	cfg := &Config{}
+	err := d.Decode(cfg)
+	s.NoError(err)
+
+	s.True(cfg.HasSection("remote"))
+	remote := cfg.Section("remote")
+	s.True(remote.HasOption("key"))
+	s.Equal("value", remote.Option("key"))
+}
+
 func FuzzDecoder(f *testing.F) {
-
 	f.Fuzz(func(t *testing.T, input []byte) {
-
 		d := NewDecoder(bytes.NewReader(input))
 		cfg := &Config{}
 		d.Decode(cfg)

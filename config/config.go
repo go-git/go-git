@@ -379,6 +379,21 @@ func (c *Config) unmarshalRemotes() error {
 		c.Remotes[r.Name] = r
 	}
 
+	// Check if the main remote section still has options
+	// after unmarshaling named subsections - this indicates an empty subsection name
+	if len(s.Options) > 0 {
+		emptySubsection := &format.Subsection{
+			Name:    "",
+			Options: s.Options,
+		}
+
+		r := &RemoteConfig{}
+		if err := r.unmarshal(emptySubsection); err != nil {
+			return err
+		}
+
+		c.Remotes[r.Name] = r
+	}
 	// Apply insteadOf url rules
 	for _, r := range c.Remotes {
 		r.applyURLRules(c.URLs)

@@ -420,3 +420,53 @@ func (s *ConfigSuite) TestUnmarshalRemotes() {
 	s.Equal("https://git.sr.ht/~mcepl/go-git", cfg.Remotes["origin"].URLs[0])
 	s.Equal("git@git.sr.ht:~mcepl/go-git.git", cfg.Remotes["origin"].URLs[1])
 }
+
+func (s *ConfigSuite) TestUnmarshalRemotesUnnamedFirst() {
+	input := []byte(`
+[remote ""]
+  url = https://github.com/CLBRITTON2/go-git.git
+  fetch = +refs/heads/*:refs/remotes/origin/*
+[remote "upstream"]
+	url = https://github.com/go-git/go-git.git
+	fetch = +refs/heads/*:refs/remotes/upstream/*
+	`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	s.NoError(err)
+
+	unnamedRemote, ok := cfg.Remotes[""]
+	s.True(ok, "Expected unnamed remote to be present")
+	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
+	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
+
+	namedRemote, ok := cfg.Remotes["upstream"]
+	s.True(ok, "Expected named remote 'upstream' to be present")
+	s.Equal([]string{"https://github.com/go-git/go-git.git"}, namedRemote.URLs)
+	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
+}
+
+func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
+	input := []byte(`
+[remote "upstream"]
+	url = https://github.com/go-git/go-git.git
+	fetch = +refs/heads/*:refs/remotes/upstream/*
+[remote ""]
+  url = https://github.com/CLBRITTON2/go-git.git
+  fetch = +refs/heads/*:refs/remotes/origin/*
+	`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	s.NoError(err)
+
+	namedRemote, ok := cfg.Remotes["upstream"]
+	s.True(ok, "Expected a named remote 'upstream' to be present")
+	s.Equal([]string{"https://github.com/go-git/go-git.git"}, namedRemote.URLs)
+	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
+
+	unnamedRemote, ok := cfg.Remotes[""]
+	s.True(ok, "Expected an unnamed remote to be present")
+	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
+	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
+}

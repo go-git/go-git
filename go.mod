@@ -7,6 +7,7 @@ toolchain go1.23.7
 
 // Use the v6-exp branch across go-git dependencies.
 replace (
+	github.com/go-git/gcfg/v2 v2.0.1 => github.com/CLBRITTON2/gcfg/v2 v2.0.2
 	github.com/go-git/go-billy/v5 => github.com/go-git/go-billy/v5 v5.5.1-0.20250112183528-18f878617b0e
 	github.com/go-git/go-git-fixtures/v5 => github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 )
