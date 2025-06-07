@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // UploadPackOptions is a set of options for the UploadPack service.
@@ -37,6 +38,8 @@ func UploadPack(
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
+
+	w = ioutil.NewContextWriteCloser(ctx, w)
 
 	if opts == nil {
 		opts = &UploadPackOptions{}
@@ -67,6 +70,8 @@ func UploadPack(
 	if r == nil {
 		return fmt.Errorf("nil reader")
 	}
+
+	r = ioutil.NewContextReadCloser(ctx, r)
 
 	rd := bufio.NewReader(r)
 	l, _, err := pktline.PeekLine(rd)
