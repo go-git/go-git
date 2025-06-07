@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -52,6 +53,18 @@ func SendPack(
 ) error {
 	writer = ioutil.NewContextWriteCloser(ctx, writer)
 	reader = ioutil.NewContextReadCloser(ctx, reader)
+
+	var needPackData bool
+	for _, cmd := range req.Commands {
+		if cmd.New != plumbing.ZeroHash {
+			needPackData = true
+			break
+		}
+	}
+
+	if needPackData && req.Packfile == nil {
+		return fmt.Errorf("packfile is required for push request with new objects")
+	}
 
 	caps := conn.Capabilities()
 	upreq := buildUpdateRequests(caps, req)
