@@ -104,7 +104,7 @@ func ReceivePack(
 
 	// Should we expect a packfile?
 	for _, cmd := range updreq.Commands {
-		if cmd.New != plumbing.ZeroHash {
+		if cmd.Action() != packp.Delete {
 			needPackfile = true
 			break
 		}

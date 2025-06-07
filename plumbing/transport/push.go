@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -30,7 +29,7 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 		capability.DeleteRefs,
 		capability.OFSDelta,
 		capability.Atomic,
-		capability.PushOptions,
+		// capability.PushOptions, // This is set later if options are present.
 	} {
 		if caps.Supports(cap) {
 			upreq.Capabilities.Set(cap) //nolint:errcheck
@@ -54,15 +53,18 @@ func SendPack(
 	writer = ioutil.NewContextWriteCloser(ctx, writer)
 	reader = ioutil.NewContextReadCloser(ctx, reader)
 
-	var needPackData bool
+	var needPackfile bool
 	for _, cmd := range req.Commands {
-		if cmd.New != plumbing.ZeroHash {
-			needPackData = true
+		if cmd.Action() != packp.Delete {
+			needPackfile = true
 			break
 		}
 	}
 
-	if needPackData && req.Packfile == nil {
+	if !needPackfile && req.Packfile != nil {
+		return fmt.Errorf("packfile is not accepted for push request without new objects")
+	}
+	if needPackfile && req.Packfile == nil {
 		return fmt.Errorf("packfile is required for push request with new objects")
 	}
 
