@@ -195,6 +195,13 @@ const (
 	// successful, it will send back an error message.  See pack-protocol.txt
 	// for example messages.
 	ReportStatus Capability = "report-status"
+	// ReportStatusV2 extends capability report-status by adding new "option"
+	// directives in order to support reference rewritten by the "proc-receive"
+	// hook. The "proc-receive" hook may handle a command for a
+	// pseudo-reference which may create or update a reference with different
+	// name, new-oid, and old-oid. While the capability report-status cannot
+	// report for such case. See gitprotocol-pack[5] for details.
+	ReportStatusV2 Capability = "report-status-v2"
 	// DeleteRefs If the server sends back this capability, it means that
 	// it is capable of accepting a zero-id value as the target
 	// value of a reference update.  It is not sent back by the client, it
