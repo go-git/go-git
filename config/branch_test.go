@@ -16,17 +16,17 @@ func TestBranchSuite(t *testing.T) {
 }
 
 func (b *BranchSuite) TestValidateName() {
-	goodBranch := Branch{
+	namedBranch := Branch{
 		Name:   "master",
 		Remote: "some_remote",
 		Merge:  "refs/heads/master",
 	}
-	badBranch := Branch{
+	noNameBranch := Branch{
 		Remote: "some_remote",
 		Merge:  "refs/heads/master",
 	}
-	b.Nil(goodBranch.Validate())
-	b.NotNil(badBranch.Validate())
+	b.Nil(namedBranch.Validate())
+	b.Nil(noNameBranch.Validate())
 }
 
 func (b *BranchSuite) TestValidateMerge() {

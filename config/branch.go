@@ -9,7 +9,6 @@ import (
 )
 
 var (
-	errBranchEmptyName     = errors.New("branch config: empty name")
 	errBranchInvalidMerge  = errors.New("branch config: invalid merge")
 	errBranchInvalidRebase = errors.New("branch config: rebase must be one of 'true' or 'interactive'")
 )
@@ -39,10 +38,6 @@ type Branch struct {
 
 // Validate validates fields of branch
 func (b *Branch) Validate() error {
-	if b.Name == "" {
-		return errBranchEmptyName
-	}
-
 	if b.Merge != "" && !b.Merge.IsBranch() {
 		return errBranchInvalidMerge
 	}
@@ -54,6 +49,10 @@ func (b *Branch) Validate() error {
 		return errBranchInvalidRebase
 	}
 
+	// Skip validation on empty branch names to avoid violating git ref format rules
+	if b.Name == "" {
+		return nil
+	}
 	return plumbing.NewBranchReferenceName(b.Name).Validate()
 }
 
