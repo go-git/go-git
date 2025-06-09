@@ -10,12 +10,10 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
-type RevListFixtureSuite struct {
-	fixtures.Suite
-}
+type RevListFixtureSuite struct{}
 
 type RevListSuite struct {
 	suite.Suite

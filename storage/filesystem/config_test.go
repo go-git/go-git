@@ -6,19 +6,14 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/stretchr/testify/suite"
 )
 
-type ConfigFixtureSuite struct {
-	fixtures.Suite
-}
-
 type ConfigSuite struct {
 	suite.Suite
-	ConfigFixtureSuite
 
 	dir  *dotgit.DotGit
 	path string

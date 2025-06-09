@@ -15,16 +15,11 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
-
-type EncoderAdvancedFixtureSuite struct {
-	fixtures.Suite
-}
 
 type EncoderAdvancedSuite struct {
 	suite.Suite
-	EncoderAdvancedFixtureSuite
 }
 
 func TestEncoderAdvancedSuite(t *testing.T) {

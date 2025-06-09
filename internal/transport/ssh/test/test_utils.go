@@ -58,7 +58,7 @@ func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdo
 	// fix for Windows environments
 	var path string
 	if runtime.GOOS == "windows" {
-		path = strings.Replace(c[1], "/C:/", "C:/", 1)
+		path = strings.Replace(c[1], "/C:", "C:", 1)
 	} else {
 		path = c[1]
 	}

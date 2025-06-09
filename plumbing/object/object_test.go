@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -19,7 +19,6 @@ type BaseObjectsFixtureSuite struct {
 }
 
 type BaseObjectsSuite struct {
-	fixtures.Suite
 	Storer  storer.EncodedObjectStorer
 	Fixture *fixtures.Fixture
 	t       *testing.T

@@ -13,16 +13,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
-
-type IndexFixtureSuite struct {
-	fixtures.Suite
-}
 
 type IndexSuite struct {
 	suite.Suite
-	IndexFixtureSuite
 }
 
 func TestIndexSuite(t *testing.T) {

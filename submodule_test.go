@@ -2,8 +2,6 @@ package git
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -12,11 +10,10 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type SubmoduleSuite struct {
-	suite.Suite
 	BaseSuite
 	Worktree *Worktree
 }
@@ -26,20 +23,14 @@ func TestSubmoduleSuite(t *testing.T) {
 }
 
 func (s *SubmoduleSuite) SetupTest() {
-	path := fixtures.ByTag("submodule").One().Worktree().Root()
+	url := s.GetLocalRepositoryURL(fixtures.ByTag("submodule").One())
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(filepath.Join(dir, "worktree"), &CloneOptions{
-		URL: path,
-	})
-
-	s.NoError(err)
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: url})
+	s.Require().NoError(err)
 
 	s.Repository = r
 	s.Worktree, err = r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SubmoduleSuite) TestInit() {

@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
@@ -42,7 +42,6 @@ import (
 )
 
 type RepositorySuite struct {
-	suite.Suite
 	BaseSuite
 }
 
@@ -1183,16 +1182,11 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 		s.T().Skip("skipping test in short mode.")
 	}
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	path := fixtures.ByTag("submodule").One().Worktree().Root()
-	r, err := PlainClone(dir, &CloneOptions{
-		URL:               path,
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+		URL:               s.GetLocalRepositoryURL(fixtures.ByTag("submodule").One()),
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 	})
-
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	cfg, err := r.Config()
 	s.NoError(err)
@@ -1240,16 +1234,14 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 }
 
 func (s *RepositorySuite) TestPlainCloneNoCheckout() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
-	path := fixtures.ByTag("submodule").One().Worktree().Root()
 	r, err := PlainClone(dir, &CloneOptions{
-		URL:               path,
+		URL:               s.GetLocalRepositoryURL(fixtures.ByTag("submodule").One()),
 		NoCheckout:        true,
 		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	h, err := r.Head()
 	s.NoError(err)
@@ -1787,18 +1779,13 @@ func (s *RepositorySuite) TestPushWithProgress() {
 }
 
 func (s *RepositorySuite) TestPushDepth() {
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	server, err := PlainClone(url, &CloneOptions{
-		URL:  fixtures.Basic().One().DotGit().Root(),
-		Bare: true,
+	server, err := PlainClone(s.T().TempDir(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
 	})
-
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
-		URL:   url,
+		URL:   server.wt.Root(),
 		Depth: 1,
 	})
 	s.NoError(err)
@@ -3460,8 +3447,6 @@ func (s *RepositorySuite) TestIssue674() {
 }
 
 func BenchmarkObjects(b *testing.B) {
-	defer fixtures.Clean()
-
 	for _, f := range fixtures.ByTag("packfile") {
 		if f.DotGitHash == "" {
 			continue

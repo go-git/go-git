@@ -5,7 +5,7 @@ import (
 )
 
 func (s *SuiteDotGit) TestRepositoryFilesystem() {
-	fs := s.TemporalFilesystem()
+	fs := s.EmptyFS()
 
 	err := fs.MkdirAll("dotGit", 0777)
 	s.NoError(err)

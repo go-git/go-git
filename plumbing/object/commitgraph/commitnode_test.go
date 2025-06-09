@@ -11,16 +11,11 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
-
-type CommitNodeFixtureSuite struct {
-	fixtures.Suite
-}
 
 type CommitNodeSuite struct {
 	suite.Suite
-	CommitNodeFixtureSuite
 }
 
 func TestCommitNodeSuite(t *testing.T) {

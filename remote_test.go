@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/stretchr/testify/suite"
 
@@ -29,11 +28,10 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type RemoteSuite struct {
-	suite.Suite
 	BaseSuite
 }
 
@@ -361,22 +359,12 @@ func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing
 }
 
 func (s *RemoteSuite) TestFetchOfMissingObjects() {
-	tmp := s.T().TempDir()
+	dotgit := fixtures.Basic().One().DotGit()
+	s.Require().NoError(util.RemoveAll(dotgit, "objects/pack"))
 
-	// clone to a local temp folder
-	_, err := PlainClone(tmp, &CloneOptions{
-		URL:  fixtures.Basic().One().DotGit().Root(),
-		Bare: true,
-	})
-	s.Require().NoError(err)
+	storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
-	// Delete the pack files
-	fsTmp := osfs.New(tmp)
-	err = util.RemoveAll(fsTmp, "objects/pack")
-	s.Require().NoError(err)
-
-	// Reopen the repo from the filesystem (with missing objects)
-	r, err := Open(filesystem.NewStorage(fsTmp, cache.NewObjectLRUDefault()), nil)
+	r, err := Open(storage, nil)
 	s.Require().NoError(err)
 
 	// Confirm we are missing a commit
@@ -891,7 +879,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 }
 
 func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate() {
-	fs := fixtures.Basic().One().DotGit()
+	fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	r := NewRemote(sto, &config.RemoteConfig{
@@ -906,17 +894,14 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate() {
 }
 
 func (s *RemoteSuite) TestPushDeleteReference() {
-	fs := fixtures.Basic().One().DotGit()
+	fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(url, &CloneOptions{
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
 		URL:  fs.Root(),
 		Bare: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	remote, err := r.Remote(DefaultRemoteName)
 	s.NoError(err)
@@ -934,17 +919,15 @@ func (s *RemoteSuite) TestPushDeleteReference() {
 }
 
 func (s *RemoteSuite) TestForcePushDeleteReference() {
-	fs := fixtures.Basic().One().DotGit()
+	fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(url, &CloneOptions{
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
 		URL:  fs.Root(),
 		Bare: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	remote, err := r.Remote(DefaultRemoteName)
 	s.NoError(err)
@@ -963,20 +946,15 @@ func (s *RemoteSuite) TestForcePushDeleteReference() {
 }
 
 func (s *RemoteSuite) TestPushRejectNonFastForward() {
-	fs := fixtures.Basic().One().DotGit()
+	fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+
 	server := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(url, &CloneOptions{
-		URL:  fs.Root(),
-		Bare: true,
-	})
-	s.NoError(err)
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: fs.Root(), Bare: true})
+	s.Require().NoError(err)
 
 	remote, err := r.Remote(DefaultRemoteName)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	branch := plumbing.ReferenceName("refs/heads/branch")
 	oldRef, err := server.Reference(branch)
@@ -997,13 +975,12 @@ func (s *RemoteSuite) TestPushForce() {
 	f := fixtures.Basic().One()
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
-	dstFs := f.DotGit()
+	dstFs := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 
-	url := dstFs.Root()
 	r := NewRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URLs: []string{url},
+		URLs: []string{dstFs.Root()},
 	})
 
 	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
@@ -1024,13 +1001,12 @@ func (s *RemoteSuite) TestPushForceWithOption() {
 	f := fixtures.Basic().One()
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
-	dstFs := f.DotGit()
+	dstFs := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 
-	url := dstFs.Root()
 	r := NewRemote(sto, &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URLs: []string{url},
+		URLs: []string{dstFs.Root()},
 	})
 
 	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
@@ -1077,7 +1053,8 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 
 		f := fixtures.Basic().One()
 		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-		dstFs := f.DotGit()
+
+		dstFs := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
 		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 
 		newCommit := plumbing.NewHashReference(
@@ -1089,10 +1066,9 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 		s.NoError(err)
 		s.T().Log(ref.String())
 
-		url := dstFs.Root()
 		r := NewRemote(sto, &config.RemoteConfig{
 			Name: DefaultRemoteName,
-			URLs: []string{url},
+			URLs: []string{dstFs.Root()},
 		})
 
 		oldRef, err := dstSto.Reference("refs/heads/branch")
@@ -1145,7 +1121,7 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 			),
 		))
 
-		dstFs := f.DotGit()
+		dstFs := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
 		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 		s.NoError(dstSto.SetReference(
 			plumbing.NewHashReference(
@@ -1153,10 +1129,9 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 			),
 		))
 
-		url := dstFs.Root()
 		r := NewRemote(sto, &config.RemoteConfig{
 			Name: DefaultRemoteName,
-			URLs: []string{url},
+			URLs: []string{dstFs.Root()},
 		})
 
 		oldRef, err := dstSto.Reference("refs/heads/branch")
@@ -1177,25 +1152,14 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 }
 
 func (s *RemoteSuite) TestPushPrune() {
-	fs := fixtures.Basic().One().DotGit()
+	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	s.Require().NoError(err)
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	server, err := PlainClone(url, &CloneOptions{
-		URL:  fs.Root(),
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+		URL:  server.wt.Root(),
 		Bare: true,
 	})
-	s.NoError(err)
-
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(dir, &CloneOptions{
-		URL:  url,
-		Bare: true,
-	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	tag, err := r.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
 	s.NoError(err)
@@ -1242,25 +1206,14 @@ func (s *RemoteSuite) TestPushPrune() {
 }
 
 func (s *RemoteSuite) TestPushNewReference() {
-	fs := fixtures.Basic().One().DotGit()
+	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	s.Require().NoError(err)
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	server, err := PlainClone(url, &CloneOptions{
-		URL:  fs.Root(),
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+		URL:  server.wt.Root(),
 		Bare: true,
 	})
-	s.NoError(err)
-
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(dir, &CloneOptions{
-		URL:  url,
-		Bare: true,
-	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	remote, err := r.Remote(DefaultRemoteName)
 	s.NoError(err)
@@ -1283,22 +1236,11 @@ func (s *RemoteSuite) TestPushNewReference() {
 }
 
 func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch() {
-	fs := fixtures.Basic().One().DotGit()
+	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	s.Require().NoError(err)
 
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	server, err := PlainClone(url, &CloneOptions{
-		URL:  fs.Root(),
-		Bare: true,
-	})
-	s.NoError(err)
-
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	r, err := PlainClone(dir, &CloneOptions{
-		URL:  url,
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+		URL:  server.wt.Root(),
 		Bare: true,
 	})
 	s.NoError(err)
@@ -1569,7 +1511,7 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 	f := fixtures.Basic().One()
 	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 
-	dstFs := f.DotGit()
+	dstFs := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 
 	url := dstFs.Root()
@@ -1619,16 +1561,14 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 }
 
 func (s *RemoteSuite) TestFetchPrune() {
-	fs := fixtures.Basic().One().DotGit()
-
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
 	_, err = PlainClone(url, &CloneOptions{
-		URL:  fs.Root(),
+		URL:  s.GetBasicLocalRepositoryURL(),
 		Bare: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)
@@ -1680,16 +1620,14 @@ func (s *RemoteSuite) TestFetchPrune() {
 }
 
 func (s *RemoteSuite) TestFetchPruneTags() {
-	fs := fixtures.Basic().One().DotGit()
-
 	url, err := os.MkdirTemp("", "")
 	s.NoError(err)
 
 	_, err = PlainClone(url, &CloneOptions{
-		URL:  fs.Root(),
+		URL:  s.GetBasicLocalRepositoryURL(),
 		Bare: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	dir, err := os.MkdirTemp("", "")
 	s.NoError(err)

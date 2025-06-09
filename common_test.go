@@ -19,16 +19,11 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
-
-type BaseFixtureSuite struct {
-	fixtures.Suite
-}
 
 type BaseSuite struct {
 	suite.Suite
-	BaseFixtureSuite
 	Repository *Repository
 
 	cache map[string]*Repository
@@ -49,25 +44,16 @@ func (s *BaseSuite) buildBasicRepository() {
 // is tagged as worktree the filesystem from fixture is used, otherwise a new
 // memfs filesystem is used as worktree.
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	var worktree, dotgit billy.Filesystem
+	dotgit := f.DotGit()
+	worktree := memfs.New()
 	if f.Is("worktree") {
-		r, err := PlainOpen(f.Worktree().Root())
-		if err != nil {
-			panic(err)
-		}
-
-		return r
+		worktree = f.Worktree()
 	}
-
-	dotgit = f.DotGit()
-	worktree = memfs.New()
 
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	r, err := Open(st, worktree)
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(err)
 
 	return r
 }
@@ -109,19 +95,11 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 	p := f.Packfile()
 	defer func() { _ = p.Close() }()
 
-	if err := packfile.UpdateObjectStorage(storer, p); err != nil {
-		panic(err)
-	}
-
-	err := storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head)))
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(packfile.UpdateObjectStorage(storer, p))
+	s.Require().NoError(storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head))))
 
 	r, err := Open(storer, memfs.New())
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(err)
 
 	s.cache[h] = r
 	return r
@@ -133,20 +111,16 @@ func (s *BaseSuite) GetBasicLocalRepositoryURL() string {
 }
 
 func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
-	return f.DotGit().Root()
+	return f.DotGit(fixtures.WithTargetDir(s.T().TempDir)).Root()
 }
 
 func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 	home, err := os.UserHomeDir()
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(err)
 
 	fs := osfs.New(home)
 	relPath, err := util.TempDir(fs, "", "")
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(err)
 
 	path = fs.Join(fs.Root(), relPath)
 	clean = func() {
@@ -157,23 +131,14 @@ func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 }
 
 func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem) {
-	// TODO: Use s.T().TempDir() here, but it fails. Investigate why.
-	tmpDir, err := os.MkdirTemp("", "")
-	if err != nil {
-		panic(err)
-	}
-	fs = osfs.New(tmpDir)
+	fs = osfs.New(s.T().TempDir())
 	path, err := util.TempDir(fs, "", "")
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(err)
 
 	fs, err = fs.Chroot(path)
-	if err != nil {
-		panic(err)
-	}
+	s.Require().NoError(err)
 
-	return
+	return fs
 }
 
 type SuiteCommon struct {
