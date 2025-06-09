@@ -375,6 +375,21 @@ func (c *Config) unmarshalRemotes() error {
 		if err := r.unmarshal(sub); err != nil {
 			return err
 		}
+		c.Remotes[r.Name] = r
+	}
+
+	// Check if the main remote section still has options
+	// after unmarshaling named subsections - this indicates an empty subsection name
+	if len(s.Options) > 0 {
+		emptySubsection := &format.Subsection{
+			Name:    "",
+			Options: s.Options,
+		}
+
+		r := &RemoteConfig{}
+		if err := r.unmarshal(emptySubsection); err != nil {
+			return err
+		}
 
 		c.Remotes[r.Name] = r
 	}
@@ -392,6 +407,22 @@ func (c *Config) unmarshalURLs() error {
 	for _, sub := range s.Subsections {
 		r := &URL{}
 		if err := r.unmarshal(sub); err != nil {
+			return err
+		}
+
+		c.URLs[r.Name] = r
+	}
+
+	// Check if the main URLs section still has options
+	// after unmarshaling named subsections - this indicates an empty subsection name
+	if len(s.Options) > 0 {
+		emptySubsection := &format.Subsection{
+			Name:    "",
+			Options: s.Options,
+		}
+
+		r := &URL{}
+		if err := r.unmarshal(emptySubsection); err != nil {
 			return err
 		}
 
@@ -426,6 +457,22 @@ func (c *Config) unmarshalBranches() error {
 
 		c.Branches[b.Name] = b
 	}
+	// Check if the main branch section still has options
+	// after unmarshaling named subsections - this indicates an empty subsection name
+	if len(bs.Options) > 0 {
+		emptySubsection := &format.Subsection{
+			Name:    "",
+			Options: bs.Options,
+		}
+
+		b := &Branch{}
+		if err := b.unmarshal(emptySubsection); err != nil {
+			return err
+		}
+
+		c.Branches[b.Name] = b
+	}
+
 	return nil
 }
 
