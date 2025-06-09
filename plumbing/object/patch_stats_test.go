@@ -10,17 +10,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v4"
 )
-
-type PatchStatsFixtureSuite struct {
-	fixtures.Suite
-}
 
 type PatchStatsSuite struct {
 	suite.Suite
-	PatchStatsFixtureSuite
 }
 
 func TestPatchStatsSuite(t *testing.T) {

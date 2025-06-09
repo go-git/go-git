@@ -13,17 +13,10 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
-
-	fixtures "github.com/go-git/go-git-fixtures/v4"
 )
-
-type CommitStatsFixtureSuite struct {
-	fixtures.Suite
-}
 
 type CommitStatsSuite struct {
 	suite.Suite
-	CommitStatsFixtureSuite
 }
 
 func TestCommitStatsSuite(t *testing.T) {

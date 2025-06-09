@@ -6,28 +6,23 @@ import (
 	"log"
 	"net"
 	"os"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/armon/go-socks5"
 	"github.com/gliderlabs/ssh"
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	ggssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	stdssh "golang.org/x/crypto/ssh"
 )
 
-type ProxyEnvFixtureSuite struct {
-	fixtures.Suite
-}
-
 type ProxyEnvSuite struct {
 	suite.Suite
-	ProxyEnvFixtureSuite
 	port int
 	base string
 }
@@ -64,7 +59,7 @@ func (s *ProxyEnvSuite) TestCommand() {
 	}()
 
 	s.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp("", fmt.Sprintf("go-git-ssh-%d", s.port))
+	s.base, err = os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
 	s.NoError(err)
 
 	ggssh.DefaultAuthBuilder = func(user string) (ggssh.AuthMethod, error) {
@@ -72,16 +67,15 @@ func (s *ProxyEnvSuite) TestCommand() {
 	}
 
 	st := memory.NewStorage()
-	ep := s.prepareRepository(fixtures.Basic().One(), "basic.git")
-	s.NoError(err)
+	fs := test.PrepareRepository(s.T(), fixtures.Basic().One(), s.base, "basic.git")
 
 	client := ggssh.NewTransport(&stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	})
-	r, err := client.NewSession(st, ep, nil)
-	s.NoError(err)
+	r, err := client.NewSession(st, s.newEndpoint(fs.Root()), nil)
+	s.Require().NoError(err)
 	conn, err := r.Handshake(context.Background(), transport.UploadPackService)
-	s.NoError(err)
+	s.Require().NoError(err)
 	defer func() { s.Nil(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
@@ -91,24 +85,8 @@ func (s *ProxyEnvSuite) TestCommand() {
 	s.True(proxyUsed)
 }
 
-func (s *ProxyEnvSuite) prepareRepository(f *fixtures.Fixture, name string) *transport.Endpoint {
-	fs := f.DotGit()
-
-	err := fixtures.EnsureIsBare(fs)
-	s.NoError(err)
-
-	path := filepath.Join(s.base, name)
-	err = os.Rename(fs.Root(), path)
-	s.NoError(err)
-
-	return s.newEndpoint(name)
-}
-
 func (s *ProxyEnvSuite) newEndpoint(name string) *transport.Endpoint {
-	ep, err := transport.NewEndpoint(fmt.Sprintf(
-		"ssh://git@localhost:%d/%s/%s", s.port, filepath.ToSlash(s.base), name,
-	))
-
+	ep, err := transport.NewEndpoint(fmt.Sprintf("ssh://git@localhost:%d/%s", s.port, name))
 	s.NoError(err)
 	return ep
 }

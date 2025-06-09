@@ -11,16 +11,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
-
-type WriterFixtureSuite struct {
-	fixtures.Suite
-}
 
 type WriterSuite struct {
 	suite.Suite
-	WriterFixtureSuite
 }
 
 func TestWriterSuite(t *testing.T) {

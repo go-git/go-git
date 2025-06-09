@@ -11,16 +11,10 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	fixtures "github.com/go-git/go-git-fixtures/v4"
 )
-
-type EncoderFixtureSuite struct {
-	fixtures.Suite
-}
 
 type EncoderSuite struct {
 	suite.Suite
-	EncoderFixtureSuite
 	buf   *bytes.Buffer
 	store *memory.Storage
 	enc   *Encoder

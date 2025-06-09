@@ -10,8 +10,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v4"
 )
 
 func BenchmarkFindOffset(b *testing.B) {
@@ -98,13 +96,8 @@ func BenchmarkEntries(b *testing.B) {
 	}
 }
 
-type IndexFixtureSuite struct {
-	fixtures.Suite
-}
-
 type IndexSuite struct {
 	suite.Suite
-	IndexFixtureSuite
 }
 
 func TestIndexSuite(t *testing.T) {

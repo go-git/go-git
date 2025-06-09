@@ -12,7 +12,6 @@ import (
 )
 
 type OptionsSuite struct {
-	suite.Suite
 	BaseSuite
 }
 

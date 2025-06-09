@@ -464,6 +464,7 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 	if err != nil {
 		return nil, err
 	}
+	defer ioutil.CheckClose(f, &err)
 
 	b, err := io.ReadAll(f)
 	if err != nil {

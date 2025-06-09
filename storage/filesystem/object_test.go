@@ -10,22 +10,16 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v4"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
-
-type FsFixtureSuite struct {
-	fixtures.Suite
-}
 
 type FsSuite struct {
 	suite.Suite
-	FsFixtureSuite
 }
 
 var objectTypes = []plumbing.ObjectType{
@@ -290,19 +284,25 @@ func (s *FsSuite) TestPackfileIter() {
 	}
 }
 
-func copyFile(s *FsSuite, dstDir, dstFilename string, srcFile billy.File) {
-	_, err := srcFile.Seek(0, 0)
-	s.NoError(err)
+func copyFile(fs billy.Filesystem, dstFilename string, srcFile billy.File) error {
+	if _, err := srcFile.Seek(0, 0); err != nil {
+		return err
+	}
 
-	err = osfs.Default.MkdirAll(dstDir, 0750|os.ModeDir)
-	s.NoError(err)
+	if err := fs.MkdirAll(filepath.Dir(dstFilename), 0750|os.ModeDir); err != nil {
+		return err
+	}
 
-	dst, err := osfs.Default.OpenFile(filepath.Join(dstDir, dstFilename), os.O_CREATE|os.O_WRONLY, 0666)
-	s.NoError(err)
+	dst, err := fs.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
 	defer dst.Close()
 
-	_, err = io.Copy(dst, srcFile)
-	s.NoError(err)
+	if _, err := io.Copy(dst, srcFile); err != nil {
+		return err
+	}
+	return nil
 }
 
 // TestPackfileReindex tests that externally-added packfiles are considered by go-git
@@ -325,10 +325,8 @@ func (s *FsSuite) TestPackfileReindex() {
 
 		// add the external packfile+idx to the packs folder
 		// this simulates a git bundle unbundle command, or a repack, for example.
-		copyFile(s, filepath.Join(storer.Filesystem().Root(), "objects", "pack"),
-			fmt.Sprintf("pack-%s.pack", packFilename), packFile)
-		copyFile(s, filepath.Join(storer.Filesystem().Root(), "objects", "pack"),
-			fmt.Sprintf("pack-%s.idx", packFilename), idxFile)
+		s.Require().NoError(copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", packFilename)), packFile))
+		s.Require().NoError(copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", packFilename)), idxFile))
 
 		// check that we cannot still retrieve the test object
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
@@ -435,8 +433,6 @@ func (s *FsSuite) TestHashesWithPrefixFromPackfile() {
 }
 
 func BenchmarkPackfileIter(b *testing.B) {
-	defer fixtures.Clean()
-
 	for _, f := range fixtures.ByTag(".git") {
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
@@ -483,8 +479,6 @@ func BenchmarkPackfileIter(b *testing.B) {
 }
 
 func BenchmarkPackfileIterReadContent(b *testing.B) {
-	defer fixtures.Clean()
-
 	for _, f := range fixtures.ByTag(".git") {
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()
@@ -541,8 +535,6 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 }
 
 func BenchmarkGetObjectFromPackfile(b *testing.B) {
-	defer fixtures.Clean()
-
 	for _, f := range fixtures.Basic() {
 		b.Run(f.URL, func(b *testing.B) {
 			fs := f.DotGit()

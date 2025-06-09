@@ -7,7 +7,7 @@ toolchain go1.23.7
 
 // Use the v6-exp branch across go-git dependencies.
 replace (
-	github.com/go-git/go-billy/v5 => github.com/go-git/go-billy/v5 v5.0.0-20240804231525-dc481f5289ba
+	github.com/go-git/go-billy/v5 => github.com/go-git/go-billy/v5 v5.5.1-0.20250112183528-18f878617b0e
 	github.com/go-git/go-git-fixtures/v5 => github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 )
 
@@ -21,7 +21,6 @@ require (
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.1
 	github.com/go-git/go-billy/v5 v5.6.2
-	github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399
 	github.com/go-git/go-git-fixtures/v5 v5.0.0-20241203230421-0753e18f8f03
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/kevinburke/ssh_config v1.2.0
@@ -41,7 +40,6 @@ require (
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
