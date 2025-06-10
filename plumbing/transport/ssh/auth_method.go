@@ -230,23 +230,11 @@ func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
 //	~/.ssh/known_hosts
 //	/etc/ssh/ssh_known_hosts
 func NewKnownHostsCallback(files ...string) (ssh.HostKeyCallback, error) {
-	kh, err := NewKnownHostsDb(files...)
-	return kh.HostKeyCallback(), err
+	kh, err := newKnownHosts(files...)
+	return ssh.HostKeyCallback(kh), err
 }
 
-// NewKnownHostsDb returns knownhosts.HostKeyDB based on a file based on a
-// known_hosts file. http://man.openbsd.org/sshd#SSH_KNOWN_HOSTS_FILE_FORMAT
-//
-// If list of files is empty, then it will be read from the SSH_KNOWN_HOSTS
-// environment variable, example:
-//
-//	/home/foo/custom_known_hosts_file:/etc/custom_known/hosts_file
-//
-// If SSH_KNOWN_HOSTS is not set the following file locations will be used:
-//
-//	~/.ssh/known_hosts
-//	/etc/ssh/ssh_known_hosts
-func NewKnownHostsDb(files ...string) (*knownhosts.HostKeyDB, error) {
+func newKnownHosts(files ...string) (knownhosts.HostKeyCallback, error) {
 	var err error
 
 	if len(files) == 0 {
@@ -259,7 +247,7 @@ func NewKnownHostsDb(files ...string) (*knownhosts.HostKeyDB, error) {
 		return nil, err
 	}
 
-	return knownhosts.NewDB(files...)
+	return knownhosts.New(files...)
 }
 
 func getDefaultKnownHostsFiles() ([]string, error) {
@@ -304,16 +292,21 @@ func filterKnownHostsFiles(files ...string) ([]string, error) {
 // configure HostKeyCallback into a ssh.ClientConfig.
 type HostKeyCallbackHelper struct {
 	// HostKeyCallback is the function type used for verifying server keys.
-	// If nil, a default callback will be created using NewKnownHostsDb
+	// If nil default callback will be create using NewKnownHostsCallback
 	// without argument.
 	HostKeyCallback ssh.HostKeyCallback
-
 }
 
-// SetHostKeyCallback sets the field HostKeyCallback in the given cfg.
-// If the host key callback is empty it is left empty. It will be handled
-// by the dial method by falling back to knownhosts.
+// SetHostKeyCallback sets the field HostKeyCallback in the given cfg. If
+// HostKeyCallback is empty a default callback is created using
+// NewKnownHostsCallback.
 func (m *HostKeyCallbackHelper) SetHostKeyCallback(cfg *ssh.ClientConfig) (*ssh.ClientConfig, error) {
+	var err error
+	if m.HostKeyCallback == nil {
+		if m.HostKeyCallback, err = NewKnownHostsCallback(); err != nil {
+			return cfg, err
+		}
+	}
 
 	cfg.HostKeyCallback = m.HostKeyCallback
 	return cfg, nil
