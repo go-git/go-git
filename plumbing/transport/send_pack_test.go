@@ -89,7 +89,7 @@ func (rw *mockReadWriteCloser) Close() error {
 // TestSendPackWithReportStatus tests the SendPack function with ReportStatus capability
 func TestSendPackWithReportStatus(t *testing.T) {
 	caps := capability.NewList()
-	caps.Add(capability.ReportStatus)
+	caps.Add(capability.ReportStatus) //nolint:errcheck
 	conn := &mockConnection{caps: caps}
 
 	// Create a mock reader with a valid report status response
@@ -101,6 +101,7 @@ func TestSendPackWithReportStatus(t *testing.T) {
 	reader := newMockRWC([]byte(reportStatusResponse))
 	writer := newMockRWC(nil)
 
+	var buf bytes.Buffer
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -109,6 +110,7 @@ func TestSendPackWithReportStatus(t *testing.T) {
 				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 			},
 		},
+		Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 	}
 
 	storer := memory.NewStorage()
@@ -135,6 +137,7 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 	reader := newMockRWC([]byte(reportStatusResponse))
 	writer := newMockRWC(nil)
 
+	var buf bytes.Buffer
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -143,6 +146,7 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 			},
 		},
+		Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 	}
 
 	// Call SendPack
@@ -167,6 +171,7 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 	reader := newMockRWC(nil)
 	writer := newMockRWC(nil)
 
+	var buf bytes.Buffer
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -175,6 +180,7 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 			},
 		},
+		Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 	}
 
 	storer := memory.NewStorage()
@@ -216,6 +222,7 @@ func TestSendPackWithProgress(t *testing.T) {
 	// Create a progress buffer to capture progress messages
 	progressBuf := &bytes.Buffer{}
 
+	var buf bytes.Buffer
 	req := &PushRequest{
 		Commands: []*packp.Command{
 			{
@@ -224,6 +231,7 @@ func TestSendPackWithProgress(t *testing.T) {
 				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 			},
 		},
+		Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 		Progress: progressBuf,
 	}
 
@@ -289,6 +297,7 @@ func TestSendPackErrors(t *testing.T) {
 		writer.writeErr = errors.New("encode error")
 		reader := newMockRWC(nil)
 
+		var buf bytes.Buffer
 		req := &PushRequest{
 			Commands: []*packp.Command{
 				{
@@ -297,6 +306,7 @@ func TestSendPackErrors(t *testing.T) {
 					New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 				},
 			},
+			Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 		}
 
 		storer := memory.NewStorage()
@@ -336,6 +346,7 @@ func TestSendPackErrors(t *testing.T) {
 		writer.closeErr = errors.New("writer close error")
 		reader := newMockRWC(nil)
 
+		var buf bytes.Buffer
 		req := &PushRequest{
 			Commands: []*packp.Command{
 				{
@@ -344,6 +355,7 @@ func TestSendPackErrors(t *testing.T) {
 					New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 				},
 			},
+			Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 		}
 
 		storer := memory.NewStorage()
@@ -361,6 +373,7 @@ func TestSendPackErrors(t *testing.T) {
 		reader := newMockRWC([]byte(invalidResponse))
 		writer := newMockRWC(nil)
 
+		var buf bytes.Buffer
 		req := &PushRequest{
 			Commands: []*packp.Command{
 				{
@@ -369,6 +382,7 @@ func TestSendPackErrors(t *testing.T) {
 					New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 				},
 			},
+			Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 		}
 
 		storer := memory.NewStorage()
@@ -388,6 +402,7 @@ func TestSendPackErrors(t *testing.T) {
 		reader.closeErr = errors.New("reader close error")
 		writer := newMockRWC(nil)
 
+		var buf bytes.Buffer
 		req := &PushRequest{
 			Commands: []*packp.Command{
 				{
@@ -396,6 +411,7 @@ func TestSendPackErrors(t *testing.T) {
 					New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 				},
 			},
+			Packfile: io.NopCloser(&buf), // Use a buffer to simulate packfile
 		}
 
 		storer := memory.NewStorage()

@@ -211,9 +211,6 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
-	// req.Capabilities.Set(capability.ReportStatus)
-
-	// report, err := s.receivePackNoCheck(endpoint, req, fixture, full)
 	err := s.receivePackNoCheck(endpoint, req, fixture, full)
 	// XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
