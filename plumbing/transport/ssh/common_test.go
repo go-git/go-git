@@ -129,33 +129,10 @@ func (s *SuiteCommon) TestFixedHostKeyCallback(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(auth, NotNil)
 	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
-	auth.HostKeyAlgorithms = []string{"ssh-ed25519"}
 	ep := uploadPack.newEndpoint(c, "bar.git")
 	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
 	c.Assert(err, IsNil)
 	c.Assert(ps, NotNil)
-}
-
-func (s *SuiteCommon) TestFixedHostKeyCallbackUnexpectedAlgorithm(c *C) {
-	hostKey, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
-	c.Assert(err, IsNil)
-	uploadPack := &UploadPackSuite{
-		opts: []ssh.Option{
-			ssh.HostKeyPEM(testdata.PEMBytes["rsa"]),
-		},
-	}
-	uploadPack.SetUpSuite(c)
-	// Use the default client, which does not have a host key callback
-	uploadPack.Client = DefaultClient
-	auth, err := NewPublicKeys("foo", testdata.PEMBytes["rsa"], "")
-	c.Assert(err, IsNil)
-	c.Assert(auth, NotNil)
-	auth.HostKeyCallback = stdssh.FixedHostKey(hostKey.PublicKey())
-	auth.HostKeyAlgorithms = []string{"ssh-ed25519"}
-	ep := uploadPack.newEndpoint(c, "bar.git")
-	ps, err := uploadPack.Client.NewUploadPackSession(ep, auth)
-	c.Assert(err, NotNil)
-	c.Assert(ps, IsNil)
 }
 
 func (s *SuiteCommon) TestFailHostKeyCallback(c *C) {
