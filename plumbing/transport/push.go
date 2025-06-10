@@ -25,15 +25,21 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 	// ofs-delta, atomic and push-options.
 	for _, cap := range []capability.Capability{
 		capability.ReportStatus,
-		capability.ReportStatusV2,
+		// TODO: support report-status-v2
+		// capability.ReportStatusV2,
 		capability.DeleteRefs,
 		capability.OFSDelta,
-		capability.Atomic,
-		// capability.PushOptions, // This is set later if options are present.
+
+		// This is set later if options are present.
+		// capability.PushOptions,
 	} {
 		if caps.Supports(cap) {
 			upreq.Capabilities.Set(cap) //nolint:errcheck
 		}
+	}
+
+	if req.Atomic && caps.Supports(capability.Atomic) {
+		upreq.Capabilities.Set(capability.Atomic) //nolint:errcheck
 	}
 
 	upreq.Commands = req.Commands
