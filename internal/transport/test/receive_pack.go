@@ -211,9 +211,6 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
-	// req.Capabilities.Set(capability.ReportStatus)
-
-	// report, err := s.receivePackNoCheck(endpoint, req, fixture, full)
 	err := s.receivePackNoCheck(endpoint, req, fixture, full)
 	// XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
@@ -267,11 +264,21 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 		s.Require().NotNil(info, comment)
 	}
 
-	if fixture != nil {
-		s.Require().NotNil(fixture.Packfile())
-		req.Packfile = fixture.Packfile()
-	} else {
-		req.Packfile = s.emptyPackfile()
+	var needPackfile bool
+	for _, cmd := range req.Commands {
+		if cmd.Action() != packp.Delete {
+			needPackfile = true
+			break
+		}
+	}
+
+	if needPackfile {
+		if fixture != nil {
+			s.Require().NotNil(fixture.Packfile())
+			req.Packfile = fixture.Packfile()
+		} else {
+			req.Packfile = s.emptyPackfile()
+		}
 	}
 
 	return conn.Push(ctx, req)
@@ -363,11 +370,8 @@ func (s *ReceivePackSuite) testSendPackAddReference() {
 			{Name: "refs/heads/newbranch", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 		},
 	}
-	// if refs.Capabilities.Supports(capability.ReportStatus) {
-	// 	req.Capabilities.Set(capability.ReportStatus)
-	// }
 
-	s.receivePack(s.Endpoint, req, nil, false)
+	s.receivePack(s.Endpoint, req, fixture, false)
 	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.NewHash(fixture.Head))
 }
 
@@ -393,15 +397,12 @@ func (s *ReceivePackSuite) testSendPackDeleteReference() {
 			{Name: "refs/heads/newbranch", Old: plumbing.NewHash(fixture.Head), New: plumbing.ZeroHash},
 		},
 	}
-	// if refs.Capabilities.Supports(capability.ReportStatus) {
-	// 	req.Capabilities.Set(capability.ReportStatus)
-	// }
 
 	if !caps.Supports(capability.DeleteRefs) {
 		s.Fail("capability delete-refs not supported")
 	}
 
-	s.receivePack(s.Endpoint, req, nil, false)
+	s.receivePack(s.Endpoint, req, fixture, false)
 	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.ZeroHash)
 }
 
