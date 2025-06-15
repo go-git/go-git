@@ -118,6 +118,11 @@ func (s StatusStrategy) new(w *Worktree) (Status, error) {
 	return nil, fmt.Errorf("%w: %+v", ErrUnsupportedStatusStrategy, s)
 }
 
+type NodeWithPath struct {
+	Node noder.Noder
+	Path string
+}
+
 func preloadStatus(w *Worktree) (Status, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
@@ -125,21 +130,32 @@ func preloadStatus(w *Worktree) (Status, error) {
 	}
 
 	idxRoot := mindex.NewRootNode(idx)
-	nodes := []noder.Noder{idxRoot}
+	nodes := []NodeWithPath{{Node: idxRoot, Path: ""}}
 
 	status := make(Status)
 	for len(nodes) > 0 {
-		var node noder.Noder
+		var node NodeWithPath
 		node, nodes = nodes[0], nodes[1:]
-		if node.IsDir() {
-			children, err := node.Children()
+		if node.Node.IsDir() {
+			children, err := node.Node.Children()
 			if err != nil {
 				return nil, err
 			}
-			nodes = append(nodes, children...)
+			childrenWP := []NodeWithPath{}
+			for _, child := range children {
+				var path string
+				if node.Path == "" {
+					path = child.Name()
+				} else {
+					path = node.Path + "/" + child.Name()
+				}
+				nodeWP := NodeWithPath{Node: child, Path: path}
+				childrenWP = append(childrenWP, nodeWP)
+			}
+			nodes = append(nodes, childrenWP...)
 			continue
 		}
-		fs := status.File(node.Name())
+		fs := status.File(node.Path)
 		fs.Worktree = Unmodified
 		fs.Staging = Unmodified
 	}
