@@ -284,6 +284,7 @@ change
 		newCommit := &Commit{}
 		err = newCommit.Decode(obj)
 		s.NoError(err)
+		newCommit.headersRaw = nil // Clear raw headers to avoid comparison issues
 		commit.Hash = obj.Hash()
 		s.Equal(commit, newCommit)
 	}
@@ -372,6 +373,7 @@ func (s *SuiteCommit) TestPGPSignatureSerialization() {
 	encoded := &plumbing.MemoryObject{}
 	decoded := &Commit{}
 	commit := *s.Commit
+	commit.headersRaw = nil // Clear raw headers to force re-encoding
 
 	pgpsignature := `-----BEGIN PGP SIGNATURE-----
 
@@ -632,4 +634,40 @@ func (s *SuiteCommit) TestLess() {
 		}
 		s.Equal(t.Exp, commit1.Less(commit2))
 	}
+}
+
+func (s *SuiteCommit) TestDecodeChangeID() {
+	obj := s.Storer.NewEncodedObject()
+	obj.SetType(plumbing.CommitObject)
+
+	wr, err := obj.Writer()
+	s.NoError(err)
+
+	content := `tree 3f348705592aaca76552a2a4342710d429c9d716
+parent 4f95dc6c993653228cb197aa30c9775f0f67f90d
+parent bf0bb78d2479b593f61bb3cc1d189e1579ea4509
+author Paulo Gomes <pjbgf@linux.com> 1748990462 +0100
+committer GitHub <noreply@github.com> 1748990462 +0100
+commit-id yqoqvnmqmuowmtzrptnprqwvowxoppwp
+
+`
+
+	_, err = wr.Write([]byte(content))
+	s.NoError(err)
+
+	c, err := DecodeCommit(s.Storer, obj)
+	s.NoError(err)
+
+	s.Equal("3f348705592aaca76552a2a4342710d429c9d716", c.TreeHash.String())
+
+	encoded := &plumbing.MemoryObject{}
+	err = c.EncodeWithoutSignature(encoded)
+	s.NoError(err)
+	r, err := encoded.Reader()
+	s.NoError(err)
+
+	payload, err := io.ReadAll(r)
+	s.NoError(err)
+
+	s.Equal(content, string(payload))
 }
