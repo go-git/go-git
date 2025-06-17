@@ -17,24 +17,29 @@ import (
 func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateRequests {
 	upreq := packp.NewUpdateRequests()
 
-	// Prepare the request and capabilities
-	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) // nolint: errcheck
-	}
-	if caps.Supports(capability.ReportStatus) {
-		upreq.Capabilities.Set(capability.ReportStatus) // nolint: errcheck
-	}
-	if req.Progress != nil {
-		if caps.Supports(capability.Sideband64k) {
-			upreq.Capabilities.Set(capability.Sideband64k) // nolint: errcheck
-		} else if caps.Supports(capability.Sideband) {
-			upreq.Capabilities.Set(capability.Sideband) // nolint: errcheck
+	// The reference discovery phase is done nearly the same way as it is in
+	// the fetching protocol. Each reference obj-id and name on the server is
+	// sent in packet-line format to the client, followed by a flush-pkt. The
+	// only real difference is that the capability listing is different - the
+	// only possible values are report-status, report-status-v2, delete-refs,
+	// ofs-delta, atomic and push-options.
+	for _, cap := range []capability.Capability{
+		capability.ReportStatus,
+		// TODO: support report-status-v2
+		// capability.ReportStatusV2,
+		capability.DeleteRefs,
+		capability.OFSDelta,
+
+		// This is set later if options are present.
+		// capability.PushOptions,
+	} {
+		if caps.Supports(cap) {
+			upreq.Capabilities.Set(cap) //nolint:errcheck
 		}
-	} else if caps.Supports(capability.NoProgress) {
-		upreq.Capabilities.Set(capability.NoProgress) // nolint: errcheck
 	}
+
 	if req.Atomic && caps.Supports(capability.Atomic) {
-		upreq.Capabilities.Set(capability.Atomic) // nolint: errcheck
+		upreq.Capabilities.Set(capability.Atomic) //nolint:errcheck
 	}
 
 	upreq.Commands = req.Commands
@@ -53,6 +58,21 @@ func SendPack(
 ) error {
 	writer = ioutil.NewContextWriteCloser(ctx, writer)
 	reader = ioutil.NewContextReadCloser(ctx, reader)
+
+	var needPackfile bool
+	for _, cmd := range req.Commands {
+		if cmd.Action() != packp.Delete {
+			needPackfile = true
+			break
+		}
+	}
+
+	if !needPackfile && req.Packfile != nil {
+		return fmt.Errorf("packfile is not accepted for push request without new objects")
+	}
+	if needPackfile && req.Packfile == nil {
+		return fmt.Errorf("packfile is required for push request with new objects")
+	}
 
 	caps := conn.Capabilities()
 	upreq := buildUpdateRequests(caps, req)

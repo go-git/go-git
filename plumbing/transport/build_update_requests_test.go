@@ -75,8 +75,8 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 
 	upreq := buildUpdateRequests(caps, req)
 
-	// Verify Sideband64k capability is set
-	assert.True(t, upreq.Capabilities.Supports(capability.Sideband64k))
+	// Verify Sideband64k capability is not set
+	assert.False(t, upreq.Capabilities.Supports(capability.Sideband64k))
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband))
 	assert.False(t, upreq.Capabilities.Supports(capability.NoProgress))
 }
@@ -99,9 +99,9 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 
 	upreq := buildUpdateRequests(caps, req)
 
-	// Verify Sideband capability is set but not Sideband64k
+	// Verify Sideband capability is not set but not Sideband64k
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband64k))
-	assert.True(t, upreq.Capabilities.Supports(capability.Sideband))
+	assert.False(t, upreq.Capabilities.Supports(capability.Sideband))
 	assert.False(t, upreq.Capabilities.Supports(capability.NoProgress))
 }
 
@@ -122,8 +122,8 @@ func TestBuildUpdateRequestsWithNoProgress(t *testing.T) {
 
 	upreq := buildUpdateRequests(caps, req)
 
-	// Verify NoProgress capability is set
-	assert.True(t, upreq.Capabilities.Supports(capability.NoProgress))
+	// Verify NoProgress capability is not set
+	assert.False(t, upreq.Capabilities.Supports(capability.NoProgress))
 }
 
 func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
@@ -184,12 +184,8 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 
 	upreq := buildUpdateRequests(caps, req)
 
-	// Verify Agent capability is set
-	assert.True(t, upreq.Capabilities.Supports(capability.Agent))
-
-	// Verify agent value is set to default agent
-	val := upreq.Capabilities.Get(capability.Agent)
-	assert.Equal(t, []string{capability.DefaultAgent()}, val)
+	// Verify Agent capability is not set
+	assert.False(t, upreq.Capabilities.Supports(capability.Agent))
 }
 
 // mockWriter is a simple io.Writer implementation for testing

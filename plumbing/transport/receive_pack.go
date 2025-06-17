@@ -38,6 +38,8 @@ func ReceivePack(
 		return fmt.Errorf("nil writer")
 	}
 
+	w = ioutil.NewContextWriteCloser(ctx, w)
+
 	if opts == nil {
 		opts = &ReceivePackOptions{}
 	}
@@ -67,6 +69,8 @@ func ReceivePack(
 	if r == nil {
 		return fmt.Errorf("nil reader")
 	}
+
+	r = ioutil.NewContextReadCloser(ctx, r)
 
 	rd := bufio.NewReader(r)
 	l, _, err := pktline.PeekLine(rd)
@@ -100,7 +104,7 @@ func ReceivePack(
 
 	// Should we expect a packfile?
 	for _, cmd := range updreq.Commands {
-		if cmd.New != plumbing.ZeroHash {
+		if cmd.Action() != packp.Delete {
 			needPackfile = true
 			break
 		}
