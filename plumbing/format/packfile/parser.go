@@ -330,7 +330,7 @@ func (p *Parser) resolveDeltas() error {
 			return err
 		}
 
-		if err := p.onInflatedObjectContent(obj.SHA1, obj.Offset, obj.Crc32, nil); err != nil {
+		if err := p.onInflatedObjectContent(obj.SHA1, obj.Offset, obj.Crc32, buf.Bytes()); err != nil {
 			return err
 		}
 
