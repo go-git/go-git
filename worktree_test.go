@@ -622,8 +622,16 @@ func (s *WorktreeSuite) TestCheckoutRelativePathSubmoduleInitialized() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	w.Add(".gitmodules")
-	w.Commit("test", &CommitOptions{})
+	_, err = w.Add(".gitmodules")
+	s.NoError(err)
+	_, err = w.Commit("test", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	s.NoError(err)
 
 	// test submodule path
 	modules, err := w.readGitmodulesFile()
