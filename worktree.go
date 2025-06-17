@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/sync"
@@ -897,6 +900,118 @@ func (w *Worktree) Submodule(name string) (*Submodule, error) {
 	return nil, ErrSubmoduleNotFound
 }
 
+// isRelativeURL checks if the given URL is a relative path
+func isRelativeURL(url string) bool {
+	return strings.HasPrefix(url, "../") || strings.HasPrefix(url, "./")
+}
+
+// resolveRelativeSubmoduleURL resolves relative submodule URLs against the origin remote URL
+// It expects a relative URL and will return an error if the URL is not relative
+func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, error) {
+	// Get origin remote
+	remotes, err := w.r.Remotes()
+	if err != nil {
+		return "", err
+	}
+
+	var originRemote *Remote
+	for _, remote := range remotes {
+		if remote.Config().Name == "origin" {
+			originRemote = remote
+			break
+		}
+	}
+
+	if originRemote == nil || len(originRemote.Config().URLs) == 0 {
+		return "", fmt.Errorf("no origin remote found to resolve relative URL: %s", relativeURL)
+	}
+
+	// Parse the origin URL
+	originURL := originRemote.Config().URLs[0]
+	baseEndpoint, err := transport.NewEndpoint(originURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Handle different protocols
+	switch baseEndpoint.Protocol {
+	case "https", "http":
+		// For HTTPS/HTTP URLs like https://github.com/user/repo.git
+		base, err := url.Parse(originURL)
+		if err != nil {
+			return "", err
+		}
+
+		// Remove .git suffix if present to get the directory path
+		base.Path = strings.TrimSuffix(base.Path, ".git")
+
+		// Ensure the path ends with a slash for proper relative resolution
+		if !strings.HasSuffix(base.Path, "/") {
+			base.Path += "/"
+		}
+
+		// Resolve relative path
+		resolved, err := url.Parse(relativeURL)
+		if err != nil {
+			return "", err
+		}
+
+		resolvedURL := base.ResolveReference(resolved)
+
+		resolvedURL.Path = strings.TrimSuffix(resolvedURL.Path, "/")
+		if !strings.HasSuffix(resolvedURL.Path, ".git") {
+			resolvedURL.Path += ".git"
+		}
+
+		return resolvedURL.String(), nil
+
+	case "ssh":
+		// For SSH URLs like git@github.com:user/repo.git
+		if baseEndpoint.Host == "" || baseEndpoint.Path == "" {
+			return "", fmt.Errorf("invalid SSH URL format for origin: %s", originURL)
+		}
+
+		basePath := strings.TrimSuffix(baseEndpoint.Path, ".git")
+		pathParts := strings.Split(basePath, "/")
+
+		relativeParts := strings.Split(relativeURL, "/")
+		for _, part := range relativeParts {
+			if part == ".." && len(pathParts) > 0 {
+				pathParts = pathParts[:len(pathParts)-1]
+			} else if part != "." && part != "" {
+				pathParts = append(pathParts, part)
+			}
+		}
+
+		newPath := strings.Join(pathParts, "/")
+		if !strings.HasSuffix(newPath, ".git") {
+			newPath += ".git"
+		}
+
+		if baseEndpoint.User != "" {
+			return fmt.Sprintf("%s@%s:%s", baseEndpoint.User, baseEndpoint.Host, newPath), nil
+		}
+		return fmt.Sprintf("%s:%s", baseEndpoint.Host, newPath), nil
+
+	case "file":
+		// For file:// URLs like file:///path/to/repo.git
+		basePath := strings.TrimSuffix(baseEndpoint.Path, ".git")
+		relativePathClean := strings.TrimSuffix(relativeURL, ".git")
+
+		resolvedPath := path.Join(basePath, relativePathClean)
+
+		if !strings.HasSuffix(resolvedPath, ".git") {
+			resolvedPath += ".git"
+		}
+
+		return fmt.Sprintf("file://%s", resolvedPath), nil
+
+	default:
+		// For other protocols, we don't support relative URL resolution
+		return "", fmt.Errorf("relative URL resolution not supported for protocol: %s", baseEndpoint.Protocol)
+	}
+}
+
 // Submodules returns all the available submodules
 func (w *Worktree) Submodules() (Submodules, error) {
 	l := make(Submodules, 0)
@@ -911,7 +1026,27 @@ func (w *Worktree) Submodules() (Submodules, error) {
 	}
 
 	for _, s := range m.Submodules {
-		l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
+		// Create a copy to avoid modifying the original submodule data
+		submoduleCopy := *s
+
+		var configCopy *config.Submodule
+		if c.Submodules[s.Name] != nil {
+			configCopyVal := *c.Submodules[s.Name]
+			configCopy = &configCopyVal
+		}
+
+		if s.URL != "" && isRelativeURL(s.URL) {
+			resolvedURL, err := w.resolveRelativeSubmoduleURL(s.URL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve relative submodule URL %q: %w", s.URL, err)
+			}
+			submoduleCopy.URL = resolvedURL
+			if configCopy != nil {
+				configCopy.URL = resolvedURL
+			}
+		}
+
+		l = append(l, w.newSubmodule(&submoduleCopy, configCopy))
 	}
 
 	return l, nil
