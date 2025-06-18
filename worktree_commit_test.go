@@ -42,7 +42,7 @@ func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	_, err = w.Add("foo")
 	s.NoError(err)
 
-	hash, err := w.Commit("foo", &CommitOptions{})
+	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
 	s.NoError(err)
 	s.False(hash.IsZero())
 
@@ -226,7 +226,7 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 	_, err = w.Add("bar")
 	s.NoError(err)
 
-	amendedHash, err := w.Commit("bar\n", &CommitOptions{Amend: true})
+	amendedHash, err := w.Commit("bar\n", &CommitOptions{Author: defaultSignature(), Amend: true})
 	s.NoError(err)
 
 	headRef, err := w.r.Head()

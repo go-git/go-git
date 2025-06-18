@@ -623,7 +623,7 @@ func (s *WorktreeSuite) TestCheckoutRelativePathSubmoduleInitialized() {
 	s.NoError(err)
 
 	w.Add(".gitmodules")
-	w.Commit("test", &CommitOptions{})
+	w.Commit("test", &CommitOptions{Author: defaultSignature()})
 
 	// test submodule path
 	modules, err := w.readGitmodulesFile()
