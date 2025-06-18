@@ -901,8 +901,8 @@ func (w *Worktree) Submodule(name string) (*Submodule, error) {
 }
 
 // isRelativeURL checks if the given URL is a relative path
-func isRelativeURL(url string) bool {
-	return strings.HasPrefix(url, "../") || strings.HasPrefix(url, "./")
+func isRelativeURL(rawURL string) bool {
+	return strings.HasPrefix(rawURL, "../") || strings.HasPrefix(rawURL, "./")
 }
 
 // resolveRelativeSubmoduleURL resolves relative submodule URLs against the origin remote URL
@@ -933,6 +933,7 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 		return "", err
 	}
 
+	// Handle different protocols
 	switch baseEndpoint.Protocol {
 	case "https", "http":
 		// For HTTPS/HTTP URLs like https://github.com/user/repo.git
@@ -941,12 +942,15 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 			return "", err
 		}
 
+		// Remove .git suffix if present to get the directory path
 		base.Path = strings.TrimSuffix(base.Path, ".git")
 
+		// Ensure the path ends with a slash for proper relative resolution
 		if !strings.HasSuffix(base.Path, "/") {
 			base.Path += "/"
 		}
 
+		// Resolve relative path
 		resolved, err := url.Parse(relativeURL)
 		if err != nil {
 			return "", err
@@ -984,10 +988,12 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 
 	case "file":
 		// For file:// URLs like file:///path/to/repo.git
-		basePath := strings.TrimSuffix(baseEndpoint.Path, ".git")
-		relativePathClean := strings.TrimSuffix(relativeURL, ".git")
+		if !strings.HasSuffix(relativeURL, ".git") {
+			return "", fmt.Errorf("file:// protocol requires .git suffix, got: %s", relativeURL)
+		}
 
-		resolvedPath := path.Join(basePath, relativePathClean)
+		baseDir := path.Dir(baseEndpoint.Path)
+		resolvedPath := path.Join(baseDir, relativeURL)
 
 		return fmt.Sprintf("file://%s", resolvedPath), nil
 
@@ -1011,18 +1017,29 @@ func (w *Worktree) Submodules() (Submodules, error) {
 	}
 
 	for _, s := range m.Submodules {
-		// Create a copy to avoid modifying the original submodule data
-		submoduleCopy := *s
-
-		if s.URL != "" && isRelativeURL(s.URL) {
-			resolvedURL, err := w.resolveRelativeSubmoduleURL(s.URL)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve relative submodule URL %q: %w", s.URL, err)
-			}
-			submoduleCopy.URL = resolvedURL
+		if s.URL == "" || !isRelativeURL(s.URL) {
+			l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
+			continue
 		}
 
-		l = append(l, w.newSubmodule(&submoduleCopy, c.Submodules[s.Name]))
+		// Create a copy to avoid modifying the original submodule data
+		submoduleCopy := *s
+		var configCopy *config.Submodule
+		if c.Submodules[s.Name] != nil {
+			configCopyVal := *c.Submodules[s.Name]
+			configCopy = &configCopyVal
+		}
+
+		resolvedURL, err := w.resolveRelativeSubmoduleURL(s.URL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve relative submodule URL %q: %w", s.URL, err)
+		}
+		submoduleCopy.URL = resolvedURL
+		if configCopy != nil {
+			configCopy.URL = resolvedURL
+		}
+
+		l = append(l, w.newSubmodule(&submoduleCopy, configCopy))
 	}
 
 	return l, nil

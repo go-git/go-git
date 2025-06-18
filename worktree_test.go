@@ -1670,6 +1670,33 @@ func (s *WorktreeSuite) TestSubmodulesWithRelativeURLNoOrigin() {
 	s.Contains(err.Error(), "no origin remote found")
 }
 
+func (s *WorktreeSuite) TestSubmodulesWithRelativeURLFileProtocolNoGitSuffix() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"file:///home/user/parent-repo.git"},
+	})
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	gitmodulesContent := `[submodule "relative"]
+	path = relative
+	url = ../relative-repo`
+
+	err = util.WriteFile(fs, ".gitmodules", []byte(gitmodulesContent), 0644)
+	s.NoError(err)
+
+	_, err = w.Submodules()
+	s.Error(err)
+	s.Contains(err.Error(), "failed to resolve relative submodule URL")
+	s.Contains(err.Error(), "file:// protocol requires .git suffix")
+}
+
 func (s *WorktreeSuite) TestAddUntracked() {
 	fs := memfs.New()
 	w := &Worktree{
