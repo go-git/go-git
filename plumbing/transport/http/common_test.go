@@ -225,7 +225,7 @@ func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
 	return ep
 }
 
-func setupServer(t testing.TB, smart bool) (server *http.Server, base string, port int) {
+func setupServer(t testing.TB, smart bool) (base string, port int) {
 	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
@@ -239,6 +239,7 @@ func setupServer(t testing.TB, smart bool) (server *http.Server, base string, po
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err)
 
+	var server *http.Server
 	if smart {
 		server = &http.Server{
 			// TODO: Implement a go-git middleware and use it here.
@@ -253,10 +254,10 @@ func setupServer(t testing.TB, smart bool) (server *http.Server, base string, po
 		}
 	}
 
+	t.Cleanup(func() { require.NoError(t, server.Close()) })
+
 	go func() {
-		if err := server.Serve(l); err != http.ErrServerClosed {
-			t.Fatalf("error http starting server: %v", err)
-		}
+		require.ErrorIs(t, server.Serve(l), http.ErrServerClosed)
 	}()
 
 	return

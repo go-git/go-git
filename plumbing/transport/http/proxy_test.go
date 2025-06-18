@@ -33,8 +33,7 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	defer httpListener.Close()
 	defer proxyServer.Close()
 
-	server, base, port := setupServer(s.T(), true)
-	defer server.Close()
+	base, port := setupServer(s.T(), true)
 
 	endpoint := newEndpoint(s.T(), port, "basic.git")
 	dotgit := ttest.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")

@@ -1,7 +1,6 @@
 package http
 
 import (
-	"net/http"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -18,7 +17,6 @@ import (
 
 type DumbSuite struct {
 	test.UploadPackSuite
-	server *http.Server
 }
 
 func TestDumbSuite(t *testing.T) {
@@ -27,8 +25,7 @@ func TestDumbSuite(t *testing.T) {
 }
 
 func (s *DumbSuite) SetupTest() {
-	server, base, port := setupServer(s.T(), false)
-	s.server = server
+	base, port := setupServer(s.T(), false)
 
 	s.Client = NewTransport(&TransportOptions{
 		// Set to true to use the dumb transport.
@@ -51,10 +48,6 @@ func (s *DumbSuite) SetupTest() {
 	s.Require().NoError(err)
 	err = transport.UpdateServerInfo(s.EmptyStorer, empty)
 	s.Require().NoError(err)
-}
-
-func (s *DumbSuite) TearDownTest() {
-	s.Require().NoError(s.server.Close())
 }
 
 // The following tests are not applicable to the dumb transport as it does not

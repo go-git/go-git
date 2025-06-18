@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"testing"
 
@@ -21,12 +20,10 @@ func TestUploadPackSuite(t *testing.T) {
 
 type UploadPackSuite struct {
 	test.UploadPackSuite
-	server *http.Server
 }
 
 func (s *UploadPackSuite) SetupTest() {
-	server, base, port := setupServer(s.T(), true)
-	s.server = server
+	base, port := setupServer(s.T(), true)
 
 	s.Client = DefaultTransport
 
@@ -41,10 +38,6 @@ func (s *UploadPackSuite) SetupTest() {
 
 	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
 	s.NonExistentStorer = memory.NewStorage()
-}
-
-func (s *UploadPackSuite) TearDownTest() {
-	s.Require().NoError(s.server.Close())
 }
 
 // Overwritten, different behaviour for HTTP.

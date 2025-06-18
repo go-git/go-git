@@ -1,7 +1,6 @@
 package http
 
 import (
-	"net/http"
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
@@ -17,12 +16,10 @@ func TestReceivePackSuite(t *testing.T) {
 
 type ReceivePackSuite struct {
 	test.ReceivePackSuite
-	server *http.Server
 }
 
 func (s *ReceivePackSuite) SetupTest() {
-	server, base, port := setupServer(s.T(), true)
-	s.server = server
+	base, port := setupServer(s.T(), true)
 
 	s.Client = DefaultTransport
 
@@ -36,8 +33,4 @@ func (s *ReceivePackSuite) SetupTest() {
 	s.EmptyStorer = filesystem.NewStorage(empty, nil)
 
 	s.NonExistentEndpoint = newEndpoint(s.T(), port, "non-existent.git")
-}
-
-func (s *ReceivePackSuite) TearDownTest() {
-	s.Require().NoError(s.server.Close())
 }
