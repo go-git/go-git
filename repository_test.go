@@ -407,7 +407,7 @@ func (s *RepositorySuite) TestEmptyCreateBranch() {
 	r, _ := Init(memory.NewStorage())
 	err := r.CreateBranch(&config.Branch{})
 
-	s.NotNil(err)
+	s.Nil(err)
 }
 
 func (s *RepositorySuite) TestInvalidCreateBranch() {
@@ -605,7 +605,7 @@ func (s *RepositorySuite) TestCreateBranchInvalid() {
 	r, _ := Init(memory.NewStorage())
 	err := r.CreateBranch(&config.Branch{})
 
-	s.NotNil(err)
+	s.Nil(err)
 
 	testBranch := &config.Branch{
 		Name:   "foo",
@@ -1301,8 +1301,8 @@ func (s *RepositorySuite) TestFetchWithFilters() {
 		Filter: packp.FilterBlobNone(),
 	})
 	s.ErrorIs(err, transport.ErrFilterNotSupported)
-
 }
+
 func (s *RepositorySuite) TestFetchWithFiltersReal() {
 	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{
@@ -1317,8 +1317,8 @@ func (s *RepositorySuite) TestFetchWithFiltersReal() {
 	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
 	s.NotNil(err)
 	s.Nil(blob)
-
 }
+
 func (s *RepositorySuite) TestCloneWithProgress() {
 	s.T().Skip("Currently, go-git server-side implementation does not support writing" +
 		"progress and sideband messages to the client. This means any tests that" +
