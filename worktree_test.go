@@ -622,8 +622,16 @@ func (s *WorktreeSuite) TestCheckoutRelativePathSubmoduleInitialized() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	w.Add(".gitmodules")
-	w.Commit("test", &CommitOptions{})
+	_, err = w.Add(".gitmodules")
+	s.NoError(err)
+	_, err = w.Commit("test", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	s.NoError(err)
 
 	// test submodule path
 	modules, err := w.readGitmodulesFile()
@@ -1583,6 +1591,109 @@ func (s *WorktreeSuite) TestSubmodules() {
 	s.NoError(err)
 
 	s.Len(l, 2)
+}
+
+func (s *WorktreeSuite) TestSubmodulesWithMixedURLs() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"https://github.com/user/parent-repo.git"},
+	})
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	gitmodulesContent := `[submodule "relative"]
+	path = relative
+	url = ../relative-repo.git
+[submodule "absolute-https"]
+	path = absolute-https
+	url = https://github.com/other/absolute-repo.git
+[submodule "absolute-ssh"]
+	path = absolute-ssh
+	url = git@github.com:another/ssh-repo.git
+[submodule "absolute-file"]
+	path = absolute-file
+	url = file:///path/to/file-repo.git`
+
+	err = util.WriteFile(fs, ".gitmodules", []byte(gitmodulesContent), 0644)
+	s.NoError(err)
+
+	submodules, err := w.Submodules()
+	s.NoError(err)
+	s.Len(submodules, 4)
+
+	// Create a map for easy lookup by name
+	submoduleMap := make(map[string]*Submodule)
+	for _, sub := range submodules {
+		submoduleMap[sub.Config().Name] = sub
+	}
+
+	// Expected results: relative URL should be resolved, absolute URLs preserved
+	expectedResults := map[string]string{
+		"relative":       "https://github.com/user/relative-repo.git",
+		"absolute-https": "https://github.com/other/absolute-repo.git",
+		"absolute-ssh":   "git@github.com:another/ssh-repo.git",
+		"absolute-file":  "file:///path/to/file-repo.git",
+	}
+
+	// Verify each submodule has correct path and URL
+	for name, expectedURL := range expectedResults {
+		sub := submoduleMap[name]
+		s.Equal(name, sub.Config().Path)
+		s.Equal(expectedURL, sub.Config().URL)
+	}
+}
+
+func (s *WorktreeSuite) TestSubmodulesWithRelativeURLNoOrigin() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	gitmodulesContent := `[submodule "relative"]
+	path = relative
+	url = ../relative-repo.git`
+
+	err = util.WriteFile(fs, ".gitmodules", []byte(gitmodulesContent), 0644)
+	s.NoError(err)
+
+	_, err = w.Submodules()
+	s.Error(err)
+	s.Contains(err.Error(), "no origin remote found")
+}
+
+func (s *WorktreeSuite) TestSubmodulesWithRelativeURLFileProtocolNoGitSuffix() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"file:///home/user/parent-repo.git"},
+	})
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	gitmodulesContent := `[submodule "relative"]
+	path = relative
+	url = ../relative-repo`
+
+	err = util.WriteFile(fs, ".gitmodules", []byte(gitmodulesContent), 0644)
+	s.NoError(err)
+
+	_, err = w.Submodules()
+	s.Error(err)
+	s.Contains(err.Error(), "failed to resolve relative submodule URL")
+	s.Contains(err.Error(), "file:// protocol requires .git suffix")
 }
 
 func (s *WorktreeSuite) TestAddUntracked() {
