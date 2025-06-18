@@ -12,7 +12,7 @@ import (
 // put its name in double quotes, separated by space from the section name,
 // in the section header, like in the example below:
 //
-//     [section "subsection"]
+//	[section "subsection"]
 //
 // All the other lines (and the remainder of the line after the section header)
 // are recognized as option variables, in the form "name = value" (or just name,
@@ -20,12 +20,11 @@ import (
 // The variable names are case-insensitive, allow only alphanumeric characters
 // and -, and must start with an alphabetic character:
 //
-//     [section "subsection1"]
-//         option1 = value1
-//         option2
-//     [section "subsection2"]
-//         option3 = value2
-//
+//	[section "subsection1"]
+//	    option1 = value1
+//	    option2
+//	[section "subsection2"]
+//	    option3 = value2
 type Section struct {
 	Name        string
 	Options     Options
@@ -133,7 +132,20 @@ func (s *Section) SetOption(key string, value string) *Section {
 	return s
 }
 
-// Remove an option with the specified key. The updated Section is returned.
+// GetOption gets the value of a named Option from the Section. If the option does not exist or is
+// not set, it returns the empty string. Note that there is no difference. This matches git behaviour
+// since git v1.8.1-rc1, if there are multiple definitions of a key, the last one wins.
+func (s *Section) GetOption(key string) string {
+	return s.Options.Get(key)
+}
+
+// GetAllOptions gets all the values of a named Option from the Section. If the option does not
+// exist or is not set, it returns an empty slice. This matches git behaviour since git v1.8.1-rc1.
+func (s *Section) GetAllOptions(key string) []string {
+	return s.Options.GetAll(key)
+}
+
+// RemoveOption removes an option with the specified key. The updated Section is returned.
 func (s *Section) RemoveOption(key string) *Section {
 	s.Options = s.Options.withoutOption(key)
 	return s
@@ -172,6 +184,19 @@ func (s *Subsection) AddOption(key string, value string) *Subsection {
 func (s *Subsection) SetOption(key string, value ...string) *Subsection {
 	s.Options = s.Options.withSettedOption(key, value...)
 	return s
+}
+
+// GetOption gets the value of a named Option from the Subsection. If the option does not exist or is
+// not set, it returns the empty string. Note that there is no difference. This matches git behaviour
+// since git v1.8.1-rc1, if there are multiple definitions of a key, the last one wins.
+func (s *Subsection) GetOption(key string) string {
+	return s.Options.Get(key)
+}
+
+// GetAllOptions gets all the values of a named Option from the Subsection. If the option does not
+// exist or is not set, it returns an empty slice. This matches git behaviour since git v1.8.1-rc1.
+func (s *Subsection) GetAllOptions(key string) []string {
+	return s.Options.GetAll(key)
 }
 
 // RemoveOption removes the option with the specified key. The updated Subsection is returned.
