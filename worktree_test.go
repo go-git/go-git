@@ -1666,7 +1666,6 @@ func (s *WorktreeSuite) TestSubmodulesWithRelativeURLNoOrigin() {
 
 	_, err = w.Submodules()
 	s.Error(err)
-	s.Contains(err.Error(), "failed to resolve relative submodule URL")
 	s.Contains(err.Error(), "no origin remote found")
 }
 

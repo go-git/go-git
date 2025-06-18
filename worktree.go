@@ -905,10 +905,76 @@ func isRelativeURL(rawURL string) bool {
 	return strings.HasPrefix(rawURL, "../") || strings.HasPrefix(rawURL, "./")
 }
 
-// resolveRelativeSubmoduleURL resolves relative submodule URLs against the origin remote URL
-// It expects a relative URL and will return an error if the URL is not relative
-func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, error) {
-	// Get origin remote
+// resolveHTTPRelativeURL resolves relative URLs for HTTP/HTTPS protocols
+func (w *Worktree) resolveHTTPRelativeURL(originURL, relativeURL string) (string, error) {
+	// For HTTPS/HTTP URLs like https://github.com/user/repo.git
+	base, err := url.Parse(originURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Remove .git suffix if present to get the directory path
+	base.Path = strings.TrimSuffix(base.Path, ".git")
+
+	// Ensure the path ends with a slash for proper relative resolution
+	if !strings.HasSuffix(base.Path, "/") {
+		base.Path += "/"
+	}
+
+	// Resolve relative path
+	resolved, err := url.Parse(relativeURL)
+	if err != nil {
+		return "", err
+	}
+
+	resolvedURL := base.ResolveReference(resolved)
+	resolvedURL.Path = strings.TrimSuffix(resolvedURL.Path, "/")
+
+	return resolvedURL.String(), nil
+}
+
+// resolveSSHRelativeURL resolves relative URLs for SSH protocol
+func (w *Worktree) resolveSSHRelativeURL(baseEndpoint *transport.Endpoint, relativeURL, originURL string) (string, error) {
+	// For SSH URLs like git@github.com:user/repo.git
+	if baseEndpoint.Host == "" || baseEndpoint.Path == "" {
+		return "", fmt.Errorf("invalid SSH URL format for origin: %s", originURL)
+	}
+
+	basePath := strings.TrimSuffix(baseEndpoint.Path, ".git")
+	pathParts := strings.Split(basePath, "/")
+
+	relativeParts := strings.Split(relativeURL, "/")
+	for _, part := range relativeParts {
+		if part == ".." && len(pathParts) > 0 {
+			pathParts = pathParts[:len(pathParts)-1]
+		} else if part != "." && part != "" {
+			pathParts = append(pathParts, part)
+		}
+	}
+
+	newPath := strings.Join(pathParts, "/")
+
+	if baseEndpoint.User != "" {
+		return fmt.Sprintf("%s@%s:%s", baseEndpoint.User, baseEndpoint.Host, newPath), nil
+	}
+	return fmt.Sprintf("%s:%s", baseEndpoint.Host, newPath), nil
+}
+
+// resolveFileRelativeURL resolves relative URLs for file:// protocol
+func (w *Worktree) resolveFileRelativeURL(baseEndpoint *transport.Endpoint, relativeURL string) (string, error) {
+	// For file:// URLs like file:///path/to/repo.git
+	if !strings.HasSuffix(relativeURL, ".git") {
+		return "", fmt.Errorf("file:// protocol requires .git suffix, got: %s", relativeURL)
+	}
+
+	baseDir := path.Dir(baseEndpoint.Path)
+	resolvedPath := path.Join(baseDir, relativeURL)
+
+	return fmt.Sprintf("file://%s", resolvedPath), nil
+}
+
+// getOriginRemoteURL extracts the origin remote URL for reuse
+func (w *Worktree) getOriginRemoteURL() (string, error) {
 	remotes, err := w.r.Remotes()
 	if err != nil {
 		return "", err
@@ -916,18 +982,29 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 
 	var originRemote *Remote
 	for _, remote := range remotes {
-		if remote.Config().Name == "origin" {
+		if remote.c.Name == "origin" {
 			originRemote = remote
 			break
 		}
 	}
 
-	if originRemote == nil || len(originRemote.Config().URLs) == 0 {
-		return "", fmt.Errorf("no origin remote found to resolve relative URL: %s", relativeURL)
+	if originRemote == nil {
+		return "", fmt.Errorf("no origin remote found")
 	}
 
-	// Parse the origin URL
-	originURL := originRemote.Config().URLs[0]
+	if len(originRemote.c.URLs) == 0 {
+		return "", fmt.Errorf("origin remote has no URLs configured")
+	}
+
+	return originRemote.c.URLs[0], nil
+}
+
+// resolveRelativeSubmoduleURL resolves relative URLs using a pre-fetched origin URL
+func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL, originURL string) (string, error) {
+	if !isRelativeURL(relativeURL) {
+		return "", fmt.Errorf("URL is not relative: %s", relativeURL)
+	}
+
 	baseEndpoint, err := transport.NewEndpoint(originURL)
 	if err != nil {
 		return "", err
@@ -936,67 +1013,11 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 	// Handle different protocols
 	switch baseEndpoint.Protocol {
 	case "https", "http":
-		// For HTTPS/HTTP URLs like https://github.com/user/repo.git
-		base, err := url.Parse(originURL)
-		if err != nil {
-			return "", err
-		}
-
-		// Remove .git suffix if present to get the directory path
-		base.Path = strings.TrimSuffix(base.Path, ".git")
-
-		// Ensure the path ends with a slash for proper relative resolution
-		if !strings.HasSuffix(base.Path, "/") {
-			base.Path += "/"
-		}
-
-		// Resolve relative path
-		resolved, err := url.Parse(relativeURL)
-		if err != nil {
-			return "", err
-		}
-
-		resolvedURL := base.ResolveReference(resolved)
-		resolvedURL.Path = strings.TrimSuffix(resolvedURL.Path, "/")
-
-		return resolvedURL.String(), nil
-
+		return w.resolveHTTPRelativeURL(originURL, relativeURL)
 	case "ssh":
-		// For SSH URLs like git@github.com:user/repo.git
-		if baseEndpoint.Host == "" || baseEndpoint.Path == "" {
-			return "", fmt.Errorf("invalid SSH URL format for origin: %s", originURL)
-		}
-
-		basePath := strings.TrimSuffix(baseEndpoint.Path, ".git")
-		pathParts := strings.Split(basePath, "/")
-
-		relativeParts := strings.Split(relativeURL, "/")
-		for _, part := range relativeParts {
-			if part == ".." && len(pathParts) > 0 {
-				pathParts = pathParts[:len(pathParts)-1]
-			} else if part != "." && part != "" {
-				pathParts = append(pathParts, part)
-			}
-		}
-
-		newPath := strings.Join(pathParts, "/")
-
-		if baseEndpoint.User != "" {
-			return fmt.Sprintf("%s@%s:%s", baseEndpoint.User, baseEndpoint.Host, newPath), nil
-		}
-		return fmt.Sprintf("%s:%s", baseEndpoint.Host, newPath), nil
-
+		return w.resolveSSHRelativeURL(baseEndpoint, relativeURL, originURL)
 	case "file":
-		// For file:// URLs like file:///path/to/repo.git
-		if !strings.HasSuffix(relativeURL, ".git") {
-			return "", fmt.Errorf("file:// protocol requires .git suffix, got: %s", relativeURL)
-		}
-
-		baseDir := path.Dir(baseEndpoint.Path)
-		resolvedPath := path.Join(baseDir, relativeURL)
-
-		return fmt.Sprintf("file://%s", resolvedPath), nil
-
+		return w.resolveFileRelativeURL(baseEndpoint, relativeURL)
 	default:
 		// For other protocols, we don't support relative URL resolution
 		return "", fmt.Errorf("relative URL resolution not supported for protocol: %s", baseEndpoint.Protocol)
@@ -1016,6 +1037,18 @@ func (w *Worktree) Submodules() (Submodules, error) {
 		return nil, err
 	}
 
+	// Pre-fetch origin remote for relative URL resolution to avoid repeated lookups
+	var originURL string
+	for _, s := range m.Submodules {
+		if s.URL != "" && isRelativeURL(s.URL) {
+			originURL, err = w.getOriginRemoteURL()
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+
 	for _, s := range m.Submodules {
 		if s.URL == "" || !isRelativeURL(s.URL) {
 			l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
@@ -1023,23 +1056,24 @@ func (w *Worktree) Submodules() (Submodules, error) {
 		}
 
 		// Create a copy to avoid modifying the original submodule data
-		submoduleCopy := *s
-		var configCopy *config.Submodule
+		copiedSubmodule := *s
+
+		var copiedConfig *config.Submodule
 		if c.Submodules[s.Name] != nil {
-			configCopyVal := *c.Submodules[s.Name]
-			configCopy = &configCopyVal
+			tempConfig := *c.Submodules[s.Name]
+			copiedConfig = &tempConfig
 		}
 
-		resolvedURL, err := w.resolveRelativeSubmoduleURL(s.URL)
+		resolvedURL, err := w.resolveRelativeSubmoduleURL(s.URL, originURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve relative submodule URL %q: %w", s.URL, err)
 		}
-		submoduleCopy.URL = resolvedURL
-		if configCopy != nil {
-			configCopy.URL = resolvedURL
+		copiedSubmodule.URL = resolvedURL
+		if copiedConfig != nil {
+			copiedConfig.URL = resolvedURL
 		}
 
-		l = append(l, w.newSubmodule(&submoduleCopy, configCopy))
+		l = append(l, w.newSubmodule(&copiedSubmodule, copiedConfig))
 	}
 
 	return l, nil
