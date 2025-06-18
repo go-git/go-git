@@ -933,7 +933,6 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 		return "", err
 	}
 
-	// Handle different protocols
 	switch baseEndpoint.Protocol {
 	case "https", "http":
 		// For HTTPS/HTTP URLs like https://github.com/user/repo.git
@@ -942,26 +941,19 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 			return "", err
 		}
 
-		// Remove .git suffix if present to get the directory path
 		base.Path = strings.TrimSuffix(base.Path, ".git")
 
-		// Ensure the path ends with a slash for proper relative resolution
 		if !strings.HasSuffix(base.Path, "/") {
 			base.Path += "/"
 		}
 
-		// Resolve relative path
 		resolved, err := url.Parse(relativeURL)
 		if err != nil {
 			return "", err
 		}
 
 		resolvedURL := base.ResolveReference(resolved)
-
 		resolvedURL.Path = strings.TrimSuffix(resolvedURL.Path, "/")
-		if !strings.HasSuffix(resolvedURL.Path, ".git") {
-			resolvedURL.Path += ".git"
-		}
 
 		return resolvedURL.String(), nil
 
@@ -984,9 +976,6 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 		}
 
 		newPath := strings.Join(pathParts, "/")
-		if !strings.HasSuffix(newPath, ".git") {
-			newPath += ".git"
-		}
 
 		if baseEndpoint.User != "" {
 			return fmt.Sprintf("%s@%s:%s", baseEndpoint.User, baseEndpoint.Host, newPath), nil
@@ -999,10 +988,6 @@ func (w *Worktree) resolveRelativeSubmoduleURL(relativeURL string) (string, erro
 		relativePathClean := strings.TrimSuffix(relativeURL, ".git")
 
 		resolvedPath := path.Join(basePath, relativePathClean)
-
-		if !strings.HasSuffix(resolvedPath, ".git") {
-			resolvedPath += ".git"
-		}
 
 		return fmt.Sprintf("file://%s", resolvedPath), nil
 
@@ -1029,24 +1014,15 @@ func (w *Worktree) Submodules() (Submodules, error) {
 		// Create a copy to avoid modifying the original submodule data
 		submoduleCopy := *s
 
-		var configCopy *config.Submodule
-		if c.Submodules[s.Name] != nil {
-			configCopyVal := *c.Submodules[s.Name]
-			configCopy = &configCopyVal
-		}
-
 		if s.URL != "" && isRelativeURL(s.URL) {
 			resolvedURL, err := w.resolveRelativeSubmoduleURL(s.URL)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve relative submodule URL %q: %w", s.URL, err)
 			}
 			submoduleCopy.URL = resolvedURL
-			if configCopy != nil {
-				configCopy.URL = resolvedURL
-			}
 		}
 
-		l = append(l, w.newSubmodule(&submoduleCopy, configCopy))
+		l = append(l, w.newSubmodule(&submoduleCopy, c.Submodules[s.Name]))
 	}
 
 	return l, nil
