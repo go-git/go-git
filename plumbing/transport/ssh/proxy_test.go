@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/armon/go-socks5"
-	ttest "github.com/go-git/go-git/v6/internal/transport/test"
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/stretchr/testify/suite"
 
@@ -33,7 +33,7 @@ func (dr *TestProxyRule) Allow(ctx context.Context, req *socks5.Request) (contex
 // Its located in a separate package because golang caches the value
 // of proxy env vars leading to misleading/unexpected test results.
 func (s *ProxySuite) TestCommand() {
-	socksListener := ttest.ListenTCP(s.T())
+	socksListener := test.ListenTCP(s.T())
 
 	rule := TestProxyRule{}
 	socksServer, err := socks5.New(&socks5.Config{
