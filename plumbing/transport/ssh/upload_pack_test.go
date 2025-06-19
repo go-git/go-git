@@ -87,11 +87,20 @@ func startServer(t testing.TB, opts ...ssh.Option) *net.TCPAddr {
 		opt(server)
 	}
 
+	done := make(chan struct{})
+
 	go func() {
-		require.ErrorIs(t, server.Serve(l), ssh.ErrServerClosed)
+		defer func() { close(done) }()
+		require.ErrorIs(t, server.Serve(l), net.ErrClosed)
 	}()
 
-	t.Cleanup(func() { require.NoError(t, server.Close()) })
+	t.Cleanup(func() {
+		// server.Serve(l) tracks the given listener, and server.Close() closes all tracked listeners.
+		// If the test finishes too early and calls server.Close() before the listener is tracked,
+		// server.Serve() may hang. Therefore, we should close the listener directly.
+		require.NoError(t, l.Close())
+		<-done
+	})
 
 	return l.Addr().(*net.TCPAddr)
 }

@@ -253,11 +253,17 @@ func setupServer(t testing.TB, smart bool) (base string, port int) {
 		}
 	}
 
-	t.Cleanup(func() { require.NoError(t, server.Close()) })
+	done := make(chan struct{})
 
 	go func() {
+		defer func() { close(done) }()
 		require.ErrorIs(t, server.Serve(l), http.ErrServerClosed)
 	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		<-done
+	})
 
 	return
 }

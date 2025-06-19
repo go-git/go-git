@@ -44,8 +44,15 @@ func (s *ProxySuite) TestCommand() {
 	})
 	s.Require().NoError(err)
 
+	done := make(chan struct{})
 	go func() {
+		defer func() { close(done) }()
 		s.Require().ErrorIs(socksServer.Serve(socksListener), net.ErrClosed)
+	}()
+
+	defer func() {
+		s.Require().NoError(socksListener.Close())
+		<-done
 	}()
 
 	socksProxyAddr := fmt.Sprintf("socks5://localhost:%d", socksListener.Addr().(*net.TCPAddr).Port)

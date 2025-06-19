@@ -41,8 +41,7 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTP() {
 
 	setupHTTPProxy(proxy, &proxiedRequests)
 
-	httpProxyAddr, proxyServer := setupProxyServer(s.T(), proxy, false, true)
-	defer proxyServer.Close()
+	httpProxyAddr := setupProxyServer(s.T(), proxy, false, true)
 
 	base, port := setupServer(s.T(), true)
 
@@ -78,8 +77,7 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
 	proxy := goproxy.NewProxyHttpServer()
 	setupHTTPSProxy(proxy, &proxiedRequests)
 
-	httpsProxyAddr, tlsProxyServer := setupProxyServer(s.T(), proxy, true, true)
-	defer tlsProxyServer.Close()
+	httpsProxyAddr := setupProxyServer(s.T(), proxy, true, true)
 
 	endpoint, err := transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
 	s.Require().NoError(err)
@@ -113,7 +111,7 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
 var certs embed.FS
 
 // Make sure you close the server after the test.
-func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool) (string, *http.Server) {
+func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool) string {
 	schema := "http"
 	if isTls {
 		schema = "https"
@@ -157,7 +155,10 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 		proxyServer.TLSConfig = cfg
 	}
 
+	done := make(chan struct{})
+
 	go func() {
+		defer func() { close(done) }()
 		var err error
 		if isTls {
 			err = proxyServer.ServeTLS(httpListener, "", "")
@@ -168,7 +169,12 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 		require.ErrorIs(t, err, http.ErrServerClosed)
 	}()
 
-	return httpProxyAddr, &proxyServer
+	t.Cleanup(func() {
+		require.NoError(t, proxyServer.Close())
+		<-done
+	})
+
+	return httpProxyAddr
 }
 
 func setupHTTPProxy(proxy *goproxy.ProxyHttpServer, proxiedRequests *int32) {
