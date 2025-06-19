@@ -29,8 +29,7 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	proxy.Verbose = true
 	test.SetupHTTPProxy(proxy, &proxiedRequests)
 
-	httpProxyAddr, proxyServer, httpListener := test.SetupProxyServer(s.T(), proxy, false, true)
-	defer httpListener.Close()
+	httpProxyAddr, proxyServer := test.SetupProxyServer(s.T(), proxy, false, true)
 	defer proxyServer.Close()
 
 	base, port := setupServer(s.T(), true)
@@ -61,8 +60,7 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	atomic.StoreInt32(&proxiedRequests, 0)
 	test.SetupHTTPSProxy(proxy, &proxiedRequests)
 
-	httpsProxyAddr, tlsProxyServer, httpsListener := test.SetupProxyServer(s.T(), proxy, true, true)
-	defer httpsListener.Close()
+	httpsProxyAddr, tlsProxyServer := test.SetupProxyServer(s.T(), proxy, true, true)
 	defer tlsProxyServer.Close()
 
 	endpoint, err = transport.NewEndpoint("https://github.com/git-fixtures/basic.git")

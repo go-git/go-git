@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -226,14 +227,12 @@ func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
 }
 
 func setupServer(t testing.TB, smart bool) (base string, port int) {
-	l, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
+	l := test.ListenTCP(t)
 
 	port = l.Addr().(*net.TCPAddr).Port
 	base = filepath.Join(t.TempDir(), fmt.Sprintf("go-git-http-%d", port))
-	require.NoError(t, err)
-	err = os.MkdirAll(base, 0o755)
-	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(base, 0o755))
 
 	cmd := exec.Command("git", "--exec-path")
 	out, err := cmd.CombinedOutput()

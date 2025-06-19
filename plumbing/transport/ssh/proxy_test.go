@@ -3,19 +3,15 @@ package ssh
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
-	"os"
 	"sync/atomic"
 
 	"github.com/armon/go-socks5"
-	"github.com/gliderlabs/ssh"
-	"github.com/go-git/go-git/v6/internal/transport/ssh/test"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	ttest "github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 	stdssh "golang.org/x/crypto/ssh"
 )
 
@@ -26,33 +22,23 @@ type ProxySuite struct {
 var socksProxiedRequests int32
 
 func (s *ProxySuite) TestCommand() {
-	socksListener, err := net.Listen("tcp", "localhost:0")
-	s.NoError(err)
+	socksListener := ttest.ListenTCP(s.T())
 
 	socksServer, err := socks5.New(&socks5.Config{
 		AuthMethods: []socks5.Authenticator{socks5.UserPassAuthenticator{
-			Credentials: socks5.StaticCredentials{
-				"user": "pass",
-			},
+			Credentials: socks5.StaticCredentials{"user": "pass"},
 		}},
 		Rules: TestProxyRule{},
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
+
 	go func() {
-		socksServer.Serve(socksListener)
+		s.Require().ErrorIs(socksServer.Serve(socksListener), net.ErrClosed)
 	}()
+
 	socksProxyAddr := fmt.Sprintf("socks5://localhost:%d", socksListener.Addr().(*net.TCPAddr).Port)
 
-	sshListener, err := net.Listen("tcp", "localhost:0")
-	s.NoError(err)
-	sshServer := &ssh.Server{Handler: test.HandlerSSH}
-	go func() {
-		log.Fatal(sshServer.Serve(sshListener))
-	}()
-
-	s.port = sshListener.Addr().(*net.TCPAddr).Port
-	s.base, err = os.MkdirTemp(s.T().TempDir(), fmt.Sprintf("go-git-ssh-%d", s.port))
-	s.NoError(err)
+	s.base, s.port, _ = setupTest(s.T())
 
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil

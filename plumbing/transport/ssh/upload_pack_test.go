@@ -1,9 +1,9 @@
 package ssh
 
 import (
-	"errors"
 	"fmt"
-	"log"
+	"net"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -59,11 +59,6 @@ func (s *UploadPackSuite) SetupTest() {
 }
 
 func setupTest(t testing.TB, opts ...ssh.Option) (base string, port int, client transport.Transport) {
-	var err error
-	port, err = test.FreePort()
-	require.NoError(t, err)
-	base = t.TempDir()
-
 	sshconfig := &stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
@@ -71,28 +66,31 @@ func setupTest(t testing.TB, opts ...ssh.Option) (base string, port int, client 
 	r := &runner{config: sshconfig}
 	client = transport.NewPackTransport(r)
 
-	server := startServer(t, port, opts...)
-	t.Cleanup(func() {
-		server.Close()
-	})
-	return
+	addr := startServer(t, opts...)
+
+	base, err := os.MkdirTemp(t.TempDir(), fmt.Sprintf("go-git-ssh-%d", addr.Port))
+	require.NoError(t, err)
+
+	return base, addr.Port, client
 }
 
-func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {
+func startServer(t testing.TB, opts ...ssh.Option) *net.TCPAddr {
 	t.Helper()
+
+	l := test.ListenTCP(t)
+
 	server := &ssh.Server{Handler: testutils.HandlerSSH}
 	for _, opt := range opts {
 		opt(server)
 	}
-	server.Addr = fmt.Sprintf(":%d", port)
+
 	go func() {
-		err := server.ListenAndServe()
-		if !errors.Is(err, ssh.ErrServerClosed) {
-			log.Fatal(err)
-		}
+		require.ErrorIs(t, server.Serve(l), ssh.ErrServerClosed)
 	}()
 
-	return server
+	t.Cleanup(func() { require.NoError(t, server.Close()) })
+
+	return l.Addr().(*net.TCPAddr)
 }
 
 func newEndpoint(t testing.TB, base string, port int, name string) *transport.Endpoint {

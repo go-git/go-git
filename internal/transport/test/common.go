@@ -36,3 +36,20 @@ func FreePort() (int, error) {
 
 	return l.Addr().(*net.TCPAddr).Port, l.Close()
 }
+
+// ListenTCP listens localhost:0.
+// It reserves the listener to be closed on t.CleanUp.
+func ListenTCP(t testing.TB) *net.TCPListener {
+	t.Helper()
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		err := l.Close()
+		if err != nil {
+			require.ErrorIs(t, err, net.ErrClosed)
+		}
+	})
+
+	return l.(*net.TCPListener)
+}

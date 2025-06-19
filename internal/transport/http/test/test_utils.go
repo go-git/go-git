@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"embed"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,17 +13,16 @@ import (
 	"testing"
 
 	"github.com/elazarl/goproxy"
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 //go:embed testdata/certs/*
 var certs embed.FS
 
 // Make sure you close the server after the test.
-func SetupProxyServer(t *testing.T, handler http.Handler, isTls, schemaAddr bool) (string, *http.Server, net.Listener) {
-	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
-	assert.NoError(t, err)
-
+func SetupProxyServer(t *testing.T, handler http.Handler, isTls, schemaAddr bool) (string, *http.Server) {
 	schema := "http"
 	if isTls {
 		schema = "https"
@@ -35,11 +33,15 @@ func SetupProxyServer(t *testing.T, handler http.Handler, isTls, schemaAddr bool
 		addr = schema + "://localhost:%d"
 	}
 
-	httpProxyAddr := fmt.Sprintf(addr, httpListener.Addr().(*net.TCPAddr).Port)
+	httpListener := test.ListenTCP(t)
+	port := httpListener.Addr().(*net.TCPAddr).Port
+
+	httpProxyAddr := fmt.Sprintf(addr, port)
 	proxyServer := http.Server{
 		Addr:    httpProxyAddr,
 		Handler: handler,
 	}
+
 	if isTls {
 		certf, err := certs.Open("testdata/certs/server.crt")
 		assert.NoError(t, err)
@@ -71,11 +73,11 @@ func SetupProxyServer(t *testing.T, handler http.Handler, isTls, schemaAddr bool
 		} else {
 			err = proxyServer.Serve(httpListener)
 		}
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			panic(err)
-		}
+
+		require.ErrorIs(t, err, http.ErrServerClosed)
 	}()
-	return httpProxyAddr, &proxyServer, httpListener
+
+	return httpProxyAddr, &proxyServer
 }
 
 func SetupHTTPProxy(proxy *goproxy.ProxyHttpServer, proxiedRequests *int32) {
