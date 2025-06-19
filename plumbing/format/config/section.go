@@ -127,8 +127,8 @@ func (s *Section) AddOption(key string, value string) *Section {
 
 // SetOption adds a new Option to the Section. If the option already exists, is replaced.
 // The updated Section is returned.
-func (s *Section) SetOption(key string, value string) *Section {
-	s.Options = s.Options.withSettedOption(key, value)
+func (s *Section) SetOption(key string, value ...string) *Section {
+	s.Options = s.Options.withSettedOption(key, value...)
 	return s
 }
 

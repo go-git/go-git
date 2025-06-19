@@ -98,11 +98,11 @@ func (c *Config) AddOption(section string, subsection string, key string, value 
 
 // SetOption sets an option to a given section and subsection. Use the
 // NoSubsection constant for the subsection argument if no subsection is wanted.
-func (c *Config) SetOption(section string, subsection string, key string, value string) *Config {
+func (c *Config) SetOption(section string, subsection string, key string, value ...string) *Config {
 	if subsection == NoSubsection {
-		c.Section(section).SetOption(key, value)
+		c.Section(section).SetOption(key, value...)
 	} else {
-		c.Section(section).Subsection(subsection).SetOption(key, value)
+		c.Section(section).Subsection(subsection).SetOption(key, value...)
 	}
 
 	return c
