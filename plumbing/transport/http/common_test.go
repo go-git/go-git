@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -225,20 +226,19 @@ func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
 	return ep
 }
 
-func setupServer(t testing.TB, smart bool) (server *http.Server, base string, port int) {
-	l, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
+func setupServer(t testing.TB, smart bool) (base string, port int) {
+	l := test.ListenTCP(t)
 
 	port = l.Addr().(*net.TCPAddr).Port
 	base = filepath.Join(t.TempDir(), fmt.Sprintf("go-git-http-%d", port))
-	require.NoError(t, err)
-	err = os.MkdirAll(base, 0o755)
-	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(base, 0o755))
 
 	cmd := exec.Command("git", "--exec-path")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err)
 
+	var server *http.Server
 	if smart {
 		server = &http.Server{
 			// TODO: Implement a go-git middleware and use it here.
@@ -253,11 +253,17 @@ func setupServer(t testing.TB, smart bool) (server *http.Server, base string, po
 		}
 	}
 
+	done := make(chan struct{})
+
 	go func() {
-		if err := server.Serve(l); err != http.ErrServerClosed {
-			t.Fatalf("error http starting server: %v", err)
-		}
+		defer func() { close(done) }()
+		require.ErrorIs(t, server.Serve(l), http.ErrServerClosed)
 	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		<-done
+	})
 
 	return
 }
