@@ -48,7 +48,7 @@ func (s *UploadPackSuite) TearDownSuite() {
 }
 
 func (s *UploadPackSuite) SetupTest() {
-	s.base, s.port, s.Client = setupTest(s.T())
+	s.base, s.port, s.Client = setupTest(s.T(), s.opts...)
 	s.Endpoint = newEndpoint(s.T(), s.base, s.port, "basic.git")
 	s.EmptyEndpoint = newEndpoint(s.T(), s.base, s.port, "empty.git")
 	s.NonExistentEndpoint = newEndpoint(s.T(), s.base, s.port, "non-existent.git")

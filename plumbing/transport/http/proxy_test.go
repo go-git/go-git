@@ -14,15 +14,18 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// This test tests proxy support via an env var, i.e. `HTTPS_PROXY`.
+// Its located in a separate package because golang caches the value
+// of proxy env vars leading to misleading/unexpected test results.
 func TestProxySuite(t *testing.T) {
 	suite.Run(t, new(ProxySuite))
 }
 
 type ProxySuite struct {
-	UploadPackSuite
+	suite.Suite
 }
 
-func (s *ProxySuite) TestAdvertisedReferences() {
+func (s *ProxySuite) TestAdvertisedReferencesHTTP() {
 	var proxiedRequests int32
 
 	proxy := goproxy.NewProxyHttpServer()
@@ -35,36 +38,43 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	base, port := setupServer(s.T(), true)
 
 	endpoint := newEndpoint(s.T(), port, "basic.git")
-	dotgit := ttest.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpProxyAddr,
 		Username: "user",
 		Password: "pass",
 	}
 
+	client := NewTransport(nil)
+	dotgit := ttest.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
 	st := filesystem.NewStorage(dotgit, nil)
-	s.Client = NewTransport(nil)
-	session, err := s.Client.NewSession(st, endpoint, nil)
-	s.Nil(err)
+
+	session, err := client.NewSession(st, endpoint, nil)
+	s.Require().NoError(err)
 	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	info, err := conn.GetRemoteRefs(ctx)
-	s.Nil(err)
+	s.NoError(err)
 	s.NotNil(info)
-	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
-	s.Equal(true, proxyUsed)
 
-	atomic.StoreInt32(&proxiedRequests, 0)
+	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
+	s.True(proxyUsed)
+}
+
+func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
+	var proxiedRequests int32
+
+	proxy := goproxy.NewProxyHttpServer()
+	proxy.Verbose = true
 	test.SetupHTTPSProxy(proxy, &proxiedRequests)
 
 	httpsProxyAddr, tlsProxyServer := test.SetupProxyServer(s.T(), proxy, true, true)
 	defer tlsProxyServer.Close()
 
-	endpoint, err = transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
-	s.Nil(err)
+	endpoint, err := transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
+	s.Require().NoError(err)
 	endpoint.Proxy = transport.ProxyOptions{
 		URL:      httpsProxyAddr,
 		Username: "user",
@@ -72,14 +82,21 @@ func (s *ProxySuite) TestAdvertisedReferences() {
 	}
 	endpoint.InsecureSkipTLS = true
 
-	session, err = s.Client.NewSession(st, endpoint, nil)
-	s.Nil(err)
-	conn, err = session.Handshake(context.Background(), transport.UploadPackService)
-	s.NoError(err)
+	client := NewTransport(nil)
+	dotgit := ttest.PrepareRepository(s.T(), fixtures.Basic().One(), s.T().TempDir(), "basic.git")
+	st := filesystem.NewStorage(dotgit, nil)
 
-	info, err = conn.GetRemoteRefs(ctx)
-	s.Nil(err)
+	session, err := client.NewSession(st, endpoint, nil)
+	s.Require().NoError(err)
+	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
+	s.Require().NoError(err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	info, err := conn.GetRemoteRefs(ctx)
+	s.NoError(err)
 	s.NotNil(info)
-	proxyUsed = atomic.LoadInt32(&proxiedRequests) > 0
-	s.Equal(true, proxyUsed)
+
+	proxyUsed := atomic.LoadInt32(&proxiedRequests) > 0
+	s.True(proxyUsed)
 }
