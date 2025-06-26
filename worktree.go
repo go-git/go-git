@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v6/config"
+	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -897,6 +900,31 @@ func (w *Worktree) Submodule(name string) (*Submodule, error) {
 	return nil, ErrSubmoduleNotFound
 }
 
+// resolveModuleURL resolves relative URLs based on the originURL.
+// The moduleURL is returned verbatim when originURL is empty or moduleURL is an absolute URL.
+func resolveModuleURL(originURL, moduleURL string) (string, error) {
+	if originURL == "" {
+		return moduleURL, nil
+	}
+	if !strings.HasPrefix(moduleURL, "../") && !strings.HasPrefix(moduleURL, "./") {
+		return moduleURL, nil
+	}
+	if !giturl.MatchesScheme(originURL) && giturl.MatchesScpLike(originURL) {
+		user, host, portStr, p := giturl.FindScpLikeComponents(originURL)
+		p = path.Join(p, moduleURL)
+		if portStr != "" {
+			portStr += ":"
+		}
+		return fmt.Sprintf("%s@%s:%s%s", user, host, portStr, p), nil
+	}
+	base, err := url.Parse(originURL)
+	if err != nil {
+		return "", err
+	}
+	base.Path = path.Join(base.Path, moduleURL)
+	return base.String(), nil
+}
+
 // Submodules returns all the available submodules
 func (w *Worktree) Submodules() (Submodules, error) {
 	l := make(Submodules, 0)
@@ -910,8 +938,22 @@ func (w *Worktree) Submodules() (Submodules, error) {
 		return nil, err
 	}
 
+	var originURL string
+	if origin, err := w.r.Remote(DefaultRemoteName); err == nil {
+		if origin.c != nil && len(origin.c.URLs) > 0 {
+			originURL = origin.c.URLs[0]
+		}
+	}
+
 	for _, s := range m.Submodules {
-		l = append(l, w.newSubmodule(s, c.Submodules[s.Name]))
+		sub := w.newSubmodule(s, c.Submodules[s.Name])
+		cfg := sub.Config()
+		resolvedURL, err := resolveModuleURL(originURL, cfg.URL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve submodule URL %q: %w", s.URL, err)
+		}
+		cfg.URL = resolvedURL
+		l = append(l, sub)
 	}
 
 	return l, nil
