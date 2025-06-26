@@ -1585,6 +1585,177 @@ func (s *WorktreeSuite) TestSubmodules() {
 	s.Len(l, 2)
 }
 
+func (s *WorktreeSuite) TestSubmodules_URLResolution() {
+	tests := []struct {
+		name       string
+		originURL  string
+		gitmodules string
+		expected   map[string]string
+	}{
+		{
+			name:      "HTTPS origin with relative URL",
+			originURL: "https://github.com/user/parent-repo.git",
+			gitmodules: `[submodule "relative"]
+	path = relative
+	url = ../relative-repo.git`,
+			expected: map[string]string{
+				"relative": "https://github.com/user/relative-repo.git",
+			},
+		},
+		{
+			name:      "SSH origin with relative URL",
+			originURL: "git@github.com:user/parent-repo.git",
+			gitmodules: `[submodule "relative"]
+	path = relative
+	url = ../relative-repo.git`,
+			expected: map[string]string{
+				"relative": "git@github.com:user/relative-repo.git",
+			},
+		},
+		{
+			name:      "HTTPS origin with mixed relative and absolute URLs",
+			originURL: "https://github.com/user/parent-repo.git",
+			gitmodules: `[submodule "relative"]
+	path = relative
+	url = ../relative-repo.git
+[submodule "absolute"]
+	path = absolute
+	url = https://github.com/other/absolute-repo.git`,
+			expected: map[string]string{
+				"relative": "https://github.com/user/relative-repo.git",
+				"absolute": "https://github.com/other/absolute-repo.git",
+			},
+		},
+		{
+			name:      "file protocol with relative URL",
+			originURL: "file:///home/user/parent-repo.git",
+			gitmodules: `[submodule "relative"]
+	path = relative
+	url = ../relative-repo.git`,
+			expected: map[string]string{
+				"relative": "file:///home/user/relative-repo.git",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			s.NoError(err)
+
+			_, err = r.CreateRemote(&config.RemoteConfig{
+				Name: "origin",
+				URLs: []string{tc.originURL},
+			})
+			s.NoError(err)
+
+			w, err := r.Worktree()
+			s.NoError(err)
+
+			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0644)
+			s.NoError(err)
+
+			submodules, err := w.Submodules()
+			s.NoError(err)
+			s.Len(submodules, len(tc.expected))
+
+			submoduleMap := make(map[string]*Submodule)
+			for _, sub := range submodules {
+				submoduleMap[sub.Config().Name] = sub
+			}
+
+			for name, expectedURL := range tc.expected {
+				sub := submoduleMap[name]
+				s.NotNil(sub, "submodule %s should exist", name)
+				s.Equal(expectedURL, sub.Config().URL)
+			}
+		})
+	}
+}
+
+func TestResolveModuleURL(t *testing.T) {
+	tests := []struct {
+		originURL string
+		moduleURL string
+		want      string
+		wantErr   error
+	}{
+		{
+			originURL: "https://github/user/repo1",
+			moduleURL: "../repo2",
+			want:      "https://github/user/repo2",
+		},
+		{
+			originURL: "https://github/user/repo1",
+			moduleURL: "https://github/user/repo3",
+			want:      "https://github/user/repo3",
+		},
+		{
+			originURL: "ssh://git@github.com:22/user/repo1.git",
+			moduleURL: "../repo2.git",
+			want:      "ssh://git@github.com:22/user/repo2.git",
+		},
+		{
+			originURL: "ssh://git@github.com:22/user/repo1.git",
+			moduleURL: "ssh://git@github.com:22/user/repo3.git",
+			want:      "ssh://git@github.com:22/user/repo3.git",
+		},
+		{
+			originURL: "git@github.com:2222:user/repo1.git",
+			moduleURL: "../repo2.git",
+			want:      "git@github.com:2222:user/repo2.git",
+		},
+		{
+			originURL: "git@github.com:user/repo1.git",
+			moduleURL: "../repo2.git",
+			want:      "git@github.com:user/repo2.git",
+		},
+		{
+			originURL: "git@github.com:user/repo1.git",
+			moduleURL: "git@github.com:user/repo3.git",
+			want:      "git@github.com:user/repo3.git",
+		},
+		{
+			originURL: "file://git/user/repo1.git",
+			moduleURL: "../repo2.git",
+			want:      "file://git/user/repo2.git",
+		},
+		{
+			originURL: "file://git/user/repo1.git",
+			moduleURL: "file://git/user/repo3.git",
+			want:      "file://git/user/repo3.git",
+		},
+		{
+			originURL: "/git/user/repo1.git",
+			moduleURL: "../repo2.git",
+			want:      "/git/user/repo2.git",
+		},
+		{
+			originURL: "/git/user/repo1.git",
+			moduleURL: "/git/user/repo3.git",
+			want:      "/git/user/repo3.git",
+		},
+		{
+			originURL: "",
+			moduleURL: "../repo2/.git",
+			want:      "../repo2/.git",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			got, err := resolveModuleURL(tc.originURL, tc.moduleURL)
+			if tc.wantErr == nil {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.want, got)
+			} else {
+				assert.Empty(t, got)
+				assert.ErrorIs(t, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestAddUntracked() {
 	fs := memfs.New()
 	w := &Worktree{
