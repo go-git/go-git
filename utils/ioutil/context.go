@@ -54,6 +54,9 @@ func (w *ctxWriter) Write(buf []byte) (int, error) {
 
 	select {
 	case r := <-c:
+		if err := w.ctx.Err(); err != nil {
+			return 0, err
+		}
 		return r.n, r.err
 	case <-w.ctx.Done():
 		return 0, w.ctx.Err()
@@ -102,6 +105,9 @@ func (r *ctxReader) Read(buf []byte) (int, error) {
 
 	select {
 	case ret := <-c:
+		if err := r.ctx.Err(); err != nil {
+			return 0, err
+		}
 		copy(buf, buf2)
 		return ret.n, ret.err
 	case <-r.ctx.Done():
