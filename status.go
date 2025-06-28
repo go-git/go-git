@@ -139,7 +139,7 @@ func preloadStatus(w *Worktree) (Status, error) {
 			nodes = append(nodes, children...)
 			continue
 		}
-		fs := status.File(node.Name())
+		fs := status.File(node.String())
 		fs.Worktree = Unmodified
 		fs.Staging = Unmodified
 	}
