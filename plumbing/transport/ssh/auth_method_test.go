@@ -20,9 +20,7 @@ func TestSuiteCommon(t *testing.T) {
 }
 
 type (
-	SuiteCommon struct {
-		UploadPackSuite
-	}
+	SuiteCommon struct{ suite.Suite }
 
 	mockKnownHosts         struct{}
 	mockKnownHostsWithCert struct{}
