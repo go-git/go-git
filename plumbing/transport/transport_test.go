@@ -1,4 +1,4 @@
-package transport_test
+package transport
 
 import (
 	"fmt"
@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -126,7 +125,7 @@ func TestNewEndpoint(t *testing.T) {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 
-			ep, err := transport.NewEndpoint(tc.input)
+			ep, err := NewEndpoint(tc.input)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 			} else {
@@ -147,6 +146,6 @@ func TestFilterUnsupportedCapabilities(t *testing.T) {
 
 func FuzzNewEndpoint(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, input string) {
-		transport.NewEndpoint(input)
+		NewEndpoint(input)
 	})
 }
