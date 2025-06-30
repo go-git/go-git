@@ -15,9 +15,9 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-billy/v5/util"
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/path_util"
 	"github.com/go-git/go-git/v6/internal/revision"

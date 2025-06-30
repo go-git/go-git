@@ -1,6 +1,6 @@
 package storer
 
-import "github.com/go-git/go-billy/v5"
+import "github.com/go-git/go-billy/v6"
 
 // Storer is a basic storer for encoded objects and references.
 type Storer interface {

@@ -3,7 +3,7 @@ package transport
 import (
 	"fmt"
 
-	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
