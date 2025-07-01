@@ -1,14 +1,17 @@
 package ssh
 
 import (
-	"errors"
 	"fmt"
-	"log"
+	"io"
+	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 
-	testutils "github.com/go-git/go-git/v6/internal/transport/ssh/test"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -48,7 +51,7 @@ func (s *UploadPackSuite) TearDownSuite() {
 }
 
 func (s *UploadPackSuite) SetupTest() {
-	s.base, s.port, s.Client = setupTest(s.T())
+	s.base, s.port, s.Client = setupTest(s.T(), s.opts...)
 	s.Endpoint = newEndpoint(s.T(), s.base, s.port, "basic.git")
 	s.EmptyEndpoint = newEndpoint(s.T(), s.base, s.port, "empty.git")
 	s.NonExistentEndpoint = newEndpoint(s.T(), s.base, s.port, "non-existent.git")
@@ -59,11 +62,6 @@ func (s *UploadPackSuite) SetupTest() {
 }
 
 func setupTest(t testing.TB, opts ...ssh.Option) (base string, port int, client transport.Transport) {
-	var err error
-	port, err = test.FreePort()
-	require.NoError(t, err)
-	base = t.TempDir()
-
 	sshconfig := &stdssh.ClientConfig{
 		HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
 	}
@@ -71,28 +69,40 @@ func setupTest(t testing.TB, opts ...ssh.Option) (base string, port int, client 
 	r := &runner{config: sshconfig}
 	client = transport.NewPackTransport(r)
 
-	server := startServer(t, port, opts...)
-	t.Cleanup(func() {
-		server.Close()
-	})
-	return
+	addr := startServer(t, opts...)
+
+	base, err := os.MkdirTemp(t.TempDir(), fmt.Sprintf("go-git-ssh-%d", addr.Port))
+	require.NoError(t, err)
+
+	return base, addr.Port, client
 }
 
-func startServer(t testing.TB, port int, opts ...ssh.Option) *ssh.Server {
+func startServer(t testing.TB, opts ...ssh.Option) *net.TCPAddr {
 	t.Helper()
-	server := &ssh.Server{Handler: testutils.HandlerSSH}
+
+	l := test.ListenTCP(t)
+
+	server := &ssh.Server{Handler: handlerSSH}
 	for _, opt := range opts {
 		opt(server)
 	}
-	server.Addr = fmt.Sprintf(":%d", port)
+
+	done := make(chan struct{})
+
 	go func() {
-		err := server.ListenAndServe()
-		if !errors.Is(err, ssh.ErrServerClosed) {
-			log.Fatal(err)
-		}
+		defer func() { close(done) }()
+		require.ErrorIs(t, server.Serve(l), net.ErrClosed)
 	}()
 
-	return server
+	t.Cleanup(func() {
+		// server.Serve(l) tracks the given listener, and server.Close() closes all tracked listeners.
+		// If the test finishes too early and calls server.Close() before the listener is tracked,
+		// server.Serve() may hang. Therefore, we should close the listener directly.
+		require.NoError(t, l.Close())
+		<-done
+	})
+
+	return l.Addr().(*net.TCPAddr)
 }
 
 func newEndpoint(t testing.TB, base string, port int, name string) *transport.Endpoint {
@@ -101,4 +111,75 @@ func newEndpoint(t testing.TB, base string, port int, name string) *transport.En
 	))
 	require.NoError(t, err)
 	return ep
+}
+
+func handlerSSH(s ssh.Session) {
+	cmd, stdin, stderr, stdout, err := buildCommand(s.Command())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	go func() {
+		defer stdin.Close()
+		io.Copy(stdin, s)
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		io.Copy(s.Stderr(), stderr)
+	}()
+
+	go func() {
+		defer wg.Done()
+		io.Copy(s, stdout)
+	}()
+
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		return
+	}
+
+}
+
+func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdout io.ReadCloser, err error) {
+	if len(c) != 2 {
+		err = fmt.Errorf("invalid command")
+		return
+	}
+
+	// fix for Windows environments
+	var path string
+	if runtime.GOOS == "windows" {
+		path = strings.Replace(c[1], "/C:", "C:", 1)
+	} else {
+		path = c[1]
+	}
+
+	cmd = exec.Command(c[0], path)
+	stdout, err = cmd.StdoutPipe()
+	if err != nil {
+		return
+	}
+
+	stdin, err = cmd.StdinPipe()
+	if err != nil {
+		return
+	}
+
+	stderr, err = cmd.StderrPipe()
+	if err != nil {
+		return
+	}
+
+	return
 }
