@@ -10,7 +10,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 
-	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v6"
 )
 
 var ignore = map[string]bool{

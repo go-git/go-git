@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/go-git/go-billy/v5/util"
+	"github.com/go-git/go-billy/v6/util"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/storage/memory"
 
-	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v6/memfs"
 )
 
 func ExampleClone() {

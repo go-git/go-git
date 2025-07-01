@@ -1,7 +1,7 @@
 package packfile
 
 import (
-	billy "github.com/go-git/go-billy/v5"
+	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )

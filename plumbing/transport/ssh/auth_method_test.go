@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-billy/v5/util"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"

@@ -17,8 +17,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object/commitgraph"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
 )
 
 // Example how to resolve a revision into its commit counterpart
