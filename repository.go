@@ -17,7 +17,6 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/path_util"
 	"github.com/go-git/go-git/v6/internal/revision"
@@ -65,6 +64,7 @@ var (
 	ErrAlternatePathNotSupported   = errors.New("alternate path must use the file scheme")
 	ErrUnsupportedMergeStrategy    = errors.New("unsupported merge strategy")
 	ErrFastForwardMergeNotPossible = errors.New("not possible to fast-forward merge changes")
+	ErrCloneDirNotEmpty            = errors.New("clone destination path already exists and is not empty")
 )
 
 // Repository represents a git repository
@@ -306,7 +306,6 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	}
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	r, err := initFn(s)
-
 	if err != nil {
 		return nil, err
 	}
@@ -491,21 +490,26 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 
 // PlainClone a repository into the path with the given options, isBare defines
 // if the new repository will be bare or normal. If the path is not empty
-// ErrRepositoryAlreadyExists is returned.
+// ErrCloneDirNotEmpty is returned.
 func PlainClone(path string, o *CloneOptions) (*Repository, error) {
 	return PlainCloneContext(context.Background(), path, o)
 }
 
 // PlainCloneContext a repository into the path with the given options, isBare
 // defines if the new repository will be bare or normal. If the path is not empty
-// ErrRepositoryAlreadyExists is returned.
+// ErrCloneDirNotEmpty is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
-//
-// TODO(smola): refuse upfront to clone on a non-empty directory in v5, see #1027
 func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repository, error) {
+	empty, err := checkCloneDirIsEmpty(path)
+	if err != nil {
+		return nil, err
+	}
+	if !empty {
+		return nil, fmt.Errorf("%w %s", ErrCloneDirNotEmpty, path)
+	}
 	start := time.Now()
 	defer func() {
 		url := ""
@@ -514,11 +518,6 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 		}
 		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
 	}()
-
-	cleanup, cleanupParent, err := checkIfCleanupIsNeeded(path)
-	if err != nil {
-		return nil, err
-	}
 
 	isBare := o.Bare
 	if o.Mirror {
@@ -530,12 +529,6 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	}
 
 	err = r.clone(ctx, o)
-	if err != nil && err != ErrRepositoryAlreadyExists {
-		if cleanup {
-			_ = cleanUpDir(path, cleanupParent)
-		}
-	}
-
 	return r, err
 }
 
@@ -547,49 +540,30 @@ func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 	}
 }
 
-func checkIfCleanupIsNeeded(path string) (cleanup bool, cleanParent bool, err error) {
+func checkCloneDirIsEmpty(path string) (empty bool, err error) {
 	fi, err := osfs.Default.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return true, true, nil
+			return true, nil
 		}
 
-		return false, false, err
+		return false, err
 	}
 
 	if !fi.IsDir() {
-		return false, false, fmt.Errorf("path is not a directory: %s", path)
+		return false, fmt.Errorf("path is not a directory: %s", path)
 	}
 
 	files, err := osfs.Default.ReadDir(path)
 	if err != nil {
-		return false, false, err
+		return false, err
 	}
 
 	if len(files) == 0 {
-		return true, false, nil
+		return true, nil
 	}
 
-	return false, false, nil
-}
-
-func cleanUpDir(path string, all bool) error {
-	if all {
-		return util.RemoveAll(osfs.Default, path)
-	}
-
-	files, err := osfs.Default.ReadDir(path)
-	if err != nil {
-		return err
-	}
-
-	for _, fi := range files {
-		if err := util.RemoveAll(osfs.Default, osfs.Default.Join(path, fi.Name())); err != nil {
-			return err
-		}
-	}
-
-	return err
+	return false, nil
 }
 
 // Config return the repository config. In a filesystem backed repository this
