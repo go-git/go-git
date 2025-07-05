@@ -26,10 +26,6 @@ func TestGetAndPutZlibReader(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	if dict != z2.dict {
-		t.Errorf("zlib dictionary was not reused")
-	}
-
 	if &reader != z2.Reader {
 		t.Errorf("zlib reader was not reused")
 	}

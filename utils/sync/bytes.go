@@ -6,9 +6,11 @@ import (
 )
 
 var (
+	size = 32 * 1024
+
 	byteSlice = sync.Pool{
 		New: func() interface{} {
-			b := make([]byte, 16*1024)
+			b := make([]byte, size)
 			return &b
 		},
 	}
@@ -20,17 +22,31 @@ var (
 )
 
 // GetByteSlice returns a *[]byte that is managed by a sync.Pool.
-// The initial slice length will be 16384 (16kb).
+// The initial slice length will be 32768 (32kb).
 //
 // After use, the *[]byte should be put back into the sync.Pool
 // by calling PutByteSlice.
 func GetByteSlice() *[]byte {
 	buf := byteSlice.Get().(*[]byte)
-	return buf
+	b := *buf
+	if len(b) < size {
+		b = b[:cap(b)]
+	}
+
+	// zero out the array contents.
+	for i := 0; i < len(b); i++ {
+		b[i] = 0
+	}
+
+	return &b
 }
 
 // PutByteSlice puts buf back into its sync.Pool.
 func PutByteSlice(buf *[]byte) {
+	if buf == nil {
+		return
+	}
+
 	byteSlice.Put(buf)
 }
 
@@ -47,5 +63,8 @@ func GetBytesBuffer() *bytes.Buffer {
 
 // PutBytesBuffer puts buf back into its sync.Pool.
 func PutBytesBuffer(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
 	bytesBuffer.Put(buf)
 }

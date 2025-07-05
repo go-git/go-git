@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
 var (
@@ -324,13 +325,17 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 			return nil, fmt.Errorf("cannot find base object: %w", err)
 		}
 
-		err = p.scanner.inflateContent(oh.ContentOffset, &oh.content)
+		if oh.content == nil {
+			oh.content = gogitsync.GetBytesBuffer()
+		}
+
+		err = p.scanner.inflateContent(oh.ContentOffset, oh.content)
 		if err != nil {
 			return nil, fmt.Errorf("cannot inflate content: %w", err)
 		}
 
 		obj.SetType(parent.Type())
-		err = ApplyDelta(obj, parent, oh.content.Bytes()) //nolint:ineffassign
+		err = ApplyDelta(obj, parent, oh.content) //nolint:ineffassign
 
 	default:
 		err = ErrInvalidObject.AddDetails("type %q", oh.Type)
@@ -343,19 +348,6 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 	p.cache.Put(obj)
 
 	return obj, nil
-}
-
-// isInvalid checks whether an error is an os.PathError with an os.ErrInvalid
-// error inside. It also checks for the windows error, which is different from
-// os.ErrInvalid.
-func isInvalid(err error) bool {
-	pe, ok := err.(*os.PathError)
-	if !ok {
-		return false
-	}
-
-	errstr := pe.Err.Error()
-	return errstr == errInvalidUnix || errstr == errInvalidWindows
 }
 
 // errInvalidWindows is the Windows equivalent to os.ErrInvalid

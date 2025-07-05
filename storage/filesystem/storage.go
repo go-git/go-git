@@ -41,6 +41,10 @@ type Options struct {
 	// If none is provided, it falls back to using the underlying instance used for
 	// DotGit.
 	AlternatesFS billy.Filesystem
+	// HighMemoryMode defines whether the storage will operate in high-memory
+	// mode. This defaults to false. For more information refer to packfile's Parser
+	// WithHighMemoryMode option.
+	HighMemoryMode bool
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -54,6 +58,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
 		AlternatesFS:    ops.AlternatesFS,
+		KeepDescriptors: ops.KeepDescriptors,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
@@ -86,4 +91,8 @@ func (s *Storage) Init() error {
 
 func (s *Storage) AddAlternate(remote string) error {
 	return s.dir.AddAlternate(remote)
+}
+
+func (s *Storage) LowMemoryMode() bool {
+	return !s.options.HighMemoryMode
 }

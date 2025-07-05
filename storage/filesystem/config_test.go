@@ -25,7 +25,7 @@ func TestConfigSuite(t *testing.T) {
 
 func (s *ConfigSuite) SetupTest() {
 	tmp, err := util.TempDir(osfs.Default, "", "go-git-filestystem-config")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.dir = dotgit.New(osfs.New(tmp))
 	s.path = tmp
@@ -36,7 +36,7 @@ func (s *ConfigSuite) TestRemotes() {
 	storer := &ConfigStorage{dir}
 
 	cfg, err := storer.Config()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	remotes := cfg.Remotes
 	s.Len(remotes, 1)

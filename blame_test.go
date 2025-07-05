@@ -56,10 +56,10 @@ func (s *BlameSuite) TestBlame() {
 
 		exp := s.mockBlame(t, r)
 		commit, err := r.CommitObject(plumbing.NewHash(t.rev))
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		obt, err := Blame(commit, t.path)
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(exp, obt)
 
 		for i, l := range obt.Lines {
@@ -70,19 +70,19 @@ func (s *BlameSuite) TestBlame() {
 
 func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) {
 	commit, err := r.CommitObject(plumbing.NewHash(t.rev))
-	s.NoError(err, fmt.Sprintf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
+	s.Require().NoError(err, fmt.Sprintf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
 
 	f, err := commit.File(t.path)
-	s.NoError(err)
+	s.Require().NoError(err)
 	lines, err := f.Lines()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(t.blames, len(lines), fmt.Sprintf(
 		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
 
 	blamedLines := make([]*Line, 0, len(t.blames))
 	for i := range t.blames {
 		commit, err := r.CommitObject(plumbing.NewHash(t.blames[i]))
-		s.NoError(err)
+		s.Require().NoError(err)
 		l := &Line{
 			Author:     commit.Author.Email,
 			AuthorName: commit.Author.Name,

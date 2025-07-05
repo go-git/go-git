@@ -50,7 +50,7 @@ func (r *scannerReader) Reset(reader io.Reader) {
 	r.seeker = seeker
 
 	if ok {
-		r.offset, _ = seeker.Seek(0, io.SeekCurrent)
+		r.offset, _ = seeker.Seek(0, io.SeekStart)
 	}
 }
 
