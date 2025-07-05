@@ -38,19 +38,19 @@ func (s *SuiteDotGit) TestInitialize() {
 	dir := New(fs)
 
 	err := dir.Initialize()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = fs.Stat(fs.Join("objects", "info"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = fs.Stat(fs.Join("objects", "pack"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = fs.Stat(fs.Join("refs", "heads"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = fs.Stat(fs.Join("refs", "tags"))
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SuiteDotGit) TestSetRefs() {
@@ -73,7 +73,7 @@ func (s *SuiteDotGit) TestRefsHeadFirst() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotEqual(0, len(refs))
 	s.Equal("HEAD", refs[0].Name().String())
 }
@@ -85,29 +85,29 @@ func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 	)
 	err := dir.SetRef(firstFoo, nil)
 
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/symbolic",
 		"ref: refs/heads/foo",
 	), nil)
 
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"bar",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/feature/baz",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 3)
 
 	ref := findReference(refs, "refs/heads/foo")
@@ -122,23 +122,23 @@ func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 	s.Nil(ref)
 
 	_, err = dir.readReferenceFile(".", "refs/heads/feature/baz")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = dir.readReferenceFile(".", "refs/heads/feature")
 	s.ErrorIs(err, ErrIsDir)
 
 	ref, err = dir.Ref("refs/heads/foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
 	ref, err = dir.Ref("refs/heads/symbolic")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("refs/heads/foo", ref.Target().String())
 
 	ref, err = dir.Ref("bar")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
@@ -147,7 +147,7 @@ func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 		"refs/heads/foo",
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	), firstFoo)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// `firstFoo` is no longer the right `old` reference, so this
 	// should fail.
@@ -163,7 +163,7 @@ func (s *SuiteDotGit) TestRefsFromPackedRefs() {
 	dir := New(fs)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref := findReference(refs, "refs/remotes/origin/branch")
 	s.NotNil(ref)
@@ -175,7 +175,7 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile() {
 	dir := New(fs)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref := findReference(refs, "refs/remotes/origin/HEAD")
 	s.NotNil(ref)
@@ -207,10 +207,10 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFile() {
 
 	name := plumbing.ReferenceName("refs/remotes/origin/HEAD")
 	err := dir.RemoveRef(name)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref := findReference(refs, string(name))
 	s.Nil(ref)
@@ -222,10 +222,10 @@ func (s *SuiteDotGit) TestRemoveRefFromPackedRefs() {
 
 	name := plumbing.ReferenceName("refs/remotes/origin/master")
 	err := dir.RemoveRef(name)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	b, err := util.ReadFile(fs, packedRefsPath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(""+
 		"# pack-refs with: peeled fully-peeled \n"+
@@ -243,11 +243,11 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 		"refs/remotes/origin/branch",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Make sure it only appears once in the refs list.
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	found := false
 	for _, ref := range refs {
 		if ref.Name() == "refs/remotes/origin/branch" {
@@ -258,10 +258,10 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 
 	name := plumbing.ReferenceName("refs/remotes/origin/branch")
 	err = dir.RemoveRef(name)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	b, err := util.ReadFile(fs, packedRefsPath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(""+
 		"# pack-refs with: peeled fully-peeled \n"+
@@ -270,7 +270,7 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 		string(b))
 
 	refs, err = dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref := findReference(refs, string(name))
 	s.Nil(ref)
@@ -281,14 +281,14 @@ func (s *SuiteDotGit) TestRemoveRefNonExistent() {
 	dir := New(fs)
 
 	before, err := util.ReadFile(fs, packedRefsPath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
 	err = dir.RemoveRef(name)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	after, err := util.ReadFile(fs, packedRefsPath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(string(after), string(before))
 }
@@ -300,14 +300,14 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs() {
 	brokenContent := "BROKEN STUFF REALLY BROKEN"
 
 	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0755))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
 	err = dir.RemoveRef(name)
 	s.NotNil(err)
 
 	after, err := util.ReadFile(fs, packedRefsPath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(string(after), brokenContent)
 }
@@ -319,14 +319,14 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2() {
 	brokenContent := strings.Repeat("a", bufio.MaxScanTokenSize*2)
 
 	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0755))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
 	err = dir.RemoveRef(name)
 	s.NotNil(err)
 
 	after, err := util.ReadFile(fs, packedRefsPath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(string(after), brokenContent)
 }
@@ -336,7 +336,7 @@ func (s *SuiteDotGit) TestRefsFromHEADFile() {
 	dir := New(fs)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref := findReference(refs, "HEAD")
 	s.NotNil(ref)
@@ -349,7 +349,7 @@ func (s *SuiteDotGit) TestConfig() {
 	dir := New(fs)
 
 	file, err := dir.Config()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("config", filepath.Base(file.Name()))
 }
 
@@ -359,16 +359,16 @@ func (s *SuiteDotGit) TestConfigWriteAndConfig() {
 	dir := New(fs)
 
 	f, err := dir.ConfigWriter()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = f.Write([]byte("foo"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	f, err = dir.Config()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	cnt, err := io.ReadAll(f)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal("foo", string(cnt))
 }
@@ -378,7 +378,7 @@ func (s *SuiteDotGit) TestIndex() {
 	dir := New(fs)
 
 	idx, err := dir.Index()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(idx)
 }
 
@@ -388,16 +388,16 @@ func (s *SuiteDotGit) TestIndexWriteAndIndex() {
 	dir := New(fs)
 
 	f, err := dir.IndexWriter()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = f.Write([]byte("foo"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	f, err = dir.Index()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	cnt, err := io.ReadAll(f)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal("foo", string(cnt))
 }
@@ -407,7 +407,7 @@ func (s *SuiteDotGit) TestShallow() {
 	dir := New(fs)
 
 	file, err := dir.Shallow()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Nil(file)
 }
 
@@ -417,16 +417,16 @@ func (s *SuiteDotGit) TestShallowWriteAndShallow() {
 	dir := New(fs)
 
 	f, err := dir.ShallowWriter()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = f.Write([]byte("foo"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	f, err = dir.Shallow()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	cnt, err := io.ReadAll(f)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal("foo", string(cnt))
 }
@@ -460,24 +460,24 @@ func (s *SuiteDotGit) TestObjectPacksExclusive() {
 
 func testObjectPacks(s *SuiteDotGit, fs billy.Filesystem, dir *DotGit, f *fixtures.Fixture) {
 	hashes, err := dir.ObjectPacks()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hashes, 1)
 	s.Equal(plumbing.NewHash(f.PackfileHash), hashes[0])
 
 	// Make sure that a random file in the pack directory doesn't
 	// break everything.
 	badFile, err := fs.Create("objects/pack/OOPS_THIS_IS_NOT_RIGHT.pack")
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = badFile.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 	// temporary file generated by git gc
 	tmpFile, err := fs.Create("objects/pack/.tmp-11111-pack-58rf8y4wm1b1k52bpe0kdlx6lpreg6ahso8n3ylc.pack")
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = tmpFile.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hashes2, err := dir.ObjectPacks()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hashes2, 1)
 	s.Equal(hashes2[0], hashes[0])
 }
@@ -488,7 +488,7 @@ func (s *SuiteDotGit) TestObjectPack() {
 	dir := New(fs)
 
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(".pack", filepath.Ext(pack.Name()))
 }
 
@@ -498,33 +498,33 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors() {
 	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
 
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(".pack", filepath.Ext(pack.Name()))
 
 	// Move to an specific offset
 	pack.Seek(42, io.SeekStart)
 
 	pack2, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// If the file is the same the offset should be the same
 	offset, err := pack2.Seek(0, io.SeekCurrent)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(42), offset)
 
 	err = dir.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	pack2, err = dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// If the file is opened again its offset should be 0
 	offset, err = pack2.Seek(0, io.SeekCurrent)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(0), offset)
 
 	err = pack2.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = dir.Close()
 	s.NotNil(err)
@@ -536,7 +536,7 @@ func (s *SuiteDotGit) TestObjectPackIdx() {
 	dir := New(fs)
 
 	idx, err := dir.ObjectPackIdx(plumbing.NewHash(f.PackfileHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(".idx", filepath.Ext(idx.Name()))
 	s.Nil(idx.Close())
 }
@@ -559,21 +559,21 @@ func (s *SuiteDotGit) TestNewObject() {
 
 	dir := New(fs)
 	w, err := dir.NewObject()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = w.WriteHeader(plumbing.BlobObject, 14)
-	s.NoError(err)
+	s.Require().NoError(err)
 	n, err := w.Write([]byte("this is a test"))
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(14, n)
 
 	s.Equal("a8a940627d132695a9769df883f85992f0ff4a43", w.Hash().String())
 
 	err = w.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	i, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(34), i.Size())
 }
 
@@ -595,7 +595,7 @@ func (s *SuiteDotGit) TestObjectsExclusive() {
 
 func testObjects(s *SuiteDotGit, _ billy.Filesystem, dir *DotGit) {
 	hashes, err := dir.Objects()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hashes, 187)
 	s.Equal("0097821d427a3c3385898eb13b50dcbc8702b8a3", hashes[0].String())
 	s.Equal("01d5fa556c33743006de7e76e67a2dfcd994ca04", hashes[1].String())
@@ -605,14 +605,14 @@ func testObjects(s *SuiteDotGit, _ billy.Filesystem, dir *DotGit) {
 func testObjectsWithPrefix(s *SuiteDotGit, _ billy.Filesystem, dir *DotGit) {
 	prefix, _ := hex.DecodeString("01d5")
 	hashes, err := dir.ObjectsWithPrefix(prefix)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hashes, 1)
 	s.Equal("01d5fa556c33743006de7e76e67a2dfcd994ca04", hashes[0].String())
 
 	// Empty prefix should yield all objects.
 	// (subset of testObjects)
 	hashes, err = dir.ObjectsWithPrefix(nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hashes, 187)
 }
 
@@ -621,7 +621,7 @@ func (s *SuiteDotGit) TestObjectsNoFolder() {
 
 	dir := New(fs)
 	hash, err := dir.Objects()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hash, 0)
 }
 
@@ -631,7 +631,7 @@ func (s *SuiteDotGit) TestObject() {
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	file, err := dir.Object(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(strings.HasSuffix(
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 	)
@@ -642,7 +642,7 @@ func (s *SuiteDotGit) TestObject() {
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SuiteDotGit) TestPreGit235Object() {
@@ -651,7 +651,7 @@ func (s *SuiteDotGit) TestPreGit235Object() {
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	file, err := dir.Object(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(strings.HasSuffix(
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 	)
@@ -662,7 +662,7 @@ func (s *SuiteDotGit) TestPreGit235Object() {
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SuiteDotGit) TestObjectStat() {
@@ -671,7 +671,7 @@ func (s *SuiteDotGit) TestObjectStat() {
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	_, err := dir.ObjectStat(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
@@ -679,7 +679,7 @@ func (s *SuiteDotGit) TestObjectStat() {
 	fs.Create(incomingFilePath)
 
 	_, err = dir.ObjectStat(plumbing.NewHash(incomingHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SuiteDotGit) TestObjectDelete() {
@@ -688,7 +688,7 @@ func (s *SuiteDotGit) TestObjectDelete() {
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
 	err := dir.ObjectDelete(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
@@ -696,16 +696,16 @@ func (s *SuiteDotGit) TestObjectDelete() {
 	incomingFilePath := fs.Join(incomingSubDirPath, incomingHash[2:40])
 
 	err = fs.MkdirAll(incomingSubDirPath, os.FileMode(0755))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	f, err := fs.Create(incomingFilePath)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = f.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = dir.ObjectDelete(plumbing.NewHash(incomingHash))
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SuiteDotGit) TestObjectNotFound() {
@@ -723,7 +723,7 @@ func (s *SuiteDotGit) TestSubmodules() {
 	dir := New(fs)
 
 	m, err := dir.Module("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(strings.HasSuffix(m.Root(), m.Join(".git", "modules", "basic")))
 }
 
@@ -736,37 +736,37 @@ func (s *SuiteDotGit) TestPackRefs() {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/bar",
 		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 2)
 	looseCount, err := dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(2, looseCount)
 
 	err = dir.PackRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 2)
 	looseCount, err = dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(0, looseCount)
 
 	ref, err := dir.Ref("refs/heads/foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 	ref, err = dir.Ref("refs/heads/bar")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("a8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
@@ -775,23 +775,23 @@ func (s *SuiteDotGit) TestPackRefs() {
 		"refs/heads/foo",
 		"b8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 	looseCount, err = dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(1, looseCount)
 	err = dir.PackRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 2)
 	looseCount, err = dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(0, looseCount)
 
 	ref, err = dir.Ref("refs/heads/foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("b8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 }
@@ -1006,20 +1006,20 @@ func (s *SuiteDotGit) TestDeletedRefs() {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/bar",
 		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/baz/baz",
 		"a8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 1)
 	s.Equal(plumbing.ReferenceName("refs/heads/foo"), refs[0].Name())
 }
@@ -1034,28 +1034,28 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	refs, err := dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 1)
 	looseCount, err := dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(1, looseCount)
 
 	err = dir.PackRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Make sure the refs are still there, but no longer loose.
 	refs, err = dir.Refs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(refs, 1)
 	looseCount, err = dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(0, looseCount)
 
 	ref, err := dir.Ref("refs/heads/foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(ref)
 	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 
@@ -1077,8 +1077,8 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 		"refs/heads/foo",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	))
-	s.NoError(err)
+	s.Require().NoError(err)
 	looseCount, err = dir.CountLooseRefs()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(1, looseCount)
 }
