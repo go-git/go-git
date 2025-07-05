@@ -30,7 +30,7 @@ func GetByteSlice() *[]byte {
 	buf := byteSlice.Get().(*[]byte)
 	b := *buf
 	if len(b) < size {
-		b = append(b[:cap(b)])
+		b = b[:cap(b)]
 	}
 
 	// zero out the array contents.
