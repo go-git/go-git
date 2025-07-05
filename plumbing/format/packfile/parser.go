@@ -293,6 +293,8 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
+				defer r.Close()
+
 				if parent.content == nil {
 					parent.content = sync.GetBytesBuffer()
 				}
@@ -302,10 +304,6 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 				if err == nil {
 					return bytes.NewReader(parent.content.Bytes()), nil
 				}
-			}
-
-			if err = r.Close(); err != nil {
-				return nil, fmt.Errorf("close parent obj reader: %w", err)
 			}
 		}
 	}
