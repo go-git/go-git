@@ -2,8 +2,6 @@ package git
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
@@ -27,13 +25,7 @@ func TestSubmoduleSuite(t *testing.T) {
 func (s *SubmoduleSuite) SetupTest() {
 	url := s.GetLocalRepositoryURL(fixtures.ByTag("submodule").One())
 
-	dir, err := os.MkdirTemp("", "")
-	s.Require().NoError(err)
-
-	r, err := PlainClone(filepath.Join(dir, "worktree"), &CloneOptions{
-		URL: url,
-	})
-
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: url})
 	s.Require().NoError(err)
 
 	s.Repository = r
