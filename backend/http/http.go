@@ -245,7 +245,7 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 	w.Header().Set("Last-Modified", stat.ModTime().Format(http.TimeFormat))
 
 	frw := &flushResponseWriter{ResponseWriter: w, log: errorLog, chunkSize: defaultChunkSize}
-	if _, err := ioutil.Copy(frw, f); err != nil {
+	if _, err := ioutil.CopyBufferPool(frw, f); err != nil {
 		logf(errorLog, "error writing response: %v", err)
 		renderStatusError(w, http.StatusInternalServerError)
 		return

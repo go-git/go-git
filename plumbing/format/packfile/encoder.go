@@ -132,7 +132,7 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 
 	defer ioutil.CheckClose(or, &err)
 
-	_, err = ioutil.Copy(e.zw, or)
+	_, err = ioutil.CopyBufferPool(e.zw, or)
 	return err
 }
 

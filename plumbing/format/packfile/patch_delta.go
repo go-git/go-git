@@ -87,7 +87,7 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta *bytes.Buffer) (err e
 
 	target.SetSize(int64(dst.Len()))
 
-	_, err = ioutil.Copy(w, dst)
+	_, err = ioutil.CopyBufferPool(w, dst)
 	return err
 }
 
@@ -200,7 +200,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					basePos += uint(n)
 					discard -= uint(n)
 				}
-				if _, err := ioutil.Copy(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -213,7 +213,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				if _, err := ioutil.Copy(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
 					_ = dstWr.CloseWithError(err)
 					return
 				}

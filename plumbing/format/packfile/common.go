@@ -54,7 +54,7 @@ func WritePackfileToObjectStorage(
 
 	defer ioutil.CheckClose(w, &err)
 
-	n, err := ioutil.Copy(w, packfile)
+	n, err := ioutil.CopyBufferPool(w, packfile)
 	if err == nil && n == 0 {
 		return ErrEmptyPackfile
 	}

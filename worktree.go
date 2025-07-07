@@ -787,7 +787,7 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	}
 
 	defer ioutil.CheckClose(to, &err)
-	_, err = ioutil.Copy(to, from)
+	_, err = ioutil.CopyBufferPool(to, from)
 	return
 }
 

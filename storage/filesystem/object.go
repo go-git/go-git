@@ -161,7 +161,7 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (h plumbing.H
 		return plumbing.ZeroHash, err
 	}
 
-	if _, err = ioutil.Copy(ow, or); err != nil {
+	if _, err = ioutil.CopyBufferPool(ow, or); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
@@ -454,7 +454,7 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 
 	defer ioutil.CheckClose(w, &err)
 
-	_, err = ioutil.Copy(w, r)
+	_, err = ioutil.CopyBufferPool(w, r)
 	if err != nil {
 		return nil, err
 	}

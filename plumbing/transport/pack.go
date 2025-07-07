@@ -88,7 +88,7 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	// Some transports like Git doesn't support stderr, so we need to check if
 	// it's not nil before starting to read it.
 	if stderr != nil {
-		go ioutil.Copy(&c.stderrBuf, stderr) // nolint: errcheck
+		go ioutil.CopyBufferPool(&c.stderrBuf, stderr) // nolint: errcheck
 	}
 
 	// Check if stderr is not empty before returning.

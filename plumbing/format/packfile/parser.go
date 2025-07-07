@@ -92,7 +92,7 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 
 		defer w.Close()
 
-		_, err = ioutil.Copy(w, oh.content)
+		_, err = ioutil.CopyBufferPool(w, oh.content)
 		if err != nil {
 			return err
 		}
@@ -300,7 +300,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 				}
 				parent.content.Grow(int(parent.Size))
 
-				_, err = ioutil.Copy(parent.content, r)
+				_, err = ioutil.CopyBufferPool(parent.content, r)
 				if err == nil {
 					return bytes.NewReader(parent.content.Bytes()), nil
 				}
