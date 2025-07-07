@@ -59,12 +59,11 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	defer c.Close() //nolint:errcheck
 
 	svc := transport.Service(req.RequestCommand)
-	if (svc != transport.UploadPackService &&
-		// svc != transport.UploadArchiveService &&
-		svc != transport.ReceivePackService) ||
-		(svc == transport.UploadPackService && !b.UploadPack) ||
-		// (svc == transport.UploadArchiveService && !b.UploadArchive) ||
-		(svc == transport.ReceivePackService && !b.ReceivePack) {
+	switch {
+	case svc == transport.UploadPackService && b.UploadPack,
+		svc == transport.ReceivePackService && b.ReceivePack:
+		// TODO: Support git-upload-archive
+	default:
 		renderError(wc, transport.ErrUnsupportedService) //nolint:errcheck
 		return
 	}
@@ -82,8 +81,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
-		// XXX: Should we use a more descriptive error?
-		renderError(wc, transport.ErrRepositoryNotFound) //nolint:errcheck
+		renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)) //nolint:errcheck
 		return
 	}
 
@@ -110,7 +108,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	}
 
 	if err != nil {
-		renderError(wc, transport.ErrRepositoryNotFound) //nolint:errcheck
+		renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)) //nolint:errcheck
 		return
 	}
 }
