@@ -37,6 +37,7 @@ var (
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
 	ErrInvalidAuthMethod      = errors.New("invalid auth method")
 	ErrAlreadyConnected       = errors.New("session already established")
+	ErrInvalidRequest         = errors.New("invalid request")
 )
 
 // Transport can initiate git-upload-pack and git-receive-pack processes.
