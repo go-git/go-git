@@ -17,29 +17,47 @@ import (
 func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateRequests {
 	upreq := packp.NewUpdateRequests()
 
-	// The reference discovery phase is done nearly the same way as it is in
-	// the fetching protocol. Each reference obj-id and name on the server is
-	// sent in packet-line format to the client, followed by a flush-pkt. The
-	// only real difference is that the capability listing is different - the
-	// only possible values are report-status, report-status-v2, delete-refs,
-	// ofs-delta, atomic and push-options.
-	for _, cap := range []capability.Capability{
-		capability.ReportStatus,
-		// TODO: support report-status-v2
-		// capability.ReportStatusV2,
-		capability.DeleteRefs,
-		capability.OFSDelta,
-
-		// This is set later if options are present.
-		// capability.PushOptions,
-	} {
-		if caps.Supports(cap) {
-			upreq.Capabilities.Set(cap) //nolint:errcheck
+	// The atomic, report-status, report-status-v2, delete-refs, quiet, and
+	// push-cert capabilities are sent and recognized by the receive-pack (push
+	// to server) process.
+	//
+	// The ofs-delta and side-band-64k capabilities are sent and recognized by
+	// both upload-pack and receive-pack protocols. The agent and session-id
+	// capabilities may optionally be sent in both protocols.
+	//
+	// All other capabilities are only recognized by the upload-pack (fetch
+	// from server) process.
+	//
+	// In addition to the ones listed above, receive-pack special capabilities
+	// include object-format and push-options.
+	//
+	// However, upstream Git does *not* send all of these capabilities by
+	// client side. See
+	// https://github.com/git/git/blob/485f5f863615e670fd97ae40af744e14072cfe18/send-pack.c#L589
+	// for more details.
+	//
+	// See https://git-scm.com/docs/gitprotocol-capabilities for more details.
+	if caps.Supports(capability.ReportStatus) {
+		upreq.Capabilities.Set(capability.ReportStatus) //nolint:errcheck
+	}
+	if req.Progress != nil {
+		if caps.Supports(capability.Sideband64k) {
+			upreq.Capabilities.Set(capability.Sideband64k) //nolint:errcheck
+		} else if caps.Supports(capability.Sideband) {
+			upreq.Capabilities.Set(capability.Sideband) //nolint:errcheck
+		}
+		if caps.Supports(capability.Quiet) {
+			upreq.Capabilities.Set(capability.Quiet) //nolint:errcheck
 		}
 	}
-
 	if req.Atomic && caps.Supports(capability.Atomic) {
 		upreq.Capabilities.Set(capability.Atomic) //nolint:errcheck
+	}
+	if len(req.Options) > 0 && caps.Supports(capability.PushOptions) {
+		upreq.Capabilities.Set(capability.PushOptions) //nolint:errcheck
+	}
+	if caps.Supports(capability.Agent) {
+		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) //nolint:errcheck
 	}
 
 	upreq.Commands = req.Commands
@@ -76,16 +94,11 @@ func SendPack(
 
 	caps := conn.Capabilities()
 	upreq := buildUpdateRequests(caps, req)
-	usePushOptions := len(req.Options) > 0 && caps.Supports(capability.PushOptions)
-	if usePushOptions {
-		upreq.Capabilities.Set(capability.PushOptions) //nolint:errcheck
-	}
-
 	if err := upreq.Encode(writer); err != nil {
 		return err
 	}
 
-	if usePushOptions {
+	if upreq.Capabilities.Supports(capability.PushOptions) {
 		var opts packp.PushOptions
 		opts.Options = req.Options
 		if err := opts.Encode(writer); err != nil {
@@ -109,7 +122,7 @@ func SendPack(
 		return err
 	}
 
-	if !caps.Supports(capability.ReportStatus) {
+	if !upreq.Capabilities.Supports(capability.ReportStatus) {
 		// If we don't have report-status, we're done here.
 		return nil
 	}
@@ -117,13 +130,17 @@ func SendPack(
 	var r io.Reader = reader
 	if req.Progress != nil {
 		var d *sideband.Demuxer
-		if caps.Supports(capability.Sideband64k) {
+		if upreq.Capabilities.Supports(capability.Sideband64k) {
 			d = sideband.NewDemuxer(sideband.Sideband64k, reader)
-		} else if caps.Supports(capability.Sideband) {
+		} else if upreq.Capabilities.Supports(capability.Sideband) {
 			d = sideband.NewDemuxer(sideband.Sideband, reader)
 		}
 		if d != nil {
-			d.Progress = req.Progress
+			if !upreq.Capabilities.Supports(capability.Quiet) {
+				// If we want quiet mode, we don't report progress messages
+				// which means the demuxer won't have a progress writer.
+				d.Progress = req.Progress
+			}
 			r = d
 		}
 	}
