@@ -95,7 +95,7 @@ func SendPack(
 
 	// Send the packfile.
 	if req.Packfile != nil {
-		if _, err := io.Copy(writer, req.Packfile); err != nil {
+		if _, err := ioutil.CopyBufferPool(writer, req.Packfile); err != nil {
 			return err
 		}
 

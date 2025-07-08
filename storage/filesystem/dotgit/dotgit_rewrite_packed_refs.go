@@ -57,7 +57,7 @@ func (d *DotGit) copyToExistingFile(tmp, pr billy.File) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(pr, tmp)
+	_, err = ioutil.CopyBufferPool(pr, tmp)
 
 	return err
 }
@@ -75,7 +75,7 @@ func (d *DotGit) copyNewFile(tmp billy.File, pr billy.File) (err error) {
 		return err
 	}
 
-	_, err = io.Copy(prWrite, tmp)
+	_, err = ioutil.CopyBufferPool(prWrite, tmp)
 
 	return err
 }

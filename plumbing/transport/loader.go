@@ -63,7 +63,7 @@ func (l *FilesystemLoader) load(path string, tried bool) (storage.Storer, error)
 		return nil, ErrRepositoryNotFound
 	}
 
-	return filesystem.NewStorage(fs, cache.NewObjectLRUDefault()), nil
+	return filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{}), nil
 }
 
 // MapLoader is a Loader that uses a lookup map of storer.Storer by

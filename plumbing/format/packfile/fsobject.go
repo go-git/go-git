@@ -85,13 +85,14 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &zlibReadCloser{zr, dict, closer}, nil
+	return &zlibReadCloser{zr, dict, closer, false}, nil
 }
 
 type zlibReadCloser struct {
-	r    sync.ZLibReader
-	dict *[]byte
-	f    io.Closer
+	r      sync.ZLibReader
+	dict   *[]byte
+	f      io.Closer
+	closed bool
 }
 
 // Read reads up to len(p) bytes into p from the data.
@@ -100,7 +101,10 @@ func (r *zlibReadCloser) Read(p []byte) (int, error) {
 }
 
 func (r *zlibReadCloser) Close() error {
-	sync.PutByteSlice(r.dict)
+	if r.closed {
+		return nil
+	}
+	r.closed = true
 	sync.PutZlibReader(r.r)
 	if r.f != nil {
 		r.f.Close()

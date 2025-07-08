@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
@@ -54,12 +53,8 @@ func WritePackfileToObjectStorage(
 	}
 
 	defer ioutil.CheckClose(w, &err)
-	var n int64
 
-	buf := sync.GetByteSlice()
-	n, err = io.CopyBuffer(w, packfile, *buf)
-	sync.PutByteSlice(buf)
-
+	n, err := ioutil.CopyBufferPool(w, packfile)
 	if err == nil && n == 0 {
 		return ErrEmptyPackfile
 	}

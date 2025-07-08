@@ -39,7 +39,7 @@ func (s *FsSuite) TestGetFromObjectFile() {
 
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
 	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 }
 
@@ -50,7 +50,7 @@ func (s *FsSuite) TestGetFromPackfile() {
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(expected, obj.Hash())
 	}
 }
@@ -63,29 +63,29 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(expected, obj.Hash())
 
 		packfiles, err := dg.ObjectPacks()
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		pack1, err := dg.ObjectPack(packfiles[0])
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		pack1.Seek(42, io.SeekStart)
 
 		err = o.Close()
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		pack2, err := dg.ObjectPack(packfiles[0])
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		offset, err := pack2.Seek(0, io.SeekCurrent)
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(int64(0), offset)
 
 		err = o.Close()
-		s.NoError(err)
+		s.Require().NoError(err)
 
 	}
 }
@@ -96,16 +96,16 @@ func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptors() {
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
 	obj, err := o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
 	obj, err = o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	err = o.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold() {
@@ -117,16 +117,16 @@ func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold() {
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
 	obj, err := o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
 	obj, err = o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	err = o.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *FsSuite) TestGetSizeOfObjectFile() {
@@ -136,7 +136,7 @@ func (s *FsSuite) TestGetSizeOfObjectFile() {
 	// Get the size of `tree_walker.go`.
 	expected := plumbing.NewHash("cbd81c47be12341eb1185b379d1c82675aeded6a")
 	size, err := o.EncodedObjectSize(expected)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(2412), size)
 }
 
@@ -148,7 +148,7 @@ func (s *FsSuite) TestGetSizeFromPackfile() {
 		// Get the size of `binary.jpg`.
 		expected := plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d")
 		size, err := o.EncodedObjectSize(expected)
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(int64(76110), size)
 	}
 }
@@ -160,11 +160,11 @@ func (s *FsSuite) TestGetSizeOfAllObjectFiles() {
 	// Get the size of `tree_walker.go`.
 	err := o.ForEachObjectHash(func(h plumbing.Hash) error {
 		size, err := o.EncodedObjectSize(h)
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.NotEqual(int64(0), size)
 		return nil
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *FsSuite) TestGetFromPackfileMultiplePackfiles() {
@@ -173,12 +173,12 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles() {
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
 	obj, err := o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
 	obj, err = o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 }
 
@@ -188,12 +188,12 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfilesLargeObjectThreshold() {
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
 	obj, err := o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
 	obj, err = o.getFromPackfile(expected, false)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 }
 
@@ -203,7 +203,7 @@ func (s *FsSuite) TestIter() {
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		var count int32
 		err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -211,7 +211,7 @@ func (s *FsSuite) TestIter() {
 			return nil
 		})
 
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(f.ObjectsCount, count)
 	}
 }
@@ -222,7 +222,7 @@ func (s *FsSuite) TestIterLargeObjectThreshold() {
 		o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{LargeObjectThreshold: 1})
 
 		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
-		s.NoError(err)
+		s.Require().NoError(err)
 
 		var count int32
 		err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -230,7 +230,7 @@ func (s *FsSuite) TestIterLargeObjectThreshold() {
 			return nil
 		})
 
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Equal(f.ObjectsCount, count)
 	}
 }
@@ -242,14 +242,14 @@ func (s *FsSuite) TestIterWithType() {
 			o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 			iter, err := o.IterEncodedObjects(t)
-			s.NoError(err)
+			s.Require().NoError(err)
 
 			err = iter.ForEach(func(o plumbing.EncodedObject) error {
 				s.Equal(t, o.Type())
 				return nil
 			})
 
-			s.NoError(err)
+			s.Require().NoError(err)
 		}
 
 	}
@@ -262,23 +262,23 @@ func (s *FsSuite) TestPackfileIter() {
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
-			s.NoError(err)
+			s.Require().NoError(err)
 
 			for _, h := range ph {
 				f, err := dg.ObjectPack(h)
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				idxf, err := dg.ObjectPackIdx(h)
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
 					s.Equal(t, o.Type())
 					return nil
 				})
-				s.NoError(err)
+				s.Require().NoError(err)
 			}
 		}
 	}
@@ -336,14 +336,12 @@ func (s *FsSuite) TestPackfileReindex() {
 
 		// Now check that the test object can be retrieved
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
-		s.NoError(err)
+		s.Require().NoError(err)
 
 	}
 }
 
 func (s *FsSuite) TestPackfileIterKeepDescriptors() {
-	s.T().Skip("packfileIter with keep descriptors is currently broken")
-
 	for _, f := range fixtures.ByTag(".git") {
 		fs := f.DotGit()
 		ops := dotgit.Options{KeepDescriptors: true}
@@ -351,17 +349,17 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
-			s.NoError(err)
+			s.Require().NoError(err)
 
 			for _, h := range ph {
 				f, err := dg.ObjectPack(h)
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				idxf, err := dg.ObjectPackIdx(h)
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, crypto.SHA1.Size())
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				if err != nil {
 					continue
@@ -371,14 +369,14 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 					s.Equal(t, o.Type())
 					return nil
 				})
-				s.NoError(err)
+				s.Require().NoError(err)
 
 				// test twice to check that packfiles are not closed
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
 					s.Equal(t, o.Type())
 					return nil
 				})
-				s.NoError(err)
+				s.Require().NoError(err)
 			}
 		}
 	}
@@ -394,7 +392,7 @@ func (s *FsSuite) TestGetFromObjectFileSharedCache() {
 
 	expected := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 	obj, err := o1.EncodedObject(plumbing.CommitObject, expected)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	_, err = o2.EncodedObject(plumbing.CommitObject, expected)
@@ -407,12 +405,12 @@ func (s *FsSuite) TestHashesWithPrefix() {
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
 	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
 	prefix, _ := hex.DecodeString("f3dfe2")
 	hashes, err := o.HashesWithPrefix(prefix)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(hashes, 1)
 	s.Equal("f3dfe29d268303fc6e1bbce268605fc99573406e", hashes[0].String())
 }
@@ -426,7 +424,7 @@ func (s *FsSuite) TestHashesWithPrefixFromPackfile() {
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 		// Only pass the first 8 bytes
 		hashes, err := o.HashesWithPrefix(expected.Bytes()[:8])
-		s.NoError(err)
+		s.Require().NoError(err)
 		s.Len(hashes, 1)
 		s.Equal(expected, hashes[0])
 	}
@@ -566,7 +564,7 @@ func (s *FsSuite) TestGetFromUnpackedCachesObjects() {
 
 	// Load the object
 	obj, err := objectStorage.EncodedObject(plumbing.AnyObject, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(hash, obj.Hash())
 
 	// The object should've been cached during the load
@@ -577,20 +575,20 @@ func (s *FsSuite) TestGetFromUnpackedCachesObjects() {
 	// Assert that both objects can be read and that they both produce the same bytes
 
 	objReader, err := obj.Reader()
-	s.NoError(err)
+	s.Require().NoError(err)
 	objBytes, err := io.ReadAll(objReader)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotEqual(0, len(objBytes))
 	err = objReader.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	cachedObjReader, err := cachedObj.Reader()
-	s.NoError(err)
+	s.Require().NoError(err)
 	cachedObjBytes, err := io.ReadAll(cachedObjReader)
 	s.NotEqual(0, len(cachedObjBytes))
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = cachedObjReader.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(objBytes, cachedObjBytes)
 }
@@ -607,7 +605,7 @@ func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
 
 	// Load the object
 	obj, err := objectStorage.EncodedObject(plumbing.AnyObject, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(hash, obj.Hash())
 
 	// The object should not have been cached during the load

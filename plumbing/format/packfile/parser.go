@@ -11,6 +11,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 var (
@@ -29,8 +30,9 @@ var (
 // Parser decodes a packfile and calls any observer associated to it. Is used
 // to generate indexes.
 type Parser struct {
-	storage storer.EncodedObjectStorer
-	cache   *parserCache
+	storage       storer.EncodedObjectStorer
+	cache         *parserCache
+	lowMemoryMode bool
 
 	scanner   *Scanner
 	observers []Observer
@@ -38,6 +40,14 @@ type Parser struct {
 
 	checksum plumbing.Hash
 	m        stdsync.Mutex
+}
+
+// LowMemoryCapable is implemented by storage types that are capable of
+// operating in low-memory mode.
+type LowMemoryCapable interface {
+	// LowMemoryMode defines whether the storage is able and willing for
+	// the parser to operate in low-memory mode.
+	LowMemoryMode() bool
 }
 
 // NewParser creates a new Parser.
@@ -48,14 +58,24 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 		hasher: plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 	}
 	for _, opt := range opts {
-		opt(p)
+		if opt != nil {
+			opt(p)
+		}
 	}
 
 	p.scanner = NewScanner(data)
 
 	if p.storage != nil {
 		p.scanner.storage = p.storage
+
+		lm, ok := p.storage.(LowMemoryCapable)
+		p.lowMemoryMode = ok && lm.LowMemoryMode()
 	}
+
+	if p.scanner.seeker == nil {
+		p.lowMemoryMode = false
+	}
+	p.scanner.lowMemoryMode = p.lowMemoryMode
 	p.cache = newParserCache()
 
 	return p
@@ -72,13 +92,23 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 
 		defer w.Close()
 
-		_, err = io.Copy(w, bytes.NewReader(oh.content.Bytes()))
+		_, err = ioutil.CopyBufferPool(w, oh.content)
 		if err != nil {
 			return err
 		}
 	}
 
 	if p.cache != nil {
+		o := oh
+		for p.lowMemoryMode && o.content != nil {
+			sync.PutBytesBuffer(o.content)
+			o.content = nil
+
+			if o.parent == nil || o.parent.content == nil {
+				break
+			}
+			o = o.parent
+		}
 		p.cache.Add(oh)
 	}
 
@@ -125,9 +155,14 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 					pendingDeltaREFs = append(pendingDeltaREFs, &oh)
 				}
 				continue
-			} else {
-				p.storeOrCache(&oh)
 			}
+
+			if p.lowMemoryMode && oh.content != nil {
+				sync.PutBytesBuffer(oh.content)
+				oh.content = nil
+			}
+
+			p.storeOrCache(&oh)
 
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
@@ -141,18 +176,66 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 	for _, oh := range pendingDeltaREFs {
 		err := p.processDelta(oh)
 		if err != nil {
-			return plumbing.ZeroHash, err
+			return plumbing.ZeroHash, fmt.Errorf("processing ref-delta at offset %v: %w", oh.Offset, err)
 		}
 	}
 
 	for _, oh := range pendingDeltas {
 		err := p.processDelta(oh)
 		if err != nil {
-			return plumbing.ZeroHash, err
+			return plumbing.ZeroHash, fmt.Errorf("processing ofs-delta at offset %v: %w", oh.Offset, err)
 		}
 	}
 
+	// Return to pool all objects used.
+	go func() {
+		for _, oh := range p.cache.oi {
+			if oh.content != nil {
+				sync.PutBytesBuffer(oh.content)
+				oh.content = nil
+			}
+		}
+	}()
+
 	return p.checksum, p.onFooter(p.checksum)
+}
+
+func (p *Parser) ensureContent(oh *ObjectHeader) error {
+	// Skip if this object already has the correct content.
+	if oh.content != nil && oh.content.Len() == int(oh.Size) && !oh.Hash.IsZero() {
+		return nil
+	}
+
+	if oh.content == nil {
+		oh.content = sync.GetBytesBuffer()
+	}
+
+	var err error
+	if !p.lowMemoryMode && oh.content != nil && oh.content.Len() > 0 {
+		source := oh.content
+		oh.content = sync.GetBytesBuffer()
+
+		defer sync.PutBytesBuffer(source)
+
+		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
+	} else if p.scanner.scannerReader.seeker != nil {
+		deltaData := sync.GetBytesBuffer()
+		defer sync.PutBytesBuffer(deltaData)
+
+		err = p.scanner.inflateContent(oh.ContentOffset, deltaData)
+		if err != nil {
+			return fmt.Errorf("inflating content at offset %v: %w", oh.ContentOffset, err)
+		}
+
+		err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
+	} else {
+		return fmt.Errorf("can't ensure content: %w", plumbing.ErrObjectNotFound)
+	}
+
+	if err != nil {
+		return fmt.Errorf("apply delta patch: %w", err)
+	}
+	return nil
 }
 
 func (p *Parser) processDelta(oh *ObjectHeader) error {
@@ -184,46 +267,24 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return fmt.Errorf("unsupported delta type: %v", oh.Type)
 	}
 
-	parentContents, err := p.parentReader(oh.parent)
-	if err != nil {
-		return err
-	}
-
-	var deltaData bytes.Buffer
-	if oh.content.Len() > 0 {
-		_, err = oh.content.WriteTo(&deltaData)
-		if err != nil {
-			return err
-		}
-	} else {
-		deltaData = *bytes.NewBuffer(make([]byte, 0, oh.Size))
-		err = p.scanner.inflateContent(oh.ContentOffset, &deltaData)
-		if err != nil {
-			return err
-		}
-	}
-
-	w, err := p.cacheWriter(oh)
-	if err != nil {
-		return err
-	}
-
-	defer w.Close()
-
-	err = applyPatchBaseHeader(oh, parentContents, &deltaData, w, nil)
-	if err != nil {
+	if err := p.ensureContent(oh); err != nil {
 		return err
 	}
 
 	return p.storeOrCache(oh)
 }
 
+// parentReader returns a [io.ReaderAt] for the decompressed contents
+// of the parent.
 func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
+	if parent.content != nil && parent.content.Len() > 0 {
+		return bytes.NewReader(parent.content.Bytes()), nil
+	}
+
 	// If parent is a Delta object, the inflated object must come
 	// from either cache or storage, else we would need to inflate
 	// it to then inflate the current object, which could go on
 	// indefinitely.
-
 	if p.storage != nil && parent.Hash != plumbing.ZeroHash {
 		obj, err := p.storage.EncodedObject(parent.Type, parent.Hash)
 		if err == nil {
@@ -232,20 +293,19 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
-				parentData := bytes.NewBuffer(make([]byte, 0, parent.Size))
+				defer r.Close()
 
-				_, err = io.Copy(parentData, r)
-				r.Close()
+				if parent.content == nil {
+					parent.content = sync.GetBytesBuffer()
+				}
+				parent.content.Grow(int(parent.Size))
 
+				_, err = ioutil.CopyBufferPool(parent.content, r)
 				if err == nil {
-					return bytes.NewReader(parentData.Bytes()), nil
+					return bytes.NewReader(parent.content.Bytes()), nil
 				}
 			}
 		}
-	}
-
-	if p.cache != nil && parent.content.Len() > 0 {
-		return bytes.NewReader(parent.content.Bytes()), nil
 	}
 
 	// If the parent is not an external ref and we don't have the
@@ -260,21 +320,26 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 		return nil, plumbing.ErrObjectNotFound
 	}
 
-	parentData := bytes.NewBuffer(make([]byte, 0, parent.Size))
-	err := p.scanner.inflateContent(parent.ContentOffset, parentData)
+	if parent.content == nil {
+		parent.content = sync.GetBytesBuffer()
+	}
+	parent.content.Grow(int(parent.Size))
+
+	err := p.scanner.inflateContent(parent.ContentOffset, parent.content)
 	if err != nil {
 		return nil, ErrReferenceDeltaNotFound
 	}
-	return bytes.NewReader(parentData.Bytes()), nil
+	return bytes.NewReader(parent.content.Bytes()), nil
 }
 
-func (p *Parser) cacheWriter(oh *ObjectHeader) (io.WriteCloser, error) {
-	return ioutil.NewWriteCloser(&oh.content, nil), nil
-}
-
-func applyPatchBaseHeader(ota *ObjectHeader, base io.ReaderAt, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
+func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
 	if target == nil {
 		return fmt.Errorf("cannot apply patch against nil target")
+	}
+
+	parentContents, err := p.parentReader(ota.parent)
+	if err != nil {
+		return err
 	}
 
 	typ := ota.Type
@@ -282,7 +347,7 @@ func applyPatchBaseHeader(ota *ObjectHeader, base io.ReaderAt, delta io.Reader, 
 		typ = ota.parent.Type
 	}
 
-	sz, h, err := patchDeltaWriter(target, base, delta, typ, wh)
+	sz, h, err := patchDeltaWriter(target, parentContents, delta, typ, wh)
 	if err != nil {
 		return err
 	}

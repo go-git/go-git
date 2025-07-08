@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
@@ -38,7 +41,19 @@ func main() {
 	//   GIT_TRACE_PERFORMANCE=true
 	trace.SetTarget(trace.Performance)
 
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	fs := osfs.New(directory)
+	dotgit, err := fs.Chroot(".git")
+	CheckIfError(err)
+
+	storer := filesystem.NewStorageWithOptions(dotgit, cache.NewObjectLRUDefault(), filesystem.Options{
+		// HighMemoryMode caches delta objects in memory, so that they don't
+		// need to be inflated on demand. This decreases execution time but
+		// could increase memory usage quite considerably.
+		// This was the default before v6.
+		HighMemoryMode: true,
+	})
+
+	r, err := git.Clone(storer, fs, &git.CloneOptions{
 		URL: url,
 		// Differently than the git CLI, by default go-git downloads
 		// all tags and its related objects. To avoid unnecessary

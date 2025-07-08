@@ -55,7 +55,7 @@ var sizes = []offset{
 }
 
 // ApplyDelta writes to target the result of applying the modification deltas in delta to base.
-func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) (err error) {
+func ApplyDelta(target, base plumbing.EncodedObject, delta *bytes.Buffer) (err error) {
 	r, err := base.Reader()
 	if err != nil {
 		return err
@@ -80,16 +80,14 @@ func ApplyDelta(target, base plumbing.EncodedObject, delta []byte) (err error) {
 
 	dst := sync.GetBytesBuffer()
 	defer sync.PutBytesBuffer(dst)
-	err = patchDelta(dst, src, delta)
+	err = patchDelta(dst, src, delta.Bytes())
 	if err != nil {
 		return err
 	}
 
 	target.SetSize(int64(dst.Len()))
 
-	b := sync.GetByteSlice()
-	_, err = io.CopyBuffer(w, dst, *b)
-	sync.PutByteSlice(b)
+	_, err = ioutil.CopyBufferPool(w, dst)
 	return err
 }
 
@@ -202,7 +200,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					basePos += uint(n)
 					discard -= uint(n)
 				}
-				if _, err := io.Copy(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -215,7 +213,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				if _, err := io.Copy(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -310,9 +308,8 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 }
 
 func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
-	typ plumbing.ObjectType, writeHeader objectHeaderWriter,
-) (uint, plumbing.Hash, error) {
-	deltaBuf := bufio.NewReaderSize(delta, 1024)
+	typ plumbing.ObjectType, writeHeader objectHeaderWriter) (uint, plumbing.Hash, error) {
+	deltaBuf := bufio.NewReader(delta)
 	srcSz, err := decodeLEB128ByteReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
@@ -331,6 +328,12 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			return 0, plumbing.ZeroHash, ErrInvalidDelta
 		}
 		return 0, plumbing.ZeroHash, err
+	}
+
+	// Avoid several iteractions expanding the buffer, which can be quite
+	// inefficient on large deltas.
+	if b, ok := dst.(*bytes.Buffer); ok {
+		b.Grow(int(targetSz))
 	}
 
 	// If header still needs to be written, caller will provide

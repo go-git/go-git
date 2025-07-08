@@ -35,22 +35,22 @@ func (s *SubmoduleSuite) SetupTest() {
 
 func (s *SubmoduleSuite) TestInit() {
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.False(sm.initialized)
 	err = sm.Init()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.True(sm.initialized)
 
 	cfg, err := s.Repository.Config()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Len(cfg.Submodules, 1)
 	s.NotNil(cfg.Submodules["basic"])
 
 	status, err := sm.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(status.IsClean())
 }
 
@@ -60,29 +60,29 @@ func (s *SubmoduleSuite) TestUpdate() {
 	}
 
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init: true,
 	})
 
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	r, err := sm.Repository()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref, err := r.Reference(plumbing.HEAD, true)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", ref.Hash().String())
 
 	status, err := sm.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(status.IsClean())
 }
 
 func (s *SubmoduleSuite) TestRepositoryWithoutInit() {
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	r, err := sm.Repository()
 	s.ErrorIs(err, ErrSubmoduleNotInitialized)
@@ -91,7 +91,7 @@ func (s *SubmoduleSuite) TestRepositoryWithoutInit() {
 
 func (s *SubmoduleSuite) TestUpdateWithoutInit() {
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{})
 	s.ErrorIs(err, ErrSubmoduleNotInitialized)
@@ -99,7 +99,7 @@ func (s *SubmoduleSuite) TestUpdateWithoutInit() {
 
 func (s *SubmoduleSuite) TestUpdateWithNotFetch() {
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init:    true,
@@ -116,18 +116,18 @@ func (s *SubmoduleSuite) TestUpdateWithRecursion() {
 	}
 
 	sm, err := s.Worktree.Submodule("itself")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init:              true,
 		RecurseSubmodules: 2,
 	})
 
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	fs := s.Worktree.Filesystem
 	_, err = fs.Stat(fs.Join("itself", "basic", "LICENSE"))
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
@@ -136,15 +136,15 @@ func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
 	}
 
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	idx, err := s.Repository.Storer.Index()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	for i, e := range idx.Entries {
 		if e.Name == "basic" {
@@ -155,29 +155,28 @@ func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
 	}
 
 	err = s.Repository.Storer.SetIndex(idx)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	r, err := sm.Repository()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ref, err := r.Reference(plumbing.HEAD, true)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("b029517f6300c2da0f4b651b8642506cd6aaf45d", ref.Hash().String())
-
 }
 
 func (s *SubmoduleSuite) TestSubmodulesInit() {
 	sm, err := s.Worktree.Submodules()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Init()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	sm, err = s.Worktree.Submodules()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	for _, m := range sm {
 		s.True(m.initialized)
@@ -186,14 +185,14 @@ func (s *SubmoduleSuite) TestSubmodulesInit() {
 
 func (s *SubmoduleSuite) TestGitSubmodulesSymlink() {
 	f, err := s.Worktree.Filesystem.Create("badfile")
-	s.NoError(err)
-	defer func() { _ = f.Close() }()
+	s.Require().NoError(err)
+	s.Require().NoError(f.Close())
 
 	err = s.Worktree.Filesystem.Remove(gitmodulesFile)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = s.Worktree.Filesystem.Symlink("badfile", gitmodulesFile)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = s.Worktree.Submodules()
 	s.ErrorIs(err, ErrGitModulesSymlink)
@@ -201,10 +200,10 @@ func (s *SubmoduleSuite) TestGitSubmodulesSymlink() {
 
 func (s *SubmoduleSuite) TestSubmodulesStatus() {
 	sm, err := s.Worktree.Submodules()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	status, err := sm.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(status, 2)
 }
 
@@ -214,7 +213,7 @@ func (s *SubmoduleSuite) TestSubmodulesUpdateContext() {
 	}
 
 	sm, err := s.Worktree.Submodules()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -229,25 +228,25 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 	}
 
 	sm, err := s.Worktree.Submodule("basic")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = sm.Update(&SubmoduleUpdateOptions{
 		Init:  true,
 		Depth: 1,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	r, err := sm.Repository()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	lr, err := r.Log(&LogOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	commitCount := 0
 	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
 		commitCount++
 	}
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(1, commitCount)
 }
@@ -272,5 +271,5 @@ func (s *SubmoduleSuite) TestSubmoduleParseScp() {
 	}
 
 	_, err := submodule.Repository()
-	s.NoError(err)
+	s.Require().NoError(err)
 }
