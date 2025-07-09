@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"io"
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -11,7 +12,6 @@ import (
 )
 
 func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
-	// Create capabilities with ReportStatus
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 
@@ -27,10 +27,7 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 
 	upreq := buildUpdateRequests(caps, req)
 
-	// Verify ReportStatus capability is set
 	assert.True(t, upreq.Capabilities.Supports(capability.ReportStatus))
-
-	// Verify commands are properly set
 	require.Len(t, upreq.Commands, 1)
 	assert.Equal(t, plumbing.ReferenceName("refs/heads/master"), upreq.Commands[0].Name)
 	assert.Equal(t, plumbing.ZeroHash, upreq.Commands[0].Old)
@@ -38,7 +35,6 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
-	// Create capabilities without ReportStatus
 	caps := capability.NewList()
 
 	req := &PushRequest{
@@ -52,8 +48,6 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
-	// Verify ReportStatus capability is not set
 	assert.False(t, upreq.Capabilities.Supports(capability.ReportStatus))
 }
 
@@ -74,15 +68,11 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
-	// Verify Sideband64k capability is not set
-	assert.False(t, upreq.Capabilities.Supports(capability.Sideband64k))
+	assert.True(t, upreq.Capabilities.Supports(capability.Sideband64k))
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband))
-	assert.False(t, upreq.Capabilities.Supports(capability.NoProgress))
 }
 
 func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
-	// Create capabilities with Sideband but not Sideband64k
 	caps := capability.NewList()
 	caps.Add(capability.Sideband)
 
@@ -98,19 +88,16 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
-	// Verify Sideband capability is not set but not Sideband64k
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband64k))
-	assert.False(t, upreq.Capabilities.Supports(capability.Sideband))
-	assert.False(t, upreq.Capabilities.Supports(capability.NoProgress))
+	assert.True(t, upreq.Capabilities.Supports(capability.Sideband))
 }
 
-func TestBuildUpdateRequestsWithNoProgress(t *testing.T) {
-	// Create capabilities with NoProgress
+func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 	caps := capability.NewList()
-	caps.Add(capability.NoProgress)
+	caps.Add(capability.Quiet)
 
 	req := &PushRequest{
+		Progress: io.Discard,
 		Commands: []*packp.Command{
 			{
 				Name: plumbing.ReferenceName("refs/heads/master"),
@@ -121,9 +108,7 @@ func TestBuildUpdateRequestsWithNoProgress(t *testing.T) {
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
-	// Verify NoProgress capability is not set
-	assert.False(t, upreq.Capabilities.Supports(capability.NoProgress))
+	assert.True(t, upreq.Capabilities.Supports(capability.Quiet))
 }
 
 func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
@@ -147,7 +132,6 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
-	// Create capabilities without Atomic
 	caps := capability.NewList()
 
 	req := &PushRequest{
@@ -162,13 +146,10 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
-	// Verify Atomic capability is not set
 	assert.False(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
 func TestBuildUpdateRequestsWithAgent(t *testing.T) {
-	// Create capabilities with Agent
 	caps := capability.NewList()
 	caps.Set(capability.Agent, capability.DefaultAgent())
 
@@ -183,9 +164,7 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
-	// Verify Agent capability is not set
-	assert.False(t, upreq.Capabilities.Supports(capability.Agent))
+	assert.True(t, upreq.Capabilities.Supports(capability.Agent))
 }
 
 // mockWriter is a simple io.Writer implementation for testing

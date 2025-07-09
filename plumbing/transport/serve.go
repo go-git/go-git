@@ -45,6 +45,7 @@ func AdvertiseReferences(
 		ar.Capabilities.Set(capability.DeleteRefs)   //nolint:errcheck
 		ar.Capabilities.Set(capability.ReportStatus) //nolint:errcheck
 		ar.Capabilities.Set(capability.PushOptions)  //nolint:errcheck
+		ar.Capabilities.Set(capability.Quiet)        //nolint:errcheck
 	} else {
 		// TODO: support include-tag
 		// TODO: support deepen
