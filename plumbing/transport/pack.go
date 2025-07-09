@@ -95,6 +95,7 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	defer func() { checkError(c.stderr(), &err) }()
 
 	if err := cmd.Start(); err != nil {
+		_ = cmd.Close()
 		return nil, err
 	}
 
