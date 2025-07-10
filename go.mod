@@ -24,8 +24,8 @@ require (
 	golang.org/x/crypto v0.39.0
 	golang.org/x/exp v0.0.0-20250531010427-b6e5de432a8b
 	golang.org/x/net v0.41.0
-	golang.org/x/sys v0.33.0
-	golang.org/x/text v0.26.0
+	golang.org/x/sys v0.34.0
+	golang.org/x/text v0.27.0
 )
 
 require (
