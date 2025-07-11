@@ -81,7 +81,8 @@ func (s *ReportStatus) Encode(w io.Writer) error {
 }
 
 // Decode reads from the given reader and decodes a report-status message. It
-// does not read more input than what is needed to fill the report status.
+// reads whole input with multiple possible flushes to catch to fill report
+// status, as well as decode additional message from remote.
 func (s *ReportStatus) Decode(r io.Reader) error {
 	b, err := s.scanFirstLine(r)
 	if err != nil {
@@ -94,30 +95,28 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 
 	var l int
 	flushed := false
+	buf := &bytes.Buffer{}
 	for {
 		l, b, err = pktline.ReadLine(r)
-		if err != nil {
+		if errors.Is(err, io.EOF) {
 			break
+		}
+		if err != nil {
+			return err
 		}
 
 		if l == pktline.Flush {
 			flushed = true
-			break
 		}
 
-		if err := s.decodeCommandStatus(b); err != nil {
-			return err
-		}
+		buf.Write(b)
 	}
 
 	if !flushed {
 		return fmt.Errorf("missing flush: %w", err)
 	}
 
-	if err != nil && !errors.Is(err, io.EOF) {
-		// TODO: We should not ignore EOF errors here. Decoding a report-status
-		// message ends with a flush-pkt, an EOF indicates that the flush-pkt
-		// was not received.
+	if err = s.decodeCommandStatus(buf.Bytes()); err != nil {
 		return err
 	}
 
