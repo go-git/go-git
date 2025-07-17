@@ -51,6 +51,172 @@ func (s *CommonSuite) TestConfig_SetOption() {
 	s.Equal(expected, obtained)
 }
 
+func (s *CommonSuite) TestConfig_GetOption() {
+	var cfg *Config
+	var obtained string
+
+	// when option does not exist, return empty string
+	cfg = New()
+	obtained = cfg.GetOption("section", NoSubsection, "key1")
+	s.Equal("", obtained)
+
+	// when single value exists, return value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Options: []*Option{
+					{Key: "key1", Value: "value1"},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetOption("section", NoSubsection, "key1")
+	s.Equal("value1", obtained)
+
+	// when multiple values exist, return last value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Options: []*Option{
+					{Key: "key1", Value: "value1"},
+					{Key: "key1", Value: "value2"},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetOption("section", NoSubsection, "key1")
+	s.Equal("value2", obtained)
+
+	// when subsection option does not exist, return empty string
+	cfg = New()
+	obtained = cfg.GetOption("section", "subsection", "key1")
+	s.Equal("", obtained)
+
+	// when subsection single value exists, return value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Subsections: []*Subsection{
+					{
+						Name: "subsection",
+						Options: []*Option{
+							{Key: "key1", Value: "value1"},
+						},
+					},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetOption("section", "subsection", "key1")
+	s.Equal("value1", obtained)
+
+	// when multiple values exist, return last value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Subsections: []*Subsection{
+					{
+						Name: "subsection",
+						Options: []*Option{
+							{Key: "key1", Value: "value1"},
+							{Key: "key1", Value: "value2"},
+						},
+					},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetOption("section", "subsection", "key1")
+	s.Equal("value2", obtained)
+}
+
+func (s *CommonSuite) TestConfig_GetAllOptions() {
+	var cfg *Config
+	var obtained []string
+
+	// when option does not exist, return empty string
+	cfg = New()
+	obtained = cfg.GetAllOptions("section", NoSubsection, "key1")
+	s.Equal([]string{}, obtained)
+
+	// when single value exists, return value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Options: []*Option{
+					{Key: "key1", Value: "value1"},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetAllOptions("section", NoSubsection, "key1")
+	s.Equal([]string{"value1"}, obtained)
+
+	// when multiple values exist, return last value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Options: []*Option{
+					{Key: "key1", Value: "value1"},
+					{Key: "key1", Value: "value2"},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetAllOptions("section", NoSubsection, "key1")
+	s.Equal([]string{"value1", "value2"}, obtained)
+
+	// when subsection option does not exist, return empty string
+	cfg = New()
+	obtained = cfg.GetAllOptions("section", "subsection", "key1")
+	s.Equal([]string{}, obtained)
+
+	// when subsection single value exists, return value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Subsections: []*Subsection{
+					{
+						Name: "subsection",
+						Options: []*Option{
+							{Key: "key1", Value: "value1"},
+						},
+					},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetAllOptions("section", "subsection", "key1")
+	s.Equal([]string{"value1"}, obtained)
+
+	// when multiple values exist, return last value
+	cfg = &Config{
+		Sections: []*Section{
+			{
+				Name: "section",
+				Subsections: []*Subsection{
+					{
+						Name: "subsection",
+						Options: []*Option{
+							{Key: "key1", Value: "value1"},
+							{Key: "key1", Value: "value2"},
+						},
+					},
+				},
+			},
+		},
+	}
+	obtained = cfg.GetAllOptions("section", "subsection", "key1")
+	s.Equal([]string{"value1", "value2"}, obtained)
+}
+
 func (s *CommonSuite) TestConfig_AddOption() {
 	obtained := New().AddOption("section", NoSubsection, "key1", "value1")
 	expected := &Config{
