@@ -300,7 +300,11 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		// its baseDir and wreaking havoc by doubling
 		// up the baseDir prefix.
 		if !filepath.IsAbs(path) {
-			path, _ = filepath.Abs(path)
+			var err error
+			path, err = filepath.Abs(path)
+			if err != nil {
+				return nil, fmt.Errorf("PlainInit path error: filepath.Abs('%v') error: '%v'", path, err)
+			}
 		}
 		wt = osfs.New(path, osfs.WithBoundOS())
 		dot, _ = wt.Chroot(GitDirName)
