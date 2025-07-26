@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -71,8 +70,7 @@ func setupTest(t testing.TB, opts ...ssh.Option) (base string, port int, client 
 
 	addr := startServer(t, opts...)
 
-	base, err := os.MkdirTemp(t.TempDir(), fmt.Sprintf("go-git-ssh-%d", addr.Port))
-	require.NoError(t, err)
+	base = t.TempDir()
 
 	return base, addr.Port, client
 }

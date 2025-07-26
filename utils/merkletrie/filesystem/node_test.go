@@ -207,8 +207,7 @@ func (s *NoderSuite) TestSocket() {
 		s.T().Skip("socket files do not exist on windows")
 	}
 
-	td, err := os.MkdirTemp("", "socket-test")
-	s.NoError(err)
+	td := s.T().TempDir()
 
 	sock, err := net.ListenUnix("unix", &net.UnixAddr{Name: fmt.Sprintf("%s/socket", td), Net: "unix"})
 	s.NoError(err)
