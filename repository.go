@@ -289,6 +289,15 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		oFn(&o)
 	}
 
+	var err error
+	// go-git/go-git#1610
+	if !filepath.IsAbs(path) {
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if isBare {
 		dot = osfs.New(path, osfs.WithBoundOS())
 		initFn = func(s *filesystem.Storage) (*Repository, error) {
