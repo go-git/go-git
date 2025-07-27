@@ -308,8 +308,7 @@ func (s *WorktreeSuite) TestPullDepth() {
 }
 
 func (s *WorktreeSuite) TestPullAfterShallowClone() {
-	tempDir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	tempDir := s.T().TempDir()
 	remoteURL := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
@@ -437,8 +436,7 @@ func (s *WorktreeSuite) TestCheckoutSymlink() {
 		s.T().Skip("git doesn't support symlinks by default in windows")
 	}
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -2081,8 +2079,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectoryDot() {
 }
 
 func (s *WorktreeSuite) TestAddSymlink() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -3143,8 +3140,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 }
 
 func (s *WorktreeSuite) TestResetLingeringDirectories() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	commitOpts := &CommitOptions{Author: &object.Signature{
 		Name:  "foo",
@@ -3195,8 +3191,7 @@ func (s *WorktreeSuite) TestResetLingeringDirectories() {
 func (s *WorktreeSuite) TestAddAndCommit() {
 	expectedFiles := 2
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	repo, err := PlainInit(dir, false)
 	s.NoError(err)
@@ -3238,8 +3233,7 @@ func (s *WorktreeSuite) TestAddAndCommit() {
 }
 
 func (s *WorktreeSuite) TestAddAndCommitEmpty() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := s.T().TempDir()
 
 	repo, err := PlainInit(dir, false)
 	s.NoError(err)

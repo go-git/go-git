@@ -90,10 +90,12 @@ func createCommit(s *RepositorySuite, r *Repository) plumbing.Hash {
 	wt, err := r.Worktree()
 	s.NoError(err)
 
-	rm, err := wt.Filesystem.Create("foo.txt")
+	f, err := wt.Filesystem.Create("foo.txt")
 	s.NoError(err)
 
-	_, err = rm.Write([]byte("foo text"))
+	defer f.Close()
+
+	_, err = f.Write([]byte("foo text"))
 	s.NoError(err)
 
 	_, err = wt.Add("foo.txt")
@@ -116,9 +118,7 @@ func createCommit(s *RepositorySuite, r *Repository) plumbing.Hash {
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
@@ -142,9 +142,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit() {
 }
 
 func (s *RepositorySuite) TestInitStandardDotGit() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
@@ -641,9 +639,7 @@ func (s *RepositorySuite) TestDeleteBranch() {
 }
 
 func (s *RepositorySuite) TestPlainInit() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, true)
 	s.NoError(err)
 	s.NotNil(r)
@@ -654,9 +650,7 @@ func (s *RepositorySuite) TestPlainInit() {
 }
 
 func (s *RepositorySuite) TestPlainInitWithOptions() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir,
 		false,
 		WithDefaultBranch("refs/heads/foo"),
@@ -676,9 +670,7 @@ func (s *RepositorySuite) TestPlainInitWithOptions() {
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, true)
 	s.NoError(err)
 	s.NotNil(r)
@@ -689,9 +681,7 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 }
 
 func (s *RepositorySuite) TestPlainOpen() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
 	s.NotNil(r)
@@ -725,9 +715,7 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 }
 
 func (s *RepositorySuite) TestPlainOpenBare() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, true)
 	s.NoError(err)
 	s.NotNil(r)
@@ -738,9 +726,7 @@ func (s *RepositorySuite) TestPlainOpenBare() {
 }
 
 func (s *RepositorySuite) TestPlainOpenNotBare() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
 	s.NotNil(r)
@@ -892,9 +878,7 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 }
 
 func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	opt := &PlainOpenOptions{DetectDotGit: true}
 	r, err := PlainOpenWithOptions(dir, opt)
 	s.ErrorIs(err, ErrRepositoryNotExists)
@@ -921,9 +905,7 @@ func (s *RepositorySuite) TestPlainClone() {
 }
 
 func (s *RepositorySuite) TestPlainCloneBareAndShared() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	remote := s.GetBasicLocalRepositoryURL()
 
 	r, err := PlainClone(dir, &CloneOptions{
@@ -950,9 +932,7 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared() {
 }
 
 func (s *RepositorySuite) TestPlainCloneShared() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	remote := s.GetBasicLocalRepositoryURL()
 
 	r, err := PlainClone(dir, &CloneOptions{
@@ -978,12 +958,10 @@ func (s *RepositorySuite) TestPlainCloneShared() {
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	remote := "http://somerepo"
 
-	_, err = PlainClone(dir, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -991,12 +969,10 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError() {
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	remote := "https://somerepo"
 
-	_, err = PlainClone(dir, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1004,12 +980,10 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError() {
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	remote := "ssh://somerepo"
 
-	_, err = PlainClone(dir, &CloneOptions{
+	_, err := PlainClone(dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1017,9 +991,7 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError() {
 }
 
 func (s *RepositorySuite) TestPlainCloneWithRemoteName() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainClone(dir, &CloneOptions{
 		URL:        s.GetBasicLocalRepositoryURL(),
 		RemoteName: "test",
@@ -1033,9 +1005,7 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName() {
 }
 
 func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, false)
 	s.NotNil(r)
 	s.NoError(err)
@@ -1051,9 +1021,7 @@ func (s *RepositorySuite) TestPlainCloneContextCancel() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
@@ -1163,9 +1131,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	dir := s.T().TempDir()
 	r, err := PlainInit(dir, false)
 	s.NotNil(r)
 	s.NoError(err)
@@ -1678,9 +1644,7 @@ func (s *RepositorySuite) TestCloneWithFilter() {
 }
 
 func (s *RepositorySuite) TestPush() {
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
+	url := s.T().TempDir()
 	server, err := PlainInit(url, true)
 	s.NoError(err)
 
@@ -1707,10 +1671,8 @@ func (s *RepositorySuite) TestPush() {
 }
 
 func (s *RepositorySuite) TestPushContext() {
-	url, err := os.MkdirTemp("", "")
-	s.NoError(err)
-
-	_, err = PlainInit(url, true)
+	url := s.T().TempDir()
+	_, err := PlainInit(url, true)
 	s.NoError(err)
 
 	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
