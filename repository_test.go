@@ -886,8 +886,13 @@ func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit() {
 }
 
 func (s *RepositorySuite) TestPlainClone() {
-	dir, err := os.MkdirTemp("", "")
-	s.NoError(err)
+	dir := "rel-dir"
+	err := os.Mkdir(dir, 0o755)
+	s.Require().NoError(err)
+
+	s.T().Cleanup(func() {
+		os.RemoveAll(dir)
+	})
 
 	r, err := PlainClone(dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
