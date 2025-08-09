@@ -464,6 +464,11 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 	}
 
 	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		_, ok := e.Stages[stage]
+		if !ok {
+			continue
+		}
+
 		var value plumbing.Hash
 		if _, err := value.ReadFrom(d.r); err != nil {
 			return nil, err
