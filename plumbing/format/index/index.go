@@ -19,10 +19,12 @@ var (
 	// ErrEntryNotFound is returned by Index.Entry, if an entry is not found.
 	ErrEntryNotFound = errors.New("entry not found")
 
-	indexSignature              = []byte{'D', 'I', 'R', 'C'}
-	treeExtSignature            = []byte{'T', 'R', 'E', 'E'}
-	resolveUndoExtSignature     = []byte{'R', 'E', 'U', 'C'}
-	endOfIndexEntryExtSignature = []byte{'E', 'O', 'I', 'E'}
+	indexSignature              = []byte{'D', 'I', 'R', 'C'} // https://git-scm.com/docs/index-format#_the_git_index_file_has_the_following_format
+	treeExtSignature            = []byte{'T', 'R', 'E', 'E'} // https://git-scm.com/docs/index-format#_cache_tree
+	resolveUndoExtSignature     = []byte{'R', 'E', 'U', 'C'} // https://git-scm.com/docs/index-format#_resolve_undo
+	linkExtSignature            = []byte{'l', 'i', 'n', 'k'} // https://git-scm.com/docs/index-format#_split_index
+	untrackedCacheExtSignature  = []byte{'U', 'N', 'T', 'R'} // https://git-scm.com/docs/index-format#_untracked_cache
+	endOfIndexEntryExtSignature = []byte{'E', 'O', 'I', 'E'} // https://git-scm.com/docs/index-format#_end_of_index_entry
 )
 
 // Stage during merge
@@ -54,6 +56,10 @@ type Index struct {
 	ResolveUndo *ResolveUndo
 	// EndOfIndexEntry represents the 'End of Index Entry' extension
 	EndOfIndexEntry *EndOfIndexEntry
+	// Link represents the 'Split index base reference' extension
+	Link *Link
+	// UntrackedCache represents the 'Untracked cache' extension
+	UntrackedCache *UntrackedCache
 }
 
 // Add creates a new Entry and returns it. The caller should first check that
@@ -228,4 +234,115 @@ func (i *Index) SkipUnless(patterns []string) {
 			e.SkipWorktree = true
 		}
 	}
+}
+
+// Link represents the 'LINK' extension pointing to a shared base index.
+//
+// This extension is used in split-index mode to overlay modifications on top
+// of an immutable shared index file.
+type Link struct {
+	// ObjectID is the hash of the shared base index. If all-zero, no shared
+	// index is used.
+	ObjectID plumbing.Hash
+
+	// Delete is an EWAH-compressed bitmap representing which entries in the
+	// base index are deleted in this overlay.
+	//
+	// Note, because a delete operation changes index entry positions, but we
+	// do need original positions in replace phase, it’s best to just mark
+	// entries for removal, then do a mass deletion after replacement.
+	Delete []byte
+
+	// Replace is an EWAH-compressed bitmap representing which entries in the base index
+	// are replaced by the overlay.
+	//
+	// All replaced entries are stored in sorted order in this index. The first
+	// "1" bit in the replace bitmap corresponds to the first index entry, the
+	// second "1" bit to the second entry and so on.
+	//
+	// Replaced entries may have empty path names to save space.
+	//
+	// The remaining index entries after replaced ones will be added to the
+	// final index. These added entries are also sorted by entry name then
+	// stage.
+	Replace []byte
+}
+
+// UntrackedCache represents the 'UNTR' extension in the Git index format.
+// It avoids full-directory scans by caching the environment and directory state related to untracked files.
+type UntrackedCache struct {
+	// Environments is a sequence of strings describing the environment where the cache is valid.
+	Environments []string
+
+	// InfoExcludeCache contains stat metadata for $GIT_DIR/info/exclude.
+	// If the file does not exist, these fields are zeroed.
+	InfoExcludeStats UntrackedCacheStats
+
+	// ExcludesFileCache contains stat metadata for the file specified by core.excludesFile.
+	// If the file does not exist, these fields are zeroed.
+	ExcludesFileStats UntrackedCacheStats
+
+	// DirFlags corresponds to struct dir_struct.flags (32-bit).
+	// For example, 0x04 means DIR_SHOW_IGNORED_TOO.
+	DirFlags uint32
+
+	// InfoExcludeHash is the hash of the contents of $GIT_DIR/info/exclude.
+	// All-zero (null hash) if the file does not exist.
+	InfoExcludeHash plumbing.Hash
+
+	// ExcludesFileHash is the hash of the contents of the core.excludesFile.
+	// All-zero (null hash) if the file does not exist.
+	ExcludesFileHash plumbing.Hash
+
+	// PerDirIgnoreFile is a string naming the per-directory ignore file.
+	// Typically, ".gitignore".
+	PerDirIgnoreFile string
+
+	// Entries is the directory block list in depth-first order.
+	Entries []UntrackedCacheEntry
+
+	// ValidBitmap marks directories with valid untracked cache data.
+	ValidBitmap []byte
+
+	// CheckOnlyBitmap marks directories to check without recursion.
+	CheckOnlyBitmap []byte
+
+	// MetadataBitmap marks directories with valid metadata for ignore files.
+	MetadataBitmap []byte
+
+	// Stats holds stat info for per-directory ignore files, aligned with Hashes.
+	Stats []UntrackedCacheStats
+
+	// Hashes holds hashes of per-directory ignore files, aligned with Stats.
+	Hashes []plumbing.Hash
+}
+
+// UntrackedCacheEntry is a directory block in depth-first order.
+type UntrackedCacheEntry struct {
+	// Blocks is the number of immediate sub-directory blocks.
+	Blocks int64
+
+	// Name is the relative directory name, or "" for root.
+	Name string
+
+	// Entries lists untracked file and subdirectory names.
+	Entries []string
+}
+
+// UntrackedCacheStats stores file or directory metadata used for cache validation.
+type UntrackedCacheStats struct {
+	// CreatedAt corresponds to ctime (create time).
+	CreatedAt time.Time
+
+	// ModifiedAt corresponds to mtime (modification time).
+	ModifiedAt time.Time
+
+	// Dev and Inode identify the filesystem and node.
+	Dev, Inode uint32
+
+	// UID and GID specify the file owner user and group IDs.
+	UID, GID uint32
+
+	// Size is the file size in bytes. For directories, this is typically zero.
+	Size uint32
 }

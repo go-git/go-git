@@ -8,6 +8,7 @@ import (
 	"io"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +46,6 @@ func (e *Encoder) Encode(idx *Index) error {
 }
 
 func (e *Encoder) encode(idx *Index, footer bool) error {
-	// TODO: support extensions
 	if idx.Version > EncodeVersionSupported {
 		return ErrUnsupportedVersion
 	}
@@ -55,6 +55,10 @@ func (e *Encoder) encode(idx *Index, footer bool) error {
 	}
 
 	if err := e.encodeEntries(idx); err != nil {
+		return err
+	}
+
+	if err := e.encodeExtensions(idx); err != nil {
 		return err
 	}
 
@@ -200,6 +204,254 @@ func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
 
 	_, err = e.w.Write(data)
 	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *Encoder) encodeExtensions(idx *Index) error {
+	// Note: always write EOIE first to mark the boundary.
+	if idx.EndOfIndexEntry != nil {
+		if err := e.encodeEOIE(idx.EndOfIndexEntry); err != nil {
+			return err
+		}
+	}
+
+	// Write all the other optional extensions after the EIOE.
+	if idx.Cache != nil {
+		if err := e.encodeTREE(idx.Cache); err != nil {
+			return err
+		}
+	}
+
+	if idx.Link != nil {
+		if err := e.encodeLINK(idx.Link); err != nil {
+			return err
+		}
+	}
+
+	if idx.UntrackedCache != nil {
+		if err := e.encodeUNTR(idx.UntrackedCache); err != nil {
+			return err
+		}
+	}
+
+	if idx.ResolveUndo != nil {
+		if err := e.encodeREUC(idx.ResolveUndo); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *Encoder) encodeEOIE(ext *EndOfIndexEntry) error {
+	buf := &bytes.Buffer{}
+	if err := binary.WriteUint32(buf, ext.Offset); err != nil {
+		return err
+	}
+	if _, err := ext.Hash.WriteTo(buf); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("EOIE", buf.Bytes())
+}
+
+func (e *Encoder) encodeTREE(ext *Tree) error {
+	buf := &bytes.Buffer{}
+	for _, i := range ext.Entries {
+		if _, err := buf.WriteString(i.Path); err != nil {
+			return err
+		}
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(buf, "%d %d\n", i.Entries, i.Trees); err != nil {
+			return err
+		}
+		if _, err := buf.Write(i.Hash.Bytes()); err != nil {
+			return err
+		}
+	}
+
+	return e.encodeRawExtension("TREE", buf.Bytes())
+}
+
+func (e *Encoder) encodeREUC(ext *ResolveUndo) error {
+	buf := &bytes.Buffer{}
+	for _, i := range ext.Entries {
+		if _, err := buf.WriteString(i.Path); err != nil {
+			return err
+		}
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+
+		for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+			if _, ok := i.Stages[stage]; ok {
+				if _, err := buf.WriteString(strconv.FormatInt(int64(stage), 10)); err != nil {
+					return err
+				}
+			} else {
+				if _, err := buf.WriteString("0"); err != nil {
+					return err
+				}
+			}
+			if err := buf.WriteByte(0); err != nil {
+				return err
+			}
+		}
+		for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+			hash, ok := i.Stages[stage]
+			if !ok {
+				continue
+			}
+			if _, err := buf.Write(hash.Bytes()); err != nil {
+				return err
+			}
+		}
+	}
+	return e.encodeRawExtension("REUC", buf.Bytes())
+}
+
+func (e *Encoder) encodeLINK(ext *Link) error {
+	buf := &bytes.Buffer{}
+	if _, err := buf.Write(ext.ObjectID.Bytes()); err != nil {
+		return err
+	}
+	if err := binary.WriteUint32(buf, uint32(len(ext.Delete))); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.Delete); err != nil {
+		return err
+	}
+	if err := binary.WriteUint32(buf, uint32(len(ext.Replace))); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.Replace); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("link", buf.Bytes())
+}
+
+func (e *Encoder) encodeUNTR(ext *UntrackedCache) error {
+	buf := &bytes.Buffer{}
+	for _, i := range ext.Environments {
+		if _, err := buf.WriteString(i); err != nil {
+			return err
+		}
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+	}
+	// Terminate the list of strings with a NUL value.
+	if err := buf.WriteByte(0); err != nil {
+		return err
+	}
+	if err := e.encodeUntrackedCacheStats(buf, &ext.InfoExcludeStats); err != nil {
+		return err
+	}
+	if err := e.encodeUntrackedCacheStats(buf, &ext.ExcludesFileStats); err != nil {
+		return err
+	}
+	if err := binary.WriteUint32(buf, ext.DirFlags); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.InfoExcludeHash.Bytes()); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.ExcludesFileHash.Bytes()); err != nil {
+		return err
+	}
+	if _, err := buf.WriteString(ext.PerDirIgnoreFile); err != nil {
+		return err
+	}
+	if err := buf.WriteByte(0); err != nil {
+		return err
+	}
+	if err := binary.WriteVariableWidthInt(buf, int64(len(ext.Entries))); err != nil {
+		return err
+	}
+	if len(ext.Entries) != 0 {
+		for _, i := range ext.Entries {
+			if err := e.encodeUntrackedCacheEntry(buf, &i); err != nil {
+				return err
+			}
+		}
+		if _, err := buf.Write(ext.ValidBitmap); err != nil {
+			return err
+		}
+		if _, err := buf.Write(ext.CheckOnlyBitmap); err != nil {
+			return err
+		}
+		if _, err := buf.Write(ext.MetadataBitmap); err != nil {
+			return err
+		}
+		for _, i := range ext.Stats {
+			if err := e.encodeUntrackedCacheStats(buf, &i); err != nil {
+				return err
+			}
+		}
+		for _, i := range ext.Hashes {
+			if _, err := buf.Write(i.Bytes()); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Terminate the whole extension with a final NUL value.
+	if err := buf.WriteByte(0); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("UNTR", buf.Bytes())
+}
+
+func (e *Encoder) encodeUntrackedCacheEntry(w io.Writer, entry *UntrackedCacheEntry) error {
+	if err := binary.WriteVariableWidthInt(w, int64(len(entry.Entries))); err != nil {
+		return err
+	}
+	if err := binary.WriteVariableWidthInt(w, entry.Blocks); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(entry.Name)); err != nil {
+		return err
+	}
+	if err := binary.Write(w, []byte{'\x00'}); err != nil {
+		return err
+	}
+	for _, i := range entry.Entries {
+		if _, err := w.Write([]byte(i)); err != nil {
+			return err
+		}
+		if err := binary.Write(w, []byte{'\x00'}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Encoder) encodeUntrackedCacheStats(w io.Writer, stat *UntrackedCacheStats) error {
+	sec, nsec, err := e.timeToUint32(&stat.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	msec, mnsec, err := e.timeToUint32(&stat.ModifiedAt)
+	if err != nil {
+		return err
+	}
+
+	flow := []interface{}{
+		sec, nsec,
+		msec, mnsec,
+		stat.Dev,
+		stat.Inode,
+		stat.UID,
+		stat.GID,
+		stat.Size,
+	}
+
+	if err := binary.Write(w, flow...); err != nil {
 		return err
 	}
 

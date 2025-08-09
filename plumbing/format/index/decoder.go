@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
+	encoding "encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"strconv"
 	"time"
 
+	"github.com/erizocosmico/go-ewah"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -217,9 +220,6 @@ func (d *Decoder) padEntry(idx *Index, e *Entry, read int) error {
 }
 
 func (d *Decoder) readExtensions(idx *Index) error {
-	// TODO: support 'Split index' and 'Untracked cache' extensions, take in
-	// count that they are not supported by jgit or libgit
-
 	var expected []byte
 	var peeked []byte
 	var err error
@@ -267,18 +267,35 @@ func (d *Decoder) readExtension(idx *Index) error {
 		if err := d.Decode(idx.Cache); err != nil {
 			return err
 		}
+
 	case bytes.Equal(header[:], resolveUndoExtSignature):
 		idx.ResolveUndo = &ResolveUndo{}
 		d := &resolveUndoDecoder{r}
 		if err := d.Decode(idx.ResolveUndo); err != nil {
 			return err
 		}
+
 	case bytes.Equal(header[:], endOfIndexEntryExtSignature):
 		idx.EndOfIndexEntry = &EndOfIndexEntry{}
 		d := &endOfIndexEntryDecoder{r}
 		if err := d.Decode(idx.EndOfIndexEntry); err != nil {
 			return err
 		}
+
+	case bytes.Equal(header[:], linkExtSignature):
+		idx.Link = &Link{}
+		d := &linkExtensionDecoder{r}
+		if err := d.Decode(idx.Link); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], untrackedCacheExtSignature):
+		idx.UntrackedCache = &UntrackedCache{}
+		d := &untrackedCacheDecoder{r}
+		if err := d.Decode(idx.UntrackedCache); err != nil {
+			return err
+		}
+
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
@@ -489,6 +506,225 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 
 	_, err = e.Hash.ReadFrom(d.r)
 	return err
+}
+
+type linkExtensionDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *linkExtensionDecoder) Decode(ext *Link) error {
+	if _, err := ext.ObjectID.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	deleteLength, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+	ext.Delete = make([]byte, deleteLength)
+	if _, err := io.ReadFull(d.r, ext.Delete); err != nil {
+		return err
+	}
+
+	replaceLength, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+	ext.Replace = make([]byte, replaceLength)
+	if _, err := io.ReadFull(d.r, ext.Replace); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type untrackedCacheDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
+	for {
+		env, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return err
+		}
+		if len(env) == 0 {
+			break // list terminated
+		}
+		ext.Environments = append(ext.Environments, string(env))
+	}
+
+	if err := d.decodeUntrackedCacheStats(&ext.InfoExcludeStats); err != nil {
+		return err
+	}
+	if err := d.decodeUntrackedCacheStats(&ext.ExcludesFileStats); err != nil {
+		return err
+	}
+
+	flags, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	ext.DirFlags = flags
+
+	if _, err := ext.InfoExcludeHash.ReadFrom(d.r); err != nil {
+		return err
+	}
+	if _, err := ext.ExcludesFileHash.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	ignoreFile, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return err
+	}
+
+	ext.PerDirIgnoreFile = string(ignoreFile)
+
+	count, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return err
+	}
+
+	if count != 0 {
+		ext.Entries = make([]UntrackedCacheEntry, count)
+		for i := int64(0); i < count; i++ {
+			entry, err := d.readEntry()
+			if err != nil {
+				return err
+			}
+			ext.Entries[i] = *entry
+		}
+
+		validBitmap, err := ewah.FromReader(d.r, encoding.LittleEndian)
+		if err != nil {
+			return err
+		}
+
+		var validBuffer bytes.Buffer
+		if _, err := validBitmap.Write(&validBuffer, encoding.LittleEndian); err != nil {
+			return err
+		}
+		ext.ValidBitmap = validBuffer.Bytes()
+
+		checkOnlyBitmap, err := ewah.FromReader(d.r, encoding.LittleEndian)
+		if err != nil {
+			return err
+		}
+
+		var checkOnlyBuffer bytes.Buffer
+		if _, err := checkOnlyBitmap.Write(&checkOnlyBuffer, encoding.LittleEndian); err != nil {
+			return err
+		}
+		ext.CheckOnlyBitmap = checkOnlyBuffer.Bytes()
+
+		metadataBitmap, err := ewah.FromReader(d.r, encoding.LittleEndian)
+		if err != nil {
+			return err
+		}
+
+		var metadataBuffer bytes.Buffer
+		if _, err := metadataBitmap.Write(&metadataBuffer, encoding.LittleEndian); err != nil {
+			return err
+		}
+		ext.MetadataBitmap = metadataBuffer.Bytes()
+
+		count := 0
+		for i := uint32(0); i < metadataBitmap.Bits(); i++ {
+			if metadataBitmap.Get(int64(i)) {
+				count++
+			}
+		}
+
+		ext.Stats = make([]UntrackedCacheStats, count)
+		ext.Hashes = make([]plumbing.Hash, count)
+
+		for i := 0; i < int(count); i++ {
+			var value UntrackedCacheStats
+			if err := d.decodeUntrackedCacheStats(&value); err != nil {
+				return err
+			}
+			ext.Stats[i] = value
+		}
+		for i := 0; i < int(count); i++ {
+			var value plumbing.Hash
+			if _, err := value.ReadFrom(d.r); err != nil {
+				return err
+			}
+			ext.Hashes[i] = value
+		}
+	}
+
+	finalByte, err := d.r.ReadByte()
+	if err != nil {
+		return err
+	}
+	if finalByte != 0 {
+		return fmt.Errorf("expected final NUL terminator, got: 0x%x", finalByte)
+	}
+
+	return nil
+}
+
+func (d *untrackedCacheDecoder) readEntry() (*UntrackedCacheEntry, error) {
+	e := &UntrackedCacheEntry{}
+
+	entries, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return nil, err
+	}
+	e.Entries = make([]string, entries)
+
+	blocks, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return nil, err
+	}
+	e.Blocks = blocks
+
+	name, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return nil, err
+	}
+	e.Name = string(name)
+
+	for i := int64(0); i < entries; i++ {
+		value, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return nil, err
+		}
+		e.Entries[i] = string(value)
+	}
+
+	return e, nil
+}
+
+func (d *untrackedCacheDecoder) decodeUntrackedCacheStats(e *UntrackedCacheStats) error {
+	var msec, mnsec, sec, nsec uint32
+
+	flow := []interface{}{
+		&sec, &nsec,
+		&msec, &mnsec,
+		&e.Dev,
+		&e.Inode,
+		&e.UID,
+		&e.GID,
+		&e.Size,
+	}
+
+	if err := binary.Read(d.r, flow...); err != nil {
+		return err
+	}
+
+	if sec != 0 || nsec != 0 {
+		e.CreatedAt = time.Unix(int64(sec), int64(nsec))
+	}
+
+	if msec != 0 || mnsec != 0 {
+		e.ModifiedAt = time.Unix(int64(msec), int64(mnsec))
+	}
+
+	return nil
 }
 
 type unknownExtensionDecoder struct {
