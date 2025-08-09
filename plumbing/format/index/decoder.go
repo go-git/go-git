@@ -457,19 +457,19 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	e.Path = string(path)
 
-	for i := 0; i < 3; i++ {
-		if err := d.readStage(e, Stage(i+1)); err != nil {
+	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		if err := d.readStage(e, Stage(stage)); err != nil {
 			return nil, err
 		}
 	}
 
-	for s := range e.Stages {
-		var h plumbing.Hash
-		if _, err := h.ReadFrom(d.r); err != nil {
+	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		var value plumbing.Hash
+		if _, err := value.ReadFrom(d.r); err != nil {
 			return nil, err
 		}
 
-		e.Stages[s] = h
+		e.Stages[stage] = value
 	}
 
 	return e, nil
