@@ -391,34 +391,34 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 	e.Path = string(path)
 
-	count, err := binary.ReadUntil(d.r, ' ')
+	countAscii, err := binary.ReadUntil(d.r, ' ')
 	if err != nil {
 		return nil, err
 	}
 
-	i, err := strconv.Atoi(string(count))
+	count, err := strconv.Atoi(string(countAscii))
+	if err != nil {
+		return nil, err
+	}
+	e.Entries = count
+
+	treesAscii, err := binary.ReadUntil(d.r, '\n')
 	if err != nil {
 		return nil, err
 	}
 
-	e.Entries = i
-	trees, err := binary.ReadUntil(d.r, '\n')
+	trees, err := strconv.Atoi(string(treesAscii))
 	if err != nil {
 		return nil, err
 	}
-
-	i, err = strconv.Atoi(string(trees))
-	if err != nil {
-		return nil, err
-	}
+	e.Trees = trees
 
 	// An entry can be in an invalidated state and is represented by having a
 	// negative number in the entry_count field.
-	if i == -1 {
+	if count == -1 {
 		return e, nil
 	}
 
-	e.Trees = i
 	_, err = e.Hash.ReadFrom(d.r)
 	if err != nil {
 		return nil, err
