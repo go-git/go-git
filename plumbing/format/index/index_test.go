@@ -201,11 +201,11 @@ func (s *IndexSuite) TestExtensions_REUC() {
 	s.NotNil(out.ResolveUndo)
 	s.Equal(len(idx.ResolveUndo.Entries), len(out.ResolveUndo.Entries))
 
-	for i, e := range idx.ResolveUndo.Entries {
-		s.Equal(e.Path, out.ResolveUndo.Entries[i].Path)
-		s.Equal(e.Stages[AncestorMode], out.ResolveUndo.Entries[i].Stages[AncestorMode])
-		s.Equal(e.Stages[TheirMode], out.ResolveUndo.Entries[i].Stages[TheirMode])
-		s.Equal(e.Stages[OurMode], out.ResolveUndo.Entries[i].Stages[OurMode])
+	for i := range idx.ResolveUndo.Entries {
+		s.Equal(idx.ResolveUndo.Entries[i].Path, out.ResolveUndo.Entries[i].Path)
+		s.Equal(idx.ResolveUndo.Entries[i].Stages[AncestorMode], out.ResolveUndo.Entries[i].Stages[AncestorMode])
+		s.Equal(idx.ResolveUndo.Entries[i].Stages[TheirMode], out.ResolveUndo.Entries[i].Stages[TheirMode])
+		s.Equal(idx.ResolveUndo.Entries[i].Stages[OurMode], out.ResolveUndo.Entries[i].Stages[OurMode])
 	}
 }
 
@@ -245,14 +245,14 @@ func (s *IndexSuite) TestExtensions_UNTR() {
 			Environments: []string{"BAR=FOO", "FOO=BAR"},
 
 			InfoExcludeStats: UntrackedCacheStats{
-				CreatedAt:  time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC),
-				ModifiedAt: time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC),
+				CreatedAt:  time.Date(2018, 1, 1, 0, 0, 0, 0, time.Local),
+				ModifiedAt: time.Date(2019, 1, 1, 0, 0, 0, 0, time.Local),
 
 				Dev: 1, Inode: 100, UID: 1001, GID: 101, Size: 1000,
 			},
 			ExcludesFileStats: UntrackedCacheStats{
-				CreatedAt:  time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
-				ModifiedAt: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+				CreatedAt:  time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local),
+				ModifiedAt: time.Date(2021, 1, 1, 0, 0, 0, 0, time.Local),
 
 				Dev: 2, Inode: 200, UID: 2002, GID: 202, Size: 2000,
 			},
@@ -304,15 +304,15 @@ func (s *IndexSuite) TestExtensions_UNTR() {
 
 			Stats: []UntrackedCacheStats{
 				{
-					CreatedAt:  time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC),
-					ModifiedAt: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+					CreatedAt:  time.Date(2022, 1, 1, 0, 0, 0, 0, time.Local),
+					ModifiedAt: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local),
 
 					Dev: 3, Inode: 300, UID: 3003, GID: 303, Size: 3000,
 				},
 				{
 
-					CreatedAt:  time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-					ModifiedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+					CreatedAt:  time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local),
+					ModifiedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local),
 
 					Dev: 4, Inode: 400, UID: 4004, GID: 404, Size: 4000,
 				},
