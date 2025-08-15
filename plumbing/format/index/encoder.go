@@ -319,16 +319,10 @@ func (e *Encoder) encodeLINK(ext *Link) error {
 	if _, err := buf.Write(ext.ObjectID.Bytes()); err != nil {
 		return err
 	}
-	if err := binary.WriteUint32(buf, uint32(len(ext.Delete))); err != nil {
+	if _, err := buf.Write(ext.DeleteBitmap); err != nil {
 		return err
 	}
-	if _, err := buf.Write(ext.Delete); err != nil {
-		return err
-	}
-	if err := binary.WriteUint32(buf, uint32(len(ext.Replace))); err != nil {
-		return err
-	}
-	if _, err := buf.Write(ext.Replace); err != nil {
+	if _, err := buf.Write(ext.ReplaceBitmap); err != nil {
 		return err
 	}
 	return e.encodeRawExtension("link", buf.Bytes())

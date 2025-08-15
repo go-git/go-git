@@ -522,23 +522,27 @@ func (d *linkExtensionDecoder) Decode(ext *Link) error {
 		return err
 	}
 
-	deleteLength, err := binary.ReadUint32(d.r)
+	deleteBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
 	if err != nil {
-		return err
-	}
-	ext.Delete = make([]byte, deleteLength)
-	if _, err := io.ReadFull(d.r, ext.Delete); err != nil {
 		return err
 	}
 
-	replaceLength, err := binary.ReadUint32(d.r)
+	var deleteBuffer bytes.Buffer
+	if _, err := deleteBitmap.Write(&deleteBuffer, encoding.BigEndian); err != nil {
+		return err
+	}
+	ext.DeleteBitmap = deleteBuffer.Bytes()
+
+	replaceBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
 	if err != nil {
 		return err
 	}
-	ext.Replace = make([]byte, replaceLength)
-	if _, err := io.ReadFull(d.r, ext.Replace); err != nil {
+
+	var replaceBuffer bytes.Buffer
+	if _, err := replaceBitmap.Write(&replaceBuffer, encoding.BigEndian); err != nil {
 		return err
 	}
+	ext.ReplaceBitmap = replaceBuffer.Bytes()
 
 	return nil
 }
@@ -602,35 +606,35 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 			ext.Entries[i] = *entry
 		}
 
-		validBitmap, err := ewah.FromReader(d.r, encoding.LittleEndian)
+		validBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
 		if err != nil {
 			return err
 		}
 
 		var validBuffer bytes.Buffer
-		if _, err := validBitmap.Write(&validBuffer, encoding.LittleEndian); err != nil {
+		if _, err := validBitmap.Write(&validBuffer, encoding.BigEndian); err != nil {
 			return err
 		}
 		ext.ValidBitmap = validBuffer.Bytes()
 
-		checkOnlyBitmap, err := ewah.FromReader(d.r, encoding.LittleEndian)
+		checkOnlyBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
 		if err != nil {
 			return err
 		}
 
 		var checkOnlyBuffer bytes.Buffer
-		if _, err := checkOnlyBitmap.Write(&checkOnlyBuffer, encoding.LittleEndian); err != nil {
+		if _, err := checkOnlyBitmap.Write(&checkOnlyBuffer, encoding.BigEndian); err != nil {
 			return err
 		}
 		ext.CheckOnlyBitmap = checkOnlyBuffer.Bytes()
 
-		metadataBitmap, err := ewah.FromReader(d.r, encoding.LittleEndian)
+		metadataBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
 		if err != nil {
 			return err
 		}
 
 		var metadataBuffer bytes.Buffer
-		if _, err := metadataBitmap.Write(&metadataBuffer, encoding.LittleEndian); err != nil {
+		if _, err := metadataBitmap.Write(&metadataBuffer, encoding.BigEndian); err != nil {
 			return err
 		}
 		ext.MetadataBitmap = metadataBuffer.Bytes()

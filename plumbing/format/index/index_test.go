@@ -214,12 +214,22 @@ func (s *IndexSuite) TestExtensions_LINK() {
 		Version: 4,
 		Link: &Link{
 			ObjectID: plumbing.NewHash("abcd1234abcd1234abcd1234abcd1234abcd1234"),
+
 			// Valid EWAH-compressed bitmap [0, 2, 4].
-			Delete: []byte("\x05\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00" +
-				"\x00\x00\x00\x00\x00\x00\xa8\x00\x00\x00\x00"),
+			DeleteBitmap: []byte{
+				0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+				0xa8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+			},
+
 			// Valid EWAH-compressed bitmap [1, 3, 5].
-			Replace: []byte("\x06\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00" +
-				"\x00\x00\x00\x00\x00\x00\x54\x00\x00\x00\x00"),
+			ReplaceBitmap: []byte{
+				0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x02,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+				0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+			},
 		},
 	}
 
@@ -234,8 +244,8 @@ func (s *IndexSuite) TestExtensions_LINK() {
 	s.NoError(decoder.Decode(out))
 	s.NotNil(out.Link)
 	s.Equal(idx.Link.ObjectID, out.Link.ObjectID)
-	s.Equal(idx.Link.Delete, out.Link.Delete)
-	s.Equal(idx.Link.Replace, out.Link.Replace)
+	s.Equal(idx.Link.DeleteBitmap, out.Link.DeleteBitmap)
+	s.Equal(idx.Link.ReplaceBitmap, out.Link.ReplaceBitmap)
 }
 
 func (s *IndexSuite) TestExtensions_UNTR() {
@@ -288,19 +298,28 @@ func (s *IndexSuite) TestExtensions_UNTR() {
 			},
 
 			// Valid EWAH-compressed bitmap [0, 1].
-			ValidBitmap: []byte(
-				"\x02\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00" +
-					"\x00\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00"),
+			ValidBitmap: []byte{
+				0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+				0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+			},
 
 			// Valid EWAH-compressed bitmap [2, 3].
-			CheckOnlyBitmap: []byte(
-				"\x04\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00" +
-					"\x00\x00\x00\x00\x00\x00\x30\x00\x00\x00\x00"),
+			CheckOnlyBitmap: []byte{
+				0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x02,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+				0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+			},
 
 			// Valid EWAH-compressed bitmap [0, 3].
-			MetadataBitmap: []byte(
-				"\x04\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00" +
-					"\x00\x00\x00\x00\x00\x00\x90\x00\x00\x00\x00"),
+			MetadataBitmap: []byte{
+				0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x02,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+				0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+			},
 
 			Stats: []UntrackedCacheStats{
 				{

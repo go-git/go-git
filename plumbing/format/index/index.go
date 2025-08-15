@@ -245,16 +245,16 @@ type Link struct {
 	// index is used.
 	ObjectID plumbing.Hash
 
-	// Delete is an EWAH-compressed bitmap representing which entries in the
-	// base index are deleted in this overlay.
+	// DeleteBitmap is an EWAH-compressed bitmap representing which entries in
+	// the base index are deleted in this overlay.
 	//
 	// Note, because a delete operation changes index entry positions, but we
 	// do need original positions in replace phase, it’s best to just mark
 	// entries for removal, then do a mass deletion after replacement.
-	Delete []byte
+	DeleteBitmap []byte
 
-	// Replace is an EWAH-compressed bitmap representing which entries in the base index
-	// are replaced by the overlay.
+	// ReplaceBitmap is an EWAH-compressed bitmap representing which entries in
+	// the base index are replaced by the overlay.
 	//
 	// All replaced entries are stored in sorted order in this index. The first
 	// "1" bit in the replace bitmap corresponds to the first index entry, the
@@ -265,7 +265,7 @@ type Link struct {
 	// The remaining index entries after replaced ones will be added to the
 	// final index. These added entries are also sorted by entry name then
 	// stage.
-	Replace []byte
+	ReplaceBitmap []byte
 }
 
 // UntrackedCache represents the 'UNTR' extension in the Git index format.
