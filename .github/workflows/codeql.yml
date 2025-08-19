@@ -32,7 +32,7 @@ jobs:
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@eefe1b5db9f28481d2bf2bd096da3873c1cd2a7b # v2.22.11
+        uses: github/codeql-action/init@e96e340c1e95e91449de06aabfa9525b7b98113f # v2.22.11
         with:
           languages: ${{ matrix.language }}
           # xref: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
@@ -43,6 +43,6 @@ jobs:
         run: go build ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@eefe1b5db9f28481d2bf2bd096da3873c1cd2a7b # v2.22.11
+        uses: github/codeql-action/analyze@e96e340c1e95e91449de06aabfa9525b7b98113f # v2.22.11
         with:
           category: "/language:${{matrix.language}}"
