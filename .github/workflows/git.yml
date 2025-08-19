@@ -11,6 +11,11 @@ permissions: {}
 
 jobs:
   test:
+    container:
+      image: trialrrdq7a.jfrog.io/docker-trial/go-ci-base:1.22-warm
+      credentials:
+        username: ${{ secrets.ARTIFACTORY_USER }}
+        password: ${{ secrets.ARTIFACTORY_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
