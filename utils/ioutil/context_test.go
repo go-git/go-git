@@ -59,7 +59,7 @@ func TestWriter(t *testing.T) {
 	if err != nil {
 		t.Error("should have no error")
 	}
-	if buf.String() != string("abc") {
+	if buf.String() != "abc" {
 		t.Error("incorrect contents")
 	}
 
