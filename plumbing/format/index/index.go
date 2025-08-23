@@ -25,6 +25,7 @@ var (
 	linkExtSignature            = []byte{'l', 'i', 'n', 'k'} // https://git-scm.com/docs/index-format#_split_index
 	untrackedCacheExtSignature  = []byte{'U', 'N', 'T', 'R'} // https://git-scm.com/docs/index-format#_untracked_cache
 	endOfIndexEntryExtSignature = []byte{'E', 'O', 'I', 'E'} // https://git-scm.com/docs/index-format#_end_of_index_entry
+	fsMonitorExtSignature       = []byte{'F', 'S', 'M', 'N'} // https://git-scm.com/docs/index-format#_file_system_monitor_cache
 )
 
 // Stage during merge
@@ -50,16 +51,18 @@ type Index struct {
 	// Entries collection of entries represented by this Index. The order of
 	// this collection is not guaranteed
 	Entries []*Entry
-	// Cache represents the 'Cached tree' extension
+	// Cache represents the 'Cache Tree' extension
 	Cache *Tree
-	// ResolveUndo represents the 'Resolve undo' extension
+	// ResolveUndo represents the 'Resolve Undo' extension
 	ResolveUndo *ResolveUndo
 	// EndOfIndexEntry represents the 'End of Index Entry' extension
 	EndOfIndexEntry *EndOfIndexEntry
-	// Link represents the 'Split index base reference' extension
+	// Link represents the 'Split Index' extension
 	Link *Link
-	// UntrackedCache represents the 'Untracked cache' extension
+	// UntrackedCache represents the 'Untracked Cache' extension
 	UntrackedCache *UntrackedCache
+	// FSMonitor represents the 'File System Monitor Cache' extension
+	FSMonitor *FSMonitor
 }
 
 // Add creates a new Entry and returns it. The caller should first check that
@@ -345,4 +348,24 @@ type UntrackedCacheStats struct {
 
 	// Size is the file size in bytes. For directories, this is typically zero.
 	Size uint32
+}
+
+// FSMonitor describes the state of the fsmonitor extension.
+type FSMonitor struct {
+	// Version of the fsmonitor extension [1, 2].
+	Version uint32
+
+	// Since is the timestamp of the last fsmonitor query. This field is only
+	// present and valid in version 1 of the extension.
+	Since time.Time
+
+	// Token is an opaque string provided by the filesystem monitor. It
+	// identifies the last query position in the monitor’s event stream. This
+	// field is only present and valid in version 2 of the extension.
+	Token string
+
+	// DirtyBitmap is a bitmap of index entries that are known to be dirty. Git
+	// uses this to mark which paths must still be re-validated even if the
+	// fsmonitor indicates no changes.
+	DirtyBitmap []byte
 }

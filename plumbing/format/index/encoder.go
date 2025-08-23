@@ -211,14 +211,7 @@ func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
 }
 
 func (e *Encoder) encodeExtensions(idx *Index) error {
-	// Note: always write EOIE first to mark the boundary.
-	if idx.EndOfIndexEntry != nil {
-		if err := e.encodeEOIE(idx.EndOfIndexEntry); err != nil {
-			return err
-		}
-	}
-
-	// Write all the other optional extensions after the EIOE.
+	// Write all the optional extensions before the EIOE.
 	if idx.Cache != nil {
 		if err := e.encodeTREE(idx.Cache); err != nil {
 			return err
@@ -239,6 +232,25 @@ func (e *Encoder) encodeExtensions(idx *Index) error {
 
 	if idx.ResolveUndo != nil {
 		if err := e.encodeREUC(idx.ResolveUndo); err != nil {
+			return err
+		}
+	}
+
+	if idx.ResolveUndo != nil {
+		if err := e.encodeREUC(idx.ResolveUndo); err != nil {
+			return err
+		}
+	}
+
+	if idx.FSMonitor != nil {
+		if err := e.encodeFSMN(idx.FSMonitor); err != nil {
+			return err
+		}
+	}
+
+	// Note: always write EOIE last to mark the boundary.
+	if idx.EndOfIndexEntry != nil {
+		if err := e.encodeEOIE(idx.EndOfIndexEntry); err != nil {
 			return err
 		}
 	}
@@ -450,6 +462,42 @@ func (e *Encoder) encodeUntrackedCacheStats(w io.Writer, stat *UntrackedCacheSta
 	}
 
 	return nil
+}
+
+func (e *Encoder) encodeFSMN(ext *FSMonitor) error {
+	buf := &bytes.Buffer{}
+	if err := binary.WriteUint32(buf, ext.Version); err != nil {
+		return err
+	}
+	switch ext.Version {
+	case 1:
+		sec, nsec, err := e.timeToUint32(&ext.Since)
+		if err != nil {
+			return err
+		}
+		if err := binary.Write(buf, sec, nsec); err != nil {
+			return err
+		}
+
+	case 2:
+		if _, err := buf.Write([]byte(ext.Token)); err != nil {
+			return err
+		}
+		if err := binary.Write(buf, []byte{'\x00'}); err != nil {
+			return err
+		}
+
+	default:
+		return errors.New("filesystem monitor cache extension version must be in the range [1, 2]")
+	}
+
+	if err := binary.WriteUint32(buf, uint32(len(ext.DirtyBitmap))); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.DirtyBitmap); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("FSMN", buf.Bytes())
 }
 
 func (e *Encoder) timeToUint32(t *time.Time) (uint32, uint32, error) {

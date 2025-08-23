@@ -296,6 +296,13 @@ func (d *Decoder) readExtension(idx *Index) error {
 			return err
 		}
 
+	case bytes.Equal(header[:], fsMonitorExtSignature):
+		idx.FSMonitor = &FSMonitor{}
+		d := &fsMonitorDecoder{r}
+		if err := d.Decode(idx.FSMonitor); err != nil {
+			return err
+		}
+
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
@@ -734,6 +741,53 @@ func (d *untrackedCacheDecoder) decodeUntrackedCacheStats(e *UntrackedCacheStats
 	}
 
 	return nil
+}
+
+type fsMonitorDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *fsMonitorDecoder) Decode(ext *FSMonitor) error {
+	var err error
+	ext.Version, err = binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	switch ext.Version {
+	case 1:
+		var sec, nsec uint32
+		if err := binary.Read(d.r, &sec, &nsec); err != nil {
+			return err
+		}
+		if sec != 0 || nsec != 0 {
+			ext.Since = time.Unix(int64(sec), int64(nsec))
+		}
+
+	case 2:
+		token, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return err
+		}
+		ext.Token = string(token)
+
+	default:
+		return errors.New("filesystem monitor cache extension version must be in the range [1, 2]")
+	}
+
+	length, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	bitmap := make([]byte, length)
+	if err := binary.Read(d.r, bitmap); err != nil {
+		return err
+	}
+
+	ext.DirtyBitmap = bitmap
+
+	return err
 }
 
 type unknownExtensionDecoder struct {

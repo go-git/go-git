@@ -383,3 +383,55 @@ func (s *IndexSuite) TestExtensions_UNTR() {
 		s.Equal(idx.UntrackedCache.Hashes[i], out.UntrackedCache.Hashes[i])
 	}
 }
+
+func (s *IndexSuite) TestExtensions_FSMN() {
+	indexes := []*Index{
+		{
+			Version: 4,
+			FSMonitor: &FSMonitor{
+				Version: 1,
+				Since:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local),
+
+				// Valid EWAH-compressed bitmap [0, 2, 4].
+				DirtyBitmap: []byte{
+					0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02,
+					0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+					0xa8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+					0x00, 0x00, 0x00, 0x00,
+				},
+			},
+		},
+		{
+			Version: 4,
+			FSMonitor: &FSMonitor{
+				Version: 2,
+				Token:   "fsmonitor example token",
+
+				// Valid EWAH-compressed bitmap [1, 3, 5].
+				DirtyBitmap: []byte{
+					0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x02,
+					0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+					0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+					0x00, 0x00, 0x00, 0x00,
+				},
+			},
+		},
+	}
+
+	for _, i := range indexes {
+		var buffer bytes.Buffer
+
+		encoder := NewEncoder(&buffer)
+		s.Require().NoError(encoder.Encode(i))
+
+		decoder := NewDecoder(&buffer)
+		out := &Index{}
+
+		s.NoError(decoder.Decode(out))
+		s.Require().NotNil(out.FSMonitor)
+		s.Equal(i.FSMonitor.Version, out.FSMonitor.Version)
+		s.Equal(i.FSMonitor.Token, out.FSMonitor.Token)
+		s.Equal(i.FSMonitor.Since, out.FSMonitor.Since)
+		s.Equal(i.FSMonitor.DirtyBitmap, out.FSMonitor.DirtyBitmap)
+	}
+}
