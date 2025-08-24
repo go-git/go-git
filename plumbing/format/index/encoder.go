@@ -412,12 +412,12 @@ func (e *Encoder) encodeUNTR(ext *UntrackedCache) error {
 				return err
 			}
 		}
+		// Terminate the list with a final NUL value.
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
 	}
 
-	// Terminate the whole extension with a final NUL value.
-	if err := buf.WriteByte(0); err != nil {
-		return err
-	}
 	return e.encodeRawExtension("UNTR", buf.Bytes())
 }
 
