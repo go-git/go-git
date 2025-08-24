@@ -693,14 +693,14 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 			}
 			ext.Hashes[i] = value
 		}
-	}
 
-	finalByte, err := d.r.ReadByte()
-	if err != nil {
-		return err
-	}
-	if finalByte != 0 {
-		return fmt.Errorf("expected final NUL terminator, got: 0x%x", finalByte)
+		finalByte, err := d.r.ReadByte()
+		if err != nil {
+			return err
+		}
+		if finalByte != 0 {
+			return fmt.Errorf("expected final NUL terminator, got: 0x%x", finalByte)
+		}
 	}
 
 	// Make sure we've consumed the entire extension.
