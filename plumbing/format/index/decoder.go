@@ -303,6 +303,13 @@ func (d *Decoder) readExtension(idx *Index) error {
 			return err
 		}
 
+	case bytes.Equal(header[:], indexEntryOffsetTableExtSignature):
+		idx.IndexEntryOffsetTable = &IndexEntryOffsetTable{}
+		d := &indexEntryOffsetTableDecoder{r}
+		if err := d.Decode(idx.IndexEntryOffsetTable); err != nil {
+			return err
+		}
+
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
@@ -430,6 +437,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return e, nil
 }
 
@@ -516,8 +524,16 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 		return err
 	}
 
-	_, err = e.Hash.ReadFrom(d.r)
-	return err
+	if _, err := e.Hash.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("EIOE extension has extra unparsed data")
+	}
+
+	return nil
 }
 
 type linkExtensionDecoder struct {
@@ -551,6 +567,11 @@ func (d *linkExtensionDecoder) Decode(ext *Link) error {
 	}
 	ext.ReplaceBitmap = replaceBuffer.Bytes()
 
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("LINK extension has extra unparsed data")
+	}
+
 	return nil
 }
 
@@ -559,15 +580,17 @@ type untrackedCacheDecoder struct {
 }
 
 func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
-	for {
+	length, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return err
+	}
+	for i := int64(0); i < length; {
 		env, err := binary.ReadUntil(d.r, '\x00')
 		if err != nil {
 			return err
 		}
-		if len(env) == 0 {
-			break // list terminated
-		}
 		ext.Environments = append(ext.Environments, string(env))
+		i += int64(len(env)) + 1
 	}
 
 	if err := d.decodeUntrackedCacheStats(&ext.InfoExcludeStats); err != nil {
@@ -646,24 +669,24 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 		}
 		ext.MetadataBitmap = metadataBuffer.Bytes()
 
-		count := 0
-		for i := uint32(0); i < metadataBitmap.Bits(); i++ {
-			if metadataBitmap.Get(int64(i)) {
-				count++
+		valid := 0
+		for i := uint32(0); i < validBitmap.Bits(); i++ {
+			if validBitmap.Get(int64(i)) {
+				valid++
 			}
 		}
 
-		ext.Stats = make([]UntrackedCacheStats, count)
-		ext.Hashes = make([]plumbing.Hash, count)
-
-		for i := 0; i < int(count); i++ {
+		ext.Stats = make([]UntrackedCacheStats, validBitmap.Bits())
+		for i := uint32(0); i < validBitmap.Bits(); i++ {
 			var value UntrackedCacheStats
 			if err := d.decodeUntrackedCacheStats(&value); err != nil {
 				return err
 			}
 			ext.Stats[i] = value
 		}
-		for i := 0; i < int(count); i++ {
+
+		ext.Hashes = make([]plumbing.Hash, metadataBitmap.Bits())
+		for i := uint32(0); i < metadataBitmap.Bits(); i++ {
 			var value plumbing.Hash
 			if _, err := value.ReadFrom(d.r); err != nil {
 				return err
@@ -678,6 +701,11 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 	}
 	if finalByte != 0 {
 		return fmt.Errorf("expected final NUL terminator, got: 0x%x", finalByte)
+	}
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("UNTR extension has extra unparsed data")
 	}
 
 	return nil
@@ -787,7 +815,48 @@ func (d *fsMonitorDecoder) Decode(ext *FSMonitor) error {
 
 	ext.DirtyBitmap = bitmap
 
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("FSMN extension has extra unparsed data")
+	}
+
 	return err
+}
+
+type indexEntryOffsetTableDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *indexEntryOffsetTableDecoder) Decode(table *IndexEntryOffsetTable) error {
+	var err error
+
+	table.Version, err = binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	for d.r.Buffered() > 0 {
+		var entry IndexEntryOffsetEntry
+
+		entry.Offset, err = binary.ReadUint32(d.r)
+		if err != nil {
+			return err
+		}
+
+		entry.Count, err = binary.ReadUint32(d.r)
+		if err != nil {
+			return err
+		}
+
+		table.Entries = append(table.Entries, entry)
+	}
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("IEOT extension has extra unparsed data")
+	}
+
+	return nil
 }
 
 type unknownExtensionDecoder struct {

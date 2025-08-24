@@ -339,6 +339,8 @@ func (s *IndexSuite) TestExtensions_UNTR() {
 			Hashes: []plumbing.Hash{
 				plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 				plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+				plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"),
+				plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddd"),
 			},
 		},
 	}
@@ -434,4 +436,34 @@ func (s *IndexSuite) TestExtensions_FSMN() {
 		s.Equal(i.FSMonitor.Since, out.FSMonitor.Since)
 		s.Equal(i.FSMonitor.DirtyBitmap, out.FSMonitor.DirtyBitmap)
 	}
+}
+
+func (s *IndexSuite) TestExtensions_IEOT() {
+	idx := &Index{
+		Version: 4,
+		IndexEntryOffsetTable: &IndexEntryOffsetTable{
+			Version: 1,
+			Entries: []IndexEntryOffsetEntry{
+				{Offset: 100, Count: 2},
+				{Offset: 200, Count: 3},
+			},
+		},
+	}
+
+	var buffer bytes.Buffer
+
+	encoder := NewEncoder(&buffer)
+	s.Require().NoError(encoder.Encode(idx))
+
+	decoder := NewDecoder(&buffer)
+	out := &Index{}
+
+	s.Require().NoError(decoder.Decode(out))
+	s.Require().NotNil(out.IndexEntryOffsetTable)
+	s.Equal(uint32(1), out.IndexEntryOffsetTable.Version)
+	s.Require().Len(out.IndexEntryOffsetTable.Entries, 2)
+	s.Equal(idx.IndexEntryOffsetTable.Entries[0].Offset, out.IndexEntryOffsetTable.Entries[0].Offset)
+	s.Equal(idx.IndexEntryOffsetTable.Entries[0].Count, out.IndexEntryOffsetTable.Entries[0].Count)
+	s.Equal(idx.IndexEntryOffsetTable.Entries[1].Offset, out.IndexEntryOffsetTable.Entries[1].Offset)
+	s.Equal(idx.IndexEntryOffsetTable.Entries[1].Count, out.IndexEntryOffsetTable.Entries[1].Count)
 }

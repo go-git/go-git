@@ -19,13 +19,14 @@ var (
 	// ErrEntryNotFound is returned by Index.Entry, if an entry is not found.
 	ErrEntryNotFound = errors.New("entry not found")
 
-	indexSignature              = []byte{'D', 'I', 'R', 'C'} // https://git-scm.com/docs/index-format#_the_git_index_file_has_the_following_format
-	treeExtSignature            = []byte{'T', 'R', 'E', 'E'} // https://git-scm.com/docs/index-format#_cache_tree
-	resolveUndoExtSignature     = []byte{'R', 'E', 'U', 'C'} // https://git-scm.com/docs/index-format#_resolve_undo
-	linkExtSignature            = []byte{'l', 'i', 'n', 'k'} // https://git-scm.com/docs/index-format#_split_index
-	untrackedCacheExtSignature  = []byte{'U', 'N', 'T', 'R'} // https://git-scm.com/docs/index-format#_untracked_cache
-	endOfIndexEntryExtSignature = []byte{'E', 'O', 'I', 'E'} // https://git-scm.com/docs/index-format#_end_of_index_entry
-	fsMonitorExtSignature       = []byte{'F', 'S', 'M', 'N'} // https://git-scm.com/docs/index-format#_file_system_monitor_cache
+	indexSignature                    = []byte{'D', 'I', 'R', 'C'} // https://git-scm.com/docs/index-format#_the_git_index_file_has_the_following_format
+	treeExtSignature                  = []byte{'T', 'R', 'E', 'E'} // https://git-scm.com/docs/index-format#_cache_tree
+	resolveUndoExtSignature           = []byte{'R', 'E', 'U', 'C'} // https://git-scm.com/docs/index-format#_resolve_undo
+	linkExtSignature                  = []byte{'l', 'i', 'n', 'k'} // https://git-scm.com/docs/index-format#_split_index
+	untrackedCacheExtSignature        = []byte{'U', 'N', 'T', 'R'} // https://git-scm.com/docs/index-format#_untracked_cache
+	endOfIndexEntryExtSignature       = []byte{'E', 'O', 'I', 'E'} // https://git-scm.com/docs/index-format#_end_of_index_entry
+	fsMonitorExtSignature             = []byte{'F', 'S', 'M', 'N'} // https://git-scm.com/docs/index-format#_file_system_monitor_cache
+	indexEntryOffsetTableExtSignature = []byte{'I', 'E', 'O', 'T'} // https://git-scm.com/docs/index-format#_index_entry_offset_table
 )
 
 // Stage during merge
@@ -63,6 +64,8 @@ type Index struct {
 	UntrackedCache *UntrackedCache
 	// FSMonitor represents the 'File System Monitor Cache' extension
 	FSMonitor *FSMonitor
+	// IndexEntryOffsetTable represents the 'Index Entry Offset Table' extension
+	IndexEntryOffsetTable *IndexEntryOffsetTable
 }
 
 // Add creates a new Entry and returns it. The caller should first check that
@@ -239,7 +242,7 @@ func (i *Index) SkipUnless(patterns []string) {
 	}
 }
 
-// Link represents the 'LINK' extension pointing to a shared base index.
+// Link represents the 'LINK' index extension.
 //
 // This extension is used in split-index mode to overlay modifications on top
 // of an immutable shared index file.
@@ -271,8 +274,10 @@ type Link struct {
 	ReplaceBitmap []byte
 }
 
-// UntrackedCache represents the 'UNTR' extension in the Git index format.
-// It avoids full-directory scans by caching the environment and directory state related to untracked files.
+// UntrackedCache represents the 'UNTR' index extension.
+//
+// This extension is used to avoid full-directory scans by caching the
+// environment and directory state related to untracked files.
 type UntrackedCache struct {
 	// Environments is a sequence of strings describing the environment where the cache is valid.
 	Environments []string
@@ -350,9 +355,12 @@ type UntrackedCacheStats struct {
 	Size uint32
 }
 
-// FSMonitor describes the state of the fsmonitor extension.
+// FSMonitor represents the 'FSMN' index extension.
+//
+// It tracks filesystem changes since the last index update to avoid
+// unnecessary full-index scans.
 type FSMonitor struct {
-	// Version of the fsmonitor extension [1, 2].
+	// Version of the extension [1, 2].
 	Version uint32
 
 	// Since is the timestamp of the last fsmonitor query. This field is only
@@ -368,4 +376,25 @@ type FSMonitor struct {
 	// uses this to mark which paths must still be re-validated even if the
 	// fsmonitor indicates no changes.
 	DirtyBitmap []byte
+}
+
+// IndexEntryOffsetTable represents the 'IEOT' index extension.
+//
+// It stores offsets and counts of index entries to enable efficient
+// multi-threaded loading.
+type IndexEntryOffsetTable struct {
+	// Version of the extension (currently, only version 1 is supported).
+	Version uint32
+
+	// Entries lists the offset and count of cache entries in blocks.
+	Entries []IndexEntryOffsetEntry
+}
+
+// IndexEntryOffsetEntry represents an entry in the Index Entry Offset Table.
+type IndexEntryOffsetEntry struct {
+	// Offset is the byte offset to the first cache entry in this block.
+	Offset uint32
+
+	// Count is the number of cache entries in this block.
+	Count uint32
 }

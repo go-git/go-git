@@ -248,6 +248,12 @@ func (e *Encoder) encodeExtensions(idx *Index) error {
 		}
 	}
 
+	if idx.IndexEntryOffsetTable != nil {
+		if err := e.encodeIEOT(idx.IndexEntryOffsetTable); err != nil {
+			return err
+		}
+	}
+
 	// Note: always write EOIE last to mark the boundary.
 	if idx.EndOfIndexEntry != nil {
 		if err := e.encodeEOIE(idx.EndOfIndexEntry); err != nil {
@@ -342,6 +348,13 @@ func (e *Encoder) encodeLINK(ext *Link) error {
 
 func (e *Encoder) encodeUNTR(ext *UntrackedCache) error {
 	buf := &bytes.Buffer{}
+	envs := 0
+	for _, i := range ext.Environments {
+		envs += len(i) + 1
+	}
+	if err := binary.WriteVariableWidthInt(buf, int64(envs)); err != nil {
+		return err
+	}
 	for _, i := range ext.Environments {
 		if _, err := buf.WriteString(i); err != nil {
 			return err
@@ -349,10 +362,6 @@ func (e *Encoder) encodeUNTR(ext *UntrackedCache) error {
 		if err := buf.WriteByte(0); err != nil {
 			return err
 		}
-	}
-	// Terminate the list of strings with a NUL value.
-	if err := buf.WriteByte(0); err != nil {
-		return err
 	}
 	if err := e.encodeUntrackedCacheStats(buf, &ext.InfoExcludeStats); err != nil {
 		return err
@@ -498,6 +507,25 @@ func (e *Encoder) encodeFSMN(ext *FSMonitor) error {
 		return err
 	}
 	return e.encodeRawExtension("FSMN", buf.Bytes())
+}
+
+func (e *Encoder) encodeIEOT(ext *IndexEntryOffsetTable) error {
+	buf := &bytes.Buffer{}
+
+	if err := binary.Write(buf, ext.Version); err != nil {
+		return err
+	}
+
+	for _, i := range ext.Entries {
+		if err := binary.Write(buf, i.Offset); err != nil {
+			return err
+		}
+		if err := binary.Write(buf, i.Count); err != nil {
+			return err
+		}
+	}
+
+	return e.encodeRawExtension("IEOT", buf.Bytes())
 }
 
 func (e *Encoder) timeToUint32(t *time.Time) (uint32, uint32, error) {
