@@ -669,13 +669,6 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 		}
 		ext.MetadataBitmap = metadataBuffer.Bytes()
 
-		valid := 0
-		for i := uint32(0); i < validBitmap.Bits(); i++ {
-			if validBitmap.Get(int64(i)) {
-				valid++
-			}
-		}
-
 		ext.Stats = make([]UntrackedCacheStats, validBitmap.Bits())
 		for i := uint32(0); i < validBitmap.Bits(); i++ {
 			var value UntrackedCacheStats
