@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
+	encoding "encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"strconv"
 	"time"
 
+	"github.com/erizocosmico/go-ewah"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -217,9 +220,6 @@ func (d *Decoder) padEntry(idx *Index, e *Entry, read int) error {
 }
 
 func (d *Decoder) readExtensions(idx *Index) error {
-	// TODO: support 'Split index' and 'Untracked cache' extensions, take in
-	// count that they are not supported by jgit or libgit
-
 	var expected []byte
 	var peeked []byte
 	var err error
@@ -267,18 +267,49 @@ func (d *Decoder) readExtension(idx *Index) error {
 		if err := d.Decode(idx.Cache); err != nil {
 			return err
 		}
+
 	case bytes.Equal(header[:], resolveUndoExtSignature):
 		idx.ResolveUndo = &ResolveUndo{}
 		d := &resolveUndoDecoder{r}
 		if err := d.Decode(idx.ResolveUndo); err != nil {
 			return err
 		}
+
 	case bytes.Equal(header[:], endOfIndexEntryExtSignature):
 		idx.EndOfIndexEntry = &EndOfIndexEntry{}
 		d := &endOfIndexEntryDecoder{r}
 		if err := d.Decode(idx.EndOfIndexEntry); err != nil {
 			return err
 		}
+
+	case bytes.Equal(header[:], linkExtSignature):
+		idx.Link = &Link{}
+		d := &linkExtensionDecoder{r}
+		if err := d.Decode(idx.Link); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], untrackedCacheExtSignature):
+		idx.UntrackedCache = &UntrackedCache{}
+		d := &untrackedCacheDecoder{r}
+		if err := d.Decode(idx.UntrackedCache); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], fsMonitorExtSignature):
+		idx.FSMonitor = &FSMonitor{}
+		d := &fsMonitorDecoder{r}
+		if err := d.Decode(idx.FSMonitor); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], indexEntryOffsetTableExtSignature):
+		idx.IndexEntryOffsetTable = &IndexEntryOffsetTable{}
+		d := &indexEntryOffsetTableDecoder{r}
+		if err := d.Decode(idx.IndexEntryOffsetTable); err != nil {
+			return err
+		}
+
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
@@ -374,38 +405,39 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 	e.Path = string(path)
 
-	count, err := binary.ReadUntil(d.r, ' ')
+	countAscii, err := binary.ReadUntil(d.r, ' ')
 	if err != nil {
 		return nil, err
 	}
 
-	i, err := strconv.Atoi(string(count))
+	count, err := strconv.Atoi(string(countAscii))
 	if err != nil {
 		return nil, err
 	}
+	e.Entries = count
+
+	treesAscii, err := binary.ReadUntil(d.r, '\n')
+	if err != nil {
+		return nil, err
+	}
+
+	trees, err := strconv.Atoi(string(treesAscii))
+	if err != nil {
+		return nil, err
+	}
+	e.Trees = trees
 
 	// An entry can be in an invalidated state and is represented by having a
 	// negative number in the entry_count field.
-	if i == -1 {
-		return nil, nil
+	if count == -1 {
+		return e, nil
 	}
 
-	e.Entries = i
-	trees, err := binary.ReadUntil(d.r, '\n')
-	if err != nil {
-		return nil, err
-	}
-
-	i, err = strconv.Atoi(string(trees))
-	if err != nil {
-		return nil, err
-	}
-
-	e.Trees = i
 	_, err = e.Hash.ReadFrom(d.r)
 	if err != nil {
 		return nil, err
 	}
+
 	return e, nil
 }
 
@@ -440,19 +472,24 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	e.Path = string(path)
 
-	for i := 0; i < 3; i++ {
-		if err := d.readStage(e, Stage(i+1)); err != nil {
+	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		if err := d.readStage(e, Stage(stage)); err != nil {
 			return nil, err
 		}
 	}
 
-	for s := range e.Stages {
-		var h plumbing.Hash
-		if _, err := h.ReadFrom(d.r); err != nil {
+	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		_, ok := e.Stages[stage]
+		if !ok {
+			continue
+		}
+
+		var value plumbing.Hash
+		if _, err := value.ReadFrom(d.r); err != nil {
 			return nil, err
 		}
 
-		e.Stages[s] = h
+		e.Stages[stage] = value
 	}
 
 	return e, nil
@@ -487,8 +524,332 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 		return err
 	}
 
-	_, err = e.Hash.ReadFrom(d.r)
+	if _, err := e.Hash.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("EIOE extension has extra unparsed data")
+	}
+
+	return nil
+}
+
+type linkExtensionDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *linkExtensionDecoder) Decode(ext *Link) error {
+	if _, err := ext.ObjectID.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	deleteBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+	if err != nil {
+		return err
+	}
+
+	var deleteBuffer bytes.Buffer
+	if _, err := deleteBitmap.Write(&deleteBuffer, encoding.BigEndian); err != nil {
+		return err
+	}
+	ext.DeleteBitmap = deleteBuffer.Bytes()
+
+	replaceBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+	if err != nil {
+		return err
+	}
+
+	var replaceBuffer bytes.Buffer
+	if _, err := replaceBitmap.Write(&replaceBuffer, encoding.BigEndian); err != nil {
+		return err
+	}
+	ext.ReplaceBitmap = replaceBuffer.Bytes()
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("LINK extension has extra unparsed data")
+	}
+
+	return nil
+}
+
+type untrackedCacheDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
+	length, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return err
+	}
+	for i := int64(0); i < length; {
+		env, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return err
+		}
+		ext.Environments = append(ext.Environments, string(env))
+		i += int64(len(env)) + 1
+	}
+
+	if err := d.decodeUntrackedCacheStats(&ext.InfoExcludeStats); err != nil {
+		return err
+	}
+	if err := d.decodeUntrackedCacheStats(&ext.ExcludesFileStats); err != nil {
+		return err
+	}
+
+	flags, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	ext.DirFlags = flags
+
+	if _, err := ext.InfoExcludeHash.ReadFrom(d.r); err != nil {
+		return err
+	}
+	if _, err := ext.ExcludesFileHash.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	ignoreFile, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return err
+	}
+
+	ext.PerDirIgnoreFile = string(ignoreFile)
+
+	count, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return err
+	}
+
+	if count != 0 {
+		ext.Entries = make([]UntrackedCacheEntry, count)
+		for i := int64(0); i < count; i++ {
+			entry, err := d.readEntry()
+			if err != nil {
+				return err
+			}
+			ext.Entries[i] = *entry
+		}
+
+		validBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+		if err != nil {
+			return err
+		}
+
+		var validBuffer bytes.Buffer
+		if _, err := validBitmap.Write(&validBuffer, encoding.BigEndian); err != nil {
+			return err
+		}
+		ext.ValidBitmap = validBuffer.Bytes()
+
+		checkOnlyBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+		if err != nil {
+			return err
+		}
+
+		var checkOnlyBuffer bytes.Buffer
+		if _, err := checkOnlyBitmap.Write(&checkOnlyBuffer, encoding.BigEndian); err != nil {
+			return err
+		}
+		ext.CheckOnlyBitmap = checkOnlyBuffer.Bytes()
+
+		metadataBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+		if err != nil {
+			return err
+		}
+
+		var metadataBuffer bytes.Buffer
+		if _, err := metadataBitmap.Write(&metadataBuffer, encoding.BigEndian); err != nil {
+			return err
+		}
+		ext.MetadataBitmap = metadataBuffer.Bytes()
+
+		ext.Stats = make([]UntrackedCacheStats, validBitmap.Bits())
+		for i := uint32(0); i < validBitmap.Bits(); i++ {
+			var value UntrackedCacheStats
+			if err := d.decodeUntrackedCacheStats(&value); err != nil {
+				return err
+			}
+			ext.Stats[i] = value
+		}
+
+		ext.Hashes = make([]plumbing.Hash, metadataBitmap.Bits())
+		for i := uint32(0); i < metadataBitmap.Bits(); i++ {
+			var value plumbing.Hash
+			if _, err := value.ReadFrom(d.r); err != nil {
+				return err
+			}
+			ext.Hashes[i] = value
+		}
+
+		finalByte, err := d.r.ReadByte()
+		if err != nil {
+			return err
+		}
+		if finalByte != 0 {
+			return fmt.Errorf("expected final NUL terminator, got: 0x%x", finalByte)
+		}
+	}
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("UNTR extension has extra unparsed data")
+	}
+
+	return nil
+}
+
+func (d *untrackedCacheDecoder) readEntry() (*UntrackedCacheEntry, error) {
+	e := &UntrackedCacheEntry{}
+
+	entries, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return nil, err
+	}
+	e.Entries = make([]string, entries)
+
+	blocks, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return nil, err
+	}
+	e.Blocks = blocks
+
+	name, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return nil, err
+	}
+	e.Name = string(name)
+
+	for i := int64(0); i < entries; i++ {
+		value, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return nil, err
+		}
+		e.Entries[i] = string(value)
+	}
+
+	return e, nil
+}
+
+func (d *untrackedCacheDecoder) decodeUntrackedCacheStats(e *UntrackedCacheStats) error {
+	var msec, mnsec, sec, nsec uint32
+
+	flow := []interface{}{
+		&sec, &nsec,
+		&msec, &mnsec,
+		&e.Dev,
+		&e.Inode,
+		&e.UID,
+		&e.GID,
+		&e.Size,
+	}
+
+	if err := binary.Read(d.r, flow...); err != nil {
+		return err
+	}
+
+	if sec != 0 || nsec != 0 {
+		e.CreatedAt = time.Unix(int64(sec), int64(nsec))
+	}
+
+	if msec != 0 || mnsec != 0 {
+		e.ModifiedAt = time.Unix(int64(msec), int64(mnsec))
+	}
+
+	return nil
+}
+
+type fsMonitorDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *fsMonitorDecoder) Decode(ext *FSMonitor) error {
+	var err error
+	ext.Version, err = binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	switch ext.Version {
+	case 1:
+		var sec, nsec uint32
+		if err := binary.Read(d.r, &sec, &nsec); err != nil {
+			return err
+		}
+		if sec != 0 || nsec != 0 {
+			ext.Since = time.Unix(int64(sec), int64(nsec))
+		}
+
+	case 2:
+		token, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return err
+		}
+		ext.Token = string(token)
+
+	default:
+		return errors.New("filesystem monitor cache extension version must be in the range [1, 2]")
+	}
+
+	length, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	bitmap := make([]byte, length)
+	if err := binary.Read(d.r, bitmap); err != nil {
+		return err
+	}
+
+	ext.DirtyBitmap = bitmap
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("FSMN extension has extra unparsed data")
+	}
+
 	return err
+}
+
+type indexEntryOffsetTableDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *indexEntryOffsetTableDecoder) Decode(table *IndexEntryOffsetTable) error {
+	var err error
+
+	table.Version, err = binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	for d.r.Buffered() > 0 {
+		var entry IndexEntryOffsetEntry
+
+		entry.Offset, err = binary.ReadUint32(d.r)
+		if err != nil {
+			return err
+		}
+
+		entry.Count, err = binary.ReadUint32(d.r)
+		if err != nil {
+			return err
+		}
+
+		table.Entries = append(table.Entries, entry)
+	}
+
+	// Make sure we've consumed the entire extension.
+	if d.r.Buffered() > 0 {
+		return fmt.Errorf("IEOT extension has extra unparsed data")
+	}
+
+	return nil
 }
 
 type unknownExtensionDecoder struct {
