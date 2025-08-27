@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
-	encoding "encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/erizocosmico/go-ewah"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/ewah"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
@@ -545,24 +544,24 @@ func (d *linkExtensionDecoder) Decode(ext *Link) error {
 		return err
 	}
 
-	deleteBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+	deleteBitmap, err := ewah.ReadFrom(d.r)
 	if err != nil {
 		return err
 	}
 
 	var deleteBuffer bytes.Buffer
-	if _, err := deleteBitmap.Write(&deleteBuffer, encoding.BigEndian); err != nil {
+	if _, err := deleteBitmap.WriteTo(&deleteBuffer); err != nil {
 		return err
 	}
 	ext.DeleteBitmap = deleteBuffer.Bytes()
 
-	replaceBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+	replaceBitmap, err := ewah.ReadFrom(d.r)
 	if err != nil {
 		return err
 	}
 
 	var replaceBuffer bytes.Buffer
-	if _, err := replaceBitmap.Write(&replaceBuffer, encoding.BigEndian); err != nil {
+	if _, err := replaceBitmap.WriteTo(&replaceBuffer); err != nil {
 		return err
 	}
 	ext.ReplaceBitmap = replaceBuffer.Bytes()
@@ -636,41 +635,55 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 			ext.Entries[i] = *entry
 		}
 
-		validBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+		validBitmap, err := ewah.ReadFrom(d.r)
 		if err != nil {
 			return err
 		}
 
+		validEntries := 0
+		for i := uint64(0); i < validBitmap.Bits(); i++ {
+			if validBitmap.Get(i) {
+				validEntries++
+			}
+		}
+
 		var validBuffer bytes.Buffer
-		if _, err := validBitmap.Write(&validBuffer, encoding.BigEndian); err != nil {
+		if _, err := validBitmap.WriteTo(&validBuffer); err != nil {
 			return err
 		}
 		ext.ValidBitmap = validBuffer.Bytes()
 
-		checkOnlyBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+		checkOnlyBitmap, err := ewah.ReadFrom(d.r)
 		if err != nil {
 			return err
 		}
 
 		var checkOnlyBuffer bytes.Buffer
-		if _, err := checkOnlyBitmap.Write(&checkOnlyBuffer, encoding.BigEndian); err != nil {
+		if _, err := checkOnlyBitmap.WriteTo(&checkOnlyBuffer); err != nil {
 			return err
 		}
 		ext.CheckOnlyBitmap = checkOnlyBuffer.Bytes()
 
-		metadataBitmap, err := ewah.FromReader(d.r, encoding.BigEndian)
+		metadataBitmap, err := ewah.ReadFrom(d.r)
 		if err != nil {
 			return err
 		}
 
+		metadataEntries := 0
+		for i := uint64(0); i < metadataBitmap.Bits(); i++ {
+			if metadataBitmap.Get(i) {
+				metadataEntries++
+			}
+		}
+
 		var metadataBuffer bytes.Buffer
-		if _, err := metadataBitmap.Write(&metadataBuffer, encoding.BigEndian); err != nil {
+		if _, err := metadataBitmap.WriteTo(&metadataBuffer); err != nil {
 			return err
 		}
 		ext.MetadataBitmap = metadataBuffer.Bytes()
 
-		ext.Stats = make([]UntrackedCacheStats, validBitmap.Bits())
-		for i := uint32(0); i < validBitmap.Bits(); i++ {
+		ext.Stats = make([]UntrackedCacheStats, validEntries)
+		for i := 0; i < validEntries; i++ {
 			var value UntrackedCacheStats
 			if err := d.decodeUntrackedCacheStats(&value); err != nil {
 				return err
@@ -678,8 +691,8 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 			ext.Stats[i] = value
 		}
 
-		ext.Hashes = make([]plumbing.Hash, metadataBitmap.Bits())
-		for i := uint32(0); i < metadataBitmap.Bits(); i++ {
+		ext.Hashes = make([]plumbing.Hash, metadataEntries)
+		for i := 0; i < metadataEntries; i++ {
 			var value plumbing.Hash
 			if _, err := value.ReadFrom(d.r); err != nil {
 				return err
