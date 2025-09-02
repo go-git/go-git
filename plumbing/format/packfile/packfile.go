@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
 	billy "github.com/go-git/go-billy/v6"
@@ -349,8 +348,3 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 
 	return obj, nil
 }
-
-// errInvalidWindows is the Windows equivalent to os.ErrInvalid
-const errInvalidWindows = "The parameter is incorrect."
-
-var errInvalidUnix = os.ErrInvalid.Error()
