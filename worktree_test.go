@@ -509,6 +509,10 @@ func (s *WorktreeSuite) TestCheckoutCRLF() {
 
 		require.NoError(t, wt.Checkout(&CheckoutOptions{}))
 
+		status, err := wt.Status()
+		require.NoError(t, err)
+		require.True(t, status.IsClean(), status)
+
 		file, err := wt.Filesystem.Open("CHANGELOG")
 		require.NoError(t, err)
 
