@@ -515,6 +515,10 @@ func (s *WorktreeSuite) TestCheckoutCRLF() {
 	content, err := io.ReadAll(file)
 	s.NoError(err)
 	s.Equal("Initial changelog\r\n", string(content)) // added CR.
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.True(status.IsClean(), status)
 }
 
 func (s *WorktreeSuite) TestFilenameNormalization() {

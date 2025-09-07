@@ -42,8 +42,31 @@ func (s *NoderSuite) TestDiff() {
 	fsB.Symlink("foo", "bar")
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
+		IsEquals,
+	)
+
+	s.NoError(err)
+	s.Len(ch, 0)
+}
+
+func (s *NoderSuite) TestDiffCRLF() {
+	fsA := memfs.New()
+	WriteFile(fsA, "foo", []byte("foo\n"), 0644)
+	WriteFile(fsA, "qux/bar", []byte("foo\n"), 0644)
+	WriteFile(fsA, "qux/qux", []byte("foo\n"), 0644)
+	fsA.Symlink("foo", "bar")
+
+	fsB := memfs.New()
+	WriteFile(fsB, "foo", []byte("foo\r\n"), 0644)
+	WriteFile(fsB, "qux/bar", []byte("foo\r\n"), 0644)
+	WriteFile(fsB, "qux/qux", []byte("foo\r\n"), 0644)
+	fsB.Symlink("foo", "bar")
+
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{AutoCRLF: true}),
 		IsEquals,
 	)
 
@@ -59,8 +82,8 @@ func (s *NoderSuite) TestDiffChangeLink() {
 	fsB.Symlink("bar", "foo")
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -80,8 +103,8 @@ func (s *NoderSuite) TestDiffChangeContent() {
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -98,8 +121,8 @@ func (s *NoderSuite) TestDiffSymlinkDirOnA() {
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -116,8 +139,8 @@ func (s *NoderSuite) TestDiffSymlinkDirOnB() {
 	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -133,8 +156,8 @@ func (s *NoderSuite) TestDiffChangeMissing() {
 	WriteFile(fsB, "bar", []byte("bar"), 0644)
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -150,8 +173,8 @@ func (s *NoderSuite) TestDiffChangeMode() {
 	WriteFile(fsB, "foo", []byte("foo"), 0755)
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -167,8 +190,8 @@ func (s *NoderSuite) TestDiffChangeModeNotRelevant() {
 	WriteFile(fsB, "foo", []byte("foo"), 0655)
 
 	ch, err := merkletrie.DiffTree(
-		NewRootNode(fsA, nil),
-		NewRootNode(fsB, nil),
+		NewRootNode(fsA, nil, Config{}),
+		NewRootNode(fsB, nil, Config{}),
 		IsEquals,
 	)
 
@@ -187,10 +210,10 @@ func (s *NoderSuite) TestDiffDirectory() {
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, map[string]plumbing.Hash{
 			dir: plumbing.NewHash("aa102815663d23f8b75a47e7a01965dcdc96468c"),
-		}),
+		}, Config{}),
 		NewRootNode(fsB, map[string]plumbing.Hash{
 			dir: plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"),
-		}),
+		}, Config{}),
 		IsEquals,
 	)
 
@@ -216,7 +239,7 @@ func (s *NoderSuite) TestSocket() {
 	fsA := osfs.New(td)
 	WriteFile(fsA, "foo", []byte("foo"), 0644)
 
-	noder := NewRootNode(fsA, nil)
+	noder := NewRootNode(fsA, nil, Config{})
 	childs, err := noder.Children()
 	s.NoError(err)
 	s.Len(childs, 1)
