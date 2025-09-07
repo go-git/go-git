@@ -206,11 +206,12 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError(c *C)
 	report, err := s.receivePackNoCheck(c, endpoint, req, fixture, full)
 	//XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
-	c.Assert(err, ErrorMatches, ".*(failed to update ref|failed to lock).*")
+	// More recent versions: command error on <ref>: reference already exists
+	c.Assert(err, ErrorMatches, ".*(failed to update ref|failed to lock|reference already exists).*")
 	c.Assert(report.UnpackStatus, Equals, "ok")
 	c.Assert(len(report.CommandStatuses), Equals, 1)
 	c.Assert(report.CommandStatuses[0].ReferenceName, Equals, plumbing.ReferenceName("refs/heads/master"))
-	c.Assert(report.CommandStatuses[0].Status, Matches, "(failed to update ref|failed to lock)")
+	c.Assert(report.CommandStatuses[0].Status, Matches, "(failed to update ref|failed to lock|reference already exists)")
 	s.checkRemoteHead(c, endpoint, plumbing.NewHash(fixture.Head))
 }
 
