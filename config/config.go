@@ -68,6 +68,10 @@ type Config struct {
 		CommentChar string
 		// RepositoryFormatVersion identifies the repository format and layout version.
 		RepositoryFormatVersion format.RepositoryFormatVersion
+		// AutoCRLF if "true", all the CRLF line endings in the worktree will be
+		// converted to LF when added to the repository, and vice versa on checkout.
+		// If set to "input", only worktree-to-repository conversion is performed.
+		AutoCRLF string
 	}
 
 	User struct {
@@ -290,6 +294,7 @@ const (
 	objectFormat               = "objectformat"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
+	autoCRLFKey                = "autocrlf"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -337,6 +342,7 @@ func (c *Config) unmarshalCore() {
 
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
+	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
 }
 
 func (c *Config) unmarshalUser() {
@@ -497,6 +503,10 @@ func (c *Config) marshalCore() {
 
 	if c.Core.Worktree != "" {
 		s.SetOption(worktreeKey, c.Core.Worktree)
+	}
+
+	if c.Core.AutoCRLF != "" {
+		s.SetOption(autoCRLFKey, c.Core.AutoCRLF)
 	}
 }
 
