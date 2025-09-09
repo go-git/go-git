@@ -14,19 +14,15 @@ func TestGetAndPutZlibReader(t *testing.T) {
 	}
 
 	dict := &[]byte{}
-	reader := FakeZLibReader{}
-	PutZlibReader(ZLibReader{dict: dict, Reader: &reader})
-
-	if !reader.wasClosed {
-		t.Errorf("reader was not closed")
-	}
+	reader := &FakeZLibReader{}
+	PutZlibReader(&ZLibReader{dict: dict, reader: reader})
 
 	z2, err := GetZlibReader(bytes.NewReader(zlibInitBytes))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	if &reader != z2.Reader {
+	if reader != z2.reader {
 		t.Errorf("zlib reader was not reused")
 	}
 
@@ -51,8 +47,7 @@ func TestGetAndPutZlibWriter(t *testing.T) {
 }
 
 type FakeZLibReader struct {
-	wasClosed bool
-	wasReset  bool
+	wasReset bool
 }
 
 func (f *FakeZLibReader) Reset(r io.Reader, dict []byte) error {
@@ -65,6 +60,5 @@ func (f *FakeZLibReader) Read(p []byte) (n int, err error) {
 }
 
 func (f *FakeZLibReader) Close() error {
-	f.wasClosed = true
 	return nil
 }

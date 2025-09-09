@@ -95,19 +95,16 @@ type Scanner struct {
 	storage storer.EncodedObjectStorer
 
 	*scannerReader
-	zr            gogitsync.ZLibReader
 	lowMemoryMode bool
 }
 
 // NewScanner creates a new instance of Scanner.
 func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
-	dict := make([]byte, 16*1024)
 	crc := crc32.NewIEEE()
 	packhash := gogithash.New(crypto.SHA1)
 
 	r := &Scanner{
 		scannerReader: newScannerReader(rs, io.MultiWriter(crc, packhash)),
-		zr:            gogitsync.NewZlibReader(&dict),
 		objIndex:      -1,
 		hasher:        plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 		crc:           crc,
@@ -229,12 +226,13 @@ func (s *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
 		return err
 	}
 
-	err = s.zr.Reset(s.scannerReader)
+	zr, err := gogitsync.GetZlibReader(s.scannerReader)
 	if err != nil {
 		return fmt.Errorf("zlib reset error: %s", err)
 	}
+	defer gogitsync.PutZlibReader(zr)
 
-	_, err = ioutil.CopyBufferPool(writer, s.zr.Reader)
+	_, err = ioutil.CopyBufferPool(writer, zr)
 	if err != nil {
 		return err
 	}
@@ -382,10 +380,12 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 
 	oh.ContentOffset = r.scannerReader.offset
-	err = r.zr.Reset(r.scannerReader)
+
+	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
 		return nil, fmt.Errorf("zlib reset error: %s", err)
 	}
+	defer gogitsync.PutZlibReader(zr)
 
 	if !oh.Type.IsDelta() {
 		r.hasher.Reset(oh.Type, oh.Size)
@@ -414,7 +414,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		}
 
 		// For non delta objects, simply calculate the hash of each object.
-		_, err = ioutil.CopyBufferPool(mw, r.zr.Reader)
+		_, err = ioutil.CopyBufferPool(mw, zr)
 		if err != nil {
 			return nil, err
 		}
@@ -429,14 +429,14 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		// in the cache, so that it can be accessed by the Parser.
 		if !r.lowMemoryMode {
 			oh.content = gogitsync.GetBytesBuffer()
-			_, err = oh.content.ReadFrom(r.zr.Reader)
+			_, err = oh.content.ReadFrom(zr)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			// We don't know the compressed length, so we can't seek to
 			// the next object, we must discard the data instead.
-			_, err = ioutil.CopyBufferPool(io.Discard, r.zr.Reader)
+			_, err = ioutil.CopyBufferPool(io.Discard, zr)
 			if err != nil {
 				return nil, err
 			}
