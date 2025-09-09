@@ -1,13 +1,13 @@
 package filesystem
 
 import (
-	"io"
 	"os"
 	"path"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 
 	"github.com/go-git/go-billy/v6"
@@ -180,7 +180,7 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	defer f.Close()
 
 	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := ioutil.CopyBufferPool(h, f); err != nil {
 		return plumbing.ZeroHash
 	}
 

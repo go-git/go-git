@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/assert"
@@ -86,4 +88,26 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 
 	// Check whether the index was updated with the two new line breaks.
 	assert.Equal(t, uint32(len(content)+2), idx.Entries[0].Size)
+}
+
+func BenchmarkWorktreeStatus(b *testing.B) {
+	b.StopTimer()
+
+	f := fixtures.Basic().One()
+	st := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+
+	r, err := Open(st, memfs.New())
+	require.NoError(b, err)
+
+	wt, err := r.Worktree()
+	require.NoError(b, err)
+
+	err = wt.Reset(&ResetOptions{Mode: HardReset})
+	require.NoError(b, err)
+
+	b.StartTimer()
+
+	for range b.N {
+		wt.Status()
+	}
 }
