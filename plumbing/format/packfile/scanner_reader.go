@@ -28,9 +28,13 @@ type scannerReader struct {
 	seeker io.Seeker
 }
 
-func newScannerReader(r io.Reader, h io.Writer) *scannerReader {
+func newScannerReader(r io.Reader, h io.Writer, rbuf *bufio.Reader) *scannerReader {
+	if rbuf == nil {
+		rbuf = bufio.NewReader(nil)
+	}
+
 	sr := &scannerReader{
-		rbuf: bufio.NewReader(nil),
+		rbuf: rbuf,
 		wbuf: bufio.NewWriterSize(nil, 64),
 		crc:  h,
 	}
