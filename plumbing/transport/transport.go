@@ -203,17 +203,11 @@ func parseURL(endpoint string) (*Endpoint, error) {
 		pass, _ = u.User.Password()
 	}
 
-	host := u.Hostname()
-	if strings.Contains(host, ":") {
-		// IPv6 address
-		host = "[" + host + "]"
-	}
-
 	return &Endpoint{
 		Protocol: u.Scheme,
 		User:     user,
 		Password: pass,
-		Host:     host,
+		Host:     u.Hostname(),
 		Port:     getPort(u),
 		Path:     getPath(u),
 	}, nil
