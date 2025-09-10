@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"os"
@@ -80,16 +81,19 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	zr, err := sync.GetZlibReader(o.pack)
+	br := sync.GetBufioReader(o.pack)
+
+	zr, err := sync.GetZlibReader(br)
 	if err != nil {
 		return nil, err
 	}
-	return &zlibReadCloser{r: zr, f: file}, nil
+	return &zlibReadCloser{r: zr, f: file, rbuf: br}, nil
 }
 
 type zlibReadCloser struct {
 	r      *sync.ZLibReader
 	f      io.Closer
+	rbuf   *bufio.Reader
 	closed bool
 }
 
@@ -107,6 +111,8 @@ func (r *zlibReadCloser) Close() (err error) {
 	if r.f != nil {
 		defer ioutil.CheckClose(r.f, &err)
 	}
+
+	defer sync.PutBufioReader(r.rbuf)
 
 	defer sync.PutZlibReader(r.r)
 	return r.r.Close()
