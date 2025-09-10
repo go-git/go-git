@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"encoding/hex"
@@ -95,6 +96,8 @@ type Scanner struct {
 	storage storer.EncodedObjectStorer
 
 	*scannerReader
+	rbuf *bufio.Reader
+
 	lowMemoryMode bool
 }
 
@@ -104,12 +107,11 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	packhash := gogithash.New(crypto.SHA1)
 
 	r := &Scanner{
-		scannerReader: newScannerReader(rs, io.MultiWriter(crc, packhash)),
-		objIndex:      -1,
-		hasher:        plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
-		crc:           crc,
-		packhash:      packhash,
-		nextFn:        packHeaderSignature,
+		objIndex: -1,
+		hasher:   plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
+		crc:      crc,
+		packhash: packhash,
+		nextFn:   packHeaderSignature,
 		// Set the default size, which can be overriden by opts.
 		objectIDSize: packhash.Size(),
 	}
@@ -117,6 +119,8 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	for _, opt := range opts {
 		opt(r)
 	}
+
+	r.scannerReader = newScannerReader(rs, io.MultiWriter(crc, packhash), r.rbuf)
 
 	return r
 }

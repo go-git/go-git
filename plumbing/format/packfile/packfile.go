@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"crypto"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ type Packfile struct {
 	scanner *Scanner
 
 	cache cache.Object
+	rbuf  *bufio.Reader
 
 	id           plumbing.Hash
 	m            sync.Mutex
@@ -206,7 +208,10 @@ func (p *Packfile) init() error {
 			return
 		}
 
-		var opts []ScannerOption
+		p.rbuf = gogitsync.GetBufioReader(nil)
+
+		var opts = []ScannerOption{WithBufioReader(p.rbuf)}
+
 		if p.objectIdSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
 		}
@@ -256,6 +261,8 @@ func (p *Packfile) headerFromOffset(offset int64) (*ObjectHeader, error) {
 func (p *Packfile) Close() error {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	gogitsync.PutBufioReader(p.rbuf)
 
 	closer, ok := p.file.(io.Closer)
 	if !ok {
