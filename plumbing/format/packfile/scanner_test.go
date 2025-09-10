@@ -125,35 +125,35 @@ func TestPackHeaderSignature(t *testing.T) {
 		{
 			name: "valid signature",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader([]byte("PACK")), nil),
+				scannerReader: newScannerReader(bytes.NewReader([]byte("PACK")), nil, nil),
 			},
 			nextState: packVersion,
 		},
 		{
 			name: "invalid signature",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader([]byte("FOOBAR")), nil),
+				scannerReader: newScannerReader(bytes.NewReader([]byte("FOOBAR")), nil, nil),
 			},
 			wantErr: ErrBadSignature,
 		},
 		{
 			name: "invalid signature - too small",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader([]byte("FOO")), nil),
+				scannerReader: newScannerReader(bytes.NewReader([]byte("FOO")), nil, nil),
 			},
 			wantErr: ErrBadSignature,
 		},
 		{
 			name: "empty packfile: io.EOF",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil),
+				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: io.EOF,
 		},
 		{
 			name: "empty packfile: ErrBadSignature",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil),
+				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: ErrBadSignature,
 		},
@@ -192,7 +192,7 @@ func TestPackVersion(t *testing.T) {
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(2))
-					return newScannerReader(buf, nil)
+					return newScannerReader(buf, nil, nil)
 				}(),
 			},
 			nextState: packObjectsQty,
@@ -203,7 +203,7 @@ func TestPackVersion(t *testing.T) {
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, -1)
-					return newScannerReader(buf, nil)
+					return newScannerReader(buf, nil, nil)
 				}(),
 			},
 			wantErr: ErrMalformedPackfile,
@@ -214,7 +214,7 @@ func TestPackVersion(t *testing.T) {
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(3))
-					return newScannerReader(buf, nil)
+					return newScannerReader(buf, nil, nil)
 				}(),
 			},
 			wantErr: ErrUnsupportedVersion,
@@ -222,7 +222,7 @@ func TestPackVersion(t *testing.T) {
 		{
 			name: "empty packfile: ErrMalformedPackfile",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil),
+				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: ErrMalformedPackfile,
 		},
@@ -261,7 +261,7 @@ func TestPackObjectQty(t *testing.T) {
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(0))
-					return newScannerReader(buf, nil)
+					return newScannerReader(buf, nil, nil)
 				}(),
 			},
 			nextState: packFooter, // if there are no objects, skip to footer.
@@ -272,7 +272,7 @@ func TestPackObjectQty(t *testing.T) {
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(7))
-					return newScannerReader(buf, nil)
+					return newScannerReader(buf, nil, nil)
 				}(),
 			},
 			objects:   7,
@@ -283,7 +283,7 @@ func TestPackObjectQty(t *testing.T) {
 			scanner: &Scanner{
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 2))
-					return newScannerReader(buf, nil)
+					return newScannerReader(buf, nil, nil)
 				}(),
 			},
 			wantErr: ErrMalformedPackfile,
@@ -291,7 +291,7 @@ func TestPackObjectQty(t *testing.T) {
 		{
 			name: "empty packfile: ErrMalformedPackfile",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil),
+				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: ErrMalformedPackfile,
 		},
