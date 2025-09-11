@@ -564,6 +564,114 @@ func (s *SuiteCommit) TestEncodeWithoutSignature() {
 		string(payload))
 }
 
+func (s *SuiteCommit) TestEncodeWithoutSignatureJujutsu() {
+	object := &plumbing.MemoryObject{}
+	object.SetType(plumbing.CommitObject)
+	object.Write([]byte(`tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ iHUEABMIAB0WIQSZpnSpGKbQbDaLe5iiNQl48cTY5gUCaJ91XQAKCRCiNQl48cTY
+ 5vCYAP9Sf1yV9oUviRIxEA+4rsGIx0hI6kqFajJ/3TtBjyCTggD+PFnKOxdXeFL2
+ GLwcCzFIsmQmkLxuLypsg+vueDSLpsM=
+ =VucY
+ -----END PGP SIGNATURE-----
+
+initial commit
+
+Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
+`))
+
+	commit, err := DecodeCommit(s.Storer, object)
+	s.NoError(err)
+
+	// Similar to TestString since no signature
+	encoded := &plumbing.MemoryObject{}
+	err = commit.EncodeWithoutSignature(encoded)
+	er, err := encoded.Reader()
+	s.NoError(err)
+	payload, err := io.ReadAll(er)
+	s.NoError(err)
+
+	s.Equal(`tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
+
+initial commit
+
+Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
+`, string(payload))
+}
+
+func (s *SuiteCommit) TestEncodeExtraHeaders() {
+	object := &plumbing.MemoryObject{}
+	object.SetType(plumbing.CommitObject)
+	object.Write([]byte(`tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+continuedheader to be
+ continued
+continuedheader to be
+ continued
+ on
+ more than
+ a single line
+simpleflag
+ value no key
+
+initial commit
+`))
+
+	commit, err := DecodeCommit(s.Storer, object)
+	s.NoError(err)
+
+	s.Equal(commit.ExtraHeaders, []ExtraHeader{
+		ExtraHeader {
+			Key: "continuedheader",
+			Value: "to be\ncontinued",
+		},
+		ExtraHeader {
+			Key: "continuedheader",
+			Value: "to be\ncontinued\non\nmore than\na single line",
+		},
+		ExtraHeader {
+			Key: "simpleflag",
+			Value: "",
+		},
+		ExtraHeader {
+			Key: "",
+			Value: "value no key",
+		},
+	})
+
+	// Similar to TestString since no signature
+	encoded := &plumbing.MemoryObject{}
+	err = commit.EncodeWithoutSignature(encoded)
+	er, err := encoded.Reader()
+	s.NoError(err)
+	payload, err := io.ReadAll(er)
+	s.NoError(err)
+
+	s.Equal(`tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+continuedheader to be
+ continued
+continuedheader to be
+ continued
+ on
+ more than
+ a single line
+simpleflag
+ value no key
+
+initial commit
+`, string(payload))
+}
+
 func (s *SuiteCommit) TestLess() {
 	when1 := time.Now()
 	when2 := when1.Add(time.Hour)
