@@ -36,4 +36,4 @@ jobs:
       run: make test-coverage
 
     - name: Test Examples
-      run: go test -timeout 30s -v -run '^TestExamples$' github.com/go-git/go-git/v5/_examples --examples
+      run: go test -timeout ${{ matrix.platform == 'windows-latest' && '60s' || '30s' }} -v -run '^TestExamples$' github.com/go-git/go-git/v5/_examples --examples
