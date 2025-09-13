@@ -495,6 +495,32 @@ func (s *WorktreeSuite) TestCheckoutSparse() {
 	}
 }
 
+func (s *WorktreeSuite) TestCheckoutCRLF() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	cfg, err := w.r.Config()
+	s.NoError(err)
+	cfg.Core.AutoCRLF = "true"
+	s.NoError(w.r.SetConfig(cfg))
+
+	s.NoError(w.Checkout(&CheckoutOptions{}))
+
+	file, err := fs.Open("CHANGELOG")
+	s.NoError(err)
+
+	content, err := io.ReadAll(file)
+	s.NoError(err)
+	s.Equal("Initial changelog\r\n", string(content)) // added CR.
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.True(status.IsClean(), status)
+}
+
 func (s *WorktreeSuite) TestFilenameNormalization() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("windows paths may contain non utf-8 sequences")
@@ -1796,6 +1822,38 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	s.NoError(err)
 	s.NotNil(obj)
 	s.Equal(int64(3), obj.Size())
+}
+
+func (s *WorktreeSuite) TestAddCRLF() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	cfg, err := w.r.Config()
+	s.NoError(err)
+	cfg.Core.AutoCRLF = "true"
+	s.NoError(w.r.SetConfig(cfg))
+
+	err = util.WriteFile(w.Filesystem, "foo", []byte("FOO\r\n"), 0o755)
+	s.NoError(err)
+
+	h, err := w.Add("foo")
+	s.NoError(err)
+
+	obj, err := w.r.Storer.EncodedObject(plumbing.BlobObject, h)
+	s.NoError(err)
+	s.NotNil(obj)
+	s.Equal(int64(4), obj.Size())
+
+	r, err := obj.Reader()
+	s.NoError(err)
+	defer r.Close()
+
+	content, err := io.ReadAll(r)
+	s.NoError(err)
+	s.Equal([]byte("FOO\n"), content)
 }
 
 func (s *WorktreeSuite) TestIgnored() {

@@ -26,6 +26,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 		bare = true
 		worktree = foo
 		commentchar = bar
+		autocrlf = true
 [user]
 		name = John Doe
 		email = john@example.com
@@ -70,6 +71,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.True(cfg.Core.IsBare)
 	s.Equal("foo", cfg.Core.Worktree)
 	s.Equal("bar", cfg.Core.CommentChar)
+	s.Equal("true", cfg.Core.AutoCRLF)
 	s.Equal("John Doe", cfg.User.Name)
 	s.Equal("john@example.com", cfg.User.Email)
 	s.Equal("Jane Roe", cfg.Author.Name)
@@ -101,6 +103,7 @@ func (s *ConfigSuite) TestMarshal() {
 	output := []byte(`[core]
 	bare = true
 	worktree = bar
+	autocrlf = true
 [pack]
 	window = 20
 [remote "alt"]
@@ -129,6 +132,7 @@ func (s *ConfigSuite) TestMarshal() {
 	cfg := NewConfig()
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
+	cfg.Core.AutoCRLF = "true"
 	cfg.Pack.Window = 20
 	cfg.Init.DefaultBranch = "main"
 	cfg.Remotes["origin"] = &RemoteConfig{
@@ -180,6 +184,7 @@ func (s *ConfigSuite) TestUnmarshalMarshal() {
 	bare = true
 	worktree = foo
 	custom = ignored
+	autocrlf = true
 [user]
 	name = John Doe
 	email = john@example.com
