@@ -10,7 +10,7 @@ import (
 
 // RepositoryFilesystem is a billy.Filesystem compatible object wrapper
 // which handles dot-git filesystem operations and supports commondir according to git scm layout:
-// https://github.com/git/git/blob/master/Documentation/gitrepository-layout.txt
+// https://github.com/git/git/blob/master/Documentation/gitrepository-layout.adoc
 type RepositoryFilesystem struct {
 	dotGitFs       billy.Filesystem
 	commonDotGitFs billy.Filesystem
