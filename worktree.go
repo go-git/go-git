@@ -367,7 +367,7 @@ func treeContainsDirs(tree *object.Tree, dirs []string) bool {
 }
 
 // Restore restores specified files in the working tree or stage with contents from
-// a restore source. If a path is tracked but does not exist in the restore,
+// a restore source. If a path is tracked but does not exist in the restore
 // source, it will be removed to match the source.
 //
 // If Staged and Worktree are true, then the restore source will be the index.
