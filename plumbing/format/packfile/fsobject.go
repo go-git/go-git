@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
@@ -62,7 +64,7 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		return reader, nil
 	}
 
-	var closer io.Closer
+	var file io.Closer
 	_, err := o.pack.Seek(o.offset, io.SeekStart)
 	// fsobject aims to reuse an existing file descriptor to the packfile.
 	// In some cases that descriptor would already be closed, in such cases,
@@ -72,44 +74,48 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		if err != nil {
 			return nil, err
 		}
-		closer = o.pack
+		file = o.pack
 		_, err = o.pack.Seek(o.offset, io.SeekStart)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	dict := sync.GetByteSlice()
-	zr := sync.NewZlibReader(dict)
-	err = zr.Reset(o.pack)
+	br := sync.GetBufioReader(o.pack)
+
+	zr, err := sync.GetZlibReader(br)
 	if err != nil {
 		return nil, err
 	}
-	return &zlibReadCloser{zr, dict, closer, false}, nil
+	return &zlibReadCloser{r: zr, f: file, rbuf: br}, nil
 }
 
 type zlibReadCloser struct {
-	r      sync.ZLibReader
-	dict   *[]byte
+	r      *sync.ZLibReader
 	f      io.Closer
+	rbuf   *bufio.Reader
 	closed bool
 }
 
 // Read reads up to len(p) bytes into p from the data.
 func (r *zlibReadCloser) Read(p []byte) (int, error) {
-	return r.r.Reader.Read(p)
+	return r.r.Read(p)
 }
 
-func (r *zlibReadCloser) Close() error {
+func (r *zlibReadCloser) Close() (err error) {
 	if r.closed {
 		return nil
 	}
 	r.closed = true
-	sync.PutZlibReader(r.r)
+
 	if r.f != nil {
-		r.f.Close()
+		defer ioutil.CheckClose(r.f, &err)
 	}
-	return nil
+
+	defer sync.PutBufioReader(r.rbuf)
+
+	defer sync.PutZlibReader(r.r)
+	return r.r.Close()
 }
 
 // SetSize implements the plumbing.EncodedObject interface. This method
