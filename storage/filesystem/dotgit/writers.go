@@ -139,7 +139,20 @@ func (w *PackWriter) save() error {
 		return err
 	}
 
-	return w.fs.Rename(w.fw.Name(), fmt.Sprintf("%s.pack", base))
+	packPath := fmt.Sprintf("%s.pack", base)
+	if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
+		return err
+	}
+
+	// Fix permissions for packfile (issue #588)
+	// Set read-only permissions for all users (r--r--r--)
+	if changer, ok := w.fs.(billy.Change); ok {
+		if err := changer.Chmod(packPath, 0444); err != nil {
+			// Don't fail if chmod fails, but continue
+		}
+	}
+
+	return nil
 }
 
 func (w *PackWriter) encodeIdx(writer io.Writer) error {
