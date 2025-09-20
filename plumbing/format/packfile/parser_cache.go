@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"golang.org/x/exp/maps"
 )
 
 func newParserCache() *parserCache {
@@ -36,7 +35,7 @@ func (c *parserCache) Reset(n int) {
 		c.oi = c.oi[:0]
 		c.oi = slices.Grow(c.oi, n)
 
-		maps.Clear(c.oiByHash)
-		maps.Clear(c.oiByOffset)
+		clear(c.oiByHash)
+		clear(c.oiByOffset)
 	}
 }
