@@ -24,14 +24,14 @@ func testServe[T UploadPackOptions | ReceivePackOptions](
 		w io.WriteCloser,
 		opts *T,
 	) error,
-	r io.Reader,
+	r io.ReadCloser,
 	opts *T,
 ) *bytes.Buffer {
 	var out bytes.Buffer
 	err := fun(
 		context.TODO(),
 		st,
-		io.NopCloser(r),
+		r,
 		ioutil.WriteNopCloser(&out),
 		opts,
 	)
@@ -54,7 +54,7 @@ func testAdvertise[T UploadPackOptions | ReceivePackOptions](
 ) *bytes.Buffer {
 	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir))
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-	return testServe(t, st, fun, bytes.NewBuffer(nil), &T{
+	return testServe(t, st, fun, io.NopCloser(bytes.NewBuffer(nil)), &T{
 		GitProtocol:   proto,
 		AdvertiseRefs: true,
 		StatelessRPC:  stateless,

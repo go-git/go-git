@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -55,7 +56,7 @@ func (s *UploadPackSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	var reqW bytes.Buffer
 	require.NoError(s.T(), upreq.Encode(&reqW))
 	require.NoError(s.T(), uphav.Encode(&reqW))
-	buf := testServe(s.T(), st, UploadPack, &reqW, &UploadPackOptions{
+	buf := testServe(s.T(), st, UploadPack, io.NopCloser(&reqW), &UploadPackOptions{
 		GitProtocol:   "version=1",
 		AdvertiseRefs: false,
 		StatelessRPC:  true,
