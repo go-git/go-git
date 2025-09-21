@@ -44,6 +44,7 @@ func (s *UploadPackSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	upreq.Capabilities.Add(capability.NoProgress)
 	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
 	require.NoError(s.T(), err)
+	defer iter.Close()
 	obj, err := iter.Next()
 	require.NoError(s.T(), err)
 	upreq.Wants = append(upreq.Wants, obj.Hash())
