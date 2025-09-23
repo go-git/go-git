@@ -349,6 +349,7 @@ type SubmoduleUpdateOptions struct {
 var (
 	ErrBranchHashExclusive  = errors.New("Branch and Hash are mutually exclusive")
 	ErrCreateRequiresBranch = errors.New("Branch is mandatory when Create is used")
+	ErrForceKeepExclusive   = errors.New("Force and branch are mutually exclusive")
 )
 
 // CheckoutOptions describes how a checkout operation should be performed.
@@ -375,16 +376,23 @@ type CheckoutOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *CheckoutOptions) Validate() error {
+	// if not create, both hash and branch cannot be provided
 	if !o.Create && !o.Hash.IsZero() && o.Branch != "" {
 		return ErrBranchHashExclusive
 	}
 
+	// if create with branch not provided but hash is provided, ask for branch name
 	if o.Create && o.Branch == "" {
 		return ErrCreateRequiresBranch
 	}
 
-	if o.Branch == "" {
+	// if both branch and hash are not provided, set branch to master
+	if o.Branch == "" && o.Hash.IsZero() {
 		o.Branch = plumbing.Master
+	}
+
+	if o.Force && o.Keep {
+		return ErrForceKeepExclusive
 	}
 
 	return nil
