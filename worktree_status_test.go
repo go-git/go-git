@@ -6,7 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/stretchr/testify/assert"
@@ -86,4 +89,52 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 
 	// Check whether the index was updated with the two new line breaks.
 	assert.Equal(t, uint32(len(content)+2), idx.Entries[0].Size)
+}
+
+func TestAddEmptyDirectory(t *testing.T) {
+	f := fixtures.Basic().One()
+	fs := memfs.New()
+	r := NewRepositoryWithEmptyWorktree(f)
+	w := &Worktree{
+		r:          r,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{})
+	require.NoError(t, err)
+
+	// write and add foo file in the dir directory
+	require.NoError(t, util.WriteFile(fs, "/dir/f1", []byte("foo"), 0644))
+
+	err = w.AddWithOptions(&AddOptions{
+		Path:       "/dir/f1",
+		SkipStatus: true,
+	})
+	require.NoError(t, err)
+
+	_, err = w.Commit("commit foo only\n", &CommitOptions{
+		Author: defaultSignature(),
+	})
+	require.NoError(t, err)
+
+	// remove dir directory and add it
+	require.NoError(t, util.RemoveAll(fs, "/dir"))
+
+	err = w.AddWithOptions(&AddOptions{
+		Path:       "/dir",
+		SkipStatus: true,
+	})
+	require.NoError(t, err)
+
+	_, err = w.Commit("commit remove dir\n", &CommitOptions{
+		Author: defaultSignature(),
+	})
+	require.NoError(t, err)
+
+	// add invalid directory with error
+	err = w.AddWithOptions(&AddOptions{
+		Path:       "/dir2",
+		SkipStatus: true,
+	})
+	require.Error(t, err)
 }
