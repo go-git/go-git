@@ -9,7 +9,9 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -469,4 +471,101 @@ func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
 	s.True(ok, "Expected an unnamed remote to be present")
 	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
 	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
+}
+
+func TestMerge(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input []*Config
+		want  Config
+	}{
+		{
+			name:  "nil",
+			input: nil,
+			want:  Config{},
+		},
+		{
+			name: "separate objs",
+			input: []*Config{
+				{User: struct {
+					Name  string
+					Email string
+				}{
+					Name: "foo", Email: "bar@test",
+				}},
+				{
+					Extensions: struct{ ObjectFormat config.ObjectFormat }{
+						ObjectFormat: config.SHA256,
+					},
+				},
+			},
+			want: Config{
+				User: struct {
+					Name  string
+					Email string
+				}{
+					Name:  "foo",
+					Email: "bar@test",
+				},
+				Extensions: struct{ ObjectFormat config.ObjectFormat }{
+					ObjectFormat: config.SHA256,
+				},
+			},
+		},
+		{
+			name: "merge nested fields",
+			input: []*Config{
+				{User: struct {
+					Name  string
+					Email string
+				}{Name: "foo"}},
+				{User: struct {
+					Name  string
+					Email string
+				}{Email: "bar@test"}},
+			},
+			want: Config{
+				User: struct {
+					Name  string
+					Email string
+				}{
+					Name:  "foo",
+					Email: "bar@test",
+				},
+			},
+		},
+		{
+			name: "override nested fields",
+			input: []*Config{
+				{User: struct {
+					Name  string
+					Email string
+				}{Name: "foo"}},
+				{User: struct {
+					Name  string
+					Email string
+				}{Name: "bar", Email: "foo@test"}},
+			},
+			want: Config{
+				User: struct {
+					Name  string
+					Email string
+				}{
+					Name:  "bar",
+					Email: "foo@test",
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Merge(tc.input...)
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

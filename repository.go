@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -616,9 +615,8 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 		return nil, err
 	}
 
-	_ = mergo.Merge(global, system)
-	_ = mergo.Merge(local, global)
-	return local, nil
+	cfg := config.Merge(system, global, local)
+	return &cfg, nil
 }
 
 // Remote return a remote if exists
