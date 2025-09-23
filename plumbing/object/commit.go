@@ -63,7 +63,13 @@ type Commit struct {
 	// Encoding is the encoding of the commit.
 	Encoding MessageEncoding
 
-	s storer.EncodedObjectStorer
+	headersRaw []headerEntry
+	s          storer.EncodedObjectStorer
+}
+
+type headerEntry struct {
+	key   string
+	value string
 }
 
 // GetCommit gets a commit from an object storer and decodes it.
@@ -200,9 +206,9 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
+	var header bool
+	var currentHeader headerEntry
 	var message bool
-	var mergetag bool
-	var pgpsig bool
 	var msgbuf bytes.Buffer
 	for {
 		line, err := r.ReadBytes('\n')
@@ -210,23 +216,16 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			return err
 		}
 
-		if mergetag {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.MergeTag += string(line)
-				continue
+		if header {
+			if len(line) > 0 && line[0] != ' ' {
+				c.headersRaw = append(c.headersRaw, currentHeader)
+				currentHeader = headerEntry{}
+				header = false
 			} else {
-				mergetag = false
-			}
-		}
-
-		if pgpsig {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.PGPSignature += string(line)
+				line = bytes.TrimRight(bytes.TrimLeft(line, " "), "\n")
+				currentHeader.value += "\n"
+				currentHeader.value += string(line)
 				continue
-			} else {
-				pgpsig = false
 			}
 		}
 
@@ -244,23 +243,10 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				data = split[1]
 			}
 
-			switch string(split[0]) {
-			case "tree":
-				c.TreeHash = plumbing.NewHash(string(data))
-			case "parent":
-				c.ParentHashes = append(c.ParentHashes, plumbing.NewHash(string(data)))
-			case "author":
-				c.Author.Decode(data)
-			case "committer":
-				c.Committer.Decode(data)
-			case headermergetag:
-				c.MergeTag += string(data) + "\n"
-				mergetag = true
-			case headerencoding:
-				c.Encoding = MessageEncoding(data)
-			case headerpgp:
-				c.PGPSignature += string(data) + "\n"
-				pgpsig = true
+			header = true
+			currentHeader = headerEntry{
+				key:   string(split[0]),
+				value: string(data),
 			}
 		} else {
 			msgbuf.Write(line)
@@ -270,6 +256,26 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			break
 		}
 	}
+
+	for _, header := range c.headersRaw {
+		switch header.key {
+		case "tree":
+			c.TreeHash = plumbing.NewHash(header.value)
+		case "parent":
+			c.ParentHashes = append(c.ParentHashes, plumbing.NewHash(header.value))
+		case "author":
+			c.Author.Decode([]byte(header.value))
+		case "committer":
+			c.Committer.Decode([]byte(header.value))
+		case headermergetag:
+			c.MergeTag += header.value + "\n"
+		case headerencoding:
+			c.Encoding = MessageEncoding(header.value)
+		case headerpgp:
+			c.PGPSignature += header.value + "\n"
+		}
+	}
+
 	c.Message = msgbuf.String()
 	return nil
 }
@@ -293,71 +299,86 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 
 	defer ioutil.CheckClose(w, &err)
 
-	if _, err = fmt.Fprintf(w, "tree %s\n", c.TreeHash.String()); err != nil {
-		return err
-	}
+	if c.headersRaw == nil {
 
-	for _, parent := range c.ParentHashes {
-		if _, err = fmt.Fprintf(w, "parent %s\n", parent.String()); err != nil {
-			return err
-		}
-	}
-
-	if _, err = fmt.Fprint(w, "author "); err != nil {
-		return err
-	}
-
-	if err = c.Author.Encode(w); err != nil {
-		return err
-	}
-
-	if _, err = fmt.Fprint(w, "\ncommitter "); err != nil {
-		return err
-	}
-
-	if err = c.Committer.Encode(w); err != nil {
-		return err
-	}
-
-	if c.MergeTag != "" {
-		if _, err = fmt.Fprint(w, "\n"+headermergetag+" "); err != nil {
+		if _, err = fmt.Fprintf(w, "tree %s\n", c.TreeHash.String()); err != nil {
 			return err
 		}
 
-		// Split tag information lines and re-write with a left padding and
-		// newline. Use join for this so it's clear that a newline should not be
-		// added after this section. The newline will be added either as part of
-		// the PGP signature or the commit message.
-		mergetag := strings.TrimSuffix(c.MergeTag, "\n")
-		lines := strings.Split(mergetag, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+		for _, parent := range c.ParentHashes {
+			if _, err = fmt.Fprintf(w, "parent %s\n", parent.String()); err != nil {
+				return err
+			}
+		}
+
+		if _, err = fmt.Fprint(w, "author "); err != nil {
 			return err
+		}
+
+		if err = c.Author.Encode(w); err != nil {
+			return err
+		}
+
+		if _, err = fmt.Fprint(w, "\ncommitter "); err != nil {
+			return err
+		}
+
+		if err = c.Committer.Encode(w); err != nil {
+			return err
+		}
+
+		if c.MergeTag != "" {
+			if _, err = fmt.Fprint(w, "\n"+headermergetag+" "); err != nil {
+				return err
+			}
+
+			// Split tag information lines and re-write with a left padding and
+			// newline. Use join for this so it's clear that a newline should not be
+			// added after this section. The newline will be added either as part of
+			// the PGP signature or the commit message.
+			mergetag := strings.TrimSuffix(c.MergeTag, "\n")
+			lines := strings.Split(mergetag, "\n")
+			if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+				return err
+			}
+		}
+
+		if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
+			if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
+				return err
+			}
+		}
+
+		if c.PGPSignature != "" && includeSig {
+			if _, err = fmt.Fprint(w, "\n"+headerpgp+" "); err != nil {
+				return err
+			}
+
+			// Split all the signature lines and re-write with a left padding and
+			// newline. Use join for this so it's clear that a newline should not be
+			// added after this section, as it will be added when the message is
+			// printed.
+			signature := strings.TrimSuffix(c.PGPSignature, "\n")
+			lines := strings.Split(signature, "\n")
+			if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+				return err
+			}
+		}
+
+		fmt.Fprint(w, "\n")
+	} else {
+		for _, header := range c.headersRaw {
+			if header.key == headerpgp && !includeSig {
+				continue
+			}
+			lines := strings.Split(header.value, "\n")
+			if _, err := fmt.Fprintf(w, "%s %s\n", header.key, strings.Join(lines, "\n ")); err != nil {
+				return err
+			}
 		}
 	}
 
-	if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
-		if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
-			return err
-		}
-	}
-
-	if c.PGPSignature != "" && includeSig {
-		if _, err = fmt.Fprint(w, "\n"+headerpgp+" "); err != nil {
-			return err
-		}
-
-		// Split all the signature lines and re-write with a left padding and
-		// newline. Use join for this so it's clear that a newline should not be
-		// added after this section, as it will be added when the message is
-		// printed.
-		signature := strings.TrimSuffix(c.PGPSignature, "\n")
-		lines := strings.Split(signature, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
-			return err
-		}
-	}
-
-	if _, err = fmt.Fprintf(w, "\n\n%s", c.Message); err != nil {
+	if _, err = fmt.Fprintf(w, "\n%s", c.Message); err != nil {
 		return err
 	}
 
