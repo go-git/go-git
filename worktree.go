@@ -23,8 +23,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
+	"github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
@@ -774,21 +776,52 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 		return w.checkoutFileSymlink(f)
 	}
 
-	from, err := f.Reader()
+	dstFile, err := w.Filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return
 	}
+	defer ioutil.CheckClose(dstFile, &err)
 
-	defer ioutil.CheckClose(from, &err)
+	return w.copyObjectToWorktree(f, dstFile)
+}
 
-	to, err := w.Filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
+func (w *Worktree) copyObjectToWorktree(object *object.File, file billy.File) (err error) {
+	cfg, err := w.r.Config()
 	if err != nil {
-		return
+		return err
 	}
 
-	defer ioutil.CheckClose(to, &err)
-	_, err = ioutil.CopyBufferPool(to, from)
-	return
+	var src io.ReadCloser
+	var dst io.Writer = file
+
+	src, err = object.Reader()
+	if err != nil {
+		return err
+	}
+	defer ioutil.CheckClose(src, &err)
+
+	if cfg.Core.AutoCRLF == "true" {
+		br := sync.GetBufioReader(src)
+		defer sync.PutBufioReader(br)
+
+		stat, err := convert.GetStat(br)
+		if err != nil {
+			return err
+		}
+
+		src, err = object.Reader()
+		if err != nil {
+			return err
+		}
+		defer ioutil.CheckClose(src, &err)
+
+		if !stat.IsBinary() {
+			dst = convert.NewCRLFWriter(dst)
+		}
+	}
+
+	_, err = ioutil.CopyBufferPool(dst, src)
+	return err
 }
 
 func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {

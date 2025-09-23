@@ -1,20 +1,28 @@
 package filesystem
 
 import (
+	"io"
 	"os"
 	"path"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
+	"github.com/go-git/go-git/v6/utils/sync"
 
 	"github.com/go-git/go-billy/v6"
 )
 
 var ignore = map[string]bool{
 	".git": true,
+}
+
+type Options struct {
+	// AutoCRLF converts CRLF line endings in text files into LF line endings.
+	AutoCRLF bool
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -25,6 +33,8 @@ var ignore = map[string]bool{
 type node struct {
 	fs         billy.Filesystem
 	submodules map[string]plumbing.Hash
+
+	options *Options
 
 	path     string
 	hash     []byte
@@ -44,6 +54,19 @@ func NewRootNode(
 	submodules map[string]plumbing.Hash,
 ) noder.Noder {
 	return &node{fs: fs, submodules: submodules, isDir: true}
+}
+
+func NewRootNodeWithOptions(
+	fs billy.Filesystem,
+	submodules map[string]plumbing.Hash,
+	options Options,
+) noder.Noder {
+	return &node{
+		fs:         fs,
+		submodules: submodules,
+		options:    &options,
+		isDir:      true,
+	}
 }
 
 // Hash the hash of a filesystem is the result of concatenating the computed
@@ -134,6 +157,7 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	node := &node{
 		fs:         n.fs,
 		submodules: n.submodules,
+		options:    n.options,
 
 		path:  path,
 		isDir: file.IsDir(),
@@ -176,11 +200,31 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	if err != nil {
 		return plumbing.ZeroHash
 	}
-
 	defer f.Close()
 
 	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
-	if _, err := ioutil.CopyBufferPool(h, f); err != nil {
+	var dst io.Writer = h
+
+	if n.options != nil && n.options.AutoCRLF {
+		br := sync.GetBufioReader(f)
+		defer sync.PutBufioReader(br)
+
+		stat, err := convert.GetStat(br)
+		if err != nil {
+			return plumbing.ZeroHash
+		}
+
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return plumbing.ZeroHash
+		}
+
+		if !stat.IsBinary() {
+			h.Reset(plumbing.BlobObject, n.size-int64(stat.CRLF))
+			dst = convert.NewLFWriter(dst)
+		}
+	}
+
+	if _, err := ioutil.CopyBufferPool(dst, f); err != nil {
 		return plumbing.ZeroHash
 	}
 
