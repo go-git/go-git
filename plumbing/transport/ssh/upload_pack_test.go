@@ -11,15 +11,21 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"testing"
 
 	testutils "github.com/go-git/go-git/v5/internal/transport/ssh/test"
 	"github.com/go-git/go-git/v5/internal/transport/test"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/gliderlabs/ssh"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	stdssh "golang.org/x/crypto/ssh"
 )
+
+func TestUploadPackSuite(t *testing.T) {
+	suite.Run(t, new(UploadPackSuite))
+}
 
 type UploadPackSuite struct {
 	test.UploadPackSuite

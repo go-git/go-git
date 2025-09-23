@@ -21,11 +21,29 @@ const DefaultUsername = "git"
 // AuthMethod is the interface all auth methods for the ssh client
 // must implement. The clientConfig method returns the ssh client
 // configuration needed to establish an ssh connection.
-type AuthMethod interface {
+type LegacyAuthMethod interface {
 	transport.AuthMethod
 	// ClientConfig should return a valid ssh.ClientConfig to be used to create
 	// a connection to the SSH server.
 	ClientConfig() (*ssh.ClientConfig, error)
+}
+
+// AuthMethod is the interface all auth methods for the ssh client
+// must implement. The ClientConfigForHost method returns the ssh client
+// configuration needed to establish an ssh connection for a given hostname.
+type AuthMethod interface {
+	transport.AuthMethod
+	// ClientConfig should return a valid ssh.ClientConfig to be used to create
+	// a connection to the SSH server.
+	ClientConfig(user, host string) (*ssh.ClientConfig, error)
+}
+
+type legacyAuthMethodAdapter struct {
+	LegacyAuthMethod
+}
+
+func (a *legacyAuthMethodAdapter) ClientConfig(user, hostname string) (*ssh.ClientConfig, error) {
+	return a.LegacyAuthMethod.ClientConfig()
 }
 
 // The names of the AuthMethod implementations. To be returned by the
@@ -55,7 +73,7 @@ func (a *KeyboardInteractive) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
-func (a *KeyboardInteractive) ClientConfig() (*ssh.ClientConfig, error) {
+func (a *KeyboardInteractive) ClientConfig(string, string) (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", KeyboardInteractiveName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
 		User: a.User,
@@ -80,7 +98,7 @@ func (a *Password) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
-func (a *Password) ClientConfig() (*ssh.ClientConfig, error) {
+func (a *Password) ClientConfig(string, string) (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", PasswordName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
 		User: a.User,
@@ -104,7 +122,7 @@ func (a *PasswordCallback) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
-func (a *PasswordCallback) ClientConfig() (*ssh.ClientConfig, error) {
+func (a *PasswordCallback) ClientConfig(string, string) (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", PasswordCallbackName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
 		User: a.User,
@@ -154,7 +172,7 @@ func (a *PublicKeys) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
-func (a *PublicKeys) ClientConfig() (*ssh.ClientConfig, error) {
+func (a *PublicKeys) ClientConfig(string, string) (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s signer=\"%s %s\"", PublicKeysName, a.User,
 		a.Signer.PublicKey().Type(),
 		ssh.FingerprintSHA256(a.Signer.PublicKey()))
@@ -220,7 +238,7 @@ func (a *PublicKeysCallback) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
-func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
+func (a *PublicKeysCallback) ClientConfig(string, string) (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", PublicKeysCallbackName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
 		User: a.User,
