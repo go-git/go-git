@@ -19,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -1089,24 +1088,6 @@ func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List
 	}
 
 	return ErrExactSHA1NotSupported
-}
-
-func buildSidebandIfSupported(l *capability.List, reader io.Reader, p sideband.Progress) io.Reader {
-	var t sideband.Type
-
-	switch {
-	case l.Supports(capability.Sideband):
-		t = sideband.Sideband
-	case l.Supports(capability.Sideband64k):
-		t = sideband.Sideband64k
-	default:
-		return reader
-	}
-
-	d := sideband.NewDemuxer(t, reader)
-	d.Progress = p
-
-	return d
 }
 
 func (r *Remote) updateLocalReferenceStorage(
