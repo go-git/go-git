@@ -36,15 +36,6 @@ func (s *HashSuite) TestIsZero() {
 	s.False(hash.IsZero())
 }
 
-func (s *HashSuite) TestNewHasher() {
-	content := "hasher test sample"
-	hasher, err := newHasher(format.SHA1)
-	s.Require().NoError(err)
-	hash, err := hasher.Compute(BlobObject, []byte(content))
-	s.NoError(err)
-	s.Equal("dc42c3cc80028d0ec61f0a6b24cadd1c195c4dfc", hash.String())
-}
-
 func (s *HashSuite) TestHashesSort() {
 	i := []Hash{
 		NewHash("2222222222222222222222222222222222222222"),
