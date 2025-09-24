@@ -1052,7 +1052,7 @@ type testFile struct {
 }
 
 func (t testFile) Hash() plumbing.Hash {
-	hasher, _ := plumbing.FromObjectFormat(0)
+	hasher := plumbing.FromObjectFormat(0)
 	h, _ := hasher.Compute(plumbing.BlobObject, []byte(t.seed))
 	return h
 }
