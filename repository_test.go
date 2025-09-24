@@ -588,7 +588,7 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 	s.NoError(err)
 	marshaled, err := cfg.Marshal()
 	s.NoError(err)
-	s.Equal(string(marshaled), string(expected))
+	s.Equal(string(expected), string(marshaled))
 }
 
 func (s *RepositorySuite) TestBranchInvalid() {
