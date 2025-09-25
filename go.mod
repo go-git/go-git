@@ -1,9 +1,7 @@
 module github.com/go-git/go-git/v6
 
 // go-git supports the last 3 stable Go versions.
-go 1.23.0
-
-toolchain go1.23.7
+go 1.24.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
@@ -20,10 +18,10 @@ require (
 	github.com/pjbgf/sha1cd v0.5.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.41.0
-	golang.org/x/net v0.43.0
-	golang.org/x/sys v0.35.0
-	golang.org/x/text v0.28.0
+	golang.org/x/crypto v0.42.0
+	golang.org/x/net v0.44.0
+	golang.org/x/sys v0.36.0
+	golang.org/x/text v0.29.0
 )
 
 require (
