@@ -63,7 +63,7 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 		}
 	}
 
-	if _, err := pktline.Writef(w, req); err != nil {
+	if _, err := pktline.Write(w, []byte(req)); err != nil {
 		return err
 	}
 
