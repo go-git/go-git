@@ -106,6 +106,48 @@ func TestInit(t *testing.T) {
 	})
 }
 
+func TestPlainInitAndPlainOpen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		opts       []InitOption
+		wantBare   bool
+		wantBranch string
+	}{
+		{
+			name:     "Bare",
+			opts:     []InitOption{},
+			wantBare: true,
+		},
+	}
+
+	forEachFormat(t, func(t *testing.T, of formatcfg.ObjectFormat) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				opts := append(tc.opts, WithObjectFormat(of))
+				rdir := t.TempDir()
+
+				r, err := PlainInit(rdir, tc.wantBare, opts...)
+				require.NotNil(t, r)
+				require.NoError(t, err)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
+				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
+
+				ro, err := PlainOpen(rdir)
+				require.NotNil(t, ro)
+				require.NoError(t, err)
+
+			})
+		}
+	})
+}
+
 type RepositorySuite struct {
 	BaseSuite
 }

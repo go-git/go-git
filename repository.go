@@ -310,7 +310,9 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 			return Init(s, oo...)
 		}
 	}
-	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s := filesystem.NewStorageWithOptions(dot, cache.NewObjectLRUDefault(), filesystem.Options{
+		ObjectFormat: o.objectFormat,
+	})
 	r, err := initFn(s)
 	if err != nil {
 		return nil, err
@@ -319,11 +321,6 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
-	}
-
-	if o.objectFormat != formatcfg.SHA1 {
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
-		cfg.Extensions.ObjectFormat = o.objectFormat
 	}
 
 	err = r.Storer.SetConfig(cfg)
