@@ -4,19 +4,28 @@ import (
 	"os"
 
 	"github.com/go-git/go-git/v6/config"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 type ConfigStorage struct {
-	dir *dotgit.DotGit
+	dir          *dotgit.DotGit
+	objectFormat formatcfg.ObjectFormat
 }
 
 func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 	f, err := c.dir.Config()
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.NewConfig(), nil
+			cfg := config.NewConfig()
+
+			if c.objectFormat != formatcfg.SHA1 {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
+				cfg.Extensions.ObjectFormat = c.objectFormat
+			}
+
+			return cfg, nil
 		}
 
 		return nil, err
