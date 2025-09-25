@@ -346,7 +346,7 @@ const (
 	descriptionKey             = "description"
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
-	objectFormat               = "objectformat"
+	objectFormatKey            = "objectformat"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
@@ -367,6 +367,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	c.unmarshalCore()
+	c.unmarshalExtensions()
 	c.unmarshalUser()
 	c.unmarshalInit()
 	if err := c.unmarshalPack(); err != nil {
@@ -398,6 +399,17 @@ func (c *Config) unmarshalCore() {
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
+
+	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version_1) {
+		c.Core.RepositoryFormatVersion = format.Version_1
+	}
+}
+
+func (c *Config) unmarshalExtensions() {
+	s := c.Raw.Section(extensionsSection)
+	if s.Options.Get(objectFormatKey) == format.SHA256.String() {
+		c.Extensions.ObjectFormat = format.SHA256
+	}
 }
 
 func (c *Config) unmarshalUser() {
@@ -570,7 +582,7 @@ func (c *Config) marshalExtensions() {
 	// ignore them otherwise.
 	if c.Core.RepositoryFormatVersion == format.Version_1 {
 		s := c.Raw.Section(extensionsSection)
-		s.SetOption(objectFormat, c.Extensions.ObjectFormat.String())
+		s.SetOption(objectFormatKey, c.Extensions.ObjectFormat.String())
 	}
 }
 
