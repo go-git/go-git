@@ -33,7 +33,7 @@ func (s *ConfigSuite) SetupTest() {
 
 func (s *ConfigSuite) TestRemotes() {
 	dir := dotgit.New(fixtures.Basic().ByTag(".git").One().DotGit())
-	storer := &ConfigStorage{dir}
+	storer := &ConfigStorage{dir: dir}
 
 	cfg, err := storer.Config()
 	s.Require().NoError(err)
