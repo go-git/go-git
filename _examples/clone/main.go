@@ -16,8 +16,9 @@ func main() {
 
 	// Clone the given repository to the given directory
 	Info("git clone %s %s --recursive", url, directory)
-
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	
+	// this function takes 3 parameters; One of them is the isBare parameter, and as for the v6(just guessing) is required
+	r, err := git.PlainClone(directory, false, &git.CloneOptions{
 		URL:               url,
 		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 	})
