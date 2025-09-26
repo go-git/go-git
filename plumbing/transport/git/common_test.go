@@ -44,6 +44,7 @@ func startDaemon(t testing.TB, base string, port int) *exec.Cmd {
 		// Unless max-connections is limited to 1, a git-receive-pack
 		// might not be seen by a subsequent operation.
 		"--max-connections=1",
+		"--listen=127.0.0.1",
 	)
 
 	// Environment must be inherited in order to acknowledge GIT_EXEC_PATH if set.
@@ -84,7 +85,7 @@ func waitForPort(ctx context.Context, port int) error {
 		case <-ctx.Done():
 			return errors.New("context canceled before the port is connectable")
 		case <-time.After(10 * time.Millisecond):
-			conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+			conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 			if err == nil {
 				return conn.Close()
 			}
