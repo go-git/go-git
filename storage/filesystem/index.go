@@ -50,7 +50,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
-	d := index.NewDecoder(f)
+	d := index.NewDecoder(f, s.h)
 	err = d.Decode(idx)
 	return idx, err
 }
