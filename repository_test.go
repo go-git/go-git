@@ -17,7 +17,9 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -41,6 +43,69 @@ import (
 	"github.com/go-git/go-billy/v6/util"
 )
 
+func TestInit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		opts       []InitOption
+		wantBare   bool
+		wantBranch string
+	}{
+		{
+			name:     "Bare",
+			opts:     []InitOption{},
+			wantBare: true,
+		},
+		{
+			name: "With Worktree",
+			opts: []InitOption{
+				WithWorkTree(memfs.New()),
+			},
+		},
+		{
+			name: "With Default Branch",
+			opts: []InitOption{
+				WithWorkTree(memfs.New()),
+				WithDefaultBranch("refs/head/foo"),
+			},
+			wantBranch: "refs/head/foo",
+		},
+	}
+
+	forEachFormat(t, func(t *testing.T, of formatcfg.ObjectFormat) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				opts := append(tc.opts, WithObjectFormat(of))
+				r, err := Init(memory.NewStorage(memory.WithObjectFormat(of)), opts...)
+				require.NotNil(t, r)
+				require.NoError(t, err)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
+				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
+
+				if !tc.wantBare {
+					h := createCommit(t, r)
+					assert.Equal(t, of.HexSize(), len(h.String()))
+
+					wantBranch := tc.wantBranch
+					if wantBranch == "" {
+						wantBranch = plumbing.Master.String()
+					}
+
+					ref, err := r.Head()
+					require.NoError(t, err)
+					require.Equal(t, wantBranch, ref.Name().String())
+				}
+			})
+		}
+	})
+}
+
 type RepositorySuite struct {
 	BaseSuite
 }
@@ -49,72 +114,11 @@ func TestRepositorySuite(t *testing.T) {
 	suite.Run(t, new(RepositorySuite))
 }
 
-func (s *RepositorySuite) TestInit() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.False(cfg.Core.IsBare)
-
-	// check the HEAD to see what the default branch is
-	createCommit(s, r)
-	ref, err := r.Head()
-	s.NoError(err)
-	s.Equal(plumbing.Master.String(), ref.Name().String())
-}
-
-func (s *RepositorySuite) TestInitWithOptions() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()),
-		WithDefaultBranch("refs/heads/foo"),
-	)
-	s.NoError(err)
-	s.NotNil(r)
-	createCommit(s, r)
-
-	ref, err := r.Head()
-	s.NoError(err)
-	s.Equal("refs/heads/foo", ref.Name().String())
-}
-
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
 	_, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()),
 		WithDefaultBranch("foo"),
 	)
 	s.NotNil(err)
-}
-
-func createCommit(s *RepositorySuite, r *Repository) plumbing.Hash {
-	// Create a commit so there is a HEAD to check
-	wt, err := r.Worktree()
-	s.NoError(err)
-
-	f, err := wt.Filesystem.Create("foo.txt")
-	s.NoError(err)
-
-	defer f.Close()
-
-	_, err = f.Write([]byte("foo text"))
-	s.NoError(err)
-
-	_, err = wt.Add("foo.txt")
-	s.NoError(err)
-
-	author := object.Signature{
-		Name:  "go-git",
-		Email: "go-git@fake.local",
-		When:  time.Now(),
-	}
-
-	h, err := wt.Commit("test commit message", &CommitOptions{
-		All:               true,
-		Author:            &author,
-		Committer:         &author,
-		AllowEmptyCommits: true,
-	})
-	s.NoError(err)
-	return h
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit() {
@@ -158,16 +162,6 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 	cfg, err := r.Config()
 	s.NoError(err)
 	s.Equal("", cfg.Core.Worktree)
-}
-
-func (s *RepositorySuite) TestInitBare() {
-	r, err := Init(memory.NewStorage())
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.True(cfg.Core.IsBare)
 }
 
 func (s *RepositorySuite) TestInitAlreadyExists() {
@@ -447,10 +441,10 @@ func (s *RepositorySuite) TestMergeFF() {
 	s.NoError(err)
 	s.NotNil(r)
 
-	createCommit(s, r)
-	createCommit(s, r)
-	createCommit(s, r)
-	lastCommit := createCommit(s, r)
+	createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	lastCommit := createCommit(s.T(), r)
 
 	wt, err := r.Worktree()
 	s.NoError(err)
@@ -463,8 +457,8 @@ func (s *RepositorySuite) TestMergeFF() {
 	})
 	s.NoError(err)
 
-	createCommit(s, r)
-	fooHash := createCommit(s, r)
+	createCommit(s.T(), r)
+	fooHash := createCommit(s.T(), r)
 
 	// Checkout the master branch so that we can try to merge foo into it.
 	err = wt.Checkout(&CheckoutOptions{
@@ -497,10 +491,10 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 	// Keep track of the first commit, which will be the
 	// reference to create the target branch so that we
 	// can simulate a non-ff merge.
-	firstCommit := createCommit(s, r)
-	createCommit(s, r)
-	createCommit(s, r)
-	lastCommit := createCommit(s, r)
+	firstCommit := createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	lastCommit := createCommit(s.T(), r)
 
 	wt, err := r.Worktree()
 	s.NoError(err)
@@ -514,8 +508,8 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 
 	s.NoError(err)
 
-	createCommit(s, r)
-	h := createCommit(s, r)
+	createCommit(s.T(), r)
+	h := createCommit(s.T(), r)
 
 	// Checkout the master branch so that we can try to merge foo into it.
 	err = wt.Checkout(&CheckoutOptions{
@@ -588,7 +582,7 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 	s.NoError(err)
 	marshaled, err := cfg.Marshal()
 	s.NoError(err)
-	s.Equal(string(marshaled), string(expected))
+	s.Equal(string(expected), string(marshaled))
 }
 
 func (s *RepositorySuite) TestBranchInvalid() {
@@ -647,26 +641,6 @@ func (s *RepositorySuite) TestPlainInit() {
 	cfg, err := r.Config()
 	s.NoError(err)
 	s.True(cfg.Core.IsBare)
-}
-
-func (s *RepositorySuite) TestPlainInitWithOptions() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir,
-		false,
-		WithDefaultBranch("refs/heads/foo"),
-	)
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.False(cfg.Core.IsBare)
-
-	createCommit(s, r)
-
-	ref, err := r.Head()
-	s.NoError(err)
-	s.Equal("refs/heads/foo", ref.Name().String())
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
