@@ -171,11 +171,11 @@ func TestSetEncodedObjectAndEncodedObject(t *testing.T) {
 
 			o, err := sto.EncodedObject(to.Type, h)
 			require.NoError(t, err)
-			assert.Equal(t, to.Object, o)
+			assert.EqualExportedValues(t, to.Object, o)
 
 			o, err = sto.EncodedObject(plumbing.AnyObject, h)
 			require.NoError(t, err)
-			assert.Equal(t, to.Object, o)
+			assert.EqualExportedValues(t, to.Object, o)
 
 			for _, typ := range validTypes() {
 				if typ == to.Type {
@@ -220,7 +220,7 @@ func TestIterEncodedObjects(t *testing.T) {
 
 			o, err := i.Next()
 			require.NoError(t, err)
-			assert.Equal(t, objs[typ].Object, o)
+			assert.EqualExportedValues(t, objs[typ].Object, o)
 
 			o, err = i.Next()
 			assert.Nil(t, o)
