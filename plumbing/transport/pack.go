@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -88,7 +89,11 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	// Some transports like Git doesn't support stderr, so we need to check if
 	// it's not nil before starting to read it.
 	if stderr != nil {
-		go ioutil.CopyBufferPool(&c.stderrBuf, stderr) // nolint: errcheck
+		go func() {
+			var buf bytes.Buffer
+			_, _ = ioutil.CopyBufferPool(&buf, stderr)
+			c.stderrBuf.Store(&buf)
+		}()
 	}
 
 	// Check if stderr is not empty before returning.
@@ -131,7 +136,7 @@ type packConnection struct {
 	svc       Service
 	w         io.WriteCloser // stdin
 	r         *bufio.Reader  // stdout
-	stderrBuf bytes.Buffer
+	stderrBuf atomic.Pointer[bytes.Buffer]
 
 	version protocol.Version
 	caps    *capability.List
@@ -143,7 +148,11 @@ var _ Connection = &packConnection{}
 // stderr returns stderr of the command if it's not empty. This will always
 // return a RemoteError.
 func (p *packConnection) stderr() error {
-	s := strings.TrimSpace(p.stderrBuf.String())
+	buf := p.stderrBuf.Load()
+	if buf == nil {
+		return nil
+	}
+	s := strings.TrimSpace(buf.String())
 	if s == "" {
 		return nil
 	}
