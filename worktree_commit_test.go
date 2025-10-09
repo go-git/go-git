@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -584,6 +585,59 @@ func (s *WorktreeSuite) TestCommitSignBadKey() {
 	s.ErrorIs(err, errors.InvalidArgumentError("signing key is encrypted"))
 }
 
+func (s *WorktreeSuite) TestCherryPick() {
+
+	fs := memfs.New()
+
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err, "init the branch")
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	s.NoError(err)
+
+	_, err = w.Add("foo")
+	s.NoError(err)
+
+	commitHash1, err := w.Commit("commit 1\n", &CommitOptions{Author: defaultSignature()})
+	s.NoError(err)
+	s.False(commitHash1.IsZero(), "commit hash is zero")
+
+	err = util.WriteFile(fs, "foo", []byte("bar"), 0644)
+	s.NoError(err)
+
+	_, err = w.Add("foo")
+	s.NoError(err)
+
+	commitHash2, err := w.Commit("commit 2\n", &CommitOptions{Author: defaultSignature()})
+	s.NoError(err)
+	s.False(commitHash2.IsZero(), "commit hash is zero")
+
+	err = w.Checkout(&CheckoutOptions{})
+	s.NoError(err, "checkout to the default branch")
+
+	commit1, err := r.CommitObject(commitHash1)
+	s.NoError(err)
+	s.NotEmpty(commit1)
+
+	commit2, err := r.CommitObject(commitHash2)
+	s.NoError(err)
+	s.NotEmpty(commit2)
+
+	err = w.CherryPick(defaultSignature(), nil, commit2)
+	s.NoError(err)
+
+	file, err := w.Filesystem.Open("foo")
+	s.NoError(err)
+
+	content, err := io.ReadAll(file)
+	s.NoError(err)
+
+	s.Contains(string(content), "bar")
+
+}
 func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
 
