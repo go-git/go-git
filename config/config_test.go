@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -181,8 +182,12 @@ func (s *ConfigSuite) TestMarshal() {
 	s.Equal(string(output), string(b))
 }
 
-func (s *ConfigSuite) TestUnmarshalMarshal() {
-	input := []byte(`[core]
+func TestUnmarshalMarshal(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{
+			`[core]
 	bare = true
 	worktree = foo
 	custom = ignored
@@ -211,15 +216,43 @@ func (s *ConfigSuite) TestUnmarshalMarshal() {
 	merge = refs/heads/master
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
-`)
+`,
+		},
+		{
+			`[core]
+	repositoryformatversion = 1
+	bare = false
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	rebase = true
+[extensions]
+	objectformat = sha256
+`,
+		},
+		{
+			`[core]
+	repositoryformatversion = 1
+	bare = false
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	rebase = true
+[extensions]
+	objectformat = sha1
+`,
+		},
+	}
 
-	cfg := NewConfig()
-	err := cfg.Unmarshal(input)
-	s.NoError(err)
+	for _, tc := range tests {
+		cfg := NewConfig()
+		err := cfg.Unmarshal([]byte(tc.input))
+		require.NoError(t, err)
 
-	output, err := cfg.Marshal()
-	s.NoError(err)
-	s.Equal(string(input), string(output))
+		output, err := cfg.Marshal()
+		require.NoError(t, err)
+		assert.Equal(t, string(tc.input), string(output))
+	}
 }
 
 func (s *ConfigSuite) TestLoadConfigXDG() {

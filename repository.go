@@ -154,12 +154,11 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 }
 
 func initStorer(s storer.Storer) error {
-	i, ok := s.(storer.Initializer)
-	if !ok {
-		return nil
+	if i, ok := s.(storer.Initializer); ok {
+		return i.Init()
 	}
 
-	return i.Init()
+	return nil
 }
 
 func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error {
@@ -311,7 +310,9 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 			return Init(s, oo...)
 		}
 	}
-	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s := filesystem.NewStorageWithOptions(dot, cache.NewObjectLRUDefault(), filesystem.Options{
+		ObjectFormat: o.objectFormat,
+	})
 	r, err := initFn(s)
 	if err != nil {
 		return nil, err
@@ -320,11 +321,6 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
-	}
-
-	if o.objectFormat != formatcfg.SHA1 {
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
-		cfg.Extensions.ObjectFormat = o.objectFormat
 	}
 
 	err = r.Storer.SetConfig(cfg)

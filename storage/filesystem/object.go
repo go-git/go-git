@@ -34,6 +34,8 @@ type ObjectStorage struct {
 	packfiles   map[plumbing.Hash]*packfile.Packfile
 	muI         sync.RWMutex
 	muP         sync.RWMutex
+
+	oh *plumbing.ObjectHasher
 }
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
@@ -47,6 +49,7 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 		options:     ops,
 		objectCache: objectCache,
 		dir:         dir,
+		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
 	}
 }
 
@@ -114,7 +117,7 @@ func (s *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io
 }
 
 func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
-	return &plumbing.MemoryObject{}
+	return plumbing.NewMemoryObject(s.oh)
 }
 
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
