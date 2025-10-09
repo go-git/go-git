@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
 // SubmoduleRecursivity defines how depth will affect any submodule recursive
@@ -792,6 +793,9 @@ type PlainOpenOptions struct {
 	// Enable .git/commondir support (see https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt).
 	// NOTE: This option will only work with the filesystem storage.
 	EnableDotGitCommonDir bool
+
+	// Options to pass into the filesystem storage object.
+	StorageOptions filesystem.Options
 }
 
 // Validate validates the fields and sets the default values.
