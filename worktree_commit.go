@@ -97,6 +97,56 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 	return commit, w.updateHEAD(commit)
 }
 
+// Cherry-pick commits into the worktree
+// It always accepts "theirs" version of the files. the order of commits is important. Each commit sits on the top of worktree's current head
+// it resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option theirs`
+func (w *Worktree) CherryPick(committer *object.Signature, signKey *openpgp.Entity, commits ...*object.Commit) error {
+	for _, commit := range commits {
+		if commit == nil {
+			return ErrEmptyCommit
+		}
+		tree, err := commit.Tree()
+		if err != nil {
+			return err
+		}
+
+		err = tree.Files().ForEach(func(srcFile *object.File) error {
+			srcFileContent, err := srcFile.Contents()
+			if err != nil {
+				return err
+			}
+			dstFile, err := w.Filesystem.Create(srcFile.Name)
+			if err != nil {
+				return err
+			}
+			defer dstFile.Close()
+			_, err = dstFile.Write([]byte(srcFileContent))
+			if err != nil {
+				return err
+			}
+			_, err = w.Add(srcFile.Name)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = w.Commit(commit.Message, &CommitOptions{
+			Author:            &commit.Author,
+			Committer:         committer,
+			SignKey:           signKey,
+			AllowEmptyCommits: true,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Worktree) autoAddModifiedAndDeleted() error {
 	s, err := w.Status()
 	if err != nil {
