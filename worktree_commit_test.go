@@ -605,7 +605,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.NoError(err)
 	s.False(commitHash1.IsZero(), "commit hash is zero")
 
-	err = util.WriteFile(fs, "foo", []byte("bar"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foobar"), 0644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
@@ -626,7 +626,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.NoError(err)
 	s.NotEmpty(commit2)
 
-	err = w.CherryPick(defaultSignature(), nil, commit2)
+	err = w.CherryPick(defaultSignature(), nil, commit1)
 	s.NoError(err)
 
 	file, err := w.Filesystem.Open("foo")
@@ -635,7 +635,17 @@ func (s *WorktreeSuite) TestCherryPick() {
 	content, err := io.ReadAll(file)
 	s.NoError(err)
 
-	s.Contains(string(content), "bar")
+	s.Contains(string(content), "foo")
+
+	err = w.CherryPick(defaultSignature(), nil, commit2)
+	s.NoError(err)
+	file, err = w.Filesystem.Open("foo")
+	s.NoError(err)
+
+	content, err = io.ReadAll(file)
+	s.NoError(err)
+
+	s.Contains(string(content), "foobar")
 
 }
 func (s *WorktreeSuite) TestCommitTreeSort() {
