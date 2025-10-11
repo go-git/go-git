@@ -62,7 +62,7 @@ compatibility status with go-git.
 | Feature       | Sub-feature | Status | Notes                                                | Examples |
 | ------------- | ----------- | ------ | ---------------------------------------------------- | -------- |
 | `apply`       |             | ❌     |                                                      |          |
-| `cherry-pick` |             | ❌     |                                                      |          |
+| `cherry-pick` |             | ✅     | It supports just `theirs` merge strategy        |          |
 | `diff`        |             | ✅     | Patch object with UnifiedDiff output representation. |          |
 | `rebase`      |             | ❌     |                                                      |          |
 | `revert`      |             | ❌     |                                                      |          |

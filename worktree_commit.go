@@ -103,9 +103,6 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 // it resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option theirs`
 func (w *Worktree) CherryPick(commitOpts *CommitOptions, commits ...*object.Commit) error {
 	for _, commit := range commits {
-		if commit == nil {
-			return ErrEmptyCommit
-		}
 
 		headRef, err := w.r.Head()
 		if err != nil {
