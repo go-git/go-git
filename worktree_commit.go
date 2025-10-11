@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/merkletrie"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
@@ -100,46 +101,64 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 // Cherry-pick commits into the worktree
 // It always accepts "theirs" version of the files. the order of commits is important. Each commit sits on the top of worktree's current head
 // it resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option theirs`
-func (w *Worktree) CherryPick(committer *object.Signature, signKey *openpgp.Entity, commits ...*object.Commit) error {
+func (w *Worktree) CherryPick(commitOpts *CommitOptions, commits ...*object.Commit) error {
 	for _, commit := range commits {
 		if commit == nil {
 			return ErrEmptyCommit
 		}
-		tree, err := commit.Tree()
+
+		headRef, err := w.r.Head()
+		if err != nil {
+			return err
+		}
+		headCommit, err := w.r.CommitObject(headRef.Hash())
+		if err != nil {
+			return err
+		}
+		currentTree, err := headCommit.Tree()
 		if err != nil {
 			return err
 		}
 
-		err = tree.Files().ForEach(func(srcFile *object.File) error {
-			srcFileContent, err := srcFile.Contents()
-			if err != nil {
-				return err
-			}
-			dstFile, err := w.Filesystem.Create(srcFile.Name)
-			if err != nil {
-				return err
-			}
-			defer dstFile.Close()
-			_, err = dstFile.Write([]byte(srcFileContent))
-			if err != nil {
-				return err
-			}
-			_, err = w.Add(srcFile.Name)
-			if err != nil {
-				return err
-			}
-			return nil
-		})
+		commitTree, err := commit.Tree()
 		if err != nil {
 			return err
 		}
+		changes, err := currentTree.Diff(commitTree)
+		if err != nil {
+			return err
+		}
+		for _, change := range changes {
+			action, err := change.Action()
+			if err != nil {
+				return err
+			}
+			switch action {
+			case merkletrie.Delete:
+				if _, err := w.Remove(change.From.Name); err != nil {
+					return err
+				}
+			default:
+				from, _, err := change.Files()
+				if err != nil {
+					return err
+				}
+				content, err := from.Contents()
+				if err != nil {
+					return err
+				}
+				dstFile, err := w.Filesystem.Create(from.Name)
+				if err != nil {
+					return err
+				}
+				_, err = dstFile.Write([]byte(content))
+				if err != nil {
+					return err
+				}
+			}
+		}
 
-		_, err = w.Commit(commit.Message, &CommitOptions{
-			Author:            &commit.Author,
-			Committer:         committer,
-			SignKey:           signKey,
-			AllowEmptyCommits: true,
-		})
+		_, err = w.Commit(commit.Message, commitOpts)
 		if err != nil {
 			return err
 		}

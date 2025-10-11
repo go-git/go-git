@@ -598,6 +598,9 @@ func (s *WorktreeSuite) TestCherryPick() {
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
 	s.NoError(err)
 
+	err = util.WriteFile(fs, "foobar", []byte("foobar"), 0644)
+	s.NoError(err)
+
 	_, err = w.Add("foo")
 	s.NoError(err)
 
@@ -626,7 +629,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.NoError(err)
 	s.NotEmpty(commit2)
 
-	err = w.CherryPick(defaultSignature(), nil, commit1)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, commit1)
 	s.NoError(err)
 
 	file, err := w.Filesystem.Open("foo")
@@ -637,7 +640,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 
 	s.Contains(string(content), "foo")
 
-	err = w.CherryPick(defaultSignature(), nil, commit2)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, commit2)
 	s.NoError(err)
 	file, err = w.Filesystem.Open("foo")
 	s.NoError(err)
@@ -647,6 +650,29 @@ func (s *WorktreeSuite) TestCherryPick() {
 
 	s.Contains(string(content), "foobar")
 
+	// delete the file
+	rmHash, err := w.Remove("foo")
+	s.NoError(err)
+	s.False(rmHash.IsZero())
+
+	rmCommitHash, err := w.Commit("remove the file\n", &CommitOptions{Author: defaultSignature()})
+	s.NoError(err)
+
+	rmCommit, err := r.CommitObject(rmCommitHash)
+	s.NoError(err)
+
+	// go back to commit 2 and cherry pick the latest commit
+	err = w.Checkout(&CheckoutOptions{
+		Hash: commitHash2,
+	})
+	s.NoError(err)
+
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, rmCommit)
+	s.NoError(err)
+
+	fooFile, err := w.Filesystem.Open("foo")
+	s.Error(err)
+	s.Nil(fooFile)
 }
 func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
