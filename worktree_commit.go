@@ -98,10 +98,14 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 	return commit, w.updateHEAD(commit)
 }
 
-// Cherry-pick commits into the worktree
-// It always accepts "theirs" version of the files. the order of commits is important. Each commit sits on the top of worktree's current head
-// it resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option theirs`
+// CherryPick cherry picks commits and merge them into the worktree based on the selected 
+// merge strategy. Each commit sits on the top of worktree's current head.
+// It resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option [theirs,ours]`
 func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption MergeStrategyORTOption, commits ...*object.Commit) error {
+	if commitOpts == nil {
+	  return ErrCannotCherryPickWithoutCommitOptions
+	}
+
 	for _, commit := range commits {
 		var changes object.Changes
 		headRef, err := w.r.Head()
