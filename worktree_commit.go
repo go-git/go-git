@@ -101,9 +101,9 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 // Cherry-pick commits into the worktree
 // It always accepts "theirs" version of the files. the order of commits is important. Each commit sits on the top of worktree's current head
 // it resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option theirs`
-func (w *Worktree) CherryPick(commitOpts *CommitOptions, commits ...*object.Commit) error {
+func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption MergeStrategyORTOption, commits ...*object.Commit) error {
 	for _, commit := range commits {
-
+		var changes object.Changes
 		headRef, err := w.r.Head()
 		if err != nil {
 			return err
@@ -121,7 +121,14 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, commits ...*object.Comm
 		if err != nil {
 			return err
 		}
-		changes, err := currentTree.Diff(commitTree)
+
+		switch ortStrategyOption {
+		case Theirs:
+			changes, err = currentTree.Diff(commitTree)
+		case Ours:
+			changes, err = commitTree.Diff(currentTree)
+		}
+
 		if err != nil {
 			return err
 		}
@@ -130,26 +137,31 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, commits ...*object.Comm
 			if err != nil {
 				return err
 			}
+
 			switch action {
 			case merkletrie.Delete:
 				if _, err := w.Remove(change.From.Name); err != nil {
 					return err
 				}
-			default:
-				from, _, err := change.Files()
+
+			case merkletrie.Insert, merkletrie.Modify:
+				_, to, err := change.Files()
 				if err != nil {
 					return err
 				}
-				content, err := from.Contents()
+				content, err := to.Contents()
 				if err != nil {
 					return err
 				}
-				dstFile, err := w.Filesystem.Create(from.Name)
+				dstFile, err := w.Filesystem.Create(to.Name)
 				if err != nil {
 					return err
 				}
 				_, err = dstFile.Write([]byte(content))
 				if err != nil {
+					return err
+				}
+				if _, err := w.Add(to.Name); err != nil {
 					return err
 				}
 			}

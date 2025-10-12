@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -590,37 +589,44 @@ func (s *WorktreeSuite) TestCherryPick() {
 	fs := memfs.New()
 
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err, "init the branch")
+	s.NoError(err, "init the repository")
 
 	w, err := r.Worktree()
 	s.NoError(err)
+	// add README.md to the worktree
+	err = util.WriteFile(fs, "README.md", []byte("README File"), 0644)
+	s.NoError(err)
+	w.Add("README.md")
 
+	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	s.NoError(err)
+
+	// add two files to worktree
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foobar", []byte("foobar"), 0644)
+	err = util.WriteFile(fs, "foobar", []byte("foo**bar"), 0644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
+	_, err = w.Add("foobar")
+	s.NoError(err)
 
+	// commit the changes
 	commitHash1, err := w.Commit("commit 1\n", &CommitOptions{Author: defaultSignature()})
 	s.NoError(err)
 	s.False(commitHash1.IsZero(), "commit hash is zero")
-
-	err = util.WriteFile(fs, "foo", []byte("foobar"), 0644)
+	// modify the "foo" file
+	err = util.WriteFile(fs, "foo", []byte("foo=bar"), 0644)
 	s.NoError(err)
-
 	_, err = w.Add("foo")
 	s.NoError(err)
-
+	// commit the new changes to "foo" file
 	commitHash2, err := w.Commit("commit 2\n", &CommitOptions{Author: defaultSignature()})
 	s.NoError(err)
 	s.False(commitHash2.IsZero(), "commit hash is zero")
-
-	err = w.Checkout(&CheckoutOptions{})
-	s.NoError(err, "checkout to the default branch")
-
+	// get commit objects to do cherry picking
 	commit1, err := r.CommitObject(commitHash1)
 	s.NoError(err)
 	s.NotEmpty(commit1)
@@ -629,26 +635,26 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.NoError(err)
 	s.NotEmpty(commit2)
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, commit1)
+	foobarFileContent, err := util.ReadFile(fs, "foobar")
+	s.NoError(err)
+	s.Equal("foo**bar", string(foobarFileContent))
+
+	err = w.Checkout(&CheckoutOptions{Hash: initHash})
+	s.NoError(err, "checkout to the default branch")
+
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Theirs, commit1)
 	s.NoError(err)
 
-	file, err := w.Filesystem.Open("foo")
+	foobarFileContent, err = util.ReadFile(fs, "foobar")
+	s.NoError(err)
+	s.Equal("foo**bar", string(foobarFileContent))
+
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Theirs, commit2)
 	s.NoError(err)
 
-	content, err := io.ReadAll(file)
+	fooFileContent, err := util.ReadFile(fs, "foo")
 	s.NoError(err)
-
-	s.Contains(string(content), "foo")
-
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, commit2)
-	s.NoError(err)
-	file, err = w.Filesystem.Open("foo")
-	s.NoError(err)
-
-	content, err = io.ReadAll(file)
-	s.NoError(err)
-
-	s.Contains(string(content), "foobar")
+	s.Equal("foo=bar", string(fooFileContent))
 
 	// delete the file
 	rmHash, err := w.Remove("foo")
@@ -667,12 +673,25 @@ func (s *WorktreeSuite) TestCherryPick() {
 	})
 	s.NoError(err)
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, rmCommit)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Theirs, rmCommit)
 	s.NoError(err)
 
-	fooFile, err := w.Filesystem.Open("foo")
+	fooFileContent, err = util.ReadFile(fs, "foo")
 	s.Error(err)
-	s.Nil(fooFile)
+	s.Nil(fooFileContent)
+
+	// go back to commit 1 and cherry pick with "ours" strategy option
+	err = w.Checkout(&CheckoutOptions{
+		Hash: commitHash1,
+	})
+	s.NoError(err)
+
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Ours, rmCommit)
+	s.NoError(err)
+	fooFileContent, err = util.ReadFile(fs, "foo")
+	s.NoError(err)
+	s.Equal("foo", string(fooFileContent))
+
 }
 func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()

@@ -112,6 +112,19 @@ const (
 	FastForwardMerge MergeStrategy = iota
 )
 
+// ort is the default Merge strategy.  This strategy can only resolve two heads using a 3-way merge algorithm.
+// since git v2.50.0, ort is a synonym of recursive.
+// ort has two options: theirs and ours
+// in the both cases, conflicts would be auto-resolved by accepting existing or incoming changes
+type MergeStrategyORTOption int8
+
+const (
+	// "theirs" option auto-resolves the changes accepting the incoming version of the changes
+	Theirs MergeStrategyORTOption = iota
+	// "ours" option favors our version of the changes and it's opposite of "theirs"
+	Ours
+)
+
 // Validate validates the fields and sets the default values.
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
