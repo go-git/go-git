@@ -297,8 +297,17 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 // the worktree to the index. If any of the files is already staged in the index
 // no error is returned. When path is a file, the blob.Hash is returned.
 func (w *Worktree) Add(path string) (plumbing.Hash, error) {
-	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
-	return w.doAdd(path, make([]gitignore.Pattern, 0), false)
+	// TODO(mcuadros): deprecate in favor of AddWithOption in v7.
+	patterns := make([]gitignore.Pattern, 0)
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" {
+		dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, nil)
+		patterns = append(patterns, dirPatterns...)
+	} else {
+		dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, []string{dir})
+		patterns = append(patterns, dirPatterns...)
+	}
+	return w.doAdd(path, patterns, false)
 }
 
 func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
@@ -347,8 +356,11 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 		return err
 	}
 
+	patterns := make([]gitignore.Pattern, 0)
+
 	if opts.All {
-		_, err := w.doAdd(".", w.Excludes, false)
+		patterns, _ = gitignore.ReadPatterns(w.Filesystem, nil)
+		_, err := w.doAdd(".", patterns, false)
 		return err
 	}
 
@@ -356,7 +368,17 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 		return w.AddGlob(opts.Glob)
 	}
 
-	_, err := w.doAdd(opts.Path, make([]gitignore.Pattern, 0), opts.SkipStatus)
+	if !opts.Force {
+		dir := filepath.Dir(opts.Path)
+		if dir == "." || dir == "" {
+			dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, nil)
+			patterns = append(patterns, dirPatterns...)
+		} else {
+			dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, []string{dir})
+			patterns = append(patterns, dirPatterns...)
+		}
+	}
+	_, err := w.doAdd(opts.Path, patterns, opts.SkipStatus)
 	return err
 }
 
@@ -370,7 +392,6 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	var added bool
 
 	fi, err := w.Filesystem.Lstat(path)
-
 	// status is required for doAddDirectory
 	var s Status
 	var err2 error
