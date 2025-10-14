@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"crypto"
 	"strings"
 	"testing"
 	"time"
@@ -39,12 +40,12 @@ func TestEncode(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -53,7 +54,6 @@ func TestEncode(t *testing.T) {
 	assert.Equal(t, strings.Repeat(" ", 20), output.Entries[0].Name)
 	assert.Equal(t, "bar", output.Entries[1].Name)
 	assert.Equal(t, "foo", output.Entries[2].Name)
-
 }
 
 func TestEncodeV4(t *testing.T) {
@@ -94,12 +94,12 @@ func TestEncodeV4(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	require.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	require.NoError(t, err)
 
@@ -116,7 +116,7 @@ func TestEncodeUnsupportedVersion(t *testing.T) {
 	idx := &Index{Version: 5}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.Equal(t, ErrUnsupportedVersion, err)
 }
@@ -128,12 +128,12 @@ func TestEncodeWithIntentToAddUnsupportedVersion(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -148,12 +148,12 @@ func TestEncodeWithSkipWorktreeUnsupportedVersion(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
