@@ -642,14 +642,14 @@ func (s *WorktreeSuite) TestCherryPick() {
 	err = w.Checkout(&CheckoutOptions{Hash: initHash})
 	s.NoError(err, "checkout to the default branch")
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Theirs, commit1)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit1)
 	s.NoError(err)
 
 	foobarFileContent, err = util.ReadFile(fs, "foobar")
 	s.NoError(err)
 	s.Equal("foo**bar", string(foobarFileContent))
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Theirs, commit2)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit2)
 	s.NoError(err)
 
 	fooFileContent, err := util.ReadFile(fs, "foo")
@@ -673,7 +673,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	})
 	s.NoError(err)
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Theirs, rmCommit)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, rmCommit)
 	s.NoError(err)
 
 	fooFileContent, err = util.ReadFile(fs, "foo")
@@ -686,11 +686,15 @@ func (s *WorktreeSuite) TestCherryPick() {
 	})
 	s.NoError(err)
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, Ours, rmCommit)
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, OursMergeStrategy, rmCommit)
 	s.NoError(err)
 	fooFileContent, err = util.ReadFile(fs, "foo")
 	s.NoError(err)
 	s.Equal("foo", string(fooFileContent))
+
+	// cherry-pick with no commit options
+	err = w.CherryPick(nil, OursMergeStrategy, rmCommit)
+	s.ErrorIs(err, ErrCannotCherryPickWithoutCommitOptions)
 
 }
 func (s *WorktreeSuite) TestCommitTreeSort() {

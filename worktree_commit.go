@@ -25,6 +25,8 @@ var (
 	// ErrEmptyCommit occurs when a commit is attempted using a clean
 	// working tree, with no changes to be committed.
 	ErrEmptyCommit = errors.New("cannot create empty commit: clean working tree")
+	// ErrCannotCherryPickWithoutCommitOptions happens when no commitOptions is not provided for cherry-picking commit
+	ErrCannotCherryPickWithoutCommitOptions = errors.New("cannot cherry-pick without commit options")
 
 	// characters to be removed from user name and/or email before using them to build a commit object
 	// See https://git-scm.com/docs/git-commit#_commit_information
@@ -98,12 +100,12 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 	return commit, w.updateHEAD(commit)
 }
 
-// CherryPick cherry picks commits and merge them into the worktree based on the selected 
+// CherryPick cherry picks commits and merge them into the worktree based on the selected
 // merge strategy. Each commit sits on the top of worktree's current head.
 // It resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option [theirs,ours]`
-func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption MergeStrategyORTOption, commits ...*object.Commit) error {
+func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMergeStrategyOption, commits ...*object.Commit) error {
 	if commitOpts == nil {
-	  return ErrCannotCherryPickWithoutCommitOptions
+		return ErrCannotCherryPickWithoutCommitOptions
 	}
 
 	for _, commit := range commits {
@@ -127,9 +129,9 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption Merge
 		}
 
 		switch ortStrategyOption {
-		case Theirs:
+		case TheirsMergeStrategy:
 			changes, err = currentTree.Diff(commitTree)
-		case Ours:
+		case OursMergeStrategy:
 			changes, err = commitTree.Diff(currentTree)
 		}
 

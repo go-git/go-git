@@ -118,8 +118,8 @@ type OrtMergeStrategyOption int8
 
 const (
 	// TheirsMergeStrategy is a merge strategy option that auto-resolves the changes by accepting the incoming version of the changes.
-	TheirsMergeStrategy MergeStrategyORTOption = iota
-	
+	TheirsMergeStrategy OrtMergeStrategyOption = iota
+
 	// OursMergeStrategy is a merge strategy option that auto-resolves the changes by accepting our version of the changes and rejecting the incoming changes.
 	OursMergeStrategy
 )
