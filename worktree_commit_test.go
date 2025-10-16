@@ -695,7 +695,6 @@ func (s *WorktreeSuite) TestCherryPick() {
 	// cherry-pick with no commit options
 	err = w.CherryPick(nil, OursMergeStrategy, rmCommit)
 	s.ErrorIs(err, ErrCannotCherryPickWithoutCommitOptions)
-
 }
 func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()

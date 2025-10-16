@@ -149,7 +149,6 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				if _, err := w.Remove(change.From.Name); err != nil {
 					return err
 				}
-
 			case merkletrie.Insert, merkletrie.Modify:
 				_, to, err := change.Files()
 				if err != nil {
@@ -172,8 +171,13 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				}
 			}
 		}
-
-		_, err = w.Commit(commit.Message, commitOpts)
+		_, err = w.Commit(commit.Message, &CommitOptions{
+			Author:            &commit.Author,
+			Committer:         commitOpts.Committer,
+			SignKey:           commitOpts.SignKey,
+			Signer:            commitOpts.Signer,
+			AllowEmptyCommits: commitOpts.AllowEmptyCommits,
+		})
 		if err != nil {
 			return err
 		}
