@@ -9,7 +9,9 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -26,6 +28,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 		bare = true
 		worktree = foo
 		commentchar = bar
+		autocrlf = true
 [user]
 		name = John Doe
 		email = john@example.com
@@ -70,6 +73,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.True(cfg.Core.IsBare)
 	s.Equal("foo", cfg.Core.Worktree)
 	s.Equal("bar", cfg.Core.CommentChar)
+	s.Equal("true", cfg.Core.AutoCRLF)
 	s.Equal("John Doe", cfg.User.Name)
 	s.Equal("john@example.com", cfg.User.Email)
 	s.Equal("Jane Roe", cfg.Author.Name)
@@ -101,6 +105,7 @@ func (s *ConfigSuite) TestMarshal() {
 	output := []byte(`[core]
 	bare = true
 	worktree = bar
+	autocrlf = true
 [pack]
 	window = 20
 [remote "alt"]
@@ -129,6 +134,7 @@ func (s *ConfigSuite) TestMarshal() {
 	cfg := NewConfig()
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
+	cfg.Core.AutoCRLF = "true"
 	cfg.Pack.Window = 20
 	cfg.Init.DefaultBranch = "main"
 	cfg.Remotes["origin"] = &RemoteConfig{
@@ -180,6 +186,7 @@ func (s *ConfigSuite) TestUnmarshalMarshal() {
 	bare = true
 	worktree = foo
 	custom = ignored
+	autocrlf = true
 [user]
 	name = John Doe
 	email = john@example.com
@@ -469,4 +476,101 @@ func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
 	s.True(ok, "Expected an unnamed remote to be present")
 	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
 	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
+}
+
+func TestMerge(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input []*Config
+		want  Config
+	}{
+		{
+			name:  "nil",
+			input: nil,
+			want:  Config{},
+		},
+		{
+			name: "separate objs",
+			input: []*Config{
+				{User: struct {
+					Name  string
+					Email string
+				}{
+					Name: "foo", Email: "bar@test",
+				}},
+				{
+					Extensions: struct{ ObjectFormat config.ObjectFormat }{
+						ObjectFormat: config.SHA256,
+					},
+				},
+			},
+			want: Config{
+				User: struct {
+					Name  string
+					Email string
+				}{
+					Name:  "foo",
+					Email: "bar@test",
+				},
+				Extensions: struct{ ObjectFormat config.ObjectFormat }{
+					ObjectFormat: config.SHA256,
+				},
+			},
+		},
+		{
+			name: "merge nested fields",
+			input: []*Config{
+				{User: struct {
+					Name  string
+					Email string
+				}{Name: "foo"}},
+				{User: struct {
+					Name  string
+					Email string
+				}{Email: "bar@test"}},
+			},
+			want: Config{
+				User: struct {
+					Name  string
+					Email string
+				}{
+					Name:  "foo",
+					Email: "bar@test",
+				},
+			},
+		},
+		{
+			name: "override nested fields",
+			input: []*Config{
+				{User: struct {
+					Name  string
+					Email string
+				}{Name: "foo"}},
+				{User: struct {
+					Name  string
+					Email string
+				}{Name: "bar", Email: "foo@test"}},
+			},
+			want: Config{
+				User: struct {
+					Name  string
+					Email string
+				}{
+					Name:  "bar",
+					Email: "foo@test",
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Merge(tc.input...)
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

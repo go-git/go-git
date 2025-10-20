@@ -495,6 +495,44 @@ func (s *WorktreeSuite) TestCheckoutSparse() {
 	}
 }
 
+func (s *WorktreeSuite) TestCheckoutCRLF() {
+	runTest := func(t *testing.T, autoCRLF string) (result []byte) {
+		r := NewRepositoryWithEmptyWorktree(fixtures.Basic().One())
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+		cfg.Core.AutoCRLF = autoCRLF
+		require.NoError(t, r.SetConfig(cfg))
+
+		wt, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, wt.Checkout(&CheckoutOptions{}))
+
+		status, err := wt.Status()
+		require.NoError(t, err)
+		require.True(t, status.IsClean(), status)
+
+		file, err := wt.Filesystem.Open("CHANGELOG")
+		require.NoError(t, err)
+
+		content, err := io.ReadAll(file)
+		require.NoError(t, err)
+
+		return content
+	}
+
+	s.Run("autocrlf=true", func() {
+		result := runTest(s.T(), "true")
+		s.Equal("Initial changelog\r\n", string(result))
+	})
+
+	s.Run("autocrlf=input", func() {
+		result := runTest(s.T(), "input")
+		s.Equal("Initial changelog\n", string(result))
+	})
+}
+
 func (s *WorktreeSuite) TestFilenameNormalization() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("windows paths may contain non utf-8 sequences")
@@ -1796,6 +1834,49 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	s.NoError(err)
 	s.NotNil(obj)
 	s.Equal(int64(3), obj.Size())
+}
+
+func (s *WorktreeSuite) TestAddCRLF() {
+	runTest := func(t *testing.T, autoCRLF string) (result []byte) {
+		r := NewRepositoryWithEmptyWorktree(fixtures.Basic().One())
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+		cfg.Core.AutoCRLF = autoCRLF
+		require.NoError(t, r.SetConfig(cfg))
+
+		wt, err := r.Worktree()
+		require.NoError(t, err)
+
+		err = util.WriteFile(wt.Filesystem, "foo", []byte("FOO\r\n"), 0o755)
+		require.NoError(t, err)
+
+		h, err := wt.Add("foo")
+		require.NoError(t, err)
+
+		obj, err := r.Storer.EncodedObject(plumbing.BlobObject, h)
+		require.NoError(t, err)
+		require.NotNil(t, obj)
+
+		reader, err := obj.Reader()
+		require.NoError(t, err)
+		defer reader.Close()
+
+		content, err := io.ReadAll(reader)
+		s.Require().NoError(err)
+
+		return content
+	}
+
+	s.Run("autocrlf=true", func() {
+		result := runTest(s.T(), "true")
+		s.Equal("FOO\n", string(result))
+	})
+
+	s.Run("autocrlf=input", func() {
+		result := runTest(s.T(), "input")
+		s.Equal("FOO\n", string(result))
+	})
 }
 
 func (s *WorktreeSuite) TestIgnored() {

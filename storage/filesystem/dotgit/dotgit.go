@@ -872,9 +872,11 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		}
 		mtime := fi.ModTime()
 
-		err = f.Lock()
-		if err != nil {
-			return nil, err
+		if locker, ok := f.(billy.Locker); ok {
+			err = locker.Lock()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		fi, err = d.fs.Stat(packedRefsPath)
@@ -1146,14 +1148,16 @@ func (d *DotGit) AddAlternate(remote string) error {
 	}
 	defer f.Close()
 
-	// locking in windows throws an error, based on comments
-	// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
-	// do not lock on windows platform.
-	if runtime.GOOS != "windows" {
-		if err = f.Lock(); err != nil {
-			return fmt.Errorf("cannot lock file: %w", err)
+	if locker, ok := f.(billy.Locker); ok {
+		// locking in windows throws an error, based on comments
+		// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
+		// do not lock on windows platform.
+		if runtime.GOOS != "windows" {
+			if err = locker.Lock(); err != nil {
+				return fmt.Errorf("cannot lock file: %w", err)
+			}
+			defer locker.Unlock()
 		}
-		defer f.Unlock()
 	}
 
 	line := path.Join(remote, objectsPath) + "\n"

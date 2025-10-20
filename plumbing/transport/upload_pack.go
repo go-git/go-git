@@ -254,14 +254,12 @@ func UploadPack(
 		useSideband bool
 		writer      io.Writer = w
 	)
-	if !caps.Supports(capability.NoProgress) {
-		if caps.Supports(capability.Sideband64k) {
-			writer = sideband.NewMuxer(sideband.Sideband64k, w)
-			useSideband = true
-		} else if caps.Supports(capability.Sideband) {
-			writer = sideband.NewMuxer(sideband.Sideband, w)
-			useSideband = true
-		}
+	if caps.Supports(capability.Sideband64k) {
+		writer = sideband.NewMuxer(sideband.Sideband64k, w)
+		useSideband = true
+	} else if caps.Supports(capability.Sideband) {
+		writer = sideband.NewMuxer(sideband.Sideband, w)
+		useSideband = true
 	}
 
 	// TODO: Support shallow-file

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -983,7 +984,7 @@ func (f *notExistsFS) Open(filename string) (billy.File, error) {
 	return f.Filesystem.Open(filename)
 }
 
-func (f *notExistsFS) ReadDir(path string) ([]os.FileInfo, error) {
+func (f *notExistsFS) ReadDir(path string) ([]fs.DirEntry, error) {
 	if f.matches(path) {
 		return nil, os.ErrNotExist
 	}

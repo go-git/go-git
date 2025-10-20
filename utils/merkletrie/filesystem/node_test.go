@@ -51,6 +51,29 @@ func (s *NoderSuite) TestDiff() {
 	s.Len(ch, 0)
 }
 
+func (s *NoderSuite) TestDiffCRLF() {
+	fsA := memfs.New()
+	WriteFile(fsA, "foo", []byte("foo\n"), 0644)
+	WriteFile(fsA, "qux/bar", []byte("foo\n"), 0644)
+	WriteFile(fsA, "qux/qux", []byte("foo\n"), 0644)
+	fsA.Symlink("foo", "bar")
+
+	fsB := memfs.New()
+	WriteFile(fsB, "foo", []byte("foo\r\n"), 0644)
+	WriteFile(fsB, "qux/bar", []byte("foo\r\n"), 0644)
+	WriteFile(fsB, "qux/qux", []byte("foo\r\n"), 0644)
+	fsB.Symlink("foo", "bar")
+
+	ch, err := merkletrie.DiffTree(
+		NewRootNode(fsA, nil),
+		NewRootNodeWithOptions(fsB, nil, Options{AutoCRLF: true}),
+		IsEquals,
+	)
+
+	s.NoError(err)
+	s.Len(ch, 0)
+}
+
 func (s *NoderSuite) TestDiffChangeLink() {
 	fsA := memfs.New()
 	fsA.Symlink("qux", "foo")

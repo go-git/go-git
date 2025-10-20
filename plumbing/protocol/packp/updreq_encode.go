@@ -47,7 +47,7 @@ func (req *UpdateRequests) encodeCommands(w io.Writer,
 	}
 
 	for _, cmd := range cmds[1:] {
-		if _, err := pktline.Writef(w, formatCommand(cmd)); err != nil {
+		if _, err := pktline.Write(w, []byte(formatCommand(cmd))); err != nil {
 			return err
 		}
 	}

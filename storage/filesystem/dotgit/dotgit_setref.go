@@ -36,9 +36,11 @@ func (d *DotGit) setRefRwfs(fileName, content string, old *plumbing.Reference) (
 	// does not imply a fsync and thus there would be a race between
 	// Unlock+Close and other concurrent writers. Adding Sync to go-billy
 	// could work, but this is better (and avoids superfluous syncs).
-	err = f.Lock()
-	if err != nil {
-		return err
+	if locker, ok := f.(billy.Locker); ok {
+		err = locker.Lock()
+		if err != nil {
+			return err
+		}
 	}
 
 	// this is a no-op to call even when old is nil.

@@ -1,10 +1,10 @@
 package packfile
 
 import (
+	"bufio"
 	"crypto"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
 	billy "github.com/go-git/go-billy/v6"
@@ -34,6 +34,7 @@ type Packfile struct {
 	scanner *Scanner
 
 	cache cache.Object
+	rbuf  *bufio.Reader
 
 	id           plumbing.Hash
 	m            sync.Mutex
@@ -206,7 +207,10 @@ func (p *Packfile) init() error {
 			return
 		}
 
-		var opts []ScannerOption
+		p.rbuf = gogitsync.GetBufioReader(nil)
+
+		var opts = []ScannerOption{WithBufioReader(p.rbuf)}
+
 		if p.objectIdSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
 		}
@@ -256,6 +260,8 @@ func (p *Packfile) headerFromOffset(offset int64) (*ObjectHeader, error) {
 func (p *Packfile) Close() error {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	gogitsync.PutBufioReader(p.rbuf)
 
 	closer, ok := p.file.(io.Closer)
 	if !ok {
@@ -349,8 +355,3 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 
 	return obj, nil
 }
-
-// errInvalidWindows is the Windows equivalent to os.ErrInvalid
-const errInvalidWindows = "The parameter is incorrect."
-
-var errInvalidUnix = os.ErrInvalid.Error()

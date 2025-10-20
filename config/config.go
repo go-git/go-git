@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 
@@ -68,6 +69,10 @@ type Config struct {
 		CommentChar string
 		// RepositoryFormatVersion identifies the repository format and layout version.
 		RepositoryFormatVersion format.RepositoryFormatVersion
+		// AutoCRLF if "true", all the CRLF line endings in the worktree will be
+		// converted to LF when added to the repository, and vice versa on checkout.
+		// If set to "input", only worktree-to-repository conversion is performed.
+		AutoCRLF string
 	}
 
 	User struct {
@@ -146,6 +151,60 @@ type Config struct {
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
 	Raw *format.Config
+}
+
+// Merge combines all the src Config objects into one.
+// The objects are processed in the order they are passed on, and will
+// override any existing values. Empty configs are ignored.
+func Merge(src ...*Config) Config {
+	var final Config
+
+	for _, c := range src {
+		if c == nil {
+			continue
+		}
+
+		merge(&final, c)
+	}
+
+	return final
+}
+
+func merge(dst, src any) {
+	tv := reflect.ValueOf(dst).Elem()
+	sv := reflect.ValueOf(src).Elem()
+
+	for i := 0; i < tv.NumField(); i++ {
+		df := tv.Field(i)
+		sf := sv.Field(i)
+
+		if !df.CanSet() || sf.IsZero() {
+			continue
+		}
+
+		switch df.Kind() {
+		case reflect.Struct:
+			// Handle nested fields which are based off structs.
+			merge(df.Addr().Interface(), sf.Addr().Interface())
+
+		case reflect.Ptr:
+			if sf.IsNil() {
+				continue
+			}
+			if df.IsNil() {
+				df.Set(reflect.New(df.Type().Elem()))
+			}
+			// Same as per reflect.Struct, but for a struct pointer.
+			if df.Elem().Kind() == reflect.Struct {
+				merge(df.Interface(), sf.Interface())
+			} else {
+				df.Set(sf)
+			}
+
+		default:
+			df.Set(sf)
+		}
+	}
 }
 
 // NewConfig returns a new empty Config.
@@ -290,6 +349,7 @@ const (
 	objectFormat               = "objectformat"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
+	autoCRLFKey                = "autocrlf"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -337,6 +397,7 @@ func (c *Config) unmarshalCore() {
 
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
+	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
 }
 
 func (c *Config) unmarshalUser() {
@@ -497,6 +558,10 @@ func (c *Config) marshalCore() {
 
 	if c.Core.Worktree != "" {
 		s.SetOption(worktreeKey, c.Core.Worktree)
+	}
+
+	if c.Core.AutoCRLF != "" {
+		s.SetOption(autoCRLFKey, c.Core.AutoCRLF)
 	}
 }
 

@@ -15,11 +15,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/merkletrie/filesystem"
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
+	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 var (
@@ -141,7 +143,16 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	to := filesystem.NewRootNode(w.Filesystem, submodules)
+	cfg, err := w.r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	fsOpts := filesystem.Options{
+		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+	}
+
+	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
 
 	var c merkletrie.Changes
 	if reverse {
@@ -507,17 +518,37 @@ func (w *Worktree) copyFileToStorage(path string) (hash plumbing.Hash, err error
 }
 
 func (w *Worktree) fillEncodedObjectFromFile(dst io.Writer, path string, _ os.FileInfo) (err error) {
-	src, err := w.Filesystem.Open(path)
+	file, err := w.Filesystem.Open(path)
+	if err != nil {
+		return err
+	}
+	defer ioutil.CheckClose(file, &err)
+
+	cfg, err := w.r.Config()
 	if err != nil {
 		return err
 	}
 
-	defer ioutil.CheckClose(src, &err)
+	switch cfg.Core.AutoCRLF {
+	case "true", "input":
+		br := sync.GetBufioReader(file)
+		defer sync.PutBufioReader(br)
 
-	if _, err := ioutil.CopyBufferPool(dst, src); err != nil {
-		return err
+		stat, err := convert.GetStat(br)
+		if err != nil {
+			return err
+		}
+
+		if _, err = file.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+
+		if !stat.IsBinary() {
+			dst = convert.NewLFWriter(dst)
+		}
 	}
 
+	_, err = ioutil.CopyBufferPool(dst, file)
 	return err
 }
 

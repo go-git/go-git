@@ -214,7 +214,8 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	err := s.receivePackNoCheck(endpoint, req, fixture, full)
 	// XXX: Recent git versions return "failed to update ref", while older
 	//     (>=1.9) return "failed to lock".
-	s.Regexp(regexp.MustCompile(".*(failed to update ref|failed to lock).*"), err)
+	// More recent versions: command error on <ref>: reference already exists
+	s.Regexp(regexp.MustCompile(".*(failed to update ref|failed to lock|reference already exists).*"), err)
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
