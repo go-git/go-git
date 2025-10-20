@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,7 @@ func (fs *RepositoryFilesystem) TempFile(dir, prefix string) (billy.File, error)
 	return fs.mapToRepositoryFsByPath(dir).TempFile(dir, prefix)
 }
 
-func (fs *RepositoryFilesystem) ReadDir(path string) ([]os.FileInfo, error) {
+func (fs *RepositoryFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
 	return fs.mapToRepositoryFsByPath(path).ReadDir(path)
 }
 
