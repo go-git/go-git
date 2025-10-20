@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path"
@@ -1054,7 +1055,7 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 	return w.doClean(s, opts, root, files)
 }
 
-func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files []os.FileInfo) error {
+func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files []fs.DirEntry) error {
 	for _, fi := range files {
 		if fi.Name() == GitDirName {
 			continue

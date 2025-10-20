@@ -7,7 +7,7 @@ package merkletrie
 // The diff algorithm implemented here is based on the doubleiter
 // type defined in this same package; we will iterate over both
 // trees at the same time, while comparing the current noders in
-// each iterator.  Depending on how they differ we will output the
+// each iterator. Depending on how they differ we will output the
 // corresponding changes and move the iterators further over both
 // trees.
 //
