@@ -877,6 +877,34 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 	s.Nil(r)
 }
 
+func (s *RepositorySuite) TestPlainOpenWithStorageOptions() {
+	fs := s.TemporalFilesystem()
+
+	dir, err := util.TempDir(fs, "", "")
+	s.NoError(err)
+
+	subdir := filepath.Join(dir, "a", "b")
+	err = fs.MkdirAll(subdir, 0o755)
+	s.NoError(err)
+
+	file := fs.Join(subdir, "file.txt")
+	f, err := fs.Create(file)
+	s.NoError(err)
+	f.Close()
+
+	r, err := PlainInit(fs.Join(fs.Root(), dir), false)
+	s.NoError(err)
+	s.NotNil(r)
+
+	opt := &PlainOpenOptions{
+		DetectDotGit:   true,
+		StorageOptions: filesystem.Options{KeepDescriptors: true}}
+
+	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), subdir), opt)
+	s.NoError(err)
+	s.NotNil(r)
+}
+
 func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit() {
 	dir := s.T().TempDir()
 	opt := &PlainOpenOptions{DetectDotGit: true}
