@@ -358,13 +358,13 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		return nil, err
 	}
 
-	var repositoryFs billy.Filesystem
+	dotGitCommon, err := dotGitCommonDirectory(dot)
+	if err != nil {
+		return nil, err
+	}
 
-	if o.EnableDotGitCommonDir {
-		dotGitCommon, err := dotGitCommonDirectory(dot)
-		if err != nil {
-			return nil, err
-		}
+	var repositoryFs billy.Filesystem
+	if o.EnableDotGitCommonDir || dotGitCommon != nil {
 		repositoryFs = dotgit.NewRepositoryFilesystem(dot, dotGitCommon)
 	} else {
 		repositoryFs = dot
