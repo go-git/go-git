@@ -2,7 +2,13 @@ package index
 
 import (
 	"path/filepath"
+
+	"github.com/stretchr/testify/suite"
 )
+
+type IndexSuite struct {
+	suite.Suite
+}
 
 func (s *IndexSuite) TestIndexAdd() {
 	idx := &Index{}
