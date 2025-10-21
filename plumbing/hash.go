@@ -16,16 +16,6 @@ type Hash = ObjectID
 // ZeroHash is an ObjectID with value zero.
 var ZeroHash ObjectID
 
-// ComputeHash compute the hash for a given ObjectType and content
-func ComputeHash(t ObjectType, content []byte) Hash {
-	ha, err := newHasher(format.SHA1)
-	if err != nil {
-		return ZeroHash
-	}
-	h, _ := ha.Compute(t, content)
-	return h
-}
-
 // NewHash return a new Hash based on a hexadecimal hash representation.
 // Invalid input results into an empty hash.
 //

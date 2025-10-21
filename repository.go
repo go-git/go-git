@@ -154,12 +154,11 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 }
 
 func initStorer(s storer.Storer) error {
-	i, ok := s.(storer.Initializer)
-	if !ok {
-		return nil
+	if i, ok := s.(storer.Initializer); ok {
+		return i.Init()
 	}
 
-	return i.Init()
+	return nil
 }
 
 func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error {
