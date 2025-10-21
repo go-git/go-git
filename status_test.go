@@ -4,24 +4,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type StatusSuite struct {
-	suite.Suite
-	BaseSuite
-	Files    *[]string
-	Expected *map[string]bool
-}
-
-func TestStatusSuite(t *testing.T) {
-	suite.Run(t, new(StatusSuite))
-}
-
-func (s *StatusSuite) SetupTest() {
+func TestStatusReturnsFullPaths(t *testing.T) {
 	files := []string{
 		filepath.Join("a", "a"),
 		filepath.Join("b", "a"),
@@ -29,100 +18,104 @@ func (s *StatusSuite) SetupTest() {
 		filepath.Join("d", "b", "a"),
 		filepath.Join("e", "b", "c", "a"),
 	}
-	s.Files = &files
 
-	expected := map[string]bool{}
-	for _, file := range files {
-		expected[file] = true
-	}
-	s.Expected = &expected
-}
-
-func (s *StatusSuite) TestStatusReturnsFullPaths() {
 	tests := []struct {
 		name     string
 		doChange bool
 		strategy StatusStrategy
+		expected map[string]bool
 	}{
 		{
 			name:     "strategy:Empty with changes",
 			doChange: true,
 			strategy: Empty,
+			expected: map[string]bool{
+				"a/a":   true,
+				"b/a":   true,
+				"c/b/a": true,
+			},
+		},
+		{
+			name:     "strategy:Empty without changes",
+			doChange: false,
+			strategy: Empty,
+			expected: map[string]bool{},
 		},
 		{
 			name:     "strategy:Preload with changes",
 			doChange: true,
 			strategy: Preload,
+			expected: map[string]bool{
+				"a/a":     true,
+				"b/a":     true,
+				"c/b/a":   true,
+				"d/b/a":   true,
+				"e/b/c/a": true,
+			},
 		},
 		{
 			name:     "strategy:Preload without changes",
 			doChange: false,
 			strategy: Preload,
+			expected: map[string]bool{
+				"a/a":     true,
+				"b/a":     true,
+				"c/b/a":   true,
+				"d/b/a":   true,
+				"e/b/c/a": true,
+			},
 		},
 	}
 
-	for _, tv := range tests {
-		s.Run(tv.name, func() {
-			r, err := Init(memory.NewStorage(), memfs.New())
-			s.NoError(err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+			require.NoError(t, err)
 
 			w, err := r.Worktree()
-			s.NoError(err)
+			require.NoError(t, err)
 
-			for _, fname := range *s.Files {
+			for _, fname := range files {
 				file, err := w.Filesystem.Create(fname)
-				s.NoError(err)
+				require.NoError(t, err)
 
 				_, err = file.Write([]byte("foo"))
-				s.NoError(err)
+				require.NoError(t, err)
 				file.Close()
 
 				_, err = w.Add(file.Name())
-				s.NoError(err)
+				require.NoError(t, err)
 			}
 
 			_, err = w.Commit("foo", &CommitOptions{All: true})
-			s.NoError(err)
+			require.NoError(t, err)
 
-			partialExpected := map[string]bool{}
-			if tv.doChange {
-				for _, fname := range (*s.Files)[:len(*s.Files)-2] {
+			if tc.doChange {
+				for _, fname := range (files)[:len(files)-2] {
 					file, err := w.Filesystem.Create(fname)
-					if !s.NoError(err) {
-						return
-					}
+					require.NoError(t, err)
 
 					_, err = file.Write([]byte("fooo"))
-					if !s.NoError(err) {
-						return
-					}
-					file.Close()
+					require.NoError(t, err)
 
-					partialExpected[fname] = true
+					err = file.Close()
+					require.NoError(t, err)
 				}
 			}
 
 			status, err := w.StatusWithOptions(
 				StatusOptions{
-					Strategy: tv.strategy,
+					Strategy: tc.strategy,
 				},
 			)
-			s.NoError(err)
+			require.NoError(t, err)
 
-			exists := map[string]bool{}
 			for file := range status {
-				exists[file] = true
+				yes, ok := tc.expected[file]
+				assert.True(t, ok, "unexpected file %q", file)
+				assert.True(t, yes, "%q should not be marked as changed", file)
 			}
-
-			expected := s.Expected
-			if tv.strategy == Empty {
-				expected = &partialExpected
-			}
-
-			for file := range *expected {
-				_, ok := exists[file]
-				s.Truef(ok, "unexpected not ok for %s", file)
-			}
+			assert.Len(t, status, len(tc.expected), "length mismatch between status and expected files")
 		})
 	}
 }
