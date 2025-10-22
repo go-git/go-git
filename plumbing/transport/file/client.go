@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -66,6 +67,8 @@ type command struct {
 
 	closed bool
 	errc   chan error
+
+	mu sync.Mutex
 }
 
 func (c *command) Start() error {
@@ -147,6 +150,9 @@ func (c *command) StdoutPipe() (io.Reader, error) {
 
 // Close waits for the command to exit.
 func (c *command) Close() (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.closed {
 		return nil
 	}
