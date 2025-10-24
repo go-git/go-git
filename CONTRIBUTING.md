@@ -20,6 +20,20 @@ In addition to the channels above, contributors are also able to join the go-git
 
 ## How to Contribute
 
+### RFC Process for Major Changes
+
+For substantial changes to go-git's public APIs, architecture, process, or functionality, please consider using our [RFC (Request for Comments) process](rfcs/README.md). This includes:
+
+- New public APIs or significant changes to existing APIs
+- Changes to storage interfaces or backends
+- New plumbing or porcelain operations
+- The processes around merging PRs or releasing changes
+- Changes that would require migration guides for users
+
+The RFC process helps ensure that major changes are well-designed and have community consensus before implementation begins.
+
+### Pull Requests
+
 Pull Requests (PRs) are the main and exclusive way to contribute to the official go-git project.
 In order for a PR to be accepted it needs to pass a list of requirements:
 

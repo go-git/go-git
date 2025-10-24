@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/merkletrie"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
@@ -24,6 +25,8 @@ var (
 	// ErrEmptyCommit occurs when a commit is attempted using a clean
 	// working tree, with no changes to be committed.
 	ErrEmptyCommit = errors.New("cannot create empty commit: clean working tree")
+	// ErrCannotCherryPickWithoutCommitOptions happens when no commitOptions is not provided for cherry-picking commit
+	ErrCannotCherryPickWithoutCommitOptions = errors.New("cannot cherry-pick without commit options")
 
 	// characters to be removed from user name and/or email before using them to build a commit object
 	// See https://git-scm.com/docs/git-commit#_commit_information
@@ -95,6 +98,91 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 	}
 
 	return commit, w.updateHEAD(commit)
+}
+
+// CherryPick cherry picks commits and merge them into the worktree based on the selected
+// merge strategy. Each commit sits on the top of worktree's current head.
+// It resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option [theirs,ours]`
+func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMergeStrategyOption, commits ...*object.Commit) error {
+	if commitOpts == nil {
+		return ErrCannotCherryPickWithoutCommitOptions
+	}
+
+	for _, commit := range commits {
+		var changes object.Changes
+		headRef, err := w.r.Head()
+		if err != nil {
+			return err
+		}
+		headCommit, err := w.r.CommitObject(headRef.Hash())
+		if err != nil {
+			return err
+		}
+		currentTree, err := headCommit.Tree()
+		if err != nil {
+			return err
+		}
+
+		commitTree, err := commit.Tree()
+		if err != nil {
+			return err
+		}
+
+		switch ortStrategyOption {
+		case TheirsMergeStrategy:
+			changes, err = currentTree.Diff(commitTree)
+		case OursMergeStrategy:
+			changes, err = commitTree.Diff(currentTree)
+		}
+
+		if err != nil {
+			return err
+		}
+		for _, change := range changes {
+			action, err := change.Action()
+			if err != nil {
+				return err
+			}
+
+			switch action {
+			case merkletrie.Delete:
+				if _, err := w.Remove(change.From.Name); err != nil {
+					return err
+				}
+			case merkletrie.Insert, merkletrie.Modify:
+				_, to, err := change.Files()
+				if err != nil {
+					return err
+				}
+				content, err := to.Contents()
+				if err != nil {
+					return err
+				}
+				dstFile, err := w.Filesystem.Create(to.Name)
+				if err != nil {
+					return err
+				}
+				_, err = dstFile.Write([]byte(content))
+				if err != nil {
+					return err
+				}
+				if _, err := w.Add(to.Name); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = w.Commit(commit.Message, &CommitOptions{
+			Author:            &commit.Author,
+			Committer:         commitOpts.Committer,
+			SignKey:           commitOpts.SignKey,
+			Signer:            commitOpts.Signer,
+			AllowEmptyCommits: commitOpts.AllowEmptyCommits,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *Worktree) autoAddModifiedAndDeleted() error {

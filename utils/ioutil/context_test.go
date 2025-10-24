@@ -2,11 +2,10 @@ package ioutil
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"testing"
 	"time"
-
-	context "golang.org/x/net/context"
 )
 
 func TestReader(t *testing.T) {
@@ -60,7 +59,7 @@ func TestWriter(t *testing.T) {
 	if err != nil {
 		t.Error("should have no error")
 	}
-	if string(buf.Bytes()) != string("abc") {
+	if buf.String() != "abc" {
 		t.Error("incorrect contents")
 	}
 
@@ -72,7 +71,7 @@ func TestWriter(t *testing.T) {
 	if err != nil {
 		t.Error("should have no error")
 	}
-	if string(buf.Bytes()) != string("abcdef") {
+	if buf.String() != "abcdef" {
 		t.Error("incorrect contents")
 	}
 }

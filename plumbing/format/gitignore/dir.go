@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	gofs "io/fs"
 	"os"
 	"strings"
 
@@ -56,7 +57,7 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 	subps, _ := readIgnoreFile(fs, path, gitignoreFile)
 	ps = append(ps, subps...)
 
-	var fis []os.FileInfo
+	var fis []gofs.DirEntry
 	fis, err = fs.ReadDir(fs.Join(path...))
 	if err != nil {
 		return
