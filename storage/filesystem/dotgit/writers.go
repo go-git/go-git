@@ -230,7 +230,7 @@ func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	p, err := s.r.Seek(offset, whence)
-	s.read.Add(uint64(p))
+	s.read.Store(uint64(p))
 
 	return p, err
 }
