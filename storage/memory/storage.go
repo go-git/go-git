@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -27,15 +28,23 @@ type Storage struct {
 	IndexStorage
 	ReferenceStorage
 	ModuleStorage
+	options options
 }
 
-// NewStorage returns a new Storage base on memory
-func NewStorage() *Storage {
-	return &Storage{
+// NewStorage returns a new in memory Storage base.
+func NewStorage(o ...StorageOption) *Storage {
+	opts := newOptions()
+	for _, opt := range o {
+		opt(&opts)
+	}
+
+	s := &Storage{
+		options:          opts,
 		ReferenceStorage: make(ReferenceStorage),
 		ConfigStorage:    ConfigStorage{},
 		ShallowStorage:   ShallowStorage{},
 		ObjectStorage: ObjectStorage{
+			oh:      plumbing.FromObjectFormat(opts.objectFormat),
 			Objects: make(map[plumbing.Hash]plumbing.EncodedObject),
 			Commits: make(map[plumbing.Hash]plumbing.EncodedObject),
 			Trees:   make(map[plumbing.Hash]plumbing.EncodedObject),
@@ -44,6 +53,14 @@ func NewStorage() *Storage {
 		},
 		ModuleStorage: make(ModuleStorage),
 	}
+
+	if opts.objectFormat == formatcfg.SHA256 {
+		cfg, _ := s.Config() // nolint: Config() never returns an error.
+		cfg.Extensions.ObjectFormat = opts.objectFormat
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
+	}
+
+	return s
 }
 
 type ConfigStorage struct {
@@ -85,6 +102,7 @@ func (c *IndexStorage) Index() (*index.Index, error) {
 }
 
 type ObjectStorage struct {
+	oh      *plumbing.ObjectHasher
 	Objects map[plumbing.Hash]plumbing.EncodedObject
 	Commits map[plumbing.Hash]plumbing.EncodedObject
 	Trees   map[plumbing.Hash]plumbing.EncodedObject
@@ -126,7 +144,7 @@ func (o *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io
 }
 
 func (o *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
-	return &plumbing.MemoryObject{}
+	return plumbing.NewMemoryObject(o.oh)
 }
 
 func (o *ObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
@@ -325,6 +343,7 @@ func (r ReferenceStorage) CountLooseRefs() (int, error) {
 	return len(r), nil
 }
 
+// PackRefs is a no-op.
 func (r ReferenceStorage) PackRefs() error {
 	return nil
 }

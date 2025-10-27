@@ -48,35 +48,21 @@ func (h *ObjectHasher) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 	return out, nil
 }
 
-// newHasher returns a new ObjectHasher for the given
+// FromObjectFormat returns a new ObjectHasher for the given
 // ObjectFormat.
-func newHasher(f format.ObjectFormat) (*ObjectHasher, error) {
+//
+// If the format is not recognised, defaults to SHA1.
+func FromObjectFormat(f format.ObjectFormat) *ObjectHasher {
 	var hasher hash.Hash
 	switch f {
-	case format.SHA1:
-		hasher = crypto.SHA1.New()
 	case format.SHA256:
 		hasher = crypto.SHA256.New()
 	default:
-		return nil, fmt.Errorf("unsupported object format: %s", f)
+		hasher = crypto.SHA1.New()
 	}
 	return &ObjectHasher{
 		hasher: hasher,
 		format: f,
-	}, nil
-}
-
-// FromObjectFormat returns the correct ObjectHasher for the given
-// ObjectFormat.
-//
-// If the format is not recognised, an ErrInvalidObjectFormat error
-// is returned.
-func FromObjectFormat(f format.ObjectFormat) (*ObjectHasher, error) {
-	switch f {
-	case format.SHA1, format.SHA256:
-		return newHasher(f)
-	default:
-		return nil, format.ErrInvalidObjectFormat
 	}
 }
 
@@ -95,7 +81,7 @@ func FromHash(h hash.Hash) (*ObjectHasher, error) {
 	default:
 		return nil, fmt.Errorf("unsupported hash function: %T", h)
 	}
-	return newHasher(f)
+	return FromObjectFormat(f), nil
 }
 
 func writeHeader(h hash.Hash, ot ObjectType, sz int64) {
