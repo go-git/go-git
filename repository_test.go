@@ -2470,7 +2470,7 @@ func (s *RepositorySuite) TestConfigScopedPrecedence() {
 	s.Equal("global@example.com", got.User.Email)
 
 	// Unset global -> system should be selected
-	os.Unsetenv("GIT_CONFIG_GLOBAL")
+	s.T().Setenv("GIT_CONFIG_GLOBAL", "")
 	got, err = r.ConfigScoped(config.SystemScope)
 	s.NoError(err)
 	s.Equal("system@example.com", got.User.Email)
