@@ -273,6 +273,11 @@ func Paths(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
 	case GlobalScope:
+		// Honor GIT_CONFIG_GLOBAL if set (allows tests to redirect global config)
+		if g := os.Getenv("GIT_CONFIG_GLOBAL"); g != "" {
+			files = append(files, g)
+			// If GIT_CONFIG_GLOBAL is set, prefer it but still allow fallbacks
+		}
 		xdg := os.Getenv("XDG_CONFIG_HOME")
 		if xdg != "" {
 			files = append(files, filepath.Join(xdg, "git/config"))
@@ -288,7 +293,12 @@ func Paths(scope Scope) ([]string, error) {
 			filepath.Join(home, ".config/git/config"),
 		)
 	case SystemScope:
-		files = append(files, "/etc/gitconfig")
+		// Honor GIT_CONFIG_SYSTEM if set (allows tests to redirect system config)
+		if s := os.Getenv("GIT_CONFIG_SYSTEM"); s != "" {
+			files = append(files, s)
+		} else {
+			files = append(files, "/etc/gitconfig")
+		}
 	}
 
 	return files, nil

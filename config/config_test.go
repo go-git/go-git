@@ -252,6 +252,122 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.Equal("foo@foo.com", cfg.User.Email)
 }
 
+func (s *ConfigSuite) TestLoadConfigGITConfigGlobalEnv() {
+	cfg := NewConfig()
+	cfg.User.Name = "env-global"
+	cfg.User.Email = "env-global@example.com"
+
+	tmp, err := util.TempDir(osfs.Default, "", "test-git-config-global")
+	s.NoError(err)
+	defer util.RemoveAll(osfs.Default, tmp)
+
+	content, err := cfg.Marshal()
+	s.NoError(err)
+
+	cfgFile := filepath.Join(tmp, "globalgitconfig")
+	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
+	s.NoError(err)
+
+	// Set GIT_CONFIG_GLOBAL to point to our temp config file (restored by t.Setenv)
+	s.T().Setenv("GIT_CONFIG_GLOBAL", cfgFile)
+
+	got, err := LoadConfig(GlobalScope)
+	s.NoError(err)
+	s.Equal("env-global@example.com", got.User.Email)
+}
+
+func (s *ConfigSuite) TestLoadConfigGITConfigSystemEnv() {
+	cfg := NewConfig()
+	cfg.User.Name = "env-system"
+	cfg.User.Email = "env-system@example.com"
+
+	tmp, err := util.TempDir(osfs.Default, "", "test-git-config-system")
+	s.NoError(err)
+	defer util.RemoveAll(osfs.Default, tmp)
+
+	content, err := cfg.Marshal()
+	s.NoError(err)
+
+	cfgFile := filepath.Join(tmp, "systemgitconfig")
+	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
+	s.NoError(err)
+
+	// Set GIT_CONFIG_SYSTEM to point to our temp config file (restored by t.Setenv)
+	s.T().Setenv("GIT_CONFIG_SYSTEM", cfgFile)
+
+	gotFiles, err := Paths(SystemScope)
+	s.NoError(err)
+	// Ensure our file is the first candidate
+	s.True(len(gotFiles) > 0)
+	s.Equal(cfgFile, gotFiles[0])
+
+	got, err := LoadConfig(SystemScope)
+	s.NoError(err)
+	s.Equal("env-system@example.com", got.User.Email)
+}
+
+func (s *ConfigSuite) TestLoadConfigGlobalPrecedence() {
+	// Prepare three different configs: env (GIT_CONFIG_GLOBAL), xdg, and home
+	envCfg := NewConfig()
+	envCfg.User.Email = "env@example.com"
+
+	xdgCfg := NewConfig()
+	xdgCfg.User.Email = "xdg@example.com"
+
+	homeCfg := NewConfig()
+	homeCfg.User.Email = "home@example.com"
+
+	// Create temporary dirs/files
+	tmp, err := util.TempDir(osfs.Default, "", "test-global-precedence")
+	s.NoError(err)
+	defer util.RemoveAll(osfs.Default, tmp)
+
+	// env file
+	envFile := filepath.Join(tmp, "envgitconfig")
+	b, err := envCfg.Marshal()
+	s.NoError(err)
+	s.NoError(util.WriteFile(osfs.Default, envFile, b, 0777))
+
+	// xdg file
+	xdgDir := filepath.Join(tmp, "xdg")
+	s.NoError(os.MkdirAll(xdgDir, 0777))
+	xdgFile := filepath.Join(xdgDir, "git", "config")
+	s.NoError(os.MkdirAll(filepath.Dir(xdgFile), 0777))
+	b, err = xdgCfg.Marshal()
+	s.NoError(err)
+	s.NoError(util.WriteFile(osfs.Default, xdgFile, b, 0777))
+
+	// home .gitconfig
+	homeDir := filepath.Join(tmp, "home")
+	s.NoError(os.MkdirAll(homeDir, 0777))
+	homeFile := filepath.Join(homeDir, ".gitconfig")
+	b, err = homeCfg.Marshal()
+	s.NoError(err)
+	s.NoError(util.WriteFile(osfs.Default, homeFile, b, 0777))
+
+	// Use testing.T.Setenv so the environment is changed for the test and
+	// automatically restored when it finishes.
+	s.T().Setenv("GIT_CONFIG_GLOBAL", envFile)
+	s.T().Setenv("XDG_CONFIG_HOME", xdgDir)
+	s.T().Setenv("HOME", homeDir)
+
+	got, err := LoadConfig(GlobalScope)
+	s.NoError(err)
+	s.Equal("env@example.com", got.User.Email)
+
+	// Case 2: unset GIT_CONFIG_GLOBAL, XDG exists -> should pick xdg
+	s.T().Setenv("GIT_CONFIG_GLOBAL", "")
+	got, err = LoadConfig(GlobalScope)
+	s.NoError(err)
+	s.Equal("xdg@example.com", got.User.Email)
+
+	// Case 3: unset XDG, home .gitconfig exists -> should pick home
+	s.T().Setenv("XDG_CONFIG_HOME", "")
+	got, err = LoadConfig(GlobalScope)
+	s.NoError(err)
+	s.Equal("home@example.com", got.User.Email)
+}
+
 func (s *ConfigSuite) TestValidateConfig() {
 	config := &Config{
 		Remotes: map[string]*RemoteConfig{
