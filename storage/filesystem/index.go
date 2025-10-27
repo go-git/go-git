@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"bufio"
+	"hash"
 	"os"
 
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -11,6 +12,7 @@ import (
 
 type IndexStorage struct {
 	dir *dotgit.DotGit
+	h   hash.Hash
 }
 
 func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
@@ -27,7 +29,7 @@ func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 		}
 	}()
 
-	e := index.NewEncoder(bw)
+	e := index.NewEncoder(bw, s.h)
 	err = e.Encode(idx)
 	return err
 }
@@ -48,7 +50,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
-	d := index.NewDecoder(f)
+	d := index.NewDecoder(f, s.h)
 	err = d.Decode(idx)
 	return idx, err
 }

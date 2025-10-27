@@ -106,6 +106,81 @@ func TestInit(t *testing.T) {
 	})
 }
 
+func TestPlainInitAndPlainOpen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		opts       []InitOption
+		wantBare   bool
+		wantBranch string
+	}{
+		{
+			name:     "Bare",
+			opts:     []InitOption{},
+			wantBare: true,
+		},
+		{
+			name: "With Worktree",
+			opts: []InitOption{
+				WithWorkTree(memfs.New()),
+			},
+		},
+		{
+			name: "With Default Branch",
+			opts: []InitOption{
+				WithWorkTree(memfs.New()),
+				WithDefaultBranch("refs/head/foo"),
+			},
+			wantBranch: "refs/head/foo",
+		},
+	}
+
+	forEachFormat(t, func(t *testing.T, of formatcfg.ObjectFormat) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				opts := append(tc.opts, WithObjectFormat(of))
+				rdir := t.TempDir()
+
+				r, err := PlainInit(rdir, tc.wantBare, opts...)
+				require.NotNil(t, r)
+				require.NoError(t, err)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
+				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
+
+				if !tc.wantBare {
+					h := createCommit(t, r)
+					assert.Equal(t, of.HexSize(), len(h.String()))
+
+					wantBranch := tc.wantBranch
+					if wantBranch == "" {
+						wantBranch = plumbing.Master.String()
+					}
+
+					ref, err := r.Head()
+					require.NoError(t, err)
+					require.Equal(t, wantBranch, ref.Name().String())
+				}
+
+				ro, err := PlainOpen(rdir)
+				require.NotNil(t, ro)
+				require.NoError(t, err)
+
+				if !tc.wantBare {
+					ref, err := ro.Head()
+					require.NoError(t, err)
+					assert.Equal(t, of.HexSize(), len(ref.Hash().String()))
+				}
+			})
+		}
+	})
+}
+
 type RepositorySuite struct {
 	BaseSuite
 }
@@ -632,17 +707,6 @@ func (s *RepositorySuite) TestDeleteBranch() {
 	s.ErrorIs(err, ErrBranchNotFound)
 }
 
-func (s *RepositorySuite) TestPlainInit() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, true)
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.True(cfg.Core.IsBare)
-}
-
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	dir := s.T().TempDir()
 	r, err := PlainInit(dir, true)
@@ -652,17 +716,6 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	r, err = PlainInit(dir, true)
 	s.ErrorIs(err, ErrTargetDirNotEmpty)
 	s.Nil(r)
-}
-
-func (s *RepositorySuite) TestPlainOpen() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, false)
-	s.NoError(err)
-	s.NotNil(r)
-
-	r, err = PlainOpen(dir)
-	s.NoError(err)
-	s.NotNil(r)
 }
 
 func (s *RepositorySuite) TestPlainOpenTildePath() {
@@ -686,28 +739,6 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 		s.NoError(err)
 		s.NotNil(r)
 	}
-}
-
-func (s *RepositorySuite) TestPlainOpenBare() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, true)
-	s.NoError(err)
-	s.NotNil(r)
-
-	r, err = PlainOpen(dir)
-	s.NoError(err)
-	s.NotNil(r)
-}
-
-func (s *RepositorySuite) TestPlainOpenNotBare() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, false)
-	s.NoError(err)
-	s.NotNil(r)
-
-	r, err = PlainOpen(filepath.Join(dir, ".git"))
-	s.NoError(err)
-	s.NotNil(r)
 }
 
 func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
