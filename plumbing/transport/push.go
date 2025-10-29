@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -122,7 +123,14 @@ func SendPack(
 		return err
 	}
 
-	if !upreq.Capabilities.Supports(capability.ReportStatus) {
+	var reportStatus int // 0 no support, 1 v1, 2 v2
+	if upreq.Capabilities.Supports(capability.ReportStatusV2) {
+		reportStatus = 2
+	} else if upreq.Capabilities.Supports(capability.ReportStatus) {
+		reportStatus = 1
+	}
+
+	if reportStatus == 0 {
 		// If we don't have report-status, we're done here.
 		return nil
 	}
@@ -148,6 +156,14 @@ func SendPack(
 	report := packp.NewReportStatus()
 	if err := report.Decode(r); err != nil {
 		return fmt.Errorf("decode report-status: %w", err)
+	}
+
+	// Read any remaining progress messages.
+	if reportStatus > 0 && len(upreq.Commands) > 0 {
+		_, err := io.ReadAll(r)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reading progress messages: %w", err)
+		}
 	}
 
 	if err := reader.Close(); err != nil {
