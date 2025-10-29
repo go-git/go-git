@@ -137,6 +137,10 @@ type PushRequest struct {
 	// If the server supports atomic push, it will update the refs in one
 	// atomic transaction. Either all refs are updated or none.
 	Atomic bool
+
+	// Quiet indicates whether the server should suppress human-readable
+	// output.
+	Quiet bool
 }
 
 // Session is a Git protocol transfer session.

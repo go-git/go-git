@@ -302,6 +302,9 @@ type PushOptions struct {
 	Atomic bool
 	// ProxyOptions provides info required for connecting to a proxy.
 	ProxyOptions transport.ProxyOptions
+	// Quiet indicates whether the server should suppress human-readable
+	// output.
+	Quiet bool
 }
 
 // ForceWithLease sets fields on the lease

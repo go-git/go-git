@@ -1323,6 +1323,7 @@ func pushHashes(
 		Progress: o.Progress,
 		Options:  o.Options,
 		Atomic:   o.Atomic,
+		Quiet:    o.Quiet,
 	}
 
 	if !allDelete {

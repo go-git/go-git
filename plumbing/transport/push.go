@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -46,7 +47,7 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 		} else if caps.Supports(capability.Sideband) {
 			upreq.Capabilities.Set(capability.Sideband) //nolint:errcheck
 		}
-		if caps.Supports(capability.Quiet) {
+		if req.Quiet && caps.Supports(capability.Quiet) {
 			upreq.Capabilities.Set(capability.Quiet) //nolint:errcheck
 		}
 	}
@@ -122,7 +123,14 @@ func SendPack(
 		return err
 	}
 
-	if !upreq.Capabilities.Supports(capability.ReportStatus) {
+	var reportStatus int // 0 no support, 1 v1, 2 v2
+	if upreq.Capabilities.Supports(capability.ReportStatusV2) {
+		reportStatus = 2
+	} else if upreq.Capabilities.Supports(capability.ReportStatus) {
+		reportStatus = 1
+	}
+
+	if reportStatus == 0 {
 		// If we don't have report-status, we're done here.
 		return nil
 	}
@@ -150,9 +158,26 @@ func SendPack(
 		return fmt.Errorf("decode report-status: %w", err)
 	}
 
+	reportError := report.Error()
+
+	// Read any remaining progress messages.
+	if reportStatus > 0 && len(upreq.Commands) > 0 {
+		_, err := io.ReadAll(r)
+		if err != nil && !errors.Is(err, io.EOF) {
+			_ = reader.Close()
+			if reportError != nil {
+				return reportError
+			}
+			return fmt.Errorf("reading progress messages: %w", err)
+		}
+	}
+
 	if err := reader.Close(); err != nil {
+		if reportError != nil {
+			return reportError
+		}
 		return fmt.Errorf("closing reader: %w", err)
 	}
 
-	return report.Error()
+	return reportError
 }
