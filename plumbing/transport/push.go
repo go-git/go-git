@@ -158,17 +158,26 @@ func SendPack(
 		return fmt.Errorf("decode report-status: %w", err)
 	}
 
+	reportError := report.Error()
+
 	// Read any remaining progress messages.
 	if reportStatus > 0 && len(upreq.Commands) > 0 {
 		_, err := io.ReadAll(r)
 		if err != nil && !errors.Is(err, io.EOF) {
+			_ = reader.Close()
+			if reportError != nil {
+				return reportError
+			}
 			return fmt.Errorf("reading progress messages: %w", err)
 		}
 	}
 
 	if err := reader.Close(); err != nil {
+		if reportError != nil {
+			return reportError
+		}
 		return fmt.Errorf("closing reader: %w", err)
 	}
 
-	return report.Error()
+	return reportError
 }
