@@ -46,7 +46,7 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 		} else if caps.Supports(capability.Sideband) {
 			upreq.Capabilities.Set(capability.Sideband) //nolint:errcheck
 		}
-		if caps.Supports(capability.Quiet) {
+		if req.Quiet && caps.Supports(capability.Quiet) {
 			upreq.Capabilities.Set(capability.Quiet) //nolint:errcheck
 		}
 	}
