@@ -41,8 +41,14 @@ func (req *UpdateRequests) encodeShallow(w io.Writer,
 func (req *UpdateRequests) encodeCommands(w io.Writer,
 	cmds []*Command, cap *capability.List,
 ) error {
+	capStr := cap.String()
+	if len(capStr) > 0 {
+		// Canonical Git adds a space before the capabilities.
+		// See https://github.com/git/git/blob/57da342c786f59eaeb436c18635cc1c7597733d9/send-pack.c#L594
+		capStr = " " + capStr
+	}
 	if _, err := pktline.Writef(w, "%s\x00%s",
-		formatCommand(cmds[0]), cap.String()); err != nil {
+		formatCommand(cmds[0]), capStr); err != nil {
 		return err
 	}
 
