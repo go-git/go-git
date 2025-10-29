@@ -105,6 +105,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 			},
 		},
+		Quiet: true,
 	}
 
 	upreq := buildUpdateRequests(caps, req)
