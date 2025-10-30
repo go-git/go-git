@@ -138,7 +138,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
-	if !path.IsAbs(moduleEndpoint.Path) && moduleEndpoint.Protocol == "file" {
+	if !path.IsAbs(moduleEndpoint.Path) && moduleEndpoint.Scheme == "file" {
 		remotes, err := s.w.r.Remotes()
 		if err != nil {
 			return nil, err

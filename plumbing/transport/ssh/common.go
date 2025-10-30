@@ -227,13 +227,7 @@ func (c *command) getHostWithPort() string {
 		return addr
 	}
 
-	host := c.endpoint.Host
-	port := c.endpoint.Port
-	if port <= 0 {
-		port = DefaultPort
-	}
-
-	return net.JoinHostPort(host, strconv.Itoa(port))
+	return c.endpoint.Host
 }
 
 func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
@@ -241,12 +235,12 @@ func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 		return
 	}
 
-	host := c.endpoint.Host
-	port := c.endpoint.Port
+	hostname := c.endpoint.Hostname()
+	port := c.endpoint.Port()
 
-	configHost := DefaultSSHConfig.Get(c.endpoint.Host, "Hostname")
+	configHost := DefaultSSHConfig.Get(c.endpoint.Hostname(), "Hostname")
 	if configHost != "" {
-		host = configHost
+		hostname = configHost
 		found = true
 	}
 
@@ -254,20 +248,24 @@ func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 		return
 	}
 
-	configPort := DefaultSSHConfig.Get(c.endpoint.Host, "Port")
+	configPort := DefaultSSHConfig.Get(c.endpoint.Hostname(), "Port")
 	if configPort != "" {
-		if i, err := strconv.Atoi(configPort); err == nil {
-			port = i
+		if _, err := strconv.Atoi(configPort); err == nil {
+			port = configPort
 		}
 	}
 
-	addr = net.JoinHostPort(host, strconv.Itoa(port))
+	addr = net.JoinHostPort(hostname, port)
 	return
 }
 
 func (c *command) setAuthFromEndpoint() error {
 	var err error
-	c.auth, err = DefaultAuthBuilder(c.endpoint.User)
+	var username string
+	if c.endpoint.User != nil {
+		username = c.endpoint.User.Username()
+	}
+	c.auth, err = DefaultAuthBuilder(username)
 	return err
 }
 
