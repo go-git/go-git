@@ -49,12 +49,7 @@ func (c *command) Start() error {
 		ExtraParams:    c.params,
 	}
 
-	host := c.endpoint.Host
-	if c.endpoint.Port != DefaultPort {
-		host = net.JoinHostPort(c.endpoint.Host, strconv.Itoa(c.endpoint.Port))
-	}
-
-	req.Host = host
+	req.Host = c.getHostWithPort()
 
 	return req.Encode(c.conn)
 }
@@ -76,12 +71,12 @@ func (c *command) connect() error {
 
 func (c *command) getHostWithPort() string {
 	host := c.endpoint.Host
-	port := c.endpoint.Port
-	if port <= 0 {
-		port = DefaultPort
+	port := c.endpoint.Port()
+	if port == "" {
+		return net.JoinHostPort(host, strconv.Itoa(DefaultPort))
 	}
 
-	return net.JoinHostPort(host, strconv.Itoa(port))
+	return host
 }
 
 // StderrPipe git protocol doesn't have any dedicated error channel

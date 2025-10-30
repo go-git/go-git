@@ -22,7 +22,7 @@ func (s *RegistrySuite) TestNewClientSSH() {
 	e, err := NewEndpoint("ssh://github.com/src-d/go-git")
 	s.NoError(err)
 
-	output, err := Get(e.Protocol)
+	output, err := Get(e.Scheme)
 	s.NoError(err)
 	s.NotNil(output)
 }
@@ -31,7 +31,7 @@ func (s *RegistrySuite) TestNewClientUnknown() {
 	e, err := NewEndpoint("unknown://github.com/src-d/go-git")
 	s.NoError(err)
 
-	_, err = Get(e.Protocol)
+	_, err = Get(e.Scheme)
 	s.Error(err)
 }
 
@@ -40,7 +40,7 @@ func (s *RegistrySuite) TestNewClientNil() {
 	e, err := NewEndpoint("newscheme://github.com/src-d/go-git")
 	s.NoError(err)
 
-	_, err = Get(e.Protocol)
+	_, err = Get(e.Scheme)
 	s.Error(err)
 }
 
