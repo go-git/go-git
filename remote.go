@@ -527,7 +527,7 @@ func newClient(url string, insecure bool, cabundle []byte, proxyOpts transport.P
 	ep.CaBundle = cabundle
 	ep.Proxy = proxyOpts
 
-	c, err := transport.Get(ep.Protocol)
+	c, err := transport.Get(ep.Scheme)
 	if err != nil {
 		return nil, nil, err
 	}

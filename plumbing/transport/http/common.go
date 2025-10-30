@@ -9,11 +9,9 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -99,19 +97,8 @@ func modifyRedirect(res *http.Response, ep *transport.Endpoint) {
 		return
 	}
 
-	h, p, err := net.SplitHostPort(r.URL.Host)
-	if err != nil {
-		h = r.URL.Host
-	}
-	if p != "" {
-		port, err := strconv.Atoi(p)
-		if err == nil {
-			ep.Port = port
-		}
-	}
-
-	ep.Host = h
-	ep.Protocol = r.URL.Scheme
+	ep.Host = r.URL.Host
+	ep.Scheme = r.URL.Scheme
 	ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
 }
 
@@ -583,32 +570,6 @@ func (s *HTTPSession) ApplyAuthToRequest(req *http.Request) {
 	s.auth.SetAuth(req)
 }
 
-func (s *HTTPSession) ModifyEndpointIfRedirect(res *http.Response) {
-	if res.Request == nil {
-		return
-	}
-
-	r := res.Request
-	if !strings.HasSuffix(r.URL.Path, infoRefsPath) {
-		return
-	}
-
-	h, p, err := net.SplitHostPort(r.URL.Host)
-	if err != nil {
-		h = r.URL.Host
-	}
-	if p != "" {
-		port, err := strconv.Atoi(p)
-		if err == nil {
-			s.ep.Port = port
-		}
-	}
-	s.ep.Host = h
-
-	s.ep.Protocol = r.URL.Scheme
-	s.ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
-}
-
 func (*HTTPSession) Close() error {
 	return nil
 }
@@ -621,11 +582,12 @@ type AuthMethod interface {
 
 func basicAuthFromEndpoint(ep *transport.Endpoint) *BasicAuth {
 	u := ep.User
-	if u == "" {
+	if u == nil {
 		return nil
 	}
 
-	return &BasicAuth{u, ep.Password}
+	passwd, _ := u.Password()
+	return &BasicAuth{u.Username(), passwd}
 }
 
 // BasicAuth represent a HTTP basic auth
