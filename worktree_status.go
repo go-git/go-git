@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6/util"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -143,7 +144,7 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.ConfigScoped(config.SystemScope)
 	if err != nil {
 		return nil, err
 	}
@@ -524,7 +525,7 @@ func (w *Worktree) fillEncodedObjectFromFile(dst io.Writer, path string, _ os.Fi
 	}
 	defer ioutil.CheckClose(file, &err)
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.ConfigScoped(config.SystemScope)
 	if err != nil {
 		return err
 	}
