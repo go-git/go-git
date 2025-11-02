@@ -73,6 +73,8 @@ type Config struct {
 		// converted to LF when added to the repository, and vice versa on checkout.
 		// If set to "input", only worktree-to-repository conversion is performed.
 		AutoCRLF string
+		// Tells Git if the executable bit of files in the working tree is to be honored.
+		FileMode string
 	}
 
 	User struct {
@@ -350,6 +352,7 @@ const (
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
+	fileModeKey                = "filemode"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -399,6 +402,10 @@ func (c *Config) unmarshalCore() {
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
+
+	if fileMode := s.Options.Get(fileModeKey); fileMode != "" {
+		c.Core.FileMode = fileMode
+	}
 
 	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version_1) {
 		c.Core.RepositoryFormatVersion = format.Version_1
@@ -575,6 +582,11 @@ func (c *Config) marshalCore() {
 	if c.Core.AutoCRLF != "" {
 		s.SetOption(autoCRLFKey, c.Core.AutoCRLF)
 	}
+
+	if c.Core.FileMode != "" {
+		s.SetOption(fileModeKey, c.Core.FileMode)
+	}
+	
 }
 
 func (c *Config) marshalExtensions() {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6/util"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -137,13 +138,13 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	from := mindex.NewRootNode(idx)
-	submodules, err := w.getSubmodulesStatus()
+	cfg, err := w.r.ConfigScoped(config.SystemScope)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg, err := w.r.Config()
+	from := mindex.NewRootNode(idx, cfg.Core.FileMode)
+	submodules, err := w.getSubmodulesStatus()
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +263,12 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	cfg, err := w.r.ConfigScoped(config.SystemScope)
+	if err != nil {
+		return nil, err
+	}
+
+	to := mindex.NewRootNode(idx, cfg.Core.FileMode)
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)

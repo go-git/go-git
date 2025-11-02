@@ -75,6 +75,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.Equal("foo", cfg.Core.Worktree)
 	s.Equal("bar", cfg.Core.CommentChar)
 	s.Equal("true", cfg.Core.AutoCRLF)
+	s.Equal("", cfg.Core.FileMode)
 	s.Equal("John Doe", cfg.User.Name)
 	s.Equal("john@example.com", cfg.User.Email)
 	s.Equal("Jane Roe", cfg.Author.Name)

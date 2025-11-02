@@ -39,7 +39,7 @@ func (s *NoderSuite) TestDiff() {
 		},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
 	s.NoError(err)
 	s.Len(ch, 0)
 }
@@ -59,7 +59,7 @@ func (s *NoderSuite) TestDiffChange() {
 		}},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
 	s.NoError(err)
 	s.Len(ch, 2)
 }
@@ -82,7 +82,7 @@ func (s *NoderSuite) TestDiffSkipIssue1455() {
 
 	indexB := &index.Index{}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexB), NewRootNode(indexA), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexB, ""), NewRootNode(indexA, ""), isEquals)
 	s.NoError(err)
 	s.Len(ch, 1)
 	a, err := ch[0].Action()
@@ -105,7 +105,7 @@ func (s *NoderSuite) TestDiffDir() {
 		}},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
 	s.NoError(err)
 	s.Len(ch, 2)
 }
@@ -125,7 +125,7 @@ func (s *NoderSuite) TestDiffSameRoot() {
 		},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
 	s.NoError(err)
 	s.Len(ch, 1)
 }
