@@ -263,12 +263,7 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	cfg, err := w.r.ConfigScoped(config.SystemScope)
-	if err != nil {
-		return nil, err
-	}
-
-	to := mindex.NewRootNode(idx, cfg.Core.FileMode)
+	to := mindex.NewRootNode(idx, "")
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
@@ -530,7 +525,7 @@ func (w *Worktree) fillEncodedObjectFromFile(dst io.Writer, path string, _ os.Fi
 	}
 	defer ioutil.CheckClose(file, &err)
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.ConfigScoped(config.SystemScope)
 	if err != nil {
 		return err
 	}
