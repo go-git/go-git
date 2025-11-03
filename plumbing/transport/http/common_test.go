@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/cgi"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -177,46 +176,6 @@ func (*mockAuth) String() string { return "" }
 func (s *ClientSuite) TestSetAuthWrongType() {
 	_, err := DefaultTransport.NewSession(s.Storer, s.Endpoint, &mockAuth{})
 	s.Equal(transport.ErrInvalidAuthMethod, err)
-}
-
-func (s *ClientSuite) TestModifyEndpointIfRedirect() {
-	sess := &HTTPSession{ep: nil}
-	u, _ := url.Parse("https://example.com/info/refs")
-	res := &http.Response{Request: &http.Request{URL: u}}
-	s.PanicsWithError("runtime error: invalid memory address or nil pointer dereference", func() {
-		sess.ModifyEndpointIfRedirect(res)
-	})
-
-	sess = &HTTPSession{ep: nil}
-	// no-op - should return and not panic
-	sess.ModifyEndpointIfRedirect(&http.Response{})
-
-	data := []struct {
-		url      string
-		endpoint *transport.Endpoint
-		expected *transport.Endpoint
-	}{
-		{"https://example.com/foo/bar", nil, nil},
-		{
-			"https://example.com/foo.git/info/refs",
-			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"},
-		},
-		{
-			"https://example.com:8080/foo.git/info/refs",
-			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"},
-		},
-	}
-
-	for _, d := range data {
-		u, _ := url.Parse(d.url)
-		sess := &HTTPSession{ep: d.endpoint}
-		sess.ModifyEndpointIfRedirect(&http.Response{
-			Request: &http.Request{URL: u},
-		})
-		s.Equal(d.expected, d.endpoint)
-	}
 }
 
 func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {

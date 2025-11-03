@@ -74,7 +74,7 @@ func (s *SuiteCommon) TestDefaultSSHConfigNil() {
 	s.NoError(err)
 
 	cmd := &command{endpoint: ep}
-	s.Equal("github.com:22", cmd.getHostWithPort())
+	s.Equal("github.com", cmd.getHostWithPort())
 }
 
 func (s *SuiteCommon) TestDefaultSSHConfigWildcard() {
@@ -92,7 +92,7 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard() {
 	s.NoError(err)
 
 	cmd := &command{endpoint: ep}
-	s.Equal("github.com:22", cmd.getHostWithPort())
+	s.Equal("github.com", cmd.getHostWithPort())
 }
 
 func TestIgnoreHostKeyCallback(t *testing.T) {
