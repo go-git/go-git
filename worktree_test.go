@@ -1604,7 +1604,7 @@ func (s *WorktreeSuite) TestStatusFileMode() {
 		if fileMode != "" {
 			cfg, err := r.Config()
 			require.NoError(t, err)
-			
+
 			cfg.Core.FileMode = fileMode
 			err = r.SetConfig(cfg)
 			require.NoError(t, err)
@@ -1635,7 +1635,7 @@ func (s *WorktreeSuite) TestStatusFileMode() {
 		result := runTest(s.T(), "true")
 		s.Equal(" M run.bash\n", result)
 	})
-	
+
 	s.Run("filemode is not set", func() {
 		result := runTest(s.T(), "")
 		s.Equal(" M run.bash\n", result)

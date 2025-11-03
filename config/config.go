@@ -586,7 +586,7 @@ func (c *Config) marshalCore() {
 	if c.Core.FileMode != "" {
 		s.SetOption(fileModeKey, c.Core.FileMode)
 	}
-	
+
 }
 
 func (c *Config) marshalExtensions() {

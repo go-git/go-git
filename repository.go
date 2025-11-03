@@ -323,6 +323,8 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		return nil, err
 	}
 
+	initConfig(cfg)
+
 	err = r.Storer.SetConfig(cfg)
 	if err != nil {
 		return nil, err
