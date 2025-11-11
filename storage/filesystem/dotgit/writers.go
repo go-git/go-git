@@ -157,8 +157,8 @@ type syncedReader struct {
 	w io.Writer
 	r io.ReadSeeker
 
-	blocked, done uint32
-	written, read uint64
+	blocked, done atomic.Uint32
+	written, read atomic.Uint64
 	news          chan bool
 }
 
@@ -172,8 +172,8 @@ func newSyncedReader(w io.Writer, r io.ReadSeeker) *syncedReader {
 
 func (s *syncedReader) Write(p []byte) (n int, err error) {
 	defer func() {
-		written := atomic.AddUint64(&s.written, uint64(n))
-		read := atomic.LoadUint64(&s.read)
+		written := s.written.Add(uint64(n))
+		read := s.read.Load()
 		if written > read {
 			s.wake()
 		}
@@ -184,7 +184,7 @@ func (s *syncedReader) Write(p []byte) (n int, err error) {
 }
 
 func (s *syncedReader) Read(p []byte) (n int, err error) {
-	defer func() { atomic.AddUint64(&s.read, uint64(n)) }()
+	defer func() { s.read.Add(uint64(n)) }()
 
 	for {
 		s.sleep()
@@ -200,25 +200,25 @@ func (s *syncedReader) Read(p []byte) (n int, err error) {
 }
 
 func (s *syncedReader) isDone() bool {
-	return atomic.LoadUint32(&s.done) == 1
+	return s.done.Load() == 1
 }
 
 func (s *syncedReader) isBlocked() bool {
-	return atomic.LoadUint32(&s.blocked) == 1
+	return s.blocked.Load() == 1
 }
 
 func (s *syncedReader) wake() {
 	if s.isBlocked() {
-		atomic.StoreUint32(&s.blocked, 0)
+		s.blocked.Store(0)
 		s.news <- true
 	}
 }
 
 func (s *syncedReader) sleep() {
-	read := atomic.LoadUint64(&s.read)
-	written := atomic.LoadUint64(&s.written)
+	read := s.read.Load()
+	written := s.written.Load()
 	if read >= written {
-		atomic.StoreUint32(&s.blocked, 1)
+		s.blocked.Store(1)
 		<-s.news
 	}
 
@@ -230,13 +230,13 @@ func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	p, err := s.r.Seek(offset, whence)
-	atomic.StoreUint64(&s.read, uint64(p))
+	s.read.Store(uint64(p))
 
 	return p, err
 }
 
 func (s *syncedReader) Close() error {
-	atomic.StoreUint32(&s.done, 1)
+	s.done.Store(1)
 	close(s.news)
 	return nil
 }
