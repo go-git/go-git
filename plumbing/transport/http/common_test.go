@@ -174,6 +174,33 @@ func (s *ClientSuite) TestCheckError() {
 			s.NoError(checkError(&http.Response{StatusCode: code}))
 		})
 	}
+
+	tests := []struct{
+		code int
+		errType error
+	}{
+		{
+			http.StatusUnauthorized,
+			transport.ErrAuthenticationRequired,
+		},
+		{
+			http.StatusForbidden,
+			transport.ErrAuthorizationFailed,
+		},
+		{
+			http.StatusNotFound,
+			transport.ErrRepositoryNotFound,
+		},
+	}
+
+	for _, test := range tests {
+		s.Run(fmt.Sprintf("HTTP Error Status: %d", test.code), func() {
+			res := &http.Response{StatusCode: test.code}
+			err := checkError(res)
+			s.NotNil(err)
+			s.ErrorIs(err, test.errType)
+		})
+	}
 }
 
 type mockAuth struct{}
