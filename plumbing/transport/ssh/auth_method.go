@@ -242,6 +242,9 @@ func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
 //	/etc/ssh/ssh_known_hosts
 func NewKnownHostsCallback(files ...string) (ssh.HostKeyCallback, error) {
 	db, err := newKnownHostsDb(files...)
+	if db == nil {
+		return nil, err
+	}
 	return db.HostKeyCallback(), err
 }
 
