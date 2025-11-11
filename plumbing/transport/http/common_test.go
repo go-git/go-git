@@ -168,6 +168,14 @@ func (s *ClientSuite) TestSetAuth() {
 	s.NoError(err)
 }
 
+func (s *ClientSuite) TestCheckError() {
+	for code := http.StatusOK; code < http.StatusMultipleChoices; code++ {
+		s.Run(fmt.Sprintf("HTTP Status: %d", code), func() {
+			s.NoError(checkError(&http.Response{StatusCode: code}))
+		})
+	}
+}
+
 type mockAuth struct{}
 
 func (*mockAuth) Name() string   { return "" }
