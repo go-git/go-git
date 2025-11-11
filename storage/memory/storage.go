@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -230,7 +231,7 @@ func (o *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 	for h := range o.Objects {
 		err := fun(h)
 		if err != nil {
-			if err == storer.ErrStop {
+			if errors.Is(err, storer.ErrStop) {
 				return nil
 			}
 			return err

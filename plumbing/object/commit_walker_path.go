@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -153,7 +154,7 @@ func (c *commitPathIter) ForEach(cb func(*Commit) error) error {
 			return nextErr
 		}
 		err := cb(commit)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			return nil
 		} else if err != nil {
 			return err

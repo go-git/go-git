@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -74,7 +75,7 @@ func fetchOrigin(repo *git.Repository, refSpecStr string) error {
 	if err = remote.Fetch(&git.FetchOptions{
 		RefSpecs: refSpecs,
 	}); err != nil {
-		if err == git.NoErrAlreadyUpToDate {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			fmt.Print("refs already up to date")
 		} else {
 			return fmt.Errorf("fetch origin failed: %v", err)
