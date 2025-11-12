@@ -1,6 +1,7 @@
 package file
 
 import (
+	"fmt"
 	"context"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ type testLoader struct {
 func (l *testLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 	repo, ok := l.repos[ep]
 	if !ok {
-		return nil, transport.ErrRepositoryNotFound
+		return nil, transport.NewRepositoryNotFoundError(fmt.Errorf("endpoint: %s", ep.String()))
 	}
 	return repo, nil
 }

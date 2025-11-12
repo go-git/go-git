@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -53,7 +54,7 @@ func (s *LoaderSuite) SetupSuite() {
 func (s *LoaderSuite) Load(ep *Endpoint) (storage.Storer, error) {
 	_, ok := s.repos[ep.Path]
 	if !ok {
-		return nil, ErrRepositoryNotFound
+		return nil, NewRepositoryNotFoundError(fmt.Errorf("endpoint: %s", ep.Path))
 	}
 	return memory.NewStorage(), nil
 }
@@ -66,13 +67,13 @@ func (s *LoaderSuite) endpoint(url string) *Endpoint {
 
 func (s *LoaderSuite) TestLoadNonExistent() {
 	sto, err := s.loader.Load(s.endpoint("does-not-exist"))
-	s.ErrorIs(err, ErrRepositoryNotFound)
+	s.IsType(err, &RepositoryNotFoundError{})
 	s.Nil(sto)
 }
 
 func (s *LoaderSuite) TestLoadNonExistentIgnoreHost() {
 	sto, err := s.loader.Load(s.endpoint("https://github.com/does-not-exist"))
-	s.ErrorIs(err, ErrRepositoryNotFound)
+	s.IsType(err, &RepositoryNotFoundError{})
 	s.Nil(sto)
 }
 
