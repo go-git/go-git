@@ -35,6 +35,6 @@ func (e *UnexpectedError) Error() string {
 }
 
 func (e *UnexpectedError) Unwrap() error {
-  return e.Err
+	return e.Err
 }
 
