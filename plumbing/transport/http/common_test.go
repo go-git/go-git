@@ -193,6 +193,10 @@ func (s *ClientSuite) TestCheckError() {
 			http.StatusNotFound,
 			&transport.RepositoryNotFoundError{},
 		},
+		{
+			-1, // Unexpected status code
+			&plumbing.UnexpectedError{},
+		},
 	}
 
 	reason := "some reason for failing"
@@ -209,8 +213,8 @@ func (s *ClientSuite) TestCheckError() {
 			s.Error(err)
 			s.IsType(test.errType, err)
 
-			unwrappedErr, ok := errors.Unwrap(err).(*Err)
-			s.Equal(ok, true)
+			var unwrappedErr *Err
+			s.Equal(errors.As(err, &unwrappedErr), true)
 
 			s.Equal(test.code, unwrappedErr.Status)
 			s.Equal(req.URL, unwrappedErr.URL)

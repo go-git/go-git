@@ -33,3 +33,8 @@ func NewUnexpectedError(err error) *UnexpectedError {
 func (e *UnexpectedError) Error() string {
 	return fmt.Sprintf("unexpected client error: %s", e.Err.Error())
 }
+
+func (e *UnexpectedError) Unwrap() error {
+  return e.Err
+}
+
