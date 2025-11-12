@@ -673,20 +673,22 @@ func checkError(r *http.Response) error {
 		}
 	}
 
-	switch r.StatusCode {
-	case http.StatusUnauthorized:
-		return transport.ErrAuthenticationRequired
-	case http.StatusForbidden:
-		return transport.ErrAuthorizationFailed
-	case http.StatusNotFound:
-		return transport.ErrRepositoryNotFound
-	}
-
-	return plumbing.NewUnexpectedError(&Err{
+	err := &Err{
 		URL:    r.Request.URL,
 		Status: r.StatusCode,
 		Reason: reason,
-	})
+	}
+
+	switch r.StatusCode {
+	case http.StatusUnauthorized:
+		return transport.NewAuthenticationRequiredError(err)
+	case http.StatusForbidden:
+		return transport.NewAuthorizationFailedError(err)
+	case http.StatusNotFound:
+		return transport.NewRepositoryNotFoundError(err)
+	}
+
+	return plumbing.NewUnexpectedError(err)
 }
 
 // StatusCode returns the status code of the response

@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/cgi"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"errors"
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
@@ -181,24 +183,38 @@ func (s *ClientSuite) TestCheckError() {
 	}{
 		{
 			http.StatusUnauthorized,
-			transport.ErrAuthenticationRequired,
+			&transport.AuthenticationRequiredError{},
 		},
 		{
 			http.StatusForbidden,
-			transport.ErrAuthorizationFailed,
+			&transport.AuthorizationFailedError{},
 		},
 		{
 			http.StatusNotFound,
-			transport.ErrRepositoryNotFound,
+			&transport.RepositoryNotFoundError{},
 		},
 	}
 
+	reason := "some reason for failing"
+
 	for _, test := range tests {
 		s.Run(fmt.Sprintf("HTTP Error Status: %d", test.code), func() {
-			res := &http.Response{StatusCode: test.code}
+			req, _ := http.NewRequest("GET", "foo", nil)
+			res := &http.Response{
+				Request: req,
+				StatusCode: test.code,
+				Body: io.NopCloser(strings.NewReader(reason)),
+			}
 			err := checkError(res)
-			s.NotNil(err)
-			s.ErrorIs(err, test.errType)
+			s.Error(err)
+			s.IsType(test.errType, err)
+
+			unwrappedErr, ok := errors.Unwrap(err).(*Err)
+			s.Equal(ok, true)
+
+			s.Equal(test.code, unwrappedErr.Status)
+			s.Equal(req.URL, unwrappedErr.URL)
+			s.Equal(reason, unwrappedErr.Reason)
 		})
 	}
 }
