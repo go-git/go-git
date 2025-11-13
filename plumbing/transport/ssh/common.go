@@ -227,7 +227,13 @@ func (c *command) getHostWithPort() string {
 		return addr
 	}
 
-	return c.endpoint.Host
+	host := c.endpoint.Hostname()
+	port := c.endpoint.Port()
+	if port == "" {
+		port = strconv.Itoa(DefaultPort)
+	}
+
+	return net.JoinHostPort(host, port)
 }
 
 func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {

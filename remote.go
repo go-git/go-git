@@ -685,7 +685,7 @@ func (r *Remote) addObject(rs config.RefSpec,
 		}
 
 		cmd.Old = remoteRef.Hash()
-	} else if err != plumbing.ErrReferenceNotFound {
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 	if cmd.Old == cmd.New {
@@ -727,7 +727,7 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 		}
 
 		cmd.Old = remoteRef.Hash()
-	} else if err != plumbing.ErrReferenceNotFound {
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
@@ -1014,7 +1014,7 @@ func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
 func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.ReferenceStorer, cmd *packp.Command) error {
 	if cmd.Old == plumbing.ZeroHash {
 		_, err := remoteRefs.Reference(cmd.Name)
-		if err == plumbing.ErrReferenceNotFound {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return nil
 		}
 

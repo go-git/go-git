@@ -52,7 +52,7 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	var hash plumbing.Hash
 
 	ref, err := w.r.Head()
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, err
 	}
 
@@ -565,11 +565,11 @@ func (w *Worktree) fillEncodedObjectFromSymlink(dst io.Writer, path string, _ os
 
 func (w *Worktree) addOrUpdateFileToIndex(idx *index.Index, filename string, h plumbing.Hash) error {
 	e, err := idx.Entry(filename)
-	if err != nil && err != index.ErrEntryNotFound {
+	if err != nil && !errors.Is(err, index.ErrEntryNotFound) {
 		return err
 	}
 
-	if err == index.ErrEntryNotFound {
+	if errors.Is(err, index.ErrEntryNotFound) {
 		return w.doAddFileToIndex(idx, filename, h)
 	}
 
@@ -640,7 +640,7 @@ func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (remove
 			r, err = w.doRemoveDirectory(idx, name)
 		} else {
 			_, err = w.doRemoveFile(idx, name)
-			if err == index.ErrEntryNotFound {
+			if errors.Is(err, index.ErrEntryNotFound) {
 				err = nil
 			}
 		}
