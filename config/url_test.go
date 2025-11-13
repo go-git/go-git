@@ -27,6 +27,7 @@ func (b *URLSuite) TestValidateInsteadOf() {
 func (b *URLSuite) TestMarshal() {
 	expected := []byte(`[core]
 	bare = false
+	filemode = true
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 `)
@@ -45,6 +46,7 @@ func (b *URLSuite) TestMarshal() {
 func (b *URLSuite) TestMarshalMultipleInsteadOf() {
 	expected := []byte(`[core]
 	bare = false
+	filemode = true
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 	insteadOf = https://google.com/

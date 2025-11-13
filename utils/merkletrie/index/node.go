@@ -25,11 +25,18 @@ type node struct {
 	upholdExecutableBit bool
 }
 
-// NewRootNode returns the root node of a computed tree from a index.Index,
-func NewRootNode(idx *index.Index, fileMode string) noder.Noder {
-	const rootNode = ""
+type RootNodeOptions struct {
+	UpholdExecutableBit bool
+}
 
-	upholdExecutableBit := fileMode != "false"
+// NewRootNode returns the root node of a computed tree from a index.Index,
+func NewRootNode(idx *index.Index) noder.Noder {
+	return NewRootNodeWithOptions(idx, RootNodeOptions{UpholdExecutableBit: true})
+}
+
+// NewRootNodeWithOptions returns the root node of a computed tree from a index.Index,
+func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Noder {
+	const rootNode = ""
 
 	m := map[string]*node{rootNode: {isDir: true}}
 
@@ -53,7 +60,7 @@ func NewRootNode(idx *index.Index, fileMode string) noder.Noder {
 				continue
 			}
 
-			n := &node{path: fullpath, skip: e.SkipWorktree, upholdExecutableBit: upholdExecutableBit}
+			n := &node{path: fullpath, skip: e.SkipWorktree, upholdExecutableBit: options.UpholdExecutableBit}
 			if fullpath == e.Name {
 				n.entry = e
 			} else {

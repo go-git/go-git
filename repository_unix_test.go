@@ -68,7 +68,7 @@ func TestPlainInitFileMode(t *testing.T) {
 
 	cfg, err := r.Config()
 	require.NoError(t, err)
-	assert.Equal(t, "true", cfg.Core.FileMode)
+	assert.True(t, cfg.Core.FileMode)
 }
 
 func TestIsReinit(t *testing.T) {

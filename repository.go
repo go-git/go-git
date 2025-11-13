@@ -328,11 +328,7 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		return nil, err
 	}
 
-	if getFileMode(dot.Root()) {
-		cfg.Core.FileMode = "true"
-	} else {
-		cfg.Core.FileMode = "false"
-	}
+	cfg.Core.FileMode = getFileMode(dot.Root())
 
 	err = r.Storer.SetConfig(cfg)
 	if err != nil {

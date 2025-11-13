@@ -1593,7 +1593,7 @@ func (s *WorktreeSuite) TestStatusDeleted() {
 }
 
 func (s *WorktreeSuite) TestStatusFileMode() {
-	runTest := func(t *testing.T, fileMode string) string {
+	runTest := func(t *testing.T, fileMode bool) string {
 		fs := memfs.New()
 		r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 		require.NoError(t, err)
@@ -1601,14 +1601,12 @@ func (s *WorktreeSuite) TestStatusFileMode() {
 		w, err := r.Worktree()
 		require.NoError(t, err)
 
-		if fileMode != "" {
-			cfg, err := r.Config()
-			require.NoError(t, err)
+		cfg, err := r.Config()
+		require.NoError(t, err)
 
-			cfg.Core.FileMode = fileMode
-			err = r.SetConfig(cfg)
-			require.NoError(t, err)
-		}
+		cfg.Core.FileMode = fileMode
+		err = r.SetConfig(cfg)
+		require.NoError(t, err)
 
 		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0755)
 		require.NoError(t, err)
@@ -1632,17 +1630,12 @@ func (s *WorktreeSuite) TestStatusFileMode() {
 	}
 
 	s.Run("filemode=true", func() {
-		result := runTest(s.T(), "true")
-		s.Equal(" M run.bash\n", result)
-	})
-
-	s.Run("filemode is not set", func() {
-		result := runTest(s.T(), "")
+		result := runTest(s.T(), true)
 		s.Equal(" M run.bash\n", result)
 	})
 
 	s.Run("filemode=false", func() {
-		result := runTest(s.T(), "false")
+		result := runTest(s.T(), false)
 		s.Equal("", result)
 	})
 }

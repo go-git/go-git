@@ -142,7 +142,9 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	from := mindex.NewRootNode(idx, cfg.Core.FileMode)
+	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: cfg.Core.FileMode,
+	})
 	submodules, err := w.getSubmodulesStatus()
 	if err != nil {
 		return nil, err
@@ -262,7 +264,7 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx, "")
+	to := mindex.NewRootNode(idx)
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)

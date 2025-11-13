@@ -40,7 +40,7 @@ func (s *NoderSuite) TestDiff() {
 		},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	s.NoError(err)
 	s.Len(ch, 0)
 }
@@ -60,7 +60,7 @@ func (s *NoderSuite) TestDiffChange() {
 		}},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	s.NoError(err)
 	s.Len(ch, 2)
 }
@@ -83,7 +83,7 @@ func (s *NoderSuite) TestDiffSkipIssue1455() {
 
 	indexB := &index.Index{}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexB, ""), NewRootNode(indexA, ""), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexB), NewRootNode(indexA), isEquals)
 	s.NoError(err)
 	s.Len(ch, 1)
 	a, err := ch[0].Action()
@@ -106,7 +106,7 @@ func (s *NoderSuite) TestDiffDir() {
 		}},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	s.NoError(err)
 	s.Len(ch, 2)
 }
@@ -126,7 +126,7 @@ func (s *NoderSuite) TestDiffSameRoot() {
 		},
 	}
 
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	s.NoError(err)
 	s.Len(ch, 1)
 }
@@ -149,17 +149,15 @@ func (s *NoderSuite) TestDiffFileMode() {
 	}
 
 	// filemode is false
-	ch, err := merkletrie.DiffTree(NewRootNode(indexA, "false"), NewRootNode(indexB, "false"), isEquals)
+	ch, err := merkletrie.DiffTree(
+		NewRootNodeWithOptions(indexA, RootNodeOptions{}),
+		NewRootNodeWithOptions(indexB, RootNodeOptions{}),
+		isEquals)
 	s.NoError(err)
 	s.Len(ch, 0)
 
 	// filemode is true
-	ch, err = merkletrie.DiffTree(NewRootNode(indexA, "true"), NewRootNode(indexB, "true"), isEquals)
-	s.NoError(err)
-	s.Len(ch, 1)
-
-	// filemode is not set
-	ch, err = merkletrie.DiffTree(NewRootNode(indexA, ""), NewRootNode(indexB, ""), isEquals)
+	ch, err = merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	s.NoError(err)
 	s.Len(ch, 1)
 }
