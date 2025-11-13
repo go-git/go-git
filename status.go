@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v6/config"
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
@@ -125,7 +124,7 @@ func preloadStatus(w *Worktree) (Status, error) {
 		return nil, err
 	}
 
-	c, err := w.r.ConfigScoped(config.SystemScope)
+	c, err := w.r.Config()
 	if err != nil {
 		return nil, err
 	}
