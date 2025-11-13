@@ -73,7 +73,7 @@ type Config struct {
 		// converted to LF when added to the repository, and vice versa on checkout.
 		// If set to "input", only worktree-to-repository conversion is performed.
 		AutoCRLF string
-		// Tells Git if the executable bit of files in the working tree is to be honored.
+		// FileMode defines whether the executable bit of working tree files is to be honored.
 		// If "false", when an index node is an Executable and is comparing hash 
 		// against local file, 0644 will be used as the value of its mode. The original
 		// value of mode is left unchanged in the index.

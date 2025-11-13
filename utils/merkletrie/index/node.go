@@ -22,14 +22,14 @@ type node struct {
 	isDir    bool
 	skip     bool
 
-	trustExecutableBit bool
+	upholdExecutableBit bool
 }
 
 // NewRootNode returns the root node of a computed tree from a index.Index,
 func NewRootNode(idx *index.Index, fileMode string) noder.Noder {
 	const rootNode = ""
 
-	trustExecutableBit := fileMode != "false"
+	upholdExecutableBit := fileMode != "false"
 
 	m := map[string]*node{rootNode: {isDir: true}}
 
@@ -53,7 +53,7 @@ func NewRootNode(idx *index.Index, fileMode string) noder.Noder {
 				continue
 			}
 
-			n := &node{path: fullpath, skip: e.SkipWorktree, trustExecutableBit: trustExecutableBit}
+			n := &node{path: fullpath, skip: e.SkipWorktree, upholdExecutableBit: upholdExecutableBit}
 			if fullpath == e.Name {
 				n.entry = e
 			} else {
@@ -89,7 +89,7 @@ func (n *node) Hash() []byte {
 	}
 
 	mode := n.entry.Mode
-	if mode == filemode.Executable && !n.trustExecutableBit {
+	if mode == filemode.Executable && !n.upholdExecutableBit {
 		mode = filemode.Regular
 	}
 
