@@ -328,13 +328,6 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		return nil, err
 	}
 
-	cfg.Core.FileMode = getFileMode(dot.Root())
-
-	err = r.Storer.SetConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
 	return r, err
 }
 
@@ -1910,63 +1903,5 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 		}
 		return nil
 	})
-	return
-}
-
-// check filemode trustability by flipping the mode bits of p
-func checkFileModeTrustable(p string) (trust, executable bool) {
-	st1, err := os.Lstat(p)
-	if err != nil {
-		return
-	}
-	const USER_EXEC = 0100
-	// try to flip the exec bit
-	if err = os.Chmod(p, st1.Mode()^USER_EXEC); err != nil {
-		return
-	}
-	st2, err := os.Lstat(p)
-	if err != nil {
-		return
-	}
-	// exec bit changed
-	if st1.Mode() != st2.Mode() {
-		// restore exec bit
-		if err := os.Chmod(p, st1.Mode()); err == nil {
-			// check if it is reinit
-			trust = true
-			executable = (st1.Mode() & USER_EXEC) != 0
-			return
-		}
-	}
-
-	return
-}
-
-// Check if a repo is reinit
-func isReinit(gitRoot string) (ret bool) {
-	headPath := filepath.Join(gitRoot, "HEAD")
-	f, err := os.Open(headPath)
-
-	if err != nil {
-		_, err := os.Readlink(headPath)
-		return err == nil
-	} else {
-		f.Close()
-		// testPath already exists
-		return true
-	}
-}
-
-// Detect the value of filemode by manipulating mode bits of .git/config.
-// Such file must exist.
-func getFileMode(gitRoot string) (fileMode bool) {
-	var executable bool
-
-	configPath := filepath.Join(gitRoot, "config")
-	if fileMode, executable = checkFileModeTrustable(configPath); fileMode {
-		if !isReinit(gitRoot) && executable {
-			fileMode = false
-		}
-	}
 	return
 }

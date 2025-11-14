@@ -5,7 +5,6 @@ package git
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -65,24 +64,4 @@ func TestCloneFileUrlWindows(t *testing.T) {
 
 		assert.NoError(t, err, "url: %q", tc.url)
 	}
-}
-
-func TestCheckFileModeTrustable(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config")
-	err := os.WriteFile(path, []byte(""), os.ModePerm)
-	require.NoError(t, err)
-
-	trust, _ := checkFileModeTrustable(path)
-	assert.False(t, trust)
-}
-
-func TestPlainInitFileMode(t *testing.T) {
-	dir := t.TempDir()
-	r, err := PlainInit(dir, false)
-	require.NoError(t, err)
-
-	cfg, err := r.Config()
-	require.NoError(t, err)
-	assert.False(t, cfg.Core.FileMode)
 }
