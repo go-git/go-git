@@ -137,13 +137,15 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	from := mindex.NewRootNode(idx)
-	submodules, err := w.getSubmodulesStatus()
+	cfg, err := w.r.Config()
 	if err != nil {
 		return nil, err
 	}
 
-	cfg, err := w.r.Config()
+	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: cfg.Core.FileMode,
+	})
+	submodules, err := w.getSubmodulesStatus()
 	if err != nil {
 		return nil, err
 	}

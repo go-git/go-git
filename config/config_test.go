@@ -30,6 +30,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 		worktree = foo
 		commentchar = bar
 		autocrlf = true
+		filemode = false
 [user]
 		name = John Doe
 		email = john@example.com
@@ -75,6 +76,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.Equal("foo", cfg.Core.Worktree)
 	s.Equal("bar", cfg.Core.CommentChar)
 	s.Equal("true", cfg.Core.AutoCRLF)
+	s.False(cfg.Core.FileMode)
 	s.Equal("John Doe", cfg.User.Name)
 	s.Equal("john@example.com", cfg.User.Email)
 	s.Equal("Jane Roe", cfg.Author.Name)
@@ -107,6 +109,7 @@ func (s *ConfigSuite) TestMarshal() {
 	bare = true
 	worktree = bar
 	autocrlf = true
+	filemode = true
 [pack]
 	window = 20
 [remote "alt"]
@@ -192,6 +195,7 @@ func TestUnmarshalMarshal(t *testing.T) {
 	worktree = foo
 	custom = ignored
 	autocrlf = true
+	filemode = true
 [user]
 	name = John Doe
 	email = john@example.com
@@ -222,6 +226,7 @@ func TestUnmarshalMarshal(t *testing.T) {
 			`[core]
 	repositoryformatversion = 1
 	bare = false
+	filemode = true
 [branch "main"]
 	remote = origin
 	merge = refs/heads/main
@@ -234,6 +239,7 @@ func TestUnmarshalMarshal(t *testing.T) {
 			`[core]
 	repositoryformatversion = 1
 	bare = false
+	filemode = true
 [branch "main"]
 	remote = origin
 	merge = refs/heads/main

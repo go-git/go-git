@@ -4,6 +4,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
@@ -20,10 +21,21 @@ type node struct {
 	children []noder.Noder
 	isDir    bool
 	skip     bool
+
+	upholdExecutableBit bool
+}
+
+type RootNodeOptions struct {
+	UpholdExecutableBit bool
 }
 
 // NewRootNode returns the root node of a computed tree from a index.Index,
 func NewRootNode(idx *index.Index) noder.Noder {
+	return NewRootNodeWithOptions(idx, RootNodeOptions{UpholdExecutableBit: true})
+}
+
+// NewRootNodeWithOptions returns the root node of a computed tree from a index.Index,
+func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Noder {
 	const rootNode = ""
 
 	m := map[string]*node{rootNode: {isDir: true}}
@@ -48,7 +60,7 @@ func NewRootNode(idx *index.Index) noder.Noder {
 				continue
 			}
 
-			n := &node{path: fullpath, skip: e.SkipWorktree}
+			n := &node{path: fullpath, skip: e.SkipWorktree, upholdExecutableBit: options.UpholdExecutableBit}
 			if fullpath == e.Name {
 				n.entry = e
 			} else {
@@ -83,7 +95,12 @@ func (n *node) Hash() []byte {
 		return make([]byte, 24)
 	}
 
-	return append(n.entry.Hash.Bytes(), n.entry.Mode.Bytes()...)
+	mode := n.entry.Mode
+	if mode == filemode.Executable && !n.upholdExecutableBit {
+		mode = filemode.Regular
+	}
+
+	return append(n.entry.Hash.Bytes(), mode.Bytes()...)
 }
 
 func (n *node) Name() string {

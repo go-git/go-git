@@ -124,7 +124,14 @@ func preloadStatus(w *Worktree) (Status, error) {
 		return nil, err
 	}
 
-	idxRoot := mindex.NewRootNode(idx)
+	c, err := w.r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	idxRoot := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: c.Core.FileMode,
+	})
 	nodes := []noder.Noder{idxRoot}
 
 	status := make(Status)

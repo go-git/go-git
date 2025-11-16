@@ -73,6 +73,11 @@ type Config struct {
 		// converted to LF when added to the repository, and vice versa on checkout.
 		// If set to "input", only worktree-to-repository conversion is performed.
 		AutoCRLF string
+		// FileMode defines whether the executable bit of working tree files is to be honored.
+		// If "false", when an index node is an Executable and is comparing hash
+		// against local file, 0644 will be used as the value of its mode. The original
+		// value of mode is left unchanged in the index.
+		FileMode bool
 	}
 
 	User struct {
@@ -217,6 +222,7 @@ func NewConfig() *Config {
 		Raw:        format.New(),
 	}
 
+	config.Core.FileMode = DefaultFileMode
 	config.Pack.Window = DefaultPackWindow
 	config.Protocol.Version = DefaultProtocolVersion
 
@@ -350,10 +356,13 @@ const (
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
+	fileModeKey                = "filemode"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
+	// The value true is the same used by git command
+	DefaultFileMode = true
 )
 
 // Unmarshal parses a git-config file and stores it.
@@ -399,6 +408,10 @@ func (c *Config) unmarshalCore() {
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
+
+	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
+		c.Core.FileMode = false
+	}
 
 	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version_1) {
 		c.Core.RepositoryFormatVersion = format.Version_1
@@ -575,6 +588,8 @@ func (c *Config) marshalCore() {
 	if c.Core.AutoCRLF != "" {
 		s.SetOption(autoCRLFKey, c.Core.AutoCRLF)
 	}
+
+	s.SetOption(fileModeKey, fmt.Sprintf("%t", c.Core.FileMode))
 }
 
 func (c *Config) marshalExtensions() {

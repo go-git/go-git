@@ -1592,6 +1592,54 @@ func (s *WorktreeSuite) TestStatusDeleted() {
 	s.Equal(Deleted, status.File(".gitignore").Worktree)
 }
 
+func (s *WorktreeSuite) TestStatusFileMode() {
+	runTest := func(t *testing.T, fileMode bool) string {
+		fs := memfs.New()
+		r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+		require.NoError(t, err)
+
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+
+		cfg.Core.FileMode = fileMode
+		err = r.SetConfig(cfg)
+		require.NoError(t, err)
+
+		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0755)
+		require.NoError(t, err)
+
+		_, err = w.Add("run.bash")
+		require.NoError(t, err)
+
+		_, err = w.Commit("Add an executable", defaultTestCommitOptions())
+		require.NoError(t, err)
+
+		err = util.RemoveAll(fs, "run.bash")
+		require.NoError(t, err)
+
+		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0644)
+		require.NoError(t, err)
+
+		s, err := w.Status()
+		require.NoError(t, err)
+
+		return s.String()
+	}
+
+	s.Run("filemode=true", func() {
+		result := runTest(s.T(), true)
+		s.Equal(" M run.bash\n", result)
+	})
+
+	s.Run("filemode=false", func() {
+		result := runTest(s.T(), false)
+		s.Equal("", result)
+	})
+}
+
 func (s *WorktreeSuite) TestSubmodule() {
 	fs := fixtures.ByTag("submodule").One().Worktree()
 	gitdir, err := fs.Chroot(GitDirName)
