@@ -389,29 +389,12 @@ type similarityPair struct {
 	score int
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 const maxMatrixSize = 10000
 
 func buildSimilarityMatrix(srcs, dsts []*Change, renameScore int) (similarityMatrix, error) {
 	// Allocate for the worst-case scenario where every pair has a score
 	// that we need to consider. We might not need that many.
-	matrixSize := len(srcs) * len(dsts)
-	if matrixSize > maxMatrixSize {
-		matrixSize = maxMatrixSize
-	}
+	matrixSize := min(len(srcs)*len(dsts), maxMatrixSize)
 	matrix := make(similarityMatrix, 0, matrixSize)
 	srcSizes := make([]int64, len(srcs))
 	dstSizes := make([]int64, len(dsts))
@@ -464,13 +447,12 @@ outerLoop:
 				dstSizes[dstIdx] = dstSize
 			}
 
-			min, max := srcSize, dstSize
+			minSize, maxSize := srcSize, dstSize
 			if dstSize < srcSize {
-				min = dstSize
-				max = srcSize
+				minSize, maxSize = dstSize, srcSize
 			}
 
-			if int(min*100/max) < renameScore {
+			if int(minSize*100/maxSize) < renameScore {
 				// File sizes are too different to be a match
 				continue
 			}

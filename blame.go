@@ -469,20 +469,6 @@ func (b BlameResult) maxAuthorLength() int {
 	return m
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 type childToNeedsMap struct {
 	Child            *queueItem
 	NeedsMap         []lineMap
