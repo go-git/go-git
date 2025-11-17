@@ -28,8 +28,11 @@ import (
 )
 
 var (
+	ErrRepositoryNotFound     = errors.New("repository not found")
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
 	ErrNoChange               = errors.New("no change")
+	ErrAuthenticationRequired = errors.New("authentication required")
+	ErrAuthorizationFailed    = errors.New("authorization failed")
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
 	ErrInvalidAuthMethod      = errors.New("invalid auth method")
 	ErrAlreadyConnected       = errors.New("session already established")
