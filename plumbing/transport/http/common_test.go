@@ -177,48 +177,36 @@ func (s *ClientSuite) TestCheckError() {
 		})
 	}
 
-	tests := []struct{
-		code int
-		errType error
-	}{
-		{
-			http.StatusUnauthorized,
-			&transport.AuthenticationRequiredError{},
-		},
-		{
-			http.StatusForbidden,
-			&transport.AuthorizationFailedError{},
-		},
-		{
-			http.StatusNotFound,
-			&transport.RepositoryNotFoundError{},
-		},
-		{
-			-1, // Unexpected status code
-			&plumbing.UnexpectedError{},
-		},
+	statusCodesTests := []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		-1, // Unexpected status code
 	}
 
 	reason := "some reason for failing"
 
-	for _, test := range tests {
-		s.Run(fmt.Sprintf("HTTP Error Status: %d", test.code), func() {
+	for _, code := range statusCodesTests {
+		s.Run(fmt.Sprintf("HTTP Error Status: %d", code), func() {
 			req, _ := http.NewRequest("GET", "foo", nil)
 			res := &http.Response{
 				Request: req,
-				StatusCode: test.code,
+				StatusCode: code,
 				Body: io.NopCloser(strings.NewReader(reason)),
 			}
 			err := checkError(res)
 			s.Error(err)
-			s.IsType(test.errType, err)
 
-			var unwrappedErr *Err
-			s.Equal(errors.As(err, &unwrappedErr), true)
+			unwrappedErr := errors.Unwrap(err)
+			s.Error(unwrappedErr)
+			s.IsType(unwrappedErr, &Err{})
 
-			s.Equal(test.code, unwrappedErr.Status)
-			s.Equal(req.URL, unwrappedErr.URL)
-			s.Equal(reason, unwrappedErr.Reason)
+			var httpErr *Err
+			s.Equal(errors.As(unwrappedErr, &httpErr), true)
+
+			s.Equal(code, httpErr.Status)
+			s.Equal(req.URL, httpErr.URL)
+			s.Equal(reason, httpErr.Reason)
 		})
 	}
 }
