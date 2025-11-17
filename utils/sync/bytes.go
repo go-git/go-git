@@ -33,11 +33,7 @@ func GetByteSlice() *[]byte {
 		b = b[:cap(b)]
 	}
 
-	// zero out the array contents.
-	for i := 0; i < len(b); i++ {
-		b[i] = 0
-	}
-
+	clear(b)
 	return &b
 }
 
