@@ -59,7 +59,7 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 func (a *AdvRefs) AllReferences() (memory.ReferenceStorage, error) {
 	s := memory.ReferenceStorage{}
 	if err := a.addRefs(s); err != nil {
-		return s, fmt.Errorf("%w %w", plumbing.ErrUnexpected, err)
+		return s, fmt.Errorf("%w: %w", plumbing.ErrUnexpected, err)
 	}
 
 	return s, nil
@@ -175,7 +175,7 @@ func (a *AdvRefs) addSymbolicRefs(s storer.ReferenceStorer) error {
 		chunks := strings.Split(symref, ":")
 		if len(chunks) != 2 {
 			err := fmt.Errorf("bad number of `:` in symref value (%q)", symref)
-			return fmt.Errorf("%w %w", plumbing.ErrUnexpected, err)
+			return fmt.Errorf("%w: %w", plumbing.ErrUnexpected, err)
 		}
 		name := plumbing.ReferenceName(chunks[0])
 		target := plumbing.ReferenceName(chunks[1])

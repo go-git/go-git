@@ -98,7 +98,7 @@ func (s *ClientSuite) TestNewHTTPError40x() {
 }
 
 func (s *ClientSuite) TestNewUnexpectedError() {
-	err := fmt.Errorf("%w %w", plumbing.ErrUnexpected, &Err{Status: http.StatusInternalServerError, Reason: "Unexpected error"})
+	err := fmt.Errorf("%w: %w", plumbing.ErrUnexpected, &Err{Status: http.StatusInternalServerError, Reason: "Unexpected error"})
 	s.Error(err)
 	s.Equal(errors.Is(err, plumbing.ErrUnexpected), true)
 }
@@ -159,7 +159,7 @@ func (s *ClientSuite) Test_newSession() {
 
 func (s *ClientSuite) testNewHTTPError(code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
-	err := fmt.Errorf("%w %w", plumbing.ErrUnexpected, &Err{Status: code, URL: req.URL, Reason: msg})
+	err := fmt.Errorf("%w: %w", plumbing.ErrUnexpected, &Err{Status: code, URL: req.URL, Reason: msg})
 	s.NotNil(err)
 	s.Regexp(msg, err.Error())
 }
