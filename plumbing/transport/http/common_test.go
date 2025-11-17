@@ -98,9 +98,9 @@ func (s *ClientSuite) TestNewHTTPError40x() {
 }
 
 func (s *ClientSuite) TestNewUnexpectedError() {
-	err := plumbing.NewUnexpectedError(&Err{Status: http.StatusInternalServerError, Reason: "Unexpected error"})
+	err := fmt.Errorf("%w %w", plumbing.ErrUnexpected, &Err{Status: http.StatusInternalServerError, Reason: "Unexpected error"})
 	s.Error(err)
-	s.IsType(&plumbing.UnexpectedError{}, err)
+	s.Equal(errors.Is(err, plumbing.ErrUnexpected), true)
 }
 
 func (s *ClientSuite) Test_newSession() {
@@ -159,7 +159,7 @@ func (s *ClientSuite) Test_newSession() {
 
 func (s *ClientSuite) testNewHTTPError(code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
-	err := plumbing.NewUnexpectedError(&Err{Status: code, URL: req.URL, Reason: msg})
+	err := fmt.Errorf("%w %w", plumbing.ErrUnexpected, &Err{Status: code, URL: req.URL, Reason: msg})
 	s.NotNil(err)
 	s.Regexp(msg, err.Error())
 }
@@ -177,34 +177,46 @@ func (s *ClientSuite) TestCheckError() {
 		})
 	}
 
-	statusCodesTests := []int{
-		http.StatusUnauthorized,
-		http.StatusForbidden,
-		http.StatusNotFound,
-		-1, // Unexpected status code
+	statusCodesTests := []struct{
+		code int
+		errType error
+	}{
+		{
+			http.StatusUnauthorized,
+			transport.ErrAuthenticationRequired,
+		},
+		{
+			http.StatusForbidden,
+			transport.ErrAuthorizationFailed,
+		},
+		{
+			http.StatusNotFound,
+			transport.ErrRepositoryNotFound,
+		},
+		{
+			-1, // Unexpected status code
+			plumbing.ErrUnexpected,
+		},
 	}
 
 	reason := "some reason for failing"
 
-	for _, code := range statusCodesTests {
-		s.Run(fmt.Sprintf("HTTP Error Status: %d", code), func() {
+	for _, test := range statusCodesTests {
+		s.Run(fmt.Sprintf("HTTP Error Status: %d", test.code), func() {
 			req, _ := http.NewRequest("GET", "foo", nil)
 			res := &http.Response{
 				Request: req,
-				StatusCode: code,
+				StatusCode: test.code,
 				Body: io.NopCloser(strings.NewReader(reason)),
 			}
 			err := checkError(res)
 			s.Error(err)
-
-			unwrappedErr := errors.Unwrap(err)
-			s.Error(unwrappedErr)
-			s.IsType(unwrappedErr, &Err{})
+			s.Equal(errors.Is(err, test.errType), true)
 
 			var httpErr *Err
-			s.Equal(errors.As(unwrappedErr, &httpErr), true)
+			s.Equal(errors.As(err, &httpErr), true)
 
-			s.Equal(code, httpErr.Status)
+			s.Equal(test.code, httpErr.Status)
 			s.Equal(req.URL, httpErr.URL)
 			s.Equal(reason, httpErr.Reason)
 		})

@@ -681,14 +681,14 @@ func checkError(r *http.Response) error {
 
 	switch r.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%s %w", transport.ErrAuthenticationRequired.Error(), err)
+		return fmt.Errorf("%w %w", transport.ErrAuthenticationRequired, err)
 	case http.StatusForbidden:
-		return fmt.Errorf("%s %w", transport.ErrAuthorizationFailed.Error(), err)
+		return fmt.Errorf("%w %w", transport.ErrAuthorizationFailed, err)
 	case http.StatusNotFound:
-		return fmt.Errorf("%s %w", transport.ErrRepositoryNotFound.Error(), err)
+		return fmt.Errorf("%w %w", transport.ErrRepositoryNotFound, err)
 	}
 
-	return plumbing.NewUnexpectedError(err)
+	return fmt.Errorf("%w %w", plumbing.ErrUnexpected, err)
 }
 
 // StatusCode returns the status code of the response
