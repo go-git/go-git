@@ -1053,7 +1053,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir() {
 		URL: "incorrectOnPurpose",
 	})
 	s.NotNil(r)
-	s.IsType(err, &transport.RepositoryNotFoundError{})
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(dir)
 	s.False(os.IsNotExist(err))
@@ -1078,7 +1078,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir() {
 		URL: "incorrectOnPurpose",
 	})
 	s.NotNil(r)
-	s.IsType(err, &transport.RepositoryNotFoundError{})
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(repoDir)
 	s.True(os.IsNotExist(err))

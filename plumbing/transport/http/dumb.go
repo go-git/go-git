@@ -88,7 +88,7 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 	case http.StatusOK:
 		// continue
 	case http.StatusNotFound:
-		return nil, transport.NewRepositoryNotFoundError(fmt.Errorf("status code: %d", res.StatusCode))
+		return nil, transport.ErrRepositoryNotFound
 	default:
 		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
@@ -192,7 +192,7 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 	case http.StatusOK:
 		// continue
 	case http.StatusNotFound:
-		return nil, transport.NewRepositoryNotFoundError(fmt.Errorf("status code: %d", res.StatusCode))
+		return nil, transport.ErrRepositoryNotFound
 	default:
 		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
@@ -203,7 +203,7 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 			return nil, err
 		}
 		// EOF, no data
-		return nil, transport.NewRepositoryNotFoundError(fmt.Errorf("No repository data"))
+		return nil, transport.ErrRepositoryNotFound
 	}
 
 	line := s.Text()
@@ -242,7 +242,7 @@ func (r *fetchWalker) process() error {
 
 	if head.IsZero() {
 		// TODO: better error message?
-		return transport.NewRepositoryNotFoundError(fmt.Errorf("hash was zero"))
+		return transport.ErrRepositoryNotFound
 	}
 
 	infoPacks, err := r.getInfoPacks()
@@ -305,7 +305,7 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 
 	applyHeaders(req, "", r.ep, r.auth, "", false)
 	res, err := doRequest(r.client, req)
-	if errors.Is(err, &transport.RepositoryNotFoundError{}) {
+	if errors.Is(err, transport.ErrRepositoryNotFound) {
 		// TODO: better error handling
 		return io.EOF
 	}

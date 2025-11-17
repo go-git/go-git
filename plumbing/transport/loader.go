@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -19,7 +18,7 @@ var DefaultLoader = NewFilesystemLoader(osfs.New(""), false)
 // Loader loads repository's storer.Storer based on an optional host and a path.
 type Loader interface {
 	// Load loads a storer.Storer given a transport.Endpoint.
-	// Returns transport.RepositoryNotFoundError if the repository does not
+	// Returns transport.ErrRepositoryNotFound if the repository does not
 	// exist.
 	Load(ep *Endpoint) (storage.Storer, error)
 }
@@ -39,7 +38,7 @@ func NewFilesystemLoader(base billy.Filesystem, strict bool) Loader {
 }
 
 // Load looks up the endpoint's path in the base file system and returns a
-// storer for it. Returns transport.RepositoryNotFoundError if a repository does
+// storer for it. Returns transport.ErrRepositoryNotFound if a repository does
 // not exist in the given path.
 func (l *FilesystemLoader) Load(ep *Endpoint) (storage.Storer, error) {
 	return l.load(ep.Path, false)
@@ -61,7 +60,7 @@ func (l *FilesystemLoader) load(path string, tried bool) (storage.Storer, error)
 			}
 			return l.load(path, tried)
 		}
-		return nil, NewRepositoryNotFoundError(err)
+		return nil, ErrRepositoryNotFound
 	}
 
 	return filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{}), nil
@@ -72,12 +71,12 @@ func (l *FilesystemLoader) load(path string, tried bool) (storage.Storer, error)
 type MapLoader map[string]storer.Storer
 
 // Load returns a storer.Storer for given a transport.Endpoint by looking it up
-// in the map. Returns transport.RepositoryNotFoundError if the endpoint does not
+// in the map. Returns transport.ErrRepositoryNotFound if the endpoint does not
 // exist.
 func (l MapLoader) Load(ep *Endpoint) (storer.Storer, error) {
 	s, ok := l[ep.String()]
 	if !ok {
-		return nil, NewRepositoryNotFoundError(fmt.Errorf("endpoint: %s", ep.String()))
+		return nil, ErrRepositoryNotFound
 	}
 
 	return s, nil

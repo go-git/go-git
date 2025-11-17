@@ -75,13 +75,13 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 
 	url, err := url.JoinPath(fmt.Sprintf("git://%s", host), req.Pathname)
 	if err != nil {
-		renderError(wc, transport.NewRepositoryNotFoundError(err)) //nolint:errcheck
+		renderError(wc, transport.ErrRepositoryNotFound) //nolint:errcheck
 		return
 	}
 
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
-		renderError(wc, transport.NewRepositoryNotFoundError(err)) //nolint:errcheck
+		renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)) //nolint:errcheck
 		return
 	}
 
@@ -108,7 +108,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	}
 
 	if err != nil {
-		renderError(wc, transport.NewRepositoryNotFoundError(err)) //nolint:errcheck
+		renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)) //nolint:errcheck
 		return
 	}
 }
