@@ -293,7 +293,7 @@ func (tx *TxObjectStorage) Commit() error {
 }
 
 func (tx *TxObjectStorage) Rollback() error {
-	tx.Objects = make(map[plumbing.Hash]plumbing.EncodedObject)
+	clear(tx.Objects)
 	return nil
 }
 
