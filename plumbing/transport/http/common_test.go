@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -97,12 +96,6 @@ func (s *ClientSuite) TestNewHTTPError40x() {
 		"unexpected client error.*")
 }
 
-func (s *ClientSuite) TestNewUnexpectedError() {
-	err := fmt.Errorf("%w: %w", plumbing.ErrUnexpected, &Err{Status: http.StatusInternalServerError, Reason: "Unexpected error"})
-	s.Error(err)
-	s.Equal(errors.Is(err, plumbing.ErrUnexpected), true)
-}
-
 func (s *ClientSuite) Test_newSession() {
 	cl := NewTransport(&TransportOptions{
 		CacheMaxEntries: 2,
@@ -159,8 +152,7 @@ func (s *ClientSuite) Test_newSession() {
 
 func (s *ClientSuite) testNewHTTPError(code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
-	err := fmt.Errorf("%w: %w", plumbing.ErrUnexpected, &Err{Status: code, URL: req.URL, Reason: msg})
-	s.NotNil(err)
+	err := &Err{Status: code, URL: req.URL, Reason: msg}
 	s.Regexp(msg, err.Error())
 }
 
@@ -180,22 +172,27 @@ func (s *ClientSuite) TestCheckError() {
 	statusCodesTests := []struct{
 		code int
 		errType error
+		isWrapped bool
 	}{
 		{
 			http.StatusUnauthorized,
 			transport.ErrAuthenticationRequired,
+			true,
 		},
 		{
 			http.StatusForbidden,
 			transport.ErrAuthorizationFailed,
+			true,
 		},
 		{
 			http.StatusNotFound,
 			transport.ErrRepositoryNotFound,
+			true,
 		},
 		{
 			-1, // Unexpected status code
-			plumbing.ErrUnexpected,
+			&Err{},
+			false,
 		},
 	}
 
@@ -211,7 +208,10 @@ func (s *ClientSuite) TestCheckError() {
 			}
 			err := checkError(res)
 			s.Error(err)
-			s.Equal(errors.Is(err, test.errType), true)
+
+			if test.isWrapped {
+				s.Equal(errors.Is(err, test.errType), true)
+			}
 
 			var httpErr *Err
 			s.Equal(errors.As(err, &httpErr), true)

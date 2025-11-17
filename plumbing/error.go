@@ -2,11 +2,6 @@ package plumbing
 
 import (
 	"fmt"
-	"errors"
-)
-
-var (
-	ErrUnexpected = errors.New("unexpected client error")
 )
 
 type PermanentError struct {

@@ -688,7 +688,7 @@ func checkError(r *http.Response) error {
 		return fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)
 	}
 
-	return fmt.Errorf("%w: %w", plumbing.ErrUnexpected, err)
+	return err
 }
 
 // StatusCode returns the status code of the response
