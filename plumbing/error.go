@@ -1,8 +1,6 @@
 package plumbing
 
-import (
-	"fmt"
-)
+import "fmt"
 
 type PermanentError struct {
 	Err error
