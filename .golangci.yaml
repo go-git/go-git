@@ -1,0 +1,17 @@
+version: "2"
+linters:
+  default: none
+  enable:
+  - zerologlint
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+formatters:
+  default: none
+  enable:
+  exclusions:
+    generated: lax
