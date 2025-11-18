@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
+	"encoding/hex"
 	"hash"
 	"sync"
 
@@ -12,7 +13,6 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -22,8 +22,6 @@ var (
 	ErrUnsupportedVersion = errors.New("unsupported version")
 	// ErrMalformedRevFile is returned by Decode when the rev file is corrupted.
 	ErrMalformedRevFile = errors.New("malformed rev file")
-	// ErrNilIndex is returned by Decode when a nil index is used.
-	ErrNilIndex = errors.New("nil index")
 	// ErrUnsupportedHashFunction is returned by Decode when the rev file defines an
 	// unsupported hash function.
 	ErrUnsupportedHashFunction = errors.New("unsupported hash function")
@@ -41,49 +39,66 @@ const (
 
 // Decoder reads and decodes idx files from an input stream.
 type Decoder struct {
-	*bufio.Reader
+	reader  *bufio.Reader
 	hasher  crypto.Hash
 	hash    hash.Hash
 	nextFn  stateFn
 	version uint32
 
-	idx *idxfile.MemoryIndex
-	m   sync.Mutex
+	objCount     int64
+	packChecksum plumbing.ObjectID
+	out          chan<- uint32
+
+	m sync.Mutex
 }
 
-// NewDecoder builds a new idx stream decoder, that reads from r.
-func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{Reader: bufio.NewReader(r)}
+// NewDecoder builds a reverse index decoder.
+func NewDecoder(r *bufio.Reader, objCount int64, packChecksum plumbing.ObjectID) *Decoder {
+	return &Decoder{
+		reader:       r,
+		objCount:     objCount,
+		packChecksum: packChecksum,
+	}
 }
 
 // stateFn defines each individual state within the state machine that
 // represents a revfile.
 type stateFn func(*Decoder) (stateFn, error)
 
-// Decode reads from the stream and decode the content into the MemoryIndex struct.
-func (d *Decoder) Decode(idx *idxfile.MemoryIndex) error {
-	if idx == nil {
-		return ErrNilIndex
-	}
-
+// Decode reads from the reader and decode the index positions into a channel.
+func (d *Decoder) Decode(out chan<- uint32) (err error) {
 	d.m.Lock()
 	defer d.m.Unlock()
 
-	d.idx = idx
+	if d.reader == nil {
+		return fmt.Errorf("%w: nil reader", ErrMalformedRevFile)
+	}
 
-	var err error
+	if out == nil {
+		return errors.New("nil channel")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+
+	d.out = out
+
+	defer close(d.out)
 	for state := readMagicNumber; state != nil; {
 		state, err = state(d)
 		if err != nil {
-			return err
+			return
 		}
 	}
-	return nil
+	return
 }
 
 func readMagicNumber(d *Decoder) (stateFn, error) {
 	var h = make([]byte, 4)
-	if _, err := io.ReadFull(d.Reader, h); err != nil {
+	if _, err := io.ReadFull(d.reader, h); err != nil {
 		return nil, err
 	}
 
@@ -95,7 +110,7 @@ func readMagicNumber(d *Decoder) (stateFn, error) {
 }
 
 func readVersion(d *Decoder) (stateFn, error) {
-	v, err := binary.ReadUint32(d.Reader)
+	v, err := binary.ReadUint32(d.reader)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +124,7 @@ func readVersion(d *Decoder) (stateFn, error) {
 }
 
 func readHashFunction(d *Decoder) (stateFn, error) {
-	hf, err := binary.ReadUint32(d.Reader)
+	hf, err := binary.ReadUint32(d.reader)
 	if err != nil {
 		return nil, err
 	}
@@ -133,25 +148,21 @@ func readHashFunction(d *Decoder) (stateFn, error) {
 }
 
 func readEntries(d *Decoder) (stateFn, error) {
-	count, err := d.idx.Count()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get idx count: %w", err)
-	}
-
-	if count == 0 {
+	if d.objCount == 0 {
 		return nil, ErrEmptyReverseIndex
 	}
 
 	var i int64
-	for i = 0; i < count; i++ {
-		idx, err := binary.ReadUint32(d.Reader)
+	for i = 0; i < d.objCount; i++ {
+		idx, err := binary.ReadUint32(d.reader)
 		if errors.Is(err, io.EOF) {
 			return nil, err
 		}
 		if err != nil {
 			return nil, err
 		}
+
+		d.out <- idx
 
 		err = binary.Write(d.hash, idx)
 		if err != nil {
@@ -166,7 +177,7 @@ func readPackChecksum(d *Decoder) (stateFn, error) {
 	var pack plumbing.Hash
 	pack.ResetBySize(d.hasher.Size())
 
-	n, err := pack.ReadFrom(d.Reader)
+	n, err := pack.ReadFrom(d.reader)
 	if err != nil {
 		return nil, err
 	}
@@ -175,8 +186,9 @@ func readPackChecksum(d *Decoder) (stateFn, error) {
 		return nil, fmt.Errorf("%w: wrong checksum size", ErrMalformedRevFile)
 	}
 
-	if pack.Compare(d.idx.PackfileChecksum.Bytes()) != 0 {
-		return nil, fmt.Errorf("%w: pack file hash mismatch", ErrMalformedRevFile)
+	if pack.Compare(d.packChecksum.Bytes()) != 0 {
+		return nil, fmt.Errorf("%w: packfile hash mismatch wanted %q got %q",
+			ErrMalformedRevFile, d.packChecksum.String(), pack.String())
 	}
 
 	err = binary.Write(d.hash, pack.Bytes())
@@ -190,7 +202,8 @@ func readPackChecksum(d *Decoder) (stateFn, error) {
 func readRevChecksum(d *Decoder) (stateFn, error) {
 	var rev plumbing.Hash
 	rev.ResetBySize(d.hasher.Size())
-	n, err := rev.ReadFrom(d.Reader)
+
+	n, err := rev.ReadFrom(d.reader)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +212,15 @@ func readRevChecksum(d *Decoder) (stateFn, error) {
 		return nil, fmt.Errorf("%w: wrong checksum size", ErrMalformedRevFile)
 	}
 
-	if rev.Compare(d.hash.Sum(nil)) != 0 {
-		return nil, fmt.Errorf("%w: rev file checksum mismatch", ErrMalformedRevFile)
+	rh := d.hash.Sum(nil)
+	if rev.Compare(rh) != 0 {
+		return nil, fmt.Errorf("%w: rev file checksum mismatch wanted %q got %q",
+			ErrMalformedRevFile, hex.EncodeToString(rh), rev.String())
+	}
+
+	_, err = d.reader.Peek(1)
+	if err == nil {
+		return nil, fmt.Errorf("%w: expected EOF", ErrMalformedRevFile)
 	}
 
 	return nil, nil
