@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/cgi"
@@ -10,10 +11,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"errors"
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -95,12 +96,6 @@ func (s *ClientSuite) TestNewHTTPError40x() {
 		"unexpected client error.*")
 }
 
-func (s *ClientSuite) TestNewUnexpectedError() {
-	err := plumbing.NewUnexpectedError(&Err{Status: http.StatusInternalServerError, Reason: "Unexpected error"})
-	s.Error(err)
-	s.IsType(&plumbing.UnexpectedError{}, err)
-}
-
 func (s *ClientSuite) Test_newSession() {
 	cl := NewTransport(&TransportOptions{
 		CacheMaxEntries: 2,
@@ -157,8 +152,7 @@ func (s *ClientSuite) Test_newSession() {
 
 func (s *ClientSuite) testNewHTTPError(code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
-	err := plumbing.NewUnexpectedError(&Err{Status: code, URL: req.URL, Reason: msg})
-	s.NotNil(err)
+	err := &Err{Status: code, URL: req.URL, Reason: msg}
 	s.Regexp(msg, err.Error())
 }
 
@@ -166,6 +160,67 @@ func (s *ClientSuite) TestSetAuth() {
 	auth := &BasicAuth{}
 	_, err := DefaultTransport.NewSession(s.Storer, s.Endpoint, auth)
 	s.NoError(err)
+}
+
+func (s *ClientSuite) TestCheckError() {
+	for code := http.StatusOK; code < http.StatusMultipleChoices; code++ {
+		s.Run(fmt.Sprintf("HTTP Status: %d", code), func() {
+			s.NoError(checkError(&http.Response{StatusCode: code}))
+		})
+	}
+
+	statusCodesTests := []struct{
+		code int
+		errType error
+		isWrapped bool
+	}{
+		{
+			http.StatusUnauthorized,
+			transport.ErrAuthenticationRequired,
+			true,
+		},
+		{
+			http.StatusForbidden,
+			transport.ErrAuthorizationFailed,
+			true,
+		},
+		{
+			http.StatusNotFound,
+			transport.ErrRepositoryNotFound,
+			true,
+		},
+		{
+			-1, // Unexpected status code
+			&Err{},
+			false,
+		},
+	}
+
+	reason := "some reason for failing"
+
+	for _, test := range statusCodesTests {
+		s.Run(fmt.Sprintf("HTTP Error Status: %d", test.code), func() {
+			req, _ := http.NewRequest("GET", "foo", nil)
+			res := &http.Response{
+				Request: req,
+				StatusCode: test.code,
+				Body: io.NopCloser(strings.NewReader(reason)),
+			}
+			err := checkError(res)
+			s.Error(err)
+
+			if test.isWrapped {
+				s.Equal(errors.Is(err, test.errType), true)
+			}
+
+			var httpErr *Err
+			s.Equal(errors.As(err, &httpErr), true)
+
+			s.Equal(test.code, httpErr.Status)
+			s.Equal(req.URL, httpErr.URL)
+			s.Equal(reason, httpErr.Reason)
+		})
+	}
 }
 
 type mockAuth struct{}
