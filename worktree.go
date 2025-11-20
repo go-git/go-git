@@ -193,6 +193,20 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		return err
 	}
 
+	// Fast path optimization for same tree.
+	// When target commit has the same tree as current HEAD, we can skip
+	// the expensive Reset() operation that scans all files. This matches
+	// git CLI behavior which only updates files when trees actually differ.
+	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
+		if canUseFastPath, err := w.canSkipWorktreeUpdate(c); err == nil && canUseFastPath {
+			if !opts.Hash.IsZero() && !opts.Create {
+				return w.setHEADToCommit(opts.Hash)
+			}
+			return w.setHEADToBranch(opts.Branch, c)
+		}
+		// On error or if fast path not applicable, continue with slow path
+	}
+
 	ro := &ResetOptions{
 		Commit:     c,
 		Mode:       MergeReset,
@@ -294,6 +308,28 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	}
 
 	return w.r.Storer.SetReference(head)
+}
+
+// canSkipWorktreeUpdate determines if we can skip the worktree update
+// during checkout by comparing tree hashes. Returns true if current HEAD
+// and target commit point to the same tree, meaning no files need to change.
+func (w *Worktree) canSkipWorktreeUpdate(targetCommit plumbing.Hash) (bool, error) {
+	headRef, err := w.r.Head()
+	if err != nil {
+		return false, err
+	}
+
+	currentCommit, err := w.r.CommitObject(headRef.Hash())
+	if err != nil {
+		return false, err
+	}
+
+	targetCommitObj, err := w.r.CommitObject(targetCommit)
+	if err != nil {
+		return false, err
+	}
+
+	return currentCommit.TreeHash == targetCommitObj.TreeHash, nil
 }
 
 // Reset the worktree to a specified state.
