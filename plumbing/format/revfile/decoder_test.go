@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"crypto"
 	"io"
+	"sync"
 	"testing"
-	"testing/synctest"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDecodeSHA256Rev(t *testing.T) {
+func TestDecodeSHA256(t *testing.T) {
 	fixture := fixtures.ByTag("packfile-sha256").One()
 	revf := fixture.Rev()
 	require.NotNil(t, revf)
@@ -122,26 +122,27 @@ func TestDecode(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				d := NewDecoder(tc.revFile, tc.objCount, tc.packChecksum)
+			d := NewDecoder(tc.revFile, tc.objCount, tc.packChecksum)
 
-				var err error
-				go func() {
-					err = d.Decode(tc.ch)
-				}()
+			var err error
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				err = d.Decode(tc.ch)
+				wg.Done()
+			}()
 
-				if tc.ch != nil {
-					for range tc.ch {
-					}
+			if tc.ch != nil {
+				for range tc.ch {
 				}
+			}
 
-				synctest.Wait()
-				if tc.want != "" {
-					assert.EqualError(t, err, tc.want)
-				} else {
-					assert.NoError(t, err)
-				}
-			})
+			wg.Wait()
+			if tc.want != "" {
+				assert.EqualError(t, err, tc.want)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
