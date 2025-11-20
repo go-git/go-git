@@ -5,12 +5,11 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/hex"
-	"hash"
-	"sync"
-
 	"errors"
 	"fmt"
+	"hash"
 	"io"
+	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -32,9 +31,9 @@ var (
 )
 
 const (
-	VersionSupported = 1
-	sha1Hash         = 1
-	sha256Hash       = 2
+	VersionSupported        = 1
+	sha1Hash         uint32 = 1
+	sha256Hash       uint32 = 2
 )
 
 // Decoder reads and decodes idx files from an input stream.
@@ -97,7 +96,7 @@ func (d *Decoder) Decode(out chan<- uint32) (err error) {
 }
 
 func readMagicNumber(d *Decoder) (stateFn, error) {
-	var h = make([]byte, 4)
+	h := make([]byte, 4)
 	if _, err := io.ReadFull(d.reader, h); err != nil {
 		return nil, err
 	}
