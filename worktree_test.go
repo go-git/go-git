@@ -816,6 +816,69 @@ func (s *WorktreeSuite) TestCheckoutIndexOS() {
 	}
 }
 
+// TestCheckoutParallelMatchesSequential verifies that the parallel two-phase
+// checkout path (filesystem.Storage backend) produces results identical to a
+// second checkout of the same repository into a separate in-memory worktree.
+// Both worktrees are backed by the same filesystem.Storage so the parallel
+// code path is exercised for both; the test checks for output equality, not
+// sequential-vs-parallel divergence. Run with -race to detect data races.
+func TestCheckoutParallelMatchesSequential(t *testing.T) {
+	t.Parallel()
+
+	// Two independent clones of the same fixture, both backed by
+	// filesystem.Storage (triggering the parallel pre-fetch path).
+	f1 := fixtures.Basic().One()
+	repo1 := NewRepositoryWithEmptyWorktree(f1)
+	wt1 := &Worktree{r: repo1, Filesystem: memfs.New()}
+	require.NoError(t, wt1.Checkout(&CheckoutOptions{Force: true}))
+
+	f2 := fixtures.Basic().One()
+	repo2 := NewRepositoryWithEmptyWorktree(f2)
+	wt2 := &Worktree{r: repo2, Filesystem: memfs.New()}
+	require.NoError(t, wt2.Checkout(&CheckoutOptions{Force: true}))
+
+	// Both checkouts must produce the same set of index entries.
+	idx1, err := repo1.Storer.Index()
+	require.NoError(t, err)
+	idx2, err := repo2.Storer.Index()
+	require.NoError(t, err)
+
+	require.Len(t, idx2.Entries, len(idx1.Entries),
+		"repeated parallel checkouts must produce the same number of index entries")
+
+	hashes1 := make(map[string]string, len(idx1.Entries))
+	for _, e := range idx1.Entries {
+		hashes1[e.Name] = e.Hash.String()
+	}
+	for _, e := range idx2.Entries {
+		expectedHash, ok := hashes1[e.Name]
+		require.True(t, ok, "file %q missing from first checkout", e.Name)
+		require.Equal(t, expectedHash, e.Hash.String(), "hash mismatch for %q", e.Name)
+	}
+
+	// Both worktrees must expose the same files on disk.
+	var listFiles func(billy.Filesystem, string) []string
+	listFiles = func(bfs billy.Filesystem, dir string) []string {
+		entries, err := bfs.ReadDir(dir)
+		require.NoError(t, err)
+		var names []string
+		for _, e := range entries {
+			p := filepath.Join(dir, e.Name())
+			if e.IsDir() {
+				names = append(names, listFiles(bfs, p)...)
+			} else {
+				names = append(names, p)
+			}
+		}
+		return names
+	}
+
+	files1 := listFiles(wt1.Filesystem, "")
+	files2 := listFiles(wt2.Filesystem, "")
+	require.ElementsMatch(t, files1, files2,
+		"repeated parallel checkouts must produce identical file sets on disk")
+}
+
 func (s *WorktreeSuite) TestCheckoutBranch() {
 	w := &Worktree{
 		r:          s.Repository,

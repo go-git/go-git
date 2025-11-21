@@ -13,19 +13,23 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	stdsync "sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
@@ -769,6 +773,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	b := newIndexBuilder(idx)
 
 	filesMap := buildFilePathMap(files)
+	var validChanges []merkletrie.Change
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -792,13 +797,192 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		if err := w.checkoutChange(ch, t, b); err != nil {
-			return err
-		}
+		validChanges = append(validChanges, ch)
+	}
+
+	if err := w.checkoutChanges(validChanges, t, b); err != nil {
+		return err
 	}
 
 	b.Write(idx)
 	return w.r.Storer.SetIndex(idx)
+}
+
+// resolvedChange pairs a merkletrie change with the object.File resolved by a
+// worker goroutine. file is nil for Delete actions and Submodule entries.
+type resolvedChange struct {
+	change merkletrie.Change
+	file   *object.File
+}
+
+// checkoutChanges applies a list of merkletrie changes to the worktree.
+//
+// For filesystem-backed storage, object resolution (the expensive packfile
+// I/O: seeking, delta-chain resolution, decompression) runs in parallel across
+// worker goroutines, each with its own storage instance. Resolved files are
+// streamed one at a time through a channel to a single writer goroutine that
+// applies them to the billy.Filesystem, which has no thread-safety guarantee.
+// This keeps peak memory proportional to a single file instead of the whole tree.
+//
+// For all other storage backends, everything runs sequentially.
+func (w *Worktree) checkoutChanges(changes []merkletrie.Change, t *object.Tree, b *indexBuilder) error {
+	if len(changes) == 0 {
+		return nil
+	}
+
+	_, isFSStorage := w.r.Storer.(*filesystem.Storage)
+	numWorkers := 1
+	if isFSStorage && len(changes) > 1 {
+		numWorkers = max(1, min(runtime.GOMAXPROCS(0), len(changes)))
+	}
+
+	if numWorkers <= 1 {
+		for _, ch := range changes {
+			if err := w.checkoutChange(ch, t, b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Parallel object resolution, sequential filesystem writes.
+	//
+	// Workers resolve object.File handles from per-worker trees (parallel
+	// packfile I/O) and send them through resolvedCh. The main goroutine
+	// receives resolved files one at a time and writes them to the
+	// filesystem, so only one file's content is in memory at any moment.
+	workCh := make(chan merkletrie.Change, len(changes))
+	resolvedCh := make(chan resolvedChange, numWorkers)
+
+	g, ctx := errgroup.WithContext(context.Background())
+	for range numWorkers {
+		g.Go(func() error {
+			workerTree, err := w.createWorkerTree(t)
+			if err != nil {
+				return err
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case ch, ok := <-workCh:
+					if !ok {
+						return nil
+					}
+					a, err := ch.Action()
+					if err != nil {
+						return err
+					}
+					rc := resolvedChange{change: ch}
+					if a == merkletrie.Insert || a == merkletrie.Modify {
+						name := ch.To.String()
+						e, err := workerTree.FindEntry(name)
+						if err != nil {
+							return err
+						}
+						if e.Mode != filemode.Submodule {
+							rc.file, err = workerTree.File(name)
+							if err != nil {
+								return err
+							}
+						}
+					}
+					select {
+					case resolvedCh <- rc:
+					case <-ctx.Done():
+						return nil
+					}
+				}
+			}
+		})
+	}
+
+	// Feed changes to workers.
+	for _, ch := range changes {
+		workCh <- ch
+	}
+	close(workCh)
+
+	// Close resolvedCh once all workers are done so the reader loop below
+	// terminates. This must happen in a separate goroutine because g.Wait
+	// blocks until all workers return. The error is collected by the second
+	// g.Wait call below.
+	go func() {
+		_ = g.Wait()
+		close(resolvedCh)
+	}()
+
+	// Write resolved files to the filesystem one at a time.
+	var writeErr error
+	for rc := range resolvedCh {
+		if err := w.checkoutResolvedChange(rc, t, b); err != nil {
+			writeErr = err
+			break
+		}
+	}
+
+	// Wait for workers to finish (they may still be draining workCh).
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return writeErr
+}
+
+// checkoutResolvedChange writes a single resolved change to the worktree.
+// When rc.file is non-nil, the pre-resolved object.File is used directly,
+// avoiding a second packfile lookup. For Delete and Submodule actions the
+// behaviour is identical to checkoutChange.
+func (w *Worktree) checkoutResolvedChange(rc resolvedChange, t *object.Tree, idx *indexBuilder) error {
+	a, err := rc.change.Action()
+	if err != nil {
+		return err
+	}
+
+	switch a {
+	case merkletrie.Delete:
+		return rmFileAndDirsIfEmpty(w.Filesystem, rc.change.From.String())
+	case merkletrie.Modify, merkletrie.Insert:
+		name := rc.change.To.String()
+		e, err := t.FindEntry(name)
+		if err != nil {
+			return err
+		}
+		if e.Mode == filemode.Submodule {
+			return w.checkoutChangeSubmodule(name, a, e, idx)
+		}
+		if a == merkletrie.Modify {
+			idx.Remove(name)
+			if err := w.Filesystem.Remove(name); err != nil {
+				return err
+			}
+		}
+		if rc.file != nil {
+			if err := w.checkoutFile(rc.file); err != nil {
+				return err
+			}
+			return w.addIndexFromFile(name, e.Hash, idx)
+		}
+		return w.checkoutChangeRegularFile(name, a, t, e, idx)
+	}
+	return nil
+}
+
+// createWorkerTree creates a per-worker tree with its own object reader.
+// This allows parallel object fetching without contention on packfile readers.
+// It requires *filesystem.Storage; callers must verify the storage type before
+// invoking this from a parallel code path.
+func (w *Worktree) createWorkerTree(t *object.Tree) (*object.Tree, error) {
+	fsStorage, ok := w.r.Storer.(*filesystem.Storage)
+	if !ok {
+		return nil, fmt.Errorf("parallel checkout requires *filesystem.Storage, got %T", w.r.Storer)
+	}
+
+	workerStorage := filesystem.NewStorage(
+		fsStorage.Filesystem(),
+		cache.NewObjectLRUDefault(),
+	)
+
+	return object.GetTree(workerStorage, t.Hash)
 }
 
 // worktreeDeny is a list of paths that are not allowed
@@ -1559,6 +1743,7 @@ func removeDirIfEmpty(fs billy.Filesystem, dir string) (bool, error) {
 
 type indexBuilder struct {
 	entries map[string]*index.Entry
+	mu      stdsync.Mutex
 }
 
 func newIndexBuilder(idx *index.Index) *indexBuilder {
@@ -1571,6 +1756,9 @@ func newIndexBuilder(idx *index.Index) *indexBuilder {
 	}
 }
 
+// Write flushes all accumulated entries back into idx. It must only be called
+// after all concurrent Add/Remove calls have completed (e.g. after
+// errgroup.Wait or sync.WaitGroup.Wait returns).
 func (b *indexBuilder) Write(idx *index.Index) {
 	idx.Entries = idx.Entries[:0]
 	for _, e := range b.entries {
@@ -1579,10 +1767,14 @@ func (b *indexBuilder) Write(idx *index.Index) {
 }
 
 func (b *indexBuilder) Add(e *index.Entry) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.entries[e.Name] = e
 }
 
 func (b *indexBuilder) Remove(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	delete(b.entries, filepath.ToSlash(name))
 }
 
