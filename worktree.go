@@ -491,6 +491,11 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
+	// Create a cache for tree entries that will be populated lazily
+	// as we process changes. This avoids upfront tree traversal costs
+	// and only caches entries we actually need.
+	entryCache := make(map[string]*object.TreeEntry)
+
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -514,7 +519,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		if err := w.checkoutChange(ch, t, b); err != nil {
+		if err := w.checkoutChange(ch, t, b, entryCache); err != nil {
 			return err
 		}
 	}
@@ -625,7 +630,7 @@ func (w *Worktree) validChange(ch merkletrie.Change) error {
 	return nil
 }
 
-func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
+func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *indexBuilder, entryCache map[string]*object.TreeEntry) error {
 	a, err := ch.Action()
 	if err != nil {
 		return err
@@ -638,9 +643,15 @@ func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *ind
 	switch a {
 	case merkletrie.Modify, merkletrie.Insert:
 		name = ch.To.String()
-		e, err = t.FindEntry(name)
-		if err != nil {
-			return err
+
+		var ok bool
+		e, ok = entryCache[name]
+		if !ok {
+			e, err = t.FindEntry(name)
+			if err != nil {
+				return err
+			}
+			entryCache[name] = e
 		}
 
 		isSubmodule = e.Mode == filemode.Submodule
