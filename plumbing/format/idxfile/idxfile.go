@@ -215,6 +215,8 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	offsetHash := make(map[int64]plumbing.Hash, count)
 
 	var hash plumbing.Hash
+	hash.ResetBySize(idx.objectIDSize)
+
 	i := uint32(0)
 	for firstLevel, fanoutValue := range idx.Fanout {
 		mappedFirstLevel := idx.FanoutMapping[firstLevel]

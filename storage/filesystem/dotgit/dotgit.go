@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	suffix         = ".git"
 	packedRefsPath = "packed-refs"
 	configPath     = "config"
 	indexPath      = "index"
@@ -46,7 +45,6 @@ const (
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
-	idxExt     = ".idx"
 )
 
 var (
@@ -300,7 +298,7 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 	return pack, nil
 }
 
-// ObjectPack returns a fs.File of the given packfile
+// ObjectPack returns a fs.File of the given packfile.
 func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	err := d.hasPack(hash)
 	if err != nil {
@@ -310,7 +308,7 @@ func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	return d.objectPackOpen(hash, `pack`)
 }
 
-// ObjectPackIdx returns a fs.File of the index file for a given packfile
+// ObjectPackIdx returns a fs.File of the index file for a given packfile.
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 	err := d.hasPack(hash)
 	if err != nil {
@@ -318,6 +316,16 @@ func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 	}
 
 	return d.objectPackOpen(hash, `idx`)
+}
+
+// ObjectPackRev returns a fs.File of the reverse index file for a given packfile.
+func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
+	err := d.hasPack(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.objectPackOpen(hash, `rev`)
 }
 
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
@@ -532,7 +540,7 @@ func (d *DotGit) genPackList() error {
 		return err
 	}
 
-	d.packMap = make(map[plumbing.Hash]struct{})
+	d.packMap = make(map[plumbing.Hash]struct{}, len(op))
 	d.packList = nil
 
 	for _, h := range op {

@@ -1,8 +1,10 @@
 package dotgit
 
 import (
+	"crypto"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"sync/atomic"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 
 	"github.com/go-git/go-billy/v6"
 )
@@ -127,16 +130,28 @@ func (w *PackWriter) clean() error {
 
 func (w *PackWriter) save() error {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
+
 	idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
 	if err != nil {
 		return err
+	}
+	defer idx.Close()
+
+	h := crypto.SHA1.New()
+	if w.checksum.Size() == crypto.SHA256.Size() {
+		h = crypto.SHA256.New()
 	}
 
 	if err := w.encodeIdx(idx); err != nil {
 		return err
 	}
 
-	if err := idx.Close(); err != nil {
+	rev, err := w.fs.Create(fmt.Sprintf("%s.rev", base))
+	if err != nil {
+		return err
+	}
+	defer rev.Close()
+	if err := w.encodeRev(rev, h); err != nil {
 		return err
 	}
 
@@ -152,6 +167,16 @@ func (w *PackWriter) encodeIdx(writer io.Writer) error {
 	e := idxfile.NewEncoder(writer)
 	_, err = e.Encode(idx)
 	return err
+}
+
+func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
+	idx, err := w.writer.Index()
+	if err != nil {
+		return err
+	}
+
+	e := revfile.NewEncoder(writer, h)
+	return e.Encode(idx)
 }
 
 type syncedReader struct {
@@ -222,7 +247,6 @@ func (s *syncedReader) sleep() {
 		s.blocked.Store(1)
 		<-s.news
 	}
-
 }
 
 func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {

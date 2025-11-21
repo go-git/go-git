@@ -42,6 +42,9 @@ jobs:
         git config --global user.email "gha@example.com"
         git config --global user.name "GitHub Actions"
 
+    - name: Validate
+      run: make validate
+
     - name: Test
       run: make test-coverage
 
