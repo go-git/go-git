@@ -197,12 +197,19 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	// When target commit has the same tree as current HEAD, we can skip
 	// the expensive Reset() operation that scans all files. This matches
 	// git CLI behavior which only updates files when trees actually differ.
+	//
+	// However, we must also verify the index matches the target tree.
+	// Git uses the index (staging area) as the source of truth for what should
+	// be in the worktree. If index != target tree, we need Reset() to update both
+	// the index and worktree, even if HEAD's tree matches the target tree.
 	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
 		if canUseFastPath, err := w.canSkipWorktreeUpdate(c); err == nil && canUseFastPath {
-			if !opts.Hash.IsZero() && !opts.Create {
-				return w.setHEADToCommit(opts.Hash)
+			if indexMatches, err := w.indexMatchesTargetTree(c); err == nil && indexMatches {
+				if !opts.Hash.IsZero() && !opts.Create {
+					return w.setHEADToCommit(opts.Hash)
+				}
+				return w.setHEADToBranch(opts.Branch, c)
 			}
-			return w.setHEADToBranch(opts.Branch, c)
 		}
 		// On error or if fast path not applicable, continue with slow path
 	}
@@ -330,6 +337,29 @@ func (w *Worktree) canSkipWorktreeUpdate(targetCommit plumbing.Hash) (bool, erro
 	}
 
 	return currentCommit.TreeHash == targetCommitObj.TreeHash, nil
+}
+
+// indexMatchesTargetTree checks if the current index already matches the target tree.
+// This is the proper check to determine if we can skip worktree updates during checkout.
+// Git uses the index (staging area) as the source of truth - if index == target tree,
+// then no worktree updates are needed regardless of physical file state.
+func (w *Worktree) indexMatchesTargetTree(targetCommitHash plumbing.Hash) (bool, error) {
+	targetCommit, err := w.r.CommitObject(targetCommitHash)
+	if err != nil {
+		return false, err
+	}
+
+	targetTree, err := targetCommit.Tree()
+	if err != nil {
+		return false, err
+	}
+
+	changes, err := w.diffTreeWithStaging(targetTree, false)
+	if err != nil {
+		return false, err
+	}
+
+	return len(changes) == 0, nil
 }
 
 // Reset the worktree to a specified state.
