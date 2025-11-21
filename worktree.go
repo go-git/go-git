@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	stdsync "sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -19,11 +20,13 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
@@ -491,6 +494,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
+	var validChanges []merkletrie.Change
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -514,13 +518,82 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		if err := w.checkoutChange(ch, t, b); err != nil {
-			return err
+		validChanges = append(validChanges, ch)
+	}
+
+	numWorkers := runtime.GOMAXPROCS(0)
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	workCh := make(chan merkletrie.Change, len(validChanges))
+	type result struct {
+		idx int
+		err error
+	}
+	resultCh := make(chan result, len(validChanges))
+	var wg stdsync.WaitGroup
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Create worker tree within the goroutine
+			workerTree, err := w.createWorkerTree(t)
+			if err != nil {
+				resultCh <- result{err: err}
+				return
+			}
+
+			for ch := range workCh {
+				err := w.checkoutChange(ch, workerTree, b)
+
+				if err != nil {
+					resultCh <- result{err: err}
+					return
+				}
+			}
+		}()
+	}
+
+	for _, ch := range validChanges {
+		workCh <- ch
+	}
+	close(workCh)
+
+	wg.Wait()
+	close(resultCh)
+
+	for res := range resultCh {
+		if res.err != nil {
+			return res.err
 		}
 	}
 
 	b.Write(idx)
 	return w.r.Storer.SetIndex(idx)
+}
+
+// createWorkerTree creates a per-worker tree with its own object reader.
+// This allows parallel object fetching without contention on packfile readers.
+// This function is thread-safe and can be called concurrently from multiple goroutines.
+func (w *Worktree) createWorkerTree(t *object.Tree) (*object.Tree, error) {
+	if fsStorage, ok := w.r.Storer.(*filesystem.Storage); ok {
+		workerStorage := filesystem.NewStorage(
+			fsStorage.Filesystem(),
+			cache.NewObjectLRUDefault(),
+		)
+
+		workerTree, err := object.GetTree(workerStorage, t.Hash)
+		if err != nil {
+			return nil, err
+		}
+
+		return workerTree, nil
+	}
+
+	return t, nil
 }
 
 // worktreeDeny is a list of paths that are not allowed
@@ -1285,6 +1358,7 @@ func removeDirIfEmpty(fs billy.Filesystem, dir string) (bool, error) {
 
 type indexBuilder struct {
 	entries map[string]*index.Entry
+	mu      stdsync.Mutex
 }
 
 func newIndexBuilder(idx *index.Index) *indexBuilder {
@@ -1305,9 +1379,13 @@ func (b *indexBuilder) Write(idx *index.Index) {
 }
 
 func (b *indexBuilder) Add(e *index.Entry) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.entries[e.Name] = e
 }
 
 func (b *indexBuilder) Remove(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	delete(b.entries, filepath.ToSlash(name))
 }
