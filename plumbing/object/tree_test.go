@@ -217,6 +217,73 @@ func (s *TreeSuite) TestFindEntryCacheDepth2() {
 	s.Equal(1, cs.calls[jsonHash], "second FindEntry should reuse cached json tree")
 }
 
+// TestDecodeReset verifies that Decode can be called on the same *Tree twice
+// and that the second decode produces correct results. Before the fix, initOnce
+// was not reset on Decode, so the map-build step was skipped on the second
+// call, leaving m == nil and causing all entry() lookups to return
+// ErrEntryNotFound for the new object.
+func (s *TreeSuite) TestDecodeReset() {
+	// First object: root tree with entries "LICENSE", "go", "vendor", …
+	firstHash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	firstObj, err := s.Storer.EncodedObject(plumbing.TreeObject, firstHash)
+	s.Require().NoError(err)
+
+	// Second object: vendor subtree (has different entries)
+	vendorEntry, err := s.Tree.entry("vendor")
+	s.Require().NoError(err)
+	secondObj, err := s.Storer.EncodedObject(plumbing.TreeObject, vendorEntry.Hash)
+	s.Require().NoError(err)
+
+	tree := &Tree{s: s.Storer}
+
+	s.Require().NoError(tree.Decode(firstObj))
+	_, err = tree.FindEntry("LICENSE")
+	s.Require().NoError(err, "FindEntry should work after first Decode")
+
+	s.Require().NoError(tree.Decode(secondObj))
+	_, err = tree.FindEntry("foo.go")
+	s.Require().NoError(err, "FindEntry should work after second Decode")
+
+	// After re-decode the stale path cache must be gone too: entries from the
+	// first object's subtrees must not be reachable.
+	_, err = tree.FindEntry("LICENSE")
+	s.ErrorIs(err, ErrEntryNotFound, "stale path cache from first Decode must not bleed through")
+}
+
+// TestFindEntryConcurrentIsolatedStorers verifies that concurrent FindEntry
+// calls on *Tree instances backed by separate storage instances (each with its
+// own LRU cache and file handles) do not race and all succeed. This mirrors the
+// pattern used by the parallel-checkout worker pool: each worker receives its
+// own filesystem.Storage so packfile readers never contend.
+func (s *TreeSuite) TestFindEntryConcurrentIsolatedStorers() {
+	const goroutines = 10
+
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+
+	errCh := make(chan error, goroutines)
+	for range goroutines {
+		go func() {
+			// Each goroutine gets its own storage instance — separate LRU cache
+			// and separate file handles — matching the createWorkerTree pattern.
+			st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+			tree, err := GetTree(st, hash)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			_, err = tree.FindEntry("vendor/foo.go")
+			errCh <- err
+		}()
+	}
+
+	for range goroutines {
+		s.NoError(<-errCh)
+	}
+}
+
 // Overrides returned plumbing.EncodedObject for given hash.
 // Otherwise, delegates to actual storer to get real object
 type fakeStorer struct {
