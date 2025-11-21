@@ -57,9 +57,9 @@ type MemoryIndex struct {
 	PackfileChecksum plumbing.Hash
 	IdxChecksum      plumbing.Hash
 
-	offsetHash       map[int64]plumbing.Hash
-	offsetHashIsFull bool
-	mu               sync.RWMutex
+	offsetHash      map[int64]plumbing.Hash
+	offsetBuildOnce sync.Once
+	mu              sync.RWMutex
 
 	objectIDSize int
 }
@@ -130,15 +130,13 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 
 	offset := idx.getOffset(k, i)
 
-	if !idx.offsetHashIsFull {
-		// Save the offset for reverse lookup
-		idx.mu.Lock()
-		if idx.offsetHash == nil {
-			idx.offsetHash = make(map[int64]plumbing.Hash)
-		}
-		idx.offsetHash[int64(offset)] = h
-		idx.mu.Unlock()
+	// Save the offset for reverse lookup
+	idx.mu.Lock()
+	if idx.offsetHash == nil {
+		idx.offsetHash = make(map[int64]plumbing.Hash)
 	}
+	idx.offsetHash[int64(offset)] = h
+	idx.mu.Unlock()
 
 	return int64(offset), nil
 }
@@ -188,14 +186,17 @@ func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
 	}
 	idx.mu.RUnlock()
 
-	// Lazily generate the reverse offset/hash map if required.
-	if !idx.offsetHashIsFull || idx.offsetHash == nil {
-		if err := idx.genOffsetHash(); err != nil {
-			return plumbing.ZeroHash, err
-		}
-
-		hash, ok = idx.offsetHash[o]
+	var genErr error
+	idx.offsetBuildOnce.Do(func() {
+		genErr = idx.genOffsetHash()
+	})
+	if genErr != nil {
+		return plumbing.ZeroHash, genErr
 	}
+
+	idx.mu.RLock()
+	hash, ok = idx.offsetHash[o]
+	idx.mu.RUnlock()
 
 	if !ok {
 		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
@@ -206,16 +207,12 @@ func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
 
 // genOffsetHash generates the offset/hash mapping for reverse search.
 func (idx *MemoryIndex) genOffsetHash() error {
-	defer idx.mu.Unlock()
-	idx.mu.Lock()
-
 	count, err := idx.Count()
 	if err != nil {
 		return err
 	}
 
-	idx.offsetHash = make(map[int64]plumbing.Hash, count)
-	idx.offsetHashIsFull = true
+	offsetHash := make(map[int64]plumbing.Hash, count)
 
 	var hash plumbing.Hash
 	i := uint32(0)
@@ -224,10 +221,14 @@ func (idx *MemoryIndex) genOffsetHash() error {
 		for secondLevel := uint32(0); i < fanoutValue; i++ {
 			hash.Write(idx.Names[mappedFirstLevel][secondLevel*uint32(idx.idSize()):])
 			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
-			idx.offsetHash[offset] = hash
+			offsetHash[offset] = hash
 			secondLevel++
 		}
 	}
+
+	idx.mu.Lock()
+	idx.offsetHash = offsetHash
+	idx.mu.Unlock()
 
 	return nil
 }
