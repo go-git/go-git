@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -166,4 +167,35 @@ func fixtureIndex() (*idxfile.MemoryIndex, error) {
 	}
 
 	return idx, nil
+}
+
+func TestOffsetHashConcurrentPopulation(t *testing.T) {
+	idx, err := fixtureIndex()
+	if err != nil {
+		t.Fatalf("failed to build fixture index: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for _, h := range fixtureHashes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 5000; i++ {
+				_, _ = idx.FindOffset(h)
+			}
+		}()
+	}
+
+	for _, off := range fixtureOffsets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 3000; i++ {
+				_, _ = idx.FindHash(off)
+			}
+		}()
+	}
+
+	wg.Wait()
 }
