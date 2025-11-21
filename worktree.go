@@ -206,7 +206,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		if canUseFastPath, err := w.canSkipWorktreeUpdate(c); err == nil && canUseFastPath {
 			if indexMatches, err := w.indexMatchesTargetTree(c); err == nil && indexMatches {
 				if !opts.Hash.IsZero() && !opts.Create {
-					return w.setHEADToCommit(opts.Hash)
+					return w.setHEADToCommit(c)
 				}
 				return w.setHEADToBranch(opts.Branch, c)
 			}
