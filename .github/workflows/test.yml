@@ -22,6 +22,7 @@ jobs:
         go-version: ${{ matrix.go-version }}   
   
     - name: Configure known hosts
+      continue-on-error: true
       if: matrix.platform != 'ubuntu-latest'
       run: |
         mkdir -p  ~/.ssh
