@@ -3,6 +3,7 @@ package object
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -20,8 +21,7 @@ func createTestTreeObject(numEntries int) *plumbing.MemoryObject {
 		// Write mode
 		w.Write([]byte("100644 "))
 		// Write name
-		w.Write([]byte("file"))
-		w.Write([]byte{byte('0' + (i / 10)), byte('0' + (i % 10))})
+		w.Write([]byte(fmt.Sprintf("file%03d", i)))
 		w.Write([]byte{0})
 		// Write hash (20 bytes)
 		hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
