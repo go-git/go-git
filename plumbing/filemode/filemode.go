@@ -65,6 +65,26 @@ func New(s string) (FileMode, error) {
 	return FileMode(n), nil
 }
 
+// NewFromBytes parses a FileMode from a byte slice containing an octal
+// number. This avoids allocating a string when parsing from binary data.
+//
+// Please note this function does not check if the returned FileMode
+// is valid in git or if it is malformed.
+func NewFromBytes(b []byte) (FileMode, error) {
+	if len(b) == 0 || len(b) > 7 {
+		return Empty, fmt.Errorf("invalid mode length: %d", len(b))
+	}
+
+	var mode uint32
+	for _, c := range b {
+		if c < '0' || c > '7' {
+			return Empty, fmt.Errorf("invalid octal character: %c", c)
+		}
+		mode = mode*8 + uint32(c-'0')
+	}
+	return FileMode(mode), nil
+}
+
 // NewFromOSFileMode returns the FileMode used by git to represent
 // the provided file system modes and a nil error on success.  If the
 // file system mode cannot be mapped to any valid git mode (as with
