@@ -1641,3 +1641,79 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 		}
 	}
 }
+
+func TestParseModeBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected filemode.FileMode
+		wantErr  bool
+	}{
+		{
+			name:     "regular file",
+			input:    "100644",
+			expected: filemode.Regular,
+			wantErr:  false,
+		},
+		{
+			name:     "executable file",
+			input:    "100755",
+			expected: filemode.Executable,
+			wantErr:  false,
+		},
+		{
+			name:     "directory",
+			input:    "040000",
+			expected: filemode.Dir,
+			wantErr:  false,
+		},
+		{
+			name:     "submodule",
+			input:    "160000",
+			expected: filemode.Submodule,
+			wantErr:  false,
+		},
+		{
+			name:     "symlink",
+			input:    "120000",
+			expected: filemode.Symlink,
+			wantErr:  false,
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid character",
+			input:    "10064X",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid octal digit 8",
+			input:    "100648",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mode, err := parseModeBytes([]byte(tt.input))
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if mode != tt.expected {
+				t.Errorf("got mode %o, want %o", mode, tt.expected)
+			}
+		})
+	}
+}
