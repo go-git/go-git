@@ -1728,15 +1728,15 @@ func TestTreeDecodeCorruptedData(t *testing.T) {
 		errorType   error
 	}{
 		{
-			name: "truncated after mode",
-			data: []byte("100644"), // missing space, name, and hash
-			expectError: false, // no space found, loop breaks, returns 0 entries (valid empty tree)
+			name:        "truncated after mode",
+			data:        []byte("100644"), // missing space, name, and hash
+			expectError: false,            // no space found, loop breaks, returns 0 entries (valid empty tree)
 		},
 		{
-			name: "missing null terminator in name",
-			data: []byte("100644 filename"), // missing null terminator and hash
+			name:        "missing null terminator in name",
+			data:        []byte("100644 filename"), // missing null terminator and hash
 			expectError: true,
-			errorType: io.ErrUnexpectedEOF,
+			errorType:   io.ErrUnexpectedEOF,
 		},
 		{
 			name: "truncated hash (missing bytes)",
@@ -1747,31 +1747,31 @@ func TestTreeDecodeCorruptedData(t *testing.T) {
 				return buf
 			}(),
 			expectError: true,
-			errorType: io.ErrUnexpectedEOF,
+			errorType:   io.ErrUnexpectedEOF,
 		},
 		{
-			name: "invalid mode character (non-octal)",
-			data: []byte("10064G file.txt\x00" + string(make([]byte, 20))),
+			name:        "invalid mode character (non-octal)",
+			data:        []byte("10064G file.txt\x00" + string(make([]byte, 20))),
 			expectError: true,
 		},
 		{
-			name: "empty mode",
-			data: []byte(" file.txt\x00" + string(make([]byte, 20))),
+			name:        "empty mode",
+			data:        []byte(" file.txt\x00" + string(make([]byte, 20))),
 			expectError: true,
 		},
 		{
-			name: "mode with octal digit 8",
-			data: []byte("100648 file.txt\x00" + string(make([]byte, 20))),
+			name:        "mode with octal digit 8",
+			data:        []byte("100648 file.txt\x00" + string(make([]byte, 20))),
 			expectError: true,
 		},
 		{
-			name: "mode with octal digit 9",
-			data: []byte("100649 file.txt\x00" + string(make([]byte, 20))),
+			name:        "mode with octal digit 9",
+			data:        []byte("100649 file.txt\x00" + string(make([]byte, 20))),
 			expectError: true,
 		},
 		{
-			name: "completely empty tree",
-			data: []byte{},
+			name:        "completely empty tree",
+			data:        []byte{},
 			expectError: false, // empty trees are valid
 		},
 		{
@@ -1797,16 +1797,16 @@ func TestTreeDecodeCorruptedData(t *testing.T) {
 				return buf
 			}(),
 			expectError: true,
-			errorType: io.ErrUnexpectedEOF,
+			errorType:   io.ErrUnexpectedEOF,
 		},
 		{
-			name: "entry with no space after mode",
-			data: []byte("100644filename\x00" + string(make([]byte, 20))),
+			name:        "entry with no space after mode",
+			data:        []byte("100644filename\x00" + string(make([]byte, 20))),
 			expectError: false, // will fail to find space and break loop
 		},
 		{
-			name: "entry with null in middle of mode",
-			data: []byte("100\x00644 file.txt\x00" + string(make([]byte, 20))),
+			name:        "entry with null in middle of mode",
+			data:        []byte("100\x00644 file.txt\x00" + string(make([]byte, 20))),
 			expectError: true, // parseModeBytes will error on null byte in mode
 		},
 	}
@@ -1844,7 +1844,7 @@ func TestTreeDecodePartialReads(t *testing.T) {
 	obj := &plumbing.MemoryObject{}
 	obj.SetType(plumbing.TreeObject)
 	w, _ := obj.Writer()
-	
+
 	// Write multiple entries
 	entries := []struct {
 		mode string
@@ -1855,7 +1855,7 @@ func TestTreeDecodePartialReads(t *testing.T) {
 		{"100755", "script.sh", "b8d315b2b1c615d43042c3a62402b8a54288cf5c"},
 		{"040000", "subdir", "c8d315b2b1c615d43042c3a62402b8a54288cf5c"},
 	}
-	
+
 	for _, e := range entries {
 		w.Write([]byte(e.mode + " " + e.name + "\x00"))
 		hash := plumbing.NewHash(e.hash)
@@ -1879,11 +1879,11 @@ func TestTreeDecodePartialReads(t *testing.T) {
 			break
 		}
 		entry := tree.Entries[i]
-		
+
 		if entry.Name != expected.name {
 			t.Errorf("entry %d: expected name %q, got %q", i, expected.name, entry.Name)
 		}
-		
+
 		expectedHash := plumbing.NewHash(expected.hash)
 		if !entry.Hash.Equal(expectedHash) {
 			t.Errorf("entry %d: expected hash %s, got %s", i, expectedHash, entry.Hash)
