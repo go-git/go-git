@@ -223,8 +223,21 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		return nil
 	}
 
-	t.Entries = nil
 	t.m = nil
+
+	// Estimate number of entries based on object size and hash type
+	// Each entry format: mode(~6) + space(1) + name(~12 avg) + null(1) + hash
+	// Hash size depends on the repository's object format
+	hashSize := o.Hash().Size() // 20 for SHA1, 32 for SHA256
+
+	// Average bytes per entry: mode(6) + space(1) + avgName(12) + null(1) + hash
+	avgBytesPerEntry := 20 + hashSize // = 40 for SHA1, 52 for SHA256
+
+	// Estimate entries with 5% buffer for name length variance (using integer math)
+	// Always add 4 to ensure minimum reasonable capacity
+	estimatedEntries := int(o.Size())*105/(avgBytesPerEntry*100) + 4
+
+	t.Entries = make([]TreeEntry, 0, estimatedEntries)
 
 	reader, err := o.Reader()
 	if err != nil {
