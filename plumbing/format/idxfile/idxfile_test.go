@@ -18,7 +18,7 @@ import (
 func BenchmarkFindOffset(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -34,7 +34,7 @@ func BenchmarkFindOffset(b *testing.B) {
 func BenchmarkFindCRC32(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -50,7 +50,7 @@ func BenchmarkFindCRC32(b *testing.B) {
 func BenchmarkContains(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
@@ -70,7 +70,7 @@ func BenchmarkContains(b *testing.B) {
 func BenchmarkEntries(b *testing.B) {
 	idx, err := fixtureIndex()
 	if err != nil {
-		b.Fatalf(err.Error())
+		b.Fatal(err.Error())
 	}
 
 	for i := 0; i < b.N; i++ {
