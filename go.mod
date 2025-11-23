@@ -11,8 +11,8 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.2
-	github.com/go-git/go-billy/v6 v6.0.0-20251120215217-80673c4ccbfb
-	github.com/go-git/go-git-fixtures/v5 v5.1.1
+	github.com/go-git/go-billy/v6 v6.0.0-20251126203821-7f9c95185ee0
+	github.com/go-git/go-git-fixtures/v5 v5.1.2-0.20251128074335-8b982e20e4a9
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/kevinburke/ssh_config v1.4.0
 	github.com/pjbgf/sha1cd v0.5.0
