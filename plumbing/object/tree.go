@@ -250,7 +250,6 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	// Read entire tree object into memory for efficient parsing
 	buf, err := io.ReadAll(reader)
 	if err != nil {
 		return err
@@ -258,14 +257,12 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	pos := 0
 	for pos < len(buf) {
-		// Find space after mode
 		spaceIdx := bytes.IndexByte(buf[pos:], ' ')
 		if spaceIdx == -1 {
 			break
 		}
 		spaceIdx += pos
 
-		// Parse mode from bytes (avoid string allocation)
 		modeBytes := buf[pos:spaceIdx]
 		mode, err := parseModeBytes(modeBytes)
 		if err != nil {
@@ -273,18 +270,15 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		}
 		pos = spaceIdx + 1
 
-		// Find null terminator after name
 		nullIdx := bytes.IndexByte(buf[pos:], 0)
 		if nullIdx == -1 {
 			return io.ErrUnexpectedEOF
 		}
 		nullIdx += pos
 
-		// Extract name (no copy, points to buf)
 		name := string(buf[pos:nullIdx])
 		pos = nullIdx + 1
 
-		// Read hash (exactly hashSize bytes)
 		var hash plumbing.Hash
 		hashSize := hash.Size()
 		if pos+hashSize > len(buf) {
