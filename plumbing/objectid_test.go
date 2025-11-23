@@ -122,6 +122,68 @@ func TestReadFrom(t *testing.T) {
 	}
 }
 
+func TestReadFromOptimization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		bytes    []byte
+		hashSize int
+		expected string
+		wantErr  string
+	}{
+		{
+			name:     "sha1 valid",
+			bytes:    []byte{67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133},
+			hashSize: 20,
+			expected: "43aec75c611f22c73b27ece2841e6ccca592f285",
+		},
+		{
+			name:     "sha256 valid",
+			bytes:    []byte{59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133, 67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133},
+			hashSize: 32,
+			expected: "3b27ece2841e6ccca592f28543aec75c611f22c73b27ece2841e6ccca592f285",
+		},
+		{
+			name:     "sha1 partial read",
+			bytes:    []byte{67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242},
+			hashSize: 20,
+			wantErr:  "EOF",
+		},
+		{
+			name:     "sha256 partial read",
+			bytes:    []byte{59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133, 67, 174, 199, 92, 97, 31},
+			hashSize: 32,
+			wantErr:  "EOF",
+		},
+		{
+			name:     "empty reader",
+			bytes:    []byte{},
+			hashSize: 20,
+			wantErr:  "EOF",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			buf := bytes.NewReader(tc.bytes)
+
+			var h ObjectID
+			h.ResetBySize(tc.hashSize)
+			_, err := h.ReadFrom(buf)
+
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expected, h.String())
+				assert.Equal(t, tc.bytes, h.Bytes())
+			} else {
+				assert.ErrorContains(t, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestFromHex(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
