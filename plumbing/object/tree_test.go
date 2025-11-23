@@ -1807,7 +1807,7 @@ func TestTreeDecodeCorruptedData(t *testing.T) {
 		{
 			name: "entry with null in middle of mode",
 			data: []byte("100\x00644 file.txt\x00" + string(make([]byte, 20))),
-			expectError: true, // space not found before null
+			expectError: true, // parseModeBytes will error on null byte in mode
 		},
 	}
 
