@@ -1,4 +1,21 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>go-git/.github"]
+  "extends": ["github>go-git/.github"],
+  "baseBranchPatterns": [
+    "main", 
+    "releases/v5.x"
+  ],
+  "packageRules": [
+    {
+      "description": "Disable non-security bumps for the v5 release line",
+      "enabled": false,
+      "matchBaseBranches": [
+        "releases/v5.x"
+      ]
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "osvVulnerabilityAlerts": true
 }
