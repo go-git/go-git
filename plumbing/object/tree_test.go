@@ -1698,6 +1698,36 @@ func TestParseModeBytes(t *testing.T) {
 			expected: filemode.Empty,
 			wantErr:  true,
 		},
+		{
+			name:     "mode at 7 digit limit (max allowed)",
+			input:    "7777777", // 7 digits, maximum allowed
+			expected: filemode.FileMode(0x1FFFFF),
+			wantErr:  false,
+		},
+		{
+			name:     "mode string too long (8 digits)",
+			input:    "77777777", // 8 digits, exceeds limit
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "mode string too long (12 digits)",
+			input:    "777777777777", // 12 digits, exceeds limit
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "extremely long mode string (50 digits)",
+			input:    "77777777777777777777777777777777777777777777777777",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "mode with 6 digits (common)",
+			input:    "100644", // 6 digits, typical file mode
+			expected: filemode.Regular,
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1809,6 +1839,21 @@ func TestTreeDecodeCorruptedData(t *testing.T) {
 			name:        "entry with null in middle of mode",
 			data:        []byte("100\x00644 file.txt\x00" + string(make([]byte, 20))),
 			expectError: true, // parseModeBytes will error on null byte in mode
+		},
+		{
+			name:        "mode too long: 8 octal digits",
+			data:        []byte("77777777 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "mode too long: 12 octal digits",
+			data:        []byte("777777777777 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "mode too long: extremely long mode (50 digits)",
+			data:        []byte("77777777777777777777777777777777777777777777777777 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
 		},
 	}
 
@@ -1951,7 +1996,7 @@ func TestTreeDecodeEdgeCases(t *testing.T) {
 				obj := &plumbing.MemoryObject{}
 				obj.SetType(plumbing.TreeObject)
 				w, _ := obj.Writer()
-				w.Write([]byte("0000100644 file.txt\x00"))
+				w.Write([]byte("0100644 file.txt\x00")) // 7 digits with leading zero
 				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 				hash.WriteTo(w)
 				w.Close()
@@ -1962,7 +2007,7 @@ func TestTreeDecodeEdgeCases(t *testing.T) {
 				if len(tree.Entries) != 1 {
 					t.Errorf("expected 1 entry, got %d", len(tree.Entries))
 				}
-				// Mode should still parse correctly despite extra leading zeros
+				// Mode should still parse correctly despite extra leading zero
 				if tree.Entries[0].Mode != filemode.Regular {
 					t.Errorf("expected mode %o, got %o", filemode.Regular, tree.Entries[0].Mode)
 				}

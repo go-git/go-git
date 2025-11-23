@@ -219,6 +219,12 @@ func parseModeBytes(b []byte) (filemode.FileMode, error) {
 		return filemode.Empty, fmt.Errorf("empty mode string")
 	}
 
+	// Git file modes are at most 6-7 octal digits. Limiting to 7 digits ensures
+	// no overflow in uint32 (max 7-digit octal: 07777777 = 0x1FFFFF < 0xFFFFFFFF).
+	if len(b) > 7 {
+		return filemode.Empty, fmt.Errorf("mode string too long: %d digits", len(b))
+	}
+
 	var mode uint32
 	for _, c := range b {
 		if c < '0' || c > '7' {
