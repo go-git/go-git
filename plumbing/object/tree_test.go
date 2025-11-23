@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -1927,10 +1928,7 @@ func TestTreeDecodeEdgeCases(t *testing.T) {
 				obj := &plumbing.MemoryObject{}
 				obj.SetType(plumbing.TreeObject)
 				w, _ := obj.Writer()
-				longName := string(make([]byte, 4096))
-				for i := range longName {
-					longName = longName[:i] + "a" + longName[i+1:]
-				}
+				longName := strings.Repeat("a", 4096)
 				w.Write([]byte("100644 " + longName + "\x00"))
 				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
 				hash.WriteTo(w)
