@@ -118,8 +118,7 @@ func (s *ObjectID) Write(in []byte) (int, error) {
 	return n, nil
 }
 
-// ReadFrom reads the Big Endian representation of the ObjectID from
-// reader [r]. It implements the io.ReaderFrom interface.
+// ReadFrom reads the ObjectID from reader [r]. It implements the io.ReaderFrom interface.
 //
 // This method uses io.ReadFull for optimal performance, avoiding the
 // reflection overhead of encoding/binary.Read. For byte arrays (like hashes),
