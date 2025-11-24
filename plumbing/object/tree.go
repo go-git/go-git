@@ -89,6 +89,21 @@ func (t *Tree) File(path string) (*File, error) {
 	return NewFile(path, e.Mode, blob), nil
 }
 
+// FileFromEntry creates a File from a TreeEntry without performing a FindEntry lookup.
+// This is useful when you already have a TreeEntry and want to avoid redundant lookups.
+// The path parameter is used for the File's Name field.
+func (t *Tree) FileFromEntry(path string, e *TreeEntry) (*File, error) {
+	blob, err := GetBlob(t.s, e.Hash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+
+	return NewFile(path, e.Mode, blob), nil
+}
+
 // Size returns the plaintext size of an object, without reading it
 // into memory.
 func (t *Tree) Size(path string) (int64, error) {
