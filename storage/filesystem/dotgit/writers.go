@@ -175,8 +175,7 @@ func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
 		return err
 	}
 
-	e := revfile.NewEncoder(writer, h)
-	return e.Encode(idx)
+	return revfile.Encode(writer, h, idx)
 }
 
 type syncedReader struct {

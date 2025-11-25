@@ -5,43 +5,31 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
-// Encoder writes reverse index files to an output stream.
-type Encoder struct {
+// encoder is the internal state for encoding a rev file.
+// It is not exported to prevent reuse - each Encode call creates fresh state.
+type encoder struct {
 	writer io.Writer
 	hash   hash.Hash
-	nextFn stateFnEncode
 
 	entries      []uint32
 	packChecksum plumbing.Hash
-	m            sync.Mutex
 }
 
 // stateFnEncode defines each individual state within the state machine that
 // represents encoding a revfile.
-type stateFnEncode func(*Encoder) (stateFnEncode, error)
+type stateFnEncode func(*encoder) (stateFnEncode, error)
 
-// NewEncoder returns a new reverse index encoder that writes to w.
-func NewEncoder(w io.Writer, h hash.Hash) *Encoder {
-	return &Encoder{
-		writer: w,
-		hash:   h,
-	}
-}
-
-// Encode encodes a reverse index from a MemoryIndex to the encoder writer.
+// Encode encodes a reverse index from a MemoryIndex to the writer.
 // The reverse index maps pack offsets (sorted order) to index positions.
-func (e *Encoder) Encode(idx *idxfile.MemoryIndex) (err error) {
-	e.m.Lock()
-	defer e.m.Unlock()
-
-	if e.writer == nil {
+// This function is safe to call concurrently with different parameters.
+func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
+	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
 
@@ -49,22 +37,28 @@ func (e *Encoder) Encode(idx *idxfile.MemoryIndex) (err error) {
 		return fmt.Errorf("nil index")
 	}
 
+	e := &encoder{
+		writer: w,
+		hash:   h,
+	}
+
 	if err := e.buildReverseIndex(idx); err != nil {
 		return err
 	}
 
 	for state := writeHeader; state != nil; {
+		var err error
 		state, err = state(e)
 		if err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return nil
 }
 
 // buildReverseIndex creates the reverse index mapping from the MemoryIndex.
 // It maps from pack offset order to index position (sorted by hash).
-func (e *Encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
+func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 	count, err := idx.Count()
 	if err != nil {
 		return err
@@ -113,7 +107,7 @@ func (e *Encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 	return nil
 }
 
-func writeHeader(e *Encoder) (stateFnEncode, error) {
+func writeHeader(e *encoder) (stateFnEncode, error) {
 	_, err := e.writer.Write(revHeader)
 	if err != nil {
 		return nil, err
@@ -127,7 +121,7 @@ func writeHeader(e *Encoder) (stateFnEncode, error) {
 	return writeVersion, nil
 }
 
-func writeVersion(e *Encoder) (stateFnEncode, error) {
+func writeVersion(e *encoder) (stateFnEncode, error) {
 	err := binary.WriteUint32(io.MultiWriter(e.hash, e.writer), uint32(VersionSupported))
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash version: %w", err)
@@ -136,7 +130,7 @@ func writeVersion(e *Encoder) (stateFnEncode, error) {
 	return writeHashFunction, nil
 }
 
-func writeHashFunction(e *Encoder) (stateFnEncode, error) {
+func writeHashFunction(e *encoder) (stateFnEncode, error) {
 	hf := sha1Hash
 	if e.hash.Size() == crypto.SHA256.Size() {
 		hf = sha256Hash
@@ -155,7 +149,7 @@ func writeHashFunction(e *Encoder) (stateFnEncode, error) {
 	return writeEntries, nil
 }
 
-func writeEntries(e *Encoder) (stateFnEncode, error) {
+func writeEntries(e *encoder) (stateFnEncode, error) {
 	for _, entry := range e.entries {
 		err := binary.WriteUint32(e.writer, entry)
 		if err != nil {
@@ -171,7 +165,7 @@ func writeEntries(e *Encoder) (stateFnEncode, error) {
 	return writePackChecksum, nil
 }
 
-func writePackChecksum(e *Encoder) (stateFnEncode, error) {
+func writePackChecksum(e *encoder) (stateFnEncode, error) {
 	_, err := e.writer.Write(e.packChecksum.Bytes())
 	if err != nil {
 		return nil, err
@@ -185,13 +179,9 @@ func writePackChecksum(e *Encoder) (stateFnEncode, error) {
 	return writeRevChecksum, nil
 }
 
-func writeRevChecksum(e *Encoder) (stateFnEncode, error) {
+func writeRevChecksum(e *encoder) (stateFnEncode, error) {
 	checksum := e.hash.Sum(nil)
 
 	_, err := e.writer.Write(checksum)
-	if err != nil {
-		return nil, err
-	}
-
-	return nil, nil
+	return nil, err
 }

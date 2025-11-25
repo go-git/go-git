@@ -1,7 +1,6 @@
 package revfile
 
 import (
-	"bufio"
 	"bytes"
 	"crypto"
 	"io"
@@ -54,9 +53,8 @@ func TestEncode(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			h := plumbinghash.New(crypto.SHA256)
-			enc := NewEncoder(tc.writer, h)
 
-			err := enc.Encode(tc.idx)
+			err := Encode(tc.writer, h, tc.idx)
 			if tc.want != "" {
 				assert.EqualError(t, err, tc.want)
 			} else {
@@ -98,9 +96,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 			var buf bytes.Buffer
 			h := plumbinghash.New(tc.hasher)
-			enc := NewEncoder(&buf, h)
 
-			err = enc.Encode(idx)
+			err = Encode(&buf, h, idx)
 			require.NoError(t, err)
 
 			// Form expected entries based on the index so that they can
@@ -139,20 +136,19 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			entriesByOffset.Close()
 
 			// Decode the generated rev file so that the entries can be checked.
-			d := NewDecoder(bufio.NewReader(&buf), count, idx.PackfileChecksum)
-
 			idxPos := make(chan uint32)
 			got := []uint32{}
 
+			errCh := make(chan error, 1)
 			go func() {
-				err = d.Decode(idxPos)
+				errCh <- Decode(&buf, count, idx.PackfileChecksum, idxPos)
 			}()
 
 			for p := range idxPos {
 				got = append(got, p)
 			}
 
-			require.NoError(t, err)
+			require.NoError(t, <-errCh)
 			assert.Equal(t, want, got)
 		})
 	}
