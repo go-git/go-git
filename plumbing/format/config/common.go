@@ -87,7 +87,7 @@ func (c *Config) RemoveSubsection(section string, subsection string) *Config {
 // AddOption adds an option to a given section and subsection. Use the
 // NoSubsection constant for the subsection argument if no subsection is wanted.
 func (c *Config) AddOption(section string, subsection string, key string, value string) *Config {
-	if subsection == "" {
+	if subsection == NoSubsection {
 		c.Section(section).AddOption(key, value)
 	} else {
 		c.Section(section).Subsection(subsection).AddOption(key, value)
@@ -98,12 +98,38 @@ func (c *Config) AddOption(section string, subsection string, key string, value 
 
 // SetOption sets an option to a given section and subsection. Use the
 // NoSubsection constant for the subsection argument if no subsection is wanted.
-func (c *Config) SetOption(section string, subsection string, key string, value string) *Config {
-	if subsection == "" {
-		c.Section(section).SetOption(key, value)
+func (c *Config) SetOption(section string, subsection string, key string, value ...string) *Config {
+	if subsection == NoSubsection {
+		c.Section(section).SetOption(key, value...)
 	} else {
-		c.Section(section).Subsection(subsection).SetOption(key, value)
+		c.Section(section).Subsection(subsection).SetOption(key, value...)
 	}
 
 	return c
+}
+
+// GetOption gets the value of a named Option from the Section and Subsection. Use the
+// NoSubsection constant for the subsection argument if no subsection is wanted. If the
+// option does not exist or is not set, it returns the empty string. Note that there
+// is no difference. This matches git behaviour since git v1.8.1-rc1, if there are
+// multiple definitions of a key, the last one wins.
+func (c *Config) GetOption(section string, subsection string, key string) string {
+	if subsection == NoSubsection {
+		return c.Section(section).GetOption(key)
+	} else {
+		return c.Section(section).Subsection(subsection).GetOption(key)
+	}
+}
+
+// GetAllOptions gets an option from a given section and subsection. Use the
+// GetAllOptions gets all the values of a named Option from the Section. Use the
+// NoSubsection constant for the subsection argument if no subsection is wanted.
+// If the option does not exist or is not set, it returns an empty slice.
+// This matches git behaviour since git v1.8.1-rc1.
+func (c *Config) GetAllOptions(section string, subsection string, key string) []string {
+	if subsection == NoSubsection {
+		return c.Section(section).GetAllOptions(key)
+	} else {
+		return c.Section(section).Subsection(subsection).GetAllOptions(key)
+	}
 }
