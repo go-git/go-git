@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1411,14 +1413,22 @@ func (s *RemoteSuite) TestListPeeling() {
 }
 
 func (s *RemoteSuite) TestListTimeout() {
+	// Create a server that blocks until the request context is done
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
 	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URLs: []string{"https://deelay.me/60000/https://httpstat.us/503"},
+		URLs: []string{srv.URL},
 	})
 
-	_, err := remote.List(&ListOptions{})
-
-	s.NotNil(err)
+	_, err := remote.ListContext(ctx, &ListOptions{})
+	s.ErrorIs(err, context.DeadlineExceeded)
 }
 
 /*
