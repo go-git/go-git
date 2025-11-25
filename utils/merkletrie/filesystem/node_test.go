@@ -7,16 +7,20 @@ import (
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	. "gopkg.in/check.v1"
 )
 
@@ -245,4 +249,81 @@ func IsEquals(a, b noder.Hasher) bool {
 	}
 
 	return bytes.Equal(a.Hash(), b.Hash())
+}
+
+func (s *NoderSuite) TestRacyGit(c *C) {
+	td, err := os.MkdirTemp(c.MkDir(), "racy-git")
+	c.Assert(err, IsNil)
+	fs := osfs.New(td)
+
+	origContent := []byte("foo")
+	err = WriteFile(fs, "racyfile", origContent, 0o644)
+	c.Assert(err, IsNil)
+
+	fi, err := fs.Stat("racyfile")
+	c.Assert(err, IsNil)
+	modTime := fi.ModTime()
+
+	fooHasher := plumbing.NewHasher(plumbing.BlobObject, int64(len(origContent)))
+	_, err = fooHasher.Write(origContent)
+	c.Assert(err, IsNil)
+	fooHash := fooHasher.Sum()
+
+	idx := &index.Index{
+		Version: 2,
+		Entries: []*index.Entry{
+			{
+				Name:       "racyfile",
+				Hash:       fooHash,
+				Size:       uint32(len(origContent)),
+				ModifiedAt: modTime,
+				Mode:       filemode.Regular,
+			},
+		},
+		ModTime: modTime,
+	}
+
+	newContent := []byte("bar")
+	c.Assert(len(origContent), Equals, len(newContent), Commentf("test setup requires same size"))
+
+	err = WriteFile(fs, "racyfile", newContent, 0o644)
+	c.Assert(err, IsNil)
+
+	err = os.Chtimes(filepath.Join(td, "racyfile"), modTime, modTime)
+	c.Assert(err, IsNil)
+
+	fi, err = fs.Stat("racyfile")
+	c.Assert(err, IsNil)
+	c.Assert(uint32(len(origContent)), Equals, uint32(fi.Size()), Commentf("size should match"))
+	c.Assert(modTime, Equals, fi.ModTime(), Commentf("mtime should match"))
+
+	actualContent, err := util.ReadFile(fs, "racyfile")
+	c.Assert(err, IsNil)
+	c.Assert(actualContent, DeepEquals, newContent, Commentf("content should have changed"))
+	c.Assert(origContent, Not(DeepEquals), actualContent, Commentf("content should be different"))
+
+	barHasher := plumbing.NewHasher(plumbing.BlobObject, int64(len(newContent)))
+	_, err = barHasher.Write(newContent)
+	c.Assert(err, IsNil)
+	barHash := barHasher.Sum()
+	c.Assert(fooHash, Not(DeepEquals), barHash, Commentf("hashes should be different"))
+
+	fsNode := NewRootNodeWithOptions(fs, nil, Options{Index: idx})
+
+	children, err := fsNode.Children()
+	c.Assert(err, IsNil)
+	c.Assert(children, HasLen, 1, Commentf("should have one file"))
+
+	fileNode := children[0]
+	fileHash := fileNode.Hash()
+
+	expectedHash := append(barHash[:], filemode.Regular.Bytes()...)
+
+	if bytes.Equal(fileHash, expectedHash) {
+		c.Log("PASS: Correctly detected file change despite metadata match (racy-git handled)")
+	} else {
+		c.Errorf("FAIL: Racy-git not handled correctly.\nExpected hash: %x (bar)\nGot hash: %x (likely foo)\nThis means the file was not hashed despite being in the racy window.", expectedHash, fileHash)
+	}
+
+	c.Assert(expectedHash, DeepEquals, fileHash, Commentf("should hash file content when in racy-git window"))
 }

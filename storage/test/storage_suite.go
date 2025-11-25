@@ -428,6 +428,10 @@ func (s *BaseStorageSuite) TestSetIndexAndIndex(c *C) {
 
 	idx, err := s.Storer.Index()
 	c.Assert(err, IsNil)
+
+	// ModTime is populated from the index file's stat on read-back,
+	// so it won't match the zero value in expected.
+	idx.ModTime = expected.ModTime
 	c.Assert(idx, DeepEquals, expected)
 }
 

@@ -48,8 +48,8 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
-	fi, err := f.Stat()
-	if err == nil {
+	fi, statErr := s.dir.Fs().Stat(f.Name())
+	if statErr == nil {
 		idx.ModTime = fi.ModTime()
 	}
 
