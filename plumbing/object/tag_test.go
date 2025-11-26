@@ -8,11 +8,12 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type TagSuite struct {
@@ -465,7 +466,7 @@ eQnkGpsz85DfEviLtk8cZjY/t6o8lPDLiwVjIzUBaA==
 }
 
 func (s *TagSuite) TestEncodeWithoutSignature() {
-	//Similar to TestString since no signature
+	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	tag := s.tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	err := tag.EncodeWithoutSignature(encoded)

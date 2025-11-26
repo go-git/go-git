@@ -54,7 +54,6 @@ func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
 		w.added[h] = struct{}{}
 		w.objects = append(w.objects, Entry{h, crc, pos})
 	}
-
 }
 
 func (w *Writer) Finished() bool {
@@ -69,7 +68,7 @@ func (w *Writer) OnHeader(count uint32) error {
 }
 
 // OnInflatedObjectHeader implements packfile.Observer interface.
-func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, pos int64) error {
+func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize, pos int64) error {
 	return nil
 }
 
@@ -183,11 +182,11 @@ func (o objects) Len() int {
 	return len(o)
 }
 
-func (o objects) Less(i int, j int) bool {
+func (o objects) Less(i, j int) bool {
 	cmp := o[i].Hash.Compare(o[j].Hash.Bytes())
 	return cmp < 0
 }
 
-func (o objects) Swap(i int, j int) {
+func (o objects) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }

@@ -6,8 +6,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type DeltaSuite struct {
@@ -64,10 +65,21 @@ func (s *DeltaSuite) SetupSuite() {
 		target:      []piece{{"0", 100}},
 	}, {
 		description: "complex modification",
-		base: []piece{{"0", 3}, {"1", 40}, {"2", 30}, {"3", 2},
-			{"4", 400}, {"5", 23}},
-		target: []piece{{"1", 30}, {"2", 20}, {"7", 40}, {"4", 400},
-			{"5", 10}},
+		base: []piece{
+			{"0", 3},
+			{"1", 40},
+			{"2", 30},
+			{"3", 2},
+			{"4", 400},
+			{"5", 23},
+		},
+		target: []piece{
+			{"1", 30},
+			{"2", 20},
+			{"7", 40},
+			{"4", 400},
+			{"5", 10},
+		},
 	}, {
 		description: "A copy operation bigger than 64kb",
 		base:        []piece{{bigRandStr, 1}, {"1", 200}},

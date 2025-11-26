@@ -43,7 +43,7 @@ func ReadAttributesFile(fs billy.Filesystem, path []string, attributesFile strin
 func ReadPatterns(fs billy.Filesystem, path []string) (attributes []MatchAttribute, err error) {
 	attributes, err = ReadAttributesFile(fs, path, gitattributesFile, true)
 	if err != nil {
-		return
+		return attributes, err
 	}
 
 	attrs, err := walkDirectory(fs, path)
@@ -83,7 +83,7 @@ func walkDirectory(fs billy.Filesystem, root []string) (attributes []MatchAttrib
 		attributes = append(attributes, append(dirAttributes, subAttributes...)...)
 	}
 
-	return
+	return attributes, err
 }
 
 func loadPatterns(fs billy.Filesystem, path string) ([]MatchAttribute, error) {
@@ -119,7 +119,7 @@ func loadPatterns(fs billy.Filesystem, path string) ([]MatchAttribute, error) {
 func LoadGlobalPatterns(fs billy.Filesystem) (attributes []MatchAttribute, err error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return
+		return attributes, err
 	}
 
 	return loadPatterns(fs, fs.Join(home, gitconfigFile))

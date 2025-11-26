@@ -81,7 +81,7 @@ func DiffDelta(src, tgt []byte) []byte {
 	return diffDelta(new(deltaIndex), src, tgt)
 }
 
-func diffDelta(index *deltaIndex, src []byte, tgt []byte) []byte {
+func diffDelta(index *deltaIndex, src, tgt []byte) []byte {
 	buf := sync.GetBytesBuffer()
 	defer sync.PutBytesBuffer(buf)
 	buf.Write(deltaEncodeSize(len(src)))

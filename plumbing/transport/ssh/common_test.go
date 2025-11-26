@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/require"
-
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
+	"github.com/stretchr/testify/require"
 	stdssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
+
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 func (s *SuiteCommon) TestOverrideConfig() {

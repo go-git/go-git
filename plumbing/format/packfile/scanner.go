@@ -6,7 +6,6 @@ import (
 	"crypto"
 	"encoding/hex"
 	"fmt"
-
 	"hash"
 	"hash/crc32"
 	"io"

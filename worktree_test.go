@@ -14,7 +14,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -24,15 +33,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
-	"golang.org/x/text/unicode/norm"
 )
 
 func defaultTestCommitOptions() *CommitOptions {
@@ -1737,7 +1737,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 			w, err := r.Worktree()
 			s.NoError(err)
 
-			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0644)
+			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0o644)
 			s.NoError(err)
 
 			submodules, err := w.Submodules()
@@ -3646,7 +3646,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		{Worktree: Unmodified, Staging: Deleted},
 	})
 
-	return
+	return fs, w, names
 }
 
 func verifyStatus(s *WorktreeSuite, marker string, w *Worktree, files []string, statuses []FileStatus) {

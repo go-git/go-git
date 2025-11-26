@@ -2,6 +2,7 @@ package http
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,18 +12,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"errors"
 	"testing"
+
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 func TestClientSuite(t *testing.T) {
@@ -169,9 +169,9 @@ func (s *ClientSuite) TestCheckError() {
 		})
 	}
 
-	statusCodesTests := []struct{
-		code int
-		errType error
+	statusCodesTests := []struct {
+		code      int
+		errType   error
 		isWrapped bool
 	}{
 		{
@@ -202,9 +202,9 @@ func (s *ClientSuite) TestCheckError() {
 		s.Run(fmt.Sprintf("HTTP Error Status: %d", test.code), func() {
 			req, _ := http.NewRequest("GET", "foo", nil)
 			res := &http.Response{
-				Request: req,
+				Request:    req,
 				StatusCode: test.code,
-				Body: io.NopCloser(strings.NewReader(reason)),
+				Body:       io.NopCloser(strings.NewReader(reason)),
 			}
 			err := checkError(res)
 			s.Error(err)
@@ -279,5 +279,5 @@ func setupServer(t testing.TB, smart bool) (base string, port int) {
 		<-done
 	})
 
-	return
+	return base, port
 }

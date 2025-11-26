@@ -89,7 +89,7 @@ Scan:
 func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 	for len(chunk) > 0 {
 		if len(s) == 0 {
-			return
+			return rest, ok, err
 		}
 		switch chunk[0] {
 		case '[':
@@ -101,7 +101,7 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 			// a closing bracket and possibly a caret.
 			if len(chunk) == 0 {
 				err = filepath.ErrBadPattern
-				return
+				return rest, ok, err
 			}
 			// possibly negated
 			negated := chunk[0] == '^'
@@ -118,12 +118,12 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 				}
 				var lo, hi rune
 				if lo, chunk, err = getEsc(chunk); err != nil {
-					return
+					return rest, ok, err
 				}
 				hi = lo
 				if chunk[0] == '-' {
 					if hi, chunk, err = getEsc(chunk[1:]); err != nil {
-						return
+						return rest, ok, err
 					}
 				}
 				if lo <= r && r <= hi {
@@ -132,7 +132,7 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 				nrange++
 			}
 			if match == negated {
-				return
+				return rest, ok, err
 			}
 
 		case '?':
@@ -145,14 +145,14 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 				chunk = chunk[1:]
 				if len(chunk) == 0 {
 					err = filepath.ErrBadPattern
-					return
+					return rest, ok, err
 				}
 			}
 			fallthrough
 
 		default:
 			if chunk[0] != s[0] {
-				return
+				return rest, ok, err
 			}
 			s = s[1:]
 			chunk = chunk[1:]
@@ -165,13 +165,13 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 func getEsc(chunk string) (r rune, nchunk string, err error) {
 	if len(chunk) == 0 || chunk[0] == '-' || chunk[0] == ']' {
 		err = filepath.ErrBadPattern
-		return
+		return r, nchunk, err
 	}
 	if chunk[0] == '\\' && runtime.GOOS != "windows" {
 		chunk = chunk[1:]
 		if len(chunk) == 0 {
 			err = filepath.ErrBadPattern
-			return
+			return r, nchunk, err
 		}
 	}
 	r, n := utf8.DecodeRuneInString(chunk)
@@ -182,5 +182,5 @@ func getEsc(chunk string) (r rune, nchunk string, err error) {
 	if len(nchunk) == 0 {
 		err = filepath.ErrBadPattern
 	}
-	return
+	return r, nchunk, err
 }

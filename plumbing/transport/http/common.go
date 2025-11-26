@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/golang/groupcache/lru"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -24,7 +26,6 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
-	"github.com/golang/groupcache/lru"
 )
 
 func init() {

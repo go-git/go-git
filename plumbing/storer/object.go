@@ -8,10 +8,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-var (
-	//ErrStop is used to stop a ForEach function in an Iter
-	ErrStop = errors.New("stop iter")
-)
+// ErrStop is used to stop a ForEach function in an Iter
+var ErrStop = errors.New("stop iter")
 
 // EncodedObjectStorer generic storage of objects
 type EncodedObjectStorer interface {
@@ -134,7 +132,8 @@ type EncodedObjectLookupIter struct {
 // NewEncodedObjectLookupIter returns an object iterator given an object storage
 // and a slice of object hashes.
 func NewEncodedObjectLookupIter(
-	storage EncodedObjectStorer, t plumbing.ObjectType, series []plumbing.Hash) *EncodedObjectLookupIter {
+	storage EncodedObjectStorer, t plumbing.ObjectType, series []plumbing.Hash,
+) *EncodedObjectLookupIter {
 	return &EncodedObjectLookupIter{
 		storage: storage,
 		series:  series,

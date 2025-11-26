@@ -278,7 +278,7 @@ func TestIsHostKeyChanged(t *testing.T) {
 
 	// Append the key for a known host that doesn't already have that key type,
 	// re-init the known_hosts, and check again: should return false
-	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
@@ -315,7 +315,7 @@ func TestIsHostUnknown(t *testing.T) {
 
 	// Append the key for an unknown host, re-init the known_hosts, and check
 	// again: should return false
-	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
@@ -434,7 +434,7 @@ func getTestKnownHosts(t *testing.T) string {
 	if len(testKnownHostsContents) > 0 {
 		dir := t.TempDir()
 		khPath := filepath.Join(dir, "known_hosts")
-		if err := os.WriteFile(khPath, testKnownHostsContents, 0600); err != nil {
+		if err := os.WriteFile(khPath, testKnownHostsContents, 0o600); err != nil {
 			t.Fatalf("Unable to write to %s: %v", khPath, err)
 		}
 		return khPath
@@ -464,7 +464,7 @@ func writeTestKnownHosts(t *testing.T) string {
 
 	dir := t.TempDir()
 	khPath := filepath.Join(dir, "known_hosts")
-	f, err := os.OpenFile(khPath, os.O_WRONLY|os.O_CREATE, 0600)
+	f, err := os.OpenFile(khPath, os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
@@ -508,7 +508,7 @@ func appendCertTestKnownHosts(t *testing.T, filePath, hostPattern, keyType strin
 		testCertKeys[cacheKey] = pubKey
 	}
 
-	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", filePath, err)
 	}

@@ -14,5 +14,5 @@ func CopyBufferPool(dst io.Writer, src io.Reader) (n int64, err error) {
 	n, err = io.CopyBuffer(dst, src, *buf)
 	sync.PutByteSlice(buf)
 
-	return
+	return n, err
 }

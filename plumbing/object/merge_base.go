@@ -77,7 +77,6 @@ func ancestorsIndex(excluded, starting *Commit) (map[plumbing.Hash]struct{}, err
 		startingHistory[commit.Hash] = struct{}{}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +121,6 @@ func Independents(commits []*Commit) ([]*Commit, error) {
 			seen[fromAncestor.Hash] = struct{}{}
 			return nil
 		})
-
 		if err != nil {
 			return nil, err
 		}

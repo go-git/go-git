@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 

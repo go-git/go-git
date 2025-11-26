@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6/util"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -323,13 +324,13 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		var a bool
 		a, _, err = w.doAddFile(idx, s, name, ignorePattern)
 		if err != nil {
-			return
+			return added, err
 		}
 
 		added = added || a
 	}
 
-	return
+	return added, err
 }
 
 func isPathInDirectory(path, directory string) bool {
@@ -479,7 +480,7 @@ func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePatt
 			h, err = w.deleteFromIndex(idx, path)
 		}
 
-		return
+		return added, h, err
 	}
 
 	if err := w.addOrUpdateFileToIndex(idx, path, h); err != nil {
@@ -647,7 +648,7 @@ func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (remove
 		}
 
 		if err != nil {
-			return
+			return removed, err
 		}
 
 		if !removed && r {
@@ -656,7 +657,7 @@ func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (remove
 	}
 
 	err = w.removeEmptyDirectory(directory)
-	return
+	return removed, err
 }
 
 func (w *Worktree) removeEmptyDirectory(path string) error {

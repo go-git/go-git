@@ -68,7 +68,7 @@ type PackData struct {
 	checksum     plumbing.Hash
 }
 
-func (p PackData) Value() interface{} {
+func (p PackData) Value() any {
 	switch p.Section {
 	case HeaderSection:
 		return p.header

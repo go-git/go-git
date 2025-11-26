@@ -6,9 +6,10 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/stretchr/testify/suite"
 )
 
 type UpdReqDecodeSuite struct {
@@ -313,7 +314,7 @@ func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *UpdateRequests, paylo
 	s.Equal(expected, req)
 }
 
-func (s *UpdReqDecodeSuite) compareReaders(a io.ReadCloser, b io.ReadCloser) {
+func (s *UpdReqDecodeSuite) compareReaders(a, b io.ReadCloser) {
 	pba, err := io.ReadAll(a)
 	s.NoError(err)
 	s.NoError(a.Close())

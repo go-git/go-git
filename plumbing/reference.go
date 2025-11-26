@@ -128,9 +128,7 @@ func (r ReferenceName) Short() string {
 	return res
 }
 
-var (
-	ctrlSeqs = regexp.MustCompile(`[\000-\037\177]`)
-)
+var ctrlSeqs = regexp.MustCompile(`[\000-\037\177]`)
 
 // Validate validates a reference name.
 // This follows the git-check-ref-format rules.

@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
-	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type FsSuite struct {
@@ -251,7 +251,6 @@ func (s *FsSuite) TestIterWithType() {
 
 			s.Require().NoError(err)
 		}
-
 	}
 }
 
@@ -289,11 +288,11 @@ func copyFile(fs billy.Filesystem, dstFilename string, srcFile billy.File) error
 		return err
 	}
 
-	if err := fs.MkdirAll(filepath.Dir(dstFilename), 0750|os.ModeDir); err != nil {
+	if err := fs.MkdirAll(filepath.Dir(dstFilename), 0o750|os.ModeDir); err != nil {
 		return err
 	}
 
-	dst, err := fs.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY, 0666)
+	dst, err := fs.OpenFile(dstFilename, os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
 		return err
 	}
@@ -465,7 +464,6 @@ func BenchmarkPackfileIter(b *testing.B) {
 							}
 							return nil
 						})
-
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -521,7 +519,6 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 
 							return r.Close()
 						})
-
 						if err != nil {
 							b.Fatal(err)
 						}

@@ -2,11 +2,10 @@ package idxfile
 
 import (
 	"crypto"
+	encbin "encoding/binary"
 	"io"
 	"sort"
 	"sync"
-
-	encbin "encoding/binary"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -18,9 +17,7 @@ const (
 	noMapping = -1
 )
 
-var (
-	idxHeader = []byte{255, 't', 'O', 'c'}
-)
+var idxHeader = []byte{255, 't', 'O', 'c'}
 
 // Index represents an index of a packfile.
 type Index interface {
@@ -360,10 +357,10 @@ func (o entriesByOffset) Len() int {
 	return len(o)
 }
 
-func (o entriesByOffset) Less(i int, j int) bool {
+func (o entriesByOffset) Less(i, j int) bool {
 	return o[i].Offset < o[j].Offset
 }
 
-func (o entriesByOffset) Swap(i int, j int) {
+func (o entriesByOffset) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }

@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type RenameSuite struct {
@@ -308,7 +309,7 @@ func detectRenames(s *RenameSuite, changes Changes, opts *DiffTreeOptions, expec
 	return result
 }
 
-func assertRename(s *RenameSuite, from, to *Change, rename *Change) {
+func assertRename(s *RenameSuite, from, to, rename *Change) {
 	s.Equal(rename, &Change{From: from.From, To: to.To})
 }
 
@@ -510,7 +511,7 @@ func makeDelete(s *RenameSuite, f *File) *Change {
 	return makeChange(s, f, nil)
 }
 
-func makeChange(s *RenameSuite, from *File, to *File) *Change {
+func makeChange(s *RenameSuite, from, to *File) *Change {
 	if from == nil {
 		return &Change{To: makeChangeEntry(to)}
 	}

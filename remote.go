@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
@@ -1164,7 +1165,7 @@ func (r *Remote) updateLocalReferenceStorage(
 		err = ErrForceNeeded
 	}
 
-	return
+	return updated, err
 }
 
 func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, err error) {
@@ -1192,7 +1193,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 		}
 	}
 
-	return
+	return updated, err
 }
 
 // List the references on the remote repository.

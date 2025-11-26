@@ -17,4 +17,3 @@ func NewPermanentError(err error) *PermanentError {
 func (e *PermanentError) Error() string {
 	return fmt.Sprintf("permanent client error: %s", e.Err.Error())
 }
-

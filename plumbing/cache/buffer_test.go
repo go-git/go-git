@@ -127,7 +127,7 @@ func (s *BufferSuite) TestConcurrentAccess() {
 		for i := 0; i < 1000; i++ {
 			wg.Add(3)
 			go func(i int) {
-				o.Put(int64(i), []byte{00})
+				o.Put(int64(i), []byte{0o0})
 				wg.Done()
 			}(i)
 

@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/utils/trace"
-
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
+
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 func init() {
@@ -238,7 +238,7 @@ func (c *command) getHostWithPort() string {
 
 func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 	if DefaultSSHConfig == nil {
-		return
+		return addr, found
 	}
 
 	hostname := c.endpoint.Hostname()
@@ -251,7 +251,7 @@ func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 	}
 
 	if !found {
-		return
+		return addr, found
 	}
 
 	configPort := DefaultSSHConfig.Get(c.endpoint.Hostname(), "Port")
@@ -262,7 +262,7 @@ func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 	}
 
 	addr = net.JoinHostPort(hostname, port)
-	return
+	return addr, found
 }
 
 func (c *command) setAuthFromEndpoint() error {
@@ -279,7 +279,7 @@ func endpointToCommand(cmd string, ep *transport.Endpoint) string {
 	return fmt.Sprintf("%s '%s'", cmd, ep.Path)
 }
 
-func overrideConfig(overrides *ssh.ClientConfig, c *ssh.ClientConfig) {
+func overrideConfig(overrides, c *ssh.ClientConfig) {
 	if overrides == nil {
 		return
 	}

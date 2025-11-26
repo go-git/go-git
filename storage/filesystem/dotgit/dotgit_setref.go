@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-
-	"github.com/go-git/go-billy/v6"
 )
 
 func (d *DotGit) setRef(fileName, content string, old *plumbing.Reference) (err error) {
@@ -25,7 +25,7 @@ func (d *DotGit) setRefRwfs(fileName, content string, old *plumbing.Reference) (
 		mode |= os.O_TRUNC
 	}
 
-	f, err := d.fs.OpenFile(fileName, mode, 0666)
+	f, err := d.fs.OpenFile(fileName, mode, 0o666)
 	if err != nil {
 		return err
 	}

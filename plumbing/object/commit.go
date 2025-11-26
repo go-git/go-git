@@ -98,8 +98,8 @@ func (h ExtraHeader) Format(f fmt.State, verb rune) {
 func parseExtraHeader(line []byte) (ExtraHeader, bool) {
 	split := bytes.SplitN(line, []byte{' '}, 2)
 
-	out := ExtraHeader {
-		Key: string(bytes.TrimRight(split[0], "\n")),
+	out := ExtraHeader{
+		Key:   string(bytes.TrimRight(split[0], "\n")),
 		Value: "",
 	}
 
@@ -407,7 +407,6 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	for _, header := range c.ExtraHeaders {
-		
 		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
 			return err
 		}

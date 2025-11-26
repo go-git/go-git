@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -14,7 +16,6 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
-	"github.com/stretchr/testify/suite"
 )
 
 type DiffTreeSuite struct {
@@ -32,8 +33,8 @@ func (s *DiffTreeSuite) SetupSuite() {
 }
 
 func (s *DiffTreeSuite) commitFromStorer(sto storer.EncodedObjectStorer,
-	h plumbing.Hash) *Commit {
-
+	h plumbing.Hash,
+) *Commit {
 	commit, err := GetCommit(sto, h)
 	s.NoError(err)
 	return commit

@@ -26,24 +26,24 @@ const (
 	// NewFromOsNewFromOSFileMode along with an error, when they fail.
 	Empty FileMode = 0
 	// Dir represent a Directory.
-	Dir FileMode = 0040000
+	Dir FileMode = 0o040000
 	// Regular represent non-executable files.  Please note this is not
 	// the same as golang regular files, which include executable files.
-	Regular FileMode = 0100644
+	Regular FileMode = 0o100644
 	// Deprecated represent non-executable files with the group writable
 	// bit set.  This mode was supported by the first versions of git,
 	// but it has been deprecated nowadays.  This library uses them
 	// internally, so you can read old packfiles, but will treat them as
 	// Regulars when interfacing with the outside world.  This is the
 	// standard git behaviour.
-	Deprecated FileMode = 0100664
+	Deprecated FileMode = 0o100664
 	// Executable represents executable files.
-	Executable FileMode = 0100755
+	Executable FileMode = 0o100755
 	// Symlink represents symbolic links to files.
-	Symlink FileMode = 0120000
+	Symlink FileMode = 0o120000
 	// Submodule represents git submodules.  This mode has no file system
 	// equivalent.
-	Submodule FileMode = 0160000
+	Submodule FileMode = 0o160000
 )
 
 // New takes the octal string representation of a FileMode and returns
@@ -106,7 +106,7 @@ func isSetTemporary(m os.FileMode) bool {
 }
 
 func isSetUserExecutable(m os.FileMode) bool {
-	return m&0100 != 0
+	return m&0o100 != 0
 }
 
 func isSetSymLink(m os.FileMode) bool {
@@ -174,12 +174,12 @@ func (m FileMode) ToOSFileMode() (os.FileMode, error) {
 	case Submodule:
 		return os.ModePerm | os.ModeDir, nil
 	case Regular:
-		return os.FileMode(0644), nil
+		return os.FileMode(0o644), nil
 	// Deprecated is no longer allowed: treated as a Regular instead
 	case Deprecated:
-		return os.FileMode(0644), nil
+		return os.FileMode(0o644), nil
 	case Executable:
-		return os.FileMode(0755), nil
+		return os.FileMode(0o755), nil
 	case Symlink:
 		return os.ModePerm | os.ModeSymlink, nil
 	}

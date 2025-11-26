@@ -7,7 +7,7 @@ import (
 
 // Write writes the binary representation of data into w, using BigEndian order
 // https://golang.org/pkg/encoding/binary/#Write
-func Write(w io.Writer, data ...interface{}) error {
+func Write(w io.Writer, data ...any) error {
 	for _, v := range data {
 		if err := binary.Write(w, binary.BigEndian, v); err != nil {
 			return err

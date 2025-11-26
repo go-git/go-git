@@ -4,10 +4,10 @@ import (
 	"errors"
 	"io"
 
+	"github.com/emirpasic/gods/trees/binaryheap"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-
-	"github.com/emirpasic/gods/trees/binaryheap"
 )
 
 type commitNodeIteratorTopological struct {

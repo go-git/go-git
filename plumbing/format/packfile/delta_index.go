@@ -1,7 +1,9 @@
 package packfile
 
-const blksz = 16
-const maxChainLength = 64
+const (
+	blksz          = 16
+	maxChainLength = 64
+)
 
 // deltaIndex is a modified version of JGit's DeltaIndex adapted to our current
 // design.
@@ -36,14 +38,14 @@ func (idx *deltaIndex) findMatch(src, tgt []byte, tgtOffset int) (srcOffset, l i
 	tIdx := h & idx.mask
 	eIdx := idx.table[tIdx]
 	if eIdx == 0 {
-		return
+		return srcOffset, l
 	}
 
 	srcOffset = idx.entries[eIdx]
 
 	l = matchLength(src, tgt, tgtOffset, srcOffset)
 
-	return
+	return srcOffset, l
 }
 
 func matchLength(src, tgt []byte, otgt, osrc int) (l int) {
@@ -54,7 +56,7 @@ func matchLength(src, tgt []byte, otgt, osrc int) (l int) {
 		osrc++
 		otgt++
 	}
-	return
+	return l
 }
 
 func countEntries(scan *deltaIndexScanner) (cnt int) {
@@ -84,7 +86,7 @@ func countEntries(scan *deltaIndexScanner) (cnt int) {
 		cnt += size
 	}
 
-	return
+	return cnt
 }
 
 func (idx *deltaIndex) copyEntries(scanner *deltaIndexScanner) {
@@ -240,7 +242,8 @@ func hashBlock(raw []byte, ptr int) int {
 	return int(hash)
 }
 
-var T = []uint32{0x00000000, 0xd4c6b32d, 0x7d4bd577,
+var T = []uint32{
+	0x00000000, 0xd4c6b32d, 0x7d4bd577,
 	0xa98d665a, 0x2e5119c3, 0xfa97aaee, 0x531accb4, 0x87dc7f99,
 	0x5ca23386, 0x886480ab, 0x21e9e6f1, 0xf52f55dc, 0x72f32a45,
 	0xa6359968, 0x0fb8ff32, 0xdb7e4c1f, 0x6d82d421, 0xb944670c,

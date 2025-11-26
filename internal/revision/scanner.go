@@ -31,7 +31,6 @@ func tokenizeExpression(ch rune, tokenType token, check runeCategoryValidator, r
 			data = append(data, c)
 		} else {
 			err := r.UnreadRune()
-
 			if err != nil {
 				return tokenError, "", err
 			}

@@ -3,13 +3,13 @@ package transport
 import (
 	"path/filepath"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/osfs"
 )
 
 // DefaultLoader is a filesystem loader ignoring host and resolving paths to /.

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-
 	"strconv"
 	"time"
 
@@ -100,7 +99,7 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 	var msec, mnsec, sec, nsec uint32
 	var flags uint16
 
-	flow := []interface{}{
+	flow := []any{
 		&sec, &nsec,
 		&msec, &mnsec,
 		&e.Dev,
@@ -320,7 +319,7 @@ func (d *Decoder) readChecksum(expected []byte) error {
 }
 
 func validateHeader(r io.Reader) (version uint32, err error) {
-	var s = make([]byte, 4)
+	s := make([]byte, 4)
 	if _, err := io.ReadFull(r, s); err != nil {
 		return 0, err
 	}
@@ -338,7 +337,7 @@ func validateHeader(r io.Reader) (version uint32, err error) {
 		return 0, ErrUnsupportedVersion
 	}
 
-	return
+	return version, err
 }
 
 type treeExtensionDecoder struct {

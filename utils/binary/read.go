@@ -11,7 +11,7 @@ import (
 // Read reads structured binary data from r into data. Bytes are read and
 // decoded in BigEndian order
 // https://golang.org/pkg/encoding/binary/#Read
-func Read(r io.Reader, data ...interface{}) error {
+func Read(r io.Reader, data ...any) error {
 	for _, v := range data {
 		if err := binary.Read(r, binary.BigEndian, v); err != nil {
 			return err
@@ -87,7 +87,7 @@ func ReadVariableWidthInt(r io.Reader) (int64, error) {
 		return 0, err
 	}
 
-	var v = int64(c & maskLength)
+	v := int64(c & maskLength)
 	for c&maskContinue > 0 {
 		v++
 		if err := Read(r, &c); err != nil {

@@ -8,12 +8,12 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh/knownhosts"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh/sshagent"
 	"github.com/go-git/go-git/v6/utils/trace"
-
-	"golang.org/x/crypto/ssh"
 )
 
 const DefaultUsername = "git"

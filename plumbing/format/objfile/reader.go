@@ -42,27 +42,27 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 	var raw []byte
 	raw, err = r.readUntil(' ')
 	if err != nil {
-		return
+		return t, size, err
 	}
 
 	t, err = plumbing.ParseObjectType(string(raw))
 	if err != nil {
-		return
+		return t, size, err
 	}
 
 	raw, err = r.readUntil(0)
 	if err != nil {
-		return
+		return t, size, err
 	}
 
 	size, err = strconv.ParseInt(string(raw), 10, 64)
 	if err != nil {
 		err = ErrHeader
-		return
+		return t, size, err
 	}
 
 	defer r.prepareForRead(t, size)
-	return
+	return t, size, err
 }
 
 // readSlice reads one byte at a time from r until it encounters delim or an

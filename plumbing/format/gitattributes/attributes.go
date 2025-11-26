@@ -116,7 +116,7 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	line = strings.TrimSpace(line)
 
 	if strings.HasPrefix(line, commentPrefix) || len(line) == 0 {
-		return
+		return m, err
 	}
 
 	name, unquoted := unquote(line)
@@ -129,7 +129,7 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	var macro bool
 	macro, name, err = checkMacro(name, allowMacro)
 	if err != nil {
-		return
+		return m, err
 	}
 
 	m.Name = name
@@ -164,7 +164,7 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	if !macro {
 		m.Pattern = ParsePattern(name, domain)
 	}
-	return
+	return m, err
 }
 
 func checkMacro(name string, allowMacro bool) (macro bool, macroName string, err error) {

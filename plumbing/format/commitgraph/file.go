@@ -108,7 +108,7 @@ func (fi *fileIndex) Close() (err error) {
 		}()
 	}
 	err = fi.reader.Close()
-	return
+	return err
 }
 
 func (fi *fileIndex) verifyFileHeader() error {

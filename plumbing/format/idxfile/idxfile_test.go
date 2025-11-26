@@ -8,9 +8,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	"github.com/stretchr/testify/suite"
 )
 
 func BenchmarkFindOffset(b *testing.B) {

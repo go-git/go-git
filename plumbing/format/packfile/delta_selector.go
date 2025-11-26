@@ -320,7 +320,8 @@ func (dw *deltaSelector) tryToDeltify(indexMap map[plumbing.Hash]*deltaIndex, ba
 }
 
 func (dw *deltaSelector) deltaSizeLimit(targetSize int64, baseDepth int,
-	targetDepth int, targetDelta bool) int64 {
+	targetDepth int, targetDelta bool,
+) int64 {
 	if !targetDelta {
 		// Any delta should be no more than 50% of the original size
 		// (for text files deflate of whole form should shrink 50%).

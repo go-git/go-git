@@ -109,7 +109,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		flags |= nameMask
 	}
 
-	flow := []interface{}{
+	flow := []any{
 		sec, nsec,
 		msec, mnsec,
 		entry.Dev,
@@ -121,7 +121,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		entry.Hash.Bytes(),
 	}
 
-	flagsFlow := []interface{}{flags}
+	flagsFlow := []any{flags}
 
 	if entry.IntentToAdd || entry.SkipWorktree {
 		var extendedFlags uint16
@@ -133,7 +133,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 			extendedFlags |= skipWorkTreeMask
 		}
 
-		flagsFlow = []interface{}{flags | entryExtended, extendedFlags}
+		flagsFlow = []any{flags | entryExtended, extendedFlags}
 	}
 
 	flow = append(flow, flagsFlow...)

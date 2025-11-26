@@ -8,6 +8,9 @@ import (
 	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -15,8 +18,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParserHashes(t *testing.T) {
@@ -198,7 +199,8 @@ func BenchmarkParseBasic(b *testing.B) {
 
 func benchmarkParseBasic(b *testing.B,
 	f billy.File, scanner *packfile.Scanner,
-	opts ...packfile.ParserOption) {
+	opts ...packfile.ParserOption,
+) {
 	for i := 0; i < b.N; i++ {
 		f.Seek(0, io.SeekStart)
 		scanner.Reset()
@@ -246,7 +248,7 @@ func (t *testObserver) OnHeader(count uint32) error {
 	return nil
 }
 
-func (t *testObserver) OnInflatedObjectHeader(otype plumbing.ObjectType, objSize int64, pos int64) error {
+func (t *testObserver) OnInflatedObjectHeader(otype plumbing.ObjectType, objSize, pos int64) error {
 	o := t.get(pos)
 	o.otype = otype
 	o.size = objSize

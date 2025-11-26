@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/util"
-	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 // preReceiveHook returns the bytes of a pre-receive hook script
@@ -27,7 +28,7 @@ func TestCloneFileUrlWindows(t *testing.T) {
 	r, err := PlainInit(dir, false)
 	require.NoError(t, err)
 
-	err = util.WriteFile(r.wt, "foo", nil, 0755)
+	err = util.WriteFile(r.wt, "foo", nil, 0o755)
 	require.NoError(t, err)
 
 	w, err := r.Worktree()

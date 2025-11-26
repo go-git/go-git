@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
 
 func TestNewEndpoint(t *testing.T) {

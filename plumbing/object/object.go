@@ -133,7 +133,7 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 	}
 
 	s.When = time.Unix(ts, 0).In(time.UTC)
-	var tzStart = space + 1
+	tzStart := space + 1
 	if tzStart >= len(b) || tzStart+timeZoneLength > len(b) {
 		return
 	}

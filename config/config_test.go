@@ -8,12 +8,13 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 )
 
 type ConfigSuite struct {
@@ -270,7 +271,7 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.NoError(err)
 	defer util.RemoveAll(osfs.Default, tmp)
 
-	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0777)
+	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0o777)
 	s.NoError(err)
 
 	os.Setenv("XDG_CONFIG_HOME", tmp)
@@ -282,7 +283,7 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.NoError(err)
 
 	cfgFile := filepath.Join(tmp, "git/config")
-	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
+	err = util.WriteFile(osfs.Default, cfgFile, content, 0o777)
 	s.NoError(err)
 
 	cfg, err = LoadConfig(GlobalScope)

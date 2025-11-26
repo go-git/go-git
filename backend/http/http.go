@@ -120,7 +120,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // logf logs the given message to the error log if it is set.
-func logf(logger *log.Logger, format string, v ...interface{}) {
+func logf(logger *log.Logger, format string, v ...any) {
 	if logger != nil {
 		logger.Printf(format, v...)
 	}

@@ -17,10 +17,11 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/storage"
 )
 
 type SuiteDotGit struct {
@@ -300,7 +301,7 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs() {
 
 	brokenContent := "BROKEN STUFF REALLY BROKEN"
 
-	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0755))
+	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0o755))
 	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
@@ -319,7 +320,7 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2() {
 
 	brokenContent := strings.Repeat("a", bufio.MaxScanTokenSize*2)
 
-	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0755))
+	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0o755))
 	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
@@ -639,7 +640,7 @@ func (s *SuiteDotGit) TestObject() {
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
-	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
+	fs.MkdirAll(incomingDirPath, os.FileMode(0o755))
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
@@ -659,7 +660,7 @@ func (s *SuiteDotGit) TestPreGit235Object() {
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
-	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
+	fs.MkdirAll(incomingDirPath, os.FileMode(0o755))
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
@@ -676,7 +677,7 @@ func (s *SuiteDotGit) TestObjectStat() {
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
-	fs.MkdirAll(incomingDirPath, os.FileMode(0755))
+	fs.MkdirAll(incomingDirPath, os.FileMode(0o755))
 	fs.Create(incomingFilePath)
 
 	_, err = dir.ObjectStat(plumbing.NewHash(incomingHash))
@@ -696,7 +697,7 @@ func (s *SuiteDotGit) TestObjectDelete() {
 	incomingSubDirPath := fs.Join(incomingDirPath, incomingHash[0:2])
 	incomingFilePath := fs.Join(incomingSubDirPath, incomingHash[2:40])
 
-	err = fs.MkdirAll(incomingSubDirPath, os.FileMode(0755))
+	err = fs.MkdirAll(incomingSubDirPath, os.FileMode(0o755))
 	s.Require().NoError(err)
 
 	f, err := fs.Create(incomingFilePath)

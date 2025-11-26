@@ -9,17 +9,15 @@ import (
 	"strconv"
 	"strings"
 
+	dmp "github.com/sergi/go-diff/diffmatchpatch"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/utils/diff"
-
-	dmp "github.com/sergi/go-diff/diffmatchpatch"
 )
 
-var (
-	ErrCanceled = errors.New("operation canceled")
-)
+var ErrCanceled = errors.New("operation canceled")
 
 func getPatch(message string, changes ...*Change) (*Patch, error) {
 	ctx := context.Background()
@@ -93,22 +91,21 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 		from:   c.From,
 		to:     c.To,
 	}, nil
-
 }
 
 func fileContent(f *File) (content string, isBinary bool, err error) {
 	if f == nil {
-		return
+		return content, isBinary, err
 	}
 
 	isBinary, err = f.IsBinary()
 	if err != nil || isBinary {
-		return
+		return content, isBinary, err
 	}
 
 	content, err = f.Contents()
 
-	return
+	return content, isBinary, err
 }
 
 // Patch is an implementation of fdiff.Patch interface
@@ -161,6 +158,7 @@ func (f *changeEntryWrapper) Hash() plumbing.Hash {
 func (f *changeEntryWrapper) Mode() filemode.FileMode {
 	return f.ce.TreeEntry.Mode
 }
+
 func (f *changeEntryWrapper) Path() string {
 	if !f.ce.TreeEntry.Mode.IsFile() {
 		return ""
@@ -179,7 +177,7 @@ type textFilePatch struct {
 	from, to ChangeEntry
 }
 
-func (tf *textFilePatch) Files() (from fdiff.File, to fdiff.File) {
+func (tf *textFilePatch) Files() (from, to fdiff.File) {
 	f := &changeEntryWrapper{tf.from}
 	t := &changeEntryWrapper{tf.to}
 
@@ -191,7 +189,7 @@ func (tf *textFilePatch) Files() (from fdiff.File, to fdiff.File) {
 		to = t
 	}
 
-	return
+	return from, to
 }
 
 func (tf *textFilePatch) IsBinary() bool {
