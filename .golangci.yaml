@@ -4,6 +4,7 @@ linters:
   enable:
     - ineffassign
     - staticcheck
+    - unused
 
 formatters:
   enable:

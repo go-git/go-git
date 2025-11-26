@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"regexp"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -17,10 +16,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
-)
-
-const (
-	readErrorSecondsTimeout = 10
 )
 
 var (
@@ -36,10 +31,6 @@ var (
 	// ErrPackedObjectsNotSupported is returned when the server does not support
 	// packed objects.
 	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
-	// stdErrSkipPattern is used for skipping lines from a command's stderr output.
-	// Any line matching this pattern will be skipped from further
-	// processing and not be returned to calling code.
-	stdErrSkipPattern = regexp.MustCompile("^remote:( =*){0,1}$")
 )
 
 // RemoteError represents an error returned by the remote.
