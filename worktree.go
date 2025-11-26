@@ -320,7 +320,7 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 // canSkipWorktreeUpdate determines if we can skip the worktree update
 // during checkout by comparing tree hashes. Returns true if current HEAD
 // and target commit point to the same tree, meaning no files need to change.
-func (w *Worktree) canSkipWorktreeUpdate(targetCommit plumbing.Hash) (bool, error) {
+func (w *Worktree) canSkipWorktreeUpdate(targetCommitHash plumbing.Hash) (bool, error) {
 	headRef, err := w.r.Head()
 	if err != nil {
 		return false, err
@@ -331,7 +331,7 @@ func (w *Worktree) canSkipWorktreeUpdate(targetCommit plumbing.Hash) (bool, erro
 		return false, err
 	}
 
-	targetCommitObj, err := w.r.CommitObject(targetCommit)
+	targetCommitObj, err := w.r.CommitObject(targetCommitHash)
 	if err != nil {
 		return false, err
 	}
