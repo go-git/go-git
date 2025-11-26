@@ -3,6 +3,7 @@ linters:
   default: none
   enable:
     - ineffassign
+    - modernize
     - staticcheck
     - unused
 

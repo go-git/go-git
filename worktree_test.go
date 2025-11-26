@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -3163,14 +3164,7 @@ func (s *WorktreeSuite) TestGrep() {
 		// Iterate through the results and check if the wanted result is present
 		// in the got result.
 		for _, wantResult := range tc.wantResult {
-			found := false
-			for _, gotResult := range gr {
-				if wantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(gr, wantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -3178,14 +3172,7 @@ func (s *WorktreeSuite) TestGrep() {
 		// Iterate through the results and check if the not wanted result is
 		// present in the got result.
 		for _, dontWantResult := range tc.dontWantResult {
-			found := false
-			for _, gotResult := range gr {
-				if dontWantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.Contains(gr, dontWantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}
@@ -3239,14 +3226,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 		// Iterate through the results and check if the wanted result is present
 		// in the got result.
 		for _, wantResult := range tc.wantResult {
-			found := false
-			for _, gotResult := range gr {
-				if wantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(gr, wantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -3254,14 +3234,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 		// Iterate through the results and check if the not wanted result is
 		// present in the got result.
 		for _, dontWantResult := range tc.dontWantResult {
-			found := false
-			for _, gotResult := range gr {
-				if dontWantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.Contains(gr, dontWantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}

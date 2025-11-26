@@ -39,7 +39,7 @@ func hexDecode(buf []byte) (int, error) {
 	}
 
 	var ret int
-	for i := 0; i < LenSize; i++ {
+	for i := range LenSize {
 		n, err := asciiHexToByte(buf[i])
 		if err != nil {
 			return 0, fmt.Errorf("%w: %w", ErrInvalidPktLen, err)

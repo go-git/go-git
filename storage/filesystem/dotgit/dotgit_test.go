@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -195,7 +196,7 @@ func BenchmarkRefMultipleTimes(b *testing.B) {
 		b.Fatalf("unexpected error: %s", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := dir.Ref(refname)
 		if err != nil {
 			b.Fatalf("unexpected error: %s", err)
@@ -969,12 +970,7 @@ type notExistsFS struct {
 
 func (f *notExistsFS) matches(path string) bool {
 	p := filepath.ToSlash(path)
-	for _, n := range f.paths {
-		if p == n {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.paths, p)
 }
 
 func (f *notExistsFS) Open(filename string) (billy.File, error) {

@@ -124,7 +124,7 @@ func (s *ObjectSuite) TestConcurrentAccess() {
 	for _, o := range s.c {
 		var wg sync.WaitGroup
 
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			wg.Add(3)
 			go func(i int) {
 				o.Put(newObject(fmt.Sprint(i), FileSize(i)))

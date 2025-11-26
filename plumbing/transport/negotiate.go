@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -224,15 +225,7 @@ func NegotiatePack(
 
 func isSubset(needle, haystack []plumbing.Hash) bool {
 	for _, h := range needle {
-		found := false
-		for _, oh := range haystack {
-			if h == oh {
-				found = true
-				break
-			}
-		}
-
-		if !found {
+		if !slices.Contains(haystack, h) {
 			return false
 		}
 	}

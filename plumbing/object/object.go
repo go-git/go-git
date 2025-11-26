@@ -154,10 +154,7 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 }
 
 func (s *Signature) encodeTimeAndTimeZone(w io.Writer) error {
-	u := s.When.Unix()
-	if u < 0 {
-		u = 0
-	}
+	u := max(s.When.Unix(), 0)
 	_, err := fmt.Fprintf(w, "%d %s", u, s.When.Format("-0700"))
 	return err
 }

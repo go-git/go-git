@@ -284,11 +284,11 @@ func overrideConfig(overrides, c *ssh.ClientConfig) {
 		return
 	}
 
-	t := reflect.TypeOf(*c)
+	t := reflect.TypeFor[ssh.ClientConfig]()
 	vc := reflect.ValueOf(c).Elem()
 	vo := reflect.ValueOf(overrides).Elem()
 
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		vcf := vc.FieldByName(f.Name)
 		vof := vo.FieldByName(f.Name)

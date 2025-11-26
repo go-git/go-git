@@ -103,7 +103,7 @@ func TestScan(t *testing.T) {
 func BenchmarkScannerBasic(b *testing.B) {
 	f := fixtures.Basic().One().Packfile()
 	scanner := NewScanner(f)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		scanner.Reset()
 
 		for scanner.Scan() {

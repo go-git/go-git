@@ -208,8 +208,7 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 	}
 
 	line := s.Text()
-	if strings.HasPrefix(line, "ref: ") {
-		target := strings.TrimPrefix(line, "ref: ")
+	if target, found := strings.CutPrefix(line, "ref: "); found {
 		return plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName(target)), nil
 	}
 

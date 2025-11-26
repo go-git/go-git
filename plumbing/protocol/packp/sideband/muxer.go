@@ -56,10 +56,7 @@ func (m *Muxer) WriteChannel(t Channel, p []byte) (int, error) {
 }
 
 func (m *Muxer) doWrite(ch Channel, p []byte) (int, error) {
-	sz := len(p)
-	if sz > m.max {
-		sz = m.max
-	}
+	sz := min(len(p), m.max)
 
 	_, err := pktline.Write(m.w, ch.WithPayload(p[:sz]))
 	return sz, err

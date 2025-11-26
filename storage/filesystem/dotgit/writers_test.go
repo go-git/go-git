@@ -22,7 +22,7 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
 	fs := osfs.New(b.TempDir())
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		w, err := newPackWrite(fs)
 
 		require.NoError(b, err)
@@ -120,7 +120,7 @@ func TestSyncedReader(t *testing.T) {
 	synced := newSyncedReader(tmpw, tmpr)
 
 	go func() {
-		for i := 0; i < 281; i++ {
+		for i := range 281 {
 			_, err := synced.Write([]byte(strconv.Itoa(i) + "\n"))
 			require.NoError(t, err)
 		}

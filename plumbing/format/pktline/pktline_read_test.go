@@ -349,8 +349,8 @@ func (s *SuiteReader) TestReadPacketError() {
 // and so on
 func sectionsExample(nSections, nLines int) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
-	for section := 0; section < nSections; section++ {
-		for line := 0; line < nLines; line++ {
+	for section := range nSections {
+		for line := range nLines {
 			line := fmt.Sprintf(" %d.%d\n", section, line)
 			_, err := pktline.WriteString(&buf, line)
 			if err != nil {

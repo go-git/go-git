@@ -199,8 +199,8 @@ func decodeOtherRefs(p *advRefsDecoder) decoderStateFn {
 	}
 
 	saveTo := p.data.References
-	if bytes.HasSuffix(p.line, peeled) {
-		p.line = bytes.TrimSuffix(p.line, peeled)
+	if line, found := bytes.CutSuffix(p.line, peeled); found {
+		p.line = line
 		saveTo = p.data.Peeled
 	}
 

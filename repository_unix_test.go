@@ -14,7 +14,7 @@ import (
 // preReceiveHook returns the bytes of a pre-receive hook script
 // that prints m before exiting successfully
 func preReceiveHook(m string) []byte {
-	return []byte(fmt.Sprintf("#!/bin/sh\nprintf '%s'\n", m))
+	return fmt.Appendf(nil, "#!/bin/sh\nprintf '%s'\n", m)
 }
 
 func TestPlainInitFileMode(t *testing.T) {

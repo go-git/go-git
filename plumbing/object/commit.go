@@ -515,7 +515,7 @@ func (c *Commit) Less(rhs *Commit) bool {
 
 func indent(t string) string {
 	var output []string
-	for _, line := range strings.Split(t, "\n") {
+	for line := range strings.SplitSeq(t, "\n") {
 		if len(line) != 0 {
 			line = "    " + line
 		}

@@ -207,7 +207,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 	// a delta.
 	hashes = make([]plumbing.Hash, 0, deltaWindowSize+2)
 	hashes = append(hashes, s.hashes["base"])
-	for i := uint(0); i < deltaWindowSize; i++ {
+	for range deltaWindowSize {
 		hashes = append(hashes, s.hashes["smallTarget"])
 	}
 	hashes = append(hashes, s.hashes["target"])

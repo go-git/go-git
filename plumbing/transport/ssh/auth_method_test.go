@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -276,17 +277,8 @@ func (s *SuiteCommon) TestNewKnownHostsDbWithoutCert() {
 	algos := db.HostKeyAlgorithms(mock.String())
 	s.Len(algos, len(mock.Algorithms()))
 
-	contains := func(container []string, value string) bool {
-		for _, inner := range container {
-			if inner == value {
-				return true
-			}
-		}
-		return false
-	}
-
 	for _, algorithm := range mock.Algorithms() {
-		if !contains(algos, algorithm) {
+		if !slices.Contains(algos, algorithm) {
 			s.T().Error("algos does not contain ", algorithm)
 		}
 	}
@@ -321,17 +313,8 @@ func (s *SuiteCommon) TestNewKnownHostsDbWithCert() {
 	algos := db.HostKeyAlgorithms(mock.String())
 	s.Len(algos, len(mock.Algorithms()))
 
-	contains := func(container []string, value string) bool {
-		for _, inner := range container {
-			if inner == value {
-				return true
-			}
-		}
-		return false
-	}
-
 	for _, algorithm := range mock.Algorithms() {
-		if !contains(algos, algorithm) {
+		if !slices.Contains(algos, algorithm) {
 			s.T().Error("algos does not contain ", algorithm)
 		}
 	}

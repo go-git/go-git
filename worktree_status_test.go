@@ -108,7 +108,7 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 
 	b.StartTimer()
 
-	for range b.N {
+	for b.Loop() {
 		wt.Status()
 	}
 }

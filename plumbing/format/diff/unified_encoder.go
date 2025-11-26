@@ -286,10 +286,7 @@ func (g *hunksGenerator) processEqualsLines(ls []string, i int) {
 		g.current.AddOp(Equal, g.afterContext...)
 		g.afterContext = nil
 	} else {
-		ctxLines := g.ctxLines
-		if ctxLines > len(g.afterContext) {
-			ctxLines = len(g.afterContext)
-		}
+		ctxLines := min(g.ctxLines, len(g.afterContext))
 		g.current.AddOp(Equal, g.afterContext[:ctxLines]...)
 		g.hunks = append(g.hunks, g.current)
 
@@ -383,8 +380,8 @@ func (o *op) writeTo(sb *strings.Builder, color ColorConfig) {
 	colorKey := operationColorKey[o.t]
 	sb.WriteString(color[colorKey])
 	sb.WriteByte(operationChar[o.t])
-	if strings.HasSuffix(o.text, "\n") {
-		sb.WriteString(strings.TrimSuffix(o.text, "\n"))
+	if text, found := strings.CutSuffix(o.text, "\n"); found {
+		sb.WriteString(text)
 	} else {
 		sb.WriteString(o.text + "\n\\ No newline at end of file")
 	}

@@ -98,7 +98,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	hasGenerationV2 := idx.HasGenerationV2()
 
 	// Find out if we will need extra edge table
-	for i := 0; i < len(hashes); i++ {
+	for i := range len(hashes) {
 		v, _ := idx.GetCommitDataByIndex(uint32(i))
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)

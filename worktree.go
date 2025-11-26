@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -567,10 +568,8 @@ func validPath(paths ...string) error {
 			}
 		}
 
-		for _, part := range parts {
-			if part == ".." {
-				return fmt.Errorf("invalid path %q: cannot use '..'", p)
-			}
+		if slices.Contains(parts, "..") {
+			return fmt.Errorf("invalid path %q: cannot use '..'", p)
 		}
 	}
 	return nil

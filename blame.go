@@ -302,7 +302,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 	out:
 		for h := range hunks {
 			hLines := countLines(hunks[h].Text)
-			for hl := 0; hl < hLines; hl++ {
+			for range hLines {
 				switch hunks[h].Type {
 				case diffmatchpatch.DiffEqual:
 					prevl++

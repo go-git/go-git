@@ -106,7 +106,7 @@ func repeat(s string, n int) []string {
 		panic("repeat: n < 0")
 	}
 	r := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		r = append(r, s)
 	}
 
