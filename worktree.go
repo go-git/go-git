@@ -203,8 +203,13 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	// be in the worktree. If index != target tree, we need Reset() to update both
 	// the index and worktree, even if HEAD's tree matches the target tree.
 	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
-		if canUseFastPath, err := w.canSkipWorktreeUpdate(c); err == nil && canUseFastPath {
-			if indexMatches, err := w.indexMatchesTargetTree(c); err == nil && indexMatches {
+		targetCommit, err := w.r.CommitObject(c)
+		if err != nil {
+			return err
+		}
+
+		if canUseFastPath, err := w.canSkipWorktreeUpdate(targetCommit); err == nil && canUseFastPath {
+			if indexMatches, err := w.indexMatchesTargetTree(targetCommit); err == nil && indexMatches {
 				if !opts.Hash.IsZero() && !opts.Create {
 					return w.setHEADToCommit(c)
 				}
@@ -320,7 +325,7 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 // canSkipWorktreeUpdate determines if we can skip the worktree update
 // during checkout by comparing tree hashes. Returns true if current HEAD
 // and target commit point to the same tree, meaning no files need to change.
-func (w *Worktree) canSkipWorktreeUpdate(targetCommitHash plumbing.Hash) (bool, error) {
+func (w *Worktree) canSkipWorktreeUpdate(targetCommit *object.Commit) (bool, error) {
 	headRef, err := w.r.Head()
 	if err != nil {
 		return false, err
@@ -331,24 +336,14 @@ func (w *Worktree) canSkipWorktreeUpdate(targetCommitHash plumbing.Hash) (bool, 
 		return false, err
 	}
 
-	targetCommitObj, err := w.r.CommitObject(targetCommitHash)
-	if err != nil {
-		return false, err
-	}
-
-	return currentCommit.TreeHash == targetCommitObj.TreeHash, nil
+	return currentCommit.TreeHash == targetCommit.TreeHash, nil
 }
 
 // indexMatchesTargetTree checks if the current index already matches the target tree.
 // This is the proper check to determine if we can skip worktree updates during checkout.
 // Git uses the index (staging area) as the source of truth - if index == target tree,
 // then no worktree updates are needed regardless of physical file state.
-func (w *Worktree) indexMatchesTargetTree(targetCommitHash plumbing.Hash) (bool, error) {
-	targetCommit, err := w.r.CommitObject(targetCommitHash)
-	if err != nil {
-		return false, err
-	}
-
+func (w *Worktree) indexMatchesTargetTree(targetCommit *object.Commit) (bool, error) {
 	targetTree, err := targetCommit.Tree()
 	if err != nil {
 		return false, err
