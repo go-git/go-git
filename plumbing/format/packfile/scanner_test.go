@@ -203,7 +203,7 @@ func TestPackVersion(t *testing.T) {
 			scanner: &Scanner{
 				scannerReader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
-					binary.Write(buf, binary.BigEndian, -1)
+					binary.Write(buf, binary.BigEndian, -1) //nolint:staticcheck // intentionally testing invalid input
 					return newScannerReader(buf, nil, nil)
 				}(),
 			},

@@ -65,7 +65,7 @@ func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint
 	}
 
 	if gitProtocol != "" {
-		c.Session.Setenv("GIT_PROTOCOL", gitProtocol)
+		c.Setenv("GIT_PROTOCOL", gitProtocol)
 	}
 
 	return c, nil

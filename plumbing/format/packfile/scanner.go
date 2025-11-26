@@ -163,8 +163,8 @@ func (r *Scanner) Scan() bool {
 // Reset resets the current scanner, enabling it to be used to scan the
 // same Packfile again.
 func (r *Scanner) Reset() {
-	r.scannerReader.Flush()
-	r.scannerReader.Seek(0, io.SeekStart)
+	r.Flush()
+	r.Seek(0, io.SeekStart)
 	r.packhash.Reset()
 
 	r.objIndex = -1
@@ -193,7 +193,7 @@ func (r *Scanner) SeekFromStart(offset int64) error {
 		return fmt.Errorf("failed to reset and read header")
 	}
 
-	_, err := r.scannerReader.Seek(offset, io.SeekStart)
+	_, err := r.Seek(offset, io.SeekStart)
 	return err
 }
 
@@ -224,7 +224,7 @@ func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 }
 
 func (s *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
-	_, err := s.scannerReader.Seek(contentOffset, io.SeekStart)
+	_, err := s.Seek(contentOffset, io.SeekStart)
 	if err != nil {
 		return err
 	}
@@ -336,9 +336,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	r.objIndex++
 
-	offset := r.scannerReader.offset
+	offset := r.offset
 
-	r.scannerReader.Flush()
+	r.Flush()
 	r.crc.Reset()
 
 	b := []byte{0}
@@ -382,7 +382,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		}
 	}
 
-	oh.ContentOffset = r.scannerReader.offset
+	oh.ContentOffset = r.offset
 
 	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
@@ -445,7 +445,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 		}
 	}
-	r.scannerReader.Flush()
+	r.Flush()
 	oh.Crc32 = r.crc.Sum32()
 
 	r.packData.Section = ObjectSection
@@ -459,7 +459,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 // calculated during the scanning process, an [ErrMalformedPackfile] is
 // returned.
 func packFooter(r *Scanner) (stateFn, error) {
-	r.scannerReader.Flush()
+	r.Flush()
 
 	actual := r.packhash.Sum(nil)
 

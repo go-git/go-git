@@ -77,7 +77,7 @@ func (s *ChangeSuite) TestInsert() {
 	s.NoError(err)
 	s.Nil(from)
 	s.Equal(name, to.Name)
-	s.Equal(blob, to.Blob.Hash)
+	s.Equal(blob, to.Hash)
 
 	p, err := change.Patch()
 	s.NoError(err)
@@ -135,7 +135,7 @@ func (s *ChangeSuite) TestDelete() {
 	s.NoError(err)
 	s.Nil(to)
 	s.Equal(name, from.Name)
-	s.Equal(blob, from.Blob.Hash)
+	s.Equal(blob, from.Hash)
 
 	p, err := change.Patch()
 	s.NoError(err)
@@ -205,9 +205,9 @@ func (s *ChangeSuite) TestModify() {
 	s.NoError(err)
 
 	s.Equal(name, from.Name)
-	s.Equal(fromBlob, from.Blob.Hash)
+	s.Equal(fromBlob, from.Hash)
 	s.Equal(name, to.Name)
-	s.Equal(toBlob, to.Blob.Hash)
+	s.Equal(toBlob, to.Hash)
 
 	p, err := change.Patch()
 	s.NoError(err)

@@ -84,7 +84,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	s.hasher = plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
-	s.IndexStorage.h = s.hasher.Hash
+	s.h = s.hasher.Hash
 
 	return s
 }

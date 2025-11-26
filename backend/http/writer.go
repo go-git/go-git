@@ -34,7 +34,7 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		nw, err := f.ResponseWriter.Write(p[:nr])
+		nw, err := f.Write(p[:nr])
 		if err != nil {
 			logf(f.log, "error writing response: %v", err)
 			renderStatusError(f.ResponseWriter, http.StatusInternalServerError)

@@ -45,8 +45,8 @@ func TestTransactionalPackfileWriter(t *testing.T) {
 	base := memory.NewStorage()
 	var temporal storage.Storer
 
-	temporal = filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
-
+	store := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+	temporal = store
 	st := NewStorage(base, temporal)
 
 	_, tmpOK := temporal.(storer.PackfileWriter)

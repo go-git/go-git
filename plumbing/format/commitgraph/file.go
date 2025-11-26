@@ -129,8 +129,8 @@ func (fi *fileIndex) verifyFileHeader() error {
 	if header[0] != 1 {
 		return ErrUnsupportedVersion
 	}
-	if !(fi.objSize == crypto.SHA1.Size() && header[1] == 1) &&
-		!(fi.objSize == crypto.SHA256.Size() && header[1] == 2) {
+	if (fi.objSize != crypto.SHA1.Size() || header[1] != 1) &&
+		(fi.objSize != crypto.SHA256.Size() || header[1] != 2) {
 		// Unknown hash type / unsupported hash type
 		return ErrUnsupportedHash
 	}

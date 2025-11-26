@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	NoErrAlreadyUpToDate     = errors.New("already up-to-date")
+	NoErrAlreadyUpToDate     = errors.New("already up-to-date") //nolint:staticcheck // Not an error, sentinel value for success
 	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")

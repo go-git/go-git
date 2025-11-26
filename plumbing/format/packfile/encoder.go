@@ -184,10 +184,7 @@ func (e *Encoder) entryHead(typeNum plumbing.ObjectType, size int64) error {
 	header := []byte{}
 	c := (t << firstLengthBits) | (size & maskFirstLength)
 	size >>= firstLengthBits
-	for {
-		if size == 0 {
-			break
-		}
+	for size != 0 {
 		header = append(header, byte(c|maskContinue))
 		c = size & int64(maskLength)
 		size >>= lengthBits

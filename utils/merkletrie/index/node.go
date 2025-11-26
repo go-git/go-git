@@ -54,7 +54,7 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 			// of the tree needs to have this value set to false so that subdirectories
 			// are not ignored.
 			if parentNode, ok := m[fullpath]; ok {
-				if e.SkipWorktree == false {
+				if !e.SkipWorktree {
 					parentNode.skip = false
 				}
 				continue
