@@ -589,6 +589,7 @@ Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
 	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err = commit.EncodeWithoutSignature(encoded)
+	s.NoError(err)
 	er, err := encoded.Reader()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)
@@ -649,6 +650,7 @@ initial commit
 	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err = commit.EncodeWithoutSignature(encoded)
+	s.NoError(err)
 	er, err := encoded.Reader()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)
