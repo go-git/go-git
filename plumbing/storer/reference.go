@@ -44,7 +44,8 @@ type referenceFilteredIter struct {
 // Iterator. This iterator will iterate only references that accomplish the
 // provided function.
 func NewReferenceFilteredIter(
-	ff func(r *plumbing.Reference) bool, iter ReferenceIter) ReferenceIter {
+	ff func(r *plumbing.Reference) bool, iter ReferenceIter,
+) ReferenceIter {
 	return &referenceFilteredIter{ff, iter}
 }
 

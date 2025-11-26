@@ -16,6 +16,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/path_util"
 	"github.com/go-git/go-git/v6/internal/revision"
@@ -1148,7 +1149,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 		}
 	}
 
-	return
+	return updated, err
 }
 
 func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
@@ -1903,5 +1904,5 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 		}
 		return nil
 	})
-	return
+	return hashes
 }

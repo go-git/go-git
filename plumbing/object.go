@@ -107,5 +107,5 @@ func ParseObjectType(value string) (typ ObjectType, err error) {
 	default:
 		err = ErrInvalidType
 	}
-	return
+	return typ, err
 }

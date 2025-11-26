@@ -107,7 +107,7 @@ func (i *Index) Glob(pattern string) (matches []*Entry, err error) {
 		}
 	}
 
-	return
+	return matches, err
 }
 
 // String is equivalent to `git ls-files --stage --debug`

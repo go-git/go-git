@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/internal/transport/test"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
@@ -28,7 +29,7 @@ func setupTest(t testing.TB) (base string, port int) {
 	port, err = test.FreePort()
 	require.NoError(t, err)
 	base = filepath.Join(t.TempDir(), fmt.Sprintf("go-git-protocol-%d", port))
-	return
+	return base, port
 }
 
 func startDaemon(t testing.TB, base string, port int) *exec.Cmd {

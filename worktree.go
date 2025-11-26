@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
+
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -404,7 +405,7 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 	return ErrRestoreWorktreeOnlyNotSupported
 }
 
-func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]string, error) {
+func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
@@ -770,7 +771,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
-		return
+		return err
 	}
 
 	if mode&os.ModeSymlink != 0 {
@@ -779,7 +780,7 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 
 	dstFile, err := w.Filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
-		return
+		return err
 	}
 	defer ioutil.CheckClose(dstFile, &err)
 
@@ -833,14 +834,14 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 
 	from, err := f.Reader()
 	if err != nil {
-		return
+		return err
 	}
 
 	defer ioutil.CheckClose(from, &err)
 
 	bytes, err := io.ReadAll(from)
 	if err != nil {
-		return
+		return err
 	}
 
 	err = w.Filesystem.Symlink(string(bytes), f.Name)
@@ -860,7 +861,7 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 		_, err = to.Write(bytes)
 		return err
 	}
-	return
+	return err
 }
 
 func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *indexBuilder) error {
@@ -911,7 +912,7 @@ func (r *Repository) getTreeFromCommitHash(commit plumbing.Hash) (*object.Tree, 
 	return c.Tree()
 }
 
-var fillSystemInfo func(e *index.Entry, sys interface{})
+var fillSystemInfo func(e *index.Entry, sys any)
 
 const gitmodulesFile = ".gitmodules"
 

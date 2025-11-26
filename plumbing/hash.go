@@ -55,7 +55,7 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 func (h Hasher) Sum() (hash Hash) {
 	hash.format = h.format
 	hash.Write(h.Hash.Sum(nil))
-	return
+	return hash
 }
 
 // HashesSort sorts a slice of Hashes in increasing order.

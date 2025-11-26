@@ -161,7 +161,7 @@ func (c *command) Close() (err error) {
 	closeDiscriptors(c.parentIOFiles)
 	c.closed = true
 
-	return
+	return err
 }
 
 func closeDiscriptors(fds []io.Closer) {

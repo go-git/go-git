@@ -80,7 +80,7 @@ func (e *Encoder) Encode(idx Index) error {
 	return e.encodeChecksum()
 }
 
-func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount uint32, generationV2OverflowCount uint32) {
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount, generationV2OverflowCount uint32) {
 	// Sort the hashes and build our index
 	plumbing.HashesSort(hashes)
 	hashToIndex = make(map[plumbing.Hash]uint32)
@@ -108,7 +108,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		}
 	}
 
-	return
+	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount
 }
 
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
@@ -119,7 +119,7 @@ func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 		}
 		_, err = e.Write([]byte{1, version, byte(chunkCount), 0})
 	}
-	return
+	return err
 }
 
 func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint64) (err error) {
@@ -130,23 +130,23 @@ func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint
 			err = binary.WriteUint64(e, offset)
 		}
 		if err != nil {
-			return
+			return err
 		}
 		offset += chunkSizes[i]
 	}
 	if _, err = e.Write(ZeroChunk.Signature()); err == nil {
 		err = binary.WriteUint64(e, offset)
 	}
-	return
+	return err
 }
 
 func (e *Encoder) encodeFanout(fanout []uint32) (err error) {
 	for i := 0; i <= 0xff; i++ {
 		if err = binary.WriteUint32(e, fanout[i]); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
@@ -155,7 +155,7 @@ func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 			return err
 		}
 	}
-	return
+	return err
 }
 
 func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (extraEdges []uint32, generationV2Data []uint64, err error) {
@@ -166,7 +166,7 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 		origIndex, _ := idx.GetIndexByHash(hash)
 		commitData, _ := idx.GetCommitDataByIndex(origIndex)
 		if _, err = e.Write(commitData.TreeHash.Bytes()); err != nil {
-			return
+			return extraEdges, generationV2Data, err
 		}
 
 		var parent1, parent2 uint32
@@ -192,28 +192,28 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 			err = binary.WriteUint32(e, parent2)
 		}
 		if err != nil {
-			return
+			return extraEdges, generationV2Data, err
 		}
 
 		unixTime := uint64(commitData.When.Unix())
 		unixTime |= uint64(commitData.Generation) << 34
 		if err = binary.WriteUint64(e, unixTime); err != nil {
-			return
+			return extraEdges, generationV2Data, err
 		}
 		if generationV2Data != nil {
 			generationV2Data = append(generationV2Data, commitData.GenerationV2Data())
 		}
 	}
-	return
+	return extraEdges, generationV2Data, err
 }
 
 func (e *Encoder) encodeExtraEdges(extraEdges []uint32) (err error) {
 	for _, parent := range extraEdges {
 		if err = binary.WriteUint32(e, parent); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (e *Encoder) encodeGenerationV2Data(generationV2Data []uint64) (overflows []uint64, err error) {
@@ -239,10 +239,10 @@ func (e *Encoder) encodeGenerationV2Data(generationV2Data []uint64) (overflows [
 func (e *Encoder) encodeGenerationV2Overflow(overflows []uint64) (err error) {
 	for _, overflow := range overflows {
 		if err = binary.WriteUint64(e, overflow); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (e *Encoder) encodeChecksum() error {

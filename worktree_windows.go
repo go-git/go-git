@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	fillSystemInfo = func(e *index.Entry, sys interface{}) {
+	fillSystemInfo = func(e *index.Entry, sys any) {
 		if os, ok := sys.(*syscall.Win32FileAttributeData); ok {
 			seconds := os.CreationTime.Nanoseconds() / 1000000000
 			nanoseconds := os.CreationTime.Nanoseconds() - seconds*1000000000

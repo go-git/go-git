@@ -34,7 +34,7 @@ func (opts Options) GoString() string {
 // Get gets the value for the given key if set,
 // otherwise it returns the empty string.
 //
-// Note that there is no difference
+// # Note that there is no difference
 //
 // This matches git behaviour since git v1.8.1-rc1,
 // if there are multiple definitions of a key, the
@@ -85,7 +85,7 @@ func (opts Options) withoutOption(key string) Options {
 	return result
 }
 
-func (opts Options) withAddedOption(key string, value string) Options {
+func (opts Options) withAddedOption(key, value string) Options {
 	return append(opts, &Option{key, value})
 }
 

@@ -3,7 +3,7 @@ package gitattributes
 // Matcher defines a global multi-pattern matcher for gitattributes patterns
 type Matcher interface {
 	// Match matches patterns in the order of priorities.
-	Match(path []string, attributes []string) (map[string]Attribute, bool)
+	Match(path, attributes []string) (map[string]Attribute, bool)
 }
 
 type MatcherOptions struct{}
@@ -41,13 +41,13 @@ func (m *matcher) init() {
 //
 // Matched is true if any path was matched to a rule, even if the results map
 // is empty.
-func (m *matcher) Match(path []string, attributes []string) (results map[string]Attribute, matched bool) {
+func (m *matcher) Match(path, attributes []string) (results map[string]Attribute, matched bool) {
 	results = make(map[string]Attribute, len(attributes))
 
 	n := len(m.stack)
 	for i := n - 1; i >= 0; i-- {
 		if len(attributes) > 0 && len(attributes) == len(results) {
-			return
+			return results, matched
 		}
 
 		pattern := m.stack[i].Pattern
@@ -65,7 +65,7 @@ func (m *matcher) Match(path []string, attributes []string) (results map[string]
 			}
 		}
 	}
-	return
+	return results, matched
 }
 
 func (m *matcher) expandMacro(name string, results map[string]Attribute) bool {

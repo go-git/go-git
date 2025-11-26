@@ -127,11 +127,11 @@ func (b *URLSuite) TestApplyInsteadOf() {
 
 func (b *URLSuite) TestFindLongestInsteadOfMatch() {
 	urlRules := map[string]*URL{
-		"ssh://github.com": &URL{
+		"ssh://github.com": {
 			Name:       "ssh://github.com",
 			InsteadOfs: []string{"http://github.com"},
 		},
-		"ssh://somethingelse.com": &URL{
+		"ssh://somethingelse.com": {
 			Name:       "ssh://somethingelse.com",
 			InsteadOfs: []string{"http://github.com/foobar"},
 		},

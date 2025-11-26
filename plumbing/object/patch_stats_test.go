@@ -6,10 +6,11 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type PatchStatsSuite struct {
@@ -32,7 +33,7 @@ func (s *PatchStatsSuite) TestStatsWithRename() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo\nbar\n"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo\nbar\n"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)

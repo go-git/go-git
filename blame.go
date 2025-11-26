@@ -10,10 +10,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sergi/go-diff/diffmatchpatch"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/utils/diff"
-	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 // BlameResult represents the result of a Blame operation.
@@ -504,6 +505,7 @@ func (pq *priorityQueueImp) Pop() any {
 
 	return ret
 }
+
 func (pq *priorityQueueImp) Peek() *object.Commit {
 	if len(*pq) == 0 {
 		return nil
@@ -518,6 +520,7 @@ func (pq *priorityQueue) Len() int { return (*priorityQueueImp)(pq).Len() }
 func (pq *priorityQueue) Push(c *queueItem) {
 	heap.Push((*priorityQueueImp)(pq), c)
 }
+
 func (pq *priorityQueue) Pop() *queueItem {
 	return heap.Pop((*priorityQueueImp)(pq)).(*queueItem)
 }

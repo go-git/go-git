@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
@@ -28,8 +29,6 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type RemoteSuite struct {

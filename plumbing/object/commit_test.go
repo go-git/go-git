@@ -10,10 +10,10 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -522,7 +522,6 @@ func (s *SuiteCommit) TestPatchCancel() {
 	patch, err := from.PatchContext(ctx, to)
 	s.Nil(patch)
 	s.ErrorContains(err, "operation canceled")
-
 }
 
 func (s *SuiteCommit) TestMalformedHeader() {
@@ -629,20 +628,20 @@ initial commit
 	s.NoError(err)
 
 	s.Equal(commit.ExtraHeaders, []ExtraHeader{
-		ExtraHeader {
-			Key: "continuedheader",
+		{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued",
 		},
-		ExtraHeader {
-			Key: "continuedheader",
+		{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued\non\nmore than\na single line",
 		},
-		ExtraHeader {
-			Key: "simpleflag",
+		{
+			Key:   "simpleflag",
 			Value: "",
 		},
-		ExtraHeader {
-			Key: "",
+		{
+			Key:   "",
 			Value: "value no key",
 		},
 	})

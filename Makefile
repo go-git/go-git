@@ -3,7 +3,7 @@ WORKDIR = $(PWD)
 
 # Go parameters
 GOCMD = go
-GOTEST = $(GOCMD) test 
+GOTEST = $(GOCMD) test
 
 # Git config
 GIT_VERSION ?=

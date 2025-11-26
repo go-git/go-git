@@ -9,16 +9,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
+	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
-
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/packet"
-	"github.com/go-git/go-billy/v6"
 )
 
 var (
@@ -346,9 +346,9 @@ func (sortableEntries) sortName(te object.TreeEntry) string {
 	}
 	return te.Name
 }
-func (se sortableEntries) Len() int               { return len(se) }
-func (se sortableEntries) Less(i int, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
-func (se sortableEntries) Swap(i int, j int)      { se[i], se[j] = se[j], se[i] }
+func (se sortableEntries) Len() int           { return len(se) }
+func (se sortableEntries) Less(i, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
+func (se sortableEntries) Swap(i, j int)      { se[i], se[j] = se[j], se[i] }
 
 func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
 	sort.Sort(sortableEntries(t.Entries))

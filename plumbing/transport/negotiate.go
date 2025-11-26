@@ -222,7 +222,7 @@ func NegotiatePack(
 	return shallowInfo, nil
 }
 
-func isSubset(needle []plumbing.Hash, haystack []plumbing.Hash) bool {
+func isSubset(needle, haystack []plumbing.Hash) bool {
 	for _, h := range needle {
 		found := false
 		for _, oh := range haystack {

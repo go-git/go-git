@@ -4,9 +4,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/storage"
-	"github.com/stretchr/testify/suite"
 )
 
 func TestClientSuite(t *testing.T) {

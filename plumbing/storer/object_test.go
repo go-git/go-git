@@ -5,8 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type ObjectSuite struct {
@@ -98,7 +99,7 @@ func (s *ObjectSuite) TestObjectSliceIter() {
 func (s *ObjectSuite) TestObjectSliceIterStop() {
 	i := NewEncodedObjectSliceIter(s.Objects)
 
-	var count = 0
+	count := 0
 	err := i.ForEach(func(o plumbing.EncodedObject) error {
 		s.NotNil(o)
 		s.Equal(s.Hash[count].String(), o.Hash().String())
@@ -148,7 +149,8 @@ func (o *MockObjectStorage) HasEncodedObject(h plumbing.Hash) error {
 }
 
 func (o *MockObjectStorage) EncodedObjectSize(h plumbing.Hash) (
-	size int64, err error) {
+	size int64, err error,
+) {
 	for _, o := range o.db {
 		if o.Hash() == h {
 			return o.Size(), nil

@@ -158,6 +158,7 @@ func (s *CommonSuite) TestNewReadCloserOnError() {
 
 	s.NotNil(called)
 }
+
 func ExampleCheckClose() {
 	// CheckClose is commonly used with named return values
 	f := func() (err error) {

@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/stretchr/testify/require"
 )
 
 func testServe[T UploadPackOptions | ReceivePackOptions](

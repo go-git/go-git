@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,8 +15,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 func TestDecodeEntries(t *testing.T) {
@@ -162,140 +161,129 @@ func TestDecodeEntries(t *testing.T) {
 	}
 }
 
-var (
-	// basicIndex represents fixtures.Basic().One().DotGit().Open("index")
-	basicIndex = Index{
-		Version: 2,
-		Entries: []*Entry{
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140626),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(189),
-				Hash:       plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88"),
-				Name:       ".gitignore",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140627),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(18),
-				Hash:       plumbing.NewHash("d3ff53e0564a9f87d8e84b6e28e5060e517008aa"),
-				Name:       "CHANGELOG",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140628),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(1072),
-				Hash:       plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f"),
-				Name:       "LICENSE",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140629),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(76110),
-				Hash:       plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d"),
-				Name:       "binary.jpg",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140631),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(2780),
-				Hash:       plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"),
-				Name:       "go/example.go",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140633),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(217848),
-				Hash:       plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9"),
-				Name:       "json/long.json",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140634),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(706),
-				Hash:       plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"),
-				Name:       "json/short.json",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140636),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(11488),
-				Hash:       plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"),
-				Name:       "php/crappy.php",
-				Mode:       filemode.Regular,
-			},
-			{
-
-				CreatedAt:  time.Unix(int64(1480626693), 498593596),
-				ModifiedAt: time.Unix(int64(1480626693), 498593596),
-				Dev:        uint32(39),
-				Inode:      uint32(140638),
-				UID:        uint32(1000),
-				GID:        uint32(100),
-				Size:       uint32(78),
-				Hash:       plumbing.NewHash("9dea2395f5403188298c1dabe8bdafe562c491e3"),
-				Name:       "vendor/foo.go",
-				Mode:       filemode.Regular,
-			},
+// basicIndex represents fixtures.Basic().One().DotGit().Open("index")
+var basicIndex = Index{
+	Version: 2,
+	Entries: []*Entry{
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140626),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(189),
+			Hash:       plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88"),
+			Name:       ".gitignore",
+			Mode:       filemode.Regular,
 		},
-		Cache: &Tree{
-			[]TreeEntry{
-				{Path: "", Entries: 9, Trees: 4, Hash: plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")},
-				{Path: "go", Entries: 1, Trees: 0, Hash: plumbing.NewHash("a39771a7651f97faf5c72e08224d857fc35133db")},
-				{Path: "php", Entries: 1, Trees: 0, Hash: plumbing.NewHash("586af567d0bb5e771e49bdd9434f5e0fb76d25fa")},
-				{Path: "json", Entries: 2, Trees: 0, Hash: plumbing.NewHash("5a877e6a906a2743ad6e45d99c1793642aaf8eda")},
-				{Path: "vendor", Entries: 1, Trees: 0, Hash: plumbing.NewHash("cf4aa3b38974fb7d81f367c0830f7d78d65ab86b")},
-			},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140627),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(18),
+			Hash:       plumbing.NewHash("d3ff53e0564a9f87d8e84b6e28e5060e517008aa"),
+			Name:       "CHANGELOG",
+			Mode:       filemode.Regular,
 		},
-	}
-)
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140628),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(1072),
+			Hash:       plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f"),
+			Name:       "LICENSE",
+			Mode:       filemode.Regular,
+		},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140629),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(76110),
+			Hash:       plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d"),
+			Name:       "binary.jpg",
+			Mode:       filemode.Regular,
+		},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140631),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(2780),
+			Hash:       plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"),
+			Name:       "go/example.go",
+			Mode:       filemode.Regular,
+		},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140633),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(217848),
+			Hash:       plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9"),
+			Name:       "json/long.json",
+			Mode:       filemode.Regular,
+		},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140634),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(706),
+			Hash:       plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"),
+			Name:       "json/short.json",
+			Mode:       filemode.Regular,
+		},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140636),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(11488),
+			Hash:       plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"),
+			Name:       "php/crappy.php",
+			Mode:       filemode.Regular,
+		},
+		{
+			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ModifiedAt: time.Unix(int64(1480626693), 498593596),
+			Dev:        uint32(39),
+			Inode:      uint32(140638),
+			UID:        uint32(1000),
+			GID:        uint32(100),
+			Size:       uint32(78),
+			Hash:       plumbing.NewHash("9dea2395f5403188298c1dabe8bdafe562c491e3"),
+			Name:       "vendor/foo.go",
+			Mode:       filemode.Regular,
+		},
+	},
+	Cache: &Tree{
+		[]TreeEntry{
+			{Path: "", Entries: 9, Trees: 4, Hash: plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")},
+			{Path: "go", Entries: 1, Trees: 0, Hash: plumbing.NewHash("a39771a7651f97faf5c72e08224d857fc35133db")},
+			{Path: "php", Entries: 1, Trees: 0, Hash: plumbing.NewHash("586af567d0bb5e771e49bdd9434f5e0fb76d25fa")},
+			{Path: "json", Entries: 2, Trees: 0, Hash: plumbing.NewHash("5a877e6a906a2743ad6e45d99c1793642aaf8eda")},
+			{Path: "vendor", Entries: 1, Trees: 0, Hash: plumbing.NewHash("cf4aa3b38974fb7d81f367c0830f7d78d65ab86b")},
+		},
+	},
+}
 
 func TestDecodeMergeConflict(t *testing.T) {
 	f, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit().Open("index")
@@ -347,7 +335,7 @@ func (s *IndexSuite) readSimpleIndex() *Index {
 	return idx
 }
 
-func (s *IndexSuite) buildIndexWithExtension(signature string, data string) []byte {
+func (s *IndexSuite) buildIndexWithExtension(signature, data string) []byte {
 	idx := s.readSimpleIndex()
 
 	buf := bytes.NewBuffer(nil)

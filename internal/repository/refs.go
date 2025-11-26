@@ -63,7 +63,7 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 			hash = ref.Hash()
 			fallthrough
 		case plumbing.HashReference:
-			if _, err :=fmt.Fprintf(w, "%s\t%s\n", hash, name); err != nil {
+			if _, err := fmt.Fprintf(w, "%s\t%s\n", hash, name); err != nil {
 				return fmt.Errorf("writing info reference: %w", err)
 			}
 			if name.IsTag() {

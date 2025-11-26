@@ -53,7 +53,7 @@ func (d *advRefsDecoder) Decode(v *AdvRefs) error {
 type decoderStateFn func(*advRefsDecoder) decoderStateFn
 
 // fills out the parser sticky error
-func (d *advRefsDecoder) error(format string, a ...interface{}) {
+func (d *advRefsDecoder) error(format string, a ...any) {
 	msg := fmt.Sprintf(
 		"pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...),

@@ -44,7 +44,7 @@ func (c *Change) Action() (merkletrie.Action, error) {
 func (c *Change) Files() (from, to *File, err error) {
 	action, err := c.Action()
 	if err != nil {
-		return
+		return from, to, err
 	}
 
 	if action == merkletrie.Insert || action == merkletrie.Modify {
@@ -54,7 +54,7 @@ func (c *Change) Files() (from, to *File, err error) {
 		}
 
 		if err != nil {
-			return
+			return from, to, err
 		}
 	}
 
@@ -65,11 +65,11 @@ func (c *Change) Files() (from, to *File, err error) {
 		}
 
 		if err != nil {
-			return
+			return from, to, err
 		}
 	}
 
-	return
+	return from, to, err
 }
 
 func (c *Change) String() string {

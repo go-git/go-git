@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	billy "github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -209,7 +210,7 @@ func (p *Packfile) init() error {
 
 		p.rbuf = gogitsync.GetBufioReader(nil)
 
-		var opts = []ScannerOption{WithBufioReader(p.rbuf)}
+		opts := []ScannerOption{WithBufioReader(p.rbuf)}
 
 		if p.objectIdSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
@@ -299,7 +300,7 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 }
 
 func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, error) {
-	var obj = new(plumbing.MemoryObject)
+	obj := new(plumbing.MemoryObject)
 	obj.SetSize(oh.Size)
 	obj.SetType(oh.Type)
 

@@ -19,7 +19,7 @@ const defaultChunkSize = 4096
 // Useful when using proxies.
 type flushResponseWriter struct {
 	http.ResponseWriter
-	log *log.Logger
+	log       *log.Logger
 	chunkSize int
 }
 
@@ -54,7 +54,6 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 
 	return n, nil
 }
-
 
 // Close implements io.Closer interface.
 // It is a no-op.

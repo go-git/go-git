@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-	"github.com/stretchr/testify/suite"
 )
 
 func TestFilterCommitIterSuite(t *testing.T) {
@@ -214,7 +215,6 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt() {
 //   - b029517f6300c2da0f4b651b8642506cd6aaf45d
 //   - b8e471f58bcbca63b07bda20e428190409c2db47
 func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn() {
-
 	var visited []*Commit
 	errUnexpected := fmt.Errorf("Could not continue")
 	cb := func(c *Commit) error {

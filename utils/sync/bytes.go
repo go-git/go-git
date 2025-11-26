@@ -9,13 +9,13 @@ var (
 	size = 32 * 1024
 
 	byteSlice = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			b := make([]byte, size)
 			return &b
 		},
 	}
 	bytesBuffer = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return bytes.NewBuffer(nil)
 		},
 	}

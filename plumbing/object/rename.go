@@ -97,7 +97,7 @@ func (d *renameDetector) detectExactRenames() {
 				d.modified = append(d.modified, &Change{From: bestMatch.From, To: c.To})
 				delete(deletes, hash)
 
-				var newDeletes = make([]*Change, 0, len(deleted)-1)
+				newDeletes := make([]*Change, 0, len(deleted)-1)
 				for _, d := range deleted {
 					if d != bestMatch {
 						newDeletes = append(newDeletes, d)
@@ -182,7 +182,7 @@ func (d *renameDetector) detectExactRenames() {
 				}
 			}
 
-			var newDeletes = make([]*Change, 0, len(deleted)-len(usedDeletes))
+			newDeletes := make([]*Change, 0, len(deleted)-len(usedDeletes))
 			for _, c := range deleted {
 				if _, ok := usedDeletes[c]; !ok && c != nil {
 					newDeletes = append(newDeletes, c)
@@ -358,7 +358,7 @@ func sameMode(a, b *Change) bool {
 }
 
 func groupChangesByHash(changes []*Change) map[plumbing.Hash][]*Change {
-	var result = make(map[plumbing.Hash][]*Change)
+	result := make(map[plumbing.Hash][]*Change)
 	for _, c := range changes {
 		hash := changeHash(c)
 		result[hash] = append(result[hash], c)
@@ -572,7 +572,7 @@ func (i *similarityIndex) hash(f *File) error {
 }
 
 func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error {
-	var buf = make([]byte, 4096)
+	buf := make([]byte, 4096)
 	var ptr, cnt int
 	remaining := size
 
@@ -636,7 +636,7 @@ func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error
 // two empty files.
 // The similarity score is symmetrical; i.e. a.score(b) == b.score(a).
 func (i *similarityIndex) score(other *similarityIndex, maxScore int) int {
-	var maxHashed = i.hashed
+	maxHashed := i.hashed
 	if maxHashed < other.hashed {
 		maxHashed = other.hashed
 	}

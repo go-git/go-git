@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/helper/chroot"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/helper/chroot"
 )
 
 const (
@@ -866,7 +866,7 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		if time.Since(start) > 15*time.Second {
 			return nil, errors.New("timeout trying to lock packed refs")
 		}
-		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0600)
+		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0o600)
 		if err != nil {
 			if os.IsNotExist(err) && !doCreate {
 				return nil, nil
@@ -1150,7 +1150,7 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 func (d *DotGit) AddAlternate(remote string) error {
 	altpath := d.fs.Join(objectsPath, infoPath, alternatesPath)
 
-	f, err := d.fs.OpenFile(altpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
+	f, err := d.fs.OpenFile(altpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
 	if err != nil {
 		return fmt.Errorf("cannot open file: %w", err)
 	}
@@ -1283,9 +1283,9 @@ func incBytes(in []byte) (out []byte, overflow bool) {
 	for i := len(out) - 1; i >= 0; i-- {
 		out[i]++
 		if out[i] != 0 {
-			return // Didn't overflow.
+			return out, overflow // Didn't overflow.
 		}
 	}
 	overflow = true
-	return
+	return out, overflow
 }

@@ -34,7 +34,7 @@ func NewCommitIterCTime(
 		seen[h] = true
 	}
 
-	heap := binaryheap.NewWith(func(a, b interface{}) int {
+	heap := binaryheap.NewWith(func(a, b any) int {
 		if a.(*Commit).Committer.When.Before(b.(*Commit).Committer.When) {
 			return 1
 		}

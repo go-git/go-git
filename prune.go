@@ -8,14 +8,16 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
-type PruneHandler func(unreferencedObjectHash plumbing.Hash) error
-type PruneOptions struct {
-	// OnlyObjectsOlderThan if set to non-zero value
-	// selects only objects older than the time provided.
-	OnlyObjectsOlderThan time.Time
-	// Handler is called on matching objects
-	Handler PruneHandler
-}
+type (
+	PruneHandler func(unreferencedObjectHash plumbing.Hash) error
+	PruneOptions struct {
+		// OnlyObjectsOlderThan if set to non-zero value
+		// selects only objects older than the time provided.
+		OnlyObjectsOlderThan time.Time
+		// Handler is called on matching objects
+		Handler PruneHandler
+	}
+)
 
 var ErrLooseObjectsNotSupported = errors.New("loose objects not supported")
 

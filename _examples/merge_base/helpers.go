@@ -8,7 +8,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-func checkIfError(err error, code exitCode, mainReason string, v ...interface{}) {
+func checkIfError(err error, code exitCode, mainReason string, v ...any) {
 	if err == nil {
 		return
 	}
@@ -17,7 +17,7 @@ func checkIfError(err error, code exitCode, mainReason string, v ...interface{})
 	os.Exit(int(code))
 }
 
-func helpAndExit(s string, helpMsg string, code exitCode) {
+func helpAndExit(s, helpMsg string, code exitCode) {
 	if code == exitCodeSuccess {
 		printMsg("%s", s)
 	} else {
@@ -33,7 +33,7 @@ func printErr(err error) {
 	fmt.Printf("\x1b[31;1m%s\x1b[0m\n", fmt.Sprintf("error: %s", err))
 }
 
-func printMsg(format string, args ...interface{}) {
+func printMsg(format string, args ...any) {
 	fmt.Printf("%s\n", fmt.Sprintf(format, args...))
 }
 
@@ -52,7 +52,7 @@ func printCommits(commits []*object.Commit) {
 	}
 }
 
-func wrapErr(err error, s string, v ...interface{}) error {
+func wrapErr(err error, s string, v ...any) error {
 	if err != nil {
 		return fmt.Errorf("%s\n  %s", fmt.Sprintf(s, v...), err)
 	}

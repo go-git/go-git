@@ -8,13 +8,13 @@ import (
 	"io"
 	"sync/atomic"
 
+	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
-
-	"github.com/go-git/go-billy/v6"
 )
 
 // PackWriter is a io.Writer that generates the packfile index simultaneously,
@@ -205,7 +205,7 @@ func (s *syncedReader) Write(p []byte) (n int, err error) {
 	}()
 
 	n, err = s.w.Write(p)
-	return
+	return n, err
 }
 
 func (s *syncedReader) Read(p []byte) (n int, err error) {
@@ -221,7 +221,7 @@ func (s *syncedReader) Read(p []byte) (n int, err error) {
 		break
 	}
 
-	return
+	return n, err
 }
 
 func (s *syncedReader) isDone() bool {

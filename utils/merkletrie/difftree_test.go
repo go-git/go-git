@@ -9,9 +9,10 @@ import (
 	"testing"
 	"unicode"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/merkletrie/internal/fsnoder"
-	"github.com/stretchr/testify/suite"
 )
 
 type DiffTreeSuite struct {
@@ -496,5 +497,4 @@ func (s *DiffTreeSuite) TestCancel() {
 	results, err := merkletrie.DiffTreeContext(context, a, b, fsnoder.HashEqual)
 	s.Nil(results, comment)
 	s.ErrorContains(err, "operation canceled")
-
 }

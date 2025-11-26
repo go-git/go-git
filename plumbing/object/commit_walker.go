@@ -17,7 +17,6 @@ type commitPreIterator struct {
 	start        *Commit
 }
 
-
 func forEachCommit(next func() (*Commit, error), cb func(*Commit) error) error {
 	for {
 		c, err := next()
@@ -279,8 +278,8 @@ func addReference(
 	commitIterFunc func(*Commit) CommitIter,
 	ref *plumbing.Reference,
 	commitsPath *list.List,
-	commitsLookup map[plumbing.Hash]*list.Element) error {
-
+	commitsLookup map[plumbing.Hash]*list.Element,
+) error {
 	_, exists := commitsLookup[ref.Hash()]
 	if exists {
 		// we already have it - skip the reference.

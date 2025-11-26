@@ -12,7 +12,7 @@ import (
 // put its name in double quotes, separated by space from the section name,
 // in the section header, like in the example below:
 //
-//     [section "subsection"]
+//	[section "subsection"]
 //
 // All the other lines (and the remainder of the line after the section header)
 // are recognized as option variables, in the form "name = value" (or just name,
@@ -20,12 +20,11 @@ import (
 // The variable names are case-insensitive, allow only alphanumeric characters
 // and -, and must start with an alphabetic character:
 //
-//     [section "subsection1"]
-//         option1 = value1
-//         option2
-//     [section "subsection2"]
-//         option3 = value2
-//
+//	[section "subsection1"]
+//	    option1 = value1
+//	    option2
+//	[section "subsection2"]
+//	    option3 = value2
 type Section struct {
 	Name        string
 	Options     Options
@@ -121,14 +120,14 @@ func (s *Section) HasOption(key string) bool {
 }
 
 // AddOption adds a new Option to the Section. The updated Section is returned.
-func (s *Section) AddOption(key string, value string) *Section {
+func (s *Section) AddOption(key, value string) *Section {
 	s.Options = s.Options.withAddedOption(key, value)
 	return s
 }
 
 // SetOption adds a new Option to the Section. If the option already exists, is replaced.
 // The updated Section is returned.
-func (s *Section) SetOption(key string, value string) *Section {
+func (s *Section) SetOption(key, value string) *Section {
 	s.Options = s.Options.withSettedOption(key, value)
 	return s
 }
@@ -162,7 +161,7 @@ func (s *Subsection) HasOption(key string) bool {
 }
 
 // AddOption adds a new Option to the Subsection. The updated Subsection is returned.
-func (s *Subsection) AddOption(key string, value string) *Subsection {
+func (s *Subsection) AddOption(key, value string) *Subsection {
 	s.Options = s.Options.withAddedOption(key, value)
 	return s
 }

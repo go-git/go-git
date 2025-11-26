@@ -171,7 +171,7 @@ func (r *readerOnError) Read(buf []byte) (n int, err error) {
 		r.notify(err)
 	}
 
-	return
+	return n, err
 }
 
 type writerOnError struct {
@@ -197,7 +197,7 @@ func (r *writerOnError) Write(p []byte) (n int, err error) {
 		r.notify(err)
 	}
 
-	return
+	return n, err
 }
 
 // CloserFunc implements the io.Closer interface with a function.

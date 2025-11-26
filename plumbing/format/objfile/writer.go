@@ -86,10 +86,10 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	w.pending -= int64(n)
 	if err == nil && overwrite {
 		err = ErrOverflow
-		return
+		return n, err
 	}
 
-	return
+	return n, err
 }
 
 // Hash returns the hash of the object data stream that has been written so far.

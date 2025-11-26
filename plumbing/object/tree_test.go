@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/suite"
 )
 
 type TreeSuite struct {
@@ -1494,7 +1495,8 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 				Name: "test_quota.c", Mode: filemode.Regular,
 				Hash: plumbing.NewHash("e590996ca4b8574ab1e4185d577756664ad2495f"),
 			},
-			{Name: "test_quota.h", Mode: filemode.Regular,
+			{
+				Name: "test_quota.h", Mode: filemode.Regular,
 				Hash: plumbing.NewHash("2d767a19ab7c3a421cdba6a349204367c22c81"),
 			},
 			{

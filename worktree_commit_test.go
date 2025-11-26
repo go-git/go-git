@@ -12,21 +12,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/errors"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	"github.com/ProtonMail/go-crypto/openpgp/errors"
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/util"
 )
 
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
@@ -37,7 +37,7 @@ func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -63,7 +63,7 @@ func (s *WorktreeSuite) TestCommitInitial() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -101,7 +101,7 @@ func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.NoError(err)
 
 	w.Add("foo")
@@ -124,7 +124,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitToMakeEmptyRepo() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
@@ -155,7 +155,7 @@ func (s *WorktreeSuite) TestCommitParent() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
@@ -178,7 +178,7 @@ func (s *WorktreeSuite) TestCommitAmendWithoutChanges() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
@@ -213,7 +213,7 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -221,7 +221,7 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
 	s.NoError(err)
 
-	util.WriteFile(fs, "bar", []byte("bar"), 0644)
+	util.WriteFile(fs, "bar", []byte("bar"), 0o644)
 
 	_, err = w.Add("bar")
 	s.NoError(err)
@@ -264,7 +264,7 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
@@ -341,8 +341,8 @@ func TestAddAndCommitWithSkipStatus(t *testing.T) {
 	err := w.Checkout(&CheckoutOptions{})
 	require.NoError(t, err)
 
-	util.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	err = w.AddWithOptions(&AddOptions{
 		Path:       "foo",
@@ -393,7 +393,7 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	status, err := w.Status()
 	s.NoError(err)
@@ -413,7 +413,8 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	s.Equal(Added, foo.Staging)
 	s.Equal(Unmodified, foo.Worktree)
 
-	hash, err := w.Commit("commit foo only\n", &CommitOptions{All: true,
+	hash, err := w.Commit("commit foo only\n", &CommitOptions{
+		All:    true,
 		Author: defaultSignature(),
 	})
 	s.Equal(expected, hash)
@@ -478,8 +479,8 @@ func (s *WorktreeSuite) TestCommitAll() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	util.WriteFile(fs, "LICENSE", []byte("foo"), 0644)
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	hash, err := w.Commit("foo\n", &CommitOptions{
 		All:    true,
@@ -504,7 +505,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	_, err = w.Add("foo")
 	s.NoError(err)
 
@@ -538,7 +539,7 @@ func (s *WorktreeSuite) TestCommitSign() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -574,7 +575,7 @@ func (s *WorktreeSuite) TestCommitSignBadKey() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -585,7 +586,6 @@ func (s *WorktreeSuite) TestCommitSignBadKey() {
 }
 
 func (s *WorktreeSuite) TestCherryPick() {
-
 	fs := memfs.New()
 
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
@@ -594,7 +594,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	w, err := r.Worktree()
 	s.NoError(err)
 	// add README.md to the worktree
-	err = util.WriteFile(fs, "README.md", []byte("README File"), 0644)
+	err = util.WriteFile(fs, "README.md", []byte("README File"), 0o644)
 	s.NoError(err)
 	w.Add("README.md")
 
@@ -602,10 +602,10 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.NoError(err)
 
 	// add two files to worktree
-	err = util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.NoError(err)
 
-	err = util.WriteFile(fs, "foobar", []byte("foo**bar"), 0644)
+	err = util.WriteFile(fs, "foobar", []byte("foo**bar"), 0o644)
 	s.NoError(err)
 
 	_, err = w.Add("foo")
@@ -618,7 +618,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.NoError(err)
 	s.False(commitHash1.IsZero(), "commit hash is zero")
 	// modify the "foo" file
-	err = util.WriteFile(fs, "foo", []byte("foo=bar"), 0644)
+	err = util.WriteFile(fs, "foo", []byte("foo=bar"), 0o644)
 	s.NoError(err)
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -696,6 +696,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 	err = w.CherryPick(nil, OursMergeStrategy, rmCommit)
 	s.ErrorIs(err, ErrCannotCherryPickWithoutCommitOptions)
 }
+
 func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
 
@@ -712,11 +713,11 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 
 	mfs := w.Filesystem
 
-	err = mfs.MkdirAll("delta", 0755)
+	err = mfs.MkdirAll("delta", 0o755)
 	s.NoError(err)
 
 	for _, p := range []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"} {
-		util.WriteFile(mfs, p, []byte("foo"), 0644)
+		util.WriteFile(mfs, p, []byte("foo"), 0o644)
 		_, err = w.Add(p)
 		s.NoError(err)
 	}
@@ -757,7 +758,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	s.NoError(err)
 
 	// Step 1: Write LICENSE
-	util.WriteFile(fs, "LICENSE", []byte("license"), 0644)
+	util.WriteFile(fs, "LICENSE", []byte("license"), 0o644)
 	hLicense, err := w.Add("LICENSE")
 	s.NoError(err)
 	s.Equal(plumbing.NewHash("0484eba0d41636ba71fa612c78559cd6c3006cde"), hLicense)
@@ -774,7 +775,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 
 	// Step 2: Write foo.
 	time.Sleep(5 * time.Millisecond) // uncool, but we need to get different timestamps...
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	hFoo, err := w.Add("foo")
 	s.NoError(err)
 	s.Equal(plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"), hFoo)
@@ -816,7 +817,7 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	util.WriteFile(fs, "foo", []byte("foo"), 0644)
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
 	s.NoError(err)
@@ -836,7 +837,6 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 
 	s.Equal("foo bad", commit.Author.Name)
 	s.Equal("badfoo@foo.foo", commit.Author.Email)
-
 }
 
 func assertStorageStatus(

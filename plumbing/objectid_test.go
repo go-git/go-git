@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 var input = strings.Repeat("43aec75c611f22c73b27ece2841e6ccca592f2", 50000000)
@@ -83,7 +84,8 @@ func TestReadFrom(t *testing.T) {
 			expected: "43aec75c611f22c73b27ece2841e6ccca592f285",
 			bytes:    []byte{67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133},
 			len:      20,
-		}, {
+		},
+		{
 			expected: "3b27ece2841e6ccca592f28543aec75c611f22c73b27ece2841e6ccca592f285",
 			bytes:    []byte{59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133, 67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133},
 			len:      32,

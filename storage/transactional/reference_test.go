@@ -3,9 +3,10 @@ package transactional
 import (
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 func TestReferenceSuite(t *testing.T) {
@@ -159,5 +160,4 @@ func (s *ReferenceSuite) TestCommitDelete() {
 	ref, err := rs.Reference(refC.Name())
 	s.NoError(err)
 	s.Equal("c3f4688a08fd86f1bf8e055724c84b7a40a09733", ref.Hash().String())
-
 }

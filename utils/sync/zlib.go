@@ -10,7 +10,7 @@ import (
 var (
 	zlibInitBytes = []byte{0x78, 0x9c, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01}
 	zlibReader    = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			r, _ := zlib.NewReader(bytes.NewReader(zlibInitBytes))
 			return &ZLibReader{
 				reader: r.(zlibReadCloser),
@@ -19,7 +19,7 @@ var (
 		},
 	}
 	zlibWriter = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return zlib.NewWriter(nil)
 		},
 	}

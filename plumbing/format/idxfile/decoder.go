@@ -56,7 +56,7 @@ func (d *Decoder) Decode(idx *MemoryIndex) error {
 }
 
 func validateHeader(r io.Reader) error {
-	var h = make([]byte, 4)
+	h := make([]byte, 4)
 	if _, err := io.ReadFull(r, h); err != nil {
 		return err
 	}

@@ -37,7 +37,7 @@ func (s *ModeSuite) TestNew() {
 		// these are valid inputs, but probably means there is a bug
 		// somewhere.
 		{input: "0", expected: Empty},
-		{input: "42", expected: FileMode(042)},
+		{input: "42", expected: FileMode(0o42)},
 		{input: "00000000000100644", expected: Regular},
 	} {
 		comment := fmt.Sprintf("input = %q", test.input)
@@ -86,22 +86,22 @@ func (f fixture) test(s *ModeSuite) {
 
 func (s *ModeSuite) TestNewFromOsFileModeSimplePerms() {
 	for _, f := range [...]fixture{
-		{os.FileMode(0755) | os.ModeDir, Dir, ""},         // drwxr-xr-x
-		{os.FileMode(0700) | os.ModeDir, Dir, ""},         // drwx------
-		{os.FileMode(0500) | os.ModeDir, Dir, ""},         // dr-x------
-		{os.FileMode(0644), Regular, ""},                  // -rw-r--r--
-		{os.FileMode(0660), Regular, ""},                  // -rw-rw----
-		{os.FileMode(0640), Regular, ""},                  // -rw-r-----
-		{os.FileMode(0600), Regular, ""},                  // -rw-------
-		{os.FileMode(0400), Regular, ""},                  // -r--------
-		{os.FileMode(0000), Regular, ""},                  // ----------
-		{os.FileMode(0755), Executable, ""},               // -rwxr-xr-x
-		{os.FileMode(0700), Executable, ""},               // -rwx------
-		{os.FileMode(0500), Executable, ""},               // -r-x------
-		{os.FileMode(0744), Executable, ""},               // -rwxr--r--
-		{os.FileMode(0540), Executable, ""},               // -r-xr-----
-		{os.FileMode(0550), Executable, ""},               // -r-xr-x---
-		{os.FileMode(0777) | os.ModeSymlink, Symlink, ""}, // Lrwxrwxrwx
+		{os.FileMode(0o755) | os.ModeDir, Dir, ""},         // drwxr-xr-x
+		{os.FileMode(0o700) | os.ModeDir, Dir, ""},         // drwx------
+		{os.FileMode(0o500) | os.ModeDir, Dir, ""},         // dr-x------
+		{os.FileMode(0o644), Regular, ""},                  // -rw-r--r--
+		{os.FileMode(0o660), Regular, ""},                  // -rw-rw----
+		{os.FileMode(0o640), Regular, ""},                  // -rw-r-----
+		{os.FileMode(0o600), Regular, ""},                  // -rw-------
+		{os.FileMode(0o400), Regular, ""},                  // -r--------
+		{os.FileMode(0o000), Regular, ""},                  // ----------
+		{os.FileMode(0o755), Executable, ""},               // -rwxr-xr-x
+		{os.FileMode(0o700), Executable, ""},               // -rwx------
+		{os.FileMode(0o500), Executable, ""},               // -r-x------
+		{os.FileMode(0o744), Executable, ""},               // -rwxr--r--
+		{os.FileMode(0o540), Executable, ""},               // -r-xr-----
+		{os.FileMode(0o550), Executable, ""},               // -r-xr-x---
+		{os.FileMode(0o777) | os.ModeSymlink, Symlink, ""}, // Lrwxrwxrwx
 	} {
 		f.test(s)
 	}
@@ -110,7 +110,7 @@ func (s *ModeSuite) TestNewFromOsFileModeSimplePerms() {
 func (s *ModeSuite) TestNewFromOsFileModeAppend() {
 	// append files are just regular files
 	fixture{
-		input:    os.FileMode(0644) | os.ModeAppend, // arw-r--r--
+		input:    os.FileMode(0o644) | os.ModeAppend, // arw-r--r--
 		expected: Regular, err: "",
 	}.test(s)
 }
@@ -118,12 +118,12 @@ func (s *ModeSuite) TestNewFromOsFileModeAppend() {
 func (s *ModeSuite) TestNewFromOsFileModeExclusive() {
 	// exclusive files are just regular or executable files
 	fixture{
-		input:    os.FileMode(0644) | os.ModeExclusive, // lrw-r--r--
+		input:    os.FileMode(0o644) | os.ModeExclusive, // lrw-r--r--
 		expected: Regular, err: "",
 	}.test(s)
 
 	fixture{
-		input:    os.FileMode(0755) | os.ModeExclusive, // lrwxr-xr-x
+		input:    os.FileMode(0o755) | os.ModeExclusive, // lrwxr-xr-x
 		expected: Executable, err: "",
 	}.test(s)
 }
@@ -131,12 +131,12 @@ func (s *ModeSuite) TestNewFromOsFileModeExclusive() {
 func (s *ModeSuite) TestNewFromOsFileModeTemporary() {
 	// temporary files are ignored
 	fixture{
-		input:    os.FileMode(0644) | os.ModeTemporary, // Trw-r--r--
+		input:    os.FileMode(0o644) | os.ModeTemporary, // Trw-r--r--
 		expected: Empty, err: "no equivalent",
 	}.test(s)
 
 	fixture{
-		input:    os.FileMode(0755) | os.ModeTemporary, // Trwxr-xr-x
+		input:    os.FileMode(0o755) | os.ModeTemporary, // Trwxr-xr-x
 		expected: Empty, err: "no equivalent",
 	}.test(s)
 }
@@ -144,7 +144,7 @@ func (s *ModeSuite) TestNewFromOsFileModeTemporary() {
 func (s *ModeSuite) TestNewFromOsFileModeDevice() {
 	// device files has no git equivalent
 	fixture{
-		input:    os.FileMode(0644) | os.ModeDevice, // Drw-r--r--
+		input:    os.FileMode(0o644) | os.ModeDevice, // Drw-r--r--
 		expected: Empty, err: "no equivalent",
 	}.test(s)
 }
@@ -152,7 +152,7 @@ func (s *ModeSuite) TestNewFromOsFileModeDevice() {
 func (s *ModeSuite) TestNewFromOsFileNamedPipe() {
 	// named pipes files has not git equivalent
 	fixture{
-		input:    os.FileMode(0644) | os.ModeNamedPipe, // prw-r--r--
+		input:    os.FileMode(0o644) | os.ModeNamedPipe, // prw-r--r--
 		expected: Empty, err: "no equivalent",
 	}.test(s)
 }
@@ -160,7 +160,7 @@ func (s *ModeSuite) TestNewFromOsFileNamedPipe() {
 func (s *ModeSuite) TestNewFromOsFileModeSocket() {
 	// sockets has no git equivalent
 	fixture{
-		input:    os.FileMode(0644) | os.ModeSocket, // Srw-r--r--
+		input:    os.FileMode(0o644) | os.ModeSocket, // Srw-r--r--
 		expected: Empty, err: "no equivalent",
 	}.test(s)
 }
@@ -168,7 +168,7 @@ func (s *ModeSuite) TestNewFromOsFileModeSocket() {
 func (s *ModeSuite) TestNewFromOsFileModeSetuid() {
 	// Setuid are just executables
 	fixture{
-		input:    os.FileMode(0755) | os.ModeSetuid, // urwxr-xr-x
+		input:    os.FileMode(0o755) | os.ModeSetuid, // urwxr-xr-x
 		expected: Executable, err: "",
 	}.test(s)
 }
@@ -176,12 +176,12 @@ func (s *ModeSuite) TestNewFromOsFileModeSetuid() {
 func (s *ModeSuite) TestNewFromOsFileModeSetgid() {
 	// Setguid are regular or executables, depending on the owner perms
 	fixture{
-		input:    os.FileMode(0644) | os.ModeSetgid, // grw-r--r--
+		input:    os.FileMode(0o644) | os.ModeSetgid, // grw-r--r--
 		expected: Regular, err: "",
 	}.test(s)
 
 	fixture{
-		input:    os.FileMode(0755) | os.ModeSetgid, // grwxr-xr-x
+		input:    os.FileMode(0o755) | os.ModeSetgid, // grwxr-xr-x
 		expected: Executable, err: "",
 	}.test(s)
 }
@@ -189,7 +189,7 @@ func (s *ModeSuite) TestNewFromOsFileModeSetgid() {
 func (s *ModeSuite) TestNewFromOsFileModeCharDevice() {
 	// char devices has no git equivalent
 	fixture{
-		input:    os.FileMode(0644) | os.ModeCharDevice, // crw-r--r--
+		input:    os.FileMode(0o644) | os.ModeCharDevice, // crw-r--r--
 		expected: Empty, err: "no equivalent",
 	}.test(s)
 }
@@ -197,7 +197,7 @@ func (s *ModeSuite) TestNewFromOsFileModeCharDevice() {
 func (s *ModeSuite) TestNewFromOsFileModeSticky() {
 	// dirs with the sticky bit are just dirs
 	fixture{
-		input:    os.FileMode(0755) | os.ModeDir | os.ModeSticky, // dtrwxr-xr-x
+		input:    os.FileMode(0o755) | os.ModeDir | os.ModeSticky, // dtrwxr-xr-x
 		expected: Dir, err: "",
 	}.test(s)
 }
@@ -238,12 +238,12 @@ func (s *ModeSuite) TestIsMalformed() {
 		{Executable, false},
 		{Symlink, false},
 		{Submodule, false},
-		{FileMode(01), true},
-		{FileMode(010), true},
-		{FileMode(0100), true},
-		{FileMode(01000), true},
-		{FileMode(010000), true},
-		{FileMode(0100000), true},
+		{FileMode(0o1), true},
+		{FileMode(0o10), true},
+		{FileMode(0o100), true},
+		{FileMode(0o1000), true},
+		{FileMode(0o10000), true},
+		{FileMode(0o100000), true},
 	} {
 		s.Equal(test.expected, test.mode.IsMalformed())
 	}
@@ -261,12 +261,12 @@ func (s *ModeSuite) TestString() {
 		{Executable, "0100755"},
 		{Symlink, "0120000"},
 		{Submodule, "0160000"},
-		{FileMode(01), "0000001"},
-		{FileMode(010), "0000010"},
-		{FileMode(0100), "0000100"},
-		{FileMode(01000), "0001000"},
-		{FileMode(010000), "0010000"},
-		{FileMode(0100000), "0100000"},
+		{FileMode(0o1), "0000001"},
+		{FileMode(0o10), "0000010"},
+		{FileMode(0o100), "0000100"},
+		{FileMode(0o1000), "0001000"},
+		{FileMode(0o10000), "0010000"},
+		{FileMode(0o100000), "0100000"},
 	} {
 		s.Equal(test.expected, test.mode.String())
 	}
@@ -284,12 +284,12 @@ func (s *ModeSuite) TestIsRegular() {
 		{Executable, false},
 		{Symlink, false},
 		{Submodule, false},
-		{FileMode(01), false},
-		{FileMode(010), false},
-		{FileMode(0100), false},
-		{FileMode(01000), false},
-		{FileMode(010000), false},
-		{FileMode(0100000), false},
+		{FileMode(0o1), false},
+		{FileMode(0o10), false},
+		{FileMode(0o100), false},
+		{FileMode(0o1000), false},
+		{FileMode(0o10000), false},
+		{FileMode(0o100000), false},
 	} {
 		s.Equal(test.expected, test.mode.IsRegular())
 	}
@@ -307,12 +307,12 @@ func (s *ModeSuite) TestIsFile() {
 		{Executable, true},
 		{Symlink, true},
 		{Submodule, false},
-		{FileMode(01), false},
-		{FileMode(010), false},
-		{FileMode(0100), false},
-		{FileMode(01000), false},
-		{FileMode(010000), false},
-		{FileMode(0100000), false},
+		{FileMode(0o1), false},
+		{FileMode(0o10), false},
+		{FileMode(0o100), false},
+		{FileMode(0o1000), false},
+		{FileMode(0o10000), false},
+		{FileMode(0o100000), false},
 	} {
 		s.Equal(test.expected, test.mode.IsFile())
 	}
@@ -326,17 +326,17 @@ func (s *ModeSuite) TestToOSFileMode() {
 	}{
 		{Empty, os.FileMode(0), "malformed"},
 		{Dir, os.ModePerm | os.ModeDir, ""},
-		{Regular, os.FileMode(0644), ""},
-		{Deprecated, os.FileMode(0644), ""},
-		{Executable, os.FileMode(0755), ""},
+		{Regular, os.FileMode(0o644), ""},
+		{Deprecated, os.FileMode(0o644), ""},
+		{Executable, os.FileMode(0o755), ""},
 		{Symlink, os.ModePerm | os.ModeSymlink, ""},
 		{Submodule, os.ModePerm | os.ModeDir, ""},
-		{FileMode(01), os.FileMode(0), "malformed"},
-		{FileMode(010), os.FileMode(0), "malformed"},
-		{FileMode(0100), os.FileMode(0), "malformed"},
-		{FileMode(01000), os.FileMode(0), "malformed"},
-		{FileMode(010000), os.FileMode(0), "malformed"},
-		{FileMode(0100000), os.FileMode(0), "malformed"},
+		{FileMode(0o1), os.FileMode(0), "malformed"},
+		{FileMode(0o10), os.FileMode(0), "malformed"},
+		{FileMode(0o100), os.FileMode(0), "malformed"},
+		{FileMode(0o1000), os.FileMode(0), "malformed"},
+		{FileMode(0o10000), os.FileMode(0), "malformed"},
+		{FileMode(0o100000), os.FileMode(0), "malformed"},
 	} {
 		obtained, err := test.input.ToOSFileMode()
 		comment := fmt.Sprintf("input = %s", test.input)

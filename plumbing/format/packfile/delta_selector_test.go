@@ -3,9 +3,10 @@ package packfile
 import (
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type DeltaSelectorSuite struct {
@@ -26,15 +27,15 @@ func (s *DeltaSelectorSuite) SetupTest() {
 }
 
 func (s *DeltaSelectorSuite) TestSort() {
-	var o1 = newObjectToPack(newObject(plumbing.BlobObject, []byte("00000")))
-	var o4 = newObjectToPack(newObject(plumbing.BlobObject, []byte("0000")))
-	var o6 = newObjectToPack(newObject(plumbing.BlobObject, []byte("00")))
-	var o9 = newObjectToPack(newObject(plumbing.BlobObject, []byte("0")))
-	var o8 = newObjectToPack(newObject(plumbing.TreeObject, []byte("000")))
-	var o2 = newObjectToPack(newObject(plumbing.TreeObject, []byte("00")))
-	var o3 = newObjectToPack(newObject(plumbing.TreeObject, []byte("0")))
-	var o5 = newObjectToPack(newObject(plumbing.CommitObject, []byte("0000")))
-	var o7 = newObjectToPack(newObject(plumbing.CommitObject, []byte("00")))
+	o1 := newObjectToPack(newObject(plumbing.BlobObject, []byte("00000")))
+	o4 := newObjectToPack(newObject(plumbing.BlobObject, []byte("0000")))
+	o6 := newObjectToPack(newObject(plumbing.BlobObject, []byte("00")))
+	o9 := newObjectToPack(newObject(plumbing.BlobObject, []byte("0")))
+	o8 := newObjectToPack(newObject(plumbing.TreeObject, []byte("000")))
+	o2 := newObjectToPack(newObject(plumbing.TreeObject, []byte("00")))
+	o3 := newObjectToPack(newObject(plumbing.TreeObject, []byte("0")))
+	o5 := newObjectToPack(newObject(plumbing.CommitObject, []byte("0000")))
+	o7 := newObjectToPack(newObject(plumbing.CommitObject, []byte("00")))
 
 	toSort := []*ObjectToPack{o1, o2, o3, o4, o5, o6, o7, o8, o9}
 	s.ds.sort(toSort)

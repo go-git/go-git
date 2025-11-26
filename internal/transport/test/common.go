@@ -16,7 +16,7 @@ func FixturesFactory(base, name string) func() string {
 	}
 }
 
-func PrepareRepository(t testing.TB, f *fixtures.Fixture, base string, name string) billy.Filesystem {
+func PrepareRepository(t testing.TB, f *fixtures.Fixture, base, name string) billy.Filesystem {
 	fs := f.DotGit(fixtures.WithTargetDir(FixturesFactory(base, name)))
 	err := fixtures.EnsureIsBare(fs)
 	require.NoError(t, err)

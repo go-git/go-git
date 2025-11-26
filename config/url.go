@@ -7,9 +7,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
-var (
-	errURLEmptyInsteadOf = errors.New("url config: empty insteadOf")
-)
+var errURLEmptyInsteadOf = errors.New("url config: empty insteadOf")
 
 // Url defines Url rewrite rules
 type URL struct {

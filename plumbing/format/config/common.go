@@ -68,7 +68,7 @@ func (c *Config) RemoveSection(name string) *Config {
 }
 
 // RemoveSubsection remove a subsection from a config file.
-func (c *Config) RemoveSubsection(section string, subsection string) *Config {
+func (c *Config) RemoveSubsection(section, subsection string) *Config {
 	for _, s := range c.Sections {
 		if s.IsName(section) {
 			result := Subsections{}
@@ -86,7 +86,7 @@ func (c *Config) RemoveSubsection(section string, subsection string) *Config {
 
 // AddOption adds an option to a given section and subsection. Use the
 // NoSubsection constant for the subsection argument if no subsection is wanted.
-func (c *Config) AddOption(section string, subsection string, key string, value string) *Config {
+func (c *Config) AddOption(section, subsection, key, value string) *Config {
 	if subsection == "" {
 		c.Section(section).AddOption(key, value)
 	} else {
@@ -98,7 +98,7 @@ func (c *Config) AddOption(section string, subsection string, key string, value 
 
 // SetOption sets an option to a given section and subsection. Use the
 // NoSubsection constant for the subsection argument if no subsection is wanted.
-func (c *Config) SetOption(section string, subsection string, key string, value string) *Config {
+func (c *Config) SetOption(section, subsection, key, value string) *Config {
 	if subsection == "" {
 		c.Section(section).SetOption(key, value)
 	} else {

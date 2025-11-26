@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/color"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
-	"github.com/stretchr/testify/suite"
 )
 
 type UnifiedEncoderTestSuite struct {
@@ -1023,6 +1024,7 @@ type testFilePatch struct {
 func (t testFilePatch) IsBinary() bool {
 	return len(t.chunks) == 0
 }
+
 func (t testFilePatch) Files() (File, File) {
 	// Go is amazing
 	switch {
