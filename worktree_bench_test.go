@@ -15,11 +15,7 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 )
 
-// BenchmarkCheckoutSameTree benchmarks the common case of creating a new
-// branch from current HEAD, which has the same tree.
-// This is the primary use case that benefits from fast path optimization.
-func BenchmarkCheckoutSameTree(b *testing.B) {
-	// Use a real fixture - following pattern from common_test.go NewRepository
+func BenchmarkCheckout(b *testing.B) {
 	f := fixtures.Basic().One()
 
 	dotgit := f.DotGit()
@@ -36,9 +32,25 @@ func BenchmarkCheckoutSameTree(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	// Benchmark creating new branches from current HEAD (all same tree)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.Run("SameTree", func(b *testing.B) {
+		benchmarkCheckoutSameTree(b, w)
+	})
+
+	b.Run("SameTreeForce", func(b *testing.B) {
+		benchmarkCheckoutSameTreeForce(b, w)
+	})
+
+	b.Run("DifferentBranch", func(b *testing.B) {
+		benchmarkCheckoutDifferentBranch(b, w, r)
+	})
+}
+
+// benchmarkCheckoutSameTree benchmarks the common case of creating a new
+// branch from current HEAD, which has the same tree.
+// This is the primary use case that benefits from fast path optimization.
+func benchmarkCheckoutSameTree(b *testing.B, w *Worktree) {
+	i := 0
+	for b.Loop() {
 		branchName := plumbing.NewBranchReferenceName(fmt.Sprintf("bench-branch-%d", i))
 
 		err := w.Checkout(&CheckoutOptions{
@@ -48,30 +60,14 @@ func BenchmarkCheckoutSameTree(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		i++
 	}
 }
 
-// BenchmarkCheckoutSameTreeForce benchmarks force checkout to ensure no regression.
-func BenchmarkCheckoutSameTreeForce(b *testing.B) {
-	f := fixtures.Basic().One()
-
-	dotgit := f.DotGit()
-	storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
-	worktree := memfs.New()
-
-	r, err := Open(storage, worktree)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	w, err := r.Worktree()
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	// Benchmark force checkout (should use slow path)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+// benchmarkCheckoutSameTreeForce benchmarks force checkout to ensure no regression.
+func benchmarkCheckoutSameTreeForce(b *testing.B, w *Worktree) {
+	i := 0
+	for b.Loop() {
 		branchName := plumbing.NewBranchReferenceName(fmt.Sprintf("force-branch-%d", i))
 
 		err := w.Checkout(&CheckoutOptions{
@@ -82,28 +78,13 @@ func BenchmarkCheckoutSameTreeForce(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		i++
 	}
 }
 
 // BenchmarkCheckoutDifferentBranch benchmarks switching between branches
 // to ensure no regression in the slow path.
-func BenchmarkCheckoutDifferentBranch(b *testing.B) {
-	f := fixtures.Basic().One()
-
-	dotgit := f.DotGit()
-	storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
-	worktree := memfs.New()
-
-	r, err := Open(storage, worktree)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	w, err := r.Worktree()
-	if err != nil {
-		b.Fatal(err)
-	}
-
+func benchmarkCheckoutDifferentBranch(b *testing.B, w *Worktree, r *Repository) {
 	// Get list of refs to checkout between
 	refs, err := r.References()
 	if err != nil {
@@ -135,8 +116,8 @@ func BenchmarkCheckoutDifferentBranch(b *testing.B) {
 	}
 
 	// Benchmark switching between branches
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		branch := branches[i%len(branches)]
 
 		err := w.Checkout(&CheckoutOptions{
@@ -146,5 +127,6 @@ func BenchmarkCheckoutDifferentBranch(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		i++
 	}
 }
