@@ -4062,6 +4062,9 @@ func (s *WorktreeSuite) TestCheckoutFastPathVerification() {
 		Filesystem: memfs.New(),
 	}
 
+	err := w.Checkout(&CheckoutOptions{})
+	s.NoError(err)
+
 	head, err := w.r.Head()
 	s.NoError(err)
 
