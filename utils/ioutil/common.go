@@ -115,7 +115,7 @@ type readerAtAsReader struct {
 }
 
 func (r *readerAtAsReader) Read(bs []byte) (int, error) {
-	n, err := r.ReaderAt.ReadAt(bs, r.offset)
+	n, err := r.ReadAt(bs, r.offset)
 	r.offset += int64(n)
 	return n, err
 }

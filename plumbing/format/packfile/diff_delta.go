@@ -146,10 +146,7 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	b := ibuf.Bytes()
 	s := ibuf.Len()
 	o := 0
-	for {
-		if s <= 127 {
-			break
-		}
+	for s > 127 {
 		buf.WriteByte(byte(127))
 		buf.Write(b[o : o+127])
 		s -= 127
@@ -165,11 +162,7 @@ func deltaEncodeSize(size int) []byte {
 	var ret []byte
 	c := size & 0x7f
 	size >>= 7
-	for {
-		if size == 0 {
-			break
-		}
-
+	for size != 0 {
 		ret = append(ret, byte(c|0x80))
 		c = size & 0x7f
 		size >>= 7

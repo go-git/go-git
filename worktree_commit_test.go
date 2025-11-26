@@ -2,7 +2,6 @@ package git
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -739,8 +738,7 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 	cmd.Stdout = buf
 
 	err = cmd.Run()
-
-	s.NoError(err, fmt.Sprintf("%s", buf.Bytes()))
+	s.NoError(err, buf.String())
 }
 
 // https://github.com/go-git/go-git/pull/224

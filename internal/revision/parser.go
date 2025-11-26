@@ -305,15 +305,15 @@ func (p *Parser) parseAt() (Revisioner, error) {
 				return nil, err
 			}
 
-			switch {
-			case tok == cbrace:
+			switch tok {
+			case cbrace:
 				t, err := time.Parse("2006-01-02T15:04:05Z", date)
 				if err != nil {
 					return nil, &ErrInvalidRevision{fmt.Sprintf(`wrong date "%s" must fit ISO-8601 format : 2006-01-02T15:04:05Z`, date)}
 				}
 
 				return AtDate{t}, nil
-			case tok == eof:
+			case eof:
 				return nil, &ErrInvalidRevision{s: `missing "}" in @{<data>} structure`}
 			default:
 				date += lit
@@ -333,8 +333,8 @@ func (p *Parser) parseTilde() (Revisioner, error) {
 		return nil, err
 	}
 
-	switch {
-	case tok == number:
+	switch tok {
+	case number:
 		n, _ := strconv.Atoi(lit)
 
 		return TildePath{n}, nil
@@ -355,15 +355,15 @@ func (p *Parser) parseCaret() (Revisioner, error) {
 		return nil, err
 	}
 
-	switch {
-	case tok == obrace:
+	switch tok {
+	case obrace:
 		r, err := p.parseCaretBraces()
 		if err != nil {
 			return nil, err
 		}
 
 		return r, nil
-	case tok == number:
+	case number:
 		n, _ := strconv.Atoi(lit)
 
 		if n > 2 {

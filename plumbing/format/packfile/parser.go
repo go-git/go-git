@@ -149,9 +149,10 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		case ObjectSection:
 			oh := data.Value().(ObjectHeader)
 			if oh.Type.IsDelta() {
-				if oh.Type == plumbing.OFSDeltaObject {
+				switch oh.Type {
+				case plumbing.OFSDeltaObject:
 					pendingDeltas = append(pendingDeltas, &oh)
-				} else if oh.Type == plumbing.REFDeltaObject {
+				case plumbing.REFDeltaObject:
 					pendingDeltaREFs = append(pendingDeltaREFs, &oh)
 				}
 				continue
@@ -218,7 +219,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 		defer sync.PutBytesBuffer(source)
 
 		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
-	} else if p.scanner.scannerReader.seeker != nil {
+	} else if p.scanner.seeker != nil {
 		deltaData := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(deltaData)
 

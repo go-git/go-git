@@ -34,10 +34,10 @@ var services = []service{
 	{regexp.MustCompile("(.*?)/objects/info/packs$"), http.MethodGet, getInfoPacks, ""},
 	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$"), http.MethodGet, getLooseObject, ""},
 	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{62}$"), http.MethodGet, getLooseObject, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$"), http.MethodGet, getPackFile, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{64}\\.pack$"), http.MethodGet, getPackFile, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$"), http.MethodGet, getIdxFile, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{64}\\.idx$"), http.MethodGet, getIdxFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40}\.pack$`), http.MethodGet, getPackFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{64}\.pack$`), http.MethodGet, getPackFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40}\.idx$`), http.MethodGet, getIdxFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{64}\.idx$`), http.MethodGet, getIdxFile, ""},
 
 	// TODO: Support git-upload-archive
 	// {regexp.MustCompile("(.*?)/git-upload-archive$"), http.MethodPost, serviceRpc, transport.UploadArchiveService},

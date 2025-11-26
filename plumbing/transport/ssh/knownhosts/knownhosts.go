@@ -254,8 +254,8 @@ func keyTypeToCertAlgo(keyType string) string {
 		return ssh.CertAlgoRSASHA256v01
 	case ssh.KeyAlgoRSASHA512:
 		return ssh.CertAlgoRSASHA512v01
-	case ssh.KeyAlgoDSA:
-		return ssh.CertAlgoDSAv01
+	case ssh.KeyAlgoDSA: //nolint:staticcheck // DSA support needed for legacy SSH servers
+		return ssh.CertAlgoDSAv01 //nolint:staticcheck // DSA support needed for legacy SSH servers
 	case ssh.KeyAlgoECDSA256:
 		return ssh.CertAlgoECDSA256v01
 	case ssh.KeyAlgoSKECDSA256:

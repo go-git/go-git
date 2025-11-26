@@ -188,10 +188,10 @@ func validAttributeName(name string) bool {
 	}
 
 	for _, ch := range name {
-		if !(ch == '-' || ch == '.' || ch == '_' ||
-			('0' <= ch && ch <= '9') ||
-			('a' <= ch && ch <= 'z') ||
-			('A' <= ch && ch <= 'Z')) {
+		if (ch != '-' && ch != '.' && ch != '_') &&
+			(ch < '0' || ch > '9') &&
+			(ch < 'a' || ch > 'z') &&
+			(ch < 'A' || ch > 'Z') {
 			return false
 		}
 	}

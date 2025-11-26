@@ -505,7 +505,7 @@ func (s *ObjectStorage) decodeDeltaObjectAt(
 	offset int64,
 	hash plumbing.Hash,
 ) (plumbing.EncodedObject, error) {
-	scan, err := p.Scanner()
+	scan, err := p.Scanner() //nolint:staticcheck // TODO: Refactor to avoid deprecated Scanner method
 	if err != nil {
 		return nil, err
 	}

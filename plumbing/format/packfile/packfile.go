@@ -164,7 +164,7 @@ func (p *Packfile) get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 		return obj, nil
 	}
 
-	offset, err := p.Index.FindOffset(h)
+	offset, err := p.FindOffset(h)
 	if err != nil {
 		return nil, err
 	}

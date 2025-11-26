@@ -142,12 +142,7 @@ const sniffLen = 8000
 // http://git.kernel.org/cgit/git/git.git/tree/xdiff-interface.c?id=HEAD#n198
 func IsBinary(r io.Reader) (bool, error) {
 	reader := bufio.NewReader(r)
-	c := 0
-	for {
-		if c == sniffLen {
-			break
-		}
-
+	for range sniffLen {
 		b, err := reader.ReadByte()
 		if err == io.EOF {
 			break
@@ -159,8 +154,6 @@ func IsBinary(r io.Reader) (bool, error) {
 		if b == byte(0) {
 			return true, nil
 		}
-
-		c++
 	}
 
 	return false, nil
