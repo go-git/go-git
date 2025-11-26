@@ -270,3 +270,31 @@ func TestWritePostCancel(t *testing.T) {
 		t.Error("write contents differ from expected")
 	}
 }
+
+func BenchmarkContextReader(b *testing.B) {
+	data := bytes.Repeat([]byte{'0'}, 10000)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+
+	for range b.N {
+		r := bytes.NewReader(data)
+
+		ctxr := NewContextReader(ctx, r)
+		io.Copy(io.Discard, ctxr)
+	}
+}
+
+func BenchmarkContextWriter(b *testing.B) {
+	data := bytes.Repeat([]byte{'0'}, 10000)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+
+	for range b.N {
+		ctxw := NewContextWriter(ctx, io.Discard)
+		ctxw.Write(data)
+	}
+}
