@@ -351,7 +351,6 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 				curDepth = depths[commit]
 			}
 		}
-
 	}
 
 	return nil

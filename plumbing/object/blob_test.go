@@ -50,7 +50,7 @@ func (s *BlobsSuite) TestBlobHash() {
 }
 
 func (s *BlobsSuite) TestBlobDecodeEncodeIdempotent() {
-	var objects []*plumbing.MemoryObject
+	objects := make([]*plumbing.MemoryObject, 0, 2)
 	for _, str := range []string{"foo", "foo\n"} {
 		obj := &plumbing.MemoryObject{}
 		obj.Write([]byte(str))

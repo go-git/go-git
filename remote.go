@@ -876,7 +876,7 @@ func getHaves(
 		}
 	}
 
-	var result []plumbing.Hash
+	result := make([]plumbing.Hash, 0, len(haves))
 	for h := range haves {
 		result = append(result, h)
 	}
@@ -995,7 +995,7 @@ func getWants(localStorer storage.Storer, refs memory.ReferenceStorage, depth in
 		}
 	}
 
-	var result []plumbing.Hash
+	result := make([]plumbing.Hash, 0, len(wants))
 	for h := range wants {
 		result = append(result, h)
 	}

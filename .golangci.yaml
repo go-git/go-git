@@ -4,8 +4,10 @@ linters:
   enable:
     - ineffassign
     - modernize
+    - prealloc
     - staticcheck
     - unused
+    - whitespace
 
 formatters:
   enable:

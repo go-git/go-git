@@ -39,7 +39,7 @@ type Subsection struct {
 type Sections []*Section
 
 func (s Sections) GoString() string {
-	var strs []string
+	strs := make([]string, 0, len(s))
 	for _, ss := range s {
 		strs = append(strs, fmt.Sprintf("%#v", ss))
 	}
@@ -50,7 +50,7 @@ func (s Sections) GoString() string {
 type Subsections []*Subsection
 
 func (s Subsections) GoString() string {
-	var strs []string
+	strs := make([]string, 0, len(s))
 	for _, ss := range s {
 		strs = append(strs, fmt.Sprintf("%#v", ss))
 	}

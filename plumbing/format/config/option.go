@@ -24,7 +24,7 @@ func (o *Option) IsKey(key string) bool {
 }
 
 func (opts Options) GoString() string {
-	var strs []string
+	strs := make([]string, 0, len(opts))
 	for _, opt := range opts {
 		strs = append(strs, fmt.Sprintf("%#v", opt))
 	}

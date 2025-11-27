@@ -86,7 +86,6 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
 
 		err = o.Close()
 		s.Require().NoError(err)
-
 	}
 }
 
@@ -336,7 +335,6 @@ func (s *FsSuite) TestPackfileReindex() {
 		// Now check that the test object can be retrieved
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
 		s.Require().NoError(err)
-
 	}
 }
 

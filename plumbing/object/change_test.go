@@ -264,7 +264,6 @@ func (s *ChangeSuite) TestNoFileFilemodes() {
 			commit, err := GetCommit(sto, o.Hash())
 			s.NoError(err)
 			commits = append(commits, commit)
-
 		}
 
 		return nil

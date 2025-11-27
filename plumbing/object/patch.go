@@ -25,7 +25,11 @@ func getPatch(message string, changes ...*Change) (*Patch, error) {
 }
 
 func getPatchContext(ctx context.Context, message string, changes ...*Change) (*Patch, error) {
-	var filePatches []fdiff.FilePatch
+	if len(changes) == 0 {
+		return &Patch{message: message}, nil
+	}
+
+	filePatches := make([]fdiff.FilePatch, 0, len(changes))
 	for _, c := range changes {
 		select {
 		case <-ctx.Done():
@@ -65,7 +69,7 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 
 	diffs := diff.Do(fromContent, toContent)
 
-	var chunks []fdiff.Chunk
+	chunks := make([]fdiff.Chunk, 0, len(diffs))
 	for _, d := range diffs {
 		select {
 		case <-ctx.Done():
@@ -285,7 +289,7 @@ func printStat(fileStats []FileStat) string {
 }
 
 func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
-	var fileStats FileStats
+	fileStats := make(FileStats, 0, len(filePatches))
 
 	for _, fp := range filePatches {
 		// ignore empty patches (binary files, submodule refs updates)
