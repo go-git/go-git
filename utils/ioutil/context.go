@@ -2,8 +2,10 @@ package ioutil
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"slices"
+
+	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 type ioret struct {
@@ -34,7 +36,7 @@ type ctxWriter struct {
 //
 // Furthermore, in order to protect your memory from being read
 // _after_ you've cancelled the context, this io.Writer will
-// first make a **copy** of the buffer.
+// use a buffer from the memory pool.
 func NewContextWriter(ctx context.Context, w io.Writer) io.Writer {
 	if ctx == nil {
 		ctx = context.Background()
@@ -43,28 +45,60 @@ func NewContextWriter(ctx context.Context, w io.Writer) io.Writer {
 }
 
 func (w *ctxWriter) Write(buf []byte) (int, error) {
-	buf2 := slices.Clone(buf)
+	ret := make(chan ioret, 1)
+	input := make(chan []byte)
+	defer close(input)
 
-	c := make(chan ioret, 1)
+	// temp will be released when both goroutines stop using it.
+	temp := sync.GetByteSlice()
 
 	go func() {
-		n, err := w.w.Write(buf2)
-		c <- ioret{err, n}
-		close(c)
+		defer func() {
+			if v := recover(); v != nil {
+				err := fmt.Errorf("underlying writer resulted in panic: %v", v)
+				ret <- ioret{err, 0}
+			}
+
+			sync.PutByteSlice(temp)
+		}()
+
+		for {
+			buf2, ok := <-input
+			if !ok {
+				return
+			}
+
+			n, err := w.w.Write(buf2)
+			ret <- ioret{err, n}
+		}
 	}()
 
-	select {
-	case r := <-c:
-		if err := w.ctx.Err(); err != nil {
-			return 0, err
+	total := 0
+
+	for len(buf) > 0 {
+		n := copy(*temp, buf)
+		input <- (*temp)[:n]
+
+		select {
+		case <-w.ctx.Done():
+			return total, w.ctx.Err()
+		case write := <-ret:
+			if err := w.ctx.Err(); err != nil {
+				return total, w.ctx.Err()
+			}
+
+			total += write.n
+			buf = buf[write.n:]
+
+			if write.err != nil {
+				return total, write.err
+			}
 		}
-		return r.n, r.err
-	case <-w.ctx.Done():
-		return 0, w.ctx.Err()
 	}
+
+	return total, nil
 }
 
-// Reader is an interface for io.Reader.
 type Reader interface {
 	io.Reader
 }
@@ -81,42 +115,56 @@ type ctxReader struct {
 // and err=ctx.Err().)
 //
 // Note well: this wrapper DOES NOT ACTUALLY cancel the underlying
-// write-- there is no way to do that with the standard go io
+// read-- there is no way to do that with the standard go io
 // interface. So the read and write _will_ happen or hang. So, use
 // this sparingly, make sure to cancel the read or write as necessary
 // (e.g. closing a connection whose context is up, etc.)
 //
 // Furthermore, in order to protect your memory from being read
 // _before_ you've cancelled the context, this io.Reader will
-// allocate a buffer of the same size, and **copy** into the client's
-// if the read succeeds in time.
+// use a buffer from the memory pool.
 func NewContextReader(ctx context.Context, r io.Reader) io.Reader {
 	return &ctxReader{ctx: ctx, r: r}
 }
 
 func (r *ctxReader) Read(buf []byte) (int, error) {
-	buf2 := make([]byte, len(buf))
+	ret := make(chan ioret, 1)
 
-	c := make(chan ioret, 1)
+	temp := sync.GetByteSlice()
+	window := (*temp)[:min(len(*temp), len(buf))]
+
+	// temp will be released when both goroutines stop using it.
+	done := make(chan struct{}, 1)
+	defer close(done)
 
 	go func() {
-		n, err := r.r.Read(buf2)
-		c <- ioret{err, n}
-		close(c)
+		defer func() {
+			if v := recover(); v != nil {
+				err := fmt.Errorf("underlying reader resulted in panic: %v", v)
+				ret <- ioret{err, 0}
+			}
+
+			// wait for the main goroutine to copy from the buffer.
+			<-done
+			sync.PutByteSlice(temp)
+		}()
+
+		n, err := r.r.Read(window)
+		ret <- ioret{err, n}
 	}()
 
 	select {
-	case ret := <-c:
-		if err := r.ctx.Err(); err != nil {
-			return 0, err
-		}
-		copy(buf, buf2)
-		return ret.n, ret.err
 	case <-r.ctx.Done():
 		if r.closer != nil {
 			_ = r.closer.Close()
 		}
 		return 0, r.ctx.Err()
+	case read := <-ret:
+		if err := r.ctx.Err(); err != nil {
+			return 0, err
+		}
+		copy(buf, window[:read.n])
+		return read.n, read.err
 	}
 }
 
