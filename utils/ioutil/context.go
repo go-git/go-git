@@ -90,10 +90,6 @@ func (w *ctxWriter) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-type Reader interface {
-	io.Reader
-}
-
 type ctxReader struct {
 	r      io.Reader
 	ctx    context.Context
