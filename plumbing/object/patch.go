@@ -261,7 +261,7 @@ func printStat(fileStats []FileStat) string {
 		}
 	}
 
-	result := ""
+	var result strings.Builder
 	for _, fs := range fileStats {
 		add := uint(fs.Addition)
 		del := uint(fs.Deletion)
@@ -279,9 +279,9 @@ func printStat(fileStats []FileStat) string {
 		namePad := strings.Repeat(" ", np)
 		changePad := strings.Repeat(" ", cp)
 
-		result += fmt.Sprintf(" %s%s | %s%d %s%s\n", fs.Name, namePad, changePad, total, adds, dels)
+		fmt.Fprintf(&result, " %s%s | %s%d %s%s\n", fs.Name, namePad, changePad, total, adds, dels)
 	}
-	return result
+	return result.String()
 }
 
 func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {

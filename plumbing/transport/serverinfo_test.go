@@ -45,7 +45,7 @@ func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) 
 	s.NoError(err)
 
 	localRefs := make(map[plumbing.ReferenceName]plumbing.Hash)
-	for _, line := range strings.Split(string(bts), "\n") {
+	for line := range strings.SplitSeq(string(bts), "\n") {
 		if line == "" {
 			continue
 		}
@@ -104,7 +104,7 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 	packs, err := pos.ObjectPacks()
 	s.NoError(err)
 
-	for _, line := range strings.Split(string(bts), "\n") {
+	for line := range strings.SplitSeq(string(bts), "\n") {
 		if line == "" {
 			continue
 		}

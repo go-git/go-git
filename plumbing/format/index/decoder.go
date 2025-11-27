@@ -80,7 +80,7 @@ func (d *Decoder) Decode(idx *Index) error {
 }
 
 func (d *Decoder) readEntries(idx *Index, count int) error {
-	for i := 0; i < count; i++ {
+	for range count {
 		e, err := d.readEntry(idx)
 		if err != nil {
 			return err
@@ -442,7 +442,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	e.Path = string(path)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := d.readStage(e, Stage(i+1)); err != nil {
 			return nil, err
 		}

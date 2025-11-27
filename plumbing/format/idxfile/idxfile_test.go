@@ -20,7 +20,7 @@ func BenchmarkFindOffset(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, h := range fixtureHashes {
 			_, err := idx.FindOffset(h)
 			if err != nil {
@@ -36,7 +36,7 @@ func BenchmarkFindCRC32(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, h := range fixtureHashes {
 			_, err := idx.FindCRC32(h)
 			if err != nil {
@@ -52,7 +52,7 @@ func BenchmarkContains(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, h := range fixtureHashes {
 			ok, err := idx.Contains(h)
 			if err != nil {
@@ -72,7 +72,7 @@ func BenchmarkEntries(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		iter, err := idx.Entries()
 		if err != nil {
 			b.Fatalf("unexpected error getting entries: %s", err)
@@ -182,7 +182,7 @@ func TestOffsetHashConcurrentPopulation(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 5000; i++ {
+			for range 5000 {
 				_, _ = idx.FindOffset(h)
 			}
 		}()
@@ -192,7 +192,7 @@ func TestOffsetHashConcurrentPopulation(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 3000; i++ {
+			for range 3000 {
 				_, _ = idx.FindHash(off)
 			}
 		}()

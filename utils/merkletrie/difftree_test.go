@@ -180,7 +180,7 @@ func newChangesFromString(s string) (changes, error) {
 		return ret, nil
 	}
 
-	for _, chunk := range strings.Split(s, " ") {
+	for chunk := range strings.SplitSeq(s, " ") {
 		change := change{
 			path: chunk[1:],
 		}

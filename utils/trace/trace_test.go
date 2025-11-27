@@ -81,7 +81,7 @@ func TestDisabledMultipleTargets(t *testing.T) {
 
 func BenchmarkDisabledTarget(b *testing.B) {
 	setUpTest(b, nil)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		General.Print("test")
 	}
 }
@@ -89,7 +89,7 @@ func BenchmarkDisabledTarget(b *testing.B) {
 func BenchmarkEnabledTarget(b *testing.B) {
 	setUpTest(b, nil)
 	SetTarget(General)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		General.Print("test")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func (l *List) Decode(raw []byte) error {
 		return nil
 	}
 
-	for _, data := range bytes.Split(raw, []byte{' '}) {
+	for data := range bytes.SplitSeq(raw, []byte{' '}) {
 		pair := bytes.SplitN(data, []byte{'='}, 2)
 
 		c := Capability(pair[0])
@@ -116,10 +117,8 @@ func (l *List) Add(c Capability, values ...string) error {
 }
 
 func (l *List) validateNoEmptyArgs(values []string) error {
-	for _, v := range values {
-		if v == "" {
-			return ErrEmptyArgument
-		}
+	if slices.Contains(values, "") {
+		return ErrEmptyArgument
 	}
 	return nil
 }

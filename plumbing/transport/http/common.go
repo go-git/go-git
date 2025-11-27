@@ -268,7 +268,7 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 			tr, ok := c.client.Transport.(*http.Transport)
 			if !ok {
 				return nil, fmt.Errorf("expected underlying client transport to be of type: %s; got: %s",
-					reflect.TypeOf(transport), reflect.TypeOf(c.client.Transport))
+					reflect.TypeFor[*http.Transport](), reflect.TypeOf(c.client.Transport))
 			}
 
 			transport = tr.Clone()

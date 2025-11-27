@@ -1,6 +1,10 @@
 package diff
 
-import "github.com/go-git/go-git/v6/plumbing/color"
+import (
+	"maps"
+
+	"github.com/go-git/go-git/v6/plumbing/color"
+)
 
 // A ColorKey is a key into a ColorConfig map and also equal to the key in the
 // diff.color subsection of the config. See
@@ -77,9 +81,7 @@ var defaultColorConfig = ColorConfig{
 // NewColorConfig returns a new ColorConfig.
 func NewColorConfig(options ...ColorConfigOption) ColorConfig {
 	cc := make(ColorConfig)
-	for key, value := range defaultColorConfig {
-		cc[key] = value
-	}
+	maps.Copy(cc, defaultColorConfig)
 	for _, option := range options {
 		option(cc)
 	}

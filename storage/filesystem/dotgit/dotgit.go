@@ -1211,7 +1211,7 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 			// Handling absolute paths should be straight-forward. However, the default osfs (Chroot)
 			// tries to concatenate an abs path with the root path in some operations (e.g. Stat),
 			// which leads to unexpected errors. Therefore, make the path relative to the current FS instead.
-			if reflect.TypeOf(fs) == reflect.TypeOf(&chroot.ChrootHelper{}) {
+			if reflect.TypeOf(fs) == reflect.TypeFor[*chroot.ChrootHelper]() {
 				path, err = filepath.Rel(fs.Root(), path)
 				if err != nil {
 					return nil, fmt.Errorf("cannot make path %q relative: %w", path, err)

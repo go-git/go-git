@@ -114,7 +114,6 @@ func TestDecode(t *testing.T) {
 	assert.Greater(t, len(packfiles), 0)
 
 	for _, f := range packfiles {
-		f := f
 		index := getIndexFromIdxFile(f.Idx())
 		n, err := index.Count()
 		require.NoError(t, err)
@@ -125,7 +124,6 @@ func TestDecode(t *testing.T) {
 		)
 
 		for _, h := range expectedHashes {
-			h := h
 			obj, err := p.Get(plumbing.NewHash(h))
 			require.NoError(t, err)
 			assert.Equal(t, obj.Hash().String(), h)
@@ -181,9 +179,7 @@ func TestDecodeByType(t *testing.T) {
 	}
 
 	for _, f := range fixtures.Basic().ByTag("packfile") {
-		f := f
 		for _, typ := range types {
-			typ := typ
 			index := getIndexFromIdxFile(f.Idx())
 			n, err := index.Count()
 			require.NoError(t, err)

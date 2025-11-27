@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,26 +47,28 @@ func TestInit(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		opts       []InitOption
+		opts       func() []InitOption
 		wantBare   bool
 		wantBranch string
 	}{
 		{
 			name:     "Bare",
-			opts:     []InitOption{},
+			opts:     func() []InitOption { return []InitOption{} },
 			wantBare: true,
 		},
 		{
 			name: "With Worktree",
-			opts: []InitOption{
-				WithWorkTree(memfs.New()),
+			opts: func() []InitOption {
+				return []InitOption{WithWorkTree(memfs.New())}
 			},
 		},
 		{
 			name: "With Default Branch",
-			opts: []InitOption{
-				WithWorkTree(memfs.New()),
-				WithDefaultBranch("refs/head/foo"),
+			opts: func() []InitOption {
+				return []InitOption{
+					WithWorkTree(memfs.New()),
+					WithDefaultBranch("refs/head/foo"),
+				}
 			},
 			wantBranch: "refs/head/foo",
 		},
@@ -76,7 +79,7 @@ func TestInit(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				opts := append(tc.opts, WithObjectFormat(of))
+				opts := append(tc.opts(), WithObjectFormat(of))
 				r, err := Init(memory.NewStorage(memory.WithObjectFormat(of)), opts...)
 				require.NotNil(t, r)
 				require.NoError(t, err)
@@ -807,7 +810,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage() {
 	s.NoError(err)
 
 	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
-		[]byte(fmt.Sprintf("gitdir: %s\nTRAILING", fs.Join(fs.Root(), altDir))),
+		fmt.Appendf(nil, "gitdir: %s\nTRAILING", fs.Join(fs.Root(), altDir)),
 		0o644,
 	)
 	s.NoError(err)
@@ -830,9 +833,9 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix() {
 	altDir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
 
-	err = util.WriteFile(fs, fs.Join(altDir, ".git"), []byte(
-		fmt.Sprintf("xgitdir: %s\n", fs.Join(fs.Root(), dir)),
-	), 0o644)
+	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
+		fmt.Appendf(nil, "xgitdir: %s\n", fs.Join(fs.Root(), dir)),
+		0o644)
 
 	s.NoError(err)
 
@@ -3364,10 +3367,8 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 	s.NotNil(cobj)
 	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
 		for _, ph := range c.ParentHashes {
-			for _, h := range shallows {
-				if ph == h {
-					return storer.ErrStop
-				}
+			if slices.Contains(shallows, ph) {
+				return storer.ErrStop
 			}
 		}
 
@@ -3391,10 +3392,8 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 	s.NotNil(cobj)
 	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
 		for _, ph := range c.ParentHashes {
-			for _, h := range shallows {
-				if ph == h {
-					return storer.ErrStop
-				}
+			if slices.Contains(shallows, ph) {
+				return storer.ErrStop
 			}
 		}
 
@@ -3437,7 +3436,7 @@ func BenchmarkObjects(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				iter, err := repo.Objects()
 				if err != nil {
 					b.Fatal(err)
@@ -3480,7 +3479,7 @@ func BenchmarkPlainClone(b *testing.B) {
 	clone(b)
 
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		clone(b)
 	}
 }

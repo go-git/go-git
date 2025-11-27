@@ -172,7 +172,7 @@ func (fi *fileIndex) readFanout() error {
 	// The Fanout table is a 256 entry table of the number (as uint32) of OIDs with first byte at most i.
 	// Thus F[255] stores the total number of commits (N)
 	fanoutReader := io.NewSectionReader(fi.reader, fi.offsets[OIDFanoutChunk], lenFanout*szUint32)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		fanoutValue, err := binary.ReadUint32(fanoutReader)
 		if err != nil {
 			return err

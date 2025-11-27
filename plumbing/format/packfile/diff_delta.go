@@ -185,7 +185,7 @@ func encodeCopyOperation(offset, length int) []byte {
 		}
 	}
 
-	for i = 0; i < 3; i++ {
+	for i = range 3 {
 		f := 0xff << (i * 8)
 		if length&f != 0 {
 			opcodes = append(opcodes, byte(length&f>>(i*8)))

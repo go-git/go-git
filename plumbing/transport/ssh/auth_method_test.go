@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,7 +37,6 @@ func (mockKnownHosts) Algorithms() []string {
 	return []string{ssh.KeyAlgoRSA, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512}
 }
 
-func (mockKnownHostsWithCert) host() string { return "github.com" }
 func (mockKnownHostsWithCert) knownHosts() []byte {
 	return []byte(`@cert-authority github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==`)
 }
@@ -277,17 +277,8 @@ func (s *SuiteCommon) TestNewKnownHostsDbWithoutCert() {
 	algos := db.HostKeyAlgorithms(mock.String())
 	s.Len(algos, len(mock.Algorithms()))
 
-	contains := func(container []string, value string) bool {
-		for _, inner := range container {
-			if inner == value {
-				return true
-			}
-		}
-		return false
-	}
-
 	for _, algorithm := range mock.Algorithms() {
-		if !contains(algos, algorithm) {
+		if !slices.Contains(algos, algorithm) {
 			s.T().Error("algos does not contain ", algorithm)
 		}
 	}
@@ -322,17 +313,8 @@ func (s *SuiteCommon) TestNewKnownHostsDbWithCert() {
 	algos := db.HostKeyAlgorithms(mock.String())
 	s.Len(algos, len(mock.Algorithms()))
 
-	contains := func(container []string, value string) bool {
-		for _, inner := range container {
-			if inner == value {
-				return true
-			}
-		}
-		return false
-	}
-
 	for _, algorithm := range mock.Algorithms() {
-		if !contains(algos, algorithm) {
+		if !slices.Contains(algos, algorithm) {
 			s.T().Error("algos does not contain ", algorithm)
 		}
 	}

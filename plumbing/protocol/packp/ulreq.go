@@ -32,8 +32,6 @@ type Depth interface {
 // undefined consequences.
 type DepthCommits int
 
-func (d DepthCommits) isDepth() {}
-
 func (d DepthCommits) IsZero() bool {
 	return d == 0
 }
@@ -45,8 +43,6 @@ func (d DepthCommits) String() string {
 // DepthSince values requests only commits newer than the specified time.
 type DepthSince time.Time
 
-func (d DepthSince) isDepth() {}
-
 func (d DepthSince) IsZero() bool {
 	return time.Time(d).IsZero()
 }
@@ -57,8 +53,6 @@ func (d DepthSince) String() string {
 
 // DepthReference requests only commits not to found in the specified reference.
 type DepthReference string
-
-func (d DepthReference) isDepth() {}
 
 func (d DepthReference) IsZero() bool {
 	return string(d) == ""

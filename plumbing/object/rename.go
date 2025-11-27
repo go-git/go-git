@@ -636,10 +636,7 @@ func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error
 // two empty files.
 // The similarity score is symmetrical; i.e. a.score(b) == b.score(a).
 func (i *similarityIndex) score(other *similarityIndex, maxScore int) int {
-	maxHashed := i.hashed
-	if maxHashed < other.hashed {
-		maxHashed = other.hashed
-	}
+	maxHashed := max(i.hashed, other.hashed)
 	if maxHashed == 0 {
 		return maxScore
 	}

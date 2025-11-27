@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -98,7 +99,7 @@ func (opts Options) withSettedOption(key string, values ...string) Options {
 			continue
 		}
 
-		if contains(values, o.Value) {
+		if slices.Contains(values, o.Value) {
 			added = append(added, o.Value)
 			result = append(result, o)
 			continue
@@ -106,7 +107,7 @@ func (opts Options) withSettedOption(key string, values ...string) Options {
 	}
 
 	for _, value := range values {
-		if contains(added, value) {
+		if slices.Contains(added, value) {
 			continue
 		}
 
@@ -114,14 +115,4 @@ func (opts Options) withSettedOption(key string, values ...string) Options {
 	}
 
 	return result
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-
-	return false
 }

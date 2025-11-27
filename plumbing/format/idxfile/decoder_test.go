@@ -122,7 +122,7 @@ func BenchmarkDecode(b *testing.B) {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		f := bytes.NewBuffer(fixture)
 		idx := new(MemoryIndex)
 		d := NewDecoder(f)

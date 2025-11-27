@@ -294,17 +294,6 @@ func (s *UpdReqDecodeSuite) testDecodeOK(payloads []string) *UpdateRequests {
 	return r
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOkRaw(expected *UpdateRequests, raw []byte) {
-	req := NewUpdateRequests()
-	s.Nil(req.Decode(bytes.NewBuffer(raw)))
-	// TODO: Add packfile comparison tests to [transport.SendPack].
-	// s.NotNil(req.Packfile)
-	// s.compareReaders(req.Packfile, expected.Packfile)
-	// req.Packfile = nil
-	// expected.Packfile = nil
-	s.Equal(expected, req)
-}
-
 func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *UpdateRequests, payloads []string) {
 	req := s.testDecodeOK(payloads)
 	// s.NotNil(req.Packfile)
@@ -312,14 +301,4 @@ func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *UpdateRequests, paylo
 	// req.Packfile = nil
 	// expected.Packfile = nil
 	s.Equal(expected, req)
-}
-
-func (s *UpdReqDecodeSuite) compareReaders(a, b io.ReadCloser) {
-	pba, err := io.ReadAll(a)
-	s.NoError(err)
-	s.NoError(a.Close())
-	pbb, err := io.ReadAll(b)
-	s.NoError(err)
-	s.NoError(b.Close())
-	s.Equal(pbb, pba)
 }
