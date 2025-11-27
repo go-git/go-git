@@ -1004,7 +1004,7 @@ type testPatch struct {
 }
 
 func (t testPatch) FilePatches() []FilePatch {
-	var result []FilePatch
+	result := make([]FilePatch, 0, len(t.filePatches))
 	for _, f := range t.filePatches {
 		result = append(result, f)
 	}
@@ -1040,7 +1040,7 @@ func (t testFilePatch) Files() (File, File) {
 }
 
 func (t testFilePatch) Chunks() []Chunk {
-	var result []Chunk
+	result := make([]Chunk, 0, len(t.chunks))
 	for _, c := range t.chunks {
 		result = append(result, c)
 	}

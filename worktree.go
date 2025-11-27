@@ -419,7 +419,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		return nil, err
 	}
 
-	var removedFiles []string
+	removedFiles := make([]string, 0, len(changes))
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {

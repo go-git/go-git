@@ -410,7 +410,7 @@ func Normalize(address string) string {
 // uses the local patched implementation of Normalize in order to solve
 // https://github.com/golang/go/issues/53463.
 func Line(addresses []string, key ssh.PublicKey) string {
-	var trimmed []string
+	trimmed := make([]string, 0, len(addresses))
 	for _, a := range addresses {
 		trimmed = append(trimmed, Normalize(a))
 	}

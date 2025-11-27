@@ -67,7 +67,7 @@ func FilterObjectType(t plumbing.ObjectType) (Filter, error) {
 
 // FilterCombine combines multiple Filter values together.
 func FilterCombine(filters ...Filter) Filter {
-	var escapedFilters []string
+	escapedFilters := make([]string, 0, len(filters))
 
 	for _, filter := range filters {
 		escapedFilters = append(escapedFilters, url.QueryEscape(string(filter)))

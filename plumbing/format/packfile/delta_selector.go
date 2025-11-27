@@ -87,7 +87,7 @@ func (dw *deltaSelector) objectsToPack(
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) ([]*ObjectToPack, error) {
-	var objectsToPack []*ObjectToPack
+	objectsToPack := make([]*ObjectToPack, 0, len(hashes))
 	for _, h := range hashes {
 		var o plumbing.EncodedObject
 		var err error

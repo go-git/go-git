@@ -101,7 +101,7 @@ var revisionIndex = map[string]plumbing.Hash{
 }
 
 func (s *mergeBaseSuite) commitsFromRevs(revs []string) ([]*Commit, error) {
-	var commits []*Commit
+	commits := make([]*Commit, 0, len(revs))
 	for _, rev := range revs {
 		hash, ok := revisionIndex[rev]
 		if !ok {

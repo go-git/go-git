@@ -335,7 +335,7 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 }
 
 func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
-	var refs []*plumbing.Reference
+	refs := make([]*plumbing.Reference, 0, len(r))
 	for _, ref := range r {
 		refs = append(refs, ref)
 	}

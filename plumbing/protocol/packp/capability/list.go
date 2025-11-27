@@ -166,7 +166,11 @@ func (l *List) Delete(capability Capability) {
 
 // All returns a slice with all defined capabilities.
 func (l *List) All() []Capability {
-	var cs []Capability
+	if len(l.sort) == 0 {
+		return nil
+	}
+
+	cs := make([]Capability, 0, len(l.sort))
 	for _, key := range l.sort {
 		cs = append(cs, Capability(key))
 	}
