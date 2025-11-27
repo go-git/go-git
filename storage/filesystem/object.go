@@ -37,6 +37,11 @@ type ObjectStorage struct {
 	muP         sync.RWMutex
 
 	oh *plumbing.ObjectHasher
+
+	// alternates holds cached ObjectStorage instances for alternate repositories.
+	// Initialized lazily via alternatesOnce to avoid recreating them on every lookup.
+	alternates     []*ObjectStorage
+	alternatesOnce sync.Once
 }
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
@@ -52,6 +57,24 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 		dir:         dir,
 		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
 	}
+}
+
+// initAlternates initializes the cached alternate ObjectStorage instances.
+// This is called lazily via sync.Once to ensure thread-safe initialization
+// and to avoid recreating ObjectStorage instances on every object lookup.
+func (s *ObjectStorage) initAlternates() {
+	s.alternatesOnce.Do(func() {
+		dotgits, err := s.dir.Alternates()
+		if err != nil {
+			// Alternates file doesn't exist or couldn't be read.
+			// This is not an error - alternates are optional.
+			return
+		}
+		for _, dg := range dotgits {
+			s.alternates = append(s.alternates,
+				NewObjectStorageWithOptions(dg, s.objectCache, s.options))
+		}
+	})
 }
 
 func (s *ObjectStorage) requireIndex() error {
@@ -217,10 +240,18 @@ func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 		return err
 	}
 	_, _, offset := s.findObjectInPackfile(h)
-	if offset == -1 {
-		return plumbing.ErrObjectNotFound
+	if offset != -1 {
+		return nil
 	}
-	return nil
+
+	// Check cached alternate repositories.
+	s.initAlternates()
+	for _, alt := range s.alternates {
+		if err := alt.HasEncodedObject(h); err == nil {
+			return nil
+		}
+	}
+	return plumbing.ErrObjectNotFound
 }
 
 func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int64, err error) {
@@ -358,7 +389,22 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 		return size, nil
 	}
 
-	return s.encodedObjectSizeFromPackfile(h)
+	size, err = s.encodedObjectSizeFromPackfile(h)
+	if err == nil {
+		return size, nil
+	}
+
+	// Check cached alternate repositories.
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		s.initAlternates()
+		for _, alt := range s.alternates {
+			size, err = alt.EncodedObjectSize(h)
+			if err == nil {
+				return size, nil
+			}
+		}
+	}
+	return 0, plumbing.ErrObjectNotFound
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -379,20 +425,13 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 		}
 	}
 
-	// If the error is still object not found, check if it's a shared object
-	// repository.
+	// If the error is still object not found, check cached alternate repositories.
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		dotgits, e := s.dir.Alternates()
-		if e == nil {
-			// Create a new object storage with the DotGit(s) and check for the
-			// required hash object. Skip when not found.
-			for _, dg := range dotgits {
-				o := NewObjectStorage(dg, s.objectCache)
-				enobj, enerr := o.EncodedObject(t, h)
-				if enerr != nil {
-					continue
-				}
-				return enobj, nil
+		s.initAlternates()
+		for _, alt := range s.alternates {
+			obj, err = alt.EncodedObject(t, h)
+			if err == nil {
+				return obj, nil
 			}
 		}
 	}
@@ -669,6 +708,13 @@ func (s *ObjectStorage) buildPackfileIters(
 // Close closes all opened files.
 func (s *ObjectStorage) Close() error {
 	var firstError error
+
+	// Close cached alternate storages first.
+	for _, alt := range s.alternates {
+		if err := alt.Close(); err != nil && firstError == nil {
+			firstError = err
+		}
+	}
 
 	s.muP.RLock()
 	defer s.muP.RUnlock()
