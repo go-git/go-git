@@ -197,6 +197,8 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	// When target commit has the same tree as current HEAD, we can skip
 	// the expensive Reset() operation that scans all files. This matches
 	// git CLI behavior which only updates files when trees actually differ.
+	// This is trying to match `git checkout -b` and `git switch -c` behavior
+	// which is implemented here https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L1215
 	//
 	// However, we must also verify the index matches the target tree.
 	// Git uses the index (staging area) as the source of truth for what should
