@@ -6,6 +6,7 @@ linters:
     - modernize
     - staticcheck
     - unused
+    - whitespace
 
 formatters:
   enable:

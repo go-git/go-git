@@ -458,7 +458,6 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 			Hash: e.Hash,
 			Mode: e.Mode,
 		})
-
 	}
 
 	b.Write(idx)

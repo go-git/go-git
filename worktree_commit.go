@@ -204,7 +204,6 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 		if _, _, err := w.doAddFile(idx, s, path, nil); err != nil {
 			return err
 		}
-
 	}
 
 	return w.r.Storer.SetIndex(idx)

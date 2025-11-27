@@ -90,7 +90,6 @@ func (s *CommitStatsSuite) writeHistory(files ...[]byte) (*git.Repository, plumb
 
 		hash, err = w.Commit("foo\n", cm)
 		s.NoError(err)
-
 	}
 
 	return r, hash
