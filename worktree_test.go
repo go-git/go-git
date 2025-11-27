@@ -2073,7 +2073,7 @@ func (s *WorktreeSuite) TestAddRemoved() {
 	s.Equal(Deleted, file.Staging)
 }
 
-func (s *WorktreeSuite) TestAddRemovedInDirectory() {
+func (s *WorktreeSuite) testAddRemovedInDirectory(addPath string, expectedJSONStatus StatusCode) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -2093,7 +2093,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory() {
 	err = w.Filesystem.Remove("json/short.json")
 	s.NoError(err)
 
-	hash, err := w.Add("go")
+	hash, err := w.Add(addPath)
 	s.NoError(err)
 	s.True(hash.IsZero())
 
@@ -2115,97 +2115,19 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory() {
 	s.Equal(Deleted, file.Staging)
 
 	file = status.File("json/short.json")
-	s.Equal(Unmodified, file.Staging)
+	s.Equal(expectedJSONStatus, file.Staging)
+}
+
+func (s *WorktreeSuite) TestAddRemovedInDirectory() {
+	s.testAddRemovedInDirectory("go", Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddRemovedInDirectoryWithTrailingSlash() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = w.Filesystem.Remove("go/example.go")
-	s.NoError(err)
-
-	err = w.Filesystem.Remove("json/short.json")
-	s.NoError(err)
-
-	hash, err := w.Add("go/")
-	s.NoError(err)
-	s.True(hash.IsZero())
-
-	e, err := idx.Entry("go/example.go")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	e, err = idx.Entry("json/short.json")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 2)
-
-	file := status.File("go/example.go")
-	s.Equal(Deleted, file.Staging)
-
-	file = status.File("json/short.json")
-	s.Equal(Unmodified, file.Staging)
+	s.testAddRemovedInDirectory("go/", Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddRemovedInDirectoryDot() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = w.Filesystem.Remove("go/example.go")
-	s.NoError(err)
-
-	err = w.Filesystem.Remove("json/short.json")
-	s.NoError(err)
-
-	hash, err := w.Add(".")
-	s.NoError(err)
-	s.True(hash.IsZero())
-
-	e, err := idx.Entry("go/example.go")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	e, err = idx.Entry("json/short.json")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 2)
-
-	file := status.File("go/example.go")
-	s.Equal(Deleted, file.Staging)
-
-	file = status.File("json/short.json")
-	s.Equal(Deleted, file.Staging)
+	s.testAddRemovedInDirectory(".", Deleted)
 }
 
 func (s *WorktreeSuite) TestAddSymlink() {
@@ -2457,7 +2379,7 @@ func (s *WorktreeSuite) TestAddGlobErrorNoMatches() {
 	s.ErrorIs(err, ErrGlobNoMatches)
 }
 
-func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
+func (s *WorktreeSuite) testAddSkipStatus(filePath string, expectedEntries int, expectedStaging StatusCode) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -2471,17 +2393,17 @@ func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
 	s.NoError(err)
 	s.Len(idx.Entries, 9)
 
-	err = util.WriteFile(w.Filesystem, "file1", []byte("file1"), 0o644)
+	err = util.WriteFile(w.Filesystem, filePath, []byte("file1"), 0o644)
 	s.NoError(err)
 
-	err = w.AddWithOptions(&AddOptions{Path: "file1", SkipStatus: true})
+	err = w.AddWithOptions(&AddOptions{Path: filePath, SkipStatus: true})
 	s.NoError(err)
 
 	idx, err = w.r.Storer.Index()
 	s.NoError(err)
-	s.Len(idx.Entries, 10)
+	s.Len(idx.Entries, expectedEntries)
 
-	e, err := idx.Entry("file1")
+	e, err := idx.Entry(filePath)
 	s.NoError(err)
 	s.Equal(filemode.Regular, e.Mode)
 
@@ -2489,46 +2411,17 @@ func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
 	s.NoError(err)
 	s.Len(status, 1)
 
-	file := status.File("file1")
-	s.Equal(Added, file.Staging)
+	file := status.File(filePath)
+	s.Equal(expectedStaging, file.Staging)
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
+	s.testAddSkipStatus("file1", 10, Added)
+}
+
 func (s *WorktreeSuite) TestAddSkipStatusModifiedPath() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = util.WriteFile(w.Filesystem, "LICENSE", []byte("file1"), 0o644)
-	s.NoError(err)
-
-	err = w.AddWithOptions(&AddOptions{Path: "LICENSE", SkipStatus: true})
-	s.NoError(err)
-
-	idx, err = w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	e, err := idx.Entry("LICENSE")
-	s.NoError(err)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 1)
-
-	file := status.File("LICENSE")
-	s.Equal(Modified, file.Staging)
-	s.Equal(Unmodified, file.Worktree)
+	s.testAddSkipStatus("LICENSE", 9, Modified)
 }
 
 func (s *WorktreeSuite) TestAddSkipStatusNonModifiedPath() {
