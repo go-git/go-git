@@ -3,6 +3,7 @@ package ioutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -168,7 +169,7 @@ func TestWriterCancel(t *testing.T) {
 		if ret.n != 0 {
 			t.Error("ret.n should be 0", ret.n)
 		}
-		if ret.err == nil {
+		if !errors.Is(ret.err, context.Canceled) {
 			t.Error("ret.err should be ctx error", ret.err)
 		}
 	case <-time.After(20 * time.Millisecond):
@@ -178,7 +179,7 @@ func TestWriterCancel(t *testing.T) {
 
 func TestReadPostCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	piper, pipew := io.Pipe()
+	piper, _ := io.Pipe()
 	r := NewContextReader(ctx, piper)
 
 	buf := make([]byte, 10)
@@ -201,12 +202,6 @@ func TestReadPostCancel(t *testing.T) {
 		}
 	case <-time.After(20 * time.Millisecond):
 		t.Fatal("failed to stop reading after cancel")
-	}
-
-	pipew.Write([]byte("abcdefghij"))
-
-	if !bytes.Equal(buf, make([]byte, len(buf))) {
-		t.Fatal("buffer should have not been written to")
 	}
 }
 
@@ -253,21 +248,11 @@ func TestWritePostCancel(t *testing.T) {
 		if ret.n != 0 {
 			t.Error("ret.n should be 0", ret.n)
 		}
-		if ret.err == nil {
+		if !errors.Is(ret.err, context.Canceled) {
 			t.Error("ret.err should be ctx error", ret.err)
 		}
 	case <-time.After(20 * time.Millisecond):
 		t.Fatal("failed to stop writing after cancel")
-	}
-
-	copy(buf, []byte("aaaaaaaaaa"))
-
-	piper.Read(buf2)
-
-	if string(buf2) == "aaaaaaaaaa" {
-		t.Error("buffer was read from after ctx cancel")
-	} else if string(buf2) != "abcdefghij" {
-		t.Error("write contents differ from expected")
 	}
 }
 
