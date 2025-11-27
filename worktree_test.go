@@ -3578,7 +3578,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		{Worktree: Untracked, Staging: Untracked},
 	})
 
-	// Touch of bunch of files including create a new file and delete an exsiting file
+	// Touch of bunch of files including create a new file and delete an existing file
 	for _, name := range names {
 		err = util.WriteFile(fs, name, []byte("Foo Bar"), 0o755)
 		s.NoError(err)
