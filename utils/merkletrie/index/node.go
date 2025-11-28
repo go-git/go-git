@@ -3,6 +3,7 @@ package index
 import (
 	"path"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -101,6 +102,14 @@ func (n *node) Hash() []byte {
 	}
 
 	return append(n.entry.Hash.Bytes(), mode.Bytes()...)
+}
+
+func (n *node) ModTime() time.Time {
+	if n.entry == nil {
+		return time.Time{}
+	}
+
+	return n.entry.ModifiedAt
 }
 
 func (n *node) Name() string {

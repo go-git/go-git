@@ -3,6 +3,7 @@ package noder
 import (
 	"bytes"
 	"strings"
+	"time"
 )
 
 // Path values represent a noder and its ancestors.  The root goes first
@@ -45,6 +46,14 @@ func (p Path) Last() Noder {
 // Hash returns the hash of the final noder of the path.
 func (p Path) Hash() []byte {
 	return p.Last().Hash()
+}
+
+// ModTime returns the modification time of the final noder of the path.
+func (p Path) ModTime() time.Time {
+	if last, ok := p.Last().(ModTimer); ok {
+		return last.ModTime()
+	}
+	return time.Time{}
 }
 
 // Name returns the name of the final noder of the path.
