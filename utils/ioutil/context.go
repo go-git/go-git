@@ -81,7 +81,7 @@ type ctxReader struct {
 // Note well: this wrapper DOES NOT ACTUALLY cancel the underlying
 // write-- there is no way to do that with the standard go io
 // interface. So the read and write _will_ happen or hang. So, use
-// this sparingly, make sure to cancel the read or write as necesary
+// this sparingly, make sure to cancel the read or write as necessary
 // (e.g. closing a connection whose context is up, etc.)
 //
 // Furthermore, in order to protect your memory from being read

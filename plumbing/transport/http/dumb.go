@@ -257,7 +257,7 @@ func (r *fetchWalker) process() error {
 		}
 
 		// XXX: we need to check if the index file exists. Currently, there is
-		// no way to do so using the storer interfaces except useing
+		// no way to do so using the storer interfaces except using
 		// HasEncodedObject which might be an expensive operation.
 		packIdx := path.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", hash))
 		if _, err := r.fs.Stat(packIdx); errors.Is(err, fs.ErrExist) {
