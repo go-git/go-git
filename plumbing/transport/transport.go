@@ -97,6 +97,7 @@ func (o *ProxyOptions) FullURL() (*url.URL, error) {
 }
 
 var fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
+var windowsDrive = regexp.MustCompile(`^[A-Za-z]:(/|\\)`)
 
 func NewEndpoint(endpoint string) (*Endpoint, error) {
 	if e, ok := parseSCPLike(endpoint); ok {
@@ -145,6 +146,12 @@ func parseURL(endpoint string) (*Endpoint, error) {
 }
 
 func parseSCPLike(endpoint string) (*Endpoint, bool) {
+	// On Windows, a path like "C:/..." or "C:\\..." should be treated
+	// as a local file path, not an SCP-like SSH URL. Avoid matching those
+	// as SCP-like endpoints.
+	if runtime.GOOS == "windows" && windowsDrive.MatchString(endpoint) {
+		return nil, false
+	}
 	if giturl.MatchesScheme(endpoint) || !giturl.MatchesScpLike(endpoint) {
 		return nil, false
 	}
