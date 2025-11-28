@@ -52,10 +52,15 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 // recursively traversing through the directory structure. The result is in
 // the ascending order of priority (last higher).
 func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) {
-	ps, _ = readIgnoreFile(fs, path, infoExcludeFile)
+	return extendPatterns(fs, nil, path)
+}
 
+func extendPatterns(fs billy.Filesystem, start []Pattern, path []string) (ps []Pattern, err error) {
+	dirps, _ := readIgnoreFile(fs, path, infoExcludeFile)
 	subps, _ := readIgnoreFile(fs, path, gitignoreFile)
-	ps = append(ps, subps...)
+	dirps = append(dirps, subps...)
+	ignores := append(start, dirps...)
+	ps = dirps
 
 	var fis []gofs.DirEntry
 	fis, err = fs.ReadDir(fs.Join(path...))
@@ -65,12 +70,12 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 
 	for _, fi := range fis {
 		if fi.IsDir() && fi.Name() != gitDir {
-			if NewMatcher(ps).Match(append(path, fi.Name()), true) {
+			if NewMatcher(ignores).Match(append(path, fi.Name()), true) {
 				continue
 			}
 
 			var subps []Pattern
-			subps, err = ReadPatterns(fs, append(path, fi.Name()))
+			subps, err = extendPatterns(fs, append(start, dirps...), append(path, fi.Name()))
 			if err != nil {
 				return ps, err
 			}
