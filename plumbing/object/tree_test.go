@@ -137,6 +137,101 @@ func (s *TreeSuite) TestFindEntryNotFound() {
 	s.ErrorIs(err, ErrDirectoryNotFound)
 }
 
+// countingStorer wraps a storer and counts EncodedObject calls per hash
+type countingStorer struct {
+	storer.EncodedObjectStorer
+	calls map[plumbing.Hash]int
+}
+
+func newCountingStorer(s storer.EncodedObjectStorer) *countingStorer {
+	return &countingStorer{
+		EncodedObjectStorer: s,
+		calls:               make(map[plumbing.Hash]int),
+	}
+}
+
+func (cs *countingStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	cs.calls[h]++
+	return cs.EncodedObjectStorer.EncodedObject(t, h)
+}
+
+// TestFindEntryCacheDepth1 verifies that the tree path cache works for
+// paths with only one directory level (e.g., "vendor/foo.go").
+// This test ensures that repeated lookups in the same directory reuse
+// the cached subtree instead of fetching it from the storer each time.
+func (s *TreeSuite) TestFindEntryCacheDepth1() {
+	// Create a counting storer to track how many times each object is fetched
+	cs := newCountingStorer(s.Storer)
+
+	// Get a fresh tree with the counting storer
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(cs, hash)
+	s.Require().NoError(err)
+
+	// Get the vendor directory hash from the tree entries
+	vendorEntry, err := tree.entry("vendor")
+	s.Require().NoError(err)
+	vendorHash := vendorEntry.Hash
+
+	// Reset call counts (GetTree and entry lookup may have made calls)
+	cs.calls = make(map[plumbing.Hash]int)
+
+	// First call to FindEntry should fetch the vendor tree from the storer
+	e1, err := tree.FindEntry("vendor/foo.go")
+	s.Require().NoError(err)
+	s.Equal("foo.go", e1.Name)
+
+	// Verify that the vendor tree was fetched exactly once
+	s.Equal(1, cs.calls[vendorHash], "first FindEntry should fetch vendor tree once")
+
+	// Second call to FindEntry on same path should use the cache
+	e2, err := tree.FindEntry("vendor/foo.go")
+	s.Require().NoError(err)
+	s.Equal("foo.go", e2.Name)
+
+	// Verify that the vendor tree was NOT fetched again (still only 1 call)
+	s.Equal(1, cs.calls[vendorHash], "second FindEntry should reuse cached vendor tree")
+}
+
+// TestFindEntryCacheDepth2 verifies that the tree path cache works for
+// paths with two different files in the same directory ("json/short.json"
+// and "json/long.json") .
+// This complements TestFindEntryCacheDepth1 by testing multiple access with
+// different path in the same directory.
+func (s *TreeSuite) TestFindEntryCacheDepth2() {
+	// Create a counting storer to track how many times each object is fetched
+	cs := newCountingStorer(s.Storer)
+
+	// Get a fresh tree with the counting storer
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(cs, hash)
+	s.Require().NoError(err)
+
+	// Get the json directory hash from the tree entries
+	jsonEntry, err := tree.entry("json")
+	s.Require().NoError(err)
+	jsonHash := jsonEntry.Hash
+
+	// Reset call counts
+	cs.calls = make(map[plumbing.Hash]int)
+
+	// First call to FindEntry should fetch the json tree from the storer
+	e1, err := tree.FindEntry("json/short.json")
+	s.Require().NoError(err)
+	s.Equal("short.json", e1.Name)
+
+	// Verify that the json tree was fetched exactly once
+	s.Equal(1, cs.calls[jsonHash], "first FindEntry should fetch json tree once")
+
+	// Second call to FindEntry on different file in same directory
+	e2, err := tree.FindEntry("json/long.json")
+	s.Require().NoError(err)
+	s.Equal("long.json", e2.Name)
+
+	// Verify that the json tree was NOT fetched again (still only 1 call)
+	s.Equal(1, cs.calls[jsonHash], "second FindEntry should reuse cached json tree")
+}
+
 // Overrides returned plumbing.EncodedObject for given hash.
 // Otherwise, delegates to actual storer to get real object
 type fakeStorer struct {
