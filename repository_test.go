@@ -112,26 +112,28 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		opts       []InitOption
+		opts       func() []InitOption
 		wantBare   bool
 		wantBranch string
 	}{
 		{
 			name:     "Bare",
-			opts:     []InitOption{},
+			opts:     func() []InitOption { return nil },
 			wantBare: true,
 		},
 		{
 			name: "With Worktree",
-			opts: []InitOption{
-				WithWorkTree(memfs.New()),
+			opts: func() []InitOption {
+				return []InitOption{WithWorkTree(memfs.New())}
 			},
 		},
 		{
 			name: "With Default Branch",
-			opts: []InitOption{
-				WithWorkTree(memfs.New()),
-				WithDefaultBranch("refs/head/foo"),
+			opts: func() []InitOption {
+				return []InitOption{
+					WithWorkTree(memfs.New()),
+					WithDefaultBranch("refs/head/foo"),
+				}
 			},
 			wantBranch: "refs/head/foo",
 		},
@@ -142,7 +144,7 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				opts := append(tc.opts, WithObjectFormat(of))
+				opts := append(tc.opts(), WithObjectFormat(of))
 				rdir := t.TempDir()
 
 				r, err := PlainInit(rdir, tc.wantBare, opts...)
