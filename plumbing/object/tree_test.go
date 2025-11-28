@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -1641,5 +1642,396 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 		for i := 0; i < len(expected.Entries); i++ {
 			s.Equal(expected.Entries[i], obtained.Entries[i])
 		}
+	}
+}
+
+func TestParseModeBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected filemode.FileMode
+		wantErr  bool
+	}{
+		{
+			name:     "regular file",
+			input:    "100644",
+			expected: filemode.Regular,
+			wantErr:  false,
+		},
+		{
+			name:     "executable file",
+			input:    "100755",
+			expected: filemode.Executable,
+			wantErr:  false,
+		},
+		{
+			name:     "directory",
+			input:    "040000",
+			expected: filemode.Dir,
+			wantErr:  false,
+		},
+		{
+			name:     "submodule",
+			input:    "160000",
+			expected: filemode.Submodule,
+			wantErr:  false,
+		},
+		{
+			name:     "symlink",
+			input:    "120000",
+			expected: filemode.Symlink,
+			wantErr:  false,
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid character",
+			input:    "10064X",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid octal digit 8",
+			input:    "100648",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "mode at 7 digit limit (max allowed)",
+			input:    "7777777", // 7 digits, maximum allowed
+			expected: filemode.FileMode(0x1FFFFF),
+			wantErr:  false,
+		},
+		{
+			name:     "mode string too long (8 digits)",
+			input:    "77777777", // 8 digits, exceeds limit
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "mode string too long (12 digits)",
+			input:    "777777777777", // 12 digits, exceeds limit
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "extremely long mode string (50 digits)",
+			input:    "77777777777777777777777777777777777777777777777777",
+			expected: filemode.Empty,
+			wantErr:  true,
+		},
+		{
+			name:     "mode with 6 digits (common)",
+			input:    "100644", // 6 digits, typical file mode
+			expected: filemode.Regular,
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mode, err := parseModeBytes([]byte(tt.input))
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if mode != tt.expected {
+				t.Errorf("got mode %o, want %o", mode, tt.expected)
+			}
+		})
+	}
+}
+
+// TestTreeDecodeCorruptedData tests that tree decoding properly handles
+// various forms of corrupted or malformed tree data.
+func TestTreeDecodeCorruptedData(t *testing.T) {
+	tests := []struct {
+		name        string
+		data        []byte
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "truncated after mode",
+			data:        []byte("100644"), // missing space, name, and hash
+			expectError: false,            // no space found, loop breaks, returns 0 entries (valid empty tree)
+		},
+		{
+			name:        "missing null terminator in name",
+			data:        []byte("100644 filename"), // missing null terminator and hash
+			expectError: true,
+			errorType:   io.ErrUnexpectedEOF,
+		},
+		{
+			name: "truncated hash (missing bytes)",
+			data: func() []byte {
+				// Create valid entry but truncate hash
+				buf := []byte("100644 file.txt\x00")
+				buf = append(buf, []byte{0x01, 0x02, 0x03, 0x04, 0x05}...) // only 5 bytes of 20-byte hash
+				return buf
+			}(),
+			expectError: true,
+			errorType:   io.ErrUnexpectedEOF,
+		},
+		{
+			name:        "invalid mode character (non-octal)",
+			data:        []byte("10064G file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "empty mode",
+			data:        []byte(" file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "mode with octal digit 8",
+			data:        []byte("100648 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "mode with octal digit 9",
+			data:        []byte("100649 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "completely empty tree",
+			data:        []byte{},
+			expectError: false, // empty trees are valid
+		},
+		{
+			name: "valid single entry",
+			data: func() []byte {
+				buf := []byte("100644 file.txt\x00")
+				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+				hashBytes := hash.Bytes()
+				buf = append(buf, hashBytes...)
+				return buf
+			}(),
+			expectError: false,
+		},
+		{
+			name: "truncated in middle of second entry",
+			data: func() []byte {
+				// First entry complete
+				buf := []byte("100644 file1.txt\x00")
+				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+				buf = append(buf, hash.Bytes()...)
+				// Second entry truncated
+				buf = append(buf, []byte("100644 file2")...) // missing null and hash
+				return buf
+			}(),
+			expectError: true,
+			errorType:   io.ErrUnexpectedEOF,
+		},
+		{
+			name:        "entry with no space after mode",
+			data:        []byte("100644filename\x00" + string(make([]byte, 20))),
+			expectError: false, // will fail to find space and break loop
+		},
+		{
+			name:        "entry with null in middle of mode",
+			data:        []byte("100\x00644 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true, // parseModeBytes will error on null byte in mode
+		},
+		{
+			name:        "mode too long: 8 octal digits",
+			data:        []byte("77777777 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "mode too long: 12 octal digits",
+			data:        []byte("777777777777 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+		{
+			name:        "mode too long: extremely long mode (50 digits)",
+			data:        []byte("77777777777777777777777777777777777777777777777777 file.txt\x00" + string(make([]byte, 20))),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := &plumbing.MemoryObject{}
+			obj.SetType(plumbing.TreeObject)
+			w, _ := obj.Writer()
+			w.Write(tt.data)
+			w.Close()
+
+			tree := &Tree{}
+			err := tree.Decode(obj)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none; decoded %d entries", len(tree.Entries))
+				} else if tt.errorType != nil && !errors.Is(err, tt.errorType) {
+					t.Errorf("expected error type %v, got %v", tt.errorType, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestTreeDecodePartialReads tests that tree decoding works correctly
+// even when the underlying reader returns data in small chunks.
+func TestTreeDecodePartialReads(t *testing.T) {
+	// Create a valid tree with multiple entries
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+	w, _ := obj.Writer()
+
+	// Write multiple entries
+	entries := []struct {
+		mode string
+		name string
+		hash string
+	}{
+		{"100644", "file1.txt", "a8d315b2b1c615d43042c3a62402b8a54288cf5c"},
+		{"100755", "script.sh", "b8d315b2b1c615d43042c3a62402b8a54288cf5c"},
+		{"040000", "subdir", "c8d315b2b1c615d43042c3a62402b8a54288cf5c"},
+	}
+
+	for _, e := range entries {
+		w.Write([]byte(e.mode + " " + e.name + "\x00"))
+		hash := plumbing.NewHash(e.hash)
+		hash.WriteTo(w)
+	}
+	w.Close()
+
+	tree := &Tree{}
+	err := tree.Decode(obj)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(tree.Entries) != len(entries) {
+		t.Errorf("expected %d entries, got %d", len(entries), len(tree.Entries))
+	}
+
+	// Verify each entry
+	for i, expected := range entries {
+		if i >= len(tree.Entries) {
+			break
+		}
+		entry := tree.Entries[i]
+
+		if entry.Name != expected.name {
+			t.Errorf("entry %d: expected name %q, got %q", i, expected.name, entry.Name)
+		}
+
+		expectedHash := plumbing.NewHash(expected.hash)
+		if !entry.Hash.Equal(expectedHash) {
+			t.Errorf("entry %d: expected hash %s, got %s", i, expectedHash, entry.Hash)
+		}
+	}
+}
+
+// TestTreeDecodeEdgeCases tests edge cases in tree decoding.
+func TestTreeDecodeEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupFunc   func() *plumbing.MemoryObject
+		expectError bool
+		validate    func(*testing.T, *Tree)
+	}{
+		{
+			name: "entry with empty name",
+			setupFunc: func() *plumbing.MemoryObject {
+				obj := &plumbing.MemoryObject{}
+				obj.SetType(plumbing.TreeObject)
+				w, _ := obj.Writer()
+				w.Write([]byte("100644 \x00")) // empty name between space and null
+				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+				hash.WriteTo(w)
+				w.Close()
+				return obj
+			},
+			expectError: false,
+			validate: func(t *testing.T, tree *Tree) {
+				if len(tree.Entries) != 1 {
+					t.Errorf("expected 1 entry, got %d", len(tree.Entries))
+				}
+				if tree.Entries[0].Name != "" {
+					t.Errorf("expected empty name, got %q", tree.Entries[0].Name)
+				}
+			},
+		},
+		{
+			name: "entry with very long name",
+			setupFunc: func() *plumbing.MemoryObject {
+				obj := &plumbing.MemoryObject{}
+				obj.SetType(plumbing.TreeObject)
+				w, _ := obj.Writer()
+				longName := strings.Repeat("a", 4096)
+				w.Write([]byte("100644 " + longName + "\x00"))
+				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+				hash.WriteTo(w)
+				w.Close()
+				return obj
+			},
+			expectError: false,
+			validate: func(t *testing.T, tree *Tree) {
+				if len(tree.Entries) != 1 {
+					t.Errorf("expected 1 entry, got %d", len(tree.Entries))
+				}
+				if len(tree.Entries[0].Name) != 4096 {
+					t.Errorf("expected name length 4096, got %d", len(tree.Entries[0].Name))
+				}
+			},
+		},
+		{
+			name: "mode with leading zeros",
+			setupFunc: func() *plumbing.MemoryObject {
+				obj := &plumbing.MemoryObject{}
+				obj.SetType(plumbing.TreeObject)
+				w, _ := obj.Writer()
+				w.Write([]byte("0100644 file.txt\x00")) // 7 digits with leading zero
+				hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+				hash.WriteTo(w)
+				w.Close()
+				return obj
+			},
+			expectError: false,
+			validate: func(t *testing.T, tree *Tree) {
+				if len(tree.Entries) != 1 {
+					t.Errorf("expected 1 entry, got %d", len(tree.Entries))
+				}
+				// Mode should still parse correctly despite extra leading zero
+				if tree.Entries[0].Mode != filemode.Regular {
+					t.Errorf("expected mode %o, got %o", filemode.Regular, tree.Entries[0].Mode)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := tt.setupFunc()
+			tree := &Tree{}
+			err := tree.Decode(obj)
+
+			if tt.expectError && err == nil {
+				t.Error("expected error but got none")
+			} else if !tt.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+
+			if err == nil && tt.validate != nil {
+				tt.validate(t, tree)
+			}
+		})
 	}
 }
