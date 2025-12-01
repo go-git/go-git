@@ -93,7 +93,7 @@ func (s *SubmoduleSuite) TestUpdateWithoutInit() {
 	sm, err := s.Worktree.Submodule("basic")
 	s.Require().NoError(err)
 
-	err = sm.Update(&SubmoduleUpdateOptions{})
+	err = sm.Update(nil)
 	s.ErrorIs(err, ErrSubmoduleNotInitialized)
 }
 
@@ -157,7 +157,7 @@ func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
 	err = s.Repository.Storer.SetIndex(idx)
 	s.Require().NoError(err)
 
-	err = sm.Update(&SubmoduleUpdateOptions{})
+	err = sm.Update(nil)
 	s.Require().NoError(err)
 
 	r, err := sm.Repository()
@@ -239,7 +239,7 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 	r, err := sm.Repository()
 	s.Require().NoError(err)
 
-	lr, err := r.Log(&LogOptions{})
+	lr, err := r.Log(nil)
 	s.Require().NoError(err)
 
 	commitCount := 0

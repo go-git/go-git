@@ -342,6 +342,10 @@ func PlainOpen(path string) (*Repository, error) {
 // PlainOpenWithOptions opens a git repository from the given path with specific
 // options. See PlainOpen for more info.
 func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error) {
+	if err := o.Validate(); err != nil {
+		return nil, err
+	}
+
 	dot, wt, err := dotGitToOSFilesystems(path, o.DetectDotGit)
 	if err != nil {
 		return nil, err
@@ -1221,6 +1225,10 @@ func (r *Repository) Fetch(o *FetchOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Repository) FetchContext(ctx context.Context, o *FetchOptions) error {
+	if o == nil {
+		o = &FetchOptions{}
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -1262,6 +1270,10 @@ func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 
 // Log returns the commit history from the given LogOptions.
 func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
+	if o == nil {
+		o = &LogOptions{}
+	}
+
 	fn := commitIterFunc(o.Order)
 	if fn == nil {
 		return nil, fmt.Errorf("invalid Order=%v", o.Order)

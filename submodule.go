@@ -181,6 +181,10 @@ func (s *Submodule) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions
 }
 
 func (s *Submodule) update(ctx context.Context, o *SubmoduleUpdateOptions, forceHash plumbing.Hash) error {
+	if o == nil {
+		o = &SubmoduleUpdateOptions{}
+	}
+
 	if !s.initialized && !o.Init {
 		return ErrSubmoduleNotInitialized
 	}

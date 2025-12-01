@@ -72,6 +72,10 @@ func (w *Worktree) Pull(o *PullOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
+	if o == nil {
+		o = &PullOptions{}
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -170,6 +174,10 @@ func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptio
 
 // Checkout switch branches or restore working tree files.
 func (w *Worktree) Checkout(opts *CheckoutOptions) error {
+	if opts == nil {
+		opts = &CheckoutOptions{}
+	}
+
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -1041,6 +1049,10 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 // Clean the worktree by removing untracked files.
 // An empty dir could be removed - this is what  `git clean -f -d .` does.
 func (w *Worktree) Clean(opts *CleanOptions) error {
+	if opts == nil {
+		opts = &CleanOptions{}
+	}
+
 	s, err := w.Status()
 	if err != nil {
 		return err

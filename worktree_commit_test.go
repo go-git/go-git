@@ -151,7 +151,7 @@ func (s *WorktreeSuite) TestCommitParent() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -174,7 +174,7 @@ func (s *WorktreeSuite) TestCommitAmendWithoutChanges() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -209,7 +209,7 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -260,7 +260,7 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -337,7 +337,7 @@ func TestAddAndCommitWithSkipStatus(t *testing.T) {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	require.NoError(t, err)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
@@ -389,7 +389,7 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -475,7 +475,7 @@ func (s *WorktreeSuite) TestCommitAll() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
@@ -501,7 +501,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -827,7 +827,7 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	assertStorageStatus(s, r, 1, 1, 1, expected)
 
 	// Check HEAD commit contains author informations with '<', '>' and '\n' stripped
-	lr, err := r.Log(&LogOptions{})
+	lr, err := r.Log(nil)
 	s.NoError(err)
 
 	commit, err := lr.Next()

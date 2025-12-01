@@ -33,6 +33,8 @@ const (
 
 var ErrMissingURL = errors.New("URL field is required")
 
+var ErrNilOptions = errors.New("nil options")
+
 // CloneOptions describes how a clone should be performed.
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
@@ -127,6 +129,10 @@ const (
 
 // Validate validates the fields and sets the default values.
 func (o *CloneOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.URL == "" {
 		return ErrMissingURL
 	}
@@ -180,6 +186,10 @@ type PullOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PullOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
 	}
@@ -242,6 +252,10 @@ type FetchOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *FetchOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
 	}
@@ -323,6 +337,10 @@ type ForceWithLease struct {
 
 // Validate validates the fields and sets the default values.
 func (o *PushOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
 	}
@@ -389,6 +407,10 @@ type CheckoutOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *CheckoutOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if !o.Create && !o.Hash.IsZero() && o.Branch != "" {
 		return ErrBranchHashExclusive
 	}
@@ -451,6 +473,10 @@ type ResetOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *ResetOptions) Validate(r *Repository) error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.Commit == plumbing.ZeroHash {
 		ref, err := r.Head()
 		if err != nil {
@@ -544,6 +570,10 @@ type AddOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *AddOptions) Validate(r *Repository) error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.Path != "" && o.Glob != "" {
 		return fmt.Errorf("fields Path and Glob are mutual exclusive")
 	}
@@ -584,6 +614,10 @@ type CommitOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *CommitOptions) Validate(r *Repository) error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.All && o.Amend {
 		return errors.New("all and amend cannot be used together")
 	}
@@ -675,6 +709,10 @@ type CreateTagOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if o.Tagger == nil {
 		if err := o.loadConfigTagger(r); err != nil {
 			return err
@@ -778,10 +816,18 @@ var ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash o
 //
 // TODO: deprecate in favor of Validate(r *Repository) in v6.
 func (o *GrepOptions) Validate(w *Worktree) error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	return o.validate(w.r)
 }
 
 func (o *GrepOptions) validate(r *Repository) error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if !o.CommitHash.IsZero() && o.ReferenceName != "" {
 		return ErrHashOrReference
 	}
@@ -811,7 +857,13 @@ type PlainOpenOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *PlainOpenOptions) Validate() error { return nil }
+func (o *PlainOpenOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
+	return nil
+}
 
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 
@@ -827,6 +879,10 @@ type RestoreOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *RestoreOptions) Validate() error {
+	if o == nil {
+		return ErrNilOptions
+	}
+
 	if len(o.Files) == 0 {
 		return ErrNoRestorePaths
 	}
