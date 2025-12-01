@@ -1628,9 +1628,6 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 				Hash: plumbing.NewHash("e614f4a6d864e7ec4328dbdb254e3ac9f0d287"),
 			},
 		},
-		Hash: plumbing.ZeroHash,
-		s:    (storer.EncodedObjectStorer)(nil),
-		m:    map[string]*TreeEntry(nil),
 	}
 
 	var obtained Tree

@@ -69,7 +69,7 @@ func (s *RenameSuite) TestExactRename_DifferentObjects() {
 func (s *RenameSuite) TestExactRename_OneRenameOneModify() {
 	c1 := makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo"))
 	c2 := makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo"))
-	c3 := makeChange(s,
+	c3 := makeChange(
 		makeFile(s, pathH, filemode.Regular, "bar"),
 		makeFile(s, pathH, filemode.Regular, "bar"),
 	)
@@ -504,24 +504,20 @@ func makeChangeEntry(f *File) ChangeEntry {
 }
 
 func makeAdd(s *RenameSuite, f *File) *Change {
-	return makeChange(s, nil, f)
+	return makeChange(nil, f)
 }
 
 func makeDelete(s *RenameSuite, f *File) *Change {
-	return makeChange(s, f, nil)
+	return makeChange(f, nil)
 }
 
-func makeChange(s *RenameSuite, from, to *File) *Change {
+func makeChange(from, to *File) *Change {
 	if from == nil {
 		return &Change{To: makeChangeEntry(to)}
 	}
 
 	if to == nil {
 		return &Change{From: makeChangeEntry(from)}
-	}
-
-	if from == nil && to == nil {
-		s.Fail("cannot make change without from or to")
 	}
 
 	return &Change{From: makeChangeEntry(from), To: makeChangeEntry(to)}

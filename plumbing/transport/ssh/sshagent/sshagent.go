@@ -17,7 +17,6 @@
 // Originally from: https://github.com/xanzy/ssh-agent/blob/main/sshagent.go
 
 //go:build !windows
-// +build !windows
 
 package sshagent
 

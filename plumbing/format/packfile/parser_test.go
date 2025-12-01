@@ -58,7 +58,7 @@ func TestParserHashes(t *testing.T) {
 			parser := packfile.NewParser(f.Packfile(), packfile.WithScannerObservers(obs),
 				packfile.WithStorage(tc.storage), tc.option)
 
-			field := reflect.ValueOf(*parser).FieldByName("lowMemoryMode")
+			field := reflect.ValueOf(parser).Elem().FieldByName("lowMemoryMode")
 			got := field.Bool()
 			assert.Equal(t, tc.wantLowMemoryMode, got)
 

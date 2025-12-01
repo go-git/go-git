@@ -21,7 +21,6 @@
 // MIT LICENSE: https://github.com/davidmz/go-pageant/blob/master/LICENSE.txt
 
 //go:build windows
-// +build windows
 
 package sshagent
 

@@ -1,5 +1,4 @@
 //go:build !plan9 && !unix && windows
-// +build !plan9,!unix,windows
 
 package git
 
