@@ -2,7 +2,9 @@ version: "2"
 linters:
   default: none
   enable:
+    - dupl
     - ineffassign
+    - misspell
     - modernize
     - prealloc
     - staticcheck

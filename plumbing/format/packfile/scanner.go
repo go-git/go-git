@@ -111,7 +111,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		crc:      crc,
 		packhash: packhash,
 		nextFn:   packHeaderSignature,
-		// Set the default size, which can be overriden by opts.
+		// Set the default size, which can be overridden by opts.
 		objectIDSize: packhash.Size(),
 	}
 
