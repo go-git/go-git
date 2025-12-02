@@ -33,16 +33,20 @@ const (
 	DefaultProtocolVersion = protocol.V0 // go-git only supports V0 at the moment
 )
 
-// ConfigStorer generic storage of Config object
-type ConfigStorer interface {
+// Storer is a generic storage of Config object.
+type Storer interface {
 	Config() (*Config, error)
 	SetConfig(*Config) error
 }
 
 var (
-	ErrInvalid               = errors.New("config invalid key in remote or branch")
-	ErrRemoteConfigNotFound  = errors.New("remote config not found")
-	ErrRemoteConfigEmptyURL  = errors.New("remote config: empty URL")
+	// ErrInvalid is returned when a config key is invalid.
+	ErrInvalid = errors.New("config invalid key in remote or branch")
+	// ErrRemoteConfigNotFound is returned when a remote config is not found.
+	ErrRemoteConfigNotFound = errors.New("remote config not found")
+	// ErrRemoteConfigEmptyURL is returned when a remote config has an empty URL.
+	ErrRemoteConfigEmptyURL = errors.New("remote config: empty URL")
+	// ErrRemoteConfigEmptyName is returned when a remote config has an empty name.
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
 )
 
@@ -362,7 +366,7 @@ const (
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
-	// The value true is the same used by git command
+	// DefaultFileMode is the default file mode used by git command.
 	DefaultFileMode = true
 )
 
@@ -414,8 +418,8 @@ func (c *Config) unmarshalCore() {
 		c.Core.FileMode = false
 	}
 
-	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version_1) {
-		c.Core.RepositoryFormatVersion = format.Version_1
+	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version1) {
+		c.Core.RepositoryFormatVersion = format.Version1
 	}
 }
 
@@ -596,7 +600,7 @@ func (c *Config) marshalCore() {
 func (c *Config) marshalExtensions() {
 	// Extensions are only supported on Version 1, therefore
 	// ignore them otherwise.
-	if c.Core.RepositoryFormatVersion == format.Version_1 {
+	if c.Core.RepositoryFormatVersion == format.Version1 {
 		s := c.Raw.Section(extensionsSection)
 		s.SetOption(objectFormatKey, c.Extensions.ObjectFormat.String())
 	}
@@ -839,6 +843,7 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	return c.raw
 }
 
+// IsFirstURLLocal returns true if the first URL is a local path.
 func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }

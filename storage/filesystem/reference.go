@@ -1,3 +1,4 @@
+//nolint:revive // interface methods don't need individual comments
 package filesystem
 
 import (
@@ -6,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
+// ReferenceStorage implements storer.ReferenceStorer for filesystem storage.
 type ReferenceStorage struct {
 	dir *dotgit.DotGit
 }

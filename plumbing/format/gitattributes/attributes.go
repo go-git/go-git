@@ -1,3 +1,4 @@
+// Package gitattributes provides utilities for parsing and matching gitattributes files.
 package gitattributes
 
 import (
@@ -14,10 +15,13 @@ const (
 )
 
 var (
-	ErrMacroNotAllowed      = errors.New("macro not allowed")
+	// ErrMacroNotAllowed is returned when a macro is used where it is not allowed.
+	ErrMacroNotAllowed = errors.New("macro not allowed")
+	// ErrInvalidAttributeName is returned when an invalid attribute name is used.
 	ErrInvalidAttributeName = errors.New("invalid attribute name")
 )
 
+// MatchAttribute represents a gitattribute pattern match with its attributes.
 type MatchAttribute struct {
 	Name       string
 	Pattern    Pattern
@@ -34,6 +38,7 @@ const (
 	attributeSetValue    attributeState = '='
 )
 
+// Attribute represents a gitattribute.
 type Attribute interface {
 	Name() string
 	IsSet() bool

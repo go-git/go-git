@@ -3217,7 +3217,7 @@ func (s *WorktreeSuite) TestAddAndCommit() {
 			return err
 		}
 
-		err = files.ForEach(func(f *object.File) error {
+		err = files.ForEach(func(*object.File) error {
 			filesFound++
 			return nil
 		})

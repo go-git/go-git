@@ -1,3 +1,4 @@
+// Package git provides a Git transport backend using the local git command.
 package git
 
 import (

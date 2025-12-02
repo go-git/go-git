@@ -17,6 +17,7 @@ func Write(w io.Writer, data ...any) error {
 	return nil
 }
 
+// WriteVariableWidthInt writes a variable width encoded int64 to w.
 func WriteVariableWidthInt(w io.Writer, n int64) error {
 	buf := []byte{byte(n & 0x7f)}
 	n >>= 7

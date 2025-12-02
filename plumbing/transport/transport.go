@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// Transport errors.
 var (
 	ErrRepositoryNotFound     = errors.New("repository not found")
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
@@ -50,6 +51,7 @@ type Transport interface {
 	SupportedProtocols() []protocol.Version
 }
 
+// AuthMethod defines the interface for authentication.
 type AuthMethod interface {
 	fmt.Stringer
 	Name() string
@@ -67,12 +69,14 @@ type Endpoint struct {
 	Proxy ProxyOptions
 }
 
+// ProxyOptions provides configuration for proxy connections.
 type ProxyOptions struct {
 	URL      string
 	Username string
 	Password string
 }
 
+// Validate validates the proxy options.
 func (o *ProxyOptions) Validate() error {
 	if o.URL != "" {
 		_, err := url.Parse(o.URL)
@@ -81,6 +85,7 @@ func (o *ProxyOptions) Validate() error {
 	return nil
 }
 
+// FullURL returns the full proxy URL including credentials.
 func (o *ProxyOptions) FullURL() (*url.URL, error) {
 	proxyURL, err := url.Parse(o.URL)
 	if err != nil {
@@ -98,6 +103,7 @@ func (o *ProxyOptions) FullURL() (*url.URL, error) {
 
 var fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
 
+// NewEndpoint parses an endpoint string and returns an Endpoint.
 func NewEndpoint(endpoint string) (*Endpoint, error) {
 	if e, ok := parseSCPLike(endpoint); ok {
 		return e, nil

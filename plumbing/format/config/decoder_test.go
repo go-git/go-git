@@ -112,7 +112,7 @@ func decodeSucceeds(s *DecoderSuite, text string) {
 }
 
 func FuzzDecoder(f *testing.F) {
-	f.Fuzz(func(t *testing.T, input []byte) {
+	f.Fuzz(func(_ *testing.T, input []byte) {
 		d := NewDecoder(bytes.NewReader(input))
 		cfg := &Config{}
 		d.Decode(cfg)

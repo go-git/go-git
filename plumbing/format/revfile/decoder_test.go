@@ -155,7 +155,7 @@ func TestDecode(t *testing.T) {
 			}()
 
 			if tc.ch != nil {
-				for range tc.ch {
+				for range tc.ch { //nolint:revive
 				}
 			}
 

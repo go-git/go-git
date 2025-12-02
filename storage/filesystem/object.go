@@ -1,3 +1,4 @@
+//nolint:revive // ObjectStorage methods implement storer interfaces
 package filesystem
 
 import (

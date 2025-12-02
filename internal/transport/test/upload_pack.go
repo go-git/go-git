@@ -1,5 +1,7 @@
 // Package test implements common test suite for different transport
 // implementations.
+//
+//nolint:revive // test suite methods don't need comments
 package test
 
 import (

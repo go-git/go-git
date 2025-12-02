@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// Negotiation errors.
 var (
 	ErrFilterNotSupported  = errors.New("server does not support filters")
 	ErrShallowNotSupported = errors.New("server does not support shallow clients")

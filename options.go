@@ -31,6 +31,7 @@ const (
 	DefaultSubmoduleRecursionDepth SubmoduleRecursivity = 10
 )
 
+// ErrMissingURL is returned when a URL is required but not provided.
 var ErrMissingURL = errors.New("URL field is required")
 
 // CloneOptions describes how a clone should be performed.
@@ -191,6 +192,7 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
+// Tag modes for fetching.
 const (
 	InvalidTagMode = plumbing.InvalidTagMode
 	// TagFollowing any tag that points into the histories being fetched is also
@@ -360,6 +362,7 @@ type SubmoduleUpdateOptions struct {
 	Depth int
 }
 
+// Checkout errors.
 var (
 	ErrBranchHashExclusive  = errors.New("Branch and Hash are mutually exclusive")
 	ErrCreateRequiresBranch = errors.New("Branch is mandatory when Create is used")
@@ -468,9 +471,12 @@ func (o *ResetOptions) Validate(r *Repository) error {
 	return nil
 }
 
+// LogOrder represents the order in which commits are traversed during log operations.
 type LogOrder int8
 
+// Log traversal order options.
 const (
+	// LogOrderDefault uses depth-first search.
 	LogOrderDefault LogOrder = iota
 	LogOrderDFS
 	LogOrderDFSPost
@@ -520,6 +526,7 @@ type LogOptions struct {
 	Until *time.Time
 }
 
+// ErrMissingAuthor is returned when the author field is required but not provided.
 var ErrMissingAuthor = errors.New("author field is required")
 
 // AddOptions describes how an `add` operation should be performed
@@ -543,7 +550,7 @@ type AddOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *AddOptions) Validate(r *Repository) error {
+func (o *AddOptions) Validate(_ *Repository) error {
 	if o.Path != "" && o.Glob != "" {
 		return fmt.Errorf("fields Path and Glob are mutual exclusive")
 	}
@@ -653,6 +660,7 @@ func (o *CommitOptions) loadConfigAuthorAndCommitter(r *Repository) error {
 	return nil
 }
 
+// Tag creation errors.
 var (
 	ErrMissingName    = errors.New("name field is required")
 	ErrMissingTagger  = errors.New("tagger field is required")
@@ -674,7 +682,7 @@ type CreateTagOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
+func (o *CreateTagOptions) Validate(r *Repository, _ plumbing.Hash) error {
 	if o.Tagger == nil {
 		if err := o.loadConfigTagger(r); err != nil {
 			return err
@@ -772,6 +780,7 @@ type GrepOptions struct {
 	PathSpecs []*regexp.Regexp
 }
 
+// ErrHashOrReference is returned when both CommitHash and ReferenceName are specified.
 var ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
 
 // Validate validates the fields and sets the default values.
@@ -813,6 +822,7 @@ type PlainOpenOptions struct {
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
 
+// ErrNoRestorePaths is returned when no paths are specified to restore.
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 
 // RestoreOptions describes how a restore should be performed.

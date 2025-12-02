@@ -1,3 +1,4 @@
+// Package filesystem provides a merkletrie noder implementation for billy filesystems.
 package filesystem
 
 import (
@@ -20,6 +21,7 @@ var ignore = map[string]bool{
 	".git": true,
 }
 
+// Options contains configuration for the filesystem node.
 type Options struct {
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.
 	AutoCRLF bool
@@ -56,6 +58,7 @@ func NewRootNode(
 	return &node{fs: fs, submodules: submodules, isDir: true}
 }
 
+// NewRootNodeWithOptions returns the root node based on a given billy.Filesystem with options.
 func NewRootNodeWithOptions(
 	fs billy.Filesystem,
 	submodules map[string]plumbing.Hash,

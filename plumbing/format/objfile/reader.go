@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
+// Errors returned by the objfile package.
 var (
 	ErrClosed       = errors.New("objfile: already closed")
 	ErrHeader       = errors.New("objfile: invalid header")

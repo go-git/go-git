@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	. "github.com/go-git/go-git/v6/plumbing/format/idxfile" //nolint:revive
 )
 
 type IdxfileSuite struct {

@@ -27,7 +27,7 @@ type Storer interface {
 	storer.ReferenceStorer
 	storer.ShallowStorer
 	storer.IndexStorer
-	config.ConfigStorer
+	config.Storer
 	storage.ModuleStorer
 }
 
@@ -65,11 +65,11 @@ func validTypes() []plumbing.ObjectType {
 }
 
 var storageFactories = []func(t *testing.T) (Storer, string){
-	func(_ *testing.T) (Storer, string) { return memory.NewStorage(), "memory" },
+	func(*testing.T) (Storer, string) { return memory.NewStorage(), "memory" },
 	func(t *testing.T) (Storer, string) {
 		return filesystem.NewStorage(osfs.New(t.TempDir()), nil), "filesystem"
 	},
-	func(t *testing.T) (Storer, string) {
+	func(*testing.T) (Storer, string) {
 		temporal := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 		base := memory.NewStorage()
 
@@ -279,7 +279,7 @@ func TestObjectStorerTxSetEncodedObjectAndCommit(t *testing.T) {
 		require.NoError(t, err)
 
 		var count int
-		iter.ForEach(func(o plumbing.EncodedObject) error {
+		iter.ForEach(func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})

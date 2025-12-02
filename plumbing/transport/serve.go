@@ -14,12 +14,13 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// ErrUpdateReference is returned when a reference update fails.
 var ErrUpdateReference = errors.New("failed to update ref")
 
 // AdvertiseReferences is a server command that implements the reference
 // discovery phase of the Git transfer protocol.
 func AdvertiseReferences(
-	ctx context.Context,
+	_ context.Context,
 	st storage.Storer,
 	w io.Writer,
 	service Service,

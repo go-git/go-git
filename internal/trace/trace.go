@@ -1,3 +1,5 @@
+// Package trace provides functions to read environment variables for enabling
+// trace targets in the go-git library.
 package trace
 
 import (

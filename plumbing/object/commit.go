@@ -76,7 +76,7 @@ type ExtraHeader struct {
 	Value string
 }
 
-// Implement fmt.Formatter for ExtraHeader
+// Format implements fmt.Formatter for ExtraHeader.
 func (h ExtraHeader) Format(f fmt.State, verb rune) {
 	switch verb {
 	case 'v':
@@ -106,9 +106,8 @@ func parseExtraHeader(line []byte) (ExtraHeader, bool) {
 	if len(split) == 2 {
 		out.Value += string(split[1])
 		return out, true
-	} else {
-		return out, false
 	}
+	return out, false
 }
 
 // GetCommit gets a commit from an object storer and decodes it.
@@ -179,6 +178,7 @@ func (c *Commit) NumParents() int {
 	return len(c.ParentHashes)
 }
 
+// ErrParentNotFound is returned when the parent commit is not found.
 var ErrParentNotFound = errors.New("commit parent not found")
 
 // Parent returns the ith parent of a commit.
@@ -249,7 +249,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	var mergetag bool
 	var pgpsig bool
 	var msgbuf bytes.Buffer
-	var extraheader *ExtraHeader = nil
+	var extraheader *ExtraHeader
 	for {
 		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
@@ -261,9 +261,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				line = bytes.TrimLeft(line, " ")
 				c.MergeTag += string(line)
 				continue
-			} else {
-				mergetag = false
 			}
+			mergetag = false
 		}
 
 		if pgpsig {
@@ -271,24 +270,22 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				line = bytes.TrimLeft(line, " ")
 				c.PGPSignature += string(line)
 				continue
-			} else {
-				pgpsig = false
 			}
+			pgpsig = false
 		}
 
 		if extraheader != nil {
 			if len(line) > 0 && line[0] == ' ' {
 				extraheader.Value += string(line[1:])
 				continue
-			} else {
-				extraheader.Value = strings.TrimRight(extraheader.Value, "\n")
-				c.ExtraHeaders = append(c.ExtraHeaders, *extraheader)
-				extraheader = nil
 			}
+			extraheader.Value = strings.TrimRight(extraheader.Value, "\n")
+			c.ExtraHeaders = append(c.ExtraHeaders, *extraheader)
+			extraheader = nil
 		}
 
 		if !message {
-			original_line := line
+			originalLine := line
 			line = bytes.TrimSpace(line)
 			if len(line) == 0 {
 				message = true
@@ -320,7 +317,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				c.PGPSignature += string(data) + "\n"
 				pgpsig = true
 			default:
-				h, maybecontinued := parseExtraHeader(original_line)
+				h, maybecontinued := parseExtraHeader(originalLine)
 				if maybecontinued {
 					extraheader = &h
 				} else {

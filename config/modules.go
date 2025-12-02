@@ -9,9 +9,12 @@ import (
 )
 
 var (
-	ErrModuleEmptyURL  = errors.New("module config: empty URL")
+	// ErrModuleEmptyURL is returned when a submodule has an empty URL.
+	ErrModuleEmptyURL = errors.New("module config: empty URL")
+	// ErrModuleEmptyPath is returned when a submodule has an empty path.
 	ErrModuleEmptyPath = errors.New("module config: empty path")
-	ErrModuleBadPath   = errors.New("submodule has an invalid path")
+	// ErrModuleBadPath is returned when a submodule has an invalid path.
+	ErrModuleBadPath = errors.New("submodule has an invalid path")
 )
 
 // Matches module paths with dotdot ".." components.

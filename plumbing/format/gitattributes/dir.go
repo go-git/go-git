@@ -20,6 +20,7 @@ const (
 	systemFile        = "/etc/gitconfig"
 )
 
+// ReadAttributesFile reads a gitattributes file from the given filesystem and path.
 func ReadAttributesFile(fs billy.Filesystem, path []string, attributesFile string, allowMacro bool) ([]MatchAttribute, error) {
 	f, err := fs.Open(fs.Join(append(path, attributesFile)...))
 	if os.IsNotExist(err) {

@@ -413,7 +413,7 @@ func FuzzParser(f *testing.F) {
 	f.Add(":/fix nasty bug")
 	f.Add(":/[A-")
 
-	f.Fuzz(func(t *testing.T, input string) {
+	f.Fuzz(func(_ *testing.T, input string) {
 		parser := NewParser(bytes.NewBufferString(input))
 		parser.Parse()
 	})

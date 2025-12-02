@@ -78,7 +78,7 @@ func NewPackfileIter(
 	idxFile billy.File,
 	t plumbing.ObjectType,
 	keepPack bool,
-	largeObjectThreshold int64,
+	_ int64, // largeObjectThreshold - currently unused
 	objectIDSize int,
 ) (storer.EncodedObjectIter, error) {
 	idx := idxfile.NewMemoryIndex(objectIDSize)

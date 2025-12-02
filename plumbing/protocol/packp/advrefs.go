@@ -1,3 +1,4 @@
+// Package packp implements encoding and decoding of the Git packfile protocol messages.
 package packp
 
 import (
@@ -39,6 +40,7 @@ func NewAdvRefs() *AdvRefs {
 	}
 }
 
+// AddReference adds a reference to the AdvRefs.
 func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	switch r.Type() {
 	case plumbing.SymbolicReference:
@@ -53,7 +55,8 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	return nil
 }
 
-// XXX: AllReferences doesn't return all the references advertised by the
+// AllReferences returns all the references advertised by the server.
+// Note: AllReferences doesn't return all the references advertised by the
 // server, instead, it only returns non-peeled references.
 // Use MakeReferenceSlice to get all the references, their peeled values, and
 // symrefs.

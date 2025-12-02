@@ -33,14 +33,22 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
+// Worktree errors.
 var (
-	ErrWorktreeNotClean                = errors.New("worktree is not clean")
-	ErrSubmoduleNotFound               = errors.New("submodule not found")
-	ErrUnstagedChanges                 = errors.New("worktree contains unstaged changes")
-	ErrGitModulesSymlink               = errors.New(gitmodulesFile + " is a symlink")
-	ErrNonFastForwardUpdate            = errors.New("non-fast-forward update")
+	// ErrWorktreeNotClean is returned when the worktree is not clean.
+	ErrWorktreeNotClean = errors.New("worktree is not clean")
+	// ErrSubmoduleNotFound is returned when the submodule is not found.
+	ErrSubmoduleNotFound = errors.New("submodule not found")
+	// ErrUnstagedChanges is returned when the worktree has unstaged changes.
+	ErrUnstagedChanges = errors.New("worktree contains unstaged changes")
+	// ErrGitModulesSymlink is returned when .gitmodules is a symlink.
+	ErrGitModulesSymlink = errors.New(gitmodulesFile + " is a symlink")
+	// ErrNonFastForwardUpdate is returned when a non-fast-forward update is attempted.
+	ErrNonFastForwardUpdate = errors.New("non-fast-forward update")
+	// ErrRestoreWorktreeOnlyNotSupported is returned when worktree only restore is not supported.
 	ErrRestoreWorktreeOnlyNotSupported = errors.New("worktree only is not supported")
-	ErrSparseResetDirectoryNotFound    = errors.New("sparse-reset directory not found on commit")
+	// ErrSparseResetDirectoryNotFound is returned when a sparse-reset directory is not found.
+	ErrSparseResetDirectoryNotFound = errors.New("sparse-reset directory not found on commit")
 )
 
 // Worktree represents a git worktree.

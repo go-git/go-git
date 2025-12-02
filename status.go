@@ -70,6 +70,7 @@ type FileStatus struct {
 // StatusCode status code of a file in the Worktree
 type StatusCode byte
 
+// File status codes.
 const (
 	Unmodified         StatusCode = ' '
 	Untracked          StatusCode = '?'

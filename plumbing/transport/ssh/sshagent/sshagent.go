@@ -18,6 +18,7 @@
 
 //go:build !windows
 
+// Package sshagent provides functionality to interact with the SSH agent.
 package sshagent
 
 import (

@@ -21,13 +21,13 @@ const chLen = 1
 // other value is given, max pack is set to MaxPackedSize64k, that is the
 // maximum length of a line in pktline format.
 func NewMuxer(t Type, w io.Writer) *Muxer {
-	max := MaxPackedSize64k
+	maxSize := MaxPackedSize64k
 	if t == Sideband {
-		max = MaxPackedSize
+		maxSize = MaxPackedSize
 	}
 
 	return &Muxer{
-		max: max - chLen,
+		max: maxSize - chLen,
 		w:   w,
 	}
 }

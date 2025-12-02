@@ -289,7 +289,7 @@ func TestCount(t *testing.T) {
 	require.NoError(t, err)
 
 	count := 0
-	iter.ForEach(func(c *object.Commit) error {
+	iter.ForEach(func(*object.Commit) error {
 		count++
 		return nil
 	})
@@ -299,7 +299,7 @@ func TestCount(t *testing.T) {
 	require.NoError(t, err)
 
 	count = 0
-	trees.ForEach(func(c *object.Tree) error {
+	trees.ForEach(func(*object.Tree) error {
 		count++
 		return nil
 	})
@@ -309,7 +309,7 @@ func TestCount(t *testing.T) {
 	require.NoError(t, err)
 
 	count = 0
-	blobs.ForEach(func(c *object.Blob) error {
+	blobs.ForEach(func(*object.Blob) error {
 		count++
 		return nil
 	})
@@ -319,7 +319,7 @@ func TestCount(t *testing.T) {
 	require.NoError(t, err)
 
 	count = 0
-	objects.ForEach(func(c object.Object) error {
+	objects.ForEach(func(object.Object) error {
 		count++
 		return nil
 	})

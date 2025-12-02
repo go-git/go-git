@@ -1,3 +1,5 @@
+// Package storage defines the interfaces for storing objects, references
+// and any information related to a particular repository.
 package storage
 
 import (
@@ -7,6 +9,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
+// ErrReferenceHasChanged is returned when an atomic compare-and-swap operation fails
+// because the reference has changed concurrently.
 var ErrReferenceHasChanged = errors.New("reference has changed concurrently")
 
 // Storer is a generic storage of objects, references and any information
@@ -18,7 +22,7 @@ type Storer interface {
 	storer.ReferenceStorer
 	storer.ShallowStorer
 	storer.IndexStorer
-	config.ConfigStorer
+	config.Storer
 	ModuleStorer
 }
 

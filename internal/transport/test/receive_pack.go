@@ -1,5 +1,7 @@
 // Package test implements common test suite for different transport
 // implementations.
+//
+//nolint:revive // test suite methods don't need comments
 package test
 
 import (
@@ -133,8 +135,8 @@ func (s *ReceivePackSuite) TestSendPackWithContext() {
 	s.Require().NoError(err)
 	defer func() { s.Require().Nil(conn.Close()) }()
 
-	ctx, close := context.WithCancel(context.TODO())
-	close()
+	ctx, cancel := context.WithCancel(context.TODO())
+	cancel()
 
 	err = conn.Push(ctx, req)
 	s.Require().NotNil(err)

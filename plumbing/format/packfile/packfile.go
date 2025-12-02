@@ -39,7 +39,7 @@ type Packfile struct {
 
 	id           plumbing.Hash
 	m            sync.Mutex
-	objectIdSize int
+	objectIdSize int //nolint:revive
 
 	once    sync.Once
 	onceErr error
@@ -136,7 +136,7 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 	}
 }
 
-// Returns the Packfile's inner scanner.
+// Scanner returns the Packfile's inner scanner.
 //
 // Deprecated: this will be removed in future versions of the packfile package
 // to avoid exposing the package internals and to improve its thread-safety.

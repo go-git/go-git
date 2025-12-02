@@ -90,21 +90,21 @@ type Signature struct {
 // Decode decodes a byte slice into a signature
 func (s *Signature) Decode(b []byte) {
 	open := bytes.LastIndexByte(b, '<')
-	close := bytes.LastIndexByte(b, '>')
-	if open == -1 || close == -1 {
+	closeBracket := bytes.LastIndexByte(b, '>')
+	if open == -1 || closeBracket == -1 {
 		return
 	}
 
-	if close < open {
+	if closeBracket < open {
 		return
 	}
 
 	s.Name = string(bytes.Trim(b[:open], " "))
-	s.Email = string(b[open+1 : close])
+	s.Email = string(b[open+1 : closeBracket])
 
-	hasTime := close+2 < len(b)
+	hasTime := closeBracket+2 < len(b)
 	if hasTime {
-		s.decodeTimeAndTimeZone(b[close+2:])
+		s.decodeTimeAndTimeZone(b[closeBracket+2:])
 	}
 }
 
@@ -164,7 +164,7 @@ func (s *Signature) String() string {
 }
 
 // ObjectIter provides an iterator for a set of objects.
-type ObjectIter struct {
+type ObjectIter struct { //nolint:revive
 	storer.EncodedObjectIter
 	s storer.EncodedObjectStorer
 }

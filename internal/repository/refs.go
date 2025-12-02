@@ -1,3 +1,4 @@
+// Package repository provides internal utilities for repository operations.
 package repository
 
 import (
@@ -11,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// ExpandRef resolves a reference name using git ref parsing rules.
 func ExpandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
 	// For improving troubleshooting, this preserves the error for the provided `ref`,
 	// and returns the error for that specific ref in case all parse rules fails.

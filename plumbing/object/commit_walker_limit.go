@@ -14,12 +14,14 @@ type commitLimitIter struct {
 	limitOptions LogLimitOptions
 }
 
+// LogLimitOptions defines limits for log traversal.
 type LogLimitOptions struct {
 	Since    *time.Time
 	Until    *time.Time
 	TailHash plumbing.Hash
 }
 
+// NewCommitLimitIterFromIter creates a new commit iterator with limits applied.
 func NewCommitLimitIterFromIter(commitIter CommitIter, limitOptions LogLimitOptions) CommitIter {
 	iterator := new(commitLimitIter)
 	iterator.sourceIter = commitIter

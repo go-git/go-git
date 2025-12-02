@@ -197,7 +197,7 @@ func FuzzParseSignedBytes(f *testing.F) {
 	f.Add([]byte(x509SignatureFormat[0]))
 	f.Add([]byte(sshSignatureFormat[0]))
 
-	f.Fuzz(func(t *testing.T, input []byte) {
+	f.Fuzz(func(_ *testing.T, input []byte) {
 		parseSignedBytes(input)
 	})
 }

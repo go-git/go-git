@@ -99,10 +99,12 @@ func (s *Storage) Init() error {
 	return s.dir.Initialize()
 }
 
+// AddAlternate adds an alternate object directory.
 func (s *Storage) AddAlternate(remote string) error {
 	return s.dir.AddAlternate(remote)
 }
 
+// LowMemoryMode returns true if low memory mode is enabled.
 func (s *Storage) LowMemoryMode() bool {
 	return !s.options.HighMemoryMode
 }

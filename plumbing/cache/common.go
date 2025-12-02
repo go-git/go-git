@@ -2,6 +2,7 @@ package cache
 
 import "github.com/go-git/go-git/v6/plumbing"
 
+// File size units.
 const (
 	Byte FileSize = 1 << (iota * 10)
 	KiByte
@@ -9,8 +10,10 @@ const (
 	GiByte
 )
 
+// FileSize represents a file size in bytes.
 type FileSize int64
 
+// DefaultMaxSize is the default maximum cache size.
 const DefaultMaxSize FileSize = 96 * MiByte
 
 // Object is an interface to a object cache.

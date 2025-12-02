@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/diff"
 )
 
+// ErrCanceled is returned when the operation is canceled.
 var ErrCanceled = errors.New("operation canceled")
 
 func getPatch(message string, changes ...*Change) (*Patch, error) {
@@ -118,20 +119,24 @@ type Patch struct {
 	filePatches []fdiff.FilePatch
 }
 
+// FilePatches returns the file patches.
 func (p *Patch) FilePatches() []fdiff.FilePatch {
 	return p.filePatches
 }
 
+// Message returns the patch message.
 func (p *Patch) Message() string {
 	return p.message
 }
 
+// Encode encodes the patch to the given writer.
 func (p *Patch) Encode(w io.Writer) error {
 	ue := fdiff.NewUnifiedEncoder(w, fdiff.DefaultContextLines)
 
 	return ue.Encode(p)
 }
 
+// Stats returns the file stats.
 func (p *Patch) Stats() FileStats {
 	return getFileStatsFromFilePatches(p.FilePatches())
 }
@@ -246,12 +251,12 @@ func printStat(fileStats []FileStat) string {
 	maxNameLen := 0
 	maxChangeLen := 0
 
-	scaleLinear := func(it, width, max uint) uint {
-		if it == 0 || max == 0 {
+	scaleLinear := func(it, width, maxVal uint) uint {
+		if it == 0 || maxVal == 0 {
 			return 0
 		}
 
-		return 1 + (it * (width - 1) / max)
+		return 1 + (it * (width - 1) / maxVal)
 	}
 
 	for _, fs := range fileStats {

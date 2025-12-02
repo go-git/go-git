@@ -4,16 +4,16 @@ import "github.com/go-git/go-git/v6/config"
 
 // ConfigStorage implements the storer.ConfigStorage for the transactional package.
 type ConfigStorage struct {
-	config.ConfigStorer
-	temporal config.ConfigStorer
+	config.Storer
+	temporal config.Storer
 
 	set bool
 }
 
 // NewConfigStorage returns a new ConfigStorer based on a base storer and a
 // temporal storer.
-func NewConfigStorage(s, temporal config.ConfigStorer) *ConfigStorage {
-	return &ConfigStorage{ConfigStorer: s, temporal: temporal}
+func NewConfigStorage(s, temporal config.Storer) *ConfigStorage {
+	return &ConfigStorage{Storer: s, temporal: temporal}
 }
 
 // SetConfig honors the storer.ConfigStorer interface.
@@ -29,7 +29,7 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
 // Config honors the storer.ConfigStorer interface.
 func (c *ConfigStorage) Config() (*config.Config, error) {
 	if !c.set {
-		return c.ConfigStorer.Config()
+		return c.Storer.Config()
 	}
 
 	return c.temporal.Config()
@@ -46,5 +46,5 @@ func (c *ConfigStorage) Commit() error {
 		return err
 	}
 
-	return c.ConfigStorer.SetConfig(cfg)
+	return c.Storer.SetConfig(cfg)
 }

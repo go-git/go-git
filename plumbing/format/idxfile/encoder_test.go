@@ -6,7 +6,7 @@ import (
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 
-	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	. "github.com/go-git/go-git/v6/plumbing/format/idxfile" //nolint:revive
 )
 
 func (s *IdxfileSuite) TestDecodeEncode() {

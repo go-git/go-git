@@ -1,3 +1,4 @@
+//nolint:revive // interface methods don't need individual comments
 package filesystem
 
 import (

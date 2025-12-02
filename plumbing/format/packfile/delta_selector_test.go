@@ -48,7 +48,7 @@ type testObject struct {
 	object plumbing.EncodedObject
 }
 
-var testObjects []*testObject = []*testObject{{
+var testObjects = []*testObject{{
 	id: "base",
 	object: newObject(plumbing.BlobObject,
 		genBytes([]piece{{

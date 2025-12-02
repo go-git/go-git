@@ -158,9 +158,8 @@ func (e *Encoder) writeDeltaHeader(o *ObjectToPack) error {
 
 	if e.useRefDeltas {
 		return e.writeRefDeltaHeader(o.Base.Hash())
-	} else {
-		return e.writeOfsDeltaHeader(o)
 	}
+	return e.writeOfsDeltaHeader(o)
 }
 
 func (e *Encoder) writeRefDeltaHeader(base plumbing.Hash) error {

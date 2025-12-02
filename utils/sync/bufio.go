@@ -1,3 +1,4 @@
+// Package sync provides sync.Pool-based utilities for reusing objects.
 package sync
 
 import (

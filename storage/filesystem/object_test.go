@@ -205,7 +205,7 @@ func (s *FsSuite) TestIter() {
 		s.Require().NoError(err)
 
 		var count int32
-		err = iter.ForEach(func(o plumbing.EncodedObject) error {
+		err = iter.ForEach(func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})
@@ -224,7 +224,7 @@ func (s *FsSuite) TestIterLargeObjectThreshold() {
 		s.Require().NoError(err)
 
 		var count int32
-		err = iter.ForEach(func(o plumbing.EncodedObject) error {
+		err = iter.ForEach(func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})

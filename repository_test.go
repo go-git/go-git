@@ -365,7 +365,7 @@ func (s *RepositorySuite) TestCloneWithTags() {
 	s.NoError(err)
 
 	var count int
-	i.ForEach(func(r *plumbing.Reference) error { count++; return nil })
+	i.ForEach(func(*plumbing.Reference) error { count++; return nil })
 
 	s.Equal(3, count)
 }
@@ -771,13 +771,13 @@ func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
 }
 
 func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFile() {
-	s.testPlainOpenGitFile(func(dir, altDir string) string {
+	s.testPlainOpenGitFile(func(dir, _ string) string {
 		return fmt.Sprintf("gitdir: %s\n", dir)
 	})
 }
 
 func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFileNoEOL() {
-	s.testPlainOpenGitFile(func(dir, altDir string) string {
+	s.testPlainOpenGitFile(func(dir, _ string) string {
 		return fmt.Sprintf("gitdir: %s", dir)
 	})
 }
@@ -1843,7 +1843,7 @@ func (s *RepositorySuite) TestLogAll() {
 	s.NoError(err)
 
 	refCount := 0
-	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+	err = rIter.ForEach(func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
@@ -1890,7 +1890,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	s.NoError(err)
 
 	refCount := 0
-	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+	err = rIter.ForEach(func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
@@ -1904,7 +1904,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	s.NoError(err)
 
 	refCount = 0
-	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+	err = rIter.ForEach(func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
@@ -1918,7 +1918,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	s.NoError(err)
 
 	cCount := 0
-	cIter.ForEach(func(c *object.Commit) error {
+	cIter.ForEach(func(*object.Commit) error {
 		cCount++
 		return nil
 	})
@@ -2217,7 +2217,7 @@ func (s *RepositorySuite) TestLogFileWithError() {
 	cIter := object.NewCommitFileIterFromIter(fileName, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(commit *object.Commit) error {
+	err := cIter.ForEach(func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2231,7 +2231,7 @@ func (s *RepositorySuite) TestLogPathWithError() {
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(commit *object.Commit) error {
+	err := cIter.ForEach(func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2245,7 +2245,7 @@ func (s *RepositorySuite) TestLogPathRegexpWithError() {
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(commit *object.Commit) error {
+	err := cIter.ForEach(func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -3064,7 +3064,7 @@ func (s *RepositorySuite) TestTagObjects() {
 	})
 
 	refs, _ := r.References()
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	refs.ForEach(func(*plumbing.Reference) error {
 		return nil
 	})
 

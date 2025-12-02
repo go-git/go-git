@@ -1,3 +1,4 @@
+// Package convert provides utilities for converting content such as line endings and determining binary files.
 package convert
 
 import (

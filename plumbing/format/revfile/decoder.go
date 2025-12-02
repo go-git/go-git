@@ -29,6 +29,7 @@ var (
 	revHeader = []byte{'R', 'I', 'D', 'X'}
 )
 
+// Revfile constants.
 const (
 	VersionSupported        = 1
 	sha1Hash         uint32 = 1

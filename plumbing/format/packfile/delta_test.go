@@ -199,7 +199,7 @@ func FuzzPatchDelta(f *testing.F) {
 	f.Add([]byte("some value"), []byte("\n\x0e\x0eva"))
 	f.Add([]byte("some value"), []byte("\n\x80\x80\x80\x80\x80\x802\x7fvalue"))
 
-	f.Fuzz(func(t *testing.T, input1, input2 []byte) {
+	f.Fuzz(func(_ *testing.T, input1, input2 []byte) {
 		PatchDelta(input1, input2)
 	})
 }

@@ -29,8 +29,9 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// Remote operation errors and sentinel values.
 var (
-	NoErrAlreadyUpToDate     = errors.New("already up-to-date") //nolint:staticcheck // Not an error, sentinel value for success
+	NoErrAlreadyUpToDate     = errors.New("already up-to-date") //nolint:revive,staticcheck // sentinel value, not an error
 	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
@@ -1038,8 +1039,8 @@ func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.Refe
 	return nil
 }
 
-func isFastForward(s storer.EncodedObjectStorer, old, new plumbing.Hash, earliestShallow *plumbing.Hash) (bool, error) {
-	c, err := object.GetCommit(s, new)
+func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, earliestShallow *plumbing.Hash) (bool, error) { //nolint:revive
+	c, err := object.GetCommit(s, newHash)
 	if err != nil {
 		return false, err
 	}
@@ -1117,12 +1118,12 @@ func (r *Remote) updateLocalReferenceStorage(
 				localName = plumbing.NewBranchReferenceName(localName.String())
 			}
 			old, _ := storer.ResolveReference(r.s, localName)
-			new := plumbing.NewHashReference(localName, ref.Hash())
+			newRef := plumbing.NewHashReference(localName, ref.Hash())
 
 			// If the ref exists locally as a non-tag and force is not
 			// specified, only update if the new ref is an ancestor of the old
 			if old != nil && !old.Name().IsTag() && !force && !spec.IsForceUpdate() {
-				ff, err := isFastForward(r.s, old.Hash(), new.Hash(), nil)
+				ff, err := isFastForward(r.s, old.Hash(), newRef.Hash(), nil)
 				if err != nil {
 					return updated, err
 				}
@@ -1133,7 +1134,7 @@ func (r *Remote) updateLocalReferenceStorage(
 				}
 			}
 
-			refUpdated, err := checkAndUpdateReferenceStorerIfNeeded(r.s, new, old)
+			refUpdated, err := checkAndUpdateReferenceStorerIfNeeded(r.s, newRef, old)
 			if err != nil {
 				return updated, err
 			}
@@ -1196,7 +1197,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 	return updated, err
 }
 
-// List the references on the remote repository.
+// ListContext lists the references on the remote repository.
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects to the
 // transport operations.
@@ -1204,6 +1205,7 @@ func (r *Remote) ListContext(ctx context.Context, o *ListOptions) (rfs []*plumbi
 	return r.list(ctx, o)
 }
 
+// List lists the references on the remote repository.
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 	timeout := o.Timeout
 	// Default to the old hardcoded 10s value if a timeout is not explicitly set.

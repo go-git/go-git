@@ -1,3 +1,4 @@
+// Package trace provides tracing utilities for debugging go-git operations.
 package trace
 
 import (

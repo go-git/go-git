@@ -32,7 +32,7 @@ func (s *SuiteReader) TestReadObjfile() {
 	}
 }
 
-func testReader(t *testing.T, source io.Reader, hash plumbing.Hash, o plumbing.ObjectType, content []byte, com string) {
+func testReader(t *testing.T, source io.Reader, hash plumbing.Hash, o plumbing.ObjectType, content []byte, _ string) {
 	r, err := NewReader(source)
 	assert.NoError(t, err)
 

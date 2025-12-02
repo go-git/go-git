@@ -15,6 +15,7 @@ type Option struct {
 	Value string
 }
 
+// Options is a collection of Option.
 type Options []*Option
 
 // IsKey returns true if the given key matches
@@ -23,6 +24,7 @@ func (o *Option) IsKey(key string) bool {
 	return strings.EqualFold(o.Key, key)
 }
 
+// GoString returns a Go-syntax representation of Options.
 func (opts Options) GoString() string {
 	strs := make([]string, 0, len(opts))
 	for _, opt := range opts {

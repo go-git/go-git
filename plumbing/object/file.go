@@ -133,6 +133,7 @@ func (iter *FileIter) ForEach(cb func(*File) error) error {
 	}
 }
 
+// Close releases resources associated with the iterator.
 func (iter *FileIter) Close() {
 	iter.w.Close()
 }

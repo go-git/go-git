@@ -16,6 +16,7 @@ var (
 	minCommandAndCapsLength = minCommandLength + 1
 )
 
+// Decode errors.
 var (
 	ErrEmpty                        = errors.New("empty update-request message")
 	errNoCommands                   = errors.New("unexpected EOF before any command")
@@ -54,17 +55,17 @@ func errInvalidCommandLineLength(got int) error {
 		minCommandLength, got))
 }
 
-func errInvalidShallowObjId(err error) error {
+func errInvalidShallowObjID(err error) error {
 	return errMalformedRequest(
 		fmt.Sprintf("invalid shallow object id: %s", err.Error()))
 }
 
-func errInvalidOldObjId(err error) error {
+func errInvalidOldObjID(err error) error {
 	return errMalformedRequest(
 		fmt.Sprintf("invalid old object id: %s", err.Error()))
 }
 
-func errInvalidNewObjId(err error) error {
+func errInvalidNewObjID(err error) error {
 	return errMalformedRequest(
 		fmt.Sprintf("invalid new object id: %s", err.Error()))
 }
@@ -147,7 +148,7 @@ func (d *updReqDecoder) decodeShallow() error {
 
 	h, err := parseHash(string(b[len(shallow):]))
 	if err != nil {
-		return errInvalidShallowObjId(err)
+		return errInvalidShallowObjID(err)
 	}
 
 	if err := d.readLine(errNoCommands); err != nil {
@@ -227,12 +228,12 @@ func parseCommand(b []byte) (*Command, error) {
 
 	oh, err := parseHash(os)
 	if err != nil {
-		return nil, errInvalidOldObjId(err)
+		return nil, errInvalidOldObjID(err)
 	}
 
 	nh, err := parseHash(ns)
 	if err != nil {
-		return nil, errInvalidNewObjId(err)
+		return nil, errInvalidNewObjID(err)
 	}
 
 	return &Command{Old: oh, New: nh, Name: n}, nil

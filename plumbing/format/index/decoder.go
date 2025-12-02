@@ -159,8 +159,8 @@ func (d *Decoder) readEntryName(idx *Index, e *Entry, flags uint16) error {
 
 	switch idx.Version {
 	case 2, 3:
-		len := flags & nameMask
-		name, err = d.doReadEntryName(len)
+		nameLen := flags & nameMask
+		name, err = d.doReadEntryName(nameLen)
 	case 4:
 		name, err = d.doReadEntryNameV4()
 	default:
@@ -194,8 +194,8 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 	return base + string(name), nil
 }
 
-func (d *Decoder) doReadEntryName(len uint16) (string, error) {
-	name := make([]byte, len)
+func (d *Decoder) doReadEntryName(nameLen uint16) (string, error) {
+	name := make([]byte, nameLen)
 	_, err := io.ReadFull(d.r, name)
 
 	return string(name), err
@@ -294,12 +294,12 @@ func (d *Decoder) readExtension(idx *Index) error {
 }
 
 func (d *Decoder) getExtensionReader() (*bufio.Reader, error) {
-	len, err := binary.ReadUint32(d.r)
+	extLen, err := binary.ReadUint32(d.r)
 	if err != nil {
 		return nil, err
 	}
 
-	d.extReader.Reset(&io.LimitedReader{R: d.r, N: int64(len)})
+	d.extReader.Reset(&io.LimitedReader{R: d.r, N: int64(extLen)})
 	return d.extReader, nil
 }
 

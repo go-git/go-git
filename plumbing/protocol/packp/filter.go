@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// ErrUnsupportedObjectFilterType is returned when the filter type is not supported.
 var ErrUnsupportedObjectFilterType = errors.New("unsupported object filter type")
 
 // Filter values enable the partial clone capability which causes
@@ -19,8 +20,10 @@ var ErrUnsupportedObjectFilterType = errors.New("unsupported object filter type"
 // [Git's documentation]: https://github.com/git/git/blob/e02ecfcc534e2021aae29077a958dd11c3897e4c/Documentation/rev-list-options.txt#L948
 type Filter string
 
+// BlobLimitPrefix specifies the unit prefix for blob size limits.
 type BlobLimitPrefix string
 
+// Blob limit prefix values.
 const (
 	BlobLimitPrefixNone BlobLimitPrefix = ""
 	BlobLimitPrefixKibi BlobLimitPrefix = "k"

@@ -346,7 +346,7 @@ func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing
 	var refs int
 	l, err := r.s.IterReferences()
 	s.Require().NoError(err)
-	err = l.ForEach(func(r *plumbing.Reference) error { refs++; return nil })
+	err = l.ForEach(func(*plumbing.Reference) error { refs++; return nil })
 	s.Require().NoError(err)
 
 	s.Len(expected, refs)
@@ -1413,7 +1413,7 @@ func (s *RemoteSuite) TestListPeeling() {
 
 func (s *RemoteSuite) TestListTimeout() {
 	// Create a server that blocks until the request context is done
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}))
 	defer srv.Close()
@@ -1711,11 +1711,11 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 
 func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	tempDir := s.T().TempDir()
-	remoteUrl := filepath.Join(tempDir, "remote")
+	remoteURL := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
 	// Create a new repo and add more than 1 commit (so we can have a shallow commit)
-	remote, err := PlainInit(remoteUrl, false)
+	remote, err := PlainInit(remoteURL, false)
 	s.Require().NoError(err)
 	s.Require().NotNil(remote)
 
@@ -1724,7 +1724,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 
 	// Clone the repo with a depth of 1
 	repo, err := PlainClone(repoDir, &CloneOptions{
-		URL:           remoteUrl,
+		URL:           remoteURL,
 		Depth:         1,
 		Tags:          plumbing.NoTags,
 		SingleBranch:  true,

@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
+// Submodule errors.
 var (
 	ErrSubmoduleAlreadyInitialized = errors.New("submodule already initialized")
 	ErrSubmoduleNotInitialized     = errors.New("submodule not initialized")
@@ -233,11 +234,11 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 		return err
 	}
 
-	new := &SubmoduleUpdateOptions{}
-	*new = *o
+	opts := &SubmoduleUpdateOptions{}
+	*opts = *o
 
-	new.RecurseSubmodules--
-	return l.UpdateContext(ctx, new)
+	opts.RecurseSubmodules--
+	return l.UpdateContext(ctx, opts)
 }
 
 func (s *Submodule) fetchAndCheckout(

@@ -163,7 +163,7 @@ func (s *TagSuite) TestTagIterError() {
 
 	randomErr := fmt.Errorf("a random error")
 	i := NewTagIter(s.Storer, iter)
-	err = i.ForEach(func(t *Tag) error {
+	err = i.ForEach(func(_ *Tag) error {
 		return randomErr
 	})
 

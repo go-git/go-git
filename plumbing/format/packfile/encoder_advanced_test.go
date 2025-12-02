@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	. "github.com/go-git/go-git/v6/plumbing/format/packfile"
+	. "github.com/go-git/go-git/v6/plumbing/format/packfile" //nolint:revive
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )

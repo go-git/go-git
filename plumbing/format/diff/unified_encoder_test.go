@@ -182,7 +182,7 @@ var oneChunkPatchInverted Patch = testPatch{
 	}},
 }
 
-var fixtures []*fixture = []*fixture{{
+var fixtures = []*fixture{{
 	patch: testPatch{
 		message: "",
 		filePatches: []testFilePatch{{

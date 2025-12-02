@@ -1,3 +1,4 @@
+//nolint:revive // methods implement plumbing.EncodedObject interface
 package dotgit
 
 import (

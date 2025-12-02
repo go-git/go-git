@@ -8,6 +8,7 @@ linters:
     - misspell
     - modernize
     - prealloc
+    - revive
     - staticcheck
     - unused
     - whitespace

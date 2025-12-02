@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
+// DefaultUsername is the default username used for SSH connections.
 const DefaultUsername = "git"
 
 // AuthMethod is the interface all auth methods for the ssh client
@@ -47,6 +48,7 @@ type KeyboardInteractive struct {
 	HostKeyCallbackHelper
 }
 
+// Name returns the name of the authentication method.
 func (a *KeyboardInteractive) Name() string {
 	return KeyboardInteractiveName
 }
@@ -55,6 +57,7 @@ func (a *KeyboardInteractive) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
+// ClientConfig returns the ssh.ClientConfig for this authentication method.
 func (a *KeyboardInteractive) ClientConfig() (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", KeyboardInteractiveName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
@@ -72,6 +75,7 @@ type Password struct {
 	HostKeyCallbackHelper
 }
 
+// Name returns the name of the authentication method.
 func (a *Password) Name() string {
 	return PasswordName
 }
@@ -80,6 +84,7 @@ func (a *Password) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
+// ClientConfig returns the ssh.ClientConfig for this authentication method.
 func (a *Password) ClientConfig() (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", PasswordName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
@@ -96,6 +101,7 @@ type PasswordCallback struct {
 	HostKeyCallbackHelper
 }
 
+// Name returns the name of the authentication method.
 func (a *PasswordCallback) Name() string {
 	return PasswordCallbackName
 }
@@ -104,6 +110,7 @@ func (a *PasswordCallback) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
+// ClientConfig returns the ssh.ClientConfig for this authentication method.
 func (a *PasswordCallback) ClientConfig() (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", PasswordCallbackName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
@@ -146,6 +153,7 @@ func NewPublicKeysFromFile(user, pemFile, password string) (*PublicKeys, error) 
 	return NewPublicKeys(user, bytes, password)
 }
 
+// Name returns the name of the authentication method.
 func (a *PublicKeys) Name() string {
 	return PublicKeysName
 }
@@ -154,6 +162,7 @@ func (a *PublicKeys) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
+// ClientConfig returns the ssh.ClientConfig for this authentication method.
 func (a *PublicKeys) ClientConfig() (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s signer=\"%s %s\"", PublicKeysName, a.User,
 		a.Signer.PublicKey().Type(),
@@ -212,6 +221,7 @@ func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 	}, nil
 }
 
+// Name returns the name of the authentication method.
 func (a *PublicKeysCallback) Name() string {
 	return PublicKeysCallbackName
 }
@@ -220,6 +230,7 @@ func (a *PublicKeysCallback) String() string {
 	return fmt.Sprintf("user: %s, name: %s", a.User, a.Name())
 }
 
+// ClientConfig returns the ssh.ClientConfig for this authentication method.
 func (a *PublicKeysCallback) ClientConfig() (*ssh.ClientConfig, error) {
 	trace.SSH.Printf("ssh: %s user=%s", PublicKeysCallbackName, a.User)
 	return a.SetHostKeyCallback(&ssh.ClientConfig{
