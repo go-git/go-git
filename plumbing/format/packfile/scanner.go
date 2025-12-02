@@ -64,7 +64,7 @@ var (
 type Scanner struct {
 	// version holds the packfile version.
 	version Version
-	// objects holds the quantiy of objects within the packfile.
+	// objects holds the quantity of objects within the packfile.
 	objects uint32
 	// objIndex is the current index when going through the packfile objects.
 	objIndex int

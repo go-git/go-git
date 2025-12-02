@@ -310,7 +310,7 @@ type PushOptions struct {
 
 // ForceWithLease sets fields on the lease
 // If neither RefName nor Hash are set, ForceWithLease protects
-// all refs in the refspec by ensuring the ref of the remote in the local repsitory
+// all refs in the refspec by ensuring the ref of the remote in the local repository
 // matches the one in the ref advertisement.
 type ForceWithLease struct {
 	// RefName, when set will protect the ref by ensuring it matches the
@@ -437,7 +437,7 @@ type ResetOptions struct {
 	// the index (resetting it to the tree of Commit) and the working tree
 	// depending on Mode. If empty MixedReset is used.
 	Mode ResetMode
-	// Files, if not empty will constrain the reseting the index to only files
+	// Files, if not empty will constrain the resetting the index to only files
 	// specified in this list.
 	Files []string
 

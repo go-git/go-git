@@ -29,7 +29,7 @@ const (
 	continuation = 0x80 // 1000 0000
 
 	// maxPatchPreemptionSize defines what is the max size of bytes to be
-	// premptively made available for a patch operation.
+	// preemptively made available for a patch operation.
 	maxPatchPreemptionSize uint = 65536
 
 	// minDeltaSize defines the smallest size for a delta.
@@ -331,7 +331,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 		return 0, plumbing.ZeroHash, err
 	}
 
-	// Avoid several iteractions expanding the buffer, which can be quite
+	// Avoid several interactions expanding the buffer, which can be quite
 	// inefficient on large deltas.
 	if b, ok := dst.(*bytes.Buffer); ok {
 		b.Grow(int(targetSz))

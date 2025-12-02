@@ -235,7 +235,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 	)
 
 	// Set write permissions to endpoint directory files. By default
-	// fixtures are generated with read only permissions, this casuses
+	// fixtures are generated with read only permissions, this causes
 	// errors deleting or modifying files.
 	rootPath := ep.Path
 	stat, err := os.Stat(ep.Path)

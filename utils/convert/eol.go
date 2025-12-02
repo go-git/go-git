@@ -42,7 +42,7 @@ func (conv *crlfToLFWriter) Write(data []byte) (int, error) {
 	}
 
 	if data[len(data)-1] == '\r' {
-		// Lone CR woudn't exist. So it's CRLF.
+		// Lone CR wouldn't exist. So it's CRLF.
 		rest, err := conv.w.Write(data[n : len(data)-1])
 		if err != nil {
 			return n + rest, err

@@ -49,14 +49,14 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 ### Branches
 
 The development branch is `main`, where all development takes place.
-All new features and bug fixes should target it. This was formely known
+All new features and bug fixes should target it. This was formerly known
 as `v6-exp` or `v6-transport`. This branch contains all the changes for
 `v6` - the next major release.
 From time to time this branch will contain breaking changes, as the API
 for `v6` is being refined.
 
 The `releases/v5.x` branch is the branch for changes to the `v5` version,
-which is now in maintaince mode. To avoid having to divert efforts from `v6`,
+which is now in maintenance mode. To avoid having to divert efforts from `v6`,
 we will only be accepting bug fixes or CVE related dependency bumps for the
 `v5` release.
 
