@@ -106,7 +106,7 @@ func TestMultipleHashes(t *testing.T) {
 	}
 }
 
-func TestThreadSatefy(t *testing.T) {
+func TestThreadSafety(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {

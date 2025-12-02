@@ -29,7 +29,7 @@ func (e *Encoder) Encode(idx Index) error {
 	// Get all the hashes in the input index
 	hashes := idx.Hashes()
 
-	// Sort the inout and prepare helper structures we'll need for encoding
+	// Sort the input and prepare helper structures we'll need for encoding
 	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{OIDFanoutChunk.Signature(), OIDLookupChunk.Signature(), CommitDataChunk.Signature()}
