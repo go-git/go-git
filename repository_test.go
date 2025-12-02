@@ -308,6 +308,11 @@ func (s *RepositorySuite) TestClone() {
 	s.Len(remotes, 1)
 }
 
+func (s *RepositorySuite) TestCloneNilOptions() {
+	_, err := Clone(memory.NewStorage(), nil, nil)
+	s.Error(err)
+}
+
 func (s *RepositorySuite) TestCloneContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1202,7 +1207,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 	subRepo, err := submodule.Repository()
 	s.Require().NoError(err)
 
-	lr, err := subRepo.Log(&LogOptions{})
+	lr, err := subRepo.Log(nil)
 	s.Require().NoError(err)
 
 	commitCount := 0
@@ -1239,7 +1244,7 @@ func (s *RepositorySuite) TestFetch() {
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 	s.NoError(err)
-	s.Nil(r.Fetch(&FetchOptions{}))
+	s.Nil(r.Fetch(nil))
 
 	remotes, err := r.Remotes()
 	s.NoError(err)
@@ -1266,7 +1271,7 @@ func (s *RepositorySuite) TestFetchContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	s.NotNil(r.FetchContext(ctx, &FetchOptions{}))
+	s.NotNil(r.FetchContext(ctx, nil))
 }
 
 func (s *RepositorySuite) TestFetchWithFilters() {
@@ -1973,7 +1978,7 @@ func (s *RepositorySuite) TestLogHead() {
 
 	s.NoError(err)
 
-	cIter, err := r.Log(&LogOptions{})
+	cIter, err := r.Log(nil)
 
 	s.NoError(err)
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/suite"
 
@@ -121,4 +122,55 @@ func (s *OptionsSuite) writeGlobalConfig(cfg *config.Config) func() {
 	return func() {
 		os.Setenv("XDG_CONFIG_HOME", "")
 	}
+}
+
+func (s *OptionsSuite) TestGrepOptionsNil() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	g := (*GrepOptions)(nil)
+	s.Error(g.Validate(w))
+}
+
+func (s *OptionsSuite) TestPullOptionsNil() {
+	p := (*PullOptions)(nil)
+	s.Error(p.Validate())
+}
+
+func (s *OptionsSuite) TestFetchOptionsNil() {
+	f := (*FetchOptions)(nil)
+	s.Error(f.Validate())
+}
+
+func (s *OptionsSuite) TestCreateTagOptionsNil() {
+	c := (*CreateTagOptions)(nil)
+	s.Error(c.Validate(s.Repository, plumbing.ZeroHash))
+}
+
+func (s *OptionsSuite) TestPlainOpenOptionsNil() {
+	p := (*PlainOpenOptions)(nil)
+	s.Error(p.Validate())
+}
+
+func (s *OptionsSuite) TestCheckOptionsNil() {
+	c := (*CheckoutOptions)(nil)
+	s.Error(c.Validate())
+}
+
+func (s *OptionsSuite) TestResetoptionsNil() {
+	r := (*ResetOptions)(nil)
+	s.Error(r.Validate(s.Repository))
+}
+
+func (s *OptionsSuite) TestRestoreOptionsNil() {
+	r := (*RestoreOptions)(nil)
+	s.Error(r.Validate())
+}
+
+func (s *OptionsSuite) TestPushOptionsNil() {
+	p := (*PushOptions)(nil)
+	s.Error(p.Validate())
 }

@@ -372,7 +372,7 @@ func (s *RemoteSuite) TestFetchOfMissingObjects() {
 	s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
 
 	// Refetch to get all the missing objects
-	err = r.Fetch(&FetchOptions{})
+	err = r.Fetch(nil)
 	s.NoError(err)
 
 	// Confirm we now have the commit
@@ -1351,7 +1351,7 @@ func (s *RemoteSuite) TestList() {
 		URLs: []string{repo.URL},
 	})
 
-	refs, err := remote.List(&ListOptions{})
+	refs, err := remote.List(nil)
 	s.NoError(err)
 
 	expected := []*plumbing.Reference{
@@ -1426,7 +1426,7 @@ func (s *RemoteSuite) TestListTimeout() {
 		URLs: []string{srv.URL},
 	})
 
-	_, err := remote.ListContext(ctx, &ListOptions{})
+	_, err := remote.ListContext(ctx, nil)
 	s.ErrorIs(err, context.DeadlineExceeded)
 }
 

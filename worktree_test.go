@@ -66,7 +66,7 @@ func (s *WorktreeSuite) TestPullCheckout() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.NoError(err)
 
 	fi, err := fs.ReadDir("")
@@ -93,7 +93,7 @@ func (s *WorktreeSuite) TestPullFastForward() {
 	w, err = r.Worktree()
 	s.NoError(err)
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.NoError(err)
 
 	head, err := r.Head()
@@ -124,7 +124,7 @@ func (s *WorktreeSuite) TestPullNonFastForward() {
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	s.NoError(err)
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.ErrorIs(err, ErrNonFastForwardUpdate)
 }
 
@@ -135,7 +135,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded() {
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err := r.Fetch(&FetchOptions{})
+	err := r.Fetch(nil)
 	s.NoError(err)
 
 	_, err = r.Reference("refs/heads/master", false)
@@ -144,7 +144,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.NoError(err)
 
 	head, err := r.Reference(plumbing.HEAD, true)
@@ -155,7 +155,7 @@ func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded() {
 	s.NoError(err)
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branch.Hash().String())
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.ErrorIs(err, NoErrAlreadyUpToDate)
 }
 
@@ -171,7 +171,7 @@ func (s *WorktreeSuite) TestPullInSingleBranch() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.ErrorIs(err, NoErrAlreadyUpToDate)
 
 	branch, err := r.Reference("refs/heads/master", false)
@@ -286,7 +286,7 @@ func (s *WorktreeSuite) TestPullAlreadyUptodate() {
 	_, err = w.Commit("bar", &CommitOptions{Author: defaultSignature()})
 	s.NoError(err)
 
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.ErrorIs(err, NoErrAlreadyUpToDate)
 }
 
@@ -304,7 +304,7 @@ func (s *WorktreeSuite) TestPullDepth() {
 
 	w, err := r.Worktree()
 	s.NoError(err)
-	err = w.Pull(&PullOptions{})
+	err = w.Pull(nil)
 	s.NoError(err)
 }
 
@@ -377,7 +377,7 @@ func (s *WorktreeSuite) TestCheckoutForce() {
 		Filesystem: memfs.New(),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	w.Filesystem = memfs.New()
@@ -452,7 +452,7 @@ func (s *WorktreeSuite) TestCheckoutSymlink() {
 	r.Storer.SetIndex(&index.Index{Version: 2})
 	w.Filesystem = osfs.New(filepath.Join(dir, "worktree-empty"))
 
-	err = w.Checkout(&CheckoutOptions{})
+	err = w.Checkout(nil)
 	s.NoError(err)
 
 	status, err := w.Status()
@@ -508,7 +508,7 @@ func (s *WorktreeSuite) TestCheckoutCRLF() {
 		wt, err := r.Worktree()
 		require.NoError(t, err)
 
-		require.NoError(t, wt.Checkout(&CheckoutOptions{}))
+		require.NoError(t, wt.Checkout(nil))
 
 		status, err := wt.Status()
 		require.NoError(t, err)
@@ -613,7 +613,7 @@ func (s *WorktreeSuite) TestCheckoutSubmodule() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = w.Checkout(&CheckoutOptions{})
+	err = w.Checkout(nil)
 	s.NoError(err)
 
 	status, err := w.Status()
@@ -703,7 +703,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMem() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	idx, err := s.Repository.Storer.Index()
@@ -731,7 +731,7 @@ func (s *WorktreeSuite) TestCheckoutIndexOS() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	idx, err := s.Repository.Storer.Index()
@@ -907,7 +907,7 @@ func (s *WorktreeSuite) TestCheckoutTag() {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	err = w.Checkout(&CheckoutOptions{})
+	err = w.Checkout(nil)
 	s.NoError(err)
 	head, err := w.r.Head()
 	s.NoError(err)
@@ -994,7 +994,7 @@ func (s *WorktreeSuite) testCheckoutBisect(url string) {
 	w, err := r.Worktree()
 	s.NoError(err)
 
-	iter, err := w.r.Log(&LogOptions{})
+	iter, err := w.r.Log(nil)
 	s.NoError(err)
 
 	iter.ForEach(func(commit *object.Commit) error {
@@ -1140,7 +1140,7 @@ func (s *WorktreeSuite) TestReset() {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	branch, err := w.r.Reference(plumbing.Master, false)
@@ -1168,7 +1168,7 @@ func (s *WorktreeSuite) TestResetWithUntracked() {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = util.WriteFile(fs, "foo", nil, 0o755)
@@ -1200,7 +1200,7 @@ func (s *WorktreeSuite) TestResetSoft() {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = w.Reset(&ResetOptions{Mode: SoftReset, Commit: commit})
@@ -1225,7 +1225,7 @@ func (s *WorktreeSuite) TestResetMixed() {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = w.Reset(&ResetOptions{Mode: MixedReset, Commit: commit})
@@ -1251,7 +1251,7 @@ func (s *WorktreeSuite) TestResetMerge() {
 	commitA := plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294")
 	commitB := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = w.Reset(&ResetOptions{Mode: MergeReset, Commit: commitA})
@@ -1285,7 +1285,7 @@ func (s *WorktreeSuite) TestResetHard() {
 
 	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	f, err := fs.Create(".gitignore")
@@ -1310,7 +1310,7 @@ func (s *WorktreeSuite) TestResetHardSubFolders() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = fs.MkdirAll("dir", os.ModePerm)
@@ -1348,7 +1348,7 @@ func (s *WorktreeSuite) TestResetHardWithGitIgnore() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	tf, err := fs.Create("newTestFile.txt")
@@ -1490,7 +1490,7 @@ func (s *WorktreeSuite) TestStatusModified() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	f, err := fs.Create(".gitignore")
@@ -1513,7 +1513,7 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 		Filesystem: fs,
 	}
 
-	w.Checkout(&CheckoutOptions{})
+	w.Checkout(nil)
 
 	fs.MkdirAll("another", os.ModePerm)
 	f, _ := fs.Create("another/file")
@@ -1581,7 +1581,7 @@ func (s *WorktreeSuite) TestStatusDeleted() {
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	err = fs.Remove(".gitignore")
@@ -2756,7 +2756,7 @@ func (s *WorktreeSuite) TestClean() {
 	s.NoError(err)
 	s.Len(status, 2)
 
-	err = wt.Clean(&CleanOptions{})
+	err = wt.Clean(nil)
 	s.NoError(err)
 
 	// Status after cleaning.
@@ -3207,7 +3207,7 @@ func (s *WorktreeSuite) TestAddAndCommit() {
 	}})
 	s.NoError(err)
 
-	iter, err := w.r.Log(&LogOptions{})
+	iter, err := w.r.Log(nil)
 	s.NoError(err)
 
 	filesFound := 0
@@ -3460,7 +3460,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		Filesystem: fs,
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(nil)
 	s.NoError(err)
 
 	names = []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg"}
@@ -3610,4 +3610,62 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 	})
+}
+
+func (s *WorktreeSuite) TestWorktreeCommitNilOptions() {
+	dir := s.T().TempDir()
+
+	repo, err := PlainInit(dir, false)
+	s.NoError(err)
+
+	w, err := repo.Worktree()
+	s.NoError(err)
+
+	_, err = w.Add(".")
+	s.NoError(err)
+
+	_, err = w.Commit("Test Add And Commit With Nil Options", nil)
+	s.Error(err)
+}
+
+func (s *WorktreeSuite) TestAddNilOptions() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 9)
+
+	err = util.WriteFile(w.Filesystem, "file", []byte("file"), 0o644)
+	s.NoError(err)
+
+	err = w.AddWithOptions(nil)
+	s.Error(err)
+}
+
+func (s *WorktreeSuite) TestWorktreeGrepNilOptions() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	_, err := w.Grep(nil)
+	s.Error(err)
+}
+
+func (s *WorktreeSuite) TestRepositoryGrepNilOptions() {
+	url := s.GetLocalRepositoryURL(fixtures.Basic().ByTag("worktree").One())
+
+	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Bare: true})
+	s.Require().NoError(err)
+
+	_, err = r.Grep(nil)
+	s.Error(err)
 }

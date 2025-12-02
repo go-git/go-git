@@ -1205,6 +1205,10 @@ func (r *Remote) ListContext(ctx context.Context, o *ListOptions) (rfs []*plumbi
 }
 
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
+	if o == nil {
+		o = &ListOptions{}
+	}
+
 	timeout := o.Timeout
 	// Default to the old hardcoded 10s value if a timeout is not explicitly set.
 	if timeout == 0 {
@@ -1219,6 +1223,10 @@ func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
 }
 
 func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
+	if o == nil {
+		o = &ListOptions{}
+	}
+
 	if r.c == nil || len(r.c.URLs) == 0 {
 		return nil, ErrEmptyUrls
 	}
