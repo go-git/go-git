@@ -48,11 +48,11 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 		}
 	}
 
-	if err != nil && err != io.EOF {
-		return err
+	if err == io.EOF {
+		return nil
 	}
 
-	return nil
+	return err
 }
 
 func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
