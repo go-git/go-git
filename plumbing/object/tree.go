@@ -131,16 +131,6 @@ func (t *Tree) Tree(path string) (*Tree, error) {
 	return tree, err
 }
 
-// TreeEntryFile returns the *File for a given *TreeEntry.
-func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
-	blob, err := GetBlob(t.s, e.Hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFile(e.Name, e.Mode, blob), nil
-}
-
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	if t.t == nil {
