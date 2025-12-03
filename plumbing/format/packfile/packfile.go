@@ -39,7 +39,7 @@ type Packfile struct {
 
 	id           plumbing.Hash
 	m            sync.Mutex
-	objectIdSize int //nolint:revive
+	objectIdSize int
 
 	once    sync.Once
 	onceErr error
@@ -342,7 +342,7 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 		}
 
 		obj.SetType(parent.Type())
-		err = ApplyDelta(obj, parent, oh.content) //nolint:ineffassign
+		err = ApplyDelta(obj, parent, oh.content)
 
 	default:
 		err = ErrInvalidObject.AddDetails("type %q", oh.Type)

@@ -54,14 +54,14 @@ func SetLogger(l *log.Logger) {
 // Print prints the given message only if the target is enabled.
 func (t Target) Print(args ...any) {
 	if t.Enabled() {
-		logger.Output(2, fmt.Sprint(args...)) // nolint: errcheck
+		logger.Output(2, fmt.Sprint(args...)) //nolint:errcheck
 	}
 }
 
 // Printf prints the given message only if the target is enabled.
 func (t Target) Printf(format string, args ...any) {
 	if t.Enabled() {
-		logger.Output(2, fmt.Sprintf(format, args...)) // nolint: errcheck
+		logger.Output(2, fmt.Sprintf(format, args...)) //nolint:errcheck
 	}
 }
 

@@ -8,8 +8,6 @@ import (
 )
 
 // PackfileOption configures a Packfile.
-//
-//nolint:revive // stuttering name is acceptable for clarity
 type PackfileOption func(*Packfile)
 
 // WithCache sets the cache to be used throughout Packfile operations.

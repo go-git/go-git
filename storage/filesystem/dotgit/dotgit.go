@@ -1,7 +1,5 @@
-// Package dotgit implements the git directory layout.
+// Package dotgit implements the .git directory layout.
 // https://github.com/git/git/blob/master/Documentation/gitrepository-layout.txt
-//
-//nolint:revive // many exported methods implement interfaces
 package dotgit
 
 import (

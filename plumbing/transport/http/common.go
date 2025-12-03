@@ -188,8 +188,6 @@ func (c *client) SupportedProtocols() []protocol.Version {
 }
 
 // HTTPSession represents a transport session that uses the HTTP protocol.
-//
-//nolint:revive // stuttering name is acceptable for clarity
 type HTTPSession struct {
 	st          storage.Storer
 	auth        AuthMethod
@@ -461,7 +459,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 	if err != nil {
 		if rwc.res != nil {
 			// Make sure the response body is closed.
-			defer packfile.Close() // nolint: errcheck
+			defer packfile.Close() //nolint:errcheck
 		}
 		return err
 	}

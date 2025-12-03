@@ -1,4 +1,3 @@
-//nolint:revive // ObjectWriter methods implement io.WriteCloser interface
 package dotgit
 
 import (

@@ -33,8 +33,8 @@ const (
 	DefaultProtocolVersion = protocol.V0 // go-git only supports V0 at the moment
 )
 
-// Storer is a generic storage of Config object.
-type Storer interface {
+// ConfigStorer is a generic storage of Config object.
+type ConfigStorer interface {
 	Config() (*Config, error)
 	SetConfig(*Config) error
 }

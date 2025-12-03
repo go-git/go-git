@@ -57,7 +57,7 @@ func NewStorage(o ...StorageOption) *Storage {
 	}
 
 	if opts.objectFormat == formatcfg.SHA256 {
-		cfg, _ := s.Config() // nolint: Config() never returns an error.
+		cfg, _ := s.Config() // Config() never returns an error.
 		cfg.Extensions.ObjectFormat = opts.objectFormat
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 	}
@@ -65,7 +65,7 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
-// ConfigStorage implements config.Storer for in-memory storage.
+// ConfigStorage implements config.ConfigStorer for in-memory storage.
 type ConfigStorage struct {
 	config *config.Config
 }

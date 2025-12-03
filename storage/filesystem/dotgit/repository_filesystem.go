@@ -1,4 +1,3 @@
-//nolint:revive // methods implement billy.Filesystem interface
 package dotgit
 
 import (

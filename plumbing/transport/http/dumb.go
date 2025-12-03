@@ -58,7 +58,7 @@ type fetchWalker struct {
 	packIdx map[plumbing.Hash]string
 }
 
-func newFetchWalker(s *HTTPSession, ctx context.Context, fs billy.Filesystem) *fetchWalker { //nolint:revive
+func newFetchWalker(s *HTTPSession, ctx context.Context, fs billy.Filesystem) *fetchWalker {
 	walker := new(fetchWalker)
 	walker.HTTPSession = s
 	walker.ctx = ctx

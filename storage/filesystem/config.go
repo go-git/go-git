@@ -9,7 +9,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// ConfigStorage implements config.Storer for filesystem storage.
+// ConfigStorage implements config.ConfigStorer for filesystem storage.
 type ConfigStorage struct {
 	dir          *dotgit.DotGit
 	objectFormat formatcfg.ObjectFormat

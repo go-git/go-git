@@ -22,7 +22,7 @@ type Storer interface {
 	storer.ReferenceStorer
 	storer.ShallowStorer
 	storer.IndexStorer
-	config.Storer
+	config.ConfigStorer
 	ModuleStorer
 }
 

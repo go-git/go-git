@@ -47,7 +47,6 @@ var (
 	ErrPageantNotFound = errors.New("pageant process not found")
 	// ErrSendMessage is returned when an error occurs sending a message to Pageant.
 	ErrSendMessage = errors.New("error sending message")
-
 	// ErrMessageTooLong is returned when the message exceeds MaxMessageLen.
 	ErrMessageTooLong = errors.New("message too long")
 	// ErrInvalidMessageFormat is returned when the message format is invalid.

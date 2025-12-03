@@ -89,7 +89,7 @@ const (
 	// understood thin packs. Adding 'no-thin' later allowed receive-pack
 	// to disable the feature in a backwards-compatible manner.
 	ThinPack Capability = "thin-pack"
-	// NoThin is the opposite of ThinPack capability.
+	// NoThin is the opposite of the ThinPack capability.
 	NoThin Capability = "no-thin"
 	// Sideband means that server can send, and client understand multiplexed
 	// progress reports and error info interleaved with the packfile itself.
