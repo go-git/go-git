@@ -726,7 +726,7 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 // Symbolic references are resolved and included in the output.
 func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 	var refs []*plumbing.Reference
-	seen := make(map[plumbing.ReferenceName]bool)
+	seen := make(map[plumbing.ReferenceName]struct{})
 	if err := d.addRefFromHEAD(&refs); err != nil {
 		return nil, err
 	}
@@ -755,12 +755,12 @@ func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 func (d *DotGit) findPackedRefsInFile(f billy.File, recv refsRecv) error {
 	s := bufio.NewScanner(f)
 	for s.Scan() {
-		ref, err := d.processLine(s.Text())
+		refName, target, err := d.processLine(s.Text())
 		if err != nil {
 			return err
 		}
 
-		if !recv(ref) {
+		if !recv(refName, target) {
 			// skip parse
 			return nil
 		}
@@ -772,7 +772,7 @@ func (d *DotGit) findPackedRefsInFile(f billy.File, recv refsRecv) error {
 }
 
 // refsRecv: returning true means that the reference continues to be resolved, otherwise it is stopped, which will speed up the lookup of a single reference.
-type refsRecv func(*plumbing.Reference) bool
+type refsRecv func(refName plumbing.ReferenceName, target string) bool
 
 func (d *DotGit) findPackedRefs(recv refsRecv) error {
 	f, err := d.fs.Open(packedRefsPath)
@@ -789,9 +789,9 @@ func (d *DotGit) findPackedRefs(recv refsRecv) error {
 
 func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	var ref *plumbing.Reference
-	if err := d.findPackedRefs(func(r *plumbing.Reference) bool {
-		if r != nil && r.Name() == name {
-			ref = r
+	if err := d.findPackedRefs(func(refName plumbing.ReferenceName, target string) bool {
+		if refName == name {
+			ref = plumbing.NewReferenceFromStrings(string(refName), target)
 			// ref found
 			return false
 		}
@@ -821,21 +821,21 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	return d.rewritePackedRefsWithoutRef(name)
 }
 
-func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
-	return func(r *plumbing.Reference) bool {
-		if r != nil && !seen[r.Name()] {
-			*refs = append(*refs, r)
-			seen[r.Name()] = true
+func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]struct{}) refsRecv {
+	return func(refName plumbing.ReferenceName, target string) bool {
+		if _, ok := seen[refName]; refName != "" && !ok {
+			*refs = append(*refs, plumbing.NewReferenceFromStrings(string(refName), target))
+			seen[refName] = struct{}{}
 		}
 		return true
 	}
 }
 
-func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) (err error) {
+func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]struct{}) (err error) {
 	return d.findPackedRefs(refsRecvFunc(refs, seen))
 }
 
-func (d *DotGit) addRefsFromPackedRefsFile(refs *[]*plumbing.Reference, f billy.File, seen map[plumbing.ReferenceName]bool) (err error) {
+func (d *DotGit) addRefsFromPackedRefsFile(refs *[]*plumbing.Reference, f billy.File, seen map[plumbing.ReferenceName]struct{}) (err error) {
 	return d.findPackedRefsInFile(f, refsRecvFunc(refs, seen))
 }
 
@@ -924,22 +924,24 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		ioutil.CheckClose(tmp, &err)
 		_ = d.fs.Remove(tmpName) // don't check err, we might have renamed it
 	}()
+	// use buffered writer
+	w := bufio.NewWriter(tmp)
 
 	s := bufio.NewScanner(pr)
 	found := false
 	for s.Scan() {
 		line := s.Text()
-		ref, err := d.processLine(line)
+		refName, _, err := d.processLine(line)
 		if err != nil {
 			return err
 		}
 
-		if ref != nil && ref.Name() == name {
+		if refName == name {
 			found = true
 			continue
 		}
 
-		if _, err := fmt.Fprintln(tmp, line); err != nil {
+		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
 	}
@@ -952,35 +954,39 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		return nil
 	}
 
+	if err := w.Flush(); err != nil {
+		return err
+	}
+
 	return d.rewritePackedRefsWhileLocked(tmp, pr)
 }
 
 // process lines from a packed-refs file
-func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
+func (d *DotGit) processLine(line string) (plumbing.ReferenceName, string, error) {
 	if len(line) == 0 {
-		return nil, nil
+		return "", "", nil
 	}
 
 	switch line[0] {
 	case '#': // comment - ignore
-		return nil, nil
+		return "", "", nil
 	case '^': // annotated tag commit of the previous line - ignore
-		return nil, nil
+		return "", "", nil
 	default:
 		ws := strings.Split(line, " ") // hash then ref
 		if len(ws) != 2 {
-			return nil, ErrPackedRefsBadFormat
+			return "", "", ErrPackedRefsBadFormat
 		}
 
-		return plumbing.NewReferenceFromStrings(ws[1], ws[0]), nil
+		return plumbing.ReferenceName(ws[1]), ws[0], nil
 	}
 }
 
-func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) error {
+func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]struct{}) error {
 	return d.walkReferencesTree(refs, []string{refsPath}, seen)
 }
 
-func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string, seen map[plumbing.ReferenceName]bool) error {
+func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string, seen map[plumbing.ReferenceName]struct{}) error {
 	files, err := d.fs.ReadDir(d.fs.Join(relPath...))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1010,9 +1016,11 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []strin
 			return err
 		}
 
-		if ref != nil && !seen[ref.Name()] {
-			*refs = append(*refs, ref)
-			seen[ref.Name()] = true
+		if ref != nil {
+			if _, ok := seen[ref.Name()]; !ok {
+				*refs = append(*refs, ref)
+				seen[ref.Name()] = struct{}{}
+			}
 		}
 	}
 
@@ -1054,7 +1062,7 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 
 func (d *DotGit) CountLooseRefs() (int, error) {
 	var refs []*plumbing.Reference
-	seen := make(map[plumbing.ReferenceName]bool)
+	seen := make(map[plumbing.ReferenceName]struct{})
 	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
 		return 0, err
 	}
@@ -1087,7 +1095,7 @@ func (d *DotGit) PackRefs() (err error) {
 
 	// Gather all refs using addRefsFromRefDir and addRefsFromPackedRefs.
 	var refs []*plumbing.Reference
-	seen := make(map[plumbing.ReferenceName]bool)
+	seen := make(map[plumbing.ReferenceName]struct{})
 	if err = d.addRefsFromRefDir(&refs, seen); err != nil {
 		return err
 	}
