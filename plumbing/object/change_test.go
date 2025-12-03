@@ -79,7 +79,7 @@ func (s *ChangeSuite) TestInsert() {
 	from, to, err := change.Files()
 	s.NoError(err)
 	s.Nil(from)
-	s.Equal(name, to.Name)
+	s.Equal(path, to.Name)
 	s.Equal(blob, to.Hash)
 
 	p, err := change.Patch()
@@ -137,7 +137,7 @@ func (s *ChangeSuite) TestDelete() {
 	from, to, err := change.Files()
 	s.NoError(err)
 	s.Nil(to)
-	s.Equal(name, from.Name)
+	s.Equal(path, from.Name)
 	s.Equal(blob, from.Hash)
 
 	p, err := change.Patch()
@@ -207,9 +207,9 @@ func (s *ChangeSuite) TestModify() {
 	from, to, err := change.Files()
 	s.NoError(err)
 
-	s.Equal(name, from.Name)
+	s.Equal(path, from.Name)
 	s.Equal(fromBlob, from.Hash)
-	s.Equal(name, to.Name)
+	s.Equal(path, to.Name)
 	s.Equal(toBlob, to.Hash)
 
 	p, err := change.Patch()
@@ -334,7 +334,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected() {
 	}
 
 	_, _, err := change.Files()
-	s.ErrorContains(err, "object not found")
+	s.ErrorContains(err, "file not found")
 
 	change = &Change{
 		From: empty,
@@ -350,7 +350,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected() {
 	}
 
 	_, _, err = change.Files()
-	s.ErrorContains(err, "object not found")
+	s.ErrorContains(err, "file not found")
 }
 
 func (s *ChangeSuite) TestChangesString() {
