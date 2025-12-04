@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -169,7 +170,17 @@ func parseFile(endpoint string) (*Endpoint, bool) {
 		return nil, false
 	}
 
+	relative := ".." + string(filepath.Separator)
+
 	path := endpoint
+	if strings.HasPrefix(endpoint, relative) {
+		var err error
+		path, err = filepath.Abs(endpoint)
+		if err != nil {
+			return nil, false
+		}
+	}
+
 	return &Endpoint{
 		URL: url.URL{
 			Scheme: "file",
