@@ -352,7 +352,7 @@ func (se sortableEntries) Swap(i, j int)      { se[i], se[j] = se[j], se[i] }
 func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
 	sort.Sort(sortableEntries(t.Entries))
 	for i, e := range t.Entries {
-		if e.Mode != filemode.Dir && !e.Hash.IsZero() {
+		if e.Mode != filemode.Dir {
 			continue
 		}
 
