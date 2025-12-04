@@ -9,7 +9,9 @@ import (
 )
 
 type (
+	// PruneHandler is called for each unreferenced object during pruning.
 	PruneHandler func(unreferencedObjectHash plumbing.Hash) error
+	// PruneOptions configures the prune operation.
 	PruneOptions struct {
 		// OnlyObjectsOlderThan if set to non-zero value
 		// selects only objects older than the time provided.
@@ -19,6 +21,7 @@ type (
 	}
 )
 
+// ErrLooseObjectsNotSupported is returned when the storage does not support loose objects.
 var ErrLooseObjectsNotSupported = errors.New("loose objects not supported")
 
 // DeleteObject deletes an object from a repository.
@@ -32,6 +35,7 @@ func (r *Repository) DeleteObject(hash plumbing.Hash) error {
 	return los.DeleteLooseObject(hash)
 }
 
+// Prune removes unreferenced loose objects from the repository.
 func (r *Repository) Prune(opt PruneOptions) error {
 	los, ok := r.Storer.(storer.LooseObjectStorer)
 	if !ok {

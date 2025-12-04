@@ -39,15 +39,15 @@ func (c *mockConnection) StatelessRPC() bool {
 	return false
 }
 
-func (c *mockConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+func (c *mockConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	return nil, nil
 }
 
-func (c *mockConnection) Fetch(ctx context.Context, req *FetchRequest) error {
+func (c *mockConnection) Fetch(_ context.Context, _ *FetchRequest) error {
 	return nil
 }
 
-func (c *mockConnection) Push(ctx context.Context, req *PushRequest) error {
+func (c *mockConnection) Push(_ context.Context, _ *PushRequest) error {
 	return nil
 }
 
@@ -427,6 +427,6 @@ type errorReader struct {
 	err error
 }
 
-func (r *errorReader) Read(p []byte) (int, error) {
+func (r *errorReader) Read(_ []byte) (int, error) {
 	return 0, r.err
 }

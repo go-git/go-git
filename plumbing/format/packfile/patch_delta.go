@@ -19,6 +19,7 @@ import (
 // and https://github.com/tarruda/node-git-core/blob/master/src/js/delta.js
 // for details about the delta format.
 
+// Delta errors.
 var (
 	ErrInvalidDelta = errors.New("invalid delta")
 	ErrDeltaCmd     = errors.New("wrong delta command")
@@ -106,6 +107,7 @@ func PatchDelta(src, delta []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// ReaderFromDelta returns a reader that applies a delta to a base object.
 func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadCloser, error) {
 	deltaBuf := bufio.NewReaderSize(deltaRC, 1024)
 	srcSz, err := decodeLEB128ByteReader(deltaBuf)

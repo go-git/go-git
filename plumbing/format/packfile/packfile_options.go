@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )
 
+// PackfileOption configures a Packfile.
 type PackfileOption func(*Packfile)
 
 // WithCache sets the cache to be used throughout Packfile operations.

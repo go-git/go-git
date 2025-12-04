@@ -6,6 +6,7 @@ type Matcher interface {
 	Match(path, attributes []string) (map[string]Attribute, bool)
 }
 
+// MatcherOptions contains options for the Matcher.
 type MatcherOptions struct{}
 
 // NewMatcher constructs a new matcher. Patterns must be given in the order of

@@ -247,7 +247,7 @@ func (s *FileSuite) TestFileIter() {
 
 	count = 0
 	i = tree.Files()
-	i.ForEach(func(f *File) error {
+	i.ForEach(func(_ *File) error {
 		count++
 		return storer.ErrStop
 	})

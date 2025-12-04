@@ -11,6 +11,7 @@ type ioret struct {
 	n   int
 }
 
+// Writer is an interface for io.Writer.
 type Writer interface {
 	io.Writer
 }
@@ -34,7 +35,7 @@ type ctxWriter struct {
 // Furthermore, in order to protect your memory from being read
 // _after_ you've cancelled the context, this io.Writer will
 // first make a **copy** of the buffer.
-func NewContextWriter(ctx context.Context, w io.Writer) *ctxWriter {
+func NewContextWriter(ctx context.Context, w io.Writer) io.Writer {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -63,6 +64,7 @@ func (w *ctxWriter) Write(buf []byte) (int, error) {
 	}
 }
 
+// Reader is an interface for io.Reader.
 type Reader interface {
 	io.Reader
 }
@@ -88,7 +90,7 @@ type ctxReader struct {
 // _before_ you've cancelled the context, this io.Reader will
 // allocate a buffer of the same size, and **copy** into the client's
 // if the read succeeds in time.
-func NewContextReader(ctx context.Context, r io.Reader) *ctxReader {
+func NewContextReader(ctx context.Context, r io.Reader) io.Reader {
 	return &ctxReader{ctx: ctx, r: r}
 }
 
@@ -118,6 +120,8 @@ func (r *ctxReader) Read(buf []byte) (int, error) {
 	}
 }
 
-func NewContextReaderWithCloser(ctx context.Context, r io.Reader, closer io.Closer) *ctxReader {
+// NewContextReaderWithCloser wraps a reader to make it respect given Context,
+// and closes the closer when the context is done.
+func NewContextReaderWithCloser(ctx context.Context, r io.Reader, closer io.Closer) io.Reader {
 	return &ctxReader{ctx: ctx, r: r, closer: closer}
 }

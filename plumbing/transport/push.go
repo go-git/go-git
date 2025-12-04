@@ -69,7 +69,7 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 // SendPack is a function that sends a packfile to a remote server.
 func SendPack(
 	ctx context.Context,
-	st storage.Storer,
+	_ storage.Storer,
 	conn Connection,
 	writer io.WriteCloser,
 	reader io.ReadCloser,

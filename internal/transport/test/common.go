@@ -10,12 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FixturesFactory returns a function that creates a fixture path.
 func FixturesFactory(base, name string) func() string {
 	return func() string {
 		return filepath.Join(base, name)
 	}
 }
 
+// PrepareRepository creates a bare repository from a fixture.
 func PrepareRepository(t testing.TB, f *fixtures.Fixture, base, name string) billy.Filesystem {
 	fs := f.DotGit(fixtures.WithTargetDir(FixturesFactory(base, name)))
 	err := fixtures.EnsureIsBare(fs)
@@ -23,6 +25,7 @@ func PrepareRepository(t testing.TB, f *fixtures.Fixture, base, name string) bil
 	return fs
 }
 
+// FreePort returns an available TCP port on localhost.
 func FreePort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {

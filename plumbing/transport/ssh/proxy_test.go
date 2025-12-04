@@ -24,7 +24,7 @@ func TestProxySuite(t *testing.T) {
 
 type TestProxyRule struct{ proxiedRequests int }
 
-func (dr *TestProxyRule) Allow(ctx context.Context, req *socks5.Request) (context.Context, bool) {
+func (dr *TestProxyRule) Allow(ctx context.Context, _ *socks5.Request) (context.Context, bool) {
 	dr.proxiedRequests++
 	return ctx, true
 }

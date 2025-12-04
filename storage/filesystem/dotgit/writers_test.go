@@ -154,7 +154,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	w, err := newPackWrite(fs)
 	require.NoError(t, err)
 
-	w.Notify = func(h plumbing.Hash, idx *idxfile.Writer) {
+	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
 		t.Fatal("unexpected call to PackWriter.Notify")
 	}
 

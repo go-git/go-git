@@ -29,6 +29,7 @@ var RefRevParseRules = []string{
 }
 
 var (
+	// ErrReferenceNotFound is returned when a reference is not found.
 	ErrReferenceNotFound = errors.New("reference not found")
 
 	// ErrInvalidReferenceName is returned when a reference name is invalid.
@@ -39,8 +40,11 @@ var (
 type ReferenceType int8
 
 const (
-	InvalidReference  ReferenceType = 0
-	HashReference     ReferenceType = 1
+	// InvalidReference represents an invalid reference type.
+	InvalidReference ReferenceType = 0
+	// HashReference represents a hash reference.
+	HashReference ReferenceType = 1
+	// SymbolicReference represents a symbolic reference.
 	SymbolicReference ReferenceType = 2
 )
 
@@ -212,9 +216,12 @@ func (r ReferenceName) Validate() error {
 }
 
 const (
-	HEAD   ReferenceName = "HEAD"
+	// HEAD is the special reference pointing to the current branch.
+	HEAD ReferenceName = "HEAD"
+	// Master is the master branch reference.
 	Master ReferenceName = "refs/heads/master"
-	Main   ReferenceName = "refs/heads/main"
+	// Main is the main branch reference.
+	Main ReferenceName = "refs/heads/main"
 )
 
 // Reference is a representation of git reference

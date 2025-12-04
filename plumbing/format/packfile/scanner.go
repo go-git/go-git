@@ -186,6 +186,7 @@ func (r *Scanner) Error() error {
 	return r.err
 }
 
+// SeekFromStart seeks to the given offset from the start of the packfile.
 func (r *Scanner) SeekFromStart(offset int64) error {
 	r.Reset()
 
@@ -197,7 +198,8 @@ func (r *Scanner) SeekFromStart(offset int64) error {
 	return err
 }
 
-func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
+// WriteObject writes the content of the given ObjectHeader to the provided writer.
+func (r *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	if oh.content != nil && oh.content.Len() > 0 {
 		_, err := ioutil.CopyBufferPool(writer, oh.content)
 		return err
@@ -211,11 +213,11 @@ func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	}
 
 	// Not a seeker data source.
-	if s.seeker == nil {
+	if r.seeker == nil {
 		return plumbing.ErrObjectNotFound
 	}
 
-	err := s.inflateContent(oh.ContentOffset, writer)
+	err := r.inflateContent(oh.ContentOffset, writer)
 	if err != nil {
 		return ErrReferenceDeltaNotFound
 	}
@@ -223,24 +225,20 @@ func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	return nil
 }
 
-func (s *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
-	_, err := s.Seek(contentOffset, io.SeekStart)
+func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
+	_, err := r.Seek(contentOffset, io.SeekStart)
 	if err != nil {
 		return err
 	}
 
-	zr, err := gogitsync.GetZlibReader(s.scannerReader)
+	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
 		return fmt.Errorf("zlib reset error: %s", err)
 	}
 	defer gogitsync.PutZlibReader(zr)
 
 	_, err = ioutil.CopyBufferPool(writer, zr)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // scan goes through the next stateFn.

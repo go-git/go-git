@@ -117,7 +117,7 @@ func (s *ReferenceSuite) TestCommit() {
 	s.NoError(err)
 
 	var count int
-	iter.ForEach(func(ref *plumbing.Reference) error {
+	iter.ForEach(func(*plumbing.Reference) error {
 		count++
 		return nil
 	})
@@ -150,7 +150,7 @@ func (s *ReferenceSuite) TestCommitDelete() {
 	s.NoError(err)
 
 	var count int
-	iter.ForEach(func(ref *plumbing.Reference) error {
+	iter.ForEach(func(*plumbing.Reference) error {
 		count++
 		return nil
 	})

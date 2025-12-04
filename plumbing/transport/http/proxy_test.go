@@ -112,9 +112,9 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
 var certs embed.FS
 
 // Make sure you close the server after the test.
-func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool) string {
+func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool) string {
 	schema := "http"
-	if isTls {
+	if isTLS {
 		schema = "https"
 	}
 
@@ -132,7 +132,7 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 		Handler: handler,
 	}
 
-	if isTls {
+	if isTLS {
 		certf, err := certs.Open("testdata/certs/server.crt")
 		assert.NoError(t, err)
 		defer certf.Close()
@@ -161,7 +161,7 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 	go func() {
 		defer func() { close(done) }()
 		var err error
-		if isTls {
+		if isTLS {
 			err = proxyServer.ServeTLS(httpListener, "", "")
 		} else {
 			err = proxyServer.Serve(httpListener)
@@ -180,7 +180,7 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 
 func setupHTTPProxy(proxy *goproxy.ProxyHttpServer, proxiedRequests *int32) {
 	// The request is being forwarded to the local test git server in this handler.
-	var proxyHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	var proxyHandler goproxy.FuncReqHandler = func(req *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 		if strings.Contains(req.Host, "localhost") {
 			user, pass, _ := parseBasicAuth(req.Header.Get("Proxy-Authorization"))
 			if user != "user" || pass != "pass" {

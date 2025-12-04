@@ -9,16 +9,16 @@ import "errors"
 type RepositoryFormatVersion string
 
 const (
-	// Version_0 is the format defined by the initial version of git,
+	// Version0 is the format defined by the initial version of git,
 	// including but not limited to the format of the repository
 	// directory, the repository configuration file, and the object
 	// and ref storage.
 	//
 	// Specifying the complete behavior of git is beyond the scope
 	// of this document.
-	Version_0 = "0"
+	Version0 = "0"
 
-	// Version_1 is identical to version 0, with the following exceptions:
+	// Version1 is identical to version 0, with the following exceptions:
 	//
 	//   1. When reading the core.repositoryformatversion variable, a git
 	//		implementation which supports version 1 MUST also read any
@@ -34,10 +34,10 @@ const (
 	// core.repositoryformatversion SHOULD be set to 0 (setting it to 1 provides
 	// no benefit, and makes the repository incompatible with older
 	// implementations of git).
-	Version_1 = "1"
+	Version1 = "1"
 
 	// DefaultRepositoryFormatVersion holds the default repository format version.
-	DefaultRepositoryFormatVersion = Version_0
+	DefaultRepositoryFormatVersion = Version0
 )
 
 // ObjectFormat defines the object format.

@@ -242,6 +242,7 @@ func hashBlock(raw []byte, ptr int) int {
 	return int(hash)
 }
 
+// T is the hash lookup table for delta index computation.
 var T = []uint32{
 	0x00000000, 0xd4c6b32d, 0x7d4bd577,
 	0xa98d665a, 0x2e5119c3, 0xfa97aaee, 0x531accb4, 0x87dc7f99,

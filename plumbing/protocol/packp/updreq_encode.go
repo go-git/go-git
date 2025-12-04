@@ -33,15 +33,15 @@ func (req *UpdateRequests) encodeShallow(w io.Writer,
 		return nil
 	}
 
-	objId := []byte(h.String())
-	_, err := pktline.Writef(w, "%s%s", shallow, objId)
+	objID := []byte(h.String())
+	_, err := pktline.Writef(w, "%s%s", shallow, objID)
 	return err
 }
 
 func (req *UpdateRequests) encodeCommands(w io.Writer,
-	cmds []*Command, cap *capability.List,
+	cmds []*Command, caps *capability.List,
 ) error {
-	capStr := cap.String()
+	capStr := caps.String()
 	if len(capStr) > 0 {
 		// Canonical Git adds a space before the capabilities.
 		// See https://github.com/git/git/blob/57da342c786f59eaeb436c18635cc1c7597733d9/send-pack.c#L594

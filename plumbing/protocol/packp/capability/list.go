@@ -183,13 +183,13 @@ func (l *List) All() []Capability {
 func (l *List) String() string {
 	var o []string
 	for _, key := range l.sort {
-		cap := l.m[Capability(key)]
-		if len(cap.Values) == 0 {
+		c := l.m[Capability(key)]
+		if len(c.Values) == 0 {
 			o = append(o, key)
 			continue
 		}
 
-		for _, value := range cap.Values {
+		for _, value := range c.Values {
 			o = append(o, fmt.Sprintf("%s=%s", key, value))
 		}
 	}

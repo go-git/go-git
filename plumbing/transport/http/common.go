@@ -459,7 +459,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 	if err != nil {
 		if rwc.res != nil {
 			// Make sure the response body is closed.
-			defer packfile.Close() // nolint: errcheck
+			defer packfile.Close() //nolint:errcheck
 		}
 		return err
 	}
@@ -468,7 +468,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 }
 
 // GetRemoteRefs implements transport.Connection.
-func (s *HTTPSession) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+func (s *HTTPSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -563,6 +563,7 @@ func (r *requester) Write(p []byte) (n int, err error) {
 	return r.reqBuf.Write(p)
 }
 
+// ApplyAuthToRequest applies the session's auth to the request.
 func (s *HTTPSession) ApplyAuthToRequest(req *http.Request) {
 	if s.auth == nil {
 		return
@@ -571,6 +572,7 @@ func (s *HTTPSession) ApplyAuthToRequest(req *http.Request) {
 	s.auth.SetAuth(req)
 }
 
+// Close closes the session.
 func (*HTTPSession) Close() error {
 	return nil
 }
@@ -596,6 +598,7 @@ type BasicAuth struct {
 	Username, Password string
 }
 
+// SetAuth sets the basic auth on the request.
 func (a *BasicAuth) SetAuth(r *http.Request) {
 	if a == nil {
 		return
@@ -630,6 +633,7 @@ type TokenAuth struct {
 	Token string
 }
 
+// SetAuth sets the token auth on the request.
 func (a *TokenAuth) SetAuth(r *http.Request) {
 	if a == nil {
 		return

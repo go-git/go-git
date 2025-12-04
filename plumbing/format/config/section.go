@@ -31,13 +31,16 @@ type Section struct {
 	Subsections Subsections
 }
 
+// Subsection is a subsection of a Section.
 type Subsection struct {
 	Name    string
 	Options Options
 }
 
+// Sections is a collection of Section.
 type Sections []*Section
 
+// GoString returns a Go-syntax representation of Sections.
 func (s Sections) GoString() string {
 	strs := make([]string, 0, len(s))
 	for _, ss := range s {
@@ -47,8 +50,10 @@ func (s Sections) GoString() string {
 	return strings.Join(strs, ", ")
 }
 
+// Subsections is a collection of Subsection.
 type Subsections []*Subsection
 
+// GoString returns a Go-syntax representation of Subsections.
 func (s Subsections) GoString() string {
 	strs := make([]string, 0, len(s))
 	for _, ss := range s {
@@ -132,7 +137,7 @@ func (s *Section) SetOption(key, value string) *Section {
 	return s
 }
 
-// Remove an option with the specified key. The updated Section is returned.
+// RemoveOption removes an option with the specified key. The updated Section is returned.
 func (s *Section) RemoveOption(key string) *Section {
 	s.Options = s.Options.withoutOption(key)
 	return s

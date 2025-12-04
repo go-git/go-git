@@ -87,10 +87,10 @@ func (c *Change) Patch() (*Patch, error) {
 	return c.PatchContext(context.Background())
 }
 
-// Patch returns a Patch with all the file changes in chunks. This
+// PatchContext returns a Patch with all the file changes in chunks. This
 // representation can be used to create several diff outputs.
-// If context expires, an non-nil error will be returned
-// Provided context must be non-nil
+// If context expires, an non-nil error will be returned.
+// Provided context must be non-nil.
 func (c *Change) PatchContext(ctx context.Context) (*Patch, error) {
 	return getPatchContext(ctx, "", c)
 }
@@ -150,10 +150,10 @@ func (c Changes) Patch() (*Patch, error) {
 	return c.PatchContext(context.Background())
 }
 
-// Patch returns a Patch with all the changes in chunks. This
+// PatchContext returns a Patch with all the changes in chunks. This
 // representation can be used to create several diff outputs.
-// If context expires, an non-nil error will be returned
-// Provided context must be non-nil
+// If context expires, an non-nil error will be returned.
+// Provided context must be non-nil.
 func (c Changes) PatchContext(ctx context.Context) (*Patch, error) {
 	return getPatchContext(ctx, "", c...)
 }

@@ -1,4 +1,5 @@
-package path_util
+// Package pathutil provides path utility functions.
+package pathutil
 
 import (
 	"os"
@@ -6,6 +7,8 @@ import (
 	"strings"
 )
 
+// ReplaceTildeWithHome replaces the tilde character at the beginning of a path
+// with the appropriate home directory.
 func ReplaceTildeWithHome(path string) (string, error) {
 	if strings.HasPrefix(path, "~") {
 		firstSlash := strings.Index(path, "/")

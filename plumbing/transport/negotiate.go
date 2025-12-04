@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// Negotiation errors.
 var (
 	ErrFilterNotSupported  = errors.New("server does not support filters")
 	ErrShallowNotSupported = errors.New("server does not support shallow clients")
@@ -39,19 +40,19 @@ func NegotiatePack(
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
 	if multiAckDetailed {
-		upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
+		upreq.Capabilities.Set(capability.MultiACKDetailed) //nolint:errcheck
 	} else if multiAck {
-		upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
+		upreq.Capabilities.Set(capability.MultiACK) //nolint:errcheck
 	}
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			upreq.Capabilities.Set(capability.Sideband64k) // nolint: errcheck
+			upreq.Capabilities.Set(capability.Sideband64k) //nolint:errcheck
 		} else if caps.Supports(capability.Sideband) {
-			upreq.Capabilities.Set(capability.Sideband) // nolint: errcheck
+			upreq.Capabilities.Set(capability.Sideband) //nolint:errcheck
 		}
 	} else if caps.Supports(capability.NoProgress) {
-		upreq.Capabilities.Set(capability.NoProgress) // nolint: errcheck
+		upreq.Capabilities.Set(capability.NoProgress) //nolint:errcheck
 	}
 
 	// TODO: support thin-pack
@@ -60,15 +61,15 @@ func NegotiatePack(
 	// }
 
 	if caps.Supports(capability.OFSDelta) {
-		upreq.Capabilities.Set(capability.OFSDelta) // nolint: errcheck
+		upreq.Capabilities.Set(capability.OFSDelta) //nolint:errcheck
 	}
 
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) // nolint: errcheck
+		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) //nolint:errcheck
 	}
 
 	if req.IncludeTags && caps.Supports(capability.IncludeTag) {
-		upreq.Capabilities.Set(capability.IncludeTag) // nolint: errcheck
+		upreq.Capabilities.Set(capability.IncludeTag) //nolint:errcheck
 	}
 
 	if req.Filter != "" {

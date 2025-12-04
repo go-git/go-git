@@ -1,3 +1,4 @@
+// Package filemode provides types and utilities for working with git file modes.
 package filemode
 
 import (

@@ -1,3 +1,4 @@
+// Package git provides a Git transport backend for the git protocol.
 package git
 
 import (

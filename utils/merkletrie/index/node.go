@@ -1,3 +1,4 @@
+// Package index provides a merkletrie noder implementation for git index entries.
 package index
 
 import (
@@ -25,6 +26,7 @@ type node struct {
 	upholdExecutableBit bool
 }
 
+// RootNodeOptions contains configuration for the root node.
 type RootNodeOptions struct {
 	UpholdExecutableBit bool
 }

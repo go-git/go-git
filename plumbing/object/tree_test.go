@@ -112,7 +112,7 @@ func (s *TreeSuite) TestSize() {
 
 func (s *TreeSuite) TestFiles() {
 	var count int
-	err := s.Tree.Files().ForEach(func(f *File) error {
+	err := s.Tree.Files().ForEach(func(_ *File) error {
 		count++
 		return nil
 	})
@@ -327,7 +327,7 @@ func (s *TreeSuite) TestTreeIter() {
 		t.s = nil
 		s.NoError(err)
 		s.Equal(trees[i], t)
-		i += 1
+		i++
 	}
 
 	iter.Close()

@@ -503,11 +503,11 @@ func makeChangeEntry(f *File) ChangeEntry {
 	}
 }
 
-func makeAdd(s *RenameSuite, f *File) *Change {
+func makeAdd(_ *RenameSuite, f *File) *Change {
 	return makeChange(nil, f)
 }
 
-func makeDelete(s *RenameSuite, f *File) *Change {
+func makeDelete(_ *RenameSuite, f *File) *Change {
 	return makeChange(f, nil)
 }
 

@@ -25,7 +25,7 @@ type flushResponseWriter struct {
 
 // ReadFrom implements io.ReaderFrom interface.
 func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
-	flusher := http.NewResponseController(f.ResponseWriter) // nolint: bodyclose
+	flusher := http.NewResponseController(f.ResponseWriter)
 
 	var n int64
 	p := make([]byte, f.chunkSize)

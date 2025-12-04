@@ -171,7 +171,7 @@ func (p *packConnection) Capabilities() *capability.List {
 }
 
 // GetRemoteRefs implements Connection.
-func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+func (p *packConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	if p.refs == nil {
 		// TODO: return appropriate error
 		return nil, ErrEmptyRemoteRepository

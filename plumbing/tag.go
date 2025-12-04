@@ -3,6 +3,7 @@ package plumbing
 // TagMode defines how the tags will be fetched from the remote repository.
 type TagMode int
 
+// Tag modes for fetching tags.
 const (
 	InvalidTagMode TagMode = iota
 	// TagFollowing any tag that points into the histories being fetched is also

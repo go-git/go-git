@@ -56,6 +56,7 @@ func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
 	}
 }
 
+// Finished returns true if the writer has finished writing.
 func (w *Writer) Finished() bool {
 	return w.finished
 }
@@ -68,7 +69,7 @@ func (w *Writer) OnHeader(count uint32) error {
 }
 
 // OnInflatedObjectHeader implements packfile.Observer interface.
-func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize, pos int64) error {
+func (w *Writer) OnInflatedObjectHeader(_ plumbing.ObjectType, _, _ int64) error {
 	return nil
 }
 

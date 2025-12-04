@@ -30,15 +30,18 @@ type zlibReadCloser interface {
 	zlib.Resetter
 }
 
+// ZLibReader is a poolable zlib reader.
 type ZLibReader struct {
 	dict   *[]byte
 	reader zlibReadCloser
 }
 
+// Read reads data from the zlib reader.
 func (r *ZLibReader) Read(p []byte) (int, error) {
 	return r.reader.Read(p)
 }
 
+// Close closes the zlib reader.
 func (r *ZLibReader) Close() error {
 	return r.reader.Close()
 }

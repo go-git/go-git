@@ -41,18 +41,26 @@ type Index interface {
 
 // MemoryIndex is the in memory representation of an idx file.
 type MemoryIndex struct {
+	// Version is the version of the index file.
 	Version uint32
-	Fanout  [256]uint32
+	// Fanout is a table where the Nth entry is the cumulative count of objects with the first byte of their name <= N.
+	Fanout [256]uint32
 	// FanoutMapping maps the position in the fanout table to the position
 	// in the Names, Offset32 and CRC32 slices. This improves the memory
 	// usage by not needing an array with unnecessary empty slots.
-	FanoutMapping    [256]int
-	Names            [][]byte
-	Offset32         [][]byte
-	CRC32            [][]byte
-	Offset64         []byte
+	FanoutMapping [256]int
+	// Names is the list of object names.
+	Names [][]byte
+	// Offset32 is the list of 32-bit offsets.
+	Offset32 [][]byte
+	// CRC32 is the list of CRC32 checksums.
+	CRC32 [][]byte
+	// Offset64 is the list of 64-bit offsets.
+	Offset64 []byte
+	// PackfileChecksum is the checksum of the packfile.
 	PackfileChecksum plumbing.Hash
-	IdxChecksum      plumbing.Hash
+	// IdxChecksum is the checksum of the index file.
+	IdxChecksum plumbing.Hash
 
 	offsetHash      map[int64]plumbing.Hash
 	offsetBuildOnce sync.Once

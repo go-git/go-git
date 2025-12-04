@@ -12,6 +12,7 @@ func newOptions() options {
 	}
 }
 
+// StorageOption is a function that configures storage options.
 type StorageOption func(*options)
 
 // WithObjectFormat sets the storage's object format.

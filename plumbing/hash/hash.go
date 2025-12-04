@@ -1,4 +1,4 @@
-// package hash provides a way for managing the
+// Package hash provides a way for managing the
 // underlying hash implementations used across go-git.
 package hash
 
@@ -13,6 +13,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
+// ErrUnsupportedHashFunction is returned when an unsupported hash function is used.
 var ErrUnsupportedHashFunction = errors.New("unsupported hash function")
 
 // algos is a map of hash algorithms.

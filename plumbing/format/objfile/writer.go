@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
+// ErrOverflow is returned when the declared data length is exceeded.
 var ErrOverflow = errors.New("objfile: declared data length exceeded (overflow)")
 
 // Writer writes and encodes data in compressed objfile format to a provided

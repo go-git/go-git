@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// MaxResolveRecursion is the maximum number of recursions allowed when resolving references.
 const MaxResolveRecursion = 1024
 
 // ErrMaxResolveRecursion is returned by ResolveReference is MaxResolveRecursion
@@ -20,7 +21,7 @@ type ReferenceStorer interface {
 	// not `nil`, it first checks that the current stored value for
 	// `old.Name()` matches the given reference value in `old`.  If
 	// not, it returns an error and doesn't update `new`.
-	CheckAndSetReference(new, old *plumbing.Reference) error
+	CheckAndSetReference(newRef, old *plumbing.Reference) error
 	Reference(plumbing.ReferenceName) (*plumbing.Reference, error)
 	IterReferences() (ReferenceIter, error)
 	RemoveReference(plumbing.ReferenceName) error

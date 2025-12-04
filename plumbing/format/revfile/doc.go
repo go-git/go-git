@@ -1,4 +1,4 @@
-// The revfile package implements encoding and decoding logic of reverse
+// Package revfile implements encoding and decoding logic of reverse
 // index files (RIDX).
 //
 // This package is thread-safe.

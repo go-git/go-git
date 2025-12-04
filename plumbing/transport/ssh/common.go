@@ -45,6 +45,7 @@ var DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 	return NewSSHAgentAuth(user)
 }
 
+// DefaultPort is the default port for the SSH protocol.
 const DefaultPort = 22
 
 type runner struct {
@@ -190,13 +191,13 @@ func dial(ctx context.Context, network, addr string, proxyOpts transport.ProxyOp
 	var dialErr error
 
 	if proxyOpts.URL != "" {
-		proxyUrl, err := proxyOpts.FullURL()
+		proxyURL, err := proxyOpts.FullURL()
 		if err != nil {
 			return nil, err
 		}
 
-		trace.SSH.Printf("ssh: using proxyURL=%s", proxyUrl)
-		dialer, err := proxy.FromURL(proxyUrl, proxy.Direct)
+		trace.SSH.Printf("ssh: using proxyURL=%s", proxyURL)
+		dialer, err := proxy.FromURL(proxyURL, proxy.Direct)
 		if err != nil {
 			return nil, err
 		}

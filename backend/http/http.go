@@ -1,3 +1,5 @@
+// Package http provides a Git HTTP backend handler for serving git repositories
+// over HTTP using the Smart-HTTP and Dumb-HTTP protocols.
 package http
 
 import (
@@ -41,8 +43,8 @@ var services = []service{
 
 	// TODO: Support git-upload-archive
 	// {regexp.MustCompile("(.*?)/git-upload-archive$"), http.MethodPost, serviceRpc, transport.UploadArchiveService},
-	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, serviceRpc, transport.UploadPackService},
-	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRpc, transport.ReceivePackService},
+	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, serviceRPC, transport.UploadPackService},
+	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRPC, transport.ReceivePackService},
 }
 
 // Backend represents a Git HTTP handler.
@@ -126,7 +128,7 @@ func logf(logger *log.Logger, format string, v ...any) {
 	}
 }
 
-func serviceRpc(w http.ResponseWriter, r *http.Request) {
+func serviceRPC(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	st, ok := ctx.Value(contextKey("storer")).(storage.Storer)
 	if !ok {

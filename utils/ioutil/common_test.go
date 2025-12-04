@@ -60,7 +60,7 @@ func (s *CommonSuite) TestNewReadCloser() {
 
 func (s *CommonSuite) TestNewContextReader() {
 	buf := bytes.NewBuffer([]byte("12"))
-	ctx, close := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	r := NewContextReader(ctx, buf)
 
@@ -69,7 +69,7 @@ func (s *CommonSuite) TestNewContextReader() {
 	s.Equal(1, n)
 	s.NoError(err)
 
-	close()
+	cancel()
 	n, err = r.Read(b)
 	s.Equal(0, n)
 	s.NotNil(err)
@@ -77,7 +77,7 @@ func (s *CommonSuite) TestNewContextReader() {
 
 func (s *CommonSuite) TestNewContextReadCloser() {
 	buf := NewReadCloser(bytes.NewBuffer([]byte("12")), &closer{})
-	ctx, close := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	r := NewContextReadCloser(ctx, buf)
 
@@ -86,7 +86,7 @@ func (s *CommonSuite) TestNewContextReadCloser() {
 	s.Equal(1, n)
 	s.NoError(err)
 
-	close()
+	cancel()
 	n, err = r.Read(b)
 	s.Equal(0, n)
 	s.NotNil(err)
@@ -96,7 +96,7 @@ func (s *CommonSuite) TestNewContextReadCloser() {
 
 func (s *CommonSuite) TestNewContextWriter() {
 	buf := bytes.NewBuffer(nil)
-	ctx, close := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	r := NewContextWriter(ctx, buf)
 
@@ -104,7 +104,7 @@ func (s *CommonSuite) TestNewContextWriter() {
 	s.Equal(1, n)
 	s.NoError(err)
 
-	close()
+	cancel()
 	n, err = r.Write([]byte("1"))
 	s.Equal(0, n)
 	s.NotNil(err)
@@ -112,7 +112,7 @@ func (s *CommonSuite) TestNewContextWriter() {
 
 func (s *CommonSuite) TestNewContextWriteCloser() {
 	buf := NewWriteCloser(bytes.NewBuffer(nil), &closer{})
-	ctx, close := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	w := NewContextWriteCloser(ctx, buf)
 
@@ -120,7 +120,7 @@ func (s *CommonSuite) TestNewContextWriteCloser() {
 	s.Equal(1, n)
 	s.NoError(err)
 
-	close()
+	cancel()
 	n, err = w.Write([]byte("1"))
 	s.Equal(0, n)
 	s.NotNil(err)
@@ -131,14 +131,14 @@ func (s *CommonSuite) TestNewContextWriteCloser() {
 func (s *CommonSuite) TestNewWriteCloserOnError() {
 	buf := NewWriteCloser(bytes.NewBuffer(nil), &closer{})
 
-	ctx, close := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var called error
 	w := NewWriteCloserOnError(NewContextWriteCloser(ctx, buf), func(err error) {
 		called = err
 	})
 
-	close()
+	cancel()
 	w.Write(nil)
 
 	s.NotNil(called)
@@ -146,14 +146,14 @@ func (s *CommonSuite) TestNewWriteCloserOnError() {
 
 func (s *CommonSuite) TestNewReadCloserOnError() {
 	buf := NewReadCloser(bytes.NewBuffer(nil), &closer{})
-	ctx, close := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var called error
 	w := NewReadCloserOnError(NewContextReadCloser(ctx, buf), func(err error) {
 		called = err
 	})
 
-	close()
+	cancel()
 	w.Read(nil)
 
 	s.NotNil(called)

@@ -272,6 +272,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	return nil
 }
 
+// TreeEntrySorter is a helper type for sorting TreeEntry slices.
 type TreeEntrySorter []TreeEntry
 
 func (s TreeEntrySorter) Len() int {

@@ -136,7 +136,7 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 	}
 }
 
-// Returns the Packfile's inner scanner.
+// Scanner returns the Packfile's inner scanner.
 //
 // Deprecated: this will be removed in future versions of the packfile package
 // to avoid exposing the package internals and to improve its thread-safety.
@@ -342,7 +342,7 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 		}
 
 		obj.SetType(parent.Type())
-		err = ApplyDelta(obj, parent, oh.content) //nolint:ineffassign
+		err = ApplyDelta(obj, parent, oh.content)
 
 	default:
 		err = ErrInvalidObject.AddDetails("type %q", oh.Type)

@@ -11,7 +11,7 @@ import (
 // https://github.com/git/git/blob/v2.26.2/diff.c#L83-L106.
 type ColorKey string
 
-// ColorKeys.
+// Color keys for diff output.
 const (
 	Context                   ColorKey = "context"
 	Meta                      ColorKey = "meta"

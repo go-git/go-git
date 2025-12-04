@@ -21,7 +21,7 @@ func init() {
 }
 
 func isSymlinkWindowsNonAdmin(err error) bool {
-	const ERROR_PRIVILEGE_NOT_HELD syscall.Errno = 1314
+	const ERROR_PRIVILEGE_NOT_HELD syscall.Errno = 1314 //nolint:revive: to make search as it is
 
 	if err != nil {
 		if errLink, ok := err.(*os.LinkError); ok {

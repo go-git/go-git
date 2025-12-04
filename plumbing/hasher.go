@@ -23,6 +23,7 @@ type ObjectHasher struct {
 	format format.ObjectFormat
 }
 
+// Size returns the size of the hash in bytes.
 func (h *ObjectHasher) Size() int {
 	return h.hasher.Size()
 }
@@ -31,6 +32,7 @@ func (h *ObjectHasher) Write(p []byte) (int, error) {
 	return h.hasher.Write(p)
 }
 
+// Compute computes the hash of the given data with the specified object type.
 func (h *ObjectHasher) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 	h.m.Lock()
 	h.hasher.Reset()

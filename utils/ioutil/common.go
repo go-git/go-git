@@ -19,6 +19,7 @@ type ReadPeeker interface {
 	Peeker
 }
 
+// ErrEmptyReader is returned when a reader is empty.
 var ErrEmptyReader = errors.New("reader is empty")
 
 // NonEmptyReader takes a reader and returns it if it is not empty, or
@@ -120,6 +121,7 @@ func (r *readerAtAsReader) Read(bs []byte) (int, error) {
 	return n, err
 }
 
+// NewReaderUsingReaderAt returns a new io.Reader from an io.ReaderAt starting at the given offset.
 func NewReaderUsingReaderAt(r io.ReaderAt, offset int64) io.Reader {
 	return &readerAtAsReader{
 		ReaderAt: r,

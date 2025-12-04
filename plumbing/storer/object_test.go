@@ -127,7 +127,7 @@ type MockObjectStorage struct {
 	db []plumbing.EncodedObject
 }
 
-func (o *MockObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error) {
+func (o *MockObjectStorage) RawObjectWriter(_ plumbing.ObjectType, _ int64) (w io.WriteCloser, err error) {
 	return nil, nil
 }
 
@@ -135,7 +135,7 @@ func (o *MockObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 	return nil
 }
 
-func (o *MockObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+func (o *MockObjectStorage) SetEncodedObject(_ plumbing.EncodedObject) (plumbing.Hash, error) {
 	return plumbing.ZeroHash, nil
 }
 
@@ -159,7 +159,7 @@ func (o *MockObjectStorage) EncodedObjectSize(h plumbing.Hash) (
 	return 0, plumbing.ErrObjectNotFound
 }
 
-func (o *MockObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+func (o *MockObjectStorage) EncodedObject(_ plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	for _, o := range o.db {
 		if o.Hash() == h {
 			return o, nil
@@ -168,7 +168,7 @@ func (o *MockObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash
 	return nil, plumbing.ErrObjectNotFound
 }
 
-func (o *MockObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (EncodedObjectIter, error) {
+func (o *MockObjectStorage) IterEncodedObjects(_ plumbing.ObjectType) (EncodedObjectIter, error) {
 	return nil, nil
 }
 
@@ -176,6 +176,6 @@ func (o *MockObjectStorage) Begin() Transaction {
 	return nil
 }
 
-func (o *MockObjectStorage) AddAlternate(remote string) error {
+func (o *MockObjectStorage) AddAlternate(_ string) error {
 	return nil
 }

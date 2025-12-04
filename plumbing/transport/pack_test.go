@@ -52,7 +52,7 @@ type mockStartEOFCommander struct {
 	mockCmd *mockStartEOFCommand
 }
 
-func (c *mockStartEOFCommander) Command(_ context.Context, cmd string, ep *Endpoint, auth AuthMethod, _ ...string) (Command, error) {
+func (c *mockStartEOFCommander) Command(_ context.Context, _ string, _ *Endpoint, _ AuthMethod, _ ...string) (Command, error) {
 	c.mockCmd = &mockStartEOFCommand{}
 	return c.mockCmd, nil
 }

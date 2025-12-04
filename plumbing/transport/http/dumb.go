@@ -127,7 +127,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
 
-	copy := func(w io.Writer) error {
+	copyFn := func(w io.Writer) error {
 		if _, err := ioutil.CopyBufferPool(w, res.Body); err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 
 	f, err := r.fs.TempFile(filepath.Dir(fp), filepath.Base(fp)+".temp")
 	if err != nil {
-		copy(io.Discard)
+		copyFn(io.Discard)
 		return err
 	}
 
@@ -155,7 +155,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 		}
 	}()
 
-	if err := copy(f); err != nil {
+	if err := copyFn(f); err != nil {
 		return err
 	}
 

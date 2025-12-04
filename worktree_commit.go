@@ -287,7 +287,7 @@ type buildTreeHelper struct {
 
 // BuildTree builds the tree objects and push its to the storer, the hash
 // of the root tree is returned.
-func (h *buildTreeHelper) BuildTree(idx *index.Index, opts *CommitOptions) (plumbing.Hash, error) {
+func (h *buildTreeHelper) BuildTree(idx *index.Index, _ *CommitOptions) (plumbing.Hash, error) {
 	const rootNode = ""
 	h.trees = map[string]*object.Tree{rootNode: {}}
 	h.entries = map[string]*object.TreeEntry{}
