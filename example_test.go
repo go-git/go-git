@@ -55,13 +55,15 @@ func ExamplePlainClone() {
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	// Prints the content of the CHANGELOG file from the cloned repository
 	changelog, err := os.Open(filepath.Join(dir, "CHANGELOG"))
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	io.Copy(os.Stdout, changelog)
@@ -86,7 +88,7 @@ func ExamplePlainClone_usernamePassword() {
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 }
 
@@ -108,7 +110,7 @@ func ExamplePlainClone_accessToken() {
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 }
 

@@ -304,16 +304,17 @@ func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
 
 		cs := FileStat{}
 		from, to := fp.Files()
-		if from == nil {
+		switch {
+		case from == nil:
 			// New File is created.
 			cs.Name = to.Path()
-		} else if to == nil {
+		case to == nil:
 			// File is deleted.
 			cs.Name = from.Path()
-		} else if from.Path() != to.Path() {
+		case from.Path() != to.Path():
 			// File is renamed.
 			cs.Name = fmt.Sprintf("%s => %s", from.Path(), to.Path())
-		} else {
+		default:
 			cs.Name = from.Path()
 		}
 

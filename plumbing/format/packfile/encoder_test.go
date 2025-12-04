@@ -38,7 +38,7 @@ func (s *EncoderSuite) TestCorrectPackHeader() {
 
 	// PACK + VERSION + OBJECTS + HASH
 	expectedResult := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0}
-	expectedResult = append(expectedResult, hb[:]...)
+	expectedResult = append(expectedResult, hb...)
 
 	result := s.buf.Bytes()
 
@@ -66,7 +66,7 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 
 	// + HASH
 	hb := h.Bytes()
-	expectedResult = append(expectedResult, hb[:]...)
+	expectedResult = append(expectedResult, hb...)
 
 	result := s.buf.Bytes()
 

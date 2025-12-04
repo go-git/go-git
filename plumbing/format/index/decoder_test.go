@@ -53,15 +53,15 @@ func TestDecodeEntries(t *testing.T) {
 						{
 							Path: "go/example.go",
 							Stages: map[Stage]plumbing.Hash{
-								AncestorMode: plumbing.NewHash(""),
-								OurMode:      plumbing.NewHash(""),
-								TheirMode:    plumbing.NewHash(""),
+								AncestorMode: plumbing.ZeroHash,
+								OurMode:      plumbing.ZeroHash,
+								TheirMode:    plumbing.ZeroHash,
 							},
 						}, {
 							Path: "haskal/haskal.hs",
 							Stages: map[Stage]plumbing.Hash{
-								OurMode:   plumbing.NewHash(""),
-								TheirMode: plumbing.NewHash(""),
+								OurMode:   plumbing.ZeroHash,
+								TheirMode: plumbing.ZeroHash,
 							},
 						},
 					},

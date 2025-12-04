@@ -56,7 +56,7 @@ func (l *FilesystemLoader) load(path string, tried bool) (storage.Storer, error)
 			if fi, err := fs.Stat(".git"); err == nil && fi.IsDir() {
 				path = filepath.Join(path, ".git")
 			} else {
-				path = path + ".git"
+				path += ".git"
 			}
 			return l.load(path, tried)
 		}

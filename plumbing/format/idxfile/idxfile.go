@@ -98,11 +98,12 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
 		offset := mid * uint64(idx.idSize())
 
 		cmp := h.Compare(data[offset : offset+uint64(idx.idSize())])
-		if cmp < 0 {
+		switch {
+		case cmp < 0:
 			high = mid
-		} else if cmp == 0 {
+		case cmp == 0:
 			return int(mid), true
-		} else {
+		default:
 			low = mid + 1
 		}
 

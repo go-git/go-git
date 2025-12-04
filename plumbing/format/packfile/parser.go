@@ -212,14 +212,15 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 	}
 
 	var err error
-	if !p.lowMemoryMode && oh.content != nil && oh.content.Len() > 0 {
+	switch {
+	case !p.lowMemoryMode && oh.content != nil && oh.content.Len() > 0:
 		source := oh.content
 		oh.content = sync.GetBytesBuffer()
 
 		defer sync.PutBytesBuffer(source)
 
 		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
-	} else if p.scanner.seeker != nil {
+	case p.scanner.seeker != nil:
 		deltaData := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(deltaData)
 
@@ -229,7 +230,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 		}
 
 		err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
-	} else {
+	default:
 		return fmt.Errorf("can't ensure content: %w", plumbing.ErrObjectNotFound)
 	}
 

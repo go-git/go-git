@@ -204,11 +204,12 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 			return 0, err
 		}
 		cmp := h.Compare(oid.Bytes())
-		if cmp < 0 {
+		switch {
+		case cmp < 0:
 			high = mid
-		} else if cmp == 0 {
+		case cmp == 0:
 			return mid + fi.minimumNumberOfHashes, nil
-		} else {
+		default:
 			low = mid + 1
 		}
 	}
@@ -265,7 +266,8 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 	}
 
 	var parentIndexes []uint32
-	if parent2&parentOctopusUsed == parentOctopusUsed {
+	switch {
+	case parent2&parentOctopusUsed == parentOctopusUsed:
 		// Octopus merge - Look-up the extra parents from the extra edge list
 		// The extra edge list is a list of uint32s, each of which is an index into the Commit Data table, terminated by a index with the most significant bit on.
 		parentIndexes = []uint32{parent1 & parentOctopusMask}
@@ -284,9 +286,9 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 				break
 			}
 		}
-	} else if parent2 != parentNone {
+	case parent2 != parentNone:
 		parentIndexes = []uint32{parent1 & parentOctopusMask, parent2 & parentOctopusMask}
-	} else if parent1 != parentNone {
+	case parent1 != parentNone:
 		parentIndexes = []uint32{parent1 & parentOctopusMask}
 	}
 
