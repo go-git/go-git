@@ -20,7 +20,7 @@ func (s *PackScanner) loadPackFile(pack billy.File) error {
 		return fmt.Errorf("cannot create mmap for .pack file: %w", err)
 	}
 	if err := validateFile(mmap, packSupported, packSignature, packMinLen); err != nil {
-		cleanup()
+		_ = cleanup()
 		return fmt.Errorf("malformed pack file: %w", err)
 	}
 

@@ -86,5 +86,5 @@ func (i *objectIter) Close() {
 	i.p.m.Lock()
 	defer i.p.m.Unlock()
 
-	i.iter.Close()
+	_ = i.iter.Close()
 }

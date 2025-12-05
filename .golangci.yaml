@@ -3,6 +3,7 @@ linters:
   default: none
   enable:
     - dupl
+    - errcheck
     - gocritic
     - govet
     - ineffassign
@@ -33,6 +34,9 @@ linters:
         linters:
           - gocritic
         text: deprecatedComment # Causes churn in test files, better to do separately.
+      - path: _test\.go
+        linters:
+          - errcheck
 
 formatters:
   enable:

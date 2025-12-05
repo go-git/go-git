@@ -30,7 +30,7 @@ func FromHex(in string) (ObjectID, bool) {
 		return id, false
 	}
 
-	id.Write(out)
+	_, _ = id.Write(out)
 	return id, true
 }
 

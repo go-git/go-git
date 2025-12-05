@@ -104,7 +104,9 @@ func BenchmarkScannerBasic(b *testing.B) {
 	f := fixtures.Basic().One().Packfile()
 	scanner := NewScanner(f)
 	for b.Loop() {
-		scanner.Reset()
+		if err := scanner.Reset(); err != nil {
+			b.Fatal(err)
+		}
 
 		for scanner.Scan() {
 		}

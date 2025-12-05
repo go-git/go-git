@@ -80,16 +80,16 @@ type ExtraHeader struct {
 func (h ExtraHeader) Format(f fmt.State, verb rune) {
 	switch verb {
 	case 'v':
-		fmt.Fprintf(f, "ExtraHeader{Key: %v, Value: %v}", h.Key, h.Value)
+		_, _ = fmt.Fprintf(f, "ExtraHeader{Key: %v, Value: %v}", h.Key, h.Value)
 	default:
-		fmt.Fprintf(f, "%s", h.Key)
+		_, _ = fmt.Fprintf(f, "%s", h.Key)
 		if len(h.Value) > 0 {
-			fmt.Fprint(f, " ")
+			_, _ = fmt.Fprint(f, " ")
 			// Content may be spread on multiple lines, if so we need to
 			// prepend each of them with a space for "continuation".
 			value := strings.TrimSuffix(h.Value, "\n")
 			lines := strings.Split(value, "\n")
-			fmt.Fprint(f, strings.Join(lines, "\n "))
+			_, _ = fmt.Fprint(f, strings.Join(lines, "\n "))
 		}
 	}
 }

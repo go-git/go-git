@@ -136,7 +136,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 			_ = dstWr.CloseWithError(ErrInvalidDelta)
 			return
 		}
-		defer baseRd.Close()
+		defer func() { _ = baseRd.Close() }()
 
 		baseBuf := bufio.NewReader(baseRd)
 		basePos := uint(0)

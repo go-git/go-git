@@ -202,8 +202,12 @@ func benchmarkParseBasic(b *testing.B,
 	opts ...packfile.ParserOption,
 ) {
 	for i := 0; i < b.N; i++ {
-		f.Seek(0, io.SeekStart)
-		scanner.Reset()
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			b.Fatal(err)
+		}
+		if err := scanner.Reset(); err != nil {
+			b.Fatal(err)
+		}
 		parser := packfile.NewParser(scanner, opts...)
 
 		checksum, err := parser.Parse()

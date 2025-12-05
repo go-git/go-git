@@ -213,7 +213,7 @@ func createDotGitFile(worktree, storage billy.Filesystem) error {
 		return err
 	}
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = fmt.Fprintf(f, "gitdir: %s\n", path)
 	return err
 }
@@ -1918,7 +1918,7 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 	if err != nil {
 		return nil
 	}
-	iter.ForEach(func(obj plumbing.EncodedObject) error {
+	_ = iter.ForEach(func(obj plumbing.EncodedObject) error {
 		h := obj.Hash()
 		if h.HasPrefix(prefix) {
 			hashes = append(hashes, h)
