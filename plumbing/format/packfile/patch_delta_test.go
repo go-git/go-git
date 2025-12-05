@@ -3,8 +3,9 @@ package packfile
 import (
 	"testing"
 
-	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/stretchr/testify/assert"
+
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 )
 
 func TestDecodeLEB128(t *testing.T) {
