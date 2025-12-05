@@ -383,7 +383,7 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		repositoryFs = dot
 	}
 
-	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
+	s := filesystem.NewStorageWithOptions(repositoryFs, cache.NewObjectLRUDefault(), o.StorageOptions)
 
 	return Open(s, wt)
 }
