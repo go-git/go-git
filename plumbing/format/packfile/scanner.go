@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -345,12 +346,12 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		return nil, err
 	}
 
-	typ := parseType(b[0])
+	typ := packutil.ObjectType(b[0])
 	if !typ.Valid() {
 		return nil, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b[0])
 	}
 
-	size, err := readVariableLengthSize(b[0], r)
+	size, err := packutil.VariableLengthSize(b[0], r)
 	if err != nil {
 		return nil, err
 	}
@@ -477,42 +478,4 @@ func packFooter(r *Scanner) (stateFn, error) {
 	r.nextFn = nil
 
 	return nil, nil
-}
-
-func readVariableLengthSize(first byte, reader io.ByteReader) (uint64, error) {
-	// Extract the first part of the size (last 3 bits of the first byte).
-	size := uint64(first & 0x0F)
-
-	// |  001xxxx | xxxxxxxx | xxxxxxxx | ...
-	//
-	//	 ^^^       ^^^^^^^^   ^^^^^^^^
-	//	Type      Size Part 1   Size Part 2
-	//
-	// Check if more bytes are needed to fully determine the size.
-	if first&maskContinue != 0 {
-		shift := uint(4)
-
-		for {
-			b, err := reader.ReadByte()
-			if err != nil {
-				return 0, err
-			}
-
-			// Add the next 7 bits to the size.
-			size |= uint64(b&0x7F) << shift
-
-			// Check if the continuation bit is set.
-			if b&maskContinue == 0 {
-				break
-			}
-
-			// Prepare for the next byte.
-			shift += 7
-		}
-	}
-	return size, nil
-}
-
-func parseType(b byte) plumbing.ObjectType {
-	return plumbing.ObjectType((b & maskType) >> firstLengthBits)
 }

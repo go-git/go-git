@@ -20,7 +20,6 @@ const (
 	maskFirstLength = 15         // 0000 1111
 	maskContinue    = 0x80       // 1000 0000
 	maskLength      = uint8(127) // 0111 1111
-	maskType        = uint8(112) // 0111 0000
 )
 
 // UpdateObjectStorage updates the storer with the objects in the given
