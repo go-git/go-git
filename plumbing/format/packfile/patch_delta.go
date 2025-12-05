@@ -372,7 +372,8 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			return 0, plumbing.ZeroHash, err
 		}
 
-		if isCopyFromSrc(cmd) {
+		switch {
+		case isCopyFromSrc(cmd):
 			offset, err := decodeOffsetByteReader(cmd, deltaBuf)
 			if err != nil {
 				return 0, plumbing.ZeroHash, err
@@ -395,7 +396,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 				return 0, plumbing.ZeroHash, err
 			}
 			remainingTargetSz -= sz
-		} else if isCopyFromDelta(cmd) {
+		case isCopyFromDelta(cmd):
 			sz := uint(cmd) // cmd is the size itself
 			if invalidSize(sz, targetSz) {
 				return 0, plumbing.ZeroHash, ErrInvalidDelta
@@ -406,7 +407,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			}
 
 			remainingTargetSz -= sz
-		} else {
+		default:
 			return 0, plumbing.ZeroHash, err
 		}
 		if remainingTargetSz <= 0 {

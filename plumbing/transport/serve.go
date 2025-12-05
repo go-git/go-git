@@ -86,8 +86,7 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 	// Add references and their peeled values
 	if err := iter.ForEach(func(r *plumbing.Reference) error {
 		hash, name := r.Hash(), r.Name()
-		switch r.Type() {
-		case plumbing.SymbolicReference:
+		if r.Type() == plumbing.SymbolicReference {
 			ref, err := storer.ResolveReference(st, r.Target())
 			if errors.Is(err, plumbing.ErrReferenceNotFound) {
 				return nil

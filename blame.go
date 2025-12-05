@@ -217,16 +217,18 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 			cur := curItems[i].NeedsMap
 			n := 0 // position in newNeedsMap
 			c := 0 // position in current list
+		curLoop:
 			for c < len(cur) {
-				if n == len(newNeedsMap) {
+				switch {
+				case n == len(newNeedsMap):
 					newNeedsMap = append(newNeedsMap, cur[c:]...)
-					break
-				} else if newNeedsMap[n].Cur == cur[c].Cur {
+					break curLoop
+				case newNeedsMap[n].Cur == cur[c].Cur:
 					n++
 					c++
-				} else if newNeedsMap[n].Cur < cur[c].Cur {
+				case newNeedsMap[n].Cur < cur[c].Cur:
 					n++
-				} else {
+				default:
 					newNeedsMap = append(newNeedsMap, cur[c])
 					newPos := len(newNeedsMap) - 1
 					for newPos > n {
@@ -381,13 +383,14 @@ func finishNeeds(curItem *queueItem) (bool, error) {
 		m := 0 // position in merged needs map
 		p := 0 // position in parent needs map
 		for p < len(ctn.NeedsMap) {
-			if ctn.NeedsMap[p].Cur == curItem.NeedsMap[m].Cur {
+			switch {
+			case ctn.NeedsMap[p].Cur == curItem.NeedsMap[m].Cur:
 				ctn.NeedsMap[p].Commit = curItem.NeedsMap[m].Commit
 				m++
 				p++
-			} else if ctn.NeedsMap[p].Cur < curItem.NeedsMap[m].Cur {
+			case ctn.NeedsMap[p].Cur < curItem.NeedsMap[m].Cur:
 				p++
-			} else {
+			default:
 				m++
 			}
 		}

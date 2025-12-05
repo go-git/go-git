@@ -297,10 +297,8 @@ func copyFile(fs billy.Filesystem, dstFilename string, srcFile billy.File) error
 	}
 	defer dst.Close()
 
-	if _, err := io.Copy(dst, srcFile); err != nil {
-		return err
-	}
-	return nil
+	_, err = io.Copy(dst, srcFile)
+	return err
 }
 
 // TestPackfileReindex tests that externally-added packfiles are considered by go-git

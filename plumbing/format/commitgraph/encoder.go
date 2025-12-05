@@ -170,16 +170,17 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 		}
 
 		var parent1, parent2 uint32
-		if len(commitData.ParentHashes) == 0 {
+		switch len(commitData.ParentHashes) {
+		case 0:
 			parent1 = parentNone
 			parent2 = parentNone
-		} else if len(commitData.ParentHashes) == 1 {
+		case 1:
 			parent1 = hashToIndex[commitData.ParentHashes[0]]
 			parent2 = parentNone
-		} else if len(commitData.ParentHashes) == 2 {
+		case 2:
 			parent1 = hashToIndex[commitData.ParentHashes[0]]
 			parent2 = hashToIndex[commitData.ParentHashes[1]]
-		} else if len(commitData.ParentHashes) > 2 {
+		default:
 			parent1 = hashToIndex[commitData.ParentHashes[0]]
 			parent2 = uint32(len(extraEdges)) | parentOctopusUsed
 			for _, parentHash := range commitData.ParentHashes[1:] {

@@ -96,23 +96,24 @@ func diffDelta(index *deltaIndex, src, tgt []byte) []byte {
 	for i := 0; i < len(tgt); i++ {
 		offset, l := index.findMatch(src, tgt, i)
 
-		if l == 0 {
+		switch {
+		case l == 0:
 			// couldn't find a match, just write the current byte and continue
 			ibuf.WriteByte(tgt[i])
-		} else if l < 0 {
+		case l < 0:
 			// src is less than blksz, copy the rest of the target to avoid
 			// calls to findMatch
 			for ; i < len(tgt); i++ {
 				ibuf.WriteByte(tgt[i])
 			}
-		} else if l < s {
+		case l < s:
 			// remaining target is less than blksz, copy what's left of it
 			// and avoid calls to findMatch
 			for j := i; j < i+l; j++ {
 				ibuf.WriteByte(tgt[j])
 			}
 			i += l - 1
-		} else {
+		default:
 			encodeInsertOperation(ibuf, buf)
 
 			rl := l

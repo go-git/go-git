@@ -41,11 +41,12 @@ func TestRegisterHash(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := RegisterHash(tt.hash, tt.new)
-			if tt.wantErr == "" && err != nil {
+			switch {
+			case tt.wantErr == "" && err != nil:
 				t.Errorf("unexpected error: %v", err)
-			} else if tt.wantErr != "" && err == nil {
+			case tt.wantErr != "" && err == nil:
 				t.Errorf("expected error: %v got: nil", tt.wantErr)
-			} else if err != nil && !strings.Contains(err.Error(), tt.wantErr) {
+			case err != nil && !strings.Contains(err.Error(), tt.wantErr):
 				t.Errorf("expected error: %v got: %v", tt.wantErr, err)
 			}
 		})

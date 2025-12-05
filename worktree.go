@@ -1083,11 +1083,9 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files 
 			if err != nil {
 				return err
 			}
-		} else {
-			if status.IsUntracked(path) {
-				if err := w.Filesystem.Remove(path); err != nil {
-					return err
-				}
+		} else if status.IsUntracked(path) {
+			if err := w.Filesystem.Remove(path); err != nil {
+				return err
 			}
 		}
 	}

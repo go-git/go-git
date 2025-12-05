@@ -3,10 +3,12 @@ linters:
   default: none
   enable:
     - dupl
+    - gocritic
     - govet
     - ineffassign
     - misspell
     - modernize
+    - nolintlint
     - prealloc
     - revive
     - staticcheck
@@ -25,6 +27,12 @@ linters:
         - name: dot-imports
           exclude:
             - "**/*_test.go"
+  exclusions:
+    rules:
+      - path: plumbing/hash.go
+        linters:
+          - gocritic
+        text: deprecatedComment # Causes churn in test files, better to do separately.
 
 formatters:
   enable:

@@ -1107,11 +1107,14 @@ func (r *Repository) fetchAndUpdateReferences(
 
 	objsUpdated := true
 	remoteRefs, err := remote.fetch(ctx, o)
-	if err == NoErrAlreadyUpToDate {
+	switch err {
+	case NoErrAlreadyUpToDate:
 		objsUpdated = false
-	} else if err == packfile.ErrEmptyPackfile {
+	case packfile.ErrEmptyPackfile:
 		return nil, ErrFetching
-	} else if err != nil {
+	case nil:
+		// continue
+	default:
 		return nil, err
 	}
 

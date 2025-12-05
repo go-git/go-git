@@ -84,14 +84,15 @@ func (d *renameDetector) detectExactRenames() {
 		hash := changeHash(c)
 		deleted := deletes[hash]
 
-		if len(deleted) == 1 {
+		switch {
+		case len(deleted) == 1:
 			if sameMode(c, deleted[0]) {
 				d.modified = append(d.modified, &Change{From: deleted[0].From, To: c.To})
 				delete(deletes, hash)
 			} else {
 				addedLeft = append(addedLeft, c)
 			}
-		} else if len(deleted) > 1 {
+		case len(deleted) > 1:
 			bestMatch := bestNameMatch(c, deleted)
 			if bestMatch != nil && sameMode(c, bestMatch) {
 				d.modified = append(d.modified, &Change{From: bestMatch.From, To: c.To})
@@ -105,7 +106,7 @@ func (d *renameDetector) detectExactRenames() {
 				}
 				deletes[hash] = newDeletes
 			}
-		} else {
+		default:
 			addedLeft = append(addedLeft, c)
 		}
 	}
@@ -114,7 +115,8 @@ func (d *renameDetector) detectExactRenames() {
 		hash := changeHash(added[0])
 		deleted := deletes[hash]
 
-		if len(deleted) == 1 {
+		switch {
+		case len(deleted) == 1:
 			deleted := deleted[0]
 			bestMatch := bestNameMatch(deleted, added)
 			if bestMatch != nil && sameMode(deleted, bestMatch) {
@@ -129,7 +131,7 @@ func (d *renameDetector) detectExactRenames() {
 			} else {
 				addedLeft = append(addedLeft, added...)
 			}
-		} else if len(deleted) > 1 {
+		case len(deleted) > 1:
 			maxSize := len(deleted) * len(added)
 			if d.renameLimit > 0 && d.renameLimit < maxSize {
 				maxSize = d.renameLimit
@@ -189,7 +191,7 @@ func (d *renameDetector) detectExactRenames() {
 				}
 			}
 			deletes[hash] = newDeletes
-		} else {
+		default:
 			addedLeft = append(addedLeft, added...)
 		}
 	}
@@ -653,8 +655,10 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 	var common uint64
 	srcKey, dstKey := i.hashes[srcIdx].key(), dst.hashes[dstIdx].key()
 
+mainLoop:
 	for {
-		if srcKey == dstKey {
+		switch {
+		case srcKey == dstKey:
 			srcCnt, dstCnt := i.hashes[srcIdx].count(), dst.hashes[dstIdx].count()
 			if srcCnt < dstCnt {
 				common += srcCnt
@@ -664,27 +668,27 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 
 			srcIdx++
 			if srcIdx == len(i.hashes) {
-				break
+				break mainLoop
 			}
 			srcKey = i.hashes[srcIdx].key()
 
 			dstIdx++
 			if dstIdx == len(dst.hashes) {
-				break
+				break mainLoop
 			}
 			dstKey = dst.hashes[dstIdx].key()
-		} else if srcKey < dstKey {
+		case srcKey < dstKey:
 			// Region of src that is not in dst
 			srcIdx++
 			if srcIdx == len(i.hashes) {
-				break
+				break mainLoop
 			}
 			srcKey = i.hashes[srcIdx].key()
-		} else {
+		default:
 			// Region of dst that is not in src
 			dstIdx++
 			if dstIdx == len(dst.hashes) {
-				break
+				break mainLoop
 			}
 			dstKey = dst.hashes[dstIdx].key()
 		}
@@ -699,7 +703,8 @@ func (i *similarityIndex) add(key int, cnt uint64) error {
 	j := i.slot(key)
 	for {
 		v := i.hashes[j]
-		if v == 0 {
+		switch {
+		case v == 0:
 			// It's an empty slot, so we can store it here.
 			if i.growAt <= i.numHashes {
 				if err := i.grow(); err != nil {
@@ -716,14 +721,14 @@ func (i *similarityIndex) add(key int, cnt uint64) error {
 			}
 			i.numHashes++
 			return nil
-		} else if v.key() == key {
+		case v.key() == key:
 			// It's the same key, so increment the counter.
 			var err error
 			i.hashes[j], err = newKeyCountPair(key, v.count()+cnt)
 			return err
-		} else if j+1 >= len(i.hashes) {
+		case j+1 >= len(i.hashes):
 			j = 0
-		} else {
+		default:
 			j++
 		}
 	}
