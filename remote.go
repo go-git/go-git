@@ -492,7 +492,7 @@ func referenceStorageFromRefs(refs []*plumbing.Reference, filterPeeled bool) mem
 		if filterPeeled && strings.HasSuffix(ref.Name().String(), peeledSuffix) {
 			continue
 		}
-		refStore.SetReference(ref) //nolint:errcheck
+		_ = refStore.SetReference(ref)
 	}
 	return refStore
 }

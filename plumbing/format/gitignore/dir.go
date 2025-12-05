@@ -32,7 +32,7 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 
 	f, err := fs.Open(fs.Join(append(path, ignoreFile)...))
 	if err == nil {
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {

@@ -227,7 +227,7 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	for firstLevel, fanoutValue := range idx.Fanout {
 		mappedFirstLevel := idx.FanoutMapping[firstLevel]
 		for secondLevel := uint32(0); i < fanoutValue; i++ {
-			hash.Write(idx.Names[mappedFirstLevel][secondLevel*uint32(idx.idSize()):])
+			_, _ = hash.Write(idx.Names[mappedFirstLevel][secondLevel*uint32(idx.idSize()):])
 			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
 			offsetHash[offset] = hash
 			secondLevel++
@@ -316,7 +316,7 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 
 		mappedFirstLevel := i.idx.FanoutMapping[i.firstLevel]
 		entry := new(Entry)
-		entry.Hash.Write(i.idx.Names[mappedFirstLevel][i.secondLevel*i.idx.idSize():])
+		_, _ = entry.Hash.Write(i.idx.Names[mappedFirstLevel][i.secondLevel*i.idx.idSize():])
 		entry.Offset = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
 		entry.CRC32 = i.idx.getCRC32(mappedFirstLevel, i.secondLevel)
 

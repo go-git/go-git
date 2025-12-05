@@ -207,7 +207,7 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	if err != nil {
 		return plumbing.ZeroHash
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
 	var dst io.Writer = h

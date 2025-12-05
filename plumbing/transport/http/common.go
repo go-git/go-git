@@ -272,7 +272,9 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 			}
 
 			transport = tr.Clone()
-			configureTransport(transport, ep)
+			if err := configureTransport(transport, ep); err != nil {
+				return nil, err
+			}
 		} else {
 			transportOpts := transportOptions{
 				caBundle:        string(ep.CaBundle),
@@ -290,7 +292,9 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 
 			if !found {
 				transport = c.client.Transport.(*http.Transport).Clone()
-				configureTransport(transport, ep)
+				if err := configureTransport(transport, ep); err != nil {
+					return nil, err
+				}
 				c.addTransport(transportOpts, transport)
 			}
 		}
@@ -459,7 +463,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 	if err != nil {
 		if rwc.res != nil {
 			// Make sure the response body is closed.
-			defer packfile.Close() //nolint:errcheck
+			defer func() { _ = packfile.Close() }()
 		}
 		return err
 	}

@@ -90,7 +90,9 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 		// (for example due to a concurrent repack) and a different base
 		// was chosen, forcing a cycle. Select something other than a
 		// delta, and write this object.
-		e.selector.restoreOriginal(o)
+		if err := e.selector.restoreOriginal(o); err != nil {
+			return err
+		}
 		o.BackToOriginal()
 	}
 

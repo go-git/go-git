@@ -56,7 +56,7 @@ func newOndemandObject(
 	// If this is a delta object and autoResolve is enabled,
 	// resolve metadata eagerly.
 	if typ.IsDelta() && autoResolve {
-		obj.resolveMetadata()
+		_ = obj.resolveMetadata()
 	}
 
 	return obj
@@ -287,7 +287,7 @@ func (o *ondemandObject) resolveDelta() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read base object: %w", err)
 	}
-	defer baseReader.Close()
+	defer func() { _ = baseReader.Close() }()
 
 	baseBuf := sync.GetBytesBuffer()
 	defer sync.PutBytesBuffer(baseBuf)

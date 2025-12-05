@@ -69,7 +69,7 @@ func (d *DotGit) setRefNorwfs(fileName, content string, old *plumbing.Reference)
 		}
 
 		ref, err := d.readReferenceFrom(fRead, old.Name().String())
-		fRead.Close()
+		_ = fRead.Close()
 
 		if err != nil {
 			return err
@@ -85,7 +85,7 @@ func (d *DotGit) setRefNorwfs(fileName, content string, old *plumbing.Reference)
 		return err
 	}
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = f.Write([]byte(content))
 	return err

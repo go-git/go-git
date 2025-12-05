@@ -40,36 +40,36 @@ func NegotiatePack(
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
 	if multiAckDetailed {
-		upreq.Capabilities.Set(capability.MultiACKDetailed) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.MultiACKDetailed)
 	} else if multiAck {
-		upreq.Capabilities.Set(capability.MultiACK) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.MultiACK)
 	}
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			upreq.Capabilities.Set(capability.Sideband64k) //nolint:errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			upreq.Capabilities.Set(capability.Sideband) //nolint:errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband)
 		}
 	} else if caps.Supports(capability.NoProgress) {
-		upreq.Capabilities.Set(capability.NoProgress) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.NoProgress)
 	}
 
 	// TODO: support thin-pack
 	// if caps.Supports(capability.ThinPack) {
-	// 	upreq.Capabilities.Set(capability.ThinPack) // nolint: errcheck
+	// 	_ = upreq.Capabilities.Set(capability.ThinPack)
 	// }
 
 	if caps.Supports(capability.OFSDelta) {
-		upreq.Capabilities.Set(capability.OFSDelta) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.OFSDelta)
 	}
 
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	if req.IncludeTags && caps.Supports(capability.IncludeTag) {
-		upreq.Capabilities.Set(capability.IncludeTag) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.IncludeTag)
 	}
 
 	if req.Filter != "" {

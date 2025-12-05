@@ -39,26 +39,26 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 	//
 	// See https://git-scm.com/docs/gitprotocol-capabilities for more details.
 	if caps.Supports(capability.ReportStatus) {
-		upreq.Capabilities.Set(capability.ReportStatus) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.ReportStatus)
 	}
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			upreq.Capabilities.Set(capability.Sideband64k) //nolint:errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			upreq.Capabilities.Set(capability.Sideband) //nolint:errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband)
 		}
 		if req.Quiet && caps.Supports(capability.Quiet) {
-			upreq.Capabilities.Set(capability.Quiet) //nolint:errcheck
+			_ = upreq.Capabilities.Set(capability.Quiet)
 		}
 	}
 	if req.Atomic && caps.Supports(capability.Atomic) {
-		upreq.Capabilities.Set(capability.Atomic) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.Atomic)
 	}
 	if len(req.Options) > 0 && caps.Supports(capability.PushOptions) {
-		upreq.Capabilities.Set(capability.PushOptions) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.PushOptions)
 	}
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) //nolint:errcheck
+		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	upreq.Commands = req.Commands

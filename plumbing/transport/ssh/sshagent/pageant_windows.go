@@ -112,13 +112,13 @@ func query(msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer syscall.CloseHandle(mmap)
+	defer func() { _ = syscall.CloseHandle(mmap) }()
 
 	ptr, err := syscall.MapViewOfFile(mmap, syscall.FILE_MAP_WRITE, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	defer syscall.UnmapViewOfFile(ptr)
+	defer func() { _ = syscall.UnmapViewOfFile(ptr) }()
 
 	mmSlice := (*(*[MaxMessageLen]byte)(unsafe.Pointer(ptr)))[:]
 
