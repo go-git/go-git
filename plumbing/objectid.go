@@ -117,14 +117,21 @@ func (s *ObjectID) Write(in []byte) (int, error) {
 	return n, nil
 }
 
-// ReadFrom reads the Big Endian representation of the ObjectID from
-// reader [r].
+// ReadFrom reads the ObjectID from reader [r]. It implements the io.ReaderFrom interface.
+//
+// This method uses io.ReadFull for optimal performance, avoiding the
+// reflection overhead of encoding/binary.Read. For byte arrays (like hashes),
+// no byte-order conversion occurs regardless of the method used.
 func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
-	err := binary.Read(r, binary.BigEndian, s.hash[:s.Size()])
+	n, err := io.ReadFull(r, s.hash[:s.Size()])
 	if err != nil {
-		return 0, fmt.Errorf("read hash from binary: %w", err)
+		// Zero out the hash on error for cleaner state
+		for i := range s.hash[:s.Size()] {
+			s.hash[i] = 0
+		}
+		return int64(n), fmt.Errorf("read hash: %w", err)
 	}
-	return int64(s.Size()), nil
+	return int64(n), nil
 }
 
 // WriteTo writes the Big Endian representation of the ObjectID
