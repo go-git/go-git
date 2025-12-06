@@ -360,6 +360,10 @@ type SubmoduleUpdateOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
+	// SingleBranch, if true, limits fetching to the single branch (or commit)
+	// that the submodule points to, rather than fetching all branches.
+	// This reduces network traffic when combined with Depth.
+	SingleBranch bool
 }
 
 // Checkout errors.

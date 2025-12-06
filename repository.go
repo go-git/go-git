@@ -1004,7 +1004,8 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 					}
 					return 0
 				}(),
-				Auth: o.Auth,
+				Auth:         o.Auth,
+				SingleBranch: o.SingleBranch,
 			}); err != nil {
 				return err
 			}
