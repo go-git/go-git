@@ -32,7 +32,7 @@ func (s *PackScanner) loadIdxFile(idx billy.File) error {
 		return fmt.Errorf("cannot create mmap for .idx file: %w", err)
 	}
 	if err := validateFile(mmap, idxSupported, idxSignature, idxMinLen); err != nil {
-		cleanup()
+		_ = cleanup()
 		return fmt.Errorf("malformed idx file: %w", err)
 	}
 

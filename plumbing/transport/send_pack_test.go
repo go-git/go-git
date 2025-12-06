@@ -90,7 +90,7 @@ func (rw *mockReadWriteCloser) Close() error {
 // TestSendPackWithReportStatus tests the SendPack function with ReportStatus capability
 func TestSendPackWithReportStatus(t *testing.T) {
 	caps := capability.NewList()
-	caps.Add(capability.ReportStatus) //nolint:errcheck
+	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
 
 	// Create a mock reader with a valid report status response

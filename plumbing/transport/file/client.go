@@ -166,6 +166,6 @@ func (c *command) Close() (err error) {
 
 func closeDiscriptors(fds []io.Closer) {
 	for _, fd := range fds {
-		fd.Close()
+		_ = fd.Close()
 	}
 }

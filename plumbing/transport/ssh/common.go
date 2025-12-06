@@ -66,7 +66,9 @@ func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint
 	}
 
 	if gitProtocol != "" {
-		c.Setenv("GIT_PROTOCOL", gitProtocol)
+		if err := c.Setenv("GIT_PROTOCOL", gitProtocol); err != nil {
+			return nil, err
+		}
 	}
 
 	return c, nil

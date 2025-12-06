@@ -1155,7 +1155,7 @@ func (d *DotGit) AddAlternate(remote string) error {
 	if err != nil {
 		return fmt.Errorf("cannot open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if locker, ok := f.(billy.Locker); ok {
 		// locking in windows throws an error, based on comments
@@ -1165,7 +1165,7 @@ func (d *DotGit) AddAlternate(remote string) error {
 			if err = locker.Lock(); err != nil {
 				return fmt.Errorf("cannot lock file: %w", err)
 			}
-			defer locker.Unlock()
+			defer func() { _ = locker.Unlock() }()
 		}
 	}
 
@@ -1186,7 +1186,7 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fs := d.options.AlternatesFS
 	if fs == nil {

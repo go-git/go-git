@@ -57,7 +57,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	wc := ioutil.NewContextWriteCloser(ctx, c)
 
 	// Ensure we close the connection when we're done.
-	defer c.Close() //nolint:errcheck
+	defer func() { _ = c.Close() }()
 
 	svc := transport.Service(req.RequestCommand)
 	switch {
@@ -65,7 +65,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 		svc == transport.ReceivePackService && b.ReceivePack:
 		// TODO: Support git-upload-archive
 	default:
-		renderError(wc, transport.ErrUnsupportedService) //nolint:errcheck
+		_ = renderError(wc, transport.ErrUnsupportedService)
 		return
 	}
 
@@ -76,19 +76,19 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 
 	url, err := url.JoinPath(fmt.Sprintf("git://%s", host), req.Pathname)
 	if err != nil {
-		renderError(wc, transport.ErrRepositoryNotFound) //nolint:errcheck
+		_ = renderError(wc, transport.ErrRepositoryNotFound)
 		return
 	}
 
 	ep, err := transport.NewEndpoint(url)
 	if err != nil {
-		renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)) //nolint:errcheck
+		_ = renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err))
 		return
 	}
 
 	st, err := loader.Load(ep)
 	if err != nil {
-		renderError(wc, err) //nolint:errcheck
+		_ = renderError(wc, err)
 		return
 	}
 
@@ -109,14 +109,14 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	}
 
 	if err != nil {
-		renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)) //nolint:errcheck
+		_ = renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err))
 		return
 	}
 }
 
 func renderError(rw io.WriteCloser, err error) error {
 	if _, err := pktline.WriteError(rw, err); err != nil {
-		rw.Close() //nolint:errcheck
+		_ = rw.Close()
 		return err
 	}
 	return rw.Close()

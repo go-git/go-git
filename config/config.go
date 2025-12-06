@@ -272,7 +272,7 @@ func LoadConfig(scope Scope) (*Config, error) {
 			return nil, err
 		}
 
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		return ReadConfig(f)
 	}
 
