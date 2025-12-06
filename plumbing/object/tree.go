@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	stdsync "sync"
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -38,8 +39,10 @@ type Tree struct {
 	Hash    plumbing.Hash
 
 	s storer.EncodedObjectStorer
-	m map[string]*TreeEntry
-	t map[string]*Tree // tree path cache
+	m map[string]*TreeEntry // entry name lookup map, lazily initialized
+	t stdsync.Map           // tree path cache, concurrent-safe
+
+	initOnce stdsync.Once // ensures m is initialized exactly once
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -128,10 +131,6 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
-	if t.t == nil {
-		t.t = make(map[string]*Tree)
-	}
-
 	pathParts := strings.Split(path, "/")
 	startingTree := t
 	pathCurrent := ""
@@ -140,9 +139,8 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	for i := len(pathParts) - 1; i > 1; i-- {
 		path := filepath.Join(pathParts[:i]...)
 
-		tree, ok := t.t[path]
-		if ok {
-			startingTree = tree
+		if cached, ok := t.t.Load(path); ok {
+			startingTree = cached.(*Tree)
 			pathParts = pathParts[i:]
 			pathCurrent = path
 
@@ -158,7 +156,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
-		t.t[pathCurrent] = tree
+		t.t.Store(pathCurrent, tree)
 	}
 
 	return tree.entry(pathParts[0])
@@ -182,9 +180,10 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	if t.m == nil {
+	// Use sync.Once to ensure map is built exactly once, even under concurrent access
+	t.initOnce.Do(func() {
 		t.buildMap()
-	}
+	})
 
 	entry, ok := t.m[baseName]
 	if !ok {
@@ -225,6 +224,8 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	t.Entries = nil
 	t.m = nil
+	// Note: t.t is a sync.Map and doesn't need to be reset
+	// Note: t.initOnce will be reset on next decode by creating new Tree
 
 	reader, err := o.Reader()
 	if err != nil {
