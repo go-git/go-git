@@ -251,6 +251,44 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 	s.Equal(1, commitCount)
 }
 
+func (s *SubmoduleSuite) TestSubmodulesSingleBranch() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	sm, err := s.Worktree.Submodule("basic")
+	s.Require().NoError(err)
+
+	// Update with SingleBranch should skip the broad fetch and only fetch
+	// the specific commit that the submodule points to.
+	err = sm.Update(&SubmoduleUpdateOptions{
+		Init:         true,
+		Depth:        1,
+		SingleBranch: true,
+	})
+	s.Require().NoError(err)
+
+	r, err := sm.Repository()
+	s.Require().NoError(err)
+
+	// Verify the submodule was checked out to the correct commit
+	ref, err := r.Reference(plumbing.HEAD, true)
+	s.Require().NoError(err)
+	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", ref.Hash().String())
+
+	// With SingleBranch and Depth 1, we should only have fetched the required commit
+	lr, err := r.Log(&LogOptions{})
+	s.Require().NoError(err)
+
+	commitCount := 0
+	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+		commitCount++
+	}
+	s.Require().NoError(err)
+
+	s.Equal(1, commitCount)
+}
+
 func (s *SubmoduleSuite) TestSubmoduleParseScp() {
 	repo := &Repository{
 		Storer: memory.NewStorage(),
