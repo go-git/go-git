@@ -1,7 +1,9 @@
 package git
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -72,6 +74,13 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 		for _, h := range obj.ParentHashes {
 			err = p.walkObjectTree(h)
 			if err != nil {
+				shallow, serr := p.Storer.Shallow()
+				if serr != nil {
+					return errors.Join(err, serr)
+				}
+				if slices.Contains(shallow, obj.ID()) {
+					return nil
+				}
 				return err
 			}
 		}
