@@ -277,7 +277,7 @@ func (s *SubmoduleSuite) TestSubmodulesSingleBranch() {
 	s.Require().NoError(err)
 
 	commitCount := 0
-	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+	for _, err := lr.Next(); err != nil {
 		commitCount++
 	}
 	s.Require().NoError(err)
