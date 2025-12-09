@@ -252,10 +252,6 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 }
 
 func (s *SubmoduleSuite) TestSubmodulesSingleBranch() {
-	if testing.Short() {
-		s.T().Skip("skipping test in short mode.")
-	}
-
 	sm, err := s.Worktree.Submodule("basic")
 	s.Require().NoError(err)
 
