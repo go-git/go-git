@@ -270,7 +270,7 @@ func (s *SubmoduleSuite) TestSubmodulesSingleBranch() {
 	// Verify the submodule was checked out to the correct commit
 	ref, err := r.Reference(plumbing.HEAD, true)
 	s.Require().NoError(err)
-	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", ref.Hash().String())
+	s.Equal(hash, ref.Hash())
 
 	// With SingleBranch and Depth 1, we should only have fetched the required commit
 	lr, err := r.Log(&LogOptions{})
