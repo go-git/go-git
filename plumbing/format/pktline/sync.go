@@ -21,5 +21,8 @@ func GetBuffer() *[MaxSize]byte {
 
 // PutBuffer puts buf back into its sync.Pool.
 func PutBuffer(buf *[MaxSize]byte) {
+	if buf == nil {
+		return
+	}
 	pktBuffer.Put(buf)
 }

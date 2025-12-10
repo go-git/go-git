@@ -64,6 +64,9 @@ func GetZlibReader(r io.Reader) (*ZLibReader, error) {
 // PutZlibReader puts z back into its sync.Pool.
 // The Byte slice dictionary is also put back into its sync.Pool.
 func PutZlibReader(z *ZLibReader) {
+	if z == nil {
+		return
+	}
 	PutByteSlice(z.dict)
 	zlibReader.Put(z)
 }
@@ -81,5 +84,8 @@ func GetZlibWriter(w io.Writer) *zlib.Writer {
 
 // PutZlibWriter puts w back into its sync.Pool.
 func PutZlibWriter(w *zlib.Writer) {
+	if w == nil {
+		return
+	}
 	zlibWriter.Put(w)
 }
