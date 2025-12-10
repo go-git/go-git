@@ -54,10 +54,10 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	_, err = wt.Commit("add file", &CommitOptions{})
 	require.NoError(t, err)
 
-	st, err := wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+	st, err := wt.StatusWithOptions(StatusOptions{})
 	require.NoError(t, err)
 	assert.Equal(t,
-		&FileStatus{Worktree: Unmodified, Staging: Unmodified},
+		FileStatus{Worktree: Unmodified, Staging: Unmodified},
 		st.File(file))
 
 	// Make the file not regular. The same would apply to a transition
@@ -82,10 +82,10 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	// reports the unstaged file was modified while "git diff" would return
 	// empty, as the files are the same but the index has the incorrect file
 	// size.
-	st, err = wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+	st, err = wt.StatusWithOptions(StatusOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t,
-		&FileStatus{Worktree: Unmodified, Staging: Modified},
+		FileStatus{Worktree: Unmodified, Staging: Modified},
 		st.File(file))
 
 	idx, err := wt.r.Storer.Index()
@@ -176,7 +176,7 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 				require.NoError(b, err)
 
 				for b.Loop() {
-					wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+					wt.Status()
 				}
 			})
 		}
@@ -212,7 +212,7 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 				addFiles(b, wt.Filesystem)
 
 				for b.Loop() {
-					wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+					wt.Status()
 				}
 			})
 		}
@@ -240,7 +240,7 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 				require.NoError(b, err)
 
 				for b.Loop() {
-					wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+					wt.Status()
 				}
 			})
 		}
