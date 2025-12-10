@@ -103,7 +103,7 @@ func benchmarkCheckoutDifferentBranch(b *testing.B, w *Worktree, r *Repository) 
 	}
 
 	if len(branches) < 2 {
-		b.Skip("Need at least 2 branches for this benchmark")
+		b.Fatalf("Need at least 2 branches for this benchmark")
 	}
 
 	// Initialize worktree with first checkout
