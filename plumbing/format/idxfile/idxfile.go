@@ -316,6 +316,7 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 
 		mappedFirstLevel := i.idx.FanoutMapping[i.firstLevel]
 		entry := new(Entry)
+		entry.Hash.ResetBySize(i.idx.idSize())
 		_, _ = entry.Hash.Write(i.idx.Names[mappedFirstLevel][i.secondLevel*i.idx.idSize():])
 		entry.Offset = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
 		entry.CRC32 = i.idx.getCRC32(mappedFirstLevel, i.secondLevel)
