@@ -3621,3 +3621,187 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 	})
 }
+
+func (s *WorktreeSuite) TestCanSkipWorktreeUpdate() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	err = util.WriteFile(fs, "file1.txt", []byte("content1"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("file1.txt")
+	s.NoError(err)
+	initialCommit, err := w.Commit("initial commit", defaultTestCommitOptions())
+	s.NoError(err)
+
+	// Test case 1: Same tree - HEAD and target point to same tree
+	// Create a new branch pointing to the same commit (same tree)
+	err = r.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.NewBranchReferenceName("same-tree-branch"),
+		initialCommit,
+	))
+	s.NoError(err)
+
+	targetCommit, err := r.CommitObject(initialCommit)
+	s.NoError(err)
+
+	canSkip, err := w.canSkipWorktreeUpdate(targetCommit)
+	s.NoError(err)
+	s.True(canSkip, "should skip worktree update when trees are identical")
+
+	// Test case 2: Different tree - create a new commit with different content
+	err = util.WriteFile(fs, "file2.txt", []byte("content2"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("file2.txt")
+	s.NoError(err)
+	secondCommit, err := w.Commit("second commit", defaultTestCommitOptions())
+	s.NoError(err)
+
+	// Now HEAD points to secondCommit, check against initialCommit (different tree)
+	targetCommit, err = r.CommitObject(initialCommit)
+	s.NoError(err)
+
+	canSkip, err = w.canSkipWorktreeUpdate(targetCommit)
+	s.NoError(err)
+	s.False(canSkip, "should not skip worktree update when trees differ")
+
+	// Test case 3: Check that same tree hash returns true even with different commits
+	// Create another commit on top of secondCommit with no file changes (amend-like)
+	// First, let's verify current state
+	secondCommitObj, err := r.CommitObject(secondCommit)
+	s.NoError(err)
+
+	canSkip, err = w.canSkipWorktreeUpdate(secondCommitObj)
+	s.NoError(err)
+	s.True(canSkip, "should skip worktree update when trees are identical")
+}
+
+// TestCanSkipWorktreeUpdateNoHead test with No HEAD reference (empty repository)
+func (s *WorktreeSuite) TestCanSkipWorktreeUpdateNoHead() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	dummyCommit := &object.Commit{
+		TreeHash: plumbing.NewHash("4b825dc642cb6eb9a060e54bf8d69288fbee4904"),
+	}
+
+	_, err = w.canSkipWorktreeUpdate(dummyCommit)
+	s.Error(err, "should return error when HEAD doesn't exist")
+}
+
+func (s *WorktreeSuite) TestIndexMatchesTargetTree() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	err = util.WriteFile(fs, "file1.txt", []byte("content1"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(fs, "file2.txt", []byte("content2"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("file1.txt")
+	s.NoError(err)
+	_, err = w.Add("file2.txt")
+	s.NoError(err)
+	initialCommit, err := w.Commit("initial commit", defaultTestCommitOptions())
+	s.NoError(err)
+
+	// Test case 1: Index matches target tree exactly (right after commit)
+	targetCommit, err := r.CommitObject(initialCommit)
+	s.NoError(err)
+
+	matches, err := w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.True(matches, "index should match target tree right after commit")
+
+	// Test case 2: Index has staged changes (file modified in index)
+	err = util.WriteFile(fs, "file1.txt", []byte("modified content"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("file1.txt")
+	s.NoError(err)
+
+	matches, err = w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.False(matches, "index should not match target tree when file is modified in staging")
+
+	secondCommit, err := w.Commit("second commit", defaultTestCommitOptions())
+	s.NoError(err)
+
+	// Test case 3: Index has new file staged (not in target tree)
+	err = util.WriteFile(fs, "newfile.txt", []byte("new content"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("newfile.txt")
+	s.NoError(err)
+
+	targetCommit, err = r.CommitObject(secondCommit)
+	s.NoError(err)
+
+	matches, err = w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.False(matches, "index should not match target tree when new file is staged")
+
+	thirdCommit, err := w.Commit("third commit", defaultTestCommitOptions())
+	s.NoError(err)
+
+	// Test case 4: Index has file removed (staged deletion)
+	_, err = w.Remove("newfile.txt")
+	s.NoError(err)
+
+	targetCommit, err = r.CommitObject(thirdCommit)
+	s.NoError(err)
+
+	matches, err = w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.False(matches, "index should not match target tree when file deletion is staged")
+
+	// Test case 5: After reset, index should match the target tree again
+	err = w.Reset(&ResetOptions{Mode: HardReset, Commit: thirdCommit})
+	s.NoError(err)
+
+	matches, err = w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.True(matches, "index should match target tree after hard reset")
+}
+
+// TestIndexMatchesTargetTreeEmptyTree test with empty tree
+func (s *WorktreeSuite) TestIndexMatchesTargetTreeEmptyTree() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	emptyCommit, err := w.Commit("empty commit", &CommitOptions{
+		Author:            &object.Signature{Name: "test", Email: "test@test.com"},
+		AllowEmptyCommits: true,
+	})
+	s.NoError(err)
+
+	targetCommit, err := r.CommitObject(emptyCommit)
+	s.NoError(err)
+
+	// Empty index should match empty tree
+	matches, err := w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.True(matches, "empty index should match empty tree")
+
+	// Add a file to index - should no longer match empty tree
+	err = util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("file.txt")
+	s.NoError(err)
+
+	matches, err = w.indexMatchesTargetTree(targetCommit)
+	s.NoError(err)
+	s.False(matches, "non-empty index should not match empty tree")
+}
