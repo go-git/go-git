@@ -1020,7 +1020,7 @@ func (s *WorktreeSuite) TestStatus() {
 	s.NoError(err)
 
 	s.False(status.IsClean())
-	s.Len(status, 9)
+	s.Equal(9, status.Len())
 }
 
 func (s *WorktreeSuite) TestStatusEmpty() {
@@ -1070,7 +1070,6 @@ func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored() {
 
 	err = util.WriteFile(fs, "secondIgnoredFile", []byte("Should be completely ignored"), 0o755)
 	s.NoError(err)
-	status = nil
 	status, err = w.Status()
 	s.NoError(err)
 	s.True(status.IsClean())
@@ -1078,7 +1077,6 @@ func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored() {
 
 	err = util.WriteFile(fs, "fileToIgnore", []byte("Updated data"), 0o755)
 	s.NoError(err)
-	status = nil
 	status, err = w.Status()
 	s.NoError(err)
 	s.False(status.IsClean())
@@ -1101,7 +1099,7 @@ func (s *WorktreeSuite) TestStatusEmptyDirty() {
 	status, err := w.Status()
 	s.NoError(err)
 	s.False(status.IsClean())
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 }
 
 func (s *WorktreeSuite) TestStatusUnmodified() {
@@ -1114,21 +1112,13 @@ func (s *WorktreeSuite) TestStatusUnmodified() {
 	err := w.Checkout(&CheckoutOptions{Force: true})
 	s.NoError(err)
 
-	status, err := w.StatusWithOptions(StatusOptions{Strategy: Preload})
+	status, err := w.StatusWithOptions(StatusOptions{})
 	s.NoError(err)
 	s.True(status.IsClean())
 	s.False(status.IsUntracked("LICENSE"))
 
 	s.Equal(Unmodified, status.File("LICENSE").Staging)
 	s.Equal(Unmodified, status.File("LICENSE").Worktree)
-
-	status, err = w.StatusWithOptions(StatusOptions{Strategy: Empty})
-	s.NoError(err)
-	s.True(status.IsClean())
-	s.False(status.IsUntracked("LICENSE"))
-
-	s.Equal(Untracked, status.File("LICENSE").Staging)
-	s.Equal(Untracked, status.File("LICENSE").Worktree)
 }
 
 func (s *WorktreeSuite) TestReset() {
@@ -1179,7 +1169,7 @@ func (s *WorktreeSuite) TestResetWithUntracked() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	for file, st := range status {
+	for file, st := range status.Iter() {
 		if file == "foo" {
 			s.Equal(Untracked, st.Worktree)
 			s.Equal(Untracked, st.Staging)
@@ -1526,13 +1516,10 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 	f.Close()
 
 	status, _ := w.Status()
-	s.Len(status, 3)
-	_, ok := status["another/file"]
-	s.True(ok)
-	_, ok = status["vendor/github.com/file"]
-	s.True(ok)
-	_, ok = status["vendor/gopkg.in/file"]
-	s.True(ok)
+	s.Equal(3, status.Len())
+	s.True(status.IsUntracked("another/file"))
+	s.True(status.IsUntracked("vendor/github.com/file"))
+	s.True(status.IsUntracked("vendor/gopkg.in/file"))
 
 	f, _ = fs.Create(".gitignore")
 	f.Write([]byte("vendor/g*/"))
@@ -1542,15 +1529,11 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 	f.Close()
 
 	status, _ = w.Status()
-	s.Len(status, 4)
-	_, ok = status[".gitignore"]
-	s.True(ok)
-	_, ok = status["another/file"]
-	s.True(ok)
-	_, ok = status["vendor/.gitignore"]
-	s.True(ok)
-	_, ok = status["vendor/github.com/file"]
-	s.True(ok)
+	s.Equal(4, status.Len())
+	s.Equal(Modified, status.File(".gitignore").Worktree)
+	s.True(status.IsUntracked("another/file"))
+	s.True(status.IsUntracked("vendor/github.com/file"))
+	s.True(status.IsUntracked("vendor/gopkg.in/file"))
 }
 
 func (s *WorktreeSuite) TestStatusUntracked() {
@@ -1873,7 +1856,7 @@ func (s *WorktreeSuite) TestAddUntracked() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 
 	file := status.File("foo")
 	s.Equal(Added, file.Staging)
@@ -1950,7 +1933,7 @@ func (s *WorktreeSuite) TestIgnored() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 0)
+	s.Equal(0, status.Len())
 
 	file := status.File("foo")
 	s.Equal(Untracked, file.Staging)
@@ -1978,7 +1961,7 @@ func (s *WorktreeSuite) TestExcludedNoGitignore() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 0)
+	s.Equal(0, status.Len())
 
 	file := status.File("foo")
 	s.Equal(Untracked, file.Staging)
@@ -2017,7 +2000,7 @@ func (s *WorktreeSuite) TestAddModified() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 
 	file := status.File("LICENSE")
 	s.Equal(Modified, file.Staging)
@@ -2067,7 +2050,7 @@ func (s *WorktreeSuite) TestAddRemoved() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 
 	file := status.File("LICENSE")
 	s.Equal(Deleted, file.Staging)
@@ -2109,7 +2092,7 @@ func (s *WorktreeSuite) testAddRemovedInDirectory(addPath string, expectedJSONSt
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 
 	file := status.File("go/example.go")
 	s.Equal(Deleted, file.Staging)
@@ -2193,7 +2176,7 @@ func (s *WorktreeSuite) TestAddDirectory() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 
 	file := status.File("qux/foo")
 	s.Equal(Added, file.Staging)
@@ -2248,7 +2231,7 @@ func (s *WorktreeSuite) TestAddAll() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 
 	file1 := status.File("file1")
 	s.Equal(Added, file1.Staging)
@@ -2297,7 +2280,7 @@ func (s *WorktreeSuite) TestAddGlob() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 3)
+	s.Equal(3, status.Len())
 
 	file := status.File("qux/qux")
 	s.Equal(Untracked, file.Staging)
@@ -2356,7 +2339,7 @@ func (s *WorktreeSuite) TestAddFilenameStartingWithDot() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 3)
+	s.Equal(3, status.Len())
 
 	file := status.File("qux")
 	s.Equal(Added, file.Staging)
@@ -2409,7 +2392,7 @@ func (s *WorktreeSuite) testAddSkipStatus(filePath string, expectedEntries int, 
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 
 	file := status.File(filePath)
 	s.Equal(expectedStaging, file.Staging)
@@ -2451,11 +2434,11 @@ func (s *WorktreeSuite) TestAddSkipStatusNonModifiedPath() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 0)
+	s.Equal(0, status.Len())
 
 	file := status.File("LICENSE")
-	s.Equal(Untracked, file.Staging)
-	s.Equal(Untracked, file.Worktree)
+	s.Equal(Unmodified, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
 }
 
 func (s *WorktreeSuite) TestAddSkipStatusWithIgnoredPath() {
@@ -2484,7 +2467,7 @@ func (s *WorktreeSuite) TestAddSkipStatusWithIgnoredPath() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 0)
+	s.Equal(0, status.Len())
 
 	file := status.File("fileToIgnore")
 	s.Equal(Untracked, file.Staging)
@@ -2503,7 +2486,7 @@ func (s *WorktreeSuite) TestAddSkipStatusWithIgnoredPath() {
 
 	status, err = w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 
 	file = status.File("fileToIgnore")
 	s.Equal(Added, file.Staging)
@@ -2526,7 +2509,7 @@ func (s *WorktreeSuite) TestRemove() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 	s.Equal(Deleted, status.File("LICENSE").Staging)
 }
 
@@ -2561,7 +2544,7 @@ func (s *WorktreeSuite) TestRemoveDirectory() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 	s.Equal(Deleted, status.File("json/long.json").Staging)
 	s.Equal(Deleted, status.File("json/short.json").Staging)
 
@@ -2588,7 +2571,7 @@ func (s *WorktreeSuite) TestRemoveDirectoryUntracked() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 3)
+	s.Equal(3, status.Len())
 	s.Equal(Deleted, status.File("json/long.json").Staging)
 	s.Equal(Deleted, status.File("json/short.json").Staging)
 	s.Equal(Untracked, status.File("json/foo").Staging)
@@ -2616,7 +2599,7 @@ func (s *WorktreeSuite) TestRemoveDeletedFromWorktree() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 	s.Equal(Deleted, status.File("LICENSE").Staging)
 }
 
@@ -2635,7 +2618,7 @@ func (s *WorktreeSuite) TestRemoveGlob() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 	s.Equal(Deleted, status.File("json/long.json").Staging)
 }
 
@@ -2654,7 +2637,7 @@ func (s *WorktreeSuite) TestRemoveGlobDirectory() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 	s.Equal(Deleted, status.File("json/short.json").Staging)
 	s.Equal(Deleted, status.File("json/long.json").Staging)
 
@@ -2683,7 +2666,7 @@ func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 3)
+	s.Equal(3, status.Len())
 	s.Equal(Deleted, status.File("json/short.json").Staging)
 	s.Equal(Deleted, status.File("json/long.json").Staging)
 }
@@ -2704,7 +2687,7 @@ func (s *WorktreeSuite) TestMove() {
 
 	status, err := w.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 	s.Equal(Deleted, status.File("LICENSE").Staging)
 	s.Equal(Added, status.File("foo").Staging)
 }
@@ -2754,7 +2737,7 @@ func (s *WorktreeSuite) TestClean() {
 	// Status before cleaning.
 	status, err := wt.Status()
 	s.NoError(err)
-	s.Len(status, 2)
+	s.Equal(2, status.Len())
 
 	err = wt.Clean(&CleanOptions{})
 	s.NoError(err)
@@ -2763,7 +2746,7 @@ func (s *WorktreeSuite) TestClean() {
 	status, err = wt.Status()
 	s.NoError(err)
 
-	s.Len(status, 1)
+	s.Equal(1, status.Len())
 
 	fi, err := fs.Lstat("pkgA")
 	s.NoError(err)
@@ -2776,7 +2759,7 @@ func (s *WorktreeSuite) TestClean() {
 	status, err = wt.Status()
 	s.NoError(err)
 
-	s.Len(status, 0)
+	s.Equal(0, status.Len())
 
 	// An empty dir should be deleted, as well.
 	_, err = fs.Lstat("pkgA")
@@ -3262,7 +3245,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 
 		status, err := wt.Status()
 		s.NoError(err)
-		s.Len(status, 2) // 2 files
+		s.Equal(2, status.Len()) // 2 files
 
 		head, err := repo.Head()
 		s.NoError(err)
@@ -3281,10 +3264,10 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 
 		status, err := wt.Status()
 		s.NoError(err)
-		s.Len(status, 3) // 3 files
+		s.Equal(3, status.Len()) // 3 files
 
-		_, ok := status["linked-worktree-1-unique-file.txt"]
-		s.True(ok)
+		fileStat := status.File("linked-worktree-1-unique-file.txt")
+		s.Equal(Modified, fileStat.Worktree)
 
 		head, err := repo.Head()
 		s.NoError(err)
@@ -3303,10 +3286,10 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 
 		status, err := wt.Status()
 		s.NoError(err)
-		s.Len(status, 3) // 3 files
+		s.Equal(3, status.Len()) // 3 files
 
-		_, ok := status["linked-worktree-2-unique-file.txt"]
-		s.True(ok)
+		fileStat := status.File("linked-worktree-2-unique-file.txt")
+		s.Equal(Modified, fileStat.Worktree)
 
 		head, err := repo.Head()
 		s.NoError(err)
@@ -3463,12 +3446,12 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 	err := w.Checkout(&CheckoutOptions{})
 	s.NoError(err)
 
-	names = []string{"foo", "CHANGELOG", "LICENSE", "binary.jpg"}
+	names = []string{"added.txt", "CHANGELOG", "LICENSE", "binary.jpg"}
 	verifyStatus(s, "Checkout", w, names, []FileStatus{
 		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Unmodified, Staging: Unmodified},
+		{Worktree: Unmodified, Staging: Unmodified},
+		{Worktree: Unmodified, Staging: Unmodified},
 	})
 
 	// Touch of bunch of files including create a new file and delete an existing file
@@ -3596,7 +3579,7 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 	s.NoError(err)
 	verifyStatus(s, "Restored First", w, names, []FileStatus{
 		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Unmodified, Staging: Unmodified},
 		{Worktree: Modified, Staging: Modified},
 		{Worktree: Unmodified, Staging: Deleted},
 	})
@@ -3606,8 +3589,8 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 	s.NoError(err)
 	verifyStatus(s, "Restored Second", w, names, []FileStatus{
 		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
-		{Worktree: Untracked, Staging: Untracked},
+		{Worktree: Unmodified, Staging: Unmodified},
+		{Worktree: Unmodified, Staging: Unmodified},
+		{Worktree: Unmodified, Staging: Unmodified},
 	})
 }
