@@ -85,10 +85,6 @@ func TestPackfileWithCache(t *testing.T) {
 	})
 }
 
-func (p *PackHandlerSuite[T]) SetupTest() {
-	resetGlobalSyncPools()
-}
-
 func (p *PackHandlerSuite[T]) TestFindHash() {
 	handler := p.newPackHandler()
 	defer handler.Close()

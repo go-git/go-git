@@ -1,10 +1,8 @@
 package pack_test
 
 import (
-	"bufio"
 	"crypto"
 	"io"
-	"sync"
 
 	"github.com/go-git/go-billy/v6"
 
@@ -51,16 +49,4 @@ func newPackfileOpts(pack, idx billy.File, opts ...packfile.PackfileOption) pack
 
 	opts = append(opts, packfile.WithIdx(i))
 	return packfile.NewPackfile(pack, opts...)
-}
-
-//go:linkname bufioPool github.com/go-git/go-git/v6/utils/sync.bufioReader
-var bufioPool sync.Pool
-
-// resetGlobalSyncPools resets the global sync pools. This is needed as
-// the Suite execution ends up copying global vars by value, which in this
-// case specifically results in the `New` becoming nil.
-func resetGlobalSyncPools() {
-	bufioPool = sync.Pool{New: func() any {
-		return bufio.NewReader(nil)
-	}}
 }
