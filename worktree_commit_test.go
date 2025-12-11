@@ -425,8 +425,8 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	status, err = w.Status()
 	s.NoError(err)
 	foo = status.File("foo")
-	s.Equal(Untracked, foo.Staging)
-	s.Equal(Untracked, foo.Worktree)
+	s.Equal(Unmodified, foo.Staging)
+	s.Equal(Unmodified, foo.Worktree)
 
 	assertStorageStatus(s, s.Repository, 13, 11, 10, expected)
 
@@ -439,8 +439,8 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	status, err = w.Status()
 	s.NoError(err)
 	foo = status.File("foo")
-	s.Equal(Untracked, foo.Staging)
-	s.Equal(Untracked, foo.Worktree)
+	s.Equal(Unmodified, foo.Staging)
+	s.Equal(Unmodified, foo.Worktree)
 
 	hash, err = w.Commit("commit with no changes\n", &CommitOptions{
 		Author:            defaultSignature(),
@@ -455,8 +455,8 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	status, err = w.Status()
 	s.NoError(err)
 	foo = status.File("foo")
-	s.Equal(Untracked, foo.Staging)
-	s.Equal(Untracked, foo.Worktree)
+	s.Equal(Unmodified, foo.Staging)
+	s.Equal(Unmodified, foo.Worktree)
 
 	patch, err := commit2.Patch(commit1)
 	s.NoError(err)
