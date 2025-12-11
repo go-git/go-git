@@ -10,6 +10,7 @@ import (
 )
 
 func TestPackScanner(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[uint64]{
 		newPackHandler: func() packHandler[uint64] {

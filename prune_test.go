@@ -19,6 +19,7 @@ type PruneSuite struct {
 }
 
 func TestPruneSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(PruneSuite))
 }
 

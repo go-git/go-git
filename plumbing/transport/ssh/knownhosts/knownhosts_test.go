@@ -32,6 +32,7 @@ import (
 )
 
 func TestNewDB(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 
 	// Valid path should return a non-nil HostKeyDB and no error
@@ -69,6 +70,7 @@ func TestNewDB(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 
 	// Valid path should return a callback and no error; callback should be usable
@@ -96,6 +98,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestHostKeys(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -128,6 +131,7 @@ func TestHostKeys(t *testing.T) {
 }
 
 func TestHostKeyAlgorithms(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -161,6 +165,7 @@ func TestHostKeyAlgorithms(t *testing.T) {
 }
 
 func TestWithCertLines(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	khPath2 := khPath + "2"
 	appendCertTestKnownHosts(t, khPath, "*.certy.test", ssh.KeyAlgoRSA)
@@ -258,6 +263,7 @@ func TestWithCertLines(t *testing.T) {
 }
 
 func TestIsHostKeyChanged(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -295,6 +301,7 @@ func TestIsHostKeyChanged(t *testing.T) {
 }
 
 func TestIsHostUnknown(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -332,6 +339,7 @@ func TestIsHostUnknown(t *testing.T) {
 }
 
 func TestNormalize(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"127.0.0.1":                 "127.0.0.1",
 		"127.0.0.1:22":              "127.0.0.1",
@@ -352,6 +360,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestLine(t *testing.T) {
+	t.Parallel()
 	edKeyStr := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF9Wn63tLEhSWl9Ye+4x2GnruH8cq0LIh2vum/fUHrFQ"
 	edKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(edKeyStr))
 	if err != nil {
@@ -371,6 +380,7 @@ func TestLine(t *testing.T) {
 }
 
 func TestWriteKnownHost(t *testing.T) {
+	t.Parallel()
 	edKeyStr := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF9Wn63tLEhSWl9Ye+4x2GnruH8cq0LIh2vum/fUHrFQ"
 	edKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(edKeyStr))
 	if err != nil {
@@ -414,6 +424,7 @@ func TestWriteKnownHost(t *testing.T) {
 }
 
 func TestFakePublicKey(t *testing.T) {
+	t.Parallel()
 	fpk := fakePublicKey{}
 	if err := fpk.Verify(nil, nil); err == nil {
 		t.Error("Expected fakePublicKey.Verify() to always return an error, but it did not")

@@ -12,6 +12,7 @@ import (
 )
 
 func TestCmdStartEOFSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(CmdStartEOFSuite))
 }
 

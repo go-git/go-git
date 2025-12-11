@@ -23,6 +23,7 @@ type EncoderAdvancedSuite struct {
 }
 
 func TestEncoderAdvancedSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(EncoderAdvancedSuite))
 }
 

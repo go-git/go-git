@@ -14,6 +14,7 @@ import (
 )
 
 func TestNewEndpoint(t *testing.T) {
+	t.Parallel()
 	type tt struct {
 		input   string
 		want    string
@@ -94,6 +95,7 @@ func TestNewEndpoint(t *testing.T) {
 }
 
 func TestNewEndpointFile(t *testing.T) {
+	t.Parallel()
 	type tt struct {
 		input   string
 		want    string
@@ -165,6 +167,7 @@ func TestNewEndpointFile(t *testing.T) {
 }
 
 func TestFilterUnsupportedCapabilities(t *testing.T) {
+	t.Parallel()
 	l := capability.NewList()
 	l.Set(capability.MultiACK)
 	l.Set(capability.MultiACKDetailed)

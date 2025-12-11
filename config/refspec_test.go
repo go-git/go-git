@@ -14,6 +14,7 @@ type RefSpecSuite struct {
 }
 
 func TestRefSpecSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RefSpecSuite))
 }
 

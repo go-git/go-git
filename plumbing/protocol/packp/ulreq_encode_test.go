@@ -19,6 +19,7 @@ type UlReqEncodeSuite struct {
 }
 
 func TestUlReqEncodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UlReqEncodeSuite))
 }
 

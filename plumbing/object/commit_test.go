@@ -24,6 +24,7 @@ type SuiteCommit struct {
 }
 
 func TestSuiteCommit(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteCommit))
 }
 

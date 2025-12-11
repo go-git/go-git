@@ -27,6 +27,7 @@ import (
 )
 
 func TestClientSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ClientSuite))
 }
 
@@ -284,6 +285,7 @@ func setupServer(t testing.TB, smart bool) (base string, port int) {
 }
 
 func TestFilterHeaders(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    http.Header
@@ -377,6 +379,7 @@ func TestFilterHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := filterHeaders(tt.input)
 			require.Equal(t, tt.expected, result)
 		})
@@ -384,6 +387,7 @@ func TestFilterHeaders(t *testing.T) {
 }
 
 func TestRedactedURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    *url.URL
@@ -448,6 +452,7 @@ func TestRedactedURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := redactedURL(tt.input)
 			require.Equal(t, tt.expected, result)
 

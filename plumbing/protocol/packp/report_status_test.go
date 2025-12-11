@@ -16,6 +16,7 @@ type ReportStatusSuite struct {
 }
 
 func TestReportStatusSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ReportStatusSuite))
 }
 

@@ -11,6 +11,7 @@ import (
 )
 
 func TestEmptyUpdateObjectStorage(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	sto := memory.NewStorage()
 

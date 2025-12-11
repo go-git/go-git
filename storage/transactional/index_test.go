@@ -10,6 +10,7 @@ import (
 )
 
 func TestIndexSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IndexSuite))
 }
 

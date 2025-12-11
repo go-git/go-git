@@ -18,6 +18,7 @@ type RenameSuite struct {
 }
 
 func TestRenameSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RenameSuite))
 }
 
@@ -319,6 +320,7 @@ type SimilarityIndexSuite struct {
 }
 
 func TestSimilarityIndexSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SimilarityIndexSuite))
 }
 

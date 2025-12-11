@@ -17,6 +17,7 @@ type DeltaSuite struct {
 }
 
 func TestDeltaSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DeltaSuite))
 }
 

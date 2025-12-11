@@ -37,6 +37,7 @@ func (s *ChangeSuite) tree(h plumbing.Hash) *Tree {
 }
 
 func TestChangeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ChangeSuite))
 }
 

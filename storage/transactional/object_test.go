@@ -10,6 +10,7 @@ import (
 )
 
 func TestObjectSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ObjectSuite))
 }
 

@@ -149,6 +149,7 @@ func TestSyncedReader(t *testing.T) {
 }
 
 func TestPackWriterUnusedNotify(t *testing.T) {
+	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
 	w, err := newPackWrite(fs)

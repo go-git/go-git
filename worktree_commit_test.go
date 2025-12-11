@@ -282,6 +282,7 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 }
 
 func TestCount(t *testing.T) {
+	t.Parallel()
 	f := fixtures.Basic().One()
 	r := NewRepositoryWithEmptyWorktree(f)
 
@@ -327,6 +328,7 @@ func TestCount(t *testing.T) {
 }
 
 func TestAddAndCommitWithSkipStatus(t *testing.T) {
+	t.Parallel()
 	expected := plumbing.NewHash("375a3808ffde7f129cdd3c8c252fd0fe37cfd13b")
 
 	f := fixtures.Basic().One()

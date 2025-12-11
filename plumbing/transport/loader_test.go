@@ -19,6 +19,7 @@ type loaderSuiteRepo struct {
 }
 
 func TestLoaderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(LoaderSuite))
 }
 

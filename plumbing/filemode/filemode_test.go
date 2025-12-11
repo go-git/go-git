@@ -13,6 +13,7 @@ type ModeSuite struct {
 }
 
 func TestModeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ModeSuite))
 }
 

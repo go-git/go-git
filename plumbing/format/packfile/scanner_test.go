@@ -16,6 +16,7 @@ import (
 )
 
 func TestScan(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		packfile     billy.File
@@ -50,6 +51,7 @@ func TestScan(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var opts []ScannerOption
 
 			if tc.sha256 {
@@ -119,6 +121,7 @@ func BenchmarkScannerBasic(b *testing.B) {
 }
 
 func TestPackHeaderSignature(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		scanner   *Scanner
@@ -164,6 +167,7 @@ func TestPackHeaderSignature(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			next, err := packHeaderSignature(tc.scanner)
 
 			if tc.wantErr == nil {
@@ -181,6 +185,7 @@ func TestPackHeaderSignature(t *testing.T) {
 }
 
 func TestPackVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		scanner   *Scanner
@@ -233,6 +238,7 @@ func TestPackVersion(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			next, err := packVersion(tc.scanner)
 
 			if tc.wantErr == nil {
@@ -251,6 +257,7 @@ func TestPackVersion(t *testing.T) {
 }
 
 func TestPackObjectQty(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		scanner   *Scanner
@@ -302,6 +309,7 @@ func TestPackObjectQty(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			next, err := packObjectsQty(tc.scanner)
 
 			if tc.wantErr == nil {

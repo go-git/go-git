@@ -12,6 +12,7 @@ import (
 )
 
 func TestOpenChainFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		goodShas []string

@@ -14,6 +14,7 @@ type FSNoderSuite struct {
 }
 
 func TestFSNoderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FSNoderSuite))
 }
 

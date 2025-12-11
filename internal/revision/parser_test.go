@@ -14,6 +14,7 @@ type ParserSuite struct {
 }
 
 func TestParserSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ParserSuite))
 }
 

@@ -18,6 +18,7 @@ type PatchStatsSuite struct {
 }
 
 func TestPatchStatsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(PatchStatsSuite))
 }
 

@@ -14,6 +14,7 @@ type ObjectToPackSuite struct {
 }
 
 func TestObjectToPackSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ObjectToPackSuite))
 }
 

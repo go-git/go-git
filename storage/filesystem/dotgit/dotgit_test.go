@@ -30,6 +30,7 @@ type SuiteDotGit struct {
 }
 
 func TestSuiteDotGit(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteDotGit))
 }
 
@@ -800,6 +801,7 @@ func (s *SuiteDotGit) TestPackRefs() {
 }
 
 func TestAlternatesDefault(t *testing.T) {
+	t.Parallel()
 	// Create a new dotgit object.
 	dotFS := osfs.New(t.TempDir())
 
@@ -807,6 +809,7 @@ func TestAlternatesDefault(t *testing.T) {
 }
 
 func TestAlternatesWithFS(t *testing.T) {
+	t.Parallel()
 	// Create a new dotgit object with a specific FS for alternates.
 	altFS := osfs.New(t.TempDir())
 	dotFS, _ := altFS.Chroot("repo2")
@@ -815,6 +818,7 @@ func TestAlternatesWithFS(t *testing.T) {
 }
 
 func TestAlternatesWithBoundOS(t *testing.T) {
+	t.Parallel()
 	// Create a new dotgit object with a specific FS for alternates.
 	altFS := osfs.New(t.TempDir(), osfs.WithBoundOS())
 	dotFS, _ := altFS.Chroot("repo2")
@@ -906,6 +910,7 @@ func testAlternates(t *testing.T, dotFS, altFS billy.Filesystem) {
 }
 
 func TestAlternatesDupes(t *testing.T) {
+	t.Parallel()
 	dotFS := osfs.New(t.TempDir())
 	dir := New(dotFS)
 	err := dir.Initialize()

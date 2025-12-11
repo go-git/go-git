@@ -26,6 +26,7 @@ type MatcherSuite struct {
 }
 
 func TestMatcherSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(MatcherSuite))
 }
 

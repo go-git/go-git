@@ -26,10 +26,12 @@ var (
 )
 
 func TestFilesystem(t *testing.T) {
+	t.Parallel()
 	assert.Same(t, fs, sto.Filesystem())
 }
 
 func TestNewStorageShouldNotAddAnyContentsToDir(t *testing.T) {
+	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
 	sto := filesystem.NewStorageWithOptions(

@@ -17,6 +17,7 @@ type SuiteScanner struct {
 }
 
 func TestSuiteScanner(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteScanner))
 }
 

@@ -286,6 +286,7 @@ var basicIndex = Index{
 }
 
 func TestDecodeMergeConflict(t *testing.T) {
+	t.Parallel()
 	f, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit().Open("index")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, f.Close()) }()

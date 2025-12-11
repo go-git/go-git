@@ -36,6 +36,7 @@ type RemoteSuite struct {
 }
 
 func TestRemoteSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RemoteSuite))
 }
 
@@ -1775,6 +1776,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 }
 
 func TestFetchFastForwardForCustomRef(t *testing.T) {
+	t.Parallel()
 	customRef := "refs/custom/branch"
 	// 1. Set up a remote with a URL
 	remoteURL := t.TempDir()

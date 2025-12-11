@@ -22,6 +22,7 @@ type RevListSuite struct {
 }
 
 func TestRevListSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RevListSuite))
 }
 

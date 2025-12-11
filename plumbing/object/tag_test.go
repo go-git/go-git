@@ -22,6 +22,7 @@ type TagSuite struct {
 }
 
 func TestTagSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(TagSuite))
 }
 

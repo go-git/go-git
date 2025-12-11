@@ -41,6 +41,7 @@ func (e *errorAfterReader) Read(p []byte) (int, error) {
 }
 
 func TestDecodeSHA256(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.ByTag("packfile-sha256").One()
 	revf := fixture.Rev()
 	require.NotNil(t, revf)
@@ -148,6 +149,7 @@ func TestDecode(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			errCh := make(chan error, 1)
 
 			go func() {

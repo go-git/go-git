@@ -17,6 +17,7 @@ func preReceiveHook(m string) []byte {
 }
 
 func TestPlainInitFileMode(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	r, err := PlainInit(dir, false)
 	require.NoError(t, err)

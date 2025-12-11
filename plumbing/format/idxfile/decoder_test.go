@@ -18,6 +18,7 @@ type IdxfileSuite struct {
 }
 
 func TestIdxfileSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IdxfileSuite))
 }
 

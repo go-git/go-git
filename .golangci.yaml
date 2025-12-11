@@ -10,6 +10,7 @@ linters:
     - misspell
     - modernize
     - nolintlint
+    - paralleltest
     - prealloc
     - revive
     - staticcheck

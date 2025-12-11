@@ -22,6 +22,7 @@ type CommitgraphSuite struct {
 }
 
 func TestCommitgraphSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(CommitgraphSuite))
 }
 

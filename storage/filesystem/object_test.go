@@ -30,6 +30,7 @@ var objectTypes = []plumbing.ObjectType{
 }
 
 func TestFsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FsSuite))
 }
 

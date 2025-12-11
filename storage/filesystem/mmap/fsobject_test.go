@@ -35,6 +35,7 @@ var data = []struct {
 }
 
 func TestOndemandObject(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	scanner, err := NewPackScanner(crypto.SHA1.Size(), fixture.Packfile(), fixture.Idx(), fixture.Rev())
 	require.NoError(t, err)
@@ -97,6 +98,7 @@ func TestOndemandObject(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			offset, err := scanner.FindOffset(tc.hash)
 			require.NoError(t, err)
 

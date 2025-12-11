@@ -13,6 +13,7 @@ type FileSuite struct {
 }
 
 func TestFileSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FileSuite))
 }
 

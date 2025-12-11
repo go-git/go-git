@@ -22,6 +22,8 @@ func preReceiveHook(m string) []byte {
 }
 
 func TestCloneFileUrlWindows(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	r, err := PlainInit(dir, false)

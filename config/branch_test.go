@@ -13,6 +13,7 @@ type BranchSuite struct {
 }
 
 func TestBranchSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BranchSuite))
 }
 

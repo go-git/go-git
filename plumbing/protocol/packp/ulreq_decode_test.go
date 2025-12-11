@@ -21,6 +21,7 @@ type UlReqDecodeSuite struct {
 }
 
 func TestUlReqDecodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UlReqDecodeSuite))
 }
 

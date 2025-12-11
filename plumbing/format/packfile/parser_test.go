@@ -21,6 +21,7 @@ import (
 )
 
 func TestParserHashes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		storage           storer.Storer
@@ -52,6 +53,7 @@ func TestParserHashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := fixtures.Basic().One()
 
 			obs := new(testObserver)
@@ -110,6 +112,7 @@ func TestParserHashes(t *testing.T) {
 }
 
 func TestThinPack(t *testing.T) {
+	t.Parallel()
 	// Initialize an empty repository
 	r, err := git.PlainInit(t.TempDir(), true)
 	assert.NoError(t, err)
@@ -152,6 +155,7 @@ func TestThinPack(t *testing.T) {
 }
 
 func TestResolveExternalRefsInThinPack(t *testing.T) {
+	t.Parallel()
 	extRefsThinPack := fixtures.ByTag("codecommit").One().Packfile()
 
 	parser := packfile.NewParser(extRefsThinPack)
@@ -162,6 +166,7 @@ func TestResolveExternalRefsInThinPack(t *testing.T) {
 }
 
 func TestResolveExternalRefs(t *testing.T) {
+	t.Parallel()
 	extRefsThinPack := fixtures.ByTag("delta-before-base").One().Packfile()
 
 	parser := packfile.NewParser(extRefsThinPack)
@@ -172,6 +177,7 @@ func TestResolveExternalRefs(t *testing.T) {
 }
 
 func TestMemoryResolveExternalRefs(t *testing.T) {
+	t.Parallel()
 	extRefsThinPack := fixtures.ByTag("delta-before-base").One().Packfile()
 
 	parser := packfile.NewParser(extRefsThinPack, packfile.WithStorage(memory.NewStorage()))

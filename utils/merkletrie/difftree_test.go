@@ -20,6 +20,7 @@ type DiffTreeSuite struct {
 }
 
 func TestDiffTreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DiffTreeSuite))
 }
 

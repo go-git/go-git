@@ -47,6 +47,7 @@ type WorktreeSuite struct {
 }
 
 func TestWorktreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(WorktreeSuite))
 }
 
@@ -1760,6 +1761,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 }
 
 func TestResolveModuleURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		originURL string
 		moduleURL string
@@ -1829,6 +1831,7 @@ func TestResolveModuleURL(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			got, err := resolveModuleURL(tc.originURL, tc.moduleURL)
 			if tc.wantErr == nil {
 				assert.NoError(t, err)
@@ -2817,6 +2820,7 @@ func (s *WorktreeSuite) TestCleanBare() {
 }
 
 func TestAlternatesRepo(t *testing.T) {
+	t.Parallel()
 	fs := fixtures.ByTag("alternates").One().Worktree()
 
 	// Open 1st repo.
@@ -3323,6 +3327,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 }
 
 func TestTreeContainsDirs(t *testing.T) {
+	t.Parallel()
 	tree := &object.Tree{
 		Entries: []object.TreeEntry{
 			{Name: "foo", Mode: filemode.Dir},
@@ -3361,12 +3366,14 @@ func TestTreeContainsDirs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, test.expected, treeContainsDirs(tree, test.dirs))
 		})
 	}
 }
 
 func TestValidPath(t *testing.T) {
+	t.Parallel()
 	type testcase struct {
 		path    string
 		wantErr bool
@@ -3405,6 +3412,7 @@ func TestValidPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			err := validPath(tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -3416,6 +3424,7 @@ func TestValidPath(t *testing.T) {
 }
 
 func TestWindowsValidPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want bool
@@ -3436,6 +3445,7 @@ func TestWindowsValidPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			got := windowsValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
 		})

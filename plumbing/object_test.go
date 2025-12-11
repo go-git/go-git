@@ -11,6 +11,7 @@ type ObjectSuite struct {
 }
 
 func TestObjectSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ObjectSuite))
 }
 
