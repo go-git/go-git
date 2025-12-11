@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cgi"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -280,4 +281,183 @@ func setupServer(t testing.TB, smart bool) (base string, port int) {
 	})
 
 	return base, port
+}
+
+func TestFilterHeaders(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    http.Header
+		expected http.Header
+	}{
+		{
+			name:     "empty headers",
+			input:    http.Header{},
+			expected: http.Header{},
+		},
+		{
+			name: "only safe headers",
+			input: http.Header{
+				"User-Agent":   []string{"go-git/1.0"},
+				"Content-Type": []string{"application/json"},
+				"Git-Protocol": []string{"version=2"},
+			},
+			expected: http.Header{
+				"User-Agent":   []string{"go-git/1.0"},
+				"Content-Type": []string{"application/json"},
+				"Git-Protocol": []string{"version=2"},
+			},
+		},
+		{
+			name: "only sensitive headers",
+			input: http.Header{
+				"Authorization":       []string{"Bearer secret-token"},
+				"Cookie":              []string{"session=abc123"},
+				"X-Auth-Token":        []string{"secret"},
+				"Proxy-Authorization": []string{"Basic creds"},
+			},
+			expected: http.Header{},
+		},
+		{
+			name: "mixed headers",
+			input: http.Header{
+				"User-Agent":        []string{"go-git/1.0"},
+				"Authorization":     []string{"Bearer secret-token"},
+				"Content-Type":      []string{"application/x-git-upload-pack-request"},
+				"Cookie":            []string{"session=abc123"},
+				"Git-Protocol":      []string{"version=2"},
+				"Content-Length":    []string{"1234"},
+				"Transfer-Encoding": []string{"chunked"},
+			},
+			expected: http.Header{
+				"User-Agent":        []string{"go-git/1.0"},
+				"Content-Type":      []string{"application/x-git-upload-pack-request"},
+				"Git-Protocol":      []string{"version=2"},
+				"Content-Length":    []string{"1234"},
+				"Transfer-Encoding": []string{"chunked"},
+			},
+		},
+		{
+			name: "case insensitive matching",
+			input: http.Header{
+				"user-agent":    []string{"go-git/1.0"},
+				"CONTENT-TYPE":  []string{"application/json"},
+				"authorization": []string{"Bearer secret"},
+			},
+			expected: http.Header{
+				"user-agent":   []string{"go-git/1.0"},
+				"CONTENT-TYPE": []string{"application/json"},
+			},
+		},
+		{
+			name: "all safe headers",
+			input: http.Header{
+				"User-Agent":        []string{"go-git/1.0"},
+				"Host":              []string{"github.com"},
+				"Accept":            []string{"application/x-git-upload-pack-result"},
+				"Content-Type":      []string{"application/x-git-upload-pack-request"},
+				"Content-Length":    []string{"1234"},
+				"Cache-Control":     []string{"no-cache"},
+				"Git-Protocol":      []string{"version=2"},
+				"Transfer-Encoding": []string{"chunked"},
+				"Content-Encoding":  []string{"gzip"},
+			},
+			expected: http.Header{
+				"User-Agent":        []string{"go-git/1.0"},
+				"Host":              []string{"github.com"},
+				"Accept":            []string{"application/x-git-upload-pack-result"},
+				"Content-Type":      []string{"application/x-git-upload-pack-request"},
+				"Content-Length":    []string{"1234"},
+				"Cache-Control":     []string{"no-cache"},
+				"Git-Protocol":      []string{"version=2"},
+				"Transfer-Encoding": []string{"chunked"},
+				"Content-Encoding":  []string{"gzip"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterHeaders(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestRedactedURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *url.URL
+		expected string
+	}{
+		{
+			name:     "nil URL",
+			input:    nil,
+			expected: "",
+		},
+		{
+			name: "URL without userinfo",
+			input: &url.URL{
+				Scheme: "https",
+				Host:   "github.com",
+				Path:   "/go-git/go-git",
+			},
+			expected: "https://github.com/go-git/go-git",
+		},
+		{
+			name: "URL with username only",
+			input: &url.URL{
+				Scheme: "https",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/go-git/go-git",
+			},
+			expected: "https://git@github.com/go-git/go-git",
+		},
+		{
+			name: "URL with username and password",
+			input: &url.URL{
+				Scheme: "https",
+				User:   url.UserPassword("git", "secret-password"),
+				Host:   "github.com",
+				Path:   "/go-git/go-git",
+			},
+			expected: "https://git:REDACTED@github.com/go-git/go-git",
+		},
+		{
+			name: "URL with empty password",
+			input: &url.URL{
+				Scheme: "https",
+				User:   url.UserPassword("git", ""),
+				Host:   "github.com",
+				Path:   "/go-git/go-git",
+			},
+			expected: "https://git:REDACTED@github.com/go-git/go-git",
+		},
+		{
+			name: "URL with query parameters",
+			input: &url.URL{
+				Scheme:   "https",
+				User:     url.UserPassword("user", "pass"),
+				Host:     "github.com",
+				Path:     "/repo",
+				RawQuery: "service=git-upload-pack",
+			},
+			expected: "https://user:REDACTED@github.com/repo?service=git-upload-pack",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := redactedURL(tt.input)
+			require.Equal(t, tt.expected, result)
+
+			// Verify original URL is not modified
+			if tt.input != nil && tt.input.User != nil {
+				if origPass, hasPass := tt.input.User.Password(); hasPass {
+					// Original password should still be intact
+					require.NotEqual(t, "REDACTED", origPass, "original URL should not be modified")
+				}
+			}
+		})
+	}
 }

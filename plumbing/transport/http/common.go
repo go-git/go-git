@@ -33,6 +33,52 @@ func init() {
 	transport.Register("https", DefaultTransport)
 }
 
+// safeHeaders is a list of HTTP headers that are safe to log for debugging
+// the Git protocol. Headers not in this list may contain sensitive information
+// (e.g., Authorization, Cookie, X-Auth-Token) and should not be logged.
+var safeHeaders = map[string]struct{}{
+	"User-Agent":        {},
+	"Host":              {},
+	"Accept":            {},
+	"Content-Type":      {},
+	"Content-Length":    {},
+	"Cache-Control":     {},
+	"Git-Protocol":      {},
+	"Transfer-Encoding": {},
+	"Content-Encoding":  {},
+}
+
+// filterHeaders returns a new http.Header containing only safe headers
+// that are useful for debugging the Git protocol without exposing sensitive
+// information.
+func filterHeaders(h http.Header) http.Header {
+	filtered := make(http.Header)
+	for key, values := range h {
+		if _, ok := safeHeaders[http.CanonicalHeaderKey(key)]; ok {
+			filtered[key] = values
+		}
+	}
+	return filtered
+}
+
+// redactedURL returns a string representation of the URL with the password
+// redacted if present.
+func redactedURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if u.User == nil {
+		return u.String()
+	}
+	if _, hasPassword := u.User.Password(); !hasPassword {
+		return u.String()
+	}
+	// Clone the URL to avoid modifying the original
+	redacted := *u
+	redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+	return redacted.String()
+}
+
 func applyHeaders(
 	req *http.Request,
 	service string,
@@ -68,7 +114,7 @@ func doRequest(
 ) (*http.Response, error) {
 	traceHTTP := trace.HTTP.Enabled()
 	if traceHTTP {
-		trace.HTTP.Printf("requesting %s %s %v", req.Method, req.URL.String(), req.Header)
+		trace.HTTP.Printf("requesting %s %s %v", req.Method, redactedURL(req.URL), filterHeaders(req.Header))
 	}
 
 	res, err := client.Do(req)
@@ -77,7 +123,7 @@ func doRequest(
 	}
 
 	if traceHTTP {
-		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, res.Request.URL.String(), res.Header)
+		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, redactedURL(res.Request.URL), filterHeaders(res.Header))
 	}
 
 	if res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices {
