@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -307,6 +308,42 @@ func (s *RepositorySuite) TestClone() {
 	remotes, err := r.Remotes()
 	s.NoError(err)
 	s.Len(remotes, 1)
+}
+
+func TestCloneAll(t *testing.T) {
+	t.Parallel()
+	for _, tag := range []string{".git-sha256", ".git"} {
+		f := fixtures.ByTag(tag).One()
+
+		for _, srv := range server.All(server.Loader(t, f)) {
+			endpoint, err := srv.Start()
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				require.NoError(t, srv.Close())
+			})
+
+			r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+				URL: endpoint,
+			})
+			require.NoError(t, err)
+
+			remotes, err := r.Remotes()
+			require.NoError(t, err)
+			assert.Len(t, remotes, 1)
+
+			iter, err := r.References()
+			require.NoError(t, err)
+
+			refs := 0
+			iter.ForEach(func(r *plumbing.Reference) error {
+				refs++
+				return nil
+			})
+
+			assert.Greater(t, refs, 0)
+		}
+	}
 }
 
 func (s *RepositorySuite) TestCloneContext() {
