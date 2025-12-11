@@ -247,7 +247,7 @@ func UploadPack(
 
 	objs, err := objectsToUpload(st, wants, haves)
 	if err != nil {
-		w.Close() //nolint:errcheck
+		_ = w.Close()
 		return fmt.Errorf("getting objects to upload: %w", err)
 	}
 

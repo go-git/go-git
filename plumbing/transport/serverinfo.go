@@ -26,7 +26,7 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 		return err
 	}
 
-	defer infoRefs.Close() //nolint:errcheck
+	defer func() { _ = infoRefs.Close() }()
 
 	refsIter, err := s.IterReferences()
 	if err != nil {
@@ -44,7 +44,7 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 		return err
 	}
 
-	defer infoPacks.Close() //nolint:errcheck
+	defer func() { _ = infoPacks.Close() }()
 
 	if err := repository.WriteObjectsInfoPacks(infoPacks, pos); err != nil {
 		return fmt.Errorf("failed to write objects/info/packs: %w", err)

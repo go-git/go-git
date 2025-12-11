@@ -163,9 +163,13 @@ func (r *Scanner) Scan() bool {
 
 // Reset resets the current scanner, enabling it to be used to scan the
 // same Packfile again.
-func (r *Scanner) Reset() {
-	r.Flush()
-	r.Seek(0, io.SeekStart)
+func (r *Scanner) Reset() error {
+	if err := r.Flush(); err != nil {
+		return err
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	r.packhash.Reset()
 
 	r.objIndex = -1
@@ -174,6 +178,7 @@ func (r *Scanner) Reset() {
 	r.packData = PackData{}
 	r.err = nil
 	r.nextFn = packHeaderSignature
+	return nil
 }
 
 // Data returns the pack data based on the last call to Scan().
@@ -189,7 +194,9 @@ func (r *Scanner) Error() error {
 
 // SeekFromStart seeks to the given offset from the start of the packfile.
 func (r *Scanner) SeekFromStart(offset int64) error {
-	r.Reset()
+	if err := r.Reset(); err != nil {
+		return err
+	}
 
 	if !r.Scan() {
 		return fmt.Errorf("failed to reset and read header")
@@ -337,7 +344,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 
 	offset := r.offset
 
-	r.Flush()
+	if err := r.Flush(); err != nil {
+		return nil, err
+	}
 	r.crc.Reset()
 
 	b := []byte{0}
@@ -399,7 +408,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 				return nil, err
 			}
 
-			defer w.Close()
+			defer func() { _ = w.Close() }()
 			mw = io.MultiWriter(r.hasher, w)
 		}
 
@@ -444,7 +453,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 		}
 	}
-	r.Flush()
+	if err := r.Flush(); err != nil {
+		return nil, err
+	}
 	oh.Crc32 = r.crc.Sum32()
 
 	r.packData.Section = ObjectSection
@@ -458,7 +469,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 // calculated during the scanning process, an [ErrMalformedPackfile] is
 // returned.
 func packFooter(r *Scanner) (stateFn, error) {
-	r.Flush()
+	if err := r.Flush(); err != nil {
+		return nil, err
+	}
 
 	actual := r.packhash.Sum(nil)
 

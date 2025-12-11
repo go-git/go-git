@@ -596,7 +596,7 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 				hashes = append(hashes, e.Hash)
 			}
 		}
-		ei.Close()
+		_ = ei.Close()
 	}
 
 	return hashes, nil
@@ -670,7 +670,7 @@ func (s *ObjectStorage) Close() error {
 	}
 
 	s.packfiles = nil
-	s.dir.Close()
+	_ = s.dir.Close()
 
 	return firstError
 }

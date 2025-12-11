@@ -84,7 +84,7 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 		return nil, err
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	switch res.StatusCode {
 	case http.StatusOK:
 		// continue
@@ -145,7 +145,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 
 	f, err := r.fs.TempFile(filepath.Dir(fp), filepath.Base(fp)+".temp")
 	if err != nil {
-		copyFn(io.Discard)
+		_ = copyFn(io.Discard)
 		return err
 	}
 
@@ -313,7 +313,7 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 		return err
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	switch res.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:

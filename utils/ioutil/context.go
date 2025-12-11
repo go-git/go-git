@@ -114,7 +114,7 @@ func (r *ctxReader) Read(buf []byte) (int, error) {
 		return ret.n, ret.err
 	case <-r.ctx.Done():
 		if r.closer != nil {
-			r.closer.Close()
+			_ = r.closer.Close()
 		}
 		return 0, r.ctx.Err()
 	}

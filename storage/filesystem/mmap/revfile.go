@@ -24,7 +24,7 @@ func (s *PackScanner) loadRevFile(rev billy.File) error {
 		return fmt.Errorf("cannot create mmap for .rev file: %w", err)
 	}
 	if err := validateFile(mmap, revSupported, revSignature, revMinLen); err != nil {
-		cleanup()
+		_ = cleanup()
 		return fmt.Errorf("malformed rev file: %w", err)
 	}
 

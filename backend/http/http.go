@@ -169,7 +169,7 @@ func serviceRPC(w http.ResponseWriter, r *http.Request) {
 			renderStatusError(w, http.StatusInternalServerError)
 			return
 		}
-		defer reader.Close() //nolint:errcheck
+		defer func() { _ = reader.Close() }()
 	default:
 		reader = r.Body
 	}
@@ -234,7 +234,7 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 		return
 	}
 
-	defer f.Close() //nolint:errcheck
+	defer func() { _ = f.Close() }()
 
 	stat, err := fs.Lstat(file)
 	if err != nil || !stat.Mode().IsRegular() {

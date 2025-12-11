@@ -50,7 +50,7 @@ func TestDiscoverVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			if tt.input != "" {
-				pktline.WriteString(&buf, tt.input) //nolint:errcheck
+				pktline.WriteString(&buf, tt.input)
 			}
 
 			r := bufio.NewReader(&buf)

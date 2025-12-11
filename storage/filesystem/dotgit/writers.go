@@ -135,7 +135,7 @@ func (w *PackWriter) save() error {
 	if err != nil {
 		return err
 	}
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	h := crypto.SHA1.New()
 	if w.checksum.Size() == crypto.SHA256.Size() {
@@ -150,7 +150,7 @@ func (w *PackWriter) save() error {
 	if err != nil {
 		return err
 	}
-	defer rev.Close()
+	defer func() { _ = rev.Close() }()
 	if err := w.encodeRev(rev, h); err != nil {
 		return err
 	}

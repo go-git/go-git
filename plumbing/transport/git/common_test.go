@@ -108,7 +108,7 @@ func stopDaemon(t testing.TB, cmd *exec.Cmd) {
 	// remaining child processes.
 	// Using [os.Process.Kill] won't work here because it won't terminate
 	// the child processes.
-	cmd.Process.Signal(os.Interrupt) //nolint:errcheck
+	cmd.Process.Signal(os.Interrupt)
 }
 
 func waitForPort(ctx context.Context, port int) error {

@@ -69,7 +69,7 @@ func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 	if err != nil {
 		return err
 	}
-	defer entries.Close()
+	defer func() { _ = entries.Close() }()
 
 	var pos uint32
 	for {
@@ -88,7 +88,7 @@ func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 	if err != nil {
 		return err
 	}
-	defer entriesByOffset.Close()
+	defer func() { _ = entriesByOffset.Close() }()
 
 	// Build the reverse index array
 	e.entries = make([]uint32, 0, count)

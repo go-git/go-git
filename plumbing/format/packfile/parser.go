@@ -90,7 +90,7 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 			return err
 		}
 
-		defer w.Close()
+		defer func() { _ = w.Close() }()
 
 		_, err = ioutil.CopyBufferPool(w, oh.content)
 		if err != nil {
@@ -116,11 +116,7 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 		return err
 	}
 
-	if err := p.onInflatedObjectContent(oh.Hash, oh.Offset, oh.Crc32, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return p.onInflatedObjectContent(oh.Hash, oh.Offset, oh.Crc32, nil)
 }
 
 func (p *Parser) resetCache(qty int) {
@@ -144,7 +140,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 			header := data.Value().(Header)
 
 			p.resetCache(int(header.ObjectsQty))
-			p.onHeader(header.ObjectsQty)
+			_ = p.onHeader(header.ObjectsQty)
 
 		case ObjectSection:
 			oh := data.Value().(ObjectHeader)
@@ -163,7 +159,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 				oh.content = nil
 			}
 
-			p.storeOrCache(&oh)
+			_ = p.storeOrCache(&oh)
 
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
@@ -295,7 +291,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
-				defer r.Close()
+				defer func() { _ = r.Close() }()
 
 				if parent.content == nil {
 					parent.content = sync.GetBytesBuffer()

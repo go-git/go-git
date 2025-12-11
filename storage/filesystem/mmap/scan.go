@@ -59,14 +59,14 @@ func NewPackScanner(hashSize int, pack, idx, rev billy.File) (*PackScanner, erro
 
 	err = s.loadRevFile(rev)
 	if err != nil {
-		s.packCleanup()
+		_ = s.packCleanup()
 		return nil, err
 	}
 
 	err = s.loadIdxFile(idx)
 	if err != nil {
-		s.packCleanup()
-		s.revCleanup()
+		_ = s.packCleanup()
+		_ = s.revCleanup()
 		return nil, err
 	}
 

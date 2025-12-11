@@ -1032,7 +1032,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 		return nil, err
 	}
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	input, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
@@ -1040,7 +1040,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 
 	m := config.NewModules()
 	if err := m.Unmarshal(input); err != nil {
-		return m, err
+		return nil, err
 	}
 
 	return m, nil
