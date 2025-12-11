@@ -166,8 +166,12 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		}
 	}
 
-	if p.scanner.objects == 0 {
-		return plumbing.ZeroHash, ErrEmptyPackfile
+	err := p.scanner.Error()
+	if err != nil {
+		if errors.Is(err, io.EOF) && p.scanner.objects == 0 {
+			return plumbing.ZeroHash, ErrEmptyPackfile
+		}
+		return plumbing.ZeroHash, err
 	}
 
 	for _, oh := range pendingDeltaREFs {
