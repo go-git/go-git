@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 
@@ -44,6 +45,7 @@ type node struct {
 	isDir    bool
 	mode     os.FileMode
 	size     int64
+	modTime  time.Time
 }
 
 // NewRootNode returns the root node based on a given billy.Filesystem.
@@ -87,6 +89,10 @@ func (n *node) Hash() []byte {
 		n.calculateHash()
 	}
 	return n.hash
+}
+
+func (n *node) ModTime() time.Time {
+	return n.modTime
 }
 
 func (n *node) Name() string {
@@ -166,10 +172,11 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		submodules: n.submodules,
 		options:    n.options,
 
-		path:  path,
-		isDir: file.IsDir(),
-		size:  file.Size(),
-		mode:  file.Mode(),
+		path:    path,
+		isDir:   file.IsDir(),
+		size:    file.Size(),
+		mode:    file.Mode(),
+		modTime: file.ModTime(),
 	}
 
 	if _, isSubmodule := n.submodules[path]; isSubmodule {
