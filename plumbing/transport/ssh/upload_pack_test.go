@@ -31,7 +31,7 @@ type UploadPackSuite struct {
 	base        string
 }
 
-func TestUploadPackSuite(t *testing.T) {
+func TestUploadPackSuite(t *testing.T) { //nolint:paralleltest // modifies global DefaultAuthBuilder
 	if runtime.GOOS == "js" {
 		t.Skip("tcp connections are not available in wasm")
 	}

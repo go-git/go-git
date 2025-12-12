@@ -22,6 +22,7 @@ type ConfigSuite struct {
 }
 
 func TestConfigSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ConfigSuite))
 }
 
@@ -187,6 +188,7 @@ func (s *ConfigSuite) TestMarshal() {
 }
 
 func TestUnmarshalMarshal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 	}{

@@ -18,6 +18,7 @@ type SuiteReader struct {
 }
 
 func TestSuiteReader(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteReader))
 }
 

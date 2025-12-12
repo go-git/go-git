@@ -18,6 +18,7 @@ type SuiteWriter struct {
 }
 
 func TestSuiteWriter(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteWriter))
 }
 

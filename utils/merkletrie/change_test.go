@@ -15,6 +15,7 @@ type ChangeSuite struct {
 }
 
 func TestChangeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ChangeSuite))
 }
 

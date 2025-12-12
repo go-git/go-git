@@ -23,6 +23,7 @@ type ServerInfoSuite struct {
 }
 
 func TestServerInfoSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ServerInfoSuite))
 }
 

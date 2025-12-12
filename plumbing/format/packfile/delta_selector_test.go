@@ -17,6 +17,7 @@ type DeltaSelectorSuite struct {
 }
 
 func TestDeltaSelectorSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DeltaSelectorSuite))
 }
 

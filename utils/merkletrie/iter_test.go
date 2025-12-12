@@ -19,6 +19,7 @@ type IterSuite struct {
 }
 
 func TestIterSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IterSuite))
 }
 

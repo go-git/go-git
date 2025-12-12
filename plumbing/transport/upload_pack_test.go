@@ -21,6 +21,7 @@ type UploadPackSuite struct {
 }
 
 func TestUploadPackSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UploadPackSuite))
 }
 

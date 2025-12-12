@@ -53,6 +53,7 @@ func TestEncode(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			h := plumbinghash.New(crypto.SHA256)
 
 			err := Encode(tc.writer, h, tc.idx)
@@ -87,6 +88,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			idxf := tc.fixture.Idx()
 			require.NotNil(t, idxf)
 

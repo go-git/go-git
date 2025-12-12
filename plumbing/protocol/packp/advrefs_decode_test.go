@@ -20,6 +20,7 @@ type AdvRefsDecodeSuite struct {
 }
 
 func TestAdvRefsDecodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AdvRefsDecodeSuite))
 }
 

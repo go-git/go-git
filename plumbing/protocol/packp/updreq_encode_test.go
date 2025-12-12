@@ -16,6 +16,7 @@ type UpdReqEncodeSuite struct {
 }
 
 func TestUpdReqEncodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UpdReqEncodeSuite))
 }
 

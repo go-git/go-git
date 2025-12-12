@@ -21,6 +21,7 @@ type DumbSuite struct {
 }
 
 func TestDumbSuite(t *testing.T) {
+	t.Parallel()
 	trace.ReadEnv()
 	suite.Run(t, new(DumbSuite))
 }

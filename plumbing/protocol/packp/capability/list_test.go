@@ -11,6 +11,7 @@ type SuiteCapabilities struct {
 }
 
 func TestSuiteCapabilities(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteCapabilities))
 }
 

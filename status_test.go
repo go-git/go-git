@@ -12,6 +12,7 @@ import (
 )
 
 func TestStatusReturnsFullPaths(t *testing.T) {
+	t.Parallel()
 	files := []string{
 		filepath.Join("a", "a"),
 		filepath.Join("b", "a"),
@@ -70,6 +71,7 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 			require.NoError(t, err)
 

@@ -89,6 +89,7 @@ func TestNewPackScanner(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			scanner, err := NewPackScanner(tc.hashSize, tc.pack(), tc.idx(), tc.rev())
 
 			if tc.want != "" {
@@ -274,6 +275,7 @@ func TestSearchObjectID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			gotIndex, gotFound := searchObjectID(tc.names, tc.lo, tc.hi, tc.want)
 			assert.Equal(t, tc.wantFound, gotFound, "found mismatch")
 			assert.Equal(t, tc.wantIndex, gotIndex, "index mismatch")

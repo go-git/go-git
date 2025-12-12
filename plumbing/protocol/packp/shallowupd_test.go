@@ -14,6 +14,7 @@ type ShallowUpdateSuite struct {
 }
 
 func TestShallowUpdateSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ShallowUpdateSuite))
 }
 

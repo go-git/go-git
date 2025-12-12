@@ -24,6 +24,7 @@ type TreeSuite struct {
 }
 
 func TestTreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(TreeSuite))
 }
 

@@ -11,6 +11,7 @@ import (
 )
 
 func TestRegisterHash(t *testing.T) {
+	t.Parallel()
 	// Reset default hash to avoid side effects.
 	defer reset()
 
@@ -40,6 +41,7 @@ func TestRegisterHash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := RegisterHash(tt.hash, tt.new)
 			switch {
 			case tt.wantErr == "" && err != nil:
@@ -56,6 +58,7 @@ func TestRegisterHash(t *testing.T) {
 // Verifies that the SHA1 implementation used is collision-resistant
 // by default.
 func TestSha1Collision(t *testing.T) {
+	t.Parallel()
 	defer reset()
 
 	tests := []struct {
@@ -81,6 +84,7 @@ func TestSha1Collision(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if tt.before != nil {
 				tt.before()
 			}

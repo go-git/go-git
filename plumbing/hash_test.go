@@ -11,6 +11,7 @@ type HashSuite struct {
 }
 
 func TestHashSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(HashSuite))
 }
 

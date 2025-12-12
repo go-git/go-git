@@ -17,6 +17,7 @@ type UpdReqDecodeSuite struct {
 }
 
 func TestUpdReqDecodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UpdReqDecodeSuite))
 }
 

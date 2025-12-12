@@ -8,6 +8,7 @@ import (
 )
 
 func TestCommonSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(CommonSuite))
 }
 

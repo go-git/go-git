@@ -15,6 +15,7 @@ type DirSuite struct {
 }
 
 func TestDirSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DirSuite))
 }
 

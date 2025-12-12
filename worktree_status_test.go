@@ -18,6 +18,7 @@ import (
 
 // For additional context: #1159.
 func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
+	t.Parallel()
 	w := osfs.New(t.TempDir(), osfs.WithBoundOS())
 	dot, err := w.Chroot(GitDirName)
 	require.NoError(t, err)

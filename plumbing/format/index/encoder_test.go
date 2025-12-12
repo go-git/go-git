@@ -14,6 +14,7 @@ import (
 )
 
 func TestEncode(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 2,
 		Entries: []*Entry{{
@@ -58,6 +59,7 @@ func TestEncode(t *testing.T) {
 }
 
 func TestEncodeV4(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 4,
 		Entries: []*Entry{{
@@ -114,6 +116,7 @@ func TestEncodeV4(t *testing.T) {
 }
 
 func TestEncodeUnsupportedVersion(t *testing.T) {
+	t.Parallel()
 	idx := &Index{Version: 5}
 
 	buf := bytes.NewBuffer(nil)
@@ -123,6 +126,7 @@ func TestEncodeUnsupportedVersion(t *testing.T) {
 }
 
 func TestEncodeWithIntentToAddUnsupportedVersion(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 3,
 		Entries: []*Entry{{IntentToAdd: true}},
@@ -143,6 +147,7 @@ func TestEncodeWithIntentToAddUnsupportedVersion(t *testing.T) {
 }
 
 func TestEncodeWithSkipWorktreeUnsupportedVersion(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 3,
 		Entries: []*Entry{{SkipWorktree: true}},

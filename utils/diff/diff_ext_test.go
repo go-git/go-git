@@ -15,6 +15,7 @@ type suiteCommon struct {
 }
 
 func TestSuiteCommon(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(suiteCommon))
 }
 

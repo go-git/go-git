@@ -19,6 +19,7 @@ type ProxySuite struct {
 }
 
 func TestProxySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ProxySuite))
 }
 

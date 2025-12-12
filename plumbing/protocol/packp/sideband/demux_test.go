@@ -16,6 +16,7 @@ type SidebandSuite struct {
 }
 
 func TestSidebandSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SidebandSuite))
 }
 

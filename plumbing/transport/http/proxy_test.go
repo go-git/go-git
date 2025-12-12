@@ -28,6 +28,7 @@ import (
 // Its located in a separate package because golang caches the value
 // of proxy env vars leading to misleading/unexpected test results.
 func TestProxySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ProxySuite))
 }
 

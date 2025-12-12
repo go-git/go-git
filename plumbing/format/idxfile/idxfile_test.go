@@ -103,6 +103,7 @@ type IndexSuite struct {
 }
 
 func TestIndexSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IndexSuite))
 }
 
@@ -171,6 +172,7 @@ func fixtureIndex() (*idxfile.MemoryIndex, error) {
 }
 
 func TestOffsetHashConcurrentPopulation(t *testing.T) {
+	t.Parallel()
 	idx, err := fixtureIndex()
 	if err != nil {
 		t.Fatalf("failed to build fixture index: %v", err)

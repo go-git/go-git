@@ -9,6 +9,7 @@ import (
 )
 
 func TestReader(t *testing.T) {
+	t.Parallel()
 	buf := []byte("abcdef")
 	buf2 := make([]byte, 3)
 	r := NewContextReader(context.Background(), bytes.NewReader(buf))
@@ -48,6 +49,7 @@ func TestReader(t *testing.T) {
 }
 
 func TestWriter(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	w := NewContextWriter(context.Background(), &buf)
 
@@ -77,6 +79,7 @@ func TestWriter(t *testing.T) {
 }
 
 func TestReaderCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	r := NewContextReader(ctx, piper)
@@ -127,6 +130,7 @@ func TestReaderCancel(t *testing.T) {
 }
 
 func TestWriterCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	w := NewContextWriter(ctx, pipew)
@@ -177,6 +181,7 @@ func TestWriterCancel(t *testing.T) {
 }
 
 func TestReadPostCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	r := NewContextReader(ctx, piper)
@@ -211,6 +216,7 @@ func TestReadPostCancel(t *testing.T) {
 }
 
 func TestWritePostCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	w := NewContextWriter(ctx, pipew)

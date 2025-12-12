@@ -16,6 +16,7 @@ type BlameSuite struct {
 }
 
 func TestBlameSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BlameSuite))
 }
 

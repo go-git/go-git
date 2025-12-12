@@ -19,6 +19,7 @@ type WriterSuite struct {
 }
 
 func TestWriterSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(WriterSuite))
 }
 

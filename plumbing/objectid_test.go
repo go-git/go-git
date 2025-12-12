@@ -74,6 +74,7 @@ func BenchmarkObjectIDComparison(b *testing.B) {
 }
 
 func TestReadFrom(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expected string
 		bytes    []byte
@@ -100,6 +101,7 @@ func TestReadFrom(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
 			buf := &bytes.Buffer{}
 			err := binary.Write(buf, binary.BigEndian, tc.bytes)
 			require.NoError(t, err)
@@ -121,6 +123,7 @@ func TestReadFrom(t *testing.T) {
 }
 
 func TestFromHex(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		in    string
@@ -139,6 +142,7 @@ func TestFromHex(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, tc.in), func(t *testing.T) {
+			t.Parallel()
 			h, ok := FromHex(tc.in)
 
 			assert.Equal(t, tc.ok, ok, "OK did not match")
@@ -152,6 +156,7 @@ func TestFromHex(t *testing.T) {
 }
 
 func TestFromBytes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in     []byte
 		wantOK bool

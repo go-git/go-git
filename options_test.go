@@ -17,6 +17,7 @@ type OptionsSuite struct {
 }
 
 func TestOptionsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(OptionsSuite))
 }
 

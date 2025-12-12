@@ -17,6 +17,7 @@ type PatchSuite struct {
 }
 
 func TestPatchSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(PatchSuite))
 }
 

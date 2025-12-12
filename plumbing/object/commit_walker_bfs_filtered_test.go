@@ -12,6 +12,7 @@ import (
 )
 
 func TestFilterCommitIterSuite(t *testing.T) {
+	t.Parallel()
 	// TODO: re-enable test
 	t.SkipNow()
 	suite.Run(t, new(filterCommitIterSuite))

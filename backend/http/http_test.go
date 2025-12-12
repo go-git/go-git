@@ -31,6 +31,7 @@ func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 }
 
 func TestNilLoaderBackend(t *testing.T) {
+	t.Parallel()
 	h := NewBackend(nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
@@ -78,9 +79,11 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 }
 
 func TestDumbInfoRefs(t *testing.T) {
+	t.Parallel()
 	testInfoRefs(t, false)
 }
 
 func TestSmartInfoRefs(t *testing.T) {
+	t.Parallel()
 	testInfoRefs(t, true)
 }

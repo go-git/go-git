@@ -20,6 +20,7 @@ type CommitStatsSuite struct {
 }
 
 func TestCommitStatsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(CommitStatsSuite))
 }
 

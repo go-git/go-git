@@ -16,6 +16,7 @@ import (
 )
 
 func TestCommit(t *testing.T) {
+	t.Parallel()
 	base := memory.NewStorage()
 	temporal := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 	st := NewStorage(base, temporal)
@@ -42,6 +43,7 @@ func TestCommit(t *testing.T) {
 }
 
 func TestTransactionalPackfileWriter(t *testing.T) {
+	t.Parallel()
 	base := memory.NewStorage()
 	var temporal storage.Storer
 

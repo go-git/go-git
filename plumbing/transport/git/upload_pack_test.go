@@ -11,6 +11,7 @@ import (
 )
 
 func TestUploadPackSuite(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip(`git for windows has issues with write operations through git:// protocol.
 		See https://github.com/git-for-windows/git/issues/907`)

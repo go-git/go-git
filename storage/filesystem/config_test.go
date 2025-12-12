@@ -21,6 +21,7 @@ type ConfigSuite struct {
 }
 
 func TestConfigSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ConfigSuite))
 }
 

@@ -12,6 +12,7 @@ type PathSuite struct {
 }
 
 func TestPathSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(PathSuite))
 }
 

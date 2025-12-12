@@ -17,6 +17,7 @@ type ServerResponseSuite struct {
 }
 
 func TestServerResponseSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ServerResponseSuite))
 }
 

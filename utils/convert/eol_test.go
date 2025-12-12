@@ -9,6 +9,7 @@ import (
 )
 
 func TestCRLFToLFConverter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input  []byte
 		output []byte
@@ -25,6 +26,7 @@ func TestCRLFToLFConverter(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(string(test.input), func(t *testing.T) {
+			t.Parallel()
 			buf := bytes.NewBuffer(nil)
 			conv := NewLFWriter(buf)
 
@@ -38,6 +40,7 @@ func TestCRLFToLFConverter(t *testing.T) {
 }
 
 func TestLFToCRLFConverter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input  []byte
 		output []byte
@@ -54,6 +57,7 @@ func TestLFToCRLFConverter(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(string(test.input), func(t *testing.T) {
+			t.Parallel()
 			buf := bytes.NewBuffer(nil)
 			conv := NewCRLFWriter(buf)
 

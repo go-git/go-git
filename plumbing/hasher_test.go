@@ -50,6 +50,7 @@ func TestHasher(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, ""), func(t *testing.T) {
+			t.Parallel()
 			oh, err := FromHash(tc.h)
 			assert.NoError(t, err)
 
@@ -92,6 +93,7 @@ func TestMultipleHashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, ""), func(t *testing.T) {
+			t.Parallel()
 			oh, err := FromHash(tc.h)
 			assert.NoError(t, err)
 
@@ -135,6 +137,7 @@ func TestThreadSafety(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			oh, err := FromHash(tc.h)
 			assert.NoError(t, err)
 

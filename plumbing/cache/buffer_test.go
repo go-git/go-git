@@ -19,6 +19,7 @@ type BufferSuite struct {
 }
 
 func TestBufferSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BufferSuite))
 }
 

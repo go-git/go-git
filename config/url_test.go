@@ -11,6 +11,7 @@ type URLSuite struct {
 }
 
 func TestURLSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(URLSuite))
 }
 

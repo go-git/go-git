@@ -62,6 +62,7 @@ passed   result
 */
 
 func TestMergeBaseSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(mergeBaseSuite))
 }
 

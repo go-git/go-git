@@ -18,6 +18,7 @@ type AdvRefSuite struct {
 }
 
 func TestAdvRefSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AdvRefSuite))
 }
 
@@ -166,6 +167,7 @@ type AdvRefsDecodeEncodeSuite struct {
 }
 
 func TestAdvRefsDecodeEncodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AdvRefsDecodeEncodeSuite))
 }
 

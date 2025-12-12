@@ -19,6 +19,7 @@ type SubmoduleSuite struct {
 }
 
 func TestSubmoduleSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SubmoduleSuite))
 }
 

@@ -15,6 +15,7 @@ type FrameSuite struct {
 }
 
 func TestFrameSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FrameSuite))
 }
 

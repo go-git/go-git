@@ -21,6 +21,7 @@ type PackHandlerSuite[T int64OrUint64] struct {
 }
 
 func TestPackfileEmbedFS(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.Basic().One()
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
@@ -38,6 +39,7 @@ func TestPackfileEmbedFS(t *testing.T) {
 }
 
 func TestPackfileWithFSandCache(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
@@ -55,6 +57,7 @@ func TestPackfileWithFSandCache(t *testing.T) {
 }
 
 func TestPackfileWithFS(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
@@ -70,6 +73,7 @@ func TestPackfileWithFS(t *testing.T) {
 }
 
 func TestPackfileWithCache(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {

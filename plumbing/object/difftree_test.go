@@ -60,6 +60,7 @@ func (s *DiffTreeSuite) storageFromPackfile(f *fixtures.Fixture) storer.EncodedO
 }
 
 func TestDiffTreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DiffTreeSuite))
 }
 
