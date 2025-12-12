@@ -177,15 +177,13 @@ func (w *PackWriter) save() error {
 	return nil
 }
 
-func (w *PackWriter) encodeIdx(writer io.Writer) error {
+func (w *PackWriter) encodeIdx(writer io.Writer, h hash.Hash) error {
 	idx, err := w.writer.Index()
 	if err != nil {
 		return err
 	}
 
-	e := idxfile.NewEncoder(writer)
-	_, err = e.Encode(idx)
-	return err
+	return idxfile.Encode(writer, h, idx)
 }
 
 func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
