@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -160,4 +161,69 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	}
 
 	assert.NoError(t, w.Close())
+}
+
+func TestPackWriterPermissions(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("not applicable to windows")
+	}
+
+	f := fixtures.Basic().One()
+
+	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+
+	_, err = io.Copy(w, f.Packfile())
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
+	idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
+	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", f.PackfileHash)
+
+	stat, err := fs.Stat(pfPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+
+	stat, err = fs.Stat(idxPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+
+	stat, err = fs.Stat(revPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+}
+
+func TestObjectWriterPermissions(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("not applicable to windows")
+	}
+
+	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObject()
+	require.NoError(t, err)
+
+	err = w.WriteHeader(plumbing.BlobObject, 14)
+	require.NoError(t, err)
+
+	_, err = w.Write([]byte("this is a test"))
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	stat, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
 }
