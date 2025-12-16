@@ -231,4 +231,4 @@ compatibility status with go-git.
 | `config`        | `--global` <br/> `--system` | ✅     | Read-only.                                     |          |
 | `gitignore`     |                             | ✅     |                                                |          |
 | `gitattributes` |                             | ✅     |                                                |          |
-| `git-worktree`  |                             | ❌     | Multiple worktrees are not supported.          |          |
+| `git-worktree`  |                             | ⚠️ (partial) | Creation / Opening worktrees is supported.          |          |
