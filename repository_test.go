@@ -1661,7 +1661,8 @@ func (s *RepositorySuite) TestCloneWithFilter() {
 // opened.
 func (s *RepositorySuite) TestCloneRelative() {
 	fs := memfs.New()
-	r, _ := Init(memory.NewStorage(), WithWorkTree(fs))
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
 
 	head, err := r.Head()
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
