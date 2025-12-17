@@ -97,6 +97,27 @@ func TestAdd(t *testing.T) {
 				checkWorktree(t, storage, wt, filepath.Join(storage.Root(), "worktrees", name))
 			},
 		},
+		{
+			description: "memfs: add worktree that already exists",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				err = w.Add(wtFS, "existing-worktree", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				require.NoError(t, err)
+
+				return storer
+			},
+			setupWorktree: func() billy.Filesystem {
+				return memfs.New()
+			},
+			name:    "existing-worktree",
+			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -265,8 +286,9 @@ func TestRemove(t *testing.T) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
-			name:    "non-existent",
-			wantErr: true,
+			name:        "non-existent",
+			wantErr:     true,
+			errContains: "worktree not found",
 		},
 		{
 			description: "invalid worktree name with spaces",
@@ -354,6 +376,128 @@ func TestRemove(t *testing.T) {
 			if tt.checkRemoved != nil {
 				tt.checkRemoved(t, storer.Filesystem(), tt.name)
 			}
+		})
+	}
+}
+
+func TestList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		description string
+		setup       func() *filesystem.Storage
+		wantNames   []string
+		wantErr     bool
+	}{
+		{
+			description: "memfs: list empty worktrees",
+			setup: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			wantNames: []string{},
+			wantErr:   false,
+		},
+		{
+			description: "memfs: list single worktree",
+			setup: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				err = w.Add(memfs.New(), "worktree-1",
+					xworktree.WithCommit(
+						plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				require.NoError(t, err)
+
+				return storer
+			},
+			wantNames: []string{"worktree-1"},
+			wantErr:   false,
+		},
+		{
+			description: "memfs: list multiple worktrees",
+			setup: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+
+				for _, name := range []string{"worktree-1", "worktree-2", "worktree-3"} {
+					err = w.Add(memfs.New(), name, xworktree.WithCommit(commit))
+					require.NoError(t, err)
+				}
+
+				return storer
+			},
+			wantNames: []string{"worktree-1", "worktree-2", "worktree-3"},
+			wantErr:   false,
+		},
+		{
+			description: "boundOS: list worktrees",
+			setup: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+
+				err = w.Add(memfs.New(), "feature-a", xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				err = w.Add(memfs.New(), "feature-b", xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer
+			},
+			wantNames: []string{"feature-a", "feature-b"},
+			wantErr:   false,
+		},
+		{
+			description: "memfs: list after removing a worktree",
+			setup: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+
+				for _, name := range []string{"wt-1", "wt-2", "wt-3"} {
+					err = w.Add(memfs.New(), name, xworktree.WithCommit(commit))
+					require.NoError(t, err)
+				}
+
+				err = w.Remove("wt-2")
+				require.NoError(t, err)
+
+				return storer
+			},
+			wantNames: []string{"wt-1", "wt-3"},
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			t.Parallel()
+
+			storer := tt.setup()
+			w, err := xworktree.New(storer)
+			require.NoError(t, err)
+
+			names, err := w.List()
+			if tt.wantErr {
+				require.Error(t, err, "List() should return an error")
+				return
+			}
+
+			require.NoError(t, err, "List() should not return an error")
+			assert.ElementsMatch(t, tt.wantNames, names, "returned worktree names should match expected")
 		})
 	}
 }
@@ -633,6 +777,9 @@ func ExampleWorktree_Open() {
 	fs := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	w, err := xworktree.New(storer)
+	if err != nil {
+		panic(err)
+	}
 
 	// Create a filesystem for the new worktree.
 	worktreeFS := osfs.New("/path/to/worktrees/feature-branch")
@@ -648,6 +795,10 @@ func ExampleWorktree_Open() {
 
 	// Open linked worktree repository.
 	r, err := w.Open(worktreeFS)
+	if err != nil {
+		panic(err)
+	}
+
 	_, _ = r.Head()
 
 	// The linked worktree repository is now ready to be used.
@@ -658,6 +809,9 @@ func ExampleWorktree_Remove() {
 	fs := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	w, err := xworktree.New(storer)
+	if err != nil {
+		panic(err)
+	}
 
 	// Remove a linked worktree by name.
 	err = w.Remove("feature-branch")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -34,7 +35,15 @@ const (
 	worktreeDotGitMaxSize = 1024
 )
 
-var worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
+var (
+	worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
+
+	// ErrWorktreeNotFound is returned when attempting to remove a worktree that does not exist.
+	ErrWorktreeNotFound = errors.New("worktree not found")
+
+	// ErrWorktreeAlreadyExists is returned when attempting to add a worktree with a name that already exists.
+	ErrWorktreeAlreadyExists = errors.New("worktree already exists")
+)
 
 // Worktree manages multiple working trees attached to a git repository.
 // It provides functionality to add and remove linked worktrees, allowing
@@ -93,6 +102,13 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 	}
 
 	commonDir := w.storer.Filesystem()
+
+	path := filepath.Join(commonDir.Root(), worktrees, name)
+	_, err = commonDir.Lstat(path)
+	if err == nil {
+		return ErrWorktreeAlreadyExists
+	}
+
 	err = w.addDotGitDirs(commonDir, name)
 	if err != nil {
 		return err
@@ -103,7 +119,6 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		return err
 	}
 
-	path := filepath.Join(commonDir.Root(), worktrees, name)
 	err = w.addWorktreeDotGitFile(wt, path)
 	if err != nil {
 		return err
@@ -137,6 +152,9 @@ func (w *Worktree) Remove(name string) error {
 	path := filepath.Join(dotgit.Root(), worktrees, name)
 	fi, err := dotgit.Lstat(path)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrWorktreeNotFound
+		}
 		return err
 	}
 
@@ -145,6 +163,33 @@ func (w *Worktree) Remove(name string) error {
 	}
 
 	return util.RemoveAll(dotgit, path)
+}
+
+// List returns a list of all linked worktree names.
+func (w *Worktree) List() ([]string, error) {
+	dotgit := w.storer.Filesystem()
+
+	_, err := dotgit.Lstat(worktrees)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	entries, err := dotgit.ReadDir(worktrees)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+
+	return names, nil
 }
 
 // Open opens a repository that may be a linked worktree.
