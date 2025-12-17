@@ -4,6 +4,7 @@ import (
 	"io"
 	iofs "io/fs"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
+
+var worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
 
 func TestAdd(t *testing.T) {
 	t.Parallel()
@@ -553,4 +556,74 @@ func TestOpen(t *testing.T) {
 			}
 		})
 	}
+}
+
+func FuzzAdd(f *testing.F) {
+	f.Add("test")
+	f.Add("test-worktree")
+	f.Add("test123")
+	f.Add("TEST-123")
+	f.Add("")
+	f.Add("test worktree")
+	f.Add("test@worktree")
+	f.Add("test/worktree")
+	f.Add("test.worktree")
+	f.Add("test_worktree")
+	f.Add("-")
+	f.Add("a")
+	f.Add("123")
+	f.Add("test-")
+	f.Add("-test")
+	f.Add("../../../test")
+
+	f.Fuzz(func(t *testing.T, name string) {
+		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		w, err := xworktree.New(storer)
+		require.NoError(t, err, "failed to create worktree manager")
+		require.NotNil(t, w)
+
+		wtFS := memfs.New()
+		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+
+		err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+		if worktreeNameRE.MatchString(name) {
+			assert.NoError(t, err)
+		} else {
+			assert.Error(t, err)
+		}
+	})
+}
+
+func FuzzOpen(f *testing.F) {
+	f.Add("gitdir: /path/to/worktree")
+	f.Add("gitdir: .")
+	f.Add("gitdir:")
+	f.Add("gitdir")
+	f.Add("")
+	f.Add("invalid content")
+	f.Add("gitdir: /very/long/path/to/worktree/directory/structure")
+	f.Add("gitdir: ../relative/path")
+	f.Add("gitdir: \n")
+	f.Add("gitdir: path\nwith\nnewlines")
+	f.Add("../../path")
+	f.Add("../../path\n")
+
+	f.Fuzz(func(t *testing.T, gitFileContent string) {
+		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		w, err := xworktree.New(storer)
+		require.NoError(t, err, "failed to create worktree manager")
+		require.NotNil(t, w)
+
+		wtFS := memfs.New()
+		err = util.WriteFile(wtFS, ".git", []byte(gitFileContent), 0o644)
+		require.NoError(t, err, "failed to file .git file")
+
+		repo, err := w.Open(wtFS)
+
+		if err == nil && repo == nil {
+			t.Error("invalid state: Open returned nil error and nil repository")
+		}
+	})
 }
