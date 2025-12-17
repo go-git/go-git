@@ -34,8 +34,11 @@ func (opts *PushOptions) Decode(r io.Reader) error {
 		opts.Options = make([]string, 0)
 	}
 
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	for {
-		l, line, err := pktline.ReadLine(r)
+		l, line, err := pktline.ReadLine(r, (*buf)[:])
 		if err != nil {
 			return err
 		}

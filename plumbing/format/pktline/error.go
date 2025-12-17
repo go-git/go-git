@@ -41,11 +41,15 @@ func (e *ErrorLine) Encode(w io.Writer) error {
 
 // Decode decodes a packet line into an ErrorLine.
 func (e *ErrorLine) Decode(r io.Reader) error {
-	_, _, err := ReadLine(r)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
+	_, _, err := ReadLine(r, (*buf)[:])
 	var el *ErrorLine
 	if !errors.As(err, &el) {
 		return ErrInvalidErrorLine
 	}
+
 	e.Text = el.Text
 	return nil
 }

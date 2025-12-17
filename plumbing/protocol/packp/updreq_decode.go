@@ -77,21 +77,21 @@ func errMalformedCommand(err error) error {
 
 // Decode reads the next update-request message form the reader and wr
 func (req *UpdateRequests) Decode(r io.Reader) error {
-	var rc io.ReadCloser
-	var ok bool
-	rc, ok = r.(io.ReadCloser)
-	if !ok {
-		rc = io.NopCloser(r)
-	}
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
 
-	d := &updReqDecoder{r: rc, pr: r}
+	d := newUpdReqDecoder(r, buf)
 	return d.Decode(req)
 }
 
+func newUpdReqDecoder(r io.Reader, buf *[pktline.MaxSize]byte) *updReqDecoder {
+	return &updReqDecoder{r: r, buf: buf}
+}
+
 type updReqDecoder struct {
-	r   io.ReadCloser
-	pr  io.Reader
+	r   io.Reader
 	req *UpdateRequests
+	buf *[pktline.MaxSize]byte // temporary shared buffer
 
 	payload []byte
 	length  int // length of the pktline payload
@@ -117,7 +117,7 @@ func (d *updReqDecoder) Decode(req *UpdateRequests) error {
 }
 
 func (d *updReqDecoder) readLine(e error) error {
-	l, p, err := pktline.ReadLine(d.pr)
+	l, p, err := pktline.ReadLine(d.r, (*d.buf)[:])
 	if errors.Is(err, io.EOF) {
 		return e
 	}

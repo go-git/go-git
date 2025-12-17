@@ -51,10 +51,13 @@ type ACK struct {
 
 // Decode decodes the response into the struct.
 func (r *ServerResponse) Decode(reader io.Reader) error {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	var err error
 	for err == nil {
 		var p []byte
-		_, p, err = pktline.ReadLine(reader)
+		_, p, err = pktline.ReadLine(reader, (*buf)[:])
 		if err != nil {
 			break
 		}

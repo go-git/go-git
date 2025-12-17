@@ -20,8 +20,11 @@ func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
 
 	pkt := strings.TrimSpace(string(pktb))
 	if strings.HasPrefix(pkt, "version ") {
+		buf := pktline.GetBuffer()
+		defer pktline.PutBuffer(buf)
+
 		// Consume the version packet
-		if _, _, err := pktline.ReadLine(r); err != nil {
+		if _, _, err := pktline.ReadLine(r, (*buf)[:]); err != nil {
 			return ver, err
 		}
 		if v, _ := protocol.Parse(pkt[8:]); v > ver {

@@ -28,7 +28,10 @@ type SmartReply struct {
 
 // Decode decodes a SmartReply from reader.
 func (s *SmartReply) Decode(r io.Reader) error {
-	_, p, err := pktline.ReadLine(r)
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	_, p, err := pktline.ReadLine(r, (*buf)[:])
 	if err != nil {
 		return err
 	}
@@ -38,7 +41,8 @@ func (s *SmartReply) Decode(r io.Reader) error {
 	}
 
 	s.Service = strings.TrimSpace(string(p[10:]))
-	l, _, err := pktline.ReadLine(r)
+
+	l, _, err := pktline.ReadLine(r, (*buf)[:])
 	if err != nil {
 		return err
 	}
