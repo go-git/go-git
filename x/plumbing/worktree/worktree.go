@@ -7,6 +7,8 @@ import (
 	"regexp"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/util"
+
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/storage"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
@@ -28,11 +30,21 @@ const (
 
 var worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
 
-type worktree struct {
+// Worktree manages multiple working trees attached to a git repository.
+// It provides functionality to add and remove linked worktrees, allowing
+// multiple branches to be checked out simultaneously in different directories.
+//
+// A Worktree instance is tied to a specific repository through its storage
+// backend, which must implement the WorktreeStorer interface.
+type Worktree struct {
 	storer xstorage.WorktreeStorer
 }
 
-func New(storer storage.Storer) (*worktree, error) {
+// New creates a new Worktree for the given storage backend.
+//
+// The storer must implement the WorktreeStorer interface, which provides
+// access to the repository's filesystem for managing worktree metadata.
+func New(storer storage.Storer) (*Worktree, error) {
 	if storer == nil {
 		return nil, errors.New("storer is nil")
 	}
@@ -42,12 +54,18 @@ func New(storer storage.Storer) (*worktree, error) {
 		return nil, errors.New("storer does not implement WorktreeStorer")
 	}
 
-	return &worktree{
+	return &Worktree{
 		storer: wts,
 	}, nil
 }
 
-func (w *worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
+// Add creates a new linked worktree with the specified name and filesystem.
+//
+// This method sets up the necessary metadata and directory structure for a new
+// worktree, similar to the `git worktree add` command. The worktree will be
+// associated with the repository and can be used to work on a different commit
+// or branch simultaneously.
+func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 	if wt == nil {
 		return errors.New("cannot add worktree: fs is nil")
 	}
@@ -96,15 +114,40 @@ func (w *worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 	return work.Reset(&git.ResetOptions{Commit: o.commit})
 }
 
-func (w *worktree) addDotGitDirs(wt billy.Filesystem, name string) error {
+// Remove deletes a linked worktree by removing its metadata dir within .git.
+//
+// This method removes the metadata directory for the specified worktree from
+// .git/worktrees/<name>, similar to the `git worktree remove` command. Note
+// that this only removes the metadata; it does not delete the actual worktree
+// filesystem or its files.
+func (w *Worktree) Remove(name string) error {
+	if !worktreeNameRE.MatchString(name) {
+		return fmt.Errorf("invalid worktree name %q", name)
+	}
+
+	dotgit := w.storer.Filesystem()
+	path := filepath.Join(dotgit.Root(), worktrees, name)
+	fi, err := dotgit.Lstat(path)
+	if err != nil {
+		return err
+	}
+
+	if !fi.IsDir() {
+		return errors.New("invalid worktree")
+	}
+
+	return util.RemoveAll(dotgit, path)
+}
+
+func (w *Worktree) addDotGitDirs(wt billy.Filesystem, name string) error {
 	return wt.MkdirAll(path(name, refs), dirMode)
 }
 
-func (w *worktree) addWorktreeDotGitFile(wt billy.Filesystem, path string) error {
+func (w *Worktree) addWorktreeDotGitFile(wt billy.Filesystem, path string) error {
 	return writeFile(wt, dotgit, []byte("gitdir: "+path))
 }
 
-func (w *worktree) addDotGitFiles(dotgit, wt billy.Filesystem, name string, opts *options) error {
+func (w *Worktree) addDotGitFiles(dotgit, wt billy.Filesystem, name string, opts *options) error {
 	err := writeFile(dotgit, path(name, commonDir), []byte("../.."))
 	if err != nil {
 		return err
@@ -127,7 +170,7 @@ func writeFile(wt billy.Filesystem, fn string, data []byte) (err error) {
 	var f billy.File
 	f, err = wt.Create(fn)
 	if err != nil {
-		return
+		return err
 	}
 
 	defer func() {
@@ -136,7 +179,7 @@ func writeFile(wt billy.Filesystem, fn string, data []byte) (err error) {
 
 	_, err = f.Write(append(data, []byte("\n")...))
 
-	return
+	return err
 }
 
 func path(wtn, fn string) string {

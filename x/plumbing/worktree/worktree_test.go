@@ -8,13 +8,15 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAdd(t *testing.T) {
@@ -48,7 +50,7 @@ func TestAdd(t *testing.T) {
 		name          string
 		commit        plumbing.Hash
 		wantErr       bool
-		checkFiles    func(t *testing.T, wt billy.Filesystem, storage billy.Filesystem, name string)
+		checkFiles    func(t *testing.T, wt, storage billy.Filesystem, name string)
 	}{
 		{
 			description: "memfs: add worktree",
@@ -62,15 +64,15 @@ func TestAdd(t *testing.T) {
 			name:    "test-work-tree",
 			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: false,
-			checkFiles: func(t *testing.T, wt billy.Filesystem, storage billy.Filesystem, name string) {
+			checkFiles: func(t *testing.T, wt, storage billy.Filesystem, name string) {
 				checkFiles(t, dotGitExpectedFiles, storage, wt, name)
 				checkWorktree(t, wt, filepath.Join(storage.Root(), "worktrees", name))
 			},
 		},
 		{
-			description: "chrootOS: add worktree",
+			description: "boundOS: add worktree",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir))
+				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			setupWorktree: func() billy.Filesystem {
@@ -79,7 +81,7 @@ func TestAdd(t *testing.T) {
 			name:    "test-work-tree",
 			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: false,
-			checkFiles: func(t *testing.T, wt billy.Filesystem, storage billy.Filesystem, name string) {
+			checkFiles: func(t *testing.T, wt, storage billy.Filesystem, name string) {
 				checkFiles(t, dotGitExpectedFiles, storage, wt, name)
 				checkWorktree(t, wt, filepath.Join(storage.Root(), "worktrees", name))
 			},
@@ -110,12 +112,11 @@ func TestAdd(t *testing.T) {
 }
 
 type expectedFile struct {
-	path           string
-	dir            bool
-	appendWorktree bool
-	appendFSRoot   bool
-	fileMode       int
-	content        []byte
+	path         string
+	dir          bool
+	appendFSRoot bool
+	fileMode     int
+	content      []byte
 }
 
 func checkWorktree(t *testing.T, fs billy.Filesystem, path string) {
@@ -162,5 +163,157 @@ func checkFiles(t *testing.T, expected []expectedFile, fs, wt billy.Filesystem, 
 		require.NoError(t, err)
 
 		assert.Equal(t, string(e.content), string(data))
+	}
+}
+
+func TestRemove(t *testing.T) {
+	tests := []struct {
+		description  string
+		setupStorer  func() *filesystem.Storage
+		name         string
+		wantErr      bool
+		errContains  string
+		checkRemoved func(t *testing.T, storage billy.Filesystem, name string)
+	}{
+		{
+			description: "memfs: remove existing worktree",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				err = w.Add(wtFS, "test-worktree", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				require.NoError(t, err)
+
+				return storer
+			},
+			name:    "test-worktree",
+			wantErr: false,
+			checkRemoved: func(t *testing.T, storage billy.Filesystem, name string) {
+				worktreePath := filepath.Join("worktrees", name)
+				_, err := storage.Lstat(worktreePath)
+				assert.Error(t, err, "worktree directory should be removed")
+			},
+		},
+		{
+			description: "boundOS: remove existing worktree",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				err = w.Add(wtFS, "test-worktree", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				require.NoError(t, err)
+
+				return storer
+			},
+			name:    "test-worktree",
+			wantErr: false,
+			checkRemoved: func(t *testing.T, storage billy.Filesystem, name string) {
+				worktreePath := filepath.Join("worktrees", name)
+				_, err := storage.Lstat(worktreePath)
+				assert.Error(t, err, "worktree directory should be removed")
+			},
+		},
+		{
+			description: "remove non-existent worktree",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			name:    "non-existent",
+			wantErr: true,
+		},
+		{
+			description: "invalid worktree name with spaces",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			name:        "invalid name",
+			wantErr:     true,
+			errContains: "invalid worktree name",
+		},
+		{
+			description: "invalid worktree name with special characters",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			name:        "test@worktree",
+			wantErr:     true,
+			errContains: "invalid worktree name",
+		},
+		{
+			description: "invalid worktree name with slash",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			name:        "test/worktree",
+			wantErr:     true,
+			errContains: "invalid worktree name",
+		},
+		{
+			description: "empty worktree name",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			name:        "",
+			wantErr:     true,
+			errContains: "invalid worktree name",
+		},
+		{
+			description: "worktree name with only dash",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				err = w.Add(wtFS, "test-dash-name", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				require.NoError(t, err)
+
+				return storer
+			},
+			name:    "test-dash-name",
+			wantErr: false,
+			checkRemoved: func(t *testing.T, storage billy.Filesystem, name string) {
+				worktreePath := filepath.Join("worktrees", name)
+				_, err := storage.Lstat(worktreePath)
+				assert.Error(t, err, "worktree directory should be removed")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			storer := tt.setupStorer()
+
+			w, err := xworktree.New(storer)
+			require.NoError(t, err, "Unable to create worktree")
+
+			err = w.Remove(tt.name)
+			if tt.wantErr {
+				require.Error(t, err, "Remove() should return an error")
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains, "error message should contain expected text")
+				}
+				return
+			}
+
+			require.NoError(t, err, "Remove() should not return an error")
+
+			if tt.checkRemoved != nil {
+				tt.checkRemoved(t, storer.Filesystem(), tt.name)
+			}
+		})
 	}
 }
