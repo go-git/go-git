@@ -627,3 +627,43 @@ func FuzzOpen(f *testing.F) {
 		}
 	})
 }
+
+func ExampleWorktree_Open() {
+	// Setup repository storage pointing to existing dotgit.
+	fs := osfs.New("/path/to/repo/.git")
+	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	w, err := xworktree.New(storer)
+
+	// Create a filesystem for the new worktree.
+	worktreeFS := osfs.New("/path/to/worktrees/feature-branch")
+
+	// Specify the commit to check out.
+	commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+
+	// Create linked worktree.
+	err = w.Add(worktreeFS, "feature-branch", xworktree.WithCommit(commit))
+	if err != nil {
+		panic(err)
+	}
+
+	// Open linked worktree repository.
+	r, err := w.Open(worktreeFS)
+	_, _ = r.Head()
+
+	// The linked worktree repository is now ready to be used.
+}
+
+func ExampleWorktree_Remove() {
+	// Setup repository storage pointing to existing dotgit.
+	fs := osfs.New("/path/to/repo/.git")
+	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	w, err := xworktree.New(storer)
+
+	// Remove a linked worktree by name.
+	err = w.Remove("feature-branch")
+	if err != nil {
+		panic(err)
+	}
+
+	// The worktree metadata has been removed.
+}
