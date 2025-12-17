@@ -4,22 +4,30 @@ import (
 	"io"
 	iofs "io/fs"
 	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
 
 func TestAdd(t *testing.T) {
+	t.Parallel()
+
 	dotGitExpectedFiles := []expectedFile{{
 		path:     "commondir",
 		fileMode: 0o644,
@@ -50,7 +58,7 @@ func TestAdd(t *testing.T) {
 		name          string
 		commit        plumbing.Hash
 		wantErr       bool
-		checkFiles    func(t *testing.T, wt, storage billy.Filesystem, name string)
+		checkFiles    func(t *testing.T, storage, wt billy.Filesystem, name string)
 	}{
 		{
 			description: "memfs: add worktree",
@@ -64,9 +72,9 @@ func TestAdd(t *testing.T) {
 			name:    "test-work-tree",
 			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: false,
-			checkFiles: func(t *testing.T, wt, storage billy.Filesystem, name string) {
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
 				checkFiles(t, dotGitExpectedFiles, storage, wt, name)
-				checkWorktree(t, wt, filepath.Join(storage.Root(), "worktrees", name))
+				checkWorktree(t, storage, wt, filepath.Join(storage.Root(), "worktrees", name))
 			},
 		},
 		{
@@ -81,15 +89,17 @@ func TestAdd(t *testing.T) {
 			name:    "test-work-tree",
 			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: false,
-			checkFiles: func(t *testing.T, wt, storage billy.Filesystem, name string) {
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
 				checkFiles(t, dotGitExpectedFiles, storage, wt, name)
-				checkWorktree(t, wt, filepath.Join(storage.Root(), "worktrees", name))
+				checkWorktree(t, storage, wt, filepath.Join(storage.Root(), "worktrees", name))
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
+			t.Parallel()
+
 			storer := tt.setupStorer()
 			wt := tt.setupWorktree()
 
@@ -105,7 +115,7 @@ func TestAdd(t *testing.T) {
 			}
 
 			if !tt.wantErr && tt.checkFiles != nil {
-				tt.checkFiles(t, wt, storer.Filesystem(), tt.name)
+				tt.checkFiles(t, storer.Filesystem(), wt, tt.name)
 			}
 		})
 	}
@@ -119,44 +129,68 @@ type expectedFile struct {
 	content      []byte
 }
 
-func checkWorktree(t *testing.T, fs billy.Filesystem, path string) {
+func checkWorktree(t *testing.T, storage, wt billy.Filesystem, path string) {
 	fn := ".git"
 	fileMode := 0o644
 	content := []byte("gitdir: " + path + "\n")
 
-	fi, err := fs.Lstat(fn)
+	fi, err := wt.Lstat(fn)
 	require.NoError(t, err, "failed to lstat %q: %w", fn, err)
 
-	assert.Equal(t, iofs.FileMode(fileMode).String(), fi.Mode().String(), "filemode mismatch for %q", fn)
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, iofs.FileMode(fileMode).String(), fi.Mode().String(), "filemode mismatch for %q", fn)
+	}
 	assert.False(t, fi.IsDir(), "isdir mismatch")
 
-	f, err := fs.Open(fn)
+	f, err := wt.Open(fn)
 	require.NoError(t, err)
 
 	data, err := io.ReadAll(f)
 	require.NoError(t, err)
 
 	assert.Equal(t, string(content), string(data))
+
+	rel, err := filepath.Rel(storage.Root(), path)
+	require.NoError(t, err)
+
+	gitDir, err := storage.Chroot(rel)
+	require.NoError(t, err)
+
+	commonDir := storage
+	stor := filesystem.NewStorage(dotgit.NewRepositoryFilesystem(gitDir, commonDir),
+		cache.NewObjectLRUDefault())
+	r, err := git.Open(stor, wt)
+	require.NoError(t, err)
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	st, err := w.Status()
+	require.NoError(t, err)
+
+	assert.True(t, st.IsClean(), "worktree is not clean")
 }
 
-func checkFiles(t *testing.T, expected []expectedFile, fs, wt billy.Filesystem, name string) {
+func checkFiles(t *testing.T, expected []expectedFile, storage, wt billy.Filesystem, name string) {
 	for _, e := range expected {
 		if e.appendFSRoot {
 			e.content = append(e.content, []byte(filepath.Join(wt.Root(), ".git")+"\n")...)
 		}
 
 		fn := filepath.Join("worktrees", name, e.path)
-		fi, err := fs.Lstat(fn)
+		fi, err := storage.Lstat(fn)
 		require.NoError(t, err, "failed to lstat %q: %w", fn, err)
 
-		assert.Equal(t, iofs.FileMode(e.fileMode).String(), fi.Mode().String(), "filemode mismatch for %q", fn)
+		if runtime.GOOS != "windows" {
+			assert.Equal(t, iofs.FileMode(e.fileMode).String(), fi.Mode().String(), "filemode mismatch for %q", fn)
+		}
 		assert.Equal(t, e.dir, fi.IsDir(), "isdir mismatch")
 
 		if e.dir {
 			continue
 		}
 
-		f, err := fs.Open(fn)
+		f, err := storage.Open(fn)
 		require.NoError(t, err)
 
 		data, err := io.ReadAll(f)
@@ -167,6 +201,8 @@ func checkFiles(t *testing.T, expected []expectedFile, fs, wt billy.Filesystem, 
 }
 
 func TestRemove(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		description  string
 		setupStorer  func() *filesystem.Storage
@@ -295,8 +331,9 @@ func TestRemove(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
-			storer := tt.setupStorer()
+			t.Parallel()
 
+			storer := tt.setupStorer()
 			w, err := xworktree.New(storer)
 			require.NoError(t, err, "Unable to create worktree")
 
@@ -313,6 +350,206 @@ func TestRemove(t *testing.T) {
 
 			if tt.checkRemoved != nil {
 				tt.checkRemoved(t, storer.Filesystem(), tt.name)
+			}
+		})
+	}
+}
+
+func TestOpen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		description string
+		setup       func() (*filesystem.Storage, billy.Filesystem)
+		wantErr     bool
+		errContains string
+		checkRepo   func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem)
+	}{
+		{
+			description: "memfs: open linked worktree",
+			setup: func() (*filesystem.Storage, billy.Filesystem) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "test-worktree"
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, wtFS
+			},
+			wantErr: false,
+			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+				require.NotNil(t, repo, "repository should not be nil")
+
+				wt, err := repo.Worktree()
+				require.NoError(t, err)
+				require.NotNil(t, wt)
+
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
+			},
+		},
+		{
+			description: "boundOS: open linked worktree",
+			setup: func() (*filesystem.Storage, billy.Filesystem) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "test-worktree"
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, wtFS
+			},
+			wantErr: false,
+			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+				require.NotNil(t, repo, "repository should not be nil")
+
+				wt, err := repo.Worktree()
+				require.NoError(t, err)
+				require.NotNil(t, wt)
+
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
+			},
+		},
+		{
+			description: "open with nil filesystem",
+			setup: func() (*filesystem.Storage, billy.Filesystem) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				return storer, nil
+			},
+			wantErr:     true,
+			errContains: "worktree fs is nil",
+		},
+		{
+			description: "open regular repository (non-linked worktree)",
+			setup: func() (*filesystem.Storage, billy.Filesystem) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+				return storer, memfs.New()
+			},
+			wantErr: false,
+			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+				require.NotNil(t, repo, "repository should not be nil")
+
+				_, err := repo.Head()
+				require.NoError(t, err)
+			},
+		},
+		{
+			description: "open linked worktree and verify filesystem operations",
+			setup: func() (*filesystem.Storage, billy.Filesystem) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "feature-branch"
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, wtFS
+			},
+			wantErr: false,
+			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+				require.NotNil(t, repo, "repository should not be nil")
+
+				fi, err := wtFS.Stat(".git")
+				require.NoError(t, err)
+				assert.False(t, fi.IsDir(), ".git should be a file, not a directory in linked worktree")
+
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
+
+				commit, err := repo.CommitObject(head.Hash())
+				require.NoError(t, err)
+				require.NotNil(t, commit)
+			},
+		},
+		{
+			description: "open multiple linked worktrees",
+			setup: func() (*filesystem.Storage, billy.Filesystem) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS1 := memfs.New()
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS1, "worktree-1", xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				r, err := w.Open(wtFS1)
+				require.NoError(t, err)
+
+				wt, err := r.Worktree()
+				require.NoError(t, err)
+
+				err = util.WriteFile(wtFS1, "newfile.txt", []byte("foobar"), 0o644)
+				require.NoError(t, err)
+
+				_, err = wt.Add("newfile.txt")
+				require.NoError(t, err)
+
+				_, err = wt.Commit("test commit", &git.CommitOptions{
+					Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+				})
+				require.NoError(t, err)
+
+				wtFS2 := memfs.New()
+				err = w.Add(wtFS2, "worktree-2", xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, wtFS1
+			},
+			wantErr: false,
+			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+				require.NotNil(t, repo, "repository should not be nil")
+
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.NotEqual(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			t.Parallel()
+
+			storer, wtFS := tt.setup()
+			w, err := xworktree.New(storer)
+			require.NoError(t, err)
+
+			repo, err := w.Open(wtFS)
+			if tt.wantErr {
+				require.Error(t, err, "Open() should return an error")
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains, "error message should contain expected text")
+				}
+				return
+			}
+
+			require.NoError(t, err, "Open() should not return an error")
+
+			if tt.checkRepo != nil {
+				tt.checkRepo(t, repo, wtFS)
 			}
 		})
 	}

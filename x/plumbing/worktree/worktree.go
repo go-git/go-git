@@ -1,31 +1,37 @@
 package worktree
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 const (
 	// names for dir and files managed by worktrees.
-	dotgit       = ".git"
+	dotgitDir    = ".git"
 	worktrees    = "worktrees"
 	commonDir    = "commondir"
 	gitDir       = "gitdir"
 	head         = "HEAD"
 	originalHead = "ORIG_HEAD"
-	index        = "index"
 	refs         = "refs"
 
-	dirMode = 0o777
+	dirMode               = 0o777
+	worktreeDotGitMaxSize = 1024
 )
 
 var worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
@@ -40,10 +46,12 @@ type Worktree struct {
 	storer xstorage.WorktreeStorer
 }
 
-// New creates a new Worktree for the given storage backend.
+// New creates a new Worktree manager for the given storage backend.
 //
 // The storer must implement the WorktreeStorer interface, which provides
 // access to the repository's filesystem for managing worktree metadata.
+//
+// Returns an error if storer is nil or does not implement WorktreeStorer.
 func New(storer storage.Storer) (*Worktree, error) {
 	if storer == nil {
 		return nil, errors.New("storer is nil")
@@ -84,24 +92,24 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		return err
 	}
 
-	dotgit := w.storer.Filesystem()
-	err = w.addDotGitDirs(dotgit, name)
+	commonDir := w.storer.Filesystem()
+	err = w.addDotGitDirs(commonDir, name)
 	if err != nil {
 		return err
 	}
 
-	err = w.addDotGitFiles(dotgit, wt, name, o)
+	err = w.addDotGitFiles(commonDir, wt, name, o)
 	if err != nil {
 		return err
 	}
 
-	path := filepath.Join(dotgit.Root(), worktrees, name)
+	path := filepath.Join(commonDir.Root(), worktrees, name)
 	err = w.addWorktreeDotGitFile(wt, path)
 	if err != nil {
 		return err
 	}
 
-	r, err := git.Open(w.storer.(storage.Storer), wt)
+	r, err := w.Open(wt)
 	if err != nil {
 		return err
 	}
@@ -111,7 +119,7 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		return err
 	}
 
-	return work.Reset(&git.ResetOptions{Commit: o.commit})
+	return work.Reset(&git.ResetOptions{Commit: o.commit, Mode: git.HardReset})
 }
 
 // Remove deletes a linked worktree by removing its metadata dir within .git.
@@ -139,12 +147,62 @@ func (w *Worktree) Remove(name string) error {
 	return util.RemoveAll(dotgit, path)
 }
 
+// Open opens a repository that may be a linked worktree.
+//
+// When the target is not a linked worktree, it behaves just like git.Open.
+// This logic is likely going to be moved to git.Open in the future.
+func (w *Worktree) Open(wt billy.Filesystem) (*git.Repository, error) {
+	if wt == nil {
+		return nil, errors.New("worktree fs is nil")
+	}
+
+	fs := w.getDualFS(wt)
+	if fs == nil {
+		fs = w.storer.Filesystem()
+	}
+
+	stor := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	return git.Open(stor, wt)
+}
+
+func (w *Worktree) getDualFS(wt billy.Filesystem) billy.Filesystem {
+	commonDir := w.storer.Filesystem()
+
+	f, err := wt.Open(dotgitDir)
+	if err != nil {
+		return nil
+	}
+
+	data, err := io.ReadAll(io.LimitReader(f, worktreeDotGitMaxSize))
+	if err != nil || len(data) < 9 {
+		return nil
+	}
+
+	// ensure it is reading gitdir data:
+	if !bytes.Equal(data[:len(gitDir)], []byte(gitDir)) {
+		return nil
+	}
+
+	path := strings.TrimSpace(string(data[8:]))
+	rel, err := filepath.Rel(commonDir.Root(), path)
+	if err != nil {
+		return nil
+	}
+
+	wtGitDir, err := commonDir.Chroot(rel)
+	if err != nil {
+		return nil
+	}
+
+	return dotgit.NewRepositoryFilesystem(wtGitDir, commonDir)
+}
+
 func (w *Worktree) addDotGitDirs(wt billy.Filesystem, name string) error {
 	return wt.MkdirAll(path(name, refs), dirMode)
 }
 
 func (w *Worktree) addWorktreeDotGitFile(wt billy.Filesystem, path string) error {
-	return writeFile(wt, dotgit, []byte("gitdir: "+path))
+	return writeFile(wt, dotgitDir, []byte("gitdir: "+path))
 }
 
 func (w *Worktree) addDotGitFiles(dotgit, wt billy.Filesystem, name string, opts *options) error {
