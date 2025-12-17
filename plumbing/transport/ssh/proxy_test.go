@@ -18,8 +18,7 @@ type ProxySuite struct {
 	suite.Suite
 }
 
-func TestProxySuite(t *testing.T) {
-	t.Parallel()
+func TestProxySuite(t *testing.T) { //nolint: paralleltest // modifies global DefaultAuthBuilder
 	suite.Run(t, new(ProxySuite))
 }
 
@@ -60,6 +59,8 @@ func (s *ProxySuite) TestCommand() {
 
 	base, port, _ := setupTest(s.T())
 
+	authBuilder := DefaultAuthBuilder
+	defer func() { DefaultAuthBuilder = authBuilder }()
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
 	}

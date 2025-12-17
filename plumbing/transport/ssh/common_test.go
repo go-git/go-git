@@ -154,12 +154,9 @@ func TestFailHostKeyCallback(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestIssue70Suite(t *testing.T) {
-	t.Parallel()
+func TestIssue70Suite(t *testing.T) { //nolint: paralleltest // modifies global DefaultAuthBuilder
 	authBuilder := DefaultAuthBuilder
-	defer func() {
-		DefaultAuthBuilder = authBuilder
-	}()
+	defer func() { DefaultAuthBuilder = authBuilder }()
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
 	}
