@@ -3,6 +3,7 @@ package worktree_test
 import (
 	"io"
 	iofs "io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -987,6 +989,130 @@ func TestInit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorktreeIsolation(t *testing.T) {
+	t.Parallel()
+
+	// Init the main repo with a single commit.
+	mainRepoDir := t.TempDir()
+	mainRepoFS := osfs.New(mainRepoDir, osfs.WithBoundOS())
+
+	mainRepo, err := git.PlainInit(mainRepoDir, false)
+	require.NoError(t, err)
+
+	mainWt, err := mainRepo.Worktree()
+	require.NoError(t, err)
+
+	err = util.WriteFile(mainRepoFS, "README.md", []byte("# Main Repo\n"), 0o644)
+	require.NoError(t, err)
+
+	_, err = mainWt.Add("README.md")
+	require.NoError(t, err)
+
+	initialCommit, err := mainWt.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err)
+
+	// Create a remote repository.
+	remoteDir := t.TempDir()
+	remoteRepo, err := git.PlainInit(remoteDir, true)
+	require.NoError(t, err)
+
+	_, err = mainRepo.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{remoteDir},
+	})
+	require.NoError(t, err)
+
+	err = mainRepo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{"refs/heads/master:refs/heads/master"},
+	})
+	require.NoError(t, err)
+
+	// Back to the main repo, create a linked worktree.
+	worktreeDir := t.TempDir()
+	worktreeFS := osfs.New(worktreeDir, osfs.WithBoundOS())
+
+	w, err := xworktree.New(mainRepo.Storer)
+	require.NoError(t, err)
+
+	err = w.Add(worktreeFS, "feature-branch", xworktree.WithCommit(initialCommit))
+	require.NoError(t, err)
+
+	wtRepo, err := w.Open(worktreeFS)
+	require.NoError(t, err)
+
+	wtWorkTree, err := wtRepo.Worktree()
+	require.NoError(t, err)
+
+	err = util.WriteFile(worktreeFS, "feature.txt", []byte("Feature implementation\n"), 0o644)
+	require.NoError(t, err)
+
+	_, err = wtWorkTree.Add("feature.txt")
+	require.NoError(t, err)
+
+	featureCommit, err := wtWorkTree.Commit("Add feature", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err)
+
+	// Push worktree changes to the remote.
+	err = wtRepo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{"refs/heads/feature-branch:refs/heads/feature-branch"},
+	})
+	require.NoError(t, err)
+
+	wtHead, err := wtRepo.Head()
+	require.NoError(t, err)
+	assert.Equal(t, featureCommit.String(), wtHead.Hash().String(), "worktree should point to feature commit")
+
+	_, err = worktreeFS.Stat("feature.txt")
+	require.NoError(t, err, "feature.txt should exist in worktree")
+
+	// Main repository must remain unchanged, with HEAD at the initial commit.
+	mainHead, err := mainRepo.Head()
+	require.NoError(t, err)
+	assert.Equal(t, initialCommit.String(), mainHead.Hash().String(), "main repo should still point to initial commit")
+
+	_, err = mainRepoFS.Stat("feature.txt")
+	assert.True(t, os.IsNotExist(err), "feature.txt should NOT exist in main repo working tree")
+
+	readmeContent, err := util.ReadFile(mainRepoFS, "README.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Main Repo\n", string(readmeContent), "README.md should be unchanged in main repo")
+
+	// remote must have both branches.
+	remoteRefs, err := remoteRepo.References()
+	require.NoError(t, err)
+
+	var foundMaster, foundFeature bool
+	err = remoteRefs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Name() == plumbing.NewBranchReferenceName("master") {
+			foundMaster = true
+			assert.Equal(t, initialCommit.String(), ref.Hash().String(), "remote master should point to initial commit")
+		}
+		if ref.Name() == plumbing.NewBranchReferenceName("feature-branch") {
+			foundFeature = true
+			assert.Equal(t, featureCommit.String(), ref.Hash().String(), "remote feature-branch should point to feature commit")
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.True(t, foundMaster, "remote should have master branch")
+	assert.True(t, foundFeature, "remote should have feature-branch")
 }
 
 func FuzzAdd(f *testing.F) {
