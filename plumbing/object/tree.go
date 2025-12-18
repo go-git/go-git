@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 const (
@@ -212,6 +212,30 @@ func (t *Tree) Type() plumbing.ObjectType {
 	return plumbing.TreeObject
 }
 
+// parseModeBytes parses a FileMode from byte slice without allocating a string.
+// This is more efficient than strconv.ParseUint(string(bytes), 8, 32).
+func parseModeBytes(b []byte) (filemode.FileMode, error) {
+	if len(b) == 0 {
+		return filemode.Empty, fmt.Errorf("empty mode string")
+	}
+
+	// Git file modes are at most 6-7 octal digits. Limiting to 7 digits ensures
+	// no overflow in uint32 (max 7-digit octal: 07777777 = 0x1FFFFF < 0xFFFFFFFF).
+	if len(b) > 7 {
+		return filemode.Empty, fmt.Errorf("mode string too long: %d digits", len(b))
+	}
+
+	var mode uint32
+	for _, c := range b {
+		if c < '0' || c > '7' {
+			return filemode.Empty, fmt.Errorf("invalid octal character: %c", c)
+		}
+		mode = mode*8 + uint32(c-'0')
+	}
+
+	return filemode.FileMode(mode), nil
+}
+
 // Decode transform an plumbing.EncodedObject into a Tree struct
 func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.TreeObject {
@@ -232,40 +256,48 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	r := sync.GetBufioReader(reader)
-	defer sync.PutBufioReader(r)
+	buf, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
 
-	for {
-		str, err := r.ReadString(' ')
+	pos := 0
+	for pos < len(buf) {
+		spaceIdx := bytes.IndexByte(buf[pos:], ' ')
+		if spaceIdx == -1 {
+			break
+		}
+		spaceIdx += pos
+
+		modeBytes := buf[pos:spaceIdx]
+		mode, err := parseModeBytes(modeBytes)
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
 			return err
 		}
-		str = str[:len(str)-1] // strip last byte (' ')
+		pos = spaceIdx + 1
 
-		mode, err := filemode.New(str)
-		if err != nil {
-			return err
+		nullIdx := bytes.IndexByte(buf[pos:], 0)
+		if nullIdx == -1 {
+			return io.ErrUnexpectedEOF
 		}
+		nullIdx += pos
 
-		name, err := r.ReadString(0)
-		if err != nil && err != io.EOF {
-			return err
-		}
+		name := string(buf[pos:nullIdx])
+		pos = nullIdx + 1
 
 		var hash plumbing.Hash
-		if _, err = hash.ReadFrom(r); err != nil {
-			return err
+		hash.ResetBySize(t.Hash.Size())
+		hashSize := hash.Size()
+		if pos+hashSize > len(buf) {
+			return io.ErrUnexpectedEOF
 		}
+		hash.Write(buf[pos : pos+hashSize])
+		pos += hashSize
 
-		baseName := name[:len(name)-1]
 		t.Entries = append(t.Entries, TreeEntry{
 			Hash: hash,
 			Mode: mode,
-			Name: baseName,
+			Name: name,
 		})
 	}
 
