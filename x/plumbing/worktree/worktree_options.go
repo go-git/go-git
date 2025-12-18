@@ -13,7 +13,7 @@ type options struct {
 
 func (o *options) Validate() error {
 	if o.commit.IsZero() {
-		return errors.New("commit is nil")
+		return errors.New("commit hash is empty")
 	}
 	return nil
 }

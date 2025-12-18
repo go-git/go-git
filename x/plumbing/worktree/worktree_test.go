@@ -1,11 +1,10 @@
-package worktree_test
+package worktree
 
 import (
 	"io"
 	iofs "io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"testing"
 	"time"
@@ -25,10 +24,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
-	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
-
-var worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
 
 func TestAdd(t *testing.T) {
 	t.Parallel()
@@ -53,7 +49,7 @@ func TestAdd(t *testing.T) {
 		setupStorer   func() *filesystem.Storage
 		setupWorktree func() billy.Filesystem
 		name          string
-		opts          []xworktree.Option
+		opts          []Option
 		wantErr       bool
 		checkFiles    func(t *testing.T, storage, wt billy.Filesystem, name string)
 	}{
@@ -90,8 +86,8 @@ func TestAdd(t *testing.T) {
 				return memfs.New()
 			},
 			name: "test-work-tree2",
-			opts: []xworktree.Option{
-				xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")),
+			opts: []Option{
+				WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")),
 			},
 			wantErr: false,
 			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
@@ -132,7 +128,7 @@ func TestAdd(t *testing.T) {
 				return memfs.New()
 			},
 			name:    "detached-worktree",
-			opts:    []xworktree.Option{xworktree.WithDetachedHead()},
+			opts:    []Option{WithDetachedHead()},
 			wantErr: false,
 			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
 				expected := append(dotGitExpectedFiles, expectedFile{ //nolint:gocritic
@@ -144,7 +140,7 @@ func TestAdd(t *testing.T) {
 				})
 				checkFiles(t, expected, storage, wt, name)
 
-				w, err := xworktree.New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
+				w, err := New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
@@ -169,7 +165,7 @@ func TestAdd(t *testing.T) {
 			name:    "branch-worktree",
 			wantErr: false,
 			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
-				w, err := xworktree.New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
+				w, err := New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
@@ -191,11 +187,11 @@ func TestAdd(t *testing.T) {
 			setupStorer: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "existing-worktree", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(wtFS, "existing-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -215,7 +211,7 @@ func TestAdd(t *testing.T) {
 			storer := tt.setupStorer()
 			wt := tt.setupWorktree()
 
-			w, err := xworktree.New(storer)
+			w, err := New(storer)
 			if err != nil {
 				t.Fatalf("failed to create worktree: %v", err)
 			}
@@ -329,11 +325,11 @@ func TestRemove(t *testing.T) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "test-worktree", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(wtFS, "test-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -351,11 +347,11 @@ func TestRemove(t *testing.T) {
 			setupStorer: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "test-worktree", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(wtFS, "test-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -423,11 +419,11 @@ func TestRemove(t *testing.T) {
 			setupStorer: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "test-dash-name", xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(wtFS, "test-dash-name", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -447,7 +443,7 @@ func TestRemove(t *testing.T) {
 			t.Parallel()
 
 			storer := tt.setupStorer()
-			w, err := xworktree.New(storer)
+			w, err := New(storer)
 			require.NoError(t, err, "Unable to create worktree")
 
 			err = w.Remove(tt.name)
@@ -491,11 +487,11 @@ func TestList(t *testing.T) {
 			setup: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				err = w.Add(memfs.New(), "worktree-1",
-					xworktree.WithCommit(
+					WithCommit(
 						plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
@@ -509,13 +505,13 @@ func TestList(t *testing.T) {
 			setup: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 				for _, name := range []string{"worktree-1", "worktree-2", "worktree-3"} {
-					err = w.Add(memfs.New(), name, xworktree.WithCommit(commit))
+					err = w.Add(memfs.New(), name, WithCommit(commit))
 					require.NoError(t, err)
 				}
 
@@ -529,15 +525,15 @@ func TestList(t *testing.T) {
 			setup: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
-				err = w.Add(memfs.New(), "feature-a", xworktree.WithCommit(commit))
+				err = w.Add(memfs.New(), "feature-a", WithCommit(commit))
 				require.NoError(t, err)
 
-				err = w.Add(memfs.New(), "feature-b", xworktree.WithCommit(commit))
+				err = w.Add(memfs.New(), "feature-b", WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer
@@ -550,13 +546,13 @@ func TestList(t *testing.T) {
 			setup: func() *filesystem.Storage {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 				for _, name := range []string{"wt-1", "wt-2", "wt-3"} {
-					err = w.Add(memfs.New(), name, xworktree.WithCommit(commit))
+					err = w.Add(memfs.New(), name, WithCommit(commit))
 					require.NoError(t, err)
 				}
 
@@ -575,7 +571,7 @@ func TestList(t *testing.T) {
 			t.Parallel()
 
 			storer := tt.setup()
-			w, err := xworktree.New(storer)
+			w, err := New(storer)
 			require.NoError(t, err)
 
 			names, err := w.List()
@@ -605,13 +601,13 @@ func TestOpen(t *testing.T) {
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "test-worktree"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS
@@ -634,13 +630,13 @@ func TestOpen(t *testing.T) {
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "test-worktree"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS
@@ -689,13 +685,13 @@ func TestOpen(t *testing.T) {
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "feature-branch"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS
@@ -722,12 +718,12 @@ func TestOpen(t *testing.T) {
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS1 := memfs.New()
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS1, "worktree-1", xworktree.WithCommit(commit))
+				err = w.Add(wtFS1, "worktree-1", WithCommit(commit))
 				require.NoError(t, err)
 
 				r, err := w.Open(wtFS1)
@@ -748,7 +744,7 @@ func TestOpen(t *testing.T) {
 				require.NoError(t, err)
 
 				wtFS2 := memfs.New()
-				err = w.Add(wtFS2, "worktree-2", xworktree.WithCommit(commit))
+				err = w.Add(wtFS2, "worktree-2", WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS1
@@ -769,7 +765,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			storer, wtFS := tt.setup()
-			w, err := xworktree.New(storer)
+			w, err := New(storer)
 			require.NoError(t, err)
 
 			repo, err := w.Open(wtFS)
@@ -807,13 +803,13 @@ func TestInit(t *testing.T) {
 			setup: func() (*filesystem.Storage, string) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "test-init"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -822,7 +818,7 @@ func TestInit(t *testing.T) {
 			name:    "test-init",
 			wantErr: false,
 			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
-				w, err := xworktree.New(storage)
+				w, err := New(storage)
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
@@ -839,13 +835,13 @@ func TestInit(t *testing.T) {
 			setup: func() (*filesystem.Storage, string) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "cross-fs-init"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -854,7 +850,7 @@ func TestInit(t *testing.T) {
 			name:    "cross-fs-init",
 			wantErr: false,
 			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
-				w, err := xworktree.New(storage)
+				w, err := New(storage)
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
@@ -875,13 +871,13 @@ func TestInit(t *testing.T) {
 			setup: func() (*filesystem.Storage, string) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "reverse-cross-fs"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -890,7 +886,7 @@ func TestInit(t *testing.T) {
 			name:    "reverse-cross-fs",
 			wantErr: false,
 			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
-				w, err := xworktree.New(storage)
+				w, err := New(storage)
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
@@ -930,13 +926,13 @@ func TestInit(t *testing.T) {
 			setup: func() (*filesystem.Storage, string) {
 				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-				w, err := xworktree.New(storer)
+				w, err := New(storer)
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
 				name := "specific-commit"
 				commit := plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294")
-				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				err = w.Add(wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -945,7 +941,7 @@ func TestInit(t *testing.T) {
 			name:    "specific-commit",
 			wantErr: false,
 			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
-				w, err := xworktree.New(storage)
+				w, err := New(storage)
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
@@ -970,7 +966,7 @@ func TestInit(t *testing.T) {
 			t.Parallel()
 
 			storer, name := tt.setup()
-			w, err := xworktree.New(storer)
+			w, err := New(storer)
 			require.NoError(t, err)
 
 			err = w.Init(tt.wtFS, name)
@@ -1040,10 +1036,10 @@ func TestWorktreeIsolation(t *testing.T) {
 	worktreeDir := t.TempDir()
 	worktreeFS := osfs.New(worktreeDir, osfs.WithBoundOS())
 
-	w, err := xworktree.New(mainRepo.Storer)
+	w, err := New(mainRepo.Storer)
 	require.NoError(t, err)
 
-	err = w.Add(worktreeFS, "feature-branch", xworktree.WithCommit(initialCommit))
+	err = w.Add(worktreeFS, "feature-branch", WithCommit(initialCommit))
 	require.NoError(t, err)
 
 	wtRepo, err := w.Open(worktreeFS)
@@ -1136,14 +1132,14 @@ func FuzzAdd(f *testing.F) {
 	f.Fuzz(func(t *testing.T, name string) {
 		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-		w, err := xworktree.New(storer)
+		w, err := New(storer)
 		require.NoError(t, err, "failed to create worktree manager")
 		require.NotNil(t, w)
 
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
-		err = w.Add(wtFS, name, xworktree.WithCommit(commit), xworktree.WithDetachedHead())
+		err = w.Add(wtFS, name, WithCommit(commit), WithDetachedHead())
 		if worktreeNameRE.MatchString(name) {
 			assert.NoError(t, err, "worktree name: %q", name)
 		} else {
@@ -1169,13 +1165,13 @@ func FuzzOpen(f *testing.F) {
 	f.Fuzz(func(t *testing.T, gitFileContent string) {
 		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-		w, err := xworktree.New(storer)
+		w, err := New(storer)
 		require.NoError(t, err, "failed to create worktree manager")
 		require.NotNil(t, w)
 
 		wtFS := memfs.New()
 		err = util.WriteFile(wtFS, ".git", []byte(gitFileContent), 0o644)
-		require.NoError(t, err, "failed to file .git file")
+		require.NoError(t, err, "failed to write .git file")
 
 		repo, err := w.Open(wtFS)
 
@@ -1189,7 +1185,7 @@ func ExampleWorktree_Open() {
 	// Setup repository storage pointing to existing dotgit.
 	fs := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	w, err := xworktree.New(storer)
+	w, err := New(storer)
 	if err != nil {
 		panic(err)
 	}
@@ -1201,7 +1197,7 @@ func ExampleWorktree_Open() {
 	commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 	// Create linked worktree.
-	err = w.Add(worktreeFS, "feature-branch", xworktree.WithCommit(commit))
+	err = w.Add(worktreeFS, "feature-branch", WithCommit(commit))
 	if err != nil {
 		panic(err)
 	}
@@ -1221,7 +1217,7 @@ func ExampleWorktree_Remove() {
 	// Setup repository storage pointing to existing dotgit.
 	fs := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	w, err := xworktree.New(storer)
+	w, err := New(storer)
 	if err != nil {
 		panic(err)
 	}
@@ -1239,7 +1235,7 @@ func ExampleWorktree_Init() {
 	// Setup repository storage on osfs pointing to existing dotgit.
 	storerFS := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(storerFS, cache.NewObjectLRUDefault())
-	w, err := xworktree.New(storer)
+	w, err := New(storer)
 	if err != nil {
 		panic(err)
 	}

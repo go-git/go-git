@@ -8,7 +8,7 @@
 // The working tree, along with this metadata, is called a "worktree".
 //
 // This new worktree is called a "linked worktree" as opposed to the "main
-// worktree" prepared by linkgit:git-init[1] or linkgit:git-clone[1].
+// worktree" prepared by git-init or git-clone.
 // A repository has one main worktree (if it's not a bare repository) and
 // zero or more linked worktrees. When you are done with a linked worktree,
 // remove it with `git worktree remove`.
@@ -26,9 +26,9 @@
 // at the same commit as the current branch.
 //
 // If a working tree is deleted without using `git worktree remove`, then
-// its associated administrative files, which reside in the repository
-// (see "DETAILS" below), will eventually be removed automatically (see
-// `gc.worktreePruneExpire` in linkgit:git-config[1]), or you can run
+// its associated administrative files, which reside in the repository,
+// will eventually be removed automatically (see
+// `gc.worktreePruneExpire` in git-config), or you can run
 // `git worktree prune` in the main or any linked worktree to clean up any
 // stale administrative files.
 //

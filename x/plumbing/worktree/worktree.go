@@ -241,6 +241,14 @@ func (w *Worktree) Open(wt billy.Filesystem) (*git.Repository, error) {
 // For example, in-memory worktrees that are connected pre-existing worktree
 // metadata on disk - or vice versa.
 func (w *Worktree) Init(wt billy.Filesystem, name string) error {
+	if wt == nil {
+		return errors.New("worktree fs is nil")
+	}
+
+	if !worktreeNameRE.MatchString(name) {
+		return fmt.Errorf("invalid worktree name %q", name)
+	}
+
 	commonDir := w.storer.Filesystem()
 	path := filepath.Join(commonDir.Root(), worktrees, name)
 
@@ -256,7 +264,7 @@ func (w *Worktree) Init(wt billy.Filesystem, name string) error {
 
 	fs := w.getDualFS(wt)
 	if fs == nil {
-		return errors.New("unable to generate dual fs for %w")
+		return errors.New("unable to generate dual fs")
 	}
 
 	return nil
@@ -269,6 +277,7 @@ func (w *Worktree) getDualFS(wt billy.Filesystem) billy.Filesystem {
 	if err != nil {
 		return nil
 	}
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(f, worktreeDotGitMaxSize))
 	if err != nil || len(data) < 9 {
