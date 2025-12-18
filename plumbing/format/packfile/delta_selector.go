@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"math"
 	"sort"
 	"sync"
 
@@ -220,12 +221,17 @@ func (dw *deltaSelector) walk(
 	objectsToPack []*ObjectToPack,
 	packWindow uint,
 ) error {
+	window := math.MaxInt
+	if packWindow < uint(math.MaxInt) {
+		window = int(packWindow)
+	}
+
 	indexMap := make(map[plumbing.Hash]*deltaIndex)
 	for i := range len(objectsToPack) {
 		// Clean up the index map and reconstructed delta objects for anything
 		// outside our pack window, to save memory.
-		if i > int(packWindow) {
-			obj := objectsToPack[i-int(packWindow)]
+		if i > window {
+			obj := objectsToPack[i-window]
 
 			delete(indexMap, obj.Hash())
 
@@ -249,7 +255,7 @@ func (dw *deltaSelector) walk(
 			continue
 		}
 
-		for j := i - 1; j >= 0 && i-j < int(packWindow); j-- {
+		for j := i - 1; j >= 0 && i-j < window; j-- {
 			base := objectsToPack[j]
 			// Objects must use only the same type as their delta base.
 			// Since objectsToPack is sorted by type and size, once we find

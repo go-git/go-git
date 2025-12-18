@@ -33,7 +33,7 @@ func (c *CommitData) GenerationV2Data() uint64 {
 	if c.GenerationV2 == 0 || c.GenerationV2 == math.MaxUint64 {
 		return 0
 	}
-	return c.GenerationV2 - uint64(c.When.Unix())
+	return c.GenerationV2 - uint64(c.When.Unix()) //nolint:gosec // G115: Unix timestamp is always positive for valid commits
 }
 
 // Index represents a representation of commit graph that allows indexed

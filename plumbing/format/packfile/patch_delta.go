@@ -115,7 +115,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 		}
 		return nil, err
 	}
-	if srcSz != uint(base.Size()) {
+	if srcSz != uint(base.Size()) { //nolint:gosec // G115: base size is bounded by object limits
 		return nil, ErrInvalidDelta
 	}
 
@@ -188,19 +188,19 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 						_ = dstWr.CloseWithError(err)
 						return
 					}
-					basePos += uint(n)
-					discard -= uint(n)
+					basePos += uint(n) //nolint:gosec // G115: n is bounded by discard
+					discard -= uint(n) //nolint:gosec // G115: n is bounded by discard
 				}
 				for discard > 0 {
-					n, err := baseBuf.Discard(int(discard))
+					n, err := baseBuf.Discard(int(discard)) //nolint:gosec // G115: discard is bounded
 					if err != nil {
 						_ = dstWr.CloseWithError(err)
 						return
 					}
-					basePos += uint(n)
-					discard -= uint(n)
+					basePos += uint(n) //nolint:gosec // G115: n is bounded by discard
+					discard -= uint(n) //nolint:gosec // G115: n is bounded by discard
 				}
-				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil { //nolint:gosec // G115: sz is delta size
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -213,7 +213,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil { //nolint:gosec // G115: sz is delta size
 					_ = dstWr.CloseWithError(err)
 					return
 				}
@@ -251,7 +251,7 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 	var cmd byte
 
 	growSz := min(targetSz, maxPatchPreemptionSize)
-	dst.Grow(int(growSz))
+	dst.Grow(int(growSz)) //nolint:gosec // G115: growSz is bounded by maxPatchPreemptionSize
 	for {
 		if len(delta) == 0 {
 			return ErrInvalidDelta
@@ -319,7 +319,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 		return 0, plumbing.ZeroHash, err
 	}
 
-	if r, ok := base.(*bytes.Reader); ok && srcSz != uint(r.Size()) {
+	if r, ok := base.(*bytes.Reader); ok && srcSz != uint(r.Size()) { //nolint:gosec // G115: reader size is bounded
 		return 0, plumbing.ZeroHash, ErrInvalidDelta
 	}
 
@@ -334,14 +334,14 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 	// Avoid several interactions expanding the buffer, which can be quite
 	// inefficient on large deltas.
 	if b, ok := dst.(*bytes.Buffer); ok {
-		b.Grow(int(targetSz))
+		b.Grow(int(targetSz)) //nolint:gosec // G115: targetSz is delta target size
 	}
 
 	// If header still needs to be written, caller will provide
 	// a LazyObjectWriterHeader. This seems to be the case when
 	// dealing with thin-packs.
 	if writeHeader != nil {
-		err = writeHeader(typ, int64(targetSz))
+		err = writeHeader(typ, int64(targetSz)) //nolint:gosec // G115: targetSz is delta target size
 		if err != nil {
 			return 0, plumbing.ZeroHash, fmt.Errorf("could not lazy write header: %w", err)
 		}
@@ -349,13 +349,13 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 
 	remainingTargetSz := targetSz
 
-	hasher := plumbing.NewHasher(format.SHA1, typ, int64(targetSz))
+	hasher := plumbing.NewHasher(format.SHA1, typ, int64(targetSz)) //nolint:gosec // G115: targetSz fits in int64
 	mw := io.MultiWriter(dst, hasher)
 
 	bufp := sync.GetByteSlice()
 	defer sync.PutByteSlice(bufp)
 
-	sr := io.NewSectionReader(base, int64(0), int64(srcSz))
+	sr := io.NewSectionReader(base, int64(0), int64(srcSz)) //nolint:gosec // G115: srcSz fits in int64
 	// Keep both the io.LimitedReader types, so we can reset N.
 	baselr := io.LimitReader(sr, 0).(*io.LimitedReader)
 	deltalr := io.LimitReader(deltaBuf, 0).(*io.LimitedReader)
@@ -386,10 +386,10 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 				return 0, plumbing.ZeroHash, err
 			}
 
-			if _, err := sr.Seek(int64(offset), io.SeekStart); err != nil {
+			if _, err := sr.Seek(int64(offset), io.SeekStart); err != nil { //nolint:gosec // G115: offset fits in int64
 				return 0, plumbing.ZeroHash, err
 			}
-			baselr.N = int64(sz)
+			baselr.N = int64(sz) //nolint:gosec // G115: sz fits in int64
 			if _, err := io.CopyBuffer(mw, baselr, buf); err != nil {
 				return 0, plumbing.ZeroHash, err
 			}
@@ -399,7 +399,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			if invalidSize(sz, targetSz) {
 				return 0, plumbing.ZeroHash, ErrInvalidDelta
 			}
-			deltalr.N = int64(sz)
+			deltalr.N = int64(sz) //nolint:gosec // G115: sz fits in int64
 			if _, err := io.CopyBuffer(mw, deltalr, buf); err != nil {
 				return 0, plumbing.ZeroHash, err
 			}

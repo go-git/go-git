@@ -39,7 +39,7 @@ func (mi *MemoryIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 
 // GetHashByIndex gets the hash given an index in the commit graph
 func (mi *MemoryIndex) GetHashByIndex(i uint32) (plumbing.Hash, error) {
-	if i >= uint32(len(mi.commitData)) {
+	if i >= uint32(len(mi.commitData)) { //nolint:gosec // G115: len fits in uint32
 		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 	}
 
@@ -49,7 +49,7 @@ func (mi *MemoryIndex) GetHashByIndex(i uint32) (plumbing.Hash, error) {
 // GetCommitDataByIndex gets the commit node from the commit graph using index
 // obtained from child node, if available
 func (mi *MemoryIndex) GetCommitDataByIndex(i uint32) (*CommitData, error) {
-	if i >= uint32(len(mi.commitData)) {
+	if i >= uint32(len(mi.commitData)) { //nolint:gosec // G115: len fits in uint32
 		return nil, plumbing.ErrObjectNotFound
 	}
 
@@ -85,7 +85,7 @@ func (mi *MemoryIndex) Add(hash plumbing.Hash, data *CommitData) {
 	// which allows adding nodes out of order as long as all parents
 	// are eventually resolved
 	data.ParentIndexes = nil
-	mi.indexMap[hash] = uint32(len(mi.commitData))
+	mi.indexMap[hash] = uint32(len(mi.commitData)) //nolint:gosec // G115: len fits in uint32
 	mi.commitData = append(mi.commitData, commitData{Hash: hash, CommitData: data})
 	if data.GenerationV2 == math.MaxUint64 { // if GenerationV2 is not available reset it to zero
 		data.GenerationV2 = 0
@@ -105,5 +105,5 @@ func (mi *MemoryIndex) Close() error {
 
 // MaximumNumberOfHashes returns the maximum number of hashes in the index.
 func (mi *MemoryIndex) MaximumNumberOfHashes() uint32 {
-	return uint32(len(mi.indexMap))
+	return uint32(len(mi.indexMap)) //nolint:gosec // G115: len fits in uint32
 }

@@ -95,14 +95,16 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
 	low := uint64(0)
 	for {
 		mid := (low + high) >> 1
+		//nolint:gosec // G115: idSize() returns small hash size (20 or 32)
 		offset := mid * uint64(idx.idSize())
 
+		//nolint:gosec // G115: idSize() returns small hash size (20 or 32)
 		cmp := h.Compare(data[offset : offset+uint64(idx.idSize())])
 		switch {
 		case cmp < 0:
 			high = mid
 		case cmp == 0:
-			return int(mid), true
+			return int(mid), true //nolint:gosec // G115: mid is bounded by index size
 		default:
 			low = mid + 1
 		}
@@ -141,10 +143,10 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 	if idx.offsetHash == nil {
 		idx.offsetHash = make(map[int64]plumbing.Hash)
 	}
-	idx.offsetHash[int64(offset)] = h
+	idx.offsetHash[int64(offset)] = h //nolint:gosec // G115: packfile offsets fit in int64
 	idx.mu.Unlock()
 
-	return int64(offset), nil
+	return int64(offset), nil //nolint:gosec // G115: packfile offsets fit in int64
 }
 
 const isO64Mask = uint64(1) << 31
@@ -227,8 +229,9 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	for firstLevel, fanoutValue := range idx.Fanout {
 		mappedFirstLevel := idx.FanoutMapping[firstLevel]
 		for secondLevel := uint32(0); i < fanoutValue; i++ {
+			//nolint:gosec // G115: idSize() returns small hash size (20 or 32)
 			_, _ = hash.Write(idx.Names[mappedFirstLevel][secondLevel*uint32(idx.idSize()):])
-			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
+			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel))) //nolint:gosec // G115: offsets fit in int64
 			offsetHash[offset] = hash
 			secondLevel++
 		}

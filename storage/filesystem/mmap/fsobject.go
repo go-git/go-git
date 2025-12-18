@@ -180,7 +180,7 @@ func (o *ondemandObject) resolveMetadata() error {
 		if err != nil {
 			return fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		baseOffset := uint64(o.offset) - uint64(negativeOffset)
+		baseOffset := uint64(o.offset) - uint64(negativeOffset) //nolint:gosec // G115: offset is always non-negative
 		consumed := len(o.scanner.packMmap[pos:]) - reader.Len()
 		pos += int64(consumed)
 
@@ -225,7 +225,7 @@ func (o *ondemandObject) resolveMetadata() error {
 	}
 
 	o.typ = base.Type()
-	o.size = int64(targetSize)
+	o.size = int64(targetSize) //nolint:gosec // G115: targetSize is delta target size
 
 	return nil
 }
@@ -257,7 +257,7 @@ func (o *ondemandObject) resolveDelta() (io.ReadCloser, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		baseOffset = uint64(o.offset) - uint64(negativeOffset)
+		baseOffset = uint64(o.offset) - uint64(negativeOffset) //nolint:gosec // G115: offset is always non-negative
 
 		consumed := len(o.scanner.packMmap[pos:]) - reader.Len()
 		pos += int64(consumed)

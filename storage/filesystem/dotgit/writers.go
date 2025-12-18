@@ -197,7 +197,7 @@ func newSyncedReader(w io.Writer, r io.ReadSeeker) *syncedReader {
 
 func (s *syncedReader) Write(p []byte) (n int, err error) {
 	defer func() {
-		written := s.written.Add(uint64(n))
+		written := s.written.Add(uint64(n)) //nolint:gosec // G115: n is bytes written, always non-negative
 		read := s.read.Load()
 		if written > read {
 			s.wake()
@@ -209,7 +209,7 @@ func (s *syncedReader) Write(p []byte) (n int, err error) {
 }
 
 func (s *syncedReader) Read(p []byte) (n int, err error) {
-	defer func() { s.read.Add(uint64(n)) }()
+	defer func() { s.read.Add(uint64(n)) }() //nolint:gosec // G115: n is bytes read, always non-negative
 
 	for {
 		s.sleep()
@@ -254,7 +254,7 @@ func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	p, err := s.r.Seek(offset, whence)
-	s.read.Store(uint64(p))
+	s.read.Store(uint64(p)) //nolint:gosec // G115: p is file position, always non-negative
 
 	return p, err
 }
