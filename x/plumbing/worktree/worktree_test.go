@@ -788,6 +788,207 @@ func TestOpen(t *testing.T) {
 	}
 }
 
+func TestInit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		description string
+		setup       func() (*filesystem.Storage, string)
+		wtFS        billy.Filesystem
+		name        string
+		wantErr     bool
+		errContains string
+		checkRepo   func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string)
+	}{
+		{
+			description: "memfs storer with memfs worktree",
+			setup: func() (*filesystem.Storage, string) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "test-init"
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, name
+			},
+			wtFS:    memfs.New(),
+			name:    "test-init",
+			wantErr: false,
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+				w, err := xworktree.New(storage)
+				require.NoError(t, err)
+
+				repo, err := w.Open(wt)
+				require.NoError(t, err)
+				require.NotNil(t, repo)
+
+				fi, err := wt.Stat(".git")
+				require.NoError(t, err)
+				assert.False(t, fi.IsDir(), ".git should be a file")
+			},
+		},
+		{
+			description: "boundOS storer with memfs worktree (cross-FS)",
+			setup: func() (*filesystem.Storage, string) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "cross-fs-init"
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, name
+			},
+			wtFS:    memfs.New(),
+			name:    "cross-fs-init",
+			wantErr: false,
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+				w, err := xworktree.New(storage)
+				require.NoError(t, err)
+
+				repo, err := w.Open(wt)
+				require.NoError(t, err)
+				require.NotNil(t, repo)
+
+				fi, err := wt.Stat(".git")
+				require.NoError(t, err)
+				assert.False(t, fi.IsDir(), ".git should be a file")
+
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
+			},
+		},
+		{
+			description: "memfs storer with boundOS worktree (cross-FS)",
+			setup: func() (*filesystem.Storage, string) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "reverse-cross-fs"
+				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, name
+			},
+			wtFS:    osfs.New(t.TempDir(), osfs.WithBoundOS()),
+			name:    "reverse-cross-fs",
+			wantErr: false,
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+				w, err := xworktree.New(storage)
+				require.NoError(t, err)
+
+				repo, err := w.Open(wt)
+				require.NoError(t, err)
+				require.NotNil(t, repo)
+
+				fi, err := wt.Stat(".git")
+				require.NoError(t, err)
+				assert.False(t, fi.IsDir(), ".git should be a file")
+			},
+		},
+		{
+			description: "init with non-existent worktree metadata",
+			setup: func() (*filesystem.Storage, string) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				return storer, "non-existent"
+			},
+			wtFS:        memfs.New(),
+			name:        "non-existent",
+			wantErr:     true,
+			errContains: "worktree not found",
+		},
+		{
+			description: "init with nil filesystem",
+			setup: func() (*filesystem.Storage, string) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				return storer, "test"
+			},
+			wtFS:    nil,
+			name:    "test",
+			wantErr: true,
+		},
+		{
+			description: "init and verify checkout state",
+			setup: func() (*filesystem.Storage, string) {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+				w, err := xworktree.New(storer)
+				require.NoError(t, err)
+
+				wtFS := memfs.New()
+				name := "specific-commit"
+				commit := plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294")
+				err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+				require.NoError(t, err)
+
+				return storer, name
+			},
+			wtFS:    memfs.New(),
+			name:    "specific-commit",
+			wantErr: false,
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+				w, err := xworktree.New(storage)
+				require.NoError(t, err)
+
+				repo, err := w.Open(wt)
+				require.NoError(t, err)
+
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "918c48b83bd081e863dbe1b80f8998f058cd8294", head.Hash().String())
+
+				wtObj, err := repo.Worktree()
+				require.NoError(t, err)
+				status, err := wtObj.Status()
+				require.NoError(t, err)
+
+				assert.False(t, status.IsClean())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			t.Parallel()
+
+			storer, name := tt.setup()
+			w, err := xworktree.New(storer)
+			require.NoError(t, err)
+
+			err = w.Init(tt.wtFS, name)
+			if tt.wantErr {
+				require.Error(t, err, "Init() should return an error")
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains, "error message should contain expected text")
+				}
+				return
+			}
+
+			require.NoError(t, err, "Init() should not return an error")
+
+			if tt.checkRepo != nil {
+				tt.checkRepo(t, storer, tt.wtFS, name)
+			}
+		})
+	}
+}
+
 func FuzzAdd(f *testing.F) {
 	f.Add("test")
 	f.Add("test-worktree")
@@ -906,4 +1107,32 @@ func ExampleWorktree_Remove() {
 	}
 
 	// The worktree metadata has been removed.
+}
+
+func ExampleWorktree_Init() {
+	// Setup repository storage on osfs pointing to existing dotgit.
+	storerFS := osfs.New("/path/to/repo/.git")
+	storer := filesystem.NewStorage(storerFS, cache.NewObjectLRUDefault())
+	w, err := xworktree.New(storer)
+	if err != nil {
+		panic(err)
+	}
+
+	// Now connect a fresh memfs filesystem to the existing worktree metadata.
+	// This is useful when you want the worktree on a different filesystem
+	// or filesystem type.
+	freshWtFS := memfs.New()
+	err = w.Init(freshWtFS, "feature-x")
+	if err != nil {
+		panic(err)
+	}
+
+	// Open the worktree with the new filesystem.
+	r, err := w.Open(freshWtFS)
+	if err != nil {
+		panic(err)
+	}
+
+	// The worktree is now connected and can be used.
+	_, _ = r.Head()
 }

@@ -232,6 +232,36 @@ func (w *Worktree) Open(wt billy.Filesystem) (*git.Repository, error) {
 	return git.Open(stor, wt)
 }
 
+// Init initialises a worktree filesystem, connecting it to an existing
+// worktree metadata.
+//
+// This is a go-git concept, which adds flexibility to the way linked
+// worktrees work. It enables a fs to be connected to an existing metadata,
+// which is particularly useful cross-filesystem implementations.
+// For example, in-memory worktrees that are connected pre-existing worktree
+// metadata on disk - or vice versa.
+func (w *Worktree) Init(wt billy.Filesystem, name string) error {
+	commonDir := w.storer.Filesystem()
+	path := filepath.Join(commonDir.Root(), worktrees, name)
+
+	_, err := commonDir.Lstat(path)
+	if err != nil {
+		return ErrWorktreeNotFound
+	}
+
+	err = w.addWorktreeDotGitFile(wt, path)
+	if err != nil {
+		return fmt.Errorf("unable to create .git file: %w", err)
+	}
+
+	fs := w.getDualFS(wt)
+	if fs == nil {
+		return errors.New("unable to generate dual fs for %w")
+	}
+
+	return nil
+}
+
 func (w *Worktree) getDualFS(wt billy.Filesystem) billy.Filesystem {
 	commonDir := w.storer.Filesystem()
 
