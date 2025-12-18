@@ -7,14 +7,14 @@ import (
 )
 
 type options struct {
-	commit plumbing.Hash
+	commit       plumbing.Hash
+	detachedHead bool
 }
 
 func (o *options) Validate() error {
 	if o.commit.IsZero() {
-		return errors.New("commit ID cannot be zero")
+		return errors.New("commit is nil")
 	}
-
 	return nil
 }
 
@@ -29,5 +29,14 @@ type Option func(*options)
 func WithCommit(commit plumbing.Hash) Option {
 	return func(o *options) {
 		o.commit = commit
+	}
+}
+
+// WithDetachedHead creates the worktree with a detached HEAD at the specified commit.
+//
+// Use this option to create a detached HEAD instead, similar to `git worktree add --detach <path>`.
+func WithDetachedHead() Option {
+	return func(o *options) {
+		o.detachedHead = true
 	}
 }

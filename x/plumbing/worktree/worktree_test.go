@@ -41,14 +41,6 @@ func TestAdd(t *testing.T) {
 		content:      []byte(""),
 		appendFSRoot: true,
 	}, {
-		path:     "HEAD",
-		fileMode: 0o644,
-		content:  []byte("af2d6a6954d532f8ffb47615169c8fdf9d383a1a\n"),
-	}, {
-		path:     "ORIG_HEAD",
-		fileMode: 0o644,
-		content:  []byte("af2d6a6954d532f8ffb47615169c8fdf9d383a1a\n"),
-	}, {
 		path:     "refs",
 		dir:      true,
 		fileMode: int(0o755 | iofs.ModeDir),
@@ -59,7 +51,7 @@ func TestAdd(t *testing.T) {
 		setupStorer   func() *filesystem.Storage
 		setupWorktree func() billy.Filesystem
 		name          string
-		commit        plumbing.Hash
+		opts          []xworktree.Option
 		wantErr       bool
 		checkFiles    func(t *testing.T, storage, wt billy.Filesystem, name string)
 	}{
@@ -73,10 +65,42 @@ func TestAdd(t *testing.T) {
 				return memfs.New()
 			},
 			name:    "test-work-tree",
-			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: false,
 			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
-				checkFiles(t, dotGitExpectedFiles, storage, wt, name)
+				expected := append(dotGitExpectedFiles, expectedFile{ //nolint:gocritic
+					path: "ORIG_HEAD", fileMode: 0o644,
+					content: []byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"),
+				}, expectedFile{
+					path: "HEAD", fileMode: 0o644,
+					content: []byte("ref: refs/heads/test-work-tree\n"),
+				})
+				checkFiles(t, expected, storage, wt, name)
+				checkWorktree(t, storage, wt, filepath.Join(storage.Root(), "worktrees", name))
+			},
+		},
+		{
+			description: "memfs: add worktree with commit",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			setupWorktree: func() billy.Filesystem {
+				return memfs.New()
+			},
+			name: "test-work-tree2",
+			opts: []xworktree.Option{
+				xworktree.WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")),
+			},
+			wantErr: false,
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
+				expected := append(dotGitExpectedFiles, expectedFile{ //nolint:gocritic
+					path: "ORIG_HEAD", fileMode: 0o644,
+					content: []byte("af2d6a6954d532f8ffb47615169c8fdf9d383a1a\n"),
+				}, expectedFile{
+					path: "HEAD", fileMode: 0o644,
+					content: []byte("ref: refs/heads/test-work-tree2\n"),
+				})
+				checkFiles(t, expected, storage, wt, name)
 				checkWorktree(t, storage, wt, filepath.Join(storage.Root(), "worktrees", name))
 			},
 		},
@@ -90,11 +114,74 @@ func TestAdd(t *testing.T) {
 				return memfs.New()
 			},
 			name:    "test-work-tree",
-			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: false,
 			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
 				checkFiles(t, dotGitExpectedFiles, storage, wt, name)
 				checkWorktree(t, storage, wt, filepath.Join(storage.Root(), "worktrees", name))
+			},
+		},
+		{
+			description: "memfs: add worktree with detached HEAD",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			setupWorktree: func() billy.Filesystem {
+				return memfs.New()
+			},
+			name:    "detached-worktree",
+			opts:    []xworktree.Option{xworktree.WithDetachedHead()},
+			wantErr: false,
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
+				expected := append(dotGitExpectedFiles, expectedFile{ //nolint:gocritic
+					path: "ORIG_HEAD", fileMode: 0o644,
+					content: []byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"),
+				}, expectedFile{
+					path: "HEAD", fileMode: 0o644,
+					content: []byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"),
+				})
+				checkFiles(t, expected, storage, wt, name)
+
+				w, err := xworktree.New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
+				require.NoError(t, err)
+
+				repo, err := w.Open(wt)
+				require.NoError(t, err)
+
+				// Verify HEAD points to the commit (detached).
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
+				assert.Equal(t, plumbing.ReferenceName("HEAD"), head.Name())
+			},
+		},
+		{
+			description: "memfs: add worktree with branch (default)",
+			setupStorer: func() *filesystem.Storage {
+				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			},
+			setupWorktree: func() billy.Filesystem {
+				return memfs.New()
+			},
+			name:    "branch-worktree",
+			wantErr: false,
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
+				w, err := xworktree.New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
+				require.NoError(t, err)
+
+				repo, err := w.Open(wt)
+				require.NoError(t, err)
+
+				// Verify HEAD points to the branch.
+				head, err := repo.Head()
+				require.NoError(t, err)
+				assert.Equal(t, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
+				assert.Equal(t, plumbing.NewBranchReferenceName("branch-worktree"), head.Name())
+
+				branchRef, err := repo.Reference(plumbing.NewBranchReferenceName("branch-worktree"), true)
+				require.NoError(t, err)
+				assert.Equal(t, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branchRef.Hash().String())
 			},
 		},
 		{
@@ -115,7 +202,6 @@ func TestAdd(t *testing.T) {
 				return memfs.New()
 			},
 			name:    "existing-worktree",
-			commit:  plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 			wantErr: true,
 		},
 	}
@@ -132,7 +218,7 @@ func TestAdd(t *testing.T) {
 				t.Fatalf("failed to create worktree: %v", err)
 			}
 
-			err = w.Add(wt, tt.name, xworktree.WithCommit(tt.commit))
+			err = w.Add(wt, tt.name, tt.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Add() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -730,11 +816,11 @@ func FuzzAdd(f *testing.F) {
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
-		err = w.Add(wtFS, name, xworktree.WithCommit(commit))
+		err = w.Add(wtFS, name, xworktree.WithCommit(commit), xworktree.WithDetachedHead())
 		if worktreeNameRE.MatchString(name) {
-			assert.NoError(t, err)
+			assert.NoError(t, err, "worktree name: %q", name)
 		} else {
-			assert.Error(t, err)
+			assert.Error(t, err, "worktree name: %q", name)
 		}
 	})
 }
@@ -767,7 +853,7 @@ func FuzzOpen(f *testing.F) {
 		repo, err := w.Open(wtFS)
 
 		if err == nil && repo == nil {
-			t.Error("invalid state: Open returned nil error and nil repository")
+			assert.Fail(t, "invalid state: repository and error is nil")
 		}
 	})
 }

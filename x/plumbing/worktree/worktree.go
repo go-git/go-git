@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -96,6 +97,19 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		opt(o)
 	}
 
+	if o.commit.IsZero() {
+		r, err := git.Open(w.storer.(storage.Storer), nil)
+		if err != nil {
+			return fmt.Errorf("unable to open repository: %w", err)
+		}
+
+		ref, err := r.Head()
+		if err != nil {
+			return fmt.Errorf("invalid reference: %w", err)
+		}
+		o.commit = ref.Hash()
+	}
+
 	err := o.Validate()
 	if err != nil {
 		return err
@@ -133,8 +147,16 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 	if err != nil {
 		return err
 	}
+	opt := &git.CheckoutOptions{
+		Hash: o.commit,
+	}
 
-	return work.Reset(&git.ResetOptions{Commit: o.commit, Mode: git.HardReset})
+	if !o.detachedHead {
+		opt.Branch = plumbing.NewBranchReferenceName(name)
+		opt.Create = true
+	}
+
+	return work.Checkout(opt)
 }
 
 // Remove deletes a linked worktree by removing its metadata dir within .git.
