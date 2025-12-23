@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/storage/filesystem/readerat"
 )
 
 // The existing implementation uses int64, instead of uint64, which is
@@ -49,4 +50,26 @@ func newPackfileOpts(pack, idx billy.File, opts ...packfile.PackfileOption) pack
 
 	opts = append(opts, packfile.WithIdx(i))
 	return packfile.NewPackfile(pack, opts...)
+}
+
+func newPackScannerAt(pack, idx, rev billy.File) packHandler[uint64] {
+	_, err := pack.Seek(0, io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
+	_, err = idx.Seek(0, io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
+	_, err = rev.Seek(0, io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
+
+	s, err := readerat.NewPackScanner(crypto.SHA1.Size(), pack, idx, rev)
+	if err != nil {
+		panic(err)
+	}
+
+	return s
 }

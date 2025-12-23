@@ -101,6 +101,10 @@ func BenchmarkPackHandlers(b *testing.B) {
 				return newPackScanner(pack, idx, rev)
 			}, data.offsetHashMap)
 		}
+
+		runBenchmark(b, "readerat-pack-scanner:"+data.name, func() packHandler[uint64] {
+			return newPackScannerAt(pack, idx, rev)
+		}, data.offsetHashMap)
 	}
 }
 
