@@ -15,12 +15,12 @@ jobs:
    steps:
    - name: Build Fuzzers
      id: build
-     uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@4a92d87b24ac655a05fa6ae539a5f7ea8eb2d74a
+     uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master  # not to be pinned https://github.com/google/oss-fuzz/issues/6836
      with:
        oss-fuzz-project-name: 'go-git'
        language: go
    - name: Run Fuzzers
-     uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@4a92d87b24ac655a05fa6ae539a5f7ea8eb2d74a
+     uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master  # as per above
      with:
        oss-fuzz-project-name: 'go-git'
        language: go
