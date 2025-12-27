@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io"
 	"io/fs"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -227,9 +228,9 @@ func TestReaderAtOffsetHashConcurrentPopulation(t *testing.T) {
 	wg.Wait()
 }
 
-// Benchmarks
+// Benchmarks comparing MemoryIndex vs ReaderAtIndex
 
-func BenchmarkReaderAtFindOffset(b *testing.B) {
+func BenchmarkReaderAt(b *testing.B) {
 	data, err := base64.StdEncoding.DecodeString(fixtureLarge4GB)
 	if err != nil {
 		b.Fatal(err)
@@ -242,121 +243,241 @@ func BenchmarkReaderAtFindOffset(b *testing.B) {
 	}
 	defer idx.Close()
 
-	for b.Loop() {
-		for _, h := range fixtureHashes {
-			_, err := idx.FindOffset(h)
-			if err != nil {
-				b.Fatalf("error getting offset: %s", err)
-			}
-		}
-	}
-}
-
-func BenchmarkReaderAtFindCRC32(b *testing.B) {
-	data, err := base64.StdEncoding.DecodeString(fixtureLarge4GB)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
-	idx, err := idxfile.NewReaderAtIndex(reader, 20)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer idx.Close()
-
-	for b.Loop() {
-		for _, h := range fixtureHashes {
-			_, err := idx.FindCRC32(h)
-			if err != nil {
-				b.Fatalf("error getting crc32: %s", err)
-			}
-		}
-	}
-}
-
-func BenchmarkReaderAtContains(b *testing.B) {
-	data, err := base64.StdEncoding.DecodeString(fixtureLarge4GB)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
-	idx, err := idxfile.NewReaderAtIndex(reader, 20)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer idx.Close()
-
-	for b.Loop() {
-		for _, h := range fixtureHashes {
-			ok, err := idx.Contains(h)
-			if err != nil {
-				b.Fatalf("error checking if hash is in index: %s", err)
-			}
-			if !ok {
-				b.Error("expected hash to be in index")
-			}
-		}
-	}
-}
-
-func BenchmarkReaderAtEntries(b *testing.B) {
-	data, err := base64.StdEncoding.DecodeString(fixtureLarge4GB)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
-	idx, err := idxfile.NewReaderAtIndex(reader, 20)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer idx.Close()
-
-	for b.Loop() {
-		iter, err := idx.Entries()
-		if err != nil {
-			b.Fatalf("unexpected error getting entries: %s", err)
-		}
-
-		var entries int
-		for {
-			_, err := iter.Next()
-			if err != nil {
-				if err == io.EOF {
-					break
+	b.Run("FindOffset", func(b *testing.B) {
+		for b.Loop() {
+			for _, h := range fixtureHashes {
+				_, err := idx.FindOffset(h)
+				if err != nil {
+					b.Fatalf("error getting offset: %s", err)
 				}
-				b.Errorf("unexpected error getting entry: %s", err)
 			}
-			entries++
 		}
+	})
 
-		if entries != len(fixtureHashes) {
-			b.Errorf("expecting entries to be %d, got %d", len(fixtureHashes), entries)
+	b.Run("FindCRC32", func(b *testing.B) {
+		for b.Loop() {
+			for _, h := range fixtureHashes {
+				_, err := idx.FindCRC32(h)
+				if err != nil {
+					b.Fatalf("error getting crc32: %s", err)
+				}
+			}
 		}
-	}
+	})
+
+	b.Run("Contains", func(b *testing.B) {
+		for b.Loop() {
+			for _, h := range fixtureHashes {
+				ok, err := idx.Contains(h)
+				if err != nil {
+					b.Fatalf("error checking if hash is in index: %s", err)
+				}
+				if !ok {
+					b.Error("expected hash to be in index")
+				}
+			}
+		}
+	})
+
+	b.Run("Entries", func(b *testing.B) {
+		for b.Loop() {
+			iter, err := idx.Entries()
+			if err != nil {
+				b.Fatalf("unexpected error getting entries: %s", err)
+			}
+
+			var entries int
+			for {
+				_, err := iter.Next()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					b.Errorf("unexpected error getting entry: %s", err)
+				}
+				entries++
+			}
+
+			if entries != len(fixtureHashes) {
+				b.Errorf("expecting entries to be %d, got %d", len(fixtureHashes), entries)
+			}
+		}
+	})
+
+	// FindHash tests FindHash without a reverse index (fallback path).
+	// The first call builds the offset->hash map, subsequent calls are O(1) map lookups.
+	b.Run("FindHash", func(b *testing.B) {
+		for b.Loop() {
+			for _, off := range fixtureOffsets {
+				_, err := idx.FindHash(int64(off))
+				if err != nil {
+					b.Fatalf("error finding hash: %s", err)
+				}
+			}
+		}
+	})
 }
 
-func BenchmarkReaderAtFindHash(b *testing.B) {
+// BenchmarkReaderAtFindHashFresh tests FindHash performance when the cache is cold.
+// This measures the fallback path where the offset->hash map must be built.
+func BenchmarkReaderAtFindHashFresh(b *testing.B) {
 	data, err := base64.StdEncoding.DecodeString(fixtureLarge4GB)
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
-	idx, err := idxfile.NewReaderAtIndex(reader, 20)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer idx.Close()
-
 	for b.Loop() {
+		reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
+		idx, err := idxfile.NewReaderAtIndex(reader, 20)
+		if err != nil {
+			b.Fatal(err)
+		}
+
 		for _, off := range fixtureOffsets {
-			_, err := idx.FindHash(off)
+			_, err := idx.FindHash(int64(off))
 			if err != nil {
 				b.Fatalf("error finding hash: %s", err)
 			}
 		}
+		idx.Close()
 	}
+}
+
+// mockRevIndex implements OffsetLookup for benchmarking the intermediate caching optimization.
+// It simulates a reverse index by mapping offsets to their original index positions.
+type mockRevIndex struct {
+	// offsetToIdxPos maps pack offset to original index position
+	offsetToIdxPos map[uint64]int
+	// sortedOffsets contains offsets sorted in ascending order (like the .rev file)
+	sortedOffsets []uint64
+}
+
+func newMockRevIndex(idx *idxfile.ReaderAtIndex) (*mockRevIndex, error) {
+	count, err := idx.Count()
+	if err != nil {
+		return nil, err
+	}
+
+	offsetToIdxPos := make(map[uint64]int, count)
+	sortedOffsets := make([]uint64, 0, count)
+
+	// Build the mapping from offset to idxPos by iterating through entries
+	entries, err := idx.Entries()
+	if err != nil {
+		return nil, err
+	}
+
+	idxPos := 0
+	for {
+		entry, err := entries.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		offsetToIdxPos[entry.Offset] = idxPos
+		sortedOffsets = append(sortedOffsets, entry.Offset)
+		idxPos++
+	}
+
+	// Sort offsets (entries are sorted by hash, not by offset)
+	sort.Slice(sortedOffsets, func(i, j int) bool { return sortedOffsets[i] < sortedOffsets[j] })
+
+	return &mockRevIndex{
+		offsetToIdxPos: offsetToIdxPos,
+		sortedOffsets:  sortedOffsets,
+	}, nil
+}
+
+func (m *mockRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idxPos int) (uint64, error)) (int, bool) {
+	return m.LookupIndexWithCallback(packOffset, offsetGetter, nil)
+}
+
+func (m *mockRevIndex) LookupIndexWithCallback(packOffset uint64, offsetGetter func(idxPos int) (uint64, error), onIntermediate func(offset uint64, idxPos int)) (int, bool) {
+	left, right := 0, len(m.sortedOffsets)-1
+	for left <= right {
+		mid := (left + right) / 2
+		// Get the offset at the mid position in sorted order
+		midOffset := m.sortedOffsets[mid]
+		// Get the corresponding idxPos for that offset
+		idxPos := m.offsetToIdxPos[midOffset]
+
+		// Call offsetGetter to simulate the real behavior (reading from idx file)
+		got, err := offsetGetter(idxPos)
+		if err != nil {
+			return 0, false
+		}
+		if onIntermediate != nil {
+			onIntermediate(got, idxPos)
+		}
+		switch {
+		case got == packOffset:
+			return idxPos, true
+		case got < packOffset:
+			left = mid + 1
+		default:
+			right = mid - 1
+		}
+	}
+	return 0, false
+}
+
+// BenchmarkReaderAtFindHashWithRevIndex tests FindHash with a reverse index.
+func BenchmarkReaderAtFindHashWithRevIndex(b *testing.B) {
+	data, err := base64.StdEncoding.DecodeString(fixtureLarge4GB)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
+	idx, err := idxfile.NewReaderAtIndex(reader, 20)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer idx.Close()
+
+	// Set up mock reverse index
+	mockRev, err := newMockRevIndex(idx)
+	if err != nil {
+		b.Fatal(err)
+	}
+	idx.SetRevIndex(mockRev)
+
+	// Warm tests the intermediate caching optimization with a warm cache.
+	b.Run("Warm", func(b *testing.B) {
+		for b.Loop() {
+			for _, off := range fixtureOffsets {
+				_, err := idx.FindHash(int64(off))
+				if err != nil {
+					b.Fatalf("error finding hash: %s", err)
+				}
+			}
+		}
+	})
+
+	// Cold tests FindHash with a reverse index when the cache is cold (fresh index each iteration).
+	b.Run("Cold", func(b *testing.B) {
+		for b.Loop() {
+			reader := &nopCloserReaderAt{bytes.NewReader(data), int64(len(data))}
+			idx, err := idxfile.NewReaderAtIndex(reader, 20)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			mockRev, err := newMockRevIndex(idx)
+			if err != nil {
+				b.Fatal(err)
+			}
+			idx.SetRevIndex(mockRev)
+
+			for _, off := range fixtureOffsets {
+				_, err := idx.FindHash(int64(off))
+				if err != nil {
+					b.Fatalf("error finding hash: %s", err)
+				}
+			}
+			idx.Close()
+		}
+	})
 }

@@ -47,7 +47,7 @@ func (e *Encoder) Encode(idx *MemoryIndex) (int, error) {
 }
 
 func (e *Encoder) encodeHeader(idx *MemoryIndex) (int, error) {
-	c, err := e.Write(idxHeader)
+	c, err := e.Write(IdxHeader)
 	if err != nil {
 		return c, err
 	}

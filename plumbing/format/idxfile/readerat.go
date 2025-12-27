@@ -40,19 +40,38 @@ var (
 	pool32Bytes = sync.Pool{New: func() interface{} { b := make([]byte, 32); return &b }}
 )
 
+// OffsetLookup provides efficient offset-to-index lookups using a reverse index.
+type OffsetLookup interface {
+	// LookupIndex finds the index position for the given pack offset.
+	// Returns the index position and true if found, or 0 and false if not found.
+	LookupIndex(packOffset uint64, offsetGetter func(idxPos int) (uint64, error)) (int, bool)
+
+	// LookupIndexWithCallback is like LookupIndex but calls onIntermediate for each
+	// intermediate position visited during the binary search. This allows caching
+	// of offset->idxPos mappings discovered during the search.
+	// If onIntermediate is nil, behaves like LookupIndex.
+	LookupIndexWithCallback(packOffset uint64, offsetGetter func(idxPos int) (uint64, error), onIntermediate func(offset uint64, idxPos int)) (int, bool)
+}
+
 // ReaderAtIndex implements Index using io.ReaderAt for on-demand access
 // without loading the entire idx file into memory.
 type ReaderAtIndex struct {
-	reader   io.ReaderAt
-	closer   io.Closer
-	hashSize int
-	count    int
-	size     int64
+	reader    io.ReaderAt
+	closer    io.Closer
+	revCloser io.Closer
+	hashSize  int
+	count     int
+	size      int64
 
-	// Lazy-built offset->hash map for FindHash
-	offsetHash      map[int64]plumbing.Hash
-	offsetBuildOnce sync.Once
-	mu              sync.RWMutex
+	// Optional reverse index for efficient FindHash lookups
+	revIndex OffsetLookup
+
+	// Lazy-built offset->hash cache for FindHash
+	offsetCache offsetHashCache
+
+	// Cache for offset->idxPos mappings discovered during binary search.
+	// This allows subsequent FindHash calls to skip the binary search.
+	idxPosCache offsetIdxPosCache
 
 	// Cached fanout table (256 entries, 1KB) for fast lookups
 	fanout [256]uint32
@@ -81,6 +100,11 @@ type IndexFile interface {
 // The idxFile parameter is the .idx file, which must implement io.ReaderAt, io.Closer, and Stat().
 // The hashSize parameter specifies the size of object hashes (20 for SHA1, 32 for SHA256).
 // The file will be closed when Close() is called on the returned Index.
+//
+// WARNING: Without a reverse index (set via SetRevIndex), FindHash() will perform an O(n)
+// linear scan through all objects, which is extremely slow for large repositories
+// (e.g., 40+ seconds for linux-kernel). Use SetRevIndex with a reverse index from the
+// revfile package for O(log n) lookups.
 func NewReaderAtIndex(idxFile IndexFile, hashSize int) (*ReaderAtIndex, error) {
 	idxStat, err := idxFile.Stat()
 	if err != nil {
@@ -100,6 +124,18 @@ func NewReaderAtIndex(idxFile IndexFile, hashSize int) (*ReaderAtIndex, error) {
 	}
 
 	return idx, nil
+}
+
+// SetRevIndex sets the reverse index for efficient FindHash lookups.
+// Without a reverse index, FindHash performs a linear scan O(n).
+// With a reverse index, FindHash uses binary search O(log n).
+//
+// If the revIndex implements io.Closer, it will be closed when Close() is called.
+func (idx *ReaderAtIndex) SetRevIndex(rev OffsetLookup) {
+	idx.revIndex = rev
+	if closer, ok := rev.(io.Closer); ok {
+		idx.revCloser = closer
+	}
 }
 
 func (idx *ReaderAtIndex) init() error {
@@ -128,6 +164,7 @@ func (idx *ReaderAtIndex) init() error {
 	}
 
 	// Read and cache the entire fanout table (256 entries * 4 bytes = 1KB)
+	// This avoids repeated I/O for fanout lookups during FindOffset.
 	fanoutBuf := make([]byte, IdxFanoutSize)
 	n, err = idx.reader.ReadAt(fanoutBuf, int64(IdxHeaderSize))
 	if err != nil {
@@ -154,9 +191,21 @@ func (idx *ReaderAtIndex) init() error {
 }
 
 // Close implements the Index interface.
+// It closes both the idx file and the rev file (if provided).
 func (idx *ReaderAtIndex) Close() error {
+	var errs []error
+	if idx.revCloser != nil {
+		if err := idx.revCloser.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if idx.closer != nil {
-		return idx.closer.Close()
+		if err := idx.closer.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return errs[0]
 	}
 	return nil
 }
@@ -192,14 +241,6 @@ func (idx *ReaderAtIndex) FindOffset(h plumbing.Hash) (int64, error) {
 		return 0, err
 	}
 
-	// Cache for reverse lookup
-	idx.mu.Lock()
-	if idx.offsetHash == nil {
-		idx.offsetHash = make(map[int64]plumbing.Hash)
-	}
-	idx.offsetHash[int64(offset)] = h
-	idx.mu.Unlock()
-
 	return int64(offset), nil
 }
 
@@ -221,60 +262,77 @@ func (idx *ReaderAtIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
 }
 
 // FindHash implements the Index interface.
-// Without a reverse index, this builds a complete offset->hash map lazily.
+// If a reverse index is set via SetRevIndex, this uses O(log n) binary search.
+// Otherwise, it builds a hash map lazily (once) for O(1) lookups.
 func (idx *ReaderAtIndex) FindHash(o int64) (plumbing.Hash, error) {
-	// Check cache first
-	idx.mu.RLock()
-	if idx.offsetHash != nil {
-		if hash, ok := idx.offsetHash[o]; ok {
-			idx.mu.RUnlock()
+	// Check hash cache first (works for both revIndex and fallback paths)
+	if hash, ok := idx.offsetCache.Get(o); ok {
+		return hash, nil
+	}
+
+	// Use reverse index if available for O(log n) lookup
+	if idx.revIndex != nil {
+		// Check if we have a cached idxPos from a previous binary search
+		if idxPos, ok := idx.idxPosCache.Get(o); ok {
+			hash, err := idx.hashAt(idxPos)
+			if err != nil {
+				return plumbing.ZeroHash, err
+			}
+			idx.offsetCache.Put(o, hash)
 			return hash, nil
 		}
-	}
-	idx.mu.RUnlock()
 
-	// Build complete map once
-	var buildErr error
-	idx.offsetBuildOnce.Do(func() {
-		buildErr = idx.buildOffsetHash()
-	})
-	if buildErr != nil {
-		return plumbing.ZeroHash, buildErr
-	}
-
-	idx.mu.RLock()
-	hash, ok := idx.offsetHash[o]
-	idx.mu.RUnlock()
-
-	if !ok {
+		// Perform binary search, caching intermediate offset->idxPos mappings
+		pos, found := idx.revIndex.LookupIndexWithCallback(uint64(o),
+			func(idxPos int) (uint64, error) {
+				return idx.offset(idxPos)
+			},
+			func(offset uint64, idxPos int) {
+				// Cache intermediate offset->idxPos mapping for future lookups
+				idx.idxPosCache.Put(int64(offset), idxPos)
+			},
+		)
+		if found {
+			hash, err := idx.hashAt(pos)
+			if err != nil {
+				return plumbing.ZeroHash, err
+			}
+			// Cache for future lookups
+			idx.offsetCache.Put(o, hash)
+			return hash, nil
+		}
 		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 	}
-	return hash, nil
+
+	// Fallback: Build offset->hash map once (like MemoryIndex)
+	if err := idx.offsetCache.BuildOnce(idx.buildOffsetHash); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if hash, ok := idx.offsetCache.Get(o); ok {
+		return hash, nil
+	}
+	return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 }
 
-// buildOffsetHash builds the complete offset->hash map for FindHash.
-func (idx *ReaderAtIndex) buildOffsetHash() error {
+// buildOffsetHash builds the complete offset->hash map for fallback FindHash.
+// This is called once lazily when FindHash is used without a revIndex.
+func (idx *ReaderAtIndex) buildOffsetHash() (map[int64]plumbing.Hash, error) {
 	offsetHash := make(map[int64]plumbing.Hash, idx.count)
 
 	for i := 0; i < idx.count; i++ {
 		hash, err := idx.hashAt(i)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
 		offset, err := idx.offset(i)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
 		offsetHash[int64(offset)] = hash
 	}
 
-	idx.mu.Lock()
-	idx.offsetHash = offsetHash
-	idx.mu.Unlock()
-
-	return nil
+	return offsetHash, nil
 }
 
 // Count implements the Index interface.
@@ -284,57 +342,43 @@ func (idx *ReaderAtIndex) Count() (int64, error) {
 
 // Entries implements the Index interface.
 func (idx *ReaderAtIndex) Entries() (EntryIter, error) {
-	return &readerAtEntryIter{idx: idx, total: idx.count}, nil
+	return &readerAtEntryIter{idx: idx, pos: 0}, nil
 }
 
 // EntriesByOffset implements the Index interface.
 func (idx *ReaderAtIndex) EntriesByOffset() (EntryIter, error) {
-	entries := make(entriesByOffset, idx.count)
+	count := idx.count
+	entries := make(entriesByOffset, count)
 
-	for i := 0; i < idx.count; i++ {
-		hash, err := idx.hashAt(i)
+	for i := 0; i < count; i++ {
+		entry, err := idx.entryAt(i)
 		if err != nil {
 			return nil, err
 		}
-
-		offset, err := idx.offset(i)
-		if err != nil {
-			return nil, err
-		}
-
-		crc, err := idx.crc32(i)
-		if err != nil {
-			return nil, err
-		}
-
-		entries[i] = &Entry{
-			Hash:   hash,
-			CRC32:  crc,
-			Offset: offset,
-		}
+		entries[i] = entry
 	}
 
 	sort.Sort(entries)
-
-	return &sliceEntryIter{entries: entries}, nil
+	return &idxfileEntryOffsetIter{entries: entries}, nil
 }
 
-// fanoutEntry returns the fanout value for the given byte.
-func (idx *ReaderAtIndex) fanoutEntry(b int) uint32 {
-	return idx.fanout[b]
+// fanoutEntry returns the value at index i in the fanout table.
+// fanoutEntry returns the value at index i in the cached fanout table.
+func (idx *ReaderAtIndex) fanoutEntry(i int) uint32 {
+	if i < 0 || i >= 256 {
+		return 0
+	}
+	return idx.fanout[i]
 }
 
-// searchHash performs a binary search for the given hash in the specified range.
-func (idx *ReaderAtIndex) searchHash(lo, hi int, want plumbing.Hash) (int, bool) {
+// searchHash performs a binary search for a hash in the names table.
+func (idx *ReaderAtIndex) searchHash(left, right int, want plumbing.Hash) (int, bool) {
 	wantBytes := want.Bytes()
-	right := hi
+	n := right - left
 
-	pos := sort.Search(hi-lo, func(i int) bool {
-		cmp := idx.compareHash(lo+i, wantBytes)
-		return cmp >= 0
+	pos := left + sort.Search(n, func(i int) bool {
+		return idx.compareHash(left+i, wantBytes) >= 0
 	})
-
-	pos += lo
 
 	if pos < right && idx.compareHash(pos, wantBytes) == 0 {
 		return pos, true
@@ -347,9 +391,17 @@ func (idx *ReaderAtIndex) searchHash(lo, hi int, want plumbing.Hash) (int, bool)
 func (idx *ReaderAtIndex) compareHash(i int, want []byte) int {
 	offset := int64(idx.namesStart + (i * idx.hashSize))
 
-	bufPtr := idx.getHashBuffer()
+	var bufPtr *[]byte
+	var pool *sync.Pool
+	if idx.hashSize == 20 {
+		bufPtr = pool20Bytes.Get().(*[]byte)
+		pool = &pool20Bytes
+	} else {
+		bufPtr = pool32Bytes.Get().(*[]byte)
+		pool = &pool32Bytes
+	}
 	buf := (*bufPtr)[:idx.hashSize]
-	defer idx.putHashBuffer(bufPtr)
+	defer pool.Put(bufPtr)
 
 	n, err := idx.reader.ReadAt(buf, offset)
 	if err != nil || n != idx.hashSize {
@@ -422,9 +474,17 @@ func (idx *ReaderAtIndex) crc32(pos int) (uint32, error) {
 func (idx *ReaderAtIndex) hashAt(pos int) (plumbing.Hash, error) {
 	offset := int64(idx.namesStart + (pos * idx.hashSize))
 
-	bufPtr := idx.getHashBuffer()
+	var bufPtr *[]byte
+	var pool *sync.Pool
+	if idx.hashSize == 20 {
+		bufPtr = pool20Bytes.Get().(*[]byte)
+		pool = &pool20Bytes
+	} else {
+		bufPtr = pool32Bytes.Get().(*[]byte)
+		pool = &pool32Bytes
+	}
 	hashBuf := (*bufPtr)[:idx.hashSize]
-	defer idx.putHashBuffer(bufPtr)
+	defer pool.Put(bufPtr)
 
 	n, err := idx.reader.ReadAt(hashBuf, offset)
 	if err != nil {
@@ -440,78 +500,51 @@ func (idx *ReaderAtIndex) hashAt(pos int) (plumbing.Hash, error) {
 	return h, nil
 }
 
-// getHashBuffer returns a buffer from the appropriate pool based on hash size.
-func (idx *ReaderAtIndex) getHashBuffer() *[]byte {
-	if idx.hashSize == 20 {
-		return pool20Bytes.Get().(*[]byte)
-	}
-	return pool32Bytes.Get().(*[]byte)
-}
-
-// putHashBuffer returns a buffer to the appropriate pool based on hash size.
-func (idx *ReaderAtIndex) putHashBuffer(buf *[]byte) {
-	if idx.hashSize == 20 {
-		pool20Bytes.Put(buf)
-	} else {
-		pool32Bytes.Put(buf)
-	}
-}
-
-// readerAtEntryIter iterates over entries in a ReaderAtIndex.
-type readerAtEntryIter struct {
-	idx   *ReaderAtIndex
-	pos   int
-	total int
-}
-
-func (i *readerAtEntryIter) Next() (*Entry, error) {
-	if i.pos >= i.total {
-		return nil, io.EOF
-	}
-
-	hash, err := i.idx.hashAt(i.pos)
+// entryAt returns the entry at the given index position.
+func (idx *ReaderAtIndex) entryAt(pos int) (*Entry, error) {
+	hash, err := idx.hashAt(pos)
 	if err != nil {
 		return nil, err
 	}
 
-	offset, err := i.idx.offset(i.pos)
+	offset, err := idx.offset(pos)
 	if err != nil {
 		return nil, err
 	}
 
-	crc, err := i.idx.crc32(i.pos)
+	crc, err := idx.crc32(pos)
 	if err != nil {
 		return nil, err
 	}
-
-	i.pos++
 
 	return &Entry{
 		Hash:   hash,
-		CRC32:  crc,
 		Offset: offset,
+		CRC32:  crc,
 	}, nil
 }
 
-func (i *readerAtEntryIter) Close() error {
-	return nil
+// readerAtEntryIter implements EntryIter for ReaderAtIndex.
+type readerAtEntryIter struct {
+	idx *ReaderAtIndex
+	pos int
 }
 
-// sliceEntryIter iterates over a pre-sorted slice of entries.
-type sliceEntryIter struct {
-	entries []*Entry
-	pos     int
-}
-
-func (i *sliceEntryIter) Next() (*Entry, error) {
-	if i.pos >= len(i.entries) {
+func (i *readerAtEntryIter) Next() (*Entry, error) {
+	if i.pos >= i.idx.count {
 		return nil, io.EOF
 	}
-	e := i.entries[i.pos]
+
+	entry, err := i.idx.entryAt(i.pos)
+	if err != nil {
+		return nil, err
+	}
+
 	i.pos++
-	return e, nil
+	return entry, nil
 }
 
-func (i *sliceEntryIter) Close() error {
+func (i *readerAtEntryIter) Close() error {
+	i.pos = i.idx.count + 1
 	return nil
 }

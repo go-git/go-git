@@ -5,7 +5,6 @@ import (
 	encbin "encoding/binary"
 	"io"
 	"sort"
-	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -16,8 +15,6 @@ const (
 
 	noMapping = -1
 )
-
-var idxHeader = []byte{255, 't', 'O', 'c'}
 
 // Index represents an index of a packfile.
 type Index interface {
@@ -63,10 +60,7 @@ type MemoryIndex struct {
 	// IdxChecksum is the checksum of the index file.
 	IdxChecksum plumbing.Hash
 
-	offsetHash      map[int64]plumbing.Hash
-	offsetBuildOnce sync.Once
-	mu              sync.RWMutex
-
+	offsetCache  offsetHashCache
 	objectIDSize int
 }
 
@@ -138,24 +132,17 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 	offset := idx.getOffset(k, i)
 
 	// Save the offset for reverse lookup
-	idx.mu.Lock()
-	if idx.offsetHash == nil {
-		idx.offsetHash = make(map[int64]plumbing.Hash)
-	}
-	idx.offsetHash[int64(offset)] = h
-	idx.mu.Unlock()
+	idx.offsetCache.Put(int64(offset), h)
 
 	return int64(offset), nil
 }
-
-const isO64Mask = uint64(1) << 31
 
 func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) uint64 {
 	offset := secondLevel << 2
 	ofs := encbin.BigEndian.Uint32(idx.Offset32[firstLevel][offset : offset+4])
 
-	if (uint64(ofs) & isO64Mask) != 0 {
-		offset := 8 * (uint64(ofs) & ^isO64Mask)
+	if (uint64(ofs) & Is64BitsMask) != 0 {
+		offset := 8 * (uint64(ofs) & ^Is64BitsMask)
 		n := encbin.BigEndian.Uint64(idx.Offset64[offset : offset+8])
 		return n
 	}
@@ -181,42 +168,28 @@ func (idx *MemoryIndex) getCRC32(firstLevel, secondLevel int) uint32 {
 
 // FindHash implements the Index interface.
 func (idx *MemoryIndex) FindHash(o int64) (plumbing.Hash, error) {
-	var hash plumbing.Hash
-	var ok bool
-
-	idx.mu.RLock()
-	if idx.offsetHash != nil {
-		if hash, ok = idx.offsetHash[o]; ok {
-			idx.mu.RUnlock()
-			return hash, nil
-		}
-	}
-	idx.mu.RUnlock()
-
-	var genErr error
-	idx.offsetBuildOnce.Do(func() {
-		genErr = idx.genOffsetHash()
-	})
-	if genErr != nil {
-		return plumbing.ZeroHash, genErr
+	// Check cache first
+	if hash, ok := idx.offsetCache.Get(o); ok {
+		return hash, nil
 	}
 
-	idx.mu.RLock()
-	hash, ok = idx.offsetHash[o]
-	idx.mu.RUnlock()
-
-	if !ok {
-		return plumbing.ZeroHash, plumbing.ErrObjectNotFound
+	// Build complete map once
+	if err := idx.offsetCache.BuildOnce(idx.buildOffsetHash); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
-	return hash, nil
+	if hash, ok := idx.offsetCache.Get(o); ok {
+		return hash, nil
+	}
+
+	return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 }
 
-// genOffsetHash generates the offset/hash mapping for reverse search.
-func (idx *MemoryIndex) genOffsetHash() error {
+// buildOffsetHash generates the offset/hash mapping for reverse search.
+func (idx *MemoryIndex) buildOffsetHash() (map[int64]plumbing.Hash, error) {
 	count, err := idx.Count()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	offsetHash := make(map[int64]plumbing.Hash, count)
@@ -235,11 +208,7 @@ func (idx *MemoryIndex) genOffsetHash() error {
 		}
 	}
 
-	idx.mu.Lock()
-	idx.offsetHash = offsetHash
-	idx.mu.Unlock()
-
-	return nil
+	return offsetHash, nil
 }
 
 // Count implements the Index interface.

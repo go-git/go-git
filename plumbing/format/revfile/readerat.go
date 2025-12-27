@@ -152,6 +152,14 @@ func (ri *ReaderAtRevIndex) Count() int64 {
 //
 // Returns the index position and true if found, or 0 and false if not found.
 func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idxPos int) (uint64, error)) (int, bool) {
+	return ri.LookupIndexWithCallback(packOffset, offsetGetter, nil)
+}
+
+// LookupIndexWithCallback is like LookupIndex but calls onIntermediate for each
+// intermediate position visited during the binary search. This allows caching
+// of offset->idxPos mappings discovered during the search.
+// If onIntermediate is nil, behaves like LookupIndex.
+func (ri *ReaderAtRevIndex) LookupIndexWithCallback(packOffset uint64, offsetGetter func(idxPos int) (uint64, error), onIntermediate func(offset uint64, idxPos int)) (int, bool) {
 	if ri.count == 0 {
 		return 0, false
 	}
@@ -175,6 +183,11 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 		got, err := offsetGetter(idxPos)
 		if err != nil {
 			return 0, false
+		}
+
+		// Report intermediate finding for caching
+		if onIntermediate != nil {
+			onIntermediate(got, idxPos)
 		}
 
 		switch {
