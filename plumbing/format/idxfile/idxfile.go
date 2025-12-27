@@ -21,6 +21,7 @@ var idxHeader = []byte{255, 't', 'O', 'c'}
 
 // Index represents an index of a packfile.
 type Index interface {
+	io.Closer
 	// Contains checks whether the given hash is in the index.
 	Contains(h plumbing.Hash) (bool, error)
 	// FindOffset finds the offset in the packfile for the object with
@@ -244,6 +245,12 @@ func (idx *MemoryIndex) genOffsetHash() error {
 // Count implements the Index interface.
 func (idx *MemoryIndex) Count() (int64, error) {
 	return int64(idx.Fanout[fanout-1]), nil
+}
+
+// Close implements the Index interface.
+// For MemoryIndex, this is a no-op since there are no resources to release.
+func (idx *MemoryIndex) Close() error {
+	return nil
 }
 
 // Entries implements the Index interface.
