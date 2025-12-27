@@ -85,19 +85,30 @@ func BenchmarkPackHandlers(b *testing.B) {
 			rev.Close()
 		})
 
-		runBenchmark(b, "packfile-cache-osfs: "+data.name, func() packHandler[int64] {
+		runBenchmark(b, "memidx-cache-osfs:    "+data.name, func() packHandler[int64] {
 			return newPackfileOpts(pack, idx,
 				packfile.WithFs(osfs.New(b.TempDir())),
 				packfile.WithCache(cache.NewObjectLRUDefault()))
 		}, data.offsetHashMap)
 
-		runBenchmark(b, "packfile-nocache-memfs:"+data.name, func() packHandler[int64] {
+		runBenchmark(b, "memidx-nocache-memfs: "+data.name, func() packHandler[int64] {
 			return newPackfileOpts(pack, idx,
 				packfile.WithFs(memfs.New()))
 		}, data.offsetHashMap)
 
+		runBenchmark(b, "readerat-cache-osfs:  "+data.name, func() packHandler[int64] {
+			return newPackfileReaderAt(pack, idx, rev,
+				packfile.WithFs(osfs.New(b.TempDir())),
+				packfile.WithCache(cache.NewObjectLRUDefault()))
+		}, data.offsetHashMap)
+
+		runBenchmark(b, "readerat-nocache-memfs:"+data.name, func() packHandler[int64] {
+			return newPackfileReaderAt(pack, idx, rev,
+				packfile.WithFs(memfs.New()))
+		}, data.offsetHashMap)
+
 		if runtime.GOOS != "windows" {
-			runBenchmark(b, "mmap-pack-scanner:"+data.name, func() packHandler[uint64] {
+			runBenchmark(b, "mmap-pack-scanner:    "+data.name, func() packHandler[uint64] {
 				return newPackScanner(pack, idx, rev)
 			}, data.offsetHashMap)
 		}

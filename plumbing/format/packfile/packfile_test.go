@@ -371,3 +371,36 @@ var expectedEntries = map[plumbing.Hash]int64{
 	plumbing.NewHash("eba74343e2f15d62adedfd8c883ee0262b5c8021"): 84708,
 	plumbing.NewHash("fb72698cab7617ac416264415f13224dfd7a165e"): 84671,
 }
+
+// TestGetWithReaderAtIndex tests that ReaderAtIndex works with Packfile.
+func TestGetWithReaderAtIndex(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
+	idxFile := fixture.Idx()
+	defer idxFile.Close()
+
+	index, err := idxfile.NewReaderAtIndex(idxFile, crypto.SHA1.Size())
+	require.NoError(t, err)
+	defer index.Close()
+
+	n, err := index.Count()
+	require.NoError(t, err)
+	require.Equal(t, int64(31), n)
+
+	p := packfile.NewPackfile(fixture.Packfile(),
+		packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())),
+	)
+	defer p.Close()
+
+	// Test getting objects
+	for h := range expectedEntries {
+		obj, err := p.Get(h)
+		require.NoError(t, err)
+		require.NotNil(t, obj)
+		assert.Equal(t, h.String(), obj.Hash().String())
+	}
+
+	_, err = p.Get(plumbing.ZeroHash)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+}

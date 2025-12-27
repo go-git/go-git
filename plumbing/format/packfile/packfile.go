@@ -258,6 +258,9 @@ func (p *Packfile) headerFromOffset(offset int64) (*ObjectHeader, error) {
 }
 
 // Close the packfile and its resources.
+// Note: This does not close the embedded Index, as it may be shared
+// with other components. The caller is responsible for closing the Index
+// when it's no longer needed.
 func (p *Packfile) Close() error {
 	p.m.Lock()
 	defer p.m.Unlock()
