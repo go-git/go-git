@@ -83,8 +83,15 @@ func (s *ReportStatus) Encode(w io.Writer) error {
 // Decode reads from the given reader and decodes a report-status message. It
 // does not read more input than what is needed to fill the report status.
 func (s *ReportStatus) Decode(r io.Reader) error {
-	b, err := s.scanFirstLine(r)
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	// First line
+	_, b, err := pktline.ReadLine(r, (*buf)[:])
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return io.ErrUnexpectedEOF
+		}
 		return err
 	}
 
@@ -95,7 +102,7 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 	var l int
 	flushed := false
 	for {
-		l, b, err = pktline.ReadLine(r)
+		l, b, err = pktline.ReadLine(r, (*buf)[:])
 		if err != nil {
 			break
 		}
@@ -124,18 +131,6 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 	return nil
 }
 
-func (s *ReportStatus) scanFirstLine(r io.Reader) ([]byte, error) {
-	_, p, err := pktline.ReadLine(r)
-	if errors.Is(err, io.EOF) {
-		return p, io.ErrUnexpectedEOF
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return p, nil
-}
-
 func (s *ReportStatus) decodeReportStatus(b []byte) error {
 	if isFlush(b) {
 		return fmt.Errorf("premature flush")
@@ -154,9 +149,8 @@ func (s *ReportStatus) decodeReportStatus(b []byte) error {
 }
 
 func (s *ReportStatus) decodeCommandStatus(b []byte) error {
-	b = bytes.TrimSuffix(b, eol)
+	line := string(bytes.TrimSuffix(b, eol))
 
-	line := string(b)
 	fields := strings.SplitN(line, " ", 3)
 	status := ok
 	if len(fields) == 3 && fields[0] == "ng" {

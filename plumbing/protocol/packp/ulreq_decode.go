@@ -14,21 +14,27 @@ import (
 // Decode reads the next upload-request form its input and
 // stores it in the UploadRequest.
 func (req *UploadRequest) Decode(r io.Reader) error {
-	d := newUlReqDecoder(r)
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	d := newUlReqDecoder(r, buf)
 	return d.Decode(req)
 }
 
 type ulReqDecoder struct {
-	r     io.Reader      // a pkt-line scanner from the input stream
-	line  []byte         // current pkt-line contents, use parser.nextLine() to make it advance
+	r   io.Reader              // a pkt-line scanner from the input stream
+	buf *[pktline.MaxSize]byte // temporary shared buffer
+
+	line  []byte         // current pkt-line contents, use parser.nextLine() to make it advance.
 	nLine int            // current pkt-line number for debugging, begins at 1
 	err   error          // sticky error, use the parser.error() method to fill this out
 	data  *UploadRequest // parsed data is stored here
 }
 
-func newUlReqDecoder(r io.Reader) *ulReqDecoder {
+func newUlReqDecoder(r io.Reader, buf *[pktline.MaxSize]byte) *ulReqDecoder {
 	return &ulReqDecoder{
-		r: r,
+		r:   r,
+		buf: buf,
 	}
 }
 
@@ -49,7 +55,7 @@ func (d *ulReqDecoder) error(format string, a ...any) {
 		fmt.Sprintf(format, a...),
 	)
 
-	d.err = NewErrUnexpectedData(msg, d.line)
+	d.err = NewErrUnexpectedData(msg, bytes.Clone(d.line))
 }
 
 // Reads a new pkt-line from the scanner, makes its payload available as
@@ -59,7 +65,7 @@ func (d *ulReqDecoder) error(format string, a ...any) {
 func (d *ulReqDecoder) nextLine() bool {
 	d.nLine++
 
-	_, p, err := pktline.ReadLine(d.r)
+	_, p, err := pktline.ReadLine(d.r, (*d.buf)[:])
 	if err == io.EOF {
 		d.error("EOF")
 		return false
@@ -69,8 +75,7 @@ func (d *ulReqDecoder) nextLine() bool {
 		return false
 	}
 
-	d.line = p
-	d.line = bytes.TrimSuffix(d.line, eol)
+	d.line = bytes.TrimSuffix(p, eol)
 
 	return true
 }

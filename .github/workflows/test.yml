@@ -46,10 +46,7 @@ jobs:
       run: make validate
 
     - name: Test
-      run: make test-coverage
-
-    - name: Test Examples
-      run: go test -timeout 45s -v -run '^TestExamples$' github.com/go-git/go-git/v6/_examples --examples
+      run: make test
 
   test-wasi:
     strategy:

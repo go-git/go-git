@@ -101,7 +101,9 @@ func BenchmarkReadPacket(b *testing.B) {
 		r := strings.NewReader("")
 		b.Run(tc.name, func(b *testing.B) {
 			buf := pktline.GetBuffer()
-			for i := 0; i < b.N; i++ {
+			defer pktline.PutBuffer(buf)
+
+			for b.Loop() {
 				r.Reset(tc.input)
 				for {
 					_, err := pktline.Read(r, (*buf)[:])
@@ -113,7 +115,6 @@ func BenchmarkReadPacket(b *testing.B) {
 					}
 				}
 			}
-			pktline.PutBuffer(buf)
 		})
 	}
 }
@@ -157,10 +158,13 @@ func BenchmarkReadPacketLine(b *testing.B) {
 	for _, tc := range cases {
 		r := strings.NewReader("")
 		b.Run(tc.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			buf := pktline.GetBuffer()
+			defer pktline.PutBuffer(buf)
+
+			for b.Loop() {
 				r.Reset(tc.input)
 				for {
-					_, _, err := pktline.ReadLine(r)
+					_, _, err := pktline.ReadLine(r, (*buf)[:])
 					if err == io.EOF {
 						break
 					}

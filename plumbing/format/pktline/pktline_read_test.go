@@ -24,6 +24,9 @@ func TestSuiteReader(t *testing.T) {
 }
 
 func (s *SuiteReader) TestInvalid() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	for i, test := range [...]string{
 		"0003",
 		"fff5", "ffff",
@@ -33,13 +36,16 @@ func (s *SuiteReader) TestInvalid() {
 		"-001", "-000",
 	} {
 		r := strings.NewReader(test)
-		_, _, err := pktline.ReadLine(r)
+		_, _, err := pktline.ReadLine(r, (*buf)[:])
 		s.ErrorContains(err, pktline.ErrInvalidPktLen.Error(),
 			fmt.Sprintf("i = %d, data = %q", i, test))
 	}
 }
 
 func (s *SuiteReader) TestDecodeOversizePktLines() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	for _, test := range [...]string{
 		"fff1" + strings.Repeat("a", 0xfff1),
 		"fff2" + strings.Repeat("a", 0xfff2),
@@ -47,25 +53,31 @@ func (s *SuiteReader) TestDecodeOversizePktLines() {
 		"fff4" + strings.Repeat("a", 0xfff4),
 	} {
 		r := strings.NewReader(test)
-		_, _, err := pktline.ReadLine(r)
+		_, _, err := pktline.ReadLine(r, (*buf)[:])
 		s.NotNil(err)
 	}
 }
 
 func (s *SuiteReader) TestEmptyReader() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	r := strings.NewReader("")
-	l, p, err := pktline.ReadLine(r)
+	l, p, err := pktline.ReadLine(r, (*buf)[:])
 	s.Equal(-1, l)
 	s.Nil(p)
 	s.ErrorContains(err, io.EOF.Error())
 }
 
 func (s *SuiteReader) TestFlush() {
-	var buf bytes.Buffer
-	err := pktline.WriteFlush(&buf)
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	var src bytes.Buffer
+	err := pktline.WriteFlush(&src)
 	s.NoError(err)
 
-	l, p, err := pktline.ReadLine(&buf)
+	l, p, err := pktline.ReadLine(&src, (*buf)[:])
 	s.Equal(pktline.Flush, l)
 	s.Nil(p)
 	s.NoError(err)
@@ -73,12 +85,18 @@ func (s *SuiteReader) TestFlush() {
 }
 
 func (s *SuiteReader) TestPktLineTooShort() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	r := strings.NewReader("010cfoobar")
-	_, _, err := pktline.ReadLine(r)
+	_, _, err := pktline.ReadLine(r, (*buf)[:])
 	s.ErrorContains(err, "unexpected EOF")
 }
 
 func (s *SuiteReader) TestScanAndPayload() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	for i, test := range [...]string{
 		"a",
 		"a\n",
@@ -89,12 +107,12 @@ func (s *SuiteReader) TestScanAndPayload() {
 		strings.Repeat("a", pktline.MaxPayloadSize),
 		strings.Repeat("a", pktline.MaxPayloadSize-1) + "\n",
 	} {
-		var buf bytes.Buffer
-		_, err := pktline.Writef(&buf, "%s", test)
+		var src bytes.Buffer
+		_, err := pktline.Writef(&src, "%s", test)
 		s.NoError(err,
 			fmt.Sprintf("input len=%x, contents=%.10q\n", len(test), test))
 
-		_, p, err := pktline.ReadLine(&buf)
+		_, p, err := pktline.ReadLine(&src, (*buf)[:])
 		s.NoError(err)
 		s.NotNil(p,
 			fmt.Sprintf("i = %d, payload = %q, test = %.20q...", i, p, test))
@@ -105,6 +123,9 @@ func (s *SuiteReader) TestScanAndPayload() {
 }
 
 func (s *SuiteReader) TestSkip() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	for _, test := range [...]struct {
 		input    []string
 		n        int
@@ -129,18 +150,18 @@ func (s *SuiteReader) TestSkip() {
 			expected: []byte("third"),
 		},
 	} {
-		var buf bytes.Buffer
+		var src bytes.Buffer
 		for _, in := range test.input {
-			_, err := pktline.Writef(&buf, "%s", in)
+			_, err := pktline.Writef(&src, "%s", in)
 			s.NoError(err)
 		}
 
 		for i := 0; i < test.n; i++ {
-			_, p, err := pktline.ReadLine(&buf)
+			_, p, err := pktline.ReadLine(&src, (*buf)[:])
 			s.NotNil(p,
 				fmt.Sprintf("scan error = %s", err))
 		}
-		_, p, err := pktline.ReadLine(&buf)
+		_, p, err := pktline.ReadLine(&src, (*buf)[:])
 		s.NotNil(p,
 			fmt.Sprintf("scan error = %s", err))
 
@@ -151,14 +172,17 @@ func (s *SuiteReader) TestSkip() {
 }
 
 func (s *SuiteReader) TestEOF() {
-	var buf bytes.Buffer
-	_, err := pktline.Writef(&buf, "first")
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	var src bytes.Buffer
+	_, err := pktline.Writef(&src, "first")
 	s.NoError(err)
-	_, err = pktline.Writef(&buf, "second")
+	_, err = pktline.Writef(&src, "second")
 	s.NoError(err)
 
 	for {
-		_, _, err = pktline.ReadLine(&buf)
+		_, _, err = pktline.ReadLine(&src, (*buf)[:])
 		if err == io.EOF {
 			break
 		}
@@ -171,8 +195,11 @@ type mockSuiteReader struct{}
 func (r *mockSuiteReader) Read([]byte) (int, error) { return 0, errors.New("foo") }
 
 func (s *SuiteReader) TestInternalReadError() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	r := &mockSuiteReader{}
-	_, p, err := pktline.ReadLine(r)
+	_, p, err := pktline.ReadLine(r, (*buf)[:])
 	s.Nil(p)
 	s.ErrorContains(err, "foo")
 }
@@ -180,6 +207,9 @@ func (s *SuiteReader) TestInternalReadError() {
 // A section are several non flush-pkt lines followed by a flush-pkt, which
 // how the git protocol sends long messages.
 func (s *SuiteReader) TestReadSomeSections() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	nSections := 2
 	nLines := 4
 	data, err := sectionsExample(nSections, nLines)
@@ -192,7 +222,7 @@ func (s *SuiteReader) TestReadSomeSections() {
 		e error
 	)
 	for {
-		_, p, e = pktline.ReadLine(data)
+		_, p, e = pktline.ReadLine(data, (*buf)[:])
 		if e == io.EOF {
 			break
 		}
@@ -207,18 +237,21 @@ func (s *SuiteReader) TestReadSomeSections() {
 }
 
 func (s *SuiteReader) TestPeekReadPacket() {
-	var buf bytes.Buffer
-	_, err := pktline.Writef(&buf, "first")
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	var src bytes.Buffer
+	_, err := pktline.Writef(&src, "first")
 	s.NoError(err)
-	_, err = pktline.Writef(&buf, "second")
+	_, err = pktline.Writef(&src, "second")
 	s.NoError(err)
 
-	sc := bufio.NewReader(&buf)
+	sc := bufio.NewReader(&src)
 	p, err := sc.Peek(4)
 	s.NoError(err)
 	s.Equal([]byte("0009"), p)
 
-	l, p, err := pktline.ReadLine(sc)
+	l, p, err := pktline.ReadLine(sc, (*buf)[:])
 	s.NoError(err)
 	s.Equal(9, l)
 	s.Equal([]byte("first"), p)
@@ -272,17 +305,20 @@ func (s *SuiteReader) TestPeekPacket() {
 }
 
 func (s *SuiteReader) TestPeekPacketReadPacket() {
-	var buf bytes.Buffer
-	_, err := pktline.WriteString(&buf, "a")
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	var src bytes.Buffer
+	_, err := pktline.WriteString(&src, "a")
 	s.NoError(err)
 
-	sc := bufio.NewReader(&buf)
+	sc := bufio.NewReader(&src)
 	l, p, err := pktline.PeekLine(sc)
 	s.NoError(err)
 	s.Equal(5, l)
 	s.Equal([]byte("a"), p)
 
-	l, p, err = pktline.ReadLine(sc)
+	l, p, err = pktline.ReadLine(sc, (*buf)[:])
 	s.NoError(err)
 	s.Equal(5, l)
 	s.Equal([]byte("a"), p)
@@ -330,11 +366,14 @@ func (s *SuiteReader) TestPeekReadPart() {
 }
 
 func (s *SuiteReader) TestReadPacketError() {
-	var buf bytes.Buffer
-	_, err := pktline.WriteError(&buf, io.EOF)
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	var src bytes.Buffer
+	_, err := pktline.WriteError(&src, io.EOF)
 	s.NoError(err)
 
-	l, p, err := pktline.ReadLine(&buf)
+	l, p, err := pktline.ReadLine(&src, (*buf)[:])
 	s.NotNil(err)
 	s.Equal(12, l)
 	s.Equal("ERR EOF\n", string(p))
