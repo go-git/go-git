@@ -61,7 +61,7 @@ func validateHeader(r io.Reader) error {
 		return err
 	}
 
-	if !bytes.Equal(h, idxHeader) {
+	if !bytes.Equal(h, IdxHeader) {
 		return ErrMalformedIdxFile
 	}
 

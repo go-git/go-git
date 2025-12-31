@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -81,6 +82,13 @@ func (s *ObjectStorage) requireIndex() error {
 
 // Reindex indexes again all packfiles. Useful if git changed packfiles externally
 func (s *ObjectStorage) Reindex() {
+	s.muI.Lock()
+	defer s.muI.Unlock()
+
+	// Close existing indexes before clearing
+	for _, idx := range s.index {
+		_ = idx.Close()
+	}
 	s.index = nil
 }
 
@@ -90,16 +98,29 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 		return err
 	}
 
-	defer ioutil.CheckClose(f, &err)
-
-	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f)
-	if err = d.Decode(idxf); err != nil {
+	// Use ReaderAtIndex for on-demand access instead of loading into memory.
+	// The file will be closed when the index is closed.
+	idxf, err := idxfile.NewReaderAtIndex(f, h.Size())
+	if err != nil {
+		_ = f.Close()
 		return err
 	}
 
+	// Try to load reverse index for efficient FindHash lookups.
+	// This is optional - if .rev file doesn't exist, FindHash falls back
+	// to building an offset->hash map lazily.
+	if revf, revErr := s.dir.ObjectPackRev(h); revErr == nil {
+		count, _ := idxf.Count()
+		revIdx, revIdxErr := revfile.NewReaderAtRevIndex(revf, h.Size(), count)
+		if revIdxErr == nil {
+			idxf.SetRevIndex(revIdx)
+		} else {
+			_ = revf.Close()
+		}
+	}
+
 	s.index[h] = idxf
-	return err
+	return nil
 }
 
 func (s *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error) {
@@ -656,6 +677,16 @@ func (s *ObjectStorage) buildPackfileIters(
 // Close closes all opened files.
 func (s *ObjectStorage) Close() error {
 	var firstError error
+
+	// Close index files
+	s.muI.Lock()
+	for _, idx := range s.index {
+		if err := idx.Close(); firstError == nil && err != nil {
+			firstError = err
+		}
+	}
+	s.index = nil
+	s.muI.Unlock()
 
 	s.muP.RLock()
 	defer s.muP.RUnlock()

@@ -354,7 +354,12 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 func (r *fetchWalker) fetch() error {
 	packs := map[string]struct{}{}
 	processed := map[string]struct{}{}
-	indicies := []*idxfile.MemoryIndex{}
+	indicies := []idxfile.Index{}
+	defer func() {
+		for _, idx := range indicies {
+			_ = idx.Close()
+		}
+	}()
 
 LOOP:
 	for len(r.queue) > 0 {
@@ -380,11 +385,10 @@ LOOP:
 					return fmt.Errorf("error opening index file: %w", err)
 				}
 
-				idx := idxfile.NewMemoryIndex(packHash.Size())
-				d := idxfile.NewDecoder(idxFile)
-				if err := d.Decode(idx); err != nil {
+				idx, err := idxfile.NewReaderAtIndex(idxFile, packHash.Size())
+				if err != nil {
 					_ = idxFile.Close()
-					return fmt.Errorf("error decoding index file: %w", err)
+					return fmt.Errorf("error reading index file: %w", err)
 				}
 
 				indicies = append(indicies, idx)
