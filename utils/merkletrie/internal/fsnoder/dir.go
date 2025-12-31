@@ -83,11 +83,11 @@ func (d *dir) Hash() []byte {
 // alphabetically before calculating the hash, so the result is unique.
 func (d *dir) calculateHash() {
 	h := fnv.New64a()
-	h.Write([]byte("dir "))
+	_, _ = h.Write([]byte("dir "))
 	for _, c := range d.children {
-		h.Write([]byte(c.Name()))
-		h.Write([]byte(" "))
-		h.Write(c.Hash())
+		_, _ = h.Write([]byte(c.Name()))
+		_, _ = h.Write([]byte(" "))
+		_, _ = h.Write(c.Hash())
 	}
 	d.hash = h.Sum([]byte{})
 }

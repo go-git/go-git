@@ -173,8 +173,9 @@ func (s *deltaIndexScanner) scan(buf []byte, end int) {
 }
 
 func tableSize(worstCaseBlockCnt int) int {
+	//nolint:gosec // G115: int to uint32 for hash calculation
 	shift := 32 - leadingZeros(uint32(worstCaseBlockCnt))
-	sz := 1 << uint(shift-1)
+	sz := 1 << uint(shift-1) //nolint:gosec // G115: shift is bounded by leading zeros calculation
 	if sz < worstCaseBlockCnt {
 		sz <<= 1
 	}

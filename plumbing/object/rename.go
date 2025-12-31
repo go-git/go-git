@@ -25,8 +25,8 @@ func DetectRenames(
 	}
 
 	detector := &renameDetector{
-		renameScore: int(opts.RenameScore),
-		renameLimit: int(opts.RenameLimit),
+		renameScore: int(opts.RenameScore), //nolint:gosec // G115: RenameScore is a small config value
+		renameLimit: int(opts.RenameLimit), //nolint:gosec // G115: RenameLimit is a small config value
 		onlyExact:   opts.OnlyExactRenames,
 	}
 
@@ -643,7 +643,7 @@ func (i *similarityIndex) score(other *similarityIndex, maxScore int) int {
 		return maxScore
 	}
 
-	return int(i.common(other) * uint64(maxScore) / maxHashed)
+	return int(i.common(other) * uint64(maxScore) / maxHashed) //nolint:gosec // G115: maxScore is a small constant
 }
 
 func (i *similarityIndex) common(dst *similarityIndex) uint64 {
@@ -698,7 +698,7 @@ mainLoop:
 }
 
 func (i *similarityIndex) add(key int, cnt uint64) error {
-	key = int(uint32(key) * 0x9e370001 >> 1)
+	key = int(uint32(key) * 0x9e370001 >> 1) //nolint:gosec // G115: key is bounded for hash calculation
 
 	j := i.slot(key)
 	for {
@@ -741,11 +741,11 @@ func newKeyCountPair(key int, cnt uint64) (keyCountPair, error) {
 		return 0, errIndexFull
 	}
 
-	return keyCountPair((uint64(key) << keyShift) | cnt), nil
+	return keyCountPair((uint64(key) << keyShift) | cnt), nil //nolint:gosec // G115: key fits in uint64
 }
 
 func (p keyCountPair) key() int {
-	return int(p >> keyShift)
+	return int(p >> keyShift) //nolint:gosec // G115: key fits in int after shift
 }
 
 func (p keyCountPair) count() uint64 {
@@ -756,11 +756,11 @@ func (i *similarityIndex) slot(key int) int {
 	// We use 31 - hashBits because the upper bit was already forced
 	// to be 0 and we want the remaining high bits to be used as the
 	// table slot.
-	return int(uint32(key) >> uint(31-i.hashBits))
+	return int(uint32(key) >> uint(31-i.hashBits)) //nolint:gosec // G115: key is bounded for hash calculation
 }
 
 func shouldGrowAt(hashBits int) int {
-	return (1 << uint(hashBits)) * (hashBits - 3) / hashBits
+	return (1 << uint(hashBits)) * (hashBits - 3) / hashBits //nolint:gosec // G115: hashBits is bounded
 }
 
 func (i *similarityIndex) grow() error {
@@ -775,7 +775,7 @@ func (i *similarityIndex) grow() error {
 
 	// TODO(erizocosmico): find a way to check if it will OOM and return
 	// errIndexFull instead.
-	i.hashes = make([]keyCountPair, 1<<uint(i.hashBits))
+	i.hashes = make([]keyCountPair, 1<<uint(i.hashBits)) //nolint:gosec // G115: hashBits is bounded
 
 	for _, v := range old {
 		if v != 0 {

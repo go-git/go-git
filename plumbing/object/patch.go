@@ -272,8 +272,8 @@ func printStat(fileStats []FileStat) string {
 
 	var result strings.Builder
 	for _, fs := range fileStats {
-		add := uint(fs.Addition)
-		del := uint(fs.Deletion)
+		add := uint(fs.Addition) //nolint:gosec // G115: Addition is a count of lines
+		del := uint(fs.Deletion) //nolint:gosec // G115: Deletion is a count of lines
 		np := maxNameLen - len(fs.Name)
 		cp := maxChangeLen - len(strconv.Itoa(fs.Addition+fs.Deletion))
 
@@ -283,8 +283,8 @@ func printStat(fileStats []FileStat) string {
 			del = scaleLinear(del, maxGraphWidth, total)
 		}
 
-		adds := strings.Repeat("+", int(add))
-		dels := strings.Repeat("-", int(del))
+		adds := strings.Repeat("+", int(add)) //nolint:gosec // G115: add is bounded
+		dels := strings.Repeat("-", int(del)) //nolint:gosec // G115: del is bounded
 		namePad := strings.Repeat(" ", np)
 		changePad := strings.Repeat(" ", cp)
 

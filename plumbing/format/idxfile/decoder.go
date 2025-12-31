@@ -111,7 +111,7 @@ func readObjectNames(idx *MemoryIndex, r io.Reader) error {
 
 		idx.FanoutMapping[k] = len(idx.Names)
 
-		nameLen := int(buckets * uint32(idx.idSize()))
+		nameLen := int(buckets * uint32(idx.idSize())) //nolint:gosec // G115: idSize() returns small hash size (20 or 32)
 		bin := make([]byte, nameLen)
 		if _, err := io.ReadFull(r, bin); err != nil {
 			return err

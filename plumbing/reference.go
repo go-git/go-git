@@ -286,17 +286,16 @@ func (r *Reference) Target() ReferenceName {
 
 // Strings dump a reference as a [2]string
 func (r *Reference) Strings() [2]string {
-	var o [2]string
-	o[0] = r.Name().String()
+	name := r.Name().String()
 
 	switch r.Type() {
 	case HashReference:
-		o[1] = r.Hash().String()
+		return [2]string{name, r.Hash().String()}
 	case SymbolicReference:
-		o[1] = symrefPrefix + r.Target().String()
+		return [2]string{name, symrefPrefix + r.Target().String()}
+	default:
+		return [2]string{name, ""}
 	}
-
-	return o
 }
 
 func (r *Reference) String() string {

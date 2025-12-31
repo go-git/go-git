@@ -5,6 +5,7 @@ linters:
     - dupl
     - errcheck
     - gocritic
+    - gosec
     - govet
     - ineffassign
     - misspell
@@ -38,6 +39,7 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+          - gosec
 
 formatters:
   enable:

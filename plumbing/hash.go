@@ -49,10 +49,10 @@ func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
 // Reset resets the hasher with a new object type and size.
 func (h Hasher) Reset(t ObjectType, size int64) {
 	h.Hash.Reset()
-	h.Write(t.Bytes())
-	h.Write([]byte(" "))
-	h.Write([]byte(strconv.FormatInt(size, 10)))
-	h.Write([]byte{0})
+	_, _ = h.Write(t.Bytes())
+	_, _ = h.Write([]byte(" "))
+	_, _ = h.Write([]byte(strconv.FormatInt(size, 10)))
+	_, _ = h.Write([]byte{0})
 }
 
 // Sum returns the computed hash.

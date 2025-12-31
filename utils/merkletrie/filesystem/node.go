@@ -226,7 +226,7 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 		}
 
 		if !stat.IsBinary() {
-			h.Reset(plumbing.BlobObject, n.size-int64(stat.CRLF))
+			h.Reset(plumbing.BlobObject, n.size-int64(stat.CRLF)) //nolint:gosec // G115: CRLF count fits in int64
 			dst = convert.NewLFWriter(dst)
 		}
 	}

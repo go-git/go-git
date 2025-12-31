@@ -280,7 +280,8 @@ func (d *Decoder) readExtension(idx *Index) error {
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
-		if header[0] < 'A' || header[0] > 'Z' {
+		first := header[0]
+		if first < 'A' || first > 'Z' {
 			return ErrUnknownExtension
 		}
 

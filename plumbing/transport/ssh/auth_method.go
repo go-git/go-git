@@ -145,7 +145,7 @@ func NewPublicKeys(user string, pemBytes []byte, password string) (*PublicKeys, 
 // encoded private key. An encryption password should be given if the pemBytes
 // contains a password encrypted PEM block otherwise password should be empty.
 func NewPublicKeysFromFile(user, pemFile, password string) (*PublicKeys, error) {
-	bytes, err := os.ReadFile(pemFile)
+	bytes, err := os.ReadFile(pemFile) //nolint:gosec // G304: user-provided path is intentional for SSH key loading
 	if err != nil {
 		return nil, err
 	}

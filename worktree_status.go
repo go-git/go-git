@@ -599,7 +599,7 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 	// it will cause go-git's Worktree.Status() to divert from "git status".
 	// The size of a symlink is the length of the path to the target.
 	// The size of Regular and Executable files is the size of the files.
-	e.Size = uint32(info.Size())
+	e.Size = uint32(info.Size()) //nolint:gosec // G115: file size fits in uint32 for git index
 
 	fillSystemInfo(e, info.Sys())
 	return nil

@@ -897,7 +897,7 @@ func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *indexBuil
 		Name:       name,
 		Mode:       mode,
 		ModifiedAt: fi.ModTime(),
-		Size:       uint32(fi.Size()),
+		Size:       uint32(fi.Size()), //nolint:gosec // G115: file size fits in uint32 for git index
 	}
 
 	// if the FileInfo.Sys() comes from os the ctime, dev, inode, uid and gid

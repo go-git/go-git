@@ -130,7 +130,7 @@ func (s *PackScanner) GetByOffset(offset uint64) (plumbing.EncodedObject, error)
 
 // getObject retrieves object metadata from the pack at the given offset.
 func (s *PackScanner) getObject(h plumbing.Hash, offset uint64) (plumbing.EncodedObject, error) {
-	if int(offset+1) >= len(s.packMmap) {
+	if int(offset+1) >= len(s.packMmap) { //nolint:gosec // G115: offset is validated against mmap length
 		return nil, ErrOffsetNotFound
 	}
 
@@ -142,7 +142,7 @@ func (s *PackScanner) getObject(h plumbing.Hash, offset uint64) (plumbing.Encode
 
 	// For easier user-consumption, auto resolve is being set to true.
 	// This should be reviewed as not always this is needed.
-	return newOndemandObject(h, packutil.ObjectType(typ), int64(offset), int64(size), s, true), nil
+	return newOndemandObject(h, packutil.ObjectType(typ), int64(offset), int64(size), s, true), nil //nolint:gosec // G115: offset fits in int64
 }
 
 func (s *PackScanner) lookupOffset(want uint64) (int, bool) {
@@ -190,7 +190,7 @@ func (s *PackScanner) offset(pos int) (uint64, error) {
 	off32 := binary.BigEndian.Uint32(s.idxMmap[start : start+off32Size])
 
 	if uint64(off32)&is64bitsMask != 0 {
-		loIndex := int(uint64(off32) & ^is64bitsMask)
+		loIndex := int(uint64(off32) & ^is64bitsMask) //nolint:gosec // G115: masked to 31 bits, fits in int
 		start = s.off64Start + (loIndex * off64Size)
 		end := start + off64Size
 

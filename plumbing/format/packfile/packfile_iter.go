@@ -31,7 +31,7 @@ func (i *objectIter) next() (plumbing.EncodedObject, error) {
 			return nil, err
 		}
 
-		oh, err := i.p.headerFromOffset(int64(e.Offset))
+		oh, err := i.p.headerFromOffset(int64(e.Offset)) //nolint:gosec // G115: offset fits in int64
 		if err != nil {
 			return nil, err
 		}

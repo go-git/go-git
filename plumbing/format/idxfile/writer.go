@@ -75,7 +75,7 @@ func (w *Writer) OnInflatedObjectHeader(_ plumbing.ObjectType, _, _ int64) error
 
 // OnInflatedObjectContent implements packfile.Observer interface.
 func (w *Writer) OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32, _ []byte) error {
-	w.Add(h, uint64(pos), crc)
+	w.Add(h, uint64(pos), crc) //nolint:gosec // G115: pos is always non-negative in packfile
 	return nil
 }
 
@@ -114,11 +114,11 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 
 		// fill the gaps between fans
 		for j := last + 1; j < int(fan); j++ {
-			idx.Fanout[j] = uint32(i)
+			idx.Fanout[j] = uint32(i) //nolint:gosec // G115: i is loop index bounded by objects count
 		}
 
 		// update the number of objects for this position
-		idx.Fanout[fan] = uint32(i + 1)
+		idx.Fanout[fan] = uint32(i + 1) //nolint:gosec // G115: i is loop index bounded by objects count
 
 		// we move from one bucket to another, update counters and allocate
 		// memory
@@ -144,7 +144,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 		}
 
 		buf.Truncate(0)
-		if err := binary.WriteUint32(buf, uint32(offset)); err != nil {
+		if err := binary.WriteUint32(buf, uint32(offset)); err != nil { //nolint:gosec // G115: checked against limit above
 			return nil, err
 		}
 		idx.Offset32[bucket] = append(idx.Offset32[bucket], buf.Bytes()...)
@@ -157,7 +157,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 	}
 
 	for j := last + 1; j < 256; j++ {
-		idx.Fanout[j] = uint32(len(w.objects))
+		idx.Fanout[j] = uint32(len(w.objects)) //nolint:gosec // G115: objects count fits in uint32
 	}
 
 	idx.Version = VersionSupported

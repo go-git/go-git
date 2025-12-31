@@ -247,7 +247,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 
 		for _, file := range files {
 			path := filepath.Join(objectPath, file.Name())
-			err = os.Chmod(path, 0o644)
+			err = os.Chmod(path, 0o644) //nolint:gosec // G302: test file, relaxed permissions are intentional
 			s.Require().NoError(err)
 		}
 	}

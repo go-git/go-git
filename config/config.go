@@ -450,11 +450,14 @@ func (c *Config) unmarshalPack() error {
 	if window == "" {
 		c.Pack.Window = DefaultPackWindow
 	} else {
-		winUint, err := strconv.ParseUint(window, 10, 32)
+		winInt, err := strconv.Atoi(window)
 		if err != nil {
 			return err
 		}
-		c.Pack.Window = uint(winUint)
+		if winInt < 0 {
+			return fmt.Errorf("pack.window cannot be negative: %d", winInt)
+		}
+		c.Pack.Window = uint(winInt)
 	}
 	return nil
 }
