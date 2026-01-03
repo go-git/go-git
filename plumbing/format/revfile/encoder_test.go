@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto"
 	"io"
+	"io/fs"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
@@ -13,6 +15,38 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
+
+// encoderMockRevFile wraps a bytes.Reader to satisfy the RevFile interface for testing.
+type encoderMockRevFile struct {
+	*bytes.Reader
+	size int64
+}
+
+func newEncoderMockRevFile(data []byte) *encoderMockRevFile {
+	return &encoderMockRevFile{
+		Reader: bytes.NewReader(data),
+		size:   int64(len(data)),
+	}
+}
+
+func (m *encoderMockRevFile) Stat() (fs.FileInfo, error) {
+	return &encoderMockFileInfo{size: m.size}, nil
+}
+
+func (m *encoderMockRevFile) Close() error {
+	return nil
+}
+
+type encoderMockFileInfo struct {
+	size int64
+}
+
+func (m *encoderMockFileInfo) Name() string       { return "test.rev" }
+func (m *encoderMockFileInfo) Size() int64        { return m.size }
+func (m *encoderMockFileInfo) Mode() fs.FileMode  { return 0o644 }
+func (m *encoderMockFileInfo) ModTime() time.Time { return time.Time{} }
+func (m *encoderMockFileInfo) IsDir() bool        { return false }
+func (m *encoderMockFileInfo) Sys() any           { return nil }
 
 func TestEncode(t *testing.T) {
 	t.Parallel()
@@ -145,20 +179,17 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			}
 			entriesByOffset.Close()
 
-			// Decode the generated rev file so that the entries can be checked.
-			idxPos := make(chan uint32)
-			got := []uint32{}
+			// Use ReaderAtRevIndex to verify the generated rev file.
+			revIdx, err := NewReaderAtRevIndex(newEncoderMockRevFile(buf.Bytes()), tc.hasher.Size(), count)
+			require.NoError(t, err)
+			defer revIdx.Close()
 
-			errCh := make(chan error, 1)
-			go func() {
-				errCh <- Decode(&buf, count, idx.PackfileChecksum, idxPos)
-			}()
-
-			for p := range idxPos {
-				got = append(got, p)
+			var got []uint32
+			all, finish := revIdx.All()
+			for _, idxPos := range all {
+				got = append(got, uint32(idxPos))
 			}
-
-			require.NoError(t, <-errCh)
+			assert.NoError(t, finish())
 			assert.Equal(t, want, got)
 		})
 	}
