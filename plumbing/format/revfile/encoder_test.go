@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"crypto"
 	"io"
-	"io/fs"
 	"testing"
-	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
@@ -15,38 +13,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
-
-// encoderMockRevFile wraps a bytes.Reader to satisfy the RevFile interface for testing.
-type encoderMockRevFile struct {
-	*bytes.Reader
-	size int64
-}
-
-func newEncoderMockRevFile(data []byte) *encoderMockRevFile {
-	return &encoderMockRevFile{
-		Reader: bytes.NewReader(data),
-		size:   int64(len(data)),
-	}
-}
-
-func (m *encoderMockRevFile) Stat() (fs.FileInfo, error) {
-	return &encoderMockFileInfo{size: m.size}, nil
-}
-
-func (m *encoderMockRevFile) Close() error {
-	return nil
-}
-
-type encoderMockFileInfo struct {
-	size int64
-}
-
-func (m *encoderMockFileInfo) Name() string       { return "test.rev" }
-func (m *encoderMockFileInfo) Size() int64        { return m.size }
-func (m *encoderMockFileInfo) Mode() fs.FileMode  { return 0o644 }
-func (m *encoderMockFileInfo) ModTime() time.Time { return time.Time{} }
-func (m *encoderMockFileInfo) IsDir() bool        { return false }
-func (m *encoderMockFileInfo) Sys() any           { return nil }
 
 func TestEncode(t *testing.T) {
 	t.Parallel()
@@ -180,7 +146,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			entriesByOffset.Close()
 
 			// Use ReaderAtRevIndex to verify the generated rev file.
-			revIdx, err := NewReaderAtRevIndex(newEncoderMockRevFile(buf.Bytes()), tc.hasher.Size(), count)
+			revIdx, err := NewReaderAtRevIndex(newMockRevFile(buf.Bytes()), tc.hasher.Size(), count)
 			require.NoError(t, err)
 			defer revIdx.Close()
 
