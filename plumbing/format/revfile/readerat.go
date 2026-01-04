@@ -2,9 +2,11 @@ package revfile
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"iter"
@@ -126,6 +128,101 @@ func (ri *ReaderAtRevIndex) validate() error {
 	expectedSize := int64(RevHeaderSize) + ri.count*RevEntrySize + int64(2*ri.hashSize)
 	if ri.size != expectedSize {
 		return fmt.Errorf("%w: size mismatch (expected %d, got %d)", ErrInvalidRevFile, expectedSize, ri.size)
+	}
+
+	return nil
+}
+
+// ValidateChecksums verifies the integrity of the rev file by:
+//  1. Computing the hash of all data (header + entries + pack checksum)
+//     and comparing it with the stored rev file checksum.
+//  2. Comparing the stored pack file checksum with the provided packChecksum.
+//
+// This requires reading the entire file and should only be called when
+// explicit integrity verification is needed.
+func (ri *ReaderAtRevIndex) ValidateChecksums(packChecksum []byte) error {
+	if len(packChecksum) != ri.hashSize {
+		return fmt.Errorf("%w: pack checksum size mismatch (expected %d, got %d)",
+			ErrInvalidRevFile, ri.hashSize, len(packChecksum))
+	}
+
+	// Determine hash function based on hash size.
+	var hasher crypto.Hash
+	switch ri.hashSize {
+	case 20:
+		hasher = crypto.SHA1
+	case 32:
+		hasher = crypto.SHA256
+	default:
+		return fmt.Errorf("%w: unsupported hash size %d", ErrInvalidRevFile, ri.hashSize)
+	}
+
+	h := hasher.New()
+
+	// Read and hash all data except the final rev checksum.
+	dataSize := ri.size - int64(ri.hashSize)
+	if err := ri.hashData(h, 0, dataSize); err != nil {
+		return err
+	}
+
+	// Read the stored pack checksum and verify it.
+	packChecksumOffset := ri.size - int64(2*ri.hashSize)
+	storedPackChecksum := make([]byte, ri.hashSize)
+	n, err := ri.reader.ReadAt(storedPackChecksum, packChecksumOffset)
+	if err != nil {
+		return fmt.Errorf("%w: failed to read pack checksum: %w", ErrInvalidRevFile, err)
+	}
+	if n != ri.hashSize {
+		return fmt.Errorf("%w: short read on pack checksum", ErrInvalidRevFile)
+	}
+
+	if !bytes.Equal(storedPackChecksum, packChecksum) {
+		return fmt.Errorf("%w: pack checksum mismatch", ErrInvalidRevFile)
+	}
+
+	// Read the stored rev checksum.
+	revChecksumOffset := ri.size - int64(ri.hashSize)
+	storedRevChecksum := make([]byte, ri.hashSize)
+	n, err = ri.reader.ReadAt(storedRevChecksum, revChecksumOffset)
+	if err != nil {
+		return fmt.Errorf("%w: failed to read rev checksum: %w", ErrInvalidRevFile, err)
+	}
+	if n != ri.hashSize {
+		return fmt.Errorf("%w: short read on rev checksum", ErrInvalidRevFile)
+	}
+
+	// Compare computed hash with stored rev checksum.
+	computedChecksum := h.Sum(nil)
+	if !bytes.Equal(computedChecksum, storedRevChecksum) {
+		return fmt.Errorf("%w: rev file checksum mismatch", ErrInvalidRevFile)
+	}
+
+	return nil
+}
+
+// hashData reads data from the reader and writes it to the hash.
+func (ri *ReaderAtRevIndex) hashData(h hash.Hash, offset, length int64) error {
+	const bufSize = 32 * 1024 // 32KB buffer
+	buf := make([]byte, bufSize)
+
+	for length > 0 {
+		toRead := min(int64(bufSize), length)
+
+		n, err := ri.reader.ReadAt(buf[:toRead], offset)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("%w: failed to read data at offset %d: %w", ErrInvalidRevFile, offset, err)
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: unexpected EOF at offset %d", ErrInvalidRevFile, offset)
+		}
+
+		_, err = h.Write(buf[:n])
+		if err != nil {
+			return fmt.Errorf("failed to hash data: %w", err)
+		}
+
+		offset += int64(n)
+		length -= int64(n)
 	}
 
 	return nil

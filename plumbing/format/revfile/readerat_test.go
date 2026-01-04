@@ -371,3 +371,91 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 		}
 	})
 }
+
+func TestReaderAtRevIndex_ValidateChecksums(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.ByTag("packfile-sha256").One()
+	revf := fixture.Rev()
+	require.NotNil(t, revf)
+
+	idxf := fixture.Idx()
+	require.NotNil(t, idxf)
+
+	// Load idx file to get count and pack checksum.
+	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
+	idec := idxfile.NewDecoder(idxf)
+	err := idec.Decode(idx)
+	require.NoError(t, err)
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	require.NoError(t, err)
+	defer ri.Close()
+
+	// Valid checksum should pass.
+	err = ri.ValidateChecksums(idx.PackfileChecksum.Bytes())
+	assert.NoError(t, err)
+}
+
+func TestReaderAtRevIndex_ValidateChecksums_WrongPackChecksum(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.ByTag("packfile-sha256").One()
+	revf := fixture.Rev()
+	require.NotNil(t, revf)
+
+	idxf := fixture.Idx()
+	require.NotNil(t, idxf)
+
+	// Load idx file to get count.
+	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
+	idec := idxfile.NewDecoder(idxf)
+	err := idec.Decode(idx)
+	require.NoError(t, err)
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	require.NoError(t, err)
+	defer ri.Close()
+
+	// Wrong pack checksum should fail.
+	wrongChecksum := make([]byte, crypto.SHA256.Size())
+	err = ri.ValidateChecksums(wrongChecksum)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "pack checksum mismatch")
+}
+
+func TestReaderAtRevIndex_ValidateChecksums_WrongSize(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.ByTag("packfile-sha256").One()
+	revf := fixture.Rev()
+	require.NotNil(t, revf)
+
+	idxf := fixture.Idx()
+	require.NotNil(t, idxf)
+
+	// Load idx file to get count.
+	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
+	idec := idxfile.NewDecoder(idxf)
+	err := idec.Decode(idx)
+	require.NoError(t, err)
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	require.NoError(t, err)
+	defer ri.Close()
+
+	// Wrong size checksum should fail.
+	wrongSizeChecksum := make([]byte, 20) // SHA1 size instead of SHA256
+	err = ri.ValidateChecksums(wrongSizeChecksum)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "pack checksum size mismatch")
+}
