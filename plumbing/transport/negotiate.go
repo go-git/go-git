@@ -216,7 +216,7 @@ func NegotiatePack(
 	}
 
 	if !conn.StatelessRPC() {
-		if err := writer.Close(); err != nil {
+		if err := writer.Close(); err != nil && err != io.EOF {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 	}
