@@ -10,7 +10,7 @@ func Test_typeForSignature(t *testing.T) {
 	tests := []struct {
 		name string
 		b    []byte
-		want signatureType
+		want SignatureType
 	}{
 		{
 			name: "known signature format (PGP)",
@@ -21,7 +21,7 @@ iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
 TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
 =YQUf
 -----END PGP SIGNATURE-----`),
-			want: signatureTypeOpenPGP,
+			want: SignatureTypeOpenPGP,
 		},
 		{
 			name: "known signature format (SSH)",
@@ -31,7 +31,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
 MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----`),
-			want: signatureTypeSSH,
+			want: SignatureTypeSSH,
 		},
 		{
 			name: "known signature format (X509) CERTIFICATE",
@@ -44,7 +44,7 @@ AlNFMQ4wDAYDVQQIDAVUZXhhczEOMAwGA1UEBwwFVGV4YXMxDjAMBgNVBAoMBVRl
 eGFzMQ4wDAYDVQQLDAVUZXhhczEYMBYGA1UEAwwPVGV4YXMgQ2VydGlmaWNhdGUw
 ggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQZ9Z3Z9Z3Z9Z3Z9Z3Z9Z3
 -----END CERTIFICATE-----`),
-			want: signatureTypeX509,
+			want: SignatureTypeX509,
 		},
 		{
 			name: "known signature format (x509) SIGNED MESSAGE",
@@ -57,14 +57,14 @@ AlNFMQ4wDAYDVQQIDAVUZXhhczEOMAwGA1UEBwwFVGV4YXMxDjAMBgNVBAoMBVRl
 eGFzMQ4wDAYDVQQLDAVUZXhhczEYMBYGA1UEAwwPVGV4YXMgQ2VydGlmaWNhdGUw
 ggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQZ9Z3Z9Z3Z9Z3Z9Z3Z9Z3
 -----END SIGNED MESSAGE-----`),
-			want: signatureTypeX509,
+			want: SignatureTypeX509,
 		},
 		{
 			name: "unknown signature format",
 			b: []byte(`-----BEGIN ARBITRARY SIGNATURE-----
 U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 -----END UNKNOWN SIGNATURE-----`),
-			want: signatureTypeUnknown,
+			want: SignatureTypeUnknown,
 		},
 	}
 	for _, tt := range tests {
@@ -83,7 +83,7 @@ func Test_parseSignedBytes(t *testing.T) {
 		name          string
 		b             []byte
 		wantSignature []byte
-		wantType      signatureType
+		wantType      SignatureType
 	}{
 		{
 			name: "detects signature and type",
@@ -116,7 +116,7 @@ pAe1/EFuhv2UDLucAiWM8iDZIcw8iN0OYMOGUmnk0WuGIo7dzLeqMGY+ND5n5Z8J
 sZC//k6m
 =VhHy
 -----END PGP SIGNATURE-----`),
-			wantType: signatureTypeOpenPGP,
+			wantType: SignatureTypeOpenPGP,
 		},
 		{
 			name: "last signature for multiple signatures",
@@ -147,7 +147,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
 MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----`),
-			wantType: signatureTypeSSH,
+			wantType: SignatureTypeSSH,
 		},
 		{
 			name: "signature with trailing data",
@@ -169,13 +169,13 @@ MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----
 
 signed tag`),
-			wantType: signatureTypeSSH,
+			wantType: SignatureTypeSSH,
 		},
 		{
 			name:          "data without signature",
 			b:             []byte(`Some message`),
 			wantSignature: []byte(``),
-			wantType:      signatureTypeUnknown,
+			wantType:      SignatureTypeUnknown,
 		},
 	}
 	for _, tt := range tests {
@@ -204,4 +204,83 @@ func FuzzParseSignedBytes(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, input []byte) {
 		parseSignedBytes(input)
 	})
+}
+
+func TestSignatureType_String(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		sigType SignatureType
+		want    string
+	}{
+		{SignatureTypeUnknown, "unknown"},
+		{SignatureTypeOpenPGP, "openpgp"},
+		{SignatureTypeX509, "x509"},
+		{SignatureTypeSSH, "ssh"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.sigType.String(); got != tt.want {
+				t.Errorf("SignatureType.String() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectSignatureType(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		signature []byte
+		want      SignatureType
+	}{
+		{
+			name:      "OpenPGP signature",
+			signature: []byte("-----BEGIN PGP SIGNATURE-----\ndata\n-----END PGP SIGNATURE-----"),
+			want:      SignatureTypeOpenPGP,
+		},
+		{
+			name:      "OpenPGP message",
+			signature: []byte("-----BEGIN PGP MESSAGE-----\ndata\n-----END PGP MESSAGE-----"),
+			want:      SignatureTypeOpenPGP,
+		},
+		{
+			name:      "SSH signature",
+			signature: []byte("-----BEGIN SSH SIGNATURE-----\ndata\n-----END SSH SIGNATURE-----"),
+			want:      SignatureTypeSSH,
+		},
+		{
+			name:      "X509 certificate",
+			signature: []byte("-----BEGIN CERTIFICATE-----\ndata"),
+			want:      SignatureTypeX509,
+		},
+		{
+			name:      "X509 signed message",
+			signature: []byte("-----BEGIN SIGNED MESSAGE-----\ndata"),
+			want:      SignatureTypeX509,
+		},
+		{
+			name:      "Unknown signature",
+			signature: []byte("random data"),
+			want:      SignatureTypeUnknown,
+		},
+		{
+			name:      "Empty signature",
+			signature: []byte{},
+			want:      SignatureTypeUnknown,
+		},
+		{
+			name:      "Nil signature",
+			signature: nil,
+			want:      SignatureTypeUnknown,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := DetectSignatureType(tt.signature); got != tt.want {
+				t.Errorf("DetectSignatureType() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
