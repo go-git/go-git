@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/color"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
-	"github.com/stretchr/testify/suite"
 )
 
 type UnifiedEncoderTestSuite struct {
@@ -15,6 +16,7 @@ type UnifiedEncoderTestSuite struct {
 }
 
 func TestUnifiedEncoderTestSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UnifiedEncoderTestSuite))
 }
 
@@ -181,7 +183,7 @@ var oneChunkPatchInverted Patch = testPatch{
 	}},
 }
 
-var fixtures []*fixture = []*fixture{{
+var fixtures = []*fixture{{
 	patch: testPatch{
 		message: "",
 		filePatches: []testFilePatch{{
@@ -1003,7 +1005,7 @@ type testPatch struct {
 }
 
 func (t testPatch) FilePatches() []FilePatch {
-	var result []FilePatch
+	result := make([]FilePatch, 0, len(t.filePatches))
 	for _, f := range t.filePatches {
 		result = append(result, f)
 	}
@@ -1023,6 +1025,7 @@ type testFilePatch struct {
 func (t testFilePatch) IsBinary() bool {
 	return len(t.chunks) == 0
 }
+
 func (t testFilePatch) Files() (File, File) {
 	// Go is amazing
 	switch {
@@ -1038,7 +1041,7 @@ func (t testFilePatch) Files() (File, File) {
 }
 
 func (t testFilePatch) Chunks() []Chunk {
-	var result []Chunk
+	result := make([]Chunk, 0, len(t.chunks))
 	for _, c := range t.chunks {
 		result = append(result, c)
 	}
@@ -1052,7 +1055,9 @@ type testFile struct {
 }
 
 func (t testFile) Hash() plumbing.Hash {
-	return plumbing.ComputeHash(plumbing.BlobObject, []byte(t.seed))
+	hasher := plumbing.FromObjectFormat(0)
+	h, _ := hasher.Compute(plumbing.BlobObject, []byte(t.seed))
+	return h
 }
 
 func (t testFile) Mode() filemode.FileMode {

@@ -1,3 +1,5 @@
+// Package http provides a Git HTTP backend handler for serving git repositories
+// over HTTP using the Smart-HTTP and Dumb-HTTP protocols.
 package http
 
 import (
@@ -34,15 +36,15 @@ var services = []service{
 	{regexp.MustCompile("(.*?)/objects/info/packs$"), http.MethodGet, getInfoPacks, ""},
 	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$"), http.MethodGet, getLooseObject, ""},
 	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{62}$"), http.MethodGet, getLooseObject, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$"), http.MethodGet, getPackFile, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{64}\\.pack$"), http.MethodGet, getPackFile, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$"), http.MethodGet, getIdxFile, ""},
-	{regexp.MustCompile("(.*?)/objects/pack/pack-[0-9a-f]{64}\\.idx$"), http.MethodGet, getIdxFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40}\.pack$`), http.MethodGet, getPackFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{64}\.pack$`), http.MethodGet, getPackFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40}\.idx$`), http.MethodGet, getIdxFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{64}\.idx$`), http.MethodGet, getIdxFile, ""},
 
 	// TODO: Support git-upload-archive
 	// {regexp.MustCompile("(.*?)/git-upload-archive$"), http.MethodPost, serviceRpc, transport.UploadArchiveService},
-	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, serviceRpc, transport.UploadPackService},
-	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRpc, transport.ReceivePackService},
+	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, serviceRPC, transport.UploadPackService},
+	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, serviceRPC, transport.ReceivePackService},
 }
 
 // Backend represents a Git HTTP handler.
@@ -120,13 +122,13 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // logf logs the given message to the error log if it is set.
-func logf(logger *log.Logger, format string, v ...interface{}) {
+func logf(logger *log.Logger, format string, v ...any) {
 	if logger != nil {
 		logger.Printf(format, v...)
 	}
 }
 
-func serviceRpc(w http.ResponseWriter, r *http.Request) {
+func serviceRPC(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	st, ok := ctx.Value(contextKey("storer")).(storage.Storer)
 	if !ok {
@@ -167,7 +169,7 @@ func serviceRpc(w http.ResponseWriter, r *http.Request) {
 			renderStatusError(w, http.StatusInternalServerError)
 			return
 		}
-		defer reader.Close() //nolint:errcheck
+		defer func() { _ = reader.Close() }()
 	default:
 		reader = r.Body
 	}
@@ -232,7 +234,7 @@ func sendFile(w http.ResponseWriter, r *http.Request, contentType string) {
 		return
 	}
 
-	defer f.Close() //nolint:errcheck
+	defer func() { _ = f.Close() }()
 
 	stat, err := fs.Lstat(file)
 	if err != nil || !stat.Mode().IsRegular() {

@@ -111,7 +111,7 @@ func (r *ServerResponse) decodeACKLine(line []byte) (err error) {
 	}
 
 	r.ACKs = append(r.ACKs, ack)
-	return
+	return err
 }
 
 // Encode encodes the ServerResponse into a writer.

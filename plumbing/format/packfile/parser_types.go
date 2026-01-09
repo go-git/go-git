@@ -9,7 +9,7 @@ type Observer interface {
 	// OnHeader is called when a new packfile is opened.
 	OnHeader(count uint32) error
 	// OnInflatedObjectHeader is called for each object header read.
-	OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, pos int64) error
+	OnInflatedObjectHeader(t plumbing.ObjectType, objSize, pos int64) error
 	// OnInflatedObjectContent is called for each decoded object.
 	OnInflatedObjectContent(h plumbing.Hash, pos int64, crc uint32, content []byte) error
 	// OnFooter is called when decoding is done.

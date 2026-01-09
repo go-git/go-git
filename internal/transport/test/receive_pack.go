@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"regexp"
 
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -18,9 +21,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type ReceivePackSuite struct {
@@ -133,8 +133,8 @@ func (s *ReceivePackSuite) TestSendPackWithContext() {
 	s.Require().NoError(err)
 	defer func() { s.Require().Nil(conn.Close()) }()
 
-	ctx, close := context.WithCancel(context.TODO())
-	close()
+	ctx, cancel := context.WithCancel(context.TODO())
+	cancel()
 
 	err = conn.Push(ctx, req)
 	s.Require().NotNil(err)
@@ -235,7 +235,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 	)
 
 	// Set write permissions to endpoint directory files. By default
-	// fixtures are generated with read only permissions, this casuses
+	// fixtures are generated with read only permissions, this causes
 	// errors deleting or modifying files.
 	rootPath := ep.Path
 	stat, err := os.Stat(ep.Path)

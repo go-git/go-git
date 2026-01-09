@@ -6,11 +6,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
-	"github.com/stretchr/testify/suite"
 )
 
 type UploadPackSuite struct {
@@ -215,25 +216,20 @@ func (s *UploadPackSuite) TestUploadPackNoChanges() {
 }
 
 func (s *UploadPackSuite) TestUploadPackMulti() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
-
-	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
-
-	err = conn.Fetch(context.Background(), req)
-	s.Require().NoError(err)
-
-	afterCount := s.countObjects(s.Storer)
-	s.Require().Equal(31, afterCount-beforeCount)
+	s.testUploadPackFetch(req, 31)
 }
 
 func (s *UploadPackSuite) TestUploadPackPartial() {
+	req := &transport.FetchRequest{}
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	s.testUploadPackFetch(req, 4)
+}
+
+func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expectedObjects int) {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
 	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
@@ -241,15 +237,11 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 	defer func() { s.Require().Nil(conn.Close()) }()
 
 	beforeCount := s.countObjects(s.Storer)
-	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
-
 	err = conn.Fetch(context.Background(), req)
 	s.Require().NoError(err)
 
 	afterCount := s.countObjects(s.Storer)
-	s.Require().Equal(4, afterCount-beforeCount)
+	s.Require().Equal(expectedObjects, afterCount-beforeCount)
 }
 
 func (s *UploadPackSuite) TestFetchError() {

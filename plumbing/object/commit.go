@@ -76,20 +76,20 @@ type ExtraHeader struct {
 	Value string
 }
 
-// Implement fmt.Formatter for ExtraHeader
+// Format implements fmt.Formatter for ExtraHeader.
 func (h ExtraHeader) Format(f fmt.State, verb rune) {
 	switch verb {
 	case 'v':
-		fmt.Fprintf(f, "ExtraHeader{Key: %v, Value: %v}", h.Key, h.Value)
+		_, _ = fmt.Fprintf(f, "ExtraHeader{Key: %v, Value: %v}", h.Key, h.Value)
 	default:
-		fmt.Fprintf(f, "%s", h.Key)
+		_, _ = fmt.Fprintf(f, "%s", h.Key)
 		if len(h.Value) > 0 {
-			fmt.Fprint(f, " ")
+			_, _ = fmt.Fprint(f, " ")
 			// Content may be spread on multiple lines, if so we need to
 			// prepend each of them with a space for "continuation".
 			value := strings.TrimSuffix(h.Value, "\n")
 			lines := strings.Split(value, "\n")
-			fmt.Fprint(f, strings.Join(lines, "\n "))
+			_, _ = fmt.Fprint(f, strings.Join(lines, "\n "))
 		}
 	}
 }
@@ -98,17 +98,16 @@ func (h ExtraHeader) Format(f fmt.State, verb rune) {
 func parseExtraHeader(line []byte) (ExtraHeader, bool) {
 	split := bytes.SplitN(line, []byte{' '}, 2)
 
-	out := ExtraHeader {
-		Key: string(bytes.TrimRight(split[0], "\n")),
+	out := ExtraHeader{
+		Key:   string(bytes.TrimRight(split[0], "\n")),
 		Value: "",
 	}
 
 	if len(split) == 2 {
 		out.Value += string(split[1])
 		return out, true
-	} else {
-		return out, false
 	}
+	return out, false
 }
 
 // GetCommit gets a commit from an object storer and decodes it.
@@ -179,6 +178,7 @@ func (c *Commit) NumParents() int {
 	return len(c.ParentHashes)
 }
 
+// ErrParentNotFound is returned when the parent commit is not found.
 var ErrParentNotFound = errors.New("commit parent not found")
 
 // Parent returns the ith parent of a commit.
@@ -249,7 +249,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	var mergetag bool
 	var pgpsig bool
 	var msgbuf bytes.Buffer
-	var extraheader *ExtraHeader = nil
+	var extraheader *ExtraHeader
 	for {
 		line, err := r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
@@ -261,9 +261,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				line = bytes.TrimLeft(line, " ")
 				c.MergeTag += string(line)
 				continue
-			} else {
-				mergetag = false
 			}
+			mergetag = false
 		}
 
 		if pgpsig {
@@ -271,24 +270,22 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				line = bytes.TrimLeft(line, " ")
 				c.PGPSignature += string(line)
 				continue
-			} else {
-				pgpsig = false
 			}
+			pgpsig = false
 		}
 
 		if extraheader != nil {
 			if len(line) > 0 && line[0] == ' ' {
 				extraheader.Value += string(line[1:])
 				continue
-			} else {
-				extraheader.Value = strings.TrimRight(extraheader.Value, "\n")
-				c.ExtraHeaders = append(c.ExtraHeaders, *extraheader)
-				extraheader = nil
 			}
+			extraheader.Value = strings.TrimRight(extraheader.Value, "\n")
+			c.ExtraHeaders = append(c.ExtraHeaders, *extraheader)
+			extraheader = nil
 		}
 
 		if !message {
-			original_line := line
+			originalLine := line
 			line = bytes.TrimSpace(line)
 			if len(line) == 0 {
 				message = true
@@ -320,7 +317,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 				c.PGPSignature += string(data) + "\n"
 				pgpsig = true
 			default:
-				h, maybecontinued := parseExtraHeader(original_line)
+				h, maybecontinued := parseExtraHeader(originalLine)
 				if maybecontinued {
 					extraheader = &h
 				} else {
@@ -407,7 +404,6 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	for _, header := range c.ExtraHeaders {
-		
 		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
 			return err
 		}
@@ -515,8 +511,8 @@ func (c *Commit) Less(rhs *Commit) bool {
 }
 
 func indent(t string) string {
-	var output []string
-	for _, line := range strings.Split(t, "\n") {
+	output := make([]string, 0, strings.Count(t, "\n")+1)
+	for line := range strings.SplitSeq(t, "\n") {
 		if len(line) != 0 {
 			line = "    " + line
 		}

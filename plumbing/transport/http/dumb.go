@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
@@ -83,7 +84,7 @@ func (r *fetchWalker) getInfoPacks() ([]string, error) {
 		return nil, err
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	switch res.StatusCode {
 	case http.StatusOK:
 		// continue
@@ -126,7 +127,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
 
-	copy := func(w io.Writer) error {
+	copyFn := func(w io.Writer) error {
 		if _, err := ioutil.CopyBufferPool(w, res.Body); err != nil {
 			return err
 		}
@@ -144,7 +145,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 
 	f, err := r.fs.TempFile(filepath.Dir(fp), filepath.Base(fp)+".temp")
 	if err != nil {
-		copy(io.Discard)
+		_ = copyFn(io.Discard)
 		return err
 	}
 
@@ -154,7 +155,7 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 		}
 	}()
 
-	if err := copy(f); err != nil {
+	if err := copyFn(f); err != nil {
 		return err
 	}
 
@@ -207,8 +208,7 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 	}
 
 	line := s.Text()
-	if strings.HasPrefix(line, "ref: ") {
-		target := strings.TrimPrefix(line, "ref: ")
+	if target, found := strings.CutPrefix(line, "ref: "); found {
 		return plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName(target)), nil
 	}
 
@@ -257,7 +257,7 @@ func (r *fetchWalker) process() error {
 		}
 
 		// XXX: we need to check if the index file exists. Currently, there is
-		// no way to do so using the storer interfaces except useing
+		// no way to do so using the storer interfaces except using
 		// HasEncodedObject which might be an expensive operation.
 		packIdx := path.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", hash))
 		if _, err := r.fs.Stat(packIdx); errors.Is(err, fs.ErrExist) {
@@ -313,7 +313,7 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 		return err
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	switch res.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:

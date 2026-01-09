@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/utils/trace"
-
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
+
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 func init() {
@@ -45,6 +45,7 @@ var DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 	return NewSSHAgentAuth(user)
 }
 
+// DefaultPort is the default port for the SSH protocol.
 const DefaultPort = 22
 
 type runner struct {
@@ -65,7 +66,9 @@ func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint
 	}
 
 	if gitProtocol != "" {
-		c.Session.Setenv("GIT_PROTOCOL", gitProtocol)
+		if err := c.Setenv("GIT_PROTOCOL", gitProtocol); err != nil {
+			return nil, err
+		}
 	}
 
 	return c, nil
@@ -190,13 +193,13 @@ func dial(ctx context.Context, network, addr string, proxyOpts transport.ProxyOp
 	var dialErr error
 
 	if proxyOpts.URL != "" {
-		proxyUrl, err := proxyOpts.FullURL()
+		proxyURL, err := proxyOpts.FullURL()
 		if err != nil {
 			return nil, err
 		}
 
-		trace.SSH.Printf("ssh: using proxyURL=%s", proxyUrl)
-		dialer, err := proxy.FromURL(proxyUrl, proxy.Direct)
+		trace.SSH.Printf("ssh: using proxyURL=%s", proxyURL)
+		dialer, err := proxy.FromURL(proxyURL, proxy.Direct)
 		if err != nil {
 			return nil, err
 		}
@@ -227,47 +230,51 @@ func (c *command) getHostWithPort() string {
 		return addr
 	}
 
-	host := c.endpoint.Host
-	port := c.endpoint.Port
-	if port <= 0 {
-		port = DefaultPort
+	host := c.endpoint.Hostname()
+	port := c.endpoint.Port()
+	if port == "" {
+		port = strconv.Itoa(DefaultPort)
 	}
 
-	return net.JoinHostPort(host, strconv.Itoa(port))
+	return net.JoinHostPort(host, port)
 }
 
 func (c *command) doGetHostWithPortFromSSHConfig() (addr string, found bool) {
 	if DefaultSSHConfig == nil {
-		return
+		return addr, found
 	}
 
-	host := c.endpoint.Host
-	port := c.endpoint.Port
+	hostname := c.endpoint.Hostname()
+	port := c.endpoint.Port()
 
-	configHost := DefaultSSHConfig.Get(c.endpoint.Host, "Hostname")
+	configHost := DefaultSSHConfig.Get(c.endpoint.Hostname(), "Hostname")
 	if configHost != "" {
-		host = configHost
+		hostname = configHost
 		found = true
 	}
 
 	if !found {
-		return
+		return addr, found
 	}
 
-	configPort := DefaultSSHConfig.Get(c.endpoint.Host, "Port")
+	configPort := DefaultSSHConfig.Get(c.endpoint.Hostname(), "Port")
 	if configPort != "" {
-		if i, err := strconv.Atoi(configPort); err == nil {
-			port = i
+		if _, err := strconv.Atoi(configPort); err == nil {
+			port = configPort
 		}
 	}
 
-	addr = net.JoinHostPort(host, strconv.Itoa(port))
-	return
+	addr = net.JoinHostPort(hostname, port)
+	return addr, found
 }
 
 func (c *command) setAuthFromEndpoint() error {
 	var err error
-	c.auth, err = DefaultAuthBuilder(c.endpoint.User)
+	var username string
+	if c.endpoint.User != nil {
+		username = c.endpoint.User.Username()
+	}
+	c.auth, err = DefaultAuthBuilder(username)
 	return err
 }
 
@@ -275,16 +282,16 @@ func endpointToCommand(cmd string, ep *transport.Endpoint) string {
 	return fmt.Sprintf("%s '%s'", cmd, ep.Path)
 }
 
-func overrideConfig(overrides *ssh.ClientConfig, c *ssh.ClientConfig) {
+func overrideConfig(overrides, c *ssh.ClientConfig) {
 	if overrides == nil {
 		return
 	}
 
-	t := reflect.TypeOf(*c)
+	t := reflect.TypeFor[ssh.ClientConfig]()
 	vc := reflect.ValueOf(c).Elem()
 	vo := reflect.ValueOf(overrides).Elem()
 
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		vcf := vc.FieldByName(f.Name)
 		vof := vo.FieldByName(f.Name)

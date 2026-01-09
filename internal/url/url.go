@@ -1,3 +1,4 @@
+// Package url provides URL parsing utilities for git endpoints.
 package url
 
 import (
@@ -8,7 +9,7 @@ var (
 	isSchemeRegExp = regexp.MustCompile(`^[^:]+://`)
 
 	// Ref: https://github.com/git/git/blob/master/Documentation/urls.txt#L37
-	scpLikeUrlRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5}):)?(?P<path>[^\\].*)$`)
+	scpLikeURLRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5}):)?(?P<path>[^\\].*)$`)
 )
 
 // MatchesScheme returns true if the given string matches a URL-like
@@ -20,13 +21,13 @@ func MatchesScheme(url string) bool {
 // MatchesScpLike returns true if the given string matches an SCP-like
 // format scheme.
 func MatchesScpLike(url string) bool {
-	return scpLikeUrlRegExp.MatchString(url)
+	return scpLikeURLRegExp.MatchString(url)
 }
 
 // FindScpLikeComponents returns the user, host, port and path of the
 // given SCP-like URL.
 func FindScpLikeComponents(url string) (user, host, port, path string) {
-	m := scpLikeUrlRegExp.FindStringSubmatch(url)
+	m := scpLikeURLRegExp.FindStringSubmatch(url)
 	return m[1], m[2], m[3], m[4]
 }
 

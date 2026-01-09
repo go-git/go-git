@@ -4,25 +4,26 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 )
 
 func BenchmarkNewObjectPack(b *testing.B) {
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
 	fs := osfs.New(b.TempDir())
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		w, err := newPackWrite(fs)
 
 		require.NoError(b, err)
@@ -120,7 +121,7 @@ func TestSyncedReader(t *testing.T) {
 	synced := newSyncedReader(tmpw, tmpr)
 
 	go func() {
-		for i := 0; i < 281; i++ {
+		for i := range 281 {
 			_, err := synced.Write([]byte(strconv.Itoa(i) + "\n"))
 			require.NoError(t, err)
 		}
@@ -149,14 +150,80 @@ func TestSyncedReader(t *testing.T) {
 }
 
 func TestPackWriterUnusedNotify(t *testing.T) {
+	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
 	w, err := newPackWrite(fs)
 	require.NoError(t, err)
 
-	w.Notify = func(h plumbing.Hash, idx *idxfile.Writer) {
+	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
 		t.Fatal("unexpected call to PackWriter.Notify")
 	}
 
 	assert.NoError(t, w.Close())
+}
+
+func TestPackWriterPermissions(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("not applicable to windows")
+	}
+
+	f := fixtures.Basic().One()
+
+	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+
+	_, err = io.Copy(w, f.Packfile())
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
+	idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
+	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", f.PackfileHash)
+
+	stat, err := fs.Stat(pfPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+
+	stat, err = fs.Stat(idxPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+
+	stat, err = fs.Stat(revPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+}
+
+func TestObjectWriterPermissions(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("not applicable to windows")
+	}
+
+	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObject()
+	require.NoError(t, err)
+
+	err = w.WriteHeader(plumbing.BlobObject, 14)
+	require.NoError(t, err)
+
+	_, err = w.Write([]byte("this is a test"))
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	stat, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
 }

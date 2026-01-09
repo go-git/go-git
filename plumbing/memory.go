@@ -3,7 +3,14 @@ package plumbing
 import (
 	"bytes"
 	"io"
+
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 )
+
+// NewMemoryObject returns a new MemoryObject with the given ObjectHasher.
+func NewMemoryObject(oh *ObjectHasher) *MemoryObject {
+	return &MemoryObject{oh: oh}
+}
 
 // MemoryObject on memory Object implementation
 type MemoryObject struct {
@@ -11,6 +18,7 @@ type MemoryObject struct {
 	h    Hash
 	cont []byte
 	sz   int64
+	oh   *ObjectHasher
 }
 
 // Hash returns the object Hash, the hash is calculated on-the-fly the first
@@ -19,7 +27,15 @@ type MemoryObject struct {
 // size of the content is exactly the object size.
 func (o *MemoryObject) Hash() Hash {
 	if o.h.IsZero() && int64(len(o.cont)) == o.sz {
-		o.h = ComputeHash(o.t, o.cont)
+		// TODO: Ensure that every MemoryObject has an object hasher.
+		if o.oh == nil {
+			o.oh = FromObjectFormat(config.SHA1)
+		}
+		h, err := o.oh.Compute(o.t, o.cont)
+		if err != nil {
+			return ZeroHash
+		}
+		o.h = h
 	}
 
 	if o.h.IsZero() {

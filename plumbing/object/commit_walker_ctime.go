@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"io"
 
 	"github.com/emirpasic/gods/trees/binaryheap"
@@ -33,7 +34,7 @@ func NewCommitIterCTime(
 		seen[h] = true
 	}
 
-	heap := binaryheap.NewWith(func(a, b interface{}) int {
+	heap := binaryheap.NewWith(func(a, b any) int {
 		if a.(*Commit).Committer.When.Before(b.(*Commit).Committer.When) {
 			return 1
 		}
@@ -89,7 +90,7 @@ func (w *commitIteratorByCTime) ForEach(cb func(*Commit) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {

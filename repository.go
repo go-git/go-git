@@ -16,8 +16,9 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6/config"
-	"github.com/go-git/go-git/v6/internal/path_util"
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/internal/revision"
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -48,21 +49,36 @@ var (
 	// ErrFetching is returned when the packfile could not be downloaded
 	ErrFetching = errors.New("unable to fetch packfile")
 
-	ErrInvalidReference            = errors.New("invalid reference, should be a tag or a branch")
-	ErrRepositoryNotExists         = errors.New("repository does not exist")
-	ErrRepositoryIncomplete        = errors.New("repository's commondir path does not exist")
-	ErrRemoteNotFound              = errors.New("remote not found")
-	ErrRemoteExists                = errors.New("remote already exists")
-	ErrAnonymousRemoteName         = errors.New("anonymous remote name must be 'anonymous'")
-	ErrWorktreeNotProvided         = errors.New("worktree should be provided")
-	ErrIsBareRepository            = errors.New("worktree not available in a bare repository")
-	ErrUnableToResolveCommit       = errors.New("unable to resolve commit")
-	ErrPackedObjectsNotSupported   = errors.New("packed objects not supported")
-	ErrSHA256NotSupported          = errors.New("go-git was not compiled with SHA256 support")
-	ErrAlternatePathNotSupported   = errors.New("alternate path must use the file scheme")
-	ErrUnsupportedMergeStrategy    = errors.New("unsupported merge strategy")
+	// ErrInvalidReference is returned when the reference is not a tag or branch.
+	ErrInvalidReference = errors.New("invalid reference, should be a tag or a branch")
+	// ErrRepositoryNotExists is returned when the repository does not exist.
+	ErrRepositoryNotExists = errors.New("repository does not exist")
+	// ErrRepositoryIncomplete is returned when the repository's commondir path does not exist.
+	ErrRepositoryIncomplete = errors.New("repository's commondir path does not exist")
+	// ErrRemoteNotFound is returned when the remote is not found.
+	ErrRemoteNotFound = errors.New("remote not found")
+	// ErrRemoteExists is returned when the remote already exists.
+	ErrRemoteExists = errors.New("remote already exists")
+	// ErrAnonymousRemoteName is returned when the anonymous remote name is not 'anonymous'.
+	ErrAnonymousRemoteName = errors.New("anonymous remote name must be 'anonymous'")
+	// ErrWorktreeNotProvided is returned when a worktree should be provided.
+	ErrWorktreeNotProvided = errors.New("worktree should be provided")
+	// ErrIsBareRepository is returned when the repository is bare.
+	ErrIsBareRepository = errors.New("worktree not available in a bare repository")
+	// ErrUnableToResolveCommit is returned when a commit cannot be resolved.
+	ErrUnableToResolveCommit = errors.New("unable to resolve commit")
+	// ErrPackedObjectsNotSupported is returned when packed objects are not supported.
+	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
+	// ErrSHA256NotSupported is returned when go-git was not compiled with SHA256 support.
+	ErrSHA256NotSupported = errors.New("go-git was not compiled with SHA256 support")
+	// ErrAlternatePathNotSupported is returned when the alternate path is not a file scheme.
+	ErrAlternatePathNotSupported = errors.New("alternate path must use the file scheme")
+	// ErrUnsupportedMergeStrategy is returned when an unsupported merge strategy is used.
+	ErrUnsupportedMergeStrategy = errors.New("unsupported merge strategy")
+	// ErrFastForwardMergeNotPossible is returned when it's not possible to fast-forward merge.
 	ErrFastForwardMergeNotPossible = errors.New("not possible to fast-forward merge changes")
-	ErrTargetDirNotEmpty           = errors.New("destination path already exists and is not empty")
+	// ErrTargetDirNotEmpty is returned when the destination path is not empty.
+	ErrTargetDirNotEmpty = errors.New("destination path already exists and is not empty")
 )
 
 // Repository represents a git repository
@@ -87,6 +103,7 @@ func newInitOptions() initOptions {
 	}
 }
 
+// InitOption configures repository initialization.
 type InitOption func(*initOptions)
 
 // WithDefaultBranch sets the default branch for the new repo (e.g. "refs/heads/master").
@@ -154,12 +171,11 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 }
 
 func initStorer(s storer.Storer) error {
-	i, ok := s.(storer.Initializer)
-	if !ok {
-		return nil
+	if i, ok := s.(storer.Initializer); ok {
+		return i.Init()
 	}
 
-	return i.Init()
+	return nil
 }
 
 func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error {
@@ -197,7 +213,7 @@ func createDotGitFile(worktree, storage billy.Filesystem) error {
 		return err
 	}
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = fmt.Fprintf(f, "gitdir: %s\n", path)
 	return err
 }
@@ -311,7 +327,9 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 			return Init(s, oo...)
 		}
 	}
-	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s := filesystem.NewStorageWithOptions(dot, cache.NewObjectLRUDefault(), filesystem.Options{
+		ObjectFormat: o.objectFormat,
+	})
 	r, err := initFn(s)
 	if err != nil {
 		return nil, err
@@ -320,11 +338,6 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
-	}
-
-	if o.objectFormat != formatcfg.SHA1 {
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
-		cfg.Extensions.ObjectFormat = o.objectFormat
 	}
 
 	err = r.Storer.SetConfig(cfg)
@@ -376,7 +389,7 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 }
 
 func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
-	path, err = path_util.ReplaceTildeWithHome(path)
+	path, err = pathutil.ReplaceTildeWithHome(path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1094,15 +1107,18 @@ func (r *Repository) fetchAndUpdateReferences(
 
 	objsUpdated := true
 	remoteRefs, err := remote.fetch(ctx, o)
-	if err == NoErrAlreadyUpToDate {
+	switch err {
+	case NoErrAlreadyUpToDate:
 		objsUpdated = false
-	} else if err == packfile.ErrEmptyPackfile {
+	case packfile.ErrEmptyPackfile:
 		return nil, ErrFetching
-	} else if err != nil {
+	case nil:
+		// continue
+	default:
 		return nil, err
 	}
 
-	resolvedRef, err := expand_ref(remoteRefs, ref)
+	resolvedRef, err := expandRef(remoteRefs, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -1152,7 +1168,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 		}
 	}
 
-	return
+	return updated, err
 }
 
 func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
@@ -1556,7 +1572,7 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	return &Worktree{r: r, Filesystem: r.wt}, nil
 }
 
-func expand_ref(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
+func expandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
 	// For improving troubleshooting, this preserves the error for the provided `ref`,
 	// and returns the error for that specific ref in case all parse rules fails.
 	var ret error
@@ -1601,7 +1617,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 			tryHashes = append(tryHashes, r.resolveHashPrefix(string(revisionRef))...)
 
-			ref, err := expand_ref(r.Storer, plumbing.ReferenceName(revisionRef))
+			ref, err := expandRef(r.Storer, plumbing.ReferenceName(revisionRef))
 			if err == nil {
 				tryHashes = append(tryHashes, ref.Hash())
 			}
@@ -1754,6 +1770,7 @@ func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
 	return hashes
 }
 
+// RepackConfig configures the repack operation.
 type RepackConfig struct {
 	// UseRefDeltas configures whether packfile encoder will use reference deltas.
 	// By default OFSDeltaObject is used.
@@ -1763,6 +1780,7 @@ type RepackConfig struct {
 	OnlyDeletePacksOlderThan time.Time
 }
 
+// RepackObjects repacks all objects in the repository into a single packfile.
 func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 	pos, ok := r.Storer.(storer.PackedObjectStorer)
 	if !ok {
@@ -1900,12 +1918,12 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 	if err != nil {
 		return nil
 	}
-	iter.ForEach(func(obj plumbing.EncodedObject) error {
+	_ = iter.ForEach(func(obj plumbing.EncodedObject) error {
 		h := obj.Hash()
 		if h.HasPrefix(prefix) {
 			hashes = append(hashes, h)
 		}
 		return nil
 	})
-	return
+	return hashes
 }

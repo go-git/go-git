@@ -1,6 +1,8 @@
+// Package packp implements encoding and decoding of the Git packfile protocol messages.
 package packp
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -38,6 +40,7 @@ func NewAdvRefs() *AdvRefs {
 	}
 }
 
+// AddReference adds a reference to the AdvRefs.
 func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	switch r.Type() {
 	case plumbing.SymbolicReference:
@@ -52,14 +55,15 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	return nil
 }
 
-// XXX: AllReferences doesn't return all the references advertised by the
+// AllReferences returns all the references advertised by the server.
+// Note: AllReferences doesn't return all the references advertised by the
 // server, instead, it only returns non-peeled references.
 // Use MakeReferenceSlice to get all the references, their peeled values, and
 // symrefs.
 func (a *AdvRefs) AllReferences() (memory.ReferenceStorage, error) {
 	s := memory.ReferenceStorage{}
 	if err := a.addRefs(s); err != nil {
-		return s, plumbing.NewUnexpectedError(err)
+		return s, err
 	}
 
 	return s, nil
@@ -110,7 +114,7 @@ func (a *AdvRefs) resolveHead(s storer.ReferenceStorer) error {
 		}
 	}
 
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
@@ -175,7 +179,7 @@ func (a *AdvRefs) addSymbolicRefs(s storer.ReferenceStorer) error {
 		chunks := strings.Split(symref, ":")
 		if len(chunks) != 2 {
 			err := fmt.Errorf("bad number of `:` in symref value (%q)", symref)
-			return plumbing.NewUnexpectedError(err)
+			return err
 		}
 		name := plumbing.ReferenceName(chunks[0])
 		target := plumbing.ReferenceName(chunks[1])

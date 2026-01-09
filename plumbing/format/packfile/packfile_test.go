@@ -8,12 +8,13 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGet(t *testing.T) {
@@ -113,7 +114,6 @@ func TestDecode(t *testing.T) {
 	assert.Greater(t, len(packfiles), 0)
 
 	for _, f := range packfiles {
-		f := f
 		index := getIndexFromIdxFile(f.Idx())
 		n, err := index.Count()
 		require.NoError(t, err)
@@ -124,7 +124,6 @@ func TestDecode(t *testing.T) {
 		)
 
 		for _, h := range expectedHashes {
-			h := h
 			obj, err := p.Get(plumbing.NewHash(h))
 			require.NoError(t, err)
 			assert.Equal(t, obj.Hash().String(), h)
@@ -180,9 +179,7 @@ func TestDecodeByType(t *testing.T) {
 	}
 
 	for _, f := range fixtures.Basic().ByTag("packfile") {
-		f := f
 		for _, typ := range types {
-			typ := typ
 			index := getIndexFromIdxFile(f.Idx())
 			n, err := index.Count()
 			require.NoError(t, err)

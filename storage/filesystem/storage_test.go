@@ -3,13 +3,13 @@ package filesystem_test
 import (
 	"testing"
 
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/assert"
-
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/osfs"
 )
 
 var (
@@ -26,10 +26,12 @@ var (
 )
 
 func TestFilesystem(t *testing.T) {
+	t.Parallel()
 	assert.Same(t, fs, sto.Filesystem())
 }
 
 func TestNewStorageShouldNotAddAnyContentsToDir(t *testing.T) {
+	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
 	sto := filesystem.NewStorageWithOptions(

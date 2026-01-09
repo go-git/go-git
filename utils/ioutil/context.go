@@ -11,6 +11,7 @@ type ioret struct {
 	n   int
 }
 
+// Writer is an interface for io.Writer.
 type Writer interface {
 	io.Writer
 }
@@ -34,7 +35,7 @@ type ctxWriter struct {
 // Furthermore, in order to protect your memory from being read
 // _after_ you've cancelled the context, this io.Writer will
 // first make a **copy** of the buffer.
-func NewContextWriter(ctx context.Context, w io.Writer) *ctxWriter {
+func NewContextWriter(ctx context.Context, w io.Writer) io.Writer {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -63,6 +64,7 @@ func (w *ctxWriter) Write(buf []byte) (int, error) {
 	}
 }
 
+// Reader is an interface for io.Reader.
 type Reader interface {
 	io.Reader
 }
@@ -81,14 +83,14 @@ type ctxReader struct {
 // Note well: this wrapper DOES NOT ACTUALLY cancel the underlying
 // write-- there is no way to do that with the standard go io
 // interface. So the read and write _will_ happen or hang. So, use
-// this sparingly, make sure to cancel the read or write as necesary
+// this sparingly, make sure to cancel the read or write as necessary
 // (e.g. closing a connection whose context is up, etc.)
 //
 // Furthermore, in order to protect your memory from being read
 // _before_ you've cancelled the context, this io.Reader will
 // allocate a buffer of the same size, and **copy** into the client's
 // if the read succeeds in time.
-func NewContextReader(ctx context.Context, r io.Reader) *ctxReader {
+func NewContextReader(ctx context.Context, r io.Reader) io.Reader {
 	return &ctxReader{ctx: ctx, r: r}
 }
 
@@ -112,12 +114,14 @@ func (r *ctxReader) Read(buf []byte) (int, error) {
 		return ret.n, ret.err
 	case <-r.ctx.Done():
 		if r.closer != nil {
-			r.closer.Close()
+			_ = r.closer.Close()
 		}
 		return 0, r.ctx.Err()
 	}
 }
 
-func NewContextReaderWithCloser(ctx context.Context, r io.Reader, closer io.Closer) *ctxReader {
+// NewContextReaderWithCloser wraps a reader to make it respect given Context,
+// and closes the closer when the context is done.
+func NewContextReaderWithCloser(ctx context.Context, r io.Reader, closer io.Closer) io.Reader {
 	return &ctxReader{ctx: ctx, r: r, closer: closer}
 }

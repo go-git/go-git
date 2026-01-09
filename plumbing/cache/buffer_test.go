@@ -19,6 +19,7 @@ type BufferSuite struct {
 }
 
 func TestBufferSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BufferSuite))
 }
 
@@ -124,10 +125,10 @@ func (s *BufferSuite) TestConcurrentAccess() {
 	for _, o := range s.c {
 		var wg sync.WaitGroup
 
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			wg.Add(3)
 			go func(i int) {
-				o.Put(int64(i), []byte{00})
+				o.Put(int64(i), []byte{0o0})
 				wg.Done()
 			}(i)
 

@@ -7,6 +7,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
+// ScannerOption configures a Scanner.
 type ScannerOption func(*Scanner)
 
 // WithSHA256 enables the SHA256 hashing while scanning a pack file.

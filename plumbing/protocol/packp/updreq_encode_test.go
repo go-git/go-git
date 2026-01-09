@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/suite"
 )
 
 type UpdReqEncodeSuite struct {
@@ -15,6 +16,7 @@ type UpdReqEncodeSuite struct {
 }
 
 func TestUpdReqEncodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UpdReqEncodeSuite))
 }
 
@@ -90,7 +92,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilities() {
 	r.Capabilities.Add("shallow")
 
 	expected := pktlines(s.T(),
-		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00 shallow",
 		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 0000000000000000000000000000000000000000 myref3",
 		"",
@@ -114,7 +116,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow() {
 
 	expected := pktlines(s.T(),
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
-		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00 shallow",
 		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 0000000000000000000000000000000000000000 myref3",
 		"",
@@ -161,7 +163,7 @@ func (s *UpdReqEncodeSuite) TestPushAtomic() {
 	}
 
 	expected := pktlines(s.T(),
-		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00atomic",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00 atomic",
 		"",
 	)
 

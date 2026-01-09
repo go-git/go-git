@@ -28,7 +28,7 @@ func GetBlob(s storer.EncodedObjectStorer, h plumbing.Hash) (*Blob, error) {
 	return DecodeBlob(o)
 }
 
-// DecodeObject decodes an encoded object into a *Blob.
+// DecodeBlob decodes an encoded object into a *Blob.
 func DecodeBlob(o plumbing.EncodedObject) (*Blob, error) {
 	b := &Blob{}
 	if err := b.Decode(o); err != nil {

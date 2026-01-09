@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type loaderSuiteRepo struct {
@@ -18,6 +19,7 @@ type loaderSuiteRepo struct {
 }
 
 func TestLoaderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(LoaderSuite))
 }
 

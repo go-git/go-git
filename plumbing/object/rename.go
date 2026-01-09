@@ -84,20 +84,21 @@ func (d *renameDetector) detectExactRenames() {
 		hash := changeHash(c)
 		deleted := deletes[hash]
 
-		if len(deleted) == 1 {
+		switch {
+		case len(deleted) == 1:
 			if sameMode(c, deleted[0]) {
 				d.modified = append(d.modified, &Change{From: deleted[0].From, To: c.To})
 				delete(deletes, hash)
 			} else {
 				addedLeft = append(addedLeft, c)
 			}
-		} else if len(deleted) > 1 {
+		case len(deleted) > 1:
 			bestMatch := bestNameMatch(c, deleted)
 			if bestMatch != nil && sameMode(c, bestMatch) {
 				d.modified = append(d.modified, &Change{From: bestMatch.From, To: c.To})
 				delete(deletes, hash)
 
-				var newDeletes = make([]*Change, 0, len(deleted)-1)
+				newDeletes := make([]*Change, 0, len(deleted)-1)
 				for _, d := range deleted {
 					if d != bestMatch {
 						newDeletes = append(newDeletes, d)
@@ -105,7 +106,7 @@ func (d *renameDetector) detectExactRenames() {
 				}
 				deletes[hash] = newDeletes
 			}
-		} else {
+		default:
 			addedLeft = append(addedLeft, c)
 		}
 	}
@@ -114,7 +115,8 @@ func (d *renameDetector) detectExactRenames() {
 		hash := changeHash(added[0])
 		deleted := deletes[hash]
 
-		if len(deleted) == 1 {
+		switch {
+		case len(deleted) == 1:
 			deleted := deleted[0]
 			bestMatch := bestNameMatch(deleted, added)
 			if bestMatch != nil && sameMode(deleted, bestMatch) {
@@ -129,7 +131,7 @@ func (d *renameDetector) detectExactRenames() {
 			} else {
 				addedLeft = append(addedLeft, added...)
 			}
-		} else if len(deleted) > 1 {
+		case len(deleted) > 1:
 			maxSize := len(deleted) * len(added)
 			if d.renameLimit > 0 && d.renameLimit < maxSize {
 				maxSize = d.renameLimit
@@ -182,14 +184,14 @@ func (d *renameDetector) detectExactRenames() {
 				}
 			}
 
-			var newDeletes = make([]*Change, 0, len(deleted)-len(usedDeletes))
+			newDeletes := make([]*Change, 0, len(deleted)-len(usedDeletes))
 			for _, c := range deleted {
 				if _, ok := usedDeletes[c]; !ok && c != nil {
 					newDeletes = append(newDeletes, c)
 				}
 			}
 			deletes[hash] = newDeletes
-		} else {
+		default:
 			addedLeft = append(addedLeft, added...)
 		}
 	}
@@ -358,7 +360,7 @@ func sameMode(a, b *Change) bool {
 }
 
 func groupChangesByHash(changes []*Change) map[plumbing.Hash][]*Change {
-	var result = make(map[plumbing.Hash][]*Change)
+	result := make(map[plumbing.Hash][]*Change)
 	for _, c := range changes {
 		hash := changeHash(c)
 		result[hash] = append(result[hash], c)
@@ -389,29 +391,12 @@ type similarityPair struct {
 	score int
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 const maxMatrixSize = 10000
 
 func buildSimilarityMatrix(srcs, dsts []*Change, renameScore int) (similarityMatrix, error) {
 	// Allocate for the worst-case scenario where every pair has a score
 	// that we need to consider. We might not need that many.
-	matrixSize := len(srcs) * len(dsts)
-	if matrixSize > maxMatrixSize {
-		matrixSize = maxMatrixSize
-	}
+	matrixSize := min(len(srcs)*len(dsts), maxMatrixSize)
 	matrix := make(similarityMatrix, 0, matrixSize)
 	srcSizes := make([]int64, len(srcs))
 	dstSizes := make([]int64, len(dsts))
@@ -464,13 +449,12 @@ outerLoop:
 				dstSizes[dstIdx] = dstSize
 			}
 
-			min, max := srcSize, dstSize
+			minSize, maxSize := srcSize, dstSize
 			if dstSize < srcSize {
-				min = dstSize
-				max = srcSize
+				minSize, maxSize = dstSize, srcSize
 			}
 
-			if int(min*100/max) < renameScore {
+			if int(minSize*100/maxSize) < renameScore {
 				// File sizes are too different to be a match
 				continue
 			}
@@ -478,7 +462,7 @@ outerLoop:
 			if s == nil {
 				s, err = fileSimilarityIndex(from)
 				if err != nil {
-					if err == errIndexFull {
+					if errors.Is(err, errIndexFull) {
 						continue outerLoop
 					}
 					return nil, err
@@ -494,7 +478,7 @@ outerLoop:
 
 			di, err := fileSimilarityIndex(to)
 			if err != nil {
-				if err == errIndexFull {
+				if errors.Is(err, errIndexFull) {
 					dstTooLarge[dstIdx] = true
 				}
 
@@ -590,7 +574,7 @@ func (i *similarityIndex) hash(f *File) error {
 }
 
 func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error {
-	var buf = make([]byte, 4096)
+	buf := make([]byte, 4096)
 	var ptr, cnt int
 	remaining := size
 
@@ -605,7 +589,7 @@ func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error
 				ptr = 0
 				var err error
 				cnt, err = io.ReadFull(r, buf)
-				if err != nil && err != io.ErrUnexpectedEOF {
+				if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 					return err
 				}
 
@@ -654,10 +638,7 @@ func (i *similarityIndex) hashContent(r io.Reader, size int64, isBin bool) error
 // two empty files.
 // The similarity score is symmetrical; i.e. a.score(b) == b.score(a).
 func (i *similarityIndex) score(other *similarityIndex, maxScore int) int {
-	var maxHashed = i.hashed
-	if maxHashed < other.hashed {
-		maxHashed = other.hashed
-	}
+	maxHashed := max(i.hashed, other.hashed)
 	if maxHashed == 0 {
 		return maxScore
 	}
@@ -674,8 +655,10 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 	var common uint64
 	srcKey, dstKey := i.hashes[srcIdx].key(), dst.hashes[dstIdx].key()
 
+mainLoop:
 	for {
-		if srcKey == dstKey {
+		switch {
+		case srcKey == dstKey:
 			srcCnt, dstCnt := i.hashes[srcIdx].count(), dst.hashes[dstIdx].count()
 			if srcCnt < dstCnt {
 				common += srcCnt
@@ -685,27 +668,27 @@ func (i *similarityIndex) common(dst *similarityIndex) uint64 {
 
 			srcIdx++
 			if srcIdx == len(i.hashes) {
-				break
+				break mainLoop
 			}
 			srcKey = i.hashes[srcIdx].key()
 
 			dstIdx++
 			if dstIdx == len(dst.hashes) {
-				break
+				break mainLoop
 			}
 			dstKey = dst.hashes[dstIdx].key()
-		} else if srcKey < dstKey {
+		case srcKey < dstKey:
 			// Region of src that is not in dst
 			srcIdx++
 			if srcIdx == len(i.hashes) {
-				break
+				break mainLoop
 			}
 			srcKey = i.hashes[srcIdx].key()
-		} else {
+		default:
 			// Region of dst that is not in src
 			dstIdx++
 			if dstIdx == len(dst.hashes) {
-				break
+				break mainLoop
 			}
 			dstKey = dst.hashes[dstIdx].key()
 		}
@@ -720,7 +703,8 @@ func (i *similarityIndex) add(key int, cnt uint64) error {
 	j := i.slot(key)
 	for {
 		v := i.hashes[j]
-		if v == 0 {
+		switch {
+		case v == 0:
 			// It's an empty slot, so we can store it here.
 			if i.growAt <= i.numHashes {
 				if err := i.grow(); err != nil {
@@ -737,14 +721,14 @@ func (i *similarityIndex) add(key int, cnt uint64) error {
 			}
 			i.numHashes++
 			return nil
-		} else if v.key() == key {
+		case v.key() == key:
 			// It's the same key, so increment the counter.
 			var err error
 			i.hashes[j], err = newKeyCountPair(key, v.count()+cnt)
 			return err
-		} else if j+1 >= len(i.hashes) {
+		case j+1 >= len(i.hashes):
 			j = 0
-		} else {
+		default:
 			j++
 		}
 	}

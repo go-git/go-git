@@ -21,7 +21,9 @@ func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
 	pkt := strings.TrimSpace(string(pktb))
 	if strings.HasPrefix(pkt, "version ") {
 		// Consume the version packet
-		pktline.ReadLine(r) // nolint:errcheck
+		if _, _, err := pktline.ReadLine(r); err != nil {
+			return ver, err
+		}
 		if v, _ := protocol.Parse(pkt[8:]); v > ver {
 			ver = protocol.Version(v)
 		}
@@ -36,7 +38,7 @@ func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
 // the client.
 func ProtocolVersion(p string) protocol.Version {
 	var ver protocol.Version
-	for _, param := range strings.Split(p, ":") {
+	for param := range strings.SplitSeq(p, ":") {
 		if strings.HasPrefix(param, "version=") {
 			if v, _ := protocol.Parse(param[8:]); v > ver {
 				ver = protocol.Version(v)

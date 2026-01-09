@@ -8,6 +8,9 @@ import (
 	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -15,11 +18,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParserHashes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		storage           storer.Storer
@@ -51,13 +53,14 @@ func TestParserHashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := fixtures.Basic().One()
 
 			obs := new(testObserver)
 			parser := packfile.NewParser(f.Packfile(), packfile.WithScannerObservers(obs),
 				packfile.WithStorage(tc.storage), tc.option)
 
-			field := reflect.ValueOf(*parser).FieldByName("lowMemoryMode")
+			field := reflect.ValueOf(parser).Elem().FieldByName("lowMemoryMode")
 			got := field.Bool()
 			assert.Equal(t, tc.wantLowMemoryMode, got)
 
@@ -109,6 +112,7 @@ func TestParserHashes(t *testing.T) {
 }
 
 func TestThinPack(t *testing.T) {
+	t.Parallel()
 	// Initialize an empty repository
 	r, err := git.PlainInit(t.TempDir(), true)
 	assert.NoError(t, err)
@@ -151,6 +155,7 @@ func TestThinPack(t *testing.T) {
 }
 
 func TestResolveExternalRefsInThinPack(t *testing.T) {
+	t.Parallel()
 	extRefsThinPack := fixtures.ByTag("codecommit").One().Packfile()
 
 	parser := packfile.NewParser(extRefsThinPack)
@@ -161,6 +166,7 @@ func TestResolveExternalRefsInThinPack(t *testing.T) {
 }
 
 func TestResolveExternalRefs(t *testing.T) {
+	t.Parallel()
 	extRefsThinPack := fixtures.ByTag("delta-before-base").One().Packfile()
 
 	parser := packfile.NewParser(extRefsThinPack)
@@ -171,6 +177,7 @@ func TestResolveExternalRefs(t *testing.T) {
 }
 
 func TestMemoryResolveExternalRefs(t *testing.T) {
+	t.Parallel()
 	extRefsThinPack := fixtures.ByTag("delta-before-base").One().Packfile()
 
 	parser := packfile.NewParser(extRefsThinPack, packfile.WithStorage(memory.NewStorage()))
@@ -198,10 +205,15 @@ func BenchmarkParseBasic(b *testing.B) {
 
 func benchmarkParseBasic(b *testing.B,
 	f billy.File, scanner *packfile.Scanner,
-	opts ...packfile.ParserOption) {
+	opts ...packfile.ParserOption,
+) {
 	for i := 0; i < b.N; i++ {
-		f.Seek(0, io.SeekStart)
-		scanner.Reset()
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			b.Fatal(err)
+		}
+		if err := scanner.Reset(); err != nil {
+			b.Fatal(err)
+		}
 		parser := packfile.NewParser(scanner, opts...)
 
 		checksum, err := parser.Parse()
@@ -246,7 +258,7 @@ func (t *testObserver) OnHeader(count uint32) error {
 	return nil
 }
 
-func (t *testObserver) OnInflatedObjectHeader(otype plumbing.ObjectType, objSize int64, pos int64) error {
+func (t *testObserver) OnInflatedObjectHeader(otype plumbing.ObjectType, objSize, pos int64) error {
 	o := t.get(pos)
 	o.otype = otype
 	o.size = objSize

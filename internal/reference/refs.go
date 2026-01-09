@@ -1,3 +1,4 @@
+// Package reference provides internal utilities for handling git references.
 package reference
 
 import (

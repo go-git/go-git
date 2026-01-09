@@ -11,11 +11,13 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
+
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -31,14 +33,22 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
+// Worktree errors.
 var (
-	ErrWorktreeNotClean                = errors.New("worktree is not clean")
-	ErrSubmoduleNotFound               = errors.New("submodule not found")
-	ErrUnstagedChanges                 = errors.New("worktree contains unstaged changes")
-	ErrGitModulesSymlink               = errors.New(gitmodulesFile + " is a symlink")
-	ErrNonFastForwardUpdate            = errors.New("non-fast-forward update")
+	// ErrWorktreeNotClean is returned when the worktree is not clean.
+	ErrWorktreeNotClean = errors.New("worktree is not clean")
+	// ErrSubmoduleNotFound is returned when the submodule is not found.
+	ErrSubmoduleNotFound = errors.New("submodule not found")
+	// ErrUnstagedChanges is returned when the worktree has unstaged changes.
+	ErrUnstagedChanges = errors.New("worktree contains unstaged changes")
+	// ErrGitModulesSymlink is returned when .gitmodules is a symlink.
+	ErrGitModulesSymlink = errors.New(gitmodulesFile + " is a symlink")
+	// ErrNonFastForwardUpdate is returned when a non-fast-forward update is attempted.
+	ErrNonFastForwardUpdate = errors.New("non-fast-forward update")
+	// ErrRestoreWorktreeOnlyNotSupported is returned when worktree only restore is not supported.
 	ErrRestoreWorktreeOnlyNotSupported = errors.New("worktree only is not supported")
-	ErrSparseResetDirectoryNotFound    = errors.New("sparse-reset directory not found on commit")
+	// ErrSparseResetDirectoryNotFound is returned when a sparse-reset directory is not found.
+	ErrSparseResetDirectoryNotFound = errors.New("sparse-reset directory not found on commit")
 )
 
 // Worktree represents a git worktree.
@@ -92,7 +102,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	})
 
 	updated := true
-	if err == NoErrAlreadyUpToDate {
+	if errors.Is(err, NoErrAlreadyUpToDate) {
 		updated = false
 	} else if err != nil {
 		return err
@@ -132,7 +142,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		}
 	}
 
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
@@ -217,7 +227,7 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 		return fmt.Errorf("a branch named %q already exists", opts.Branch)
 	}
 
-	if err != plumbing.ErrReferenceNotFound {
+	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 
@@ -404,7 +414,7 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 	return ErrRestoreWorktreeOnlyNotSupported
 }
 
-func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]string, error) {
+func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
@@ -417,7 +427,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]
 		return nil, err
 	}
 
-	var removedFiles []string
+	removedFiles := make([]string, 0, len(changes))
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
@@ -456,7 +466,6 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]
 			Hash: e.Hash,
 			Mode: e.Mode,
 		})
-
 	}
 
 	b.Write(idx)
@@ -566,10 +575,8 @@ func validPath(paths ...string) error {
 			}
 		}
 
-		for _, part := range parts {
-			if part == ".." {
-				return fmt.Errorf("invalid path %q: cannot use '..'", p)
-			}
+		if slices.Contains(parts, "..") {
+			return fmt.Errorf("invalid path %q: cannot use '..'", p)
 		}
 	}
 	return nil
@@ -770,7 +777,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
-		return
+		return err
 	}
 
 	if mode&os.ModeSymlink != 0 {
@@ -779,7 +786,7 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 
 	dstFile, err := w.Filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
-		return
+		return err
 	}
 	defer ioutil.CheckClose(dstFile, &err)
 
@@ -833,14 +840,14 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 
 	from, err := f.Reader()
 	if err != nil {
-		return
+		return err
 	}
 
 	defer ioutil.CheckClose(from, &err)
 
 	bytes, err := io.ReadAll(from)
 	if err != nil {
-		return
+		return err
 	}
 
 	err = w.Filesystem.Symlink(string(bytes), f.Name)
@@ -860,7 +867,7 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 		_, err = to.Write(bytes)
 		return err
 	}
-	return
+	return err
 }
 
 func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *indexBuilder) error {
@@ -911,7 +918,7 @@ func (r *Repository) getTreeFromCommitHash(commit plumbing.Hash) (*object.Tree, 
 	return c.Tree()
 }
 
-var fillSystemInfo func(e *index.Entry, sys interface{})
+var fillSystemInfo func(e *index.Entry, sys any)
 
 const gitmodulesFile = ".gitmodules"
 
@@ -1025,7 +1032,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 		return nil, err
 	}
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	input, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
@@ -1033,7 +1040,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 
 	m := config.NewModules()
 	if err := m.Unmarshal(input); err != nil {
-		return m, err
+		return nil, err
 	}
 
 	return m, nil
@@ -1076,11 +1083,9 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files 
 			if err != nil {
 				return err
 			}
-		} else {
-			if status.IsUntracked(path) {
-				if err := w.Filesystem.Remove(path); err != nil {
-					return err
-				}
+		} else if status.IsUntracked(path) {
+			if err := w.Filesystem.Remove(path); err != nil {
+				return err
 			}
 		}
 	}

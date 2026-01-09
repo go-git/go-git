@@ -1,3 +1,4 @@
+// Package sync provides sync.Pool-based utilities for reusing objects.
 package sync
 
 import (
@@ -7,7 +8,7 @@ import (
 )
 
 var bufioReader = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bufio.NewReader(nil)
 	},
 }
@@ -25,5 +26,8 @@ func GetBufioReader(reader io.Reader) *bufio.Reader {
 
 // PutBufioReader puts reader back into its sync.Pool.
 func PutBufioReader(reader *bufio.Reader) {
+	if reader == nil {
+		return
+	}
 	bufioReader.Put(reader)
 }

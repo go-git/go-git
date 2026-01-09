@@ -202,7 +202,8 @@ func UploadPack(
 				}
 			}
 
-			if !done {
+			switch {
+			case !done:
 				if multiAck || multiAckDetailed {
 					// Encode a NAK for multi-ack
 					srvrsp := packp.ServerResponse{}
@@ -211,7 +212,7 @@ func UploadPack(
 						return
 					}
 				}
-			} else if !ack.Hash.IsZero() && (multiAck || multiAckDetailed) {
+			case !ack.Hash.IsZero() && (multiAck || multiAckDetailed):
 				// We're done, send the final ACK
 				ack.Status = 0
 				srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
@@ -219,7 +220,7 @@ func UploadPack(
 					writec <- fmt.Errorf("sending final ack server-response: %w", err)
 					return
 				}
-			} else if ack.Hash.IsZero() {
+			case ack.Hash.IsZero():
 				// We don't have multi-ack and there are no haves. Encode a NAK.
 				srvrsp := packp.ServerResponse{}
 				if err := srvrsp.Encode(w); err != nil {
@@ -246,7 +247,7 @@ func UploadPack(
 
 	objs, err := objectsToUpload(st, wants, haves)
 	if err != nil {
-		w.Close() //nolint:errcheck
+		_ = w.Close()
 		return fmt.Errorf("getting objects to upload: %w", err)
 	}
 
@@ -351,7 +352,6 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 				curDepth = depths[commit]
 			}
 		}
-
 	}
 
 	return nil

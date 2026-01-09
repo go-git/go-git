@@ -1,12 +1,13 @@
 package commitgraph
 
 import (
+	"errors"
 	"io"
+
+	"github.com/emirpasic/gods/trees/binaryheap"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-
-	"github.com/emirpasic/gods/trees/binaryheap"
 )
 
 type commitNodeIteratorTopological struct {
@@ -148,7 +149,7 @@ func (iter *commitNodeIteratorTopological) ForEach(cb func(CommitNode) error) er
 		}
 
 		if err := cb(obj); err != nil {
-			if err == storer.ErrStop {
+			if errors.Is(err, storer.ErrStop) {
 				return nil
 			}
 

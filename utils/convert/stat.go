@@ -2,6 +2,7 @@ package convert
 
 import "io"
 
+// Stat holds statistics about the content being analyzed.
 type Stat struct {
 	NUL, LoneCR, LoneLF, CRLF uint
 	Printable, NonPrintable   uint

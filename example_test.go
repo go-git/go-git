@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-git/go-billy/v6/memfs"
+
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/storage/memory"
-
-	"github.com/go-git/go-billy/v6/memfs"
 )
 
 func ExampleClone() {
@@ -54,15 +54,16 @@ func ExamplePlainClone() {
 	_, err = git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
-
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	// Prints the content of the CHANGELOG file from the cloned repository
 	changelog, err := os.Open(filepath.Join(dir, "CHANGELOG"))
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	io.Copy(os.Stdout, changelog)
@@ -86,9 +87,8 @@ func ExamplePlainClone_usernamePassword() {
 			Password: "password",
 		},
 	})
-
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 }
 
@@ -109,9 +109,8 @@ func ExamplePlainClone_accessToken() {
 			Password: "github_access_token",
 		},
 	})
-
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 }
 
@@ -134,7 +133,6 @@ func ExampleRepository_References() {
 	// 6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master
 	// e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/remotes/origin/branch
 	// 6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master
-
 }
 
 func ExampleRepository_Branches() {
@@ -160,7 +158,6 @@ func ExampleRepository_CreateRemote() {
 		Name: "example",
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
-
 	if err != nil {
 		log.Fatal(err)
 	}

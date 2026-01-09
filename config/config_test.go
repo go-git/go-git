@@ -8,11 +8,13 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
 )
 
 type ConfigSuite struct {
@@ -20,6 +22,7 @@ type ConfigSuite struct {
 }
 
 func TestConfigSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ConfigSuite))
 }
 
@@ -29,6 +32,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 		worktree = foo
 		commentchar = bar
 		autocrlf = true
+		filemode = false
 [user]
 		name = John Doe
 		email = john@example.com
@@ -74,6 +78,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.Equal("foo", cfg.Core.Worktree)
 	s.Equal("bar", cfg.Core.CommentChar)
 	s.Equal("true", cfg.Core.AutoCRLF)
+	s.False(cfg.Core.FileMode)
 	s.Equal("John Doe", cfg.User.Name)
 	s.Equal("john@example.com", cfg.User.Email)
 	s.Equal("Jane Roe", cfg.Author.Name)
@@ -106,6 +111,7 @@ func (s *ConfigSuite) TestMarshal() {
 	bare = true
 	worktree = bar
 	autocrlf = true
+	filemode = true
 [pack]
 	window = 20
 [remote "alt"]
@@ -181,12 +187,18 @@ func (s *ConfigSuite) TestMarshal() {
 	s.Equal(string(output), string(b))
 }
 
-func (s *ConfigSuite) TestUnmarshalMarshal() {
-	input := []byte(`[core]
+func TestUnmarshalMarshal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+	}{
+		{
+			`[core]
 	bare = true
 	worktree = foo
 	custom = ignored
 	autocrlf = true
+	filemode = true
 [user]
 	name = John Doe
 	email = john@example.com
@@ -211,15 +223,45 @@ func (s *ConfigSuite) TestUnmarshalMarshal() {
 	merge = refs/heads/master
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
-`)
+`,
+		},
+		{
+			`[core]
+	repositoryformatversion = 1
+	bare = false
+	filemode = true
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	rebase = true
+[extensions]
+	objectformat = sha256
+`,
+		},
+		{
+			`[core]
+	repositoryformatversion = 1
+	bare = false
+	filemode = true
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	rebase = true
+[extensions]
+	objectformat = sha1
+`,
+		},
+	}
 
-	cfg := NewConfig()
-	err := cfg.Unmarshal(input)
-	s.NoError(err)
+	for _, tc := range tests {
+		cfg := NewConfig()
+		err := cfg.Unmarshal([]byte(tc.input))
+		require.NoError(t, err)
 
-	output, err := cfg.Marshal()
-	s.NoError(err)
-	s.Equal(string(input), string(output))
+		output, err := cfg.Marshal()
+		require.NoError(t, err)
+		assert.Equal(t, string(tc.input), string(output))
+	}
 }
 
 func (s *ConfigSuite) TestLoadConfigXDG() {
@@ -231,7 +273,7 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.NoError(err)
 	defer util.RemoveAll(osfs.Default, tmp)
 
-	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0777)
+	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0o777)
 	s.NoError(err)
 
 	os.Setenv("XDG_CONFIG_HOME", tmp)
@@ -243,7 +285,7 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.NoError(err)
 
 	cfgFile := filepath.Join(tmp, "git/config")
-	err = util.WriteFile(osfs.Default, cfgFile, content, 0777)
+	err = util.WriteFile(osfs.Default, cfgFile, content, 0o777)
 	s.NoError(err)
 
 	cfg, err = LoadConfig(GlobalScope)

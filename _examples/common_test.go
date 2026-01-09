@@ -39,6 +39,8 @@ var args = map[string][]string{
 	"showcase":                   {defaultURL, tempFolder()},
 	"sparse-checkout":            {defaultURL, "vendor", tempFolder()},
 	"tag":                        {cloneRepository(defaultURL, tempFolder())},
+	"update-server-info":         {cloneRepository(defaultURL, tempFolder())},
+	"worktrees":                  {cloneRepository(defaultURL, tempFolder()), tempFolder()},
 }
 
 // tests not working / set-up

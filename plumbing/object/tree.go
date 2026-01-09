@@ -272,6 +272,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	return nil
 }
 
+// TreeEntrySorter is a helper type for sorting TreeEntry slices.
 type TreeEntrySorter []TreeEntry
 
 func (s TreeEntrySorter) Len() int {
@@ -429,13 +430,13 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		if current < 0 {
 			// Nothing left on the stack so we're finished
 			err = io.EOF
-			return
+			return name, entry, err
 		}
 
 		if current > maxTreeDepth {
 			// We're probably following bad data or some self-referencing tree
 			err = ErrMaxTreeDepth
-			return
+			return name, entry, err
 		}
 
 		entry, err = w.stack[current].Next()
@@ -448,7 +449,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		}
 
 		if err != nil {
-			return
+			return name, entry, err
 		}
 
 		if w.seen[entry.Hash] {
@@ -463,14 +464,14 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 
 		if err != nil {
 			err = io.EOF
-			return
+			return name, entry, err
 		}
 
 		break
 	}
 
 	if !w.recursive {
-		return
+		return name, entry, err
 	}
 
 	if obj != nil {
@@ -478,7 +479,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		w.base = simpleJoin(w.base, entry.Name)
 	}
 
-	return
+	return name, entry, err
 }
 
 // Tree returns the tree that the tree walker most recently operated on.

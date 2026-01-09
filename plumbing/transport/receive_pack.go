@@ -144,7 +144,7 @@ func ReceivePack(
 	writeCloser := ioutil.NewWriteCloser(writer, w)
 	if unpackErr != nil {
 		res := sendReportStatus(writeCloser, unpackErr, nil)
-		closeWriter(w)
+		_ = closeWriter(w)
 		return res
 	}
 

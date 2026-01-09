@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// Negotiation errors.
 var (
 	ErrFilterNotSupported  = errors.New("server does not support filters")
 	ErrShallowNotSupported = errors.New("server does not support shallow clients")
@@ -38,36 +40,36 @@ func NegotiatePack(
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
 	if multiAckDetailed {
-		upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.MultiACKDetailed)
 	} else if multiAck {
-		upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.MultiACK)
 	}
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			upreq.Capabilities.Set(capability.Sideband64k) // nolint: errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			upreq.Capabilities.Set(capability.Sideband) // nolint: errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband)
 		}
 	} else if caps.Supports(capability.NoProgress) {
-		upreq.Capabilities.Set(capability.NoProgress) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.NoProgress)
 	}
 
 	// TODO: support thin-pack
 	// if caps.Supports(capability.ThinPack) {
-	// 	upreq.Capabilities.Set(capability.ThinPack) // nolint: errcheck
+	// 	_ = upreq.Capabilities.Set(capability.ThinPack)
 	// }
 
 	if caps.Supports(capability.OFSDelta) {
-		upreq.Capabilities.Set(capability.OFSDelta) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.OFSDelta)
 	}
 
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	if req.IncludeTags && caps.Supports(capability.IncludeTag) {
-		upreq.Capabilities.Set(capability.IncludeTag) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.IncludeTag)
 	}
 
 	if req.Filter != "" {
@@ -222,17 +224,9 @@ func NegotiatePack(
 	return shallowInfo, nil
 }
 
-func isSubset(needle []plumbing.Hash, haystack []plumbing.Hash) bool {
+func isSubset(needle, haystack []plumbing.Hash) bool {
 	for _, h := range needle {
-		found := false
-		for _, oh := range haystack {
-			if h == oh {
-				found = true
-				break
-			}
-		}
-
-		if !found {
+		if !slices.Contains(haystack, h) {
 			return false
 		}
 	}

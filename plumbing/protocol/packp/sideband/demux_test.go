@@ -6,8 +6,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 type SidebandSuite struct {
@@ -15,6 +16,7 @@ type SidebandSuite struct {
 }
 
 func TestSidebandSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SidebandSuite))
 }
 

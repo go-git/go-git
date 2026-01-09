@@ -1,3 +1,4 @@
+// Package pktline implements reading and writing of pkt-line formatted data used in Git protocol communication.
 package pktline
 
 import (
