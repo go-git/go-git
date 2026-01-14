@@ -140,7 +140,7 @@ func (s *CommonSuite) TestNewWriteCloserOnError() {
 	})
 
 	cancel()
-	w.Write(nil)
+	w.Write([]byte{'1'}) // if len(p) == 0, the write might not be performed.
 
 	s.NotNil(called)
 }
