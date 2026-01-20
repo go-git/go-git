@@ -6,7 +6,11 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -26,6 +30,44 @@ func NewSSHSigner(signer ssh.Signer) *SSHSigner {
 		signer:    signer,
 		namespace: sshGitNamespace,
 	}
+}
+
+// NewSSHSignerFromFile creates an SSHSigner by loading a private key from a file.
+// The keyPath can use "~/" prefix to refer to the user's home directory.
+// If the key is encrypted, use NewSSHSignerFromFileWithPassphrase instead.
+func NewSSHSignerFromFile(keyPath string) (*SSHSigner, error) {
+	return NewSSHSignerFromFileWithPassphrase(keyPath, nil)
+}
+
+// NewSSHSignerFromFileWithPassphrase creates an SSHSigner by loading an encrypted
+// private key from a file. The keyPath can use "~/" prefix to refer to the user's
+// home directory. Pass nil for passphrase if the key is not encrypted.
+func NewSSHSignerFromFileWithPassphrase(keyPath string, passphrase []byte) (*SSHSigner, error) {
+	// Expand ~ to home directory
+	if strings.HasPrefix(keyPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		keyPath = filepath.Join(home, keyPath[2:])
+	}
+
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	var signer ssh.Signer
+	if passphrase != nil {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(keyBytes, passphrase)
+	} else {
+		signer, err = ssh.ParsePrivateKey(keyBytes)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	return NewSSHSigner(signer), nil
 }
 
 // Sign signs the message using SSH.

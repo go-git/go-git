@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/pem"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -136,5 +139,72 @@ func TestArmorSSHSignature(t *testing.T) {
 		if len(line) > 76 {
 			t.Errorf("line %d is too long: %d chars", i, len(line))
 		}
+	}
+}
+
+func TestNewSSHSignerFromFile(t *testing.T) {
+	t.Parallel()
+
+	// Create a temporary directory for the test key
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "test_key")
+
+	// Generate a test key and write it to file
+	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	// Marshal the private key to OpenSSH format
+	pemBlock, err := ssh.MarshalPrivateKey(privKey, "")
+	if err != nil {
+		t.Fatalf("failed to marshal private key: %v", err)
+	}
+
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(pemBlock), 0600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
+	// Test loading the key
+	signer, err := NewSSHSignerFromFile(keyPath)
+	if err != nil {
+		t.Fatalf("failed to load key from file: %v", err)
+	}
+
+	// Verify the signer works
+	message := []byte("test message")
+	signature, err := signer.Sign(bytes.NewReader(message))
+	if err != nil {
+		t.Fatalf("failed to sign: %v", err)
+	}
+
+	if !bytes.HasPrefix(signature, []byte(sshSigArmorHead)) {
+		t.Error("signature should have SSH armor header")
+	}
+}
+
+func TestNewSSHSignerFromFile_NotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewSSHSignerFromFile("/nonexistent/path/to/key")
+	if err == nil {
+		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestNewSSHSignerFromFile_InvalidKey(t *testing.T) {
+	t.Parallel()
+
+	// Create a temporary file with invalid content
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "invalid_key")
+
+	if err := os.WriteFile(keyPath, []byte("not a valid key"), 0600); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	_, err := NewSSHSignerFromFile(keyPath)
+	if err == nil {
+		t.Error("expected error for invalid key")
 	}
 }
