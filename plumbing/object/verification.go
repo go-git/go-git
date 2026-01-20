@@ -1,9 +1,13 @@
 package object
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrNoSignature is returned when attempting to verify an unsigned object.
+var ErrNoSignature = errors.New("object has no signature")
 
 // TrustLevel represents the trust level of a signing key.
 // The levels follow Git's trust model, from lowest to highest.
@@ -96,4 +100,11 @@ func (r *VerificationResult) String() string {
 		"%s signature: %s, trust: %s, key: %s, signer: %s",
 		r.Type, validity, r.TrustLevel, r.KeyID, r.Signer,
 	)
+}
+
+// Verifier is an interface for verifying cryptographic signatures.
+// This interface is defined locally to avoid circular imports with the git package.
+// The git.Verifier, git.VerifierChain, and other implementations satisfy this interface.
+type Verifier interface {
+	Verify(signature, message []byte) (*VerificationResult, error)
 }

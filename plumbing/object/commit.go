@@ -499,6 +499,48 @@ func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
 }
 
+// VerifySignature verifies the commit's signature using the provided verifier.
+// This method works with any signature type (OpenPGP, SSH, etc.) supported by
+// the verifier.
+//
+// Returns an error if the commit has no signature. Otherwise, the verification
+// result indicates whether the signature is valid and provides details about
+// the signing key.
+//
+// Example:
+//
+//	verifier, _ := git.NewOpenPGPVerifier(armoredKeyRing)
+//	result, err := commit.VerifySignature(verifier)
+//	if err != nil {
+//	    // Handle error (e.g., no signature)
+//	}
+//	if result.IsTrusted(object.TrustFull) {
+//	    // Signature is valid and from a trusted key
+//	}
+func (c *Commit) VerifySignature(verifier Verifier) (*VerificationResult, error) {
+	if c.PGPSignature == "" {
+		return nil, ErrNoSignature
+	}
+
+	// Encode commit without signature to get the signed message
+	encoded := &plumbing.MemoryObject{}
+	if err := c.EncodeWithoutSignature(encoded); err != nil {
+		return nil, err
+	}
+
+	reader, err := encoded.Reader()
+	if err != nil {
+		return nil, err
+	}
+
+	message, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return verifier.Verify([]byte(c.PGPSignature), message)
+}
+
 // Less defines a compare function to determine which commit is 'earlier' by:
 // - First use Committer.When
 // - If Committer.When are equal then use Author.When
