@@ -73,7 +73,10 @@ var _ Index = (*MemoryIndex)(nil)
 
 // NewMemoryIndex returns an instance of a new MemoryIndex.
 func NewMemoryIndex(objectIDSize int) *MemoryIndex {
-	return &MemoryIndex{objectIDSize: objectIDSize}
+	m := &MemoryIndex{objectIDSize: objectIDSize}
+	m.IdxChecksum.ResetBySize(objectIDSize)
+	m.PackfileChecksum.ResetBySize(objectIDSize)
+	return m
 }
 
 func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
