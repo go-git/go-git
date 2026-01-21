@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -162,7 +163,7 @@ func readSSHString(r *bytes.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("string too long: %d", length)
 	}
 	data := make([]byte, length)
-	if _, err := r.Read(data); err != nil {
+	if _, err := io.ReadFull(r, data); err != nil {
 		return nil, err
 	}
 	return data, nil
