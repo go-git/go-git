@@ -9,6 +9,9 @@ import (
 // ErrNoSignature is returned when attempting to verify an unsigned object.
 var ErrNoSignature = errors.New("object has no signature")
 
+// ErrNilVerifier is returned when a nil verifier is passed to a verification method.
+var ErrNilVerifier = errors.New("verifier is nil")
+
 // TrustLevel represents the trust level of a signing key.
 // The levels follow Git's trust model, from lowest to highest.
 type TrustLevel int8

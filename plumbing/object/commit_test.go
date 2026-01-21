@@ -514,12 +514,23 @@ YIefGtzXfldDxg4=
 	s.True(ok)
 }
 
+func (s *SuiteCommit) TestVerifySignature_NilVerifier() {
+	// Test that ErrNilVerifier is returned when verifier is nil
+	commit := &Commit{
+		Message:      "signed",
+		PGPSignature: "some signature",
+	}
+	_, err := commit.VerifySignature(nil)
+	s.ErrorIs(err, ErrNilVerifier)
+}
+
 func (s *SuiteCommit) TestVerifySignature_NoSignature() {
 	// Test that ErrNoSignature is returned for unsigned commits
 	unsignedCommit := &Commit{
 		Message: "unsigned",
 	}
-	_, err := unsignedCommit.VerifySignature(nil)
+	mockVerifier := &mockVerifier{}
+	_, err := unsignedCommit.VerifySignature(mockVerifier)
 	s.ErrorIs(err, ErrNoSignature)
 }
 

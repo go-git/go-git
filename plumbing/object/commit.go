@@ -518,6 +518,9 @@ func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 //	    // Signature is valid and from a trusted key
 //	}
 func (c *Commit) VerifySignature(verifier Verifier) (*VerificationResult, error) {
+	if verifier == nil {
+		return nil, ErrNilVerifier
+	}
 	if c.PGPSignature == "" {
 		return nil, ErrNoSignature
 	}
