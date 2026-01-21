@@ -17,15 +17,20 @@ const sshGitNamespace = "git"
 
 // SSHVerifier verifies SSH signatures.
 type SSHVerifier struct {
-	// AllowedSigners maps principal names (e.g., email) to their public keys.
+	// allowedSigners maps principal names (e.g., email) to their public keys.
 	// If a key is in this map, signatures from it will have TrustFull.
 	// Keys not in the map will have TrustUndefined.
-	AllowedSigners map[string]ssh.PublicKey
+	allowedSigners map[string]ssh.PublicKey
 }
 
 // NewSSHVerifier creates an SSH verifier with the given allowed signers.
+// The provided map is copied to prevent external modification.
 func NewSSHVerifier(allowedSigners map[string]ssh.PublicKey) *SSHVerifier {
-	return &SSHVerifier{AllowedSigners: allowedSigners}
+	copied := make(map[string]ssh.PublicKey, len(allowedSigners))
+	for k, v := range allowedSigners {
+		copied[k] = v
+	}
+	return &SSHVerifier{allowedSigners: copied}
 }
 
 // SupportsSignatureType returns true for SSH signatures.
@@ -75,13 +80,11 @@ func (v *SSHVerifier) Verify(signature, message []byte) (*object.VerificationRes
 
 	// Check if key is in allowed signers
 	result.TrustLevel = object.TrustUndefined
-	if v.AllowedSigners != nil {
-		for principal, allowedKey := range v.AllowedSigners {
-			if sshKeysEqual(sig.PublicKey, allowedKey) {
-				result.TrustLevel = object.TrustFull
-				result.Signer = principal
-				break
-			}
+	for principal, allowedKey := range v.allowedSigners {
+		if sshKeysEqual(sig.PublicKey, allowedKey) {
+			result.TrustLevel = object.TrustFull
+			result.Signer = principal
+			break
 		}
 	}
 
