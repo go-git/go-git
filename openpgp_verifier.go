@@ -68,10 +68,9 @@ func (v *OpenPGPVerifier) Verify(signature, message []byte) (*object.Verificatio
 	result.KeyID = fmt.Sprintf("%016X", entity.PrimaryKey.KeyId)
 	result.PrimaryKeyFingerprint = fmt.Sprintf("%X", entity.PrimaryKey.Fingerprint)
 
-	// Extract signer identity
-	for _, ident := range entity.Identities {
+	// Use PrimaryIdentity for deterministic selection (map iteration order is undefined in Go)
+	if ident := entity.PrimaryIdentity(); ident != nil {
 		result.Signer = ident.Name
-		break
 	}
 
 	return result, nil
