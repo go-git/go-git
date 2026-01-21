@@ -25,11 +25,15 @@ type SSHSigner struct {
 
 // NewSSHSigner creates an SSHSigner with the given SSH signer.
 // The namespace defaults to "git" which is correct for commits and tags.
-func NewSSHSigner(signer ssh.Signer) *SSHSigner {
+// Returns an error if signer is nil.
+func NewSSHSigner(signer ssh.Signer) (*SSHSigner, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("signer cannot be nil")
+	}
 	return &SSHSigner{
 		signer:    signer,
 		namespace: sshGitNamespace,
-	}
+	}, nil
 }
 
 // NewSSHSignerFromFile creates an SSHSigner by loading a private key from a file.
@@ -67,7 +71,7 @@ func NewSSHSignerFromFileWithPassphrase(keyPath string, passphrase []byte) (*SSH
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
 	}
 
-	return NewSSHSigner(signer), nil
+	return NewSSHSigner(signer)
 }
 
 // Sign signs the message using SSH.

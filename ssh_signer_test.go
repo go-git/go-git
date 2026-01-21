@@ -27,7 +27,10 @@ func TestSSHSigner_Sign(t *testing.T) {
 		t.Fatalf("failed to create SSH signer: %v", err)
 	}
 
-	signer := NewSSHSigner(sshSigner)
+	signer, err := NewSSHSigner(sshSigner)
+	if err != nil {
+		t.Fatalf("failed to create SSHSigner: %v", err)
+	}
 
 	message := []byte("test message to sign")
 	signature, err := signer.Sign(bytes.NewReader(message))
@@ -79,7 +82,10 @@ func TestSSHSigner_SignatureFormat(t *testing.T) {
 		t.Fatalf("failed to create SSH signer: %v", err)
 	}
 
-	signer := NewSSHSigner(sshSigner)
+	signer, err := NewSSHSigner(sshSigner)
+	if err != nil {
+		t.Fatalf("failed to create SSHSigner: %v", err)
+	}
 
 	signature, err := signer.Sign(bytes.NewReader([]byte("test")))
 	if err != nil {
@@ -206,5 +212,14 @@ func TestNewSSHSignerFromFile_InvalidKey(t *testing.T) {
 	_, err := NewSSHSignerFromFile(keyPath)
 	if err == nil {
 		t.Error("expected error for invalid key")
+	}
+}
+
+func TestNewSSHSigner_NilSigner(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewSSHSigner(nil)
+	if err == nil {
+		t.Error("expected error for nil signer")
 	}
 }
