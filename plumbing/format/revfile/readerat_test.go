@@ -24,7 +24,6 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 	idxf := fixture.Idx()
 	require.NotNil(t, idxf)
 
-	// Load idx file for offset lookups.
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
 	idec := idxfile.NewDecoder(idxf)
 	err := idec.Decode(idx)
@@ -38,8 +37,6 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 
 	assert.Equal(t, count, ri.Count())
 
-	// Test All() iterator for all entries.
-	// These are the expected positions from the fixture.
 	expectedPositions := []int{2, 0, 3, 4, 5, 1}
 	gotPositions := make([]int, 0, len(expectedPositions))
 	all, finish := ri.All()
@@ -49,12 +46,9 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 	assert.Equal(t, expectedPositions, gotPositions)
 	assert.NoError(t, finish())
 
-	// Build offset map from idx for testing LookupIndex.
-	// We use EntriesByOffset to get offsets sorted by pack offset order.
 	entriesByOffset, err := idx.EntriesByOffset()
 	require.NoError(t, err)
 
-	// Build position -> offset map.
 	posToOffset := make(map[int]uint64)
 	pos := 0
 	for {
@@ -66,10 +60,6 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 		pos++
 	}
 
-	// Create offset getter using the position -> offset map.
-	// Note: The rev file maps pack_offset_position -> idx_position
-	// So to look up by pack offset, we need to know what offset corresponds
-	// to each idx position. Let's build idx_position -> offset map instead.
 	entries, err := idx.Entries()
 	require.NoError(t, err)
 
@@ -92,15 +82,11 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 		return offset, nil
 	}
 
-	// Test LookupIndex: for each rev position, get the idx position,
-	// then verify we can find it by offset lookup.
 	all, finish = ri.All()
 	for _, gotIdxPos := range all {
-		// Get offset for this idx position.
 		offset, err := offsetGetter(gotIdxPos)
 		require.NoError(t, err)
 
-		// Lookup should find the same idx position.
 		foundPos, found, err := ri.LookupIndex(offset, offsetGetter)
 		require.NoError(t, err)
 		assert.True(t, found, "offset %d should be found", offset)
@@ -108,7 +94,6 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 	}
 	assert.NoError(t, finish())
 
-	// Test LookupIndex with non-existent offset.
 	_, found, err := ri.LookupIndex(999999, offsetGetter)
 	require.NoError(t, err)
 	assert.False(t, found)
@@ -234,7 +219,6 @@ func TestReaderAtRevIndex_EmptyIndex(t *testing.T) {
 
 	assert.Equal(t, int64(0), ri.Count())
 
-	// LookupIndex should return false for empty index.
 	_, found, err := ri.LookupIndex(100, func(idxPos int) (uint64, error) {
 		return 0, nil
 	})
@@ -295,7 +279,6 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 	require.NoError(b, err)
 	defer ri.Close()
 
-	// Build idx_position -> offset map.
 	entries, err := idx.Entries()
 	require.NoError(b, err)
 
@@ -318,7 +301,6 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 		return offset, nil
 	}
 
-	// Get a sample offset to look up.
 	sampleOffset := idxPosToOffset[0]
 
 	b.Run("LookupIndex", func(b *testing.B) {
@@ -347,7 +329,6 @@ func TestReaderAtRevIndex_ValidateChecksums(t *testing.T) {
 	idxf := fixture.Idx()
 	require.NotNil(t, idxf)
 
-	// Load idx file to get count and pack checksum.
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
 	idec := idxfile.NewDecoder(idxf)
 	err := idec.Decode(idx)
@@ -360,7 +341,6 @@ func TestReaderAtRevIndex_ValidateChecksums(t *testing.T) {
 	require.NoError(t, err)
 	defer ri.Close()
 
-	// Valid checksum should pass.
 	err = ri.ValidateChecksums(idx.PackfileChecksum.Bytes())
 	assert.NoError(t, err)
 }
@@ -375,7 +355,6 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongPackChecksum(t *testing.T) {
 	idxf := fixture.Idx()
 	require.NotNil(t, idxf)
 
-	// Load idx file to get count.
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
 	idec := idxfile.NewDecoder(idxf)
 	err := idec.Decode(idx)
@@ -388,7 +367,6 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongPackChecksum(t *testing.T) {
 	require.NoError(t, err)
 	defer ri.Close()
 
-	// Wrong pack checksum should fail.
 	wrongChecksum := make([]byte, crypto.SHA256.Size())
 	err = ri.ValidateChecksums(wrongChecksum)
 	assert.Error(t, err)
@@ -405,7 +383,6 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongSize(t *testing.T) {
 	idxf := fixture.Idx()
 	require.NotNil(t, idxf)
 
-	// Load idx file to get count.
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
 	idec := idxfile.NewDecoder(idxf)
 	err := idec.Decode(idx)
@@ -418,7 +395,6 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongSize(t *testing.T) {
 	require.NoError(t, err)
 	defer ri.Close()
 
-	// Wrong size checksum should fail.
 	wrongSizeChecksum := make([]byte, 20) // SHA1 size instead of SHA256
 	err = ri.ValidateChecksums(wrongSizeChecksum)
 	assert.Error(t, err)
@@ -525,20 +501,18 @@ func TestReaderAtRevIndex_LookupIndex_ReadError(t *testing.T) {
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
 	}
 
-	// Create mock that returns error on read after construction.
 	mock := &errorAfterNReadsRevFile{
 		mockRevFile: mockRevFile{
 			Reader: bytes.NewReader(data),
 			size:   expectedSize,
 		},
-		errorAfterN: 1, // Allow header read, fail on entry read
+		errorAfterN: 1,
 	}
 
 	ri, err := NewReaderAtRevIndex(mock, hashSize, count)
 	require.NoError(t, err)
 	defer ri.Close()
 
-	// Now make reads fail.
 	mock.failNow = true
 
 	offsetGetter := func(idxPos int) (uint64, error) {
@@ -562,7 +536,6 @@ func TestReaderAtRevIndex_LookupIndex_OffsetGetterError(t *testing.T) {
 	binary.BigEndian.PutUint32(data[4:], VersionSupported)
 	binary.BigEndian.PutUint32(data[8:], sha1Hash)
 
-	// Put valid entry data.
 	for i := int64(0); i < count; i++ {
 		offset := RevHeaderSize + int(i)*RevEntrySize
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
@@ -572,7 +545,6 @@ func TestReaderAtRevIndex_LookupIndex_OffsetGetterError(t *testing.T) {
 	require.NoError(t, err)
 	defer ri.Close()
 
-	// OffsetGetter that always returns an error.
 	offsetGetter := func(idxPos int) (uint64, error) {
 		return 0, fmt.Errorf("simulated offsetGetter error for position %d", idxPos)
 	}
@@ -614,7 +586,6 @@ func TestReaderAtRevIndex_All_ReadError(t *testing.T) {
 	binary.BigEndian.PutUint32(data[4:], VersionSupported)
 	binary.BigEndian.PutUint32(data[8:], sha1Hash)
 
-	// Put valid entry data.
 	for i := int64(0); i < count; i++ {
 		offset := RevHeaderSize + int(i)*RevEntrySize
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
@@ -632,7 +603,6 @@ func TestReaderAtRevIndex_All_ReadError(t *testing.T) {
 	require.NoError(t, err)
 	defer ri.Close()
 
-	// Make reads fail.
 	mock.failNow = true
 
 	all, finish := ri.All()
