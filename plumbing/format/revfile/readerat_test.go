@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -614,4 +615,241 @@ func TestReaderAtRevIndex_All_ReadError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read entry")
 	assert.Equal(t, 0, entriesRead)
+}
+
+func loadRevIndexFixture(t *testing.T) (*ReaderAtRevIndex, *idxfile.MemoryIndex) {
+	t.Helper()
+
+	fixture := fixtures.ByTag("packfile-sha256").One()
+	revf := fixture.Rev()
+	require.NotNil(t, revf)
+
+	idxf := fixture.Idx()
+	require.NotNil(t, idxf)
+
+	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
+	err := idxfile.NewDecoder(idxf).Decode(idx)
+	require.NoError(t, err)
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	require.NoError(t, err)
+
+	return ri, idx
+}
+
+type offsetData struct {
+	offsets     []uint64
+	expectedPos map[uint64]int
+	getter      func(int) (uint64, error)
+}
+
+func buildOffsetData(t *testing.T, idx *idxfile.MemoryIndex) offsetData {
+	t.Helper()
+
+	entries, err := idx.Entries()
+	require.NoError(t, err)
+
+	idxPosToOffset := make(map[int]uint64)
+	for idxPos := 0; ; idxPos++ {
+		entry, err := entries.Next()
+		if err != nil {
+			break
+		}
+		idxPosToOffset[idxPos] = entry.Offset
+	}
+
+	offsets := make([]uint64, 0, len(idxPosToOffset))
+	expectedPos := make(map[uint64]int)
+	for pos, offset := range idxPosToOffset {
+		offsets = append(offsets, offset)
+		expectedPos[offset] = pos
+	}
+
+	getter := func(idxPos int) (uint64, error) {
+		offset, ok := idxPosToOffset[idxPos]
+		if !ok {
+			return 0, fmt.Errorf("entry not found at position %d", idxPos)
+		}
+		return offset, nil
+	}
+
+	return offsetData{offsets: offsets, expectedPos: expectedPos, getter: getter}
+}
+
+func collectAllPositions(t *testing.T, ri *ReaderAtRevIndex) []int {
+	t.Helper()
+
+	positions := make([]int, 0, ri.Count())
+	all, finish := ri.All()
+	for _, idxPos := range all {
+		positions = append(positions, idxPos)
+	}
+	require.NoError(t, finish())
+	return positions
+}
+
+func waitAndCollectErrors(t *testing.T, wg *sync.WaitGroup, errChan chan error) {
+	t.Helper()
+	wg.Wait()
+	close(errChan)
+	for err := range errChan {
+		t.Error(err)
+	}
+}
+
+func TestReaderAtRevIndex_ConcurrentLookup(t *testing.T) {
+	t.Parallel()
+
+	ri, idx := loadRevIndexFixture(t)
+	defer ri.Close()
+
+	data := buildOffsetData(t, idx)
+
+	const numGoroutines = 50
+	const lookupsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, numGoroutines)
+
+	for g := range numGoroutines {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+			for i := range lookupsPerGoroutine {
+				offsetIdx := (goroutineID*lookupsPerGoroutine + i) % len(data.offsets)
+				offset := data.offsets[offsetIdx]
+
+				foundPos, found, err := ri.LookupIndex(offset, data.getter)
+				if err != nil {
+					errChan <- fmt.Errorf("goroutine %d, iteration %d: %w", goroutineID, i, err)
+					return
+				}
+				if !found {
+					errChan <- fmt.Errorf("goroutine %d, iteration %d: offset %d not found", goroutineID, i, offset)
+					return
+				}
+				if foundPos != data.expectedPos[offset] {
+					errChan <- fmt.Errorf("goroutine %d, iteration %d: expected %d, got %d", goroutineID, i, data.expectedPos[offset], foundPos)
+					return
+				}
+			}
+		}(g)
+	}
+
+	waitAndCollectErrors(t, &wg, errChan)
+}
+
+func TestReaderAtRevIndex_ConcurrentAll(t *testing.T) {
+	t.Parallel()
+
+	ri, _ := loadRevIndexFixture(t)
+	defer ri.Close()
+
+	expectedPositions := collectAllPositions(t, ri)
+
+	const numGoroutines = 25
+	const iterationsPerGoroutine = 10
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, numGoroutines)
+
+	for g := range numGoroutines {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+			for i := range iterationsPerGoroutine {
+				positions := make([]int, 0, ri.Count())
+				all, finish := ri.All()
+				for _, idxPos := range all {
+					positions = append(positions, idxPos)
+				}
+				if err := finish(); err != nil {
+					errChan <- fmt.Errorf("goroutine %d, iteration %d: finish error: %w", goroutineID, i, err)
+					return
+				}
+				if len(positions) != len(expectedPositions) {
+					errChan <- fmt.Errorf("goroutine %d, iteration %d: expected %d entries, got %d", goroutineID, i, len(expectedPositions), len(positions))
+					return
+				}
+				for j, pos := range positions {
+					if pos != expectedPositions[j] {
+						errChan <- fmt.Errorf("goroutine %d, iteration %d: position %d: expected %d, got %d", goroutineID, i, j, expectedPositions[j], pos)
+						return
+					}
+				}
+			}
+		}(g)
+	}
+
+	waitAndCollectErrors(t, &wg, errChan)
+}
+
+func TestReaderAtRevIndex_ConcurrentLookupAndAll(t *testing.T) {
+	t.Parallel()
+
+	ri, idx := loadRevIndexFixture(t)
+	defer ri.Close()
+
+	data := buildOffsetData(t, idx)
+	expectedPositions := collectAllPositions(t, ri)
+
+	const numLookupGoroutines = 25
+	const numAllGoroutines = 25
+	const lookupsPerGoroutine = 50
+	const allIterationsPerGoroutine = 5
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, numLookupGoroutines+numAllGoroutines)
+
+	for g := range numLookupGoroutines {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+			for i := range lookupsPerGoroutine {
+				offsetIdx := (goroutineID*lookupsPerGoroutine + i) % len(data.offsets)
+				offset := data.offsets[offsetIdx]
+
+				foundPos, found, err := ri.LookupIndex(offset, data.getter)
+				if err != nil {
+					errChan <- fmt.Errorf("lookup goroutine %d, iteration %d: %w", goroutineID, i, err)
+					return
+				}
+				if !found {
+					errChan <- fmt.Errorf("lookup goroutine %d, iteration %d: offset %d not found", goroutineID, i, offset)
+					return
+				}
+				if foundPos != data.expectedPos[offset] {
+					errChan <- fmt.Errorf("lookup goroutine %d, iteration %d: expected %d, got %d", goroutineID, i, data.expectedPos[offset], foundPos)
+					return
+				}
+			}
+		}(g)
+	}
+
+	for g := range numAllGoroutines {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+			for i := range allIterationsPerGoroutine {
+				positions := make([]int, 0, ri.Count())
+				all, finish := ri.All()
+				for _, idxPos := range all {
+					positions = append(positions, idxPos)
+				}
+				if err := finish(); err != nil {
+					errChan <- fmt.Errorf("all goroutine %d, iteration %d: finish error: %w", goroutineID, i, err)
+					return
+				}
+				if len(positions) != len(expectedPositions) {
+					errChan <- fmt.Errorf("all goroutine %d, iteration %d: expected %d entries, got %d", goroutineID, i, len(expectedPositions), len(positions))
+					return
+				}
+			}
+		}(g)
+	}
+
+	waitAndCollectErrors(t, &wg, errChan)
 }
