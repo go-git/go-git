@@ -495,8 +495,7 @@ func TestReaderAtRevIndex_LookupIndex_ReadError(t *testing.T) {
 	binary.BigEndian.PutUint32(data[4:], VersionSupported)
 	binary.BigEndian.PutUint32(data[8:], sha1Hash)
 
-	// Put valid entry data.
-	for i := int64(0); i < count; i++ {
+	for i := range count {
 		offset := RevHeaderSize + int(i)*RevEntrySize
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
 	}
@@ -536,7 +535,7 @@ func TestReaderAtRevIndex_LookupIndex_OffsetGetterError(t *testing.T) {
 	binary.BigEndian.PutUint32(data[4:], VersionSupported)
 	binary.BigEndian.PutUint32(data[8:], sha1Hash)
 
-	for i := int64(0); i < count; i++ {
+	for i := range count {
 		offset := RevHeaderSize + int(i)*RevEntrySize
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
 	}
@@ -586,7 +585,7 @@ func TestReaderAtRevIndex_All_ReadError(t *testing.T) {
 	binary.BigEndian.PutUint32(data[4:], VersionSupported)
 	binary.BigEndian.PutUint32(data[8:], sha1Hash)
 
-	for i := int64(0); i < count; i++ {
+	for i := range count {
 		offset := RevHeaderSize + int(i)*RevEntrySize
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
 	}
