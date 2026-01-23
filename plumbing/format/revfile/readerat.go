@@ -277,7 +277,7 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 	defer revPool4Bytes.Put(bufPtr)
 
 	for left <= right {
-		mid := (left + right) / 2
+		mid := left + (right-left)/2
 
 		offset := int64(RevHeaderSize) + int64(mid)*int64(RevEntrySize)
 		n, err := ri.reader.ReadAt(buf, offset)
@@ -289,7 +289,7 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 		}
 
 		idxPos := int(binary.BigEndian.Uint32(buf))
-		if idxPos < 0 || idxPos >= int(ri.count) {
+		if int64(idxPos) >= ri.count {
 			return 0, false, fmt.Errorf("%w: entry at position %d contains invalid index %d (count=%d)",
 				ErrInvalidRevFile, mid, idxPos, ri.count)
 		}
