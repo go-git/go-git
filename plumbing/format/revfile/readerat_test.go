@@ -421,3 +421,85 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongSize(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "pack checksum size mismatch")
 }
+
+func TestReaderAtRevIndex_InvalidHashSize(t *testing.T) {
+	t.Parallel()
+
+	data := make([]byte, 100)
+	copy(data, revHeader)
+	binary.BigEndian.PutUint32(data[4:], VersionSupported)
+	binary.BigEndian.PutUint32(data[8:], sha256Hash)
+
+	tests := []struct {
+		name     string
+		hashSize int
+		wantErr  string
+	}{
+		{
+			name:     "hashSize 0",
+			hashSize: 0,
+			wantErr:  "invalid hash size 0",
+		},
+		{
+			name:     "hashSize 16",
+			hashSize: 16,
+			wantErr:  "invalid hash size 16",
+		},
+		{
+			name:     "hashSize 64",
+			hashSize: 64,
+			wantErr:  "invalid hash size 64",
+		},
+		{
+			name:     "negative hashSize",
+			hashSize: -1,
+			wantErr:  "invalid hash size -1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mock := newMockRevFile(data)
+			_, err := NewReaderAtRevIndex(mock, tc.hashSize, 1)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestReaderAtRevIndex_InvalidCount(t *testing.T) {
+	t.Parallel()
+
+	data := make([]byte, 100)
+	copy(data, revHeader)
+	binary.BigEndian.PutUint32(data[4:], VersionSupported)
+	binary.BigEndian.PutUint32(data[8:], sha256Hash)
+
+	tests := []struct {
+		name    string
+		count   int64
+		wantErr string
+	}{
+		{
+			name:    "negative count",
+			count:   -1,
+			wantErr: "invalid object count -1",
+		},
+		{
+			name:    "count exceeds max",
+			count:   1<<31 + 1,
+			wantErr: "invalid object count",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mock := newMockRevFile(data)
+			_, err := NewReaderAtRevIndex(mock, 32, tc.count)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}

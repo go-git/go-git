@@ -34,6 +34,11 @@ var revHeader = []byte{'R', 'I', 'D', 'X'}
 // ErrInvalidRevFile is returned when the rev file has an invalid format.
 var ErrInvalidRevFile = errors.New("invalid rev file")
 
+// maxObjectCount is a reasonable upper bound for the number of objects.
+// Git packfiles are limited to ~4 billion objects (2^32), but in practice
+// even extremely large repositories have far fewer objects.
+const maxObjectCount = 1 << 31 // ~2 billion objects
+
 // Buffer pool for reducing allocations.
 var revPool4Bytes = sync.Pool{New: func() any { b := make([]byte, 4); return &b }}
 
@@ -65,6 +70,16 @@ type RevFile interface {
 // The count parameter is the number of objects in the index (from the .idx file).
 // The revFile will be closed when Close() is called on the returned index.
 func NewReaderAtRevIndex(revFile RevFile, hashSize int, count int64) (*ReaderAtRevIndex, error) {
+	// Validate hashSize early - only SHA1 (20) and SHA256 (32) are supported.
+	if hashSize != 20 && hashSize != 32 {
+		return nil, fmt.Errorf("%w: invalid hash size %d (must be 20 for SHA1 or 32 for SHA256)", ErrInvalidRevFile, hashSize)
+	}
+
+	// Validate count to prevent integer overflow in size calculations.
+	if count < 0 || count > maxObjectCount {
+		return nil, fmt.Errorf("%w: invalid object count %d", ErrInvalidRevFile, count)
+	}
+
 	stat, err := revFile.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat rev file: %w", err)
