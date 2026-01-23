@@ -264,9 +264,10 @@ func (ri *ReaderAtRevIndex) Count() int64 {
 // from the idx file's offset table.
 //
 // Returns the index position and true if found, or 0 and false if not found.
-func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idxPos int) (uint64, error)) (int, bool) {
+// Returns an error if there was an I/O error or if offsetGetter returned an error.
+func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idxPos int) (uint64, error)) (int, bool, error) {
 	if ri.count == 0 {
-		return 0, false
+		return 0, false, nil
 	}
 
 	left, right := 0, int(ri.count)-1
@@ -278,21 +279,24 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 	for left <= right {
 		mid := (left + right) / 2
 
-		offset := int64(RevHeaderSize + mid*RevEntrySize)
+		offset := int64(RevHeaderSize) + int64(mid)*int64(RevEntrySize)
 		n, err := ri.reader.ReadAt(buf, offset)
-		if err != nil || n != RevEntrySize {
-			return 0, false
+		if err != nil {
+			return 0, false, fmt.Errorf("failed to read entry at position %d: %w", mid, err)
+		}
+		if n != RevEntrySize {
+			return 0, false, fmt.Errorf("short read at position %d: got %d bytes, expected %d", mid, n, RevEntrySize)
 		}
 
 		idxPos := int(binary.BigEndian.Uint32(buf))
 		got, err := offsetGetter(idxPos)
 		if err != nil {
-			return 0, false
+			return 0, false, fmt.Errorf("offsetGetter failed for idx position %d: %w", idxPos, err)
 		}
 
 		switch {
 		case got == packOffset:
-			return idxPos, true
+			return idxPos, true, nil
 		case got < packOffset:
 			left = mid + 1
 		default:
@@ -300,7 +304,7 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 		}
 	}
 
-	return 0, false
+	return 0, false, nil
 }
 
 // All returns an iterator over all (revPosition, idxPosition) pairs in the reverse index,

@@ -101,14 +101,16 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 		require.NoError(t, err)
 
 		// Lookup should find the same idx position.
-		foundPos, found := ri.LookupIndex(offset, offsetGetter)
+		foundPos, found, err := ri.LookupIndex(offset, offsetGetter)
+		require.NoError(t, err)
 		assert.True(t, found, "offset %d should be found", offset)
 		assert.Equal(t, gotIdxPos, foundPos, "offset %d should map to idx position %d", offset, gotIdxPos)
 	}
 	assert.NoError(t, finish())
 
 	// Test LookupIndex with non-existent offset.
-	_, found := ri.LookupIndex(999999, offsetGetter)
+	_, found, err := ri.LookupIndex(999999, offsetGetter)
+	require.NoError(t, err)
 	assert.False(t, found)
 
 	err = ri.Close()
@@ -233,9 +235,10 @@ func TestReaderAtRevIndex_EmptyIndex(t *testing.T) {
 	assert.Equal(t, int64(0), ri.Count())
 
 	// LookupIndex should return false for empty index.
-	_, found := ri.LookupIndex(100, func(idxPos int) (uint64, error) {
+	_, found, err := ri.LookupIndex(100, func(idxPos int) (uint64, error) {
 		return 0, nil
 	})
+	require.NoError(t, err)
 	assert.False(t, found)
 
 	err = ri.Close()
@@ -320,7 +323,7 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 
 	b.Run("LookupIndex", func(b *testing.B) {
 		for b.Loop() {
-			_, _ = ri.LookupIndex(sampleOffset, offsetGetter)
+			_, _, _ = ri.LookupIndex(sampleOffset, offsetGetter)
 		}
 	})
 
@@ -502,4 +505,99 @@ func TestReaderAtRevIndex_InvalidCount(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestReaderAtRevIndex_LookupIndex_ReadError(t *testing.T) {
+	t.Parallel()
+
+	hashSize := 20
+	count := int64(5)
+	expectedSize := int64(RevHeaderSize) + count*int64(RevEntrySize) + int64(2*hashSize)
+
+	data := make([]byte, expectedSize)
+	copy(data, revHeader)
+	binary.BigEndian.PutUint32(data[4:], VersionSupported)
+	binary.BigEndian.PutUint32(data[8:], sha1Hash)
+
+	// Put valid entry data.
+	for i := int64(0); i < count; i++ {
+		offset := RevHeaderSize + int(i)*RevEntrySize
+		binary.BigEndian.PutUint32(data[offset:], uint32(i))
+	}
+
+	// Create mock that returns error on read after construction.
+	mock := &errorAfterNReadsRevFile{
+		mockRevFile: mockRevFile{
+			Reader: bytes.NewReader(data),
+			size:   expectedSize,
+		},
+		errorAfterN: 1, // Allow header read, fail on entry read
+	}
+
+	ri, err := NewReaderAtRevIndex(mock, hashSize, count)
+	require.NoError(t, err)
+	defer ri.Close()
+
+	// Now make reads fail.
+	mock.failNow = true
+
+	offsetGetter := func(idxPos int) (uint64, error) {
+		return uint64(idxPos * 100), nil
+	}
+
+	_, _, err = ri.LookupIndex(100, offsetGetter)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read entry")
+}
+
+func TestReaderAtRevIndex_LookupIndex_OffsetGetterError(t *testing.T) {
+	t.Parallel()
+
+	hashSize := 20
+	count := int64(5)
+	expectedSize := int64(RevHeaderSize) + count*int64(RevEntrySize) + int64(2*hashSize)
+
+	data := make([]byte, expectedSize)
+	copy(data, revHeader)
+	binary.BigEndian.PutUint32(data[4:], VersionSupported)
+	binary.BigEndian.PutUint32(data[8:], sha1Hash)
+
+	// Put valid entry data.
+	for i := int64(0); i < count; i++ {
+		offset := RevHeaderSize + int(i)*RevEntrySize
+		binary.BigEndian.PutUint32(data[offset:], uint32(i))
+	}
+
+	ri, err := NewReaderAtRevIndex(newMockRevFile(data), hashSize, count)
+	require.NoError(t, err)
+	defer ri.Close()
+
+	// OffsetGetter that always returns an error.
+	offsetGetter := func(idxPos int) (uint64, error) {
+		return 0, fmt.Errorf("simulated offsetGetter error for position %d", idxPos)
+	}
+
+	_, _, err = ri.LookupIndex(100, offsetGetter)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "offsetGetter failed")
+	assert.Contains(t, err.Error(), "simulated offsetGetter error")
+}
+
+// errorAfterNReadsRevFile is a mock that fails after N reads.
+type errorAfterNReadsRevFile struct {
+	mockRevFile
+	errorAfterN int
+	readCount   int
+	failNow     bool
+}
+
+func (e *errorAfterNReadsRevFile) ReadAt(p []byte, off int64) (int, error) {
+	if e.failNow {
+		return 0, fmt.Errorf("simulated read error")
+	}
+	e.readCount++
+	if e.readCount > e.errorAfterN {
+		return 0, fmt.Errorf("simulated read error after %d reads", e.errorAfterN)
+	}
+	return e.mockRevFile.ReadAt(p, off)
 }
