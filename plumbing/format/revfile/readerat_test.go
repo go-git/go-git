@@ -601,3 +601,48 @@ func (e *errorAfterNReadsRevFile) ReadAt(p []byte, off int64) (int, error) {
 	}
 	return e.mockRevFile.ReadAt(p, off)
 }
+
+func TestReaderAtRevIndex_All_ReadError(t *testing.T) {
+	t.Parallel()
+
+	hashSize := 20
+	count := int64(5)
+	expectedSize := int64(RevHeaderSize) + count*int64(RevEntrySize) + int64(2*hashSize)
+
+	data := make([]byte, expectedSize)
+	copy(data, revHeader)
+	binary.BigEndian.PutUint32(data[4:], VersionSupported)
+	binary.BigEndian.PutUint32(data[8:], sha1Hash)
+
+	// Put valid entry data.
+	for i := int64(0); i < count; i++ {
+		offset := RevHeaderSize + int(i)*RevEntrySize
+		binary.BigEndian.PutUint32(data[offset:], uint32(i))
+	}
+
+	mock := &errorAfterNReadsRevFile{
+		mockRevFile: mockRevFile{
+			Reader: bytes.NewReader(data),
+			size:   expectedSize,
+		},
+		errorAfterN: 1,
+	}
+
+	ri, err := NewReaderAtRevIndex(mock, hashSize, count)
+	require.NoError(t, err)
+	defer ri.Close()
+
+	// Make reads fail.
+	mock.failNow = true
+
+	all, finish := ri.All()
+	entriesRead := 0
+	for range all {
+		entriesRead++
+	}
+
+	err = finish()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read entry")
+	assert.Equal(t, 0, entriesRead)
+}

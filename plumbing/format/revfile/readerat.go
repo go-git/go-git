@@ -289,6 +289,10 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 		}
 
 		idxPos := int(binary.BigEndian.Uint32(buf))
+		if idxPos < 0 || idxPos >= int(ri.count) {
+			return 0, false, fmt.Errorf("%w: entry at position %d contains invalid index %d (count=%d)",
+				ErrInvalidRevFile, mid, idxPos, ri.count)
+		}
 		got, err := offsetGetter(idxPos)
 		if err != nil {
 			return 0, false, fmt.Errorf("offsetGetter failed for idx position %d: %w", idxPos, err)
@@ -328,7 +332,7 @@ func (ri *ReaderAtRevIndex) All() (iter.Seq2[int, int], func() error) {
 	seq := func(yield func(int, int) bool) {
 		buf := make([]byte, 4)
 		for i := 0; i < int(ri.count); i++ {
-			offset := int64(RevHeaderSize + i*RevEntrySize)
+			offset := int64(RevHeaderSize) + int64(i)*int64(RevEntrySize)
 			n, err := ri.reader.ReadAt(buf, offset)
 			if err != nil {
 				iterErr = fmt.Errorf("failed to read entry %d: %w", i, err)
@@ -339,6 +343,11 @@ func (ri *ReaderAtRevIndex) All() (iter.Seq2[int, int], func() error) {
 				return
 			}
 			idxPos := int(binary.BigEndian.Uint32(buf))
+			if idxPos < 0 || idxPos >= int(ri.count) {
+				iterErr = fmt.Errorf("%w: entry at position %d contains invalid index %d (count=%d)",
+					ErrInvalidRevFile, i, idxPos, ri.count)
+				return
+			}
 			if !yield(i, idxPos) {
 				return
 			}
