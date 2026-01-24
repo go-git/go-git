@@ -202,6 +202,84 @@ func BenchmarkRefMultipleTimes(b *testing.B) {
 	}
 }
 
+func (s *SuiteDotGit) TestEmptyParentDirsRemoved() {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	ref := plumbing.NewReferenceFromStrings(
+		"refs/heads/a/b/c/d/ref1",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	)
+	err := dir.SetRef(ref, nil)
+	s.Require().NoError(err)
+
+	// Check that all directories in the path exist.
+	dirPaths := []string{
+		"refs",
+		"refs/heads",
+		"refs/heads/a",
+		"refs/heads/a/b",
+		"refs/heads/a/b/c",
+		"refs/heads/a/b/c/d",
+	}
+
+	for _, p := range dirPaths {
+		_, err := fs.Stat(p)
+		s.Require().NoError(err, "Directory %s should exist", p)
+	}
+
+	err = dir.RemoveRef(ref.Name())
+	s.Require().NoError(err)
+
+	// Check that none of the empty parent directories exist.
+	for _, p := range dirPaths[2:] {
+		_, err := fs.Stat(p)
+		s.True(os.IsNotExist(err), "Directory %s should not exist after ref is deleted", p)
+	}
+
+	// Check that refs/ and refs/heads still exist.
+	for _, p := range dirPaths[:2] {
+		_, err = fs.Stat(p)
+		s.False(os.IsNotExist(err), "Directory %s should still exist after ref is deleted", p)
+	}
+}
+
+func (s *SuiteDotGit) TestNonEmptyParentDirsNotRemoved() {
+	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	dir := New(fs)
+
+	refs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings(
+			"refs/heads/a/b/c/d/ref1",
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+		),
+		plumbing.NewReferenceFromStrings(
+			"refs/heads/a/b/ref2",
+			"e8d3ffab552895c19b9fcf7aa264d277cde33882",
+		),
+	}
+	for _, ref := range refs {
+		err := dir.SetRef(ref, nil)
+		s.Require().NoError(err)
+	}
+
+	err := dir.RemoveRef(refs[0].Name())
+	s.Require().NoError(err)
+
+	dirPaths := []string{
+		"refs",
+		"refs/heads",
+		"refs/heads/a",
+		"refs/heads/a/b",
+	}
+
+	// Check that non-empty parent directories still exist.
+	for _, p := range dirPaths {
+		_, err := fs.Stat(p)
+		s.Require().NoError(err, "Non-empty directory %s should still exist after ref is deleted", p)
+	}
+}
+
 func (s *SuiteDotGit) TestRemoveRefFromReferenceFile() {
 	fs := fixtures.Basic().ByTag(".git").One().DotGit()
 	dir := New(fs)
