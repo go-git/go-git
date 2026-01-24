@@ -203,34 +203,7 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 	}
 }
 
-func TestReaderAtRevIndex_EmptyIndex(t *testing.T) {
-	t.Parallel()
-
-	hashSize := 20 // SHA1
-	// Empty index: header + 0 entries + 2 checksums.
-	expectedSize := int64(RevHeaderSize + 0*RevEntrySize + 2*hashSize)
-
-	data := make([]byte, expectedSize)
-	copy(data, revHeader)
-	binary.BigEndian.PutUint32(data[4:], VersionSupported)
-	binary.BigEndian.PutUint32(data[8:], sha1Hash)
-
-	ri, err := NewReaderAtRevIndex(newMockRevFile(data), hashSize, 0)
-	require.NoError(t, err)
-
-	assert.Equal(t, int64(0), ri.Count())
-
-	_, found, err := ri.LookupIndex(100, func(idxPos int) (uint64, error) {
-		return 0, nil
-	})
-	require.NoError(t, err)
-	assert.False(t, found)
-
-	err = ri.Close()
-	require.NoError(t, err)
-}
-
-func TestReaderAtRevIndex_WithCloser(t *testing.T) {
+func TestReaderAtRevIndex_EmptyIndexWithCloser(t *testing.T) {
 	t.Parallel()
 
 	hashSize := 20
@@ -253,6 +226,14 @@ func TestReaderAtRevIndex_WithCloser(t *testing.T) {
 
 	ri, err := NewReaderAtRevIndex(mock, hashSize, 0)
 	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), ri.Count())
+
+	_, found, err := ri.LookupIndex(100, func(idxPos int) (uint64, error) {
+		return 0, nil
+	})
+	require.NoError(t, err)
+	assert.False(t, found)
 
 	assert.False(t, closed)
 	err = ri.Close()
