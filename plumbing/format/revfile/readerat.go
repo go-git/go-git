@@ -326,13 +326,13 @@ func (ri *ReaderAtRevIndex) LookupIndex(packOffset uint64, offsetGetter func(idx
 //	if err := finish(); err != nil {
 //	    // handle error
 //	}
-func (ri *ReaderAtRevIndex) All() (iter.Seq2[int, int], func() error) {
+func (ri *ReaderAtRevIndex) All() (iter.Seq2[int64, int], func() error) {
 	var iterErr error
 
-	seq := func(yield func(int, int) bool) {
+	seq := func(yield func(int64, int) bool) {
 		buf := make([]byte, 4)
-		for i := 0; i < int(ri.count); i++ {
-			offset := int64(RevHeaderSize) + int64(i)*int64(RevEntrySize)
+		for i := range ri.count {
+			offset := int64(RevHeaderSize) + i*int64(RevEntrySize)
 			n, err := ri.reader.ReadAt(buf, offset)
 			if err != nil {
 				iterErr = fmt.Errorf("failed to read entry %d: %w", i, err)
