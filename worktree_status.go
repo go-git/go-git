@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6/util"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -51,7 +52,7 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	var hash plumbing.Hash
 
 	ref, err := w.r.Head()
-	if err != nil && err != plumbing.ErrReferenceNotFound {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, err
 	}
 
@@ -137,13 +138,15 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	from := mindex.NewRootNode(idx)
-	submodules, err := w.getSubmodulesStatus()
+	cfg, err := w.r.Config()
 	if err != nil {
 		return nil, err
 	}
 
-	cfg, err := w.r.Config()
+	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: cfg.Core.FileMode,
+	})
+	submodules, err := w.getSubmodulesStatus()
 	if err != nil {
 		return nil, err
 	}
@@ -321,13 +324,13 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		var a bool
 		a, _, err = w.doAddFile(idx, s, name, ignorePattern)
 		if err != nil {
-			return
+			return added, err
 		}
 
 		added = added || a
 	}
 
-	return
+	return added, err
 }
 
 func isPathInDirectory(path, directory string) bool {
@@ -477,7 +480,7 @@ func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePatt
 			h, err = w.deleteFromIndex(idx, path)
 		}
 
-		return
+		return added, h, err
 	}
 
 	if err := w.addOrUpdateFileToIndex(idx, path, h); err != nil {
@@ -564,11 +567,11 @@ func (w *Worktree) fillEncodedObjectFromSymlink(dst io.Writer, path string, _ os
 
 func (w *Worktree) addOrUpdateFileToIndex(idx *index.Index, filename string, h plumbing.Hash) error {
 	e, err := idx.Entry(filename)
-	if err != nil && err != index.ErrEntryNotFound {
+	if err != nil && !errors.Is(err, index.ErrEntryNotFound) {
 		return err
 	}
 
-	if err == index.ErrEntryNotFound {
+	if errors.Is(err, index.ErrEntryNotFound) {
 		return w.doAddFileToIndex(idx, filename, h)
 	}
 
@@ -639,13 +642,13 @@ func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (remove
 			r, err = w.doRemoveDirectory(idx, name)
 		} else {
 			_, err = w.doRemoveFile(idx, name)
-			if err == index.ErrEntryNotFound {
+			if errors.Is(err, index.ErrEntryNotFound) {
 				err = nil
 			}
 		}
 
 		if err != nil {
-			return
+			return removed, err
 		}
 
 		if !removed && r {
@@ -654,7 +657,7 @@ func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (remove
 	}
 
 	err = w.removeEmptyDirectory(directory)
-	return
+	return removed, err
 }
 
 func (w *Worktree) removeEmptyDirectory(path string) error {

@@ -1,9 +1,9 @@
 package commitgraph
 
 import (
-	"github.com/go-git/go-git/v6/plumbing"
-
 	"github.com/emirpasic/gods/trees/binaryheap"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // NewCommitNodeIterAuthorDateOrder returns a CommitNodeIter that walks the commit history,
@@ -32,7 +32,7 @@ func NewCommitNodeIterAuthorDateOrder(c CommitNode,
 	exploreHeap := &commitNodeHeap{binaryheap.NewWith(generationAndDateOrderComparator)}
 	exploreHeap.Push(c)
 
-	visitHeap := &commitNodeHeap{binaryheap.NewWith(func(left, right interface{}) int {
+	visitHeap := &commitNodeHeap{binaryheap.NewWith(func(left, right any) int {
 		leftCommit, err := left.(CommitNode).Commit()
 		if err != nil {
 			return -1

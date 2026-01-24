@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/internal/trace"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 // The dumb http transport only supports git-upload-pack service so there's no
@@ -20,6 +21,7 @@ type DumbSuite struct {
 }
 
 func TestDumbSuite(t *testing.T) {
+	t.Parallel()
 	trace.ReadEnv()
 	suite.Run(t, new(DumbSuite))
 }

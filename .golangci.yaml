@@ -1,0 +1,66 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - dupl
+    - errcheck
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - modernize
+    - nolintlint
+    - paralleltest
+    - prealloc
+    - revive
+    - staticcheck
+    - unused
+    - whitespace
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # An optimization check, not something we strictly need enabled.
+        - shadow # Produces a large number of findings and would require quite a bit of cleanup.
+        - unsafeptr # TODO: Requires Windows environment to fix.
+    revive:
+      enable-default-rules: true
+      rules:
+        - name: dot-imports
+          exclude:
+            - "**/*_test.go"
+  exclusions:
+    rules:
+      - path: plumbing/hash.go
+        linters:
+          - gocritic
+        text: deprecatedComment # Causes churn in test files, better to do separately.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard # Standard section: captures all standard packages.
+        - default # Default section: contains all imports that could not be matched to another section type.
+        - prefix(github.com/go-git/go-git/) # Custom section: groups all imports with the specified Prefix.
+        - blank # Blank section: contains all blank imports. This section is not present unless explicitly enabled.
+        - dot # Dot section: contains all dot imports. This section is not present unless explicitly enabled.
+        - localmodule # Local module section: contains all local packages. This section is not present unless explicitly enabled.
+      no-inline-comments: true
+      no-prefix-comments: true
+      custom-order: true
+      no-lex-order: true
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: 'any'
+    gofumpt:
+      extra-rules: true

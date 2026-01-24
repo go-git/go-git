@@ -40,7 +40,7 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 - You should be able to run the same query using `git`. We don't accept features that are not implemented in the official git implementation.
 - The expected behavior must match the [official git implementation].
 - The actual behavior must be correctly explained with natural language and providing a minimum working example in Go that reproduces it.
-- All PRs must be written in idiomatic Go, formatted according to [gofmt], and without any warnings from [go vet].
+- All PRs must be written in idiomatic Go, formatted according to [gofmt], and without any warnings from [golangci-lint].
 - They should in general include tests, and those shall pass.
 - If the PR is a bug fix, it has to include a suite of unit tests for the new functionality.
 - If the PR is a new feature, it has to come with a suite of unit tests, that tests the new functionality.
@@ -49,14 +49,14 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 ### Branches
 
 The development branch is `main`, where all development takes place.
-All new features and bug fixes should target it. This was formely known
+All new features and bug fixes should target it. This was formerly known
 as `v6-exp` or `v6-transport`. This branch contains all the changes for
 `v6` - the next major release.
 From time to time this branch will contain breaking changes, as the API
 for `v6` is being refined.
 
 The `releases/v5.x` branch is the branch for changes to the `v5` version,
-which is now in maintaince mode. To avoid having to divert efforts from `v6`,
+which is now in maintenance mode. To avoid having to divert efforts from `v6`,
 we will only be accepting bug fixes or CVE related dependency bumps for the
 `v5` release.
 
@@ -81,4 +81,4 @@ The format can be described more formally as follows:
 [Issues]: https://github.com/go-git/go-git/issues
 [official git implementation]: https://github.com/git/git
 [gofmt]: https://golang.org/cmd/gofmt/
-[go vet]: https://golang.org/cmd/vet/
+[golangci-lint]: https://github.com/golangci/golangci-lint

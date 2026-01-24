@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/armon/go-socks5"
+	"github.com/stretchr/testify/suite"
+	stdssh "golang.org/x/crypto/ssh"
+
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/stretchr/testify/suite"
-
-	stdssh "golang.org/x/crypto/ssh"
 )
 
 type ProxySuite struct {
@@ -19,12 +19,13 @@ type ProxySuite struct {
 }
 
 func TestProxySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ProxySuite))
 }
 
 type TestProxyRule struct{ proxiedRequests int }
 
-func (dr *TestProxyRule) Allow(ctx context.Context, req *socks5.Request) (context.Context, bool) {
+func (dr *TestProxyRule) Allow(ctx context.Context, _ *socks5.Request) (context.Context, bool) {
 	dr.proxiedRequests++
 	return ctx, true
 }

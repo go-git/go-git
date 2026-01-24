@@ -9,13 +9,13 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/golang/groupcache/lru"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -26,12 +26,57 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
-	"github.com/golang/groupcache/lru"
 )
 
 func init() {
 	transport.Register("http", DefaultTransport)
 	transport.Register("https", DefaultTransport)
+}
+
+// safeHeaders is a list of HTTP headers that are safe to log for debugging
+// the Git protocol. Headers not in this list may contain sensitive information
+// (e.g., Authorization, Cookie, X-Auth-Token) and should not be logged.
+var safeHeaders = map[string]struct{}{
+	"User-Agent":        {},
+	"Host":              {},
+	"Accept":            {},
+	"Content-Type":      {},
+	"Content-Length":    {},
+	"Cache-Control":     {},
+	"Git-Protocol":      {},
+	"Transfer-Encoding": {},
+	"Content-Encoding":  {},
+}
+
+// filterHeaders returns a new http.Header containing only safe headers
+// that are useful for debugging the Git protocol without exposing sensitive
+// information.
+func filterHeaders(h http.Header) http.Header {
+	filtered := make(http.Header)
+	for key, values := range h {
+		if _, ok := safeHeaders[http.CanonicalHeaderKey(key)]; ok {
+			filtered[key] = values
+		}
+	}
+	return filtered
+}
+
+// redactedURL returns a string representation of the URL with the password
+// redacted if present.
+func redactedURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if u.User == nil {
+		return u.String()
+	}
+	if _, hasPassword := u.User.Password(); !hasPassword {
+		return u.String()
+	}
+	// Clone the URL to avoid modifying the original
+	redacted := *u
+	redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+	return redacted.String()
 }
 
 func applyHeaders(
@@ -69,7 +114,7 @@ func doRequest(
 ) (*http.Response, error) {
 	traceHTTP := trace.HTTP.Enabled()
 	if traceHTTP {
-		trace.HTTP.Printf("requesting %s %s %v", req.Method, req.URL.String(), req.Header)
+		trace.HTTP.Printf("requesting %s %s %v", req.Method, redactedURL(req.URL), filterHeaders(req.Header))
 	}
 
 	res, err := client.Do(req)
@@ -78,7 +123,7 @@ func doRequest(
 	}
 
 	if traceHTTP {
-		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, res.Request.URL.String(), res.Header)
+		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, redactedURL(res.Request.URL), filterHeaders(res.Header))
 	}
 
 	if res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices {
@@ -99,19 +144,8 @@ func modifyRedirect(res *http.Response, ep *transport.Endpoint) {
 		return
 	}
 
-	h, p, err := net.SplitHostPort(r.URL.Host)
-	if err != nil {
-		h = r.URL.Host
-	}
-	if p != "" {
-		port, err := strconv.Atoi(p)
-		if err == nil {
-			ep.Port = port
-		}
-	}
-
-	ep.Host = h
-	ep.Protocol = r.URL.Scheme
+	ep.Host = r.URL.Host
+	ep.Scheme = r.URL.Scheme
 	ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
 }
 
@@ -280,11 +314,13 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 			tr, ok := c.client.Transport.(*http.Transport)
 			if !ok {
 				return nil, fmt.Errorf("expected underlying client transport to be of type: %s; got: %s",
-					reflect.TypeOf(transport), reflect.TypeOf(c.client.Transport))
+					reflect.TypeFor[*http.Transport](), reflect.TypeOf(c.client.Transport))
 			}
 
 			transport = tr.Clone()
-			configureTransport(transport, ep)
+			if err := configureTransport(transport, ep); err != nil {
+				return nil, err
+			}
 		} else {
 			transportOpts := transportOptions{
 				caBundle:        string(ep.CaBundle),
@@ -302,7 +338,9 @@ func newSession(st storage.Storer, c *client, ep *transport.Endpoint, auth trans
 
 			if !found {
 				transport = c.client.Transport.(*http.Transport).Clone()
-				configureTransport(transport, ep)
+				if err := configureTransport(transport, ep); err != nil {
+					return nil, err
+				}
 				c.addTransport(transportOpts, transport)
 			}
 		}
@@ -471,7 +509,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 	if err != nil {
 		if rwc.res != nil {
 			// Make sure the response body is closed.
-			defer packfile.Close() // nolint: errcheck
+			defer func() { _ = packfile.Close() }()
 		}
 		return err
 	}
@@ -480,7 +518,7 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 }
 
 // GetRemoteRefs implements transport.Connection.
-func (s *HTTPSession) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+func (s *HTTPSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -575,6 +613,7 @@ func (r *requester) Write(p []byte) (n int, err error) {
 	return r.reqBuf.Write(p)
 }
 
+// ApplyAuthToRequest applies the session's auth to the request.
 func (s *HTTPSession) ApplyAuthToRequest(req *http.Request) {
 	if s.auth == nil {
 		return
@@ -583,32 +622,7 @@ func (s *HTTPSession) ApplyAuthToRequest(req *http.Request) {
 	s.auth.SetAuth(req)
 }
 
-func (s *HTTPSession) ModifyEndpointIfRedirect(res *http.Response) {
-	if res.Request == nil {
-		return
-	}
-
-	r := res.Request
-	if !strings.HasSuffix(r.URL.Path, infoRefsPath) {
-		return
-	}
-
-	h, p, err := net.SplitHostPort(r.URL.Host)
-	if err != nil {
-		h = r.URL.Host
-	}
-	if p != "" {
-		port, err := strconv.Atoi(p)
-		if err == nil {
-			s.ep.Port = port
-		}
-	}
-	s.ep.Host = h
-
-	s.ep.Protocol = r.URL.Scheme
-	s.ep.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
-}
-
+// Close closes the session.
 func (*HTTPSession) Close() error {
 	return nil
 }
@@ -621,11 +635,12 @@ type AuthMethod interface {
 
 func basicAuthFromEndpoint(ep *transport.Endpoint) *BasicAuth {
 	u := ep.User
-	if u == "" {
+	if u == nil {
 		return nil
 	}
 
-	return &BasicAuth{u, ep.Password}
+	passwd, _ := u.Password()
+	return &BasicAuth{u.Username(), passwd}
 }
 
 // BasicAuth represent a HTTP basic auth
@@ -633,6 +648,7 @@ type BasicAuth struct {
 	Username, Password string
 }
 
+// SetAuth sets the basic auth on the request.
 func (a *BasicAuth) SetAuth(r *http.Request) {
 	if a == nil {
 		return
@@ -667,6 +683,7 @@ type TokenAuth struct {
 	Token string
 }
 
+// SetAuth sets the token auth on the request.
 func (a *TokenAuth) SetAuth(r *http.Request) {
 	if a == nil {
 		return
@@ -711,20 +728,22 @@ func checkError(r *http.Response) error {
 		}
 	}
 
-	switch r.StatusCode {
-	case http.StatusUnauthorized:
-		return transport.ErrAuthenticationRequired
-	case http.StatusForbidden:
-		return transport.ErrAuthorizationFailed
-	case http.StatusNotFound:
-		return transport.ErrRepositoryNotFound
-	}
-
-	return plumbing.NewUnexpectedError(&Err{
+	err := &Err{
 		URL:    r.Request.URL,
 		Status: r.StatusCode,
 		Reason: reason,
-	})
+	}
+
+	switch r.StatusCode {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%w: %w", transport.ErrAuthenticationRequired, err)
+	case http.StatusForbidden:
+		return fmt.Errorf("%w: %w", transport.ErrAuthorizationFailed, err)
+	case http.StatusNotFound:
+		return fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err)
+	}
+
+	return err
 }
 
 // StatusCode returns the status code of the response

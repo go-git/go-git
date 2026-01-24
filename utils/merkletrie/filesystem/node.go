@@ -1,9 +1,12 @@
+// Package filesystem provides a merkletrie noder implementation for billy filesystems.
 package filesystem
 
 import (
 	"io"
 	"os"
 	"path"
+
+	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -12,14 +15,13 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/go-git/go-git/v6/utils/sync"
-
-	"github.com/go-git/go-billy/v6"
 )
 
 var ignore = map[string]bool{
 	".git": true,
 }
 
+// Options contains configuration for the filesystem node.
 type Options struct {
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.
 	AutoCRLF bool
@@ -56,6 +58,7 @@ func NewRootNode(
 	return &node{fs: fs, submodules: submodules, isDir: true}
 }
 
+// NewRootNodeWithOptions returns the root node based on a given billy.Filesystem with options.
 func NewRootNodeWithOptions(
 	fs billy.Filesystem,
 	submodules map[string]plumbing.Hash,
@@ -204,7 +207,7 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	if err != nil {
 		return plumbing.ZeroHash
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
 	var dst io.Writer = h

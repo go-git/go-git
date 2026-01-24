@@ -10,6 +10,7 @@ import (
 )
 
 func TestScannerReader(t *testing.T) {
+	t.Parallel()
 	r := bytes.NewReader([]byte("foo"))
 	w := bytes.NewBuffer(nil)
 	rbuf := bufio.NewReader(nil)

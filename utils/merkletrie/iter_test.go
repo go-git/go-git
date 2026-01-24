@@ -6,11 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/merkletrie/internal/fsnoder"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
 )
 
 type IterSuite struct {
@@ -18,6 +19,7 @@ type IterSuite struct {
 }
 
 func TestIterSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IterSuite))
 }
 
@@ -56,8 +58,8 @@ type test struct {
 // returned values are correct.  If not, the treeDescription value is
 // printed along with information about mismatch.
 func (t test) run(s *IterSuite, iter *merkletrie.Iter,
-	treeDescription string, testNumber int) {
-
+	treeDescription string, testNumber int,
+) {
 	expectedChunks := strings.Split(t.expected, " ")
 	if t.expected == "" {
 		expectedChunks = []string{}

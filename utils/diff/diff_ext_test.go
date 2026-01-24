@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-git/go-git/v6/utils/diff"
+	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/go-git/go-git/v6/utils/diff"
 )
 
 type suiteCommon struct {
@@ -15,6 +15,7 @@ type suiteCommon struct {
 }
 
 func TestSuiteCommon(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(suiteCommon))
 }
 

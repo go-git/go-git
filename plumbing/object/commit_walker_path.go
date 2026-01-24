@@ -1,7 +1,9 @@
 package object
 
 import (
+	"errors"
 	"io"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -135,12 +137,7 @@ func (c *commitPathIter) hasFileChange(changes Changes, parent *Commit) bool {
 }
 
 func isParentHash(hash plumbing.Hash, commit *Commit) bool {
-	for _, h := range commit.ParentHashes {
-		if h == hash {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(commit.ParentHashes, hash)
 }
 
 func (c *commitPathIter) ForEach(cb func(*Commit) error) error {
@@ -153,7 +150,7 @@ func (c *commitPathIter) ForEach(cb func(*Commit) error) error {
 			return nextErr
 		}
 		err := cb(commit)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			return nil
 		} else if err != nil {
 			return err

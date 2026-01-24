@@ -1,5 +1,4 @@
 //go:build js
-// +build js
 
 package git
 
@@ -11,7 +10,7 @@ import (
 )
 
 func init() {
-	fillSystemInfo = func(e *index.Entry, sys interface{}) {
+	fillSystemInfo = func(e *index.Entry, sys any) {
 		if os, ok := sys.(*syscall.Stat_t); ok {
 			e.CreatedAt = time.Unix(int64(os.Ctime), int64(os.CtimeNsec))
 			e.Dev = uint32(os.Dev)
@@ -22,6 +21,6 @@ func init() {
 	}
 }
 
-func isSymlinkWindowsNonAdmin(err error) bool {
+func isSymlinkWindowsNonAdmin(error) bool {
 	return false
 }

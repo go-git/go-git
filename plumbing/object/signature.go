@@ -28,15 +28,13 @@ var (
 	}
 )
 
-var (
-	// knownSignatureFormats is a map of known signature formats, indexed by
-	// their signatureType.
-	knownSignatureFormats = map[signatureType]signatureFormat{
-		signatureTypeOpenPGP: openPGPSignatureFormat,
-		signatureTypeX509:    x509SignatureFormat,
-		signatureTypeSSH:     sshSignatureFormat,
-	}
-)
+// knownSignatureFormats is a map of known signature formats, indexed by
+// their signatureType.
+var knownSignatureFormats = map[signatureType]signatureFormat{
+	signatureTypeOpenPGP: openPGPSignatureFormat,
+	signatureTypeX509:    x509SignatureFormat,
+	signatureTypeSSH:     sshSignatureFormat,
+}
 
 // signatureType represents the type of the signature.
 type signatureType int8
@@ -83,10 +81,10 @@ func typeForSignature(b []byte) signatureType {
 // This logic is on par with git's gpg-interface.c:parse_signed_buffer().
 // https://github.com/git/git/blob/7c2ef319c52c4997256f5807564523dfd4acdfc7/gpg-interface.c#L668
 func parseSignedBytes(b []byte) (int, signatureType) {
-	var n, match = 0, -1
+	n, match := 0, -1
 	var t signatureType
 	for n < len(b) {
-		var i = b[n:]
+		i := b[n:]
 		if st := typeForSignature(i); st != signatureTypeUnknown {
 			match = n
 			t = st

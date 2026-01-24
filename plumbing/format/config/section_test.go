@@ -11,6 +11,7 @@ type SectionSuite struct {
 }
 
 func TestSectionSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SectionSuite))
 }
 

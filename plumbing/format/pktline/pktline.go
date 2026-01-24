@@ -33,16 +33,16 @@ func Write(w io.Writer, p []byte) (n int, err error) {
 	pktlen := len(p) + LenSize
 	n, err = w.Write(asciiHex16(pktlen))
 	if err != nil {
-		return
+		return n, err
 	}
 
 	n2, err := w.Write(p)
 	n += n2
-	return
+	return n, err
 }
 
 // Writef writes a pktline packet from a format string.
-func Writef(w io.Writer, format string, a ...interface{}) (n int, err error) {
+func Writef(w io.Writer, format string, a ...any) (n int, err error) {
 	if len(a) == 0 {
 		return Write(w, []byte(format))
 	}

@@ -1,3 +1,4 @@
+// Package frame provides a data structure for storing siblings in a trie.
 package frame
 
 import (

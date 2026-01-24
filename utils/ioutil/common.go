@@ -19,6 +19,7 @@ type ReadPeeker interface {
 	Peeker
 }
 
+// ErrEmptyReader is returned when a reader is empty.
 var ErrEmptyReader = errors.New("reader is empty")
 
 // NonEmptyReader takes a reader and returns it if it is not empty, or
@@ -115,11 +116,12 @@ type readerAtAsReader struct {
 }
 
 func (r *readerAtAsReader) Read(bs []byte) (int, error) {
-	n, err := r.ReaderAt.ReadAt(bs, r.offset)
+	n, err := r.ReadAt(bs, r.offset)
 	r.offset += int64(n)
 	return n, err
 }
 
+// NewReaderUsingReaderAt returns a new io.Reader from an io.ReaderAt starting at the given offset.
 func NewReaderUsingReaderAt(r io.ReaderAt, offset int64) io.Reader {
 	return &readerAtAsReader{
 		ReaderAt: r,
@@ -171,7 +173,7 @@ func (r *readerOnError) Read(buf []byte) (n int, err error) {
 		r.notify(err)
 	}
 
-	return
+	return n, err
 }
 
 type writerOnError struct {
@@ -197,7 +199,7 @@ func (r *writerOnError) Write(p []byte) (n int, err error) {
 		r.notify(err)
 	}
 
-	return
+	return n, err
 }
 
 // CloserFunc implements the io.Closer interface with a function.

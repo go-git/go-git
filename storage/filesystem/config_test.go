@@ -7,9 +7,10 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
-	"github.com/stretchr/testify/suite"
 )
 
 type ConfigSuite struct {
@@ -20,6 +21,7 @@ type ConfigSuite struct {
 }
 
 func TestConfigSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ConfigSuite))
 }
 
@@ -33,7 +35,7 @@ func (s *ConfigSuite) SetupTest() {
 
 func (s *ConfigSuite) TestRemotes() {
 	dir := dotgit.New(fixtures.Basic().ByTag(".git").One().DotGit())
-	storer := &ConfigStorage{dir}
+	storer := &ConfigStorage{dir: dir}
 
 	cfg, err := storer.Config()
 	s.Require().NoError(err)

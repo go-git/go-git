@@ -12,6 +12,7 @@ type PushOptionsSuite struct {
 }
 
 func TestPushOptionsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(PushOptionsSuite))
 }
 

@@ -10,23 +10,25 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
-	"github.com/elazarl/goproxy"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/internal/transport/test"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
 // This test tests proxy support via an env var, i.e. `HTTPS_PROXY`.
 // Its located in a separate package because golang caches the value
 // of proxy env vars leading to misleading/unexpected test results.
 func TestProxySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ProxySuite))
 }
 
@@ -37,9 +39,7 @@ type ProxySuite struct {
 func (s *ProxySuite) TestAdvertisedReferencesHTTP() {
 	var proxiedRequests int32
 
-	proxy := goproxy.NewProxyHttpServer()
-
-	setupHTTPProxy(proxy, &proxiedRequests)
+	proxy := newTestProxy(&proxiedRequests)
 
 	httpProxyAddr := setupProxyServer(s.T(), proxy, false, true)
 
@@ -74,8 +74,7 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTP() {
 func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
 	var proxiedRequests int32
 
-	proxy := goproxy.NewProxyHttpServer()
-	setupHTTPSProxy(proxy, &proxiedRequests)
+	proxy := newTestProxy(&proxiedRequests)
 
 	httpsProxyAddr := setupProxyServer(s.T(), proxy, true, true)
 
@@ -111,9 +110,9 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
 var certs embed.FS
 
 // Make sure you close the server after the test.
-func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool) string {
+func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool) string {
 	schema := "http"
-	if isTls {
+	if isTLS {
 		schema = "https"
 	}
 
@@ -131,7 +130,7 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 		Handler: handler,
 	}
 
-	if isTls {
+	if isTLS {
 		certf, err := certs.Open("testdata/certs/server.crt")
 		assert.NoError(t, err)
 		defer certf.Close()
@@ -160,7 +159,7 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 	go func() {
 		defer func() { close(done) }()
 		var err error
-		if isTls {
+		if isTLS {
 			err = proxyServer.ServeTLS(httpListener, "", "")
 		} else {
 			err = proxyServer.Serve(httpListener)
@@ -177,37 +176,130 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTls, schemaAddr bool
 	return httpProxyAddr
 }
 
-func setupHTTPProxy(proxy *goproxy.ProxyHttpServer, proxiedRequests *int32) {
-	// The request is being forwarded to the local test git server in this handler.
-	var proxyHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		if strings.Contains(req.Host, "localhost") {
-			user, pass, _ := parseBasicAuth(req.Header.Get("Proxy-Authorization"))
-			if user != "user" || pass != "pass" {
-				return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusUnauthorized, "")
-			}
-			atomic.AddInt32(proxiedRequests, 1)
-			return req, nil
-		}
-		// Reject if it isn't our request.
-		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "")
-	}
-	proxy.OnRequest().Do(proxyHandler)
+// testProxy is a minimal HTTP/HTTPS proxy for testing.
+type testProxy struct {
+	proxiedRequests *int32
 }
 
-func setupHTTPSProxy(proxy *goproxy.ProxyHttpServer, proxiedRequests *int32) {
-	var proxyHandler goproxy.FuncHttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-		if strings.Contains(host, "github.com") {
-			user, pass, _ := parseBasicAuth(ctx.Req.Header.Get("Proxy-Authorization"))
-			if user != "user" || pass != "pass" {
-				return goproxy.RejectConnect, host
-			}
-			atomic.AddInt32(proxiedRequests, 1)
-			return goproxy.OkConnect, host
-		}
-		// Reject if it isn't our request.
-		return goproxy.RejectConnect, host
+func newTestProxy(proxiedRequests *int32) *testProxy {
+	return &testProxy{proxiedRequests: proxiedRequests}
+}
+
+func (p *testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Check proxy authentication
+	user, pass, _ := parseBasicAuth(r.Header.Get("Proxy-Authorization"))
+	if user != "user" || pass != "pass" {
+		http.Error(w, "Proxy Authentication Required", http.StatusProxyAuthRequired)
+		return
 	}
-	proxy.OnRequest().HandleConnect(proxyHandler)
+
+	if r.Method == http.MethodConnect {
+		// HTTPS proxy: handle CONNECT requests
+		p.handleConnect(w, r)
+	} else {
+		// HTTP proxy: forward the request
+		p.handleHTTP(w, r)
+	}
+}
+
+func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
+	// Only allow connections to github.com for HTTPS tests
+	if !strings.Contains(r.Host, "github.com") && !strings.Contains(r.Host, "localhost") {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	atomic.AddInt32(p.proxiedRequests, 1)
+
+	// Establish connection to the target
+	targetConn, err := net.Dial("tcp", r.Host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	// Hijack the connection first
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+		targetConn.Close()
+		return
+	}
+
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		targetConn.Close()
+		return
+	}
+
+	// Send 200 Connection Established response manually after hijacking
+	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	if err != nil {
+		targetConn.Close()
+		clientConn.Close()
+		return
+	}
+
+	// Tunnel data between client and target.
+	// Use one goroutine for client->target, current goroutine for target->client.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(targetConn, clientConn)
+		targetConn.Close() // Signal EOF to the other direction
+	}()
+
+	_, _ = io.Copy(clientConn, targetConn)
+	clientConn.Close() // Signal EOF to the other direction
+
+	wg.Wait()
+}
+
+func (p *testProxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only allow requests to localhost for HTTP tests
+	if !strings.Contains(r.Host, "localhost") {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	atomic.AddInt32(p.proxiedRequests, 1)
+
+	// Create a new request to the target
+	outReq := r.Clone(r.Context())
+	outReq.RequestURI = ""
+
+	// Remove hop-by-hop headers
+	hopHeaders := []string{
+		"Connection",
+		"Proxy-Connection", // non-standard but still sent by some proxies
+		"Keep-Alive",
+		"Proxy-Authorization",
+		"TE",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+	}
+	for _, h := range hopHeaders {
+		outReq.Header.Del(h)
+	}
+
+	resp, err := http.DefaultTransport.RoundTrip(outReq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // adapted from https://github.com/golang/go/blob/2ef70d9d0f98832c8103a7968b195e560a8bb262/src/net/http/request.go#L959

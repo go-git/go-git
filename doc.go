@@ -1,4 +1,4 @@
-// A highly extensible git implementation in pure Go.
+// Package git is a highly extensible git implementation in pure Go.
 //
 // go-git aims to reach the completeness of libgit2 or jgit, nowadays covers the
 // majority of the plumbing read operations and some of the main write

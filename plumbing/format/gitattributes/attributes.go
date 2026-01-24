@@ -1,3 +1,4 @@
+// Package gitattributes provides utilities for parsing and matching gitattributes files.
 package gitattributes
 
 import (
@@ -14,10 +15,13 @@ const (
 )
 
 var (
-	ErrMacroNotAllowed      = errors.New("macro not allowed")
+	// ErrMacroNotAllowed is returned when a macro is used where it is not allowed.
+	ErrMacroNotAllowed = errors.New("macro not allowed")
+	// ErrInvalidAttributeName is returned when an invalid attribute name is used.
 	ErrInvalidAttributeName = errors.New("invalid attribute name")
 )
 
+// MatchAttribute represents a gitattribute pattern match with its attributes.
 type MatchAttribute struct {
 	Name       string
 	Pattern    Pattern
@@ -34,6 +38,7 @@ const (
 	attributeSetValue    attributeState = '='
 )
 
+// Attribute represents a gitattribute.
 type Attribute interface {
 	Name() string
 	IsSet() bool
@@ -116,7 +121,7 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	line = strings.TrimSpace(line)
 
 	if strings.HasPrefix(line, commentPrefix) || len(line) == 0 {
-		return
+		return m, err
 	}
 
 	name, unquoted := unquote(line)
@@ -129,7 +134,7 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	var macro bool
 	macro, name, err = checkMacro(name, allowMacro)
 	if err != nil {
-		return
+		return m, err
 	}
 
 	m.Name = name
@@ -164,7 +169,7 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	if !macro {
 		m.Pattern = ParsePattern(name, domain)
 	}
-	return
+	return m, err
 }
 
 func checkMacro(name string, allowMacro bool) (macro bool, macroName string, err error) {
@@ -188,10 +193,10 @@ func validAttributeName(name string) bool {
 	}
 
 	for _, ch := range name {
-		if !(ch == '-' || ch == '.' || ch == '_' ||
-			('0' <= ch && ch <= '9') ||
-			('a' <= ch && ch <= 'z') ||
-			('A' <= ch && ch <= 'Z')) {
+		if (ch != '-' && ch != '.' && ch != '_') &&
+			(ch < '0' || ch > '9') &&
+			(ch < 'a' || ch > 'z') &&
+			(ch < 'A' || ch > 'Z') {
 			return false
 		}
 	}

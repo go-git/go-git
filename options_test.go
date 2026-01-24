@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/util"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/stretchr/testify/suite"
 )
 
 type OptionsSuite struct {
@@ -16,6 +17,7 @@ type OptionsSuite struct {
 }
 
 func TestOptionsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(OptionsSuite))
 }
 
@@ -105,7 +107,7 @@ func (s *OptionsSuite) writeGlobalConfig(cfg *config.Config) func() {
 	tmp, err := util.TempDir(fs, "", "test-options")
 	s.NoError(err)
 
-	err = fs.MkdirAll(fs.Join(tmp, "git"), 0777)
+	err = fs.MkdirAll(fs.Join(tmp, "git"), 0o777)
 	s.NoError(err)
 
 	os.Setenv("XDG_CONFIG_HOME", fs.Join(fs.Root(), tmp))
@@ -114,11 +116,10 @@ func (s *OptionsSuite) writeGlobalConfig(cfg *config.Config) func() {
 	s.NoError(err)
 
 	cfgFile := fs.Join(tmp, "git/config")
-	err = util.WriteFile(fs, cfgFile, content, 0777)
+	err = util.WriteFile(fs, cfgFile, content, 0o777)
 	s.NoError(err)
 
 	return func() {
 		os.Setenv("XDG_CONFIG_HOME", "")
-
 	}
 }

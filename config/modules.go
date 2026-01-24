@@ -9,15 +9,16 @@ import (
 )
 
 var (
-	ErrModuleEmptyURL  = errors.New("module config: empty URL")
+	// ErrModuleEmptyURL is returned when a submodule has an empty URL.
+	ErrModuleEmptyURL = errors.New("module config: empty URL")
+	// ErrModuleEmptyPath is returned when a submodule has an empty path.
 	ErrModuleEmptyPath = errors.New("module config: empty path")
-	ErrModuleBadPath   = errors.New("submodule has an invalid path")
+	// ErrModuleBadPath is returned when a submodule has an invalid path.
+	ErrModuleBadPath = errors.New("submodule has an invalid path")
 )
 
-var (
-	// Matches module paths with dotdot ".." components.
-	dotdotPath = regexp.MustCompile(`(^|[/\\])\.\.([/\\]|$)`)
-)
+// Matches module paths with dotdot ".." components.
+var dotdotPath = regexp.MustCompile(`(^|[/\\])\.\.([/\\]|$)`)
 
 // Modules defines the submodules properties, represents a .gitmodules file
 // https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html

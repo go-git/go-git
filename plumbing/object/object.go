@@ -90,21 +90,21 @@ type Signature struct {
 // Decode decodes a byte slice into a signature
 func (s *Signature) Decode(b []byte) {
 	open := bytes.LastIndexByte(b, '<')
-	close := bytes.LastIndexByte(b, '>')
-	if open == -1 || close == -1 {
+	closeBracket := bytes.LastIndexByte(b, '>')
+	if open == -1 || closeBracket == -1 {
 		return
 	}
 
-	if close < open {
+	if closeBracket < open {
 		return
 	}
 
 	s.Name = string(bytes.Trim(b[:open], " "))
-	s.Email = string(b[open+1 : close])
+	s.Email = string(b[open+1 : closeBracket])
 
-	hasTime := close+2 < len(b)
+	hasTime := closeBracket+2 < len(b)
 	if hasTime {
-		s.decodeTimeAndTimeZone(b[close+2:])
+		s.decodeTimeAndTimeZone(b[closeBracket+2:])
 	}
 }
 
@@ -133,7 +133,7 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 	}
 
 	s.When = time.Unix(ts, 0).In(time.UTC)
-	var tzStart = space + 1
+	tzStart := space + 1
 	if tzStart >= len(b) || tzStart+timeZoneLength > len(b) {
 		return
 	}
@@ -154,10 +154,7 @@ func (s *Signature) decodeTimeAndTimeZone(b []byte) {
 }
 
 func (s *Signature) encodeTimeAndTimeZone(w io.Writer) error {
-	u := s.When.Unix()
-	if u < 0 {
-		u = 0
-	}
+	u := max(s.When.Unix(), 0)
 	_, err := fmt.Fprintf(w, "%d %s", u, s.When.Format("-0700"))
 	return err
 }
@@ -189,7 +186,7 @@ func (iter *ObjectIter) Next() (Object, error) {
 		}
 
 		o, err := iter.toObject(obj)
-		if err == plumbing.ErrInvalidType {
+		if errors.Is(err, plumbing.ErrInvalidType) {
 			continue
 		}
 
@@ -207,7 +204,7 @@ func (iter *ObjectIter) Next() (Object, error) {
 func (iter *ObjectIter) ForEach(cb func(Object) error) error {
 	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
 		o, err := iter.toObject(obj)
-		if err == plumbing.ErrInvalidType {
+		if errors.Is(err, plumbing.ErrInvalidType) {
 			return nil
 		}
 

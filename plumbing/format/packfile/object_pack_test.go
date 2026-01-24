@@ -4,8 +4,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type ObjectToPackSuite struct {
@@ -13,6 +14,7 @@ type ObjectToPackSuite struct {
 }
 
 func TestObjectToPackSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ObjectToPackSuite))
 }
 
@@ -39,6 +41,6 @@ func (*dummyObject) Hash() plumbing.Hash             { return plumbing.ZeroHash 
 func (*dummyObject) Type() plumbing.ObjectType       { return plumbing.InvalidObject }
 func (*dummyObject) SetType(plumbing.ObjectType)     {}
 func (*dummyObject) Size() int64                     { return 0 }
-func (*dummyObject) SetSize(s int64)                 {}
+func (*dummyObject) SetSize(_ int64)                 {}
 func (*dummyObject) Reader() (io.ReadCloser, error)  { return nil, nil }
 func (*dummyObject) Writer() (io.WriteCloser, error) { return nil, nil }

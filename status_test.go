@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 func TestStatusReturnsFullPaths(t *testing.T) {
+	t.Parallel()
 	files := []string{
 		filepath.Join("a", "a"),
 		filepath.Join("b", "a"),
@@ -69,6 +71,7 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 			require.NoError(t, err)
 

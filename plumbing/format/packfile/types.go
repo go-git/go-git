@@ -6,12 +6,15 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// Version represents the packfile version.
 type Version uint32
 
+// Packfile versions.
 const (
 	V2 Version = 2
 )
 
+// Supported returns true if the version is supported.
 func (v Version) Supported() bool {
 	switch v {
 	case V2:
@@ -48,19 +51,23 @@ func (oh *ObjectHeader) ID() plumbing.Hash {
 	return oh.Hash
 }
 
+// SectionType represents the type of section in a packfile.
 type SectionType int
 
+// Section types.
 const (
 	HeaderSection SectionType = iota
 	ObjectSection
 	FooterSection
 )
 
+// Header represents the packfile header.
 type Header struct {
 	Version    Version
 	ObjectsQty uint32
 }
 
+// PackData represents the data returned by the scanner.
 type PackData struct {
 	Section      SectionType
 	header       Header
@@ -68,7 +75,8 @@ type PackData struct {
 	checksum     plumbing.Hash
 }
 
-func (p PackData) Value() interface{} {
+// Value returns the value of the PackData based on its section type.
+func (p PackData) Value() any {
 	switch p.Section {
 	case HeaderSection:
 		return p.header

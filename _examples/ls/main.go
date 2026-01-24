@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -131,7 +132,7 @@ func getFullPath(treePath, path string) string {
 
 func getFileHashes(c commitgraph.CommitNode, treePath string, paths []string) (map[string]plumbing.Hash, error) {
 	tree, err := getCommitTree(c, treePath)
-	if err == object.ErrDirectoryNotFound {
+	if errors.Is(err, object.ErrDirectoryNotFound) {
 		// The whole tree didn't exist, so return empty map
 		return make(map[string]plumbing.Hash), nil
 	}
@@ -156,7 +157,7 @@ func getFileHashes(c commitgraph.CommitNode, treePath string, paths []string) (m
 
 func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []string) (map[string]*object.Commit, error) {
 	// We do a tree traversal with nodes sorted by commit time
-	heap := binaryheap.NewWith(func(a, b interface{}) int {
+	heap := binaryheap.NewWith(func(a, b any) int {
 		if a.(*commitAndPaths).commit.CommitTime().Before(b.(*commitAndPaths).commit.CommitTime()) {
 			return 1
 		}

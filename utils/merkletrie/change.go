@@ -8,9 +8,8 @@ import (
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
-var (
-	ErrEmptyFileName = errors.New("empty filename in tree entry")
-)
+// ErrEmptyFileName is returned when a tree entry has an empty filename.
+var ErrEmptyFileName = errors.New("empty filename in tree entry")
 
 // Action values represent the kind of things a Change can represent:
 // insertion, deletions or modifications of files.

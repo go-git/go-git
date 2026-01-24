@@ -10,6 +10,7 @@ import (
 )
 
 func TestGetStat(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    []byte
 		expected Stat
@@ -64,6 +65,7 @@ func TestGetStat(t *testing.T) {
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("#%d %s", idx, test.input), func(t *testing.T) {
+			t.Parallel()
 			r := bytes.NewReader(test.input)
 
 			stat, err := GetStat(r)
@@ -75,6 +77,7 @@ func TestGetStat(t *testing.T) {
 }
 
 func TestIsBinary(t *testing.T) {
+	t.Parallel()
 	stat := Stat{}
 	assert.False(t, stat.IsBinary())
 

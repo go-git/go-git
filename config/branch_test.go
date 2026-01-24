@@ -3,8 +3,9 @@ package config
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type BranchSuite struct {
@@ -12,6 +13,7 @@ type BranchSuite struct {
 }
 
 func TestBranchSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BranchSuite))
 }
 
@@ -47,6 +49,7 @@ func (b *BranchSuite) TestValidateMerge() {
 func (b *BranchSuite) TestMarshal() {
 	expected := []byte(`[core]
 	bare = false
+	filemode = true
 [branch "branch-tracking-on-clone"]
 	remote = fork
 	merge = refs/heads/branch-tracking-on-clone

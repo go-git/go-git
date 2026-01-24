@@ -7,9 +7,10 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type SuiteReader struct {
@@ -17,6 +18,7 @@ type SuiteReader struct {
 }
 
 func TestSuiteReader(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteReader))
 }
 
@@ -31,7 +33,7 @@ func (s *SuiteReader) TestReadObjfile() {
 	}
 }
 
-func testReader(t *testing.T, source io.Reader, hash plumbing.Hash, o plumbing.ObjectType, content []byte, com string) {
+func testReader(t *testing.T, source io.Reader, hash plumbing.Hash, o plumbing.ObjectType, content []byte, _ string) {
 	r, err := NewReader(source)
 	assert.NoError(t, err)
 
@@ -46,7 +48,6 @@ func testReader(t *testing.T, source io.Reader, hash plumbing.Hash, o plumbing.O
 
 	assert.Equal(t, hash, r.Hash()) // Test Hash() before close
 	assert.NoError(t, r.Close())
-
 }
 
 func (s *SuiteReader) TestReadEmptyObjfile() {

@@ -26,11 +26,11 @@ func CheckIfError(err error) {
 }
 
 // Info should be used to describe the example commands that are about to run.
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	fmt.Printf("\x1b[34;1m%s\x1b[0m\n", fmt.Sprintf(format, args...))
 }
 
 // Warning should be used to display a warning
-func Warning(format string, args ...interface{}) {
+func Warning(format string, args ...any) {
 	fmt.Printf("\x1b[36;1m%s\x1b[0m\n", fmt.Sprintf(format, args...))
 }

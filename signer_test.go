@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6/memfs"
+
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 )

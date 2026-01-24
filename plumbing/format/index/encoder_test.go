@@ -2,16 +2,19 @@ package index
 
 import (
 	"bytes"
+	"crypto"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 func TestEncode(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 2,
 		Entries: []*Entry{{
@@ -39,12 +42,12 @@ func TestEncode(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -53,10 +56,10 @@ func TestEncode(t *testing.T) {
 	assert.Equal(t, strings.Repeat(" ", 20), output.Entries[0].Name)
 	assert.Equal(t, "bar", output.Entries[1].Name)
 	assert.Equal(t, "foo", output.Entries[2].Name)
-
 }
 
 func TestEncodeV4(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 4,
 		Entries: []*Entry{{
@@ -94,12 +97,12 @@ func TestEncodeV4(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	require.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	require.NoError(t, err)
 
@@ -113,27 +116,29 @@ func TestEncodeV4(t *testing.T) {
 }
 
 func TestEncodeUnsupportedVersion(t *testing.T) {
+	t.Parallel()
 	idx := &Index{Version: 5}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.Equal(t, ErrUnsupportedVersion, err)
 }
 
 func TestEncodeWithIntentToAddUnsupportedVersion(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 3,
 		Entries: []*Entry{{IntentToAdd: true}},
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -142,18 +147,19 @@ func TestEncodeWithIntentToAddUnsupportedVersion(t *testing.T) {
 }
 
 func TestEncodeWithSkipWorktreeUnsupportedVersion(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 3,
 		Entries: []*Entry{{SkipWorktree: true}},
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf)
+	e := NewEncoder(buf, crypto.SHA1.New())
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf)
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(output)
 	assert.NoError(t, err)
 

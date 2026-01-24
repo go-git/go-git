@@ -5,8 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type BlobsSuite struct {
@@ -15,6 +16,7 @@ type BlobsSuite struct {
 }
 
 func TestBlobsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BlobsSuite))
 }
 
@@ -49,7 +51,7 @@ func (s *BlobsSuite) TestBlobHash() {
 }
 
 func (s *BlobsSuite) TestBlobDecodeEncodeIdempotent() {
-	var objects []*plumbing.MemoryObject
+	objects := make([]*plumbing.MemoryObject, 0, 2)
 	for _, str := range []string{"foo", "foo\n"} {
 		obj := &plumbing.MemoryObject{}
 		obj.Write([]byte(str))

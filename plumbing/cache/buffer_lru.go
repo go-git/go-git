@@ -1,3 +1,4 @@
+// Package cache implements different caching strategies for go-git objects and buffers.
 package cache
 
 import (

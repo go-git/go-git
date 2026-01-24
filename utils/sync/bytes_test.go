@@ -8,6 +8,7 @@ import (
 )
 
 func TestGetAndPutByteSlice(t *testing.T) {
+	t.Parallel()
 	slice := GetByteSlice()
 	require.NotNil(t, slice)
 

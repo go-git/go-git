@@ -6,11 +6,13 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 func TestCmdStartEOFSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(CmdStartEOFSuite))
 }
 
@@ -51,7 +53,7 @@ type mockStartEOFCommander struct {
 	mockCmd *mockStartEOFCommand
 }
 
-func (c *mockStartEOFCommander) Command(_ context.Context, cmd string, ep *Endpoint, auth AuthMethod, _ ...string) (Command, error) {
+func (c *mockStartEOFCommander) Command(_ context.Context, _ string, _ *Endpoint, _ AuthMethod, _ ...string) (Command, error) {
 	c.mockCmd = &mockStartEOFCommand{}
 	return c.mockCmd, nil
 }

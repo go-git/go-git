@@ -6,7 +6,6 @@ import (
 	"crypto"
 	"encoding/hex"
 	"fmt"
-
 	"hash"
 	"hash/crc32"
 	"io"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -65,7 +65,7 @@ var (
 type Scanner struct {
 	// version holds the packfile version.
 	version Version
-	// objects holds the quantiy of objects within the packfile.
+	// objects holds the quantity of objects within the packfile.
 	objects uint32
 	// objIndex is the current index when going through the packfile objects.
 	objIndex int
@@ -112,7 +112,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		crc:      crc,
 		packhash: packhash,
 		nextFn:   packHeaderSignature,
-		// Set the default size, which can be overriden by opts.
+		// Set the default size, which can be overridden by opts.
 		objectIDSize: packhash.Size(),
 	}
 
@@ -163,9 +163,13 @@ func (r *Scanner) Scan() bool {
 
 // Reset resets the current scanner, enabling it to be used to scan the
 // same Packfile again.
-func (r *Scanner) Reset() {
-	r.scannerReader.Flush()
-	r.scannerReader.Seek(0, io.SeekStart)
+func (r *Scanner) Reset() error {
+	if err := r.Flush(); err != nil {
+		return err
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	r.packhash.Reset()
 
 	r.objIndex = -1
@@ -174,6 +178,7 @@ func (r *Scanner) Reset() {
 	r.packData = PackData{}
 	r.err = nil
 	r.nextFn = packHeaderSignature
+	return nil
 }
 
 // Data returns the pack data based on the last call to Scan().
@@ -187,18 +192,22 @@ func (r *Scanner) Error() error {
 	return r.err
 }
 
+// SeekFromStart seeks to the given offset from the start of the packfile.
 func (r *Scanner) SeekFromStart(offset int64) error {
-	r.Reset()
+	if err := r.Reset(); err != nil {
+		return err
+	}
 
 	if !r.Scan() {
 		return fmt.Errorf("failed to reset and read header")
 	}
 
-	_, err := r.scannerReader.Seek(offset, io.SeekStart)
+	_, err := r.Seek(offset, io.SeekStart)
 	return err
 }
 
-func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
+// WriteObject writes the content of the given ObjectHeader to the provided writer.
+func (r *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	if oh.content != nil && oh.content.Len() > 0 {
 		_, err := ioutil.CopyBufferPool(writer, oh.content)
 		return err
@@ -212,11 +221,11 @@ func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	}
 
 	// Not a seeker data source.
-	if s.seeker == nil {
+	if r.seeker == nil {
 		return plumbing.ErrObjectNotFound
 	}
 
-	err := s.inflateContent(oh.ContentOffset, writer)
+	err := r.inflateContent(oh.ContentOffset, writer)
 	if err != nil {
 		return ErrReferenceDeltaNotFound
 	}
@@ -224,24 +233,20 @@ func (s *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	return nil
 }
 
-func (s *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
-	_, err := s.scannerReader.Seek(contentOffset, io.SeekStart)
+func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
+	_, err := r.Seek(contentOffset, io.SeekStart)
 	if err != nil {
 		return err
 	}
 
-	zr, err := gogitsync.GetZlibReader(s.scannerReader)
+	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
 		return fmt.Errorf("zlib reset error: %s", err)
 	}
 	defer gogitsync.PutZlibReader(zr)
 
 	_, err = ioutil.CopyBufferPool(writer, zr)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // scan goes through the next stateFn.
@@ -337,9 +342,11 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	r.objIndex++
 
-	offset := r.scannerReader.offset
+	offset := r.offset
 
-	r.scannerReader.Flush()
+	if err := r.Flush(); err != nil {
+		return nil, err
+	}
 	r.crc.Reset()
 
 	b := []byte{0}
@@ -348,12 +355,12 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		return nil, err
 	}
 
-	typ := parseType(b[0])
+	typ := packutil.ObjectType(b[0])
 	if !typ.Valid() {
 		return nil, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b[0])
 	}
 
-	size, err := readVariableLengthSize(b[0], r)
+	size, err := packutil.VariableLengthSize(b[0], r)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +390,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		}
 	}
 
-	oh.ContentOffset = r.scannerReader.offset
+	oh.ContentOffset = r.offset
 
 	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
@@ -401,7 +408,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 				return nil, err
 			}
 
-			defer w.Close()
+			defer func() { _ = w.Close() }()
 			mw = io.MultiWriter(r.hasher, w)
 		}
 
@@ -446,7 +453,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 		}
 	}
-	r.scannerReader.Flush()
+	if err := r.Flush(); err != nil {
+		return nil, err
+	}
 	oh.Crc32 = r.crc.Sum32()
 
 	r.packData.Section = ObjectSection
@@ -460,7 +469,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 // calculated during the scanning process, an [ErrMalformedPackfile] is
 // returned.
 func packFooter(r *Scanner) (stateFn, error) {
-	r.scannerReader.Flush()
+	if err := r.Flush(); err != nil {
+		return nil, err
+	}
 
 	actual := r.packhash.Sum(nil)
 
@@ -480,42 +491,4 @@ func packFooter(r *Scanner) (stateFn, error) {
 	r.nextFn = nil
 
 	return nil, nil
-}
-
-func readVariableLengthSize(first byte, reader io.ByteReader) (uint64, error) {
-	// Extract the first part of the size (last 3 bits of the first byte).
-	size := uint64(first & 0x0F)
-
-	// |  001xxxx | xxxxxxxx | xxxxxxxx | ...
-	//
-	//	 ^^^       ^^^^^^^^   ^^^^^^^^
-	//	Type      Size Part 1   Size Part 2
-	//
-	// Check if more bytes are needed to fully determine the size.
-	if first&maskContinue != 0 {
-		shift := uint(4)
-
-		for {
-			b, err := reader.ReadByte()
-			if err != nil {
-				return 0, err
-			}
-
-			// Add the next 7 bits to the size.
-			size |= uint64(b&0x7F) << shift
-
-			// Check if the continuation bit is set.
-			if b&maskContinue == 0 {
-				break
-			}
-
-			// Prepare for the next byte.
-			shift += 7
-		}
-	}
-	return size, nil
-}
-
-func parseType(b byte) plumbing.ObjectType {
-	return plumbing.ObjectType((b & maskType) >> firstLengthBits)
 }

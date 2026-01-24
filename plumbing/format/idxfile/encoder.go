@@ -67,7 +67,7 @@ func (e *Encoder) encodeFanout(idx *MemoryIndex) (int, error) {
 
 func (e *Encoder) encodeHashes(idx *MemoryIndex) (int, error) {
 	var size int
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		pos := idx.FanoutMapping[k]
 		if pos == noMapping {
 			continue
@@ -84,7 +84,7 @@ func (e *Encoder) encodeHashes(idx *MemoryIndex) (int, error) {
 
 func (e *Encoder) encodeCRC32(idx *MemoryIndex) (int, error) {
 	var size int
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		pos := idx.FanoutMapping[k]
 		if pos == noMapping {
 			continue
@@ -103,7 +103,7 @@ func (e *Encoder) encodeCRC32(idx *MemoryIndex) (int, error) {
 
 func (e *Encoder) encodeOffsets(idx *MemoryIndex) (int, error) {
 	var size int
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		pos := idx.FanoutMapping[k]
 		if pos == noMapping {
 			continue

@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -32,16 +33,20 @@ const (
 	DefaultProtocolVersion = protocol.V0 // go-git only supports V0 at the moment
 )
 
-// ConfigStorer generic storage of Config object
+// ConfigStorer is a generic storage of Config object.
 type ConfigStorer interface {
 	Config() (*Config, error)
 	SetConfig(*Config) error
 }
 
 var (
-	ErrInvalid               = errors.New("config invalid key in remote or branch")
-	ErrRemoteConfigNotFound  = errors.New("remote config not found")
-	ErrRemoteConfigEmptyURL  = errors.New("remote config: empty URL")
+	// ErrInvalid is returned when a config key is invalid.
+	ErrInvalid = errors.New("config invalid key in remote or branch")
+	// ErrRemoteConfigNotFound is returned when a remote config is not found.
+	ErrRemoteConfigNotFound = errors.New("remote config not found")
+	// ErrRemoteConfigEmptyURL is returned when a remote config has an empty URL.
+	ErrRemoteConfigEmptyURL = errors.New("remote config: empty URL")
+	// ErrRemoteConfigEmptyName is returned when a remote config has an empty name.
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
 )
 
@@ -73,6 +78,11 @@ type Config struct {
 		// converted to LF when added to the repository, and vice versa on checkout.
 		// If set to "input", only worktree-to-repository conversion is performed.
 		AutoCRLF string
+		// FileMode defines whether the executable bit of working tree files is to be honored.
+		// If "false", when an index node is an Executable and is comparing hash
+		// against local file, 0644 will be used as the value of its mode. The original
+		// value of mode is left unchanged in the index.
+		FileMode bool
 	}
 
 	User struct {
@@ -217,6 +227,7 @@ func NewConfig() *Config {
 		Raw:        format.New(),
 	}
 
+	config.Core.FileMode = DefaultFileMode
 	config.Pack.Window = DefaultPackWindow
 	config.Protocol.Version = DefaultProtocolVersion
 
@@ -261,7 +272,7 @@ func LoadConfig(scope Scope) (*Config, error) {
 			return nil, err
 		}
 
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		return ReadConfig(f)
 	}
 
@@ -346,14 +357,17 @@ const (
 	descriptionKey             = "description"
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
-	objectFormat               = "objectformat"
+	objectFormatKey            = "objectformat"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
+	fileModeKey                = "filemode"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
+	// DefaultFileMode is the default file mode used by git command.
+	DefaultFileMode = true
 )
 
 // Unmarshal parses a git-config file and stores it.
@@ -367,6 +381,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	}
 
 	c.unmarshalCore()
+	c.unmarshalExtensions()
 	c.unmarshalUser()
 	c.unmarshalInit()
 	if err := c.unmarshalPack(); err != nil {
@@ -398,6 +413,21 @@ func (c *Config) unmarshalCore() {
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
+
+	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
+		c.Core.FileMode = false
+	}
+
+	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version1) {
+		c.Core.RepositoryFormatVersion = format.Version1
+	}
+}
+
+func (c *Config) unmarshalExtensions() {
+	s := c.Raw.Section(extensionsSection)
+	if s.Options.Get(objectFormatKey) == format.SHA256.String() {
+		c.Extensions.ObjectFormat = format.SHA256
+	}
 }
 
 func (c *Config) unmarshalUser() {
@@ -483,7 +513,7 @@ func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
 		m := &Submodule{}
 		m.unmarshal(sub)
 
-		if m.Validate() == ErrModuleBadPath {
+		if errors.Is(m.Validate(), ErrModuleBadPath) {
 			continue
 		}
 
@@ -563,14 +593,16 @@ func (c *Config) marshalCore() {
 	if c.Core.AutoCRLF != "" {
 		s.SetOption(autoCRLFKey, c.Core.AutoCRLF)
 	}
+
+	s.SetOption(fileModeKey, fmt.Sprintf("%t", c.Core.FileMode))
 }
 
 func (c *Config) marshalExtensions() {
 	// Extensions are only supported on Version 1, therefore
 	// ignore them otherwise.
-	if c.Core.RepositoryFormatVersion == format.Version_1 {
+	if c.Core.RepositoryFormatVersion == format.Version1 {
 		s := c.Raw.Section(extensionsSection)
-		s.SetOption(objectFormat, c.Extensions.ObjectFormat.String())
+		s.SetOption(objectFormatKey, c.Extensions.ObjectFormat.String())
 	}
 }
 
@@ -811,6 +843,7 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	return c.raw
 }
 
+// IsFirstURLLocal returns true if the first URL is a local path.
 func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }

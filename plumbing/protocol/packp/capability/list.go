@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func (l *List) Decode(raw []byte) error {
 		return nil
 	}
 
-	for _, data := range bytes.Split(raw, []byte{' '}) {
+	for data := range bytes.SplitSeq(raw, []byte{' '}) {
 		pair := bytes.SplitN(data, []byte{'='}, 2)
 
 		c := Capability(pair[0])
@@ -116,10 +117,8 @@ func (l *List) Add(c Capability, values ...string) error {
 }
 
 func (l *List) validateNoEmptyArgs(values []string) error {
-	for _, v := range values {
-		if v == "" {
-			return ErrEmptyArgument
-		}
+	if slices.Contains(values, "") {
+		return ErrEmptyArgument
 	}
 	return nil
 }
@@ -167,7 +166,11 @@ func (l *List) Delete(capability Capability) {
 
 // All returns a slice with all defined capabilities.
 func (l *List) All() []Capability {
-	var cs []Capability
+	if len(l.sort) == 0 {
+		return nil
+	}
+
+	cs := make([]Capability, 0, len(l.sort))
 	for _, key := range l.sort {
 		cs = append(cs, Capability(key))
 	}
@@ -180,13 +183,13 @@ func (l *List) All() []Capability {
 func (l *List) String() string {
 	var o []string
 	for _, key := range l.sort {
-		cap := l.m[Capability(key)]
-		if len(cap.Values) == 0 {
+		c := l.m[Capability(key)]
+		if len(c.Values) == 0 {
 			o = append(o, key)
 			continue
 		}
 
-		for _, value := range cap.Values {
+		for _, value := range c.Values {
 			o = append(o, fmt.Sprintf("%s=%s", key, value))
 		}
 	}

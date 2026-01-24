@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"io"
 	"time"
 
@@ -13,12 +14,14 @@ type commitLimitIter struct {
 	limitOptions LogLimitOptions
 }
 
+// LogLimitOptions defines limits for log traversal.
 type LogLimitOptions struct {
 	Since    *time.Time
 	Until    *time.Time
 	TailHash plumbing.Hash
 }
 
+// NewCommitLimitIterFromIter creates a new commit iterator with limits applied.
 func NewCommitLimitIterFromIter(commitIter CommitIter, limitOptions LogLimitOptions) CommitIter {
 	iterator := new(commitLimitIter)
 	iterator.sourceIter = commitIter
@@ -52,11 +55,11 @@ func (c *commitLimitIter) ForEach(cb func(*Commit) error) error {
 		if nextErr == io.EOF {
 			break
 		}
-		if nextErr != nil && nextErr != storer.ErrStop {
+		if nextErr != nil && !errors.Is(nextErr, storer.ErrStop) {
 			return nextErr
 		}
 		err := cb(commit)
-		if err == storer.ErrStop || nextErr == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) || errors.Is(nextErr, storer.ErrStop) {
 			return nil
 		} else if err != nil {
 			return err

@@ -19,12 +19,13 @@ func init() {
 // DefaultClient is the default git client.
 var DefaultClient = transport.NewPackTransport(&runner{})
 
+// DefaultPort is the default port for the git protocol.
 const DefaultPort = 9418
 
 type runner struct{}
 
 // Command returns a new Command for the given cmd in the given Endpoint
-func (r *runner) Command(ctx context.Context, cmd string, ep *transport.Endpoint, _ transport.AuthMethod, params ...string) (transport.Command, error) {
+func (r *runner) Command(_ context.Context, cmd string, ep *transport.Endpoint, _ transport.AuthMethod, params ...string) (transport.Command, error) {
 	c := &command{command: cmd, endpoint: ep, params: params}
 	if err := c.connect(); err != nil {
 		return nil, err
@@ -49,12 +50,7 @@ func (c *command) Start() error {
 		ExtraParams:    c.params,
 	}
 
-	host := c.endpoint.Host
-	if c.endpoint.Port != DefaultPort {
-		host = net.JoinHostPort(c.endpoint.Host, strconv.Itoa(c.endpoint.Port))
-	}
-
-	req.Host = host
+	req.Host = c.getHostWithPort()
 
 	return req.Encode(c.conn)
 }
@@ -76,12 +72,12 @@ func (c *command) connect() error {
 
 func (c *command) getHostWithPort() string {
 	host := c.endpoint.Host
-	port := c.endpoint.Port
-	if port <= 0 {
-		port = DefaultPort
+	port := c.endpoint.Port()
+	if port == "" {
+		return net.JoinHostPort(host, strconv.Itoa(DefaultPort))
 	}
 
-	return net.JoinHostPort(host, strconv.Itoa(port))
+	return host
 }
 
 // StderrPipe git protocol doesn't have any dedicated error channel

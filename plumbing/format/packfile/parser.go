@@ -90,7 +90,7 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 			return err
 		}
 
-		defer w.Close()
+		defer func() { _ = w.Close() }()
 
 		_, err = ioutil.CopyBufferPool(w, oh.content)
 		if err != nil {
@@ -116,11 +116,7 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 		return err
 	}
 
-	if err := p.onInflatedObjectContent(oh.Hash, oh.Offset, oh.Crc32, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return p.onInflatedObjectContent(oh.Hash, oh.Offset, oh.Crc32, nil)
 }
 
 func (p *Parser) resetCache(qty int) {
@@ -144,14 +140,15 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 			header := data.Value().(Header)
 
 			p.resetCache(int(header.ObjectsQty))
-			p.onHeader(header.ObjectsQty)
+			_ = p.onHeader(header.ObjectsQty)
 
 		case ObjectSection:
 			oh := data.Value().(ObjectHeader)
 			if oh.Type.IsDelta() {
-				if oh.Type == plumbing.OFSDeltaObject {
+				switch oh.Type {
+				case plumbing.OFSDeltaObject:
 					pendingDeltas = append(pendingDeltas, &oh)
-				} else if oh.Type == plumbing.REFDeltaObject {
+				case plumbing.REFDeltaObject:
 					pendingDeltaREFs = append(pendingDeltaREFs, &oh)
 				}
 				continue
@@ -162,7 +159,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 				oh.content = nil
 			}
 
-			p.storeOrCache(&oh)
+			_ = p.storeOrCache(&oh)
 
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
@@ -211,14 +208,15 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 	}
 
 	var err error
-	if !p.lowMemoryMode && oh.content != nil && oh.content.Len() > 0 {
+	switch {
+	case !p.lowMemoryMode && oh.content != nil && oh.content.Len() > 0:
 		source := oh.content
 		oh.content = sync.GetBytesBuffer()
 
 		defer sync.PutBytesBuffer(source)
 
 		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
-	} else if p.scanner.scannerReader.seeker != nil {
+	case p.scanner.seeker != nil:
 		deltaData := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(deltaData)
 
@@ -228,7 +226,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 		}
 
 		err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
-	} else {
+	default:
 		return fmt.Errorf("can't ensure content: %w", plumbing.ErrObjectNotFound)
 	}
 
@@ -293,7 +291,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 			parent.Size = obj.Size()
 			r, err := obj.Reader()
 			if err == nil {
-				defer r.Close()
+				defer func() { _ = r.Close() }()
 
 				if parent.content == nil {
 					parent.content = sync.GetBytesBuffer()

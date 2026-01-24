@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
@@ -19,17 +20,15 @@ import (
 // and https://github.com/tarruda/node-git-core/blob/master/src/js/delta.js
 // for details about the delta format.
 
+// Delta errors.
 var (
 	ErrInvalidDelta = errors.New("invalid delta")
 	ErrDeltaCmd     = errors.New("wrong delta command")
 )
 
 const (
-	payload      = 0x7f // 0111 1111
-	continuation = 0x80 // 1000 0000
-
 	// maxPatchPreemptionSize defines what is the max size of bytes to be
-	// premptively made available for a patch operation.
+	// preemptively made available for a patch operation.
 	maxPatchPreemptionSize uint = 65536
 
 	// minDeltaSize defines the smallest size for a delta.
@@ -106,9 +105,10 @@ func PatchDelta(src, delta []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// ReaderFromDelta returns a reader that applies a delta to a base object.
 func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadCloser, error) {
 	deltaBuf := bufio.NewReaderSize(deltaRC, 1024)
-	srcSz, err := decodeLEB128ByteReader(deltaBuf)
+	srcSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
 			return nil, ErrInvalidDelta
@@ -119,7 +119,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 		return nil, ErrInvalidDelta
 	}
 
-	targetSz, err := decodeLEB128ByteReader(deltaBuf)
+	targetSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
 			return nil, ErrInvalidDelta
@@ -136,7 +136,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 			_ = dstWr.CloseWithError(ErrInvalidDelta)
 			return
 		}
-		defer baseRd.Close()
+		defer func() { _ = baseRd.Close() }()
 
 		baseBuf := bufio.NewReader(baseRd)
 		basePos := uint(0)
@@ -240,12 +240,12 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 		return ErrInvalidDelta
 	}
 
-	srcSz, delta := decodeLEB128(delta)
+	srcSz, delta := packutil.DecodeLEB128(delta)
 	if srcSz != uint(len(src)) {
 		return ErrInvalidDelta
 	}
 
-	targetSz, delta := decodeLEB128(delta)
+	targetSz, delta := packutil.DecodeLEB128(delta)
 	remainingTargetSz := targetSz
 
 	var cmd byte
@@ -308,9 +308,10 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 }
 
 func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
-	typ plumbing.ObjectType, writeHeader objectHeaderWriter) (uint, plumbing.Hash, error) {
+	typ plumbing.ObjectType, writeHeader objectHeaderWriter,
+) (uint, plumbing.Hash, error) {
 	deltaBuf := bufio.NewReader(delta)
-	srcSz, err := decodeLEB128ByteReader(deltaBuf)
+	srcSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
 			return 0, plumbing.ZeroHash, ErrInvalidDelta
@@ -322,7 +323,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 		return 0, plumbing.ZeroHash, ErrInvalidDelta
 	}
 
-	targetSz, err := decodeLEB128ByteReader(deltaBuf)
+	targetSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
 			return 0, plumbing.ZeroHash, ErrInvalidDelta
@@ -330,7 +331,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 		return 0, plumbing.ZeroHash, err
 	}
 
-	// Avoid several iteractions expanding the buffer, which can be quite
+	// Avoid several interactions expanding the buffer, which can be quite
 	// inefficient on large deltas.
 	if b, ok := dst.(*bytes.Buffer); ok {
 		b.Grow(int(targetSz))
@@ -369,7 +370,8 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			return 0, plumbing.ZeroHash, err
 		}
 
-		if isCopyFromSrc(cmd) {
+		switch {
+		case isCopyFromSrc(cmd):
 			offset, err := decodeOffsetByteReader(cmd, deltaBuf)
 			if err != nil {
 				return 0, plumbing.ZeroHash, err
@@ -392,7 +394,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 				return 0, plumbing.ZeroHash, err
 			}
 			remainingTargetSz -= sz
-		} else if isCopyFromDelta(cmd) {
+		case isCopyFromDelta(cmd):
 			sz := uint(cmd) // cmd is the size itself
 			if invalidSize(sz, targetSz) {
 				return 0, plumbing.ZeroHash, ErrInvalidDelta
@@ -403,7 +405,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			}
 
 			remainingTargetSz -= sz
-		} else {
+		default:
 			return 0, plumbing.ZeroHash, err
 		}
 		if remainingTargetSz <= 0 {
@@ -414,57 +416,12 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 	return targetSz, hasher.Sum(), nil
 }
 
-// Decodes a number encoded as an unsigned LEB128 at the start of some
-// binary data and returns the decoded number and the rest of the
-// stream.
-//
-// This must be called twice on the delta data buffer, first to get the
-// expected source buffer size, and again to get the target buffer size.
-func decodeLEB128(input []byte) (uint, []byte) {
-	if len(input) == 0 {
-		return 0, input
-	}
-
-	var num, sz uint
-	var b byte
-	for {
-		b = input[sz]
-		num |= (uint(b) & payload) << (sz * 7) // concats 7 bits chunks
-		sz++
-
-		if uint(b)&continuation == 0 || sz == uint(len(input)) {
-			break
-		}
-	}
-
-	return num, input[sz:]
-}
-
-func decodeLEB128ByteReader(input io.ByteReader) (uint, error) {
-	var num, sz uint
-	for {
-		b, err := input.ReadByte()
-		if err != nil {
-			return 0, err
-		}
-
-		num |= (uint(b) & payload) << (sz * 7) // concats 7 bits chunks
-		sz++
-
-		if uint(b)&continuation == 0 {
-			break
-		}
-	}
-
-	return num, nil
-}
-
 func isCopyFromSrc(cmd byte) bool {
-	return (cmd & continuation) != 0
+	return (cmd & maskContinue) != 0
 }
 
 func isCopyFromDelta(cmd byte) bool {
-	return (cmd&continuation) == 0 && cmd != 0
+	return (cmd&maskContinue) == 0 && cmd != 0
 }
 
 func decodeOffsetByteReader(cmd byte, delta io.ByteReader) (uint, error) {

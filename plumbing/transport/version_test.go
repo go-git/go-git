@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDiscoverVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -47,9 +49,10 @@ func TestDiscoverVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			if tt.input != "" {
-				pktline.WriteString(&buf, tt.input) //nolint:errcheck
+				pktline.WriteString(&buf, tt.input)
 			}
 
 			r := bufio.NewReader(&buf)
@@ -66,6 +69,7 @@ func TestDiscoverVersion(t *testing.T) {
 }
 
 func TestProtocolVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -110,6 +114,7 @@ func TestProtocolVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			version := ProtocolVersion(tt.input)
 			assert.Equal(t, tt.expected, version)
 		})

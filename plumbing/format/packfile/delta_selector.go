@@ -64,7 +64,6 @@ func (dw *deltaSelector) ObjectsToPack(
 	var wg sync.WaitGroup
 	var once sync.Once
 	for _, objs := range objectGroups {
-		objs := objs
 		wg.Add(1)
 		go func() {
 			if walkErr := dw.walk(objs, packWindow); walkErr != nil {
@@ -88,7 +87,7 @@ func (dw *deltaSelector) objectsToPack(
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) ([]*ObjectToPack, error) {
-	var objectsToPack []*ObjectToPack
+	objectsToPack := make([]*ObjectToPack, 0, len(hashes))
 	for _, h := range hashes {
 		var o plumbing.EncodedObject
 		var err error
@@ -222,7 +221,7 @@ func (dw *deltaSelector) walk(
 	packWindow uint,
 ) error {
 	indexMap := make(map[plumbing.Hash]*deltaIndex)
-	for i := 0; i < len(objectsToPack); i++ {
+	for i := range len(objectsToPack) {
 		// Clean up the index map and reconstructed delta objects for anything
 		// outside our pack window, to save memory.
 		if i > int(packWindow) {
@@ -320,7 +319,8 @@ func (dw *deltaSelector) tryToDeltify(indexMap map[plumbing.Hash]*deltaIndex, ba
 }
 
 func (dw *deltaSelector) deltaSizeLimit(targetSize int64, baseDepth int,
-	targetDepth int, targetDelta bool) int64 {
+	targetDepth int, targetDelta bool,
+) int64 {
 	if !targetDelta {
 		// Any delta should be no more than 50% of the original size
 		// (for text files deflate of whole form should shrink 50%).

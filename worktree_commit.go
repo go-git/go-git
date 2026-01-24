@@ -9,16 +9,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
+	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
-
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/packet"
-	"github.com/go-git/go-billy/v6"
 )
 
 var (
@@ -204,7 +204,6 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 		if _, _, err := w.doAddFile(idx, s, path, nil); err != nil {
 			return err
 		}
-
 	}
 
 	return w.r.Storer.SetIndex(idx)
@@ -288,7 +287,7 @@ type buildTreeHelper struct {
 
 // BuildTree builds the tree objects and push its to the storer, the hash
 // of the root tree is returned.
-func (h *buildTreeHelper) BuildTree(idx *index.Index, opts *CommitOptions) (plumbing.Hash, error) {
+func (h *buildTreeHelper) BuildTree(idx *index.Index, _ *CommitOptions) (plumbing.Hash, error) {
 	const rootNode = ""
 	h.trees = map[string]*object.Tree{rootNode: {}}
 	h.entries = map[string]*object.TreeEntry{}
@@ -346,9 +345,9 @@ func (sortableEntries) sortName(te object.TreeEntry) string {
 	}
 	return te.Name
 }
-func (se sortableEntries) Len() int               { return len(se) }
-func (se sortableEntries) Less(i int, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
-func (se sortableEntries) Swap(i int, j int)      { se[i], se[j] = se[j], se[i] }
+func (se sortableEntries) Len() int           { return len(se) }
+func (se sortableEntries) Less(i, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
+func (se sortableEntries) Swap(i, j int)      { se[i], se[j] = se[j], se[i] }
 
 func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
 	sort.Sort(sortableEntries(t.Entries))

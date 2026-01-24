@@ -6,17 +6,17 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
 )
 
-type BaseObjectsFixtureSuite struct {
-}
+type BaseObjectsFixtureSuite struct{}
 
 type BaseObjectsSuite struct {
 	Storer  storer.EncodedObjectStorer
@@ -55,6 +55,7 @@ type ObjectsSuite struct {
 }
 
 func TestObjectsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ObjectsSuite))
 }
 

@@ -88,7 +88,9 @@ const (
 	// historically the reference implementation of receive-pack always
 	// understood thin packs. Adding 'no-thin' later allowed receive-pack
 	// to disable the feature in a backwards-compatible manner.
-	ThinPack, NoThin Capability = "thin-pack", "no-thin"
+	ThinPack Capability = "thin-pack"
+	// NoThin is the opposite of the ThinPack capability.
+	NoThin Capability = "no-thin"
 	// Sideband means that server can send, and client understand multiplexed
 	// progress reports and error info interleaved with the packfile itself.
 	//
@@ -120,7 +122,8 @@ const (
 	// The client MUST send only maximum of one of "side-band" and "side-
 	// band-64k".  Server MUST diagnose it as an error if client requests
 	// both.
-	Sideband    Capability = "side-band"
+	Sideband Capability = "side-band"
+	// Sideband64k is the 64k variant of Sideband.
 	Sideband64k Capability = "side-band-64k"
 	// OFSDelta server can send, and client understand PACKv2 with delta
 	// referring to its base by position in pack rather than by an obj-id. That

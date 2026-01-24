@@ -11,6 +11,7 @@ type ModulesSuite struct {
 }
 
 func TestModulesSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ModulesSuite))
 }
 

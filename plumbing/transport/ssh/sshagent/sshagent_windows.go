@@ -21,7 +21,6 @@
 // MIT LICENSE: https://github.com/davidmz/go-pageant/blob/master/LICENSE.txt
 
 //go:build windows
-// +build windows
 
 package sshagent
 
@@ -32,8 +31,9 @@ import (
 	"sync"
 
 	"github.com/Microsoft/go-winio"
-	"github.com/go-git/go-git/v6/utils/trace"
 	"golang.org/x/crypto/ssh/agent"
+
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 const (
@@ -50,7 +50,7 @@ func Available() bool {
 	if err != nil {
 		return false
 	}
-	conn.Close()
+	_ = conn.Close()
 	return true
 }
 

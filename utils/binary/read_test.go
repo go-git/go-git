@@ -14,6 +14,7 @@ type BinarySuite struct {
 }
 
 func TestBinarySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BinarySuite))
 }
 

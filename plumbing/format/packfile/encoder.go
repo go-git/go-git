@@ -90,7 +90,9 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 		// (for example due to a concurrent repack) and a different base
 		// was chosen, forcing a cycle. Select something other than a
 		// delta, and write this object.
-		e.selector.restoreOriginal(o)
+		if err := e.selector.restoreOriginal(o); err != nil {
+			return err
+		}
 		o.BackToOriginal()
 	}
 
@@ -158,9 +160,8 @@ func (e *Encoder) writeDeltaHeader(o *ObjectToPack) error {
 
 	if e.useRefDeltas {
 		return e.writeRefDeltaHeader(o.Base.Hash())
-	} else {
-		return e.writeOfsDeltaHeader(o)
 	}
+	return e.writeOfsDeltaHeader(o)
 }
 
 func (e *Encoder) writeRefDeltaHeader(base plumbing.Hash) error {
@@ -184,10 +185,7 @@ func (e *Encoder) entryHead(typeNum plumbing.ObjectType, size int64) error {
 	header := []byte{}
 	c := (t << firstLengthBits) | (size & maskFirstLength)
 	size >>= firstLengthBits
-	for {
-		if size == 0 {
-			break
-		}
+	for size != 0 {
 		header = append(header, byte(c|maskContinue))
 		c = size & int64(maskLength)
 		size >>= lengthBits

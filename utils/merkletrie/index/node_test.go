@@ -5,11 +5,13 @@ import (
 	"path"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
-	"github.com/stretchr/testify/suite"
 )
 
 type NoderSuite struct {
@@ -17,6 +19,7 @@ type NoderSuite struct {
 }
 
 func TestNoderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(NoderSuite))
 }
 
@@ -126,6 +129,37 @@ func (s *NoderSuite) TestDiffSameRoot() {
 	}
 
 	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
+	s.NoError(err)
+	s.Len(ch, 1)
+}
+
+func (s *NoderSuite) TestDiffFileMode() {
+	indexA := &index.Index{
+		Entries: []*index.Entry{{
+			Name: "foo.bash",
+			Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+			Mode: filemode.Executable,
+		}},
+	}
+
+	indexB := &index.Index{
+		Entries: []*index.Entry{{
+			Name: "foo.bash",
+			Hash: plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+			Mode: filemode.Regular,
+		}},
+	}
+
+	// filemode is false
+	ch, err := merkletrie.DiffTree(
+		NewRootNodeWithOptions(indexA, RootNodeOptions{}),
+		NewRootNodeWithOptions(indexB, RootNodeOptions{}),
+		isEquals)
+	s.NoError(err)
+	s.Len(ch, 0)
+
+	// filemode is true
+	ch, err = merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
 	s.NoError(err)
 	s.Len(ch, 1)
 }
