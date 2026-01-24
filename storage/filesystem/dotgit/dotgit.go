@@ -800,17 +800,36 @@ func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, er
 // RemoveRef removes a reference by name.
 func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	path := d.fs.Join(".", name.String())
-	_, err := d.fs.Stat(path)
-	if err == nil {
+	if _, err := d.fs.Stat(path); err == nil {
 		err = d.fs.Remove(path)
-		// Drop down to remove it from the packed refs file, too.
-	}
 
-	if err != nil && !os.IsNotExist(err) {
+		// Remove any parent directories that became empty after ref is deleted.
+		if err := d.removeEmptyParentDirs(filepath.Dir(path)); err != nil {
+			return fmt.Errorf("removing empty parent directories: %v", err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
+	// Drop down to remove it from the packed refs file, too.
 	return d.rewritePackedRefsWithoutRef(name)
+}
+
+func (d *DotGit) removeEmptyParentDirs(path string) error {
+	for path != "refs/" {
+		files, err := d.fs.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("reading directory: %v", err)
+		}
+		if len(files) > 0 {
+			return nil
+		}
+		if err := d.fs.Remove(path); err != nil {
+			return fmt.Errorf("removing empty directory: %w", err)
+		}
+		path = filepath.Dir(path)
+	}
+	return nil
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
