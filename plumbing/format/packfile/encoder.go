@@ -3,12 +3,15 @@ package packfile
 import (
 	"compress/zlib"
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -19,7 +22,7 @@ type Encoder struct {
 	selector *deltaSelector
 	w        *offsetWriter
 	zw       *zlib.Writer
-	hasher   plumbing.Hasher
+	hasher   hash.Hash
 
 	useRefDeltas bool
 }
@@ -28,10 +31,13 @@ type Encoder struct {
 // EncodedObjectStorer. By default deltas used to generate the packfile will be
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
-	h := plumbing.Hasher{
-		// TODO: Support passing an ObjectFormat (sha256)
-		Hash: hash.New(crypto.SHA1),
+	var h hash.Hash
+	if getter, ok := s.(storage.ObjectFormatGetter); ok && getter.ObjectFormat() == config.SHA256 {
+		h = hash.New(crypto.SHA256)
+	} else {
+		h = hash.New(crypto.SHA1)
 	}
+
 	mw := io.MultiWriter(w, h)
 	ow := newOffsetWriter(mw)
 	zw := zlib.NewWriter(mw)
@@ -198,7 +204,11 @@ func (e *Encoder) entryHead(typeNum plumbing.ObjectType, size int64) error {
 }
 
 func (e *Encoder) footer() (plumbing.Hash, error) {
-	h := e.hasher.Sum()
+	h, ok := plumbing.FromBytes(e.hasher.Sum(nil))
+	if !ok {
+		return plumbing.ZeroHash, errors.New("packfile encoder yielded invalid hash")
+	}
+
 	_, err := h.WriteTo(e.w)
 	return h, err
 }
