@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
@@ -39,7 +40,12 @@ func FetchPack(
 		reader = demuxer
 	}
 
-	if err := packfile.UpdateObjectStorage(st, reader); err != nil {
+	of := config.SHA1
+	if req.Wants[0].Size() == config.SHA256.Size() {
+		of = config.SHA256
+	}
+
+	if err := packfile.UpdateObjectStorage(st, reader, of); err != nil {
 		return err
 	}
 

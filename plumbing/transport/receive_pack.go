@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -110,10 +111,16 @@ func ReceivePack(
 		}
 	}
 
+	of := config.SHA1
+	f := caps.Get(capability.ObjectFormat)
+	if len(f) > 0 && f[0] == "sha256" {
+		of = config.SHA256
+	}
+
 	// Receive the packfile
 	var unpackErr error
 	if needPackfile {
-		unpackErr = packfile.UpdateObjectStorage(st, rd)
+		unpackErr = packfile.UpdateObjectStorage(st, rd, of)
 	}
 
 	// Done with the request, now close the reader
