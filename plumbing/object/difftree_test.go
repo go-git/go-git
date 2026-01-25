@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -51,7 +52,7 @@ func (s *DiffTreeSuite) storageFromPackfile(f *fixtures.Fixture) storer.EncodedO
 	pf := f.Packfile()
 	defer pf.Close()
 
-	if err := packfile.UpdateObjectStorage(storer, pf); err != nil {
+	if err := packfile.UpdateObjectStorage(storer, pf, config.SHA1); err != nil {
 		panic(err)
 	}
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -95,7 +96,7 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 	p := f.Packfile()
 	defer func() { _ = p.Close() }()
 
-	s.Require().NoError(packfile.UpdateObjectStorage(storer, p))
+	s.Require().NoError(packfile.UpdateObjectStorage(storer, p, config.SHA1))
 	s.Require().NoError(storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head))))
 
 	r, err := Open(storer, memfs.New())
