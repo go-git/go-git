@@ -372,6 +372,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 
 	switch oh.Type {
 	case plumbing.OFSDeltaObject, plumbing.REFDeltaObject:
+		oh.Hash.ResetBySize(r.objectIDSize)
+
 		// For delta objects, we need to skip the base reference
 		if oh.Type == plumbing.OFSDeltaObject {
 			no, err := binary.ReadVariableWidthInt(r.scannerReader)
@@ -458,7 +460,7 @@ func packFooter(r *Scanner) (stateFn, error) {
 	}
 
 	if checksum.Compare(actual) != 0 {
-		return nil, fmt.Errorf("checksum mismatch expected %q but found %q: %w",
+		return nil, fmt.Errorf("checksum mismatch: expected %q found %q: %w",
 			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
 	}
 

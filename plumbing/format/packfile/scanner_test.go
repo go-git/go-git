@@ -38,7 +38,7 @@ func TestScan(t *testing.T) {
 			sha256:   true,
 			want: []ObjectHeader{
 				{Hash: plumbing.NewHash("233fbe36fbc685c391d6e48049c1e6558a6742dba527281d02896bcba43a8950"), Offset: 12, Size: 685, Type: plumbing.CommitObject},
-				{Offset: 459, Size: 227, Type: plumbing.OFSDeltaObject, OffsetReference: 12},
+				{Hash: plumbing.NewHash("0000000000000000000000000000000000000000000000000000000000000000"), Offset: 459, Size: 227, Type: plumbing.OFSDeltaObject, OffsetReference: 12},
 				{Hash: plumbing.NewHash("757ba6c738cdd774ea77094c52350acb8de989889a63f90972702ff6c5df69d4"), Offset: 687, Size: 47, Type: plumbing.BlobObject},
 				{Hash: plumbing.NewHash("a3490718a0b0e8564981306fcfb3c8e5e5b8dd4c00d477d635350c92c542e15c"), Offset: 737, Size: 49, Type: plumbing.TreeObject},
 				{Hash: plumbing.NewHash("fc90aec557362385e83d1f2046e2f8c2d52fdaeb5ba570a5f82b403e12340370"), Offset: 797, Size: 49, Type: plumbing.TreeObject},

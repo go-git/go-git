@@ -4,7 +4,9 @@ import (
 	"io"
 	"time"
 
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
@@ -24,17 +26,24 @@ const (
 
 // UpdateObjectStorage updates the storer with the objects in the given
 // packfile.
-func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
+func UpdateObjectStorage(s storer.Storer, packfile io.Reader, of formatcfg.ObjectFormat) error {
 	start := time.Now()
 	defer func() {
 		trace.Performance.Printf("performance: %.9f s: update_obj_storage", time.Since(start).Seconds())
 	}()
 
+	if setter, ok := s.(storage.ObjectFormatSetter); ok {
+		err := setter.SetObjectFormat(of)
+		if err != nil {
+			return err
+		}
+	}
+
 	if pw, ok := s.(storer.PackfileWriter); ok {
 		return WritePackfileToObjectStorage(pw, packfile)
 	}
 
-	p := NewParser(packfile, WithStorage(s))
+	p := NewParser(packfile, WithStorage(s), WithObjectFormat(of))
 
 	_, err := p.Parse()
 	return err
