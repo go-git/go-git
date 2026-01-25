@@ -110,6 +110,12 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 		idx.FanoutMapping[i] = noMapping
 	}
 
+	// Pre-allocate underlying array based on expected number
+	// of objects.
+	idx.Names = make([][]byte, 0, len(w.objects))
+	idx.Offset32 = make([][]byte, 0, len(w.objects))
+	idx.CRC32 = make([][]byte, 0, len(w.objects))
+
 	buf := new(bytes.Buffer)
 
 	last := -1
