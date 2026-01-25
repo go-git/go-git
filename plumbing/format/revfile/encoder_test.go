@@ -28,7 +28,7 @@ func TestEncode(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		writer io.Writer
+		writer *bytes.Buffer
 		idx    *idxfile.MemoryIndex
 		want   string
 	}{
@@ -60,7 +60,14 @@ func TestEncode(t *testing.T) {
 			if tc.want != "" {
 				assert.EqualError(t, err, tc.want)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
+
+				content, err := io.ReadAll(fixture.Rev())
+				require.NoError(t, err)
+
+				// Ensure the produced rev file is byte-identical to
+				// the one in the fixture.
+				assert.Equal(t, content, tc.writer.Bytes())
 			}
 		})
 	}
