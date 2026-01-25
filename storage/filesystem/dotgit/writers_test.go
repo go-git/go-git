@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 )
@@ -24,7 +25,7 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	fs := osfs.New(b.TempDir())
 
 	for b.Loop() {
-		w, err := newPackWrite(fs)
+		w, err := newPackWrite(fs, config.SHA1)
 
 		require.NoError(b, err)
 		_, err = io.Copy(w, f.Packfile())
@@ -153,7 +154,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
-	w, err := newPackWrite(fs)
+	w, err := newPackWrite(fs, config.SHA1)
 	require.NoError(t, err)
 
 	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {

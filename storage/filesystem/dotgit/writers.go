@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -35,9 +36,10 @@ type PackWriter struct {
 	parser   *packfile.Parser
 	writer   *idxfile.Writer
 	result   chan error
+	format   formatcfg.ObjectFormat
 }
 
-func newPackWrite(fs billy.Filesystem) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -54,7 +56,10 @@ func newPackWrite(fs billy.Filesystem) (*PackWriter, error) {
 		fr:     fr,
 		synced: newSyncedReader(fw, fr),
 		result: make(chan error),
+		format: format,
 	}
+
+	writer.checksum.ResetBySize(format.Size())
 
 	go writer.buildIndex()
 	return writer, nil
@@ -64,7 +69,9 @@ func (w *PackWriter) buildIndex() {
 	w.writer = new(idxfile.Writer)
 	var err error
 
-	w.parser = packfile.NewParser(w.synced, packfile.WithScannerObservers(w.writer))
+	w.parser = packfile.NewParser(w.synced,
+		packfile.WithScannerObservers(w.writer),
+		packfile.WithObjectFormat(w.format))
 
 	h, err := w.parser.Parse()
 	if err != nil {
@@ -143,7 +150,7 @@ func (w *PackWriter) save() error {
 		h = crypto.SHA256.New()
 	}
 
-	if err := w.encodeIdx(idx); err != nil {
+	if err := w.encodeIdx(idx, h); err != nil {
 		_ = idx.Close()
 		return err
 	}

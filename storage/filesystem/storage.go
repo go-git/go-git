@@ -2,12 +2,17 @@
 package filesystem
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // Storage is an implementation of git.Storer that stores data on disk in the
@@ -60,33 +65,85 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 // NewStorageWithOptions returns a new Storage with extra options,
 // backed by a given `fs.Filesystem` and cache.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
+	of := ops.ObjectFormat
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
 		AlternatesFS:    ops.AlternatesFS,
 		KeepDescriptors: ops.KeepDescriptors,
+		ObjectFormat:    of,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
+
+	// If the dotgit already exists, and has a config, use that ObjectFormat instead.
+	if f, err := dir.Config(); err == nil {
+		defer ioutil.CheckClose(f, &err)
+		cfg, err := config.ReadConfig(f)
+		if err == nil {
+			if cfg.Core.RepositoryFormatVersion == formatcfg.Version1 {
+				if of != cfg.Extensions.ObjectFormat {
+					_ = dir.SetObjectFormat(cfg.Extensions.ObjectFormat)
+				}
+				of = cfg.Extensions.ObjectFormat
+				ops.ObjectFormat = cfg.Extensions.ObjectFormat
+			}
+		}
+	}
 
 	if c == nil {
 		c = cache.NewObjectLRUDefault()
 	}
 
+	hasher := plumbing.NewHasher(of, plumbing.AnyObject, 0)
 	s := &Storage{
-		fs:  fs,
-		dir: dir,
+		fs:     fs,
+		dir:    dir,
+		hasher: hasher,
 
 		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir},
+		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash},
 		ShallowStorage:   ShallowStorage{dir: dir},
-		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
+		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: of},
 		ModuleStorage:    ModuleStorage{dir: dir},
 	}
 
-	s.hasher = plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
-	s.h = s.hasher.Hash
+	s.h = hasher.Hash
 
 	return s
+}
+
+func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
+	cfg, err := s.Config()
+	if err != nil {
+		return err
+	}
+
+	if cfg.Extensions.ObjectFormat != of {
+		// Presently, storage only supports a single object format at a
+		// time. Changing the format of an existing (and populated) object
+		// storage is yet to be supported.
+		if len(s.packList) > 0 ||
+			len(s.packfiles) > 0 {
+			return errors.New("cannot change object format of existing object storage")
+		}
+
+		cfg.Extensions.ObjectFormat = of
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		err = s.SetConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("cannot set object format on config: %w", err)
+		}
+
+		err = s.dir.SetObjectFormat(of)
+		if err != nil {
+			return fmt.Errorf("cannot set object format on dotgit: %w", err)
+		}
+
+		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
+		s.h = s.hasher.Hash
+	}
+
+	return nil
 }
 
 // Filesystem returns the underlying filesystem
