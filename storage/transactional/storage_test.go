@@ -4,17 +4,19 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCommit(t *testing.T) {
+	t.Parallel()
 	base := memory.NewStorage()
 	temporal := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 	st := NewStorage(base, temporal)
@@ -41,11 +43,12 @@ func TestCommit(t *testing.T) {
 }
 
 func TestTransactionalPackfileWriter(t *testing.T) {
+	t.Parallel()
 	base := memory.NewStorage()
 	var temporal storage.Storer
 
-	temporal = filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
-
+	store := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+	temporal = store
 	st := NewStorage(base, temporal)
 
 	_, tmpOK := temporal.(storer.PackfileWriter)

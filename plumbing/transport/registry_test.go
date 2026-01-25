@@ -4,12 +4,14 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/storage"
-	"github.com/stretchr/testify/suite"
 )
 
 func TestClientSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RegistrySuite))
 }
 
@@ -22,7 +24,7 @@ func (s *RegistrySuite) TestNewClientSSH() {
 	e, err := NewEndpoint("ssh://github.com/src-d/go-git")
 	s.NoError(err)
 
-	output, err := Get(e.Protocol)
+	output, err := Get(e.Scheme)
 	s.NoError(err)
 	s.NotNil(output)
 }
@@ -31,7 +33,7 @@ func (s *RegistrySuite) TestNewClientUnknown() {
 	e, err := NewEndpoint("unknown://github.com/src-d/go-git")
 	s.NoError(err)
 
-	_, err = Get(e.Protocol)
+	_, err = Get(e.Scheme)
 	s.Error(err)
 }
 
@@ -40,7 +42,7 @@ func (s *RegistrySuite) TestNewClientNil() {
 	e, err := NewEndpoint("newscheme://github.com/src-d/go-git")
 	s.NoError(err)
 
-	_, err = Get(e.Protocol)
+	_, err = Get(e.Scheme)
 	s.Error(err)
 }
 

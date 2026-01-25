@@ -10,10 +10,10 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -24,6 +24,7 @@ type SuiteCommit struct {
 }
 
 func TestSuiteCommit(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteCommit))
 }
 
@@ -522,7 +523,6 @@ func (s *SuiteCommit) TestPatchCancel() {
 	patch, err := from.PatchContext(ctx, to)
 	s.Nil(patch)
 	s.ErrorContains(err, "operation canceled")
-
 }
 
 func (s *SuiteCommit) TestMalformedHeader() {
@@ -590,6 +590,7 @@ Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
 	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err = commit.EncodeWithoutSignature(encoded)
+	s.NoError(err)
 	er, err := encoded.Reader()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)
@@ -629,20 +630,20 @@ initial commit
 	s.NoError(err)
 
 	s.Equal(commit.ExtraHeaders, []ExtraHeader{
-		ExtraHeader {
-			Key: "continuedheader",
+		{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued",
 		},
-		ExtraHeader {
-			Key: "continuedheader",
+		{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued\non\nmore than\na single line",
 		},
-		ExtraHeader {
-			Key: "simpleflag",
+		{
+			Key:   "simpleflag",
 			Value: "",
 		},
-		ExtraHeader {
-			Key: "",
+		{
+			Key:   "",
 			Value: "value no key",
 		},
 	})
@@ -650,6 +651,7 @@ initial commit
 	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err = commit.EncodeWithoutSignature(encoded)
+	s.NoError(err)
 	er, err := encoded.Reader()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)

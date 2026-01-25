@@ -1,4 +1,4 @@
-// package plumbing implement the core interfaces and structs used by go-git
+// Package plumbing implements the core interfaces and structs used by go-git.
 package plumbing
 
 import (
@@ -7,12 +7,13 @@ import (
 )
 
 var (
+	// ErrObjectNotFound is returned when an object is not found.
 	ErrObjectNotFound = errors.New("object not found")
 	// ErrInvalidType is returned when an invalid object type is provided.
 	ErrInvalidType = errors.New("invalid object type")
 )
 
-// Object is a generic representation of any git object
+// EncodedObject is a generic representation of any git object.
 type EncodedObject interface {
 	Hash() Hash
 	Type() ObjectType
@@ -40,15 +41,22 @@ type DeltaObject interface {
 type ObjectType int8
 
 const (
+	// InvalidObject represents an invalid object type.
 	InvalidObject ObjectType = 0
-	CommitObject  ObjectType = 1
-	TreeObject    ObjectType = 2
-	BlobObject    ObjectType = 3
-	TagObject     ObjectType = 4
-	// 5 reserved for future expansion
+	// CommitObject is a git commit object.
+	CommitObject ObjectType = 1
+	// TreeObject is a git tree object.
+	TreeObject ObjectType = 2
+	// BlobObject is a git blob object.
+	BlobObject ObjectType = 3
+	// TagObject is a git tag object.
+	TagObject ObjectType = 4
+	// OFSDeltaObject is an offset delta object type (5 reserved for future expansion).
 	OFSDeltaObject ObjectType = 6
+	// REFDeltaObject is a reference delta object type.
 	REFDeltaObject ObjectType = 7
 
+	// AnyObject is used to represent any object type.
 	AnyObject ObjectType = -127
 )
 
@@ -73,6 +81,7 @@ func (t ObjectType) String() string {
 	}
 }
 
+// Bytes returns the byte representation of the ObjectType.
 func (t ObjectType) Bytes() []byte {
 	return []byte(t.String())
 }
@@ -107,5 +116,5 @@ func ParseObjectType(value string) (typ ObjectType, err error) {
 	default:
 		err = ErrInvalidType
 	}
-	return
+	return typ, err
 }

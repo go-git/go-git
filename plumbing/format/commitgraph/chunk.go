@@ -16,6 +16,7 @@ var chunkSignatures = []byte("OIDFOIDLCDATGDA2GDO2EDGEBIDXBDATBASE\000\000\000\0
 // ChunkType represents the type of a chunk in the commit graph file.
 type ChunkType int
 
+// Chunk types in the commit graph file.
 const (
 	OIDFanoutChunk              ChunkType = iota // "OIDF"
 	OIDLookupChunk                               // "OIDL"

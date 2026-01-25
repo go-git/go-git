@@ -243,18 +243,16 @@ func (g *hunksGenerator) processHunk(i int, op Operation) {
 
 	switch op {
 	case Delete:
-		g.current.fromLine, g.current.toLine =
-			g.addLineNumbers(g.fromLine, g.toLine, linesBefore, i, Add)
+		g.current.fromLine, g.current.toLine = g.addLineNumbers(g.fromLine, g.toLine, linesBefore, i, Add)
 	case Add:
-		g.current.toLine, g.current.fromLine =
-			g.addLineNumbers(g.toLine, g.fromLine, linesBefore, i, Delete)
+		g.current.toLine, g.current.fromLine = g.addLineNumbers(g.toLine, g.fromLine, linesBefore, i, Delete)
 	}
 
 	g.beforeContext = nil
 }
 
 // addLineNumbers obtains the line numbers in a new chunk.
-func (g *hunksGenerator) addLineNumbers(la, lb int, linesBefore int, i int, op Operation) (cla, clb int) {
+func (g *hunksGenerator) addLineNumbers(la, lb, linesBefore, i int, op Operation) (cla, clb int) {
 	cla = la - linesBefore
 	// we need to search for a reference for the next diff
 	switch {
@@ -274,7 +272,7 @@ func (g *hunksGenerator) addLineNumbers(la, lb int, linesBefore int, i int, op O
 		}
 	}
 
-	return
+	return cla, clb
 }
 
 func (g *hunksGenerator) processEqualsLines(ls []string, i int) {
@@ -288,10 +286,7 @@ func (g *hunksGenerator) processEqualsLines(ls []string, i int) {
 		g.current.AddOp(Equal, g.afterContext...)
 		g.afterContext = nil
 	} else {
-		ctxLines := g.ctxLines
-		if ctxLines > len(g.afterContext) {
-			ctxLines = len(g.afterContext)
-		}
+		ctxLines := min(g.ctxLines, len(g.afterContext))
 		g.current.AddOp(Equal, g.afterContext[:ctxLines]...)
 		g.hunks = append(g.hunks, g.current)
 
@@ -385,8 +380,8 @@ func (o *op) writeTo(sb *strings.Builder, color ColorConfig) {
 	colorKey := operationColorKey[o.t]
 	sb.WriteString(color[colorKey])
 	sb.WriteByte(operationChar[o.t])
-	if strings.HasSuffix(o.text, "\n") {
-		sb.WriteString(strings.TrimSuffix(o.text, "\n"))
+	if text, found := strings.CutSuffix(o.text, "\n"); found {
+		sb.WriteString(text)
 	} else {
 		sb.WriteString(o.text + "\n\\ No newline at end of file")
 	}

@@ -10,11 +10,21 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -24,15 +34,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
-	"golang.org/x/text/unicode/norm"
 )
 
 func defaultTestCommitOptions() *CommitOptions {
@@ -46,6 +47,7 @@ type WorktreeSuite struct {
 }
 
 func TestWorktreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(WorktreeSuite))
 }
 
@@ -1592,6 +1594,54 @@ func (s *WorktreeSuite) TestStatusDeleted() {
 	s.Equal(Deleted, status.File(".gitignore").Worktree)
 }
 
+func (s *WorktreeSuite) TestStatusFileMode() {
+	runTest := func(t *testing.T, fileMode bool) string {
+		fs := memfs.New()
+		r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+		require.NoError(t, err)
+
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+
+		cfg.Core.FileMode = fileMode
+		err = r.SetConfig(cfg)
+		require.NoError(t, err)
+
+		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0755)
+		require.NoError(t, err)
+
+		_, err = w.Add("run.bash")
+		require.NoError(t, err)
+
+		_, err = w.Commit("Add an executable", defaultTestCommitOptions())
+		require.NoError(t, err)
+
+		err = util.RemoveAll(fs, "run.bash")
+		require.NoError(t, err)
+
+		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0644)
+		require.NoError(t, err)
+
+		s, err := w.Status()
+		require.NoError(t, err)
+
+		return s.String()
+	}
+
+	s.Run("filemode=true", func() {
+		result := runTest(s.T(), true)
+		s.Equal(" M run.bash\n", result)
+	})
+
+	s.Run("filemode=false", func() {
+		result := runTest(s.T(), false)
+		s.Equal("", result)
+	})
+}
+
 func (s *WorktreeSuite) TestSubmodule() {
 	fs := fixtures.ByTag("submodule").One().Worktree()
 	gitdir, err := fs.Chroot(GitDirName)
@@ -1689,7 +1739,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 			w, err := r.Worktree()
 			s.NoError(err)
 
-			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0644)
+			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0o644)
 			s.NoError(err)
 
 			submodules, err := w.Submodules()
@@ -1711,6 +1761,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 }
 
 func TestResolveModuleURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		originURL string
 		moduleURL string
@@ -1780,6 +1831,7 @@ func TestResolveModuleURL(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			got, err := resolveModuleURL(tc.originURL, tc.moduleURL)
 			if tc.wantErr == nil {
 				assert.NoError(t, err)
@@ -2024,7 +2076,7 @@ func (s *WorktreeSuite) TestAddRemoved() {
 	s.Equal(Deleted, file.Staging)
 }
 
-func (s *WorktreeSuite) TestAddRemovedInDirectory() {
+func (s *WorktreeSuite) testAddRemovedInDirectory(addPath string, expectedJSONStatus StatusCode) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -2044,7 +2096,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory() {
 	err = w.Filesystem.Remove("json/short.json")
 	s.NoError(err)
 
-	hash, err := w.Add("go")
+	hash, err := w.Add(addPath)
 	s.NoError(err)
 	s.True(hash.IsZero())
 
@@ -2066,97 +2118,19 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory() {
 	s.Equal(Deleted, file.Staging)
 
 	file = status.File("json/short.json")
-	s.Equal(Unmodified, file.Staging)
+	s.Equal(expectedJSONStatus, file.Staging)
+}
+
+func (s *WorktreeSuite) TestAddRemovedInDirectory() {
+	s.testAddRemovedInDirectory("go", Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddRemovedInDirectoryWithTrailingSlash() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = w.Filesystem.Remove("go/example.go")
-	s.NoError(err)
-
-	err = w.Filesystem.Remove("json/short.json")
-	s.NoError(err)
-
-	hash, err := w.Add("go/")
-	s.NoError(err)
-	s.True(hash.IsZero())
-
-	e, err := idx.Entry("go/example.go")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	e, err = idx.Entry("json/short.json")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 2)
-
-	file := status.File("go/example.go")
-	s.Equal(Deleted, file.Staging)
-
-	file = status.File("json/short.json")
-	s.Equal(Unmodified, file.Staging)
+	s.testAddRemovedInDirectory("go/", Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddRemovedInDirectoryDot() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = w.Filesystem.Remove("go/example.go")
-	s.NoError(err)
-
-	err = w.Filesystem.Remove("json/short.json")
-	s.NoError(err)
-
-	hash, err := w.Add(".")
-	s.NoError(err)
-	s.True(hash.IsZero())
-
-	e, err := idx.Entry("go/example.go")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	e, err = idx.Entry("json/short.json")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 2)
-
-	file := status.File("go/example.go")
-	s.Equal(Deleted, file.Staging)
-
-	file = status.File("json/short.json")
-	s.Equal(Deleted, file.Staging)
+	s.testAddRemovedInDirectory(".", Deleted)
 }
 
 func (s *WorktreeSuite) TestAddSymlink() {
@@ -2408,7 +2382,7 @@ func (s *WorktreeSuite) TestAddGlobErrorNoMatches() {
 	s.ErrorIs(err, ErrGlobNoMatches)
 }
 
-func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
+func (s *WorktreeSuite) testAddSkipStatus(filePath string, expectedEntries int, expectedStaging StatusCode) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -2422,17 +2396,17 @@ func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
 	s.NoError(err)
 	s.Len(idx.Entries, 9)
 
-	err = util.WriteFile(w.Filesystem, "file1", []byte("file1"), 0o644)
+	err = util.WriteFile(w.Filesystem, filePath, []byte("file1"), 0o644)
 	s.NoError(err)
 
-	err = w.AddWithOptions(&AddOptions{Path: "file1", SkipStatus: true})
+	err = w.AddWithOptions(&AddOptions{Path: filePath, SkipStatus: true})
 	s.NoError(err)
 
 	idx, err = w.r.Storer.Index()
 	s.NoError(err)
-	s.Len(idx.Entries, 10)
+	s.Len(idx.Entries, expectedEntries)
 
-	e, err := idx.Entry("file1")
+	e, err := idx.Entry(filePath)
 	s.NoError(err)
 	s.Equal(filemode.Regular, e.Mode)
 
@@ -2440,46 +2414,17 @@ func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
 	s.NoError(err)
 	s.Len(status, 1)
 
-	file := status.File("file1")
-	s.Equal(Added, file.Staging)
+	file := status.File(filePath)
+	s.Equal(expectedStaging, file.Staging)
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
+	s.testAddSkipStatus("file1", 10, Added)
+}
+
 func (s *WorktreeSuite) TestAddSkipStatusModifiedPath() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = util.WriteFile(w.Filesystem, "LICENSE", []byte("file1"), 0o644)
-	s.NoError(err)
-
-	err = w.AddWithOptions(&AddOptions{Path: "LICENSE", SkipStatus: true})
-	s.NoError(err)
-
-	idx, err = w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	e, err := idx.Entry("LICENSE")
-	s.NoError(err)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 1)
-
-	file := status.File("LICENSE")
-	s.Equal(Modified, file.Staging)
-	s.Equal(Unmodified, file.Worktree)
+	s.testAddSkipStatus("LICENSE", 9, Modified)
 }
 
 func (s *WorktreeSuite) TestAddSkipStatusNonModifiedPath() {
@@ -2933,6 +2878,7 @@ func (s *WorktreeSuite) TestCleanBare() {
 }
 
 func TestAlternatesRepo(t *testing.T) {
+	t.Parallel()
 	fs := fixtures.ByTag("alternates").One().Worktree()
 
 	// Open 1st repo.
@@ -3173,14 +3119,7 @@ func (s *WorktreeSuite) TestGrep() {
 		// Iterate through the results and check if the wanted result is present
 		// in the got result.
 		for _, wantResult := range tc.wantResult {
-			found := false
-			for _, gotResult := range gr {
-				if wantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(gr, wantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -3188,14 +3127,7 @@ func (s *WorktreeSuite) TestGrep() {
 		// Iterate through the results and check if the not wanted result is
 		// present in the got result.
 		for _, dontWantResult := range tc.dontWantResult {
-			found := false
-			for _, gotResult := range gr {
-				if dontWantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.Contains(gr, dontWantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}
@@ -3249,14 +3181,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 		// Iterate through the results and check if the wanted result is present
 		// in the got result.
 		for _, wantResult := range tc.wantResult {
-			found := false
-			for _, gotResult := range gr {
-				if wantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(gr, wantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -3264,14 +3189,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 		// Iterate through the results and check if the not wanted result is
 		// present in the got result.
 		for _, dontWantResult := range tc.dontWantResult {
-			found := false
-			for _, gotResult := range gr {
-				if dontWantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.Contains(gr, dontWantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}
@@ -3361,7 +3279,7 @@ func (s *WorktreeSuite) TestAddAndCommit() {
 			return err
 		}
 
-		err = files.ForEach(func(f *object.File) error {
+		err = files.ForEach(func(*object.File) error {
 			filesFound++
 			return nil
 		})
@@ -3467,6 +3385,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 }
 
 func TestTreeContainsDirs(t *testing.T) {
+	t.Parallel()
 	tree := &object.Tree{
 		Entries: []object.TreeEntry{
 			{Name: "foo", Mode: filemode.Dir},
@@ -3505,12 +3424,14 @@ func TestTreeContainsDirs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, test.expected, treeContainsDirs(tree, test.dirs))
 		})
 	}
 }
 
 func TestValidPath(t *testing.T) {
+	t.Parallel()
 	type testcase struct {
 		path    string
 		wantErr bool
@@ -3549,6 +3470,7 @@ func TestValidPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			err := validPath(tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -3560,6 +3482,7 @@ func TestValidPath(t *testing.T) {
 }
 
 func TestWindowsValidPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want bool
@@ -3580,6 +3503,7 @@ func TestWindowsValidPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			got := windowsValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
 		})
@@ -3615,7 +3539,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		{Worktree: Untracked, Staging: Untracked},
 	})
 
-	// Touch of bunch of files including create a new file and delete an exsiting file
+	// Touch of bunch of files including create a new file and delete an existing file
 	for _, name := range names {
 		err = util.WriteFile(fs, name, []byte("Foo Bar"), 0o755)
 		s.NoError(err)
@@ -3656,7 +3580,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		{Worktree: Unmodified, Staging: Deleted},
 	})
 
-	return
+	return fs, w, names
 }
 
 func verifyStatus(s *WorktreeSuite, marker string, w *Worktree, files []string, statuses []FileStatus) {

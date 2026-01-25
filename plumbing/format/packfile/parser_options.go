@@ -4,6 +4,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
+// ParserOption configures a Parser.
 type ParserOption func(*Parser)
 
 // WithStorage sets the storage to be used while parsing a pack file.

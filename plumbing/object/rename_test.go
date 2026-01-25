@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type RenameSuite struct {
@@ -17,6 +18,7 @@ type RenameSuite struct {
 }
 
 func TestRenameSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RenameSuite))
 }
 
@@ -68,7 +70,7 @@ func (s *RenameSuite) TestExactRename_DifferentObjects() {
 func (s *RenameSuite) TestExactRename_OneRenameOneModify() {
 	c1 := makeAdd(s, makeFile(s, pathA, filemode.Regular, "foo"))
 	c2 := makeDelete(s, makeFile(s, pathQ, filemode.Regular, "foo"))
-	c3 := makeChange(s,
+	c3 := makeChange(
 		makeFile(s, pathH, filemode.Regular, "bar"),
 		makeFile(s, pathH, filemode.Regular, "bar"),
 	)
@@ -308,7 +310,7 @@ func detectRenames(s *RenameSuite, changes Changes, opts *DiffTreeOptions, expec
 	return result
 }
 
-func assertRename(s *RenameSuite, from, to *Change, rename *Change) {
+func assertRename(s *RenameSuite, from, to, rename *Change) {
 	s.Equal(rename, &Change{From: from.From, To: to.To})
 }
 
@@ -318,6 +320,7 @@ type SimilarityIndexSuite struct {
 }
 
 func TestSimilarityIndexSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SimilarityIndexSuite))
 }
 
@@ -502,25 +505,21 @@ func makeChangeEntry(f *File) ChangeEntry {
 	}
 }
 
-func makeAdd(s *RenameSuite, f *File) *Change {
-	return makeChange(s, nil, f)
+func makeAdd(_ *RenameSuite, f *File) *Change {
+	return makeChange(nil, f)
 }
 
-func makeDelete(s *RenameSuite, f *File) *Change {
-	return makeChange(s, f, nil)
+func makeDelete(_ *RenameSuite, f *File) *Change {
+	return makeChange(f, nil)
 }
 
-func makeChange(s *RenameSuite, from *File, to *File) *Change {
+func makeChange(from, to *File) *Change {
 	if from == nil {
 		return &Change{To: makeChangeEntry(to)}
 	}
 
 	if to == nil {
 		return &Change{From: makeChangeEntry(from)}
-	}
-
-	if from == nil && to == nil {
-		s.Fail("cannot make change without from or to")
 	}
 
 	return &Change{From: makeChangeEntry(from), To: makeChangeEntry(to)}

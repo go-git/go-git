@@ -6,6 +6,7 @@ import (
 )
 
 func Test_typeForSignature(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		b    []byte
@@ -68,6 +69,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := typeForSignature(tt.b); got != tt.want {
 				t.Errorf("typeForSignature() = %v, want %v", got, tt.want)
 			}
@@ -76,6 +78,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 }
 
 func Test_parseSignedBytes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		b             []byte
@@ -177,6 +180,7 @@ signed tag`),
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			pos, st := parseSignedBytes(tt.b)
 			var signature []byte
 			if pos >= 0 {
@@ -197,7 +201,7 @@ func FuzzParseSignedBytes(f *testing.F) {
 	f.Add([]byte(x509SignatureFormat[0]))
 	f.Add([]byte(sshSignatureFormat[0]))
 
-	f.Fuzz(func(t *testing.T, input []byte) {
+	f.Fuzz(func(_ *testing.T, input []byte) {
 		parseSignedBytes(input)
 	})
 }

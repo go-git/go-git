@@ -43,7 +43,7 @@ func (d *ulReqDecoder) Decode(v *UploadRequest) error {
 }
 
 // fills out the parser sticky error
-func (d *ulReqDecoder) error(format string, a ...interface{}) {
+func (d *ulReqDecoder) error(format string, a ...any) {
 	msg := fmt.Sprintf(
 		"pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...),

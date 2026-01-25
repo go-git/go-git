@@ -1,3 +1,4 @@
+// Package dotgit implements the .git directory layout.
 // https://github.com/git/git/blob/master/Documentation/gitrepository-layout.txt
 package dotgit
 
@@ -16,16 +17,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/helper/chroot"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/helper/chroot"
 )
 
 const (
-	suffix         = ".git"
 	packedRefsPath = "packed-refs"
 	configPath     = "config"
 	indexPath      = "index"
@@ -46,7 +46,6 @@ const (
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
-	idxExt     = ".idx"
 )
 
 var (
@@ -244,7 +243,7 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 		return nil, err
 	}
 
-	var packs []plumbing.Hash
+	packs := make([]plumbing.Hash, 0, len(files))
 	for _, f := range files {
 		n := f.Name()
 		if !strings.HasSuffix(n, packExt) || !strings.HasPrefix(n, packPrefix) {
@@ -300,7 +299,7 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 	return pack, nil
 }
 
-// ObjectPack returns a fs.File of the given packfile
+// ObjectPack returns a fs.File of the given packfile.
 func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	err := d.hasPack(hash)
 	if err != nil {
@@ -310,7 +309,7 @@ func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	return d.objectPackOpen(hash, `pack`)
 }
 
-// ObjectPackIdx returns a fs.File of the index file for a given packfile
+// ObjectPackIdx returns a fs.File of the index file for a given packfile.
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 	err := d.hasPack(hash)
 	if err != nil {
@@ -318,6 +317,16 @@ func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 	}
 
 	return d.objectPackOpen(hash, `idx`)
+}
+
+// ObjectPackRev returns a fs.File of the reverse index file for a given packfile.
+func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
+	err := d.hasPack(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.objectPackOpen(hash, `rev`)
 }
 
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
@@ -532,7 +541,7 @@ func (d *DotGit) genPackList() error {
 		return err
 	}
 
-	d.packMap = make(map[plumbing.Hash]struct{})
+	d.packMap = make(map[plumbing.Hash]struct{}, len(op))
 	d.packList = nil
 
 	for _, h := range op {
@@ -858,7 +867,7 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		if time.Since(start) > 15*time.Second {
 			return nil, errors.New("timeout trying to lock packed refs")
 		}
-		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0600)
+		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0o600)
 		if err != nil {
 			if os.IsNotExist(err) && !doCreate {
 				return nil, nil
@@ -872,9 +881,11 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		}
 		mtime := fi.ModTime()
 
-		err = f.Lock()
-		if err != nil {
-			return nil, err
+		if locker, ok := f.(billy.Locker); ok {
+			err = locker.Lock()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		fi, err = d.fs.Stat(packedRefsPath)
@@ -1140,20 +1151,22 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 func (d *DotGit) AddAlternate(remote string) error {
 	altpath := d.fs.Join(objectsPath, infoPath, alternatesPath)
 
-	f, err := d.fs.OpenFile(altpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
+	f, err := d.fs.OpenFile(altpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
 	if err != nil {
 		return fmt.Errorf("cannot open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	// locking in windows throws an error, based on comments
-	// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
-	// do not lock on windows platform.
-	if runtime.GOOS != "windows" {
-		if err = f.Lock(); err != nil {
-			return fmt.Errorf("cannot lock file: %w", err)
+	if locker, ok := f.(billy.Locker); ok {
+		// locking in windows throws an error, based on comments
+		// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
+		// do not lock on windows platform.
+		if runtime.GOOS != "windows" {
+			if err = locker.Lock(); err != nil {
+				return fmt.Errorf("cannot lock file: %w", err)
+			}
+			defer func() { _ = locker.Unlock() }()
 		}
-		defer f.Unlock()
 	}
 
 	line := path.Join(remote, objectsPath) + "\n"
@@ -1173,7 +1186,7 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fs := d.options.AlternatesFS
 	if fs == nil {
@@ -1199,7 +1212,7 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 			// Handling absolute paths should be straight-forward. However, the default osfs (Chroot)
 			// tries to concatenate an abs path with the root path in some operations (e.g. Stat),
 			// which leads to unexpected errors. Therefore, make the path relative to the current FS instead.
-			if reflect.TypeOf(fs) == reflect.TypeOf(&chroot.ChrootHelper{}) {
+			if reflect.TypeOf(fs) == reflect.TypeFor[*chroot.ChrootHelper]() {
 				path, err = filepath.Rel(fs.Root(), path)
 				if err != nil {
 					return nil, fmt.Errorf("cannot make path %q relative: %w", path, err)
@@ -1271,9 +1284,9 @@ func incBytes(in []byte) (out []byte, overflow bool) {
 	for i := len(out) - 1; i >= 0; i-- {
 		out[i]++
 		if out[i] != 0 {
-			return // Didn't overflow.
+			return out, overflow // Didn't overflow.
 		}
 	}
 	overflow = true
-	return
+	return out, overflow
 }

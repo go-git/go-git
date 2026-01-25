@@ -3,10 +3,8 @@ package index
 import (
 	"bufio"
 	"bytes"
-	"crypto"
 	"errors"
 	"io"
-
 	"strconv"
 	"time"
 
@@ -16,21 +14,21 @@ import (
 )
 
 var (
-	// DecodeVersionSupported is the range of supported index versions
+	// DecodeVersionSupported is the range of supported index versions.
 	DecodeVersionSupported = struct{ Min, Max uint32 }{Min: 2, Max: 4}
 
 	// ErrMalformedSignature is returned by Decode when the index header file is
-	// malformed
-	ErrMalformedSignature = errors.New("malformed index signature file")
-	// ErrInvalidChecksum is returned by Decode if the SHA1 hash mismatch with
-	// the read content
-	ErrInvalidChecksum = errors.New("invalid checksum")
-	// ErrUnknownExtension is returned when an index extension is encountered that is considered mandatory
-	ErrUnknownExtension = errors.New("unknown extension")
+	// malformed.
+	ErrMalformedSignature = errors.New("index decoder: malformed index signature file")
+	// ErrInvalidChecksum is returned by Decode if the SHA1/SHA256 hash mismatch with
+	// the read content.
+	ErrInvalidChecksum = errors.New("index decoder: invalid checksum")
+	// ErrUnknownExtension is returned when an index extension is encountered that is considered mandatory.
+	ErrUnknownExtension = errors.New("index decoder: unknown extension")
 )
 
 const (
-	entryHeaderLength = 62
+	entryHeaderLength = 42
 	entryExtended     = 0x4000
 	entryValid        = 0x8000
 	nameMask          = 0xfff
@@ -49,9 +47,8 @@ type Decoder struct {
 }
 
 // NewDecoder returns a new decoder that reads from r.
-func NewDecoder(r io.Reader) *Decoder {
-	// TODO: Support passing an ObjectFormat (sha256)
-	h := hash.New(crypto.SHA1)
+func NewDecoder(r io.Reader, h hash.Hash) *Decoder {
+	h.Reset()
 	buf := bufio.NewReader(r)
 	return &Decoder{
 		buf:       buf,
@@ -83,7 +80,7 @@ func (d *Decoder) Decode(idx *Index) error {
 }
 
 func (d *Decoder) readEntries(idx *Index, count int) error {
-	for i := 0; i < count; i++ {
+	for range count {
 		e, err := d.readEntry(idx)
 		if err != nil {
 			return err
@@ -102,7 +99,7 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 	var msec, mnsec, sec, nsec uint32
 	var flags uint16
 
-	flow := []interface{}{
+	flow := []any{
 		&sec, &nsec,
 		&msec, &mnsec,
 		&e.Dev,
@@ -117,6 +114,7 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 		return nil, err
 	}
 
+	e.Hash.ResetBySize(d.hash.Size())
 	if _, err := e.Hash.ReadFrom(d.r); err != nil {
 		return nil, err
 	}
@@ -125,7 +123,7 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 		return nil, err
 	}
 
-	read := entryHeaderLength
+	read := entryHeaderLength + d.hash.Size()
 
 	if sec != 0 || nsec != 0 {
 		e.CreatedAt = time.Unix(int64(sec), int64(nsec))
@@ -161,8 +159,8 @@ func (d *Decoder) readEntryName(idx *Index, e *Entry, flags uint16) error {
 
 	switch idx.Version {
 	case 2, 3:
-		len := flags & nameMask
-		name, err = d.doReadEntryName(len)
+		nameLen := flags & nameMask
+		name, err = d.doReadEntryName(nameLen)
 	case 4:
 		name, err = d.doReadEntryNameV4()
 	default:
@@ -196,8 +194,8 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 	return base + string(name), nil
 }
 
-func (d *Decoder) doReadEntryName(len uint16) (string, error) {
-	name := make([]byte, len)
+func (d *Decoder) doReadEntryName(nameLen uint16) (string, error) {
+	name := make([]byte, nameLen)
 	_, err := io.ReadFull(d.r, name)
 
 	return string(name), err
@@ -263,19 +261,19 @@ func (d *Decoder) readExtension(idx *Index) error {
 	switch {
 	case bytes.Equal(header[:], treeExtSignature):
 		idx.Cache = &Tree{}
-		d := &treeExtensionDecoder{r}
+		d := &treeExtensionDecoder{r, d.hash}
 		if err := d.Decode(idx.Cache); err != nil {
 			return err
 		}
 	case bytes.Equal(header[:], resolveUndoExtSignature):
 		idx.ResolveUndo = &ResolveUndo{}
-		d := &resolveUndoDecoder{r}
+		d := &resolveUndoDecoder{r, d.hash}
 		if err := d.Decode(idx.ResolveUndo); err != nil {
 			return err
 		}
 	case bytes.Equal(header[:], endOfIndexEntryExtSignature):
 		idx.EndOfIndexEntry = &EndOfIndexEntry{}
-		d := &endOfIndexEntryDecoder{r}
+		d := &endOfIndexEntryDecoder{r, d.hash}
 		if err := d.Decode(idx.EndOfIndexEntry); err != nil {
 			return err
 		}
@@ -296,17 +294,18 @@ func (d *Decoder) readExtension(idx *Index) error {
 }
 
 func (d *Decoder) getExtensionReader() (*bufio.Reader, error) {
-	len, err := binary.ReadUint32(d.r)
+	extLen, err := binary.ReadUint32(d.r)
 	if err != nil {
 		return nil, err
 	}
 
-	d.extReader.Reset(&io.LimitedReader{R: d.r, N: int64(len)})
+	d.extReader.Reset(&io.LimitedReader{R: d.r, N: int64(extLen)})
 	return d.extReader, nil
 }
 
 func (d *Decoder) readChecksum(expected []byte) error {
 	var h plumbing.Hash
+	h.ResetBySize(d.hash.Size())
 
 	if _, err := h.ReadFrom(d.r); err != nil {
 		return err
@@ -320,7 +319,7 @@ func (d *Decoder) readChecksum(expected []byte) error {
 }
 
 func validateHeader(r io.Reader) (version uint32, err error) {
-	var s = make([]byte, 4)
+	s := make([]byte, 4)
 	if _, err := io.ReadFull(r, s); err != nil {
 		return 0, err
 	}
@@ -338,11 +337,12 @@ func validateHeader(r io.Reader) (version uint32, err error) {
 		return 0, ErrUnsupportedVersion
 	}
 
-	return
+	return version, err
 }
 
 type treeExtensionDecoder struct {
 	r *bufio.Reader
+	h hash.Hash
 }
 
 func (d *treeExtensionDecoder) Decode(t *Tree) error {
@@ -402,6 +402,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	}
 
 	e.Trees = i
+	e.Hash.ResetBySize(d.h.Size())
 	_, err = e.Hash.ReadFrom(d.r)
 	if err != nil {
 		return nil, err
@@ -411,6 +412,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 type resolveUndoDecoder struct {
 	r *bufio.Reader
+	h hash.Hash
 }
 
 func (d *resolveUndoDecoder) Decode(ru *ResolveUndo) error {
@@ -440,7 +442,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	e.Path = string(path)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := d.readStage(e, Stage(i+1)); err != nil {
 			return nil, err
 		}
@@ -448,6 +450,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	for s := range e.Stages {
 		var h plumbing.Hash
+		h.ResetBySize(d.h.Size())
 		if _, err := h.ReadFrom(d.r); err != nil {
 			return nil, err
 		}
@@ -478,6 +481,7 @@ func (d *resolveUndoDecoder) readStage(e *ResolveUndoEntry, s Stage) error {
 
 type endOfIndexEntryDecoder struct {
 	r *bufio.Reader
+	h hash.Hash
 }
 
 func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
@@ -487,6 +491,7 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 		return err
 	}
 
+	e.Hash.ResetBySize(d.h.Size())
 	_, err = e.Hash.ReadFrom(d.r)
 	return err
 }

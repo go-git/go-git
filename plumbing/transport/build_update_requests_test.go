@@ -4,14 +4,16 @@ import (
 	"io"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 
@@ -35,6 +37,7 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 
 	req := &PushRequest{
@@ -52,6 +55,7 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithProgress(t *testing.T) {
+	t.Parallel()
 	// Create capabilities with Sideband64k
 	caps := capability.NewList()
 	caps.Add(capability.Sideband64k)
@@ -73,6 +77,7 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.Sideband)
 
@@ -93,6 +98,7 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.Quiet)
 
@@ -105,6 +111,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
 			},
 		},
+		Quiet: true,
 	}
 
 	upreq := buildUpdateRequests(caps, req)
@@ -112,6 +119,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.Atomic)
 
@@ -132,6 +140,7 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 
 	req := &PushRequest{
@@ -150,6 +159,7 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 }
 
 func TestBuildUpdateRequestsWithAgent(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Set(capability.Agent, capability.DefaultAgent())
 

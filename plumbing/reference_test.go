@@ -12,6 +12,7 @@ type ReferenceSuite struct {
 }
 
 func TestReferenceSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ReferenceSuite))
 }
 

@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing/transport"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/internal/transport/test"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
 func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
@@ -23,12 +26,41 @@ func newEndpoint(t testing.TB, port int, name string) *transport.Endpoint {
 	return ep
 }
 
+// suiteSetup holds the common setup values for git transport test suites.
+type suiteSetup struct {
+	Endpoint            *transport.Endpoint
+	EmptyEndpoint       *transport.Endpoint
+	NonExistentEndpoint *transport.Endpoint
+	Storer              *filesystem.Storage
+	EmptyStorer         *filesystem.Storage
+	Client              transport.Transport
+	Daemon              *exec.Cmd
+}
+
+// setupSuite creates the common test setup for git transport tests.
+func setupSuite(t testing.TB) *suiteSetup {
+	base, port := setupTest(t)
+
+	basic := test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
+	empty := test.PrepareRepository(t, fixtures.ByTag("empty").One(), base, "empty.git")
+
+	return &suiteSetup{
+		Endpoint:            newEndpoint(t, port, "basic.git"),
+		EmptyEndpoint:       newEndpoint(t, port, "empty.git"),
+		NonExistentEndpoint: newEndpoint(t, port, "non-existent.git"),
+		Storer:              filesystem.NewStorage(basic, nil),
+		EmptyStorer:         filesystem.NewStorage(empty, nil),
+		Client:              DefaultClient,
+		Daemon:              startDaemon(t, base, port),
+	}
+}
+
 func setupTest(t testing.TB) (base string, port int) {
 	var err error
 	port, err = test.FreePort()
 	require.NoError(t, err)
 	base = filepath.Join(t.TempDir(), fmt.Sprintf("go-git-protocol-%d", port))
-	return
+	return base, port
 }
 
 func startDaemon(t testing.TB, base string, port int) *exec.Cmd {
@@ -76,7 +108,7 @@ func stopDaemon(t testing.TB, cmd *exec.Cmd) {
 	// remaining child processes.
 	// Using [os.Process.Kill] won't work here because it won't terminate
 	// the child processes.
-	cmd.Process.Signal(os.Interrupt) //nolint:errcheck
+	cmd.Process.Signal(os.Interrupt)
 }
 
 func waitForPort(ctx context.Context, port int) error {

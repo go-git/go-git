@@ -12,21 +12,27 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
-
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	openpgperr "github.com/ProtonMail/go-crypto/openpgp/errors"
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -34,48 +40,157 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
 )
+
+func TestInit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		opts       func() []InitOption
+		wantBare   bool
+		wantBranch string
+	}{
+		{
+			name:     "Bare",
+			opts:     func() []InitOption { return []InitOption{} },
+			wantBare: true,
+		},
+		{
+			name: "With Worktree",
+			opts: func() []InitOption {
+				return []InitOption{WithWorkTree(memfs.New())}
+			},
+		},
+		{
+			name: "With Default Branch",
+			opts: func() []InitOption {
+				return []InitOption{
+					WithWorkTree(memfs.New()),
+					WithDefaultBranch("refs/head/foo"),
+				}
+			},
+			wantBranch: "refs/head/foo",
+		},
+	}
+
+	forEachFormat(t, func(t *testing.T, of formatcfg.ObjectFormat) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				opts := append(tc.opts(), WithObjectFormat(of))
+				r, err := Init(memory.NewStorage(memory.WithObjectFormat(of)), opts...)
+				require.NotNil(t, r)
+				require.NoError(t, err)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
+				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
+
+				if !tc.wantBare {
+					h := createCommit(t, r)
+					assert.Equal(t, of.HexSize(), len(h.String()))
+
+					wantBranch := tc.wantBranch
+					if wantBranch == "" {
+						wantBranch = plumbing.Master.String()
+					}
+
+					ref, err := r.Head()
+					require.NoError(t, err)
+					require.Equal(t, wantBranch, ref.Name().String())
+				}
+			})
+		}
+	})
+}
+
+func TestPlainInitAndPlainOpen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		opts       func() []InitOption
+		wantBare   bool
+		wantBranch string
+	}{
+		{
+			name:     "Bare",
+			opts:     func() []InitOption { return nil },
+			wantBare: true,
+		},
+		{
+			name: "With Worktree",
+			opts: func() []InitOption {
+				return []InitOption{WithWorkTree(memfs.New())}
+			},
+		},
+		{
+			name: "With Default Branch",
+			opts: func() []InitOption {
+				return []InitOption{
+					WithWorkTree(memfs.New()),
+					WithDefaultBranch("refs/head/foo"),
+				}
+			},
+			wantBranch: "refs/head/foo",
+		},
+	}
+
+	forEachFormat(t, func(t *testing.T, of formatcfg.ObjectFormat) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				opts := append(tc.opts(), WithObjectFormat(of))
+				rdir := t.TempDir()
+
+				r, err := PlainInit(rdir, tc.wantBare, opts...)
+				require.NotNil(t, r)
+				require.NoError(t, err)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
+				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
+
+				if !tc.wantBare {
+					h := createCommit(t, r)
+					assert.Equal(t, of.HexSize(), len(h.String()))
+
+					wantBranch := tc.wantBranch
+					if wantBranch == "" {
+						wantBranch = plumbing.Master.String()
+					}
+
+					ref, err := r.Head()
+					require.NoError(t, err)
+					require.Equal(t, wantBranch, ref.Name().String())
+				}
+
+				ro, err := PlainOpen(rdir)
+				require.NotNil(t, ro)
+				require.NoError(t, err)
+
+				if !tc.wantBare {
+					ref, err := ro.Head()
+					require.NoError(t, err)
+					assert.Equal(t, of.HexSize(), len(ref.Hash().String()))
+				}
+			})
+		}
+	})
+}
 
 type RepositorySuite struct {
 	BaseSuite
 }
 
 func TestRepositorySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RepositorySuite))
-}
-
-func (s *RepositorySuite) TestInit() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.False(cfg.Core.IsBare)
-
-	// check the HEAD to see what the default branch is
-	createCommit(s, r)
-	ref, err := r.Head()
-	s.NoError(err)
-	s.Equal(plumbing.Master.String(), ref.Name().String())
-}
-
-func (s *RepositorySuite) TestInitWithOptions() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()),
-		WithDefaultBranch("refs/heads/foo"),
-	)
-	s.NoError(err)
-	s.NotNil(r)
-	createCommit(s, r)
-
-	ref, err := r.Head()
-	s.NoError(err)
-	s.Equal("refs/heads/foo", ref.Name().String())
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
@@ -83,38 +198,6 @@ func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
 		WithDefaultBranch("foo"),
 	)
 	s.NotNil(err)
-}
-
-func createCommit(s *RepositorySuite, r *Repository) plumbing.Hash {
-	// Create a commit so there is a HEAD to check
-	wt, err := r.Worktree()
-	s.NoError(err)
-
-	f, err := wt.Filesystem.Create("foo.txt")
-	s.NoError(err)
-
-	defer f.Close()
-
-	_, err = f.Write([]byte("foo text"))
-	s.NoError(err)
-
-	_, err = wt.Add("foo.txt")
-	s.NoError(err)
-
-	author := object.Signature{
-		Name:  "go-git",
-		Email: "go-git@fake.local",
-		When:  time.Now(),
-	}
-
-	h, err := wt.Commit("test commit message", &CommitOptions{
-		All:               true,
-		Author:            &author,
-		Committer:         &author,
-		AllowEmptyCommits: true,
-	})
-	s.NoError(err)
-	return h
 }
 
 func (s *RepositorySuite) TestInitNonStandardDotGit() {
@@ -158,16 +241,6 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 	cfg, err := r.Config()
 	s.NoError(err)
 	s.Equal("", cfg.Core.Worktree)
-}
-
-func (s *RepositorySuite) TestInitBare() {
-	r, err := Init(memory.NewStorage())
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.True(cfg.Core.IsBare)
 }
 
 func (s *RepositorySuite) TestInitAlreadyExists() {
@@ -293,7 +366,7 @@ func (s *RepositorySuite) TestCloneWithTags() {
 	s.NoError(err)
 
 	var count int
-	i.ForEach(func(r *plumbing.Reference) error { count++; return nil })
+	i.ForEach(func(*plumbing.Reference) error { count++; return nil })
 
 	s.Equal(3, count)
 }
@@ -447,10 +520,10 @@ func (s *RepositorySuite) TestMergeFF() {
 	s.NoError(err)
 	s.NotNil(r)
 
-	createCommit(s, r)
-	createCommit(s, r)
-	createCommit(s, r)
-	lastCommit := createCommit(s, r)
+	createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	lastCommit := createCommit(s.T(), r)
 
 	wt, err := r.Worktree()
 	s.NoError(err)
@@ -463,8 +536,8 @@ func (s *RepositorySuite) TestMergeFF() {
 	})
 	s.NoError(err)
 
-	createCommit(s, r)
-	fooHash := createCommit(s, r)
+	createCommit(s.T(), r)
+	fooHash := createCommit(s.T(), r)
 
 	// Checkout the master branch so that we can try to merge foo into it.
 	err = wt.Checkout(&CheckoutOptions{
@@ -497,10 +570,10 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 	// Keep track of the first commit, which will be the
 	// reference to create the target branch so that we
 	// can simulate a non-ff merge.
-	firstCommit := createCommit(s, r)
-	createCommit(s, r)
-	createCommit(s, r)
-	lastCommit := createCommit(s, r)
+	firstCommit := createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	createCommit(s.T(), r)
+	lastCommit := createCommit(s.T(), r)
 
 	wt, err := r.Worktree()
 	s.NoError(err)
@@ -514,8 +587,8 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 
 	s.NoError(err)
 
-	createCommit(s, r)
-	h := createCommit(s, r)
+	createCommit(s.T(), r)
+	h := createCommit(s.T(), r)
 
 	// Checkout the master branch so that we can try to merge foo into it.
 	err = wt.Checkout(&CheckoutOptions{
@@ -553,6 +626,7 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 
 	expected := []byte(`[core]
 	bare = true
+	filemode = true
 [remote "foo"]
 	url = http://foo/foo.git
 	fetch = +refs/heads/*:refs/remotes/foo/*
@@ -588,7 +662,7 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 	s.NoError(err)
 	marshaled, err := cfg.Marshal()
 	s.NoError(err)
-	s.Equal(string(marshaled), string(expected))
+	s.Equal(string(expected), string(marshaled))
 }
 
 func (s *RepositorySuite) TestBranchInvalid() {
@@ -638,37 +712,6 @@ func (s *RepositorySuite) TestDeleteBranch() {
 	s.ErrorIs(err, ErrBranchNotFound)
 }
 
-func (s *RepositorySuite) TestPlainInit() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, true)
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.True(cfg.Core.IsBare)
-}
-
-func (s *RepositorySuite) TestPlainInitWithOptions() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir,
-		false,
-		WithDefaultBranch("refs/heads/foo"),
-	)
-	s.NoError(err)
-	s.NotNil(r)
-
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.False(cfg.Core.IsBare)
-
-	createCommit(s, r)
-
-	ref, err := r.Head()
-	s.NoError(err)
-	s.Equal("refs/heads/foo", ref.Name().String())
-}
-
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	dir := s.T().TempDir()
 	r, err := PlainInit(dir, true)
@@ -678,17 +721,6 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	r, err = PlainInit(dir, true)
 	s.ErrorIs(err, ErrTargetDirNotEmpty)
 	s.Nil(r)
-}
-
-func (s *RepositorySuite) TestPlainOpen() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, false)
-	s.NoError(err)
-	s.NotNil(r)
-
-	r, err = PlainOpen(dir)
-	s.NoError(err)
-	s.NotNil(r)
 }
 
 func (s *RepositorySuite) TestPlainOpenTildePath() {
@@ -712,28 +744,6 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 		s.NoError(err)
 		s.NotNil(r)
 	}
-}
-
-func (s *RepositorySuite) TestPlainOpenBare() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, true)
-	s.NoError(err)
-	s.NotNil(r)
-
-	r, err = PlainOpen(dir)
-	s.NoError(err)
-	s.NotNil(r)
-}
-
-func (s *RepositorySuite) TestPlainOpenNotBare() {
-	dir := s.T().TempDir()
-	r, err := PlainInit(dir, false)
-	s.NoError(err)
-	s.NotNil(r)
-
-	r, err = PlainOpen(filepath.Join(dir, ".git"))
-	s.NoError(err)
-	s.NotNil(r)
 }
 
 func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
@@ -762,13 +772,13 @@ func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
 }
 
 func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFile() {
-	s.testPlainOpenGitFile(func(dir, altDir string) string {
+	s.testPlainOpenGitFile(func(dir, _ string) string {
 		return fmt.Sprintf("gitdir: %s\n", dir)
 	})
 }
 
 func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFileNoEOL() {
-	s.testPlainOpenGitFile(func(dir, altDir string) string {
+	s.testPlainOpenGitFile(func(dir, _ string) string {
 		return fmt.Sprintf("gitdir: %s", dir)
 	})
 }
@@ -803,7 +813,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage() {
 	s.NoError(err)
 
 	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
-		[]byte(fmt.Sprintf("gitdir: %s\nTRAILING", fs.Join(fs.Root(), altDir))),
+		fmt.Appendf(nil, "gitdir: %s\nTRAILING", fs.Join(fs.Root(), altDir)),
 		0o644,
 	)
 	s.NoError(err)
@@ -826,9 +836,9 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix() {
 	altDir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
 
-	err = util.WriteFile(fs, fs.Join(altDir, ".git"), []byte(
-		fmt.Sprintf("xgitdir: %s\n", fs.Join(fs.Root(), dir)),
-	), 0o644)
+	err = util.WriteFile(fs, fs.Join(altDir, ".git"),
+		fmt.Appendf(nil, "xgitdir: %s\n", fs.Join(fs.Root(), dir)),
+		0o644)
 
 	s.NoError(err)
 
@@ -1834,7 +1844,7 @@ func (s *RepositorySuite) TestLogAll() {
 	s.NoError(err)
 
 	refCount := 0
-	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+	err = rIter.ForEach(func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
@@ -1881,7 +1891,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	s.NoError(err)
 
 	refCount := 0
-	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+	err = rIter.ForEach(func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
@@ -1895,7 +1905,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	s.NoError(err)
 
 	refCount = 0
-	err = rIter.ForEach(func(ref *plumbing.Reference) error {
+	err = rIter.ForEach(func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
@@ -1909,7 +1919,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	s.NoError(err)
 
 	cCount := 0
-	cIter.ForEach(func(c *object.Commit) error {
+	cIter.ForEach(func(*object.Commit) error {
 		cCount++
 		return nil
 	})
@@ -2208,7 +2218,7 @@ func (s *RepositorySuite) TestLogFileWithError() {
 	cIter := object.NewCommitFileIterFromIter(fileName, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(commit *object.Commit) error {
+	err := cIter.ForEach(func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2222,7 +2232,7 @@ func (s *RepositorySuite) TestLogPathWithError() {
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(commit *object.Commit) error {
+	err := cIter.ForEach(func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2236,7 +2246,7 @@ func (s *RepositorySuite) TestLogPathRegexpWithError() {
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(commit *object.Commit) error {
+	err := cIter.ForEach(func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -3055,7 +3065,7 @@ func (s *RepositorySuite) TestTagObjects() {
 	})
 
 	refs, _ := r.References()
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	refs.ForEach(func(*plumbing.Reference) error {
 		return nil
 	})
 
@@ -3360,10 +3370,8 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 	s.NotNil(cobj)
 	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
 		for _, ph := range c.ParentHashes {
-			for _, h := range shallows {
-				if ph == h {
-					return storer.ErrStop
-				}
+			if slices.Contains(shallows, ph) {
+				return storer.ErrStop
 			}
 		}
 
@@ -3387,10 +3395,8 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 	s.NotNil(cobj)
 	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
 		for _, ph := range c.ParentHashes {
-			for _, h := range shallows {
-				if ph == h {
-					return storer.ErrStop
-				}
+			if slices.Contains(shallows, ph) {
+				return storer.ErrStop
 			}
 		}
 
@@ -3433,7 +3439,7 @@ func BenchmarkObjects(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				iter, err := repo.Objects()
 				if err != nil {
 					b.Fatal(err)
@@ -3476,7 +3482,7 @@ func BenchmarkPlainClone(b *testing.B) {
 	clone(b)
 
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		clone(b)
 	}
 }

@@ -2,10 +2,12 @@ package plumbing
 
 import "fmt"
 
+// PermanentError represents an unrecoverable error.
 type PermanentError struct {
 	Err error
 }
 
+// NewPermanentError returns a new PermanentError wrapping the given error.
 func NewPermanentError(err error) *PermanentError {
 	if err == nil {
 		return nil
@@ -16,20 +18,4 @@ func NewPermanentError(err error) *PermanentError {
 
 func (e *PermanentError) Error() string {
 	return fmt.Sprintf("permanent client error: %s", e.Err.Error())
-}
-
-type UnexpectedError struct {
-	Err error
-}
-
-func NewUnexpectedError(err error) *UnexpectedError {
-	if err == nil {
-		return nil
-	}
-
-	return &UnexpectedError{Err: err}
-}
-
-func (e *UnexpectedError) Error() string {
-	return fmt.Sprintf("unexpected client error: %s", e.Err.Error())
 }

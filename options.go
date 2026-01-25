@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -30,6 +31,7 @@ const (
 	DefaultSubmoduleRecursionDepth SubmoduleRecursivity = 10
 )
 
+// ErrMissingURL is returned when a URL is required but not provided.
 var ErrMissingURL = errors.New("URL field is required")
 
 // CloneOptions describes how a clone should be performed.
@@ -112,6 +114,18 @@ const (
 	FastForwardMerge MergeStrategy = iota
 )
 
+// OrtMergeStrategyOption defines the merge strategy options for the ORT merge strategy, which can only resolve two heads using a 3-way merge algorithm.
+// Since Git v2.50.0, ORT is synonym of recursive.
+type OrtMergeStrategyOption int8
+
+const (
+	// TheirsMergeStrategy is a merge strategy option that auto-resolves the changes by accepting the incoming version of the changes.
+	TheirsMergeStrategy OrtMergeStrategyOption = iota
+
+	// OursMergeStrategy is a merge strategy option that auto-resolves the changes by accepting our version of the changes and rejecting the incoming changes.
+	OursMergeStrategy
+)
+
 // Validate validates the fields and sets the default values.
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
@@ -178,6 +192,7 @@ func (o *PullOptions) Validate() error {
 	return nil
 }
 
+// Tag modes for fetching.
 const (
 	InvalidTagMode = plumbing.InvalidTagMode
 	// TagFollowing any tag that points into the histories being fetched is also
@@ -290,11 +305,14 @@ type PushOptions struct {
 	Atomic bool
 	// ProxyOptions provides info required for connecting to a proxy.
 	ProxyOptions transport.ProxyOptions
+	// Quiet indicates whether the server should suppress human-readable
+	// output.
+	Quiet bool
 }
 
 // ForceWithLease sets fields on the lease
 // If neither RefName nor Hash are set, ForceWithLease protects
-// all refs in the refspec by ensuring the ref of the remote in the local repsitory
+// all refs in the refspec by ensuring the ref of the remote in the local repository
 // matches the one in the ref advertisement.
 type ForceWithLease struct {
 	// RefName, when set will protect the ref by ensuring it matches the
@@ -344,6 +362,7 @@ type SubmoduleUpdateOptions struct {
 	Depth int
 }
 
+// Checkout errors.
 var (
 	ErrBranchHashExclusive  = errors.New("Branch and Hash are mutually exclusive")
 	ErrCreateRequiresBranch = errors.New("Branch is mandatory when Create is used")
@@ -421,7 +440,7 @@ type ResetOptions struct {
 	// the index (resetting it to the tree of Commit) and the working tree
 	// depending on Mode. If empty MixedReset is used.
 	Mode ResetMode
-	// Files, if not empty will constrain the reseting the index to only files
+	// Files, if not empty will constrain the resetting the index to only files
 	// specified in this list.
 	Files []string
 
@@ -452,9 +471,12 @@ func (o *ResetOptions) Validate(r *Repository) error {
 	return nil
 }
 
+// LogOrder represents the order in which commits are traversed during log operations.
 type LogOrder int8
 
+// Log traversal order options.
 const (
+	// LogOrderDefault uses depth-first search.
 	LogOrderDefault LogOrder = iota
 	LogOrderDFS
 	LogOrderDFSPost
@@ -504,6 +526,7 @@ type LogOptions struct {
 	Until *time.Time
 }
 
+// ErrMissingAuthor is returned when the author field is required but not provided.
 var ErrMissingAuthor = errors.New("author field is required")
 
 // AddOptions describes how an `add` operation should be performed
@@ -529,7 +552,7 @@ type AddOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *AddOptions) Validate(r *Repository) error {
+func (o *AddOptions) Validate(_ *Repository) error {
 	if o.Path != "" && o.Glob != "" {
 		return fmt.Errorf("fields Path and Glob are mutual exclusive")
 	}
@@ -590,7 +613,7 @@ func (o *CommitOptions) Validate(r *Repository) error {
 
 	if len(o.Parents) == 0 {
 		head, err := r.Head()
-		if err != nil && err != plumbing.ErrReferenceNotFound {
+		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return err
 		}
 
@@ -639,6 +662,7 @@ func (o *CommitOptions) loadConfigAuthorAndCommitter(r *Repository) error {
 	return nil
 }
 
+// Tag creation errors.
 var (
 	ErrMissingName    = errors.New("name field is required")
 	ErrMissingTagger  = errors.New("tagger field is required")
@@ -660,7 +684,7 @@ type CreateTagOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *CreateTagOptions) Validate(r *Repository, hash plumbing.Hash) error {
+func (o *CreateTagOptions) Validate(r *Repository, _ plumbing.Hash) error {
 	if o.Tagger == nil {
 		if err := o.loadConfigTagger(r); err != nil {
 			return err
@@ -758,6 +782,7 @@ type GrepOptions struct {
 	PathSpecs []*regexp.Regexp
 }
 
+// ErrHashOrReference is returned when both CommitHash and ReferenceName are specified.
 var ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash or ReferenceName can be passed")
 
 // Validate validates the fields and sets the default values.
@@ -799,6 +824,7 @@ type PlainOpenOptions struct {
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
 
+// ErrNoRestorePaths is returned when no paths are specified to restore.
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 
 // RestoreOptions describes how a restore should be performed.

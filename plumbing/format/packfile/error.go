@@ -22,7 +22,7 @@ func (e *Error) Error() string {
 }
 
 // AddDetails adds details to an error, with additional text.
-func (e *Error) AddDetails(format string, args ...interface{}) *Error {
+func (e *Error) AddDetails(format string, args ...any) *Error {
 	return &Error{
 		reason:  e.reason,
 		details: fmt.Sprintf(format, args...),

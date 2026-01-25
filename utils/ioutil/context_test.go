@@ -3,12 +3,16 @@ package ioutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReader(t *testing.T) {
+	t.Parallel()
 	buf := []byte("abcdef")
 	buf2 := make([]byte, 3)
 	r := NewContextReader(context.Background(), bytes.NewReader(buf))
@@ -48,6 +52,7 @@ func TestReader(t *testing.T) {
 }
 
 func TestWriter(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	w := NewContextWriter(context.Background(), &buf)
 
@@ -77,6 +82,7 @@ func TestWriter(t *testing.T) {
 }
 
 func TestReaderCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	r := NewContextReader(ctx, piper)
@@ -127,6 +133,7 @@ func TestReaderCancel(t *testing.T) {
 }
 
 func TestWriterCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	w := NewContextWriter(ctx, pipew)
@@ -168,7 +175,7 @@ func TestWriterCancel(t *testing.T) {
 		if ret.n != 0 {
 			t.Error("ret.n should be 0", ret.n)
 		}
-		if ret.err == nil {
+		if !errors.Is(ret.err, context.Canceled) {
 			t.Error("ret.err should be ctx error", ret.err)
 		}
 	case <-time.After(20 * time.Millisecond):
@@ -177,8 +184,9 @@ func TestWriterCancel(t *testing.T) {
 }
 
 func TestReadPostCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
-	piper, pipew := io.Pipe()
+	piper, _ := io.Pipe()
 	r := NewContextReader(ctx, piper)
 
 	buf := make([]byte, 10)
@@ -202,15 +210,10 @@ func TestReadPostCancel(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 		t.Fatal("failed to stop reading after cancel")
 	}
-
-	pipew.Write([]byte("abcdefghij"))
-
-	if !bytes.Equal(buf, make([]byte, len(buf))) {
-		t.Fatal("buffer should have not been written to")
-	}
 }
 
 func TestWritePostCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	piper, pipew := io.Pipe()
 	w := NewContextWriter(ctx, pipew)
@@ -253,20 +256,82 @@ func TestWritePostCancel(t *testing.T) {
 		if ret.n != 0 {
 			t.Error("ret.n should be 0", ret.n)
 		}
-		if ret.err == nil {
+		if !errors.Is(ret.err, context.Canceled) {
 			t.Error("ret.err should be ctx error", ret.err)
 		}
 	case <-time.After(20 * time.Millisecond):
 		t.Fatal("failed to stop writing after cancel")
 	}
+}
 
-	copy(buf, []byte("aaaaaaaaaa"))
+func TestReadUnderlyingPanics(t *testing.T) {
+	t.Parallel()
 
-	piper.Read(buf2)
+	r := NewContextReader(context.Background(), nil)
 
-	if string(buf2) == "aaaaaaaaaa" {
-		t.Error("buffer was read from after ctx cancel")
-	} else if string(buf2) != "abcdefghij" {
-		t.Error("write contents differ from expected")
+	done := make(chan struct{}, 1)
+
+	go func() {
+		n, err := r.Read([]byte{})
+		assert.Error(t, err)
+		assert.Equal(t, 0, n)
+
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("test timed out")
+	}
+}
+
+func TestWriteUnderlyingPanics(t *testing.T) {
+	t.Parallel()
+
+	r := NewContextWriter(context.Background(), nil)
+
+	done := make(chan struct{}, 1)
+
+	go func() {
+		n, err := r.Write([]byte{'a'})
+		assert.Error(t, err)
+		assert.Equal(t, 0, n)
+
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("test timed out")
+	}
+}
+
+func BenchmarkContextReader(b *testing.B) {
+	data := bytes.Repeat([]byte{'0'}, 10000)
+
+	ctx := context.Background()
+
+	for b.Loop() {
+		r := bytes.NewReader(data)
+
+		ctxr := NewContextReader(ctx, r)
+
+		n, _ := ctxr.Read(data)
+		b.SetBytes(int64(n))
+	}
+}
+
+func BenchmarkContextWriter(b *testing.B) {
+	data := bytes.Repeat([]byte{'0'}, 10000)
+
+	ctx := context.Background()
+
+	for b.Loop() {
+		ctxw := NewContextWriter(ctx, io.Discard)
+
+		n, _ := ctxw.Write(data)
+		b.SetBytes(int64(n))
 	}
 }

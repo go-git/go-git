@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/suite"
 )
 
 type TreeSuite struct {
@@ -23,6 +24,7 @@ type TreeSuite struct {
 }
 
 func TestTreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(TreeSuite))
 }
 
@@ -111,7 +113,7 @@ func (s *TreeSuite) TestSize() {
 
 func (s *TreeSuite) TestFiles() {
 	var count int
-	err := s.Tree.Files().ForEach(func(f *File) error {
+	err := s.Tree.Files().ForEach(func(_ *File) error {
 		count++
 		return nil
 	})
@@ -326,7 +328,7 @@ func (s *TreeSuite) TestTreeIter() {
 		t.s = nil
 		s.NoError(err)
 		s.Equal(trees[i], t)
-		i += 1
+		i++
 	}
 
 	iter.Close()
@@ -1494,7 +1496,8 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 				Name: "test_quota.c", Mode: filemode.Regular,
 				Hash: plumbing.NewHash("e590996ca4b8574ab1e4185d577756664ad2495f"),
 			},
-			{Name: "test_quota.h", Mode: filemode.Regular,
+			{
+				Name: "test_quota.h", Mode: filemode.Regular,
 				Hash: plumbing.NewHash("2d767a19ab7c3a421cdba6a349204367c22c81"),
 			},
 			{
@@ -1626,9 +1629,6 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 				Hash: plumbing.NewHash("e614f4a6d864e7ec4328dbdb254e3ac9f0d287"),
 			},
 		},
-		Hash: plumbing.ZeroHash,
-		s:    (storer.EncodedObjectStorer)(nil),
-		m:    map[string]*TreeEntry(nil),
 	}
 
 	var obtained Tree

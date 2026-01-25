@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/require"
-
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
+	"github.com/stretchr/testify/require"
 	stdssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
+
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 func (s *SuiteCommon) TestOverrideConfig() {
@@ -96,6 +96,7 @@ func (s *SuiteCommon) TestDefaultSSHConfigWildcard() {
 }
 
 func TestIgnoreHostKeyCallback(t *testing.T) {
+	t.Parallel()
 	opts := []ssh.Option{
 		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
@@ -114,6 +115,7 @@ func TestIgnoreHostKeyCallback(t *testing.T) {
 }
 
 func TestFixedHostKeyCallback(t *testing.T) {
+	t.Parallel()
 	opts := []ssh.Option{
 		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
@@ -134,6 +136,7 @@ func TestFixedHostKeyCallback(t *testing.T) {
 }
 
 func TestFailHostKeyCallback(t *testing.T) {
+	t.Parallel()
 	opts := []ssh.Option{
 		ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]),
 	}
@@ -152,6 +155,7 @@ func TestFailHostKeyCallback(t *testing.T) {
 }
 
 func TestIssue70Suite(t *testing.T) {
+	t.Parallel()
 	authBuilder := DefaultAuthBuilder
 	defer func() {
 		DefaultAuthBuilder = authBuilder

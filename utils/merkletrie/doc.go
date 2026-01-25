@@ -27,7 +27,7 @@ When comparing git trees, the simple approach of alphabetically sorting
 their elements and comparing the resulting lists is too slow as it
 depends linearly on the number of files in the trees: When a directory
 has lots of files but none of them has been modified, this approach is
-very expensive.  We can do better by prunning whole directories that
+very expensive.  We can do better by pruning whole directories that
 have not change, just by looking at their hashes.  This package provides
 the tools to do exactly that.
 */

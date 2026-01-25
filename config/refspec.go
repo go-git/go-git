@@ -14,8 +14,10 @@ const (
 )
 
 var (
+	// ErrRefSpecMalformedSeparator is returned when the refspec has wrong separators.
 	ErrRefSpecMalformedSeparator = errors.New("malformed refspec, separators are wrong")
-	ErrRefSpecMalformedWildcard  = errors.New("malformed refspec, mismatched number of wildcards")
+	// ErrRefSpecMalformedWildcard is returned when the refspec has mismatched wildcards.
+	ErrRefSpecMalformedWildcard = errors.New("malformed refspec, mismatched number of wildcards")
 )
 
 // RefSpec is a mapping from local branches to remote references.
@@ -132,6 +134,7 @@ func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
 	return plumbing.ReferenceName(dst[0:wd] + match + dst[wd+1:])
 }
 
+// Reverse returns the RefSpec with source and destination swapped.
 func (s RefSpec) Reverse() RefSpec {
 	spec := string(s)
 	separator := strings.Index(spec, refSpecSeparator)

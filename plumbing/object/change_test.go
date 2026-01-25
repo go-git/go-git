@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -13,7 +15,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
-	"github.com/stretchr/testify/suite"
 )
 
 type ChangeSuite struct {
@@ -36,6 +37,7 @@ func (s *ChangeSuite) tree(h plumbing.Hash) *Tree {
 }
 
 func TestChangeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ChangeSuite))
 }
 
@@ -76,7 +78,7 @@ func (s *ChangeSuite) TestInsert() {
 	s.NoError(err)
 	s.Nil(from)
 	s.Equal(name, to.Name)
-	s.Equal(blob, to.Blob.Hash)
+	s.Equal(blob, to.Hash)
 
 	p, err := change.Patch()
 	s.NoError(err)
@@ -134,7 +136,7 @@ func (s *ChangeSuite) TestDelete() {
 	s.NoError(err)
 	s.Nil(to)
 	s.Equal(name, from.Name)
-	s.Equal(blob, from.Blob.Hash)
+	s.Equal(blob, from.Hash)
 
 	p, err := change.Patch()
 	s.NoError(err)
@@ -204,9 +206,9 @@ func (s *ChangeSuite) TestModify() {
 	s.NoError(err)
 
 	s.Equal(name, from.Name)
-	s.Equal(fromBlob, from.Blob.Hash)
+	s.Equal(fromBlob, from.Hash)
 	s.Equal(name, to.Name)
-	s.Equal(toBlob, to.Blob.Hash)
+	s.Equal(toBlob, to.Hash)
 
 	p, err := change.Patch()
 	s.NoError(err)
@@ -263,7 +265,6 @@ func (s *ChangeSuite) TestNoFileFilemodes() {
 			commit, err := GetCommit(sto, o.Hash())
 			s.NoError(err)
 			commits = append(commits, commit)
-
 		}
 
 		return nil

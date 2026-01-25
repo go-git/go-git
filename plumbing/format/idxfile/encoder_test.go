@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"io"
 
-	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
-
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+
+	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )
 
 func (s *IdxfileSuite) TestDecodeEncode() {

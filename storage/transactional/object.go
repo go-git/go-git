@@ -85,6 +85,7 @@ func (o *ObjectStorage) Commit() error {
 	})
 }
 
+// AddAlternate adds an alternate object directory.
 func (o *ObjectStorage) AddAlternate(remote string) error {
 	return o.temporal.AddAlternate(remote)
 }

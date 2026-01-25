@@ -16,16 +16,6 @@ type Hash = ObjectID
 // ZeroHash is an ObjectID with value zero.
 var ZeroHash ObjectID
 
-// ComputeHash compute the hash for a given ObjectType and content
-func ComputeHash(t ObjectType, content []byte) Hash {
-	ha, err := newHasher(format.SHA1)
-	if err != nil {
-		return ZeroHash
-	}
-	h, _ := ha.Compute(t, content)
-	return h
-}
-
 // NewHash return a new Hash based on a hexadecimal hash representation.
 // Invalid input results into an empty hash.
 //
@@ -35,11 +25,13 @@ func NewHash(s string) Hash {
 	return h
 }
 
+// Hasher wraps a hash.Hash to compute git object hashes.
 type Hasher struct {
 	hash.Hash
 	format format.ObjectFormat
 }
 
+// NewHasher returns a new Hasher for the given object format, type and size.
 func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
 	h := Hasher{format: f}
 	switch f {
@@ -54,6 +46,7 @@ func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
 	return h
 }
 
+// Reset resets the hasher with a new object type and size.
 func (h Hasher) Reset(t ObjectType, size int64) {
 	h.Hash.Reset()
 	h.Write(t.Bytes())
@@ -62,10 +55,11 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 	h.Write([]byte{0})
 }
 
+// Sum returns the computed hash.
 func (h Hasher) Sum() (hash Hash) {
 	hash.format = h.format
-	hash.Write(h.Hash.Sum(nil))
-	return
+	_, _ = hash.Write(h.Hash.Sum(nil))
+	return hash
 }
 
 // HashesSort sorts a slice of Hashes in increasing order.

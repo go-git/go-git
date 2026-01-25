@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type RefSpecSuite struct {
@@ -13,6 +14,7 @@ type RefSpecSuite struct {
 }
 
 func TestRefSpecSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RefSpecSuite))
 }
 

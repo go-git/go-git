@@ -12,6 +12,7 @@ type MemoryObjectSuite struct {
 }
 
 func TestMemoryObjectSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(MemoryObjectSuite))
 }
 

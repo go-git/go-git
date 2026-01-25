@@ -3,14 +3,14 @@ package revlist
 import (
 	"testing"
 
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type RevListFixtureSuite struct{}
@@ -22,6 +22,7 @@ type RevListSuite struct {
 }
 
 func TestRevListSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RevListSuite))
 }
 
@@ -182,7 +183,6 @@ func (s *RevListSuite) TestRevListObjectsWithBlobsAndTrees() {
 }
 
 func (s *RevListSuite) TestRevListObjectsReverse() {
-
 	localHist, err := Objects(s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, nil)
 	s.NoError(err)
@@ -219,7 +219,8 @@ func (s *RevListSuite) TestRevListObjectsNewBranch() {
 	remoteHist, err := Objects(
 		s.Storer, []plumbing.Hash{
 			plumbing.NewHash(someCommitBranch),
-			plumbing.NewHash(someCommitOtherBranch)}, localHist)
+			plumbing.NewHash(someCommitOtherBranch),
+		}, localHist)
 	s.NoError(err)
 
 	revList := map[string]bool{

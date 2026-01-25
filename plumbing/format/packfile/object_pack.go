@@ -99,6 +99,7 @@ func (o *ObjectToPack) CleanOriginal() {
 	o.Original = nil
 }
 
+// Type returns the object type.
 func (o *ObjectToPack) Type() plumbing.ObjectType {
 	if o.Original != nil {
 		return o.Original.Type()
@@ -119,6 +120,7 @@ func (o *ObjectToPack) Type() plumbing.ObjectType {
 	panic("cannot get type")
 }
 
+// Hash returns the object hash.
 func (o *ObjectToPack) Hash() plumbing.Hash {
 	if o.Original != nil {
 		return o.Original.Hash()
@@ -136,6 +138,7 @@ func (o *ObjectToPack) Hash() plumbing.Hash {
 	panic("cannot get hash")
 }
 
+// Size returns the object size.
 func (o *ObjectToPack) Size() int64 {
 	if o.Original != nil {
 		return o.Original.Size()
@@ -153,10 +156,12 @@ func (o *ObjectToPack) Size() int64 {
 	panic("cannot get ObjectToPack size")
 }
 
+// IsDelta returns true if the object is a delta.
 func (o *ObjectToPack) IsDelta() bool {
 	return o.Base != nil
 }
 
+// SetDelta sets the object's base and delta.
 func (o *ObjectToPack) SetDelta(base *ObjectToPack, delta plumbing.EncodedObject) {
 	o.Object = delta
 	o.Base = base

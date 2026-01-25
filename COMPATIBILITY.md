@@ -62,7 +62,7 @@ compatibility status with go-git.
 | Feature       | Sub-feature | Status | Notes                                                | Examples |
 | ------------- | ----------- | ------ | ---------------------------------------------------- | -------- |
 | `apply`       |             | ❌     |                                                      |          |
-| `cherry-pick` |             | ❌     |                                                      |          |
+| `cherry-pick` |             | ⚠️ (partial) | It supports default merge strategy `--strategy=ort` and underlying auto-conflict resolve strategy options `--strategy-option` which are `theirs` and `ours`.|          |
 | `diff`        |             | ✅     | Patch object with UnifiedDiff output representation. |          |
 | `rebase`      |             | ❌     |                                                      |          |
 | `revert`      |             | ❌     |                                                      |          |
@@ -110,10 +110,10 @@ compatibility status with go-git.
 
 ## Server admin
 
-| Feature              | Sub-feature | Status | Notes | Examples                                  |
-| -------------------- | ----------- | ------ | ----- | ----------------------------------------- |
-| `daemon`             |             | ❌     |       |                                           |
-| `update-server-info` |             | ✅     |       | [cli](./cli/go-git/update_server_info.go) |
+| Feature              | Sub-feature | Status | Notes | Examples                                                   |
+| -------------------- | ----------- | ------ | ----- | ---------------------------------------------------------- |
+| `daemon`             |             | ❌     |       |                                                            |
+| `update-server-info` |             | ✅     |       | [update-server-info](_examples/update-server-info/main.go) |
 
 ## Advanced
 
@@ -231,4 +231,4 @@ compatibility status with go-git.
 | `config`        | `--global` <br/> `--system` | ✅     | Read-only.                                     |          |
 | `gitignore`     |                             | ✅     |                                                |          |
 | `gitattributes` |                             | ✅     |                                                |          |
-| `git-worktree`  |                             | ❌     | Multiple worktrees are not supported.          |          |
+| `git-worktree`  | `add`, `remove` and `list`  | ⚠️ (partial) | Not all flags nor subcommands are supported.   |          |

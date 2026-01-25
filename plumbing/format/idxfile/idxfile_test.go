@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	"github.com/stretchr/testify/suite"
 )
 
 func BenchmarkFindOffset(b *testing.B) {
@@ -18,7 +20,7 @@ func BenchmarkFindOffset(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, h := range fixtureHashes {
 			_, err := idx.FindOffset(h)
 			if err != nil {
@@ -34,7 +36,7 @@ func BenchmarkFindCRC32(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, h := range fixtureHashes {
 			_, err := idx.FindCRC32(h)
 			if err != nil {
@@ -50,7 +52,7 @@ func BenchmarkContains(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, h := range fixtureHashes {
 			ok, err := idx.Contains(h)
 			if err != nil {
@@ -70,7 +72,7 @@ func BenchmarkEntries(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		iter, err := idx.Entries()
 		if err != nil {
 			b.Fatalf("unexpected error getting entries: %s", err)
@@ -101,6 +103,7 @@ type IndexSuite struct {
 }
 
 func TestIndexSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IndexSuite))
 }
 
@@ -166,4 +169,36 @@ func fixtureIndex() (*idxfile.MemoryIndex, error) {
 	}
 
 	return idx, nil
+}
+
+func TestOffsetHashConcurrentPopulation(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureIndex()
+	if err != nil {
+		t.Fatalf("failed to build fixture index: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for _, h := range fixtureHashes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 5000 {
+				_, _ = idx.FindOffset(h)
+			}
+		}()
+	}
+
+	for _, off := range fixtureOffsets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 3000 {
+				_, _ = idx.FindHash(off)
+			}
+		}()
+	}
+
+	wg.Wait()
 }

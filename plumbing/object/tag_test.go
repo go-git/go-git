@@ -8,11 +8,12 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type TagSuite struct {
@@ -21,6 +22,7 @@ type TagSuite struct {
 }
 
 func TestTagSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(TagSuite))
 }
 
@@ -162,7 +164,7 @@ func (s *TagSuite) TestTagIterError() {
 
 	randomErr := fmt.Errorf("a random error")
 	i := NewTagIter(s.Storer, iter)
-	err = i.ForEach(func(t *Tag) error {
+	err = i.ForEach(func(_ *Tag) error {
 		return randomErr
 	})
 
@@ -465,7 +467,7 @@ eQnkGpsz85DfEviLtk8cZjY/t6o8lPDLiwVjIzUBaA==
 }
 
 func (s *TagSuite) TestEncodeWithoutSignature() {
-	//Similar to TestString since no signature
+	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	tag := s.tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	err := tag.EncodeWithoutSignature(encoded)

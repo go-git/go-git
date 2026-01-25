@@ -8,6 +8,9 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -17,8 +20,6 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/storage/transactional"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type Storer interface {
@@ -64,11 +65,11 @@ func validTypes() []plumbing.ObjectType {
 }
 
 var storageFactories = []func(t *testing.T) (Storer, string){
-	func(_ *testing.T) (Storer, string) { return memory.NewStorage(), "memory" },
+	func(*testing.T) (Storer, string) { return memory.NewStorage(), "memory" },
 	func(t *testing.T) (Storer, string) {
 		return filesystem.NewStorage(osfs.New(t.TempDir()), nil), "filesystem"
 	},
-	func(t *testing.T) (Storer, string) {
+	func(*testing.T) (Storer, string) {
 		temporal := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 		base := memory.NewStorage()
 
@@ -171,11 +172,11 @@ func TestSetEncodedObjectAndEncodedObject(t *testing.T) {
 
 			o, err := sto.EncodedObject(to.Type, h)
 			require.NoError(t, err)
-			assert.Equal(t, to.Object, o)
+			assert.EqualExportedValues(t, to.Object, o)
 
 			o, err = sto.EncodedObject(plumbing.AnyObject, h)
 			require.NoError(t, err)
-			assert.Equal(t, to.Object, o)
+			assert.EqualExportedValues(t, to.Object, o)
 
 			for _, typ := range validTypes() {
 				if typ == to.Type {
@@ -220,7 +221,7 @@ func TestIterEncodedObjects(t *testing.T) {
 
 			o, err := i.Next()
 			require.NoError(t, err)
-			assert.Equal(t, objs[typ].Object, o)
+			assert.EqualExportedValues(t, objs[typ].Object, o)
 
 			o, err = i.Next()
 			assert.Nil(t, o)
@@ -278,7 +279,7 @@ func TestObjectStorerTxSetEncodedObjectAndCommit(t *testing.T) {
 		require.NoError(t, err)
 
 		var count int
-		iter.ForEach(func(o plumbing.EncodedObject) error {
+		iter.ForEach(func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})

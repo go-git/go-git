@@ -51,19 +51,21 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 		return err
 	}
 
-	req := fmt.Sprintf("%s %s\x00", g.RequestCommand, g.Pathname)
+	var req strings.Builder
+	fmt.Fprintf(&req, "%s %s\x00", g.RequestCommand, g.Pathname)
 	if host := g.Host; host != "" {
-		req += fmt.Sprintf("host=%s\x00", host)
+		fmt.Fprintf(&req, "host=%s\x00", host)
 	}
 
 	if len(g.ExtraParams) > 0 {
-		req += "\x00"
+		req.WriteString("\x00")
 		for _, param := range g.ExtraParams {
-			req += param + "\x00"
+			req.WriteString(param)
+			req.WriteString("\x00")
 		}
 	}
 
-	if _, err := pktline.Write(w, []byte(req)); err != nil {
+	if _, err := pktline.Write(w, []byte(req.String())); err != nil {
 		return err
 	}
 

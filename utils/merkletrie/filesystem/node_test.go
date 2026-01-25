@@ -10,14 +10,14 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/utils/merkletrie"
-	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
-	"github.com/stretchr/testify/suite"
-
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/utils/merkletrie"
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
 type NoderSuite struct {
@@ -25,20 +25,21 @@ type NoderSuite struct {
 }
 
 func TestNoderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(NoderSuite))
 }
 
 func (s *NoderSuite) TestDiff() {
 	fsA := memfs.New()
-	WriteFile(fsA, "foo", []byte("foo"), 0644)
-	WriteFile(fsA, "qux/bar", []byte("foo"), 0644)
-	WriteFile(fsA, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsA, "foo", []byte("foo"), 0o644)
+	WriteFile(fsA, "qux/bar", []byte("foo"), 0o644)
+	WriteFile(fsA, "qux/qux", []byte("foo"), 0o644)
 	fsA.Symlink("foo", "bar")
 
 	fsB := memfs.New()
-	WriteFile(fsB, "foo", []byte("foo"), 0644)
-	WriteFile(fsB, "qux/bar", []byte("foo"), 0644)
-	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsB, "foo", []byte("foo"), 0o644)
+	WriteFile(fsB, "qux/bar", []byte("foo"), 0o644)
+	WriteFile(fsB, "qux/qux", []byte("foo"), 0o644)
 	fsB.Symlink("foo", "bar")
 
 	ch, err := merkletrie.DiffTree(
@@ -53,15 +54,15 @@ func (s *NoderSuite) TestDiff() {
 
 func (s *NoderSuite) TestDiffCRLF() {
 	fsA := memfs.New()
-	WriteFile(fsA, "foo", []byte("foo\n"), 0644)
-	WriteFile(fsA, "qux/bar", []byte("foo\n"), 0644)
-	WriteFile(fsA, "qux/qux", []byte("foo\n"), 0644)
+	WriteFile(fsA, "foo", []byte("foo\n"), 0o644)
+	WriteFile(fsA, "qux/bar", []byte("foo\n"), 0o644)
+	WriteFile(fsA, "qux/qux", []byte("foo\n"), 0o644)
 	fsA.Symlink("foo", "bar")
 
 	fsB := memfs.New()
-	WriteFile(fsB, "foo", []byte("foo\r\n"), 0644)
-	WriteFile(fsB, "qux/bar", []byte("foo\r\n"), 0644)
-	WriteFile(fsB, "qux/qux", []byte("foo\r\n"), 0644)
+	WriteFile(fsB, "foo", []byte("foo\r\n"), 0o644)
+	WriteFile(fsB, "qux/bar", []byte("foo\r\n"), 0o644)
+	WriteFile(fsB, "qux/qux", []byte("foo\r\n"), 0o644)
 	fsB.Symlink("foo", "bar")
 
 	ch, err := merkletrie.DiffTree(
@@ -93,14 +94,14 @@ func (s *NoderSuite) TestDiffChangeLink() {
 
 func (s *NoderSuite) TestDiffChangeContent() {
 	fsA := memfs.New()
-	WriteFile(fsA, "foo", []byte("foo"), 0644)
-	WriteFile(fsA, "qux/bar", []byte("foo"), 0644)
-	WriteFile(fsA, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsA, "foo", []byte("foo"), 0o644)
+	WriteFile(fsA, "qux/bar", []byte("foo"), 0o644)
+	WriteFile(fsA, "qux/qux", []byte("foo"), 0o644)
 
 	fsB := memfs.New()
-	WriteFile(fsB, "foo", []byte("foo"), 0644)
-	WriteFile(fsB, "qux/bar", []byte("bar"), 0644)
-	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsB, "foo", []byte("foo"), 0o644)
+	WriteFile(fsB, "qux/bar", []byte("bar"), 0o644)
+	WriteFile(fsB, "qux/qux", []byte("foo"), 0o644)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, nil),
@@ -114,11 +115,11 @@ func (s *NoderSuite) TestDiffChangeContent() {
 
 func (s *NoderSuite) TestDiffSymlinkDirOnA() {
 	fsA := memfs.New()
-	WriteFile(fsA, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsA, "qux/qux", []byte("foo"), 0o644)
 
 	fsB := memfs.New()
 	fsB.Symlink("qux", "foo")
-	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsB, "qux/qux", []byte("foo"), 0o644)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, nil),
@@ -133,10 +134,10 @@ func (s *NoderSuite) TestDiffSymlinkDirOnA() {
 func (s *NoderSuite) TestDiffSymlinkDirOnB() {
 	fsA := memfs.New()
 	fsA.Symlink("qux", "foo")
-	WriteFile(fsA, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsA, "qux/qux", []byte("foo"), 0o644)
 
 	fsB := memfs.New()
-	WriteFile(fsB, "qux/qux", []byte("foo"), 0644)
+	WriteFile(fsB, "qux/qux", []byte("foo"), 0o644)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, nil),
@@ -150,10 +151,10 @@ func (s *NoderSuite) TestDiffSymlinkDirOnB() {
 
 func (s *NoderSuite) TestDiffChangeMissing() {
 	fsA := memfs.New()
-	WriteFile(fsA, "foo", []byte("foo"), 0644)
+	WriteFile(fsA, "foo", []byte("foo"), 0o644)
 
 	fsB := memfs.New()
-	WriteFile(fsB, "bar", []byte("bar"), 0644)
+	WriteFile(fsB, "bar", []byte("bar"), 0o644)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, nil),
@@ -167,10 +168,10 @@ func (s *NoderSuite) TestDiffChangeMissing() {
 
 func (s *NoderSuite) TestDiffChangeMode() {
 	fsA := memfs.New()
-	WriteFile(fsA, "foo", []byte("foo"), 0644)
+	WriteFile(fsA, "foo", []byte("foo"), 0o644)
 
 	fsB := memfs.New()
-	WriteFile(fsB, "foo", []byte("foo"), 0755)
+	WriteFile(fsB, "foo", []byte("foo"), 0o755)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, nil),
@@ -184,10 +185,10 @@ func (s *NoderSuite) TestDiffChangeMode() {
 
 func (s *NoderSuite) TestDiffChangeModeNotRelevant() {
 	fsA := memfs.New()
-	WriteFile(fsA, "foo", []byte("foo"), 0644)
+	WriteFile(fsA, "foo", []byte("foo"), 0o644)
 
 	fsB := memfs.New()
-	WriteFile(fsB, "foo", []byte("foo"), 0655)
+	WriteFile(fsB, "foo", []byte("foo"), 0o655)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, nil),
@@ -202,10 +203,10 @@ func (s *NoderSuite) TestDiffChangeModeNotRelevant() {
 func (s *NoderSuite) TestDiffDirectory() {
 	dir := path.Join("qux", "bar")
 	fsA := memfs.New()
-	fsA.MkdirAll(dir, 0644)
+	fsA.MkdirAll(dir, 0o644)
 
 	fsB := memfs.New()
-	fsB.MkdirAll(dir, 0644)
+	fsB.MkdirAll(dir, 0o644)
 
 	ch, err := merkletrie.DiffTree(
 		NewRootNode(fsA, map[string]plumbing.Hash{
@@ -237,7 +238,7 @@ func (s *NoderSuite) TestSocket() {
 	defer sock.Close()
 
 	fsA := osfs.New(td)
-	WriteFile(fsA, "foo", []byte("foo"), 0644)
+	WriteFile(fsA, "foo", []byte("foo"), 0o644)
 
 	noder := NewRootNode(fsA, nil)
 	childs, err := noder.Children()

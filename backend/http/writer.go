@@ -19,13 +19,13 @@ const defaultChunkSize = 4096
 // Useful when using proxies.
 type flushResponseWriter struct {
 	http.ResponseWriter
-	log *log.Logger
+	log       *log.Logger
 	chunkSize int
 }
 
 // ReadFrom implements io.ReaderFrom interface.
 func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
-	flusher := http.NewResponseController(f.ResponseWriter) // nolint: bodyclose
+	flusher := http.NewResponseController(f.ResponseWriter)
 
 	var n int64
 	p := make([]byte, f.chunkSize)
@@ -34,7 +34,7 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		nw, err := f.ResponseWriter.Write(p[:nr])
+		nw, err := f.Write(p[:nr])
 		if err != nil {
 			logf(f.log, "error writing response: %v", err)
 			renderStatusError(f.ResponseWriter, http.StatusInternalServerError)
@@ -54,7 +54,6 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 
 	return n, nil
 }
-
 
 // Close implements io.Closer interface.
 // It is a no-op.

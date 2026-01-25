@@ -2,18 +2,21 @@
 package filesystem
 
 import (
-	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
-
 	"github.com/go-git/go-billy/v6"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
 // Storage is an implementation of git.Storer that stores data on disk in the
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
-	fs  billy.Filesystem
-	dir *dotgit.DotGit
+	fs     billy.Filesystem
+	dir    *dotgit.DotGit
+	hasher plumbing.Hasher
 
 	ObjectStorage
 	ReferenceStorage
@@ -45,6 +48,8 @@ type Options struct {
 	// mode. This defaults to false. For more information refer to packfile's Parser
 	// WithHighMemoryMode option.
 	HighMemoryMode bool
+
+	ObjectFormat formatcfg.ObjectFormat
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -66,7 +71,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		c = cache.NewObjectLRUDefault()
 	}
 
-	return &Storage{
+	s := &Storage{
 		fs:  fs,
 		dir: dir,
 
@@ -74,9 +79,14 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		ReferenceStorage: ReferenceStorage{dir: dir},
 		IndexStorage:     IndexStorage{dir: dir},
 		ShallowStorage:   ShallowStorage{dir: dir},
-		ConfigStorage:    ConfigStorage{dir: dir},
+		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir},
 	}
+
+	s.hasher = plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
+	s.h = s.hasher.Hash
+
+	return s
 }
 
 // Filesystem returns the underlying filesystem
@@ -89,10 +99,12 @@ func (s *Storage) Init() error {
 	return s.dir.Initialize()
 }
 
+// AddAlternate adds an alternate object directory.
 func (s *Storage) AddAlternate(remote string) error {
 	return s.dir.AddAlternate(remote)
 }
 
+// LowMemoryMode returns true if low memory mode is enabled.
 func (s *Storage) LowMemoryMode() bool {
 	return !s.options.HighMemoryMode
 }

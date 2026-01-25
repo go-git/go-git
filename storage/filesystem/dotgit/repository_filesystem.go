@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,24 @@ func (fs *RepositoryFilesystem) mapToRepositoryFsByPath(path string) billy.Files
 	}
 
 	cleanPath := filepath.Clean(path)
+
+	// Handle absolute paths by checking if they're under commonDotGitFs or dotGitFs.
+	// This is needed because temp files return absolute paths from Name(), and operations
+	// like Rename need to route to the correct filesystem.
+	if filepath.IsAbs(cleanPath) {
+		commonRoot := fs.commonDotGitFs.Root()
+		dotGitRoot := fs.dotGitFs.Root()
+
+		if strings.HasPrefix(cleanPath, commonRoot+string(filepath.Separator)) || cleanPath == commonRoot {
+			return fs.commonDotGitFs
+		}
+		if strings.HasPrefix(cleanPath, dotGitRoot+string(filepath.Separator)) || cleanPath == dotGitRoot {
+			return fs.dotGitFs
+		}
+		// Absolute path doesn't match either root - default to dotGitFs.
+		// This shouldn't occur in normal usage.
+		return fs.dotGitFs
+	}
 
 	// Check exceptions for commondir (https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt)
 	switch cleanPath {
@@ -82,7 +101,7 @@ func (fs *RepositoryFilesystem) TempFile(dir, prefix string) (billy.File, error)
 	return fs.mapToRepositoryFsByPath(dir).TempFile(dir, prefix)
 }
 
-func (fs *RepositoryFilesystem) ReadDir(path string) ([]os.FileInfo, error) {
+func (fs *RepositoryFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
 	return fs.mapToRepositoryFsByPath(path).ReadDir(path)
 }
 

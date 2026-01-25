@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// MaxResolveRecursion is the maximum number of recursions allowed when resolving references.
 const MaxResolveRecursion = 1024
 
 // ErrMaxResolveRecursion is returned by ResolveReference is MaxResolveRecursion
@@ -20,7 +21,7 @@ type ReferenceStorer interface {
 	// not `nil`, it first checks that the current stored value for
 	// `old.Name()` matches the given reference value in `old`.  If
 	// not, it returns an error and doesn't update `new`.
-	CheckAndSetReference(new, old *plumbing.Reference) error
+	CheckAndSetReference(newRef, old *plumbing.Reference) error
 	Reference(plumbing.ReferenceName) (*plumbing.Reference, error)
 	IterReferences() (ReferenceIter, error)
 	RemoveReference(plumbing.ReferenceName) error
@@ -44,7 +45,8 @@ type referenceFilteredIter struct {
 // Iterator. This iterator will iterate only references that accomplish the
 // provided function.
 func NewReferenceFilteredIter(
-	ff func(r *plumbing.Reference) bool, iter ReferenceIter) ReferenceIter {
+	ff func(r *plumbing.Reference) bool, iter ReferenceIter,
+) ReferenceIter {
 	return &referenceFilteredIter{ff, iter}
 }
 
@@ -80,7 +82,7 @@ func (iter *referenceFilteredIter) ForEach(cb func(*plumbing.Reference) error) e
 		}
 
 		if err := cb(r); err != nil {
-			if err == ErrStop {
+			if errors.Is(err, ErrStop) {
 				break
 			}
 
@@ -152,7 +154,7 @@ func forEachReferenceIter(iter bareReferenceIterator, cb func(*plumbing.Referenc
 		}
 
 		if err := cb(obj); err != nil {
-			if err == ErrStop {
+			if errors.Is(err, ErrStop) {
 				return nil
 			}
 

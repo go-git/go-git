@@ -56,7 +56,7 @@ func (d *Decoder) Decode(idx *MemoryIndex) error {
 }
 
 func validateHeader(r io.Reader) error {
-	var h = make([]byte, 4)
+	h := make([]byte, 4)
 	if _, err := io.ReadFull(r, h); err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func readVersion(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readFanout(idx *MemoryIndex, r io.Reader) error {
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		n, err := binary.ReadUint32(r)
 		if err != nil {
 			return err
@@ -97,7 +97,7 @@ func readFanout(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readObjectNames(idx *MemoryIndex, r io.Reader) error {
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		var buckets uint32
 		if k == 0 {
 			buckets = idx.Fanout[k]
@@ -126,7 +126,7 @@ func readObjectNames(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readCRC32(idx *MemoryIndex, r io.Reader) error {
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		if pos := idx.FanoutMapping[k]; pos != noMapping {
 			if _, err := io.ReadFull(r, idx.CRC32[pos]); err != nil {
 				return err
@@ -139,7 +139,7 @@ func readCRC32(idx *MemoryIndex, r io.Reader) error {
 
 func readOffsets(idx *MemoryIndex, r io.Reader) error {
 	var o64cnt int
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		if pos := idx.FanoutMapping[k]; pos != noMapping {
 			if _, err := io.ReadFull(r, idx.Offset32[pos]); err != nil {
 				return err
