@@ -43,6 +43,11 @@ func (w *Writer) Index() (*MemoryIndex, error) {
 
 // Add appends new object data.
 func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
+	// Skip unmaterialised delta objects.
+	if h.IsZero() {
+		return
+	}
+
 	w.m.Lock()
 	defer w.m.Unlock()
 
@@ -110,6 +115,10 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 	last := -1
 	bucket := -1
 	for i, o := range w.objects {
+		if o.Hash.Size() != w.checksum.Size() {
+			return nil, fmt.Errorf("object hash size mismatch: %d instead of %d", o.Hash.Size(), w.checksum.Size())
+		}
+
 		fan := o.Hash.Bytes()[0]
 
 		// fill the gaps between fans
