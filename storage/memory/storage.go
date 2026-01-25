@@ -65,6 +65,33 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
+func (s *Storage) ObjectFormat() formatcfg.ObjectFormat {
+	return s.options.objectFormat
+}
+
+func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
+	if s.options.objectFormat == of {
+		return nil
+	}
+
+	// Presently, storage only supports a single object format at a
+	// time. Changing the format of an existing (and populated) object
+	// storage is yet to be supported.
+	if len(s.Blobs) > 0 ||
+		len(s.Commits) > 0 ||
+		len(s.Objects) > 0 ||
+		len(s.Tags) > 0 ||
+		len(s.Trees) > 0 {
+		return errors.New("cannot change object format of existing object storage")
+	}
+
+	s.config.Extensions.ObjectFormat = of
+	s.config.Core.RepositoryFormatVersion = formatcfg.Version1
+	s.options.objectFormat = of
+	s.oh = plumbing.FromObjectFormat(of)
+	return nil
+}
+
 // ConfigStorage implements config.ConfigStorer for in-memory storage.
 type ConfigStorage struct {
 	config *config.Config
