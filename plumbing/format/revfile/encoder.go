@@ -45,6 +45,7 @@ func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
 		return fmt.Errorf("nil index")
 	}
 
+	h.Reset()
 	e := &encoder{
 		writer: w,
 		hash:   h,
