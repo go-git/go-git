@@ -228,8 +228,12 @@ change
 %s
 `, pgpsignature)
 
-	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
-	s.NoError(err)
+	// Use time.Unix with a fixed zone to avoid timezone database differences.
+	// time.Parse would attach a rich Location from the system timezone database,
+	// but decode uses time.FixedZone which creates a minimal fixed-offset zone.
+	// Using Unix timestamp with FixedZone ensures encode/decode idempotency.
+	tz := time.FixedZone("", -7*60*60) // -07:00
+	ts := time.Unix(1136239445, 0).In(tz) // 2006-01-02T15:04:05-07:00
 	commits := []*Commit{
 		{
 			Author:       Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -280,7 +284,7 @@ change
 	}
 	for _, commit := range commits {
 		obj := &plumbing.MemoryObject{}
-		err = commit.Encode(obj)
+		err := commit.Encode(obj)
 		s.NoError(err)
 		newCommit := &Commit{}
 		err = newCommit.Decode(obj)
