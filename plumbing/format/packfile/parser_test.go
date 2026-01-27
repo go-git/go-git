@@ -111,6 +111,15 @@ func TestParserHashes(t *testing.T) {
 	}
 }
 
+func TestMalformedPack(t *testing.T) {
+	t.Parallel()
+	f := fixtures.Basic().One()
+	parser := packfile.NewParser(io.LimitReader(f.Packfile(), 300))
+
+	_, err := parser.Parse()
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
+
 func TestThinPack(t *testing.T) {
 	t.Parallel()
 	// Initialize an empty repository

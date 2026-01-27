@@ -35,7 +35,6 @@ type ObjectHeader struct {
 	OffsetReference int64
 	Crc32           uint32
 	Hash            plumbing.Hash
-	Hash256         *plumbing.Hash
 
 	content     *bytes.Buffer
 	parent      *ObjectHeader
@@ -43,11 +42,8 @@ type ObjectHeader struct {
 	externalRef bool
 }
 
-// ID returns the preferred object ID.
+// ID returns the object ID.
 func (oh *ObjectHeader) ID() plumbing.Hash {
-	if oh.Hash256 != nil {
-		return *oh.Hash256
-	}
 	return oh.Hash
 }
 

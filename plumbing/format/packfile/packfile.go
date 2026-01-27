@@ -300,7 +300,13 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 }
 
 func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, error) {
-	obj := new(plumbing.MemoryObject)
+	of := format.SHA1
+	if p.objectIdSize == format.SHA256.Size() {
+		of = format.SHA256
+	}
+	h := plumbing.FromObjectFormat(of)
+	obj := plumbing.NewMemoryObject(h)
+
 	obj.SetSize(oh.Size)
 	obj.SetType(oh.Type)
 

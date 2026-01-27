@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -307,6 +308,65 @@ func (s *RepositorySuite) TestClone() {
 	remotes, err := r.Remotes()
 	s.NoError(err)
 	s.Len(remotes, 1)
+}
+
+func TestCloneAll(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		tag    string
+		format formatcfg.ObjectFormat
+		refs   int
+	}{
+		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4},
+		{tag: ".git", format: formatcfg.SHA1, refs: 11},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.tag, func(t *testing.T) {
+			t.Parallel()
+			f := fixtures.ByTag(tc.tag).One()
+
+			for _, srv := range server.All(server.Loader(t, f)) {
+				endpoint, err := srv.Start()
+				require.NoError(t, err)
+
+				t.Cleanup(func() {
+					require.NoError(t, srv.Close())
+				})
+
+				r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+					URL: endpoint,
+				})
+				require.NoError(t, err)
+
+				remotes, err := r.Remotes()
+				require.NoError(t, err)
+				assert.Len(t, remotes, 1)
+
+				iter, err := r.References()
+				require.NoError(t, err)
+
+				refs := 0
+				iter.ForEach(func(r *plumbing.Reference) error {
+					refs++
+					return nil
+				})
+				assert.Equal(t, tc.refs, refs)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+
+				assert.Equal(t, tc.format, cfg.Extensions.ObjectFormat)
+
+				ref, err := r.Head()
+				require.NoError(t, err, "failed to get repository HEAD ref")
+
+				c, err := r.CommitObject(ref.Hash())
+				require.NoError(t, err, "failed to get commit object")
+				assert.NotNil(t, c)
+			}
+		})
+	}
 }
 
 func (s *RepositorySuite) TestCloneContext() {

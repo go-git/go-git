@@ -73,7 +73,10 @@ var _ Index = (*MemoryIndex)(nil)
 
 // NewMemoryIndex returns an instance of a new MemoryIndex.
 func NewMemoryIndex(objectIDSize int) *MemoryIndex {
-	return &MemoryIndex{objectIDSize: objectIDSize}
+	m := &MemoryIndex{objectIDSize: objectIDSize}
+	m.IdxChecksum.ResetBySize(objectIDSize)
+	m.PackfileChecksum.ResetBySize(objectIDSize)
+	return m
 }
 
 func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
@@ -316,6 +319,7 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 
 		mappedFirstLevel := i.idx.FanoutMapping[i.firstLevel]
 		entry := new(Entry)
+		entry.Hash.ResetBySize(i.idx.idSize())
 		_, _ = entry.Hash.Write(i.idx.Names[mappedFirstLevel][i.secondLevel*i.idx.idSize():])
 		entry.Offset = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
 		entry.CRC32 = i.idx.getCRC32(mappedFirstLevel, i.secondLevel)

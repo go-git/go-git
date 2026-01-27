@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	shallowLineLength       = len(shallow) + hashSize
-	minCommandLength        = hashSize*2 + 2 + 1
+	shallowLineLength       = len(shallow) + sha1HexSize
+	minCommandLength        = sha1HexSize*2 + 2 + 1
 	minCommandAndCapsLength = minCommandLength + 1
 )
 
@@ -26,11 +26,6 @@ var (
 
 func errMalformedRequest(reason string) error {
 	return fmt.Errorf("malformed request: %s", reason)
-}
-
-func errInvalidHashSize(got int) error {
-	return fmt.Errorf("invalid hash size: expected %d, got %d",
-		hashSize, got)
 }
 
 func errInvalidHash(hash string) error {
@@ -240,10 +235,6 @@ func parseCommand(b []byte) (*Command, error) {
 }
 
 func parseHash(s string) (plumbing.Hash, error) {
-	if len(s) != hashSize {
-		return plumbing.ZeroHash, errInvalidHashSize(len(s))
-	}
-
 	h, ok := plumbing.FromHex(s)
 	if !ok {
 		return plumbing.ZeroHash, errInvalidHash(s)

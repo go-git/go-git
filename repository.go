@@ -69,8 +69,6 @@ var (
 	ErrUnableToResolveCommit = errors.New("unable to resolve commit")
 	// ErrPackedObjectsNotSupported is returned when packed objects are not supported.
 	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
-	// ErrSHA256NotSupported is returned when go-git was not compiled with SHA256 support.
-	ErrSHA256NotSupported = errors.New("go-git was not compiled with SHA256 support")
 	// ErrAlternatePathNotSupported is returned when the alternate path is not a file scheme.
 	ErrAlternatePathNotSupported = errors.New("alternate path must use the file scheme")
 	// ErrUnsupportedMergeStrategy is returned when an unsupported merge strategy is used.
