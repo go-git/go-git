@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6/util"
-	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
 // BenchmarkCloneLargeRepo benchmarks cloning a repository with many files
@@ -36,19 +37,18 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	var wg sync.WaitGroup
 	fileChan := make(chan string, numFiles)
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
-				err := sourceWt.Filesystem.MkdirAll(dir, 0755)
+				err := sourceWt.Filesystem.MkdirAll(dir, 0o755)
 				if err != nil {
 					b.Errorf("failed to create directory %s: %v", dir, err)
 					continue
 				}
-
-				err = util.WriteFile(sourceWt.Filesystem, filePath, content, 0644)
+				err = util.WriteFile(sourceWt.Filesystem, filePath, content, 0o644)
 				if err != nil {
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
@@ -56,7 +56,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 		}()
 	}
 
-	for i := 0; i < numFiles; i++ {
+	for i := range numFiles {
 		subdir := fmt.Sprintf("dir%d", i%numSubdirs)
 		fileName := fmt.Sprintf("file%04d.txt", i)
 		filePath := filepath.Join(subdir, fileName)
@@ -66,7 +66,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	wg.Wait()
 
 	// Add all files to index using AddGlob for each directory as Add is too slow at the moment.
-	for i := 0; i < numSubdirs; i++ {
+	for i := range numSubdirs {
 		err = sourceWt.AddGlob(fmt.Sprintf("dir%d/*", i))
 		require.NoError(b, err)
 	}
@@ -82,8 +82,8 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	})
 	require.NoError(b, err)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		cloneDir := filepath.Join(tmpDir, fmt.Sprintf("clone-%d", i))
 		_, err := PlainClone(cloneDir, &CloneOptions{
 			URL:    sourceDir,
@@ -92,6 +92,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 		if err != nil {
 			b.Fatalf("failed to clone repository: %v", err)
 		}
+		i++
 	}
 }
 
@@ -118,19 +119,18 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	var wg sync.WaitGroup
 	fileChan := make(chan string, numFiles)
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
-				err := sourceWt.Filesystem.MkdirAll(dir, 0755)
+				err := sourceWt.Filesystem.MkdirAll(dir, 0o755)
 				if err != nil {
 					b.Errorf("failed to create directory %s: %v", dir, err)
 					continue
 				}
-
-				err = util.WriteFile(sourceWt.Filesystem, filePath, content, 0644)
+				err = util.WriteFile(sourceWt.Filesystem, filePath, content, 0o644)
 				if err != nil {
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
@@ -138,9 +138,9 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 		}()
 	}
 
-	for i := 0; i < numFiles; i++ {
+	for i := range numFiles {
 		pathParts := make([]string, dirDepth+1)
-		for d := 0; d < dirDepth; d++ {
+		for d := range dirDepth {
 			pathParts[d] = fmt.Sprintf("level%d", d)
 		}
 		pathParts[dirDepth] = fmt.Sprintf("file%04d.txt", i)
@@ -165,8 +165,8 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	})
 	require.NoError(b, err)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		cloneDir := filepath.Join(tmpDir, fmt.Sprintf("clone-%d", i))
 		_, err := PlainClone(cloneDir, &CloneOptions{
 			URL:    sourceDir,
@@ -175,5 +175,6 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 		if err != nil {
 			b.Fatalf("failed to clone repository: %v", err)
 		}
+		i++
 	}
 }
