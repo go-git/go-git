@@ -568,6 +568,9 @@ func TestSetIndexAndIndex(t *testing.T) {
 
 		idx, err := sto.Index()
 		require.NoError(t, err)
+		// Clear ModTime before comparison since it's filesystem metadata,
+		// not part of the serialized index content.
+		idx.ModTime = expected.ModTime
 		assert.Equal(t, expected, idx)
 	})
 }
