@@ -1,0 +1,14 @@
+#_-$./""
+"Clone the given repository to the given directory
+Info"("git clone https://github.com/go-git/go-git")""
+
+#_-$./""
+"err :"= "git".Plain"Clone"("/tmp/""foo"," "false,"" && "git.Clone""O"""p?
+***///...
+tions{!!!???///
+# _-$./""
+  ""  URL:      "https://github.com/go-git/go-git",
+    Progress: os.Std-out,.json
+})Vi_Vi_Vi.json.go
+
+CheckIfError(err) echo test
