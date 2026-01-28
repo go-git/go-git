@@ -22,13 +22,17 @@ type ShallowUpdate struct {
 
 // Decode parses shallow update information from the reader.
 func (r *ShallowUpdate) Decode(reader io.Reader) error {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	var (
 		p   []byte
 		err error
 		l   int
 	)
+
 	for {
-		l, p, err = pktline.ReadLine(reader)
+		l, p, err = pktline.ReadLine(reader, (*buf)[:])
 		if err != nil {
 			break
 		}

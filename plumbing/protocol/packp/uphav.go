@@ -52,8 +52,11 @@ func (u *UploadHaves) Encode(w io.Writer) error {
 func (u *UploadHaves) Decode(r io.Reader) error {
 	u.Haves = make([]plumbing.Hash, 0)
 
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	for {
-		l, line, err := pktline.ReadLine(r)
+		l, line, err := pktline.ReadLine(r, (*buf)[:])
 		if err != nil {
 			if err == io.EOF {
 				break

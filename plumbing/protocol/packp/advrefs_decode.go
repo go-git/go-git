@@ -13,12 +13,17 @@ import (
 // Decode reads the next advertised-refs message form its input and
 // stores it in the AdvRefs.
 func (a *AdvRefs) Decode(r io.Reader) error {
-	d := newAdvRefsDecoder(r)
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	d := newAdvRefsDecoder(r, buf)
 	return d.Decode(a)
 }
 
 type advRefsDecoder struct {
-	s     io.Reader     // a pkt-line reader from the input stream
+	s   io.Reader              // a pkt-line reader from the input stream
+	buf *[pktline.MaxSize]byte // temporary shared buffer
+
 	line  []byte        // current pkt-line contents, use parser.nextLine() to make it advance
 	nLine int           // current pkt-line number for debugging, begins at 1
 	hash  plumbing.Hash // last hash read
@@ -34,9 +39,10 @@ var (
 	ErrEmptyInput = errors.New("empty input")
 )
 
-func newAdvRefsDecoder(r io.Reader) *advRefsDecoder {
+func newAdvRefsDecoder(r io.Reader, buf *[pktline.MaxSize]byte) *advRefsDecoder {
 	return &advRefsDecoder{
-		s: r,
+		s:   r,
+		buf: buf,
 	}
 }
 
@@ -59,7 +65,7 @@ func (d *advRefsDecoder) error(format string, a ...any) {
 		fmt.Sprintf(format, a...),
 	)
 
-	d.err = NewErrUnexpectedData(msg, d.line)
+	d.err = NewErrUnexpectedData(msg, bytes.Clone(d.line))
 }
 
 // Reads a new pkt-line from the scanner, makes its payload available as
@@ -69,7 +75,7 @@ func (d *advRefsDecoder) error(format string, a ...any) {
 func (d *advRefsDecoder) nextLine() bool {
 	d.nLine++
 
-	_, p, err := pktline.ReadLine(d.s)
+	_, p, err := pktline.ReadLine(d.s, (*d.buf)[:])
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			d.err = err
@@ -85,8 +91,7 @@ func (d *advRefsDecoder) nextLine() bool {
 		return false
 	}
 
-	d.line = p
-	d.line = bytes.TrimSuffix(d.line, eol)
+	d.line = bytes.TrimSuffix(p, eol)
 
 	return true
 }
@@ -190,12 +195,12 @@ func decodeOtherRefs(p *advRefsDecoder) decoderStateFn {
 		return nil
 	}
 
-	if bytes.HasPrefix(p.line, shallow) {
-		return decodeShallow
-	}
-
 	if len(p.line) == 0 {
 		return nil
+	}
+
+	if bytes.HasPrefix(p.line, shallow) {
+		return decodeShallow
 	}
 
 	saveTo := p.data.References

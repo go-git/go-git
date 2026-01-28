@@ -74,18 +74,21 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 
 // Decode decodes the request from the reader.
 func (g *GitProtoRequest) Decode(r io.Reader) error {
-	_, p, err := pktline.ReadLine(r)
-	if errors.Is(err, io.EOF) {
-		return ErrInvalidGitProtoRequest
-	}
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	_, p, err := pktline.ReadLine(r, (*buf)[:])
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return ErrInvalidGitProtoRequest
+		}
 		return err
+	}
+	if len(p) == 0 {
+		return io.EOF
 	}
 
 	line := string(p)
-	if len(line) == 0 {
-		return io.EOF
-	}
 
 	if line[len(line)-1] != 0 {
 		return fmt.Errorf("%w: missing null terminator", ErrInvalidGitProtoRequest)

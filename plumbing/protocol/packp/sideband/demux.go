@@ -79,7 +79,10 @@ func (d *Demuxer) Read(b []byte) (read int, err error) {
 }
 
 func (d *Demuxer) doRead(b []byte) (int, error) {
-	read, err := d.nextPackData()
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
+	read, err := d.nextPackData(buf)
 	size := len(read)
 	wanted := len(b)
 
@@ -95,13 +98,13 @@ func (d *Demuxer) doRead(b []byte) (int, error) {
 	return size, err
 }
 
-func (d *Demuxer) nextPackData() ([]byte, error) {
+func (d *Demuxer) nextPackData(buf *[pktline.MaxSize]byte) ([]byte, error) {
 	content := d.getPending()
 	if len(content) != 0 {
 		return content, nil
 	}
 
-	l, p, err := pktline.ReadLine(d.r)
+	l, p, err := pktline.ReadLine(d.r, (*buf)[:])
 	if err != nil {
 		return nil, err
 	}

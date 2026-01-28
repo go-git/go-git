@@ -26,9 +26,12 @@ func TestUlReqDecodeSuite(t *testing.T) {
 }
 
 func (s *UlReqDecodeSuite) TestEmpty() {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	ur := NewUploadRequest()
-	var buf bytes.Buffer
-	d := newUlReqDecoder(&buf)
+	var src bytes.Buffer
+	d := newUlReqDecoder(&src, buf)
 
 	err := d.Decode(ur)
 	s.ErrorContains(err, "pkt-line 1: EOF")
@@ -44,8 +47,11 @@ func (s *UlReqDecodeSuite) TestNoWant() {
 }
 
 func (s *UlReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	ur := NewUploadRequest()
-	d := newUlReqDecoder(input)
+	d := newUlReqDecoder(input, buf)
 
 	err := d.Decode(ur)
 	s.Regexp(regexp.MustCompile(pattern), err)
@@ -73,18 +79,21 @@ func (s *UlReqDecodeSuite) TestWantOK() {
 }
 
 func (s *UlReqDecodeSuite) testDecodeOK(payloads []string, expectedHaveCalls int) (*UploadRequest, []plumbing.Hash) {
-	var buf bytes.Buffer
+	var src bytes.Buffer
 	for _, p := range payloads {
 		if p == "" {
-			s.NoError(pktline.WriteFlush(&buf))
+			s.NoError(pktline.WriteFlush(&src))
 		} else {
-			_, err := pktline.WriteString(&buf, p)
+			_, err := pktline.WriteString(&src, p)
 			s.NoError(err)
 		}
 	}
 
+	buf := pktline.GetBuffer()
+	defer pktline.PutBuffer(buf)
+
 	ur := NewUploadRequest()
-	d := newUlReqDecoder(&buf)
+	d := newUlReqDecoder(&src, buf)
 
 	s.Nil(d.Decode(ur))
 
@@ -93,7 +102,7 @@ func (s *UlReqDecodeSuite) testDecodeOK(payloads []string, expectedHaveCalls int
 
 	for {
 		var hav UploadHaves
-		s.NoError(hav.Decode(&buf))
+		s.NoError(hav.Decode(&src))
 		if len(hav.Haves) > 0 {
 			nbCall += len(hav.Haves)
 			haves = append(haves, hav.Haves...)
