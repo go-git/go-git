@@ -79,7 +79,7 @@ func (e *Encoder) head(numEntries int) error {
 		e.w,
 		signature,
 		int32(VersionSupported),
-		int32(numEntries),
+		int32(numEntries), //nolint:gosec // G115: numEntries is bounded by packfile limits
 	)
 }
 

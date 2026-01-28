@@ -13,8 +13,8 @@ func init() {
 	fillSystemInfo = func(e *index.Entry, sys any) {
 		if os, ok := sys.(*syscall.Stat_t); ok {
 			e.CreatedAt = time.Unix(os.Atimespec.Unix())
-			e.Dev = uint32(os.Dev)
-			e.Inode = uint32(os.Ino)
+			e.Dev = uint32(os.Dev)   //nolint:gosec // G115: dev number fits in uint32
+			e.Inode = uint32(os.Ino) //nolint:gosec // G115: inode fits in uint32
 			e.GID = os.Gid
 			e.UID = os.Uid
 		}

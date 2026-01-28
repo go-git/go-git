@@ -369,7 +369,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		Offset:   offset,
 		Type:     typ,
 		diskType: typ,
-		Size:     int64(size),
+		Size:     int64(size), //nolint:gosec // G115: size fits in int64
 	}
 
 	switch oh.Type {

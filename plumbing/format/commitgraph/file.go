@@ -158,7 +158,7 @@ func (fi *fileIndex) readChunkHeaders() error {
 		if chunkType == ZeroChunk || int(chunkType) >= len(fi.offsets) {
 			break
 		}
-		fi.offsets[chunkType] = int64(chunkOffset)
+		fi.offsets[chunkType] = int64(chunkOffset) //nolint:gosec // G115: file offset fits in int64
 	}
 
 	if fi.offsets[OIDFanoutChunk] <= 0 || fi.offsets[OIDLookupChunk] <= 0 || fi.offsets[CommitDataChunk] <= 0 {
@@ -332,7 +332,7 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 		ParentHashes:  parentHashes,
 		Generation:    genAndTime >> 34,
 		GenerationV2:  generationV2,
-		When:          time.Unix(int64(genAndTime&0x3FFFFFFFF), 0),
+		When:          time.Unix(int64(genAndTime&0x3FFFFFFFF), 0), //nolint:gosec // G115: masked timestamp fits in int64
 	}, nil
 }
 

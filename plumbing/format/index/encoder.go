@@ -66,7 +66,7 @@ func (e *Encoder) encodeHeader(idx *Index) error {
 	return binary.Write(e.w,
 		indexSignature,
 		idx.Version,
-		uint32(len(idx.Entries)),
+		uint32(len(idx.Entries)), //nolint:gosec // G115: entries count fits in uint32
 	)
 }
 
@@ -102,7 +102,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		return err
 	}
 
-	flags := uint16(entry.Stage&0x3) << 12
+	flags := uint16(entry.Stage&0x3) << 12 //nolint:gosec // G115: Stage is masked to 2 bits (0-3)
 	if l := len(entry.Name); l < nameMask {
 		flags |= uint16(l)
 	} else {
@@ -191,7 +191,7 @@ func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
 		return err
 	}
 
-	err = binary.WriteUint32(e.w, uint32(len(data)))
+	err = binary.WriteUint32(e.w, uint32(len(data))) //nolint:gosec // G115: data length fits in uint32
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (e *Encoder) timeToUint32(t *time.Time) (uint32, uint32, error) {
 		return 0, 0, ErrInvalidTimestamp
 	}
 
-	return uint32(t.Unix()), uint32(t.Nanosecond()), nil
+	return uint32(t.Unix()), uint32(t.Nanosecond()), nil //nolint:gosec // G115: checked non-negative above
 }
 
 func (e *Encoder) padEntry(idx *Index, wrote int) error {

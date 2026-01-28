@@ -120,7 +120,7 @@ func query(msg []byte) ([]byte, error) {
 	}
 	defer func() { _ = syscall.UnmapViewOfFile(ptr) }()
 
-	mmSlice := (*(*[MaxMessageLen]byte)(unsafe.Pointer(ptr)))[:]
+	mmSlice := (*(*[MaxMessageLen]byte)(unsafe.Pointer(ptr)))[:] //nolint:gosec // G103: unsafe required for Windows shared memory
 
 	copy(mmSlice, msg)
 
@@ -128,11 +128,11 @@ func query(msg []byte) ([]byte, error) {
 
 	cds := copyData{
 		dwData: agentCopydataID,
-		cbData: uint32(len(mapNameBytesZ)),
-		lpData: unsafe.Pointer(&(mapNameBytesZ[0])),
+		cbData: uint32(len(mapNameBytesZ)),          //nolint:gosec // G115: mapName length fits in uint32
+		lpData: unsafe.Pointer(&(mapNameBytesZ[0])), //nolint:gosec // G103: unsafe required for Windows IPC
 	}
 
-	resp, _, _ := winSendMessage(paWin, wmCopydata, 0, uintptr(unsafe.Pointer(&cds)))
+	resp, _, _ := winSendMessage(paWin, wmCopydata, 0, uintptr(unsafe.Pointer(&cds))) //nolint:gosec // G103: unsafe required for Windows IPC
 
 	if resp == 0 {
 		return nil, ErrSendMessage
@@ -151,6 +151,6 @@ func query(msg []byte) ([]byte, error) {
 
 func pageantWindow() uintptr {
 	nameP, _ := syscall.UTF16PtrFromString("Pageant")
-	h, _, _ := winFindWindow(uintptr(unsafe.Pointer(nameP)), uintptr(unsafe.Pointer(nameP)))
+	h, _, _ := winFindWindow(uintptr(unsafe.Pointer(nameP)), uintptr(unsafe.Pointer(nameP))) //nolint:gosec // G103: unsafe required for Windows API
 	return h
 }

@@ -33,6 +33,7 @@ func (e *Encoder) Encode(idx Index) error {
 	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount := e.prepare(idx, hashes)
 
 	chunkSignatures := [][]byte{OIDFanoutChunk.Signature(), OIDLookupChunk.Signature(), CommitDataChunk.Signature()}
+	//nolint:gosec // G115: len() and hash.Size() are always small positive values
 	chunkSizes := []uint64{szUint32 * lenFanout, uint64(len(hashes) * e.hash.Size()), uint64(len(hashes) * (e.hash.Size() + szCommitData))}
 	if extraEdgesCount > 0 {
 		chunkSignatures = append(chunkSignatures, ExtraEdgeListChunk.Signature())
@@ -86,7 +87,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	hashToIndex = make(map[plumbing.Hash]uint32)
 	fanout = make([]uint32, lenFanout)
 	for i, hash := range hashes {
-		hashToIndex[hash] = uint32(i)
+		hashToIndex[hash] = uint32(i) //nolint:gosec // G115: i is loop index bounded by hashes count
 		fanout[hash.Bytes()[0]]++
 	}
 
@@ -99,9 +100,9 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 
 	// Find out if we will need extra edge table
 	for i := range len(hashes) {
-		v, _ := idx.GetCommitDataByIndex(uint32(i))
+		v, _ := idx.GetCommitDataByIndex(uint32(i)) //nolint:gosec // G115: i is loop index
 		if len(v.ParentHashes) > 2 {
-			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
+			extraEdgesCount += uint32(len(v.ParentHashes) - 1) //nolint:gosec // G115: parent count is small
 		}
 		if hasGenerationV2 && v.GenerationV2Data() > math.MaxUint32 {
 			generationV2OverflowCount++
@@ -114,7 +115,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 	if _, err = e.Write(commitFileSignature); err == nil {
 		version := byte(1)
-		if crypto.Hash(e.hash.Size()) == crypto.Hash(crypto.SHA256.Size()) {
+		if crypto.Hash(e.hash.Size()) == crypto.Hash(crypto.SHA256.Size()) { //nolint:gosec // G115: hash.Size() is always small positive
 			version = byte(2)
 		}
 		_, err = e.Write([]byte{1, version, byte(chunkCount), 0})
@@ -124,7 +125,7 @@ func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 
 func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint64) (err error) {
 	// 8 bytes of file header, 12 bytes for each chunk header and 12 byte for terminator
-	offset := uint64(szSignature + szHeader + (len(chunkSignatures)+1)*(szChunkSig+szUint64))
+	offset := uint64(szSignature + szHeader + (len(chunkSignatures)+1)*(szChunkSig+szUint64)) //nolint:gosec // G115: small constants
 	for i, signature := range chunkSignatures {
 		if _, err = e.Write(signature); err == nil {
 			err = binary.WriteUint64(e, offset)
@@ -182,7 +183,7 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 			parent2 = hashToIndex[commitData.ParentHashes[1]]
 		default:
 			parent1 = hashToIndex[commitData.ParentHashes[0]]
-			parent2 = uint32(len(extraEdges)) | parentOctopusUsed
+			parent2 = uint32(len(extraEdges)) | parentOctopusUsed //nolint:gosec // G115: extraEdges count is bounded
 			for _, parentHash := range commitData.ParentHashes[1:] {
 				extraEdges = append(extraEdges, hashToIndex[parentHash])
 			}
@@ -196,7 +197,7 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 			return extraEdges, generationV2Data, err
 		}
 
-		unixTime := uint64(commitData.When.Unix())
+		unixTime := uint64(commitData.When.Unix()) //nolint:gosec // G115: Unix timestamp is always positive for valid commits
 		unixTime |= uint64(commitData.Generation) << 34
 		if err = binary.WriteUint64(e, unixTime); err != nil {
 			return extraEdges, generationV2Data, err
@@ -222,7 +223,7 @@ func (e *Encoder) encodeGenerationV2Data(generationV2Data []uint64) (overflows [
 	for _, data := range generationV2Data {
 		if data >= 0x80000000 {
 			// overflow
-			if err = binary.WriteUint32(e, uint32(head)|0x80000000); err != nil {
+			if err = binary.WriteUint32(e, uint32(head)|0x80000000); err != nil { //nolint:gosec // G115: head is bounded
 				return nil, err
 			}
 			generationV2Data[head] = data

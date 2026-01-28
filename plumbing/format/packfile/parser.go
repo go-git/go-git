@@ -352,7 +352,7 @@ func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target
 
 	if ota.Hash == plumbing.ZeroHash {
 		ota.Type = typ
-		ota.Size = int64(sz)
+		ota.Size = int64(sz) //nolint:gosec // G115: sz is object size from packfile
 		ota.Hash = h
 	}
 

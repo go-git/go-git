@@ -256,7 +256,7 @@ var _ transport.Session = (*HTTPSession)(nil)
 
 func transportWithInsecureTLS(transport *http.Transport) {
 	if transport.TLSClientConfig == nil {
-		transport.TLSClientConfig = &tls.Config{}
+		transport.TLSClientConfig = &tls.Config{} //nolint:gosec // G402: intentionally allowing user to skip TLS verification
 	}
 	transport.TLSClientConfig.InsecureSkipVerify = true
 }
@@ -271,7 +271,7 @@ func transportWithCABundle(transport *http.Transport, caBundle []byte) error {
 	}
 	rootCAs.AppendCertsFromPEM(caBundle)
 	if transport.TLSClientConfig == nil {
-		transport.TLSClientConfig = &tls.Config{}
+		transport.TLSClientConfig = &tls.Config{} //nolint:gosec // G402: MinVersion will use Go's secure default
 	}
 	transport.TLSClientConfig.RootCAs = rootCAs
 	return nil
