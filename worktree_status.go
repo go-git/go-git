@@ -155,7 +155,7 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
 	}
 
-	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
+	to := filesystem.NewRootNodeWithIndex(w.Filesystem, submodules, idx, fsOpts)
 
 	var c merkletrie.Changes
 	if reverse {

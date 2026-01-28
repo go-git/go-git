@@ -50,6 +50,11 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
+	fi, err := f.Stat()
+	if err == nil {
+		idx.ModTime = fi.ModTime()
+	}
+
 	d := index.NewDecoder(f, s.h)
 	err = d.Decode(idx)
 	return idx, err
