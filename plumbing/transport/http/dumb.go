@@ -16,7 +16,6 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -356,7 +355,6 @@ func (r *fetchWalker) fetch() error {
 	packs := map[string]struct{}{}
 	processed := map[string]struct{}{}
 	indicies := []*idxfile.MemoryIndex{}
-	of := config.SHA1
 
 LOOP:
 	for len(r.queue) > 0 {
@@ -364,10 +362,6 @@ LOOP:
 		r.queue = r.queue[1:]
 		if _, ok := processed[objHash.String()]; ok {
 			continue
-		}
-
-		if objHash.Size() == config.SHA256Size {
-			of = config.SHA256
 		}
 
 		for _, idx := range indicies {
@@ -468,7 +462,7 @@ LOOP:
 			return err
 		}
 
-		if err := packfile.UpdateObjectStorage(r.st, f, of); err != nil {
+		if err := packfile.UpdateObjectStorage(r.st, f); err != nil {
 			_ = f.Close()
 			return err
 		}

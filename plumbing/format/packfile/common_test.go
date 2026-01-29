@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -16,7 +15,7 @@ func TestEmptyUpdateObjectStorage(t *testing.T) {
 	var buf bytes.Buffer
 	sto := memory.NewStorage()
 
-	err := UpdateObjectStorage(sto, &buf, config.SHA1)
+	err := UpdateObjectStorage(sto, &buf)
 	assert.ErrorIs(t, err, ErrEmptyPackfile)
 }
 

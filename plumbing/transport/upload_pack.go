@@ -109,10 +109,6 @@ func UploadPack(
 				return fmt.Errorf("closing reader: %w", err)
 			}
 
-			if getter, ok := st.(storage.ObjectFormatGetter); ok {
-				_ = caps.Set(capability.ObjectFormat, getter.ObjectFormat().String())
-			}
-
 			// Find common commits/objects
 			havesWithRef, err = revlist.ObjectsWithRef(st, wants, nil)
 			if err != nil {

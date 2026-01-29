@@ -11,7 +11,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -32,7 +31,7 @@ type Encoder struct {
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
 	var h hash.Hash
-	if getter, ok := s.(storage.ObjectFormatGetter); ok && getter.ObjectFormat() == config.SHA256 {
+	if getter, ok := s.(storer.ObjectFormatGetter); ok && getter.ObjectFormat() == config.SHA256 {
 		h = hash.New(crypto.SHA256)
 	} else {
 		h = hash.New(crypto.SHA1)

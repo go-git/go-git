@@ -30,6 +30,9 @@ func WithScannerObservers(ob ...Observer) ParserOption {
 
 func WithObjectFormat(of config.ObjectFormat) ParserOption {
 	return func(p *Parser) {
+		if of == config.UnsetObjectFormat {
+			of = config.DefaultObjectFormat
+		}
 		p.objectFormat = of
 	}
 }

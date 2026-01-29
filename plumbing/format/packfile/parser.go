@@ -57,7 +57,7 @@ type LowMemoryCapable interface {
 // are parsed.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
-		objectFormat: format.SHA1,
+		objectFormat: format.DefaultObjectFormat,
 	}
 	for _, opt := range opts {
 		if opt != nil {

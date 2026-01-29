@@ -27,13 +27,6 @@ type Storer interface {
 	ModuleStorer
 }
 
-// ObjectFormatGetter is implemented by storage backends that can report
-// their object format (hash algorithm), such as SHA-1 or SHA-256.
-type ObjectFormatGetter interface {
-	// ObjectFormat returns the object format (hash algorithm) used by this storage.
-	ObjectFormat() formatcfg.ObjectFormat
-}
-
 // ObjectFormatSetter is implemented by storage backends that support
 // configuring the object format (hash algorithm) used for the repository.
 type ObjectFormatSetter interface {

@@ -10,7 +10,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
@@ -39,7 +38,7 @@ func newUnpackRepository(f *fixtures.Fixture) *filesystem.Storage {
 	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
 	p := f.Packfile()
 	defer p.Close()
-	packfile.UpdateObjectStorage(storer, p, config.SHA1)
+	packfile.UpdateObjectStorage(storer, p)
 	return storer
 }
 

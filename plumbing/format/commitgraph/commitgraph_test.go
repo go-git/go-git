@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -92,7 +91,7 @@ func (s *CommitgraphSuite) TestDecodeMultiChain() {
 		p := f.Packfile()
 		defer p.Close()
 
-		err = packfile.UpdateObjectStorage(storer, p, config.SHA1)
+		err = packfile.UpdateObjectStorage(storer, p)
 		s.Require().NoError(err)
 
 		for idx, hash := range index.Hashes() {
