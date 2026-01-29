@@ -112,21 +112,33 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	return s
 }
 
+// SetObjectFormat sets the ObjectFormat for the storage, initiatising
+// hashers and object hashers accordingly. This must only be called
+// during the first pack negotiation of a repository clone operation.
+//
+// If the storage is empty and the new ObjectFormat is the same as the
+// current, this call will be treated as a no-op.
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
+	switch of {
+	case formatcfg.SHA1, formatcfg.SHA256:
+	default:
+		return fmt.Errorf("invalid object format: %s", of)
+	}
+
+	// Presently, storage only supports a single object format at a
+	// time. Changing the format of an existing (and populated) object
+	// storage is yet to be supported.
+	packs, _ := s.dir.ObjectPacks()
+	if len(packs) > 0 {
+		return errors.New("cannot change object format of existing object storage")
+	}
+
 	cfg, err := s.Config()
 	if err != nil {
 		return err
 	}
 
 	if cfg.Extensions.ObjectFormat != of {
-		// Presently, storage only supports a single object format at a
-		// time. Changing the format of an existing (and populated) object
-		// storage is yet to be supported.
-		if len(s.packList) > 0 ||
-			len(s.packfiles) > 0 {
-			return errors.New("cannot change object format of existing object storage")
-		}
-
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 		err = s.SetConfig(cfg)
