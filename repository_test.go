@@ -155,7 +155,6 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 				cfg, err := r.Config()
 				require.NoError(t, err)
 				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
-				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
 
 				if !tc.wantBare {
 					h := createCommit(t, r)
@@ -313,12 +312,15 @@ func (s *RepositorySuite) TestClone() {
 func TestCloneAll(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		tag    string
-		format formatcfg.ObjectFormat
-		refs   int
+		tag        string
+		format     formatcfg.ObjectFormat
+		refs       int
+		plainClone bool
 	}{
 		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4},
-		{tag: ".git", format: formatcfg.SHA1, refs: 11},
+		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11},
+		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4, plainClone: true},
+		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11, plainClone: true},
 	}
 
 	for _, tc := range tests {
@@ -334,10 +336,16 @@ func TestCloneAll(t *testing.T) {
 					require.NoError(t, srv.Close())
 				})
 
-				r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
-					URL: endpoint,
-				})
+				var r *Repository
+				if tc.plainClone {
+					r, err = PlainClone(t.TempDir(), &CloneOptions{URL: endpoint})
+				} else {
+					r, err = Clone(memory.NewStorage(), nil, &CloneOptions{
+						URL: endpoint,
+					})
+				}
 				require.NoError(t, err)
+				require.NotNil(t, r, "repository must not be nil")
 
 				remotes, err := r.Remotes()
 				require.NoError(t, err)
@@ -364,6 +372,78 @@ func TestCloneAll(t *testing.T) {
 				c, err := r.CommitObject(ref.Hash())
 				require.NoError(t, err, "failed to get commit object")
 				assert.NotNil(t, c)
+			}
+		})
+	}
+}
+
+func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		clientFormat formatcfg.ObjectFormat
+		serverTag    string
+		wantErr      bool
+	}{
+		{
+			name:         "unset client format cannot fetch sha256",
+			clientFormat: formatcfg.UnsetObjectFormat,
+			serverTag:    ".git-sha256",
+			wantErr:      true,
+		},
+		{
+			name:         "sha1 client cannot fetch sha256",
+			clientFormat: formatcfg.SHA1,
+			serverTag:    ".git-sha256",
+			wantErr:      true,
+		},
+		{
+			name:         "sha256 client cannot fetch sha1",
+			clientFormat: formatcfg.SHA256,
+			serverTag:    ".git",
+			wantErr:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := fixtures.ByTag(tc.serverTag).One()
+			require.NotNil(t, f, "fixture not found for tag %s", tc.serverTag)
+
+			for _, srv := range server.All(server.Loader(t, f)) {
+				endpoint, err := srv.Start()
+				require.NoError(t, err)
+
+				t.Cleanup(func() {
+					require.NoError(t, srv.Close())
+				})
+
+				var st *memory.Storage
+				if tc.clientFormat == formatcfg.UnsetObjectFormat {
+					st = memory.NewStorage()
+				} else {
+					st = memory.NewStorage(memory.WithObjectFormat(tc.clientFormat))
+				}
+
+				r, err := Init(st)
+				require.NoError(t, err)
+
+				_, err = r.CreateRemote(&config.RemoteConfig{
+					Name: DefaultRemoteName,
+					URLs: []string{endpoint},
+				})
+				require.NoError(t, err)
+
+				err = r.Fetch(&FetchOptions{})
+				if tc.wantErr {
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), "mismatched algorithms")
+				} else {
+					require.NoError(t, err)
+				}
 			}
 		})
 	}

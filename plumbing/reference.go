@@ -222,6 +222,9 @@ const (
 	Master ReferenceName = "refs/heads/master"
 	// Main is the main branch reference.
 	Main ReferenceName = "refs/heads/main"
+	// Invalid defines an invalid reference target which is used for specific
+	// workflows on upstream Git.
+	Invalid ReferenceName = "refs/heads/.invalid"
 )
 
 // Reference is a representation of git reference
