@@ -7,9 +7,7 @@ type options struct {
 }
 
 func newOptions() options {
-	return options{
-		objectFormat: formatcfg.SHA1,
-	}
+	return options{}
 }
 
 // StorageOption is a function that configures storage options.
