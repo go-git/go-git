@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
-	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // Storage is an implementation of git.Storer that stores data on disk in the
@@ -54,6 +53,10 @@ type Options struct {
 	// WithHighMemoryMode option.
 	HighMemoryMode bool
 
+	// ObjectFormat defines the ObjectFormat when creating a new storage.
+	// This value is completely ignored when the storage is pointing to an
+	// existing dotgit. In such cases the repository config will define the
+	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
 }
 
@@ -64,36 +67,33 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 
 // NewStorageWithOptions returns a new Storage with extra options,
 // backed by a given `fs.Filesystem` and cache.
+// Returns an error if an explicit ObjectFormat is provided via options
+// but conflicts with an existing config in the filesystem.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
-	of := ops.ObjectFormat
+	f, err := fs.Open("config")
+	if err == nil {
+		cfg, err := config.ReadConfig(f)
+		if err == nil {
+			ops.ObjectFormat = cfg.Extensions.ObjectFormat
+		}
+
+		_ = f.Close()
+	}
+
+	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
+
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
 		AlternatesFS:    ops.AlternatesFS,
 		KeepDescriptors: ops.KeepDescriptors,
-		ObjectFormat:    of,
+		ObjectFormat:    ops.ObjectFormat,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
-
-	// If the dotgit already exists, and has a config, use that ObjectFormat instead.
-	if f, err := dir.Config(); err == nil {
-		defer ioutil.CheckClose(f, &err)
-		cfg, err := config.ReadConfig(f)
-		if err == nil {
-			if cfg.Core.RepositoryFormatVersion == formatcfg.Version1 {
-				if of != cfg.Extensions.ObjectFormat {
-					_ = dir.SetObjectFormat(cfg.Extensions.ObjectFormat)
-				}
-				of = cfg.Extensions.ObjectFormat
-				ops.ObjectFormat = cfg.Extensions.ObjectFormat
-			}
-		}
-	}
 
 	if c == nil {
 		c = cache.NewObjectLRUDefault()
 	}
 
-	hasher := plumbing.NewHasher(of, plumbing.AnyObject, 0)
 	s := &Storage{
 		fs:     fs,
 		dir:    dir,
@@ -103,11 +103,9 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		ReferenceStorage: ReferenceStorage{dir: dir},
 		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash},
 		ShallowStorage:   ShallowStorage{dir: dir},
-		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: of},
+		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir},
 	}
-
-	s.h = hasher.Hash
 
 	return s
 }

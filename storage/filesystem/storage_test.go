@@ -3,6 +3,7 @@ package filesystem_test
 import (
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -121,12 +122,7 @@ func TestSetObjectFormat(t *testing.T) {
 				cache.NewObjectLRUDefault(),
 				filesystem.Options{ObjectFormat: tt.initialFormat},
 			)
-			assert.NoError(t, sto.Init())
-
-			if tt.initialFormat != formatcfg.UnsetObjectFormat {
-				err := sto.SetObjectFormat(tt.initialFormat)
-				assert.NoError(t, err)
-			}
+			require.NoError(t, sto.Init())
 
 			err := sto.SetObjectFormat(tt.targetFormat)
 
@@ -138,6 +134,98 @@ func TestSetObjectFormat(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestNewStorageWithOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		fs               billy.Filesystem
+		inObjectFormat   formatcfg.ObjectFormat
+		wantObjectFormat formatcfg.ObjectFormat
+	}{
+		{
+			name:             "existing SHA1 (unset) repo, unset opts format",
+			fs:               fixtures.ByTag(".git").One().DotGit(),
+			inObjectFormat:   formatcfg.UnsetObjectFormat,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
+		},
+		{
+			name:             "existing SHA1 repo, unset opts format",
+			fs:               getExplicitSHA1(t),
+			inObjectFormat:   formatcfg.UnsetObjectFormat,
+			wantObjectFormat: formatcfg.SHA1,
+		},
+		{
+			name:             "existing SHA256 repo, unset opts format",
+			fs:               fixtures.ByTag(".git-sha256").One().DotGit(),
+			inObjectFormat:   formatcfg.UnsetObjectFormat,
+			wantObjectFormat: formatcfg.SHA256,
+		},
+		{
+			name:             "existing SHA1 (unset) repo, SHA1 opts format",
+			fs:               fixtures.ByTag(".git").One().DotGit(),
+			inObjectFormat:   formatcfg.SHA1,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
+		},
+		{
+			name:             "existing SHA1 repo, SHA1 opts format",
+			fs:               getExplicitSHA1(t),
+			inObjectFormat:   formatcfg.SHA1,
+			wantObjectFormat: formatcfg.SHA1,
+		},
+		{
+			name:             "existing SHA256 repo, SHA256 opts format",
+			fs:               fixtures.ByTag(".git-sha256").One().DotGit(),
+			inObjectFormat:   formatcfg.SHA256,
+			wantObjectFormat: formatcfg.SHA256,
+		},
+		{
+			name:             "SHA256 opts format conflicts with existing SHA1 config",
+			fs:               fixtures.ByTag(".git").One().DotGit(),
+			inObjectFormat:   formatcfg.SHA256,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
+		},
+		{
+			name:             "existing SHA256 repo, SHA1 opts format",
+			fs:               fixtures.ByTag(".git-sha256").One().DotGit(),
+			inObjectFormat:   formatcfg.SHA1,
+			wantObjectFormat: formatcfg.SHA256,
+		},
+		{
+			name:             "empty fs, no opts format",
+			fs:               osfs.New(t.TempDir()),
+			inObjectFormat:   formatcfg.UnsetObjectFormat,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
+		},
+		{
+			name:             "empty fs, SHA1 opts format",
+			fs:               osfs.New(t.TempDir()),
+			inObjectFormat:   formatcfg.SHA1,
+			wantObjectFormat: formatcfg.SHA1,
+		},
+		{
+			name:             "empty fs, SHA256 opts format",
+			fs:               osfs.New(t.TempDir()),
+			inObjectFormat:   formatcfg.SHA256,
+			wantObjectFormat: formatcfg.SHA256,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sto := filesystem.NewStorageWithOptions(
+				tt.fs,
+				cache.NewObjectLRUDefault(),
+				filesystem.Options{ObjectFormat: tt.inObjectFormat},
+			)
+
+			assert.Equal(t, tt.wantObjectFormat, sto.ObjectFormat())
 		})
 	}
 }
@@ -189,4 +277,18 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 			assert.Contains(t, err.Error(), "cannot change object format")
 		})
 	}
+}
+
+func getExplicitSHA1(t testing.TB) billy.Filesystem {
+	fs := osfs.New(t.TempDir())
+	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	cfg, err := st.Config()
+	require.NoError(t, err)
+
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	err = st.SetConfig(cfg)
+	require.NoError(t, err)
+
+	return fs
 }
