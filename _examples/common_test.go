@@ -40,6 +40,7 @@ var args = map[string][]string{
 	"sparse-checkout":            {defaultURL, "vendor", tempFolder()},
 	"tag":                        {cloneRepository(defaultURL, tempFolder())},
 	"update-server-info":         {cloneRepository(defaultURL, tempFolder())},
+	"verify-ssh-signature":       createSSHSignedRepoWithAllowedSigners(),
 	"worktrees":                  {cloneRepository(defaultURL, tempFolder()), tempFolder()},
 }
 
@@ -162,4 +163,31 @@ func deleteTempFolders() {
 		err := os.RemoveAll(folder)
 		CheckIfError(err)
 	}
+}
+
+// createSSHSignedRepoWithAllowedSigners creates a repository with an SSH-signed commit
+// and an allowed_signers file. Returns [repoPath, allowedSignersPath].
+// This function clones the current repository (which has SSH-signed commits) and
+// creates a temporary allowed_signers file with the actual signing key.
+func createSSHSignedRepoWithAllowedSigners() []string {
+	// Clone the current repository which already has SSH-signed commits
+	repoPath := tempFolder()
+	allowedSignersPath := filepath.Join(tempFolder(), "allowed_signers")
+
+	// Clone from the repository root (parent of _examples directory)
+	repoRoot := filepath.Dir(basepath)
+	cmd := exec.Command("git", "clone", repoRoot, repoPath)
+	err := cmd.Run()
+	CheckIfError(err)
+
+	// Create allowed_signers file with the actual signing key from the repository
+	// This allows the example to demonstrate successful signature verification
+	allowedSignersContent := `# Allowed signers file for SSH signature verification
+# Format: principal key-type base64-key [comment]
+cedric.bail@free.fr ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNg4QtaT7/7nLjMAbTOXaAWfT4k8h7qTMBrsg39P9KK cedric@ativ9
+`
+	err = os.WriteFile(allowedSignersPath, []byte(allowedSignersContent), 0644)
+	CheckIfError(err)
+
+	return []string{repoPath, allowedSignersPath}
 }
