@@ -55,7 +55,6 @@ func (v *OpenPGPVerifier) Verify(signature, message []byte) (*object.Verificatio
 		bytes.NewReader(signature),
 		nil,
 	)
-
 	if err != nil {
 		result.Valid = false
 		result.Error = err

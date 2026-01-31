@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"maps"
 
 	"golang.org/x/crypto/ssh"
 
@@ -27,9 +28,7 @@ type SSHVerifier struct {
 // The provided map is copied to prevent external modification.
 func NewSSHVerifier(allowedSigners map[string]ssh.PublicKey) *SSHVerifier {
 	copied := make(map[string]ssh.PublicKey, len(allowedSigners))
-	for k, v := range allowedSigners {
-		copied[k] = v
-	}
+	maps.Copy(copied, allowedSigners)
 	return &SSHVerifier{allowedSigners: copied}
 }
 
@@ -124,6 +123,7 @@ func sshKeysEqual(a, b ssh.PublicKey) bool {
 
 func writeSSHString(buf *bytes.Buffer, data []byte) {
 	length := uint32(len(data))
-	binary.Write(buf, binary.BigEndian, length)
+	// binary.Write to bytes.Buffer never fails for fixed-size types
+	_ = binary.Write(buf, binary.BigEndian, length)
 	buf.Write(data)
 }

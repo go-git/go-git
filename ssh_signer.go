@@ -119,7 +119,8 @@ func buildSSHSignatureBlob(pubKey ssh.PublicKey, namespace, hashAlg string, sig 
 	buf.WriteString(sshSigMagic)
 
 	// Version
-	binary.Write(&buf, binary.BigEndian, uint32(sshSigVersion))
+	// binary.Write to bytes.Buffer never fails for fixed-size types
+	_ = binary.Write(&buf, binary.BigEndian, uint32(sshSigVersion))
 
 	// Public key
 	writeSSHString(&buf, pubKey.Marshal())

@@ -144,7 +144,8 @@ func parseSSHSignatureWireFormat(data []byte) (*ssh.Signature, error) {
 	var rest []byte
 	if r.Len() > 0 {
 		rest = make([]byte, r.Len())
-		r.Read(rest)
+		// Reading remaining bytes from bytes.Reader, EOF is expected and can be ignored
+		_, _ = r.Read(rest)
 	}
 
 	return &ssh.Signature{

@@ -167,7 +167,7 @@ func TestNewSSHSignerFromFile(t *testing.T) {
 		t.Fatalf("failed to marshal private key: %v", err)
 	}
 
-	if err := os.WriteFile(keyPath, pem.EncodeToMemory(pemBlock), 0600); err != nil {
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(pemBlock), 0o600); err != nil {
 		t.Fatalf("failed to write key file: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestNewSSHSignerFromFile_InvalidKey(t *testing.T) {
 	tmpDir := t.TempDir()
 	keyPath := filepath.Join(tmpDir, "invalid_key")
 
-	if err := os.WriteFile(keyPath, []byte("not a valid key"), 0600); err != nil {
+	if err := os.WriteFile(keyPath, []byte("not a valid key"), 0o600); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
 
