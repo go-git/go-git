@@ -32,6 +32,16 @@ func NewSSHVerifier(allowedSigners map[string]ssh.PublicKey) *SSHVerifier {
 	return &SSHVerifier{allowedSigners: copied}
 }
 
+// NewSSHVerifierFromFile creates an SSHVerifier from an allowed_signers file path.
+// The path can use "~/" prefix to refer to the user's home directory.
+func NewSSHVerifierFromFile(allowedSignersPath string) (*SSHVerifier, error) {
+	allowedSigners, err := ParseAllowedSignersFile(allowedSignersPath)
+	if err != nil {
+		return nil, err
+	}
+	return NewSSHVerifier(allowedSigners), nil
+}
+
 // SupportsSignatureType returns true for SSH signatures.
 func (v *SSHVerifier) SupportsSignatureType(t object.SignatureType) bool {
 	return t == object.SignatureTypeSSH
