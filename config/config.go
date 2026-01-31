@@ -106,6 +106,17 @@ type Config struct {
 		Email string
 	}
 
+	GPG struct {
+		// Format specifies the signature format to use when signing commits and tags.
+		// Valid values are "openpgp" (default) and "ssh".
+		Format string
+		// SSH contains SSH-specific GPG configuration.
+		SSH struct {
+			// AllowedSignersFile is the path to the file containing allowed SSH signing keys.
+			AllowedSignersFile string
+		}
+	}
+
 	Pack struct {
 		// Window controls the size of the sliding window for delta
 		// compression.  The default is 10.  A value of 0 turns off
@@ -339,6 +350,7 @@ const (
 	userSection                = "user"
 	authorSection              = "author"
 	committerSection           = "committer"
+	gpgSection                 = "gpg"
 	initSection                = "init"
 	urlSection                 = "url"
 	extensionsSection          = "extensions"
@@ -362,6 +374,8 @@ const (
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
 	fileModeKey                = "filemode"
+	formatKey                  = "format"
+	allowedSignersFileKey      = "allowedSignersFile"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -383,6 +397,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	c.unmarshalCore()
 	c.unmarshalExtensions()
 	c.unmarshalUser()
+	c.unmarshalGPG()
 	c.unmarshalInit()
 	if err := c.unmarshalPack(); err != nil {
 		return err
@@ -442,6 +457,18 @@ func (c *Config) unmarshalUser() {
 	s = c.Raw.Section(committerSection)
 	c.Committer.Name = s.Options.Get(nameKey)
 	c.Committer.Email = s.Options.Get(emailKey)
+}
+
+func (c *Config) unmarshalGPG() {
+	s := c.Raw.Section(gpgSection)
+	c.GPG.Format = s.Options.Get(formatKey)
+
+	// SSH subsection is parsed separately since it uses subsections
+	for _, sub := range s.Subsections {
+		if sub.Name == "ssh" {
+			c.GPG.SSH.AllowedSignersFile = sub.Options.Get(allowedSignersFileKey)
+		}
+	}
 }
 
 func (c *Config) unmarshalPack() error {
@@ -563,6 +590,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
 	c.marshalExtensions()
 	c.marshalUser()
+	c.marshalGPG()
 	c.marshalPack()
 	c.marshalRemotes()
 	c.marshalSubmodules()
@@ -632,6 +660,19 @@ func (c *Config) marshalUser() {
 
 	if c.Committer.Email != "" {
 		s.SetOption(emailKey, c.Committer.Email)
+	}
+}
+
+func (c *Config) marshalGPG() {
+	s := c.Raw.Section(gpgSection)
+	if c.GPG.Format != "" {
+		s.SetOption(formatKey, c.GPG.Format)
+	}
+
+	// SSH subsection
+	if c.GPG.SSH.AllowedSignersFile != "" {
+		sub := s.Subsection("ssh")
+		sub.SetOption(allowedSignersFileKey, c.GPG.SSH.AllowedSignersFile)
 	}
 }
 
