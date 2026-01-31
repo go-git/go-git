@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -40,6 +41,20 @@ func NewSSHVerifierFromFile(allowedSignersPath string) (*SSHVerifier, error) {
 		return nil, err
 	}
 	return NewSSHVerifier(allowedSigners), nil
+}
+
+// NewSSHVerifierFromConfig creates an SSHVerifier from git config.
+// Returns nil verifier (not error) if no allowed signers file configured.
+func NewSSHVerifierFromConfig(cfg *config.Config) (*SSHVerifier, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+
+	if cfg.GPG.SSH.AllowedSignersFile == "" {
+		return nil, nil
+	}
+
+	return NewSSHVerifierFromFile(cfg.GPG.SSH.AllowedSignersFile)
 }
 
 // SupportsSignatureType returns true for SSH signatures.

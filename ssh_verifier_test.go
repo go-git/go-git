@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -296,5 +297,98 @@ func TestNewSSHVerifierFromFile_MultipleKeys(t *testing.T) {
 
 	if !verifier.SupportsSignatureType(object.SignatureTypeSSH) {
 		t.Error("expected verifier to support SSH signatures")
+	}
+}
+
+func TestNewSSHVerifierFromConfig_WithAllowedSignersFile(t *testing.T) {
+	t.Parallel()
+
+	// Generate a test key
+	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		t.Fatalf("failed to create SSH public key: %v", err)
+	}
+
+	// Create allowed signers file
+	authorizedKey := string(ssh.MarshalAuthorizedKey(sshPubKey))
+	content := "alice@example.com " + authorizedKey
+
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/allowed_signers"
+
+	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	// Create config with allowed signers file
+	cfg := config.NewConfig()
+	cfg.GPG.SSH.AllowedSignersFile = filePath
+
+	// Create verifier from config
+	verifier, err := NewSSHVerifierFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("failed to create verifier: %v", err)
+	}
+
+	if verifier == nil {
+		t.Fatal("expected non-nil verifier")
+	}
+
+	if !verifier.SupportsSignatureType(object.SignatureTypeSSH) {
+		t.Error("expected verifier to support SSH signatures")
+	}
+}
+
+func TestNewSSHVerifierFromConfig_WithoutAllowedSignersFile(t *testing.T) {
+	t.Parallel()
+
+	// Create config without allowed signers file
+	cfg := config.NewConfig()
+
+	// Create verifier from config
+	verifier, err := NewSSHVerifierFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if verifier != nil {
+		t.Error("expected nil verifier when no allowed signers file configured")
+	}
+}
+
+func TestNewSSHVerifierFromConfig_NilConfig(t *testing.T) {
+	t.Parallel()
+
+	// Create verifier from nil config
+	verifier, err := NewSSHVerifierFromConfig(nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if verifier != nil {
+		t.Error("expected nil verifier for nil config")
+	}
+}
+
+func TestNewSSHVerifierFromConfig_InvalidFile(t *testing.T) {
+	t.Parallel()
+
+	// Create config with non-existent file
+	cfg := config.NewConfig()
+	cfg.GPG.SSH.AllowedSignersFile = "/nonexistent/path/to/allowed_signers"
+
+	// Create verifier from config should return error
+	verifier, err := NewSSHVerifierFromConfig(cfg)
+	if err == nil {
+		t.Error("expected error for non-existent file")
+	}
+
+	if verifier != nil {
+		t.Error("expected nil verifier when file doesn't exist")
 	}
 }
