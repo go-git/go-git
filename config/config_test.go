@@ -616,3 +616,146 @@ func TestMerge(t *testing.T) {
 		})
 	}
 }
+
+func TestGPGConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unmarshal gpg format", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg]
+	format = ssh
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ssh", cfg.GPG.Format)
+	})
+
+	t.Run("unmarshal gpg.ssh.allowedSignersFile", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg "ssh"]
+	allowedSignersFile = ~/.ssh/allowed_signers
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "~/.ssh/allowed_signers", cfg.GPG.SSH.AllowedSignersFile)
+	})
+
+	t.Run("unmarshal gpg format and ssh subsection", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg]
+	format = ssh
+[gpg "ssh"]
+	allowedSignersFile = /home/user/.ssh/allowed_signers
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ssh", cfg.GPG.Format)
+		assert.Equal(t, "/home/user/.ssh/allowed_signers", cfg.GPG.SSH.AllowedSignersFile)
+	})
+
+	t.Run("marshal gpg format", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.GPG.Format = "ssh"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[gpg]")
+		assert.Contains(t, string(data), "format = ssh")
+	})
+
+	t.Run("marshal gpg.ssh.allowedSignersFile", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.GPG.SSH.AllowedSignersFile = "~/.ssh/allowed_signers"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), `[gpg "ssh"]`)
+		assert.Contains(t, string(data), "allowedSignersFile = ~/.ssh/allowed_signers")
+	})
+
+	t.Run("marshal gpg format and ssh subsection", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.GPG.Format = "openpgp"
+		cfg.GPG.SSH.AllowedSignersFile = "/etc/ssh/allowed_signers"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[gpg]")
+		assert.Contains(t, string(data), "format = openpgp")
+		assert.Contains(t, string(data), `[gpg "ssh"]`)
+		assert.Contains(t, string(data), "allowedSignersFile = /etc/ssh/allowed_signers")
+	})
+
+	t.Run("round-trip marshal/unmarshal", func(t *testing.T) {
+		t.Parallel()
+		original := NewConfig()
+		original.GPG.Format = "ssh"
+		original.GPG.SSH.AllowedSignersFile = "~/.ssh/allowed_signers"
+
+		data, err := original.Marshal()
+		require.NoError(t, err)
+
+		parsed := NewConfig()
+		err = parsed.Unmarshal(data)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ssh", parsed.GPG.Format)
+		assert.Equal(t, "~/.ssh/allowed_signers", parsed.GPG.SSH.AllowedSignersFile)
+	})
+
+	t.Run("empty gpg config not marshaled", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.User.Name = "Test User"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		// Empty GPG config should not be included
+		configStr := string(data)
+		if strings.Contains(configStr, "[gpg]") {
+			// Check that it's not an empty section
+			lines := strings.Split(configStr, "\n")
+			for i, line := range lines {
+				if strings.TrimSpace(line) == "[gpg]" {
+					// Check if next non-empty line is another section or EOF
+					for j := i + 1; j < len(lines); j++ {
+						nextLine := strings.TrimSpace(lines[j])
+						if nextLine == "" {
+							continue
+						}
+						// If next line is a section header or there's no format key, fail
+						if strings.HasPrefix(nextLine, "[") || !strings.Contains(nextLine, "format") {
+							t.Error("Empty [gpg] section should not be marshaled")
+						}
+						break
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("unmarshal with openpgp format", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg]
+	format = openpgp
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "openpgp", cfg.GPG.Format)
+	})
+}
