@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+
 )
 
 const (
@@ -1066,7 +1067,7 @@ func (d *DotGit) pruneEmptyDirectoriesInRefs(path string) error {
 		return nil
 	}
 	
-	info, err := d.fs.Stat(path)
+	info, err := d.fs.Lstat(path)
 	if err != nil {
 		return err
 	}
