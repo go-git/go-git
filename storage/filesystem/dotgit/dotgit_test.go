@@ -1091,21 +1091,30 @@ func (s *SuiteDotGit) TestPruneEmptyDirectoriesInRefs() {
 
 	dir := New(fs)
 
-	oldRef := plumbing.NewReferenceFromStrings(
+	refA := plumbing.NewReferenceFromStrings(
 		"refs/heads/bugfix/1",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	)
-	err := dir.SetRef(oldRef, nil)
-	s.Require().NoError(err)
-
-	err = dir.RemoveRef(oldRef.Name())
-	s.Require().NoError(err)
-
-	// if the function works well, the newRef will be created successfully instead of conflicts
-	newRef := plumbing.NewReferenceFromStrings(
-		"refs/heads/bugfix",
-		"c8d3ffab552895c19b9fcf7aa264d277cde33881",
+	refB := plumbing.NewReferenceFromStrings(
+		"refs/heads/bugfix/2",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	)
-	err = dir.SetRef(newRef,nil)
+
+	err := dir.SetRef(refA, nil)
 	s.Require().NoError(err)
+
+	err = dir.SetRef(refB, nil)
+	s.Require().NoError(err)
+
+	err = dir.RemoveRef(refA.Name())
+	_, err = dir.fs.Lstat("refs/heads")
+	s.Require().NoError(err)
+	_, err = dir.fs.Lstat("refs/heads/bugfix")
+	s.Require().NoError(err)
+
+	err = dir.RemoveRef(refB.Name())
+	_, err = dir.fs.Lstat("refs/heads")
+	s.Require().NoError(err)
+	_, err = dir.fs.Lstat("refs/heads/bugfix")
+	s.Require().ErrorIs(err,os.ErrNotExist)
 }
