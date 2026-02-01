@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -21,36 +23,24 @@ func TestParseAllowedSigners_SinglePrincipal_ED25519(t *testing.T) {
 
 	// Generate an ed25519 key
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create allowed signers content
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_SinglePrincipal_RSA(t *testing.T) {
@@ -58,35 +48,23 @@ func TestParseAllowedSigners_SinglePrincipal_RSA(t *testing.T) {
 
 	// Generate an RSA key
 	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(&privKey.PublicKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_SinglePrincipal_ECDSA(t *testing.T) {
@@ -94,72 +72,48 @@ func TestParseAllowedSigners_SinglePrincipal_ECDSA(t *testing.T) {
 
 	// Generate an ECDSA key
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(&privKey.PublicKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_MultiplePrincipals(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "alice@example.com,bob@example.com,charlie@example.com " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 3 {
-		t.Fatalf("expected 3 signers, got %d", len(signers))
-	}
+	require.Len(t, signers, 3)
 
 	expectedPrincipals := []string{"alice@example.com", "bob@example.com", "charlie@example.com"}
 	for _, principal := range expectedPrincipals {
 		key, ok := signers[principal]
-		if !ok {
-			t.Errorf("expected %s in signers", principal)
-			continue
-		}
-
-		if !sshKeysEqual(key, sshPubKey) {
-			t.Errorf("key for %s does not match", principal)
+		assert.True(t, ok, "expected %s in signers", principal)
+		if ok {
+			assert.True(t, sshKeysEqual(key, sshPubKey), "key for %s does not match", principal)
 		}
 	}
 }
@@ -168,49 +122,33 @@ func TestParseAllowedSigners_WildcardPrincipal(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "* " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["*"]
-	if !ok {
-		t.Fatal("expected * in signers")
-	}
+	require.True(t, ok, "expected * in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_CommentsAndEmptyLines(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := `# This is a comment
@@ -222,197 +160,129 @@ user@example.com ` + authorizedKey + `
 `
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_WithComment(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey + " this is a comment"
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_WithNamespaces(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com namespaces=\"git\" " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_WithValidAfter(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com valid-after=\"20230101\" " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_WithValidBefore(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com valid-before=\"20251231\" " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_WithMultipleOptions(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com namespaces=\"git\" valid-after=\"20230101\" valid-before=\"20251231\" " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_MultipleKeys(t *testing.T) {
@@ -420,24 +290,16 @@ func TestParseAllowedSigners_MultipleKeys(t *testing.T) {
 
 	// Generate two different keys
 	pubKey1, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key 1: %v", err)
-	}
+	require.NoError(t, err)
 
 	pubKey2, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key 2: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey1, err := ssh.NewPublicKey(pubKey1)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key 1: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey2, err := ssh.NewPublicKey(pubKey2)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key 2: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey1 := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey1)))
 	authorizedKey2 := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey2)))
@@ -446,31 +308,19 @@ func TestParseAllowedSigners_MultipleKeys(t *testing.T) {
 bob@example.com ` + authorizedKey2
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 2 {
-		t.Fatalf("expected 2 signers, got %d", len(signers))
-	}
+	require.Len(t, signers, 2)
 
 	key1, ok := signers["alice@example.com"]
-	if !ok {
-		t.Fatal("expected alice@example.com in signers")
-	}
+	require.True(t, ok, "expected alice@example.com in signers")
 
-	if !sshKeysEqual(key1, sshPubKey1) {
-		t.Error("key for alice@example.com does not match")
-	}
+	assert.True(t, sshKeysEqual(key1, sshPubKey1), "key for alice@example.com does not match")
 
 	key2, ok := signers["bob@example.com"]
-	if !ok {
-		t.Fatal("expected bob@example.com in signers")
-	}
+	require.True(t, ok, "expected bob@example.com in signers")
 
-	if !sshKeysEqual(key2, sshPubKey2) {
-		t.Error("key for bob@example.com does not match")
-	}
+	assert.True(t, sshKeysEqual(key2, sshPubKey2), "key for bob@example.com does not match")
 }
 
 func TestParseAllowedSigners_InvalidFormat_NoPrincipal(t *testing.T) {
@@ -479,9 +329,7 @@ func TestParseAllowedSigners_InvalidFormat_NoPrincipal(t *testing.T) {
 	content := ""
 
 	_, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Errorf("empty file should not error, got: %v", err)
-	}
+	assert.NoError(t, err, "empty file should not error")
 }
 
 func TestParseAllowedSigners_InvalidFormat_NoKey(t *testing.T) {
@@ -490,9 +338,7 @@ func TestParseAllowedSigners_InvalidFormat_NoKey(t *testing.T) {
 	content := "user@example.com"
 
 	_, err := ParseAllowedSigners(strings.NewReader(content))
-	if err == nil {
-		t.Error("expected error for line without key")
-	}
+	assert.Error(t, err, "expected error for line without key")
 }
 
 func TestParseAllowedSigners_InvalidFormat_InvalidKey(t *testing.T) {
@@ -501,32 +347,24 @@ func TestParseAllowedSigners_InvalidFormat_InvalidKey(t *testing.T) {
 	content := "user@example.com ssh-ed25519 INVALIDBASE64"
 
 	_, err := ParseAllowedSigners(strings.NewReader(content))
-	if err == nil {
-		t.Error("expected error for invalid key")
-	}
+	assert.Error(t, err, "expected error for invalid key")
 }
 
 func TestParseAllowedSignersFile_FileNotFound(t *testing.T) {
 	t.Parallel()
 
 	_, err := ParseAllowedSignersFile("/nonexistent/path/to/allowed_signers")
-	if err == nil {
-		t.Error("expected error for nonexistent file")
-	}
+	assert.Error(t, err, "expected error for nonexistent file")
 }
 
 func TestParseAllowedSignersFile_ValidFile(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey
@@ -535,41 +373,28 @@ func TestParseAllowedSignersFile_ValidFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "allowed_signers")
 
-	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
+	err = os.WriteFile(filePath, []byte(content), 0o600)
+	require.NoError(t, err)
 
 	signers, err := ParseAllowedSignersFile(filePath)
-	if err != nil {
-		t.Fatalf("failed to parse file: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSignersFile_HomeDirExpansion(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey
@@ -579,9 +404,8 @@ func TestParseAllowedSignersFile_HomeDirExpansion(t *testing.T) {
 	relPath := "test_allowed_signers"
 	filePath := filepath.Join(tmpDir, relPath)
 
-	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
+	err = os.WriteFile(filePath, []byte(content), 0o600)
+	require.NoError(t, err)
 
 	// Get the home directory
 	home, err := os.UserHomeDir()
@@ -599,22 +423,14 @@ func TestParseAllowedSignersFile_HomeDirExpansion(t *testing.T) {
 
 	tildePrefix := "~/" + filepath.Base(homeTestPath)
 	signers, err := ParseAllowedSignersFile(tildePrefix)
-	if err != nil {
-		t.Fatalf("failed to parse file with ~/ prefix: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_ComplexRealWorldExample(t *testing.T) {
@@ -622,34 +438,22 @@ func TestParseAllowedSigners_ComplexRealWorldExample(t *testing.T) {
 
 	// Generate test keys
 	pubKey1, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key 1: %v", err)
-	}
+	require.NoError(t, err)
 
 	pubKey2, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key 2: %v", err)
-	}
+	require.NoError(t, err)
 
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate RSA key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey1, err := ssh.NewPublicKey(pubKey1)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key 1: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey2, err := ssh.NewPublicKey(pubKey2)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key 2: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshRSAKey, err := ssh.NewPublicKey(&rsaKey.PublicKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH RSA key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey1 := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey1)))
 	authorizedKey2 := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey2)))
@@ -670,14 +474,10 @@ release@example.com valid-after="20250101" ` + authorizedRSAKey + `
 `
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Should have 5 entries: alice, bob, bob@work.com, release, *
-	if len(signers) != 5 {
-		t.Fatalf("expected 5 signers, got %d", len(signers))
-	}
+	require.Len(t, signers, 5)
 
 	// Verify each entry
 	tests := []struct {
@@ -693,13 +493,9 @@ release@example.com valid-after="20250101" ` + authorizedRSAKey + `
 
 	for _, tt := range tests {
 		key, ok := signers[tt.principal]
-		if !ok {
-			t.Errorf("expected %s in signers", tt.principal)
-			continue
-		}
-
-		if !sshKeysEqual(key, tt.key) {
-			t.Errorf("key for %s does not match", tt.principal)
+		assert.True(t, ok, "expected %s in signers", tt.principal)
+		if ok {
+			assert.True(t, sshKeysEqual(key, tt.key), "key for %s does not match", tt.principal)
 		}
 	}
 }
@@ -708,73 +504,49 @@ func TestParseAllowedSigners_TrailingWhitespace(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	content := "user@example.com " + authorizedKey + "   \t  \n"
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(signers) != 1 {
-		t.Fatalf("expected 1 signer, got %d", len(signers))
-	}
+	require.Len(t, signers, 1)
 
 	key, ok := signers["user@example.com"]
-	if !ok {
-		t.Fatal("expected user@example.com in signers")
-	}
+	require.True(t, ok, "expected user@example.com in signers")
 
-	if !sshKeysEqual(key, sshPubKey) {
-		t.Error("keys do not match")
-	}
+	assert.True(t, sshKeysEqual(key, sshPubKey), "keys do not match")
 }
 
 func TestParseAllowedSigners_EmptyPrincipalInList(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 	// Test with empty entries in comma-separated list
 	content := "alice@example.com,,bob@example.com " + authorizedKey
 
 	signers, err := ParseAllowedSigners(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Should have 2 signers (empty entries are skipped)
-	if len(signers) != 2 {
-		t.Fatalf("expected 2 signers, got %d", len(signers))
-	}
+	require.Len(t, signers, 2)
 
 	for _, principal := range []string{"alice@example.com", "bob@example.com"} {
 		key, ok := signers[principal]
-		if !ok {
-			t.Errorf("expected %s in signers", principal)
-			continue
-		}
-
-		if !sshKeysEqual(key, sshPubKey) {
-			t.Errorf("key for %s does not match", principal)
+		assert.True(t, ok, "expected %s in signers", principal)
+		if ok {
+			assert.True(t, sshKeysEqual(key, sshPubKey), "key for %s does not match", principal)
 		}
 	}
 }
@@ -783,14 +555,10 @@ func TestParseAllowedSigners_DuplicatePrincipal(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 
@@ -799,26 +567,18 @@ func TestParseAllowedSigners_DuplicatePrincipal(t *testing.T) {
 user@example.com ` + authorizedKey
 
 	_, err = ParseAllowedSigners(strings.NewReader(content))
-	if err == nil {
-		t.Error("expected error for duplicate principal")
-	}
-	if err != nil && !strings.Contains(err.Error(), "duplicate principal") {
-		t.Errorf("expected duplicate principal error, got: %v", err)
-	}
+	assert.Error(t, err, "expected error for duplicate principal")
+	assert.Contains(t, err.Error(), "duplicate principal")
 }
 
 func TestParseAllowedSigners_DuplicatePrincipalInSameLine(t *testing.T) {
 	t.Parallel()
 
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 
@@ -826,25 +586,17 @@ func TestParseAllowedSigners_DuplicatePrincipalInSameLine(t *testing.T) {
 	content := "user@example.com,alice@example.com,user@example.com " + authorizedKey
 
 	_, err = ParseAllowedSigners(strings.NewReader(content))
-	if err == nil {
-		t.Error("expected error for duplicate principal")
-	}
-	if err != nil && !strings.Contains(err.Error(), "duplicate principal") {
-		t.Errorf("expected duplicate principal error, got: %v", err)
-	}
+	assert.Error(t, err, "expected error for duplicate principal")
+	assert.Contains(t, err.Error(), "duplicate principal")
 }
 
 // Benchmark parsing performance
 func BenchmarkParseAllowedSigners(b *testing.B) {
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		b.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(b, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		b.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(b, err)
 
 	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 
@@ -860,8 +612,6 @@ func BenchmarkParseAllowedSigners(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_, err := ParseAllowedSigners(bytes.NewReader(content))
-		if err != nil {
-			b.Fatalf("failed to parse: %v", err)
-		}
+		require.NoError(b, err)
 	}
 }

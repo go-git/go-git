@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/go-git/go-git/v6/config"
@@ -17,15 +19,9 @@ func TestSSHVerifier_SupportsSignatureType(t *testing.T) {
 
 	v := NewSSHVerifier(nil)
 
-	if !v.SupportsSignatureType(object.SignatureTypeSSH) {
-		t.Error("should support SSH")
-	}
-	if v.SupportsSignatureType(object.SignatureTypeOpenPGP) {
-		t.Error("should not support OpenPGP")
-	}
-	if v.SupportsSignatureType(object.SignatureTypeX509) {
-		t.Error("should not support X509")
-	}
+	assert.True(t, v.SupportsSignatureType(object.SignatureTypeSSH), "should support SSH")
+	assert.False(t, v.SupportsSignatureType(object.SignatureTypeOpenPGP), "should not support OpenPGP")
+	assert.False(t, v.SupportsSignatureType(object.SignatureTypeX509), "should not support X509")
 }
 
 func TestSSHVerifier_InvalidSignature(t *testing.T) {
@@ -34,16 +30,10 @@ func TestSSHVerifier_InvalidSignature(t *testing.T) {
 	v := NewSSHVerifier(nil)
 
 	result, err := v.Verify([]byte("not a valid signature"), []byte("message"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	if result.Valid {
-		t.Error("expected invalid result for malformed signature")
-	}
-	if result.Error == nil {
-		t.Error("expected error in result")
-	}
+	assert.False(t, result.Valid, "expected invalid result for malformed signature")
+	assert.NotNil(t, result.Error, "expected error in result")
 }
 
 func TestSSHVerifier_WrongNamespace(t *testing.T) {
@@ -55,13 +45,9 @@ func TestSSHVerifier_WrongNamespace(t *testing.T) {
 
 	// Use invalid signature to trigger parse error
 	result, err := v.Verify([]byte("-----BEGIN SSH SIGNATURE-----\naW52YWxpZA==\n-----END SSH SIGNATURE-----"), []byte("message"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	if result.Valid {
-		t.Error("expected invalid result")
-	}
+	assert.False(t, result.Valid, "expected invalid result")
 }
 
 // TestSSHVerifier_KeyLookup tests the allowed signers lookup
@@ -70,14 +56,10 @@ func TestSSHVerifier_KeyLookup(t *testing.T) {
 
 	// Generate a test key
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	allowedSigners := map[string]ssh.PublicKey{
 		"test@example.com": sshPubKey,
@@ -87,50 +69,36 @@ func TestSSHVerifier_KeyLookup(t *testing.T) {
 
 	// Verify the constructor accepts the map without error by checking the verifier is usable.
 	// The internal allowedSigners field is unexported to prevent post-construction tampering.
-	if v == nil {
-		t.Error("expected non-nil verifier")
-	}
+	require.NotNil(t, v, "expected non-nil verifier")
 
 	// Verify that the verifier supports SSH signature type (basic sanity check)
-	if !v.SupportsSignatureType(object.SignatureTypeSSH) {
-		t.Error("expected verifier to support SSH signatures")
-	}
+	assert.True(t, v.SupportsSignatureType(object.SignatureTypeSSH), "expected verifier to support SSH signatures")
 }
 
 func TestComputeSSHSignedData_SHA512(t *testing.T) {
 	t.Parallel()
 
 	data, err := computeSSHSignedData("git", "sha512", []byte("test message"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Check that it starts with the magic
-	if string(data[:6]) != sshSigMagic {
-		t.Errorf("expected magic %q, got %q", sshSigMagic, string(data[:6]))
-	}
+	assert.Equal(t, sshSigMagic, string(data[:6]))
 }
 
 func TestComputeSSHSignedData_SHA256(t *testing.T) {
 	t.Parallel()
 
 	data, err := computeSSHSignedData("git", "sha256", []byte("test message"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	if string(data[:6]) != sshSigMagic {
-		t.Errorf("expected magic %q", sshSigMagic)
-	}
+	assert.Equal(t, sshSigMagic, string(data[:6]))
 }
 
 func TestComputeSSHSignedData_UnsupportedHash(t *testing.T) {
 	t.Parallel()
 
 	_, err := computeSSHSignedData("git", "md5", []byte("test"))
-	if err == nil {
-		t.Error("expected error for unsupported hash algorithm")
-	}
+	assert.Error(t, err, "expected error for unsupported hash algorithm")
 }
 
 func TestNewSSHVerifierFromFile_ValidFile(t *testing.T) {
@@ -138,14 +106,10 @@ func TestNewSSHVerifierFromFile_ValidFile(t *testing.T) {
 
 	// Generate a test key
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create allowed signers file
 	authorizedKey := string(ssh.MarshalAuthorizedKey(sshPubKey))
@@ -154,24 +118,17 @@ func TestNewSSHVerifierFromFile_ValidFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/allowed_signers"
 
-	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
+	err = os.WriteFile(filePath, []byte(content), 0o600)
+	require.NoError(t, err)
 
 	// Create verifier from file
 	verifier, err := NewSSHVerifierFromFile(filePath)
-	if err != nil {
-		t.Fatalf("failed to create verifier: %v", err)
-	}
+	require.NoError(t, err)
 
-	if verifier == nil {
-		t.Fatal("expected non-nil verifier")
-	}
+	require.NotNil(t, verifier, "expected non-nil verifier")
 
 	// Verify that it supports SSH signatures
-	if !verifier.SupportsSignatureType(object.SignatureTypeSSH) {
-		t.Error("expected verifier to support SSH signatures")
-	}
+	assert.True(t, verifier.SupportsSignatureType(object.SignatureTypeSSH), "expected verifier to support SSH signatures")
 }
 
 func TestNewSSHVerifierFromFile_HomeDirExpansion(t *testing.T) {
@@ -179,14 +136,10 @@ func TestNewSSHVerifierFromFile_HomeDirExpansion(t *testing.T) {
 
 	// Generate a test key
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create allowed signers file in home directory
 	authorizedKey := string(ssh.MarshalAuthorizedKey(sshPubKey))
@@ -208,26 +161,18 @@ func TestNewSSHVerifierFromFile_HomeDirExpansion(t *testing.T) {
 	// Test with ~/ prefix
 	tildePrefix := "~/" + fileName
 	verifier, err := NewSSHVerifierFromFile(tildePrefix)
-	if err != nil {
-		t.Fatalf("failed to create verifier with ~/ prefix: %v", err)
-	}
+	require.NoError(t, err)
 
-	if verifier == nil {
-		t.Fatal("expected non-nil verifier")
-	}
+	require.NotNil(t, verifier, "expected non-nil verifier")
 
-	if !verifier.SupportsSignatureType(object.SignatureTypeSSH) {
-		t.Error("expected verifier to support SSH signatures")
-	}
+	assert.True(t, verifier.SupportsSignatureType(object.SignatureTypeSSH), "expected verifier to support SSH signatures")
 }
 
 func TestNewSSHVerifierFromFile_FileNotFound(t *testing.T) {
 	t.Parallel()
 
 	_, err := NewSSHVerifierFromFile("/nonexistent/path/to/allowed_signers")
-	if err == nil {
-		t.Error("expected error for nonexistent file")
-	}
+	assert.Error(t, err, "expected error for nonexistent file")
 }
 
 func TestNewSSHVerifierFromFile_InvalidFileFormat(t *testing.T) {
@@ -238,14 +183,11 @@ func TestNewSSHVerifierFromFile_InvalidFileFormat(t *testing.T) {
 	filePath := tmpDir + "/allowed_signers"
 
 	invalidContent := "alice@example.com ssh-ed25519 INVALIDBASE64"
-	if err := os.WriteFile(filePath, []byte(invalidContent), 0o600); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
+	err := os.WriteFile(filePath, []byte(invalidContent), 0o600)
+	require.NoError(t, err)
 
-	_, err := NewSSHVerifierFromFile(filePath)
-	if err == nil {
-		t.Error("expected error for invalid file format")
-	}
+	_, err = NewSSHVerifierFromFile(filePath)
+	assert.Error(t, err, "expected error for invalid file format")
 }
 
 func TestNewSSHVerifierFromFile_MultipleKeys(t *testing.T) {
@@ -253,24 +195,16 @@ func TestNewSSHVerifierFromFile_MultipleKeys(t *testing.T) {
 
 	// Generate two different keys
 	pubKey1, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key 1: %v", err)
-	}
+	require.NoError(t, err)
 
 	pubKey2, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key 2: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey1, err := ssh.NewPublicKey(pubKey1)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key 1: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey2, err := ssh.NewPublicKey(pubKey2)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key 2: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create allowed signers file with multiple keys
 	authorizedKey1 := string(ssh.MarshalAuthorizedKey(sshPubKey1))
@@ -281,23 +215,16 @@ func TestNewSSHVerifierFromFile_MultipleKeys(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/allowed_signers"
 
-	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
+	err = os.WriteFile(filePath, []byte(content), 0o600)
+	require.NoError(t, err)
 
 	// Create verifier from file
 	verifier, err := NewSSHVerifierFromFile(filePath)
-	if err != nil {
-		t.Fatalf("failed to create verifier: %v", err)
-	}
+	require.NoError(t, err)
 
-	if verifier == nil {
-		t.Fatal("expected non-nil verifier")
-	}
+	require.NotNil(t, verifier, "expected non-nil verifier")
 
-	if !verifier.SupportsSignatureType(object.SignatureTypeSSH) {
-		t.Error("expected verifier to support SSH signatures")
-	}
+	assert.True(t, verifier.SupportsSignatureType(object.SignatureTypeSSH), "expected verifier to support SSH signatures")
 }
 
 func TestNewSSHVerifierFromConfig_WithAllowedSignersFile(t *testing.T) {
@@ -305,14 +232,10 @@ func TestNewSSHVerifierFromConfig_WithAllowedSignersFile(t *testing.T) {
 
 	// Generate a test key
 	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+	require.NoError(t, err)
 
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		t.Fatalf("failed to create SSH public key: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Create allowed signers file
 	authorizedKey := string(ssh.MarshalAuthorizedKey(sshPubKey))
@@ -321,9 +244,8 @@ func TestNewSSHVerifierFromConfig_WithAllowedSignersFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/allowed_signers"
 
-	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
+	err = os.WriteFile(filePath, []byte(content), 0o600)
+	require.NoError(t, err)
 
 	// Create config with allowed signers file
 	cfg := config.NewConfig()
@@ -331,17 +253,11 @@ func TestNewSSHVerifierFromConfig_WithAllowedSignersFile(t *testing.T) {
 
 	// Create verifier from config
 	verifier, err := NewSSHVerifierFromConfig(cfg)
-	if err != nil {
-		t.Fatalf("failed to create verifier: %v", err)
-	}
+	require.NoError(t, err)
 
-	if verifier == nil {
-		t.Fatal("expected non-nil verifier")
-	}
+	require.NotNil(t, verifier, "expected non-nil verifier")
 
-	if !verifier.SupportsSignatureType(object.SignatureTypeSSH) {
-		t.Error("expected verifier to support SSH signatures")
-	}
+	assert.True(t, verifier.SupportsSignatureType(object.SignatureTypeSSH), "expected verifier to support SSH signatures")
 }
 
 func TestNewSSHVerifierFromConfig_WithoutAllowedSignersFile(t *testing.T) {
@@ -352,13 +268,9 @@ func TestNewSSHVerifierFromConfig_WithoutAllowedSignersFile(t *testing.T) {
 
 	// Create verifier from config
 	verifier, err := NewSSHVerifierFromConfig(cfg)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
+	require.NoError(t, err)
 
-	if verifier != nil {
-		t.Error("expected nil verifier when no allowed signers file configured")
-	}
+	assert.Nil(t, verifier, "expected nil verifier when no allowed signers file configured")
 }
 
 func TestNewSSHVerifierFromConfig_NilConfig(t *testing.T) {
@@ -366,13 +278,9 @@ func TestNewSSHVerifierFromConfig_NilConfig(t *testing.T) {
 
 	// Create verifier from nil config
 	verifier, err := NewSSHVerifierFromConfig(nil)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
+	require.NoError(t, err)
 
-	if verifier != nil {
-		t.Error("expected nil verifier for nil config")
-	}
+	assert.Nil(t, verifier, "expected nil verifier for nil config")
 }
 
 func TestNewSSHVerifierFromConfig_InvalidFile(t *testing.T) {
@@ -384,11 +292,7 @@ func TestNewSSHVerifierFromConfig_InvalidFile(t *testing.T) {
 
 	// Create verifier from config should return error
 	verifier, err := NewSSHVerifierFromConfig(cfg)
-	if err == nil {
-		t.Error("expected error for non-existent file")
-	}
+	assert.Error(t, err, "expected error for non-existent file")
 
-	if verifier != nil {
-		t.Error("expected nil verifier when file doesn't exist")
-	}
+	assert.Nil(t, verifier, "expected nil verifier when file doesn't exist")
 }
