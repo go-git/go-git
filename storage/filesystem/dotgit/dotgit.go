@@ -812,11 +812,14 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	_, err := d.fs.Stat(path)
 	if err == nil {
 		err = d.fs.Remove(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		err = d.pruneEmptyDirectoriesInRefs(filepath.Dir(path))
+		if err != nil {
+			return err
+		}
 		// Drop down to remove it from the packed refs file, too.
-	}
-
-	if err != nil && !os.IsNotExist(err) {
-		return err
 	}
 
 	return d.rewritePackedRefsWithoutRef(name)
@@ -1051,6 +1054,40 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 	defer ioutil.CheckClose(f, &err)
 
 	return d.readReferenceFrom(f, name)
+}
+
+// PruneEmptyDirectoriesInRefs recursively removes the specified directory if empty,
+// then ascends the directory tree to remove newly emptied parent directories,
+// stopping immediately before any directory whose parent is exactly "refs".
+// This preserves top-level refs subdirectories (e.g., refs/heads, refs/tags)
+// even if they become empty, 
+func (d *DotGit) pruneEmptyDirectoriesInRefs(path string) error {
+	if filepath.Dir(path) == "refs" {
+		return nil
+	}
+	
+	info, err := d.fs.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+
+	files, err := d.fs.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	if len(files) == 0 {
+		err := d.fs.Remove(path)
+		if err != nil {
+			return err
+		}
+		d.pruneEmptyDirectoriesInRefs(filepath.Dir(path))
+	}
+
+	return nil
 }
 
 func (d *DotGit) CountLooseRefs() (int, error) {
