@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 // TestSSHSignatureVerification_TrustedKey verifies that a commit signed with a key
@@ -364,6 +366,72 @@ func TestSSHSignatureVerification_WrongSignatureType(t *testing.T) {
 	// Should fail to parse as SSH signature
 	assert.False(t, result.Valid, "expected Valid=false for non-SSH signature")
 	assert.NotNil(t, result.Error, "expected error when parsing non-SSH signature")
+}
+
+// TestSSHSignatureVerification_WorktreeCommit verifies that the full worktree.Commit
+// flow with SSH signing works correctly end-to-end.
+func TestSSHSignatureVerification_WorktreeCommit(t *testing.T) {
+	t.Parallel()
+
+	// Generate a test SSH key pair
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	sshPrivKey, err := ssh.NewSignerFromKey(privKey)
+	require.NoError(t, err)
+
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	require.NoError(t, err)
+
+	// Create an SSHSigner
+	signer, err := NewSSHSigner(sshPrivKey)
+	require.NoError(t, err)
+
+	// Create an in-memory repository
+	repo, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	require.NoError(t, err)
+
+	// Get the worktree
+	w, err := repo.Worktree()
+	require.NoError(t, err)
+
+	// Create a commit with SSH signature using worktree.Commit
+	commitHash, err := w.Commit("test commit with SSH signature", &CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+		Signer:            signer,
+		AllowEmptyCommits: true,
+	})
+	require.NoError(t, err)
+
+	// Retrieve the commit
+	commit, err := repo.CommitObject(commitHash)
+	require.NoError(t, err)
+
+	// Verify the commit has a signature
+	require.NotEmpty(t, commit.PGPSignature, "commit should have a signature")
+	assert.Contains(t, commit.PGPSignature, "-----BEGIN SSH SIGNATURE-----")
+
+	// Create a verifier with the signing key as trusted
+	verifier := NewSSHVerifier(map[string]ssh.PublicKey{
+		"test@example.com": sshPubKey,
+	})
+
+	// Verify the signature
+	result, err := commit.VerifySignature(verifier)
+	require.NoError(t, err)
+
+	// Assert results
+	assert.True(t, result.Valid, "signature should be valid")
+	assert.Equal(t, object.TrustFull, result.TrustLevel)
+	assert.Equal(t, "test@example.com", result.Signer)
+	assert.Equal(t, object.SignatureTypeSSH, result.Type)
+	assert.NotEmpty(t, result.KeyID)
+	assert.True(t, result.IsValid())
+	assert.True(t, result.IsTrusted(object.TrustFull))
 }
 
 // Helper functions
