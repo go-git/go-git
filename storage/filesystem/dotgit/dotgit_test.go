@@ -1085,3 +1085,27 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 	s.Require().NoError(err)
 	s.Equal(1, looseCount)
 }
+
+func (s *SuiteDotGit) TestPruneEmptyDirectoriesInRefs() {
+	fs := s.EmptyFS()
+
+	dir := New(fs)
+
+	oldRef := plumbing.NewReferenceFromStrings(
+		"refs/heads/bugfix/1",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	)
+	err := dir.SetRef(oldRef, nil)
+	s.Require().NoError(err)
+
+	err = dir.RemoveRef(oldRef.Name())
+	s.Require().NoError(err)
+
+	// if the function works well, the newRef will be created successfully instead of conflicts
+	newRef := plumbing.NewReferenceFromStrings(
+		"refs/heads/bugfix",
+		"c8d3ffab552895c19b9fcf7aa264d277cde33881",
+	)
+	err = dir.SetRef(newRef,nil)
+	s.Require().NoError(err)
+}
