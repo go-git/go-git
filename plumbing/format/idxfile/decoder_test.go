@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	. "github.com/go-git/go-git/v5/plumbing/format/idxfile"
+	"github.com/stretchr/testify/require"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -133,4 +135,30 @@ func BenchmarkDecode(b *testing.B) {
 			b.Errorf("unexpected error decoding: %s", err)
 		}
 	}
+}
+
+func TestChecksumMismatch(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "temp.idx")
+	require.NoError(t, err)
+	defer f.Close()
+
+	_, err = io.Copy(f, fixtures.Basic().One().Idx())
+	require.NoError(t, err)
+
+	_, err = f.Seek(-1, io.SeekEnd)
+	require.NoError(t, err)
+
+	_, err = f.Write([]byte{0})
+	require.NoError(t, err)
+
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	idx := new(MemoryIndex)
+	d := NewDecoder(f)
+
+	err = d.Decode(idx)
+	require.ErrorContains(t, err, "checksum mismatch")
 }
