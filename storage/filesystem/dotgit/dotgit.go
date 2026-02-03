@@ -817,7 +817,7 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 			return err
 		}
 		err = d.pruneEmptyDirectoriesInRefs(filepath.Dir(path))
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		// Drop down to remove it from the packed refs file, too.
