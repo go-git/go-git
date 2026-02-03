@@ -205,6 +205,38 @@ func (t *Tag) Commit() (*Commit, error) {
 	return DecodeCommit(t.s, o)
 }
 
+// Tag returns the tag pointed to by the tag. If the tag points to a
+// different type of object ErrUnsupportedObject will be returned.
+func (t *Tag) Tag() (*Tag, error) {
+	if t.TargetType != plumbing.TagObject {
+		return nil, ErrUnsupportedObject
+	}
+
+	o, err := t.s.EncodedObject(plumbing.TagObject, t.Target)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecodeTag(t.s, o)
+}
+
+// ResolveNestedTags returns the tag at the end of an nested-tag chain.
+// If the current tag does not point to another tag, the tag itself is
+// returned instead.
+func (t *Tag) ResolveNestedTags() (*Tag, error) {
+	var err error
+	for {
+		if t.TargetType == plumbing.TagObject {
+			t, err = t.Tag()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		return t, nil
+	}
+}
+
 // Tree returns the tree pointed to by the tag. If the tag points to a commit
 // object the tree of that commit will be returned. If the tag does not point
 // to a commit or tree object ErrUnsupportedObject will be returned.
