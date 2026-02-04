@@ -1,11 +1,14 @@
 package idxfile
 
 import (
-	"bufio"
 	"bytes"
+	"crypto"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -23,12 +26,15 @@ const (
 
 // Decoder reads and decodes idx files from an input stream.
 type Decoder struct {
-	*bufio.Reader
+	io.Reader
+	h hash.Hash
 }
 
 // NewDecoder builds a new idx stream decoder, that reads from r.
 func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{bufio.NewReader(r)}
+	h := hash.New(crypto.SHA1)
+	tr := io.TeeReader(r, h)
+	return &Decoder{tr, h}
 }
 
 // Decode reads from the stream and decode the content into the MemoryIndex struct.
@@ -43,13 +49,23 @@ func (d *Decoder) Decode(idx *MemoryIndex) error {
 		readObjectNames,
 		readCRC32,
 		readOffsets,
-		readChecksums,
+		readPackChecksum,
 	}
 
 	for _, f := range flow {
 		if err := f(idx, d); err != nil {
 			return err
 		}
+	}
+
+	actual := d.h.Sum(nil)
+	if err := readIdxChecksum(idx, d); err != nil {
+		return err
+	}
+
+	if idx.IdxChecksum.Compare(actual) != 0 {
+		return fmt.Errorf("%w: checksum mismatch: %q instead of %q",
+			ErrMalformedIdxFile, idx.IdxChecksum.String(), hex.EncodeToString(actual))
 	}
 
 	return nil
@@ -163,12 +179,16 @@ func readOffsets(idx *MemoryIndex, r io.Reader) error {
 	return nil
 }
 
-func readChecksums(idx *MemoryIndex, r io.Reader) error {
+func readPackChecksum(idx *MemoryIndex, r io.Reader) error {
 	idx.PackfileChecksum.ResetBySize(idx.idSize())
 	if _, err := idx.PackfileChecksum.ReadFrom(r); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func readIdxChecksum(idx *MemoryIndex, r io.Reader) error {
 	idx.IdxChecksum.ResetBySize(idx.idSize())
 	if _, err := idx.IdxChecksum.ReadFrom(r); err != nil {
 		return err
