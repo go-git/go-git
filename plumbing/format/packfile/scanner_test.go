@@ -151,7 +151,7 @@ func TestPackHeaderSignature(t *testing.T) {
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader([]byte("FOO")), nil, nil),
 			},
-			wantErr: ErrBadSignature,
+			wantErr: ErrMalformedPackfile,
 		},
 		{
 			name: "empty packfile: io.EOF",
@@ -165,7 +165,7 @@ func TestPackHeaderSignature(t *testing.T) {
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: ErrBadSignature,
+			wantErr: io.EOF,
 		},
 	}
 
@@ -218,7 +218,7 @@ func TestPackVersion(t *testing.T) {
 					return newScannerReader(buf, nil, nil)
 				}(),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 		{
 			name: "Unsupported version",
@@ -232,11 +232,11 @@ func TestPackVersion(t *testing.T) {
 			wantErr: ErrUnsupportedVersion,
 		},
 		{
-			name: "empty packfile: ErrMalformedPackfile",
+			name: "empty packfile: EOF",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 	}
 

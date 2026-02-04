@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -25,7 +26,7 @@ var (
 	// ErrEmptyPackfile is returned by ReadHeader when no data is found in the packfile.
 	ErrEmptyPackfile = NewError("empty packfile")
 	// ErrBadSignature is returned by ReadHeader when the signature in the packfile is incorrect.
-	ErrBadSignature = NewError("malformed pack file signature")
+	ErrBadSignature = NewError("bad signature")
 	// ErrMalformedPackfile is returned when the packfile format is incorrect.
 	ErrMalformedPackfile = NewError("malformed pack file")
 	// ErrUnsupportedVersion is returned by ReadHeader when the packfile version is
@@ -152,6 +153,10 @@ func (r *Scanner) Scan() bool {
 	}
 
 	if err := scan(r); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			err = fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
+		}
+
 		r.err = err
 		return false
 	}
@@ -276,14 +281,14 @@ func packHeaderSignature(r *Scanner) (stateFn, error) {
 	start := make([]byte, 4)
 	_, err := r.Read(start)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrBadSignature, err)
+		return nil, fmt.Errorf("read signature: %w", err)
 	}
 
 	if bytes.Equal(start, signature) {
 		return packVersion, nil
 	}
 
-	return nil, ErrBadSignature
+	return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, ErrBadSignature)
 }
 
 // packVersion parses the packfile version. It returns [ErrMalformedPackfile]
@@ -292,7 +297,7 @@ func packHeaderSignature(r *Scanner) (stateFn, error) {
 func packVersion(r *Scanner) (stateFn, error) {
 	version, err := binary.ReadUint32(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot read version", ErrMalformedPackfile)
+		return nil, fmt.Errorf("read version: %w", err)
 	}
 
 	v := Version(version)
@@ -311,7 +316,7 @@ func packVersion(r *Scanner) (stateFn, error) {
 func packObjectsQty(r *Scanner) (stateFn, error) {
 	qty, err := binary.ReadUint32(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot read number of objects", ErrMalformedPackfile)
+		return nil, fmt.Errorf("read number of objects: %w", err)
 	}
 	if qty == 0 {
 		return packFooter, nil
@@ -456,12 +461,12 @@ func packFooter(r *Scanner) (stateFn, error) {
 	checksum.ResetBySize(r.objectIDSize)
 	_, err := checksum.ReadFrom(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read PACK checksum: %w", ErrMalformedPackfile)
+		return nil, fmt.Errorf("read pack checksum: %w", err)
 	}
 
 	if checksum.Compare(actual) != 0 {
-		return nil, fmt.Errorf("checksum mismatch: expected %q found %q: %w",
-			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
+		return nil, fmt.Errorf("%w: checksum mismatch: %q instead of %q",
+			ErrMalformedPackfile, hex.EncodeToString(actual), checksum)
 	}
 
 	r.packData.Section = FooterSection
