@@ -2,6 +2,7 @@ package packfile_test
 
 import (
 	"io"
+	"os"
 	"reflect"
 	"testing"
 
@@ -311,4 +312,50 @@ func (t *testObserver) put(pos int64, o observerObject) {
 
 	t.pos[pos] = len(t.objects)
 	t.objects = append(t.objects, o)
+}
+
+func TestChecksumMismatch(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "temp.pack")
+	require.NoError(t, err)
+	defer f.Close()
+
+	_, err = io.Copy(f, fixtures.Basic().One().Packfile())
+	require.NoError(t, err)
+
+	_, err = f.Seek(-1, io.SeekEnd)
+	require.NoError(t, err)
+
+	_, err = f.Write([]byte{0})
+	require.NoError(t, err)
+
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	scanner := packfile.NewScanner(f)
+	parser := packfile.NewParser(scanner)
+
+	_, err = parser.Parse()
+	require.ErrorContains(t, err, "checksum mismatch")
+}
+
+func TestMalformedPack(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "temp.pack")
+	require.NoError(t, err)
+	defer f.Close()
+
+	_, err = io.Copy(f, io.LimitReader(fixtures.Basic().One().Packfile(), 200))
+	require.NoError(t, err)
+
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	scanner := packfile.NewScanner(f)
+	parser := packfile.NewParser(scanner)
+
+	_, err = parser.Parse()
+	require.ErrorContains(t, err, "malformed pack")
 }
