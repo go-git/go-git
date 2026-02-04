@@ -154,18 +154,11 @@ func TestPackHeaderSignature(t *testing.T) {
 			wantErr: ErrMalformedPackfile,
 		},
 		{
-			name: "empty packfile: io.EOF",
+			name: "empty packfile: ErrEmptyPackfile",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: io.EOF,
-		},
-		{
-			name: "empty packfile: ErrBadSignature",
-			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
-			},
-			wantErr: io.EOF,
+			wantErr: ErrEmptyPackfile,
 		},
 	}
 
@@ -300,14 +293,14 @@ func TestPackObjectQty(t *testing.T) {
 					return newScannerReader(buf, nil, nil)
 				}(),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 		{
-			name: "empty packfile: ErrMalformedPackfile",
+			name: "empty packfile: EOF",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 	}
 

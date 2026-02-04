@@ -279,8 +279,11 @@ type stateFn func(*Scanner) (stateFn, error)
 // that handles the entire packfile header.
 func packHeaderSignature(r *Scanner) (stateFn, error) {
 	start := make([]byte, 4)
-	_, err := r.Read(start)
+	n, err := r.Read(start)
 	if err != nil {
+		if n == 0 && err == io.EOF {
+			return nil, ErrEmptyPackfile
+		}
 		return nil, fmt.Errorf("read signature: %w", err)
 	}
 
