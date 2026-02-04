@@ -2,6 +2,7 @@ package idxfile_test
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func BenchmarkFindOffset(b *testing.B) {
@@ -162,7 +164,7 @@ func fixtureIndex() (*idxfile.MemoryIndex, error) {
 
 	idx := new(idxfile.MemoryIndex)
 
-	d := idxfile.NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
+	d := idxfile.NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
 	err := d.Decode(idx)
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error decoding index: %s", err)

@@ -2,6 +2,7 @@ package idxfile_test
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/base64"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type IdxfileSuite struct {
@@ -27,7 +29,7 @@ func TestIdxfileSuite(t *testing.T) {
 func (s *IdxfileSuite) TestDecode() {
 	f := fixtures.Basic().One()
 
-	d := NewDecoder(f.Idx())
+	d := NewDecoder(f.Idx(), hash.New(crypto.SHA1))
 	idx := new(MemoryIndex)
 	err := d.Decode(idx)
 	s.NoError(err)
@@ -57,7 +59,7 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 
 	idx := new(MemoryIndex)
 
-	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
+	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
 	err := d.Decode(idx)
 	s.NoError(err)
 
@@ -125,10 +127,11 @@ func BenchmarkDecode(b *testing.B) {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
 
+	hasher := hash.New(crypto.SHA1)
 	for b.Loop() {
 		f := bytes.NewBuffer(fixture)
 		idx := new(MemoryIndex)
-		d := NewDecoder(f)
+		d := NewDecoder(f, hasher)
 		if err := d.Decode(idx); err != nil {
 			b.Errorf("unexpected error decoding: %s", err)
 		}
@@ -155,7 +158,7 @@ func TestChecksumMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	idx := new(MemoryIndex)
-	d := NewDecoder(f)
+	d := NewDecoder(f, hash.New(crypto.SHA1))
 
 	err = d.Decode(idx)
 	require.ErrorContains(t, err, "checksum mismatch")

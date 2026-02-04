@@ -2,7 +2,6 @@ package idxfile
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -31,14 +30,14 @@ type Decoder struct {
 }
 
 // NewDecoder builds a new idx stream decoder, that reads from r.
-func NewDecoder(r io.Reader) *Decoder {
-	h := hash.New(crypto.SHA1)
+func NewDecoder(r io.Reader, h hash.Hash) *Decoder {
 	tr := io.TeeReader(r, h)
 	return &Decoder{tr, h}
 }
 
 // Decode reads from the stream and decode the content into the MemoryIndex struct.
 func (d *Decoder) Decode(idx *MemoryIndex) error {
+	d.h.Reset()
 	if err := validateHeader(d); err != nil {
 		return err
 	}

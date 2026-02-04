@@ -3,6 +3,7 @@ package http
 import (
 	"bufio"
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -380,8 +382,15 @@ LOOP:
 					return fmt.Errorf("error opening index file: %w", err)
 				}
 
+				var hasher hash.Hash
+				if packHash.Size() == crypto.SHA256.Size() {
+					hasher = hash.New(crypto.SHA256)
+				} else {
+					hasher = hash.New(crypto.SHA1)
+				}
+
 				idx := idxfile.NewMemoryIndex(packHash.Size())
-				d := idxfile.NewDecoder(idxFile)
+				d := idxfile.NewDecoder(idxFile, hasher)
 				if err := d.Decode(idx); err != nil {
 					_ = idxFile.Close()
 					return fmt.Errorf("error decoding index file: %w", err)

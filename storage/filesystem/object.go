@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -97,8 +98,15 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
+	var hasher hash.Hash
+	if h.Size() == crypto.SHA256.Size() {
+		hasher = hash.New(crypto.SHA256)
+	} else {
+		hasher = hash.New(crypto.SHA1)
+	}
+
 	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f)
+	d := idxfile.NewDecoder(f, hasher)
 	if err = d.Decode(idxf); err != nil {
 		return err
 	}
