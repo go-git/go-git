@@ -103,6 +103,11 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 		return err
 	}
 
+	if idxf.PackfileChecksum != h {
+		return fmt.Errorf("%w: packfile mismatch: target is %q not %q",
+			idxfile.ErrMalformedIdxFile, idxf.PackfileChecksum.String(), h.String())
+	}
+
 	s.index[h] = idxf
 	return err
 }
