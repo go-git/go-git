@@ -59,7 +59,7 @@ func TestEncode(t *testing.T) {
 
 				return idx
 			},
-			want: "malformed IDX file: invalid position 6783216",
+			want: "malformed idx file: invalid position 6783216",
 		},
 		{
 			name:   "invalid CRC32 position",
@@ -70,7 +70,7 @@ func TestEncode(t *testing.T) {
 
 				return idx
 			},
-			want: "malformed IDX file: invalid CRC32 index 0",
+			want: "malformed idx file: invalid CRC32 index 0",
 		},
 		{
 			name:   "invalid offset position",
@@ -81,7 +81,7 @@ func TestEncode(t *testing.T) {
 
 				return idx
 			},
-			want: "malformed IDX file: invalid offset32 index 0",
+			want: "malformed idx file: invalid offset32 index 0",
 		},
 		{
 			name:   "unsupported version 3",

@@ -14,7 +14,7 @@ var (
 	// is not supported.
 	ErrUnsupportedVersion = errors.New("unsupported version")
 	// ErrMalformedIdxFile is returned by Decode when the idx file is corrupted.
-	ErrMalformedIdxFile = errors.New("malformed IDX file")
+	ErrMalformedIdxFile = errors.New("malformed idx file")
 )
 
 const (
