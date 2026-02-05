@@ -32,6 +32,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -261,6 +262,17 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Fail-safe to avoid data corruption when off-tree storage implementations
+	// are used to open SHA256 repositories which they may not support.
+	if cfg, err := s.Config(); err == nil {
+		if cfg.Extensions.ObjectFormat != formatcfg.UnsetObjectFormat &&
+			cfg.Extensions.ObjectFormat != formatcfg.SHA1 {
+			if _, ok := s.(xstorage.ObjectFormatGetter); !ok {
+				return nil, errors.New("storage do not support SHA256 object format")
+			}
+		}
 	}
 
 	return newRepository(s, worktree), nil

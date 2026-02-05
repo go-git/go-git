@@ -41,6 +41,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 func TestInit(t *testing.T) {
@@ -447,6 +448,64 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sha1OnlyStorage wraps a storage.Storer to hide any ObjectFormatGetter
+// or ObjectFormatSetter implementations, simulating a storage backend
+// that only supports SHA1.
+type sha1OnlyStorage struct {
+	storage.Storer
+}
+
+func TestFailSafeUnsupportedStorage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("clone", func(t *testing.T) {
+		t.Parallel()
+
+		f := fixtures.ByTag(".git-sha256").One()
+		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+
+		for _, srv := range server.All(server.Loader(t, f)) {
+			endpoint, err := srv.Start()
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				require.NoError(t, srv.Close())
+			})
+
+			st := &sha1OnlyStorage{memory.NewStorage()}
+			_, okGetter := storage.Storer(st).(xstorage.ObjectFormatGetter)
+			assert.False(t, okGetter, "sha1OnlyStorage must not implement ObjectFormatGetter")
+
+			_, okSetter := storage.Storer(st).(xstorage.ObjectFormatSetter)
+			assert.False(t, okSetter, "sha1OnlyStorage must not implement ObjectFormatSetter")
+
+			_, err = Clone(st, nil, &CloneOptions{URL: endpoint})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "mismatched algorithms")
+		}
+	})
+
+	t.Run("open", func(t *testing.T) {
+		t.Parallel()
+
+		f := fixtures.ByTag(".git-sha256").One()
+		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+
+		st := filesystem.NewStorage(f.DotGit(fixtures.WithMemFS()), cache.NewObjectLRUDefault())
+
+		wrapped := &sha1OnlyStorage{st}
+		_, okGetter := storage.Storer(wrapped).(xstorage.ObjectFormatGetter)
+		assert.False(t, okGetter, "sha1OnlyStorage must not implement ObjectFormatGetter")
+
+		_, okSetter := storage.Storer(wrapped).(xstorage.ObjectFormatSetter)
+		assert.False(t, okSetter, "sha1OnlyStorage must not implement ObjectFormatSetter")
+
+		r, err := Open(wrapped, nil)
+		assert.Error(t, err)
+		assert.Nil(t, r)
+	})
 }
 
 func (s *RepositorySuite) TestCloneContext() {
