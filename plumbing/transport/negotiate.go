@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // Negotiation errors.
@@ -87,7 +88,7 @@ func NegotiatePack(
 			// The storage is likely better suited to make this check, however it is made here
 			// to avoid code duplication and to better handle off-tree storage implementations.
 			if err == nil && ref.Target().String() == "refs/heads/.invalid" {
-				if setter, ok := st.(storage.ObjectFormatSetter); ok {
+				if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
 					err := setter.SetObjectFormat(serverFormat)
 					if err != nil {
 						return nil, fmt.Errorf("unable to set object format: %w", err)

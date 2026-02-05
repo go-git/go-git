@@ -6,7 +6,6 @@ import (
 	"errors"
 
 	"github.com/go-git/go-git/v6/config"
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
@@ -25,13 +24,6 @@ type Storer interface {
 	storer.IndexStorer
 	config.ConfigStorer
 	ModuleStorer
-}
-
-// ObjectFormatSetter is implemented by storage backends that support
-// configuring the object format (hash algorithm) used for the repository.
-type ObjectFormatSetter interface {
-	// SetObjectFormat configures the object format (hash algorithm) for this storage.
-	SetObjectFormat(formatcfg.ObjectFormat) error
 }
 
 // ModuleStorer allows interact with the modules' Storers

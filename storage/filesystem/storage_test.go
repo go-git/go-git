@@ -14,6 +14,7 @@ import (
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 var (
@@ -21,13 +22,13 @@ var (
 	sto = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer = sto
-	_ storer.IndexStorer         = sto
-	_ storer.ReferenceStorer     = sto
-	_ storer.ShallowStorer       = sto
-	_ storer.DeltaObjectStorer   = sto
-	_ storer.PackfileWriter      = sto
-	_ storer.ObjectFormatGetter  = sto
+	_ storer.EncodedObjectStorer  = sto
+	_ storer.IndexStorer          = sto
+	_ storer.ReferenceStorer      = sto
+	_ storer.ShallowStorer        = sto
+	_ storer.DeltaObjectStorer    = sto
+	_ storer.PackfileWriter       = sto
+	_ xstorage.ObjectFormatGetter = sto
 )
 
 func TestFilesystem(t *testing.T) {

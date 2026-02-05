@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // Encoder gets the data from the storage and write it into the writer in PACK
@@ -31,7 +32,7 @@ type Encoder struct {
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
 	var h hash.Hash
-	if getter, ok := s.(storer.ObjectFormatGetter); ok && getter.ObjectFormat() == config.SHA256 {
+	if getter, ok := s.(xstorage.ObjectFormatGetter); ok && getter.ObjectFormat() == config.SHA256 {
 		h = hash.New(crypto.SHA256)
 	} else {
 		h = hash.New(crypto.SHA1)

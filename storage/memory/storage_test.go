@@ -9,20 +9,20 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/memory"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 var (
 	sto = memory.NewStorage()
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer = sto
-	_ storer.IndexStorer         = sto
-	_ storer.ReferenceStorer     = sto
-	_ storer.ShallowStorer       = sto
-	_ storer.ObjectFormatGetter  = sto
-	_ storage.ObjectFormatSetter = sto
+	_ storer.EncodedObjectStorer  = sto
+	_ storer.IndexStorer          = sto
+	_ storer.ReferenceStorer      = sto
+	_ storer.ShallowStorer        = sto
+	_ xstorage.ObjectFormatGetter = sto
+	_ xstorage.ObjectFormatSetter = sto
 )
 
 func TestSetObjectFormat(t *testing.T) {
