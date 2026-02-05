@@ -2,6 +2,7 @@ package object
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,15 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
+
+// ErrRecursiveTag trigger when a nested tag references itself.
+var ErrRecursiveTag = errors.New("recursive nested tag")
+
+// ErrMaxNestedTagDepth trigger when a nested tag's reference depth exceeds the limit.
+var ErrMaxNestedTagDepth = errors.New("maximum nested tag depth exceeded")
+
+// maxNestedTagDepth describes how many nested tag references are followed until giving up.
+const maxNestedTagDepth = 100
 
 // Tag represents an annotated tag object. It points to a single git object of
 // any type, but tags typically are applied to commit or blob objects. It
@@ -224,13 +234,24 @@ func (t *Tag) Tag() (*Tag, error) {
 // If the current tag does not point to another tag, the tag itself is
 // returned instead.
 func (t *Tag) ResolveNestedTags() (*Tag, error) {
-	var err error
+	i := 0
 	for {
 		if t.TargetType == plumbing.TagObject {
-			t, err = t.Tag()
+			if i >= maxNestedTagDepth {
+				return nil, ErrMaxNestedTagDepth
+			}
+			i += 1
+
+			ot, err := t.Tag()
+			if t.Hash == ot.Hash {
+				return nil, ErrRecursiveTag
+			}
+
 			if err != nil {
 				return nil, err
 			}
+
+			t = ot
 			continue
 		}
 		return t, nil
