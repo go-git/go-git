@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -51,6 +52,10 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 		dir:         dir,
 		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
 	}
+}
+
+func (s *ObjectStorage) ObjectFormat() formatcfg.ObjectFormat {
+	return s.options.ObjectFormat
 }
 
 func (s *ObjectStorage) requireIndex() error {

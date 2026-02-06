@@ -1,4 +1,4 @@
-package storer
+package storage
 
 import "github.com/go-git/go-billy/v6"
 

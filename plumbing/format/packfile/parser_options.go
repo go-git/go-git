@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
@@ -24,6 +25,15 @@ func WithStorage(storage storer.EncodedObjectStorer) ParserOption {
 func WithScannerObservers(ob ...Observer) ParserOption {
 	return func(p *Parser) {
 		p.observers = ob
+	}
+}
+
+func WithObjectFormat(of config.ObjectFormat) ParserOption {
+	return func(p *Parser) {
+		if of == config.UnsetObjectFormat {
+			of = config.DefaultObjectFormat
+		}
+		p.objectFormat = of
 	}
 }
 

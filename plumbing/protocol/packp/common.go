@@ -7,12 +7,11 @@ import (
 type stateFn func() stateFn
 
 const (
-	// common
-	hashSize = 40
+	sha1HexSize   = 40
+	sha256HexSize = 64
 
 	// advrefs
-	head   = "HEAD"
-	noHead = "capabilities^{}"
+	head = "HEAD"
 )
 
 var (

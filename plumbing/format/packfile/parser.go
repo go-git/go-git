@@ -38,6 +38,8 @@ type Parser struct {
 	observers []Observer
 	hasher    plumbing.Hasher
 
+	objectFormat format.ObjectFormat
+
 	checksum plumbing.Hash
 	m        stdsync.Mutex
 }
@@ -55,7 +57,7 @@ type LowMemoryCapable interface {
 // are parsed.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
-		hasher: plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
+		objectFormat: format.DefaultObjectFormat,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -63,7 +65,13 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 		}
 	}
 
-	p.scanner = NewScanner(data)
+	p.hasher = plumbing.NewHasher(p.objectFormat, plumbing.AnyObject, 0)
+	var sopts []ScannerOption
+	if p.objectFormat == format.SHA256 {
+		sopts = append(sopts, WithSHA256())
+	}
+
+	p.scanner = NewScanner(data, sopts...)
 
 	if p.storage != nil {
 		p.scanner.storage = p.storage
@@ -145,6 +153,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		case ObjectSection:
 			oh := data.Value().(ObjectHeader)
 			if oh.Type.IsDelta() {
+				oh.Hash.ResetBySize(p.scanner.objectIDSize)
 				switch oh.Type {
 				case plumbing.OFSDeltaObject:
 					pendingDeltas = append(pendingDeltas, &oh)
@@ -166,8 +175,12 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		}
 	}
 
-	if p.scanner.objects == 0 {
-		return plumbing.ZeroHash, ErrEmptyPackfile
+	err := p.scanner.Error()
+	if err != nil {
+		if errors.Is(err, io.EOF) && p.scanner.objects == 0 {
+			return plumbing.ZeroHash, ErrEmptyPackfile
+		}
+		return plumbing.ZeroHash, err
 	}
 
 	for _, oh := range pendingDeltaREFs {
@@ -341,16 +354,16 @@ func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target
 	}
 
 	typ := ota.Type
-	if ota.Hash == plumbing.ZeroHash {
+	if ota.Hash.IsZero() {
 		typ = ota.parent.Type
 	}
 
-	sz, h, err := patchDeltaWriter(target, parentContents, delta, typ, wh)
+	sz, h, err := patchDeltaWriter(target, parentContents, delta, typ, wh, p.objectFormat)
 	if err != nil {
 		return err
 	}
 
-	if ota.Hash == plumbing.ZeroHash {
+	if ota.Hash.IsZero() {
 		ota.Type = typ
 		ota.Size = int64(sz)
 		ota.Hash = h

@@ -32,6 +32,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -69,8 +70,6 @@ var (
 	ErrUnableToResolveCommit = errors.New("unable to resolve commit")
 	// ErrPackedObjectsNotSupported is returned when packed objects are not supported.
 	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
-	// ErrSHA256NotSupported is returned when go-git was not compiled with SHA256 support.
-	ErrSHA256NotSupported = errors.New("go-git was not compiled with SHA256 support")
 	// ErrAlternatePathNotSupported is returned when the alternate path is not a file scheme.
 	ErrAlternatePathNotSupported = errors.New("alternate path must use the file scheme")
 	// ErrUnsupportedMergeStrategy is returned when an unsupported merge strategy is used.
@@ -93,13 +92,13 @@ type initOptions struct {
 	defaultBranch plumbing.ReferenceName
 	workTree      billy.Filesystem
 	objectFormat  formatcfg.ObjectFormat
+	partialInit   bool
 }
 
 func newInitOptions() initOptions {
 	return initOptions{
 		defaultBranch: plumbing.Master,
 		workTree:      nil,
-		objectFormat:  formatcfg.SHA1,
 	}
 }
 
@@ -125,6 +124,14 @@ func WithWorkTree(worktree billy.Filesystem) InitOption {
 func WithObjectFormat(of formatcfg.ObjectFormat) InitOption {
 	return func(o *initOptions) {
 		o.objectFormat = of
+	}
+}
+
+// withPartialInit enables a repository to be only partially initialised.
+// This is used when cloning repositories and is reserved for internal use only.
+func withPartialInit() InitOption {
+	return func(o *initOptions) {
+		o.partialInit = true
 	}
 }
 
@@ -157,17 +164,16 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 		return nil, err
 	}
 
+	if options.partialInit {
+		return r.setInvalidHEAD()
+	}
+
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
 	if err := s.SetReference(h); err != nil {
 		return nil, err
 	}
 
-	if options.workTree == nil {
-		_ = r.setIsBare(true)
-		return r, nil
-	}
-
-	return r, setWorktreeAndStoragePaths(r, options.workTree)
+	return r, r.setWorktreeAndStoragePaths()
 }
 
 func initStorer(s storer.Storer) error {
@@ -178,7 +184,12 @@ func initStorer(s storer.Storer) error {
 	return nil
 }
 
-func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error {
+func (r *Repository) setWorktreeAndStoragePaths() error {
+	if r.wt == nil {
+		_ = r.setIsBare(true)
+		return nil
+	}
+
 	type fsBased interface {
 		Filesystem() billy.Filesystem
 	}
@@ -190,11 +201,11 @@ func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error 
 		return nil
 	}
 
-	if err := createDotGitFile(worktree, fs.Filesystem()); err != nil {
+	if err := createDotGitFile(r.wt, fs.Filesystem()); err != nil {
 		return err
 	}
 
-	return setConfigWorktree(r, worktree, fs.Filesystem())
+	return setConfigWorktree(r, r.wt, fs.Filesystem())
 }
 
 func createDotGitFile(worktree, storage billy.Filesystem) error {
@@ -253,6 +264,17 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		return nil, err
 	}
 
+	// Fail-safe to avoid data corruption when off-tree storage implementations
+	// are used to open SHA256 repositories which they may not support.
+	if cfg, err := s.Config(); err == nil {
+		if cfg.Extensions.ObjectFormat != formatcfg.UnsetObjectFormat &&
+			cfg.Extensions.ObjectFormat != formatcfg.SHA1 {
+			if _, ok := s.(xstorage.ObjectFormatGetter); !ok {
+				return nil, errors.New("storage do not support SHA256 object format")
+			}
+		}
+	}
+
 	return newRepository(s, worktree), nil
 }
 
@@ -282,12 +304,15 @@ func CloneContext(
 		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
 	}()
 
-	r, err := Init(s,
-		WithWorkTree(worktree),
-	)
+	r, err := Init(s, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
+
+	if o == nil {
+		o = &CloneOptions{}
+	}
+	o.worktree = worktree
 
 	return r, r.clone(ctx, o)
 }
@@ -335,6 +360,10 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		return nil, err
 	}
 
+	if o.partialInit {
+		return r.setInvalidHEAD()
+	}
+
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
@@ -346,6 +375,26 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	}
 
 	return r, err
+}
+
+// setInvalidHEAD makes HEAD point to .invalid, acting as a stepping
+// stone when initialising a new repository during a clone operation.
+// This is required as:
+//   - We can't tell what ObjectFormat the new repository requires until
+//     the interactions with the remote take place.
+//   - We don't want to allow ObjectFormat to be changed on a fully initialised
+//     repository - regardless of its ObjectFormat being set explicitly or not.
+//
+// https://github.com/git/git/blob/ab380cb80b0727f7f2d7f6b17592ae6783e9820c/builtin/clone.c#L1216C60-L1216C68
+func (r *Repository) setInvalidHEAD() (*Repository, error) {
+	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Invalid)
+
+	err := r.Storer.SetReference(h)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 // PlainOpen opens a git repository from the given path. It detects if the
@@ -543,13 +592,12 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	if o.Mirror {
 		isBare = true
 	}
-	r, err := PlainInit(path, isBare)
+	r, err := PlainInit(path, isBare, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
 
-	err = r.clone(ctx, o)
-	return r, err
+	return r, r.clone(ctx, o)
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
@@ -926,6 +974,13 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		return err
 	}
 
+	// PlainClone and Clone have two different execution paths, the former
+	// populates r.wt, while the latter doesn't. A refactoring is in order to
+	// better align both approaches.
+	if r.wt == nil {
+		r.wt = o.worktree
+	}
+
 	c := &config.RemoteConfig{
 		Name:   o.RemoteName,
 		URLs:   []string{o.URL},
@@ -973,6 +1028,17 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		ProxyOptions:    o.ProxyOptions,
 		Filter:          o.Filter,
 	}, o.ReferenceName)
+
+	hr, err1 := r.Storer.Reference(plumbing.HEAD)
+	if err1 == nil && hr.Target() == plumbing.Invalid {
+		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+	}
+
+	if err != nil {
+		return err
+	}
+
+	err = r.setWorktreeAndStoragePaths()
 	if err != nil {
 		return err
 	}
