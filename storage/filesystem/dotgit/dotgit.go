@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-billy/v6/helper/chroot"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 
@@ -88,6 +89,8 @@ type Options struct {
 	// If none is provided, it falls back to using the underlying instance used for
 	// DotGit.
 	AlternatesFS billy.Filesystem
+
+	ObjectFormat formatcfg.ObjectFormat
 }
 
 // The DotGit type represents a local git repository on disk. This
@@ -112,7 +115,7 @@ type DotGit struct {
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return NewWithOptions(fs, Options{})
+	return NewWithOptions(fs, Options{ObjectFormat: formatcfg.DefaultObjectFormat})
 }
 
 // NewWithOptions sets non default configuration options.
@@ -216,7 +219,7 @@ func (d *DotGit) Shallow() (billy.File, error) {
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	d.cleanPackList()
-	return newPackWrite(d.fs)
+	return newPackWrite(d.fs, d.options.ObjectFormat)
 }
 
 // ObjectPacks returns the list of availables packfiles
@@ -1287,6 +1290,12 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 // Fs returns the underlying filesystem of the DotGit folder.
 func (d *DotGit) Fs() billy.Filesystem {
 	return d.fs
+}
+
+func (d *DotGit) SetObjectFormat(of formatcfg.ObjectFormat) error {
+	d.options.ObjectFormat = of
+
+	return nil
 }
 
 func isHex(s string) bool {

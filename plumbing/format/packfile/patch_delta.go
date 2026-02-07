@@ -308,7 +308,7 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 }
 
 func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
-	typ plumbing.ObjectType, writeHeader objectHeaderWriter,
+	typ plumbing.ObjectType, writeHeader objectHeaderWriter, of format.ObjectFormat,
 ) (uint, plumbing.Hash, error) {
 	deltaBuf := bufio.NewReader(delta)
 	srcSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
@@ -349,7 +349,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 
 	remainingTargetSz := targetSz
 
-	hasher := plumbing.NewHasher(format.SHA1, typ, int64(targetSz))
+	hasher := plumbing.NewHasher(of, typ, int64(targetSz))
 	mw := io.MultiWriter(dst, hasher)
 
 	bufp := sync.GetByteSlice()

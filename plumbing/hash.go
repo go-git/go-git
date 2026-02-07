@@ -57,7 +57,11 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 
 // Sum returns the computed hash.
 func (h Hasher) Sum() (hash Hash) {
-	hash.format = h.format
+	if h.format == format.SHA256 {
+		hash.format = h.format
+	} else {
+		hash.format = format.UnsetObjectFormat
+	}
 	_, _ = hash.Write(h.Hash.Sum(nil))
 	return hash
 }

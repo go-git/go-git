@@ -64,7 +64,7 @@ func (d *ulReqDecoder) nextLine() bool {
 		d.error("EOF")
 		return false
 	}
-	if err != nil {
+	if err != nil || len(p) == 0 {
 		d.err = err
 		return false
 	}
@@ -97,17 +97,13 @@ func (d *ulReqDecoder) decodeFirstWant() stateFn {
 }
 
 func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
-	if len(d.line) < hashSize {
+	h, err := hashFrom(d.line)
+	if err != nil {
 		d.err = fmt.Errorf("malformed hash: %v", d.line)
 		return plumbing.ZeroHash, false
 	}
 
-	h, ok := plumbing.FromHex(string(d.line[:hashSize]))
-	if !ok {
-		d.error("invalid hash text: %s", d.line[:hashSize])
-		return plumbing.ZeroHash, false
-	}
-	d.line = d.line[hashSize:]
+	d.line = d.line[h.HexSize():]
 
 	return h, true
 }

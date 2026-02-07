@@ -2,8 +2,12 @@
 package filesystem
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -49,6 +53,10 @@ type Options struct {
 	// WithHighMemoryMode option.
 	HighMemoryMode bool
 
+	// ObjectFormat defines the ObjectFormat when creating a new storage.
+	// This value is completely ignored when the storage is pointing to an
+	// existing dotgit. In such cases the repository config will define the
+	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
 }
 
@@ -59,11 +67,26 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 
 // NewStorageWithOptions returns a new Storage with extra options,
 // backed by a given `fs.Filesystem` and cache.
+// Returns an error if an explicit ObjectFormat is provided via options
+// but conflicts with an existing config in the filesystem.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
+	f, err := fs.Open("config")
+	if err == nil {
+		cfg, err := config.ReadConfig(f)
+		if err == nil {
+			ops.ObjectFormat = cfg.Extensions.ObjectFormat
+		}
+
+		_ = f.Close()
+	}
+
+	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
+
 	dirOps := dotgit.Options{
 		ExclusiveAccess: ops.ExclusiveAccess,
 		AlternatesFS:    ops.AlternatesFS,
 		KeepDescriptors: ops.KeepDescriptors,
+		ObjectFormat:    ops.ObjectFormat,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
@@ -72,21 +95,65 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	s := &Storage{
-		fs:  fs,
-		dir: dir,
+		fs:     fs,
+		dir:    dir,
+		hasher: hasher,
 
 		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir},
+		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir},
 	}
 
-	s.hasher = plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
-	s.h = s.hasher.Hash
-
 	return s
+}
+
+// SetObjectFormat sets the ObjectFormat for the storage, initiatising
+// hashers and object hashers accordingly. This must only be called
+// during the first pack negotiation of a repository clone operation.
+//
+// If the storage is empty and the new ObjectFormat is the same as the
+// current, this call will be treated as a no-op.
+func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
+	switch of {
+	case formatcfg.SHA1, formatcfg.SHA256:
+	default:
+		return fmt.Errorf("invalid object format: %s", of)
+	}
+
+	// Presently, storage only supports a single object format at a
+	// time. Changing the format of an existing (and populated) object
+	// storage is yet to be supported.
+	packs, _ := s.dir.ObjectPacks()
+	if len(packs) > 0 {
+		return errors.New("cannot change object format of existing object storage")
+	}
+
+	cfg, err := s.Config()
+	if err != nil {
+		return err
+	}
+
+	if cfg.Extensions.ObjectFormat != of {
+		cfg.Extensions.ObjectFormat = of
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		err = s.SetConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("cannot set object format on config: %w", err)
+		}
+
+		err = s.dir.SetObjectFormat(of)
+		if err != nil {
+			return fmt.Errorf("cannot set object format on dotgit: %w", err)
+		}
+
+		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
+		s.h = s.hasher.Hash
+	}
+
+	return nil
 }
 
 // Filesystem returns the underlying filesystem

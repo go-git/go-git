@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -93,6 +94,10 @@ type CloneOptions struct {
 	// Bare determines whether the repository will have a worktree (non-bare)
 	// or not (bare).
 	Bare bool
+
+	// worktree defines the worktree filesystem for non-bare clone operations.
+	// This is only used internally due to partial inits.
+	worktree billy.Filesystem
 }
 
 // MergeOptions describes how a merge should be performed.

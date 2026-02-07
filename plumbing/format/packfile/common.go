@@ -4,9 +4,11 @@ import (
 	"io"
 	"time"
 
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
+	xstorer "github.com/go-git/go-git/v6/x/storage"
 )
 
 var signature = []byte{'P', 'A', 'C', 'K'}
@@ -34,8 +36,12 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 		return WritePackfileToObjectStorage(pw, packfile)
 	}
 
-	p := NewParser(packfile, WithStorage(s))
+	of := formatcfg.DefaultObjectFormat
+	if getter, ok := s.(xstorer.ObjectFormatGetter); ok {
+		of = getter.ObjectFormat()
+	}
 
+	p := NewParser(packfile, WithStorage(s), WithObjectFormat(of))
 	_, err := p.Parse()
 	return err
 }

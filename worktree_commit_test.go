@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -31,22 +32,22 @@ import (
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	fs := memfs.New()
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(hash.IsZero())
 
 	commit, err := r.CommitObject(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotEqual("", commit.Author.Name)
 }
 
@@ -57,19 +58,19 @@ func (s *WorktreeSuite) TestCommitInitial() {
 	storage := memory.NewStorage()
 
 	r, err := Init(storage, WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	assertStorageStatus(s, r, 1, 1, 1, expected)
 }
@@ -78,10 +79,10 @@ func (s *WorktreeSuite) TestNothingToCommit() {
 	expected := plumbing.NewHash("838ea833ce893e8555907e5ef224aa076f5e274a")
 
 	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hash, err := w.Commit("failed empty commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(plumbing.ZeroHash, hash)
@@ -89,57 +90,57 @@ func (s *WorktreeSuite) TestNothingToCommit() {
 
 	hash, err = w.Commit("enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo() {
 	fs := memfs.New()
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w.Add("foo")
 	_, err = w.Commit("previous commit\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hash, err := w.Commit("failed empty commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(plumbing.ZeroHash, hash)
 	s.ErrorIs(err, ErrEmptyCommit)
 
 	_, err = w.Commit("enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *WorktreeSuite) TestRemoveAndCommitToMakeEmptyRepo() {
 	fs := memfs.New()
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Commit("Add in Repo\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = fs.Remove("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Commit("Remove foo\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 }
 
 func (s *WorktreeSuite) TestCommitParent() {
@@ -152,17 +153,17 @@ func (s *WorktreeSuite) TestCommitParent() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	assertStorageStatus(s, s.Repository, 13, 11, 10, expected)
 }
@@ -175,28 +176,28 @@ func (s *WorktreeSuite) TestCommitAmendWithoutChanges() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	prevHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	amendedHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	headRef, err := w.r.Head()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(headRef.Hash(), amendedHash)
 	s.Equal(prevHash, amendedHash)
 
 	commit, err := w.r.CommitObject(headRef.Hash())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("foo\n", commit.Message)
 
 	assertStorageStatus(s, s.Repository, 13, 11, 10, amendedHash)
@@ -210,36 +211,36 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "bar", []byte("bar"), 0o644)
 
 	_, err = w.Add("bar")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	amendedHash, err := w.Commit("bar\n", &CommitOptions{Author: defaultSignature(), Amend: true})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	headRef, err := w.r.Head()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(headRef.Hash(), amendedHash)
 
 	commit, err := w.r.CommitObject(headRef.Hash())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("bar\n", commit.Message)
 	s.Equal(1, commit.NumParents())
 
 	stats, err := commit.Stats()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(stats, 2)
 	s.Equal(object.FileStat{
 		Name:     "bar",
@@ -261,19 +262,19 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	prevHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Commit("bar\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	amendedHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
 	s.T().Log(prevHash, amendedHash)
@@ -392,12 +393,12 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	status, err := w.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	foo := status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
@@ -406,10 +407,10 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 		Path:       "foo",
 		SkipStatus: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	status, err = w.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Added, foo.Staging)
 	s.Equal(Unmodified, foo.Worktree)
@@ -419,13 +420,13 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 		Author: defaultSignature(),
 	})
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	commit1, err := w.r.CommitObject(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	status, err = w.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
@@ -436,10 +437,10 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 		Path:       "foo",
 		SkipStatus: true,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	status, err = w.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
@@ -449,19 +450,19 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 		AllowEmptyCommits: true,
 	})
 	s.Equal(expected2, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	commit2, err := w.r.CommitObject(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	status, err = w.Status()
-	s.NoError(err)
+	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
 
 	patch, err := commit2.Patch(commit1)
-	s.NoError(err)
+	s.Require().NoError(err)
 	files := patch.FilePatches()
 	s.Nil(files)
 
@@ -478,7 +479,7 @@ func (s *WorktreeSuite) TestCommitAll() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -489,7 +490,7 @@ func (s *WorktreeSuite) TestCommitAll() {
 	})
 
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	assertStorageStatus(s, s.Repository, 13, 11, 10, expected)
 }
@@ -504,11 +505,11 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, errFirst := w.Commit("Add in Repo\n", &CommitOptions{
 		Author: defaultSignature(),
@@ -525,7 +526,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 	s.Nil(errSecond)
 
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	assertStorageStatus(s, s.Repository, 13, 11, 11, expected)
 }
@@ -535,34 +536,34 @@ func (s *WorktreeSuite) TestCommitSign() {
 	storage := memory.NewStorage()
 
 	r, err := Init(storage, WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	key := commitSignKey(s.T(), true)
 	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), SignKey: key})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Verify the commit.
 	pks := new(bytes.Buffer)
 	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = key.Serialize(pkw)
-	s.NoError(err)
+	s.Require().NoError(err)
 	err = pkw.Close()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	expectedCommit, err := r.CommitObject(hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 	actual, err := expectedCommit.Verify(pks.String())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(key.PrimaryKey, actual.PrimaryKey)
 }
 
@@ -571,15 +572,15 @@ func (s *WorktreeSuite) TestCommitSignBadKey() {
 	storage := memory.NewStorage()
 
 	r, err := Init(storage, WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	key := commitSignKey(s.T(), false)
 	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), SignKey: key})
@@ -590,92 +591,92 @@ func (s *WorktreeSuite) TestCherryPick() {
 	fs := memfs.New()
 
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err, "init the repository")
+	s.Require().NoError(err, "init the repository")
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 	// add README.md to the worktree
 	err = util.WriteFile(fs, "README.md", []byte("README File"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 	w.Add("README.md")
 
 	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// add two files to worktree
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foobar", []byte("foo**bar"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	_, err = w.Add("foobar")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// commit the changes
 	commitHash1, err := w.Commit("commit 1\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(commitHash1.IsZero(), "commit hash is zero")
 	// modify the "foo" file
 	err = util.WriteFile(fs, "foo", []byte("foo=bar"), 0o644)
-	s.NoError(err)
+	s.Require().NoError(err)
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	// commit the new changes to "foo" file
 	commitHash2, err := w.Commit("commit 2\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(commitHash2.IsZero(), "commit hash is zero")
 	// get commit objects to do cherry picking
 	commit1, err := r.CommitObject(commitHash1)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotEmpty(commit1)
 
 	commit2, err := r.CommitObject(commitHash2)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotEmpty(commit2)
 
 	foobarFileContent, err := util.ReadFile(fs, "foobar")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("foo**bar", string(foobarFileContent))
 
 	err = w.Checkout(&CheckoutOptions{Hash: initHash})
-	s.NoError(err, "checkout to the default branch")
+	s.Require().NoError(err, "checkout to the default branch")
 
 	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit1)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	foobarFileContent, err = util.ReadFile(fs, "foobar")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("foo**bar", string(foobarFileContent))
 
 	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit2)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	fooFileContent, err := util.ReadFile(fs, "foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("foo=bar", string(fooFileContent))
 
 	// delete the file
 	rmHash, err := w.Remove("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(rmHash.IsZero())
 
 	rmCommitHash, err := w.Commit("remove the file\n", &CommitOptions{Author: defaultSignature()})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	rmCommit, err := r.CommitObject(rmCommitHash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// go back to commit 2 and cherry pick the latest commit
 	err = w.Checkout(&CheckoutOptions{
 		Hash: commitHash2,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, rmCommit)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	fooFileContent, err = util.ReadFile(fs, "foo")
 	s.Error(err)
@@ -685,12 +686,12 @@ func (s *WorktreeSuite) TestCherryPick() {
 	err = w.Checkout(&CheckoutOptions{
 		Hash: commitHash1,
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, OursMergeStrategy, rmCommit)
-	s.NoError(err)
+	s.Require().NoError(err)
 	fooFileContent, err = util.ReadFile(fs, "foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("foo", string(fooFileContent))
 
 	// cherry-pick with no commit options
@@ -703,34 +704,35 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	_, err := Init(st)
-	s.NoError(err)
+	s.Require().NoError(err)
 
-	r, _ := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: fs.Root(),
 	})
+	s.ErrorIs(err, transport.ErrEmptyRemoteRepository)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	mfs := w.Filesystem
 
 	err = mfs.MkdirAll("delta", 0o755)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	for _, p := range []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"} {
 		util.WriteFile(mfs, p, []byte("foo"), 0o644)
 		_, err = w.Add(p)
-		s.NoError(err)
+		s.Require().NoError(err)
 	}
 
 	_, err = w.Commit("foo\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	err = r.Push(&PushOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	cmd := exec.Command("git", "fsck")
 	cmd.Dir = fs.Root()
@@ -740,7 +742,7 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 	cmd.Stdout = buf
 
 	err = cmd.Run()
-	s.NoError(err, buf.String())
+	s.Require().NoError(err, buf.String())
 }
 
 // https://github.com/go-git/go-git/pull/224
@@ -748,43 +750,43 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	fs := s.TemporalFilesystem()
 
 	fsDotgit, err := fs.Chroot(".git") // real fs to get modified timestamps
-	s.NoError(err)
+	s.Require().NoError(err)
 	storage := filesystem.NewStorage(fsDotgit, cache.NewObjectLRUDefault())
 
 	r, err := Init(storage, WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Step 1: Write LICENSE
 	util.WriteFile(fs, "LICENSE", []byte("license"), 0o644)
 	hLicense, err := w.Add("LICENSE")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("0484eba0d41636ba71fa612c78559cd6c3006cde"), hLicense)
 
 	hash, err := w.Commit("commit 1\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("7a7faee4630d2664a6869677cc8ab614f3fd4a18"), hash)
 
 	infoLicense, err := fsDotgit.Stat(filepath.Join("objects", "04", "84eba0d41636ba71fa612c78559cd6c3006cde"))
-	s.NoError(err) // checking objects file exists
+	s.Require().NoError(err) // checking objects file exists
 
 	// Step 2: Write foo.
 	time.Sleep(5 * time.Millisecond) // uncool, but we need to get different timestamps...
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	hFoo, err := w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"), hFoo)
 
 	hash, err = w.Commit("commit 2\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("97c0c5177e6ac57d10e8ea0017f2d39b91e2b364"), hash)
 
 	// Step 3: Check
@@ -792,11 +794,11 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	// was not changed. Just a write on the object of foo is required. This behaviour
 	// is fixed by #224 and tested by comparing the timestamps of the stored objects.
 	infoFoo, err := fsDotgit.Stat(filepath.Join("objects", "19", "102815663d23f8b75a47e7a01965dcdc96468c"))
-	s.NoError(err)                                          // checking objects file exists
+	s.Require().NoError(err)                                // checking objects file exists
 	s.True(infoLicense.ModTime().Before(infoFoo.ModTime())) // object of foo has another/greaterThan timestamp than LICENSE
 
 	infoLicenseSecond, err := fsDotgit.Stat(filepath.Join("objects", "04", "84eba0d41636ba71fa612c78559cd6c3006cde"))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	log.Printf("comparing mod time: %v == %v on %v (%v)", infoLicenseSecond.ModTime(), infoLicense.ModTime(), runtime.GOOS, runtime.GOARCH)
 	s.Equal(infoLicense.ModTime(), infoLicenseSecond.ModTime()) // object of LICENSE should have the same timestamp because no additional write operation was performed
@@ -812,28 +814,28 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	storage := memory.NewStorage()
 
 	r, err := Init(storage, WithWorkTree(fs))
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	w, err := r.Worktree()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
 	_, err = w.Add("foo")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	hash, err := w.Commit("foo\n", &CommitOptions{Author: invalidSignature()})
 	s.Equal(expected, hash)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	assertStorageStatus(s, r, 1, 1, 1, expected)
 
 	// Check HEAD commit contains author informations with '<', '>' and '\n' stripped
 	lr, err := r.Log(&LogOptions{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	commit, err := lr.Next()
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal("foo bad", commit.Author.Name)
 	s.Equal("badfoo@foo.foo", commit.Author.Email)
@@ -844,18 +846,18 @@ func assertStorageStatus(
 	treesCount, blobCount, commitCount int, head plumbing.Hash,
 ) {
 	trees, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
-	s.NoError(err)
+	s.Require().NoError(err)
 	blobs, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
-	s.NoError(err)
+	s.Require().NoError(err)
 	commits, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	s.Equal(treesCount, lenIterEncodedObjects(trees))
 	s.Equal(blobCount, lenIterEncodedObjects(blobs))
 	s.Equal(commitCount, lenIterEncodedObjects(commits))
 
 	ref, err := r.Head()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(head, ref.Hash())
 }
 
