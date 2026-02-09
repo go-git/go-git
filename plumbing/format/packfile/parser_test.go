@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/require"
 	. "gopkg.in/check.v1"
 )
 
@@ -81,6 +82,58 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 	c.Assert(obs.objects, DeepEquals, objs)
 }
 
+func TestChecksumMismatch(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "temp.pack")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = f.Close()
+	})
+
+	_, err = io.Copy(f, fixtures.Basic().One().Packfile())
+	require.NoError(t, err)
+
+	_, err = f.Seek(-1, io.SeekEnd)
+	require.NoError(t, err)
+
+	_, err = f.Write([]byte{0})
+	require.NoError(t, err)
+
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	scanner := packfile.NewScanner(f)
+	parser, err := packfile.NewParser(scanner)
+	require.NoError(t, err)
+
+	_, err = parser.Parse()
+	require.ErrorContains(t, err, "checksum mismatch")
+}
+
+func TestMalformedPack(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "temp.pack")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = f.Close()
+	})
+
+	_, err = io.Copy(f, io.LimitReader(fixtures.Basic().One().Packfile(), 200))
+	require.NoError(t, err)
+
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	scanner := packfile.NewScanner(f)
+	parser, err := packfile.NewParser(scanner)
+	require.NoError(t, err)
+
+	_, err = parser.Parse()
+	require.ErrorContains(t, err, "malformed PACK")
+}
+
 func (s *ParserSuite) TestThinPack(c *C) {
 	fs := osfs.New(c.MkDir())
 	path, err := util.TempDir(fs, "", "")
@@ -131,7 +184,6 @@ func (s *ParserSuite) TestThinPack(c *C) {
 	// Check that our test object is now accessible
 	_, err = r.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	c.Assert(err, IsNil)
-
 }
 
 func (s *ParserSuite) TestResolveExternalRefsInThinPack(c *C) {
