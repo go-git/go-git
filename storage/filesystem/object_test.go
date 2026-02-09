@@ -56,6 +56,41 @@ func (s *FsSuite) TestGetFromPackfile() {
 	}
 }
 
+func firstNonMatching(packfileHash string) *fixtures.Fixture {
+	for _, fix := range fixtures.ByTag(".git") {
+		if fix.PackfileHash != packfileHash {
+			return fix
+		}
+	}
+	return nil
+}
+
+func (s *FsSuite) TestMismatchIdxFile() {
+	f := fixtures.Basic().ByTag(".git").One()
+	fs := f.DotGit()
+	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+
+	fix2 := firstNonMatching(f.PackfileHash)
+	s.Require().NotNil(fix2)
+
+	idx, err := fs.OpenFile(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash), os.O_TRUNC|os.O_WRONLY, 0o600)
+	s.Require().NoError(err)
+
+	idx2 := fix2.Idx()
+	_, err = io.Copy(idx, idx2)
+	s.Require().NoError(err)
+
+	err = idx.Close()
+	s.Require().NoError(err)
+	err = idx2.Close()
+	s.Require().NoError(err)
+
+	expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+	s.Require().Nil(obj)
+	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
+}
+
 func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
 	for _, f := range fixtures.Basic().ByTag(".git") {
 		fs := f.DotGit()

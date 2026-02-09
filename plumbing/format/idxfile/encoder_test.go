@@ -26,7 +26,7 @@ func TestEncode(t *testing.T) {
 
 	validIdxFn := func() *MemoryIndex {
 		idx := NewMemoryIndex(crypto.SHA1.Size())
-		d := NewDecoder(bytes.NewBuffer(expected))
+		d := NewDecoder(bytes.NewBuffer(expected), hash.New(crypto.SHA1))
 		err = d.Decode(idx)
 		require.NoError(t, err)
 		return idx
@@ -59,7 +59,7 @@ func TestEncode(t *testing.T) {
 
 				return idx
 			},
-			want: "malformed IDX file: invalid position 6783216",
+			want: "malformed idx file: invalid position 6783216",
 		},
 		{
 			name:   "invalid CRC32 position",
@@ -70,7 +70,7 @@ func TestEncode(t *testing.T) {
 
 				return idx
 			},
-			want: "malformed IDX file: invalid CRC32 index 0",
+			want: "malformed idx file: invalid CRC32 index 0",
 		},
 		{
 			name:   "invalid offset position",
@@ -81,7 +81,7 @@ func TestEncode(t *testing.T) {
 
 				return idx
 			},
-			want: "malformed IDX file: invalid offset32 index 0",
+			want: "malformed idx file: invalid offset32 index 0",
 		},
 		{
 			name:   "unsupported version 3",
@@ -150,7 +150,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			idx := NewMemoryIndex(tc.hasher.Size())
-			d := NewDecoder(bytes.NewBuffer(expected))
+			d := NewDecoder(bytes.NewBuffer(expected), hash.New(tc.hasher))
 			err = d.Decode(idx)
 			require.NoError(t, err)
 
@@ -172,7 +172,7 @@ func TestDecodeEncode(t *testing.T) {
 		require.NoError(t, err)
 
 		idx := new(MemoryIndex)
-		d := NewDecoder(bytes.NewBuffer(expected))
+		d := NewDecoder(bytes.NewBuffer(expected), hash.New(crypto.SHA1))
 		err = d.Decode(idx)
 		require.NoError(t, err)
 
