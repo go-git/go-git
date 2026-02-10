@@ -281,6 +281,51 @@ func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
 }
 
+// VerifySignature verifies the tag's signature using the provided verifier.
+// This method works with any signature type (OpenPGP, SSH, etc.) supported by
+// the verifier.
+//
+// Returns an error if the tag has no signature. Otherwise, the verification
+// result indicates whether the signature is valid and provides details about
+// the signing key.
+//
+// Example:
+//
+//	verifier, _ := git.NewOpenPGPVerifier(armoredKeyRing)
+//	result, err := tag.VerifySignature(verifier)
+//	if err != nil {
+//	    // Handle error (e.g., no signature)
+//	}
+//	if result.IsTrusted(object.TrustFull) {
+//	    // Signature is valid and from a trusted key
+//	}
+func (t *Tag) VerifySignature(verifier Verifier) (*VerificationResult, error) {
+	if verifier == nil {
+		return nil, ErrNilVerifier
+	}
+	if t.PGPSignature == "" {
+		return nil, ErrNoSignature
+	}
+
+	encoded := &plumbing.MemoryObject{}
+	if err := t.EncodeWithoutSignature(encoded); err != nil {
+		return nil, err
+	}
+
+	reader, err := encoded.Reader()
+	if err != nil {
+		return nil, err
+	}
+
+	message, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return verifier.Verify([]byte(t.PGPSignature), message)
+}
+
+
 // TagIter provides an iterator for a set of tags.
 type TagIter struct {
 	storer.EncodedObjectIter

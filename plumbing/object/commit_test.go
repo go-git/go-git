@@ -515,6 +515,84 @@ YIefGtzXfldDxg4=
 	s.True(ok)
 }
 
+func (s *SuiteCommit) TestVerifySignature_NilVerifier() {
+	// Test that ErrNilVerifier is returned when verifier is nil
+	commit := &Commit{
+		Message:      "signed",
+		PGPSignature: "some signature",
+	}
+	_, err := commit.VerifySignature(nil)
+	s.ErrorIs(err, ErrNilVerifier)
+}
+
+func (s *SuiteCommit) TestVerifySignature_NoSignature() {
+	// Test that ErrNoSignature is returned for unsigned commits
+	unsignedCommit := &Commit{
+		Message: "unsigned",
+	}
+	mockVerifier := &mockVerifier{}
+	_, err := unsignedCommit.VerifySignature(mockVerifier)
+	s.ErrorIs(err, ErrNoSignature)
+}
+
+func (s *SuiteCommit) TestVerifySignature_WithMockVerifier() {
+	ts := time.Unix(1617402711, 0)
+	loc, _ := time.LoadLocation("UTC")
+	commit := &Commit{
+		Hash:      plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
+		Author:    Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Committer: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Message: `test
+`,
+		TreeHash:     plumbing.NewHash("52a266a58f2c028ad7de4dfd3a72fdf76b0d4e24"),
+		ParentHashes: []plumbing.Hash{plumbing.NewHash("e4fbb611cd14149c7a78e9c08425f59f4b736a9a")},
+		PGPSignature: `
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
+8VtyAP9LbuXAhtK6FQqOjKybBwlV70rLcXVP24ubDuz88VVwSgD+LuObsasWq6/U
+TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
+=YQUf
+-----END PGP SIGNATURE-----
+`,
+	}
+
+	// Create a mock verifier that returns a successful result
+	mockVerifier := &mockVerifier{
+		result: &VerificationResult{
+			Type:       SignatureTypeOpenPGP,
+			Valid:      true,
+			TrustLevel: TrustFull,
+			KeyID:      "8C9A6985E0BB95F1",
+			Signer:     "go-git test key",
+		},
+	}
+
+	result, err := commit.VerifySignature(mockVerifier)
+	s.NoError(err)
+	s.True(result.IsValid())
+	s.True(result.IsTrusted(TrustFull))
+	s.Equal("8C9A6985E0BB95F1", result.KeyID)
+
+	// Verify that the mock received the correct message (commit without signature)
+	s.NotEmpty(mockVerifier.receivedMessage)
+	s.NotContains(string(mockVerifier.receivedMessage), "-----BEGIN PGP SIGNATURE-----")
+}
+
+// mockVerifier is a test implementation of the Verifier interface
+type mockVerifier struct {
+	result          *VerificationResult
+	err             error
+	receivedSig     []byte
+	receivedMessage []byte
+}
+
+func (m *mockVerifier) Verify(signature, message []byte) (*VerificationResult, error) {
+	m.receivedSig = signature
+	m.receivedMessage = message
+	return m.result, m.err
+}
+
 func (s *SuiteCommit) TestPatchCancel() {
 	from := s.commit(plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 	to := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))

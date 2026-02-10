@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -870,13 +868,16 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 		Target:     hash,
 	}
 
-	if opts.SignKey != nil {
-		sig, err := r.buildTagSignature(tag, opts.SignKey)
+	signer := opts.Signer
+	if signer == nil && opts.SignKey != nil {
+		signer = &gpgSigner{key: opts.SignKey}
+	}
+	if signer != nil {
+		sig, err := signObject(signer, tag)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-
-		tag.PGPSignature = sig
+		tag.PGPSignature = string(sig)
 	}
 
 	obj := r.Storer.NewEncodedObject()
@@ -887,24 +888,6 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	return r.Storer.SetEncodedObject(obj)
 }
 
-func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := tag.Encode(encoded); err != nil {
-		return "", err
-	}
-
-	rdr, err := encoded.Reader()
-	if err != nil {
-		return "", err
-	}
-
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
-		return "", err
-	}
-
-	return b.String(), nil
-}
 
 // Tag returns a tag from the repository.
 //

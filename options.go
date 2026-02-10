@@ -684,6 +684,10 @@ type CreateTagOptions struct {
 	// SignKey denotes a key to sign the tag with. A nil value here means the tag
 	// will not be signed. The private key must be present and already decrypted.
 	SignKey *openpgp.Entity
+	// Signer denotes a cryptographic signer to sign the tag with.
+	// A nil value here means the tag will not be signed.
+	// Takes precedence over SignKey.
+	Signer Signer
 }
 
 // Validate validates the fields and sets the default values.

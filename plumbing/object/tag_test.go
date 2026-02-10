@@ -487,3 +487,63 @@ func (s *TagSuite) TestEncodeWithoutSignature() {
 		string(payload),
 	)
 }
+
+func (s *TagSuite) TestVerifySignature_NilVerifier() {
+	tag := &Tag{
+		Name:         "v1.0",
+		PGPSignature: "some signature",
+	}
+	_, err := tag.VerifySignature(nil)
+	s.ErrorIs(err, ErrNilVerifier)
+}
+
+func (s *TagSuite) TestVerifySignature_NoSignature() {
+	unsignedTag := &Tag{
+		Name: "v1.0",
+	}
+	mockVerifier := &mockVerifier{}
+	_, err := unsignedTag.VerifySignature(mockVerifier)
+	s.ErrorIs(err, ErrNoSignature)
+}
+
+func (s *TagSuite) TestVerifySignature_WithMockVerifier() {
+	ts := time.Unix(1617403017, 0)
+	loc, _ := time.LoadLocation("UTC")
+	tag := &Tag{
+		Name:   "v0.2",
+		Tagger: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Message: `This is a signed tag
+`,
+		TargetType: plumbing.CommitObject,
+		Target:     plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
+		PGPSignature: `
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGeciQAKCRCMmmmF4LuV
+8ZoDAP4j9msumYymfHgS3y7jpxPcSyiOMlXjipr2upspvXJ6ewD+K+OPC4pGW7Aq
+8UDK8r6qhaloxATcV/LUrvAW2yz4PwM=
+=PD+s
+-----END PGP SIGNATURE-----
+`,
+	}
+
+	mockVerifier := &mockVerifier{
+		result: &VerificationResult{
+			Type:       SignatureTypeOpenPGP,
+			Valid:      true,
+			TrustLevel: TrustFull,
+			KeyID:      "8C9A6985E0BB95F1",
+			Signer:     "go-git test key",
+		},
+	}
+
+	result, err := tag.VerifySignature(mockVerifier)
+	s.NoError(err)
+	s.NotNil(result)
+	s.True(result.Valid)
+	s.Equal(TrustFull, result.TrustLevel)
+	s.Equal("8C9A6985E0BB95F1", result.KeyID)
+	s.NotNil(mockVerifier.receivedSig)
+	s.NotNil(mockVerifier.receivedMessage)
+}
+
