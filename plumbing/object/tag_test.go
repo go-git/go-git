@@ -181,7 +181,7 @@ func (s *TagSuite) TestTagDecodeWrongType() {
 }
 
 func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
-	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
+	ts, err := time.ParseInLocation(time.RFC3339, "2006-01-02T15:04:05-07:00", time.UTC)
 	s.NoError(err)
 	tags := []*Tag{
 		{
@@ -200,7 +200,7 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
 	}
 	for _, tag := range tags {
 		obj := &plumbing.MemoryObject{}
-		err = tag.Encode(obj)
+		err := tag.Encode(obj)
 		s.NoError(err)
 		newTag := &Tag{}
 		err = newTag.Decode(obj)
