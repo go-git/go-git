@@ -228,8 +228,9 @@ change
 %s
 `, pgpsignature)
 
-	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
+	ts, err := time.ParseInLocation(time.RFC3339, "2006-01-02T15:04:05-07:00", time.UTC)
 	s.NoError(err)
+
 	commits := []*Commit{
 		{
 			Author:       Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -280,7 +281,7 @@ change
 	}
 	for _, commit := range commits {
 		obj := &plumbing.MemoryObject{}
-		err = commit.Encode(obj)
+		err := commit.Encode(obj)
 		s.NoError(err)
 		newCommit := &Commit{}
 		err = newCommit.Decode(obj)

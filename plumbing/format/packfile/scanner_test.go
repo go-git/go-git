@@ -151,21 +151,14 @@ func TestPackHeaderSignature(t *testing.T) {
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader([]byte("FOO")), nil, nil),
 			},
-			wantErr: ErrBadSignature,
+			wantErr: ErrMalformedPackfile,
 		},
 		{
-			name: "empty packfile: io.EOF",
+			name: "empty packfile: ErrEmptyPackfile",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: io.EOF,
-		},
-		{
-			name: "empty packfile: ErrBadSignature",
-			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
-			},
-			wantErr: ErrBadSignature,
+			wantErr: ErrEmptyPackfile,
 		},
 	}
 
@@ -218,7 +211,7 @@ func TestPackVersion(t *testing.T) {
 					return newScannerReader(buf, nil, nil)
 				}(),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 		{
 			name: "Unsupported version",
@@ -232,11 +225,11 @@ func TestPackVersion(t *testing.T) {
 			wantErr: ErrUnsupportedVersion,
 		},
 		{
-			name: "empty packfile: ErrMalformedPackfile",
+			name: "empty packfile: EOF",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 	}
 
@@ -300,14 +293,14 @@ func TestPackObjectQty(t *testing.T) {
 					return newScannerReader(buf, nil, nil)
 				}(),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 		{
-			name: "empty packfile: ErrMalformedPackfile",
+			name: "empty packfile: EOF",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: io.EOF,
 		},
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func TestGet(t *testing.T) {
@@ -230,7 +231,7 @@ func getIndexFromIdxFile(r io.ReadCloser) idxfile.Index {
 	defer r.Close()
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
-	if err := idxfile.NewDecoder(r).Decode(idx); err != nil {
+	if err := idxfile.NewDecoder(r, hash.New(crypto.SHA1)).Decode(idx); err != nil {
 		panic(err)
 	}
 
@@ -274,7 +275,7 @@ func BenchmarkGetByOffset(b *testing.B) {
 	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
 
 	cache := cache.NewObjectLRUDefault()
-	err := idxfile.NewDecoder(f.Idx()).Decode(idx)
+	err := idxfile.NewDecoder(f.Idx(), hash.New(crypto.SHA1)).Decode(idx)
 	require.NoError(b, err)
 
 	b.Run("with storage",
