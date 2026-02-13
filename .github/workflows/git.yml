@@ -47,7 +47,12 @@ jobs:
 
     - name: Verify Git installation
       run: |
-        git --exec-path
+        exec_path=$(git --exec-path)
+        echo "Git exec path: $exec_path"
+        if [ "$exec_path" != "${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}" ]; then
+          echo "Git exec path mismatch: expected ${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}, got $exec_path"
+          exit 1
+        fi
         git config --global user.email "gha@example.com"
         git config --global user.name "GitHub Actions"
 
