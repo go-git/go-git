@@ -52,8 +52,8 @@ type Commit struct {
 	// MergeTag is the embedded tag object when a merge commit is created by
 	// merging a signed tag.
 	MergeTag string
-	// PGPSignature is the PGP signature of the commit.
-	PGPSignature string
+	// Signature is the cryptographic signature of the commit (e.g. SSH, x.509).
+	Signature string
 	// Message is the commit message, contains arbitrary text.
 	Message string
 	// TreeHash is the hash of the root tree of the commit.
@@ -268,7 +268,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 		if pgpsig {
 			if len(line) > 0 && line[0] == ' ' {
 				line = bytes.TrimLeft(line, " ")
-				c.PGPSignature += string(line)
+				c.Signature += string(line)
 				continue
 			}
 			pgpsig = false
@@ -314,7 +314,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			case headerencoding:
 				c.Encoding = MessageEncoding(data)
 			case headerpgp:
-				c.PGPSignature += string(data) + "\n"
+				c.Signature += string(data) + "\n"
 				pgpsig = true
 			default:
 				h, maybecontinued := parseExtraHeader(originalLine)
@@ -409,7 +409,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		}
 	}
 
-	if c.PGPSignature != "" && includeSig {
+	if c.Signature != "" && includeSig {
 		if _, err = fmt.Fprint(w, "\n"+headerpgp+" "); err != nil {
 			return err
 		}
@@ -418,7 +418,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		// newline. Use join for this so it's clear that a newline should not be
 		// added after this section, as it will be added when the message is
 		// printed.
-		signature := strings.TrimSuffix(c.PGPSignature, "\n")
+		signature := strings.TrimSuffix(c.Signature, "\n")
 		lines := strings.Split(signature, "\n")
 		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
 			return err
@@ -484,7 +484,7 @@ func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	}
 
 	// Extract signature.
-	signature := strings.NewReader(c.PGPSignature)
+	signature := strings.NewReader(c.Signature)
 
 	encoded := &plumbing.MemoryObject{}
 	// Encode commit components, excluding signature and get a reader object.
