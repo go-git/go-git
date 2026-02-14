@@ -52,6 +52,6 @@ func ExampleSigner() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(obj.PGPSignature)
+	fmt.Println(obj.Signature)
 	// Output: dHJlZSA0YjgyNWRjNjQyY2I2ZWI5YTA2MGU1NGJmOGQ2OTI4OGZiZWU0OTA0CmF1dGhvciBKb2huIERvZSA8am9obkBleGFtcGxlLmNvbT4gMTIzNCArMDAwMApjb21taXR0ZXIgSm9obiBEb2UgPGpvaG5AZXhhbXBsZS5jb20+IDEyMzQgKzAwMDAKCmV4YW1wbGUgY29tbWl0
 }

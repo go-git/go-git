@@ -581,13 +581,8 @@ type CommitOptions struct {
 	// Parents are the parents commits for the new commit, by default when
 	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
-	// SignKey denotes a key to sign the commit with. A nil value here means the
-	// commit will not be signed. The private key must be present and already
-	// decrypted.
-	SignKey *openpgp.Entity
 	// Signer denotes a cryptographic signer to sign the commit with.
 	// A nil value here means the commit will not be signed.
-	// Takes precedence over SignKey.
 	Signer Signer
 	// Amend will create a new commit object and replace the commit that HEAD currently
 	// points to. Cannot be used with All nor Parents.

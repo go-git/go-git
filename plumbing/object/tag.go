@@ -32,8 +32,8 @@ type Tag struct {
 	Tagger Signature
 	// Message is an arbitrary text message.
 	Message string
-	// PGPSignature is the PGP signature of the tag.
-	PGPSignature string
+	// Signature is the cryptographic signature of the tag (e.g. SSH, X.509).
+	Signature string
 	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
 	// Target is the hash of the target object.
@@ -132,7 +132,7 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 		return err
 	}
 	if sm, _ := parseSignedBytes(data); sm >= 0 {
-		t.PGPSignature = string(data[sm:])
+		t.Signature = string(data[sm:])
 		data = data[:sm]
 	}
 	t.Message = string(data)
@@ -182,7 +182,7 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	// lower-level method, we assume you know what you are doing and have already
 	// done the needful on the message in the caller.
 	if includeSig {
-		if _, err = fmt.Fprint(w, t.PGPSignature); err != nil {
+		if _, err = fmt.Fprint(w, t.Signature); err != nil {
 			return err
 		}
 	}
@@ -266,7 +266,7 @@ func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	}
 
 	// Extract signature.
-	signature := strings.NewReader(t.PGPSignature)
+	signature := strings.NewReader(t.Signature)
 
 	encoded := &plumbing.MemoryObject{}
 	// Encode tag components, excluding signature and get a reader object.

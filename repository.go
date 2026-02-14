@@ -876,7 +876,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 			return plumbing.ZeroHash, err
 		}
 
-		tag.PGPSignature = sig
+		tag.Signature = sig
 	}
 
 	obj := r.Storer.NewEncodedObject()
