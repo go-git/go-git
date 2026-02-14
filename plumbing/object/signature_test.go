@@ -34,7 +34,7 @@ MKEQruIQWJb+8HVXwssA4=
 			want: signatureTypeSSH,
 		},
 		{
-			name: "known signature format (x509)",
+			name: "known signature format (X.509)",
 			b: []byte(`-----BEGIN SIGNED MESSAGE-----
 MIIDZjCCAk6gAwIBAgIJALZ9Z3Z9Z3Z9MA0GCSqGSIb3DQEBCwUAMIGIMQswCQYD
 VQQGEwJTRTEOMAwGA1UECAwFVGV4YXMxDjAMBgNVBAcMBVRleGFzMQ4wDAYDVQQK

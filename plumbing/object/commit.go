@@ -52,7 +52,7 @@ type Commit struct {
 	// MergeTag is the embedded tag object when a merge commit is created by
 	// merging a signed tag.
 	MergeTag string
-	// Signature is the cryptographic signature of the commit (e.g. SSH, x.509).
+	// Signature is the cryptographic signature of the commit (e.g. SSH, X.509).
 	Signature string
 	// Message is the commit message, contains arbitrary text.
 	Message string

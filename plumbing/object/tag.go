@@ -32,7 +32,7 @@ type Tag struct {
 	Tagger Signature
 	// Message is an arbitrary text message.
 	Message string
-	// Signature is the cryptographic signature of the tag (e.g. SSH, x.509).
+	// Signature is the cryptographic signature of the tag (e.g. SSH, X.509).
 	Signature string
 	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
