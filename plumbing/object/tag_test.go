@@ -181,7 +181,7 @@ func (s *TagSuite) TestTagDecodeWrongType() {
 }
 
 func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
-	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
+	ts, err := time.ParseInLocation(time.RFC3339, "2006-01-02T15:04:05-07:00", time.UTC)
 	s.NoError(err)
 	tags := []*Tag{
 		{
@@ -200,7 +200,7 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
 	}
 	for _, tag := range tags {
 		obj := &plumbing.MemoryObject{}
-		err = tag.Encode(obj)
+		err := tag.Encode(obj)
 		s.NoError(err)
 		newTag := &Tag{}
 		err = newTag.Decode(obj)
@@ -310,14 +310,14 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 =EFTF
 -----END PGP SIGNATURE-----
 `
-	tag.PGPSignature = pgpsignature
+	tag.Signature = pgpsignature
 
 	err := tag.Encode(encoded)
 	s.NoError(err)
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(pgpsignature, decoded.PGPSignature)
+	s.Equal(pgpsignature, decoded.Signature)
 }
 
 func (s *TagSuite) TestSSHSignatureSerialization() {
@@ -331,14 +331,14 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
 MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----`
-	tag.PGPSignature = signature
+	tag.Signature = signature
 
 	err := tag.Encode(encoded)
 	s.NoError(err)
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(signature, decoded.PGPSignature)
+	s.Equal(signature, decoded.Signature)
 }
 
 func (s *TagSuite) TestVerify() {
@@ -351,7 +351,7 @@ func (s *TagSuite) TestVerify() {
 `,
 		TargetType: plumbing.CommitObject,
 		Target:     plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
-		PGPSignature: `
+		Signature: `
 -----BEGIN PGP SIGNATURE-----
 
 iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGeciQAKCRCMmmmF4LuV

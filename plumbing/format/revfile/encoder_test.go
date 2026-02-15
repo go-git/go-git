@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	plumbinghash "github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func TestEncode(t *testing.T) {
@@ -22,13 +22,13 @@ func TestEncode(t *testing.T) {
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name   string
-		writer io.Writer
+		writer *bytes.Buffer
 		idx    *idxfile.MemoryIndex
 		want   string
 	}{
@@ -54,13 +54,20 @@ func TestEncode(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h := plumbinghash.New(crypto.SHA256)
+			h := hash.New(crypto.SHA256)
 
 			err := Encode(tc.writer, h, tc.idx)
 			if tc.want != "" {
 				assert.EqualError(t, err, tc.want)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
+
+				content, err := io.ReadAll(fixture.Rev())
+				require.NoError(t, err)
+
+				// Ensure the produced rev file is byte-identical to
+				// the one in the fixture.
+				assert.Equal(t, content, tc.writer.Bytes())
 			}
 		})
 	}
@@ -93,12 +100,12 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			require.NotNil(t, idxf)
 
 			idx := idxfile.NewMemoryIndex(tc.hasher.Size())
-			idec := idxfile.NewDecoder(idxf)
+			idec := idxfile.NewDecoder(idxf, hash.New(tc.hasher))
 			err := idec.Decode(idx)
 			require.NoError(t, err)
 
 			var buf bytes.Buffer
-			h := plumbinghash.New(tc.hasher)
+			h := hash.New(tc.hasher)
 
 			err = Encode(&buf, h, idx)
 			require.NoError(t, err)

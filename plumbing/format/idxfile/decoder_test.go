@@ -2,15 +2,19 @@ package idxfile_test
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/base64"
 	"io"
+	"os"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type IdxfileSuite struct {
@@ -25,7 +29,7 @@ func TestIdxfileSuite(t *testing.T) {
 func (s *IdxfileSuite) TestDecode() {
 	f := fixtures.Basic().One()
 
-	d := NewDecoder(f.Idx())
+	d := NewDecoder(f.Idx(), hash.New(crypto.SHA1))
 	idx := new(MemoryIndex)
 	err := d.Decode(idx)
 	s.NoError(err)
@@ -55,7 +59,7 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 
 	idx := new(MemoryIndex)
 
-	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
+	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
 	err := d.Decode(idx)
 	s.NoError(err)
 
@@ -123,12 +127,39 @@ func BenchmarkDecode(b *testing.B) {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
 
+	hasher := hash.New(crypto.SHA1)
 	for b.Loop() {
 		f := bytes.NewBuffer(fixture)
 		idx := new(MemoryIndex)
-		d := NewDecoder(f)
+		d := NewDecoder(f, hasher)
 		if err := d.Decode(idx); err != nil {
 			b.Errorf("unexpected error decoding: %s", err)
 		}
 	}
+}
+
+func TestChecksumMismatch(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "temp.idx")
+	require.NoError(t, err)
+	defer f.Close()
+
+	_, err = io.Copy(f, fixtures.Basic().One().Idx())
+	require.NoError(t, err)
+
+	_, err = f.Seek(-1, io.SeekEnd)
+	require.NoError(t, err)
+
+	_, err = f.Write([]byte{0})
+	require.NoError(t, err)
+
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	idx := new(MemoryIndex)
+	d := NewDecoder(f, hash.New(crypto.SHA1))
+
+	err = d.Decode(idx)
+	require.ErrorContains(t, err, "checksum mismatch")
 }

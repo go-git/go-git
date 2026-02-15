@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"reflect"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -32,11 +33,19 @@ func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
+	v := reflect.ValueOf(w)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if v.IsNil() {
+			return fmt.Errorf("nil writer")
+		}
+	}
 
 	if idx == nil {
 		return fmt.Errorf("nil index")
 	}
 
+	h.Reset()
 	e := &encoder{
 		writer: w,
 		hash:   h,

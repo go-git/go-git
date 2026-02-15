@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
@@ -57,6 +58,17 @@ func AdvertiseReferences(
 		_ = ar.Capabilities.Set(capability.NoProgress)
 		_ = ar.Capabilities.Set(capability.SymRef)
 		_ = ar.Capabilities.Set(capability.Shallow)
+
+		cfg, err := st.Config()
+		var objectformat config.ObjectFormat
+		if err == nil && cfg != nil {
+			objectformat = cfg.Extensions.ObjectFormat
+		}
+
+		if objectformat == config.UnsetObjectFormat {
+			objectformat = config.DefaultObjectFormat
+		}
+		_ = ar.Capabilities.Set(capability.ObjectFormat, objectformat.String())
 	}
 
 	// Set references

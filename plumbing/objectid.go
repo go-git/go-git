@@ -44,7 +44,7 @@ func FromBytes(in []byte) (ObjectID, bool) {
 
 	switch len(in) {
 	case format.SHA1Size:
-		id.format = format.SHA1
+		id.format = format.UnsetObjectFormat
 
 	case format.SHA256Size:
 		id.format = format.SHA256
@@ -147,7 +147,7 @@ func (s *ObjectID) ResetBySize(idSize int) {
 	if idSize == format.SHA256Size {
 		s.format = format.SHA256
 	} else {
-		s.format = format.SHA1
+		s.format = format.UnsetObjectFormat
 	}
 	copy(s.hash[:], s.hash[:0])
 }

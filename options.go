@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -93,6 +94,10 @@ type CloneOptions struct {
 	// Bare determines whether the repository will have a worktree (non-bare)
 	// or not (bare).
 	Bare bool
+
+	// worktree defines the worktree filesystem for non-bare clone operations.
+	// This is only used internally due to partial inits.
+	worktree billy.Filesystem
 }
 
 // MergeOptions describes how a merge should be performed.
@@ -578,13 +583,8 @@ type CommitOptions struct {
 	// Parents are the parents commits for the new commit, by default when
 	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
-	// SignKey denotes a key to sign the commit with. A nil value here means the
-	// commit will not be signed. The private key must be present and already
-	// decrypted.
-	SignKey *openpgp.Entity
 	// Signer denotes a cryptographic signer to sign the commit with.
 	// A nil value here means the commit will not be signed.
-	// Takes precedence over SignKey.
 	Signer Signer
 	// Amend will create a new commit object and replace the commit that HEAD currently
 	// points to. Cannot be used with All nor Parents.

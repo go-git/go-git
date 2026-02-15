@@ -91,13 +91,13 @@ func (s *UpdReqDecodeSuite) TestInvalidCommandInvalidHash() {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid old object id: invalid hash size: expected 40, got 39$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid old object id: invalid hash: ")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash size: expected 40, got 39$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash: ")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86e 2ecf0ef2c2dffb796033e5a02219af86ec6 m\x00",

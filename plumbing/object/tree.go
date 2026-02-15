@@ -257,6 +257,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		}
 
 		var hash plumbing.Hash
+		hash.ResetBySize(t.Hash.Size())
 		if _, err = hash.ReadFrom(r); err != nil {
 			return err
 		}

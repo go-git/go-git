@@ -61,6 +61,7 @@ func FromObjectFormat(f format.ObjectFormat) *ObjectHasher {
 		hasher = crypto.SHA256.New()
 	default:
 		hasher = crypto.SHA1.New()
+		f = format.UnsetObjectFormat
 	}
 	return &ObjectHasher{
 		hasher: hasher,
@@ -77,7 +78,7 @@ func FromHash(h hash.Hash) (*ObjectHasher, error) {
 	var f format.ObjectFormat
 	switch h.Size() {
 	case format.SHA1Size:
-		f = format.SHA1
+		f = format.UnsetObjectFormat
 	case format.SHA256Size:
 		f = format.SHA256
 	default:

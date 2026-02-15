@@ -8,11 +8,13 @@ import (
 	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // Negotiation errors.
@@ -59,6 +61,54 @@ func NegotiatePack(
 	// if caps.Supports(capability.ThinPack) {
 	// 	_ = upreq.Capabilities.Set(capability.ThinPack)
 	// }
+
+	if caps.Supports(capability.ObjectFormat) {
+		var clientFormat, serverFormat config.ObjectFormat
+		if cap := caps.Get(capability.ObjectFormat); len(cap) > 0 {
+			of := config.ObjectFormat(cap[0])
+			switch of {
+			case config.SHA1, config.SHA256:
+				serverFormat = of
+			}
+		}
+
+		cfg, err := st.Config()
+		if err == nil {
+			clientFormat = cfg.Extensions.ObjectFormat
+		}
+
+		// The first pack negotiation may change the storage's ObjectFormat during
+		// clone operations - provided the underlying storage was partially
+		// initialised.
+		//
+		// Refer to upstream for further information:
+		// https://github.com/git/git/blob/ab380cb80b0727f7f2d7f6b17592ae6783e9820c/builtin/clone.c#L1216C60-L1216C68
+		if clientFormat == config.UnsetObjectFormat && serverFormat == config.SHA256 {
+			ref, err := st.Reference(plumbing.HEAD)
+			// The storage is likely better suited to make this check, however it is made here
+			// to avoid code duplication and to better handle off-tree storage implementations.
+			if err == nil && ref.Target().String() == "refs/heads/.invalid" {
+				if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
+					err := setter.SetObjectFormat(serverFormat)
+					if err != nil {
+						return nil, fmt.Errorf("unable to set object format: %w", err)
+					}
+
+					clientFormat = serverFormat
+				}
+			}
+		}
+
+		if clientFormat == config.UnsetObjectFormat {
+			clientFormat = config.SHA1
+		}
+
+		if serverFormat != clientFormat {
+			return nil, fmt.Errorf("mismatched algorithms: client %s; server %s", clientFormat, serverFormat)
+		}
+
+		_ = upreq.Capabilities.Set(capability.ObjectFormat, clientFormat.String())
+	}
 
 	if caps.Supports(capability.OFSDelta) {
 		_ = upreq.Capabilities.Set(capability.OFSDelta)
@@ -216,7 +266,7 @@ func NegotiatePack(
 	}
 
 	if !conn.StatelessRPC() {
-		if err := writer.Close(); err != nil {
+		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // The existing implementation uses int64, instead of uint64, which is
@@ -42,7 +43,7 @@ func newPackfileOpts(pack, idx billy.File, opts ...packfile.PackfileOption) pack
 		panic(err)
 	}
 
-	err = idxfile.NewDecoder(idx).Decode(i)
+	err = idxfile.NewDecoder(idx, hash.New(crypto.SHA1)).Decode(i)
 	if err != nil {
 		panic(err)
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/color"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 type UnifiedEncoderTestSuite struct {
@@ -1055,7 +1056,7 @@ type testFile struct {
 }
 
 func (t testFile) Hash() plumbing.Hash {
-	hasher := plumbing.FromObjectFormat(0)
+	hasher := plumbing.FromObjectFormat(config.SHA1)
 	h, _ := hasher.Compute(plumbing.BlobObject, []byte(t.seed))
 	return h
 }

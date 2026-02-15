@@ -425,9 +425,7 @@ func (c *Config) unmarshalCore() {
 
 func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
-	if s.Options.Get(objectFormatKey) == format.SHA256.String() {
-		c.Extensions.ObjectFormat = format.SHA256
-	}
+	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
 }
 
 func (c *Config) unmarshalUser() {
@@ -600,9 +598,10 @@ func (c *Config) marshalCore() {
 func (c *Config) marshalExtensions() {
 	// Extensions are only supported on Version 1, therefore
 	// ignore them otherwise.
-	if c.Core.RepositoryFormatVersion == format.Version1 {
+	if c.Core.RepositoryFormatVersion == format.Version1 &&
+		c.Extensions.ObjectFormat != format.UnsetObjectFormat {
 		s := c.Raw.Section(extensionsSection)
-		s.SetOption(objectFormatKey, c.Extensions.ObjectFormat.String())
+		s.SetOption(objectFormatKey, string(c.Extensions.ObjectFormat))
 	}
 }
 

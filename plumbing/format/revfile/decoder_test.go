@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // errorAfterReader wraps a reader and returns an error after n bytes have been read.
@@ -50,7 +51,7 @@ func TestDecodeSHA256(t *testing.T) {
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 

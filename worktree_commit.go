@@ -174,7 +174,6 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 		_, err = w.Commit(commit.Message, &CommitOptions{
 			Author:            &commit.Author,
 			Committer:         commitOpts.Committer,
-			SignKey:           commitOpts.SignKey,
 			Signer:            commitOpts.Signer,
 			AllowEmptyCommits: commitOpts.AllowEmptyCommits,
 		})
@@ -233,17 +232,12 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		ParentHashes: opts.Parents,
 	}
 
-	// Convert SignKey into a Signer if set. Existing Signer should take priority.
-	signer := opts.Signer
-	if signer == nil && opts.SignKey != nil {
-		signer = &gpgSigner{key: opts.SignKey}
-	}
-	if signer != nil {
-		sig, err := signObject(signer, commit)
+	if opts.Signer != nil {
+		sig, err := signObject(opts.Signer, commit)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-		commit.PGPSignature = string(sig)
+		commit.Signature = string(sig)
 	}
 
 	obj := w.r.Storer.NewEncodedObject()

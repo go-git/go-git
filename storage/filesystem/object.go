@@ -11,9 +11,11 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -51,6 +53,10 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 		dir:         dir,
 		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
 	}
+}
+
+func (s *ObjectStorage) ObjectFormat() formatcfg.ObjectFormat {
+	return s.options.ObjectFormat
 }
 
 func (s *ObjectStorage) requireIndex() error {
@@ -92,10 +98,22 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
+	var hasher hash.Hash
+	if h.Size() == crypto.SHA256.Size() {
+		hasher = hash.New(crypto.SHA256)
+	} else {
+		hasher = hash.New(crypto.SHA1)
+	}
+
 	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f)
+	d := idxfile.NewDecoder(f, hasher)
 	if err = d.Decode(idxf); err != nil {
 		return err
+	}
+
+	if idxf.PackfileChecksum != h {
+		return fmt.Errorf("%w: packfile mismatch: target is %q not %q",
+			idxfile.ErrMalformedIdxFile, idxf.PackfileChecksum.String(), h.String())
 	}
 
 	s.index[h] = idxf

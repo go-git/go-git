@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -40,6 +41,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 func TestInit(t *testing.T) {
@@ -154,7 +156,6 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 				cfg, err := r.Config()
 				require.NoError(t, err)
 				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
-				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
 
 				if !tc.wantBare {
 					h := createCommit(t, r)
@@ -307,6 +308,204 @@ func (s *RepositorySuite) TestClone() {
 	remotes, err := r.Remotes()
 	s.NoError(err)
 	s.Len(remotes, 1)
+}
+
+func TestCloneAll(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		tag        string
+		format     formatcfg.ObjectFormat
+		refs       int
+		plainClone bool
+	}{
+		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4},
+		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11},
+		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4, plainClone: true},
+		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11, plainClone: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.tag, func(t *testing.T) {
+			t.Parallel()
+			f := fixtures.ByTag(tc.tag).One()
+
+			for _, srv := range server.All(server.Loader(t, f)) {
+				endpoint, err := srv.Start()
+				require.NoError(t, err)
+
+				t.Cleanup(func() {
+					require.NoError(t, srv.Close())
+				})
+
+				var r *Repository
+				if tc.plainClone {
+					r, err = PlainClone(t.TempDir(), &CloneOptions{URL: endpoint})
+				} else {
+					r, err = Clone(memory.NewStorage(), nil, &CloneOptions{
+						URL: endpoint,
+					})
+				}
+				require.NoError(t, err)
+				require.NotNil(t, r, "repository must not be nil")
+
+				remotes, err := r.Remotes()
+				require.NoError(t, err)
+				assert.Len(t, remotes, 1)
+
+				iter, err := r.References()
+				require.NoError(t, err)
+
+				refs := 0
+				iter.ForEach(func(r *plumbing.Reference) error {
+					refs++
+					return nil
+				})
+				assert.Equal(t, tc.refs, refs)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+
+				assert.Equal(t, tc.format, cfg.Extensions.ObjectFormat)
+
+				ref, err := r.Head()
+				require.NoError(t, err, "failed to get repository HEAD ref")
+
+				c, err := r.CommitObject(ref.Hash())
+				require.NoError(t, err, "failed to get commit object")
+				assert.NotNil(t, c)
+			}
+		})
+	}
+}
+
+func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		clientFormat formatcfg.ObjectFormat
+		serverTag    string
+		wantErr      bool
+	}{
+		{
+			name:         "unset client format cannot fetch sha256",
+			clientFormat: formatcfg.UnsetObjectFormat,
+			serverTag:    ".git-sha256",
+			wantErr:      true,
+		},
+		{
+			name:         "sha1 client cannot fetch sha256",
+			clientFormat: formatcfg.SHA1,
+			serverTag:    ".git-sha256",
+			wantErr:      true,
+		},
+		{
+			name:         "sha256 client cannot fetch sha1",
+			clientFormat: formatcfg.SHA256,
+			serverTag:    ".git",
+			wantErr:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := fixtures.ByTag(tc.serverTag).One()
+			require.NotNil(t, f, "fixture not found for tag %s", tc.serverTag)
+
+			for _, srv := range server.All(server.Loader(t, f)) {
+				endpoint, err := srv.Start()
+				require.NoError(t, err)
+
+				t.Cleanup(func() {
+					require.NoError(t, srv.Close())
+				})
+
+				var st *memory.Storage
+				if tc.clientFormat == formatcfg.UnsetObjectFormat {
+					st = memory.NewStorage()
+				} else {
+					st = memory.NewStorage(memory.WithObjectFormat(tc.clientFormat))
+				}
+
+				r, err := Init(st)
+				require.NoError(t, err)
+
+				_, err = r.CreateRemote(&config.RemoteConfig{
+					Name: DefaultRemoteName,
+					URLs: []string{endpoint},
+				})
+				require.NoError(t, err)
+
+				err = r.Fetch(&FetchOptions{})
+				if tc.wantErr {
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), "mismatched algorithms")
+				} else {
+					require.NoError(t, err)
+				}
+			}
+		})
+	}
+}
+
+// sha1OnlyStorage wraps a storage.Storer to hide any ObjectFormatGetter
+// or ObjectFormatSetter implementations, simulating a storage backend
+// that only supports SHA1.
+type sha1OnlyStorage struct {
+	storage.Storer
+}
+
+func TestFailSafeUnsupportedStorage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("clone", func(t *testing.T) {
+		t.Parallel()
+
+		f := fixtures.ByTag(".git-sha256").One()
+		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+
+		for _, srv := range server.All(server.Loader(t, f)) {
+			endpoint, err := srv.Start()
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				require.NoError(t, srv.Close())
+			})
+
+			st := &sha1OnlyStorage{memory.NewStorage()}
+			_, okGetter := storage.Storer(st).(xstorage.ObjectFormatGetter)
+			assert.False(t, okGetter, "sha1OnlyStorage must not implement ObjectFormatGetter")
+
+			_, okSetter := storage.Storer(st).(xstorage.ObjectFormatSetter)
+			assert.False(t, okSetter, "sha1OnlyStorage must not implement ObjectFormatSetter")
+
+			_, err = Clone(st, nil, &CloneOptions{URL: endpoint})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "mismatched algorithms")
+		}
+	})
+
+	t.Run("open", func(t *testing.T) {
+		t.Parallel()
+
+		f := fixtures.ByTag(".git-sha256").One()
+		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+
+		st := filesystem.NewStorage(f.DotGit(fixtures.WithMemFS()), cache.NewObjectLRUDefault())
+
+		wrapped := &sha1OnlyStorage{st}
+		_, okGetter := storage.Storer(wrapped).(xstorage.ObjectFormatGetter)
+		assert.False(t, okGetter, "sha1OnlyStorage must not implement ObjectFormatGetter")
+
+		_, okSetter := storage.Storer(wrapped).(xstorage.ObjectFormatSetter)
+		assert.False(t, okSetter, "sha1OnlyStorage must not implement ObjectFormatSetter")
+
+		r, err := Open(wrapped, nil)
+		assert.Error(t, err)
+		assert.Nil(t, r)
+	})
 }
 
 func (s *RepositorySuite) TestCloneContext() {

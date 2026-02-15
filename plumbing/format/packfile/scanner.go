@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -25,7 +26,7 @@ var (
 	// ErrEmptyPackfile is returned by ReadHeader when no data is found in the packfile.
 	ErrEmptyPackfile = NewError("empty packfile")
 	// ErrBadSignature is returned by ReadHeader when the signature in the packfile is incorrect.
-	ErrBadSignature = NewError("malformed pack file signature")
+	ErrBadSignature = NewError("bad signature")
 	// ErrMalformedPackfile is returned when the packfile format is incorrect.
 	ErrMalformedPackfile = NewError("malformed pack file")
 	// ErrUnsupportedVersion is returned by ReadHeader when the packfile version is
@@ -71,8 +72,6 @@ type Scanner struct {
 	objIndex int
 	// hasher is used to hash non-delta objects.
 	hasher plumbing.Hasher
-	// hasher256 is optional and used to hash the non-delta objects using SHA256.
-	hasher256 *plumbing.Hasher
 	// crc is used to generate the CRC-32 checksum of each object's content.
 	crc hash.Hash32
 	// packhash hashes the pack contents so that at the end it is able to
@@ -120,7 +119,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		opt(r)
 	}
 
-	r.scannerReader = newScannerReader(rs, io.MultiWriter(crc, packhash), r.rbuf)
+	r.scannerReader = newScannerReader(rs, io.MultiWriter(crc, r.packhash), r.rbuf)
 
 	return r
 }
@@ -154,6 +153,10 @@ func (r *Scanner) Scan() bool {
 	}
 
 	if err := scan(r); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			err = fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
+		}
+
 		r.err = err
 		return false
 	}
@@ -276,16 +279,19 @@ type stateFn func(*Scanner) (stateFn, error)
 // that handles the entire packfile header.
 func packHeaderSignature(r *Scanner) (stateFn, error) {
 	start := make([]byte, 4)
-	_, err := r.Read(start)
+	n, err := r.Read(start)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrBadSignature, err)
+		if n == 0 && err == io.EOF {
+			return nil, ErrEmptyPackfile
+		}
+		return nil, fmt.Errorf("read signature: %w", err)
 	}
 
 	if bytes.Equal(start, signature) {
 		return packVersion, nil
 	}
 
-	return nil, ErrBadSignature
+	return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, ErrBadSignature)
 }
 
 // packVersion parses the packfile version. It returns [ErrMalformedPackfile]
@@ -294,7 +300,7 @@ func packHeaderSignature(r *Scanner) (stateFn, error) {
 func packVersion(r *Scanner) (stateFn, error) {
 	version, err := binary.ReadUint32(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot read version", ErrMalformedPackfile)
+		return nil, fmt.Errorf("read version: %w", err)
 	}
 
 	v := Version(version)
@@ -313,7 +319,7 @@ func packVersion(r *Scanner) (stateFn, error) {
 func packObjectsQty(r *Scanner) (stateFn, error) {
 	qty, err := binary.ReadUint32(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot read number of objects", ErrMalformedPackfile)
+		return nil, fmt.Errorf("read number of objects: %w", err)
 	}
 	if qty == 0 {
 		return packFooter, nil
@@ -374,6 +380,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 
 	switch oh.Type {
 	case plumbing.OFSDeltaObject, plumbing.REFDeltaObject:
+		oh.Hash.ResetBySize(r.objectIDSize)
+
 		// For delta objects, we need to skip the base reference
 		if oh.Type == plumbing.OFSDeltaObject {
 			no, err := binary.ReadVariableWidthInt(r.scannerReader)
@@ -398,10 +406,10 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	defer gogitsync.PutZlibReader(zr)
 
+	mw := io.Discard
 	if !oh.Type.IsDelta() {
 		r.hasher.Reset(oh.Type, oh.Size)
-
-		var mw io.Writer = r.hasher
+		mw = r.hasher
 		if r.storage != nil {
 			w, err := r.storage.RawObjectWriter(oh.Type, oh.Size)
 			if err != nil {
@@ -411,52 +419,29 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			defer func() { _ = w.Close() }()
 			mw = io.MultiWriter(r.hasher, w)
 		}
-
-		// If the reader isn't seekable, and low memory mode
-		// isn't supported, keep the contents of the objects in
-		// memory.
-		if !r.lowMemoryMode && r.seeker == nil {
-			oh.content = gogitsync.GetBytesBuffer()
-			mw = io.MultiWriter(mw, oh.content)
-		}
-		if r.hasher256 != nil {
-			r.hasher256.Reset(oh.Type, oh.Size)
-			mw = io.MultiWriter(mw, r.hasher256)
-		}
-
-		// For non delta objects, simply calculate the hash of each object.
-		_, err = ioutil.CopyBufferPool(mw, zr)
-		if err != nil {
-			return nil, err
-		}
-
-		oh.Hash = r.hasher.Sum()
-		if r.hasher256 != nil {
-			h := r.hasher256.Sum()
-			oh.Hash256 = &h
-		}
-	} else {
-		// If data source is not io.Seeker, keep the content
-		// in the cache, so that it can be accessed by the Parser.
-		if !r.lowMemoryMode {
-			oh.content = gogitsync.GetBytesBuffer()
-			_, err = oh.content.ReadFrom(zr)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			// We don't know the compressed length, so we can't seek to
-			// the next object, we must discard the data instead.
-			_, err = ioutil.CopyBufferPool(io.Discard, zr)
-			if err != nil {
-				return nil, err
-			}
-		}
 	}
+
+	// If low memory mode isn't supported, and either the reader
+	// isn't seekable or this is a delta object, keep the contents
+	// of the objects in memory.
+	if !r.lowMemoryMode && (oh.Type.IsDelta() || r.seeker == nil) {
+		oh.content = gogitsync.GetBytesBuffer()
+		mw = io.MultiWriter(mw, oh.content)
+	}
+
+	_, err = ioutil.CopyBufferPool(mw, zr)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := r.Flush(); err != nil {
 		return nil, err
 	}
+
 	oh.Crc32 = r.crc.Sum32()
+	if !oh.Type.IsDelta() {
+		oh.Hash = r.hasher.Sum()
+	}
 
 	r.packData.Section = ObjectSection
 	r.packData.objectHeader = oh
@@ -476,14 +461,15 @@ func packFooter(r *Scanner) (stateFn, error) {
 	actual := r.packhash.Sum(nil)
 
 	var checksum plumbing.Hash
+	checksum.ResetBySize(r.objectIDSize)
 	_, err := checksum.ReadFrom(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read PACK checksum: %w", ErrMalformedPackfile)
+		return nil, fmt.Errorf("read pack checksum: %w", err)
 	}
 
 	if checksum.Compare(actual) != 0 {
-		return nil, fmt.Errorf("checksum mismatch expected %q but found %q: %w",
-			hex.EncodeToString(actual), checksum, ErrMalformedPackfile)
+		return nil, fmt.Errorf("%w: checksum mismatch: %q instead of %q",
+			ErrMalformedPackfile, hex.EncodeToString(actual), checksum)
 	}
 
 	r.packData.Section = FooterSection
