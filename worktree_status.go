@@ -372,14 +372,8 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 	}
 
 	if !opts.Force {
-		dir := filepath.Dir(opts.Path)
-		if dir == "." || dir == "" {
-			dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, nil)
-			patterns = append(patterns, dirPatterns...)
-		} else {
-			dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, []string{dir})
-			patterns = append(patterns, dirPatterns...)
-		}
+		dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, nil)
+		patterns = append(patterns, dirPatterns...)
 	}
 	_, err := w.doAdd(opts.Path, patterns, opts.SkipStatus)
 	return err
