@@ -450,9 +450,9 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 	}
 }
 
-// sha1OnlyStorage wraps a storage.Storer to hide any ObjectFormatGetter
-// or ObjectFormatSetter implementations, simulating a storage backend
-// that only supports SHA1.
+// sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
+// implementation, simulating a storage backend that does not implement
+// that interface.
 type sha1OnlyStorage struct {
 	storage.Storer
 }
@@ -475,11 +475,8 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 			})
 
 			st := &sha1OnlyStorage{memory.NewStorage()}
-			_, okGetter := storage.Storer(st).(xstorage.ObjectFormatGetter)
-			assert.False(t, okGetter, "sha1OnlyStorage must not implement ObjectFormatGetter")
-
-			_, okSetter := storage.Storer(st).(xstorage.ObjectFormatSetter)
-			assert.False(t, okSetter, "sha1OnlyStorage must not implement ObjectFormatSetter")
+			_, okGetter := storage.Storer(st).(xstorage.ExtensionChecker)
+			assert.False(t, okGetter, "sha1OnlyStorage must not implement ExtensionChecker")
 
 			_, err = Clone(st, nil, &CloneOptions{URL: endpoint})
 			require.Error(t, err)
@@ -496,11 +493,8 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 		st := filesystem.NewStorage(f.DotGit(fixtures.WithMemFS()), cache.NewObjectLRUDefault())
 
 		wrapped := &sha1OnlyStorage{st}
-		_, okGetter := storage.Storer(wrapped).(xstorage.ObjectFormatGetter)
-		assert.False(t, okGetter, "sha1OnlyStorage must not implement ObjectFormatGetter")
-
-		_, okSetter := storage.Storer(wrapped).(xstorage.ObjectFormatSetter)
-		assert.False(t, okSetter, "sha1OnlyStorage must not implement ObjectFormatSetter")
+		_, okGetter := storage.Storer(wrapped).(xstorage.ExtensionChecker)
+		assert.False(t, okGetter, "sha1OnlyStorage must not implement ExtensionChecker")
 
 		r, err := Open(wrapped, nil)
 		assert.Error(t, err)

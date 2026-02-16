@@ -67,12 +67,6 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
-func (s *Storage) ObjectFormat() formatcfg.ObjectFormat {
-	cfg, _ := s.Config()
-
-	return cfg.Extensions.ObjectFormat
-}
-
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	switch of {
 	case formatcfg.SHA1, formatcfg.SHA256:
@@ -101,6 +95,21 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	s.options.objectFormat = of
 	s.oh = plumbing.FromObjectFormat(of)
 	return nil
+}
+
+// SupportsExtension checks whether the Storer supports the given
+// Git extension defined by name.
+func (s *Storage) SupportsExtension(name, value string) bool {
+	if name != "objectformat" {
+		return false
+	}
+
+	switch value {
+	case "sha1", "sha256", "":
+		return true
+	default:
+		return false
+	}
 }
 
 // ConfigStorage implements config.ConfigStorer for in-memory storage.

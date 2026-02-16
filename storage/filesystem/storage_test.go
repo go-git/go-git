@@ -22,13 +22,13 @@ var (
 	sto = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer  = sto
-	_ storer.IndexStorer          = sto
-	_ storer.ReferenceStorer      = sto
-	_ storer.ShallowStorer        = sto
-	_ storer.DeltaObjectStorer    = sto
-	_ storer.PackfileWriter       = sto
-	_ xstorage.ObjectFormatGetter = sto
+	_ storer.EncodedObjectStorer = sto
+	_ storer.IndexStorer         = sto
+	_ storer.ReferenceStorer     = sto
+	_ storer.ShallowStorer       = sto
+	_ storer.DeltaObjectStorer   = sto
+	_ storer.PackfileWriter      = sto
+	_ xstorage.ExtensionChecker  = sto
 )
 
 func TestFilesystem(t *testing.T) {
@@ -206,7 +206,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 			name:             "empty fs, SHA1 opts format",
 			fs:               osfs.New(t.TempDir()),
 			inObjectFormat:   formatcfg.SHA1,
-			wantObjectFormat: formatcfg.SHA1,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
 		},
 		{
 			name:             "empty fs, SHA256 opts format",
@@ -226,7 +226,10 @@ func TestNewStorageWithOptions(t *testing.T) {
 				filesystem.Options{ObjectFormat: tt.inObjectFormat},
 			)
 
-			assert.Equal(t, tt.wantObjectFormat, sto.ObjectFormat())
+			cfg, err := sto.ConfigStorage.Config()
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantObjectFormat, cfg.Extensions.ObjectFormat)
 		})
 	}
 }
@@ -276,6 +279,58 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "cannot change object format")
+		})
+	}
+}
+
+func TestSupportsExtension(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		ext   string
+		value string
+		want  bool
+	}{
+		{
+			name:  "objectformat with sha1",
+			ext:   "objectformat",
+			value: "sha1",
+			want:  true,
+		},
+		{
+			name:  "objectformat with sha256",
+			ext:   "objectformat",
+			value: "sha256",
+			want:  true,
+		},
+		{
+			name:  "objectformat with empty string",
+			ext:   "objectformat",
+			value: "",
+			want:  true,
+		},
+		{
+			name:  "objectformat with unsupported value",
+			ext:   "objectformat",
+			value: "sha512",
+			want:  false,
+		},
+		{
+			name:  "unsupported extension name",
+			ext:   "noop",
+			value: "sha1",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sto := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+			got := sto.SupportsExtension(tt.ext, tt.value)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
