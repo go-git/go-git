@@ -152,9 +152,8 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 	return length, err
 }
 
-// ReadLine reads a packet line into a temporary shared buffer and
+// ReadLine reads a packet line into a newly allocated buffer and
 // returns the packet length and payload.
-// Subsequent calls to ReadLine may overwrite the buffer.
 //
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
@@ -170,7 +169,9 @@ func ReadLine(r io.Reader) (l int, p []byte, err error) {
 		return l, nil, err
 	}
 
-	return l, (*buf)[LenSize:l], err
+	clone := bytes.Clone((*buf)[LenSize:l])
+
+	return l, clone, err
 }
 
 // PeekLine reads a packet line without consuming it.
