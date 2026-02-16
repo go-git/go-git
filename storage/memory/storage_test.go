@@ -21,7 +21,6 @@ var (
 	_ storer.IndexStorer          = sto
 	_ storer.ReferenceStorer      = sto
 	_ storer.ShallowStorer        = sto
-	_ xstorage.ObjectFormatGetter = sto
 	_ xstorage.ObjectFormatSetter = sto
 	_ xstorage.ExtensionChecker   = sto
 )

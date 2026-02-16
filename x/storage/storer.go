@@ -15,16 +15,6 @@ type ObjectFormatSetter interface {
 	SetObjectFormat(config.ObjectFormat) error
 }
 
-// ObjectFormatGetter expands a Storer so that it can support different Object Formats.
-// Note that storage.Storer do not require this as they expose ConfigStorers, which is
-// the source of truth for this information.
-//
-// Storers that don't implement this interface will default to the default Object Format.
-type ObjectFormatGetter interface {
-	// ObjectFormat returns the object format (hash algorithm) used by the Storer.
-	ObjectFormat() config.ObjectFormat
-}
-
 // ExtensionChecker expands a Storer enabling it to confirm whether it supports
 // a given Git extension.
 //

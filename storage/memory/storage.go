@@ -67,12 +67,6 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
-func (s *Storage) ObjectFormat() formatcfg.ObjectFormat {
-	cfg, _ := s.Config()
-
-	return cfg.Extensions.ObjectFormat
-}
-
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	switch of {
 	case formatcfg.SHA1, formatcfg.SHA256:
