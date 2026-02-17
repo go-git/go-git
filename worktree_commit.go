@@ -1,17 +1,14 @@
 package git
 
 import (
-	"bytes"
 	"errors"
-	"io"
+	"fmt"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -262,19 +259,6 @@ func (w *Worktree) sanitize(signature object.Signature) object.Signature {
 		Email: invalidCharactersRe.ReplaceAllString(signature.Email, ""),
 		When:  signature.When,
 	}
-}
-
-type gpgSigner struct {
-	key *openpgp.Entity
-	cfg *packet.Config
-}
-
-func (s *gpgSigner) Sign(message io.Reader) ([]byte, error) {
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, s.key, message, s.cfg); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
 }
 
 // buildTreeHelper converts a given index.Index file into multiple git objects
