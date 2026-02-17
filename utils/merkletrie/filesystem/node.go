@@ -254,6 +254,13 @@ func (n *node) metadataMatches(entry *index.Entry) bool {
 		}
 	}
 
+	// If we couldn't perform the racy git check (idx is nil or idx.ModTime is zero),
+	// we cannot safely rely on metadata alone — force content hashing.
+	// This can occur with in-memory storage where the index file timestamp is unavailable.
+	if n.idx == nil || n.idx.ModTime.IsZero() {
+		return false
+	}
+
 	return true
 }
 
