@@ -428,9 +428,12 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 	}
 
 	removedFiles := make([]string, 0, len(changes))
-	filesMap := make(map[string]bool, len(files))
-	for _, f := range files {
-		filesMap[filepath.Clean(f)] = true
+	var filesMap map[string]any
+	if len(files) > 0 {
+		filesMap = make(map[string]any, len(files))
+		for _, f := range files {
+			filesMap[filepath.Clean(f)] = nil
+		}
 	}
 	for _, ch := range changes {
 		a, err := ch.Action()
@@ -482,7 +485,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 }
 
 // inFiles checks if the given file is in the list of files. The incoming filepaths in files should be cleaned before calling this function.
-func inFiles(files map[string]bool, v string) bool {
+func inFiles(files map[string]any, v string) bool {
 	v = filepath.Clean(v)
 	_, exists := files[v]
 	return exists
@@ -500,9 +503,12 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
-	filesMap := make(map[string]bool, len(files))
-	for _, f := range files {
-		filesMap[filepath.Clean(f)] = true
+	var filesMap map[string]any
+	if len(files) > 0 {
+		filesMap = make(map[string]any, len(files))
+		for _, f := range files {
+			filesMap[filepath.Clean(f)] = nil
+		}
 	}
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
