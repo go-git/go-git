@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/ProtonMail/go-crypto/openpgp/errors"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -906,6 +908,19 @@ func commitSignKey(t *testing.T, decrypt bool) *openpgp.Entity {
 	}
 
 	return key
+}
+
+type gpgSigner struct {
+	key *openpgp.Entity
+	cfg *packet.Config
+}
+
+func (s *gpgSigner) Sign(message io.Reader) ([]byte, error) {
+	var b bytes.Buffer
+	if err := openpgp.ArmoredDetachSign(&b, s.key, message, s.cfg); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
 const armoredKeyRing = `
