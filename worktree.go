@@ -386,13 +386,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]
 	}
 
 	removedFiles := make([]string, 0, len(changes))
-	var filesMap map[string]any
-	if len(files) > 0 {
-		filesMap = make(map[string]any, len(files))
-		for _, f := range files {
-			filesMap[filepath.Clean(f)] = nil
-		}
-	}
+	filesMap := buildFilePathMap(files)
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
@@ -444,7 +438,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) ([]
 }
 
 // inFiles checks if the given file is in the list of files. The incoming filepaths in files should be cleaned before calling this function.
-func inFiles(files map[string]any, v string) bool {
+func inFiles(files map[string]struct{}, v string) bool {
 	v = filepath.Clean(v)
 	_, exists := files[v]
 	return exists
@@ -462,13 +456,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
-	var filesMap map[string]any
-	if len(files) > 0 {
-		filesMap = make(map[string]any, len(files))
-		for _, f := range files {
-			filesMap[filepath.Clean(f)] = nil
-		}
-	}
+	filesMap := buildFilePathMap(files)
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -1215,4 +1203,17 @@ func (b *indexBuilder) Add(e *index.Entry) {
 
 func (b *indexBuilder) Remove(name string) {
 	delete(b.entries, filepath.ToSlash(name))
+}
+
+// buildFilePathMap creates a map of cleaned file paths for efficient lookup.
+// Returns nil if the input slice is empty.
+func buildFilePathMap(files []string) map[string]struct{} {
+	if len(files) == 0 {
+		return nil
+	}
+	filesMap := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		filesMap[filepath.Clean(f)] = struct{}{}
+	}
+	return filesMap
 }
