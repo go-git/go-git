@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
@@ -351,4 +352,62 @@ func (s *NoderSuite) TestRacyGit() {
 	}
 
 	s.Equal(expectedHash, fileHash, "should hash file content when in racy-git window")
+}
+
+func (s *NoderSuite) TestZeroIndexModTime() {
+	fs := memfs.New()
+
+	// Write a file with known content
+	content := []byte("foo")
+	err := WriteFile(fs, "testfile", content, 0o644)
+	s.Require().NoError(err)
+
+	// Get file info
+	fi, err := fs.Stat("testfile")
+	s.Require().NoError(err)
+	modTime := fi.ModTime()
+
+	// Calculate the actual hash for the file content
+	actualHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
+	_, err = actualHasher.Write(content)
+	s.Require().NoError(err)
+	actualHash := actualHasher.Sum()
+
+	// Create a fake hash for the index entry (different from actual)
+	fakeContent := []byte("bar")
+	fakeHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(fakeContent)))
+	_, err = fakeHasher.Write(fakeContent)
+	s.Require().NoError(err)
+	fakeHash := fakeHasher.Sum()
+	s.NotEqual(actualHash, fakeHash, "test setup: hashes should be different")
+
+	// Create an index with matching metadata but zero ModTime and wrong hash
+	idx := &index.Index{
+		Version: 2,
+		Entries: []*index.Entry{
+			{
+				Name:       "testfile",
+				Hash:       fakeHash, // Wrong hash to prove it gets re-hashed
+				Size:       uint32(len(content)),
+				ModifiedAt: modTime,
+				Mode:       filemode.Regular,
+			},
+		},
+		ModTime: time.Time{}, // Zero time - simulates in-memory storage
+	}
+
+	// Create node with this index
+	fsNode := NewRootNodeWithIndex(fs, nil, idx, Options{})
+
+	children, err := fsNode.Children()
+	s.Require().NoError(err)
+	s.Require().Len(children, 1, "should have one file")
+
+	fileNode := children[0]
+	fileHash := fileNode.Hash()
+
+	// The expected hash should be the actual file content, not the fake hash from index
+	expectedHash := append(actualHash.Bytes(), filemode.Regular.Bytes()...)
+
+	s.Equal(expectedHash, fileHash, "should hash actual file content when idx.ModTime is zero, not use stale index hash")
 }
