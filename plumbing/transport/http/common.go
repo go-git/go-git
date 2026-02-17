@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -443,8 +444,8 @@ func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, 
 		// Git < 2.41 sends only a flush packet for empty repositories via
 		// upload-pack, while Git 2.41+ (commit 933e3a4) sends capabilities^{}
 		// with a zero OID instead. This fallback ensures compatibility with
-		// older git by deferring empty-repo detection to GetRemoteRefs().
-		if err = ar.Decode(rd); err != nil && err != packp.ErrEmptyAdvRefs {
+		// older git versions by deferring empty-repo detection to GetRemoteRefs().
+		if err = ar.Decode(rd); err != nil && !errors.Is(err, packp.ErrEmptyAdvRefs) {
 			return nil, err
 		}
 	} else {

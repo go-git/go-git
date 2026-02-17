@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -122,8 +123,8 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	// Git < 2.41 sends only a flush packet for empty repositories via
 	// upload-pack, while Git 2.41+ (commit 933e3a4) sends capabilities^{}
 	// with a zero OID instead. This fallback ensures compatibility with
-	// older git by deferring empty-repo detection to GetRemoteRefs().
-	if err := ar.Decode(c.r); err != nil && err != packp.ErrEmptyAdvRefs {
+	// older git versions by deferring empty-repo detection to GetRemoteRefs().
+	if err := ar.Decode(c.r); err != nil && !errors.Is(err, packp.ErrEmptyAdvRefs) {
 		return nil, err
 	}
 
