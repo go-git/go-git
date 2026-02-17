@@ -103,6 +103,21 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	return nil
 }
 
+// SupportsExtension checks whether the Storer supports the given
+// Git extension defined by name.
+func (s *Storage) SupportsExtension(name, value string) bool {
+	if name != "objectformat" {
+		return false
+	}
+
+	switch value {
+	case "sha1", "sha256", "":
+		return true
+	default:
+		return false
+	}
+}
+
 // ConfigStorage implements config.ConfigStorer for in-memory storage.
 type ConfigStorage struct {
 	config *config.Config

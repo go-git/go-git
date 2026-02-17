@@ -24,3 +24,15 @@ type ObjectFormatGetter interface {
 	// ObjectFormat returns the object format (hash algorithm) used by the Storer.
 	ObjectFormat() config.ObjectFormat
 }
+
+// ExtensionChecker expands a Storer enabling it to confirm whether it supports
+// a given Git extension.
+//
+// If a repository defines an extension and go-git is unable to confirm whether
+// the Storer supports it, the repository won't be opened and an error will be
+// returned instead.
+type ExtensionChecker interface {
+	// SupportsExtension checks whether the underlying Storer supports the given
+	// Git extension.
+	SupportsExtension(name, value string) bool
+}

@@ -23,6 +23,7 @@ var (
 	_ storer.ShallowStorer        = sto
 	_ xstorage.ObjectFormatGetter = sto
 	_ xstorage.ObjectFormatSetter = sto
+	_ xstorage.ExtensionChecker   = sto
 )
 
 func TestSetObjectFormat(t *testing.T) {
@@ -150,6 +151,58 @@ func TestSetObjectFormatWithExistingObjects(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "cannot change object format")
+		})
+	}
+}
+
+func TestSupportsExtension(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		ext   string
+		value string
+		want  bool
+	}{
+		{
+			name:  "objectformat with sha1",
+			ext:   "objectformat",
+			value: "sha1",
+			want:  true,
+		},
+		{
+			name:  "objectformat with sha256",
+			ext:   "objectformat",
+			value: "sha256",
+			want:  true,
+		},
+		{
+			name:  "objectformat with empty string",
+			ext:   "objectformat",
+			value: "",
+			want:  true,
+		},
+		{
+			name:  "objectformat with unsupported value",
+			ext:   "objectformat",
+			value: "sha512",
+			want:  false,
+		},
+		{
+			name:  "unsupported extension name",
+			ext:   "noop",
+			value: "sha1",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sto := memory.NewStorage()
+			got := sto.SupportsExtension(tt.ext, tt.value)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
