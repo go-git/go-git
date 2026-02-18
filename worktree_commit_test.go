@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	_ "unsafe"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -29,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
@@ -983,3 +986,101 @@ CgLH6twOqdSFWqB/4ASDMsNeLeKX3WOYKYYMlE01cj3T1m6dpRUO
 `
 
 const keyPassphrase = "abcdef0123456789"
+
+type mockSigner struct {
+	called bool
+}
+
+func (m *mockSigner) Sign(_ io.Reader) ([]byte, error) {
+	m.called = true
+	return []byte("mock-signature"), nil
+}
+
+//go:linkname resetPluginEntry github.com/go-git/go-git/v6/x/plugin.resetEntry
+func resetPluginEntry(name plugin.Name)
+
+func TestBuildCommitObjectSignerSelection(t *testing.T) {
+	tests := []struct {
+		name           string
+		registerPlugin bool
+		optionsSigner  Signer
+		wantSignature  string
+		wantPluginUsed bool
+		wantOptionUsed bool
+	}{
+		{
+			name:          "no signer at all produces unsigned commit",
+			wantSignature: "",
+		},
+		{
+			name:           "CommitOptions.Signer works without plugin registered",
+			optionsSigner:  &mockSigner{},
+			wantSignature:  "mock-signature\n",
+			wantOptionUsed: true,
+		},
+		{
+			name:           "plugin signer is used when CommitOptions.Signer is nil",
+			registerPlugin: true,
+			wantSignature:  "mock-signature\n",
+			wantPluginUsed: true,
+		},
+		{
+			name:           "CommitOptions.Signer takes precedence over plugin",
+			registerPlugin: true,
+			optionsSigner:  &mockSigner{},
+			wantSignature:  "mock-signature\n",
+			wantOptionUsed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetPluginEntry("object-signer")
+			t.Cleanup(func() { resetPluginEntry("object-signer") })
+
+			var pluginSigner *mockSigner
+			if tt.registerPlugin {
+				pluginSigner = &mockSigner{}
+				err := plugin.Register(plugin.ObjectSigner(), func() plugin.Signer { return pluginSigner })
+				require.NoError(t, err)
+			}
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
+			_, err = w.Add("file.txt")
+			require.NoError(t, err)
+
+			hash, err := w.Commit("test commit\n", &CommitOptions{
+				Author: defaultSignature(),
+				Signer: tt.optionsSigner,
+			})
+			require.NoError(t, err)
+
+			commit, err := r.CommitObject(hash)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSignature, commit.Signature)
+
+			if tt.wantPluginUsed {
+				require.NotNil(t, pluginSigner)
+				assert.True(t, pluginSigner.called, "expected plugin signer to be called")
+			}
+
+			if tt.wantOptionUsed {
+				optSigner, ok := tt.optionsSigner.(*mockSigner)
+				require.True(t, ok)
+				assert.True(t, optSigner.called, "expected options signer to be called")
+			}
+
+			if pluginSigner != nil && tt.optionsSigner != nil {
+				assert.False(t, pluginSigner.called,
+					"plugin signer should not be called when CommitOptions.Signer is set")
+			}
+		})
+	}
+}

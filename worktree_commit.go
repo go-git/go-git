@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 var (
@@ -229,8 +230,17 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		ParentHashes: opts.Parents,
 	}
 
-	if opts.Signer != nil {
-		sig, err := signObject(opts.Signer, commit)
+	var err error
+	signer := opts.Signer
+	if signer == nil && plugin.Has(plugin.ObjectSigner()) {
+		signer, err = plugin.Get(plugin.ObjectSigner())
+		if err != nil {
+			return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+		}
+	}
+
+	if signer != nil {
+		sig, err := signObject(signer, commit)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
