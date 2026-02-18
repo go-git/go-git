@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -230,12 +231,18 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		ParentHashes: opts.Parents,
 	}
 
-	var err error
 	signer := opts.Signer
-	if signer == nil && plugin.Has(plugin.ObjectSigner()) {
-		signer, err = plugin.Get(plugin.ObjectSigner())
-		if err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+	if signer == nil {
+		cfg, err := w.r.ConfigScoped(config.SystemScope)
+		if err == nil && cfg != nil && cfg.Commit.GpgSign {
+			if !plugin.Has(plugin.ObjectSigner()) {
+				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign commit: disable commit.gpgSign or register a ObjectSigner plugin")
+			}
+
+			signer, err = plugin.Get(plugin.ObjectSigner())
+			if err != nil {
+				return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+			}
 		}
 	}
 

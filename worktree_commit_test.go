@@ -852,6 +852,8 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) {
 		name           string
 		registerPlugin bool
 		optionsSigner  Signer
+		commitSignGpg  bool
+		wantErr        string
 		wantSignature  string
 		wantPluginUsed bool
 		wantOptionUsed bool
@@ -869,12 +871,27 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) {
 		{
 			name:           "plugin signer is used when CommitOptions.Signer is nil",
 			registerPlugin: true,
+			commitSignGpg:  true,
 			wantSignature:  mockSignature + "\n",
 			wantPluginUsed: true,
 		},
 		{
+			name:           "plugin signer is ignored if commit.signGpg=false",
+			registerPlugin: true,
+			commitSignGpg:  false,
+			wantSignature:  "",
+			wantPluginUsed: false,
+		},
+		{
+			name:          "error if commit.signGpg=true and no plugin registered",
+			commitSignGpg: true,
+			wantSignature: "",
+			wantErr:       "cannot auto-sign commit: disable commit.gpgSign or register a ObjectSigner plugin",
+		},
+		{
 			name:           "CommitOptions.Signer takes precedence over plugin",
 			registerPlugin: true,
+			commitSignGpg:  true,
 			optionsSigner:  &mockSigner{},
 			wantSignature:  mockSignature + "\n",
 			wantOptionUsed: true,
@@ -897,6 +914,13 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) {
 			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 			require.NoError(t, err)
 
+			cfg, err := r.Config()
+			require.NoError(t, err)
+
+			cfg.Commit.GpgSign = tt.commitSignGpg
+			err = r.SetConfig(cfg)
+			require.NoError(t, err)
+
 			w, err := r.Worktree()
 			require.NoError(t, err)
 
@@ -908,7 +932,12 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) {
 				Author: defaultSignature(),
 				Signer: tt.optionsSigner,
 			})
-			require.NoError(t, err)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				return // no need to carry on
+			}
 
 			commit, err := r.CommitObject(hash)
 			require.NoError(t, err)

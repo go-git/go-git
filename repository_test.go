@@ -3611,6 +3611,8 @@ func TestCreateTagSignerSelection(t *testing.T) {
 		name           string
 		registerPlugin bool
 		optionsSigner  Signer
+		tagSignGpg     bool
+		wantErr        string
 		wantSignature  bool
 		wantPluginUsed bool
 		wantOptionUsed bool
@@ -3628,8 +3630,20 @@ func TestCreateTagSignerSelection(t *testing.T) {
 		{
 			name:           "plugin signer is used when CreateTagOptions.Signer is nil",
 			registerPlugin: true,
+			tagSignGpg:     true,
 			wantSignature:  true,
 			wantPluginUsed: true,
+		},
+		{
+			name:           "plugin signer is ignored if tag.signGpg=false",
+			registerPlugin: true,
+			tagSignGpg:     false,
+			wantPluginUsed: false,
+		},
+		{
+			name:       "error if tag.signGpg=true and no plugin registered",
+			tagSignGpg: true,
+			wantErr:    "cannot auto-sign tag: disable tag.gpgSign or register a ObjectSigner plugin",
 		},
 		{
 			name:           "CreateTagOptions.Signer takes precedence over plugin",
@@ -3650,6 +3664,13 @@ func TestCreateTagSignerSelection(t *testing.T) {
 			// otherwise buildCommitObject would call the plugin signer.
 			fs := memfs.New()
 			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+
+			cfg.Tag.GpgSign = tt.tagSignGpg
+			err = r.SetConfig(cfg)
 			require.NoError(t, err)
 
 			w, err := r.Worktree()
@@ -3676,7 +3697,12 @@ func TestCreateTagSignerSelection(t *testing.T) {
 				Message: "tag message",
 				Signer:  tt.optionsSigner,
 			})
-			require.NoError(t, err)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				return // no need to carry on
+			}
 
 			tagRef, err := r.Tag("test-tag")
 			require.NoError(t, err)
