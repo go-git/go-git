@@ -165,8 +165,14 @@ func (s *ReferenceSuite) TestValidReferenceNames() {
 
 	for i, v := range invalid {
 		comment := fmt.Sprintf("invalid reference name case %d: %s", i, v)
-		s.Error(v.Validate(), comment)
-		s.ErrorContains(v.Validate(), "invalid reference name", comment)
+		err := v.Validate()
+		s.Error(err, comment)
+		s.ErrorIs(err, ErrInvalidReferenceName, comment)
+		s.ErrorContains(err, "invalid reference name", comment)
+		// The reference name is included in the error using %q formatting,
+		// so we check for the quoted form to handle control characters.
+		quoted := fmt.Sprintf("%q", string(v))
+		s.ErrorContains(err, quoted, comment)
 	}
 }
 
