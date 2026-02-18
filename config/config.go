@@ -85,12 +85,7 @@ type Config struct {
 		FileMode bool
 	}
 
-	User struct {
-		// Name is the personal name of the author and the committer of a commit.
-		Name string
-		// Email is the email of the author and the committer of a commit.
-		Email string
-	}
+	User user
 
 	Author struct {
 		// Name is the personal name of the author of a commit.
@@ -106,9 +101,19 @@ type Config struct {
 		Email string
 	}
 
+	Tag struct {
+		// GpgSign indicates whether all new tags should be GPG signed.
+		GpgSign bool
+	}
+
+	Commit struct {
+		// GpgSign indicates whether all new commits should be GPG signed.
+		GpgSign bool
+	}
+
 	GPG struct {
 		// Format specifies the signature format to use when signing commits and tags.
-		// Valid values are "openpgp" (default) and "ssh".
+		// Valid values are "openpgp" (default), "x509" and "ssh".
 		Format string
 		// SSH contains SSH-specific GPG configuration.
 		SSH struct {
@@ -172,6 +177,25 @@ type Config struct {
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
 	Raw *format.Config
+}
+
+type user struct {
+	// Name is the personal name of the author and the committer of a commit.
+	Name string
+	// Email is the email of the author and the committer of a commit.
+	Email string
+
+	// SigningKey defines what key should be used when automatically
+	// signing tags or commits, and more than one key is available.
+	//
+	// If gpg.format is set to ssh this can contain the path to either
+	// your private ssh key or the public key when ssh-agent is used.
+	// Alternatively it can contain a public key prefixed with key::
+	// directly (e.g.: "key::ssh-rsa XXXXXX identifier"). The private
+	// key needs to be available via ssh-agent.
+	//
+	// If not set go-git will use the first key available.
+	SigningKey string
 }
 
 // Merge combines all the src Config objects into one.
@@ -348,6 +372,8 @@ const (
 	coreSection                = "core"
 	packSection                = "pack"
 	userSection                = "user"
+	tagSection                 = "tag"
+	commitSection              = "commit"
 	authorSection              = "author"
 	committerSection           = "committer"
 	gpgSection                 = "gpg"
@@ -366,6 +392,7 @@ const (
 	rebaseKey                  = "rebase"
 	nameKey                    = "name"
 	emailKey                   = "email"
+	signingKey                 = "signingKey"
 	descriptionKey             = "description"
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
@@ -376,6 +403,7 @@ const (
 	fileModeKey                = "filemode"
 	formatKey                  = "format"
 	allowedSignersFileKey      = "allowedSignersFile"
+	gpgSignKey                 = "gpgSign"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -396,6 +424,8 @@ func (c *Config) Unmarshal(b []byte) error {
 
 	c.unmarshalCore()
 	c.unmarshalExtensions()
+	c.unmarshalTag()
+	c.unmarshalCommit()
 	c.unmarshalUser()
 	c.unmarshalGPG()
 	c.unmarshalInit()
@@ -443,10 +473,27 @@ func (c *Config) unmarshalExtensions() {
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
 }
 
+func (c *Config) unmarshalTag() {
+	s := c.Raw.Section(tagSection)
+	v, err := strconv.ParseBool(s.Options.Get(gpgSignKey))
+	if err == nil {
+		c.Tag.GpgSign = v
+	}
+}
+
+func (c *Config) unmarshalCommit() {
+	s := c.Raw.Section(commitSection)
+	v, err := strconv.ParseBool(s.Options.Get(gpgSignKey))
+	if err == nil {
+		c.Commit.GpgSign = v
+	}
+}
+
 func (c *Config) unmarshalUser() {
 	s := c.Raw.Section(userSection)
 	c.User.Name = s.Options.Get(nameKey)
 	c.User.Email = s.Options.Get(emailKey)
+	c.User.SigningKey = s.Options.Get(signingKey)
 
 	s = c.Raw.Section(authorSection)
 	c.Author.Name = s.Options.Get(nameKey)
@@ -587,6 +634,8 @@ func (c *Config) unmarshalInit() {
 func (c *Config) Marshal() ([]byte, error) {
 	c.marshalCore()
 	c.marshalExtensions()
+	c.marshalTag()
+	c.marshalCommit()
 	c.marshalUser()
 	c.marshalGPG()
 	c.marshalPack()
@@ -633,6 +682,20 @@ func (c *Config) marshalExtensions() {
 	}
 }
 
+func (c *Config) marshalTag() {
+	s := c.Raw.Section(tagSection)
+	if c.Tag.GpgSign {
+		s.SetOption(gpgSignKey, strconv.FormatBool(c.Tag.GpgSign))
+	}
+}
+
+func (c *Config) marshalCommit() {
+	s := c.Raw.Section(commitSection)
+	if c.Commit.GpgSign {
+		s.SetOption(gpgSignKey, strconv.FormatBool(c.Commit.GpgSign))
+	}
+}
+
 func (c *Config) marshalUser() {
 	s := c.Raw.Section(userSection)
 	if c.User.Name != "" {
@@ -641,6 +704,10 @@ func (c *Config) marshalUser() {
 
 	if c.User.Email != "" {
 		s.SetOption(emailKey, c.User.Email)
+	}
+
+	if c.User.SigningKey != "" {
+		s.SetOption(signingKey, c.User.SigningKey)
 	}
 
 	s = c.Raw.Section(authorSection)
