@@ -535,10 +535,7 @@ func TestMerge(t *testing.T) {
 		{
 			name: "separate objs",
 			input: []*Config{
-				{User: struct {
-					Name  string
-					Email string
-				}{
+				{User: user{
 					Name: "foo", Email: "bar@test",
 				}},
 				{
@@ -548,10 +545,7 @@ func TestMerge(t *testing.T) {
 				},
 			},
 			want: Config{
-				User: struct {
-					Name  string
-					Email string
-				}{
+				User: user{
 					Name:  "foo",
 					Email: "bar@test",
 				},
@@ -563,20 +557,11 @@ func TestMerge(t *testing.T) {
 		{
 			name: "merge nested fields",
 			input: []*Config{
-				{User: struct {
-					Name  string
-					Email string
-				}{Name: "foo"}},
-				{User: struct {
-					Name  string
-					Email string
-				}{Email: "bar@test"}},
+				{User: user{Name: "foo"}},
+				{User: user{Email: "bar@test"}},
 			},
 			want: Config{
-				User: struct {
-					Name  string
-					Email string
-				}{
+				User: user{
 					Name:  "foo",
 					Email: "bar@test",
 				},
@@ -585,20 +570,11 @@ func TestMerge(t *testing.T) {
 		{
 			name: "override nested fields",
 			input: []*Config{
-				{User: struct {
-					Name  string
-					Email string
-				}{Name: "foo"}},
-				{User: struct {
-					Name  string
-					Email string
-				}{Name: "bar", Email: "foo@test"}},
+				{User: user{Name: "foo"}},
+				{User: user{Name: "bar", Email: "foo@test"}},
 			},
 			want: Config{
-				User: struct {
-					Name  string
-					Email string
-				}{
+				User: user{
 					Name:  "bar",
 					Email: "foo@test",
 				},
@@ -757,5 +733,50 @@ func TestGPGConfig(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, "openpgp", cfg.GPG.Format)
+	})
+
+	t.Run("unmarshal user.signingKey", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[user]\n\tsigningKey = ~/.ssh/rsa_id")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "~/.ssh/rsa_id", cfg.User.SigningKey)
+	})
+
+	t.Run("marshal user.signingKey", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.User.SigningKey = "/path/to/key"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[user]\n\tsigningKey = /path/to/key")
+	})
+
+	t.Run("unmarshal gpgSign", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.True(t, cfg.Tag.GpgSign)
+		assert.True(t, cfg.Commit.GpgSign)
+	})
+
+	t.Run("marshal gpgSign", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Tag.GpgSign = true
+		cfg.Commit.GpgSign = true
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[commit]\n\tgpgSign = true")
+		assert.Contains(t, string(data), "[tag]\n\tgpgSign = true")
 	})
 }
