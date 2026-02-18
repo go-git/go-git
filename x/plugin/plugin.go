@@ -119,3 +119,15 @@ type entry struct {
 	frozen  bool
 	factory any // func() T stored as any; nil means not registered
 }
+
+// resetEntry clears the factory and unfreezes the plugin entry identified by
+// name, restoring it to its initial state. It is intended for use in tests only.
+func resetEntry(name Name) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if e := entries[name]; e != nil {
+		e.frozen = false
+		e.factory = nil
+	}
+}
