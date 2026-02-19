@@ -3606,7 +3606,7 @@ func BenchmarkPlainClone(b *testing.B) {
 	}
 }
 
-func TestCreateTagSignerSelection(t *testing.T) {
+func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modifies global plugin state
 	tests := []struct {
 		name           string
 		registerPlugin bool
@@ -3654,7 +3654,7 @@ func TestCreateTagSignerSelection(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:paralleltest // modifies global plugin state
 		t.Run(tt.name, func(t *testing.T) {
 			resetPluginEntry("object-signer")
 			t.Cleanup(func() { resetPluginEntry("object-signer") })

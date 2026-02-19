@@ -14,7 +14,7 @@ func resetGlobal() {
 	entries = map[Name]*entry{}
 }
 
-func TestRegisterAndGet(t *testing.T) {
+func TestRegisterAndGet(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[string]("greeting")
 
@@ -25,7 +25,7 @@ func TestRegisterAndGet(t *testing.T) {
 	assert.Equal(t, "hello", got)
 }
 
-func TestGetNotFound(t *testing.T) {
+func TestGetNotFound(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[int]("empty")
 
@@ -34,7 +34,7 @@ func TestGetNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestRegisterNilFactory(t *testing.T) {
+func TestRegisterNilFactory(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[int]("nil-factory")
 
@@ -42,7 +42,7 @@ func TestRegisterNilFactory(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNilFactory)
 }
 
-func TestRegisterOverwrite(t *testing.T) {
+func TestRegisterOverwrite(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[string]("overwrite")
 
@@ -54,7 +54,7 @@ func TestRegisterOverwrite(t *testing.T) {
 	assert.Equal(t, "second", got)
 }
 
-func TestAutoFreeze(t *testing.T) {
+func TestAutoFreeze(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[int]("freeze")
 
@@ -72,7 +72,7 @@ func TestAutoFreeze(t *testing.T) {
 	assert.Equal(t, 1, got)
 }
 
-func TestGetNotFoundAlsoFreezes(t *testing.T) {
+func TestGetNotFoundAlsoFreezes(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[int]("freeze-on-miss")
 
@@ -84,7 +84,7 @@ func TestGetNotFoundAlsoFreezes(t *testing.T) {
 	assert.ErrorIs(t, err, ErrFrozen)
 }
 
-func TestHas(t *testing.T) {
+func TestHas(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[int]("has-test")
 
@@ -95,7 +95,7 @@ func TestHas(t *testing.T) {
 	assert.True(t, Has(key))
 }
 
-func TestGetReturnsNewInstance(t *testing.T) {
+func TestGetReturnsNewInstance(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	counter := 0
 	key := newKey[int]("counter")
@@ -113,7 +113,7 @@ func TestGetReturnsNewInstance(t *testing.T) {
 	assert.NotEqual(t, a, b, "factory should be called each time")
 }
 
-func TestConcurrentAccess(t *testing.T) {
+func TestConcurrentAccess(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	key := newKey[int]("concurrent")
 	Register(key, func() int { return 42 })
@@ -130,7 +130,7 @@ func TestConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-func TestMultipleKeysSameType(t *testing.T) {
+func TestMultipleKeysSameType(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	type Signer struct{ name string }
 
@@ -146,7 +146,7 @@ func TestMultipleKeysSameType(t *testing.T) {
 	assert.Equal(t, "ssh", ss.name)
 }
 
-func TestPerKeyFreezeIsolation(t *testing.T) {
+func TestPerKeyFreezeIsolation(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	resetGlobal()
 	a := newKey[string]("a")
 	b := newKey[string]("b")
