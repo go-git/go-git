@@ -899,7 +899,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 		cfg, err := r.ConfigScoped(config.SystemScope)
 		if err == nil && cfg != nil && cfg.Tag.GpgSign {
 			if !plugin.Has(plugin.ObjectSigner()) {
-				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign tag: disable tag.gpgSign or register a ObjectSigner plugin")
+				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin")
 			}
 
 			signer, err = plugin.Get(plugin.ObjectSigner())

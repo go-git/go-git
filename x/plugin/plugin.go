@@ -2,9 +2,9 @@
 // functions. It enables off-tree implementations to be registered and
 // retrieved at runtime.
 //
-// Each plugin entry is identified by a [Key] value, which is a lightweight
+// Each plugin entry is identified by a key value, which is a lightweight
 // value type parameterized on the Go type it manages. This means a factory for
-// type A cannot be registered under a Key meant for type B — the compiler
+// type A cannot be registered under a key meant for type B — the compiler
 // will reject it.
 //
 // The registry freezes automatically on the first call to [Get] for a given
@@ -121,7 +121,10 @@ type entry struct {
 }
 
 // resetEntry clears the factory and unfreezes the plugin entry identified by
-// name, restoring it to its initial state. It is intended for use in tests only.
+// name, restoring it to its initial state. It is intended for use in tests
+// via go:linkname.
+//
+//nolint:unused // accessed via go:linkname from worktree_commit_test.go
 func resetEntry(name Name) {
 	mu.Lock()
 	defer mu.Unlock()
