@@ -847,7 +847,7 @@ func (m *mockSigner) Sign(_ io.Reader) ([]byte, error) {
 //go:linkname resetPluginEntry github.com/go-git/go-git/v6/x/plugin.resetEntry
 func resetPluginEntry(name plugin.Name)
 
-func TestBuildCommitObjectSignerSelection(t *testing.T) {
+func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest // modifies global plugin state
 	tests := []struct {
 		name           string
 		registerPlugin bool
@@ -898,7 +898,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:paralleltest // modifies global plugin state
 		t.Run(tt.name, func(t *testing.T) {
 			resetPluginEntry("object-signer")
 			t.Cleanup(func() { resetPluginEntry("object-signer") })

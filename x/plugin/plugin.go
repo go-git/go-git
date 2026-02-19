@@ -121,7 +121,10 @@ type entry struct {
 }
 
 // resetEntry clears the factory and unfreezes the plugin entry identified by
-// name, restoring it to its initial state. It is intended for use in tests only.
+// name, restoring it to its initial state. It is intended for use in tests
+// via go:linkname.
+//
+//nolint:unused // accessed via go:linkname from worktree_commit_test.go
 func resetEntry(name Name) {
 	mu.Lock()
 	defer mu.Unlock()
