@@ -22,12 +22,42 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
+
+// This tests that buildTreeHelper correctly
+// handles file entries with zero hashes. This was a bug where files with
+// zero hashes would incorrectly trigger recursive tree building, causing
+// a nil pointer dereference panic.
+func TestBuildTreeHelper_1773(t *testing.T) {
+	fs := memfs.New()
+	storage := memory.NewStorage()
+
+	h := &buildTreeHelper{
+		fs: fs,
+		s:  storage,
+	}
+
+	// Create an index with a file that has a zero hash.
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{
+				Name: "file.txt",
+				Mode: filemode.Regular,
+				Hash: plumbing.ZeroHash,
+			},
+		},
+	}
+
+	_, err := h.BuildTree(idx, &CommitOptions{})
+	require.NoError(t, err)
+}
 
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	fs := memfs.New()
