@@ -154,9 +154,11 @@ func NegotiatePack(
 			return nil, err
 		}
 
-		// Close the writer to signal the end of the request
-		if err := writer.Close(); err != nil {
-			return nil, fmt.Errorf("closing writer: %s", err)
+		// Close the writer to signal the end of the request.
+		// The server may have already closed the connection after receiving
+		// the flush-pkt with no wants, so io.EOF is expected.
+		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 
 		return nil, ErrNoChange
@@ -193,9 +195,11 @@ func NegotiatePack(
 				return nil, err
 			}
 
-			// Close the writer to signal the end of the request
-			if err := writer.Close(); err != nil {
-				return nil, fmt.Errorf("closing writer: %s", err)
+			// Close the writer to signal the end of the request.
+			// The server may have already closed the connection after receiving
+			// the flush-pkt with no wants, so io.EOF is expected.
+			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 
 			return nil, ErrNoChange
