@@ -27,6 +27,11 @@ var ignore = map[string]bool{
 type Options struct {
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.
 	AutoCRLF bool
+
+	// Index is used to enable the metadata-first comparison optimization while
+	// correctly handling the "racy git" condition. If no index is provided,
+	// the function works without the optimization.
+	Index *index.Index
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -57,54 +62,36 @@ type node struct {
 // should be provided where the key is the path of the submodule and the commit
 // of the submodule HEAD
 //
-// Deprecated: Use NewRootNodeWithIndex instead for better performance.
+// Deprecated: Use NewRootNodeWithOptions instead for better performance.
 // This function is kept for backward compatibility.
 func NewRootNode(
 	fs billy.Filesystem,
 	submodules map[string]plumbing.Hash,
 ) noder.Noder {
-	return NewRootNodeWithIndex(fs, submodules, nil, Options{})
+	return NewRootNodeWithOptions(fs, submodules, Options{Index: nil})
 }
 
 // NewRootNodeWithOptions returns the root node based on a given billy.Filesystem
-// with options for CRLF handling.
-//
-// Deprecated: Use NewRootNodeWithIndex instead for better performance.
-// This function is kept for backward compatibility and now internally calls
-// NewRootNodeWithIndex with a nil index, which disables the metadata
-// optimization but maintains the same functionality.
-func NewRootNodeWithOptions(
-	fs billy.Filesystem,
-	submodules map[string]plumbing.Hash,
-	options Options,
-) noder.Noder {
-	return NewRootNodeWithIndex(fs, submodules, nil, options)
-}
-
-// NewRootNodeWithIndex returns the root node based on a given billy.Filesystem
-// and an index. This enables the metadata-first comparison optimization while
-// correctly handling the "racy git" condition.
+// with options for CRLF handling and an index. Providing an index enables the
+// metadata-first comparison optimization while correctly handling the "racy git"
+// condition. If no index is provided, the function works without the optimization.
 //
 // The index's ModTime field is used to detect the racy git condition. When a file's
 // mtime equals or is newer than the index ModTime, we must hash the file content
 // even if other metadata matches, because the file may have been modified in the
 // same second that the index was written.
 //
-// If idx is nil, the function works without the optimization (equivalent to
-// NewRootNodeWithOptions), which is useful for cases where no index is available.
-//
 // Reference: https://git-scm.com/docs/racy-git
-func NewRootNodeWithIndex(
+func NewRootNodeWithOptions(
 	fs billy.Filesystem,
 	submodules map[string]plumbing.Hash,
-	idx *index.Index,
 	options Options,
 ) noder.Noder {
 	var idxMap map[string]*index.Entry
 
-	if idx != nil {
-		idxMap = make(map[string]*index.Entry, len(idx.Entries))
-		for _, entry := range idx.Entries {
+	if options.Index != nil {
+		idxMap = make(map[string]*index.Entry, len(options.Index.Entries))
+		for _, entry := range options.Index.Entries {
 			idxMap[entry.Name] = entry
 		}
 	}
@@ -112,7 +99,7 @@ func NewRootNodeWithIndex(
 	return &node{
 		fs:         fs,
 		submodules: submodules,
-		idx:        idx,
+		idx:        options.Index,
 		idxMap:     idxMap,
 		options:    &options,
 		isDir:      true,
@@ -263,6 +250,10 @@ func (n *node) calculateHash() {
 }
 
 func (n *node) metadataMatches(entry *index.Entry) bool {
+	if entry == nil {
+		return false
+	}
+
 	if uint32(n.size) != entry.Size {
 		return false
 	}

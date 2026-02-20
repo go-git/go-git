@@ -334,7 +334,7 @@ func (s *NoderSuite) TestRacyGit() {
 	barHash := barHasher.Sum()
 	s.NotEqual(fooHash, barHash, "hashes should be different")
 
-	fsNode := NewRootNodeWithIndex(fs, nil, idx, Options{})
+	fsNode := NewRootNodeWithOptions(fs, nil, Options{Index: idx})
 
 	children, err := fsNode.Children()
 	s.Require().NoError(err)
@@ -397,7 +397,7 @@ func (s *NoderSuite) TestZeroIndexModTime() {
 	}
 
 	// Create node with this index
-	fsNode := NewRootNodeWithIndex(fs, nil, idx, Options{})
+	fsNode := NewRootNodeWithOptions(fs, nil, Options{Index: idx})
 
 	children, err := fsNode.Children()
 	s.Require().NoError(err)
