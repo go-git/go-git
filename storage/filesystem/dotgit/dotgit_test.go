@@ -1085,3 +1085,36 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 	s.Require().NoError(err)
 	s.Equal(1, looseCount)
 }
+
+func (s *SuiteDotGit) TestPruneEmptyDirectoriesInRefs() {
+	fs := s.EmptyFS()
+
+	dir := New(fs)
+
+	refA := plumbing.NewReferenceFromStrings(
+		"refs/heads/bugfix/1",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	)
+	refB := plumbing.NewReferenceFromStrings(
+		"refs/heads/bugfix/2",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	)
+
+	err := dir.SetRef(refA, nil)
+	s.Require().NoError(err)
+
+	err = dir.SetRef(refB, nil)
+	s.Require().NoError(err)
+
+	err = dir.RemoveRef(refA.Name())
+	_, err = dir.fs.Lstat("refs/heads")
+	s.Require().NoError(err)
+	_, err = dir.fs.Lstat("refs/heads/bugfix")
+	s.Require().NoError(err)
+
+	err = dir.RemoveRef(refB.Name())
+	_, err = dir.fs.Lstat("refs/heads")
+	s.Require().NoError(err)
+	_, err = dir.fs.Lstat("refs/heads/bugfix")
+	s.Require().ErrorIs(err,os.ErrNotExist)
+}
