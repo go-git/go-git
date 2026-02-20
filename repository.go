@@ -1698,6 +1698,11 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 				tagObj, err := r.TagObject(hash)
 				if err == nil {
+					tagObj, err := tagObj.ResolveNestedTags()
+					if err != nil {
+						return &plumbing.ZeroHash, err
+					}
+
 					// If the tag target lookup fails here, this most likely
 					// represents some sort of repo corruption, so let the
 					// error bubble up.
