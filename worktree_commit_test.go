@@ -51,6 +51,28 @@ func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	s.NotEqual("", commit.Author.Name)
 }
 
+func (s *WorktreeSuite) TestCommitWithNilOptions() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
+
+	_, err = w.Add("foo")
+	s.NoError(err)
+
+	// Commit with nil options should not panic.
+	// If git config has user info, commit succeeds with defaults.
+	// If not, it returns ErrMissingAuthor.
+	_, err = w.Commit("test commit", nil)
+	if err != nil {
+		s.ErrorIs(err, ErrMissingAuthor)
+	}
+}
+
 func (s *WorktreeSuite) TestCommitInitial() {
 	expected := plumbing.NewHash("98c4ac7c29c913f7461eae06e024dc18e80d23a4")
 
