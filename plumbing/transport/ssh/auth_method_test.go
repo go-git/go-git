@@ -16,8 +16,7 @@ import (
 	"golang.org/x/crypto/ssh/testdata"
 )
 
-func TestSuiteCommon(t *testing.T) {
-	t.Parallel()
+func TestSuiteCommon(t *testing.T) { //nolint: paralleltest // modifies global DefaultSSHConfig
 	suite.Run(t, new(SuiteCommon))
 }
 

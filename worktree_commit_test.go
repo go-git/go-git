@@ -547,7 +547,7 @@ func (s *WorktreeSuite) TestCommitSign() {
 	s.Require().NoError(err)
 
 	key := commitSignKey(s.T(), true)
-	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), SignKey: key})
+	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Signer: &gpgSigner{key: key}})
 	s.Require().NoError(err)
 
 	// Verify the commit.
@@ -583,7 +583,7 @@ func (s *WorktreeSuite) TestCommitSignBadKey() {
 	s.Require().NoError(err)
 
 	key := commitSignKey(s.T(), false)
-	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), SignKey: key})
+	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Signer: &gpgSigner{key: key}})
 	s.ErrorIs(err, errors.InvalidArgumentError("signing key is encrypted"))
 }
 

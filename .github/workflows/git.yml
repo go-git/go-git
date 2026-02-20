@@ -39,15 +39,23 @@ jobs:
     - name: Git Build
       run: make build-git
 
-    - name: Set Git config
+    - name: Set Git config environment variables
       run: |
-        export GIT_DIST_PATH=.git-dist/${{ matrix.git[0] }}
-        export GIT_EXEC_PATH=${{ github.workspace }}/$GIT_DIST_PATH
-        export PATH=$GIT_EXEC_PATH:$PATH
-        git --exec-path
+        echo "GIT_DIST_PATH=.git-dist/${{ matrix.git[0] }}" >> $GITHUB_ENV
+        echo "GIT_EXEC_PATH=${{ github.workspace }}/$GIT_DIST_PATH" >> $GITHUB_ENV
+        echo "PATH=${{ github.workspace }}/$GIT_DIST_PATH:$PATH" >> $GITHUB_ENV
+
+    - name: Verify Git installation
+      run: |
+        exec_path=$(git --exec-path)
+        echo "Git exec path: $exec_path"
+        if [ "$exec_path" != "${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}" ]; then
+          echo "Git exec path mismatch: expected ${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}, got $exec_path"
+          exit 1
+        fi
         git config --global user.email "gha@example.com"
         git config --global user.name "GitHub Actions"
- 
+
     - name: Test
       run: make test-coverage
 

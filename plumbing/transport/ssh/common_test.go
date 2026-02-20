@@ -45,9 +45,9 @@ func (s *SuiteCommon) TestOverrideConfigKeep() {
 }
 
 func (s *SuiteCommon) TestDefaultSSHConfig() {
-	defer func() {
+	s.T().Cleanup(func() {
 		DefaultSSHConfig = ssh_config.DefaultUserSettings
-	}()
+	})
 
 	DefaultSSHConfig = &mockSSHConfig{map[string]map[string]string{
 		"github.com": {
@@ -64,9 +64,9 @@ func (s *SuiteCommon) TestDefaultSSHConfig() {
 }
 
 func (s *SuiteCommon) TestDefaultSSHConfigNil() {
-	defer func() {
+	s.T().Cleanup(func() {
 		DefaultSSHConfig = ssh_config.DefaultUserSettings
-	}()
+	})
 
 	DefaultSSHConfig = nil
 
@@ -78,9 +78,9 @@ func (s *SuiteCommon) TestDefaultSSHConfigNil() {
 }
 
 func (s *SuiteCommon) TestDefaultSSHConfigWildcard() {
-	defer func() {
+	s.T().Cleanup(func() {
 		DefaultSSHConfig = ssh_config.DefaultUserSettings
-	}()
+	})
 
 	DefaultSSHConfig = &mockSSHConfig{Values: map[string]map[string]string{
 		"*": {
@@ -154,12 +154,9 @@ func TestFailHostKeyCallback(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestIssue70Suite(t *testing.T) {
-	t.Parallel()
+func TestIssue70Suite(t *testing.T) { //nolint: paralleltest // modifies global DefaultAuthBuilder
 	authBuilder := DefaultAuthBuilder
-	defer func() {
-		DefaultAuthBuilder = authBuilder
-	}()
+	t.Cleanup(func() { DefaultAuthBuilder = authBuilder })
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
 	}
