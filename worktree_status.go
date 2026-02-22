@@ -39,13 +39,11 @@ var (
 
 // Status returns the working tree status.
 func (w *Worktree) Status() (Status, error) {
-	return w.StatusWithOptions(StatusOptions{Strategy: defaultStatusStrategy})
+	return w.StatusWithOptions(StatusOptions{})
 }
 
 // StatusOptions defines the options for Worktree.StatusWithOptions().
-type StatusOptions struct {
-	Strategy StatusStrategy
-}
+type StatusOptions struct{}
 
 // StatusWithOptions returns the working tree status.
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
@@ -53,60 +51,69 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 
 	ref, err := w.r.Head()
 	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
-		return nil, err
+		return Status{}, err
 	}
 
 	if err == nil {
 		hash = ref.Hash()
 	}
 
-	return w.status(o.Strategy, hash)
+	return w.status(hash)
 }
 
-func (w *Worktree) status(ss StatusStrategy, commit plumbing.Hash) (Status, error) {
-	s, err := ss.new(w)
-	if err != nil {
-		return nil, err
+func (w *Worktree) status(head plumbing.Hash) (Status, error) {
+	statusMap := make(map[string]FileStatus)
+
+	var headTree *object.Tree
+	if !head.IsZero() {
+		tree, err := w.r.getTreeFromCommitHash(head)
+		if err != nil {
+			return Status{}, err
+		}
+		headTree = tree
 	}
 
-	left, err := w.diffCommitWithStaging(commit, false)
+	left, err := w.diffTreeWithStaging(headTree, false)
 	if err != nil {
-		return nil, err
+		return Status{}, err
 	}
 
 	for _, ch := range left {
 		a, err := ch.Action()
 		if err != nil {
-			return nil, err
+			return Status{}, err
 		}
 
-		fs := s.File(nameFromAction(&ch))
-		fs.Worktree = Unmodified
+		path := nameFromAction(&ch)
+		fs := FileStatus{Worktree: Unmodified}
 
 		switch a {
 		case merkletrie.Delete:
-			s.File(ch.From.String()).Staging = Deleted
+			fs.Staging = Deleted
 		case merkletrie.Insert:
-			s.File(ch.To.String()).Staging = Added
+			fs.Staging = Added
 		case merkletrie.Modify:
-			s.File(ch.To.String()).Staging = Modified
+			fs.Staging = Modified
 		}
+
+		statusMap[path] = fs
 	}
 
 	right, err := w.diffStagingWithWorktree(false, true)
 	if err != nil {
-		return nil, err
+		return Status{}, err
 	}
 
 	for _, ch := range right {
 		a, err := ch.Action()
 		if err != nil {
-			return nil, err
+			return Status{}, err
 		}
 
-		fs := s.File(nameFromAction(&ch))
-		if fs.Staging == Untracked {
-			fs.Staging = Unmodified
+		path := nameFromAction(&ch)
+		fs, ok := statusMap[path]
+		if !ok {
+			fs = FileStatus{Staging: Unmodified}
 		}
 
 		switch a {
@@ -118,9 +125,13 @@ func (w *Worktree) status(ss StatusStrategy, commit plumbing.Hash) (Status, erro
 		case merkletrie.Modify:
 			fs.Worktree = Modified
 		}
+
+		statusMap[path] = fs
 	}
 
-	return s, nil
+	stat := Status{m: statusMap, head: headTree}
+
+	return stat, nil
 }
 
 func nameFromAction(ch *merkletrie.Change) string {
@@ -238,23 +249,6 @@ func (w *Worktree) getSubmodulesStatus() (map[string]plumbing.Hash, error) {
 	return o, nil
 }
 
-func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
-	var t *object.Tree
-	if !commit.IsZero() {
-		c, err := w.r.CommitObject(commit)
-		if err != nil {
-			return nil, err
-		}
-
-		t, err = c.Tree()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return w.diffTreeWithStaging(t, reverse)
-}
-
 func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
@@ -305,7 +299,7 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 	return w.doAdd(path, make([]gitignore.Pattern, 0), false)
 }
 
-func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
+func (w *Worktree) doAddDirectory(idx *index.Index, s *Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
 	if len(ignorePattern) > 0 {
 		m := gitignore.NewMatcher(ignorePattern)
 		matchPath := strings.Split(directory, string(os.PathSeparator))
@@ -317,7 +311,7 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 
 	directory = filepath.ToSlash(filepath.Clean(directory))
 
-	for name := range s {
+	for name := range s.Iter() {
 		if !isPathInDirectory(name, directory) {
 			continue
 		}
@@ -376,13 +370,13 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	fi, err := w.Filesystem.Lstat(path)
 
 	// status is required for doAddDirectory
-	var s Status
-	var err2 error
+	var s *Status
 	if !skipStatus || fi == nil || fi.IsDir() {
-		s, err2 = w.Status()
+		stat, err2 := w.Status()
 		if err2 != nil {
 			return plumbing.ZeroHash, err2
 		}
+		s = &stat
 	}
 
 	path = filepath.Clean(path)
@@ -437,9 +431,9 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 		var added bool
 		if fi.IsDir() {
-			added, err = w.doAddDirectory(idx, s, file, make([]gitignore.Pattern, 0))
+			added, err = w.doAddDirectory(idx, &s, file, make([]gitignore.Pattern, 0))
 		} else {
-			added, _, err = w.doAddFile(idx, s, file, make([]gitignore.Pattern, 0))
+			added, _, err = w.doAddFile(idx, &s, file, make([]gitignore.Pattern, 0))
 		}
 
 		if err != nil {
@@ -461,10 +455,12 @@ func (w *Worktree) AddGlob(pattern string) error {
 // doAddFile create a new blob from path and update the index, added is true if
 // the file added is different from the index.
 // if s status is nil will skip the status check and update the index anyway
-func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePattern []gitignore.Pattern) (added bool, h plumbing.Hash, err error) {
+func (w *Worktree) doAddFile(idx *index.Index, s *Status, path string, ignorePattern []gitignore.Pattern) (added bool, h plumbing.Hash, err error) {
 	if s != nil && s.File(path).Worktree == Unmodified {
-		return false, h, nil
+		e, _ := idx.Entry(path) // err is always nil.
+		return false, e.Hash, nil
 	}
+
 	if len(ignorePattern) > 0 {
 		m := gitignore.NewMatcher(ignorePattern)
 		matchPath := strings.Split(path, string(os.PathSeparator))
