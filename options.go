@@ -552,6 +552,8 @@ type AddOptions struct {
 	// Notice that when passing an ignored path it will be added anyway.
 	// When true it can speed up adding files to the worktree in very large repositories.
 	SkipStatus bool
+	// Force, when true, adds files to the index even if they are ignored by .gitignore.
+	Force bool
 }
 
 // Validate validates the fields and sets the default values.
