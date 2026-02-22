@@ -138,21 +138,25 @@ const (
 // Compare returns the comparison between the current elements in the
 // merkletries.
 func (d *doubleIter) compare() (s comparison, err error) {
-	s.sameHash = d.hashEqual(d.from.current, d.to.current)
+	return d.compareNoders(d.from.current, d.to.current)
+}
 
-	fromIsDir := d.from.current.IsDir()
-	toIsDir := d.to.current.IsDir()
+func (d *doubleIter) compareNoders(from, to noder.Noder) (s comparison, err error) {
+	s.sameHash = d.hashEqual(from, to)
+
+	fromIsDir := from.IsDir()
+	toIsDir := to.IsDir()
 
 	s.bothAreDirs = fromIsDir && toIsDir
 	s.bothAreFiles = !fromIsDir && !toIsDir
 	s.fileAndDir = !s.bothAreDirs && !s.bothAreFiles
 
-	fromNumChildren, err := d.from.current.NumChildren()
+	fromNumChildren, err := from.NumChildren()
 	if err != nil {
 		return comparison{}, fmt.Errorf("from: %s", err)
 	}
 
-	toNumChildren, err := d.to.current.NumChildren()
+	toNumChildren, err := to.NumChildren()
 	if err != nil {
 		return comparison{}, fmt.Errorf("to: %s", err)
 	}

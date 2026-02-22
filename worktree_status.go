@@ -158,6 +158,14 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 
 	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
 
+	var m gitignore.Matcher
+	if excludeIgnoredChanges {
+		m = w.loadIgnorePatterns()
+		if m != nil {
+			to = gitignore.IgnoreNoder(m, to)
+		}
+	}
+
 	var c merkletrie.Changes
 	if reverse {
 		c, err = merkletrie.DiffTree(to, from, diffTreeIsEquals)
@@ -169,26 +177,29 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		return nil, err
 	}
 
-	if excludeIgnoredChanges {
-		return w.excludeIgnoredChanges(c), nil
+	if excludeIgnoredChanges && m != nil {
+		return w.excludeIgnoredChanges(m, c), nil
 	}
+
 	return c, nil
 }
 
-func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes) merkletrie.Changes {
+func (w *Worktree) loadIgnorePatterns() gitignore.Matcher {
 	patterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
 	if err != nil {
-		return changes
+		return nil
 	}
 
 	patterns = append(patterns, w.Excludes...)
 
 	if len(patterns) == 0 {
-		return changes
+		return nil
 	}
 
-	m := gitignore.NewMatcher(patterns)
+	return gitignore.NewMatcher(patterns)
+}
 
+func (w *Worktree) excludeIgnoredChanges(m gitignore.Matcher, changes merkletrie.Changes) merkletrie.Changes {
 	var res merkletrie.Changes
 	for _, ch := range changes {
 		var path []string
