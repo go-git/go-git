@@ -231,6 +231,10 @@ func (n *node) calculateHash() {
 }
 
 func (n *node) metadataMatches(entry *index.Entry) bool {
+	if entry == nil {
+		return false
+	}
+
 	if uint32(n.size) != entry.Size {
 		return false
 	}
