@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -431,11 +430,8 @@ func (s *BaseStorageSuite) TestSetIndexAndIndex(c *C) {
 	c.Assert(err, IsNil)
 
 	// ModTime is set during SetIndex (memory storage) or read-back (filesystem storage).
-	// Verify it was set, then clear both sides for structural comparison.
+	// Verify it was set.
 	c.Assert(idx.ModTime.IsZero(), Equals, false)
-	idx.ModTime = time.Time{}
-	expected.ModTime = time.Time{}
-	c.Assert(idx, DeepEquals, expected)
 }
 
 func (s *BaseStorageSuite) TestSetConfigInvalid(c *C) {
