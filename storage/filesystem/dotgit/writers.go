@@ -3,6 +3,7 @@ package dotgit
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/objfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/go-git/go-git/v5/utils/trace"
 
 	"github.com/go-git/go-billy/v5"
 )
@@ -137,14 +139,22 @@ func (w *PackWriter) save() error {
 	}
 
 	if err := w.encodeIdx(idx); err != nil {
+		_ = idx.Close()
 		return err
 	}
 
 	if err := idx.Close(); err != nil {
 		return err
 	}
+	fixPermissions(w.fs, fmt.Sprintf("%s.idx", base))
 
-	return w.fs.Rename(w.fw.Name(), fmt.Sprintf("%s.pack", base))
+	packPath := fmt.Sprintf("%s.pack", base)
+	if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
+		return err
+	}
+	fixPermissions(w.fs, packPath)
+
+	return nil
 }
 
 func (w *PackWriter) encodeIdx(writer io.Writer) error {
@@ -281,5 +291,22 @@ func (w *ObjectWriter) save() error {
 	hex := w.Hash().String()
 	file := w.fs.Join(objectsPath, hex[0:2], hex[2:hash.HexSize])
 
-	return w.fs.Rename(w.f.Name(), file)
+	if err := w.fs.Rename(w.f.Name(), file); err != nil {
+		return err
+	}
+	fixPermissions(w.fs, file)
+
+	return nil
+}
+
+func fixPermissions(fs billy.Filesystem, path string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
+	if chmodFS, ok := fs.(billy.Chmod); ok {
+		if err := chmodFS.Chmod(path, 0o444); err != nil {
+			trace.General.Printf("failed to chmod %s: %v", path, err)
+		}
+	}
 }
