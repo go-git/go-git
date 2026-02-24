@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strconv"
 	"testing"
 
@@ -167,10 +166,6 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 func TestPackWriterPermissions(t *testing.T) {
 	t.Parallel()
 
-	if runtime.GOOS == "windows" {
-		t.Skip("not applicable to windows")
-	}
-
 	f := fixtures.Basic().One()
 
 	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
@@ -204,10 +199,6 @@ func TestPackWriterPermissions(t *testing.T) {
 
 func TestObjectWriterPermissions(t *testing.T) {
 	t.Parallel()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("not applicable to windows")
-	}
 
 	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
 	dot := New(fs)
