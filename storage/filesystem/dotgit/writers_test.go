@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -166,56 +168,74 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 func TestPackWriterPermissions(t *testing.T) {
 	t.Parallel()
 
-	f := fixtures.Basic().One()
+	for _, tc := range []struct {
+		name string
+		fs   billy.Filesystem
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
-	dot := New(fs)
-	require.NoError(t, dot.Initialize())
+			f := fixtures.Basic().One()
 
-	w, err := dot.NewObjectPack()
-	require.NoError(t, err)
+			dot := New(tc.fs)
+			require.NoError(t, dot.Initialize())
 
-	_, err = io.Copy(w, f.Packfile())
-	require.NoError(t, err)
+			w, err := dot.NewObjectPack()
+			require.NoError(t, err)
 
-	require.NoError(t, w.Close())
+			_, err = io.Copy(w, f.Packfile())
+			require.NoError(t, err)
 
-	pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
-	idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
-	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", f.PackfileHash)
+			require.NoError(t, w.Close())
 
-	stat, err := fs.Stat(pfPath)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+			pfPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", f.PackfileHash))
+			idxPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", f.PackfileHash))
 
-	stat, err = fs.Stat(idxPath)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+			ro, err := isReadOnly(tc.fs, pfPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", pfPath)
 
-	stat, err = fs.Stat(revPath)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+			ro, err = isReadOnly(tc.fs, idxPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", idxPath)
+		})
+	}
 }
 
 func TestObjectWriterPermissions(t *testing.T) {
 	t.Parallel()
 
-	fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
-	dot := New(fs)
-	require.NoError(t, dot.Initialize())
+	for _, tc := range []struct {
+		name string
+		fs   billy.Filesystem
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	w, err := dot.NewObject()
-	require.NoError(t, err)
+			dot := New(tc.fs)
+			require.NoError(t, dot.Initialize())
 
-	err = w.WriteHeader(plumbing.BlobObject, 14)
-	require.NoError(t, err)
+			w, err := dot.NewObject()
+			require.NoError(t, err)
 
-	_, err = w.Write([]byte("this is a test"))
-	require.NoError(t, err)
+			err = w.WriteHeader(plumbing.BlobObject, 14)
+			require.NoError(t, err)
 
-	require.NoError(t, w.Close())
+			_, err = w.Write([]byte("this is a test"))
+			require.NoError(t, err)
 
-	stat, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o444), stat.Mode().Perm())
+			require.NoError(t, w.Close())
+
+			path := filepath.Join("objects", "a8", "a940627d132695a9769df883f85992f0ff4a43")
+			ro, err := isReadOnly(tc.fs, path)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", path)
+		})
+	}
 }
