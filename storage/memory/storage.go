@@ -148,7 +148,10 @@ type IndexStorage struct {
 }
 
 // SetIndex stores the given index.
+// Note: this method sets idx.ModTime to simulate filesystem storage behavior.
 func (c *IndexStorage) SetIndex(idx *index.Index) error {
+	// Set ModTime to enable racy git detection in the metadata optimization.
+	idx.ModTime = time.Now()
 	c.index = idx
 	return nil
 }

@@ -153,6 +153,7 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 
 	fsOpts := filesystem.Options{
 		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:    idx,
 	}
 
 	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
