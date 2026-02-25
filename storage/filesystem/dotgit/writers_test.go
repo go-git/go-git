@@ -4,13 +4,18 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
+	"testing"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
 	. "gopkg.in/check.v1"
@@ -134,4 +139,79 @@ func (s *SuiteDotGit) TestPackWriterUnusedNotify(c *C) {
 	}
 
 	c.Assert(w.Close(), IsNil)
+}
+
+func TestPackWriterPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		fs   billy.Filesystem
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := fixtures.Basic().One()
+
+			dot := New(tc.fs)
+			require.NoError(t, dot.Initialize())
+
+			w, err := dot.NewObjectPack()
+			require.NoError(t, err)
+
+			_, err = io.Copy(w, f.Packfile())
+			require.NoError(t, err)
+
+			require.NoError(t, w.Close())
+
+			pfPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", f.PackfileHash))
+			idxPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", f.PackfileHash))
+
+			ro, err := isReadOnly(tc.fs, pfPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", pfPath)
+
+			ro, err = isReadOnly(tc.fs, idxPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", idxPath)
+		})
+	}
+}
+
+func TestObjectWriterPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		fs   billy.Filesystem
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dot := New(tc.fs)
+			require.NoError(t, dot.Initialize())
+
+			w, err := dot.NewObject()
+			require.NoError(t, err)
+
+			err = w.WriteHeader(plumbing.BlobObject, 14)
+			require.NoError(t, err)
+
+			_, err = w.Write([]byte("this is a test"))
+			require.NoError(t, err)
+
+			require.NoError(t, w.Close())
+
+			path := filepath.Join("objects", "a8", "a940627d132695a9769df883f85992f0ff4a43")
+			ro, err := isReadOnly(tc.fs, path)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", path)
+		})
+	}
 }
