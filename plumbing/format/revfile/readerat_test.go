@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func TestReaderAtRevIndex_FromFixture(t *testing.T) {
@@ -26,7 +27,7 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
@@ -250,7 +251,7 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 	require.NotNil(b, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(b, err)
 
@@ -312,7 +313,7 @@ func TestReaderAtRevIndex_ValidateChecksums(t *testing.T) {
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
@@ -338,7 +339,7 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongPackChecksum(t *testing.T) {
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
@@ -366,7 +367,7 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongSize(t *testing.T) {
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf)
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
@@ -609,7 +610,7 @@ func loadRevIndexFixture(t *testing.T) (*ReaderAtRevIndex, *idxfile.MemoryIndex)
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	err := idxfile.NewDecoder(idxf).Decode(idx)
+	err := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256)).Decode(idx)
 	require.NoError(t, err)
 
 	count, err := idx.Count()
