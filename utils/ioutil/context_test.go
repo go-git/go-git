@@ -312,11 +312,11 @@ func BenchmarkContextReader(b *testing.B) {
 	data := bytes.Repeat([]byte{'0'}, 10000)
 
 	ctx := context.Background()
+	r := bytes.NewReader(data)
+	ctxr := NewContextReader(ctx, r)
 
 	for b.Loop() {
-		r := bytes.NewReader(data)
-
-		ctxr := NewContextReader(ctx, r)
+		r.Reset(data)
 
 		n, _ := ctxr.Read(data)
 		b.SetBytes(int64(n))
@@ -327,10 +327,9 @@ func BenchmarkContextWriter(b *testing.B) {
 	data := bytes.Repeat([]byte{'0'}, 10000)
 
 	ctx := context.Background()
+	ctxw := NewContextWriter(ctx, io.Discard)
 
 	for b.Loop() {
-		ctxw := NewContextWriter(ctx, io.Discard)
-
 		n, _ := ctxw.Write(data)
 		b.SetBytes(int64(n))
 	}
