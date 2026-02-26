@@ -10,7 +10,7 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.2
-	github.com/go-git/go-billy/v6 v6.0.0-20260114122816-19306b749ecc
+	github.com/go-git/go-billy/v6 v6.0.0-20260226131633-45bd0956d66f
 	github.com/go-git/go-git-fixtures/v5 v5.1.2-0.20260122163445-0622d7459a67
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/kevinburke/ssh_config v1.5.0
@@ -29,9 +29,6 @@ require (
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
