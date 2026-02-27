@@ -284,22 +284,41 @@ func Paths(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
 	case GlobalScope:
-		xdg := os.Getenv("XDG_CONFIG_HOME")
-		if xdg != "" {
-			files = append(files, filepath.Join(xdg, "git/config"))
-		}
+		// Honor GIT_CONFIG_GLOBAL if set (allows tests to redirect global config)
+		// If it's set to an empty string, skip global config entirely (matches git behavior)
+		if g, ok := os.LookupEnv("GIT_CONFIG_GLOBAL"); ok {
+			if g != "" {
+				files = append(files, g)
+			}
+			// If GIT_CONFIG_GLOBAL is set (even to ""), don't use fallback paths
+		} else {
+			// GIT_CONFIG_GLOBAL not set, use default locations
+			xdg := os.Getenv("XDG_CONFIG_HOME")
+			if xdg != "" {
+				files = append(files, filepath.Join(xdg, "git/config"))
+			}
 
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil, err
+			}
 
-		files = append(files,
-			filepath.Join(home, ".gitconfig"),
-			filepath.Join(home, ".config/git/config"),
-		)
+			files = append(files,
+				filepath.Join(home, ".gitconfig"),
+				filepath.Join(home, ".config/git/config"),
+			)
+		}
 	case SystemScope:
-		files = append(files, "/etc/gitconfig")
+		// Honor GIT_CONFIG_SYSTEM if set (allows tests to redirect system config)
+		// If it's set to an empty string, skip system config entirely (matches git behavior)
+		if s, ok := os.LookupEnv("GIT_CONFIG_SYSTEM"); ok {
+			if s != "" {
+				files = append(files, s)
+			}
+			// If GIT_CONFIG_SYSTEM is set (even to ""), don't use fallback path
+		} else {
+			files = append(files, "/etc/gitconfig")
+		}
 	}
 
 	return files, nil

@@ -2625,6 +2625,60 @@ func (s *RepositorySuite) TestConfigScoped() {
 	s.NotEqual("", cfg.User.Email)
 }
 
+func (s *RepositorySuite) TestConfigScopedPrecedence() {
+	// Prepare configs for system, global and local
+	systemCfg := config.NewConfig()
+	systemCfg.User.Email = "system@example.com"
+
+	globalCfg := config.NewConfig()
+	globalCfg.User.Email = "global@example.com"
+
+	localCfg := config.NewConfig()
+	localCfg.User.Email = "local@example.com"
+
+	tmp, err := util.TempDir(osfs.Default, "", "test-config-scoped-precedence")
+	s.NoError(err)
+	defer util.RemoveAll(osfs.Default, tmp)
+
+	// write system and global config files
+	systemFile := filepath.Join(tmp, "systemgitconfig")
+	b, err := systemCfg.Marshal()
+	s.NoError(err)
+	s.NoError(util.WriteFile(osfs.Default, systemFile, b, 0777))
+
+	globalFile := filepath.Join(tmp, "globalgitconfig")
+	b, err = globalCfg.Marshal()
+	s.NoError(err)
+	s.NoError(util.WriteFile(osfs.Default, globalFile, b, 0777))
+
+	// Use testing.T.Setenv so the environment is automatically restored after
+	// the test finishes.
+	s.T().Setenv("GIT_CONFIG_SYSTEM", systemFile)
+	s.T().Setenv("GIT_CONFIG_GLOBAL", globalFile)
+
+	// Init repository and set local config
+	r, _ := Init(memory.NewStorage())
+	s.NoError(r.SetConfig(localCfg))
+
+	// Request SystemScope to include system, global and local
+	got, err := r.ConfigScoped(config.SystemScope)
+	s.NoError(err)
+	// local should take precedence
+	s.Equal("local@example.com", got.User.Email)
+
+	// Clear local (empty config) -> global should be selected
+	s.NoError(r.SetConfig(config.NewConfig()))
+	got, err = r.ConfigScoped(config.SystemScope)
+	s.NoError(err)
+	s.Equal("global@example.com", got.User.Email)
+
+	// Unset global -> system should be selected
+	s.T().Setenv("GIT_CONFIG_GLOBAL", "")
+	got, err = r.ConfigScoped(config.SystemScope)
+	s.NoError(err)
+	s.Equal("system@example.com", got.User.Email)
+}
+
 func (s *RepositorySuite) TestCommit() {
 	r, _ := Init(memory.NewStorage())
 	err := r.clone(context.Background(), &CloneOptions{
