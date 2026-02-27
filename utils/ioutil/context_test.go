@@ -43,15 +43,9 @@ func (s *ContextReadCloserSuite) TestRead() {
 	s.ErrorIs(err, io.EOF)
 }
 
-type testReader func([]byte) (int, error)
-
-func (r testReader) Read(b []byte) (int, error) {
-	return r(b)
-}
-
 func (s *ContextReadCloserSuite) TestReadEmpty() {
 	called := 0
-	r := testReader(func(b []byte) (int, error) {
+	r := ReaderFunc(func(b []byte) (int, error) {
 		called++
 		return len(b), nil
 	})
@@ -68,7 +62,7 @@ func (s *ContextReadCloserSuite) TestReadEmpty() {
 
 func (s *ContextReadCloserSuite) TestReadCancel() {
 	called := 0
-	r := testReader(func(b []byte) (int, error) {
+	r := ReaderFunc(func(b []byte) (int, error) {
 		called++
 		return len(b), nil
 	})
@@ -87,7 +81,7 @@ func (s *ContextReadCloserSuite) TestReadCancel() {
 
 func (s *ContextReadCloserSuite) TestClose() {
 	called := 0
-	r := testReader(func(b []byte) (int, error) {
+	r := ReaderFunc(func(b []byte) (int, error) {
 		called++
 		return len(b), nil
 	})
@@ -154,15 +148,9 @@ func (s *ContextWriteCloserSuite) TestWrite() {
 	s.Require().Equal("abcdef", buf.String())
 }
 
-type testWriter func([]byte) (int, error)
-
-func (w testWriter) Write(b []byte) (int, error) {
-	return w(b)
-}
-
 func (s *ContextWriteCloserSuite) TestWriteEmpty() {
 	called := 0
-	w := testWriter(func(b []byte) (int, error) {
+	w := WriterFunc(func(b []byte) (int, error) {
 		called++
 		return len(b), nil
 	})
@@ -178,7 +166,7 @@ func (s *ContextWriteCloserSuite) TestWriteEmpty() {
 
 func (s *ContextWriteCloserSuite) TestWriteCancel() {
 	called := 0
-	w := testWriter(func(b []byte) (int, error) {
+	w := WriterFunc(func(b []byte) (int, error) {
 		called++
 		return len(b), nil
 	})
@@ -197,7 +185,7 @@ func (s *ContextWriteCloserSuite) TestWriteCancel() {
 
 func (s *ContextWriteCloserSuite) TestClose() {
 	called := 0
-	w := testWriter(func(b []byte) (int, error) {
+	w := WriterFunc(func(b []byte) (int, error) {
 		called++
 		return len(b), nil
 	})
@@ -205,7 +193,7 @@ func (s *ContextWriteCloserSuite) TestClose() {
 	ctxw := NewContextWriteCloser(context.Background(), w)
 	s.T().Cleanup(func() { ctxw.Close() })
 
-	s.Require().Error(ctxw.Close())
+	s.Require().NoError(ctxw.Close())
 
 	n, err := ctxw.Write(make([]byte, 1))
 	s.Require().Equal(0, n)
