@@ -39,7 +39,8 @@ func UploadPack(
 		return fmt.Errorf("nil writer")
 	}
 
-	w = ioutil.NewContextWriteCloser(ctx, w)
+	ctxw := ioutil.NewContextWriteCloser(ctx, w)
+	defer func() { _ = ctxw.Close() }()
 
 	if opts == nil {
 		opts = &UploadPackOptions{}
@@ -48,7 +49,7 @@ func UploadPack(
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
 		switch version := ProtocolVersion(opts.GitProtocol); version {
 		case protocol.V1:
-			if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
+			if _, err := pktline.Writef(ctxw, "version %d\n", version); err != nil {
 				return err
 			}
 		// TODO: support version 2
@@ -57,7 +58,7 @@ func UploadPack(
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
 		}
 
-		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
+		if err := AdvertiseReferences(ctx, st, ctxw, UploadPackService, opts.StatelessRPC); err != nil {
 			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
@@ -71,9 +72,10 @@ func UploadPack(
 		return fmt.Errorf("nil reader")
 	}
 
-	r = ioutil.NewContextReadCloser(ctx, r)
+	ctxr := ioutil.NewContextReadCloser(ctx, r)
+	defer func() { _ = ctxr.Close() }()
 
-	rd := bufio.NewReader(r)
+	rd := bufio.NewReader(ctxr)
 	l, _, err := pktline.PeekLine(rd)
 	if err != nil {
 		return fmt.Errorf("peeking line: %w", err)
@@ -105,10 +107,6 @@ func UploadPack(
 			wants = upreq.Wants
 			caps = upreq.Capabilities
 
-			if err := r.Close(); err != nil {
-				return fmt.Errorf("closing reader: %w", err)
-			}
-
 			// Find common commits/objects
 			havesWithRef, err = revlist.ObjectsWithRef(st, wants, nil)
 			if err != nil {
@@ -134,7 +132,7 @@ func UploadPack(
 						return
 					}
 
-					if err := shupd.Encode(w); err != nil {
+					if err := shupd.Encode(ctxw); err != nil {
 						writec <- fmt.Errorf("sending shallow-update: %w", err)
 						return
 					}
@@ -151,10 +149,6 @@ func UploadPack(
 		var uphav packp.UploadHaves
 		if err := uphav.Decode(rd); err != nil {
 			return fmt.Errorf("decoding upload-haves: %w", err)
-		}
-
-		if err := r.Close(); err != nil {
-			return fmt.Errorf("closing reader: %w", err)
 		}
 
 		haves = append(haves, uphav.Haves...)
@@ -196,7 +190,7 @@ func UploadPack(
 			if len(haves) > 0 {
 				// Encode ACKs to client when we have haves
 				srvrsp := packp.ServerResponse{ACKs: acks}
-				if err := srvrsp.Encode(w); err != nil {
+				if err := srvrsp.Encode(ctxw); err != nil {
 					writec <- fmt.Errorf("sending acks server-response: %w", err)
 					return
 				}
@@ -207,7 +201,7 @@ func UploadPack(
 				if multiAck || multiAckDetailed {
 					// Encode a NAK for multi-ack
 					srvrsp := packp.ServerResponse{}
-					if err := srvrsp.Encode(w); err != nil {
+					if err := srvrsp.Encode(ctxw); err != nil {
 						writec <- fmt.Errorf("sending nak server-response: %w", err)
 						return
 					}
@@ -216,14 +210,14 @@ func UploadPack(
 				// We're done, send the final ACK
 				ack.Status = 0
 				srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
-				if err := srvrsp.Encode(w); err != nil {
+				if err := srvrsp.Encode(ctxw); err != nil {
 					writec <- fmt.Errorf("sending final ack server-response: %w", err)
 					return
 				}
 			case ack.Hash.IsZero():
 				// We don't have multi-ack and there are no haves. Encode a NAK.
 				srvrsp := packp.ServerResponse{}
-				if err := srvrsp.Encode(w); err != nil {
+				if err := srvrsp.Encode(ctxw); err != nil {
 					writec <- fmt.Errorf("sending final nak server-response: %w", err)
 					return
 				}
@@ -253,13 +247,13 @@ func UploadPack(
 
 	var (
 		useSideband bool
-		writer      io.Writer = w
+		writer      io.Writer = ctxw
 	)
 	if caps.Supports(capability.Sideband64k) {
-		writer = sideband.NewMuxer(sideband.Sideband64k, w)
+		writer = sideband.NewMuxer(sideband.Sideband64k, writer)
 		useSideband = true
 	} else if caps.Supports(capability.Sideband) {
-		writer = sideband.NewMuxer(sideband.Sideband, w)
+		writer = sideband.NewMuxer(sideband.Sideband, writer)
 		useSideband = true
 	}
 
@@ -272,7 +266,7 @@ func UploadPack(
 	}
 
 	if useSideband {
-		if err := pktline.WriteFlush(w); err != nil {
+		if err := pktline.WriteFlush(ctxw); err != nil {
 			return fmt.Errorf("flushing sideband: %w", err)
 		}
 	}

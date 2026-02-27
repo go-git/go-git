@@ -2,10 +2,12 @@ package ioutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"sync"
 
-	"github.com/go-git/go-git/v6/utils/sync"
+	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
 type ioret struct {
@@ -13,17 +15,19 @@ type ioret struct {
 	n   int
 }
 
-// Writer is an interface for io.Writer.
-type Writer interface {
-	io.Writer
-}
-
 type ctxWriter struct {
 	w   io.Writer
 	ctx context.Context
+
+	mu     sync.Mutex
+	buf    *[]byte
+	input  chan []byte
+	ret    chan ioret
+	done   chan struct{}
+	closed bool
 }
 
-// NewContextWriter wraps a writer to make it respect the given Context.
+// NewContextWriteCloser wraps a writer to make it respect the given Context.
 // If there is a blocking write, the returned Writer will return
 // whenever the context is cancelled (the return values are n=0
 // and err=ctx.Err().)
@@ -34,55 +38,56 @@ type ctxWriter struct {
 // this sparingly, make sure to cancel the read or write as necessary
 // (e.g. closing a connection whose context is up, etc.)
 //
-// Furthermore, in order to protect your memory from being read
-// _after_ you've cancelled the context, this io.Writer will
-// use a buffer from the memory pool.
-func NewContextWriter(ctx context.Context, w io.Writer) io.Writer {
+// The callers MUST close this io.WriteCloser to free it's resources. it internally
+// borrows a memory block from globally shared pool, and also spawns a goroutine.
+func NewContextWriteCloser(ctx context.Context, w io.Writer) io.WriteCloser {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return &ctxWriter{ctx: ctx, w: w}
+
+	ctxw := &ctxWriter{
+		ctx:   ctx,
+		w:     w,
+		buf:   gogitsync.GetByteSlice(),
+		ret:   make(chan ioret, 1),
+		input: make(chan []byte),
+		done:  make(chan struct{}),
+	}
+
+	go ctxw.writeLoop()
+
+	return ctxw
 }
 
 func (w *ctxWriter) Write(buf []byte) (int, error) {
-	ret := make(chan ioret, 1)
-	input := make(chan []byte)
-	defer close(input)
+	if len(buf) == 0 {
+		return 0, nil
+	}
 
-	// temp will be released when both goroutines stop using it.
-	temp := sync.GetByteSlice()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	go func() {
-		defer func() {
-			if v := recover(); v != nil {
-				err := fmt.Errorf("underlying writer resulted in panic: %v", v)
-				ret <- ioret{err, 0}
-			}
+	if w.closed {
+		return 0, errors.New("writer is closed")
+	}
 
-			sync.PutByteSlice(temp)
-		}()
-
-		for {
-			buf2, ok := <-input
-			if !ok {
-				return
-			}
-
-			n, err := w.w.Write(buf2)
-			ret <- ioret{err, n}
-		}
-	}()
+	select {
+	case <-w.ctx.Done():
+		// the context is closed before invoking this.
+		return 0, w.ctx.Err()
+	default:
+	}
 
 	total := 0
 
 	for len(buf) > 0 {
-		n := copy(*temp, buf)
-		input <- (*temp)[:n]
+		n := copy(*w.buf, buf)
+		w.input <- (*w.buf)[:n]
 
 		select {
 		case <-w.ctx.Done():
 			return total, w.ctx.Err()
-		case write := <-ret:
+		case write := <-w.ret:
 			if err := w.ctx.Err(); err != nil {
 				return total, w.ctx.Err()
 			}
@@ -99,17 +104,53 @@ func (w *ctxWriter) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-type Reader interface {
-	io.Reader
+func (w *ctxWriter) writeLoop() {
+	defer func() {
+		if v := recover(); v != nil {
+			err := fmt.Errorf("underlying writer resulted in panic: %v", v)
+			w.ret <- ioret{err, 0}
+		}
+
+		close(w.done)
+	}()
+
+	for buf := range w.input {
+		n, err := w.w.Write(buf)
+		w.ret <- ioret{err, n}
+	}
+}
+
+func (w *ctxWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return nil
+	}
+
+	close(w.input)
+	<-w.done
+
+	gogitsync.PutByteSlice(w.buf)
+	w.buf = nil
+	w.closed = true
+
+	return nil
 }
 
 type ctxReader struct {
-	r      io.Reader
-	ctx    context.Context
-	closer io.Closer
+	r   io.Reader
+	ctx context.Context
+
+	mu     sync.Mutex
+	buf    *[]byte
+	input  chan []byte
+	ret    chan ioret
+	done   chan struct{}
+	closed bool
 }
 
-// NewContextReader wraps a reader to make it respect given Context.
+// NewContextReadCloser wraps a reader to make it respect given Context.
 // If there is a blocking read, the returned Reader will return
 // whenever the context is cancelled (the return values are n=0
 // and err=ctx.Err().)
@@ -120,46 +161,54 @@ type ctxReader struct {
 // this sparingly, make sure to cancel the read or write as necessary
 // (e.g. closing a connection whose context is up, etc.)
 //
-// Furthermore, in order to protect your memory from being read
-// _before_ you've cancelled the context, this io.Reader will
-// use a buffer from the memory pool.
-func NewContextReader(ctx context.Context, r io.Reader) io.Reader {
-	return &ctxReader{ctx: ctx, r: r}
+// The callers MUST close this io.ReadCloser to free it's resources. it internally
+// borrows a memory block from globally shared pool, and also spawns a goroutine.
+func NewContextReadCloser(ctx context.Context, r io.Reader) io.ReadCloser {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	ctxr := &ctxReader{
+		ctx:   ctx,
+		r:     r,
+		buf:   gogitsync.GetByteSlice(),
+		input: make(chan []byte),
+		ret:   make(chan ioret, 1),
+		done:  make(chan struct{}),
+	}
+
+	go ctxr.readLoop()
+
+	return ctxr
 }
 
 func (r *ctxReader) Read(buf []byte) (int, error) {
-	ret := make(chan ioret, 1)
+	if len(buf) == 0 {
+		return 0, nil
+	}
 
-	temp := sync.GetByteSlice()
-	window := (*temp)[:min(len(*temp), len(buf))]
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	// temp will be released when both goroutines stop using it.
-	done := make(chan struct{}, 1)
-	defer close(done)
+	if r.closed {
+		return 0, errors.New("reader is closed")
+	}
 
-	go func() {
-		defer func() {
-			if v := recover(); v != nil {
-				err := fmt.Errorf("underlying reader resulted in panic: %v", v)
-				ret <- ioret{err, 0}
-			}
-
-			// wait for the main goroutine to copy from the buffer.
-			<-done
-			sync.PutByteSlice(temp)
-		}()
-
-		n, err := r.r.Read(window)
-		ret <- ioret{err, n}
-	}()
+	window := (*r.buf)[:min(len(*r.buf), len(buf))]
 
 	select {
 	case <-r.ctx.Done():
-		if r.closer != nil {
-			_ = r.closer.Close()
-		}
+		// the context is closed before invoking this.
 		return 0, r.ctx.Err()
-	case read := <-ret:
+	default:
+	}
+
+	r.input <- window
+
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	case read := <-r.ret:
 		if err := r.ctx.Err(); err != nil {
 			return 0, err
 		}
@@ -168,8 +217,36 @@ func (r *ctxReader) Read(buf []byte) (int, error) {
 	}
 }
 
-// NewContextReaderWithCloser wraps a reader to make it respect given Context,
-// and closes the closer when the context is done.
-func NewContextReaderWithCloser(ctx context.Context, r io.Reader, closer io.Closer) io.Reader {
-	return &ctxReader{ctx: ctx, r: r, closer: closer}
+func (r *ctxReader) readLoop() {
+	defer func() {
+		if v := recover(); v != nil {
+			err := fmt.Errorf("underlying reader resulted in panic: %v", v)
+			r.ret <- ioret{err, 0}
+		}
+
+		close(r.done)
+	}()
+
+	for buf := range r.input {
+		n, err := r.r.Read(buf)
+		r.ret <- ioret{err, n}
+	}
+}
+
+func (r *ctxReader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
+	}
+
+	close(r.input)
+	<-r.done
+
+	gogitsync.PutByteSlice(r.buf)
+	r.buf = nil
+	r.closed = true
+
+	return nil
 }
