@@ -3,278 +3,217 @@ package ioutil
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestReader(t *testing.T) {
+type ContextReadCloserSuite struct {
+	suite.Suite
+}
+
+func TestContextReadCloserSuite(t *testing.T) {
 	t.Parallel()
+	suite.Run(t, &ContextReadCloserSuite{})
+}
+
+func (s *ContextReadCloserSuite) TestRead() {
 	buf := []byte("abcdef")
 	buf2 := make([]byte, 3)
-	r := NewContextReader(context.Background(), bytes.NewReader(buf))
+	r := NewContextReadCloser(context.Background(), bytes.NewReader(buf))
+	s.T().Cleanup(func() { r.Close() })
 
 	// read first half
 	n, err := r.Read(buf2)
-	if n != 3 {
-		t.Error("n should be 3")
-	}
-	if err != nil {
-		t.Error("should have no error")
-	}
-	if string(buf2) != string(buf[:3]) {
-		t.Error("incorrect contents")
-	}
+	s.Require().Equal(3, n)
+	s.Require().NoError(err)
+	s.Require().Equal(buf[:3], buf2)
 
 	// read second half
 	n, err = r.Read(buf2)
-	if n != 3 {
-		t.Error("n should be 3")
-	}
-	if err != nil {
-		t.Error("should have no error")
-	}
-	if string(buf2) != string(buf[3:6]) {
-		t.Error("incorrect contents")
-	}
+	s.Require().Equal(3, n)
+	s.Require().NoError(err)
+	s.Require().Equal(buf[3:6], buf2)
 
 	// read more.
 	n, err = r.Read(buf2)
-	if n != 0 {
-		t.Error("n should be 0", n)
-	}
-	if err != io.EOF {
-		t.Error("should be EOF", err)
+	s.Equal(0, n)
+	s.ErrorIs(err, io.EOF)
+}
+
+func (s *ContextReadCloserSuite) TestReadEmpty() {
+	called := 0
+	r := ReaderFunc(func(b []byte) (int, error) {
+		called++
+		return len(b), nil
+	})
+
+	ctxr := NewContextReadCloser(context.Background(), r)
+	s.T().Cleanup(func() { ctxr.Close() })
+
+	n, err := ctxr.Read(make([]byte, 0))
+	s.Equal(0, n)
+	s.NotErrorIs(err, io.EOF)
+	s.Equal(err, nil)
+	s.Equal(0, called)
+}
+
+func (s *ContextReadCloserSuite) TestReadCancel() {
+	called := 0
+	r := ReaderFunc(func(b []byte) (int, error) {
+		called++
+		return len(b), nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ctxr := NewContextReadCloser(ctx, r)
+	s.T().Cleanup(func() { ctxr.Close() })
+	cancel()
+
+	n, err := ctxr.Read(make([]byte, 1))
+	s.Equal(0, n)
+	s.ErrorIs(err, context.Canceled)
+	s.Equal(0, called)
+}
+
+func (s *ContextReadCloserSuite) TestClose() {
+	called := 0
+	r := ReaderFunc(func(b []byte) (int, error) {
+		called++
+		return len(b), nil
+	})
+
+	ctxr := NewContextReadCloser(context.Background(), r)
+	s.T().Cleanup(func() { ctxr.Close() })
+
+	s.Require().NoError(ctxr.Close())
+
+	n, err := ctxr.Read(make([]byte, 1))
+	s.Require().Equal(0, n)
+	s.Require().Error(err)
+	s.Require().Equal(0, called)
+
+	s.NoError(ctxr.Close())
+}
+
+func (s *ContextReadCloserSuite) TestPanic() {
+	r := NewContextReadCloser(context.Background(), nil)
+	s.T().Cleanup(func() { r.Close() })
+
+	done := make(chan struct{}, 1)
+
+	go func() {
+		s.Require().NotPanics(func() {
+			n, err := r.Read(make([]byte, 1))
+			s.Require().Error(err)
+			s.Require().Equal(0, n)
+		})
+
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		s.T().Error("test timed out")
 	}
 }
 
-func TestWriter(t *testing.T) {
+type ContextWriteCloserSuite struct {
+	suite.Suite
+}
+
+func TestContextWriteCloserSuite(t *testing.T) {
 	t.Parallel()
+	suite.Run(t, &ContextWriteCloserSuite{})
+}
+
+func (s *ContextWriteCloserSuite) TestWrite() {
 	var buf bytes.Buffer
-	w := NewContextWriter(context.Background(), &buf)
+	w := NewContextWriteCloser(context.Background(), &buf)
 
 	// write three
 	n, err := w.Write([]byte("abc"))
-	if n != 3 {
-		t.Error("n should be 3")
-	}
-	if err != nil {
-		t.Error("should have no error")
-	}
-	if buf.String() != "abc" {
-		t.Error("incorrect contents")
-	}
+	s.Require().Equal(3, n)
+	s.Require().NoError(err)
+	s.Require().Equal("abc", buf.String())
 
 	// write three more
 	n, err = w.Write([]byte("def"))
-	if n != 3 {
-		t.Error("n should be 3")
-	}
-	if err != nil {
-		t.Error("should have no error")
-	}
-	if buf.String() != "abcdef" {
-		t.Error("incorrect contents")
-	}
+	s.Require().Equal(3, n)
+	s.Require().NoError(err)
+	s.Require().Equal("abcdef", buf.String())
 }
 
-func TestReaderCancel(t *testing.T) {
-	t.Parallel()
+func (s *ContextWriteCloserSuite) TestWriteEmpty() {
+	called := 0
+	w := WriterFunc(func(b []byte) (int, error) {
+		called++
+		return len(b), nil
+	})
+
+	ctxw := NewContextWriteCloser(context.Background(), w)
+	s.T().Cleanup(func() { ctxw.Close() })
+
+	n, err := ctxw.Write(make([]byte, 0))
+	s.Equal(0, n)
+	s.Equal(err, nil)
+	s.Equal(0, called)
+}
+
+func (s *ContextWriteCloserSuite) TestWriteCancel() {
+	called := 0
+	w := WriterFunc(func(b []byte) (int, error) {
+		called++
+		return len(b), nil
+	})
+
 	ctx, cancel := context.WithCancel(context.Background())
-	piper, pipew := io.Pipe()
-	r := NewContextReader(ctx, piper)
 
-	buf := make([]byte, 10)
-	done := make(chan ioret)
-
-	go func() {
-		n, err := r.Read(buf)
-		done <- ioret{err, n}
-	}()
-
-	pipew.Write([]byte("abcdefghij"))
-
-	select {
-	case ret := <-done:
-		if ret.n != 10 {
-			t.Error("ret.n should be 10", ret.n)
-		}
-		if ret.err != nil {
-			t.Error("ret.err should be nil", ret.err)
-		}
-		if string(buf) != "abcdefghij" {
-			t.Error("read contents differ")
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to read")
-	}
-
-	go func() {
-		n, err := r.Read(buf)
-		done <- ioret{err, n}
-	}()
-
+	ctxw := NewContextWriteCloser(ctx, w)
+	s.T().Cleanup(func() { ctxw.Close() })
 	cancel()
 
-	select {
-	case ret := <-done:
-		if ret.n != 0 {
-			t.Error("ret.n should be 0", ret.n)
-		}
-		if ret.err == nil {
-			t.Error("ret.err should be ctx error", ret.err)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to stop reading after cancel")
-	}
+	n, err := ctxw.Write(make([]byte, 1))
+	s.Equal(0, n)
+	s.ErrorIs(err, context.Canceled)
+	s.Equal(0, called)
 }
 
-func TestWriterCancel(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	piper, pipew := io.Pipe()
-	w := NewContextWriter(ctx, pipew)
+func (s *ContextWriteCloserSuite) TestClose() {
+	called := 0
+	w := WriterFunc(func(b []byte) (int, error) {
+		called++
+		return len(b), nil
+	})
 
-	buf := make([]byte, 10)
-	done := make(chan ioret)
+	ctxw := NewContextWriteCloser(context.Background(), w)
+	s.T().Cleanup(func() { ctxw.Close() })
 
-	go func() {
-		n, err := w.Write([]byte("abcdefghij"))
-		done <- ioret{err, n}
-	}()
+	s.Require().NoError(ctxw.Close())
 
-	piper.Read(buf)
+	n, err := ctxw.Write(make([]byte, 1))
+	s.Require().Equal(0, n)
+	s.Require().Error(err)
+	s.Require().Equal(0, called)
 
-	select {
-	case ret := <-done:
-		if ret.n != 10 {
-			t.Error("ret.n should be 10", ret.n)
-		}
-		if ret.err != nil {
-			t.Error("ret.err should be nil", ret.err)
-		}
-		if string(buf) != "abcdefghij" {
-			t.Error("write contents differ")
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to write")
-	}
-
-	go func() {
-		n, err := w.Write([]byte("abcdefghij"))
-		done <- ioret{err, n}
-	}()
-
-	cancel()
-
-	select {
-	case ret := <-done:
-		if ret.n != 0 {
-			t.Error("ret.n should be 0", ret.n)
-		}
-		if !errors.Is(ret.err, context.Canceled) {
-			t.Error("ret.err should be ctx error", ret.err)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to stop writing after cancel")
-	}
+	s.NoError(ctxw.Close())
 }
 
-func TestReadPostCancel(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	piper, _ := io.Pipe()
-	r := NewContextReader(ctx, piper)
-
-	buf := make([]byte, 10)
-	done := make(chan ioret)
-
-	go func() {
-		n, err := r.Read(buf)
-		done <- ioret{err, n}
-	}()
-
-	cancel()
-
-	select {
-	case ret := <-done:
-		if ret.n != 0 {
-			t.Error("ret.n should be 0", ret.n)
-		}
-		if ret.err == nil {
-			t.Error("ret.err should be ctx error", ret.err)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to stop reading after cancel")
-	}
-}
-
-func TestWritePostCancel(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	piper, pipew := io.Pipe()
-	w := NewContextWriter(ctx, pipew)
-
-	buf := []byte("abcdefghij")
-	buf2 := make([]byte, 10)
-	done := make(chan ioret)
-
-	go func() {
-		n, err := w.Write(buf)
-		done <- ioret{err, n}
-	}()
-
-	piper.Read(buf2)
-
-	select {
-	case ret := <-done:
-		if ret.n != 10 {
-			t.Error("ret.n should be 10", ret.n)
-		}
-		if ret.err != nil {
-			t.Error("ret.err should be nil", ret.err)
-		}
-		if string(buf2) != "abcdefghij" {
-			t.Error("write contents differ")
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to write")
-	}
-
-	go func() {
-		n, err := w.Write(buf)
-		done <- ioret{err, n}
-	}()
-
-	cancel()
-
-	select {
-	case ret := <-done:
-		if ret.n != 0 {
-			t.Error("ret.n should be 0", ret.n)
-		}
-		if !errors.Is(ret.err, context.Canceled) {
-			t.Error("ret.err should be ctx error", ret.err)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("failed to stop writing after cancel")
-	}
-}
-
-func TestReadUnderlyingPanics(t *testing.T) {
-	t.Parallel()
-
-	r := NewContextReader(context.Background(), nil)
+func (s *ContextWriteCloserSuite) TestPanic() {
+	w := NewContextWriteCloser(context.Background(), nil)
 
 	done := make(chan struct{}, 1)
 
 	go func() {
-		n, err := r.Read([]byte{})
-		assert.Error(t, err)
-		assert.Equal(t, 0, n)
+		s.Require().NotPanics(func() {
+			n, err := w.Write([]byte{'a'})
+			s.Require().Error(err)
+			s.Require().Equal(0, n)
+		})
 
 		done <- struct{}{}
 	}()
@@ -282,29 +221,7 @@ func TestReadUnderlyingPanics(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Error("test timed out")
-	}
-}
-
-func TestWriteUnderlyingPanics(t *testing.T) {
-	t.Parallel()
-
-	r := NewContextWriter(context.Background(), nil)
-
-	done := make(chan struct{}, 1)
-
-	go func() {
-		n, err := r.Write([]byte{'a'})
-		assert.Error(t, err)
-		assert.Equal(t, 0, n)
-
-		done <- struct{}{}
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Error("test timed out")
+		s.T().Error("test timed out")
 	}
 }
 
@@ -312,11 +229,12 @@ func BenchmarkContextReader(b *testing.B) {
 	data := bytes.Repeat([]byte{'0'}, 10000)
 
 	ctx := context.Background()
+	r := bytes.NewReader(data)
+	ctxr := NewContextReadCloser(ctx, r)
+	b.Cleanup(func() { ctxr.Close() })
 
 	for b.Loop() {
-		r := bytes.NewReader(data)
-
-		ctxr := NewContextReader(ctx, r)
+		r.Reset(data)
 
 		n, _ := ctxr.Read(data)
 		b.SetBytes(int64(n))
@@ -327,10 +245,10 @@ func BenchmarkContextWriter(b *testing.B) {
 	data := bytes.Repeat([]byte{'0'}, 10000)
 
 	ctx := context.Background()
+	ctxw := NewContextWriteCloser(ctx, io.Discard)
+	b.Cleanup(func() { ctxw.Close() })
 
 	for b.Loop() {
-		ctxw := NewContextWriter(ctx, io.Discard)
-
 		n, _ := ctxw.Write(data)
 		b.SetBytes(int64(n))
 	}

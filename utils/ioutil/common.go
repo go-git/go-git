@@ -2,8 +2,6 @@
 package ioutil
 
 import (
-	"bufio"
-	"context"
 	"errors"
 	"io"
 )
@@ -19,28 +17,44 @@ type ReadPeeker interface {
 	Peeker
 }
 
-// ErrEmptyReader is returned when a reader is empty.
-var ErrEmptyReader = errors.New("reader is empty")
+type (
+	CloserFunc func() error
+	WriterFunc func([]byte) (int, error)
+	ReaderFunc func([]byte) (int, error)
+)
 
-// NonEmptyReader takes a reader and returns it if it is not empty, or
-// `ErrEmptyReader` if it is empty. If there is an error when reading the first
-// byte of the given reader, it will be propagated.
-func NonEmptyReader(r io.Reader) (io.Reader, error) {
-	pr, ok := r.(ReadPeeker)
-	if !ok {
-		pr = bufio.NewReader(r)
+func (f CloserFunc) Close() error                { return f() }
+func (f WriterFunc) Write(p []byte) (int, error) { return f(p) }
+func (f ReaderFunc) Read(p []byte) (int, error)  { return f(p) }
+
+var (
+	_ io.Closer = CloserFunc(nil)
+	_ io.Writer = WriterFunc(nil)
+	_ io.Reader = ReaderFunc(nil)
+)
+
+type multiCloser struct{ closers []io.Closer }
+
+func (mc *multiCloser) Close() error {
+	var errs []error
+
+	for _, c := range mc.closers {
+		if c == nil {
+			continue
+		}
+
+		if err := c.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	_, err := pr.Peek(1)
-	if err == io.EOF {
-		return nil, ErrEmptyReader
-	}
+	return errors.Join(errs...)
+}
 
-	if err != nil {
-		return nil, err
-	}
-
-	return pr, nil
+// MultiCloser returns a closer that sequentailly closes
+// given closers. The errors are merged via [errors.Join].
+func MultiCloser(closers ...io.Closer) io.Closer {
+	return &multiCloser{closers: closers}
 }
 
 type readCloser struct {
@@ -56,28 +70,6 @@ func (r *readCloser) Close() error {
 // `io.Closer`.
 func NewReadCloser(r io.Reader, c io.Closer) io.ReadCloser {
 	return &readCloser{Reader: r, closer: c}
-}
-
-type readCloserCloser struct {
-	io.ReadCloser
-	closer func() error
-}
-
-func (r *readCloserCloser) Close() (err error) {
-	defer func() {
-		if err == nil {
-			err = r.closer()
-			return
-		}
-		_ = r.closer()
-	}()
-	return r.ReadCloser.Close()
-}
-
-// NewReadCloserWithCloser creates an `io.ReadCloser` with the given `io.ReaderCloser` and
-// `io.Closer` that ensures that the closer is closed on close
-func NewReadCloserWithCloser(r io.ReadCloser, c func() error) io.ReadCloser {
-	return &readCloserCloser{ReadCloser: r, closer: c}
 }
 
 type writeCloser struct {
@@ -110,25 +102,6 @@ func WriteNopCloser(w io.Writer) io.WriteCloser {
 	return writeNopCloser{w}
 }
 
-type readerAtAsReader struct {
-	io.ReaderAt
-	offset int64
-}
-
-func (r *readerAtAsReader) Read(bs []byte) (int, error) {
-	n, err := r.ReadAt(bs, r.offset)
-	r.offset += int64(n)
-	return n, err
-}
-
-// NewReaderUsingReaderAt returns a new io.Reader from an io.ReaderAt starting at the given offset.
-func NewReaderUsingReaderAt(r io.ReaderAt, offset int64) io.Reader {
-	return &readerAtAsReader{
-		ReaderAt: r,
-		offset:   offset,
-	}
-}
-
 // CheckClose calls Close on the given io.Closer. If the given *error points to
 // nil, it will be assigned the error returned by Close. Otherwise, any error
 // returned by Close will be ignored. CheckClose is usually called with defer.
@@ -136,78 +109,4 @@ func CheckClose(c io.Closer, err *error) {
 	if cerr := c.Close(); cerr != nil && *err == nil {
 		*err = cerr
 	}
-}
-
-// NewContextWriteCloser as NewContextWriter but with io.Closer interface.
-func NewContextWriteCloser(ctx context.Context, w io.WriteCloser) io.WriteCloser {
-	ctxw := NewContextWriter(ctx, w)
-	return NewWriteCloser(ctxw, w)
-}
-
-// NewContextReadCloser as NewContextReader but with io.Closer interface.
-func NewContextReadCloser(ctx context.Context, r io.ReadCloser) io.ReadCloser {
-	ctxr := NewContextReader(ctx, r)
-	return NewReadCloser(ctxr, r)
-}
-
-type readerOnError struct {
-	io.Reader
-	notify func(error)
-}
-
-// NewReaderOnError returns a io.Reader that call the notify function when an
-// unexpected (!io.EOF) error happens, after call Read function.
-func NewReaderOnError(r io.Reader, notify func(error)) io.Reader {
-	return &readerOnError{r, notify}
-}
-
-// NewReadCloserOnError returns a io.ReadCloser that call the notify function
-// when an unexpected (!io.EOF) error happens, after call Read function.
-func NewReadCloserOnError(r io.ReadCloser, notify func(error)) io.ReadCloser {
-	return NewReadCloser(NewReaderOnError(r, notify), r)
-}
-
-func (r *readerOnError) Read(buf []byte) (n int, err error) {
-	n, err = r.Reader.Read(buf)
-	if err != nil && err != io.EOF {
-		r.notify(err)
-	}
-
-	return n, err
-}
-
-type writerOnError struct {
-	io.Writer
-	notify func(error)
-}
-
-// NewWriterOnError returns a io.Writer that call the notify function when an
-// unexpected (!io.EOF) error happens, after call Write function.
-func NewWriterOnError(w io.Writer, notify func(error)) io.Writer {
-	return &writerOnError{w, notify}
-}
-
-// NewWriteCloserOnError returns a io.WriteCloser that call the notify function
-// when an unexpected (!io.EOF) error happens, after call Write function.
-func NewWriteCloserOnError(w io.WriteCloser, notify func(error)) io.WriteCloser {
-	return NewWriteCloser(NewWriterOnError(w, notify), w)
-}
-
-func (r *writerOnError) Write(p []byte) (n int, err error) {
-	n, err = r.Writer.Write(p)
-	if err != nil && err != io.EOF {
-		r.notify(err)
-	}
-
-	return n, err
-}
-
-// CloserFunc implements the io.Closer interface with a function.
-type CloserFunc func() error
-
-var _ io.Closer = CloserFunc(nil)
-
-// Close calls the function.
-func (f CloserFunc) Close() error {
-	return f()
 }
