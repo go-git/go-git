@@ -141,7 +141,7 @@ func benchmarkStatusModified(wt *Worktree, numFiles, numSubdirs int) func(b *tes
 				b.Fatalf("expected modified status, got clean")
 			}
 			modCount := 0
-			for _, fileStatus := range status {
+			for _, fileStatus := range status.Iter() {
 				if fileStatus.Worktree == Modified {
 					modCount++
 				}

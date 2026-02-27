@@ -195,12 +195,12 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 		return err
 	}
 
-	for path, fs := range s {
+	for path, fs := range s.Iter() {
 		if fs.Worktree != Modified && fs.Worktree != Deleted {
 			continue
 		}
 
-		if _, _, err := w.doAddFile(idx, s, path, nil); err != nil {
+		if _, _, err := w.doAddFile(idx, &s, path, nil); err != nil {
 			return err
 		}
 	}
