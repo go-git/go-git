@@ -193,6 +193,34 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		return err
 	}
 
+	// Fast path optimization for same tree.
+	// When target commit has the same tree as current HEAD, we can skip
+	// the expensive Reset() operation that scans all files. This matches
+	// git CLI behavior which only updates files when trees actually differ.
+	// This is trying to match `git checkout -b` and `git switch -c` behavior
+	// which is implemented here https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L1215
+	//
+	// However, we must also verify the index matches the target tree.
+	// Git uses the index (staging area) as the source of truth for what should
+	// be in the worktree. If index != target tree, we need Reset() to update both
+	// the index and worktree, even if HEAD's tree matches the target tree.
+	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
+		targetCommit, err := w.r.CommitObject(c)
+		if err != nil {
+			return err
+		}
+
+		if canUseFastPath, err := w.canSkipWorktreeUpdate(targetCommit); err == nil && canUseFastPath {
+			if indexMatches, err := w.indexMatchesTargetTree(targetCommit); err == nil && indexMatches {
+				if !opts.Hash.IsZero() && !opts.Create {
+					return w.setHEADToCommit(c)
+				}
+				return w.setHEADToBranch(opts.Branch, c)
+			}
+		}
+		// On error or if fast path not applicable, continue with slow path
+	}
+
 	ro := &ResetOptions{
 		Commit:     c,
 		Mode:       MergeReset,
@@ -294,6 +322,41 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	}
 
 	return w.r.Storer.SetReference(head)
+}
+
+// canSkipWorktreeUpdate determines if we can skip the worktree update
+// during checkout by comparing tree hashes. Returns true if current HEAD
+// and target commit point to the same tree, meaning no files need to change.
+func (w *Worktree) canSkipWorktreeUpdate(targetCommit *object.Commit) (bool, error) {
+	headRef, err := w.r.Head()
+	if err != nil {
+		return false, err
+	}
+
+	currentCommit, err := w.r.CommitObject(headRef.Hash())
+	if err != nil {
+		return false, err
+	}
+
+	return currentCommit.TreeHash == targetCommit.TreeHash, nil
+}
+
+// indexMatchesTargetTree checks if the current index already matches the target tree.
+// This is the proper check to determine if we can skip worktree updates during checkout.
+// Git uses the index (staging area) as the source of truth - if index == target tree,
+// then no worktree updates are needed regardless of physical file state.
+func (w *Worktree) indexMatchesTargetTree(targetCommit *object.Commit) (bool, error) {
+	targetTree, err := targetCommit.Tree()
+	if err != nil {
+		return false, err
+	}
+
+	changes, err := w.diffTreeWithStaging(targetTree, false)
+	if err != nil {
+		return false, err
+	}
+
+	return len(changes) == 0, nil
 }
 
 // Reset the worktree to a specified state.
