@@ -79,8 +79,10 @@ func (c *command) Start() error {
 
 	switch transport.Service(c.service) {
 	case transport.UploadPackService:
+		noDelta := uint(0)
 		opts := &transport.UploadPackOptions{
 			GitProtocol: c.gitProtocol,
+			PackWindow:  &noDelta, // Skip delta compression for local transfers.
 		}
 		go func() {
 			if err := transport.UploadPack(
