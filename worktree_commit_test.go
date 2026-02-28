@@ -2,23 +2,22 @@ package git
 
 import (
 	"bytes"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	"github.com/ProtonMail/go-crypto/openpgp/errors"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	_ "unsafe"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -27,6 +26,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
@@ -531,62 +531,6 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 	assertStorageStatus(s, s.Repository, 13, 11, 11, expected)
 }
 
-func (s *WorktreeSuite) TestCommitSign() {
-	fs := memfs.New()
-	storage := memory.NewStorage()
-
-	r, err := Init(storage, WithWorkTree(fs))
-	s.Require().NoError(err)
-
-	w, err := r.Worktree()
-	s.Require().NoError(err)
-
-	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-
-	_, err = w.Add("foo")
-	s.Require().NoError(err)
-
-	key := commitSignKey(s.T(), true)
-	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Signer: &gpgSigner{key: key}})
-	s.Require().NoError(err)
-
-	// Verify the commit.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	s.Require().NoError(err)
-
-	err = key.Serialize(pkw)
-	s.Require().NoError(err)
-	err = pkw.Close()
-	s.Require().NoError(err)
-
-	expectedCommit, err := r.CommitObject(hash)
-	s.Require().NoError(err)
-	actual, err := expectedCommit.Verify(pks.String())
-	s.Require().NoError(err)
-	s.Equal(key.PrimaryKey, actual.PrimaryKey)
-}
-
-func (s *WorktreeSuite) TestCommitSignBadKey() {
-	fs := memfs.New()
-	storage := memory.NewStorage()
-
-	r, err := Init(storage, WithWorkTree(fs))
-	s.Require().NoError(err)
-
-	w, err := r.Worktree()
-	s.Require().NoError(err)
-
-	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-
-	_, err = w.Add("foo")
-	s.Require().NoError(err)
-
-	key := commitSignKey(s.T(), false)
-	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Signer: &gpgSigner{key: key}})
-	s.ErrorIs(err, errors.InvalidArgumentError("signing key is encrypted"))
-}
-
 func (s *WorktreeSuite) TestCherryPick() {
 	fs := memfs.New()
 
@@ -889,82 +833,131 @@ func invalidSignature() *object.Signature {
 	}
 }
 
-func commitSignKey(t *testing.T, decrypt bool) *openpgp.Entity {
-	s := strings.NewReader(armoredKeyRing)
-	es, err := openpgp.ReadArmoredKeyRing(s)
-	assert.NoError(t, err)
-
-	assert.Len(t, es, 1)
-	assert.Len(t, es[0].Identities, 1)
-	_, ok := es[0].Identities["foo bar <foo@foo.foo>"]
-	assert.True(t, ok)
-
-	key := es[0]
-	if decrypt {
-		err = key.PrivateKey.Decrypt([]byte(keyPassphrase))
-		assert.NoError(t, err)
-	}
-
-	return key
+type mockSigner struct {
+	called bool
 }
 
-const armoredKeyRing = `
------BEGIN PGP PRIVATE KEY BLOCK-----
+const mockSignature = "-----BEGIN PGP SIGNATURE-----\n\nmock-signature\n-----END PGP SIGNATURE-----"
 
-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
-=gIM9
------END PGP PRIVATE KEY BLOCK-----
-`
+func (m *mockSigner) Sign(_ io.Reader) ([]byte, error) {
+	m.called = true
+	return []byte(mockSignature), nil
+}
 
-const keyPassphrase = "abcdef0123456789"
+//go:linkname resetPluginEntry github.com/go-git/go-git/v6/x/plugin.resetEntry
+func resetPluginEntry(name plugin.Name)
+
+func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	tests := []struct {
+		name           string
+		registerPlugin bool
+		optionsSigner  Signer
+		commitSignGpg  bool
+		wantErr        string
+		wantSignature  string
+		wantPluginUsed bool
+		wantOptionUsed bool
+	}{
+		{
+			name:          "no signer at all produces unsigned commit",
+			wantSignature: "",
+		},
+		{
+			name:           "CommitOptions.Signer works without plugin registered",
+			optionsSigner:  &mockSigner{},
+			wantSignature:  mockSignature + "\n",
+			wantOptionUsed: true,
+		},
+		{
+			name:           "plugin signer is used when CommitOptions.Signer is nil",
+			registerPlugin: true,
+			commitSignGpg:  true,
+			wantSignature:  mockSignature + "\n",
+			wantPluginUsed: true,
+		},
+		{
+			name:           "plugin signer is ignored if commit.signGpg=false",
+			registerPlugin: true,
+			commitSignGpg:  false,
+			wantSignature:  "",
+			wantPluginUsed: false,
+		},
+		{
+			name:          "error if commit.signGpg=true and no plugin registered",
+			commitSignGpg: true,
+			wantSignature: "",
+			wantErr:       "cannot auto-sign commit: disable commit.gpgSign or register a ObjectSigner plugin",
+		},
+		{
+			name:           "CommitOptions.Signer takes precedence over plugin",
+			registerPlugin: true,
+			commitSignGpg:  true,
+			optionsSigner:  &mockSigner{},
+			wantSignature:  mockSignature + "\n",
+			wantOptionUsed: true,
+		},
+	}
+
+	for _, tt := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tt.name, func(t *testing.T) {
+			resetPluginEntry("object-signer")
+			t.Cleanup(func() { resetPluginEntry("object-signer") })
+
+			var pluginSigner *mockSigner
+			if tt.registerPlugin {
+				pluginSigner = &mockSigner{}
+				err := plugin.Register(plugin.ObjectSigner(), func() plugin.Signer { return pluginSigner })
+				require.NoError(t, err)
+			}
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+
+			cfg.Commit.GpgSign = tt.commitSignGpg
+			err = r.SetConfig(cfg)
+			require.NoError(t, err)
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
+			_, err = w.Add("file.txt")
+			require.NoError(t, err)
+
+			hash, err := w.Commit("test commit\n", &CommitOptions{
+				Author: defaultSignature(),
+				Signer: tt.optionsSigner,
+			})
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				return // no need to carry on
+			}
+
+			commit, err := r.CommitObject(hash)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSignature, commit.Signature)
+
+			if tt.wantPluginUsed {
+				require.NotNil(t, pluginSigner)
+				assert.True(t, pluginSigner.called, "expected plugin signer to be called")
+			}
+
+			if tt.wantOptionUsed {
+				optSigner, ok := tt.optionsSigner.(*mockSigner)
+				require.True(t, ok)
+				assert.True(t, optSigner.called, "expected options signer to be called")
+			}
+
+			if pluginSigner != nil && tt.optionsSigner != nil {
+				assert.False(t, pluginSigner.called,
+					"plugin signer should not be called when CommitOptions.Signer is set")
+			}
+		})
+	}
+}
