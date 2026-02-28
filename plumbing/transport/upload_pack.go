@@ -25,6 +25,14 @@ type UploadPackOptions struct {
 	GitProtocol   string
 	AdvertiseRefs bool
 	StatelessRPC  bool
+
+	// PackWindow overrides the repository's pack.window configuration for delta
+	// compression when encoding the packfile. When nil, the repository
+	// pack.window is used, while a pointer to 0 disables delta compression.
+	//
+	// Disabling delta compression significantly improves performance for local
+	// transfers where recomputing deltas is unnecessary.
+	PackWindow *uint
 }
 
 // UploadPack is a server command that serves the upload-pack service.
@@ -265,8 +273,17 @@ func UploadPack(
 
 	// TODO: Support shallow-file
 	// TODO: Support thin-pack
+	var packWindow uint
+	if opts.PackWindow != nil {
+		packWindow = *opts.PackWindow
+	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
+		packWindow = cfg.Pack.Window
+	} else {
+		packWindow = 10
+	}
+
 	e := packfile.NewEncoder(writer, st, false)
-	_, err = e.Encode(objs, 10)
+	_, err = e.Encode(objs, packWindow)
 	if err != nil {
 		return fmt.Errorf("encoding packfile: %w", err)
 	}
