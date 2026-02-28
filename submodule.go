@@ -244,7 +244,9 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
-	if !o.NoFetch {
+	// When SingleBranch is true, skip the broad fetch that retrieves all branches.
+	// Instead, we'll fetch only the specific commit below, reducing network traffic.
+	if !o.NoFetch && !o.SingleBranch {
 		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth, Depth: o.Depth})
 		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 			return err
