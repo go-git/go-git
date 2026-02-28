@@ -55,9 +55,16 @@ func testAdvertise[T UploadPackOptions | ReceivePackOptions](
 ) *bytes.Buffer {
 	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir))
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-	return testServe(t, st, fun, io.NopCloser(bytes.NewBuffer(nil)), &T{
-		GitProtocol:   proto,
-		AdvertiseRefs: true,
-		StatelessRPC:  stateless,
-	})
+	opts := new(T)
+	switch o := any(opts).(type) {
+	case *UploadPackOptions:
+		o.GitProtocol = proto
+		o.AdvertiseRefs = true
+		o.StatelessRPC = stateless
+	case *ReceivePackOptions:
+		o.GitProtocol = proto
+		o.AdvertiseRefs = true
+		o.StatelessRPC = stateless
+	}
+	return testServe(t, st, fun, io.NopCloser(bytes.NewBuffer(nil)), opts)
 }

@@ -80,7 +80,8 @@ func (c *command) Start() error {
 	switch transport.Service(c.service) {
 	case transport.UploadPackService:
 		opts := &transport.UploadPackOptions{
-			GitProtocol: c.gitProtocol,
+			GitProtocol:          c.gitProtocol,
+			SkipDeltaCompression: true, // Skip delta compression for local transfers.
 		}
 		go func() {
 			if err := transport.UploadPack(
