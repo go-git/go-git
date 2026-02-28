@@ -192,6 +192,10 @@ func (s *Submodule) update(ctx context.Context, o *SubmoduleUpdateOptions, force
 		}
 	}
 
+	if o.URLRewriter != nil {
+		s.c.URL = o.URLRewriter(s.c.Name, s.c.URL)
+	}
+
 	idx, err := s.w.r.Storer.Index()
 	if err != nil {
 		return err
