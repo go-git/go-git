@@ -914,6 +914,30 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 	return string(b), nil
 }
 
+// resolveVerifier returns the registered ObjectVerifier plugin, or nil if none
+// is available. This follows the same pattern as signer resolution: the plugin
+// is optional, and a nil verifier simply means objects won't have a default
+// verifier injected (callers can still use VerifyWith explicitly).
+func (r *Repository) resolveVerifier() object.Verifier {
+	if !plugin.Has(plugin.ObjectVerifier()) {
+		return nil
+	}
+	v, err := plugin.Get(plugin.ObjectVerifier())
+	if err != nil {
+		return nil
+	}
+	return v
+}
+
+// verifierOpts returns an ObjectOption slice that injects the resolved verifier.
+// If no verifier is available, it returns nil (a nil slice is harmless as variadic args).
+func (r *Repository) verifierOpts() []object.ObjectOption {
+	if v := r.resolveVerifier(); v != nil {
+		return []object.ObjectOption{object.WithVerifier(v)}
+	}
+	return nil
+}
+
 // Tag returns a tag from the repository.
 //
 // If you want to check to see if the tag is an annotated tag, you can call
@@ -1546,7 +1570,7 @@ func (r *Repository) TreeObjects() (*object.TreeIter, error) {
 // CommitObject return a Commit with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned.
 func (r *Repository) CommitObject(h plumbing.Hash) (*object.Commit, error) {
-	return object.GetCommit(r.Storer, h)
+	return object.GetCommit(r.Storer, h, r.verifierOpts()...)
 }
 
 // CommitObjects returns an unsorted CommitIter with all the commits in the repository.
@@ -1579,7 +1603,7 @@ func (r *Repository) BlobObjects() (*object.BlobIter, error) {
 // plumbing.ErrObjectNotFound is returned. This method only returns
 // annotated Tags, no lightweight Tags.
 func (r *Repository) TagObject(h plumbing.Hash) (*object.Tag, error) {
-	return object.GetTag(r.Storer, h)
+	return object.GetTag(r.Storer, h, r.verifierOpts()...)
 }
 
 // TagObjects returns a unsorted TagIter that can step through all of the annotated
@@ -1601,7 +1625,7 @@ func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Obje
 		return nil, err
 	}
 
-	return object.DecodeObject(r.Storer, obj)
+	return object.DecodeObject(r.Storer, obj, r.verifierOpts()...)
 }
 
 // Objects returns an unsorted ObjectIter with all the objects in the repository.
