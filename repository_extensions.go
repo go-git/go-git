@@ -41,6 +41,12 @@ var (
 		// noop-v1 does not change git’s behavior at all.
 		// It is useful only for testing format-1 compatibility.
 		"noop-v1": {},
+
+		// These extensions are accepted by Git in v0 repositories and are treated
+		// as known extensions by Git regardless of repositoryFormatVersion.
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 
 	// Some Git extensions were supported upstream before the introduction
@@ -48,9 +54,9 @@ var (
 	// enabled while core.repositoryformatversion is unset or set to 0.
 	extensionsValidForV0 = map[string]struct{}{
 		"noop":            {},
-		"partialClone":    {},
-		"preciousObjects": {},
-		"worktreeConfig":  {},
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 )
 

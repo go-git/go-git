@@ -36,6 +36,44 @@ func TestVerifyExtensions(t *testing.T) {
 			},
 		},
 		{
+			name: "repositoryformatversion=0: allows worktreeConfig",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows partialClone",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				cfg.Raw.Section("extensions").SetOption("partialClone", "origin")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows preciousObjects",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				cfg.Raw.Section("extensions").SetOption("preciousObjects", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows WORKTREECONFIG (case-insensitive)",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				cfg.Raw.Section("extensions").SetOption("WORKTREECONFIG", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows multiple v0 extensions together",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				ext := cfg.Raw.Section("extensions")
+				ext.SetOption("worktreeConfig", "true")
+				ext.SetOption("partialClone", "origin")
+				ext.SetOption("preciousObjects", "true")
+			},
+		},
+		{
 			name: "repositoryformatversion='': allows supported noop",
 			setup: func(t *testing.T, cfg *config.Config) {
 				cfg.Raw.Section("extensions").SetOption("noop", "bar")
