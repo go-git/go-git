@@ -10,7 +10,7 @@ func Test_typeForSignature(t *testing.T) {
 	tests := []struct {
 		name string
 		b    []byte
-		want signatureType
+		want SignatureType
 	}{
 		{
 			name: "known signature format (PGP)",
@@ -21,7 +21,7 @@ iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
 TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
 =YQUf
 -----END PGP SIGNATURE-----`),
-			want: signatureTypeOpenPGP,
+			want: SignatureTypeOpenPGP,
 		},
 		{
 			name: "known signature format (SSH)",
@@ -31,7 +31,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
 MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----`),
-			want: signatureTypeSSH,
+			want: SignatureTypeSSH,
 		},
 		{
 			name: "known signature format (X.509)",
@@ -44,21 +44,21 @@ AlNFMQ4wDAYDVQQIDAVUZXhhczEOMAwGA1UEBwwFVGV4YXMxDjAMBgNVBAoMBVRl
 eGFzMQ4wDAYDVQQLDAVUZXhhczEYMBYGA1UEAwwPVGV4YXMgQ2VydGlmaWNhdGUw
 ggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQZ9Z3Z9Z3Z9Z3Z9Z3Z9Z3
 -----END SIGNED MESSAGE-----`),
-			want: signatureTypeX509,
+			want: SignatureTypeX509,
 		},
 		{
 			name: "unknown signature format",
 			b: []byte(`-----BEGIN ARBITRARY SIGNATURE-----
 U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 -----END UNKNOWN SIGNATURE-----`),
-			want: signatureTypeUnknown,
+			want: SignatureTypeUnknown,
 		},
 		{
-			name: "unknown signature format CERTIFICATE",
+			name: "known signature format CERTIFICATE",
 			b: []byte(`-----BEGIN CERTIFICATE-----
 MIIDZjCCAk6gAwIBAgIJALZ9Z3Z9Z3Z9MA0GCSqGSIb3DQEBCwUAMIGIMQswCQYD
 -----END CERTIFICATE-----`),
-			want: signatureTypeUnknown,
+			want: SignatureTypeX509,
 		},
 	}
 	for _, tt := range tests {
@@ -77,7 +77,7 @@ func Test_parseSignedBytes(t *testing.T) {
 		name          string
 		b             []byte
 		wantSignature []byte
-		wantType      signatureType
+		wantType      SignatureType
 	}{
 		{
 			name: "detects signature and type",
@@ -110,7 +110,7 @@ pAe1/EFuhv2UDLucAiWM8iDZIcw8iN0OYMOGUmnk0WuGIo7dzLeqMGY+ND5n5Z8J
 sZC//k6m
 =VhHy
 -----END PGP SIGNATURE-----`),
-			wantType: signatureTypeOpenPGP,
+			wantType: SignatureTypeOpenPGP,
 		},
 		{
 			name: "last signature for multiple signatures",
@@ -141,7 +141,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
 MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----`),
-			wantType: signatureTypeSSH,
+			wantType: SignatureTypeSSH,
 		},
 		{
 			name: "signature with trailing data",
@@ -163,13 +163,13 @@ MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----
 
 signed tag`),
-			wantType: signatureTypeSSH,
+			wantType: SignatureTypeSSH,
 		},
 		{
 			name:          "data without signature",
 			b:             []byte(`Some message`),
 			wantSignature: []byte(``),
-			wantType:      signatureTypeUnknown,
+			wantType:      SignatureTypeUnknown,
 		},
 	}
 	for _, tt := range tests {

@@ -2,12 +2,33 @@ package object
 
 import "bytes"
 
+// SignatureType represents the type of a cryptographic signature.
+type SignatureType int8
+
 const (
-	signatureTypeUnknown signatureType = iota
-	signatureTypeOpenPGP
-	signatureTypeX509
-	signatureTypeSSH
+	// SignatureTypeUnknown indicates an unrecognized signature format.
+	SignatureTypeUnknown SignatureType = iota
+	// SignatureTypeOpenPGP indicates an OpenPGP (GPG) signature.
+	SignatureTypeOpenPGP
+	// SignatureTypeX509 indicates an X.509 (S/MIME) signature.
+	SignatureTypeX509
+	// SignatureTypeSSH indicates an SSH signature.
+	SignatureTypeSSH
 )
+
+// String returns the string representation of the signature type.
+func (t SignatureType) String() string {
+	switch t {
+	case SignatureTypeOpenPGP:
+		return "OpenPGP"
+	case SignatureTypeX509:
+		return "X.509"
+	case SignatureTypeSSH:
+		return "SSH"
+	default:
+		return "unknown"
+	}
+}
 
 var (
 	// openPGPSignatureFormat is the format of an OpenPGP signature.
@@ -19,6 +40,7 @@ var (
 	// a PKCS#7 (S/MIME) signature.
 	x509SignatureFormat = signatureFormat{
 		[]byte("-----BEGIN SIGNED MESSAGE-----"),
+		[]byte("-----BEGIN CERTIFICATE-----"),
 	}
 
 	// sshSignatureFormat is the format of an SSH signature.
@@ -28,21 +50,23 @@ var (
 )
 
 // knownSignatureFormats is a map of known signature formats, indexed by
-// their signatureType.
-var knownSignatureFormats = map[signatureType]signatureFormat{
-	signatureTypeOpenPGP: openPGPSignatureFormat,
-	signatureTypeX509:    x509SignatureFormat,
-	signatureTypeSSH:     sshSignatureFormat,
+// their SignatureType.
+var knownSignatureFormats = map[SignatureType]signatureFormat{
+	SignatureTypeOpenPGP: openPGPSignatureFormat,
+	SignatureTypeX509:    x509SignatureFormat,
+	SignatureTypeSSH:     sshSignatureFormat,
 }
-
-// signatureType represents the type of the signature.
-type signatureType int8
 
 // signatureFormat represents the beginning of a signature.
 type signatureFormat [][]byte
 
+// DetectSignatureType returns the SignatureType for the given signature bytes.
+func DetectSignatureType(sig []byte) SignatureType {
+	return typeForSignature(sig)
+}
+
 // typeForSignature returns the type of the signature based on its format.
-func typeForSignature(b []byte) signatureType {
+func typeForSignature(b []byte) SignatureType {
 	for t, i := range knownSignatureFormats {
 		for _, begin := range i {
 			if bytes.HasPrefix(b, begin) {
@@ -50,7 +74,7 @@ func typeForSignature(b []byte) signatureType {
 			}
 		}
 	}
-	return signatureTypeUnknown
+	return SignatureTypeUnknown
 }
 
 // parseSignedBytes returns the position of the last signature block found in
@@ -79,12 +103,12 @@ func typeForSignature(b []byte) signatureType {
 //
 // This logic is on par with git's gpg-interface.c:parse_signed_buffer().
 // https://github.com/git/git/blob/7c2ef319c52c4997256f5807564523dfd4acdfc7/gpg-interface.c#L668
-func parseSignedBytes(b []byte) (int, signatureType) {
+func parseSignedBytes(b []byte) (int, SignatureType) {
 	n, match := 0, -1
-	var t signatureType
+	var t SignatureType
 	for n < len(b) {
 		i := b[n:]
-		if st := typeForSignature(i); st != signatureTypeUnknown {
+		if st := typeForSignature(i); st != SignatureTypeUnknown {
 			match = n
 			t = st
 		}
