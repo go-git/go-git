@@ -492,27 +492,68 @@ TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
 `,
 	}
 
-	armoredKeyRing := `
------BEGIN PGP PUBLIC KEY BLOCK-----
+	// Test with no verifier (nil) returns ErrNilVerifier.
+	_, err := commit.Verify()
+	s.ErrorIs(err, ErrNilVerifier)
 
-mDMEYGeSihYJKwYBBAHaRw8BAQdAIs9A3YD/EghhAOkHDkxlUkpqYrXUXebLfmmX
-+pdEK6C0D2dvLWdpdCB0ZXN0IGtleYiPBBMWCgA3FiEEzKlNMnEN3+oNzzKFjJpp
-heC7lfEFAmBnkooCGyMECwkIBwUVCgkICwUWAwIBAAIeAQIXgAAKCRCMmmmF4LuV
-8a3jAQCi4hSqjj6J3ch290FvQaYPGwR+EMQTMBG54t+NN6sDfgD/aZy41+0dnFKl
-qM/wLW5Wr9XvwH+1zXXbuSvfxasHowq4OARgZ5KKEgorBgEEAZdVAQUBAQdAXoQz
-VTYug16SisAoSrxFnOmxmFu6efYgCAwXu0ZuvzsDAQgHiHgEGBYKACAWIQTMqU0y
-cQ3f6g3PMoWMmmmF4LuV8QUCYGeSigIbDAAKCRCMmmmF4LuV8Q4QAQCKW5FnEdWW
-lHYKeByw3JugnlZ0U3V/R20bCwDglst5UQEAtkN2iZkHtkPly9xapsfNqnrt2gTt
-YIefGtzXfldDxg4=
-=Psht
------END PGP PUBLIC KEY BLOCK-----
-`
-
-	e, err := commit.Verify(armoredKeyRing)
+	// Test VerifyWith with a mock verifier.
+	mock := &mockVerifier{result: &VerificationResult{
+		Type:  SignatureTypeOpenPGP,
+		Valid: true,
+		KeyID: "test-key",
+	}}
+	result, err := commit.VerifyWith(mock)
 	s.NoError(err)
+	s.True(result.Valid)
+	s.Equal("test-key", result.KeyID)
 
-	_, ok := e.Identities["go-git test key"]
-	s.True(ok)
+	// Verify the mock received the signature bytes.
+	s.NotEmpty(mock.gotSignature)
+	s.NotEmpty(mock.gotMessage)
+
+	// Test unsigned commit returns ErrNoSignature.
+	unsigned := &Commit{
+		Hash:    plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
+		Message: "unsigned",
+	}
+	_, err = unsigned.VerifyWith(mock)
+	s.ErrorIs(err, ErrNoSignature)
+}
+
+func (s *SuiteCommit) TestVerifyWithInjectedVerifier() {
+	ts := time.Unix(1617402711, 0)
+	loc, _ := time.LoadLocation("UTC")
+
+	mock := &mockVerifier{result: &VerificationResult{
+		Type:  SignatureTypeOpenPGP,
+		Valid: true,
+		KeyID: "injected-key",
+	}}
+
+	commit := &Commit{
+		Hash:      plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
+		Author:    Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Committer: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Message: `test
+`,
+		TreeHash:     plumbing.NewHash("52a266a58f2c028ad7de4dfd3a72fdf76b0d4e24"),
+		ParentHashes: []plumbing.Hash{plumbing.NewHash("e4fbb611cd14149c7a78e9c08425f59f4b736a9a")},
+		Signature: `
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
+8VtyAP9LbuXAhtK6FQqOjKybBwlV70rLcXVP24ubDuz88VVwSgD+LuObsasWq6/U
+TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
+=YQUf
+-----END PGP SIGNATURE-----
+`,
+		v: mock,
+	}
+
+	result, err := commit.Verify()
+	s.NoError(err)
+	s.True(result.Valid)
+	s.Equal("injected-key", result.KeyID)
 }
 
 func (s *SuiteCommit) TestPatchCancel() {
@@ -743,4 +784,18 @@ func (s *SuiteCommit) TestLess() {
 		}
 		s.Equal(t.Exp, commit1.Less(commit2))
 	}
+}
+
+// mockVerifier is a test helper that implements the Verifier interface.
+type mockVerifier struct {
+	result       *VerificationResult
+	err          error
+	gotSignature []byte
+	gotMessage   []byte
+}
+
+func (m *mockVerifier) Verify(signature, message []byte) (*VerificationResult, error) {
+	m.gotSignature = signature
+	m.gotMessage = message
+	return m.result, m.err
 }

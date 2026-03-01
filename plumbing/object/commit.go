@@ -8,8 +8,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -66,6 +64,7 @@ type Commit struct {
 	ExtraHeaders []ExtraHeader
 
 	s storer.EncodedObjectStorer
+	v Verifier
 }
 
 // ExtraHeader holds any non-standard header
@@ -111,19 +110,20 @@ func parseExtraHeader(line []byte) (ExtraHeader, bool) {
 }
 
 // GetCommit gets a commit from an object storer and decodes it.
-func GetCommit(s storer.EncodedObjectStorer, h plumbing.Hash) (*Commit, error) {
+func GetCommit(s storer.EncodedObjectStorer, h plumbing.Hash, opts ...ObjectOption) (*Commit, error) {
 	o, err := s.EncodedObject(plumbing.CommitObject, h)
 	if err != nil {
 		return nil, err
 	}
 
-	return DecodeCommit(s, o)
+	return DecodeCommit(s, o, opts...)
 }
 
 // DecodeCommit decodes an encoded object into a *Commit and associates it to
 // the given object storer.
-func DecodeCommit(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Commit, error) {
-	c := &Commit{s: s}
+func DecodeCommit(s storer.EncodedObjectStorer, o plumbing.EncodedObject, opts ...ObjectOption) (*Commit, error) {
+	resolved := applyObjectOptions(opts)
+	c := &Commit{s: s, v: resolved.Verifier}
 	if err := c.Decode(o); err != nil {
 		return nil, err
 	}
@@ -168,8 +168,9 @@ func (c *Commit) Patch(to *Commit) (*Patch, error) {
 
 // Parents return a CommitIter to the parent Commits.
 func (c *Commit) Parents() CommitIter {
-	return NewCommitIter(c.s,
+	return newCommitIterWithVerifier(c.s,
 		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.ParentHashes),
+		c.v,
 	)
 }
 
@@ -187,7 +188,7 @@ func (c *Commit) Parent(i int) (*Commit, error) {
 		return nil, ErrParentNotFound
 	}
 
-	return GetCommit(c.s, c.ParentHashes[i])
+	return GetCommit(c.s, c.ParentHashes[i], WithVerifier(c.v))
 }
 
 // File returns the file with the specified "path" in the commit and a
@@ -474,29 +475,50 @@ func (c *Commit) String() string {
 	)
 }
 
-// Verify performs PGP verification of the commit with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
-func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
-	if err != nil {
-		return nil, err
+// Verify verifies the cryptographic signature on the commit using the
+// verifier injected at construction time (via WithVerifier).
+// Returns a VerificationResult on success.
+//
+// If the commit has no signature, ErrNoSignature is returned.
+// If no verifier was injected, ErrNilVerifier is returned.
+func (c *Commit) Verify() (*VerificationResult, error) {
+	return c.VerifyWith(c.v)
+}
+
+// VerifyWith verifies the cryptographic signature on the commit using the
+// provided Verifier explicitly.
+// Returns a VerificationResult on success.
+//
+// If the commit has no signature, ErrNoSignature is returned.
+// If v is nil, ErrNilVerifier is returned.
+func (c *Commit) VerifyWith(v Verifier) (*VerificationResult, error) {
+	if v == nil {
+		return nil, ErrNilVerifier
+	}
+	if c.Signature == "" {
+		return nil, ErrNoSignature
 	}
 
-	// Extract signature.
-	signature := strings.NewReader(c.Signature)
-
 	encoded := &plumbing.MemoryObject{}
-	// Encode commit components, excluding signature and get a reader object.
 	if err := c.EncodeWithoutSignature(encoded); err != nil {
 		return nil, err
 	}
-	er, err := encoded.Reader()
+	message, err := io.ReadAll(must(encoded.Reader()))
 	if err != nil {
 		return nil, err
 	}
 
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+	return v.Verify([]byte(c.Signature), message)
+}
+
+// must is a small helper that returns r, panicking if err is non-nil.
+// It is only used in contexts where the error is structurally impossible
+// (e.g. MemoryObject.Reader).
+func must[T any](r T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return r
 }
 
 // Less defines a compare function to determine which commit is 'earlier' by:
@@ -534,6 +556,7 @@ type CommitIter interface {
 type storerCommitIter struct {
 	storer.EncodedObjectIter
 	s storer.EncodedObjectStorer
+	v Verifier
 }
 
 // NewCommitIter takes a storer.EncodedObjectStorer and a
@@ -542,7 +565,13 @@ type storerCommitIter struct {
 //
 // Any non-commit object returned by the storer.EncodedObjectIter is skipped.
 func NewCommitIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) CommitIter {
-	return &storerCommitIter{iter, s}
+	return &storerCommitIter{iter, s, nil}
+}
+
+// newCommitIterWithVerifier creates a CommitIter that propagates a verifier
+// to each decoded commit.
+func newCommitIterWithVerifier(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter, v Verifier) CommitIter {
+	return &storerCommitIter{iter, s, v}
 }
 
 // Next moves the iterator to the next commit and returns a pointer to it. If
@@ -553,7 +582,7 @@ func (iter *storerCommitIter) Next() (*Commit, error) {
 		return nil, err
 	}
 
-	return DecodeCommit(iter.s, obj)
+	return DecodeCommit(iter.s, obj, WithVerifier(iter.v))
 }
 
 // ForEach call the cb function for each commit contained on this iter until
@@ -561,7 +590,7 @@ func (iter *storerCommitIter) Next() (*Commit, error) {
 // the iteration is stopped but no error is returned. The iterator is closed.
 func (iter *storerCommitIter) ForEach(cb func(*Commit) error) error {
 	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
-		c, err := DecodeCommit(iter.s, obj)
+		c, err := DecodeCommit(iter.s, obj, WithVerifier(iter.v))
 		if err != nil {
 			return err
 		}

@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strings"
-
-	"github.com/ProtonMail/go-crypto/openpgp"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -40,22 +37,24 @@ type Tag struct {
 	Target plumbing.Hash
 
 	s storer.EncodedObjectStorer
+	v Verifier
 }
 
 // GetTag gets a tag from an object storer and decodes it.
-func GetTag(s storer.EncodedObjectStorer, h plumbing.Hash) (*Tag, error) {
+func GetTag(s storer.EncodedObjectStorer, h plumbing.Hash, opts ...ObjectOption) (*Tag, error) {
 	o, err := s.EncodedObject(plumbing.TagObject, h)
 	if err != nil {
 		return nil, err
 	}
 
-	return DecodeTag(s, o)
+	return DecodeTag(s, o, opts...)
 }
 
-// DecodeTag decodes an encoded object into a *Commit and associates it to the
+// DecodeTag decodes an encoded object into a *Tag and associates it to the
 // given object storer.
-func DecodeTag(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Tag, error) {
-	t := &Tag{s: s}
+func DecodeTag(s storer.EncodedObjectStorer, o plumbing.EncodedObject, opts ...ObjectOption) (*Tag, error) {
+	resolved := applyObjectOptions(opts)
+	t := &Tag{s: s, v: resolved.Verifier}
 	if err := t.Decode(o); err != nil {
 		return nil, err
 	}
@@ -202,7 +201,7 @@ func (t *Tag) Commit() (*Commit, error) {
 		return nil, err
 	}
 
-	return DecodeCommit(t.s, o)
+	return DecodeCommit(t.s, o, WithVerifier(t.v))
 }
 
 // Tree returns the tree pointed to by the tag. If the tag points to a commit
@@ -241,7 +240,7 @@ func (t *Tag) Object() (Object, error) {
 		return nil, err
 	}
 
-	return DecodeObject(t.s, o)
+	return DecodeObject(t.s, o, WithVerifier(t.v))
 }
 
 // String returns the meta information contained in the tag as a formatted
@@ -256,35 +255,47 @@ func (t *Tag) String() string {
 	)
 }
 
-// Verify performs PGP verification of the tag with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
-func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
-	if err != nil {
-		return nil, err
+// Verify verifies the cryptographic signature on the tag using the
+// verifier injected at construction time (via WithVerifier).
+// Returns a VerificationResult on success.
+//
+// If the tag has no signature, ErrNoSignature is returned.
+// If no verifier was injected, ErrNilVerifier is returned.
+func (t *Tag) Verify() (*VerificationResult, error) {
+	return t.VerifyWith(t.v)
+}
+
+// VerifyWith verifies the cryptographic signature on the tag using the
+// provided Verifier explicitly.
+// Returns a VerificationResult on success.
+//
+// If the tag has no signature, ErrNoSignature is returned.
+// If v is nil, ErrNilVerifier is returned.
+func (t *Tag) VerifyWith(v Verifier) (*VerificationResult, error) {
+	if v == nil {
+		return nil, ErrNilVerifier
+	}
+	if t.Signature == "" {
+		return nil, ErrNoSignature
 	}
 
-	// Extract signature.
-	signature := strings.NewReader(t.Signature)
-
 	encoded := &plumbing.MemoryObject{}
-	// Encode tag components, excluding signature and get a reader object.
 	if err := t.EncodeWithoutSignature(encoded); err != nil {
 		return nil, err
 	}
-	er, err := encoded.Reader()
+	message, err := io.ReadAll(must(encoded.Reader()))
 	if err != nil {
 		return nil, err
 	}
 
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+	return v.Verify([]byte(t.Signature), message)
 }
 
 // TagIter provides an iterator for a set of tags.
 type TagIter struct {
 	storer.EncodedObjectIter
 	s storer.EncodedObjectStorer
+	v Verifier
 }
 
 // NewTagIter takes a storer.EncodedObjectStorer and a
@@ -293,7 +304,13 @@ type TagIter struct {
 //
 // Any non-tag object returned by the storer.EncodedObjectIter is skipped.
 func NewTagIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *TagIter {
-	return &TagIter{iter, s}
+	return &TagIter{iter, s, nil}
+}
+
+// newTagIterWithVerifier creates a TagIter that propagates a verifier
+// to each decoded tag.
+func newTagIterWithVerifier(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter, v Verifier) *TagIter {
+	return &TagIter{iter, s, v}
 }
 
 // Next moves the iterator to the next tag and returns a pointer to it. If
@@ -304,7 +321,7 @@ func (iter *TagIter) Next() (*Tag, error) {
 		return nil, err
 	}
 
-	return DecodeTag(iter.s, obj)
+	return DecodeTag(iter.s, obj, WithVerifier(iter.v))
 }
 
 // ForEach call the cb function for each tag contained on this iter until
@@ -312,7 +329,7 @@ func (iter *TagIter) Next() (*Tag, error) {
 // the iteration is stop but no error is returned. The iterator is closed.
 func (iter *TagIter) ForEach(cb func(*Tag) error) error {
 	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
-		t, err := DecodeTag(iter.s, obj)
+		t, err := DecodeTag(iter.s, obj, WithVerifier(iter.v))
 		if err != nil {
 			return err
 		}

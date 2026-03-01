@@ -48,27 +48,27 @@ type Object interface {
 }
 
 // GetObject gets an object from an object storer and decodes it.
-func GetObject(s storer.EncodedObjectStorer, h plumbing.Hash) (Object, error) {
+func GetObject(s storer.EncodedObjectStorer, h plumbing.Hash, opts ...ObjectOption) (Object, error) {
 	o, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
 		return nil, err
 	}
 
-	return DecodeObject(s, o)
+	return DecodeObject(s, o, opts...)
 }
 
 // DecodeObject decodes an encoded object into an Object and associates it to
 // the given object storer.
-func DecodeObject(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (Object, error) {
+func DecodeObject(s storer.EncodedObjectStorer, o plumbing.EncodedObject, opts ...ObjectOption) (Object, error) {
 	switch o.Type() {
 	case plumbing.CommitObject:
-		return DecodeCommit(s, o)
+		return DecodeCommit(s, o, opts...)
 	case plumbing.TreeObject:
 		return DecodeTree(s, o)
 	case plumbing.BlobObject:
 		return DecodeBlob(o)
 	case plumbing.TagObject:
-		return DecodeTag(s, o)
+		return DecodeTag(s, o, opts...)
 	default:
 		return nil, plumbing.ErrInvalidType
 	}
