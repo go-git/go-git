@@ -225,10 +225,10 @@ func (iter *ObjectIter) toObject(obj plumbing.EncodedObject) (Object, error) {
 		tree := &Tree{s: iter.s}
 		return tree, tree.Decode(obj)
 	case plumbing.CommitObject:
-		commit := &Commit{}
+		commit := &Commit{s: iter.s}
 		return commit, commit.Decode(obj)
 	case plumbing.TagObject:
-		tag := &Tag{}
+		tag := &Tag{s: iter.s}
 		return tag, tag.Decode(obj)
 	default:
 		return nil, plumbing.ErrInvalidType
