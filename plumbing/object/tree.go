@@ -236,7 +236,10 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	defer sync.PutBufioReader(r)
 
 	for {
-		str, err := r.ReadString(' ')
+		// Use ReadSlice to get a view into bufio's internal buffer,
+		// avoiding a string allocation for the mode (which is parsed
+		// into a uint32 immediately and doesn't need to persist).
+		modeSlice, err := r.ReadSlice(' ')
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -244,17 +247,21 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 			return err
 		}
-		str = str[:len(str)-1] // strip last byte (' ')
+		modeSlice = modeSlice[:len(modeSlice)-1] // strip delimiter
 
-		mode, err := filemode.New(str)
+		mode, err := filemode.NewFromBytes(modeSlice)
 		if err != nil {
 			return err
 		}
 
-		name, err := r.ReadString(0)
+		// Use ReadSlice for the name too — the returned slice is only
+		// valid until the next read, so we copy it into a string now
+		// (one allocation for the name we need to keep anyway).
+		nameSlice, err := r.ReadSlice(0)
 		if err != nil && err != io.EOF {
 			return err
 		}
+		name := string(nameSlice[:len(nameSlice)-1]) // strip delimiter
 
 		var hash plumbing.Hash
 		hash.ResetBySize(t.Hash.Size())
@@ -262,11 +269,10 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 			return err
 		}
 
-		baseName := name[:len(name)-1]
 		t.Entries = append(t.Entries, TreeEntry{
 			Hash: hash,
 			Mode: mode,
-			Name: baseName,
+			Name: name,
 		})
 	}
 
