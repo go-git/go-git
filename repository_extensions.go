@@ -46,11 +46,13 @@ var (
 	// Some Git extensions were supported upstream before the introduction
 	// of repositoryformatversion. These are the only extensions that can be
 	// enabled while core.repositoryformatversion is unset or set to 0.
+	// Keys must be lowercase to match the output of extensions(), which
+	// normalises extension names with strings.ToLower.
 	extensionsValidForV0 = map[string]struct{}{
 		"noop":            {},
-		"partialClone":    {},
-		"preciousObjects": {},
-		"worktreeConfig":  {},
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 )
 

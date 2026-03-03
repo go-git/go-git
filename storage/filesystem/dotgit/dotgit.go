@@ -27,21 +27,22 @@ import (
 )
 
 const (
-	packedRefsPath = "packed-refs"
-	configPath     = "config"
-	indexPath      = "index"
-	shallowPath    = "shallow"
-	modulePath     = "modules"
-	objectsPath    = "objects"
-	packPath       = "pack"
-	refsPath       = "refs"
-	branchesPath   = "branches"
-	hooksPath      = "hooks"
-	infoPath       = "info"
-	remotesPath    = "remotes"
-	logsPath       = "logs"
-	worktreesPath  = "worktrees"
-	alternatesPath = "alternates"
+	packedRefsPath     = "packed-refs"
+	configPath         = "config"
+	configWorktreePath = "config.worktree"
+	indexPath          = "index"
+	shallowPath        = "shallow"
+	modulePath         = "modules"
+	objectsPath        = "objects"
+	packPath           = "pack"
+	refsPath           = "refs"
+	branchesPath       = "branches"
+	hooksPath          = "hooks"
+	infoPath           = "info"
+	remotesPath        = "remotes"
+	logsPath           = "logs"
+	worktreesPath      = "worktrees"
+	alternatesPath     = "alternates"
 
 	tmpPackedRefsPrefix = "._packed-refs"
 
@@ -183,6 +184,16 @@ func (d *DotGit) ConfigWriter() (billy.File, error) {
 // Config returns a file pointer for read to the config file
 func (d *DotGit) Config() (billy.File, error) {
 	return d.fs.Open(configPath)
+}
+
+// ConfigWorktree returns a file pointer for read to the worktree config file.
+func (d *DotGit) ConfigWorktree() (billy.File, error) {
+	return d.fs.Open(configWorktreePath)
+}
+
+// ConfigWorktreeWriter returns a file pointer for write to the worktree config file.
+func (d *DotGit) ConfigWorktreeWriter() (billy.File, error) {
+	return d.fs.Create(configWorktreePath)
 }
 
 // IndexWriter returns a file pointer for write to the index file

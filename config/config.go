@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -129,6 +130,10 @@ type Config struct {
 		// This setting must not be changed after repository initialization
 		// (e.g. clone or init).
 		ObjectFormat format.ObjectFormat
+		// WorktreeConfig indicates that per-worktree config files are enabled.
+		// When true, each worktree may have a config.worktree file that
+		// overrides settings in the common .git/config.
+		WorktreeConfig bool
 	}
 
 	Protocol struct {
@@ -166,6 +171,9 @@ type Config struct {
 // Merge combines all the src Config objects into one.
 // The objects are processed in the order they are passed on, and will
 // override any existing values. Empty configs are ignored.
+//
+// The config field Raw cannot be merged via reflection, so it is ignored
+// as part of the Merge operation. To update Raw after a merge, call Marshal().
 func Merge(src ...*Config) Config {
 	var final Config
 
@@ -183,8 +191,19 @@ func Merge(src ...*Config) Config {
 func merge(dst, src any) {
 	tv := reflect.ValueOf(dst).Elem()
 	sv := reflect.ValueOf(src).Elem()
+	tt := tv.Type()
 
 	for i := 0; i < tv.NumField(); i++ {
+		// Raw holds a *format.Config whose Sections field is a slice. The
+		// generic default case below would replace dst.Sections with
+		// src.Sections wholesale, dropping sections that exist only in the
+		// base config (e.g. [extensions]).  Merge() rebuilds Raw from the
+		// merged struct state after all sources have been processed, so we
+		// skip it here.
+		if tt.Field(i).Name == "Raw" {
+			continue
+		}
+
 		df := tv.Field(i)
 		sf := sv.Field(i)
 
@@ -209,6 +228,21 @@ func merge(dst, src any) {
 				merge(df.Interface(), sf.Interface())
 			} else {
 				df.Set(sf)
+			}
+
+		case reflect.Map:
+			// An empty (but non-nil) src map must not overwrite dst entries.
+			// Only copy individual entries from src so that dst keys not
+			// present in src are preserved and src entries override same-key
+			// dst entries.
+			if sf.Len() == 0 {
+				continue
+			}
+			if df.IsNil() {
+				df.Set(reflect.MakeMap(df.Type()))
+			}
+			for _, key := range sf.MapKeys() {
+				df.SetMapIndex(key, sf.MapIndex(key))
 			}
 
 		default:
@@ -358,6 +392,7 @@ const (
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormatKey            = "objectformat"
+	worktreeConfigKey          = "worktreeConfig"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
@@ -426,6 +461,7 @@ func (c *Config) unmarshalCore() {
 func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
+	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
 }
 
 func (c *Config) unmarshalUser() {
@@ -557,7 +593,14 @@ func (c *Config) unmarshalInit() {
 }
 
 // Marshal returns Config encoded as a git-config file.
+//
+// This call populates the field Raw with the current values of
+// the config.
 func (c *Config) Marshal() ([]byte, error) {
+	if c.Raw == nil {
+		c.Raw = format.New()
+	}
+
 	c.marshalCore()
 	c.marshalExtensions()
 	c.marshalUser()
@@ -597,11 +640,25 @@ func (c *Config) marshalCore() {
 
 func (c *Config) marshalExtensions() {
 	// Extensions are only supported on Version 1, therefore
-	// ignore them otherwise.
-	if c.Core.RepositoryFormatVersion == format.Version1 &&
-		c.Extensions.ObjectFormat != format.UnsetObjectFormat {
-		s := c.Raw.Section(extensionsSection)
+	// don't marshal it otherwise.
+	if c.Core.RepositoryFormatVersion != format.Version1 {
+		return
+	}
+
+	// Only marshal the [extensions] section if there are extension options to write.
+	// This avoids introducing an empty [extensions] section on round-trips.
+	if c.Extensions.ObjectFormat == format.UnsetObjectFormat &&
+		!c.Extensions.WorktreeConfig {
+		return
+	}
+
+	s := c.Raw.Section(extensionsSection)
+	if c.Extensions.ObjectFormat != format.UnsetObjectFormat {
 		s.SetOption(objectFormatKey, string(c.Extensions.ObjectFormat))
+	}
+
+	if c.Extensions.WorktreeConfig {
+		s.SetOption(worktreeConfigKey, "true")
 	}
 }
 
