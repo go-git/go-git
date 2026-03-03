@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -1109,6 +1110,135 @@ func TestWorktreeIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, foundMaster, "remote should have master branch")
 	assert.True(t, foundFeature, "remote should have feature-branch")
+}
+
+func TestWorktreeConfig(t *testing.T) {
+	t.Parallel()
+
+	const worktreeName = "feature"
+	const customWorktreePath = "/custom/path"
+	const worktreeConfigContent = "[core]\n\tworktree = " + customWorktreePath + "\n"
+
+	t.Run("linked worktree reads config.worktree", func(t *testing.T) {
+		t.Parallel()
+
+		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+		cfg, err := storer.Config()
+		require.NoError(t, err)
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		cfg.Extensions.WorktreeConfig = true
+		err = storer.SetConfig(cfg)
+		require.NoError(t, err)
+
+		w, err := New(storer)
+		require.NoError(t, err)
+
+		wtFS := memfs.New()
+		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		require.NoError(t, err)
+
+		cfgWorktreePath := filepath.Join("worktrees", worktreeName, "config.worktree")
+		err = util.WriteFile(storer.Filesystem(), cfgWorktreePath, []byte(worktreeConfigContent), 0o644)
+		require.NoError(t, err)
+
+		repo, err := w.Open(wtFS)
+		require.NoError(t, err)
+
+		repoCfg, err := repo.Config()
+		require.NoError(t, err)
+		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
+
+		assert.Contains(t, repoCfg.Remotes, "origin") // check base repo config
+	})
+
+	t.Run("config.worktree absent", func(t *testing.T) {
+		t.Parallel()
+
+		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+		cfg, err := storer.Config()
+		require.NoError(t, err)
+		cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+		err = storer.SetConfig(cfg)
+		require.NoError(t, err)
+
+		w, err := New(storer)
+		require.NoError(t, err)
+
+		wtFS := memfs.New()
+		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		require.NoError(t, err)
+
+		repo, err := w.Open(wtFS)
+		require.NoError(t, err)
+
+		repoCfg, err := repo.Config()
+		require.NoError(t, err)
+		assert.Empty(t, repoCfg.Core.Worktree)
+	})
+
+	t.Run("extension disabled config.worktree ignored", func(t *testing.T) {
+		t.Parallel()
+
+		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+		w, err := New(storer)
+		require.NoError(t, err)
+
+		wtFS := memfs.New()
+		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		require.NoError(t, err)
+
+		cfgWorktreePath := filepath.Join("worktrees", worktreeName, "config.worktree")
+		err = util.WriteFile(storer.Filesystem(), cfgWorktreePath, []byte("[core]\n\tworktree = /ignored/path\n"), 0o644)
+		require.NoError(t, err)
+
+		repo, err := w.Open(wtFS)
+		require.NoError(t, err)
+
+		repoCfg, err := repo.Config()
+		require.NoError(t, err)
+		assert.Empty(t, repoCfg.Core.Worktree)
+	})
+
+	t.Run("boundOS linked worktree reads config.worktree", func(t *testing.T) {
+		t.Parallel()
+
+		fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+		cfg, err := storer.Config()
+		require.NoError(t, err)
+		cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+		err = storer.SetConfig(cfg)
+		require.NoError(t, err)
+
+		w, err := New(storer)
+		require.NoError(t, err)
+
+		wtFS := memfs.New()
+		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
+		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		require.NoError(t, err)
+
+		cfgWorktreePath := filepath.Join("worktrees", worktreeName, "config.worktree")
+		err = util.WriteFile(storer.Filesystem(), cfgWorktreePath, []byte(worktreeConfigContent), 0o644)
+		require.NoError(t, err)
+
+		repo, err := w.Open(wtFS)
+		require.NoError(t, err)
+
+		repoCfg, err := repo.Config()
+		require.NoError(t, err)
+		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
+	})
 }
 
 func FuzzAdd(f *testing.F) {
