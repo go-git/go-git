@@ -264,6 +264,61 @@ func TestUnmarshalMarshal(t *testing.T) {
 	}
 }
 
+func TestMarshalExtensions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		setup       func(*Config)
+		wantSection bool
+	}{
+		{
+			name:        "no extensions set omits section",
+			setup:       func(c *Config) {},
+			wantSection: false,
+		},
+		{
+			name: "WorktreeConfig true writes section",
+			setup: func(c *Config) {
+				c.Core.RepositoryFormatVersion = config.Version1
+				c.Extensions.WorktreeConfig = true
+			},
+			wantSection: true,
+		},
+		{
+			name: "ObjectFormat set writes section",
+			setup: func(c *Config) {
+				c.Core.RepositoryFormatVersion = config.Version1
+				c.Extensions.ObjectFormat = config.SHA256
+			},
+			wantSection: true,
+		},
+		{
+			name: "RepositoryFormat = 0 ignores section",
+			setup: func(c *Config) {
+				c.Core.RepositoryFormatVersion = config.Version0
+				c.Extensions.ObjectFormat = config.SHA256
+				c.Extensions.WorktreeConfig = true
+			},
+			wantSection: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			tc.setup(cfg)
+
+			out, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			hasSection := strings.Contains(string(out), "[extensions]")
+			assert.Equal(t, tc.wantSection, hasSection)
+		})
+	}
+}
+
 func (s *ConfigSuite) TestLoadConfigXDG() {
 	cfg := NewConfig()
 	cfg.User.Name = "foo"
@@ -612,6 +667,90 @@ func TestMerge(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "src nil map preserves dst map",
+			input: []*Config{
+				{
+					Remotes: map[string]*RemoteConfig{
+						"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
+					},
+				},
+				{
+					// Remotes is nil (zero value)
+					Branches: map[string]*Branch{
+						"main": {Name: "main"},
+					},
+				},
+			},
+			want: Config{
+				Remotes: map[string]*RemoteConfig{
+					"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
+				},
+				Branches: map[string]*Branch{
+					"main": {Name: "main"},
+				},
+			},
+		},
+		{
+			name: "src empty map preserves dst map",
+			input: []*Config{
+				{
+					Remotes: map[string]*RemoteConfig{
+						"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
+					},
+				},
+				{
+					// Remotes is explicitly initialised but empty (mirrors NewConfig behaviour).
+					Remotes: map[string]*RemoteConfig{},
+				},
+			},
+			want: Config{
+				Remotes: map[string]*RemoteConfig{
+					"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
+				},
+			},
+		},
+		{
+			name: "merge maps with disjoint keys",
+			input: []*Config{
+				{
+					Remotes: map[string]*RemoteConfig{
+						"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
+					},
+				},
+				{
+					Remotes: map[string]*RemoteConfig{
+						"upstream": {Name: "upstream", URLs: []string{"https://upstream.com/repo.git"}},
+					},
+				},
+			},
+			want: Config{
+				Remotes: map[string]*RemoteConfig{
+					"origin":   {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
+					"upstream": {Name: "upstream", URLs: []string{"https://upstream.com/repo.git"}},
+				},
+			},
+		},
+		{
+			name: "src map entry overrides dst map entry",
+			input: []*Config{
+				{
+					Remotes: map[string]*RemoteConfig{
+						"origin": {Name: "origin", URLs: []string{"https://old.com/repo.git"}},
+					},
+				},
+				{
+					Remotes: map[string]*RemoteConfig{
+						"origin": {Name: "origin", URLs: []string{"https://new.com/repo.git"}},
+					},
+				},
+			},
+			want: Config{
+				Remotes: map[string]*RemoteConfig{
+					"origin": {Name: "origin", URLs: []string{"https://new.com/repo.git"}},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -623,4 +762,38 @@ func TestMerge(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+
+	t.Run("merge resets Raw section", func(t *testing.T) {
+		t.Parallel()
+
+		const baseConfig = "[core]\n\tbare = false\n\tfilemode = true\n" +
+			"repositoryformatversion = 1\n" +
+			"[extensions]\n\tworktreeConfig = true\n" +
+			"[user]\n\tname = base-user\n\temail = base@example.com\n"
+		const wtConfig = "[user]\n\tname = wt-user\n"
+
+		base, err := ReadConfig(strings.NewReader(baseConfig))
+		require.NoError(t, err)
+		wt, err := ReadConfig(strings.NewReader(wtConfig))
+		require.NoError(t, err)
+
+		merged := Merge(base, wt)
+
+		assert.Equal(t, "wt-user", merged.User.Name)
+		assert.Equal(t, "base@example.com", merged.User.Email)
+		assert.True(t, merged.Extensions.WorktreeConfig)
+
+		require.Nil(t, merged.Raw, "merged Raw must be nil")
+
+		_, err = merged.Marshal()
+		require.NoError(t, err)
+
+		assert.True(t, merged.Raw.HasSection("extensions"),
+			"[extensions] section was dropped from merged Raw")
+		assert.Equal(t, "true",
+			merged.Raw.Section("extensions").Options.Get("worktreeConfig"))
+
+		assert.Equal(t, "wt-user",
+			merged.Raw.Section("user").Options.Get("name"))
+	})
 }
