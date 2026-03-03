@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -129,6 +130,10 @@ type Config struct {
 		// This setting must not be changed after repository initialization
 		// (e.g. clone or init).
 		ObjectFormat format.ObjectFormat
+		// WorktreeConfig indicates that per-worktree config files are enabled.
+		// When true, each worktree may have a config.worktree file that
+		// overrides settings in the common .git/config.
+		WorktreeConfig bool
 	}
 
 	Protocol struct {
@@ -358,6 +363,7 @@ const (
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormatKey            = "objectformat"
+	worktreeConfigKey          = "worktreeConfig"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
@@ -426,6 +432,7 @@ func (c *Config) unmarshalCore() {
 func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
+	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
 }
 
 func (c *Config) unmarshalUser() {
@@ -596,12 +603,13 @@ func (c *Config) marshalCore() {
 }
 
 func (c *Config) marshalExtensions() {
-	// Extensions are only supported on Version 1, therefore
-	// ignore them otherwise.
-	if c.Core.RepositoryFormatVersion == format.Version1 &&
-		c.Extensions.ObjectFormat != format.UnsetObjectFormat {
-		s := c.Raw.Section(extensionsSection)
+	s := c.Raw.Section(extensionsSection)
+	if c.Extensions.ObjectFormat != format.UnsetObjectFormat {
 		s.SetOption(objectFormatKey, string(c.Extensions.ObjectFormat))
+	}
+
+	if c.Extensions.WorktreeConfig {
+		s.SetOption(worktreeConfigKey, "true")
 	}
 }
 
