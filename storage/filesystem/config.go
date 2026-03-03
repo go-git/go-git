@@ -1,6 +1,8 @@
 package filesystem
 
 import (
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/go-git/go-git/v6/config"
@@ -32,9 +34,36 @@ func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 
 		return nil, err
 	}
-
 	defer ioutil.CheckClose(f, &err)
-	return config.ReadConfig(f)
+
+	cfg, err := config.ReadConfig(f)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	if !cfg.Extensions.WorktreeConfig {
+		return cfg, nil
+	}
+
+	wf, err := c.dir.ConfigWorktree()
+	if err != nil {
+		// If a worktree config doesn't exist we can short-circuit
+		// returning the local config.
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("get worktree config: %w", err)
+	}
+	defer ioutil.CheckClose(wf, &err)
+
+	wcfg, err := config.ReadConfig(wf)
+	if err != nil {
+		return nil, fmt.Errorf("read worktree config: %w", err)
+	}
+
+	merged := config.Merge(cfg, wcfg)
+
+	return &merged, nil
 }
 
 // SetConfig saves the repository configuration.

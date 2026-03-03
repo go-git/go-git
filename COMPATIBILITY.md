@@ -229,6 +229,8 @@ compatibility status with go-git.
 | --------------- | --------------------------- | ------ | ---------------------------------------------- | -------- |
 | `config`        | `--local`                   | ✅     | Read and write per-repository (`.git/config`). |          |
 | `config`        | `--global` <br/> `--system` | ✅     | Read-only.                                     |          |
+| `config`        | `--worktree`                | ✅     | Read and write per-worktree (`.git/worktrees/<name>/config.worktree`). Requires `extensions.worktreeConfig=true`. |          |
 | `gitignore`     |                             | ✅     |                                                |          |
 | `gitattributes` |                             | ✅     |                                                |          |
 | `git-worktree`  | `add`, `remove` and `list`  | ⚠️ (partial) | Not all flags nor subcommands are supported.   |          |
+| `extensions`    | `worktreeConfig`            | ✅           | Per-worktree `config.worktree` files are read and overlaid on the common config when this extension is enabled. Supported only by `storage.filesystem`. |          |
