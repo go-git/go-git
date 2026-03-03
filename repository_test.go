@@ -17,9 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	openpgperr "github.com/ProtonMail/go-crypto/openpgp/errors"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -41,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
@@ -2865,68 +2863,6 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadHash() {
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
-func (s *RepositorySuite) TestCreateTagSigned() {
-	url := s.GetLocalRepositoryURL(
-		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
-	)
-
-	r, _ := Init(memory.NewStorage())
-	err := r.clone(context.Background(), &CloneOptions{URL: url})
-	s.NoError(err)
-
-	h, err := r.Head()
-	s.NoError(err)
-
-	key := commitSignKey(s.T(), true)
-	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
-		Tagger:  defaultSignature(),
-		Message: "foo bar baz qux",
-		SignKey: key,
-	})
-	s.NoError(err)
-
-	tag, err := r.Tag("foobar")
-	s.NoError(err)
-
-	obj, err := r.TagObject(tag.Hash())
-	s.NoError(err)
-
-	// Verify the tag.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	s.NoError(err)
-
-	err = key.Serialize(pkw)
-	s.NoError(err)
-	err = pkw.Close()
-	s.NoError(err)
-
-	actual, err := obj.Verify(pks.String())
-	s.NoError(err)
-	s.Equal(key.PrimaryKey, actual.PrimaryKey)
-}
-
-func (s *RepositorySuite) TestCreateTagSignedBadKey() {
-	url := s.GetLocalRepositoryURL(
-		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
-	)
-
-	r, _ := Init(memory.NewStorage())
-	err := r.clone(context.Background(), &CloneOptions{URL: url})
-	s.NoError(err)
-
-	h, err := r.Head()
-	s.NoError(err)
-
-	key := commitSignKey(s.T(), false)
-	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
-		Tagger:  defaultSignature(),
-		Message: "foo bar baz qux",
-		SignKey: key,
-	})
-	s.ErrorIs(err, openpgperr.InvalidArgumentError("signing key is encrypted"))
-}
-
 func (s *RepositorySuite) TestCreateTagCanonicalize() {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
@@ -2939,11 +2875,9 @@ func (s *RepositorySuite) TestCreateTagCanonicalize() {
 	h, err := r.Head()
 	s.NoError(err)
 
-	key := commitSignKey(s.T(), true)
 	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "\n\nfoo bar baz qux\n\nsome message here",
-		SignKey: key,
 	})
 	s.NoError(err)
 
@@ -2955,20 +2889,6 @@ func (s *RepositorySuite) TestCreateTagCanonicalize() {
 
 	// Assert the new canonicalized message.
 	s.Equal("foo bar baz qux\n\nsome message here\n", obj.Message)
-
-	// Verify the tag.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	s.NoError(err)
-
-	err = key.Serialize(pkw)
-	s.NoError(err)
-	err = pkw.Close()
-	s.NoError(err)
-
-	actual, err := obj.Verify(pks.String())
-	s.NoError(err)
-	s.Equal(key.PrimaryKey, actual.PrimaryKey)
 }
 
 func (s *RepositorySuite) TestTagLightweight() {
@@ -3677,5 +3597,134 @@ func BenchmarkPlainClone(b *testing.B) {
 	b.StartTimer()
 	for b.Loop() {
 		clone(b)
+	}
+}
+
+func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	tests := []struct {
+		name           string
+		registerPlugin bool
+		optionsSigner  Signer
+		tagSignGpg     bool
+		wantErr        string
+		wantSignature  bool
+		wantPluginUsed bool
+		wantOptionUsed bool
+	}{
+		{
+			name:          "no signer at all produces unsigned tag",
+			wantSignature: false,
+		},
+		{
+			name:           "CreateTagOptions.Signer works without plugin registered",
+			optionsSigner:  &mockSigner{},
+			wantSignature:  true,
+			wantOptionUsed: true,
+		},
+		{
+			name:           "plugin signer is used when CreateTagOptions.Signer is nil",
+			registerPlugin: true,
+			tagSignGpg:     true,
+			wantSignature:  true,
+			wantPluginUsed: true,
+		},
+		{
+			name:           "plugin signer is ignored if tag.signGpg=false",
+			registerPlugin: true,
+			tagSignGpg:     false,
+			wantPluginUsed: false,
+		},
+		{
+			name:       "error if tag.signGpg=true and no plugin registered",
+			tagSignGpg: true,
+			wantErr:    "cannot auto-sign tag: disable tag.gpgSign or register a ObjectSigner plugin",
+		},
+		{
+			name:           "CreateTagOptions.Signer takes precedence over plugin",
+			registerPlugin: true,
+			optionsSigner:  &mockSigner{},
+			wantSignature:  true,
+			wantOptionUsed: true,
+		},
+	}
+
+	for _, tt := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tt.name, func(t *testing.T) {
+			resetPluginEntry("object-signer")
+			t.Cleanup(func() { resetPluginEntry("object-signer") })
+
+			// Create a repo with an initial commit to tag.
+			// This must happen before registering the plugin signer,
+			// otherwise buildCommitObject would call the plugin signer.
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+
+			cfg.Tag.GpgSign = tt.tagSignGpg
+			err = r.SetConfig(cfg)
+			require.NoError(t, err)
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
+			_, err = w.Add("file.txt")
+			require.NoError(t, err)
+
+			commitHash, err := w.Commit("initial commit\n", &CommitOptions{
+				Author: defaultSignature(),
+			})
+			require.NoError(t, err)
+
+			var pluginSigner *mockSigner
+			if tt.registerPlugin {
+				pluginSigner = &mockSigner{}
+				err = plugin.Register(plugin.ObjectSigner(), func() plugin.Signer { return pluginSigner })
+				require.NoError(t, err)
+			}
+
+			_, err = r.CreateTag("test-tag", commitHash, &CreateTagOptions{
+				Tagger:  defaultSignature(),
+				Message: "tag message",
+				Signer:  tt.optionsSigner,
+			})
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				return // no need to carry on
+			}
+
+			tagRef, err := r.Tag("test-tag")
+			require.NoError(t, err)
+
+			tagObj, err := r.TagObject(tagRef.Hash())
+			require.NoError(t, err)
+
+			if tt.wantSignature {
+				assert.NotEmpty(t, tagObj.Signature)
+			} else {
+				assert.Empty(t, tagObj.Signature)
+			}
+
+			if tt.wantPluginUsed {
+				require.NotNil(t, pluginSigner)
+				assert.True(t, pluginSigner.called, "expected plugin signer to be called")
+			}
+
+			if tt.wantOptionUsed {
+				optSigner, ok := tt.optionsSigner.(*mockSigner)
+				require.True(t, ok)
+				assert.True(t, optSigner.called, "expected options signer to be called")
+			}
+
+			if pluginSigner != nil && tt.optionsSigner != nil {
+				assert.False(t, pluginSigner.called,
+					"plugin signer should not be called when CreateTagOptions.Signer is set")
+			}
+		})
 	}
 }

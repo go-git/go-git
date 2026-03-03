@@ -1,24 +1,23 @@
 package git
 
 import (
-	"bytes"
 	"errors"
-	"io"
+	"fmt"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 var (
@@ -232,8 +231,23 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		ParentHashes: opts.Parents,
 	}
 
-	if opts.Signer != nil {
-		sig, err := signObject(opts.Signer, commit)
+	signer := opts.Signer
+	if signer == nil {
+		cfg, err := w.r.ConfigScoped(config.SystemScope)
+		if err == nil && cfg != nil && cfg.Commit.GpgSign {
+			if !plugin.Has(plugin.ObjectSigner()) {
+				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign commit: disable commit.gpgSign or register a ObjectSigner plugin")
+			}
+
+			signer, err = plugin.Get(plugin.ObjectSigner())
+			if err != nil {
+				return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+			}
+		}
+	}
+
+	if signer != nil {
+		sig, err := signObject(signer, commit)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -253,19 +267,6 @@ func (w *Worktree) sanitize(signature object.Signature) object.Signature {
 		Email: invalidCharactersRe.ReplaceAllString(signature.Email, ""),
 		When:  signature.When,
 	}
-}
-
-type gpgSigner struct {
-	key *openpgp.Entity
-	cfg *packet.Config
-}
-
-func (s *gpgSigner) Sign(message io.Reader) ([]byte, error) {
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, s.key, message, s.cfg); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
 }
 
 // buildTreeHelper converts a given index.Index file into multiple git objects

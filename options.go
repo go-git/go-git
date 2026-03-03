@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
@@ -676,9 +675,9 @@ type CreateTagOptions struct {
 	// validation into the format expected by git - no leading whitespace and
 	// ending in a newline.
 	Message string
-	// SignKey denotes a key to sign the tag with. A nil value here means the tag
-	// will not be signed. The private key must be present and already decrypted.
-	SignKey *openpgp.Entity
+	// Signer denotes a cryptographic signer to sign the tag with.
+	// A nil value here means the tag will not be signed.
+	Signer Signer
 }
 
 // Validate validates the fields and sets the default values.
