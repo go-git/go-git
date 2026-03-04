@@ -4,9 +4,9 @@ import (
 	"os"
 
 	"github.com/go-git/go-git/v6"
+	. "github.com/go-git/go-git/v6/_examples"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	. "github.com/go-git/go-git/v6/_examples"
 )
 
 // Updates server info (info/refs & objects/info/packs)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,10 +22,10 @@ func helpAndExit(s, helpMsg string, code exitCode) {
 	if code == exitCodeSuccess {
 		printMsg("%s", s)
 	} else {
-		printErr(fmt.Errorf(s))
+		printErr(errors.New(s))
 	}
 
-	fmt.Println(strings.Replace(helpMsg, "%_COMMAND_NAME_%", os.Args[0], -1))
+	fmt.Println(strings.ReplaceAll(helpMsg, "%_COMMAND_NAME_%", os.Args[0]))
 
 	os.Exit(int(code))
 }

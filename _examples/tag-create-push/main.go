@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
 
@@ -22,7 +21,6 @@ func main() {
 	key := os.Args[6]
 
 	r, err := cloneRepo(url, directory, key)
-
 	if err != nil {
 		log.Printf("clone repo error: %s", err)
 		return
@@ -56,7 +54,6 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 		URL:      url,
 		Auth:     auth,
 	})
-
 	if err != nil {
 		log.Printf("clone git repo error: %s", err)
 		return nil, err
@@ -87,7 +84,7 @@ func tagExists(tag string, r *git.Repository) bool {
 	err = tags.ForEach(func(t *object.Tag) error {
 		if t.Name == tag {
 			res = true
-			return fmt.Errorf(tagFoundErr)
+			return errors.New(tagFoundErr)
 		}
 		return nil
 	})
@@ -113,7 +110,6 @@ func setTag(r *git.Repository, tag string) (bool, error) {
 	_, err = r.CreateTag(tag, h.Hash(), &git.CreateTagOptions{
 		Message: tag,
 	})
-
 	if err != nil {
 		log.Printf("create tag error: %s", err)
 		return false, err
@@ -123,7 +119,6 @@ func setTag(r *git.Repository, tag string) (bool, error) {
 }
 
 func pushTags(r *git.Repository, publicKeyPath string) error {
-
 	auth, _ := publicKey(publicKeyPath)
 
 	po := &git.PushOptions{
@@ -134,7 +129,6 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 	}
 	Info("git push --tags")
 	err := r.Push(po)
-
 	if err != nil {
 		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			log.Print("origin remote was up to date, no push done")
