@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/go-git/go-git/v6/internal/trace"
 )
+
+func init() {
+	trace.ReadEnv()
+}
 
 // CheckArgs should be used to ensure the right command line arguments are
 // passed before executing an example.
