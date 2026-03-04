@@ -80,6 +80,13 @@ func (w *Worktree) Pull(o *PullOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git pull", time.Since(start).Seconds())
+		}()
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -178,6 +185,13 @@ func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptio
 
 // Checkout switch branches or restore working tree files.
 func (w *Worktree) Checkout(opts *CheckoutOptions) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git checkout", time.Since(start).Seconds())
+		}()
+	}
+
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -298,10 +312,12 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
-	}()
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
+		}()
+	}
 
 	if err := opts.Validate(w.r); err != nil {
 		return err

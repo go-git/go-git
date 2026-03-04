@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // ErrUnsupportedObjectType is returned when an unsupported object type is used.
@@ -152,6 +153,13 @@ func (c *IndexStorage) SetIndex(idx *index.Index) error {
 
 // Index returns the stored index.
 func (c *IndexStorage) Index() (*index.Index, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: storage/memory: get index()", time.Since(start).Seconds())
+		}()
+	}
+
 	if c.index == nil {
 		c.index = &index.Index{Version: 2}
 	}

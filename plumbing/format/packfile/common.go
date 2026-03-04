@@ -27,10 +27,12 @@ const (
 // UpdateObjectStorage updates the storer with the objects in the given
 // packfile.
 func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: update_obj_storage", time.Since(start).Seconds())
-	}()
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: update_obj_storage", time.Since(start).Seconds())
+		}()
+	}
 
 	if pw, ok := s.(storer.PackfileWriter); ok {
 		return WritePackfileToObjectStorage(pw, packfile)

@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // Remote operation errors and sentinel values.
@@ -91,6 +92,13 @@ func (r *Remote) Push(o *PushOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git push", time.Since(start).Seconds())
+		}()
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -354,6 +362,13 @@ func (r *Remote) Fetch(o *FetchOptions) error {
 }
 
 func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.ReferenceStorer, err error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git fetch", time.Since(start).Seconds())
+		}()
+	}
+
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
 	}
