@@ -138,6 +138,13 @@ func withPartialInit() InitOption {
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrTargetDirNotEmpty is returned
 func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: init", time.Since(start).Seconds())
+		}()
+	}
+
 	options := newInitOptions()
 	for _, oFn := range opts {
 		if oFn != nil {
@@ -254,6 +261,13 @@ func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error 
 // repository is a normal one (not bare) and worktree is nil the err
 // ErrWorktreeNotProvided is returned
 func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: open", time.Since(start).Seconds())
+		}()
+	}
+
 	_, err := s.Reference(plumbing.HEAD)
 	if err == plumbing.ErrReferenceNotFound {
 		return nil, ErrRepositoryNotExists
@@ -289,15 +303,6 @@ func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repos
 func CloneContext(
 	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
 ) (*Repository, error) {
-	start := time.Now()
-	defer func() {
-		url := ""
-		if o != nil {
-			url = o.URL
-		}
-		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
-	}()
-
 	r, err := Init(s, withPartialInit())
 	if err != nil {
 		return nil, err
@@ -315,6 +320,13 @@ func CloneContext(
 // if the repository will have worktree (non-bare) or not (bare), if the path
 // is not empty ErrTargetDirNotEmpty is returned.
 func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: plain-init", time.Since(start).Seconds())
+		}()
+	}
+
 	var wt, dot billy.Filesystem
 	var initFn func(s *filesystem.Storage) (*Repository, error)
 
@@ -573,14 +585,6 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	if !empty {
 		return nil, fmt.Errorf("%w %s", ErrTargetDirNotEmpty, path)
 	}
-	start := time.Now()
-	defer func() {
-		url := ""
-		if o != nil {
-			url = o.URL
-		}
-		trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
-	}()
 
 	isBare := o.Bare
 	if o.Mirror {
@@ -964,6 +968,17 @@ func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error)
 
 // Clone clones a remote repository
 func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			url := ""
+			if o != nil {
+				url = o.URL
+			}
+			trace.Performance.Printf("performance: %.9f s: git command: git clone %s", time.Since(start).Seconds(), url)
+		}()
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}

@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"hash"
 	"os"
+	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 type IndexStorage struct {
@@ -35,6 +37,13 @@ func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 }
 
 func (s *IndexStorage) Index() (i *index.Index, err error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: storage/filesystem: get index()", time.Since(start).Seconds())
+		}()
+	}
+
 	idx := &index.Index{
 		Version: 2,
 	}
