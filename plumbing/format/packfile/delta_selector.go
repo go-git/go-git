@@ -138,8 +138,11 @@ func (dw *deltaSelector) fixAndBreakChains(objectsToPack []*ObjectToPack) error 
 		m[otp.Hash()] = otp
 	}
 
+	// visiting tracks objects currently in the recursion path to detect cycles
+	visiting := make(map[plumbing.Hash]bool)
+
 	for _, otp := range objectsToPack {
-		if err := dw.fixAndBreakChainsOne(m, otp); err != nil {
+		if err := dw.fixAndBreakChainsOne(m, otp, visiting); err != nil {
 			return err
 		}
 	}
@@ -147,7 +150,7 @@ func (dw *deltaSelector) fixAndBreakChains(objectsToPack []*ObjectToPack) error 
 	return nil
 }
 
-func (dw *deltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*ObjectToPack, otp *ObjectToPack) error {
+func (dw *deltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*ObjectToPack, otp *ObjectToPack, visiting map[plumbing.Hash]bool) error {
 	if !otp.Object.Type().IsDelta() {
 		return nil
 	}
@@ -157,6 +160,14 @@ func (dw *deltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*O
 	// we already fixed it.
 	if otp.Base != nil {
 		return nil
+	}
+
+	hash := otp.Hash()
+
+	// Cycle detection: if we're already visiting this object in the current
+	// recursion path, we have a cyclic delta chain. Break it by undeltifying.
+	if visiting[hash] {
+		return dw.undeltify(otp)
 	}
 
 	do, ok := otp.Object.(plumbing.DeltaObject)
@@ -173,9 +184,15 @@ func (dw *deltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*O
 		return dw.undeltify(otp)
 	}
 
-	if err := dw.fixAndBreakChainsOne(objectsToPack, base); err != nil {
+	// Mark this object as being visited before recursing
+	visiting[hash] = true
+
+	if err := dw.fixAndBreakChainsOne(objectsToPack, base, visiting); err != nil {
 		return err
 	}
+
+	// Done visiting this object
+	delete(visiting, hash)
 
 	otp.SetDelta(base, otp.Object)
 	return nil
