@@ -36,6 +36,8 @@ import (
 // zero hashes would incorrectly trigger recursive tree building, causing
 // a nil pointer dereference panic.
 func TestBuildTreeHelper_1773(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
