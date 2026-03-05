@@ -30,11 +30,14 @@ func NegotiatePack(
 	st storage.Storer,
 	conn Connection,
 	reader io.Reader,
-	writer io.WriteCloser,
+	writeCloser io.WriteCloser,
 	req *FetchRequest,
 ) (shallowInfo *packp.ShallowUpdate, err error) {
-	reader = ioutil.NewContextReader(ctx, reader)
-	writer = ioutil.NewContextWriteCloser(ctx, writer)
+	ctxReader := ioutil.NewContextReadCloser(ctx, reader)
+	ctxWriter := ioutil.NewContextWriteCloser(ctx, writeCloser)
+	defer ioutil.CheckClose(ctxReader, &err)
+	defer ioutil.CheckClose(ctxWriter, &err)
+
 	caps := conn.Capabilities()
 
 	// Create upload-request
@@ -150,14 +153,14 @@ func NegotiatePack(
 	// Note: empty request means haves are a subset of wants, in that case we have
 	// everything we asked for. Close the connection and return nil.
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
-		if err := pktline.WriteFlush(writer); err != nil {
+		if err := pktline.WriteFlush(ctxWriter); err != nil {
 			return nil, err
 		}
 
 		// Close the writer to signal the end of the request.
 		// The server may have already closed the connection after receiving
 		// the flush-pkt with no wants, so io.EOF is expected.
-		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+		if err := writeCloser.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 
@@ -191,14 +194,14 @@ func NegotiatePack(
 		// Note: empty request means haves are a subset of wants, in that case we have
 		// everything we asked for. Close the connection and return nil.
 		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
-			if err := pktline.WriteFlush(writer); err != nil {
+			if err := pktline.WriteFlush(ctxWriter); err != nil {
 				return nil, err
 			}
 
 			// Close the writer to signal the end of the request.
 			// The server may have already closed the connection after receiving
 			// the flush-pkt with no wants, so io.EOF is expected.
-			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+			if err := writeCloser.Close(); err != nil && !errors.Is(err, io.EOF) {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 
@@ -207,28 +210,28 @@ func NegotiatePack(
 
 		// Begin the upload-pack negotiation
 		if firstRound || conn.StatelessRPC() {
-			if err := upreq.Encode(writer); err != nil {
+			if err := upreq.Encode(ctxWriter); err != nil {
 				return nil, fmt.Errorf("sending upload-request: %w", err)
 			}
 		}
 
 		readc := make(chan error)
 		if !conn.StatelessRPC() {
-			go func() { readc <- readShallows(conn, reader, req, &shallowInfo, firstRound) }()
+			go func() { readc <- readShallows(conn, ctxReader, req, &shallowInfo, firstRound) }()
 		}
 
 		// Encode upload-haves
-		if err := uphav.Encode(writer); err != nil {
+		if err := uphav.Encode(ctxWriter); err != nil {
 			return nil, fmt.Errorf("sending upload-haves: %w", err)
 		}
 
 		// Close the writer to signal the end of the request
 		if conn.StatelessRPC() {
-			if err := writer.Close(); err != nil {
+			if err := writeCloser.Close(); err != nil {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 
-			if err := readShallows(conn, reader, req, &shallowInfo, firstRound); err != nil {
+			if err := readShallows(conn, ctxReader, req, &shallowInfo, firstRound); err != nil {
 				return nil, err
 			}
 		} else {
@@ -243,7 +246,7 @@ func NegotiatePack(
 
 			if done || len(uphav.Haves) > 0 {
 				var srvrs packp.ServerResponse
-				if err := srvrs.Decode(reader); err != nil {
+				if err := srvrs.Decode(ctxReader); err != nil {
 					readc <- fmt.Errorf("decoding server-response: %w", err)
 					return
 				}
@@ -270,7 +273,7 @@ func NegotiatePack(
 	}
 
 	if !conn.StatelessRPC() {
-		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+		if err := writeCloser.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 	}
