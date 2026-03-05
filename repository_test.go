@@ -1851,6 +1851,33 @@ func (s *RepositorySuite) TestCloneWithFilter() {
 	s.Nil(blob)
 }
 
+// TestCloneRelative checks that a repository with a relative path can be
+// opened.
+func (s *RepositorySuite) TestCloneRelative() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	head, err := r.Head()
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+	s.Nil(head)
+
+	cwd, err := os.Getwd()
+	s.NoError(err)
+
+	path, err := filepath.Rel(cwd, s.GetBasicLocalRepositoryURL())
+	s.NoError(err)
+
+	err = r.clone(context.Background(), &CloneOptions{
+		URL: path,
+	})
+	s.NoError(err)
+
+	remotes, err := r.Remotes()
+	s.NoError(err)
+	s.Len(remotes, 1)
+}
+
 func (s *RepositorySuite) TestPush() {
 	url := s.T().TempDir()
 	server, err := PlainInit(url, true)
