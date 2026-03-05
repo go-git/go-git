@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "4f89f6c07350",
+  "session_id": "14a45378-1161-463e-835c-10d1824b6c22",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-05T11:02:13.043073926Z",
+  "branch": "index-cache",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "storage/filesystem/dotgit/dotgit.go",
+    "storage/filesystem/index.go",
+    "storage/filesystem/index_test.go",
+    "storage/filesystem/indexcache.go",
+    "storage/filesystem/storage.go"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "3a9e46085a8e",
+  "token_usage": {
+    "input_tokens": 1041,
+    "cache_creation_tokens": 155149,
+    "cache_read_tokens": 3537572,
+    "output_tokens": 25556,
+    "api_call_count": 62
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-05T11:02:12.76519012Z",
+    "agent_lines": 22,
+    "human_added": 185,
+    "human_modified": 118,
+    "human_removed": 0,
+    "total_committed": 322,
+    "agent_percentage": 6.832298136645963
+  }
+}

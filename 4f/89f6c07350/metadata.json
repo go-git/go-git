@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "4f89f6c07350",
+  "strategy": "manual-commit",
+  "branch": "index-cache",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "storage/filesystem/dotgit/dotgit.go",
+    "storage/filesystem/index.go",
+    "storage/filesystem/index_test.go",
+    "storage/filesystem/indexcache.go",
+    "storage/filesystem/storage.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4f/89f6c07350/0/metadata.json",
+      "transcript": "/4f/89f6c07350/0/full.jsonl",
+      "context": "/4f/89f6c07350/0/context.md",
+      "content_hash": "/4f/89f6c07350/0/content_hash.txt",
+      "prompt": "/4f/89f6c07350/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1041,
+    "cache_creation_tokens": 155149,
+    "cache_read_tokens": 3537572,
+    "output_tokens": 25556,
+    "api_call_count": 62
+  }
+}

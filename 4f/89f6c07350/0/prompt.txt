@@ -1,0 +1,101 @@
+The logic to load and save the Git worktree index lives in storage/filesystem/index.go.
+Within a given execution of go-git, it is common for Index() to be called multiple times, as different areas need access to the index and not necessarily we can pass it on across the board. This is rather an inefficient way of handling the index.
+
+Create a plan on how to optimise this by introducing a cache, so that once the index is loaded, it is only re-loaded from disk if the index file was changed directly and not by go-git.
+
+Focus on performance and cross platform compatibility, as Darwin, Linux and Windows support is needed.
+
+Think hard and consider an idiomatic Go approach.
+
+---
+
+Let's go ahead with recommendation A.
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Let's add a test to ensure it works as intended and to avoid future regression.
+
+---
+
+The tests don't really confirm that the cache data was populated, not that the data came from the cache. Let's extract the cache logic, and implement it as a separate interface/struct so that it does not violate the dependency inversion pattern. Then go ahead and test cache hit and miss via mocked/faked index cache.
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Review the staged changes and criticise for idiomatic Go, security and performance.
+
+---
+
+Fix issues 7, 8 and 3.
+
+---
+
+Create a commit message that takes into account the staged changes. Ensure it includes:
+
+Assisted-by: Claude <noreply@anthropic.com>
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Add a benchmark test for writing commits in worktree_commit_test.go.
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+<bash-input>git cm "storage: filesystem: add stat-based index cache
+Introduce an IndexCache interface and a default stat-based
+implementation that avoids redundant disk reads and decoding of
+the git index file. On each Index() call the file is stat'd and
+the cached copy is returned when modification time and size match,
+falling back to a full read+decode on a miss. SetIndex() populates
+the cache via write-through so the immediately following Index()
+is served from memory.
+
+Both read and write paths use copyIndex() which copies the Index
+struct value and clones the Entries slice, ensuring callers cannot
+corrupt the cached data through post-call mutations.
+
+The cache can be injected via Options.IndexCache for testing or
+custom invalidation strategies; a stat-based default is created
+automatically when none is provided.
+
+A new benchmark to assess commits was introduced, there is a large
+variance on sec/op and B/op between the first call and the subsequent
+ones - due to other performance issues that will be looked as a follow-up. However, the impact of the new cache has a clear impact on allocations:
+
+goos: linux
+goarch: amd64
+pkg: github.com/go-git/go-git/v6
+cpu: AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M
+                 │ /tmp/before  │           /tmp/after           │
+                 │    sec/op    │    sec/op     vs base          │
+Commit/Commit-24   6.299m ± 42%   5.719m ± 27%  ~ (p=0.579 n=10)
+
+                 │  /tmp/before  │           /tmp/after            │
+                 │     B/op      │     B/op       vs base          │
+Commit/Commit-24   2.963Mi ± 41%   2.498Mi ± 29%  ~ (p=0.280 n=10)
+
+                 │ /tmp/before  │              /tmp/after              │
+                 │  allocs/op   │  allocs/op    vs base                │
+Commit/Commit-24   73.38k ± 40%   29.82k ± 29%  -59.36% (p=0.001 n=10)
+
+Assisted-by: Claude <noreply@anthropic.com></bash-input>
+
+---
+
+<bash-stdout>(eval):38: unmatched "
+</bash-stdout><bash-stderr>(eval):38: unmatched "
+</bash-stderr>
