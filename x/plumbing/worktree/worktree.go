@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9\-]+$`)
+	worktreeNameRE = regexp.MustCompile(`^[a-zA-Z0-9._\-]+$`)
 
 	// ErrWorktreeNotFound is returned when attempting to remove a worktree that does not exist.
 	ErrWorktreeNotFound = errors.New("worktree not found")
