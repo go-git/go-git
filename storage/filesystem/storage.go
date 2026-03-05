@@ -58,6 +58,10 @@ type Options struct {
 	// existing dotgit. In such cases the repository config will define the
 	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
+
+	// IndexCache provides an optional cache implementation for index data.
+	// If left as nil, a default stat-based implementation is created automatically.
+	IndexCache IndexCache
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -94,6 +98,10 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		c = cache.NewObjectLRUDefault()
 	}
 
+	if ops.IndexCache == nil {
+		ops.IndexCache = NewIndexCache()
+	}
+
 	s := &Storage{
 		fs:     fs,
 		dir:    dir,
@@ -101,7 +109,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash},
+		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir},

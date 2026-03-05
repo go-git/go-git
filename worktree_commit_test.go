@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -839,6 +840,48 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 
 	s.Equal("foo bad", commit.Author.Name)
 	s.Equal("badfoo@foo.foo", commit.Author.Email)
+}
+
+func BenchmarkCommit(b *testing.B) {
+	const (
+		numFiles      = 100
+		numSubdirs    = 5
+		numGoroutines = 4
+	)
+
+	wt := setupBenchmarkRepo(b, numFiles, numSubdirs, numGoroutines)
+
+	sig := &object.Signature{
+		Name:  "Benchmark",
+		Email: "benchmark@test.com",
+		When:  time.Now(),
+	}
+
+	seq := 0
+	b.Run("Commit", func(b *testing.B) {
+		for range b.N {
+			b.StopTimer()
+			fileName := filepath.Join("dir0", fmt.Sprintf("bench_%d.txt", seq))
+			err := util.WriteFile(wt.Filesystem, fileName, fmt.Appendf(nil, "content %d", seq), 0o644)
+			require.NoError(b, err)
+
+			_, err = wt.Add(fileName)
+			require.NoError(b, err)
+
+			sig.When = time.Now()
+
+			// Isolate the benchmark to the commit operation.
+			b.StartTimer()
+			_, err = wt.Commit(fmt.Sprintf("commit %d\n", seq), &CommitOptions{
+				Author:    sig,
+				Committer: sig,
+			})
+			b.StopTimer()
+
+			require.NoError(b, err)
+			seq++
+		}
+	})
 }
 
 func assertStorageStatus(
