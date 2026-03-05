@@ -145,20 +145,17 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			}
 			entriesByOffset.Close()
 
-			// Decode the generated rev file so that the entries can be checked.
-			idxPos := make(chan uint32)
-			got := []uint32{}
+			// Use ReaderAtRevIndex to verify the generated rev file.
+			revIdx, err := NewReaderAtRevIndex(newMockRevFile(buf.Bytes()), tc.hasher.Size(), count)
+			require.NoError(t, err)
+			defer revIdx.Close()
 
-			errCh := make(chan error, 1)
-			go func() {
-				errCh <- Decode(&buf, count, idx.PackfileChecksum, idxPos)
-			}()
-
-			for p := range idxPos {
-				got = append(got, p)
+			var got []uint32
+			all, finish := revIdx.All()
+			for _, idxPos := range all {
+				got = append(got, uint32(idxPos))
 			}
-
-			require.NoError(t, <-errCh)
+			assert.NoError(t, finish())
 			assert.Equal(t, want, got)
 		})
 	}
