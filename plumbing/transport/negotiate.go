@@ -304,9 +304,10 @@ func readShallows(
 			return fmt.Errorf("decoding shallow-update: %w", err)
 		}
 
-		// Only return the first shallow update
-		if shallowInfo == nil {
-			shallowInfo = new(*packp.ShallowUpdate)
+		// Only capture the first shallow update; subsequent rounds may
+		// also produce shallow-update packets (stateless RPC sends one per
+		// request round-trip) but the first one is authoritative.
+		if *shallowInfo == nil {
 			*shallowInfo = &shupd
 		}
 	}

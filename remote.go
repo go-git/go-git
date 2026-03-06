@@ -443,6 +443,28 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			return nil, err
 		}
 
+		// When performing a shallow fetch, exclude any shallow-boundary commits
+		// from the haves list. Shallow commits are already communicated to the
+		// server via the "shallow" packets in the upload-request. Including them
+		// in HAVE would lead the server to treat their ancestors as present on
+		// the client (because HAVE X implies the client has X and all its
+		// ancestors), which contradicts the shallow boundary and causes the
+		// server to send an empty packfile even when the client is missing
+		// objects that are ancestors of its shallow commits.
+		if len(shallows) > 0 {
+			shallowSet := make(map[plumbing.Hash]bool, len(shallows))
+			for _, h := range shallows {
+				shallowSet[h] = true
+			}
+			filtered := haves[:0]
+			for _, h := range haves {
+				if !shallowSet[h] {
+					filtered = append(filtered, h)
+				}
+			}
+			haves = filtered
+		}
+
 		req := &transport.FetchRequest{
 			Wants:       wants,
 			Haves:       haves,
@@ -1128,8 +1150,17 @@ func (r *Remote) updateLocalReferenceStorage(
 			}
 
 			localName := spec.Dst(ref.Name())
-			// If localName doesn't start with "refs/" then treat as a branch.
+			// If localName doesn't start with "refs/" then treat as a branch,
+			// unless localName is itself a SHA-1/SHA-256 hash (as happens when
+			// a caller uses a bare-hash dst such as "+<hash>:<hash>"). Creating
+			// a branch named after a commit hash is always wrong and produces
+			// spurious refs that confuse ResolveRevision and other callers.
 			if !strings.HasPrefix(localName.String(), "refs/") {
+				if plumbing.IsHash(localName.String()) {
+					// Bare-hash dst: the intent is to fetch the object only;
+					// no local reference should be created.
+					continue
+				}
 				localName = plumbing.NewBranchReferenceName(localName.String())
 			}
 			old, _ := storer.ResolveReference(r.s, localName)

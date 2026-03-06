@@ -450,6 +450,94 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 	}
 }
 
+// TestFetchByHashThenResolveRevision is a regression test for two bugs that
+// affected fetching a specific commit by hash into an existing shallow-cloned
+// repository using the force-refspec "+<hash>:<hash>".
+//
+// Regression 1 (negotiate.go): shallow boundaries were not persisted after a
+// clone, so subsequent fetches sent no "shallow" lines to the server. The
+// server then inferred the client already owned the wanted commit (a deep
+// ancestor of the shallow tip) and returned an empty packfile, leaving the
+// object absent from the store.
+//
+// Regression 2 (remote.go): when the dst of a refspec is a bare SHA, the
+// code created a branch named after the hash (refs/heads/<sha>) pointing to
+// the zero hash. ResolveRevision resolved via that spurious ref and returned
+// the zero hash instead of the real commit hash, breaking all downstream
+// callers such as Worktree.Checkout.
+func TestFetchByHashThenResolveRevision(t *testing.T) {
+	t.Parallel()
+
+	// git-fixtures/basic.git commit graph (abbreviated):
+	//
+	//   * 6ecf0ef  vendor stuff          <- refs/heads/master (HEAD)
+	//   | * e8d3ffa some code in branch  <- refs/heads/branch
+	//   |/
+	//   * 918c48b  some code
+	//   ...several more commits...
+	//   * 35e8510  binary file            <- commitSHA (deep ancestor of both)
+	//   * b029517  Initial commit
+	//
+	// A depth=1 shallow clone of master fetches only 6ecf0ef2. The target
+	// commit (35e85108) is a deep historical ancestor, absent because it is
+	// pruned by the shallow depth limit — not because it is on a different branch.
+	const (
+		repoURL   = "https://github.com/git-fixtures/basic.git"
+		commitSHA = "35e85108805c84807bc66a02d91535e1e24b38b9"
+	)
+
+	tmp := t.TempDir()
+
+	// Step 1: clone the default branch at depth=1.
+	// commitSHA is a deep ancestor excluded by the shallow depth limit.
+	r, err := PlainClone(tmp, &CloneOptions{
+		URL:   repoURL,
+		Depth: 1,
+		Tags:  NoTags,
+	})
+	require.NoError(t, err, "clone should succeed")
+
+	// Confirm the target commit is not yet available.
+	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
+	require.Error(t, err, "commit should NOT be present in a shallow clone of master")
+
+	// Step 2: fetch the specific commit by hash using "+<hash>:<hash>".
+	// This is the standard refspec for fetching an arbitrary commit that is not
+	// the tip of a branch or tag.
+	refSpec := config.RefSpec("+" + commitSHA + ":" + commitSHA)
+	err = r.Fetch(&FetchOptions{
+		Depth:    1,
+		Force:    true,
+		RefSpecs: []config.RefSpec{refSpec},
+		Tags:     NoTags,
+	})
+	require.NoError(t, err, "fetch should succeed")
+
+	// Step 3: the commit object MUST now be present in the object store.
+	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
+	assert.NoError(t, err,
+		"commit object must be present in the object store after a successful Fetch with '+<hash>:<hash>'",
+	)
+
+	// Step 4: the commit must also be resolvable as a revision.
+	hash, err := r.ResolveRevision(plumbing.Revision(commitSHA))
+	assert.NoError(t, err,
+		"ResolveRevision with a full SHA must succeed when the commit object is present",
+	)
+	if hash != nil {
+		assert.Equal(t, commitSHA, hash.String())
+	}
+
+	// Step 5: downstream effect — Worktree.Checkout must also succeed.
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	err = w.Checkout(&CheckoutOptions{
+		Hash:  plumbing.NewHash(commitSHA),
+		Force: true,
+	})
+	assert.NoError(t, err, "Worktree.Checkout by hash should succeed after fetching the commit")
+}
+
 // sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
 // implementation, simulating a storage backend that does not implement
 // that interface.
