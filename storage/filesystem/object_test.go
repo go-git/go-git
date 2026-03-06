@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
 
@@ -640,4 +641,103 @@ func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
 	// The object should not have been cached during the load
 	_, ok = objectCache.Get(hash)
 	s.False(ok)
+}
+
+// TestObjectStorageMultipleAlternates verifies that objects can be found
+// across multiple alternate repositories.
+func (s *FsSuite) TestObjectStorageMultipleAlternates() {
+	baseDir := s.T().TempDir()
+
+	templateFs1 := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	templateFs2 := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+
+	commitHash1 := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	commitHash2 := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
+
+	workDotGit := filepath.Join(baseDir, "work", ".git")
+	alternatesDir := filepath.Join(workDotGit, "objects", "info")
+	err := os.MkdirAll(alternatesDir, 0o755)
+	s.Require().NoError(err)
+	alternatesContent := templateFs1.Root() + "/objects\n" + templateFs2.Root() + "/objects\n"
+	alternatesFile := filepath.Join(alternatesDir, "alternates")
+	err = os.WriteFile(alternatesFile, []byte(alternatesContent), 0o644)
+	s.Require().NoError(err)
+
+	rootFs := osfs.New(baseDir)
+	workFs, err := rootFs.Chroot(filepath.Join("work", ".git"))
+	s.Require().NoError(err)
+	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
+	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
+
+	obj1, err := storage.EncodedObject(plumbing.AnyObject, commitHash1)
+	s.Require().NoError(err)
+	s.Equal(commitHash1, obj1.Hash())
+
+	obj2, err := storage.EncodedObject(plumbing.AnyObject, commitHash2)
+	s.Require().NoError(err)
+	s.Equal(commitHash2, obj2.Hash())
+
+	err = storage.Close()
+	s.Require().NoError(err)
+}
+
+// TestObjectStorageAlternatesHasEncodedObject verifies HasEncodedObject
+// correctly checks alternates.
+func (s *FsSuite) TestObjectStorageAlternatesHasEncodedObject() {
+	baseDir := s.T().TempDir()
+	templateFs := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	commitHash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	nonExistentHash := plumbing.NewHash("0000000000000000000000000000000000000000")
+
+	workDotGit := filepath.Join(baseDir, "work", ".git")
+	alternatesDir := filepath.Join(workDotGit, "objects", "info")
+	err := os.MkdirAll(alternatesDir, 0o755)
+	s.Require().NoError(err)
+	alternatesFile := filepath.Join(alternatesDir, "alternates")
+	err = os.WriteFile(alternatesFile, []byte(templateFs.Root()+"/objects\n"), 0o644)
+	s.Require().NoError(err)
+
+	rootFs := osfs.New(baseDir)
+	workFs, err := rootFs.Chroot(filepath.Join("work", ".git"))
+	s.Require().NoError(err)
+	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
+	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
+
+	err = storage.HasEncodedObject(commitHash)
+	s.NoError(err)
+
+	err = storage.HasEncodedObject(nonExistentHash)
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
+
+	err = storage.Close()
+	s.Require().NoError(err)
+}
+
+// TestObjectStorageAlternatesEncodedObjectSize verifies EncodedObjectSize
+// correctly checks alternates.
+func (s *FsSuite) TestObjectStorageAlternatesEncodedObjectSize() {
+	baseDir := s.T().TempDir()
+	templateFs := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	commitHash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	workDotGit := filepath.Join(baseDir, "work", ".git")
+	alternatesDir := filepath.Join(workDotGit, "objects", "info")
+	err := os.MkdirAll(alternatesDir, 0o755)
+	s.Require().NoError(err)
+	alternatesFile := filepath.Join(alternatesDir, "alternates")
+	err = os.WriteFile(alternatesFile, []byte(templateFs.Root()+"/objects\n"), 0o644)
+	s.Require().NoError(err)
+
+	rootFs := osfs.New(baseDir)
+	workFs, err := rootFs.Chroot(filepath.Join("work", ".git"))
+	s.Require().NoError(err)
+	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
+	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
+
+	size, err := storage.EncodedObjectSize(commitHash)
+	s.NoError(err)
+	s.Greater(size, int64(0))
+
+	err = storage.Close()
+	s.Require().NoError(err)
 }
