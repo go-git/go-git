@@ -257,20 +257,21 @@ func (t *Tag) String() string {
 
 // Verify verifies the cryptographic signature on the tag using the
 // verifier injected at construction time (via WithVerifier).
-// Returns a VerificationResult on success.
 //
-// If the tag has no signature, ErrNoSignature is returned.
-// If no verifier was injected, ErrNilVerifier is returned.
+// A nil error means the signature is valid and the key is trusted.
+// On failure the error is (or wraps) one of the verification sentinel errors
+// defined in this package.
 func (t *Tag) Verify() (*VerificationResult, error) {
 	return t.VerifyWith(t.v)
 }
 
 // VerifyWith verifies the cryptographic signature on the tag using the
 // provided Verifier explicitly.
-// Returns a VerificationResult on success.
 //
-// If the tag has no signature, ErrNoSignature is returned.
-// If v is nil, ErrNilVerifier is returned.
+// A nil error means the signature is valid and the key is trusted.
+// On failure the error is (or wraps) one of the verification sentinel errors
+// defined in this package (e.g. ErrNoSignature, ErrNilVerifier,
+// ErrSignatureInvalid, ErrKeyNotTrusted, etc.).
 func (t *Tag) VerifyWith(v Verifier) (*VerificationResult, error) {
 	if v == nil {
 		return nil, ErrNilVerifier

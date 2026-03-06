@@ -477,20 +477,21 @@ func (c *Commit) String() string {
 
 // Verify verifies the cryptographic signature on the commit using the
 // verifier injected at construction time (via WithVerifier).
-// Returns a VerificationResult on success.
 //
-// If the commit has no signature, ErrNoSignature is returned.
-// If no verifier was injected, ErrNilVerifier is returned.
+// A nil error means the signature is valid and the key is trusted.
+// On failure the error is (or wraps) one of the verification sentinel errors
+// defined in this package.
 func (c *Commit) Verify() (*VerificationResult, error) {
 	return c.VerifyWith(c.v)
 }
 
 // VerifyWith verifies the cryptographic signature on the commit using the
 // provided Verifier explicitly.
-// Returns a VerificationResult on success.
 //
-// If the commit has no signature, ErrNoSignature is returned.
-// If v is nil, ErrNilVerifier is returned.
+// A nil error means the signature is valid and the key is trusted.
+// On failure the error is (or wraps) one of the verification sentinel errors
+// defined in this package (e.g. ErrNoSignature, ErrNilVerifier,
+// ErrSignatureInvalid, ErrKeyNotTrusted, etc.).
 func (c *Commit) VerifyWith(v Verifier) (*VerificationResult, error) {
 	if v == nil {
 		return nil, ErrNilVerifier

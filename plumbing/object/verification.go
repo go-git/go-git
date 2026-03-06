@@ -6,61 +6,67 @@ import (
 	"time"
 )
 
-// ErrNoSignature is returned when attempting to verify an unsigned object.
-var ErrNoSignature = errors.New("object has no signature")
+// Verification sentinel errors.
+//
+// These errors represent distinct verification outcomes. Verifier implementations
+// return them (possibly wrapped with additional context) so that callers can
+// inspect the result with errors.Is().
+//
+// A nil error from Verify means the signature is cryptographically valid AND the
+// signing key is trusted. Any non-nil error describes why verification did not
+// fully succeed; the accompanying VerificationResult (when non-nil) still carries
+// whatever metadata could be extracted from the signature.
+var (
+	// ErrNoSignature is returned when attempting to verify an unsigned object.
+	ErrNoSignature = errors.New("no signature")
 
-// ErrNilVerifier is returned when a nil verifier is passed to a verification method.
-var ErrNilVerifier = errors.New("verifier is nil")
+	// ErrNilVerifier is returned when a nil verifier is passed to a verification method.
+	ErrNilVerifier = errors.New("verifier is nil")
 
-// TrustLevel represents the trust level of a signing key.
-// The levels follow Git's trust model, from lowest to highest.
-type TrustLevel int8
+	// ErrSignatureFormatInvalid is returned when the signature cannot be parsed
+	// or is structurally malformed.
+	ErrSignatureFormatInvalid = errors.New("signature format is invalid")
 
-const (
-	// TrustUndefined indicates the trust level is not set or unknown.
-	TrustUndefined TrustLevel = iota
-	// TrustNever indicates the key should never be trusted.
-	TrustNever
-	// TrustMarginal indicates marginal trust in the key.
-	TrustMarginal
-	// TrustFull indicates full trust in the key.
-	TrustFull
-	// TrustUltimate indicates ultimate trust (typically for own keys).
-	TrustUltimate
+	// ErrSignatureInvalid is returned when the cryptographic verification of
+	// the signature fails (e.g. wrong key, tampered content).
+	ErrSignatureInvalid = errors.New("signature is invalid")
+
+	// ErrKeyNotTrusted is returned when the signature is cryptographically
+	// valid but the signing key is not present in any trust store or allowed
+	// signers list. This maps to concepts like GitHub's "Unverified" status.
+	ErrKeyNotTrusted = errors.New("signing key is not trusted")
+
+	// ErrKeyExpired is returned when the signing key has expired.
+	ErrKeyExpired = errors.New("signing key has expired")
+
+	// ErrKeyRevoked is returned when the signing key has been revoked.
+	ErrKeyRevoked = errors.New("signing key has been revoked")
+
+	// ErrUnknownSignatureType is returned when no registered verifier
+	// supports the detected signature format.
+	ErrUnknownSignatureType = errors.New("unknown signature type")
 )
 
-// String returns the string representation of the trust level.
-func (t TrustLevel) String() string {
-	switch t {
-	case TrustNever:
-		return "never"
-	case TrustMarginal:
-		return "marginal"
-	case TrustFull:
-		return "full"
-	case TrustUltimate:
-		return "ultimate"
-	default:
-		return "undefined"
-	}
-}
-
-// AtLeast returns true if this trust level meets or exceeds the required level.
-func (t TrustLevel) AtLeast(required TrustLevel) bool {
-	return t >= required
-}
-
-// VerificationResult contains the result of signature verification.
+// VerificationResult contains metadata extracted from a signature during
+// verification.
+//
+// A VerificationResult may be returned alongside a non-nil error when the
+// verifier was able to extract metadata (key ID, signer, etc.) even though
+// verification did not fully succeed. Callers should always check the
+// accompanying error to determine the verification outcome:
+//
+//   - nil error: signature is valid and the key is trusted.
+//   - errors.Is(err, ErrSignatureInvalid): cryptographic check failed.
+//   - errors.Is(err, ErrKeyNotTrusted): valid signature, but the key is not
+//     in any trust store.
+//   - errors.Is(err, ErrKeyExpired): valid signature, but the key expired.
+//   - errors.Is(err, ErrKeyRevoked): valid signature, but the key was revoked.
+//   - errors.Is(err, ErrSignatureFormatInvalid): signature could not be parsed.
+//   - errors.Is(err, ErrUnknownSignatureType): no verifier for this format.
+//   - errors.Is(err, ErrNoSignature): the object has no signature.
 type VerificationResult struct {
 	// Type is the signature format (OpenPGP, SSH, X.509).
 	Type SignatureType
-
-	// Valid is true if the cryptographic signature is valid.
-	// Note: A valid signature doesn't imply trust - check TrustLevel.
-	Valid bool
-
-	// TrustLevel indicates the trust level of the signing key.
-	TrustLevel TrustLevel
 
 	// KeyID is the identifier of the signing key.
 	// For OpenPGP: the key ID (last 16 hex chars of fingerprint)
@@ -77,35 +83,25 @@ type VerificationResult struct {
 	// SignedAt is the timestamp when the signature was created.
 	// May be zero if the signature doesn't include timing info.
 	SignedAt time.Time
-
-	// Error contains details if verification failed.
-	Error error
-}
-
-// IsValid returns true if the signature is cryptographically valid.
-func (r *VerificationResult) IsValid() bool {
-	return r.Valid && r.Error == nil
-}
-
-// IsTrusted returns true if the signature is valid AND the key meets
-// the minimum trust level.
-func (r *VerificationResult) IsTrusted(minTrust TrustLevel) bool {
-	return r.IsValid() && r.TrustLevel.AtLeast(minTrust)
 }
 
 // String returns a human-readable summary of the verification result.
 func (r *VerificationResult) String() string {
-	validity := "invalid"
-	if r.Valid {
-		validity = "valid"
-	}
 	return fmt.Sprintf(
-		"%s signature: %s, trust: %s, key: %s, signer: %s",
-		r.Type, validity, r.TrustLevel, r.KeyID, r.Signer,
+		"%s signature: key: %s, signer: %s",
+		r.Type, r.KeyID, r.Signer,
 	)
 }
 
 // Verifier is an interface for verifying cryptographic signatures.
+//
+// Verify checks the given signature against the message content.
+// On success (nil error), the returned VerificationResult contains metadata
+// about the valid, trusted signature.
+// On failure, the error is one of the sentinel verification errors (or wraps
+// one); a non-nil VerificationResult may still be returned with whatever
+// metadata could be extracted.
+//
 // This interface is defined locally to avoid circular imports with the git package.
 // The git.Verifier, git.VerifierChain, and other implementations satisfy this interface.
 type Verifier interface {
