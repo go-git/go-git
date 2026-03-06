@@ -1000,6 +1000,15 @@ func (s *WorktreeSuite) testCheckoutBisect(url string) {
 
 	iter.ForEach(func(commit *object.Commit) error {
 		err := w.Checkout(&CheckoutOptions{Hash: commit.Hash})
+		
+		// debug check
+		if err != nil {
+			fmt.Printf("\n--- CI DEBUG TRAP ---\n")
+			fmt.Printf("Attempted to checkout commit: %s\n", commit.Hash)
+			status, _ := w.Status()
+			fmt.Printf("Dirty Worktree Status:\n%s\n-----------------------\n", status)
+		}
+
 		s.NoError(err)
 
 		status, err := w.Status()
