@@ -83,6 +83,12 @@ type VerificationResult struct {
 	// SignedAt is the timestamp when the signature was created.
 	// May be zero if the signature doesn't include timing info.
 	SignedAt time.Time
+
+	// Details holds plugin-specific verification metadata.
+	// Each verifier implementation may populate this with its own
+	// concrete type (e.g. key expiry, trust chain, key source).
+	// Consumers can type-assert to access the extended information.
+	Details any
 }
 
 // String returns a human-readable summary of the verification result.
