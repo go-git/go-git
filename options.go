@@ -94,6 +94,10 @@ type CloneOptions struct {
 	// Bare determines whether the repository will have a worktree (non-bare)
 	// or not (bare).
 	Bare bool
+	// SubmoduleURLRewriter, if non-nil, is passed to SubmoduleUpdateOptions
+	// when recursively initializing submodules during clone. See
+	// SubmoduleUpdateOptions.URLRewriter for details.
+	SubmoduleURLRewriter func(submoduleName, remoteURL string) string
 
 	// worktree defines the worktree filesystem for non-bare clone operations.
 	// This is only used internally due to partial inits.
@@ -365,6 +369,10 @@ type SubmoduleUpdateOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
+	// URLRewriter, if non-nil, is called to rewrite each submodule's remote URL
+	// before fetching. It receives the submodule name and the resolved URL from
+	// .gitmodules. The return value is used as the remote URL for the submodule.
+	URLRewriter func(submoduleName, remoteURL string) string
 }
 
 // Checkout errors.

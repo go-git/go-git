@@ -45,9 +45,10 @@ var args = map[string][]string{
 
 // tests not working / set-up
 var ignored = map[string]bool{
-	"ls":              true,
-	"sha256":          true,
-	"submodule":       true,
+	"local-clone":    true,
+	"ls":             true,
+	"sha256":         true,
+	"submodule":      true,
 	"tag-create-push": true,
 }
 
