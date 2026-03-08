@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
+	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -134,6 +136,22 @@ const (
 func (o *CloneOptions) Validate() error {
 	if o.URL == "" {
 		return ErrMissingURL
+	}
+
+	// Resolve ..-relative local paths to absolute paths before they reach
+	// the transport layer. The billy chroot-based FilesystemLoader rejects
+	// any path whose clean form starts with ".." with "chroot boundary
+	// crossed". Real git resolves such paths against the working directory
+	// at the command level, before any transport code runs.
+	if giturl.IsLocalEndpoint(o.URL) && !filepath.IsAbs(o.URL) {
+		cleaned := filepath.Clean(o.URL)
+		if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+			abs, err := filepath.Abs(o.URL)
+			if err != nil {
+				return fmt.Errorf("resolve local clone URL %q to absolute path: %w", o.URL, err)
+			}
+			o.URL = abs
+		}
 	}
 
 	if o.RemoteName == "" {

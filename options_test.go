@@ -1,6 +1,7 @@
 package git
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -99,6 +100,21 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal() {
 
 	s.Equal("foo", o.Tagger.Name)
 	s.Equal("foo@foo.com", o.Tagger.Email)
+}
+
+// TestCloneOptionsValidate_RelativeDotDot verifies that ..-relative local
+// paths in CloneOptions.URL are resolved to absolute paths by Validate, so
+// that the billy chroot-based FilesystemLoader never sees a ".." component.
+//
+// Fixes: https://github.com/go-git/go-git/issues/1723
+func (s *OptionsSuite) TestCloneOptionsValidate_RelativeDotDot() {
+	for _, input := range []string{"../../", "../foo", ".."} {
+		o := &CloneOptions{URL: input}
+		err := o.Validate()
+		s.NoError(err, "input %q", input)
+		s.True(filepath.IsAbs(o.URL),
+			"..-relative URL %q must be resolved to absolute after Validate, got %q", input, o.URL)
+	}
 }
 
 // registerGlobalConfig registers a static ConfigSource plugin with the
