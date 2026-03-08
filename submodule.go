@@ -245,7 +245,7 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
-	// adapt hash if there's a hash format missmatch between parent and submodule
+	// adapt hash if there's a hash format mismatch between parent and submodule
 	hash = s.adaptHashForSubmodule(r, hash)
 
 	if !o.NoFetch {
@@ -301,11 +301,11 @@ func (s *Submodule) adaptHashForSubmodule(r *Repository, hash plumbing.Hash) plu
 		submoduleFormat = format.DefaultObjectFormat
 	}
 
-	expectedSize := submoduleFormat.Size()
-	actualSize := hash.Size()
+	submoduleHashSize := submoduleFormat.Size()
+	parentHashSize := hash.Size()
 
-	if actualSize > expectedSize {
-		hashBytes := hash.Bytes()[:expectedSize] // truncate zero padding
+	if parentHashSize > submoduleHashSize { // parent hash is SHA-256, submodule hash is SHA-1
+		hashBytes := hash.Bytes()[:submoduleHashSize] // truncate zero padding from submodule hash
 		truncatedHash, ok := plumbing.FromBytes(hashBytes)
 		if ok {
 			return truncatedHash
