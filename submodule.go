@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -244,6 +245,9 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
+	// adapt hash if there's a hash format missmatch between parent and submodule
+	hash = s.adaptHashForSubmodule(r, hash)
+
 	if !o.NoFetch {
 		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth, Depth: o.Depth})
 		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
@@ -281,6 +285,34 @@ func (s *Submodule) fetchAndCheckout(
 
 	head := plumbing.NewHashReference(plumbing.HEAD, hash)
 	return r.Storer.SetReference(head)
+}
+
+// adaptHashForSubmodule adapts the hash from the parent repository to match
+// the object format of the submodule repository
+// This handles the case where a SHA-256 parent repository references SHA-1 submodules
+func (s *Submodule) adaptHashForSubmodule(r *Repository, hash plumbing.Hash) plumbing.Hash {
+	cfg, err := r.Config()
+	if err != nil {
+		return hash
+	}
+
+	submoduleFormat := cfg.Extensions.ObjectFormat
+	if submoduleFormat == "" {
+		submoduleFormat = format.DefaultObjectFormat
+	}
+
+	expectedSize := submoduleFormat.Size()
+	actualSize := hash.Size()
+
+	if actualSize > expectedSize {
+		hashBytes := hash.Bytes()[:expectedSize] // truncate zero padding
+		truncatedHash, ok := plumbing.FromBytes(hashBytes)
+		if ok {
+			return truncatedHash
+		}
+	}
+
+	return hash
 }
 
 // Submodules list of several submodules from the same repository.

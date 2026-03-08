@@ -1426,6 +1426,38 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 	s.Len(fi, 1) // .git
 }
 
+func (s *RepositorySuite) TestPlainCloneWithSHA256ParentAndSHA1Submodules() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	dir := s.T().TempDir()
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:               "https://gitlab.com/go-git-fixtures/sha256-with-sha1-submodules.git",
+		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+	})
+	s.Require().NoError(err)
+
+	cfg, err := r.Config()
+	s.NoError(err)
+	s.Len(cfg.Remotes, 1)
+	s.Len(cfg.Submodules, 4)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	sm, err := w.Submodule("basic")
+	s.Require().NoError(err)
+
+	subRepo, err := sm.Repository()
+	s.Require().NoError(err)
+
+	subHead, err := subRepo.Head()
+	s.Require().NoError(err)
+	s.Equal(40, len(subHead.Hash().String()))
+	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", subHead.Hash().String())
+}
+
 func (s *RepositorySuite) TestFetch() {
 	r, _ := Init(memory.NewStorage())
 	_, err := r.CreateRemote(&config.RemoteConfig{

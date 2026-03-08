@@ -274,3 +274,26 @@ func (s *SubmoduleSuite) TestSubmoduleParseScp() {
 	_, err := submodule.Repository()
 	s.Require().NoError(err)
 }
+
+func (s *SubmoduleSuite) TestAdaptHashForSubmodule() {
+	sha1Hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	paddedSha256Hash := sha1Hash + "000000000000000000000000"
+
+	parentHash, ok := plumbing.FromHex(paddedSha256Hash)
+	s.Require().True(ok)
+	s.Equal(64, len(parentHash.String()), "Parent hash should be 64 chars (SHA-256)")
+
+	submoduleRepo, err := Init(memory.NewStorage(), nil)
+	s.Require().NoError(err)
+
+	sm := &Submodule{
+		initialized: true,
+		c:           &config.Submodule{Name: "test"},
+		w:           s.Worktree,
+	}
+
+	adaptedHash := sm.adaptHashForSubmodule(submoduleRepo, parentHash)
+
+	s.Equal(40, len(adaptedHash.String()), "Adapted hash should be 40 chars (SHA-1)")
+	s.Equal(sha1Hash, adaptedHash.String(), "Adapted hash should match original SHA-1 hash")
+}
