@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-billy/v6/util"
 
@@ -23,6 +24,7 @@ import (
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 var (
@@ -365,6 +367,13 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 }
 
 func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipStatus bool) (plumbing.Hash, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git add %s", time.Since(start).Seconds(), path)
+		}()
+	}
+
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -408,6 +417,13 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 // directory path, all directory contents are added to the index recursively. No
 // error is returned if all matching paths are already staged in index.
 func (w *Worktree) AddGlob(pattern string) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: add glob %s", time.Since(start).Seconds(), pattern)
+		}()
+	}
+
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
 	files, err := util.Glob(w.Filesystem, pattern)
 	if err != nil {

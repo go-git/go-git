@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/go-git/go-billy/v6/osfs"
+
 	. "github.com/go-git/go-git/v6/_examples"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
 

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 var (
@@ -36,6 +38,13 @@ var (
 // Commit stores the current contents of the index in a new commit along with
 // a log message from the user describing the changes.
 func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git commit", time.Since(start).Seconds())
+		}()
+	}
+
 	if err := opts.Validate(w.r); err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -346,7 +355,7 @@ func (se sortableEntries) Swap(i, j int)      { se[i], se[j] = se[j], se[i] }
 func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
 	sort.Sort(sortableEntries(t.Entries))
 	for i, e := range t.Entries {
-		if e.Mode != filemode.Dir && !e.Hash.IsZero() {
+		if e.Mode != filemode.Dir {
 			continue
 		}
 

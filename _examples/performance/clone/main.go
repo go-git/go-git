@@ -7,12 +7,12 @@ import (
 	"os"
 
 	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // Expands the Basic example focusing in performance.
@@ -33,13 +33,8 @@ func main() {
 	hash.RegisterHash(crypto.SHA1, sha1.New)
 
 	// Clone the given repository to the given directory
-	Info("GIT_TRACE_PERFORMANCE=true git clone --no-tags --depth 1 --single-branch %s %s", url, directory)
-
-	// Enable performance metrics. This is only to show the break down per
-	// operation, and can be removed. Like in the git CLI, this can be enabled
-	// at runtime by environment variable:
-	//   GIT_TRACE_PERFORMANCE=true
-	trace.SetTarget(trace.Performance)
+	Info("Set GIT_TRACE_PERFORMANCE=true for a time per operation breakdown")
+	Info("git clone --no-tags --depth 1 --single-branch %s %s", url, directory)
 
 	fs := osfs.New(directory)
 	dotgit, err := fs.Chroot(".git")

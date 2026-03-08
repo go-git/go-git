@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -1084,4 +1085,62 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 	looseCount, err = dir.CountLooseRefs()
 	s.Require().NoError(err)
 	s.Equal(1, looseCount)
+}
+
+func TestIssue55(t *testing.T) {
+	t.Parallel()
+
+	writeObject := func(fs billy.Filesystem) {
+		t.Helper()
+
+		dir := New(fs)
+		err := dir.Initialize()
+		require.NoError(t, err)
+
+		w, err := dir.NewObject()
+		require.NoError(t, err)
+
+		err = w.WriteHeader(plumbing.BlobObject, 14)
+		require.NoError(t, err)
+		n, err := w.Write([]byte("this is a test"))
+		require.NoError(t, err)
+		assert.Equal(t, 14, n)
+
+		assert.Equal(t, "a8a940627d132695a9769df883f85992f0ff4a43", w.Hash().String())
+
+		err = w.Close()
+		require.NoError(t, err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		fs   billy.Filesystem
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join("objects", "a8", "a940627d132695a9769df883f85992f0ff4a43")
+
+			writeObject(tc.fs)
+			i, err := tc.fs.Stat(path)
+			require.NoError(t, err)
+			assert.Equal(t, int64(34), i.Size())
+
+			ro, err := isReadOnly(tc.fs, path)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", path)
+
+			// Recreate the same object.
+			writeObject(tc.fs)
+			i, err = tc.fs.Stat(path)
+			require.NoError(t, err)
+			assert.Equal(t, int64(34), i.Size())
+
+			ro, err = isReadOnly(tc.fs, path)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", path)
+		})
+	}
 }

@@ -22,14 +22,13 @@ var (
 	sto = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer  = sto
-	_ storer.IndexStorer          = sto
-	_ storer.ReferenceStorer      = sto
-	_ storer.ShallowStorer        = sto
-	_ storer.DeltaObjectStorer    = sto
-	_ storer.PackfileWriter       = sto
-	_ xstorage.ObjectFormatGetter = sto
-	_ xstorage.ExtensionChecker   = sto
+	_ storer.EncodedObjectStorer = sto
+	_ storer.IndexStorer         = sto
+	_ storer.ReferenceStorer     = sto
+	_ storer.ShallowStorer       = sto
+	_ storer.DeltaObjectStorer   = sto
+	_ storer.PackfileWriter      = sto
+	_ xstorage.ExtensionChecker  = sto
 )
 
 func TestFilesystem(t *testing.T) {
@@ -207,7 +206,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 			name:             "empty fs, SHA1 opts format",
 			fs:               osfs.New(t.TempDir()),
 			inObjectFormat:   formatcfg.SHA1,
-			wantObjectFormat: formatcfg.SHA1,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
 		},
 		{
 			name:             "empty fs, SHA256 opts format",
@@ -227,7 +226,10 @@ func TestNewStorageWithOptions(t *testing.T) {
 				filesystem.Options{ObjectFormat: tt.inObjectFormat},
 			)
 
-			assert.Equal(t, tt.wantObjectFormat, sto.ObjectFormat())
+			cfg, err := sto.Config()
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantObjectFormat, cfg.Extensions.ObjectFormat)
 		})
 	}
 }

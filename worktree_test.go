@@ -3258,7 +3258,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("main")
 		s.Require().NoError(err)
-		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		repo, err := PlainOpenWithOptions(fs.Root(), nil)
 		s.Require().NoError(err)
 
 		wt, err := repo.Worktree()
@@ -3277,7 +3277,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("linked-worktree-1")
 		s.Require().NoError(err)
-		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		repo, err := PlainOpenWithOptions(fs.Root(), nil)
 		s.Require().NoError(err)
 
 		wt, err := repo.Worktree()
@@ -3299,7 +3299,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("linked-worktree-2")
 		s.Require().NoError(err)
-		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		repo, err := PlainOpenWithOptions(fs.Root(), nil)
 		s.Require().NoError(err)
 
 		wt, err := repo.Worktree()
@@ -3321,7 +3321,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("linked-worktree-invalid-commondir")
 		s.Require().NoError(err)
-		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		_, err = PlainOpenWithOptions(fs.Root(), nil)
 		s.ErrorIs(err, ErrRepositoryIncomplete)
 	}
 }
