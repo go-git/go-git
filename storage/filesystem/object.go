@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -209,7 +210,50 @@ func (s *ObjectStorage) Reindex() {
 	s.index = nil
 }
 
-func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
+func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
+	if s.options.UseInMemoryIdx {
+		return s.loadMemoryIndex(h)
+	}
+
+	// Use LazyIndex on a best-effort basis.
+	if idx, err := s.loadLazyIndex(h); err == nil {
+		// Of an index already exists, and implements io.Closer, try to close it to avoid leaking the fd.
+		if i, found := s.index[h]; found && i != nil {
+			if closer, ok := i.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+
+		s.index[h] = idx
+		return nil
+	}
+
+	return s.loadMemoryIndex(h)
+}
+
+func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, error) {
+	idxFile, err := s.dir.ObjectPackIdx(h)
+	if err != nil {
+		return nil, err
+	}
+
+	var revFile billy.File
+	if rf, revErr := s.dir.ObjectPackRev(h); revErr == nil {
+		revFile = rf
+	}
+
+	idx, err := idxfile.NewLazyIndex(idxFile, revFile, h)
+	if err != nil {
+		_ = idxFile.Close()
+		if revFile != nil {
+			_ = revFile.Close()
+		}
+		return nil, err
+	}
+	return idx, nil
+}
+
+func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
@@ -816,6 +860,19 @@ func (s *ObjectStorage) Close() error {
 			}
 		}
 	}
+
+	// If the index being used implements io.Closer, make sure we call it.
+	// The LazyIndex requires this to close open file descriptors, but
+	// the same could apply to other Index implementations.
+	s.muI.RLock()
+	for _, idx := range s.index {
+		if closer, ok := idx.(io.Closer); ok {
+			if err := closer.Close(); firstError == nil && err != nil {
+				firstError = err
+			}
+		}
+	}
+	s.muI.RUnlock()
 
 	s.packfiles = nil
 	_ = s.dir.Close()
