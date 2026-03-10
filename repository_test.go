@@ -1246,19 +1246,47 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir() {
 
 	dir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
+	repoPath := fs.Join(fs.Root(), dir)
 
-	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
+	r, err := PlainCloneContext(ctx, repoPath, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.NotNil(r)
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
-	_, err = fs.Stat(dir)
-	s.False(os.IsNotExist(err))
-
-	names, err := fs.ReadDir(dir)
+	fi, err := os.Stat(repoPath)
 	s.NoError(err)
-	s.Len(names, 0)
+	s.True(fi.IsDir())
+
+	names, err := os.ReadDir(repoPath)
+	s.NoError(err)
+	s.Len(names, 1)
+	s.Equal(".git", names[0].Name())
+}
+
+func (s *RepositorySuite) TestPlainCloneContextNonExistentWithPreExistingAbsoluteDir() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	parent := s.T().TempDir()
+	repoPath := filepath.Join(parent, "repo")
+	err := os.Mkdir(repoPath, 0o755)
+	s.NoError(err)
+
+	r, err := PlainCloneContext(ctx, repoPath, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	s.NotNil(r)
+	s.ErrorIs(err, transport.ErrRepositoryNotFound)
+
+	fi, err := os.Stat(repoPath)
+	s.NoError(err)
+	s.True(fi.IsDir())
+
+	names, err := os.ReadDir(repoPath)
+	s.NoError(err)
+	s.Len(names, 1)
+	s.Equal(".git", names[0].Name())
 }
 
 func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir() {
@@ -1271,14 +1299,15 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir() {
 	s.NoError(err)
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
+	repoPath := fs.Join(fs.Root(), repoDir)
 
-	r, err := PlainCloneContext(ctx, repoDir, &CloneOptions{
+	r, err := PlainCloneContext(ctx, repoPath, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.NotNil(r)
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
-	_, err = fs.Stat(repoDir)
+	_, err = os.Stat(repoPath)
 	s.True(os.IsNotExist(err))
 }
 

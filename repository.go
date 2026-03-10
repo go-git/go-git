@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -578,6 +579,13 @@ func PlainClone(path string, o *CloneOptions) (*Repository, error) {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repository, error) {
+	targetDirExisted := false
+	if _, statErr := osfs.Default.Stat(path); statErr == nil {
+		targetDirExisted = true
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return nil, statErr
+	}
+
 	empty, err := checkTargetDirIsEmpty(path)
 	if err != nil {
 		return nil, err
@@ -595,7 +603,12 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 		return nil, err
 	}
 
-	return r, r.clone(ctx, o)
+	err = r.clone(ctx, o)
+	if err != nil && !targetDirExisted && errors.Is(err, transport.ErrRepositoryNotFound) {
+		_ = os.RemoveAll(path)
+	}
+
+	return r, err
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
