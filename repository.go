@@ -590,12 +590,30 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	if o.Mirror {
 		isBare = true
 	}
+	// Record whether the directory existed before we touched it so we can
+	// roll back correctly on failure, matching the behaviour of `git clone`:
+	//   - directory didn't exist → remove it entirely on failure
+	//   - directory already existed (empty) → remove only content we added
+	_, preErr := os.Stat(path)
+	dirPreexisted := !os.IsNotExist(preErr)
+
 	r, err := PlainInit(path, isBare, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
 
-	return r, r.clone(ctx, o)
+	if err := r.clone(ctx, o); err != nil {
+		if dirPreexisted {
+			// Restore the directory to its original empty state.
+			_ = os.RemoveAll(filepath.Join(path, GitDirName))
+		} else {
+			// We created the directory; remove it entirely.
+			_ = os.RemoveAll(path)
+		}
+		return r, err
+	}
+
+	return r, nil
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {

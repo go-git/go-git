@@ -450,6 +450,54 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 	}
 }
 
+// TestPlainCloneContext_FailedCloneRemovesCreatedDirectory is a regression test
+// for a v6 behaviour difference vs v5 and the reference git implementation.
+//
+// When PlainCloneContext creates the destination directory (i.e. it did not
+// exist before the call) and the clone subsequently fails, it must remove the
+// directory it created — just as `git clone` does. Without this cleanup a
+// caller that retries with different credentials (e.g. iterating over auth
+// methods) gets "destination path already exists" on the second attempt.
+func TestPlainCloneContext_FailedCloneRemovesCreatedDirectory(t *testing.T) {
+	t.Parallel()
+
+	// dest does not exist yet; PlainCloneContext must create and then remove it.
+	dest := filepath.Join(t.TempDir(), "repo")
+
+	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	require.Error(t, err)
+
+	_, statErr := os.Stat(dest)
+	assert.True(t, os.IsNotExist(statErr),
+		"PlainCloneContext must remove the directory it created when the clone fails")
+}
+
+// TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory verifies
+// that a directory which already existed (but was empty) before the call is
+// preserved after a failed clone — matching `git clone` behaviour.
+func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *testing.T) {
+	t.Parallel()
+
+	// dest exists and is empty before the clone attempt.
+	dest := t.TempDir()
+
+	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	require.Error(t, err)
+
+	// The directory itself must still be there …
+	_, statErr := os.Stat(dest)
+	assert.NoError(t, statErr, "PlainCloneContext must not remove a pre-existing directory")
+
+	// … and must be empty (any .git content added by PlainInit must be removed).
+	entries, _ := os.ReadDir(dest)
+	assert.Empty(t, entries,
+		"PlainCloneContext must remove any content it added to a pre-existing empty directory")
+}
+
 // sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
 // implementation, simulating a storage backend that does not implement
 // that interface.
