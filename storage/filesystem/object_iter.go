@@ -216,3 +216,74 @@ func (iter *objectsIter) ForEach(cb func(plumbing.EncodedObject) error) error {
 func (iter *objectsIter) Close() {
 	iter.h = []plumbing.Hash{}
 }
+
+// packIndexIter iterates over objects in a packfile using a packIndex.
+type packIndexIter struct {
+	store    *ObjectStorage
+	pack     billy.File
+	packHash plumbing.Hash
+	idx      *packIndex
+	pos      int
+	typ      plumbing.ObjectType
+	seen     map[plumbing.Hash]struct{}
+}
+
+func newPackfileIterFromPackIndex(
+	store *ObjectStorage,
+	pack billy.File,
+	t plumbing.ObjectType,
+	seen map[plumbing.Hash]struct{},
+	idx *packIndex,
+	packHash plumbing.Hash,
+) (storer.EncodedObjectIter, error) {
+	return &packIndexIter{
+		store:    store,
+		pack:     pack,
+		packHash: packHash,
+		idx:      idx,
+		pos:      0,
+		typ:      t,
+		seen:     seen,
+	}, nil
+}
+
+func (it *packIndexIter) Next() (plumbing.EncodedObject, error) {
+	for {
+		if it.pos >= it.idx.Count() {
+			return nil, io.EOF
+		}
+
+		h, _, err := it.idx.EntryAt(it.pos)
+		it.pos++
+		if err != nil {
+			if err == io.EOF {
+				return nil, io.EOF
+			}
+			return nil, err
+		}
+
+		if _, ok := it.seen[h]; ok {
+			continue
+		}
+
+		obj, err := it.store.getFromPackfile(h, false)
+		if err != nil {
+			return nil, err
+		}
+
+		if it.typ != plumbing.AnyObject && obj.Type() != it.typ {
+			continue
+		}
+
+		return obj, nil
+	}
+}
+
+func (it *packIndexIter) ForEach(cb func(plumbing.EncodedObject) error) error {
+	return storer.ForEachIterator(it, cb)
+}
+
+func (it *packIndexIter) Close() {
+	it.pos = it.idx.Count()
+	_ = it.pack.Close()
+}

@@ -76,7 +76,7 @@ func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 }
 
 // GetByOffset retrieves the encoded object from the packfile at the given
-// offset.
+// offset. It uses the index to resolve the hash for caching purposes.
 func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
 	if err := p.init(); err != nil {
 		return nil, err
@@ -84,7 +84,69 @@ func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
+	// Do it here so getByOffset does not need the hash.
+	h, err := p.FindHash(offset)
+	if err != nil {
+		return nil, err
+	}
+	if obj, ok := p.cache.Get(h); ok {
+		return obj, nil
+	}
+
 	return p.getByOffset(offset)
+}
+
+// GetDeltaObject retrieves the object at the given offset, preserving delta
+// information if the object is a delta. For non-delta objects, it returns
+// the fully resolved object. The hash parameter should be the known hash
+// of the object, either from a reverse lookup or as already supplied
+// through other means
+func (p *Packfile) GetDeltaObject(offset int64, hash plumbing.Hash) (plumbing.EncodedObject, error) {
+	if err := p.init(); err != nil {
+		return nil, err
+	}
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	oh, err := p.headerFromOffset(offset)
+	if err != nil {
+		return nil, err
+	}
+
+	if !oh.Type.IsDelta() {
+		return p.objectFromHeader(oh)
+	}
+
+	of := format.SHA1
+	if p.objectIdSize == format.SHA256.Size() {
+		of = format.SHA256
+	}
+	h := plumbing.FromObjectFormat(of)
+	obj := plumbing.NewMemoryObject(h)
+	obj.SetType(oh.Type)
+
+	w, err := obj.Writer()
+	if err != nil {
+		return nil, err
+	}
+	defer ioutil.CheckClose(w, &err)
+
+	if err := p.scanner.WriteObject(oh, w); err != nil {
+		return nil, err
+	}
+
+	var baseHash plumbing.Hash
+	var baseOfs int64
+	switch oh.Type {
+	case plumbing.REFDeltaObject:
+		baseHash = oh.Reference
+	case plumbing.OFSDeltaObject:
+		// For OFS_DELTA, store the offset reference. The hash will be
+		// lazily resolved via the index only if BaseHash() is called.
+		baseOfs = oh.OffsetReference
+	}
+
+	return NewDeltaObject(obj, hash, baseHash, baseOfs, oh.Size, p.Index), nil
 }
 
 // GetSizeByOffset retrieves the size of the encoded object from the
@@ -177,20 +239,23 @@ func (p *Packfile) get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 	return p.objectFromHeader(oh)
 }
 
-// getByOffset is not threat-safe, and should only be called within packfile.go.
+// getByOffset is not thread-safe, and should only be called within packfile.go.
+// It resolves an object at the given offset without any index-based hash lookup.
+// This is used internally for OFS_DELTA parent resolution where only the offset
+// is known and the hash is not needed.
 func (p *Packfile) getByOffset(offset int64) (plumbing.EncodedObject, error) {
-	h, err := p.FindHash(offset)
-	if err != nil {
-		return nil, err
-	}
-
-	if obj, ok := p.cache.Get(h); ok {
-		return obj, nil
-	}
-
 	oh, err := p.headerFromOffset(offset)
 	if err != nil {
 		return nil, err
+	}
+
+	// For non-delta objects, the scanner computes the hash during scanning
+	// as a byproduct of decompression. Use it for cache lookup to avoid
+	// re-creating the object unnecessarily.
+	if !oh.Hash.IsZero() {
+		if obj, ok := p.cache.Get(oh.Hash); ok {
+			return obj, nil
+		}
 	}
 
 	return p.objectFromHeader(oh)
