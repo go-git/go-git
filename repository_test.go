@@ -498,6 +498,35 @@ func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *test
 		"PlainCloneContext must remove any content it added to a pre-existing empty directory")
 }
 
+// TestPlainCloneContext_EmptyRemoteRepository verifies that cloning an empty
+// remote repository succeeds and returns a usable repo with the remote
+// configured — matching `git clone` behaviour.
+func TestPlainCloneContext_EmptyRemoteRepository(t *testing.T) {
+	t.Parallel()
+
+	// Create a bare empty repository to use as the remote.
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	_, err := PlainInit(remote, true)
+	require.NoError(t, err)
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: remote,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// The cloned repo should have the "origin" remote configured.
+	remotes, err := r.Remotes()
+	require.NoError(t, err)
+	require.Len(t, remotes, 1)
+	assert.Equal(t, "origin", remotes[0].Config().Name)
+
+	// The .git directory should exist on disk.
+	_, statErr := os.Stat(filepath.Join(dest, GitDirName))
+	assert.NoError(t, statErr, "cloned repo should have a .git directory")
+}
+
 // sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
 // implementation, simulating a storage backend that does not implement
 // that interface.

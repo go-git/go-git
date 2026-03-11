@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -603,6 +604,9 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	}
 
 	if err := r.clone(ctx, o); err != nil {
+		if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+			return r, nil
+		}
 		if dirPreexisted {
 			// Restore the directory to its original empty state.
 			_ = os.RemoveAll(filepath.Join(path, GitDirName))
