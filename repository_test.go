@@ -498,6 +498,69 @@ func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *test
 		"PlainCloneContext must remove any content it added to a pre-existing empty directory")
 }
 
+// TestPlainCloneContext_EmptyRemoteReturnsError verifies that cloning an
+// empty remote repository returns ErrEmptyRemoteRepository by default.
+func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	_, err := PlainInit(remote, true)
+	require.NoError(t, err)
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	_, err = PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: remote,
+	})
+	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+}
+
+// TestPlainCloneContext_EmptyRemoteDoesNotCleanup verifies that cloning an
+// empty remote repository with AllowEmptyRepo does not remove the directory.
+func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
+	t.Parallel()
+
+	// Create a bare empty repository to use as the remote.
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	_, err := PlainInit(remote, true)
+	require.NoError(t, err)
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// The cloned repo should have the "origin" remote configured.
+	remotes, err := r.Remotes()
+	require.NoError(t, err)
+	require.Len(t, remotes, 1)
+	assert.Equal(t, "origin", remotes[0].Config().Name)
+
+	// The .git directory must still exist — the repo was initialized successfully.
+	_, statErr := os.Stat(filepath.Join(dest, GitDirName))
+	assert.NoError(t, statErr,
+		"PlainCloneContext must not remove .git when cloning an empty remote")
+
+	// HEAD must be a valid symbolic reference (not .invalid), because
+	// AllowEmptyRepo skips withPartialInit and fully initialises the repo.
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.NotEqual(t, plumbing.Invalid, head.Target(),
+		"HEAD must not point to .invalid when AllowEmptyRepo is set")
+
+	// The repository should be re-openable — a fully initialised repo has
+	// its config persisted (unlike a partialInit repo).
+	reopened, err := PlainOpen(dest)
+	require.NoError(t, err)
+	reopenedRemotes, err := reopened.Remotes()
+	require.NoError(t, err)
+	require.Len(t, reopenedRemotes, 1)
+	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
+}
+
 // sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
 // implementation, simulating a storage backend that does not implement
 // that interface.
