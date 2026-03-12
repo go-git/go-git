@@ -68,22 +68,26 @@ func (s *LazyIndexSuite) TestFindHashWithRev() {
 
 func (s *LazyIndexSuite) TestNoRev() {
 	fixture := fixtures.Basic().One()
-	idx, err := idxfile.NewLazyIndex(fixture.Idx(), nil, plumbing.NewHash(fixture.PackfileHash))
+	openIdx := func() (idxfile.ReadAtCloser, error) { return fixture.Idx(), nil }
+	idx, err := idxfile.NewLazyIndex(openIdx, nil, plumbing.NewHash(fixture.PackfileHash))
 	s.Require().Error(err)
 	s.Require().Nil(idx)
 }
 
 func (s *LazyIndexSuite) TestNoIdx() {
 	fixture := fixtures.Basic().One()
-	idx, err := idxfile.NewLazyIndex(nil, fixture.Rev(), plumbing.NewHash(fixture.PackfileHash))
+	openRev := func() (idxfile.ReadAtCloser, error) { return fixture.Rev(), nil }
+	idx, err := idxfile.NewLazyIndex(nil, openRev, plumbing.NewHash(fixture.PackfileHash))
 	s.Require().Error(err)
 	s.Require().Nil(idx)
 }
 
 func (s *LazyIndexSuite) TestPackfileHashMismatch() {
 	fixture := fixtures.Basic().One()
+	openIdx := func() (idxfile.ReadAtCloser, error) { return fixture.Idx(), nil }
+	openRev := func() (idxfile.ReadAtCloser, error) { return fixture.Rev(), nil }
 	wrongHash := plumbing.NewHash("0000000000000000000000000000000000000000")
-	idx, err := idxfile.NewLazyIndex(fixture.Idx(), fixture.Rev(), wrongHash)
+	idx, err := idxfile.NewLazyIndex(openIdx, openRev, wrongHash)
 	s.Require().Error(err)
 	s.Require().Nil(idx)
 	s.ErrorIs(err, idxfile.ErrMalformedIdxFile)
@@ -273,26 +277,23 @@ func fixtureLazyIndex(withRev bool) (*idxfile.LazyIndex, error) {
 		return nil, err
 	}
 
-	var rev nopCloserReaderAt
+	openIdx := func() (idxfile.ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(idxBytes)}, nil
+	}
+
 	if withRev {
 		revBytes, err := buildTestRevFile(memIdx)
 		if err != nil {
 			return nil, err
 		}
-		rev = nopCloserReaderAt{bytes.NewReader(revBytes)}
+		openRev := func() (idxfile.ReadAtCloser, error) {
+			return nopCloserReaderAt{bytes.NewReader(revBytes)}, nil
+		}
 
-		return idxfile.NewLazyIndex(
-			nopCloserReaderAt{bytes.NewReader(idxBytes)},
-			rev,
-			memIdx.PackfileChecksum,
-		)
+		return idxfile.NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
 	}
 
-	return idxfile.NewLazyIndex(
-		nopCloserReaderAt{bytes.NewReader(idxBytes)},
-		nil,
-		memIdx.PackfileChecksum,
-	)
+	return idxfile.NewLazyIndex(openIdx, nil, memIdx.PackfileChecksum)
 }
 
 func buildTestRevFile(idx *idxfile.MemoryIndex) ([]byte, error) {
