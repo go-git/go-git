@@ -112,6 +112,13 @@ type Config struct {
 		// compression.  The default is 10.  A value of 0 turns off
 		// delta compression entirely.
 		Window uint
+		// ReadReverseIndex controls whether Git reads .rev files from
+		// disk. When false, a reverse index is generated in memory on
+		// demand instead. Defaults to true.
+		ReadReverseIndex bool
+		// WriteReverseIndex controls whether Git writes .rev files
+		// when creating new packfiles. Defaults to true.
+		WriteReverseIndex bool
 	}
 
 	Init struct {
@@ -263,6 +270,8 @@ func NewConfig() *Config {
 
 	config.Core.FileMode = DefaultFileMode
 	config.Pack.Window = DefaultPackWindow
+	config.Pack.ReadReverseIndex = true
+	config.Pack.WriteReverseIndex = true
 	config.Protocol.Version = DefaultProtocolVersion
 
 	return config
@@ -384,6 +393,8 @@ const (
 	worktreeKey                = "worktree"
 	commentCharKey             = "commentChar"
 	windowKey                  = "window"
+	readReverseIndexKey        = "readReverseIndex"
+	writeReverseIndexKey       = "writeReverseIndex"
 	mergeKey                   = "merge"
 	rebaseKey                  = "rebase"
 	nameKey                    = "name"
@@ -490,6 +501,10 @@ func (c *Config) unmarshalPack() error {
 		}
 		c.Pack.Window = uint(winUint)
 	}
+
+	c.Pack.ReadReverseIndex = s.Options.Get(readReverseIndexKey) != "false"
+	c.Pack.WriteReverseIndex = s.Options.Get(writeReverseIndexKey) != "false"
+
 	return nil
 }
 
@@ -695,6 +710,12 @@ func (c *Config) marshalPack() {
 	s := c.Raw.Section(packSection)
 	if c.Pack.Window != DefaultPackWindow {
 		s.SetOption(windowKey, fmt.Sprintf("%d", c.Pack.Window))
+	}
+	if !c.Pack.ReadReverseIndex {
+		s.SetOption(readReverseIndexKey, "false")
+	}
+	if !c.Pack.WriteReverseIndex {
+		s.SetOption(writeReverseIndexKey, "false")
 	}
 }
 
