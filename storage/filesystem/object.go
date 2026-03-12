@@ -1,13 +1,17 @@
 package filesystem
 
 import (
+	"context"
 	"crypto"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -39,9 +43,12 @@ type ObjectStorage struct {
 	oh *plumbing.ObjectHasher
 
 	// alternates holds cached ObjectStorage instances for alternate repositories.
-	// Initialized lazily via alternatesOnce to avoid recreating them on every lookup.
+	// Initialized lazily via initAlternates to avoid recreating them on every lookup.
+	// Protected by muA; use findInAlternates for concurrent lookups.
 	alternates     []*ObjectStorage
-	alternatesOnce sync.Once
+	alternatesInit bool
+	alternatesErr  error
+	muA            sync.RWMutex
 }
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
@@ -60,21 +67,115 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 }
 
 // initAlternates initializes the cached alternate ObjectStorage instances.
-// This is called lazily via sync.Once to ensure thread-safe initialization
-// and to avoid recreating ObjectStorage instances on every object lookup.
-func (s *ObjectStorage) initAlternates() {
-	s.alternatesOnce.Do(func() {
-		dotgits, err := s.dir.Alternates()
-		if err != nil {
-			// Alternates file doesn't exist or couldn't be read.
-			// This is not an error - alternates are optional.
-			return
+// Uses double-checked locking to ensure thread-safe, one-time initialization.
+// Returns a non-nil error only for real I/O failures; a missing alternates
+// file (os.ErrNotExist) is silently ignored since alternates are optional.
+func (s *ObjectStorage) initAlternates() error {
+	s.muA.RLock()
+	if s.alternatesInit {
+		err := s.alternatesErr
+		s.muA.RUnlock()
+		return err
+	}
+	s.muA.RUnlock()
+
+	s.muA.Lock()
+	defer s.muA.Unlock()
+
+	if s.alternatesInit {
+		return s.alternatesErr
+	}
+	s.alternatesInit = true
+
+	dotgits, err := s.dir.Alternates()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			s.alternatesErr = err
 		}
-		for _, dg := range dotgits {
-			s.alternates = append(s.alternates,
-				NewObjectStorageWithOptions(dg, s.objectCache, s.options))
-		}
-	})
+		return s.alternatesErr
+	}
+	for _, dg := range dotgits {
+		s.alternates = append(s.alternates,
+			NewObjectStorageWithOptions(dg, s.objectCache, s.options))
+	}
+	return nil
+}
+
+// resetAlternates closes cached alternates and marks them for re-initialization.
+// Must be called when the on-disk alternates list changes (e.g. via AddAlternate).
+func (s *ObjectStorage) resetAlternates() {
+	s.muA.Lock()
+	defer s.muA.Unlock()
+
+	for _, alt := range s.alternates {
+		_ = alt.Close()
+	}
+	s.alternates = nil
+	s.alternatesErr = nil
+	s.alternatesInit = false
+}
+
+// findInAlternates concurrently searches alternate object stores using an
+// errgroup bounded by GOMAXPROCS. The first alternate to succeed captures
+// the result and cancels the remaining searches. The read lock on muA is
+// held for the duration to prevent resetAlternates from closing in-use
+// alternates.
+func findInAlternates[T any](s *ObjectStorage, fn func(*ObjectStorage) (T, error)) (T, error) {
+	var zero T
+
+	if err := s.initAlternates(); err != nil {
+		return zero, err
+	}
+
+	s.muA.RLock()
+	defer s.muA.RUnlock()
+
+	n := len(s.alternates)
+	if n == 0 {
+		return zero, plumbing.ErrObjectNotFound
+	}
+	if n == 1 {
+		return fn(s.alternates[0])
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	g := new(errgroup.Group)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	var (
+		foundVal  T
+		foundOnce sync.Once
+		found     bool
+	)
+
+	for _, alt := range s.alternates {
+		g.Go(func() error {
+			if ctx.Err() != nil {
+				return nil
+			}
+			v, err := fn(alt)
+			if err == nil {
+				foundOnce.Do(func() {
+					foundVal = v
+					found = true
+					cancel()
+				})
+				return nil
+			}
+			if errors.Is(err, plumbing.ErrObjectNotFound) {
+				return nil
+			}
+			return err
+		})
+	}
+
+	err := g.Wait()
+	if err != nil && !found {
+		return zero, errors.Join(err, plumbing.ErrObjectNotFound)
+	}
+	return foundVal, nil
 }
 
 func (s *ObjectStorage) requireIndex() error {
@@ -244,14 +345,10 @@ func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 		return nil
 	}
 
-	// Check cached alternate repositories.
-	s.initAlternates()
-	for _, alt := range s.alternates {
-		if err := alt.HasEncodedObject(h); err == nil {
-			return nil
-		}
-	}
-	return plumbing.ErrObjectNotFound
+	_, err = findInAlternates(s, func(alt *ObjectStorage) (struct{}, error) {
+		return struct{}{}, alt.HasEncodedObject(h)
+	})
+	return err
 }
 
 func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int64, err error) {
@@ -394,17 +491,13 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 		return size, nil
 	}
 
-	// Check cached alternate repositories.
-	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		s.initAlternates()
-		for _, alt := range s.alternates {
-			size, err = alt.EncodedObjectSize(h)
-			if err == nil {
-				return size, nil
-			}
-		}
+	if !errors.Is(err, plumbing.ErrObjectNotFound) {
+		return 0, err
 	}
-	return 0, plumbing.ErrObjectNotFound
+
+	return findInAlternates(s, func(alt *ObjectStorage) (int64, error) {
+		return alt.EncodedObjectSize(h)
+	})
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -425,15 +518,10 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 		}
 	}
 
-	// If the error is still object not found, check cached alternate repositories.
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		s.initAlternates()
-		for _, alt := range s.alternates {
-			obj, err = alt.EncodedObject(t, h)
-			if err == nil {
-				return obj, nil
-			}
-		}
+		obj, err = findInAlternates(s, func(alt *ObjectStorage) (plumbing.EncodedObject, error) {
+			return alt.EncodedObject(t, h)
+		})
 	}
 
 	if err != nil {
@@ -705,16 +793,17 @@ func (s *ObjectStorage) buildPackfileIters(
 	}, nil
 }
 
-// Close closes all opened files.
+// Close closes all opened files including cached alternate storages.
 func (s *ObjectStorage) Close() error {
 	var firstError error
 
-	// Close cached alternate storages first.
+	s.muA.RLock()
 	for _, alt := range s.alternates {
 		if err := alt.Close(); err != nil && firstError == nil {
 			firstError = err
 		}
 	}
+	s.muA.RUnlock()
 
 	s.muP.RLock()
 	defer s.muP.RUnlock()
