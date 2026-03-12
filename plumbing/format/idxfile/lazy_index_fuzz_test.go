@@ -41,16 +41,17 @@ func FuzzLazyIndex(f *testing.F) {
 			}
 		}
 
-		var rev nopCloserReaderAt
+		openIdx := func() (idxfile.ReadAtCloser, error) {
+			return nopCloserReaderAt{bytes.NewReader(idxData)}, nil
+		}
+		var openRev func() (idxfile.ReadAtCloser, error)
 		if len(revData) > 0 {
-			rev = nopCloserReaderAt{bytes.NewReader(revData)}
+			openRev = func() (idxfile.ReadAtCloser, error) {
+				return nopCloserReaderAt{bytes.NewReader(revData)}, nil
+			}
 		}
 
-		idx, err := idxfile.NewLazyIndex(
-			nopCloserReaderAt{bytes.NewReader(idxData)},
-			rev,
-			packHash,
-		)
+		idx, err := idxfile.NewLazyIndex(openIdx, openRev, packHash)
 		if err != nil {
 			// Expected for most fuzz inputs.
 			return

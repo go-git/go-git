@@ -21,8 +21,27 @@ const (
 	is64bitsMask = uint64(1) << 31
 )
 
+// ReadAtCloser is the interface required for files used by LazyIndex.
+// It combines random-access reads with sequential read/seek/close.
+// [billy.File] satisfies this interface.
+type ReadAtCloser interface {
+	io.ReaderAt
+	io.ReadSeekCloser
+}
+
+// openFileFunc opens a file for reading. Each call must return a fresh,
+// independently closeable handle. The caller is responsible for closing
+// the returned ReadAtCloser.
+type openFileFunc func() (ReadAtCloser, error)
+
 // LazyIndex implements the Index interface by reading directly from
 // .idx and .rev files via ReadAt, without loading all data into memory.
+//
+// File descriptors are managed automatically via reference-counted
+// shared handles: opened lazily on first use, shared across concurrent
+// readers, and closed when no readers remain. This avoids holding
+// descriptors open indefinitely while still sharing a single FD across
+// concurrent operations.
 type LazyIndex struct {
 	hashSize int
 	count    int
@@ -34,29 +53,32 @@ type LazyIndex struct {
 	off32Start  int
 	off64Start  int
 
-	idx readAtCloser
-	rev readAtCloser
+	idx *sharedFile
+	rev *sharedFile
 
 	fanout [256]uint32 // cached from idx; small enough to keep in memory
 }
 
 var _ Index = (*LazyIndex)(nil)
 
-// NewLazyIndex creates an LazyIndex from .idx and .rev file handles.
+// NewLazyIndex creates a LazyIndex from opener functions for .idx and
+// .rev files.
 //
-// The respective file descriptors for .idx and .rev will be kept opened
-// until Close() is called.
-func NewLazyIndex(idx, rev readAtCloser, packHash plumbing.Hash) (*LazyIndex, error) {
-	if isNilReader(idx) {
-		return nil, errors.New("idx is nil")
+// The openers are called to obtain file handles on demand. Each call
+// must return a fresh, independently closeable handle. File descriptors
+// are shared across concurrent readers and released automatically when
+// idle.
+func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbing.Hash) (*LazyIndex, error) {
+	if openIdx == nil {
+		return nil, errors.New("idx opener is nil")
 	}
-	if isNilReader(rev) {
-		return nil, errors.New("rev is nil")
+	if openRev == nil {
+		return nil, errors.New("rev opener is nil")
 	}
 
 	s := &LazyIndex{
-		idx: idx,
-		rev: rev,
+		idx: newSharedFile(openIdx),
+		rev: newSharedFile(openRev),
 	}
 
 	if err := s.init(packHash); err != nil {
@@ -66,9 +88,32 @@ func NewLazyIndex(idx, rev readAtCloser, packHash plumbing.Hash) (*LazyIndex, er
 	return s, nil
 }
 
+// init reads and validates headers, caches the fanout table and
+// computes section offsets. It acquires file handles through the
+// sharedFile so the grace period keeps them warm for the first real
+// operation.
 func (s *LazyIndex) init(packHash plumbing.Hash) error {
+	idxRA, err := s.idx.acquire()
+	if err != nil {
+		return fmt.Errorf("cannot open idx: %w", err)
+	}
+	defer s.idx.release()
+
+	// Type-assert to access Seek; safe because the opener returns
+	// ReadAtCloser which embeds io.ReadSeekCloser.
+	idx, ok := idxRA.(io.ReadSeeker)
+	if !ok {
+		return errors.New("idx file does not support seeking")
+	}
+
+	revRA, err := s.rev.acquire()
+	if err != nil {
+		return fmt.Errorf("cannot open rev: %w", err)
+	}
+	defer s.rev.release()
+
 	var hdr [idxHeaderSize]byte
-	if _, err := s.idx.ReadAt(hdr[:], 0); err != nil {
+	if _, err := idxRA.ReadAt(hdr[:], 0); err != nil {
 		return fmt.Errorf("cannot read idx header: %w", err)
 	}
 	if !bytes.Equal(hdr[:4], idxHeader) {
@@ -81,7 +126,7 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 	}
 
 	var revHdr [revHeaderSize]byte
-	if _, err := s.rev.ReadAt(revHdr[:], 0); err != nil {
+	if _, err := revRA.ReadAt(revHdr[:], 0); err != nil {
 		return fmt.Errorf("cannot read rev header: %w", err)
 	}
 	if !bytes.Equal(revHdr[:4], []byte{'R', 'I', 'D', 'X'}) {
@@ -93,7 +138,7 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 
 	s.fanoutStart = idxHeaderSize
 	var fanoutBuf [idxFanoutSize]byte
-	if _, err := s.idx.ReadAt(fanoutBuf[:], int64(s.fanoutStart)); err != nil {
+	if _, err := idxRA.ReadAt(fanoutBuf[:], int64(s.fanoutStart)); err != nil {
 		return fmt.Errorf("cannot read idx fanout: %w", err)
 	}
 
@@ -109,12 +154,12 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 	s.off64Start = s.off32Start + (s.count * off32Size)
 
 	packBuf := make([]byte, s.hashSize)
-	_, err := s.idx.Seek(-(int64(s.hashSize) * 2), io.SeekEnd)
+	_, err = idx.Seek(-(int64(s.hashSize) * 2), io.SeekEnd)
 	if err != nil {
 		return err
 	}
 
-	if _, err := io.ReadFull(s.idx, packBuf); err != nil {
+	if _, err := io.ReadFull(idx, packBuf); err != nil {
 		return fmt.Errorf("cannot read pack checksum: %w", err)
 	}
 
@@ -132,18 +177,26 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 // Contains reports whether the given hash exists in the index by
 // binary-searching the idx names table.
 func (s *LazyIndex) Contains(h plumbing.Hash) (bool, error) {
-	_, found, err := s.findHashPos(h)
+	idx, err := s.idx.acquire()
 	if err != nil {
 		return false, err
 	}
+	defer s.idx.release()
 
-	return found, nil
+	_, found, err := s.findHashPos(idx, h)
+	return found, err
 }
 
 // FindOffset returns the packfile offset for the object with the given hash.
 // It returns plumbing.ErrObjectNotFound if the hash is not in the index.
 func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {
-	pos, found, err := s.findHashPos(h)
+	idx, err := s.idx.acquire()
+	if err != nil {
+		return 0, err
+	}
+	defer s.idx.release()
+
+	pos, found, err := s.findHashPos(idx, h)
 	if err != nil {
 		return 0, err
 	}
@@ -151,7 +204,7 @@ func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	off, err := s.offset(pos)
+	off, err := s.offset(idx, pos)
 	if err != nil {
 		return 0, err
 	}
@@ -162,7 +215,13 @@ func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {
 // FindCRC32 returns the CRC32 checksum of the object with the given hash.
 // It returns plumbing.ErrObjectNotFound if the hash is not in the index.
 func (s *LazyIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
-	pos, found, err := s.findHashPos(h)
+	idx, err := s.idx.acquire()
+	if err != nil {
+		return 0, err
+	}
+	defer s.idx.release()
+
+	pos, found, err := s.findHashPos(idx, h)
 	if err != nil {
 		return 0, err
 	}
@@ -170,14 +229,26 @@ func (s *LazyIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	return s.crc32(pos)
+	return s.crc32(idx, pos)
 }
 
 // FindHash returns the object hash stored at the given packfile offset
 // by binary-searching the .rev reverse index.
 // It returns plumbing.ErrObjectNotFound if no object exists at that offset.
 func (s *LazyIndex) FindHash(o int64) (plumbing.Hash, error) {
-	return s.findHashViaRev(o)
+	idx, err := s.idx.acquire()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	defer s.idx.release()
+
+	rev, err := s.rev.acquire()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	defer s.rev.release()
+
+	return s.findHashViaRev(idx, rev, o)
 }
 
 // Count returns the total number of objects in the index.
@@ -186,19 +257,30 @@ func (s *LazyIndex) Count() (int64, error) {
 }
 
 // Entries returns an iterator over all index entries in hash order.
+// The caller must call Close on the returned iterator to release the
+// underlying file reference.
 func (s *LazyIndex) Entries() (EntryIter, error) {
-	return &scannerEntryIter{s: s, pos: 0}, nil
+	idx, err := s.idx.acquire()
+	if err != nil {
+		return nil, err
+	}
+	return &scannerEntryIter{s: s, idx: idx}, nil
 }
 
 // EntriesByOffset returns an iterator over all index entries sorted by
 // their packfile offset.
 func (s *LazyIndex) EntriesByOffset() (EntryIter, error) {
+	idx, err := s.idx.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer s.idx.release()
+
 	count := s.count
 	entries := make(entriesByOffset, count)
 
-	iter := &scannerEntryIter{s: s}
 	for i := range count {
-		e, err := iter.Next()
+		e, err := s.entryAt(idx, i)
 		if err != nil {
 			return nil, err
 		}
@@ -209,25 +291,19 @@ func (s *LazyIndex) EntriesByOffset() (EntryIter, error) {
 	return &idxfileEntryOffsetIter{entries: entries}, nil
 }
 
-// Close releases the underlying file handles. It is safe to call
-// multiple times; subsequent calls return nil.
+// Close releases the underlying shared file handles, preventing future
+// operations. If there are active readers they will finish normally;
+// the file descriptors close when the last reader is done.
 func (s *LazyIndex) Close() error {
-	var errs []error
-	if s.idx != nil {
-		errs = append(errs, s.idx.Close())
-		s.idx = nil
-	}
-	if s.rev != nil {
-		errs = append(errs, s.rev.Close())
-		s.rev = nil
-	}
-
-	return errors.Join(errs...)
+	return errors.Join(s.idx.Close(), s.rev.Close())
 }
+
+// --- internal helpers; all take an io.ReaderAt so the caller controls
+//     the acquire/release lifecycle. ---
 
 // findHashPos binary-searches the names table for h, returning the flat
 // position (0..count-1) if found.
-func (s *LazyIndex) findHashPos(h plumbing.Hash) (int, bool, error) {
+func (s *LazyIndex) findHashPos(idx io.ReaderAt, h plumbing.Hash) (int, bool, error) {
 	if h.Size() != s.hashSize {
 		return 0, false, fmt.Errorf("hash size mismatch: %d %d", h.Size(), s.hashSize)
 	}
@@ -248,7 +324,7 @@ func (s *LazyIndex) findHashPos(h plumbing.Hash) (int, bool, error) {
 	for lo < hi {
 		mid := (lo + hi) >> 1
 		nameOff := int64(s.namesStart + mid*s.hashSize)
-		if _, err := s.idx.ReadAt(buf, nameOff); err != nil {
+		if _, err := idx.ReadAt(buf, nameOff); err != nil {
 			return 0, false, fmt.Errorf("read name at pos %d: %w", mid, err)
 		}
 
@@ -266,10 +342,10 @@ func (s *LazyIndex) findHashPos(h plumbing.Hash) (int, bool, error) {
 }
 
 // offset returns the pack offset for the object at position pos.
-func (s *LazyIndex) offset(pos int) (uint64, error) {
+func (s *LazyIndex) offset(idx io.ReaderAt, pos int) (uint64, error) {
 	var buf [off32Size]byte
 	off := int64(s.off32Start + pos*off32Size)
-	if _, err := s.idx.ReadAt(buf[:], off); err != nil {
+	if _, err := idx.ReadAt(buf[:], off); err != nil {
 		return 0, fmt.Errorf("%w: cannot read offset32: %v", ErrMalformedIdxFile, err)
 	}
 
@@ -278,7 +354,7 @@ func (s *LazyIndex) offset(pos int) (uint64, error) {
 		loIndex := int(uint64(off32) & ^is64bitsMask)
 		var buf64 [off64Size]byte
 		off64Pos := int64(s.off64Start + loIndex*off64Size)
-		if _, err := s.idx.ReadAt(buf64[:], off64Pos); err != nil {
+		if _, err := idx.ReadAt(buf64[:], off64Pos); err != nil {
 			return 0, fmt.Errorf("%w: cannot read offset64: %v", ErrMalformedIdxFile, err)
 		}
 		return binary.BigEndian.Uint64(buf64[:]), nil
@@ -288,21 +364,21 @@ func (s *LazyIndex) offset(pos int) (uint64, error) {
 }
 
 // crc32 returns the CRC32 for the object at position pos.
-func (s *LazyIndex) crc32(pos int) (uint32, error) {
+func (s *LazyIndex) crc32(idx io.ReaderAt, pos int) (uint32, error) {
 	var buf [4]byte
 	off := int64(s.crcStart + pos*4)
-	if _, err := s.idx.ReadAt(buf[:], off); err != nil {
+	if _, err := idx.ReadAt(buf[:], off); err != nil {
 		return 0, fmt.Errorf("%w: cannot read CRC32: %v", ErrMalformedIdxFile, err)
 	}
 	return binary.BigEndian.Uint32(buf[:]), nil
 }
 
 // hashAtPos reads the hash at the given flat position.
-func (s *LazyIndex) hashAtPos(pos int) (plumbing.Hash, error) {
+func (s *LazyIndex) hashAtPos(idx io.ReaderAt, pos int) (plumbing.Hash, error) {
 	var arr [32]byte
 	buf := arr[:s.hashSize]
 	off := int64(s.namesStart + pos*s.hashSize)
-	if _, err := s.idx.ReadAt(buf, off); err != nil {
+	if _, err := idx.ReadAt(buf, off); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("read name at pos %d: %w", pos, err)
 	}
 
@@ -312,19 +388,19 @@ func (s *LazyIndex) hashAtPos(pos int) (plumbing.Hash, error) {
 	return h, nil
 }
 
-func (s *LazyIndex) findHashViaRev(want int64) (plumbing.Hash, error) {
+func (s *LazyIndex) findHashViaRev(idx, rev io.ReaderAt, want int64) (plumbing.Hash, error) {
 	lo, hi := 0, s.count
 	var buf [4]byte
 
 	for lo < hi {
 		mid := (lo + hi) >> 1
 		revOff := int64(revHeaderSize + mid*4)
-		if _, err := s.rev.ReadAt(buf[:], revOff); err != nil {
+		if _, err := rev.ReadAt(buf[:], revOff); err != nil {
 			return plumbing.ZeroHash, fmt.Errorf("read rev entry: %w", err)
 		}
 
 		idxPos := int(binary.BigEndian.Uint32(buf[:]))
-		got, err := s.offset(idxPos)
+		got, err := s.offset(idx, idxPos)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -335,42 +411,49 @@ func (s *LazyIndex) findHashViaRev(want int64) (plumbing.Hash, error) {
 		case int64(got) > want:
 			hi = mid
 		default:
-			return s.hashAtPos(idxPos)
+			return s.hashAtPos(idx, idxPos)
 		}
 	}
 	return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 }
 
-// scannerEntryIter iterates over entries in hash order using ReadAt.
+// entryAt reads a complete entry at the given flat position.
+func (s *LazyIndex) entryAt(idx io.ReaderAt, pos int) (*Entry, error) {
+	h, err := s.hashAtPos(idx, pos)
+	if err != nil {
+		return nil, err
+	}
+	off, err := s.offset(idx, pos)
+	if err != nil {
+		return nil, err
+	}
+	crc, err := s.crc32(idx, pos)
+	if err != nil {
+		return nil, err
+	}
+	return &Entry{Hash: h, Offset: off, CRC32: crc}, nil
+}
+
+// scannerEntryIter iterates over entries in hash order.
+// It holds an acquired reference to the idx sharedFile which is
+// released when Close is called.
 type scannerEntryIter struct {
 	s   *LazyIndex
+	idx io.ReaderAt // acquired from s.idx
 	pos int
 }
 
 func (it *scannerEntryIter) Next() (*Entry, error) {
+	if it.idx == nil {
+		return nil, errSharedFileClosed
+	}
 	if it.pos >= it.s.count {
 		return nil, io.EOF
 	}
 
-	h, err := it.s.hashAtPos(it.pos)
+	e, err := it.s.entryAt(it.idx, it.pos)
 	if err != nil {
 		return nil, err
-	}
-
-	off, err := it.s.offset(it.pos)
-	if err != nil {
-		return nil, err
-	}
-
-	crc, err := it.s.crc32(it.pos)
-	if err != nil {
-		return nil, err
-	}
-
-	e := &Entry{
-		Hash:   h,
-		Offset: off,
-		CRC32:  crc,
 	}
 	it.pos++
 	return e, nil
@@ -378,28 +461,9 @@ func (it *scannerEntryIter) Next() (*Entry, error) {
 
 func (it *scannerEntryIter) Close() error {
 	it.pos = it.s.count
-	return nil
-}
-
-// isNilReader reports whether r is nil or wraps a nil pointer.
-// It catches both untyped nils and typed interface values holding a nil
-// concrete pointer (e.g. (*os.File)(nil) assigned to an interface).
-func isNilReader(r readAtCloser) (isNil bool) {
-	if r == nil {
-		return true
+	if it.idx != nil {
+		it.s.idx.release()
+		it.idx = nil
 	}
-	defer func() {
-		if recover() != nil {
-			isNil = true
-		}
-	}()
-	// A zero-length ReadAt at offset 0 will panic (or return an error)
-	// if the underlying value is a nil pointer.
-	_, _ = r.ReadAt([]byte{}, 0)
-	return false
-}
-
-type readAtCloser interface {
-	io.ReaderAt
-	io.ReadSeekCloser
+	return nil
 }
