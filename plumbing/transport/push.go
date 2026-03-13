@@ -75,8 +75,10 @@ func SendPack(
 	reader io.ReadCloser,
 	req *PushRequest,
 ) error {
-	writer = ioutil.NewContextWriteCloser(ctx, writer)
-	reader = ioutil.NewContextReadCloser(ctx, reader)
+	ctxw := ioutil.NewContextWriteCloser(ctx, writer)
+	ctxr := ioutil.NewContextReadCloser(ctx, reader)
+	defer func() { _ = ctxw.Close() }()
+	defer func() { _ = ctxr.Close() }()
 
 	var needPackfile bool
 	for _, cmd := range req.Commands {
@@ -95,21 +97,21 @@ func SendPack(
 
 	caps := conn.Capabilities()
 	upreq := buildUpdateRequests(caps, req)
-	if err := upreq.Encode(writer); err != nil {
+	if err := upreq.Encode(ctxw); err != nil {
 		return err
 	}
 
 	if upreq.Capabilities.Supports(capability.PushOptions) {
 		var opts packp.PushOptions
 		opts.Options = req.Options
-		if err := opts.Encode(writer); err != nil {
+		if err := opts.Encode(ctxw); err != nil {
 			return fmt.Errorf("encoding push-options: %w", err)
 		}
 	}
 
 	// Send the packfile.
 	if req.Packfile != nil {
-		if _, err := ioutil.CopyBufferPool(writer, req.Packfile); err != nil {
+		if _, err := ioutil.CopyBufferPool(ctxw, req.Packfile); err != nil {
 			return err
 		}
 
@@ -135,13 +137,13 @@ func SendPack(
 		return nil
 	}
 
-	var r io.Reader = reader
+	var r io.Reader = ctxr
 	if req.Progress != nil {
 		var d *sideband.Demuxer
 		if upreq.Capabilities.Supports(capability.Sideband64k) {
-			d = sideband.NewDemuxer(sideband.Sideband64k, reader)
+			d = sideband.NewDemuxer(sideband.Sideband64k, r)
 		} else if upreq.Capabilities.Supports(capability.Sideband) {
-			d = sideband.NewDemuxer(sideband.Sideband, reader)
+			d = sideband.NewDemuxer(sideband.Sideband, r)
 		}
 		if d != nil {
 			if !upreq.Capabilities.Supports(capability.Quiet) {
