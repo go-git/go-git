@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"bufio"
 	"crypto"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -558,7 +560,18 @@ func (s *ObjectStorage) decodeDeltaObjectAt(
 		return nil, err
 	}
 
-	return newDeltaObject(obj, hash, base, header.Size), nil
+	// Optimisation to provide actual size without walking the delta chain.
+	sz := header.Size // default to delta size.
+	if r, err := obj.Reader(); err == nil {
+		br := bufio.NewReader(r)
+		if _, err = util.DecodeLEB128FromReader(br); err == nil {
+			if actual, _ := util.DecodeLEB128FromReader(br); actual > 0 {
+				sz = int64(actual)
+			}
+		}
+	}
+
+	return newDeltaObject(obj, hash, base, sz), nil
 }
 
 func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, plumbing.Hash, int64) {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -640,4 +642,21 @@ func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
 	// The object should not have been cached during the load
 	_, ok = objectCache.Get(hash)
 	s.False(ok)
+}
+
+func TestDeltaObject(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	st := NewObjectStorage(dotgit.New(f.DotGit()), cache.NewObjectLRUDefault())
+
+	obj, err := st.DeltaObject(plumbing.AnyObject, plumbing.NewHash("aa9b383c260e1d05fbbf6b30a02914555e20c725"))
+	require.NoError(t, err)
+
+	assert.Equal(t, plumbing.OFSDeltaObject, obj.Type())
+	assert.Equal(t, int64(4), obj.Size())
+
+	dobj, ok := obj.(plumbing.DeltaObject)
+	assert.True(t, ok)
+	assert.Equal(t, int64(73), dobj.ActualSize())
 }
