@@ -993,6 +993,21 @@ func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error)
 	}
 }
 
+// applyURLInsteadOfRules applies global URL rewrite rules (insteadOf) to the given URL.
+// It loads the global gitconfig and applies any matching URL rewrite rules.
+func applyURLInsteadOfRules(remoteURL string) string {
+	cfg, err := config.LoadConfig(config.GlobalScope)
+	if err != nil || cfg == nil {
+		return remoteURL
+	}
+
+	if matchingURLRule := config.FindLongestInsteadOfMatch(remoteURL, cfg.URLs); matchingURLRule != nil {
+		return matchingURLRule.ApplyInsteadOf(remoteURL)
+	}
+
+	return remoteURL
+}
+
 // Clone clones a remote repository
 func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	if trace.Performance.Enabled() {
@@ -1010,6 +1025,9 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		return err
 	}
 
+	// Apply global URL rewrite rules (insteadOf) to the clone URL
+	cloneURL := applyURLInsteadOfRules(o.URL)
+
 	// PlainClone and Clone have two different execution paths, the former
 	// populates r.wt, while the latter doesn't. A refactoring is in order to
 	// better align both approaches.
@@ -1019,7 +1037,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 
 	c := &config.RemoteConfig{
 		Name:   o.RemoteName,
-		URLs:   []string{o.URL},
+		URLs:   []string{cloneURL},
 		Fetch:  r.cloneRefSpec(o),
 		Mirror: o.Mirror,
 	}

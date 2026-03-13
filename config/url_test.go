@@ -138,7 +138,7 @@ func (b *URLSuite) TestFindLongestInsteadOfMatch() {
 		},
 	}
 
-	longestURL := findLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
+	longestURL := FindLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
 
 	b.Equal("ssh://somethingelse.com", longestURL.Name)
 }
