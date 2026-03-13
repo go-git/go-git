@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -273,4 +274,78 @@ func (s *SubmoduleSuite) TestSubmoduleParseScp() {
 
 	_, err := submodule.Repository()
 	s.Require().NoError(err)
+}
+
+func (s *SubmoduleSuite) TestAdaptHashForSubmoduleWhenParentIsSHA256AndSubmoduleIsSHA1() {
+	sha1Hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	paddedSha256Hash := sha1Hash + "000000000000000000000000"
+
+	parentHash, ok := plumbing.FromHex(paddedSha256Hash)
+	s.Require().True(ok)
+	s.Equal(64, len(parentHash.String()), "Parent hash should be 64 chars (SHA-256)")
+
+	submoduleRepo, err := Init(memory.NewStorage(), nil)
+	s.Require().NoError(err)
+
+	sm := &Submodule{
+		initialized: true,
+		c:           &config.Submodule{Name: "test"},
+		w:           s.Worktree,
+	}
+
+	adaptedHash := sm.adaptHashForSubmodule(submoduleRepo, parentHash)
+
+	s.Equal(40, len(adaptedHash.String()), "Adapted hash should be 40 chars (SHA-1)")
+	s.Equal(sha1Hash, adaptedHash.String(), "Adapted hash should match original SHA-1 hash")
+}
+
+func (s *SubmoduleSuite) TestAdaptHashForSubmoduleWhenParentIsSHA1AndSubmoduleIsSHA1() {
+	sha1Hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+
+	parentHash, ok := plumbing.FromHex(sha1Hash)
+	s.Require().True(ok)
+	s.Equal(40, len(parentHash.String()), "Parent hash should be 40 chars (SHA-1)")
+
+	submoduleRepo, err := Init(memory.NewStorage(), nil)
+	s.Require().NoError(err)
+
+	sm := &Submodule{
+		initialized: true,
+		c:           &config.Submodule{Name: "test"},
+		w:           s.Worktree,
+	}
+
+	adaptedHash := sm.adaptHashForSubmodule(submoduleRepo, parentHash)
+
+	s.Equal(40, len(adaptedHash.String()), "Adapted hash should remain 40 chars (SHA-1)")
+	s.Equal(sha1Hash, adaptedHash.String(), "Hash should not be modified when formats match")
+}
+
+func (s *SubmoduleSuite) TestAdaptHashForSubmoduleWhenParentIsSHA256AndSubmoduleIsSHA256() {
+	sha256Hash := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5a1b2c3d4e5f67890abcdef12"
+
+	parentHash, ok := plumbing.FromHex(sha256Hash)
+	s.Require().True(ok)
+	s.Equal(64, len(parentHash.String()), "Parent hash should be 64 chars (SHA-256)")
+
+	submoduleRepo, err := Init(memory.NewStorage(), nil)
+	s.Require().NoError(err)
+
+	cfg, err := submoduleRepo.Config()
+	s.Require().NoError(err)
+	cfg.Core.RepositoryFormatVersion = format.Version1
+	cfg.Extensions.ObjectFormat = format.SHA256
+	err = submoduleRepo.Storer.SetConfig(cfg)
+	s.Require().NoError(err)
+
+	sm := &Submodule{
+		initialized: true,
+		c:           &config.Submodule{Name: "test"},
+		w:           s.Worktree,
+	}
+
+	adaptedHash := sm.adaptHashForSubmodule(submoduleRepo, parentHash)
+
+	s.Equal(64, len(adaptedHash.String()), "Adapted hash should remain 64 chars (SHA-256)")
+	s.Equal(sha256Hash, adaptedHash.String(), "Hash should not be truncated when submodule is SHA-256")
 }
