@@ -192,9 +192,14 @@ func (s *Storage) Init() error {
 	return s.dir.Initialize()
 }
 
-// AddAlternate adds an alternate object directory.
+// AddAlternate adds an alternate object directory and resets the cached
+// alternate state so that subsequent object lookups pick up the new alternate.
 func (s *Storage) AddAlternate(remote string) error {
-	return s.dir.AddAlternate(remote)
+	if err := s.dir.AddAlternate(remote); err != nil {
+		return err
+	}
+	s.resetAlternates()
+	return nil
 }
 
 // LowMemoryMode returns true if low memory mode is enabled.
