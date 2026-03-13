@@ -561,6 +561,79 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
 }
 
+// TestPlainCloneContext_DetachedHeadSource is a regression test for a bug
+// where PlainCloneContext returns plumbing.ErrReferenceNotFound when the
+// source repository has a detached HEAD.
+//
+// A detached HEAD is the normal state of a repository after
+// Worktree.Checkout is called with CheckoutOptions{Hash: someHash}.
+// Cloning FROM such a repo (e.g. when using a local filesystem directory
+// as a "remote") must succeed, just as `git clone` does.
+func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
+	t.Parallel()
+
+	// ── Build the source repo using PlainInit + Worktree.Commit ──────────
+	// Self-contained: no network access required.
+	srcDir := t.TempDir()
+	src, err := PlainInit(srcDir, false)
+	require.NoError(t, err)
+
+	wt, err := src.Worktree()
+	require.NoError(t, err)
+
+	// Write a file and create an initial commit so HEAD resolves to a real hash.
+	err = os.WriteFile(filepath.Join(srcDir, "README.md"), []byte("hello"), 0o644)
+	require.NoError(t, err)
+	_, err = wt.Add("README.md")
+	require.NoError(t, err)
+	commitHash, err := wt.Commit("initial commit", &CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "t@t.com"},
+	})
+	require.NoError(t, err)
+
+	// Verify HEAD is a symbolic reference before detaching.
+	rawHead, err := src.Storer.Reference(plumbing.HEAD)
+	require.NoError(t, err)
+	require.Equal(t, plumbing.SymbolicReference, rawHead.Type(),
+		"HEAD should be a symbolic ref after commit")
+
+	// Detach HEAD by checking out by hash.
+	err = wt.Checkout(&CheckoutOptions{Hash: commitHash, Force: true})
+	require.NoError(t, err)
+
+	detachedHead, err := src.Storer.Reference(plumbing.HEAD)
+	require.NoError(t, err)
+	require.Equal(t, plumbing.HashReference, detachedHead.Type(),
+		"HEAD must be a hash-reference (detached) after Checkout{Hash:...}")
+
+	// ── Clone from the detached-HEAD source ───────────────────────────────
+	// The branch ref (refs/heads/master) still exists in the source object
+	// store; only HEAD is detached. PlainCloneContext must succeed — just as
+	// `git clone` does — by advertising the available refs rather than
+	// requiring HEAD to be symbolic.
+	dstDir := filepath.Join(t.TempDir(), "dst")
+	dst, err := PlainCloneContext(context.Background(), dstDir, &CloneOptions{
+		URL: srcDir,
+	})
+	assert.NoError(t, err,
+		"PlainCloneContext must succeed when the source repo has a detached HEAD")
+
+	// ── Verify the cloned repo behaves like `git clone` ──────────────────────
+	// git clone creates a symbolic HEAD (→ refs/heads/<branch>) in the clone
+	// even when the source has a detached HEAD; the resolved commit must match.
+	require.NotNil(t, dst, "cloned repository must not be nil")
+
+	rawClonedHead, err := dst.Storer.Reference(plumbing.HEAD)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, rawClonedHead.Type(),
+		"cloned repo HEAD must be a symbolic ref (as git clone produces), not detached")
+
+	resolvedHead, err := dst.Head()
+	require.NoError(t, err)
+	assert.Equal(t, commitHash, resolvedHead.Hash(),
+		"cloned repo HEAD must resolve to the same commit as the source")
+}
+
 // sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
 // implementation, simulating a storage backend that does not implement
 // that interface.
