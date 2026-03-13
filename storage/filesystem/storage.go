@@ -59,6 +59,11 @@ type Options struct {
 	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
 
+	// UseInMemoryIdx loads .idx files fully into memory (MemoryIndex) instead
+	// of reading them on demand via ReadAt (LazyIndex). This uses more memory
+	// but avoids keeping file descriptors open. Defaults to false.
+	UseInMemoryIdx bool
+
 	// IndexCache provides an optional cache implementation for index data.
 	// If left as nil, a default stat-based implementation is created automatically.
 	IndexCache IndexCache
