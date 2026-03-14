@@ -1,0 +1,191 @@
+package reflog
+
+import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-git/go-git/v6/plumbing"
+)
+
+// Entry represents a single reflog entry.
+type Entry struct {
+	// OldHash is the hash the reference pointed to before the change.
+	OldHash plumbing.Hash
+	// NewHash is the hash the reference points to after the change.
+	NewHash plumbing.Hash
+	// Name is the name of the person who made the change.
+	Name string
+	// Email is the email of the person who made the change.
+	Email string
+	// When is the timestamp of the change.
+	When time.Time
+	// Message describes the action that caused the change (e.g. "commit: Add feature").
+	Message string
+}
+
+// Decode reads all reflog entries from the reader.
+// Entries are returned in file order (oldest first).
+func Decode(r io.Reader) ([]*Entry, error) {
+	var entries []*Entry
+	reader := bufio.NewReader(r)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil && err != io.EOF {
+			return entries, err
+		}
+
+		line = bytes.TrimSuffix(line, []byte{'\n'})
+		if len(line) != 0 {
+			e, decodeErr := decodeLine(line)
+			if decodeErr != nil {
+				return entries, decodeErr
+			}
+			entries = append(entries, e)
+		}
+
+		if err == io.EOF {
+			return entries, nil
+		}
+	}
+}
+
+// decodeLine parses a single reflog line.
+// Format: <old-hash> <new-hash> <name> <<email>> <unix-timestamp> <timezone>\t<message>
+func decodeLine(line []byte) (*Entry, error) {
+	e := &Entry{}
+
+	// Parse old hash (up to first space)
+	spaceIdx := bytes.IndexByte(line, ' ')
+	if spaceIdx == -1 {
+		return nil, fmt.Errorf("reflog entry too short")
+	}
+	oldHashStr := string(line[:spaceIdx])
+	if !plumbing.IsHash(oldHashStr) {
+		return nil, fmt.Errorf("invalid old hash in reflog entry: %q", oldHashStr)
+	}
+	e.OldHash = plumbing.NewHash(oldHashStr)
+	line = line[spaceIdx+1:]
+
+	// Parse new hash (up to next space)
+	spaceIdx = bytes.IndexByte(line, ' ')
+	if spaceIdx == -1 {
+		return nil, fmt.Errorf("expected space after new hash")
+	}
+	newHashStr := string(line[:spaceIdx])
+	if !plumbing.IsHash(newHashStr) {
+		return nil, fmt.Errorf("invalid new hash in reflog entry: %q", newHashStr)
+	}
+	e.NewHash = plumbing.NewHash(newHashStr)
+	line = line[spaceIdx+1:]
+
+	// Split on tab to separate signature from message
+	sigBytes := line
+	tabIdx := bytes.IndexByte(line, '\t')
+	if tabIdx != -1 {
+		sigBytes = line[:tabIdx]
+		e.Message = string(line[tabIdx+1:])
+	}
+
+	// Parse signature: Name <email> timestamp timezone
+	open := bytes.LastIndexByte(sigBytes, '<')
+	closeBracket := bytes.LastIndexByte(sigBytes, '>')
+	if open == -1 || closeBracket == -1 || closeBracket < open {
+		return nil, fmt.Errorf("invalid signature in reflog entry")
+	}
+
+	e.Name = string(bytes.TrimSpace(sigBytes[:open]))
+	e.Email = string(sigBytes[open+1 : closeBracket])
+
+	// Parse timestamp and timezone after '> '
+	if closeBracket+2 >= len(sigBytes) {
+		return nil, fmt.Errorf("missing timestamp in reflog entry")
+	}
+	var err error
+	e.When, err = decodeTimestamp(sigBytes[closeBracket+2:])
+	if err != nil {
+		return nil, err
+	}
+
+	return e, nil
+}
+
+func decodeTimestamp(s []byte) (time.Time, error) {
+	// Format: "1234567890 +0000"
+	parts := bytes.Fields(s)
+	if len(parts) != 2 {
+		return time.Time{}, fmt.Errorf("invalid timestamp in reflog entry: %q", s)
+	}
+
+	secs, err := strconv.ParseInt(string(parts[0]), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid timestamp seconds in reflog entry: %w", err)
+	}
+
+	t := time.Unix(secs, 0)
+
+	tz := string(parts[1])
+	if len(tz) != 5 || (tz[0] != '+' && tz[0] != '-') {
+		return time.Time{}, fmt.Errorf("invalid timezone in reflog entry: %q", tz)
+	}
+	h, err := strconv.Atoi(tz[1:3])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid timezone hours in reflog entry: %w", err)
+	}
+	m, err := strconv.Atoi(tz[3:5])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid timezone minutes in reflog entry: %w", err)
+	}
+	offset := h*3600 + m*60
+	if tz[0] == '-' {
+		offset = -offset
+	}
+	t = t.In(time.FixedZone("", offset))
+
+	return t, nil
+}
+
+// normalizeMessage normalizes a reflog message the same way Git does:
+// collapse consecutive whitespace to a single space, strip leading/trailing
+// whitespace, and remove newlines.
+func normalizeMessage(msg string) string {
+	msg = strings.ReplaceAll(msg, "\n", " ")
+	msg = strings.ReplaceAll(msg, "\r", " ")
+	fields := strings.Fields(msg)
+	return strings.Join(fields, " ")
+}
+
+// Encode writes a single reflog entry to the writer.
+func Encode(w io.Writer, e *Entry) error {
+	_, offset := e.When.Zone()
+	sign := '+'
+	if offset < 0 {
+		sign = '-'
+		offset = -offset
+	}
+	hours := offset / 3600
+	minutes := (offset % 3600) / 60
+
+	msg := normalizeMessage(e.Message)
+
+	if msg != "" {
+		_, err := fmt.Fprintf(w, "%s %s %s <%s> %d %c%02d%02d\t%s\n",
+			e.OldHash, e.NewHash,
+			e.Name, e.Email,
+			e.When.Unix(), sign, hours, minutes,
+			msg,
+		)
+		return err
+	}
+
+	_, err := fmt.Fprintf(w, "%s %s %s <%s> %d %c%02d%02d\n",
+		e.OldHash, e.NewHash,
+		e.Name, e.Email,
+		e.When.Unix(), sign, hours, minutes,
+	)
+	return err
+}
