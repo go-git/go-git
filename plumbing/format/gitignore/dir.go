@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
@@ -50,23 +51,32 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 // recursively traversing through the directory structure. The result is in
 // the ascending order of priority (last higher).
 func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) {
-	return extendPatterns(fs, nil, path)
-}
-
-func extendPatterns(fs billy.Filesystem, start []Pattern, path []string) (ps []Pattern, err error) {
-	gitignore, err := readIgnoreFile(fs, path, gitignoreFile)
-	if err != nil && !os.IsNotExist(err) {
+	patternSets, err := extendPatterns(fs, nil, path)
+	if err != nil {
 		return nil, err
 	}
+
+	ps = slices.Concat(patternSets...)
+
+	return ps, nil
+}
+
+func extendPatterns(fs billy.Filesystem, matchers []Matcher, path []string) (found [][]Pattern, err error) {
+	// Read current directory's ignore patterns.
 	infoExclude, err := readIgnoreFile(fs, path, infoExcludeFile)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
+	gitignore, err := readIgnoreFile(fs, path, gitignoreFile)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
 
-	foundPatterns := append(gitignore, infoExclude...)
-
-	ignorePatterns := append(start, foundPatterns...)
-	ignoreMatcher := NewMatcher(ignorePatterns)
+	dirPatterns := slices.Concat(infoExclude, gitignore)
+	if len(dirPatterns) > 0 {
+		found = [][]Pattern{dirPatterns}
+		matchers = append(matchers, NewMatcher(dirPatterns))
+	}
 
 	fis, err := fs.ReadDir(fs.Join(path...))
 	if err != nil {
@@ -74,23 +84,34 @@ func extendPatterns(fs billy.Filesystem, start []Pattern, path []string) (ps []P
 	}
 
 	for _, fi := range fis {
-		if fi.IsDir() && fi.Name() != gitDir {
-			if ignoreMatcher.Match(append(path, fi.Name()), true) {
-				continue
-			}
+		if !fi.IsDir() || fi.Name() == gitDir {
+			continue
+		}
 
-			subPatterns, err := extendPatterns(fs, ignorePatterns, append(path, fi.Name()))
-			if err != nil {
-				return nil, err
-			}
+		fiPath := append(path, fi.Name()) //nolint:gocritic
 
-			if len(subPatterns) > 0 {
-				foundPatterns = append(foundPatterns, subPatterns...)
+		match := false
+		for _, matcher := range matchers {
+			if matcher.Match(fiPath, true) {
+				match = true
+				break
 			}
+		}
+		if match {
+			continue
+		}
+
+		subPatterns, err := extendPatterns(fs, matchers, fiPath)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(subPatterns) > 0 {
+			found = append(found, subPatterns...)
 		}
 	}
 
-	return foundPatterns, err
+	return found, err
 }
 
 func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
