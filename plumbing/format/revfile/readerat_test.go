@@ -34,7 +34,7 @@ func TestReaderAtRevIndex_FromFixture(t *testing.T) {
 	count, err := idx.Count()
 	require.NoError(t, err)
 
-	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size())
 	require.NoError(t, err)
 
 	assert.Equal(t, count, ri.Count())
@@ -113,14 +113,12 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 		name    string
 		data    []byte
 		size    int64
-		count   int64
 		wantErr string
 	}{
 		{
 			name:    "file too small",
 			data:    []byte("tiny"),
 			size:    4,
-			count:   1,
 			wantErr: "file too small",
 		},
 		{
@@ -133,7 +131,6 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 				return buf
 			}(),
 			size:    80,
-			count:   1,
 			wantErr: "invalid signature",
 		},
 		{
@@ -146,7 +143,6 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 				return buf
 			}(),
 			size:    80,
-			count:   1,
 			wantErr: "unsupported version 99",
 		},
 		{
@@ -159,20 +155,18 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 				return buf
 			}(),
 			size:    80,
-			count:   1,
 			wantErr: "unsupported hash function 99",
 		},
 		{
 			name: "size mismatch",
 			data: func() []byte {
-				buf := make([]byte, 90) // wrong size for count=1, hashSize=32
+				buf := make([]byte, 90) // wrong size: 90-12-64=14 bytes for entries, not divisible by 4
 				copy(buf, revHeader)
 				binary.BigEndian.PutUint32(buf[4:], VersionSupported)
 				binary.BigEndian.PutUint32(buf[8:], sha256Hash)
 				return buf
 			}(),
 			size:    90,
-			count:   1,
 			wantErr: "size mismatch",
 		},
 		{
@@ -185,7 +179,6 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 				return buf
 			}(),
 			size:    80,
-			count:   1,
 			wantErr: "hash size mismatch (expected SHA1)",
 		},
 	}
@@ -197,7 +190,7 @@ func TestReaderAtRevIndex_ValidateErrors(t *testing.T) {
 				Reader: bytes.NewReader(tc.data),
 				size:   tc.size,
 			}
-			_, err := NewReaderAtRevIndex(mock, hashSize, tc.count)
+			_, err := NewReaderAtRevIndex(mock, hashSize)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
@@ -225,7 +218,7 @@ func TestReaderAtRevIndex_EmptyIndexWithCloser(t *testing.T) {
 		},
 	}
 
-	ri, err := NewReaderAtRevIndex(mock, hashSize, 0)
+	ri, err := NewReaderAtRevIndex(mock, hashSize)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(0), ri.Count())
@@ -255,10 +248,7 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 	err := idec.Decode(idx)
 	require.NoError(b, err)
 
-	count, err := idx.Count()
-	require.NoError(b, err)
-
-	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size())
 	require.NoError(b, err)
 	defer ri.Close()
 
@@ -317,12 +307,13 @@ func TestReaderAtRevIndex_ValidateChecksums(t *testing.T) {
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
-	count, err := idx.Count()
-	require.NoError(t, err)
-
-	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size())
 	require.NoError(t, err)
 	defer ri.Close()
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+	assert.Equal(t, count, ri.Count())
 
 	err = ri.ValidateChecksums(idx.PackfileChecksum.Bytes())
 	assert.NoError(t, err)
@@ -343,12 +334,13 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongPackChecksum(t *testing.T) {
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
-	count, err := idx.Count()
-	require.NoError(t, err)
-
-	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size())
 	require.NoError(t, err)
 	defer ri.Close()
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+	assert.Equal(t, count, ri.Count())
 
 	wrongChecksum := make([]byte, crypto.SHA256.Size())
 	err = ri.ValidateChecksums(wrongChecksum)
@@ -371,12 +363,13 @@ func TestReaderAtRevIndex_ValidateChecksums_WrongSize(t *testing.T) {
 	err := idec.Decode(idx)
 	require.NoError(t, err)
 
-	count, err := idx.Count()
-	require.NoError(t, err)
-
-	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size())
 	require.NoError(t, err)
 	defer ri.Close()
+
+	count, err := idx.Count()
+	require.NoError(t, err)
+	assert.Equal(t, count, ri.Count())
 
 	wrongSizeChecksum := make([]byte, 20) // SHA1 size instead of SHA256
 	err = ri.ValidateChecksums(wrongSizeChecksum)
@@ -423,43 +416,7 @@ func TestReaderAtRevIndex_InvalidHashSize(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			mock := newMockRevFile(data)
-			_, err := NewReaderAtRevIndex(mock, tc.hashSize, 1)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.wantErr)
-		})
-	}
-}
-
-func TestReaderAtRevIndex_InvalidCount(t *testing.T) {
-	t.Parallel()
-
-	data := make([]byte, 100)
-	copy(data, revHeader)
-	binary.BigEndian.PutUint32(data[4:], VersionSupported)
-	binary.BigEndian.PutUint32(data[8:], sha256Hash)
-
-	tests := []struct {
-		name    string
-		count   int64
-		wantErr string
-	}{
-		{
-			name:    "negative count",
-			count:   -1,
-			wantErr: "invalid object count -1",
-		},
-		{
-			name:    "count exceeds max",
-			count:   1<<31 + 1,
-			wantErr: "invalid object count",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			mock := newMockRevFile(data)
-			_, err := NewReaderAtRevIndex(mock, 32, tc.count)
+			_, err := NewReaderAtRevIndex(mock, tc.hashSize)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
@@ -491,9 +448,11 @@ func TestReaderAtRevIndex_LookupIndex_ReadError(t *testing.T) {
 		errorAfterN: 1,
 	}
 
-	ri, err := NewReaderAtRevIndex(mock, hashSize, count)
+	ri, err := NewReaderAtRevIndex(mock, hashSize)
 	require.NoError(t, err)
 	defer ri.Close()
+
+	assert.Equal(t, count, ri.Count())
 
 	mock.failNow = true
 
@@ -523,9 +482,11 @@ func TestReaderAtRevIndex_LookupIndex_OffsetGetterError(t *testing.T) {
 		binary.BigEndian.PutUint32(data[offset:], uint32(i))
 	}
 
-	ri, err := NewReaderAtRevIndex(newMockRevFile(data), hashSize, count)
+	ri, err := NewReaderAtRevIndex(newMockRevFile(data), hashSize)
 	require.NoError(t, err)
 	defer ri.Close()
+
+	assert.Equal(t, count, ri.Count())
 
 	offsetGetter := func(idxPos int) (uint64, error) {
 		return 0, fmt.Errorf("simulated offsetGetter error for position %d", idxPos)
@@ -581,9 +542,11 @@ func TestReaderAtRevIndex_All_ReadError(t *testing.T) {
 		errorAfterN: 1,
 	}
 
-	ri, err := NewReaderAtRevIndex(mock, hashSize, count)
+	ri, err := NewReaderAtRevIndex(mock, hashSize)
 	require.NoError(t, err)
 	defer ri.Close()
+
+	assert.Equal(t, count, ri.Count())
 
 	mock.failNow = true
 
@@ -613,11 +576,12 @@ func loadRevIndexFixture(t *testing.T) (*ReaderAtRevIndex, *idxfile.MemoryIndex)
 	err := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256)).Decode(idx)
 	require.NoError(t, err)
 
-	count, err := idx.Count()
+	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size())
 	require.NoError(t, err)
 
-	ri, err := NewReaderAtRevIndex(revf, crypto.SHA256.Size(), count)
+	count, err := idx.Count()
 	require.NoError(t, err)
+	assert.Equal(t, count, ri.Count())
 
 	return ri, idx
 }

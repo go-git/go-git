@@ -112,9 +112,6 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 			// Form expected entries based on the index so that they can
 			// be cross-related to the generated rev file.
-			count, err := idx.Count()
-			require.NoError(t, err)
-
 			offsetToPos := make(map[uint64]uint32)
 			idxEntries, err := idx.Entries()
 			require.NoError(t, err)
@@ -146,7 +143,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			entriesByOffset.Close()
 
 			// Use ReaderAtRevIndex to verify the generated rev file.
-			revIdx, err := NewReaderAtRevIndex(newMockRevFile(buf.Bytes()), tc.hasher.Size(), count)
+			revIdx, err := NewReaderAtRevIndex(newMockRevFile(buf.Bytes()), tc.hasher.Size())
 			require.NoError(t, err)
 			defer revIdx.Close()
 

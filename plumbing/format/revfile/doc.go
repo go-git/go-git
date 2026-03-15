@@ -21,7 +21,7 @@
 //
 // Use [NewReaderAtRevIndex] to create a reverse index from a .rev file:
 //
-//	ri, err := revfile.NewReaderAtRevIndex(revFile, hashSize, count)
+//	ri, err := revfile.NewReaderAtRevIndex(revFile, hashSize)
 //	if err != nil {
 //	    return err
 //	}

@@ -67,17 +67,11 @@ type RevFile interface {
 //
 // The revFile parameter is the .rev file, which must implement io.ReaderAt, io.Closer, and Stat().
 // The hashSize parameter specifies the size of object hashes (20 for SHA1, 32 for SHA256).
-// The count parameter is the number of objects in the index (from the .idx file).
 // The revFile will be closed when Close() is called on the returned index.
-func NewReaderAtRevIndex(revFile RevFile, hashSize int, count int64) (*ReaderAtRevIndex, error) {
+func NewReaderAtRevIndex(revFile RevFile, hashSize int) (*ReaderAtRevIndex, error) {
 	// Validate hashSize early - only SHA1 (20) and SHA256 (32) are supported.
 	if hashSize != 20 && hashSize != 32 {
 		return nil, fmt.Errorf("%w: invalid hash size %d (must be 20 for SHA1 or 32 for SHA256)", ErrInvalidRevFile, hashSize)
-	}
-
-	// Validate count to prevent integer overflow in size calculations.
-	if count < 0 || count > maxObjectCount {
-		return nil, fmt.Errorf("%w: invalid object count %d", ErrInvalidRevFile, count)
 	}
 
 	stat, err := revFile.Stat()
@@ -85,12 +79,25 @@ func NewReaderAtRevIndex(revFile RevFile, hashSize int, count int64) (*ReaderAtR
 		return nil, fmt.Errorf("failed to stat rev file: %w", err)
 	}
 
+	size := stat.Size()
+	rawBytes := size - int64(RevHeaderSize) - int64(2*hashSize)
+	if rawBytes < 0 {
+		return nil, fmt.Errorf("%w: file too small", ErrInvalidRevFile)
+	}
+	if rawBytes%int64(RevEntrySize) != 0 {
+		return nil, fmt.Errorf("%w: size mismatch", ErrInvalidRevFile)
+	}
+	count := rawBytes / int64(RevEntrySize)
+	if count > maxObjectCount {
+		return nil, fmt.Errorf("%w: invalid object count %d", ErrInvalidRevFile, count)
+	}
+
 	ri := &ReaderAtRevIndex{
 		reader:   revFile,
 		closer:   revFile,
 		hashSize: hashSize,
 		count:    count,
-		size:     stat.Size(),
+		size:     size,
 	}
 
 	if err := ri.validate(); err != nil {
@@ -102,11 +109,6 @@ func NewReaderAtRevIndex(revFile RevFile, hashSize int, count int64) (*ReaderAtR
 }
 
 func (ri *ReaderAtRevIndex) validate() error {
-	minSize := int64(RevHeaderSize) + ri.count*int64(RevEntrySize) + int64(2*ri.hashSize)
-	if ri.size < minSize {
-		return fmt.Errorf("%w: file too small", ErrInvalidRevFile)
-	}
-
 	header := make([]byte, RevHeaderSize)
 	n, err := ri.reader.ReadAt(header, 0)
 	if err != nil {
@@ -137,12 +139,6 @@ func (ri *ReaderAtRevIndex) validate() error {
 		}
 	default:
 		return fmt.Errorf("%w: unsupported hash function %d", ErrInvalidRevFile, hashFn)
-	}
-
-	// Verify expected size.
-	expectedSize := int64(RevHeaderSize) + ri.count*RevEntrySize + int64(2*ri.hashSize)
-	if ri.size != expectedSize {
-		return fmt.Errorf("%w: size mismatch (expected %d, got %d)", ErrInvalidRevFile, expectedSize, ri.size)
 	}
 
 	return nil
