@@ -3,6 +3,7 @@ package dotgit
 import (
 	"bufio"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
 )
 
@@ -544,6 +546,196 @@ func (s *SuiteDotGit) TestObjectPackIdx() {
 	s.Require().NoError(err)
 	s.Equal(".idx", filepath.Ext(idx.Name()))
 	s.Nil(idx.Close())
+}
+
+func TestOpenPackRevReadFromDisk(t *testing.T) {
+	t.Parallel()
+
+	dot, h, _ := createPackWithRev(t, Options{
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
+
+	rev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	var hdr [4]byte
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
+
+	require.NoError(t, rev.Close())
+}
+
+func TestOpenPackRevIgnoreReverseIndex(t *testing.T) {
+	t.Parallel()
+
+	dot, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
+
+	// Overwrite the .rev with garbage.
+	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", h)
+	corruptRevFile(t, fs, revPath, []byte("corrupt rev data"))
+
+	rev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	var hdr [4]byte
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.NotEqual(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
+	require.NoError(t, rev.Close())
+
+	// Re-open DotGit with ReadReverseIndex=false so the corrupt disk
+	// file is ignored and a fresh rev is generated instead.
+	dot = NewWithOptions(fs, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: true,
+	})
+
+	rev, err = dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, [4]byte{'R', 'I', 'D', 'X'}, hdr, "generated rev should have valid RIDX header")
+	require.NoError(t, rev.Close())
+}
+
+func TestOpenPackRevNoRevFileOnDisk(t *testing.T) {
+	t.Parallel()
+
+	_, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: false,
+	})
+
+	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", h)
+	_, err := fs.Stat(revPath)
+	require.True(t, os.IsNotExist(err), ".rev file should not exist on disk")
+
+	dot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	rev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	var hdr [4]byte
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
+	require.NoError(t, rev.Close())
+}
+
+func TestOpenRevFileThatDoesNotExistFails(t *testing.T) {
+	t.Parallel()
+
+	_, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: false,
+	})
+
+	// ReadReverseIndex=true tries to open the .rev from disk — which
+	// does not exist — so it should fail.
+	dot := NewWithOptions(fs, Options{ReadReverseIndex: true})
+	_, err := dot.OpenPackRev(h)
+	require.Error(t, err)
+}
+
+func TestOpenPackRevGeneratedMatchesDisk(t *testing.T) {
+	t.Parallel()
+
+	dot, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
+
+	diskRev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	diskData, err := io.ReadAll(diskRev)
+	require.NoError(t, err)
+	require.NoError(t, diskRev.Close())
+
+	genDot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	genRev, err := genDot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	genData, err := io.ReadAll(genRev)
+	require.NoError(t, err)
+	require.NoError(t, genRev.Close())
+
+	assert.Equal(t, diskData, genData, "generated rev should be byte-identical to on-disk rev")
+}
+
+func TestOpenPackRevUsableByLazyIndex(t *testing.T) {
+	t.Parallel()
+
+	dot, h, _ := createPackWithRev(t, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: false,
+	})
+
+	openIdx := func() (idxfile.ReadAtCloser, error) {
+		return dot.ObjectPackIdx(h)
+	}
+	openRev := func() (idxfile.ReadAtCloser, error) {
+		return dot.OpenPackRev(h)
+	}
+
+	idx, err := idxfile.NewLazyIndex(openIdx, openRev, h)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	// Verify we can look up a known object by offset → hash (uses the rev).
+	// First get an entry via the forward index to obtain a known offset.
+	entries, err := idx.Entries()
+	require.NoError(t, err)
+
+	entry, err := entries.Next()
+	require.NoError(t, err)
+	require.NoError(t, entries.Close())
+
+	// Use FindHash (reverse lookup) which relies on the rev data.
+	got, err := idx.FindHash(int64(entry.Offset))
+	require.NoError(t, err)
+	assert.Equal(t, entry.Hash, got, "FindHash via generated rev should return the correct hash")
+}
+
+// createPackWithRev creates a packfile from the basic fixture and returns
+// the DotGit, the pack hash, and the filesystem. The DotGit is created
+// with the given options.
+func createPackWithRev(t *testing.T, opts Options) (*DotGit, plumbing.Hash, billy.Filesystem) {
+	t.Helper()
+
+	f := fixtures.Basic().One()
+	fs := osfs.New(t.TempDir())
+	dot := NewWithOptions(fs, opts)
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+
+	_, err = io.Copy(w, f.Packfile())
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	h := plumbing.NewHash(f.PackfileHash)
+	return dot, h, fs
+}
+
+// corruptRevFile overwrites the file at path with the given data,
+// handling the read-only permissions set by fixPermissions.
+func corruptRevFile(t *testing.T, fs billy.Filesystem, path string, data []byte) {
+	t.Helper()
+	if chmodFS, ok := fs.(billy.Chmod); ok {
+		require.NoError(t, chmodFS.Chmod(path, 0o644))
+	}
+	f, err := fs.Create(path)
+	require.NoError(t, err)
+	_, err = f.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 }
 
 func (s *SuiteDotGit) TestObjectPackNotFound() {

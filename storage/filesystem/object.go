@@ -235,7 +235,7 @@ func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, erro
 		return s.dir.ObjectPackIdx(h)
 	}
 	openRev := func() (idxfile.ReadAtCloser, error) {
-		return s.dir.ObjectPackRev(h)
+		return s.dir.OpenPackRev(h)
 	}
 
 	return idxfile.NewLazyIndex(openIdx, openRev, h)
