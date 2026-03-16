@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	gsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 // [billy.File] satisfies this interface.
 type ReadAtCloser interface {
 	io.ReaderAt
-	io.ReadSeekCloser
+	io.ReadCloser
 }
 
 // openFileFunc opens a file for reading. Each call must return a fresh,
@@ -99,13 +100,6 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 	}
 	defer s.idx.release()
 
-	// Type-assert to access Seek; safe because the opener returns
-	// ReadAtCloser which embeds io.ReadSeekCloser.
-	idx, ok := idxRA.(io.ReadSeeker)
-	if !ok {
-		return errors.New("idx file does not support seeking")
-	}
-
 	revRA, err := s.rev.acquire()
 	if err != nil {
 		return fmt.Errorf("cannot open rev: %w", err)
@@ -153,13 +147,17 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 	s.off32Start = s.crcStart + (s.count * 4)
 	s.off64Start = s.off32Start + (s.count * off32Size)
 
-	packBuf := make([]byte, s.hashSize)
-	_, err = idx.Seek(-(int64(s.hashSize) * 2), io.SeekEnd)
+	// Count 64-bit offset entries by scanning the 32-bit offset table
+	// for entries with the MSB set.
+	n64, err := s.count64bitOffsets(idxRA)
 	if err != nil {
 		return err
 	}
 
-	if _, err := io.ReadFull(idx, packBuf); err != nil {
+	// The pack checksum sits right after the 64-bit offset table.
+	packBuf := make([]byte, s.hashSize)
+	packHashOff := int64(s.off64Start + n64*off64Size)
+	if _, err := idxRA.ReadAt(packBuf, packHashOff); err != nil {
 		return fmt.Errorf("cannot read pack checksum: %w", err)
 	}
 
@@ -361,6 +359,39 @@ func (s *LazyIndex) offset(idx io.ReaderAt, pos int) (uint64, error) {
 	}
 
 	return uint64(off32), nil
+}
+
+// count64bitOffsets scans the 32-bit offset table and returns the number
+// of entries whose MSB is set (i.e. that use the 64-bit overflow table).
+func (s *LazyIndex) count64bitOffsets(idx io.ReaderAt) (int, error) {
+	bufp := gsync.GetByteSlice()
+	defer gsync.PutByteSlice(bufp)
+
+	buf := *bufp
+	// Round down to a multiple of off32Size so we always read whole entries.
+	buf = buf[:len(buf)&^(off32Size-1)]
+
+	var n int
+	remaining := s.count
+	pos := int64(s.off32Start)
+
+	for remaining > 0 {
+		chunk := min(remaining*off32Size, len(buf))
+
+		if _, err := idx.ReadAt(buf[:chunk], pos); err != nil {
+			return 0, fmt.Errorf("%w: cannot read offset32 table: %v", ErrMalformedIdxFile, err)
+		}
+
+		for i := 0; i < chunk; i += off32Size {
+			if binary.BigEndian.Uint32(buf[i:])&uint32(is64bitsMask) != 0 {
+				n++
+			}
+		}
+
+		pos += int64(chunk)
+		remaining -= chunk / off32Size
+	}
+	return n, nil
 }
 
 // crc32 returns the CRC32 for the object at position pos.
