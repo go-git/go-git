@@ -1,4 +1,4 @@
-package idxfile_test
+package idxfile
 
 import (
 	"bytes"
@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -68,29 +67,29 @@ func (s *LazyIndexSuite) TestFindHashWithRev() {
 
 func (s *LazyIndexSuite) TestNoRev() {
 	fixture := fixtures.Basic().One()
-	openIdx := func() (idxfile.ReadAtCloser, error) { return fixture.Idx(), nil }
-	idx, err := idxfile.NewLazyIndex(openIdx, nil, plumbing.NewHash(fixture.PackfileHash))
+	openIdx := func() (ReadAtCloser, error) { return fixture.Idx(), nil }
+	idx, err := NewLazyIndex(openIdx, nil, plumbing.NewHash(fixture.PackfileHash))
 	s.Require().Error(err)
 	s.Require().Nil(idx)
 }
 
 func (s *LazyIndexSuite) TestNoIdx() {
 	fixture := fixtures.Basic().One()
-	openRev := func() (idxfile.ReadAtCloser, error) { return fixture.Rev(), nil }
-	idx, err := idxfile.NewLazyIndex(nil, openRev, plumbing.NewHash(fixture.PackfileHash))
+	openRev := func() (ReadAtCloser, error) { return fixture.Rev(), nil }
+	idx, err := NewLazyIndex(nil, openRev, plumbing.NewHash(fixture.PackfileHash))
 	s.Require().Error(err)
 	s.Require().Nil(idx)
 }
 
 func (s *LazyIndexSuite) TestPackfileHashMismatch() {
 	fixture := fixtures.Basic().One()
-	openIdx := func() (idxfile.ReadAtCloser, error) { return fixture.Idx(), nil }
-	openRev := func() (idxfile.ReadAtCloser, error) { return fixture.Rev(), nil }
+	openIdx := func() (ReadAtCloser, error) { return fixture.Idx(), nil }
+	openRev := func() (ReadAtCloser, error) { return fixture.Rev(), nil }
 	wrongHash := plumbing.NewHash("0000000000000000000000000000000000000000")
-	idx, err := idxfile.NewLazyIndex(openIdx, openRev, wrongHash)
+	idx, err := NewLazyIndex(openIdx, openRev, wrongHash)
 	s.Require().Error(err)
 	s.Require().Nil(idx)
-	s.ErrorIs(err, idxfile.ErrMalformedIdxFile)
+	s.ErrorIs(err, ErrMalformedIdxFile)
 }
 
 func (s *LazyIndexSuite) TestFindHashNotFound() {
@@ -166,60 +165,6 @@ func (s *LazyIndexSuite) TestCloseIdempotent() {
 	s.NoError(idx.Close()) // second close should be safe
 }
 
-func buildMinimalIdx(count, hashSize int) []byte {
-	var buf bytes.Buffer
-	buf.Write([]byte{0xff, 't', 'O', 'c'})
-	_ = binary.Write(&buf, binary.BigEndian, uint32(2))
-
-	for range 256 {
-		_ = binary.Write(&buf, binary.BigEndian, uint32(count))
-	}
-
-	for i := range count {
-		h := make([]byte, hashSize)
-
-		// Ensure all hashes start with 0x00 (match fanout bucket 0).
-		h[1] = byte(i >> 8)
-		h[2] = byte(i)
-		buf.Write(h)
-	}
-
-	// CRC32: count * 4 bytes (all zeros).
-	buf.Write(make([]byte, count*4))
-
-	// Offset32: count * 4 bytes (sequential small offsets).
-	for i := range count {
-		_ = binary.Write(&buf, binary.BigEndian, uint32(i*100))
-	}
-
-	// No offset64 entries.
-
-	packChecksum := make([]byte, hashSize)
-	packChecksum[0] = 0xAA // recognizable
-	buf.Write(packChecksum)
-	buf.Write(make([]byte, hashSize)) // idx checksum
-
-	return buf.Bytes()
-}
-
-func buildMinimalRev(count, hashSize int) []byte {
-	var buf bytes.Buffer
-	buf.Write([]byte{'R', 'I', 'D', 'X'})
-	_ = binary.Write(&buf, binary.BigEndian, uint32(1)) // version
-	hashID := uint32(1)                                 // sha1
-	if hashSize == 32 {
-		hashID = 2 // sha256
-	}
-	_ = binary.Write(&buf, binary.BigEndian, hashID)
-	// Entries: identity mapping (already sorted by offset).
-	for i := range count {
-		_ = binary.Write(&buf, binary.BigEndian, uint32(i))
-	}
-
-	buf.Write(make([]byte, hashSize*2))
-	return buf.Bytes()
-}
-
 func BenchmarkScannerFindHash(b *testing.B) {
 	idx, err := fixtureLazyIndex(true)
 	if err != nil {
@@ -256,16 +201,10 @@ func BenchmarkScannerFindOffset(b *testing.B) {
 	}
 }
 
-type nopCloserReaderAt struct {
-	*bytes.Reader
-}
-
-func (nopCloserReaderAt) Close() error { return nil }
-
-func fixtureLazyIndex(withRev bool) (*idxfile.LazyIndex, error) {
+func fixtureLazyIndex(withRev bool) (*LazyIndex, error) {
 	f := bytes.NewBufferString(fixtureLarge4GB)
-	memIdx := new(idxfile.MemoryIndex)
-	d := idxfile.NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
+	memIdx := new(MemoryIndex)
+	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
 	if err := d.Decode(memIdx); err != nil {
 		return nil, err
 	}
@@ -277,7 +216,7 @@ func fixtureLazyIndex(withRev bool) (*idxfile.LazyIndex, error) {
 		return nil, err
 	}
 
-	openIdx := func() (idxfile.ReadAtCloser, error) {
+	openIdx := func() (ReadAtCloser, error) {
 		return nopCloserReaderAt{bytes.NewReader(idxBytes)}, nil
 	}
 
@@ -286,17 +225,17 @@ func fixtureLazyIndex(withRev bool) (*idxfile.LazyIndex, error) {
 		if err != nil {
 			return nil, err
 		}
-		openRev := func() (idxfile.ReadAtCloser, error) {
+		openRev := func() (ReadAtCloser, error) {
 			return nopCloserReaderAt{bytes.NewReader(revBytes)}, nil
 		}
 
-		return idxfile.NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
+		return NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
 	}
 
-	return idxfile.NewLazyIndex(openIdx, nil, memIdx.PackfileChecksum)
+	return NewLazyIndex(openIdx, nil, memIdx.PackfileChecksum)
 }
 
-func buildTestRevFile(idx *idxfile.MemoryIndex) ([]byte, error) {
+func buildTestRevFile(idx *MemoryIndex) ([]byte, error) {
 	count, err := idx.Count()
 	if err != nil {
 		return nil, err

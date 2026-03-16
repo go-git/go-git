@@ -1,13 +1,10 @@
-package idxfile_test
+package idxfile
 
 import (
 	"bytes"
-	"encoding/base64"
-	"io"
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )
 
 func FuzzLazyIndex(f *testing.F) {
@@ -18,11 +15,6 @@ func FuzzLazyIndex(f *testing.F) {
 	idx0 := buildMinimalIdx(0, 20)
 	rev0 := buildMinimalRev(0, 20)
 	f.Add(idx0, rev0)
-
-	raw := bytes.NewBufferString(fixtureLarge4GB)
-	if fixtureBytes, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, raw)); err == nil {
-		f.Add(fixtureBytes, rev3)
-	}
 
 	f.Add([]byte{0xff, 't', 'O', 'c', 0, 0, 0, 2}, []byte{})
 
@@ -41,17 +33,17 @@ func FuzzLazyIndex(f *testing.F) {
 			}
 		}
 
-		openIdx := func() (idxfile.ReadAtCloser, error) {
+		openIdx := func() (ReadAtCloser, error) {
 			return nopCloserReaderAt{bytes.NewReader(idxData)}, nil
 		}
-		var openRev func() (idxfile.ReadAtCloser, error)
+		var openRev func() (ReadAtCloser, error)
 		if len(revData) > 0 {
-			openRev = func() (idxfile.ReadAtCloser, error) {
+			openRev = func() (ReadAtCloser, error) {
 				return nopCloserReaderAt{bytes.NewReader(revData)}, nil
 			}
 		}
 
-		idx, err := idxfile.NewLazyIndex(openIdx, openRev, packHash)
+		idx, err := NewLazyIndex(openIdx, openRev, packHash)
 		if err != nil {
 			// Expected for most fuzz inputs.
 			return
