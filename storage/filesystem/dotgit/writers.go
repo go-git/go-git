@@ -35,9 +35,10 @@ type PackWriter struct {
 	writer   *idxfile.Writer
 	result   chan error
 	format   formatcfg.ObjectFormat
+	writeRev bool
 }
 
-func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -49,12 +50,13 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat) (*PackWrit
 	}
 
 	writer := &PackWriter{
-		fs:     fs,
-		fw:     fw,
-		fr:     fr,
-		synced: newSyncedReader(fw, fr),
-		result: make(chan error),
-		format: format,
+		fs:       fs,
+		fw:       fw,
+		fr:       fr,
+		synced:   newSyncedReader(fw, fr),
+		result:   make(chan error),
+		format:   format,
+		writeRev: writeRev,
 	}
 
 	writer.checksum.ResetBySize(format.Size())
@@ -158,20 +160,22 @@ func (w *PackWriter) save() error {
 	}
 	fixPermissions(w.fs, fmt.Sprintf("%s.idx", base))
 
-	rev, err := w.fs.Create(fmt.Sprintf("%s.rev", base))
-	if err != nil {
-		return err
-	}
+	if w.writeRev {
+		rev, err := w.fs.Create(fmt.Sprintf("%s.rev", base))
+		if err != nil {
+			return err
+		}
 
-	if err := w.encodeRev(rev, h); err != nil {
-		_ = rev.Close()
-		return err
-	}
+		if err := w.encodeRev(rev, h); err != nil {
+			_ = rev.Close()
+			return err
+		}
 
-	if err := rev.Close(); err != nil {
-		return err
+		if err := rev.Close(); err != nil {
+			return err
+		}
+		fixPermissions(w.fs, fmt.Sprintf("%s.rev", base))
 	}
-	fixPermissions(w.fs, fmt.Sprintf("%s.rev", base))
 
 	packPath := fmt.Sprintf("%s.pack", base)
 	if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {

@@ -575,6 +575,160 @@ func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
 	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
 }
 
+func TestUnmarshalPackReverseIndex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		input     string
+		wantRead  bool
+		wantWrite bool
+	}{
+		{
+			name:      "both true",
+			input:     "[pack]\n\treadReverseIndex = true\n\twriteReverseIndex = true\n",
+			wantRead:  true,
+			wantWrite: true,
+		},
+		{
+			name:      "both false",
+			input:     "[pack]\n\treadReverseIndex = false\n\twriteReverseIndex = false\n",
+			wantRead:  false,
+			wantWrite: false,
+		},
+		{
+			name:      "only readReverseIndex false",
+			input:     "[pack]\n\treadReverseIndex = false\n",
+			wantRead:  false,
+			wantWrite: true,
+		},
+		{
+			name:      "only writeReverseIndex false",
+			input:     "[pack]\n\twriteReverseIndex = false\n",
+			wantRead:  true,
+			wantWrite: false,
+		},
+		{
+			name:      "absent defaults to true",
+			input:     "[pack]\n\twindow = 10\n",
+			wantRead:  true,
+			wantWrite: true,
+		},
+		{
+			name:      "empty pack section defaults to true",
+			input:     "[pack]\n",
+			wantRead:  true,
+			wantWrite: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			err := cfg.Unmarshal([]byte(tc.input))
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.wantRead, cfg.Pack.ReadReverseIndex)
+			assert.Equal(t, tc.wantWrite, cfg.Pack.WriteReverseIndex)
+		})
+	}
+}
+
+func TestMarshalPackReverseIndex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		read           bool
+		write          bool
+		wantReadFalse  bool
+		wantWriteFalse bool
+	}{
+		{
+			name:           "both true omits keys",
+			read:           true,
+			write:          true,
+			wantReadFalse:  false,
+			wantWriteFalse: false,
+		},
+		{
+			name:           "both false writes keys",
+			read:           false,
+			write:          false,
+			wantReadFalse:  true,
+			wantWriteFalse: true,
+		},
+		{
+			name:           "only readReverseIndex false",
+			read:           false,
+			write:          true,
+			wantReadFalse:  true,
+			wantWriteFalse: false,
+		},
+		{
+			name:           "only writeReverseIndex false",
+			read:           true,
+			write:          false,
+			wantReadFalse:  false,
+			wantWriteFalse: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			cfg.Pack.ReadReverseIndex = tc.read
+			cfg.Pack.WriteReverseIndex = tc.write
+
+			b, err := cfg.Marshal()
+			require.NoError(t, err)
+			output := string(b)
+
+			assert.Equal(t, tc.wantReadFalse, strings.Contains(output, "readReverseIndex = false"), "readReverseIndex = false presence")
+			assert.Equal(t, tc.wantWriteFalse, strings.Contains(output, "writeReverseIndex = false"), "writeReverseIndex = false presence")
+		})
+	}
+}
+
+func TestUnmarshalMarshalPackReverseIndex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "both false",
+			input: "[core]\n\tbare = false\n\tfilemode = true\n" +
+				"[pack]\n\treadReverseIndex = false\n\twriteReverseIndex = false\n",
+		},
+		{
+			name: "with window and both false",
+			input: "[core]\n\tbare = false\n\tfilemode = true\n" +
+				"[pack]\n\twindow = 20\n\treadReverseIndex = false\n\twriteReverseIndex = false\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			err := cfg.Unmarshal([]byte(tc.input))
+			require.NoError(t, err)
+
+			output, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.input, string(output))
+		})
+	}
+}
+
 func TestMerge(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

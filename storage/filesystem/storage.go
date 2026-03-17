@@ -59,6 +59,11 @@ type Options struct {
 	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
 
+	// UseInMemoryIdx loads .idx files fully into memory (MemoryIndex) instead
+	// of reading them on demand via ReadAt (LazyIndex). This uses more memory
+	// but avoids keeping file descriptors open. Defaults to false.
+	UseInMemoryIdx bool
+
 	// IndexCache provides an optional cache implementation for index data.
 	// If left as nil, a default stat-based implementation is created automatically.
 	IndexCache IndexCache
@@ -74,11 +79,17 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 // Returns an error if an explicit ObjectFormat is provided via options
 // but conflicts with an existing config in the filesystem.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
+	// Reverse index defaults (true); overridden by repo config below.
+	readRevIdx := true
+	writeRevIdx := true
+
 	f, err := fs.Open("config")
 	if err == nil {
 		cfg, err := config.ReadConfig(f)
 		if err == nil {
 			ops.ObjectFormat = cfg.Extensions.ObjectFormat
+			readRevIdx = cfg.Pack.ReadReverseIndex
+			writeRevIdx = cfg.Pack.WriteReverseIndex
 		}
 
 		_ = f.Close()
@@ -87,10 +98,12 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
 
 	dirOps := dotgit.Options{
-		ExclusiveAccess: ops.ExclusiveAccess,
-		AlternatesFS:    ops.AlternatesFS,
-		KeepDescriptors: ops.KeepDescriptors,
-		ObjectFormat:    ops.ObjectFormat,
+		ExclusiveAccess:   ops.ExclusiveAccess,
+		AlternatesFS:      ops.AlternatesFS,
+		KeepDescriptors:   ops.KeepDescriptors,
+		ObjectFormat:      ops.ObjectFormat,
+		ReadReverseIndex:  readRevIdx,
+		WriteReverseIndex: writeRevIdx,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 

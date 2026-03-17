@@ -209,7 +209,39 @@ func (s *ObjectStorage) Reindex() {
 	s.index = nil
 }
 
-func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
+func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
+	if s.options.UseInMemoryIdx {
+		return s.loadMemoryIndex(h)
+	}
+
+	// Use LazyIndex on a best-effort basis.
+	if idx, err := s.loadLazyIndex(h); err == nil {
+		// If an index already exists, and implements io.Closer, try to close it.
+		if i, found := s.index[h]; found && i != nil {
+			if closer, ok := i.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+
+		s.index[h] = idx
+		return nil
+	}
+
+	return s.loadMemoryIndex(h)
+}
+
+func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, error) {
+	openIdx := func() (idxfile.ReadAtCloser, error) {
+		return s.dir.ObjectPackIdx(h)
+	}
+	openRev := func() (idxfile.ReadAtCloser, error) {
+		return s.dir.OpenPackRev(h)
+	}
+
+	return idxfile.NewLazyIndex(openIdx, openRev, h)
+}
+
+func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
@@ -816,6 +848,20 @@ func (s *ObjectStorage) Close() error {
 			}
 		}
 	}
+
+	// If the index being used implements io.Closer, make sure we call it.
+	// LazyIndex.Close permanently disables the index and releases any
+	// idle file descriptors. The same pattern applies to other Index
+	// implementations that hold resources.
+	s.muI.RLock()
+	for _, idx := range s.index {
+		if closer, ok := idx.(io.Closer); ok {
+			if err := closer.Close(); firstError == nil && err != nil {
+				firstError = err
+			}
+		}
+	}
+	s.muI.RUnlock()
 
 	s.packfiles = nil
 	_ = s.dir.Close()
