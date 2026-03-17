@@ -50,7 +50,8 @@ func (e *EncodedObject) Reader() (io.ReadCloser, error) {
 		_ = r.Close()
 		return nil, objfile.ErrHeader
 	}
-	return ioutil.NewReadCloserWithCloser(r, f.Close), nil
+
+	return ioutil.NewReadCloser(r, ioutil.MultiCloser(r, f)), nil
 }
 
 func (e *EncodedObject) SetType(plumbing.ObjectType) {}

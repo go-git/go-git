@@ -48,16 +48,18 @@ func NewBackend(loader transport.Loader) *Backend {
 // context.WithIdleTimeout where it resets the timer on each read/write
 // operation.
 func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp.GitProtoRequest) {
+	// Ensure we close the connection when we're done.
+	defer func() { _ = c.Close() }()
+
 	loader := b.Loader
 	if loader == nil {
 		loader = transport.DefaultLoader
 	}
 
-	r := ioutil.NewContextReader(ctx, c)
+	rc := ioutil.NewContextReadCloser(ctx, c)
 	wc := ioutil.NewContextWriteCloser(ctx, c)
-
-	// Ensure we close the connection when we're done.
-	defer func() { _ = c.Close() }()
+	defer func() { _ = rc.Close() }()
+	defer func() { _ = wc.Close() }()
 
 	svc := transport.Service(req.RequestCommand)
 	switch {
@@ -95,14 +97,12 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	version := strings.Join(req.ExtraParams, ":")
 	switch svc {
 	case transport.UploadPackService:
-		err = transport.UploadPack(ctx, st,
-			io.NopCloser(r), ioutil.WriteNopCloser(wc),
+		err = transport.UploadPack(ctx, st, rc, wc,
 			&transport.UploadPackOptions{
 				GitProtocol: version,
 			})
 	case transport.ReceivePackService:
-		err = transport.ReceivePack(ctx, st,
-			io.NopCloser(r), ioutil.WriteNopCloser(wc),
+		err = transport.ReceivePack(ctx, st, rc, wc,
 			&transport.ReceivePackOptions{
 				GitProtocol: version,
 			})
@@ -115,9 +115,6 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 }
 
 func renderError(rw io.WriteCloser, err error) error {
-	if _, err := pktline.WriteError(rw, err); err != nil {
-		_ = rw.Close()
-		return err
-	}
-	return rw.Close()
+	_, err = pktline.WriteError(rw, err)
+	return err
 }
