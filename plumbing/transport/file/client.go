@@ -22,7 +22,7 @@ type runner struct {
 	loader transport.Loader
 }
 
-// NewTransport returns a new file transport that users go-git built-in server
+// NewTransport returns a new file transport that uses go-git's built-in server
 // implementation to serve repositories.
 func NewTransport(loader transport.Loader) transport.Transport {
 	if loader == nil {
@@ -57,9 +57,17 @@ type command struct {
 	service     string
 	gitProtocol string
 
-	stdin  *io.PipeReader
-	stdinW *io.PipeWriter
-	stdout *io.PipeWriter
+	// stdin uses buffered pipe to prevent deadlock during pack negotiation.
+	// When cloning repos with many refs, the "have" list can be large enough
+	// to fill unbuffered pipes, causing both client and server to block.
+	stdin  io.Reader
+	stdinW io.WriteCloser
+
+	// stdout also uses buffered pipe for the same reason - the server may
+	// write advertised refs while the client is still writing "have" lines.
+	stdout io.WriteCloser
+
+	// stderr can use regular pipe as it typically has minimal data
 	stderr *io.PipeWriter
 
 	childIOFiles  []io.Closer
@@ -91,7 +99,9 @@ func (c *command) Start() error {
 				opts,
 			); err != nil {
 				// Write the error to the stderr pipe and close the command.
-				_, _ = fmt.Fprintln(c.stderr, err)
+				if c.stderr != nil {
+					_, _ = fmt.Fprintln(c.stderr, err)
+				}
 				_ = c.Close()
 			}
 		}()
@@ -108,7 +118,9 @@ func (c *command) Start() error {
 				c.stdout,
 				opts,
 			); err != nil {
-				_, _ = fmt.Fprintln(c.stderr, err)
+				if c.stderr != nil {
+					_, _ = fmt.Fprintln(c.stderr, err)
+				}
 				_ = c.Close()
 			}
 		}()
@@ -128,7 +140,11 @@ func (c *command) StderrPipe() (io.Reader, error) {
 }
 
 func (c *command) StdinPipe() (io.WriteCloser, error) {
-	pr, pw := io.Pipe()
+	// Use buffered pipe to prevent deadlock when the client sends many
+	// "have" lines during pack negotiation. With unbuffered io.Pipe,
+	// both client (writing haves) and server (writing refs/acks) can
+	// block waiting for the other to read, causing deadlock.
+	pr, pw := newBufferedPipe()
 
 	c.stdin = pr
 	c.stdinW = pw
@@ -139,7 +155,9 @@ func (c *command) StdinPipe() (io.WriteCloser, error) {
 }
 
 func (c *command) StdoutPipe() (io.Reader, error) {
-	pr, pw := io.Pipe()
+	// Use buffered pipe to prevent deadlock. The server writes advertised
+	// refs and ACKs while the client may still be writing "have" lines.
+	pr, pw := newBufferedPipe()
 
 	c.stdout = pw
 	c.childIOFiles = append(c.childIOFiles, pw)
@@ -157,14 +175,14 @@ func (c *command) Close() (err error) {
 		return nil
 	}
 
-	closeDiscriptors(c.childIOFiles)
-	closeDiscriptors(c.parentIOFiles)
+	closeDescriptors(c.childIOFiles)
+	closeDescriptors(c.parentIOFiles)
 	c.closed = true
 
 	return err
 }
 
-func closeDiscriptors(fds []io.Closer) {
+func closeDescriptors(fds []io.Closer) {
 	for _, fd := range fds {
 		_ = fd.Close()
 	}
