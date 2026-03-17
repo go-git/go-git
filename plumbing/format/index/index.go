@@ -216,7 +216,10 @@ type EndOfIndexEntry struct {
 }
 
 // SkipUnless applies patterns in the form of A, A/B, A/B/C
-// to the index to prevent the files from being checked out
+// to the index to prevent the files from being checked out.
+// Files whose names match one of the patterns have SkipWorktree cleared;
+// all other files have it set. This handles sparse-checkout dir switching
+// correctly: files moving into the active set are un-skipped.
 func (i *Index) SkipUnless(patterns []string) {
 	for _, e := range i.Entries {
 		var include bool
@@ -226,7 +229,9 @@ func (i *Index) SkipUnless(patterns []string) {
 				break
 			}
 		}
-		if !include {
+		if include {
+			e.SkipWorktree = false
+		} else {
 			e.SkipWorktree = true
 		}
 	}

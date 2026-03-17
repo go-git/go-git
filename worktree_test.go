@@ -344,6 +344,67 @@ func (s *WorktreeSuite) TestPullAfterShallowClone() {
 	s.NoError(err)
 }
 
+// TestPullAfterShallowClone_UntrackedFilesPreserved checks that an untracked
+// file in a shallow-cloned worktree is not deleted by a subsequent pull.
+// Regression test for https://github.com/go-git/go-git/issues/1719.
+func (s *WorktreeSuite) TestPullAfterShallowClone_UntrackedFilesPreserved() {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	remote, err := PlainInit(remoteURL, false)
+	s.Require().NoError(err)
+
+	_ = CommitNewFile(s.T(), remote, "File1")
+	_ = CommitNewFile(s.T(), remote, "File2")
+
+	repo, err := PlainClone(repoDir, &CloneOptions{
+		URL:           remoteURL,
+		Depth:         1,
+		Tags:          plumbing.NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	s.Require().NoError(err)
+
+	// Create an untracked file in the cloned worktree.
+	untrackedPath := filepath.Join(repoDir, "untracked.txt")
+	s.Require().NoError(os.WriteFile(untrackedPath, []byte("do not delete me"), 0o644))
+
+	// Push new commits to the remote so the pull has actual work to do.
+	_ = CommitNewFile(s.T(), remote, "File3")
+	_ = CommitNewFile(s.T(), remote, "File4")
+
+	w, err := repo.Worktree()
+	s.Require().NoError(err)
+
+	// Test without Force first.
+	err = w.Pull(&PullOptions{
+		RemoteName:    DefaultRemoteName,
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewBranchReferenceName("master"),
+	})
+	s.Require().NoError(err)
+
+	// The untracked file must survive the pull (mirrors real git behaviour).
+	_, statErr := os.Stat(untrackedPath)
+	s.Require().NoError(statErr, "untracked file was removed by pull (no Force) on a shallow clone")
+
+	// Push another commit and test with Force: true.
+	_ = CommitNewFile(s.T(), remote, "File5")
+
+	err = w.Pull(&PullOptions{
+		RemoteName:    DefaultRemoteName,
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewBranchReferenceName("master"),
+		Force:         true,
+	})
+	s.Require().NoError(err)
+
+	_, statErr = os.Stat(untrackedPath)
+	s.Require().NoError(statErr, "untracked file was removed by pull (Force: true) on a shallow clone")
+}
+
 func (s *WorktreeSuite) TestCheckout() {
 	fs := memfs.New()
 	w := &Worktree{
@@ -804,6 +865,91 @@ func (s *WorktreeSuite) TestCheckoutBranchUntracked() {
 	s.NoError(err)
 	// After deleting the untracked file it should now be clean
 	s.True(status.IsClean())
+}
+
+// TestCheckoutForceUntracked verifies that Checkout with Force:true (HardReset)
+// does not delete untracked files, matching real git checkout -f behaviour.
+func (s *WorktreeSuite) TestCheckoutForceUntracked() {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	// Populate the worktree first.
+	err := w.Checkout(&CheckoutOptions{})
+	s.Require().NoError(err)
+
+	// Create an untracked file.
+	uf, err := w.Filesystem.Create("untracked_file")
+	s.Require().NoError(err)
+	_, err = uf.Write([]byte("don't delete me"))
+	s.Require().NoError(err)
+	s.Require().NoError(uf.Close())
+
+	// Force checkout (HardReset) — should leave untracked files alone.
+	err = w.Checkout(&CheckoutOptions{Force: true})
+	s.Require().NoError(err)
+
+	status, err := w.Status()
+	s.Require().NoError(err)
+	// Untracked file must still be present.
+	s.True(status.IsUntracked("untracked_file"), "untracked file was deleted by Force checkout")
+}
+
+// TestCheckoutForceSparseUntrackedPreserved verifies that when switching
+// SparseCheckoutDirectories with Force:true, tracked files outside the new
+// sparse set are removed from disk but untracked files inside those directories
+// are preserved — matching real git behaviour (git keeps the untracked file
+// and prints a warning).
+func (s *WorktreeSuite) TestCheckoutForceSparseUntrackedPreserved() {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL:        s.GetBasicLocalRepositoryURL(),
+		NoCheckout: true,
+	})
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	// Initial sparse checkout: only the "go" directory.
+	s.Require().NoError(w.Checkout(&CheckoutOptions{
+		SparseCheckoutDirectories: []string{"go"},
+	}))
+
+	// Confirm that at least one tracked file is present inside "go/".
+	goFiles, err := fs.ReadDir("go")
+	s.Require().NoError(err)
+	s.Require().NotEmpty(goFiles, "expected tracked files in go/ after sparse checkout")
+
+	// Create an untracked file inside the soon-to-be-removed sparse directory.
+	uf, err := w.Filesystem.Create("go/untracked.txt")
+	s.Require().NoError(err)
+	_, err = uf.Write([]byte("do not delete me"))
+	s.Require().NoError(err)
+	s.Require().NoError(uf.Close())
+
+	// Force checkout: switch sparse set from "go" to "php".
+	// Real git removes tracked "go/" files from the worktree but preserves
+	// untracked files (showing a warning). go-git must match this behaviour.
+	s.Require().NoError(w.Checkout(&CheckoutOptions{
+		Force:                     true,
+		SparseCheckoutDirectories: []string{"php"},
+	}))
+
+	// Untracked file inside the removed sparse directory must be preserved.
+	_, statErr := w.Filesystem.Stat("go/untracked.txt")
+	s.Require().NoError(statErr, "untracked file inside removed sparse dir was deleted by Force checkout")
+
+	// Tracked files that moved out of the sparse set must be removed from disk.
+	firstGoFile := filepath.Join("go", goFiles[0].Name())
+	_, statErr = w.Filesystem.Stat(firstGoFile)
+	s.Require().Error(statErr, "tracked file %q in removed sparse dir should have been removed by Force checkout", firstGoFile)
+
+	// The "php" directory must now be present and populated.
+	phpFiles, err := fs.ReadDir("php")
+	s.Require().NoError(err)
+	s.NotEmpty(phpFiles, "expected php/ files after sparse checkout switch")
 }
 
 func (s *WorktreeSuite) TestCheckoutCreateWithHash() {
