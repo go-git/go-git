@@ -65,5 +65,11 @@ func (s *server) Close() error {
 	err1 := s.ln.Close()
 	err2 := s.srv.Close()
 
+	// net.ErrClosed is returned when closing an already-closed listener,
+	// which can happen because http.Server.Close also closes listeners.
+	if errors.Is(err1, net.ErrClosed) {
+		err1 = nil
+	}
+
 	return errors.Join(err1, err2)
 }
