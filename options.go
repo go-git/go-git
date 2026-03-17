@@ -439,6 +439,12 @@ const (
 	// resets the head to <commit>, just like all modes do). This leaves all
 	// your changed files "Changes to be committed", as git status would put it.
 	SoftReset
+	// KeepReset resets the index and updates files in the working tree that
+	// differ between Commit and HEAD, like HardReset. However, if a file that
+	// differs between Commit and HEAD has local modifications (staged or
+	// unstaged), the reset is aborted. Untracked files are never deleted.
+	// Equivalent to git reset --keep.
+	KeepReset
 )
 
 // ResetOptions describes how a reset operation should be performed.
