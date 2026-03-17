@@ -62,8 +62,8 @@ func (s *server) Endpoint() (string, error) {
 }
 
 func (s *server) Close() error {
-	err1 := s.ln.Close()
-	err2 := s.srv.Close()
-
-	return errors.Join(err1, err2)
+	// s.srv.Close() closes the listener internally; calling s.ln.Close()
+	// separately would close it twice and return "use of closed network
+	// connection" from the second close.
+	return s.srv.Close()
 }
