@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -112,11 +113,14 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 
 	switch c.version {
 	case protocol.V2:
-		return nil, ErrUnsupportedVersion
-	case protocol.V1:
-		// Read the version line
-		fallthrough
-	case protocol.V0:
+		// V2: server sends a capability advertisement instead of refs.
+		v2caps := packp.NewV2ServerCapabilities()
+		if err := v2caps.Decode(c.r); err != nil {
+			return nil, err
+		}
+		c.caps = v2caps.ToCapabilities()
+		return c, nil
+	case protocol.V0, protocol.V1:
 	}
 
 	ar := packp.NewAdvRefs()
@@ -194,9 +198,45 @@ func (p *packConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference
 }
 
 // LsRefs implements Connection.
-func (p *packConnection) LsRefs(_ context.Context, _ *LsRefsRequest) ([]*plumbing.Reference, error) {
-	// TODO: implement V2 ls-refs command
-	return nil, ErrUnsupportedVersion
+func (p *packConnection) LsRefs(_ context.Context, req *LsRefsRequest) ([]*plumbing.Reference, error) {
+	if p.version != protocol.V2 {
+		return nil, ErrUnsupportedVersion
+	}
+
+	if req == nil {
+		req = &LsRefsRequest{}
+	}
+
+	lsReq := &packp.LsRefsRequest{
+		RefPrefixes:    req.RefPrefixes,
+		IncludeSymRefs: req.IncludeSymRefs,
+		IncludePeeled:  req.IncludePeeled,
+		IncludeUnborn:  req.IncludeUnborn,
+	}
+
+	if err := lsReq.Encode(p.w); err != nil {
+		return nil, fmt.Errorf("encoding ls-refs request: %w", err)
+	}
+
+	resp := packp.NewLsRefsResponse()
+	if err := resp.Decode(p.r); err != nil {
+		return nil, fmt.Errorf("decoding ls-refs response: %w", err)
+	}
+
+	// Append peeled refs as separate references (matching V0/V1 convention).
+	refs := make([]*plumbing.Reference, 0, len(resp.References)+len(resp.Peeled))
+	for _, ref := range resp.References {
+		refs = append(refs, ref)
+		if peeledHash, ok := resp.Peeled[ref.Name().String()]; ok {
+			peeledRef := plumbing.NewHashReference(
+				plumbing.ReferenceName(ref.Name().String()+"^{}"),
+				peeledHash,
+			)
+			refs = append(refs, peeledRef)
+		}
+	}
+
+	return refs, nil
 }
 
 // Version implements Connection.
@@ -211,12 +251,30 @@ func (*packConnection) StatelessRPC() bool {
 
 // Fetch implements Connection.
 func (p *packConnection) Fetch(ctx context.Context, req *FetchRequest) (err error) {
+	if p.version == protocol.V2 {
+		return p.fetchV2(ctx, req)
+	}
+
 	shallows, err := NegotiatePack(ctx, p.st, p, p.r, p.w, req)
 	if err != nil {
 		return err
 	}
 
 	return FetchPack(ctx, p.st, p, io.NopCloser(p.r), shallows, req)
+}
+
+// fetchV2 implements the V2 fetch command for full-duplex connections.
+func (p *packConnection) fetchV2(ctx context.Context, req *FetchRequest) error {
+	resp, err := NegotiatePackV2(ctx, p.st, p, p.r, p.w, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.Packfile == nil {
+		return fmt.Errorf("server did not send packfile")
+	}
+
+	return FetchPack(ctx, p.st, p, io.NopCloser(p.r), resp.ShallowUpdate, req)
 }
 
 // Push implements Connection.

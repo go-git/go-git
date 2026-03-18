@@ -229,5 +229,6 @@ func (c *client) SupportedProtocols() []protocol.Version {
 	return []protocol.Version{
 		protocol.V0,
 		protocol.V1,
+		protocol.V2,
 	}
 }
