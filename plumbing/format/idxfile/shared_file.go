@@ -30,6 +30,7 @@ type sharedFile struct {
 	refs       int
 	closed     bool
 	closeTimer *time.Timer
+	timerGen   uint64 // incremented each time a timer is stopped/replaced
 }
 
 var errSharedFileClosed = errors.New("shared file is closed")
@@ -56,6 +57,7 @@ func (sf *sharedFile) acquire() (io.ReaderAt, error) {
 	if sf.closeTimer != nil {
 		sf.closeTimer.Stop()
 		sf.closeTimer = nil
+		sf.timerGen++ // invalidate any already-queued timer callback
 	}
 
 	if sf.file == nil {
@@ -92,10 +94,11 @@ func (sf *sharedFile) release() {
 		return
 	}
 
+	gen := sf.timerGen
 	sf.closeTimer = time.AfterFunc(sf.gracePeriod, func() {
 		sf.mu.Lock()
 		defer sf.mu.Unlock()
-		if sf.refs == 0 && sf.file != nil {
+		if sf.timerGen == gen && sf.refs == 0 && sf.file != nil {
 			sf.closeLocked()
 		}
 	})
@@ -113,6 +116,7 @@ func (sf *sharedFile) Close() error {
 	if sf.closeTimer != nil {
 		sf.closeTimer.Stop()
 		sf.closeTimer = nil
+		sf.timerGen++ // invalidate any already-queued timer callback
 	}
 	if sf.refs == 0 && sf.file != nil {
 		err := sf.file.Close()
