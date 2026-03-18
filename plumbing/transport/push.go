@@ -15,7 +15,7 @@ import (
 
 // buildUpdateRequests constructs a new update-requests object for the given
 // connection and push request.
-func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateRequests {
+func buildUpdateRequests(caps *capability.Capabilities, req *PushRequest) *packp.UpdateRequests {
 	upreq := packp.NewUpdateRequests()
 
 	// The atomic, report-status, report-status-v2, delete-refs, quiet, and

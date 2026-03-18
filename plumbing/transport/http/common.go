@@ -241,11 +241,12 @@ type HTTPSession struct {
 	client      *http.Client
 	ep          *transport.Endpoint
 	refs        *packp.AdvRefs
-	svc         transport.Service // the service we're using for this session
-	gitProtocol string            // the Git-Protocol header to send
-	version     protocol.Version  // the server's protocol version
-	useDumb     bool              // When true, the client will always use the dumb protocol
-	isSmart     bool              // This is true if the session is using the smart protocol
+	caps        *capability.Capabilities // version-aware server capabilities
+	svc         transport.Service        // the service we're using for this session
+	gitProtocol string                   // the Git-Protocol header to send
+	version     protocol.Version         // the server's protocol version
+	useDumb     bool                     // When true, the client will always use the dumb protocol
+	isSmart     bool                     // This is true if the session is using the smart protocol
 }
 
 // IsSmart returns true if the session is using the smart protocol.
@@ -479,6 +480,7 @@ func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, 
 	}
 
 	s.refs = ar
+	s.caps = capability.NewCapabilitiesV1(ar.Capabilities)
 
 	return s, nil
 }
@@ -486,8 +488,8 @@ func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, 
 var _ transport.Connection = &HTTPSession{}
 
 // Capabilities implements transport.Connection.
-func (s *HTTPSession) Capabilities() *capability.List {
-	return s.refs.Capabilities
+func (s *HTTPSession) Capabilities() *capability.Capabilities {
+	return s.caps
 }
 
 // StatelessRPC implements transport.Connection.
@@ -536,6 +538,12 @@ func (s *HTTPSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, e
 	}
 
 	return s.refs.MakeReferenceSlice()
+}
+
+// LsRefs implements transport.Connection.
+func (s *HTTPSession) LsRefs(_ context.Context, _ *transport.LsRefsRequest) ([]*plumbing.Reference, error) {
+	// TODO: implement V2 ls-refs command
+	return nil, transport.ErrUnsupportedVersion
 }
 
 // Push implements transport.Connection.

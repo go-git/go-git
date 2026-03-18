@@ -129,7 +129,7 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	}
 
 	c.refs = ar
-	c.caps = ar.Capabilities
+	c.caps = capability.NewCapabilitiesV1(ar.Capabilities)
 
 	return c, nil
 }
@@ -144,7 +144,7 @@ type packConnection struct {
 	stderrBuf atomic.Pointer[bytes.Buffer]
 
 	version protocol.Version
-	caps    *capability.List
+	caps    *capability.Capabilities
 	refs    *packp.AdvRefs
 }
 
@@ -171,7 +171,7 @@ func (p *packConnection) Close() error {
 }
 
 // Capabilities implements Connection.
-func (p *packConnection) Capabilities() *capability.List {
+func (p *packConnection) Capabilities() *capability.Capabilities {
 	return p.caps
 }
 
@@ -191,6 +191,12 @@ func (p *packConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference
 	}
 
 	return p.refs.MakeReferenceSlice()
+}
+
+// LsRefs implements Connection.
+func (p *packConnection) LsRefs(_ context.Context, _ *LsRefsRequest) ([]*plumbing.Reference, error) {
+	// TODO: implement V2 ls-refs command
+	return nil, ErrUnsupportedVersion
 }
 
 // Version implements Connection.

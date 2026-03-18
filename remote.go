@@ -1109,7 +1109,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, ear
 	return found, err
 }
 
-func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List) error {
+func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.Capabilities) error {
 	var containsIsExact bool
 	for _, ref := range refs {
 		if ref.IsExactSHA1() {

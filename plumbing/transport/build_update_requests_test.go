@@ -27,7 +27,7 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 		},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 
 	assert.True(t, upreq.Capabilities.Supports(capability.ReportStatus))
 	require.Len(t, upreq.Commands, 1)
@@ -50,7 +50,7 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 		},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 	assert.False(t, upreq.Capabilities.Supports(capability.ReportStatus))
 }
 
@@ -71,7 +71,7 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 		Progress: &mockWriter{},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Sideband64k))
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband))
 }
@@ -92,7 +92,7 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 		Progress: &mockWriter{},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband64k))
 	assert.True(t, upreq.Capabilities.Supports(capability.Sideband))
 }
@@ -114,7 +114,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 		Quiet: true,
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Quiet))
 }
 
@@ -134,7 +134,7 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 		Atomic: true,
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 
 	assert.True(t, upreq.Capabilities.Supports(capability.Atomic))
 }
@@ -154,7 +154,7 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 		Atomic: true,
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 	assert.False(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
@@ -173,7 +173,7 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 		},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(capability.NewCapabilitiesV1(caps), req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Agent))
 }
 

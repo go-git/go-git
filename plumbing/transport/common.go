@@ -54,8 +54,11 @@ type Connection interface {
 	// Close closes the connection.
 	Close() error
 
-	// Capabilities returns the list of capabilities supported by the server.
-	Capabilities() *capability.List
+	// Capabilities returns the server capabilities negotiated during
+	// the handshake. The returned type is version-aware: for V0/V1 it
+	// wraps the flat capability list from AdvRefs; for V2 it wraps
+	// per-command capability sets.
+	Capabilities() *capability.Capabilities
 
 	// Version returns the Git protocol version the server supports.
 	Version() protocol.Version
@@ -66,13 +69,16 @@ type Connection interface {
 	// read the request, write a response, and exit.
 	StatelessRPC() bool
 
-	// GetRemoteRefs returns the references advertised by the remote.
-	// Using protocol v0 or v1, this returns the references advertised by the
-	// remote during the handshake. Using protocol v2, this runs the ls-refs
-	// command on the remote.
+	// GetRemoteRefs returns the references advertised by the remote during
+	// the V0/V1 handshake. For V2 connections use LsRefs instead.
 	// This will error if the session is not already established using
 	// Handshake.
 	GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error)
+
+	// LsRefs runs the V2 ls-refs command on the remote, returning
+	// references matching the given request parameters.
+	// For V0/V1 connections this returns ErrUnsupportedVersion.
+	LsRefs(ctx context.Context, req *LsRefsRequest) ([]*plumbing.Reference, error)
 
 	// Fetch sends a fetch-pack request to the server.
 	Fetch(ctx context.Context, req *FetchRequest) error
@@ -82,6 +88,23 @@ type Connection interface {
 }
 
 var _ io.Closer = Connection(nil)
+
+// LsRefsRequest contains the parameters for a V2 ls-refs command.
+type LsRefsRequest struct {
+	// RefPrefixes limits the refs returned to those matching one of the
+	// given prefixes. If empty, all refs are returned.
+	RefPrefixes []string
+
+	// IncludeSymRefs requests that symref targets be included in the response.
+	IncludeSymRefs bool
+
+	// IncludePeeled requests that peeled values be included for tags.
+	IncludePeeled bool
+
+	// IncludeUnborn requests that the server report unborn HEAD with its
+	// symref target even if HEAD is not yet born.
+	IncludeUnborn bool
+}
 
 // FetchRequest contains the parameters for a fetch-pack request.
 // This is used during the pack negotiation phase of the fetch operation.

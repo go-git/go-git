@@ -26,7 +26,7 @@ func TestNegotiatePackNoChangeWithEOFOnClose(t *testing.T) {
 	t.Parallel()
 
 	caps := capability.NewList()
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	reader := bytes.NewReader(nil)
 	writer := newMockRWC(nil)
@@ -53,7 +53,7 @@ func TestNegotiatePackNoChangeWithNonEOFCloseError(t *testing.T) {
 	t.Parallel()
 
 	caps := capability.NewList()
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	reader := bytes.NewReader(nil)
 	writer := newMockRWC(nil)
@@ -84,7 +84,7 @@ func TestNegotiatePackCompleteWithEOFOnClose(t *testing.T) {
 	t.Parallel()
 
 	caps := capability.NewList()
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Server responds with NAK (no common objects found)
 	reader := bytes.NewReader([]byte("0008NAK\n"))
@@ -111,7 +111,7 @@ func TestNegotiatePackCompleteWithNonEOFCloseError(t *testing.T) {
 	t.Parallel()
 
 	caps := capability.NewList()
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Server responds with NAK (no common objects found)
 	reader := bytes.NewReader([]byte("0008NAK\n"))

@@ -20,14 +20,18 @@ import (
 
 // mockConnection implements the Connection interface for testing
 type mockConnection struct {
-	caps *capability.List
+	caps *capability.Capabilities
+}
+
+func newMockConnection(caps *capability.List) *mockConnection {
+	return &mockConnection{caps: capability.NewCapabilitiesV1(caps)}
 }
 
 func (c *mockConnection) Close() error {
 	return nil
 }
 
-func (c *mockConnection) Capabilities() *capability.List {
+func (c *mockConnection) Capabilities() *capability.Capabilities {
 	return c.caps
 }
 
@@ -41,6 +45,10 @@ func (c *mockConnection) StatelessRPC() bool {
 
 func (c *mockConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	return nil, nil
+}
+
+func (c *mockConnection) LsRefs(_ context.Context, _ *LsRefsRequest) ([]*plumbing.Reference, error) {
+	return nil, ErrUnsupportedVersion
 }
 
 func (c *mockConnection) Fetch(_ context.Context, _ *FetchRequest) error {
@@ -92,7 +100,7 @@ func TestSendPackWithReportStatus(t *testing.T) {
 	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Create a mock reader with a valid report status response
 	reportStatusResponse := strings.Join([]string{
@@ -130,7 +138,7 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Create a mock reader with an error report status response
 	reportStatusResponse := strings.Join([]string{
@@ -170,7 +178,7 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 	t.Parallel()
 	// Create a mock connection without ReportStatus capability
 	caps := capability.NewList()
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	reader := newMockRWC(nil)
 	writer := newMockRWC(nil)
@@ -206,7 +214,7 @@ func TestSendPackWithProgress(t *testing.T) {
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	caps.Add(capability.Sideband64k)
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Create a mock reader with a sideband-encoded report status response
 	// This simulates a response with progress messages and a report status
@@ -254,7 +262,7 @@ func TestSendPackWithPackfile(t *testing.T) {
 	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Create a mock reader with a valid report status response
 	reportStatusResponse := strings.Join([]string{
@@ -296,7 +304,7 @@ func TestSendPackErrors(t *testing.T) {
 	// Create a mock connection with ReportStatus capability
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
-	conn := &mockConnection{caps: caps}
+	conn := newMockConnection(caps)
 
 	// Test case: error encoding update requests
 	t.Run("EncodeError", func(t *testing.T) {
