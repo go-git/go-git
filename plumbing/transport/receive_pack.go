@@ -46,18 +46,24 @@ func ReceivePack(
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
 		switch version := ProtocolVersion(opts.GitProtocol); version {
+		case protocol.V2:
+			// V2 receive-pack: advertise V2 capabilities.
+			// Note: V2 push protocol is not yet fully specified upstream;
+			// we advertise capabilities but fall through to V0 push handling.
+			if err := AdvertiseCapabilitiesV2(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
+				return err
+			}
 		case protocol.V1:
 			if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
 				return err
 			}
-		// TODO: support version 2
-		case protocol.V0, protocol.V2:
+			fallthrough
+		case protocol.V0:
+			if err := AdvertiseReferences(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
-		}
-
-		if err := AdvertiseReferences(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
-			return err
 		}
 	}
 

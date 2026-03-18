@@ -2,10 +2,12 @@ package transport
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"math"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -45,26 +47,36 @@ func UploadPack(
 		opts = &UploadPackOptions{}
 	}
 
+	version := ProtocolVersion(opts.GitProtocol)
+
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		switch version := ProtocolVersion(opts.GitProtocol); version {
+		switch version {
+		case protocol.V2:
+			if err := AdvertiseCapabilitiesV2(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
+				return fmt.Errorf("advertising V2 capabilities: %w", err)
+			}
 		case protocol.V1:
 			if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
 				return err
 			}
-		// TODO: support version 2
-		case protocol.V0, protocol.V2:
+			fallthrough
+		case protocol.V0:
+			if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
+				return fmt.Errorf("advertising references: %w", err)
+			}
 		default:
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
-		}
-
-		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
-			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
 
 	if opts.AdvertiseRefs {
 		// Done, there's nothing else to do
 		return nil
+	}
+
+	// V2: enter command dispatch loop.
+	if version == protocol.V2 {
+		return uploadPackV2(ctx, st, r, w)
 	}
 
 	if r == nil {
@@ -355,4 +367,157 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 	}
 
 	return nil
+}
+
+// uploadPackV2 handles the V2 command dispatch loop for upload-pack.
+// After the capability advertisement, the client sends one command per
+// request. For stateless (HTTP) connections each command is a separate
+// request; for stateful connections the commands arrive on the same stream.
+func uploadPackV2(
+	ctx context.Context,
+	st storage.Storer,
+	r io.ReadCloser,
+	w io.WriteCloser,
+) error {
+	if r == nil {
+		return fmt.Errorf("nil reader")
+	}
+
+	r = ioutil.NewContextReadCloser(ctx, r)
+	rd := bufio.NewReader(r)
+
+	for {
+		l, line, err := pktline.PeekLine(rd)
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("reading V2 command: %w", err)
+		}
+
+		// Flush means the client is done.
+		if l == pktline.Flush {
+			return nil
+		}
+
+		text := string(bytes.TrimSuffix(line, []byte("\n")))
+
+		// Consume the peeked line.
+		_, _, _ = pktline.ReadLine(rd)
+
+		switch {
+		case text == "command=ls-refs":
+			if err := HandleLsRefs(ctx, st, rd, w); err != nil {
+				return fmt.Errorf("ls-refs: %w", err)
+			}
+		case text == "command=fetch":
+			if err := handleV2Fetch(ctx, st, rd, w); err != nil {
+				return fmt.Errorf("fetch: %w", err)
+			}
+		default:
+			// Skip unknown command arguments until flush.
+			for {
+				sl, _, serr := pktline.ReadLine(rd)
+				if serr != nil || sl == pktline.Flush {
+					break
+				}
+			}
+		}
+	}
+}
+
+// handleV2Fetch handles a single V2 fetch command server-side.
+func handleV2Fetch(
+	_ context.Context,
+	st storage.Storer,
+	r io.Reader,
+	w io.Writer,
+) error {
+	var wants []plumbing.Hash
+	var haves []plumbing.Hash
+	var done bool
+
+	// Phase 1: skip capability lines until delimiter.
+	for {
+		l, _, err := pktline.ReadLine(r)
+		if err != nil {
+			return err
+		}
+		if l == pktline.Delim {
+			break
+		}
+		if l == pktline.Flush {
+			return fmt.Errorf("unexpected flush before arguments")
+		}
+	}
+
+	// Phase 2: read arguments until flush.
+	for {
+		l, line, err := pktline.ReadLine(r)
+		if err != nil {
+			return err
+		}
+		if l == pktline.Flush {
+			break
+		}
+
+		text := string(bytes.TrimSuffix(line, []byte("\n")))
+
+		switch {
+		case strings.HasPrefix(text, "want "):
+			wants = append(wants, plumbing.NewHash(strings.TrimPrefix(text, "want ")))
+		case strings.HasPrefix(text, "have "):
+			haves = append(haves, plumbing.NewHash(strings.TrimPrefix(text, "have ")))
+		case text == "done":
+			done = true
+		// TODO: handle shallow, deepen, filter, include-tag, ofs-delta, etc.
+		}
+	}
+
+	// Build acknowledgments.
+	resp := packp.NewV2FetchResponse()
+
+	havesWithRef, err := revlist.ObjectsWithRef(st, wants, nil)
+	if err != nil {
+		return fmt.Errorf("getting objects with ref: %w", err)
+	}
+
+	for _, h := range haves {
+		if _, ok := havesWithRef[h]; ok {
+			resp.ACKs = append(resp.ACKs, h)
+		}
+	}
+
+	if done || len(haves) == 0 {
+		resp.Ready = true
+	}
+
+	if resp.Ready {
+		// Set packfile marker so Encode writes the packfile section header.
+		resp.Packfile = bytes.NewReader(nil)
+	}
+
+	if err := resp.Encode(w); err != nil {
+		return fmt.Errorf("encoding V2 fetch response: %w", err)
+	}
+
+	if !resp.Ready {
+		return nil
+	}
+
+	// Send the packfile.
+	objs, err := objectsToUpload(st, wants, haves)
+	if err != nil {
+		return fmt.Errorf("getting objects to upload: %w", err)
+	}
+
+	// V2 packfile section is always sideband-encoded.
+	sbw := sideband.NewMuxer(sideband.Sideband64k, w)
+
+	e := packfile.NewEncoder(sbw, st, false)
+	if _, err = e.Encode(objs, 10); err != nil {
+		return fmt.Errorf("encoding packfile: %w", err)
+	}
+
+	return pktline.WriteFlush(w)
 }
