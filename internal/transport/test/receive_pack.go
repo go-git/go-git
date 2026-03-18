@@ -35,6 +35,14 @@ type ReceivePackSuite struct {
 	Client              transport.Transport
 }
 
+func (s *ReceivePackSuite) TearDownTest() {
+	for _, st := range []storage.Storer{s.Storer, s.EmptyStorer, s.NonExistentStorer} {
+		if c, ok := st.(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
+}
+
 func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
 	s.Require().NoError(err)
