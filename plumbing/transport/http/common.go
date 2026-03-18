@@ -231,6 +231,7 @@ func (c *client) SupportedProtocols() []protocol.Version {
 	return []protocol.Version{
 		protocol.V0,
 		protocol.V1,
+		protocol.V2,
 	}
 }
 
@@ -435,11 +436,14 @@ func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, 
 		s.version, _ = transport.DiscoverVersion(rd)
 		switch s.version {
 		case protocol.V2:
-			return nil, transport.ErrUnsupportedVersion
-		case protocol.V1:
-			// Read the version line
-			fallthrough
-		case protocol.V0:
+			// V2: server sends a capability advertisement instead of refs.
+			v2caps := packp.NewV2ServerCapabilities()
+			if err = v2caps.Decode(rd); err != nil {
+				return nil, err
+			}
+			s.caps = v2caps.ToCapabilities()
+			return s, nil
+		case protocol.V0, protocol.V1:
 		}
 
 		// Git < 2.41 sends only a flush packet for empty repositories via
@@ -503,6 +507,10 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 		return s.fetchDumb(ctx, req)
 	}
 
+	if s.version == protocol.V2 {
+		return s.fetchV2(ctx, req)
+	}
+
 	rwc := newRequester(ctx, s, transport.UploadPackService)
 
 	// XXX: packfile will be populated and accessible once rwc.Close() is
@@ -518,6 +526,30 @@ func (s *HTTPSession) Fetch(ctx context.Context, req *transport.FetchRequest) (e
 	}
 
 	return transport.FetchPack(ctx, s.st, s, packfile, shallows, req)
+}
+
+// fetchV2 implements the V2 fetch for HTTP (stateless) connections.
+// Each negotiation round is a separate POST to /git-upload-pack.
+func (s *HTTPSession) fetchV2(ctx context.Context, req *transport.FetchRequest) error {
+	rwc := newRequester(ctx, s, transport.UploadPackService)
+
+	// The requester buffers the request body, sends it on Close(),
+	// then reads from the response. For V2, NegotiatePackV2 handles
+	// encoding + decoding with the writer/reader pair.
+	packfile := rwc.BodyCloser()
+	resp, err := transport.NegotiatePackV2(ctx, s.st, s, packfile, rwc, req)
+	if err != nil {
+		if rwc.res != nil {
+			defer func() { _ = packfile.Close() }()
+		}
+		return err
+	}
+
+	if resp.Packfile == nil {
+		return fmt.Errorf("server did not send packfile")
+	}
+
+	return transport.FetchPack(ctx, s.st, s, packfile, resp.ShallowUpdate, req)
 }
 
 // GetRemoteRefs implements transport.Connection.
@@ -541,9 +573,53 @@ func (s *HTTPSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, e
 }
 
 // LsRefs implements transport.Connection.
-func (s *HTTPSession) LsRefs(_ context.Context, _ *transport.LsRefsRequest) ([]*plumbing.Reference, error) {
-	// TODO: implement V2 ls-refs command
-	return nil, transport.ErrUnsupportedVersion
+func (s *HTTPSession) LsRefs(ctx context.Context, req *transport.LsRefsRequest) ([]*plumbing.Reference, error) {
+	if s.version != protocol.V2 {
+		return nil, transport.ErrUnsupportedVersion
+	}
+
+	if req == nil {
+		req = &transport.LsRefsRequest{}
+	}
+
+	lsReq := &packp.LsRefsRequest{
+		RefPrefixes:    req.RefPrefixes,
+		IncludeSymRefs: req.IncludeSymRefs,
+		IncludePeeled:  req.IncludePeeled,
+		IncludeUnborn:  req.IncludeUnborn,
+	}
+
+	rwc := newRequester(ctx, s, transport.UploadPackService)
+
+	if err := lsReq.Encode(rwc); err != nil {
+		return nil, fmt.Errorf("encoding ls-refs request: %w", err)
+	}
+
+	// Close sends the HTTP POST and populates rwc.res.
+	if err := rwc.Close(); err != nil {
+		return nil, fmt.Errorf("sending ls-refs request: %w", err)
+	}
+	defer func() { _ = rwc.res.Body.Close() }()
+
+	resp := packp.NewLsRefsResponse()
+	if err := resp.Decode(rwc); err != nil {
+		return nil, fmt.Errorf("decoding ls-refs response: %w", err)
+	}
+
+	// Append peeled refs as separate references (matching V0/V1 convention).
+	refs := make([]*plumbing.Reference, 0, len(resp.References)+len(resp.Peeled))
+	for _, ref := range resp.References {
+		refs = append(refs, ref)
+		if peeledHash, ok := resp.Peeled[ref.Name().String()]; ok {
+			peeledRef := plumbing.NewHashReference(
+				plumbing.ReferenceName(ref.Name().String()+"^{}"),
+				peeledHash,
+			)
+			refs = append(refs, peeledRef)
+		}
+	}
+
+	return refs, nil
 }
 
 // Push implements transport.Connection.
