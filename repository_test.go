@@ -32,6 +32,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -1751,7 +1752,15 @@ func (s *RepositorySuite) TestFetchContext() {
 }
 
 func (s *RepositorySuite) TestFetchWithFilters() {
-	r, _ := Init(memory.NewStorage())
+	// This test verifies the V0/V1 behavior where filter support requires
+	// the server to advertise the filter capability. Force V0 since V2
+	// always advertises filter support in the fetch command.
+	st := memory.NewStorage()
+	cfg, _ := st.Config()
+	cfg.Protocol.Version = protocol.V0
+	s.NoError(st.SetConfig(cfg))
+
+	r, _ := Init(st)
 	_, err := r.CreateRemote(&config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},

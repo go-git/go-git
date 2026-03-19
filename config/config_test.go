@@ -485,18 +485,19 @@ func (s *ConfigSuite) TestRemoveUrlOptions() {
 func (s *ConfigSuite) TestProtocol() {
 	buf := []byte(`
 [protocol]
-	version = 1`)
+	version = 2`)
 
 	cfg := NewConfig()
 	err := cfg.Unmarshal(buf)
 	s.NoError(err)
-	s.Equal(protocol.V1, cfg.Protocol.Version)
+	s.Equal(protocol.V2, cfg.Protocol.Version)
 
-	cfg.Protocol.Version = protocol.V2
+	// Setting a non-default version should cause it to be marshalled.
+	cfg.Protocol.Version = protocol.V1
 	buf, err = cfg.Marshal()
 	s.NoError(err)
 
-	if !strings.Contains(string(buf), "version = 2") {
+	if !strings.Contains(string(buf), "version = 1") {
 		s.Fail("marshal did not update version")
 	}
 	s.NoError(err)

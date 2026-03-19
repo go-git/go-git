@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -102,7 +103,15 @@ func (s *RemoteSuite) TestFetchExactSHA1() {
 }
 
 func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	// This test verifies the V0/V1 behavior where exact SHA1 wants require
+	// AllowReachableSHA1InWant or AllowTipSHA1InWant capabilities. Force V0
+	// since V2 implicitly supports exact SHA1 wants.
+	st := memory.NewStorage()
+	cfg, _ := st.Config()
+	cfg.Protocol.Version = protocol.V0
+	_ = st.SetConfig(cfg)
+
+	r := NewRemote(st, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 

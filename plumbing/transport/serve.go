@@ -144,6 +144,15 @@ func AdvertiseCapabilitiesV2(
 		_ = fetchCaps.Add(capability.Filter)
 		_ = fetchCaps.Add(capability.OFSDelta)
 		v2caps.Commands["fetch"] = fetchCaps
+	} else {
+		// receive-pack: advertise push capabilities in global so that
+		// V0-style push negotiation works. V2 push still uses V0 wire
+		// format for the actual update-request + packfile exchange.
+		_ = v2caps.Global.Add(capability.ReportStatus)
+		_ = v2caps.Global.Add(capability.DeleteRefs)
+		_ = v2caps.Global.Add(capability.Quiet)
+		_ = v2caps.Global.Add(capability.OFSDelta)
+		_ = v2caps.Global.Add(capability.Sideband64k)
 	}
 
 	return v2caps.Encode(w)

@@ -36,9 +36,17 @@ func FetchPack(
 		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
 	}
 
-	if demuxer != nil && req.Progress != nil {
-		demuxer.Progress = req.Progress
-		reader = demuxer
+	if demuxer != nil {
+		if req.Progress != nil {
+			demuxer.Progress = req.Progress
+		}
+		// In V2, the packfile section is always sideband-encoded, so the
+		// demuxer must be active regardless of whether a progress handler
+		// is set. In V0/V1, sideband is only used when explicitly requested
+		// (which implies Progress != nil).
+		if conn.Version() == protocol.V2 || req.Progress != nil {
+			reader = demuxer
+		}
 	}
 
 	if err := packfile.UpdateObjectStorage(st, reader); err != nil {

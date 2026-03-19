@@ -91,12 +91,65 @@ func (r *Remote) protocolParams() []string {
 // for the negotiated protocol version.
 func getRemoteRefs(ctx context.Context, conn transport.Connection) ([]*plumbing.Reference, error) {
 	if conn.Version() == protocol.V2 {
-		return conn.LsRefs(ctx, &transport.LsRefsRequest{
+		refs, err := conn.LsRefs(ctx, &transport.LsRefsRequest{
 			IncludeSymRefs: true,
 			IncludePeeled:  true,
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		// V2 ls-refs with symrefs returns HEAD as a SymbolicReference
+		// when it points to a branch. When HEAD is detached, it comes
+		// as a HashReference. In that case, guess the target branch by
+		// matching hashes (same as V0/V1 AdvRefs.resolveHead).
+		refs = resolveDetachedHEAD(refs)
+		return refs, nil
 	}
 	return conn.GetRemoteRefs(ctx)
+}
+
+// resolveDetachedHEAD converts a detached HEAD (HashReference) to a
+// SymbolicReference by finding a branch with the same hash. This mirrors
+// the V0/V1 AdvRefs.resolveHead behavior for V2 ls-refs responses.
+func resolveDetachedHEAD(refs []*plumbing.Reference) []*plumbing.Reference {
+	var headIdx int = -1
+	var headHash plumbing.Hash
+
+	for i, ref := range refs {
+		if ref.Name() == plumbing.HEAD {
+			if ref.Type() == plumbing.SymbolicReference {
+				return refs // already symbolic, nothing to do
+			}
+			headIdx = i
+			headHash = ref.Hash()
+			break
+		}
+	}
+
+	if headIdx < 0 || headHash.IsZero() {
+		return refs
+	}
+
+	// Try master first (common default).
+	for _, ref := range refs {
+		if ref.Name() == plumbing.Master && ref.Hash() == headHash {
+			refs[headIdx] = plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)
+			return refs
+		}
+	}
+
+	// Fall back to first matching branch.
+	for _, ref := range refs {
+		if ref.Type() == plumbing.HashReference &&
+			ref.Name().IsBranch() &&
+			ref.Hash() == headHash {
+			refs[headIdx] = plumbing.NewSymbolicReference(plumbing.HEAD, ref.Name())
+			return refs
+		}
+	}
+
+	return refs
 }
 
 // Config returns the RemoteConfig object used to instantiate this Remote.
@@ -442,6 +495,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	rRefs, err := getRemoteRefs(ctx, conn)
 	if err != nil {
 		return nil, err
+	}
+
+	// V2 ls-refs returns an empty slice for empty repos (no error).
+	// The fetch path requires ErrEmptyRemoteRepository for consistency.
+	if len(rRefs) == 0 {
+		return nil, transport.ErrEmptyRemoteRepository
 	}
 
 	remoteRefs := referenceStorageFromRefs(rRefs, true)
@@ -1153,6 +1212,11 @@ func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.Capa
 	}
 
 	if !containsIsExact {
+		return nil
+	}
+
+	// V2 implicitly supports fetching any reachable object by SHA1.
+	if caps.Version() == protocol.V2 {
 		return nil
 	}
 

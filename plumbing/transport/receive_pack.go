@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -79,6 +80,16 @@ func ReceivePack(
 	r = ioutil.NewContextReadCloser(ctx, r)
 
 	rd := bufio.NewReader(r)
+
+	// V2 receive-pack: handle ls-refs commands before the push.
+	// The client may send one or more ls-refs commands to discover
+	// refs, followed by the actual V0-style push data.
+	if ProtocolVersion(opts.GitProtocol) == protocol.V2 {
+		if err := receivePackV2Commands(ctx, st, rd, w); err != nil {
+			return fmt.Errorf("V2 command handling: %w", err)
+		}
+	}
+
 	l, _, err := pktline.PeekLine(rd)
 	if err != nil {
 		return err
@@ -258,5 +269,47 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 			err := st.SetReference(ref)
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		}
+	}
+}
+
+// receivePackV2Commands handles V2 commands (ls-refs) sent by the client
+// before the actual push data. In V2, the client sends command=ls-refs to
+// discover refs, then sends the V0-style update-request + packfile.
+// This function processes all V2 commands and returns when it encounters
+// non-command data (the push payload) or EOF/flush.
+func receivePackV2Commands(
+	ctx context.Context,
+	st storage.Storer,
+	rd *bufio.Reader,
+	w io.Writer,
+) error {
+	for {
+		l, line, err := pktline.PeekLine(rd)
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		// Flush or non-command data means V2 commands are done.
+		if l == pktline.Flush {
+			return nil
+		}
+
+		text := string(bytes.TrimSuffix(line, []byte("\n")))
+
+		if text == "command=ls-refs" {
+			// Consume the peeked line.
+			_, _, _ = pktline.ReadLine(rd)
+			if err := HandleLsRefs(ctx, st, rd, w); err != nil {
+				return fmt.Errorf("ls-refs: %w", err)
+			}
+			continue
+		}
+
+		// Not a V2 command — push data follows. Return to let the
+		// caller handle it as V0-style update-requests.
+		return nil
 	}
 }
