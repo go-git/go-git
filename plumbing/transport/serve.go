@@ -143,6 +143,7 @@ func AdvertiseCapabilitiesV2(
 		_ = fetchCaps.Add(capability.Shallow)
 		_ = fetchCaps.Add(capability.Filter)
 		_ = fetchCaps.Add(capability.OFSDelta)
+		_ = fetchCaps.Add(capability.WaitForDone)
 		v2caps.Commands["fetch"] = fetchCaps
 	} else {
 		// receive-pack: advertise push capabilities in global so that

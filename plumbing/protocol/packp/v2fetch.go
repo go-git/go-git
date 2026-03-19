@@ -58,9 +58,25 @@ type V2FetchRequest struct {
 
 	SidebandAll bool
 
+	// WaitForDone requests that the server not send the packfile until
+	// the client sends "done", even if the server has enough information.
+	WaitForDone bool
+
+	// PackfileURIProtocols lists URI protocols (e.g. "https") the client
+	// supports for packfile-uri offloading. If non-empty, the server may
+	// return URIs for large objects instead of embedding them in the pack.
+	PackfileURIProtocols []string
+
 	// ObjectFormat is the hash algorithm (e.g. "sha1", "sha256").
 	// Empty means the server default (sha1).
 	ObjectFormat string
+}
+
+// V2PackfileURI represents a URI returned in the packfile-uris section
+// of a V2 fetch response.
+type V2PackfileURI struct {
+	Hash plumbing.Hash
+	URI  string
 }
 
 // Encode writes the V2 fetch command request to w.
@@ -126,6 +142,17 @@ func (r *V2FetchRequest) Encode(w io.Writer) error {
 	}
 	if r.SidebandAll {
 		if _, err := pktline.Writeln(w, "sideband-all"); err != nil {
+			return err
+		}
+	}
+	if r.WaitForDone {
+		if _, err := pktline.Writeln(w, "wait-for-done"); err != nil {
+			return err
+		}
+	}
+	if len(r.PackfileURIProtocols) > 0 {
+		if _, err := pktline.Writef(w, "packfile-uris %s\n",
+			strings.Join(r.PackfileURIProtocols, ",")); err != nil {
 			return err
 		}
 	}
@@ -214,6 +241,11 @@ type V2FetchResponse struct {
 	// WantedRefs maps requested ref names to their resolved OIDs.
 	WantedRefs map[string]plumbing.Hash
 
+	// PackfileURIs contains URIs returned by the server for offloaded
+	// objects. The client should fetch these separately and index the
+	// packs before using the main packfile.
+	PackfileURIs []V2PackfileURI
+
 	// Packfile is the reader for the (possibly sideband-encoded)
 	// packfile data. It is non-nil only when the server sent the
 	// packfile section. The caller is responsible for reading from it.
@@ -257,6 +289,10 @@ func (resp *V2FetchResponse) Decode(r io.Reader) error {
 		case "wanted-refs":
 			if err := resp.decodeWantedRefs(r); err != nil {
 				return fmt.Errorf("decoding wanted-refs: %w", err)
+			}
+		case "packfile-uris":
+			if err := resp.decodePackfileURIs(r); err != nil {
+				return fmt.Errorf("decoding packfile-uris: %w", err)
 			}
 		case "packfile":
 			// The rest of the stream is the sideband-encoded packfile.
@@ -346,6 +382,32 @@ func (resp *V2FetchResponse) decodeWantedRefs(r io.Reader) error {
 	}
 }
 
+func (resp *V2FetchResponse) decodePackfileURIs(r io.Reader) error {
+	for {
+		l, line, err := pktline.ReadLine(r)
+		if err != nil {
+			return err
+		}
+
+		if l == pktline.Flush || l == pktline.Delim {
+			return nil
+		}
+
+		text := string(bytes.TrimSuffix(line, eol))
+
+		// Format: <oid> <uri>
+		hashStr, uri, ok := strings.Cut(text, " ")
+		if !ok {
+			return NewErrUnexpectedData("invalid packfile-uris line", []byte(text))
+		}
+
+		resp.PackfileURIs = append(resp.PackfileURIs, V2PackfileURI{
+			Hash: plumbing.NewHash(hashStr),
+			URI:  uri,
+		})
+	}
+}
+
 func (resp *V2FetchResponse) skipSection(r io.Reader) error {
 	for {
 		l, _, err := pktline.ReadLine(r)
@@ -415,6 +477,21 @@ func (resp *V2FetchResponse) Encode(w io.Writer) error {
 		}
 		for ref, oid := range resp.WantedRefs {
 			if _, err := pktline.Writef(w, "%s %s\n", oid, ref); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteDelim(w); err != nil {
+			return err
+		}
+	}
+
+	// Packfile-uris section
+	if len(resp.PackfileURIs) > 0 {
+		if _, err := pktline.Writeln(w, "packfile-uris"); err != nil {
+			return err
+		}
+		for _, pu := range resp.PackfileURIs {
+			if _, err := pktline.Writef(w, "%s %s\n", pu.Hash, pu.URI); err != nil {
 				return err
 			}
 		}

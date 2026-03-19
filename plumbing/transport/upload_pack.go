@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -434,8 +435,10 @@ func handleV2Fetch(
 	w io.Writer,
 ) error {
 	var wants []plumbing.Hash
+	var wantRefs []string
 	var haves []plumbing.Hash
 	var done bool
+	var waitForDone bool
 
 	// Phase 1: skip capability lines until delimiter.
 	for {
@@ -466,17 +469,40 @@ func handleV2Fetch(
 		switch {
 		case strings.HasPrefix(text, "want "):
 			wants = append(wants, plumbing.NewHash(strings.TrimPrefix(text, "want ")))
+		case strings.HasPrefix(text, "want-ref "):
+			wantRefs = append(wantRefs, strings.TrimPrefix(text, "want-ref "))
 		case strings.HasPrefix(text, "have "):
 			haves = append(haves, plumbing.NewHash(strings.TrimPrefix(text, "have ")))
 		case text == "done":
 			done = true
-		// TODO: handle shallow, deepen, filter, include-tag, ofs-delta, etc.
+		case text == string(capability.WaitForDone):
+			waitForDone = true
+		// thin-pack, no-progress, include-tag, ofs-delta, sideband-all,
+		// shallow, deepen, filter, packfile-uris are parsed but the
+		// corresponding server-side behavior is not yet fully implemented.
 		}
 	}
 
-	// Build acknowledgments.
+	// Resolve want-ref names to OIDs.
 	resp := packp.NewV2FetchResponse()
+	for _, refName := range wantRefs {
+		ref, err := st.Reference(plumbing.ReferenceName(refName))
+		if err != nil {
+			return fmt.Errorf("resolving want-ref %q: %w", refName, err)
+		}
+		hash := ref.Hash()
+		if ref.Type() == plumbing.SymbolicReference {
+			resolved, err := storer.ResolveReference(st, ref.Target())
+			if err != nil {
+				return fmt.Errorf("resolving want-ref symref %q: %w", refName, err)
+			}
+			hash = resolved.Hash()
+		}
+		resp.WantedRefs[refName] = hash
+		wants = append(wants, hash)
+	}
 
+	// Build acknowledgments.
 	havesWithRef, err := revlist.ObjectsWithRef(st, wants, nil)
 	if err != nil {
 		return fmt.Errorf("getting objects with ref: %w", err)
@@ -488,8 +514,12 @@ func handleV2Fetch(
 		}
 	}
 
-	if done || len(haves) == 0 {
-		resp.Ready = true
+	// With wait-for-done, the server only becomes ready when the
+	// client explicitly sends "done".
+	if waitForDone {
+		resp.Ready = done
+	} else {
+		resp.Ready = done || len(haves) == 0
 	}
 
 	if resp.Ready {

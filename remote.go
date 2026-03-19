@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -99,7 +100,10 @@ func getRemoteRefs(ctx context.Context, conn transport.Connection, prefixes ...s
 		if len(prefixes) > 0 {
 			// Always include HEAD so the clone/fetch code can resolve
 			// the default branch.
-			req.RefPrefixes = append([]string{"HEAD"}, prefixes...)
+			if !slices.Contains(prefixes, "HEAD") {
+				prefixes = append(prefixes, "HEAD")
+			}
+			req.RefPrefixes = prefixes
 		}
 
 		refs, err := conn.LsRefs(ctx, req)

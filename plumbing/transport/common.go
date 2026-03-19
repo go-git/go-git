@@ -117,6 +117,12 @@ type FetchRequest struct {
 	// TODO: Build this slice in the transport package.
 	Wants []plumbing.Hash
 
+	// WantRefs is a list of ref names to fetch (V2 only). The server
+	// resolves the ref names to OIDs and returns both in the wanted-refs
+	// section. This allows fetching refs that the client hasn't yet
+	// resolved via ls-refs.
+	WantRefs []string
+
 	// Haves is the list of references the client already has.
 	// TODO: Build this slice in the transport package.
 	Haves []plumbing.Hash

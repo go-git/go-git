@@ -60,6 +60,7 @@ func NegotiatePackV2(
 
 		fetchReq := &packp.V2FetchRequest{
 			Wants:        req.Wants,
+			WantRefs:     req.WantRefs,
 			Haves:        roundHaves,
 			Done:         done,
 			OFSDelta:     caps.Supports(capability.OFSDelta),
@@ -72,6 +73,14 @@ func NegotiatePackV2(
 
 		if req.Progress == nil {
 			fetchReq.NoProgress = true
+		}
+
+		if caps.Supports(capability.WaitForDone) {
+			fetchReq.WaitForDone = true
+		}
+
+		if caps.Supports(capability.SidebandAll) {
+			fetchReq.SidebandAll = true
 		}
 
 		if req.Filter != "" {

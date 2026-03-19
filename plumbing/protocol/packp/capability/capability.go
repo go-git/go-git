@@ -251,6 +251,18 @@ const (
 	// Filter if present, fetch-pack may send "filter" commands to request a
 	// partial clone or partial fetch and request that the server omit various objects from the packfile
 	Filter Capability = "filter"
+	// WaitForDone is a V2 fetch sub-capability. When advertised by the
+	// server and requested by the client, the server will not send the
+	// packfile until the client sends "done", even if the server already
+	// has enough information to produce the pack. This is useful for
+	// stateless (HTTP) transports to ensure complete negotiation.
+	WaitForDone Capability = "wait-for-done"
+	// SidebandAll is a V2 fetch sub-capability. When advertised, the
+	// server supports sideband multiplexing for all response sections
+	// (acknowledgments, shallow-info, wanted-refs, packfile), not just
+	// the packfile section. Progress and error messages can appear at
+	// any point in the response.
+	SidebandAll Capability = "sideband-all"
 )
 
 const userAgent = "go-git/6.x"
