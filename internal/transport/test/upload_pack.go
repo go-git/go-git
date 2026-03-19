@@ -4,6 +4,7 @@ package test
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/stretchr/testify/suite"
@@ -24,6 +25,14 @@ type UploadPackSuite struct {
 	NonExistentStorer   storage.Storer
 	EmptyAuth           transport.AuthMethod
 	Client              transport.Transport
+}
+
+func (s *UploadPackSuite) TearDownTest() {
+	for _, st := range []storage.Storer{s.Storer, s.EmptyStorer, s.NonExistentStorer} {
+		if c, ok := st.(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
 }
 
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
