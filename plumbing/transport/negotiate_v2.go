@@ -47,10 +47,19 @@ func NegotiatePackV2(
 	haves := make([]plumbing.Hash, len(req.Haves))
 	copy(haves, req.Haves)
 
+	// Common OIDs acknowledged by the server in previous rounds.
+	// These are re-sent at the start of each subsequent round so the
+	// server knows we agree on them (matching upstream git behavior).
+	var common []plumbing.Hash
+
 	var done bool
 	for !done {
 		// Pop up to 32 haves per round.
 		var roundHaves []plumbing.Hash
+
+		// Send previously ACK'd common OIDs first.
+		roundHaves = append(roundHaves, common...)
+
 		for i := 0; i < 32 && len(haves) > 0; i++ {
 			roundHaves = append(roundHaves, haves[len(haves)-1])
 			haves = haves[:len(haves)-1]
@@ -118,6 +127,11 @@ func NegotiatePackV2(
 		resp = packp.NewV2FetchResponse()
 		if err := resp.Decode(reader); err != nil {
 			return nil, fmt.Errorf("decoding V2 fetch response: %w", err)
+		}
+
+		// Collect ACKs for re-sending in subsequent rounds.
+		for _, ack := range resp.ACKs {
+			common = append(common, ack)
 		}
 
 		// If the server sent a packfile, we're done regardless.

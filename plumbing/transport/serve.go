@@ -145,6 +145,7 @@ func AdvertiseCapabilitiesV2(
 		_ = fetchCaps.Add(capability.IncludeTag)
 		_ = fetchCaps.Add(capability.OFSDelta)
 		_ = fetchCaps.Add(capability.WaitForDone)
+		_ = fetchCaps.Add("ref-in-want")
 		v2caps.Commands["fetch"] = fetchCaps
 	} else {
 		// receive-pack: advertise push capabilities in global so that
@@ -175,6 +176,58 @@ func HandleLsRefs(
 
 	resp := packp.NewLsRefsResponse()
 
+	// Upstream Git sends HEAD first (via send_possibly_unborn_head),
+	// then iterates other refs. We mirror this by handling HEAD
+	// separately before the main iteration.
+	addLsRef := func(ref *plumbing.Reference, name plumbing.ReferenceName, hash plumbing.Hash) {
+		if ref.Type() == plumbing.SymbolicReference && req.IncludeSymRefs {
+			resp.References = append(resp.References, plumbing.NewSymbolicReference(name, ref.Target()))
+			resp.SymRefTargets[name.String()] = hash
+		} else {
+			resp.References = append(resp.References, plumbing.NewHashReference(name, hash))
+		}
+		if req.IncludePeeled && name.IsTag() {
+			if tag, err := object.GetTag(st, hash); err == nil {
+				resp.Peeled[name.String()] = tag.Target
+			}
+		}
+	}
+
+	matchesPrefix := func(name string) bool {
+		if len(req.RefPrefixes) == 0 {
+			return true
+		}
+		for _, prefix := range req.RefPrefixes {
+			if strings.HasPrefix(name, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Send HEAD first.
+	if matchesPrefix("HEAD") {
+		headRef, err := st.Reference(plumbing.HEAD)
+		if err == nil {
+			hash := headRef.Hash()
+			if headRef.Type() == plumbing.SymbolicReference {
+				resolved, resolveErr := storer.ResolveReference(st, headRef.Target())
+				if resolveErr == nil {
+					hash = resolved.Hash()
+				} else if !errors.Is(resolveErr, plumbing.ErrReferenceNotFound) {
+					return resolveErr
+				} else if !req.IncludeUnborn {
+					// Unborn HEAD and unborn not requested — skip.
+					hash = plumbing.ZeroHash
+				}
+			}
+			if !hash.IsZero() || req.IncludeUnborn {
+				addLsRef(headRef, plumbing.HEAD, hash)
+			}
+		}
+	}
+
+	// Then iterate all other refs.
 	iter, err := st.IterReferences()
 	if err != nil {
 		return err
@@ -182,19 +235,12 @@ func HandleLsRefs(
 
 	err = iter.ForEach(func(ref *plumbing.Reference) error {
 		name := ref.Name()
+		if name == plumbing.HEAD {
+			return nil // already sent above
+		}
 
-		// Filter by ref-prefix if specified.
-		if len(req.RefPrefixes) > 0 {
-			matched := false
-			for _, prefix := range req.RefPrefixes {
-				if strings.HasPrefix(name.String(), prefix) {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				return nil
-			}
+		if !matchesPrefix(name.String()) {
+			return nil
 		}
 
 		hash := ref.Hash()
@@ -207,27 +253,9 @@ func HandleLsRefs(
 				return err
 			}
 			hash = resolved.Hash()
-
-			if req.IncludeSymRefs {
-				// Emit as a symbolic reference so the client knows the
-				// target. Use NewSymbolicReference — the encode path
-				// looks up the resolved hash from the SymRefTargets map.
-				resp.References = append(resp.References, plumbing.NewSymbolicReference(name, ref.Target()))
-				resp.SymRefTargets[name.String()] = hash
-			} else {
-				resp.References = append(resp.References, plumbing.NewHashReference(name, hash))
-			}
-		} else {
-			resp.References = append(resp.References, plumbing.NewHashReference(name, hash))
 		}
 
-		// Add peeled value for tags.
-		if req.IncludePeeled && name.IsTag() {
-			if tag, err := object.GetTag(st, hash); err == nil {
-				resp.Peeled[name.String()] = tag.Target
-			}
-		}
-
+		addLsRef(ref, name, hash)
 		return nil
 	})
 	if err != nil {
@@ -238,6 +266,11 @@ func HandleLsRefs(
 }
 
 // decodeLsRefsArgs reads the ls-refs arguments after the delimiter packet.
+// tooManyPrefixes matches upstream Git's guard against excessive ref-prefix
+// lines. If the client sends this many or more, all prefixes are discarded
+// and all refs are returned (preventing DoS via prefix filtering).
+const tooManyPrefixes = 65536
+
 func decodeLsRefsArgs(r io.Reader) (*packp.LsRefsRequest, error) {
 	req := &packp.LsRefsRequest{}
 
@@ -248,10 +281,13 @@ func decodeLsRefsArgs(r io.Reader) (*packp.LsRefsRequest, error) {
 		}
 
 		if l == pktline.Flush {
+			// Upstream: if too many prefixes, clear them to return all refs.
+			if len(req.RefPrefixes) >= tooManyPrefixes {
+				req.RefPrefixes = nil
+			}
 			return req, nil
 		}
 		if l == pktline.Delim {
-			// Skip delimiter — arguments follow.
 			continue
 		}
 
@@ -265,9 +301,10 @@ func decodeLsRefsArgs(r io.Reader) (*packp.LsRefsRequest, error) {
 		case text == "unborn":
 			req.IncludeUnborn = true
 		case strings.HasPrefix(text, "ref-prefix "):
-			req.RefPrefixes = append(req.RefPrefixes, strings.TrimPrefix(text, "ref-prefix "))
+			if len(req.RefPrefixes) < tooManyPrefixes {
+				req.RefPrefixes = append(req.RefPrefixes, strings.TrimPrefix(text, "ref-prefix "))
+			}
 		}
-		// Skip unknown arguments (agent, etc.).
 	}
 }
 

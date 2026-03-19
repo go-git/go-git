@@ -235,6 +235,12 @@ type V2FetchResponse struct {
 	// haves.
 	Ready bool
 
+	// SkipAcknowledgments suppresses the acknowledgments section in
+	// the encoded response. Upstream Git skips this section when the
+	// client sent "done" (the server jumps straight to sending the
+	// pack) or when there are no haves (wants-only request).
+	SkipAcknowledgments bool
+
 	// ShallowUpdate contains shallow/unshallow information if present.
 	ShallowUpdate *ShallowUpdate
 
@@ -425,10 +431,18 @@ func (resp *V2FetchResponse) skipSection(r io.Reader) error {
 // Note: the packfile section must be written by the caller after Encode
 // returns, since it involves streaming the pack data.
 func (resp *V2FetchResponse) Encode(w io.Writer) error {
-	// Acknowledgments section
-	if len(resp.ACKs) > 0 || resp.Ready {
+	// Acknowledgments section.
+	// Upstream Git skips this section entirely when the client sent
+	// "done" or when there are no haves (wants-only). The caller
+	// signals this via SkipAcknowledgments.
+	if !resp.SkipAcknowledgments && (len(resp.ACKs) > 0 || resp.Ready) {
 		if _, err := pktline.Writeln(w, "acknowledgments"); err != nil {
 			return err
+		}
+		if len(resp.ACKs) == 0 {
+			if _, err := pktline.Writeln(w, "NAK"); err != nil {
+				return err
+			}
 		}
 		for _, ack := range resp.ACKs {
 			if _, err := pktline.Writef(w, "ACK %s\n", ack); err != nil {
@@ -439,8 +453,25 @@ func (resp *V2FetchResponse) Encode(w io.Writer) error {
 			if _, err := pktline.Writeln(w, "ready"); err != nil {
 				return err
 			}
-		} else if len(resp.ACKs) == 0 {
-			if _, err := pktline.Writeln(w, "NAK"); err != nil {
+			// "ready" → delimiter (more sections follow).
+			if err := pktline.WriteDelim(w); err != nil {
+				return err
+			}
+		} else {
+			// No "ready" → flush (client should send more haves).
+			if err := pktline.WriteFlush(w); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Wanted-refs section (upstream sends this before shallow-info).
+	if len(resp.WantedRefs) > 0 {
+		if _, err := pktline.Writeln(w, "wanted-refs"); err != nil {
+			return err
+		}
+		for ref, oid := range resp.WantedRefs {
+			if _, err := pktline.Writef(w, "%s %s\n", oid, ref); err != nil {
 				return err
 			}
 		}
@@ -462,21 +493,6 @@ func (resp *V2FetchResponse) Encode(w io.Writer) error {
 		}
 		for _, ush := range resp.ShallowUpdate.Unshallows {
 			if _, err := pktline.Writef(w, "unshallow %s\n", ush); err != nil {
-				return err
-			}
-		}
-		if err := pktline.WriteDelim(w); err != nil {
-			return err
-		}
-	}
-
-	// Wanted-refs section
-	if len(resp.WantedRefs) > 0 {
-		if _, err := pktline.Writeln(w, "wanted-refs"); err != nil {
-			return err
-		}
-		for ref, oid := range resp.WantedRefs {
-			if _, err := pktline.Writef(w, "%s %s\n", oid, ref); err != nil {
 				return err
 			}
 		}

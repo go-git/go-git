@@ -438,6 +438,9 @@ type v2FetchArgs struct {
 	done        bool
 	waitForDone bool
 	includeTag  bool
+	sidebandAll bool
+
+	packfileURIProtocols []string
 
 	depth          int
 	deepenSince    int64
@@ -457,6 +460,11 @@ func handleV2Fetch(
 	args, err := parseV2FetchArgs(r)
 	if err != nil {
 		return err
+	}
+
+	// Upstream: packfile-uris requires sideband-all; clear if not set.
+	if len(args.packfileURIProtocols) > 0 && !args.sidebandAll {
+		args.packfileURIProtocols = nil
 	}
 
 	resp := packp.NewV2FetchResponse()
@@ -502,16 +510,34 @@ func handleV2Fetch(
 		}
 	}
 
-	// With wait-for-done, the server only becomes ready when the
-	// client explicitly sends "done".
-	if args.waitForDone {
-		resp.Ready = args.done
+	// Upstream state machine:
+	//   - No wants (and no wait-for-done): DONE (no response)
+	//   - Has haves: send acks, if ready → send pack
+	//   - Wants only (no haves): skip acks → send pack immediately
+	//   - Done set: skip acks → send pack immediately
+	seenHaves := len(args.haves) > 0
+	if !seenHaves && !args.waitForDone && len(args.wants) == 0 {
+		return nil
+	}
+
+	if args.done {
+		// Client said "done" — skip acks, go straight to pack.
+		resp.SkipAcknowledgments = true
+		resp.Ready = true
+	} else if !seenHaves {
+		// Wants only, no haves — skip acks, send pack immediately.
+		resp.SkipAcknowledgments = true
+		resp.Ready = true
+	} else if args.waitForDone {
+		// Have haves, wait-for-done: send acks but never "ready".
+		resp.Ready = false
 	} else {
-		resp.Ready = args.done || len(args.haves) == 0
+		// Have haves, check if we can give up (have common ancestors).
+		// For simplicity, send "ready" if we have any ACKs.
+		resp.Ready = len(resp.ACKs) > 0
 	}
 
 	if resp.Ready {
-		// Set packfile marker so Encode writes the packfile section header.
 		resp.Packfile = bytes.NewReader(nil)
 	}
 
@@ -611,8 +637,13 @@ func parseV2FetchArgs(r io.Reader) (*v2FetchArgs, error) {
 			args.includeTag = true
 		case text == string(capability.WaitForDone):
 			args.waitForDone = true
-		// thin-pack, no-progress, ofs-delta, sideband-all, packfile-uris
-		// are accepted but don't change server behavior currently.
+		case text == string(capability.SidebandAll):
+			args.sidebandAll = true
+		case strings.HasPrefix(text, "packfile-uris "):
+			protos := strings.TrimPrefix(text, "packfile-uris ")
+			args.packfileURIProtocols = strings.Split(protos, ",")
+		// thin-pack, no-progress, ofs-delta are accepted but don't
+		// change server behavior currently.
 		}
 	}
 

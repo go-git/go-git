@@ -274,6 +274,12 @@ func (p *packConnection) fetchV2(ctx context.Context, req *FetchRequest) error {
 		return fmt.Errorf("server did not send packfile")
 	}
 
+	// Close the write side to signal the server that no more requests
+	// will follow, matching upstream git's half-duplex shutdown.
+	if err := p.w.Close(); err != nil {
+		return fmt.Errorf("closing writer: %w", err)
+	}
+
 	return FetchPack(ctx, p.st, p, io.NopCloser(p.r), resp.ShallowUpdate, req)
 }
 
