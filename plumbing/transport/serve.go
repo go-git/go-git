@@ -207,11 +207,11 @@ func HandleLsRefs(
 			hash = resolved.Hash()
 
 			if req.IncludeSymRefs {
-				// Emit as symbolic reference.
-				symref := plumbing.NewSymbolicReference(name, ref.Target())
-				// We need a hash-aware symref. Create it with the resolved hash
-				// by adding it to references and emitting symref-target.
-				resp.References = append(resp.References, symref)
+				// Emit as a symbolic reference so the client knows the
+				// target. Use NewSymbolicReference — the encode path
+				// looks up the resolved hash from the SymRefTargets map.
+				resp.References = append(resp.References, plumbing.NewSymbolicReference(name, ref.Target()))
+				resp.SymRefTargets[name.String()] = hash
 			} else {
 				resp.References = append(resp.References, plumbing.NewHashReference(name, hash))
 			}

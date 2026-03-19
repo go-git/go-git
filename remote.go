@@ -89,12 +89,20 @@ func (r *Remote) protocolParams() []string {
 
 // getRemoteRefs returns remote references using the appropriate method
 // for the negotiated protocol version.
-func getRemoteRefs(ctx context.Context, conn transport.Connection) ([]*plumbing.Reference, error) {
+func getRemoteRefs(ctx context.Context, conn transport.Connection, prefixes ...string) ([]*plumbing.Reference, error) {
 	if conn.Version() == protocol.V2 {
-		refs, err := conn.LsRefs(ctx, &transport.LsRefsRequest{
+		req := &transport.LsRefsRequest{
 			IncludeSymRefs: true,
 			IncludePeeled:  true,
-		})
+		}
+
+		if len(prefixes) > 0 {
+			// Always include HEAD so the clone/fetch code can resolve
+			// the default branch.
+			req.RefPrefixes = append([]string{"HEAD"}, prefixes...)
+		}
+
+		refs, err := conn.LsRefs(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -150,6 +158,41 @@ func resolveDetachedHEAD(refs []*plumbing.Reference) []*plumbing.Reference {
 	}
 
 	return refs
+}
+
+// refSpecsToLsRefsPrefixes derives V2 ls-refs ref-prefix values from
+// fetch refspecs and tag mode. This narrows the server response to only
+// the refs the client cares about, matching upstream git behavior.
+func refSpecsToLsRefsPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
+	var prefixes []string
+	needBranches := false
+
+	for _, rs := range specs {
+		src := rs.Src()
+		if plumbing.IsHash(src) {
+			continue
+		}
+		if src == "HEAD" {
+			// HEAD is a symref that points to a branch. We need
+			// to also fetch branches so the symref can be resolved.
+			needBranches = true
+		}
+		if idx := strings.Index(src, "*"); idx >= 0 {
+			prefixes = append(prefixes, src[:idx])
+		} else {
+			prefixes = append(prefixes, src)
+		}
+	}
+
+	if needBranches {
+		prefixes = append(prefixes, "refs/heads/")
+	}
+
+	if tags != plumbing.NoTags {
+		prefixes = append(prefixes, "refs/tags/")
+	}
+
+	return prefixes
 }
 
 // Config returns the RemoteConfig object used to instantiate this Remote.
@@ -492,7 +535,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	rRefs, err := getRemoteRefs(ctx, conn)
+	rRefs, err := getRemoteRefs(ctx, conn, refSpecsToLsRefsPrefixes(o.RefSpecs, o.Tags)...)
 	if err != nil {
 		return nil, err
 	}

@@ -194,10 +194,8 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 
 	switch length {
 	case Flush, Delim, ResponseEnd:
-		trace.Packet.Printf("packet: < %04x", length)
 		return length, nil, nil
 	case LenSize: // empty line
-		trace.Packet.Printf("packet: < %04x", length)
 		return length, []byte{}, nil
 	}
 
@@ -213,7 +211,8 @@ func PeekLine(r ioutil.ReadPeeker) (l int, p []byte, err error) {
 		}
 	}
 
-	maskPackDataTrace(false, length, buf)
+	// PeekLine does not consume data, so do not trace here.
+	// The subsequent Read/ReadLine will trace when the data is consumed.
 
 	return length, buf, err
 }

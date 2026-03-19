@@ -96,12 +96,18 @@ type LsRefsResponse struct {
 
 	// Peeled maps ref names to their peeled (dereferenced) OIDs.
 	Peeled map[string]plumbing.Hash
+
+	// SymRefTargets maps symbolic ref names to their resolved OIDs.
+	// This is used by the encoder to emit the correct hash for symrefs,
+	// since plumbing.SymbolicReference does not carry a hash.
+	SymRefTargets map[string]plumbing.Hash
 }
 
 // NewLsRefsResponse creates a new, empty LsRefsResponse.
 func NewLsRefsResponse() *LsRefsResponse {
 	return &LsRefsResponse{
-		Peeled: make(map[string]plumbing.Hash),
+		Peeled:        make(map[string]plumbing.Hash),
+		SymRefTargets: make(map[string]plumbing.Hash),
 	}
 }
 
@@ -166,9 +172,13 @@ func (resp *LsRefsResponse) Encode(w io.Writer) error {
 		var line string
 		switch ref.Type() {
 		case plumbing.SymbolicReference:
-			// For symrefs we need the resolved hash. Look for it in
-			// references or use zero hash.
+			// For symrefs we need the resolved hash. Look it up in
+			// SymRefTargets (populated by the server), or fall back
+			// to the zero hash.
 			hash := ref.Hash()
+			if resolved, ok := resp.SymRefTargets[ref.Name().String()]; ok {
+				hash = resolved
+			}
 			line = fmt.Sprintf("%s %s symref-target:%s", hash, ref.Name(), ref.Target())
 		default:
 			line = fmt.Sprintf("%s %s", ref.Hash(), ref.Name())
