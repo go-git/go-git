@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -427,6 +428,25 @@ func uploadPackV2(
 	}
 }
 
+// v2FetchArgs holds parsed arguments from a V2 fetch command.
+type v2FetchArgs struct {
+	wants    []plumbing.Hash
+	wantRefs []string
+	haves    []plumbing.Hash
+	shallows []plumbing.Hash
+
+	done        bool
+	waitForDone bool
+	includeTag  bool
+
+	depth          int
+	deepenSince    int64
+	deepenNot      string
+	deepenRelative bool
+
+	filter packp.Filter
+}
+
 // handleV2Fetch handles a single V2 fetch command server-side.
 func handleV2Fetch(
 	_ context.Context,
@@ -434,58 +454,15 @@ func handleV2Fetch(
 	r io.Reader,
 	w io.Writer,
 ) error {
-	var wants []plumbing.Hash
-	var wantRefs []string
-	var haves []plumbing.Hash
-	var done bool
-	var waitForDone bool
-
-	// Phase 1: skip capability lines until delimiter.
-	for {
-		l, _, err := pktline.ReadLine(r)
-		if err != nil {
-			return err
-		}
-		if l == pktline.Delim {
-			break
-		}
-		if l == pktline.Flush {
-			return fmt.Errorf("unexpected flush before arguments")
-		}
+	args, err := parseV2FetchArgs(r)
+	if err != nil {
+		return err
 	}
 
-	// Phase 2: read arguments until flush.
-	for {
-		l, line, err := pktline.ReadLine(r)
-		if err != nil {
-			return err
-		}
-		if l == pktline.Flush {
-			break
-		}
-
-		text := string(bytes.TrimSuffix(line, []byte("\n")))
-
-		switch {
-		case strings.HasPrefix(text, "want "):
-			wants = append(wants, plumbing.NewHash(strings.TrimPrefix(text, "want ")))
-		case strings.HasPrefix(text, "want-ref "):
-			wantRefs = append(wantRefs, strings.TrimPrefix(text, "want-ref "))
-		case strings.HasPrefix(text, "have "):
-			haves = append(haves, plumbing.NewHash(strings.TrimPrefix(text, "have ")))
-		case text == "done":
-			done = true
-		case text == string(capability.WaitForDone):
-			waitForDone = true
-		// thin-pack, no-progress, include-tag, ofs-delta, sideband-all,
-		// shallow, deepen, filter, packfile-uris are parsed but the
-		// corresponding server-side behavior is not yet fully implemented.
-		}
-	}
+	resp := packp.NewV2FetchResponse()
 
 	// Resolve want-ref names to OIDs.
-	resp := packp.NewV2FetchResponse()
-	for _, refName := range wantRefs {
+	for _, refName := range args.wantRefs {
 		ref, err := st.Reference(plumbing.ReferenceName(refName))
 		if err != nil {
 			return fmt.Errorf("resolving want-ref %q: %w", refName, err)
@@ -499,16 +476,27 @@ func handleV2Fetch(
 			hash = resolved.Hash()
 		}
 		resp.WantedRefs[refName] = hash
-		wants = append(wants, hash)
+		args.wants = append(args.wants, hash)
+	}
+
+	// Handle shallow/deepen.
+	if args.depth > 0 {
+		var shupd packp.ShallowUpdate
+		if err := getShallowCommits(st, args.wants, args.depth, &shupd); err != nil {
+			return fmt.Errorf("getting shallow commits: %w", err)
+		}
+		if len(shupd.Shallows) > 0 || len(shupd.Unshallows) > 0 {
+			resp.ShallowUpdate = &shupd
+		}
 	}
 
 	// Build acknowledgments.
-	havesWithRef, err := revlist.ObjectsWithRef(st, wants, nil)
+	havesWithRef, err := revlist.ObjectsWithRef(st, args.wants, nil)
 	if err != nil {
 		return fmt.Errorf("getting objects with ref: %w", err)
 	}
 
-	for _, h := range haves {
+	for _, h := range args.haves {
 		if _, ok := havesWithRef[h]; ok {
 			resp.ACKs = append(resp.ACKs, h)
 		}
@@ -516,10 +504,10 @@ func handleV2Fetch(
 
 	// With wait-for-done, the server only becomes ready when the
 	// client explicitly sends "done".
-	if waitForDone {
-		resp.Ready = done
+	if args.waitForDone {
+		resp.Ready = args.done
 	} else {
-		resp.Ready = done || len(haves) == 0
+		resp.Ready = args.done || len(args.haves) == 0
 	}
 
 	if resp.Ready {
@@ -536,9 +524,19 @@ func handleV2Fetch(
 	}
 
 	// Send the packfile.
-	objs, err := objectsToUpload(st, wants, haves)
+	objs, err := objectsToUpload(st, args.wants, args.haves)
 	if err != nil {
 		return fmt.Errorf("getting objects to upload: %w", err)
+	}
+
+	// When include-tag is requested, add tag objects that point to
+	// objects we are already sending.
+	if args.includeTag {
+		tagObjs, err := includeTagObjects(st, objs)
+		if err != nil {
+			return fmt.Errorf("including tags: %w", err)
+		}
+		objs = append(objs, tagObjs...)
 	}
 
 	// V2 packfile section is always sideband-encoded.
@@ -550,4 +548,107 @@ func handleV2Fetch(
 	}
 
 	return pktline.WriteFlush(w)
+}
+
+// parseV2FetchArgs reads capability lines (until delimiter) and argument
+// lines (until flush) from a V2 fetch command request.
+func parseV2FetchArgs(r io.Reader) (*v2FetchArgs, error) {
+	// Phase 1: skip capability lines until delimiter.
+	for {
+		l, _, err := pktline.ReadLine(r)
+		if err != nil {
+			return nil, err
+		}
+		if l == pktline.Delim {
+			break
+		}
+		if l == pktline.Flush {
+			return nil, fmt.Errorf("unexpected flush before arguments")
+		}
+	}
+
+	// Phase 2: read arguments until flush.
+	args := &v2FetchArgs{}
+	for {
+		l, line, err := pktline.ReadLine(r)
+		if err != nil {
+			return nil, err
+		}
+		if l == pktline.Flush {
+			break
+		}
+
+		text := string(bytes.TrimSuffix(line, []byte("\n")))
+
+		switch {
+		case strings.HasPrefix(text, "want "):
+			args.wants = append(args.wants, plumbing.NewHash(strings.TrimPrefix(text, "want ")))
+		case strings.HasPrefix(text, "want-ref "):
+			args.wantRefs = append(args.wantRefs, strings.TrimPrefix(text, "want-ref "))
+		case strings.HasPrefix(text, "have "):
+			args.haves = append(args.haves, plumbing.NewHash(strings.TrimPrefix(text, "have ")))
+		case strings.HasPrefix(text, "shallow "):
+			args.shallows = append(args.shallows, plumbing.NewHash(strings.TrimPrefix(text, "shallow ")))
+		case strings.HasPrefix(text, "deepen "):
+			n, err := strconv.Atoi(strings.TrimPrefix(text, "deepen "))
+			if err == nil {
+				args.depth = n
+			}
+		case strings.HasPrefix(text, "deepen-since "):
+			ts, err := strconv.ParseInt(strings.TrimPrefix(text, "deepen-since "), 10, 64)
+			if err == nil {
+				args.deepenSince = ts
+			}
+		case strings.HasPrefix(text, "deepen-not "):
+			args.deepenNot = strings.TrimPrefix(text, "deepen-not ")
+		case text == "deepen-relative":
+			args.deepenRelative = true
+		case strings.HasPrefix(text, "filter "):
+			args.filter = packp.Filter(strings.TrimPrefix(text, "filter "))
+		case text == "done":
+			args.done = true
+		case text == "include-tag":
+			args.includeTag = true
+		case text == string(capability.WaitForDone):
+			args.waitForDone = true
+		// thin-pack, no-progress, ofs-delta, sideband-all, packfile-uris
+		// are accepted but don't change server behavior currently.
+		}
+	}
+
+	return args, nil
+}
+
+// includeTagObjects finds tag objects that point to any of the given OIDs
+// and returns them. This implements the include-tag behavior where the
+// server sends annotated tags if their referent is included in the pack.
+func includeTagObjects(st storage.Storer, objs []plumbing.Hash) ([]plumbing.Hash, error) {
+	objSet := make(map[plumbing.Hash]struct{}, len(objs))
+	for _, h := range objs {
+		objSet[h] = struct{}{}
+	}
+
+	var tags []plumbing.Hash
+	iter, err := st.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if !ref.Name().IsTag() {
+			return nil
+		}
+		tag, err := object.GetTag(st, ref.Hash())
+		if err != nil {
+			// Not an annotated tag, skip.
+			return nil
+		}
+		// If the tag's target is in our object set, include the tag object.
+		if _, ok := objSet[tag.Target]; ok {
+			tags = append(tags, ref.Hash())
+		}
+		return nil
+	})
+
+	return tags, err
 }

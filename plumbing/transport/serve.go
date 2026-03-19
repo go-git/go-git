@@ -142,6 +142,7 @@ func AdvertiseCapabilitiesV2(
 		fetchCaps := capability.NewList()
 		_ = fetchCaps.Add(capability.Shallow)
 		_ = fetchCaps.Add(capability.Filter)
+		_ = fetchCaps.Add(capability.IncludeTag)
 		_ = fetchCaps.Add(capability.OFSDelta)
 		_ = fetchCaps.Add(capability.WaitForDone)
 		v2caps.Commands["fetch"] = fetchCaps
