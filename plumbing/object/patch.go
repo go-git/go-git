@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
 
@@ -54,6 +55,11 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 	if err != nil {
 		return nil, err
 	}
+	// avoids reading file content if the context is already done.
+	if err := ctx.Err(); err != nil {
+		return nil, ErrCanceled
+	}
+
 	fromContent, fIsBinary, err := fileContent(from)
 	if err != nil {
 		return nil, err
@@ -68,7 +74,23 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 		return &textFilePatch{from: c.From, to: c.To}, nil
 	}
 
-	diffs := diff.Do(fromContent, toContent)
+	var diffs []dmp.Diff
+	// Check whether the ctx has a configured deadline (timeout),
+	// and compute the remaining time until the deadline if present.
+	deadline, ok := ctx.Deadline()
+	if ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, ErrCanceled
+		}
+
+		// diff.DoWithTimeout silently returns a best-effort (potentially incomplete)
+		// diff when its internal timeout fires — it doesn't surface an error.
+		// The ctx.Done() check in the loop below won't reliably catch this.
+		diffs = diff.DoWithTimeout(fromContent, toContent, remaining)
+	} else {
+		diffs = diff.Do(fromContent, toContent)
+	}
 
 	chunks := make([]fdiff.Chunk, 0, len(diffs))
 	for _, d := range diffs {
