@@ -122,7 +122,7 @@ func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
 	n, err := io.ReadFull(r, s.hash[:s.Size()])
 	if err != nil {
 		// Clear partial read so the hash remains zero on error.
-		clear(s.hash[:s.Size()])
+		s.ResetBySize(s.Size())
 		return 0, err
 	}
 	return int64(n), nil
