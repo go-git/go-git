@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"io"
 
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -117,14 +116,16 @@ func (s *ObjectID) Write(in []byte) (int, error) {
 	return n, nil
 }
 
-// ReadFrom reads the Big Endian representation of the ObjectID from
-// reader [r].
+// ReadFrom reads the raw bytes of the ObjectID from reader [r].
+// The number of bytes read is determined by the ObjectID's current size.
 func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
-	err := binary.Read(r, binary.BigEndian, s.hash[:s.Size()])
+	n, err := io.ReadFull(r, s.hash[:s.Size()])
 	if err != nil {
-		return 0, fmt.Errorf("read hash from binary: %w", err)
+		// Clear partial read so the hash remains zero on error.
+		clear(s.hash[:s.Size()])
+		return 0, err
 	}
-	return int64(s.Size()), nil
+	return int64(n), nil
 }
 
 // WriteTo writes the Big Endian representation of the ObjectID
