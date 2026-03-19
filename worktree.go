@@ -349,6 +349,18 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
+	// For HardReset, capture the current HEAD tree before resetting HEAD.
+	// resetWorktreeToTree will diff prevTree→t and apply only those changes
+	// to the worktree. Since the diff is tree-to-tree, untracked files are
+	// invisible and are never deleted — matching real git reset --hard.
+	var prevTree *object.Tree
+	if opts.Mode == HardReset {
+		prevTree, err = w.headTree()
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := w.setHEADCommit(opts.Commit); err != nil {
 		return err
 	}
@@ -367,7 +379,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == HardReset {
-		if err := w.resetWorktree(t, opts.Files); err != nil {
+		if err := w.resetWorktreeToTree(prevTree, t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -501,6 +513,141 @@ func inFiles(files map[string]struct{}, v string) bool {
 	return exists
 }
 
+// headTree returns the tree for the current HEAD commit.
+// Returns nil, nil if there is no HEAD yet (e.g. an unborn branch).
+func (w *Worktree) headTree() (*object.Tree, error) {
+	head, err := w.r.Head()
+	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	c, err := w.r.CommitObject(head.Hash())
+	if err != nil {
+		return nil, err
+	}
+	return c.Tree()
+}
+
+// resetWorktreeToTree updates the worktree to match toTree, mirroring
+// real git reset --hard / checkout -f:
+//
+//  1. Tree-to-tree diff (fromTree→toTree): remove files that were tracked in
+//     fromTree but deleted in toTree. Because the diff is purely object-graph,
+//     untracked files never appear and are never deleted.
+//
+//  2. New-index-to-worktree diff: write files that are in the new index but
+//     absent or different on disk. For Delete actions (file on disk, but absent
+//     from the index): the file is truly untracked and is preserved.
+//     (SkipWorktree entries are invisible to the merkletrie diff; they are
+//     handled in step 3.)
+//
+//  3. Remove SkipWorktree files from disk: diffStagingWithWorktree never
+//     surfaces SkipWorktree-flagged entries as Delete actions because the
+//     merkletrie marks them skip=true. Mirror git's behaviour: any tracked
+//     file with SkipWorktree=true must not exist in the worktree.
+//
+// files optionally restricts the operation to a specific subset of paths.
+func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []string) error {
+	filesMap := buildFilePathMap(files)
+
+	// Step 1: delete files removed from the tracked tree.
+	treeChanges, err := diffTrees(fromTree, toTree)
+	if err != nil {
+		return err
+	}
+	for _, ch := range treeChanges {
+		a, err := ch.Action()
+		if err != nil {
+			return err
+		}
+		if a != merkletrie.Delete {
+			continue
+		}
+		name := ch.From.String()
+		if len(files) > 0 && !inFiles(filesMap, name) {
+			continue
+		}
+		if err := w.validChange(ch); err != nil {
+			return err
+		}
+		if err := rmFileAndDirsIfEmpty(w.Filesystem, name); err != nil {
+			return err
+		}
+	}
+
+	// Step 2: write files that are in the new index but missing or stale
+	// in the worktree. We use diffStagingWithWorktree(reverse=true) which
+	// gives Insert for "in index, not on disk" and Modify for "differs".
+	// Delete means "on disk, not in index" = untracked → always skip.
+	// Note: SkipWorktree entries are invisible to the merkletrie diff;
+	// they are cleaned up in step 3 below.
+	worktreeChanges, err := w.diffStagingWithWorktree(true, false)
+	if err != nil {
+		return err
+	}
+
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+	b := newIndexBuilder(idx)
+
+	for _, ch := range worktreeChanges {
+		a, err := ch.Action()
+		if err != nil {
+			return err
+		}
+		if a == merkletrie.Delete {
+			// In the reverse diff, Delete means the file exists on disk but is
+			// absent from the index node tree. SkipWorktree entries are marked
+			// skip=true in the merkletrie and never appear here; they are removed
+			// in step 3 below. A Delete action here therefore always means the
+			// file is truly untracked — preserve it.
+			continue
+		}
+
+		if len(files) > 0 {
+			file := ch.To.String()
+			if !inFiles(filesMap, file) {
+				continue
+			}
+		}
+
+		if err := w.validChange(ch); err != nil {
+			return err
+		}
+		if err := w.checkoutChange(ch, toTree, b); err != nil {
+			return err
+		}
+	}
+
+	// Step 3: remove tracked files that are SkipWorktree=true from disk.
+	// diffStagingWithWorktree builds the index node tree with skip=true for
+	// SkipWorktree entries, so they never appear as Delete actions in step 2.
+	// git removes these files when the sparse-checkout contract excludes them.
+	for _, e := range idx.Entries {
+		if !e.SkipWorktree {
+			continue
+		}
+		if len(files) > 0 && !inFiles(filesMap, e.Name) {
+			continue
+		}
+		if _, statErr := w.Filesystem.Lstat(e.Name); os.IsNotExist(statErr) {
+			continue
+		}
+		if err := rmFileAndDirsIfEmpty(w.Filesystem, e.Name); err != nil {
+			return err
+		}
+	}
+
+	b.Write(idx)
+	return w.r.Storer.SetIndex(idx)
+}
+
+// resetWorktree updates the worktree to match the staging area.
+// files restricts the operation to the named paths; nil means all files.
 func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	changes, err := w.diffStagingWithWorktree(true, false)
 	if err != nil {

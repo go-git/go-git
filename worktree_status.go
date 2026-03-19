@@ -277,6 +277,19 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
 }
 
+// diffTrees returns the changes between two tree objects.
+// Either tree may be nil, which is treated as the empty tree.
+func diffTrees(from, to *object.Tree) (merkletrie.Changes, error) {
+	var fromNode, toNode noder.Noder
+	if from != nil {
+		fromNode = object.NewTreeRootNode(from)
+	}
+	if to != nil {
+		toNode = object.NewTreeRootNode(to)
+	}
+	return merkletrie.DiffTree(fromNode, toNode, diffTreeIsEquals)
+}
+
 var emptyNoderHash = make([]byte, 24)
 
 // diffTreeIsEquals is a implementation of noder.Equals, used to compare
