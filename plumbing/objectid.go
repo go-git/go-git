@@ -150,5 +150,5 @@ func (s *ObjectID) ResetBySize(idSize int) {
 	} else {
 		s.format = format.UnsetObjectFormat
 	}
-	copy(s.hash[:], s.hash[:0])
+	clear(s.hash[:])
 }
