@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
@@ -62,6 +63,40 @@ type Remote struct {
 // Otherwise Remotes should be created via the use of a Repository.
 func NewRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
+}
+
+// protocolParams returns the Git-Protocol parameters for the configured
+// protocol version. These are passed to Session.Handshake to negotiate
+// the wire protocol version with the server.
+func (r *Remote) protocolParams() []string {
+	if r.s == nil {
+		return nil
+	}
+
+	cfg, err := r.s.Config()
+	if err != nil || cfg == nil {
+		return nil
+	}
+
+	v := cfg.Protocol.Version
+	// V0 is the implicit default — no parameter needed.
+	if v <= protocol.V0 {
+		return nil
+	}
+
+	return []string{fmt.Sprintf("version=%s", v)}
+}
+
+// getRemoteRefs returns remote references using the appropriate method
+// for the negotiated protocol version.
+func getRemoteRefs(ctx context.Context, conn transport.Connection) ([]*plumbing.Reference, error) {
+	if conn.Version() == protocol.V2 {
+		return conn.LsRefs(ctx, &transport.LsRefsRequest{
+			IncludeSymRefs: true,
+			IncludePeeled:  true,
+		})
+	}
+	return conn.GetRemoteRefs(ctx)
 }
 
 // Config returns the RemoteConfig object used to instantiate this Remote.
@@ -121,12 +156,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
-	conn, err := s.Handshake(ctx, transport.ReceivePackService)
+	conn, err := s.Handshake(ctx, transport.ReceivePackService, r.protocolParams()...)
 	if err != nil {
 		return err
 	}
 
-	rRefs, err := conn.GetRemoteRefs(ctx)
+	rRefs, err := getRemoteRefs(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -395,7 +430,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	conn, err := sess.Handshake(ctx, transport.UploadPackService)
+	conn, err := sess.Handshake(ctx, transport.UploadPackService, r.protocolParams()...)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +439,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	rRefs, err := conn.GetRemoteRefs(ctx)
+	rRefs, err := getRemoteRefs(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -1281,14 +1316,14 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, err
 	}
 
-	conn, err := s.Handshake(ctx, transport.UploadPackService)
+	conn, err := s.Handshake(ctx, transport.UploadPackService, r.protocolParams()...)
 	if err != nil {
 		return nil, err
 	}
 
 	defer ioutil.CheckClose(conn, &err)
 
-	allRefs, err := conn.GetRemoteRefs(ctx)
+	allRefs, err := getRemoteRefs(ctx, conn)
 	if err != nil {
 		return nil, err
 	}

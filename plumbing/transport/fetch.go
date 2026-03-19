@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -25,10 +26,11 @@ func FetchPack(
 	packf = ioutil.NewContextReadCloser(ctx, packf)
 
 	// Do we have sideband enabled?
+	// In V2, the packfile section is always sideband-64k encoded.
 	var demuxer *sideband.Demuxer
 	var reader io.Reader = packf
 	caps := conn.Capabilities()
-	if caps.Supports(capability.Sideband64k) {
+	if conn.Version() == protocol.V2 || caps.Supports(capability.Sideband64k) {
 		demuxer = sideband.NewDemuxer(sideband.Sideband64k, reader)
 	} else if caps.Supports(capability.Sideband) {
 		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
