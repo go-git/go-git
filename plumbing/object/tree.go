@@ -249,7 +249,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		}
 		modeSlice = modeSlice[:len(modeSlice)-1] // strip delimiter
 
-		mode, err := filemode.NewFromBytes(modeSlice)
+		mode, err := filemode.FromBytes(modeSlice)
 		if err != nil {
 			return err
 		}
