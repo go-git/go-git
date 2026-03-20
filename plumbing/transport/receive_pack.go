@@ -21,9 +21,10 @@ import (
 
 // ReceivePackOptions is a set of options for the ReceivePack service.
 type ReceivePackOptions struct {
-	GitProtocol   string
-	AdvertiseRefs bool
-	StatelessRPC  bool
+	GitProtocol     string
+	AdvertiseRefs   bool
+	StatelessRPC    bool
+	AllowedVersions protocol.Versions // bitmask; zero means all versions
 }
 
 // ReceivePack is a server command that serves the receive-pack service.
@@ -46,7 +47,7 @@ func ReceivePack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		switch version := ProtocolVersion(opts.GitProtocol); version {
+		switch version := NegotiateVersion(ProtocolVersion(opts.GitProtocol), opts.AllowedVersions); version {
 		case protocol.V2:
 			// V2 receive-pack: advertise V2 capabilities.
 			// Note: V2 push protocol is not yet fully specified upstream;
@@ -84,7 +85,7 @@ func ReceivePack(
 	// V2 receive-pack: handle ls-refs commands before the push.
 	// The client may send one or more ls-refs commands to discover
 	// refs, followed by the actual V0-style push data.
-	if ProtocolVersion(opts.GitProtocol) == protocol.V2 {
+	if NegotiateVersion(ProtocolVersion(opts.GitProtocol), opts.AllowedVersions) == protocol.V2 {
 		if err := receivePackV2Commands(ctx, st, rd, w); err != nil {
 			return fmt.Errorf("V2 command handling: %w", err)
 		}

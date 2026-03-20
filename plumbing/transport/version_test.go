@@ -120,3 +120,70 @@ func TestProtocolVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestNegotiateVersion(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		requested protocol.Version
+		allowed   protocol.Versions
+		expected  protocol.Version
+	}{
+		{
+			name:      "zero mask allows anything",
+			requested: protocol.V2,
+			allowed:   0,
+			expected:  protocol.V2,
+		},
+		{
+			name:      "requested version is allowed",
+			requested: protocol.V2,
+			allowed:   protocol.SupportV0 | protocol.SupportV2,
+			expected:  protocol.V2,
+		},
+		{
+			name:      "V2 only rejects V0 request, upgrades to V2",
+			requested: protocol.V0,
+			allowed:   protocol.SupportV2,
+			expected:  protocol.V2,
+		},
+		{
+			name:      "V0 only downgrades V2 request",
+			requested: protocol.V2,
+			allowed:   protocol.SupportV0,
+			expected:  protocol.V0,
+		},
+		{
+			name:      "fallback to highest allowed below requested",
+			requested: protocol.V2,
+			allowed:   protocol.SupportV0 | protocol.SupportV1,
+			expected:  protocol.V1,
+		},
+		{
+			name:      "SupportAll allows V1",
+			requested: protocol.V1,
+			allowed:   protocol.SupportAll,
+			expected:  protocol.V1,
+		},
+		{
+			name:      "V1 only accepts V1",
+			requested: protocol.V1,
+			allowed:   protocol.SupportV1,
+			expected:  protocol.V1,
+		},
+		{
+			name:      "V1 only downgrades V2",
+			requested: protocol.V2,
+			allowed:   protocol.SupportV1,
+			expected:  protocol.V1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := NegotiateVersion(tt.requested, tt.allowed)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}

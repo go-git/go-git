@@ -24,6 +24,26 @@ const (
 	Undefined Version = -1
 )
 
+// Versions is a bitmask of protocol versions.
+type Versions uint8
+
+const (
+	// SupportV0 enables the original wire protocol.
+	SupportV0 Versions = 1 << V0
+	// SupportV1 enables version 1 of the wire protocol.
+	SupportV1 Versions = 1 << V1
+	// SupportV2 enables version 2 of the wire protocol.
+	SupportV2 Versions = 1 << V2
+
+	// SupportAll enables all protocol versions.
+	SupportAll = SupportV0 | SupportV1 | SupportV2
+)
+
+// Has reports whether mask includes the given version.
+func (m Versions) Has(v Version) bool {
+	return m&(1<<v) != 0
+}
+
 // String converts a Version into string.
 // The Unknown version is converted to empty string.
 func (v Version) String() string {

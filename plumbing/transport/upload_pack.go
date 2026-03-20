@@ -26,9 +26,10 @@ import (
 
 // UploadPackOptions is a set of options for the UploadPack service.
 type UploadPackOptions struct {
-	GitProtocol   string
-	AdvertiseRefs bool
-	StatelessRPC  bool
+	GitProtocol     string
+	AdvertiseRefs   bool
+	StatelessRPC    bool
+	AllowedVersions protocol.Versions // bitmask; zero means all versions
 }
 
 // UploadPack is a server command that serves the upload-pack service.
@@ -49,7 +50,7 @@ func UploadPack(
 		opts = &UploadPackOptions{}
 	}
 
-	version := ProtocolVersion(opts.GitProtocol)
+	version := NegotiateVersion(ProtocolVersion(opts.GitProtocol), opts.AllowedVersions)
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
 		switch version {
