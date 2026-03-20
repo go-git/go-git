@@ -12,11 +12,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-const testReflog = "0000000000000000000000000000000000000000 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author Name <author@example.com> 1234567890 +0000\tcommit (initial): Initial commit\n" +
-	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Another Author <another@example.com> 1234567891 +0100\tcommit: Second commit\n"
-
 func TestDecode(t *testing.T) {
 	t.Parallel()
+
+	testReflog := "0000000000000000000000000000000000000000 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author Name <author@example.com> 1234567890 +0000\tcommit (initial): Initial commit\n" +
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Another Author <another@example.com> 1234567891 +0100\tcommit: Second commit\n"
 
 	entries, err := Decode(strings.NewReader(testReflog))
 	require.NoError(t, err)
