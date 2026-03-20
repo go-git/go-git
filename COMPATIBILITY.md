@@ -71,7 +71,7 @@ compatibility status with go-git.
 
 | Feature  | Sub-feature | Status | Notes | Examples                           |
 | -------- | ----------- | ------ | ----- | ---------------------------------- |
-| `bisect` |             | ❌     |       |                                    |
+| `bisect` |             | ⚠️     | Using Log, ForEach and Checkout.      | - TestCheckoutBisect |
 | `blame`  |             | ✅     |       | - [blame](_examples/blame/main.go) |
 | `grep`   |             | ✅     |       |                                    |
 
@@ -106,13 +106,13 @@ compatibility status with go-git.
 | `archive`       |             | ❌     |       |          |
 | `bundle`        |             | ❌     |       |          |
 | `prune`         |             | ❌     |       |          |
-| `repack`        |             | ❌     |       |          |
+| `repack`        |             | ✅     | repository.RepackObjects. |          |
 
 ## Server admin
 
 | Feature              | Sub-feature | Status | Notes | Examples                                                   |
 | -------------------- | ----------- | ------ | ----- | ---------------------------------------------------------- |
-| `daemon`             |             | ❌     |       |                                                            |
+| `daemon`             |             | ⚠️ (partial) | via https://github.com/go-git/cli      |                                                            |
 | `update-server-info` |             | ✅     |       | [update-server-info](_examples/update-server-info/main.go) |
 
 ## Advanced
@@ -122,7 +122,6 @@ compatibility status with go-git.
 | `notes`    |             | ❌          |       |          |
 | `replace`  |             | ❌          |       |          |
 | `worktree` | `add`       | ⚠️ (partial) | Creation and opening of linked worktrees via the `x/plumbing/worktree` package. Not all flags or subcommands are supported. | - [worktrees](_examples/worktrees/main.go) |
-| `annotate` |             | (see blame) |       |          |
 
 ## GPG
 
@@ -166,7 +165,7 @@ compatibility status with go-git.
 | pack-protocol        | [v1](https://github.com/git/git/blob/master/Documentation/gitprotocol-pack.txt) | ✅     |       |
 | pack-protocol        | [v2](https://github.com/git/git/blob/master/Documentation/gitprotocol-v2.txt)   | ❌     |       |
 | multi-pack-index     | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ❌     |       |
-| pack-\*.rev files    | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ❌     |       |
+| pack-\*.rev files    | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ✅     |       |
 | pack-\*.mtimes files | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ❌     |       |
 | cruft packs          |                                                                                 | ❌     |       |
 
@@ -174,15 +173,15 @@ compatibility status with go-git.
 
 | Feature                        | Status       | Notes |
 | ------------------------------ | ------------ | ----- |
-| `multi_ack`                    | ❌           |       |
-| `multi_ack_detailed`           | ❌           |       |
+| `multi_ack`                    | ✅           |       |
+| `multi_ack_detailed`           | ✅           |       |
 | `no-done`                      | ❌           |       |
 | `thin-pack`                    | ❌           |       |
 | `side-band`                    | ⚠️ (partial) |       |
 | `side-band-64k`                | ⚠️ (partial) |       |
 | `ofs-delta`                    | ✅           |       |
 | `agent`                        | ✅           |       |
-| `object-format`                | ❌           |       |
+| `object-format`                | ✅           | [SHA-256](_examples/sha256/main.go)|
 | `symref`                       | ✅           |       |
 | `shallow`                      | ✅           |       |
 | `deepen-since`                 | ✅           |       |
@@ -206,22 +205,12 @@ compatibility status with go-git.
 
 | Scheme               | Status       | Notes                                                                  | Examples                                       |
 | -------------------- | ------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
-| `http(s)://` (dumb)  | ❌           |                                                                        |                                                |
+| `http(s)://` (dumb)  | ✅           |                                                                        |                                                |
 | `http(s)://` (smart) | ✅           |                                                                        |                                                |
 | `git://`             | ✅           |                                                                        |                                                |
 | `ssh://`             | ✅           |                                                                        |                                                |
-| `file://`            | ⚠️ (partial) | Warning: this is not pure Golang. This shells out to the `git` binary. |                                                |
+| `file://`            | ✅           |                                                                        |                                                |
 | Custom               | ✅           | All existing schemes can be replaced by custom implementations.        | - [custom_http](_examples/custom_http/main.go) |
-
-## SHA256
-
-| Feature  | Sub-feature | Status | Notes                              | Examples                             |
-| -------- | ----------- | ------ | ---------------------------------- | ------------------------------------ |
-| `init`   |             | ✅     | Requires building with tag sha256. | - [init](_examples/sha256/main.go)   |
-| `commit` |             | ✅     | Requires building with tag sha256. | - [commit](_examples/sha256/main.go) |
-| `pull`   |             | ❌     |                                    |                                      |
-| `fetch`  |             | ❌     |                                    |                                      |
-| `push`   |             | ❌     |                                    |                                      |
 
 ## Other features
 
