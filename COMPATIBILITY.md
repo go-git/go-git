@@ -71,7 +71,7 @@ compatibility status with go-git.
 
 | Feature  | Sub-feature | Status | Notes | Examples                           |
 | -------- | ----------- | ------ | ----- | ---------------------------------- |
-| `bisect` |             | ⚠️     | Using Log, ForEach and Checkout.      | - TestCheckoutBisect |
+| `bisect` |             | ⚠️     | Using Log, ForEach and Checkout.      | - See tests (search for `TestCheckoutBisect` in the repository) |
 | `blame`  |             | ✅     |       | - [blame](_examples/blame/main.go) |
 | `grep`   |             | ✅     |       |                                    |
 
@@ -106,7 +106,7 @@ compatibility status with go-git.
 | `archive`       |             | ❌     |       |          |
 | `bundle`        |             | ❌     |       |          |
 | `prune`         |             | ❌     |       |          |
-| `repack`        |             | ✅     | repository.RepackObjects. |          |
+| `repack`        |             | ✅     | `(*git.Repository).RepackObjects`. |          |
 
 ## Server admin
 
@@ -205,7 +205,7 @@ compatibility status with go-git.
 
 | Scheme               | Status       | Notes                                                                  | Examples                                       |
 | -------------------- | ------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
-| `http(s)://` (dumb)  | ✅           |                                                                        |                                                |
+| `http(s)://` (dumb)  | ⚠️ (partial) | Requires filesystem-backed storage; shallow fetch is not supported.    |                                                |
 | `http(s)://` (smart) | ✅           |                                                                        |                                                |
 | `git://`             | ✅           |                                                                        |                                                |
 | `ssh://`             | ✅           |                                                                        |                                                |

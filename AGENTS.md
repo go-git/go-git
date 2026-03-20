@@ -50,11 +50,11 @@ All new features and non-critical fixes target `main`. Backports to
 ## Code Conventions
 
 - **Go version**: stay within the range declared in `go.mod`.
-- **Formatting and linting**: no warnings from `golangci-lint` (config: `.golangci.yml`), which includes formatting checks.
+- **Formatting and linting**: no warnings from `golangci-lint` (config: `.golangci.yaml`), which includes formatting checks.
 - **Style**: idiomatic Go — no unnecessary abstractions, no premature
   generalization, no helper functions used only once.
 - **Error handling**: return errors; do not panic in library code.
-- **No global state**: the library strive to be safe to use from multiple
+- **No global state**: the library strives to be safe to use from multiple
   goroutines via separate instances, all new code should aim to align with that goal.
 
 ## Commit Message Format

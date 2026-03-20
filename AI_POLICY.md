@@ -37,8 +37,8 @@ produced:
 - **Legal compliance.** go-git is [Apache 2.0 licensed](LICENSE). Contributions
   must ensure:
   - No third-party copyrighted material has been reproduced without a compatible
-    open source licence and proper attribution.
-  - When AI tool are used, their terms do not impose restrictions incompatible with Apache 2.0.
+    open source license and proper attribution.
+  - When AI tools are used, their terms do not impose restrictions incompatible with Apache 2.0.
 
 ## Disclosure
 
