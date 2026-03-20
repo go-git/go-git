@@ -130,9 +130,7 @@ func NegotiatePackV2(
 		}
 
 		// Collect ACKs for re-sending in subsequent rounds.
-		for _, ack := range resp.ACKs {
-			common = append(common, ack)
-		}
+		common = append(common, resp.ACKs...)
 
 		// If the server sent a packfile, we're done regardless.
 		if resp.Packfile != nil {

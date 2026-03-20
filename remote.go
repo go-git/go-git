@@ -125,7 +125,7 @@ func getRemoteRefs(ctx context.Context, conn transport.Connection, prefixes ...s
 // SymbolicReference by finding a branch with the same hash. This mirrors
 // the V0/V1 AdvRefs.resolveHead behavior for V2 ls-refs responses.
 func resolveDetachedHEAD(refs []*plumbing.Reference) []*plumbing.Reference {
-	var headIdx int = -1
+	headIdx := -1
 	var headHash plumbing.Hash
 
 	for i, ref := range refs {

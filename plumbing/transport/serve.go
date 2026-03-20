@@ -212,11 +212,12 @@ func HandleLsRefs(
 			hash := headRef.Hash()
 			if headRef.Type() == plumbing.SymbolicReference {
 				resolved, resolveErr := storer.ResolveReference(st, headRef.Target())
-				if resolveErr == nil {
+				switch {
+				case resolveErr == nil:
 					hash = resolved.Hash()
-				} else if !errors.Is(resolveErr, plumbing.ErrReferenceNotFound) {
+				case !errors.Is(resolveErr, plumbing.ErrReferenceNotFound):
 					return resolveErr
-				} else if !req.IncludeUnborn {
+				case !req.IncludeUnborn:
 					// Unborn HEAD and unborn not requested — skip.
 					hash = plumbing.ZeroHash
 				}

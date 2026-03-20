@@ -407,12 +407,12 @@ func uploadPackV2(
 		// Consume the peeked line.
 		_, _, _ = pktline.ReadLine(rd)
 
-		switch {
-		case text == "command=ls-refs":
+		switch text {
+		case "command=ls-refs":
 			if err := HandleLsRefs(ctx, st, rd, w); err != nil {
 				return fmt.Errorf("ls-refs: %w", err)
 			}
-		case text == "command=fetch":
+		case "command=fetch":
 			if err := handleV2Fetch(ctx, st, rd, w); err != nil {
 				return fmt.Errorf("fetch: %w", err)
 			}
@@ -520,18 +520,19 @@ func handleV2Fetch(
 		return nil
 	}
 
-	if args.done {
+	switch {
+	case args.done:
 		// Client said "done" — skip acks, go straight to pack.
 		resp.SkipAcknowledgments = true
 		resp.Ready = true
-	} else if !seenHaves {
+	case !seenHaves:
 		// Wants only, no haves — skip acks, send pack immediately.
 		resp.SkipAcknowledgments = true
 		resp.Ready = true
-	} else if args.waitForDone {
+	case args.waitForDone:
 		// Have haves, wait-for-done: send acks but never "ready".
 		resp.Ready = false
-	} else {
+	default:
 		// Have haves, check if we can give up (have common ancestors).
 		// For simplicity, send "ready" if we have any ACKs.
 		resp.Ready = len(resp.ACKs) > 0
@@ -642,8 +643,8 @@ func parseV2FetchArgs(r io.Reader) (*v2FetchArgs, error) {
 		case strings.HasPrefix(text, "packfile-uris "):
 			protos := strings.TrimPrefix(text, "packfile-uris ")
 			args.packfileURIProtocols = strings.Split(protos, ",")
-		// thin-pack, no-progress, ofs-delta are accepted but don't
-		// change server behavior currently.
+			// thin-pack, no-progress, ofs-delta are accepted but don't
+			// change server behavior currently.
 		}
 	}
 
