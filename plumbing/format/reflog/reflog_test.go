@@ -244,6 +244,21 @@ func TestDecodeTimestampExtraFields(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid timestamp")
 }
 
+func TestDecodeSHA256Hashes(t *testing.T) {
+	t.Parallel()
+
+	oldHash := strings.Repeat("a", 64)
+	newHash := strings.Repeat("b", 64)
+	line := oldHash + " " + newHash + " Author <a@b.com> 1234567890 +0000\tcommit: test\n"
+
+	entries, err := Decode(strings.NewReader(line))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, oldHash, entries[0].OldHash.String())
+	assert.Equal(t, newHash, entries[0].NewHash.String())
+	assert.Equal(t, "commit: test", entries[0].Message)
+}
+
 func TestDecodeLongLine(t *testing.T) {
 	t.Parallel()
 
@@ -254,4 +269,33 @@ func TestDecodeLongLine(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	assert.Equal(t, message, entries[0].Message)
+}
+
+func FuzzDecode(f *testing.F) {
+	// Valid entries.
+	f.Add([]byte("0000000000000000000000000000000000000000 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author Name <author@example.com> 1234567890 +0000\tcommit (initial): Initial commit\n"))
+	f.Add([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Author <a@b.com> 1234567890 +0000\n"))
+	// SHA256 hashes.
+	f.Add([]byte(strings.Repeat("a", 64) + " " + strings.Repeat("b", 64) + " Author <a@b.com> 1234567890 +0000\tcommit: test\n"))
+	// Invalid entries.
+	f.Add([]byte("not a valid reflog line"))
+	f.Add([]byte(""))
+	f.Add([]byte("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author <a@b.com> 1234567890 +0000\n"))
+	f.Add([]byte("0000000000000000000000000000000000000000 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author <a@b.com> notanumber +0000\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Decode should never panic regardless of input.
+		entries, err := Decode(bytes.NewReader(data))
+		if err != nil {
+			return
+		}
+
+		// If decode succeeded, each entry should round-trip through encode.
+		for _, e := range entries {
+			var buf bytes.Buffer
+			if err := Encode(&buf, e); err != nil {
+				t.Fatalf("failed to encode successfully decoded entry: %v", err)
+			}
+		}
+	})
 }
