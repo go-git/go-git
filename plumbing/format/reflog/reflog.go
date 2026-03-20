@@ -36,32 +36,52 @@ type Entry struct {
 	Message string
 }
 
+// Decoder reads reflog entries from a reader one at a time.
+type Decoder struct {
+	r *bufio.Reader
+}
+
+// NewDecoder creates a Decoder that reads reflog entries from r.
+func NewDecoder(r io.Reader) *Decoder {
+	return &Decoder{r: bufio.NewReader(r)}
+}
+
+// Next returns the next reflog entry. It returns io.EOF when there are no more entries.
+func (d *Decoder) Next() (*Entry, error) {
+	for {
+		line, err := d.r.ReadBytes('\n')
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		line = bytes.TrimSuffix(line, []byte{'\n'})
+		if len(line) != 0 {
+			return decodeLine(line)
+		}
+
+		if err == io.EOF {
+			return nil, io.EOF
+		}
+	}
+}
+
 // Decode reads all reflog entries from the reader.
 // Entries are returned in file order (oldest first).
 func Decode(r io.Reader) ([]*Entry, error) {
 	if r == nil {
 		return nil, fmt.Errorf("reader is nil")
 	}
+	d := NewDecoder(r)
 	var entries []*Entry
-	reader := bufio.NewReader(r)
 	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return entries, err
-		}
-
-		line = bytes.TrimSuffix(line, []byte{'\n'})
-		if len(line) != 0 {
-			e, decodeErr := decodeLine(line)
-			if decodeErr != nil {
-				return entries, decodeErr
-			}
-			entries = append(entries, e)
-		}
-
+		e, err := d.Next()
 		if err == io.EOF {
 			return entries, nil
 		}
+		if err != nil {
+			return entries, err
+		}
+		entries = append(entries, e)
 	}
 }
 

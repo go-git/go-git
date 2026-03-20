@@ -2,6 +2,7 @@ package reflog
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,28 @@ func TestDecode(t *testing.T) {
 	assert.Equal(t, "Another Author", entries[1].Committer.Name)
 	assert.Equal(t, "another@example.com", entries[1].Committer.Email)
 	assert.Equal(t, "commit: Second commit", entries[1].Message)
+}
+
+func TestDecoderNext(t *testing.T) {
+	t.Parallel()
+
+	input := "0000000000000000000000000000000000000000 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author Name <author@example.com> 1234567890 +0000\tcommit (initial): Initial commit\n" +
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Another Author <another@example.com> 1234567891 +0100\tcommit: Second commit\n"
+
+	d := NewDecoder(strings.NewReader(input))
+
+	e, err := d.Next()
+	require.NoError(t, err)
+	assert.Equal(t, "Author Name", e.Committer.Name)
+	assert.Equal(t, "commit (initial): Initial commit", e.Message)
+
+	e, err = d.Next()
+	require.NoError(t, err)
+	assert.Equal(t, "Another Author", e.Committer.Name)
+	assert.Equal(t, "commit: Second commit", e.Message)
+
+	_, err = d.Next()
+	assert.ErrorIs(t, err, io.EOF)
 }
 
 func TestDecodeNilReader(t *testing.T) {
