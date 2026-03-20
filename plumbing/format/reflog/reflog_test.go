@@ -35,6 +35,14 @@ func TestDecode(t *testing.T) {
 	assert.Equal(t, "commit: Second commit", entries[1].Message)
 }
 
+func TestDecodeNilReader(t *testing.T) {
+	t.Parallel()
+
+	entries, err := Decode(nil)
+	require.Error(t, err)
+	assert.Nil(t, entries)
+}
+
 func TestDecodeEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +88,24 @@ func TestDecodeMissingTimestamp(t *testing.T) {
 	_, err := Decode(strings.NewReader(line))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing timestamp")
+}
+
+func TestEncodeNilWriter(t *testing.T) {
+	t.Parallel()
+
+	e := &Entry{}
+	err := Encode(nil, e)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writer is nil")
+}
+
+func TestEncodeNilEntry(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	err := Encode(&buf, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "entry is nil")
 }
 
 func TestEncode(t *testing.T) {

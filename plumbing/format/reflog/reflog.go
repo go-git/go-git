@@ -39,6 +39,9 @@ type Entry struct {
 // Decode reads all reflog entries from the reader.
 // Entries are returned in file order (oldest first).
 func Decode(r io.Reader) ([]*Entry, error) {
+	if r == nil {
+		return nil, fmt.Errorf("reader is nil")
+	}
 	var entries []*Entry
 	reader := bufio.NewReader(r)
 	for {
@@ -169,6 +172,12 @@ func normalizeMessage(msg string) string {
 
 // Encode writes a single reflog entry to the writer.
 func Encode(w io.Writer, e *Entry) error {
+	if w == nil {
+		return fmt.Errorf("writer is nil")
+	}
+	if e == nil {
+		return fmt.Errorf("entry is nil")
+	}
 	_, offset := e.Committer.When.Zone()
 	sign := '+'
 	if offset < 0 {
