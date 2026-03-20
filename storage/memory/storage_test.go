@@ -224,17 +224,21 @@ func TestReflogStorage(t *testing.T) {
 	e1 := &reflog.Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Test",
-		Email:   "test@example.com",
-		When:    time.Unix(1234567890, 0).UTC(),
+		Committer: reflog.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+			When:  time.Unix(1234567890, 0).UTC(),
+		},
 		Message: "commit: first",
 	}
 	e2 := &reflog.Entry{
 		OldHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		NewHash: plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-		Name:    "Test",
-		Email:   "test@example.com",
-		When:    time.Unix(1234567891, 0).UTC(),
+		Committer: reflog.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+			When:  time.Unix(1234567891, 0).UTC(),
+		},
 		Message: "commit: second",
 	}
 

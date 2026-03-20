@@ -24,14 +24,14 @@ func TestDecode(t *testing.T) {
 
 	assert.Equal(t, plumbing.ZeroHash, entries[0].OldHash)
 	assert.Equal(t, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), entries[0].NewHash)
-	assert.Equal(t, "Author Name", entries[0].Name)
-	assert.Equal(t, "author@example.com", entries[0].Email)
+	assert.Equal(t, "Author Name", entries[0].Committer.Name)
+	assert.Equal(t, "author@example.com", entries[0].Committer.Email)
 	assert.Equal(t, "commit (initial): Initial commit", entries[0].Message)
 
 	assert.Equal(t, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), entries[1].OldHash)
 	assert.Equal(t, plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), entries[1].NewHash)
-	assert.Equal(t, "Another Author", entries[1].Name)
-	assert.Equal(t, "another@example.com", entries[1].Email)
+	assert.Equal(t, "Another Author", entries[1].Committer.Name)
+	assert.Equal(t, "another@example.com", entries[1].Committer.Email)
 	assert.Equal(t, "commit: Second commit", entries[1].Message)
 }
 
@@ -50,8 +50,8 @@ func TestDecodeNoMessage(t *testing.T) {
 	entries, err := Decode(strings.NewReader(line))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "Author", entries[0].Name)
-	assert.Equal(t, "a@b.com", entries[0].Email)
+	assert.Equal(t, "Author", entries[0].Committer.Name)
+	assert.Equal(t, "a@b.com", entries[0].Committer.Email)
 	assert.Equal(t, "", entries[0].Message)
 }
 
@@ -88,9 +88,11 @@ func TestEncode(t *testing.T) {
 	e := &Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Author Name",
-		Email:   "author@example.com",
-		When:    time.Unix(1234567890, 0).UTC(),
+		Committer: Signature{
+			Name:  "Author Name",
+			Email: "author@example.com",
+			When:  time.Unix(1234567890, 0).UTC(),
+		},
 		Message: "commit (initial): Initial commit",
 	}
 
@@ -108,9 +110,11 @@ func TestEncodeNoMessage(t *testing.T) {
 	e := &Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Author",
-		Email:   "a@b.com",
-		When:    time.Unix(1234567890, 0).UTC(),
+		Committer: Signature{
+			Name:  "Author",
+			Email: "a@b.com",
+			When:  time.Unix(1234567890, 0).UTC(),
+		},
 	}
 
 	var buf bytes.Buffer
@@ -127,9 +131,11 @@ func TestEncodeMessageNormalization(t *testing.T) {
 	e := &Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Author",
-		Email:   "a@b.com",
-		When:    time.Unix(1234567890, 0).UTC(),
+		Committer: Signature{
+			Name:  "Author",
+			Email: "a@b.com",
+			When:  time.Unix(1234567890, 0).UTC(),
+		},
 		Message: "commit:  multiple   spaces\nand\nnewlines  ",
 	}
 
@@ -147,9 +153,11 @@ func TestRoundTrip(t *testing.T) {
 	original := &Entry{
 		OldHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		NewHash: plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-		Name:    "Test User",
-		Email:   "test@example.com",
-		When:    time.Unix(1700000000, 0).UTC(),
+		Committer: Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Unix(1700000000, 0).UTC(),
+		},
 		Message: "checkout: moving from main to feature",
 	}
 
@@ -163,9 +171,9 @@ func TestRoundTrip(t *testing.T) {
 	decoded := entries[0]
 	assert.Equal(t, original.OldHash, decoded.OldHash)
 	assert.Equal(t, original.NewHash, decoded.NewHash)
-	assert.Equal(t, original.Name, decoded.Name)
-	assert.Equal(t, original.Email, decoded.Email)
-	assert.Equal(t, original.When.Unix(), decoded.When.Unix())
+	assert.Equal(t, original.Committer.Name, decoded.Committer.Name)
+	assert.Equal(t, original.Committer.Email, decoded.Committer.Email)
+	assert.Equal(t, original.Committer.When.Unix(), decoded.Committer.When.Unix())
 	assert.Equal(t, original.Message, decoded.Message)
 }
 
@@ -176,8 +184,8 @@ func TestDecodeRealGitReflog(t *testing.T) {
 	entries, err := Decode(strings.NewReader(line))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "Stefan Haubold", entries[0].Name)
-	assert.Equal(t, "stefan@haubi.com", entries[0].Email)
+	assert.Equal(t, "Stefan Haubold", entries[0].Committer.Name)
+	assert.Equal(t, "stefan@haubi.com", entries[0].Committer.Email)
 	assert.Equal(t, "clone: from github.com:go-git/go-git.git", entries[0].Message)
 	assert.Equal(t, "2083cf940afa6b2cf04bad67f152ab56514e68bc", entries[0].NewHash.String())
 }

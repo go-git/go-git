@@ -121,9 +121,11 @@ func newEntry(msg string) *reflog.Entry {
 	return &reflog.Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Test",
-		Email:   "test@example.com",
-		When:    time.Unix(1234567890, 0).UTC(),
+		Committer: reflog.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+			When:  time.Unix(1234567890, 0).UTC(),
+		},
 		Message: msg,
 	}
 }

@@ -31,17 +31,21 @@ func TestReflogAppendAndRead(t *testing.T) {
 	e1 := &reflog.Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Test User",
-		Email:   "test@example.com",
-		When:    time.Unix(1000000000, 0).UTC(),
+		Committer: reflog.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Unix(1000000000, 0).UTC(),
+		},
 		Message: "commit (initial): first",
 	}
 	e2 := &reflog.Entry{
 		OldHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		NewHash: plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-		Name:    "Test User",
-		Email:   "test@example.com",
-		When:    time.Unix(1000000001, 0).UTC(),
+		Committer: reflog.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Unix(1000000001, 0).UTC(),
+		},
 		Message: "commit: second",
 	}
 
@@ -66,9 +70,11 @@ func TestReflogDelete(t *testing.T) {
 	require.NoError(t, sto.AppendReflog(ref, &reflog.Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		Name:    "Test User",
-		Email:   "test@example.com",
-		When:    time.Unix(1000000000, 0).UTC(),
+		Committer: reflog.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Unix(1000000000, 0).UTC(),
+		},
 		Message: "commit (initial): first",
 	}))
 

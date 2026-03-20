@@ -12,18 +12,26 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// Signature represents an author or committer identity with a timestamp.
+// This mirrors object.Signature but is defined here to avoid an import cycle
+// (reflog -> object -> storer -> reflog).
+type Signature struct {
+	// Name represents a person name.
+	Name string
+	// Email is an email address.
+	Email string
+	// When is the timestamp of the signature.
+	When time.Time
+}
+
 // Entry represents a single reflog entry.
 type Entry struct {
 	// OldHash is the hash the reference pointed to before the change.
 	OldHash plumbing.Hash
 	// NewHash is the hash the reference points to after the change.
 	NewHash plumbing.Hash
-	// Name is the name of the person who made the change.
-	Name string
-	// Email is the email of the person who made the change.
-	Email string
-	// When is the timestamp of the change.
-	When time.Time
+	// Committer holds the signature for the entry, including name, email and when it was created.
+	Committer Signature
 	// Message describes the action that caused the change (e.g. "commit: Add feature").
 	Message string
 }
@@ -98,15 +106,15 @@ func decodeLine(line []byte) (*Entry, error) {
 		return nil, fmt.Errorf("invalid signature in reflog entry")
 	}
 
-	e.Name = string(bytes.TrimSpace(sigBytes[:open]))
-	e.Email = string(sigBytes[open+1 : closeBracket])
+	e.Committer.Name = string(bytes.TrimSpace(sigBytes[:open]))
+	e.Committer.Email = string(sigBytes[open+1 : closeBracket])
 
 	// Parse timestamp and timezone after '> '
 	if closeBracket+2 >= len(sigBytes) {
 		return nil, fmt.Errorf("missing timestamp in reflog entry")
 	}
 	var err error
-	e.When, err = decodeTimestamp(sigBytes[closeBracket+2:])
+	e.Committer.When, err = decodeTimestamp(sigBytes[closeBracket+2:])
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +169,7 @@ func normalizeMessage(msg string) string {
 
 // Encode writes a single reflog entry to the writer.
 func Encode(w io.Writer, e *Entry) error {
-	_, offset := e.When.Zone()
+	_, offset := e.Committer.When.Zone()
 	sign := '+'
 	if offset < 0 {
 		sign = '-'
@@ -175,8 +183,8 @@ func Encode(w io.Writer, e *Entry) error {
 	if msg != "" {
 		_, err := fmt.Fprintf(w, "%s %s %s <%s> %d %c%02d%02d\t%s\n",
 			e.OldHash, e.NewHash,
-			e.Name, e.Email,
-			e.When.Unix(), sign, hours, minutes,
+			e.Committer.Name, e.Committer.Email,
+			e.Committer.When.Unix(), sign, hours, minutes,
 			msg,
 		)
 		return err
@@ -184,8 +192,8 @@ func Encode(w io.Writer, e *Entry) error {
 
 	_, err := fmt.Fprintf(w, "%s %s %s <%s> %d %c%02d%02d\n",
 		e.OldHash, e.NewHash,
-		e.Name, e.Email,
-		e.When.Unix(), sign, hours, minutes,
+		e.Committer.Name, e.Committer.Email,
+		e.Committer.When.Unix(), sign, hours, minutes,
 	)
 	return err
 }
