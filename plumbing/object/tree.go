@@ -93,6 +93,9 @@ func (t *Tree) File(path string) (*File, error) {
 // This is useful when you already have a TreeEntry and want to avoid redundant lookups.
 // The path parameter is used for the File's Name field.
 func (t *Tree) FileFromEntry(path string, e *TreeEntry) (*File, error) {
+	if e == nil {
+		return nil, ErrFileNotFound
+	}
 	blob, err := GetBlob(t.s, e.Hash)
 	if err != nil {
 		if errors.Is(err, plumbing.ErrObjectNotFound) {

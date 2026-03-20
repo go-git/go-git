@@ -172,10 +172,13 @@ func findInAlternates[T any](s *ObjectStorage, fn func(*ObjectStorage) (T, error
 	}
 
 	err := g.Wait()
-	if err != nil && !found {
+	if found {
+		return foundVal, nil
+	}
+	if err != nil {
 		return zero, errors.Join(err, plumbing.ErrObjectNotFound)
 	}
-	return foundVal, nil
+	return zero, plumbing.ErrObjectNotFound
 }
 
 func (s *ObjectStorage) requireIndex() error {
