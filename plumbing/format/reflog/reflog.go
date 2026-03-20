@@ -163,6 +163,8 @@ func decodeTimestamp(s []byte) (time.Time, error) {
 // normalizeMessage normalizes a reflog message the same way Git does:
 // collapse consecutive whitespace to a single space, strip leading/trailing
 // whitespace, and remove newlines.
+// See copy_reflog_msg in refs.c:
+// https://github.com/git/git/blob/7ff1e8dc1e1680510c96e69965b3fa81372c5037/refs.c#L1026-L1049
 func normalizeMessage(msg string) string {
 	msg = strings.ReplaceAll(msg, "\n", " ")
 	msg = strings.ReplaceAll(msg, "\r", " ")
