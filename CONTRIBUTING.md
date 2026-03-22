@@ -62,6 +62,31 @@ we will only be accepting bug fixes or CVE related dependency bumps for the
 
 Bug fixes that also impact `main`, should be fixed there first, and then backported to `v5`.
 
+### Developer Certificate of Origin
+
+go-git requires all commits to be signed off with a [Developer Certificate of Origin (DCO)](https://developercertificate.org/) sign-off. This is a lightweight way for contributors to certify that they wrote, or have the right to submit, the code being contributed.
+
+The sign-off is a single line added to the end of each commit message:
+
+```
+Signed-off-by: Jane Smith <jane.smith@example.com>
+```
+
+Git makes this easy — pass `-s` (or `--signoff`) when committing:
+
+```sh
+git commit -s -m "plumbing: packp, fix capability parsing"
+```
+
+To sign off commits you have already made:
+
+```sh
+git commit --amend --signoff --no-edit  # amend the last commit
+git rebase --signoff HEAD~N             # sign off the last N commits
+```
+
+DCO sign-off is verified automatically on every pull request. PRs with unsigned commits will not be merged.
+
 ### Format of the commit message
 
 Every commit message should describe what was changed, under which context and, if applicable, the GitHub issue it relates to:
