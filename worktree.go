@@ -41,6 +41,9 @@ var (
 	ErrSubmoduleNotFound = errors.New("submodule not found")
 	// ErrUnstagedChanges is returned when the worktree has unstaged changes.
 	ErrUnstagedChanges = errors.New("worktree contains unstaged changes")
+	// ErrLocalChanges is returned when a KeepReset is attempted but a file
+	// that would be changed by the reset has local modifications.
+	ErrLocalChanges = errors.New("worktree contains local changes that would be overwritten by reset")
 	// ErrGitModulesSymlink is returned when .gitmodules is a symlink.
 	ErrGitModulesSymlink = errors.New(gitmodulesFile + " is a symlink")
 	// ErrNonFastForwardUpdate is returned when a non-fast-forward update is attempted.
@@ -349,14 +352,20 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
-	// For HardReset, capture the current HEAD tree before resetting HEAD.
-	// resetWorktreeToTree will diff prevTree→t and apply only those changes
-	// to the worktree. Since the diff is tree-to-tree, untracked files are
-	// invisible and are never deleted — matching real git reset --hard.
+	// For HardReset and KeepReset, capture the current HEAD tree before
+	// resetting HEAD. resetWorktreeToTree will diff prevTree→t and apply only
+	// those changes to the worktree. Since the diff is tree-to-tree, untracked
+	// files are invisible and are never deleted — matching real git reset --hard.
 	var prevTree *object.Tree
-	if opts.Mode == HardReset {
+	if opts.Mode == HardReset || opts.Mode == KeepReset {
 		prevTree, err = w.headTree()
 		if err != nil {
+			return err
+		}
+	}
+
+	if opts.Mode == KeepReset {
+		if err := w.checkKeepResetConflicts(prevTree, t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -366,7 +375,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	var removedFiles []string
-	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset {
+	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset || opts.Mode == KeepReset {
 		if removedFiles, err = w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
@@ -378,7 +387,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
-	if opts.Mode == HardReset {
+	if opts.Mode == HardReset || opts.Mode == KeepReset {
 		if err := w.resetWorktreeToTree(prevTree, t, opts.Files); err != nil {
 			return err
 		}
@@ -528,6 +537,113 @@ func (w *Worktree) headTree() (*object.Tree, error) {
 		return nil, err
 	}
 	return c.Tree()
+}
+
+// checkKeepResetConflicts implements the safety check for KeepReset
+// (git reset --keep): it aborts if any file that would be modified by the
+// reset has local staged or unstaged modifications in the worktree.
+//
+// Three categories of "touched" paths are checked:
+//
+//  1. Files that differ between fromTree and toTree (filtered by files when
+//     non-empty). Among these, paths that will be *written* to disk (Insert or
+//     Modify) are additionally checked for untracked-overwrite collisions.
+//
+//  2. When sparseDirs is non-empty: currently-on-disk tracked files that will
+//     become SkipWorktree because their path is no longer under any of the new
+//     sparse directories. Step 3 of resetWorktreeToTree removes them from disk,
+//     so KeepReset must refuse if they carry local modifications.
+func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparseDirs, files []string) error {
+	changes, err := diffTrees(fromTree, toTree)
+	if err != nil {
+		return err
+	}
+
+	filesMap := buildFilePathMap(files)
+
+	// touched: all paths that the reset will affect (checked for local mods).
+	// writtenPaths: subset of touched that will be written to disk (Insert /
+	// Modify). An untracked file at such a path would be silently overwritten,
+	// which KeepReset must refuse — matching git reset --keep behaviour.
+	touched := make(map[string]struct{})
+	writtenPaths := make(map[string]struct{})
+
+	for _, ch := range changes {
+		// Canonical path for the files-filter: prefer To (Insert/Modify),
+		// fall back to From (Delete).
+		var name string
+		if ch.To != nil {
+			name = ch.To.String()
+		} else {
+			name = ch.From.String()
+		}
+		if len(files) > 0 && !inFiles(filesMap, name) {
+			continue
+		}
+		if ch.From != nil {
+			touched[ch.From.String()] = struct{}{}
+		}
+		if ch.To != nil {
+			touched[ch.To.String()] = struct{}{}
+			writtenPaths[ch.To.String()] = struct{}{}
+		}
+	}
+
+	// When SparseDirs is changing, any currently-on-disk tracked file that
+	// falls outside the new sparse set will be removed from disk by step 3 of
+	// resetWorktreeToTree. KeepReset must refuse if such a file has local mods.
+	if len(sparseDirs) > 0 {
+		idx, err := w.r.Storer.Index()
+		if err != nil {
+			return err
+		}
+		for _, e := range idx.Entries {
+			if e.SkipWorktree {
+				continue // already excluded from the worktree
+			}
+			if len(files) > 0 && !inFiles(filesMap, e.Name) {
+				continue
+			}
+			included := false
+			for _, dir := range sparseDirs {
+				if strings.HasPrefix(e.Name, dir+"/") || e.Name == dir {
+					included = true
+					break
+				}
+			}
+			if !included {
+				touched[e.Name] = struct{}{}
+			}
+		}
+	}
+
+	if len(touched) == 0 {
+		return nil
+	}
+
+	// Check worktree status for local modifications on touched paths.
+	status, err := w.Status()
+	if err != nil {
+		return err
+	}
+	for path, st := range status {
+		if _, willChange := touched[path]; !willChange {
+			continue
+		}
+		// Tracked file with staged or unstaged local changes → conflict.
+		if (st.Staging != Unmodified && st.Staging != Untracked) ||
+			(st.Worktree != Unmodified && st.Worktree != Untracked) {
+			return fmt.Errorf("%w: %s", ErrLocalChanges, path)
+		}
+		// Untracked file at a path that will be written to disk → the reset
+		// would silently overwrite it, which KeepReset must refuse.
+		if st.Staging == Untracked && st.Worktree == Untracked {
+			if _, willWrite := writtenPaths[path]; willWrite {
+				return fmt.Errorf("%w: %s", ErrLocalChanges, path)
+			}
+		}
+	}
+	return nil
 }
 
 // resetWorktreeToTree updates the worktree to match toTree, mirroring
