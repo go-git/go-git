@@ -659,6 +659,16 @@ func checkTargetDirIsEmpty(path string) (empty bool, err error) {
 	return false, nil
 }
 
+// Close releases any open resources held by the repository. It must be called
+// when the repository is no longer needed. It is safe to call Close on a
+// repository backed by memory storage, where it is a no-op.
+func (r *Repository) Close() error {
+	if c, ok := r.Storer.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
 // Config return the repository config. In a filesystem backed repository this
 // means read the `.git/config`.
 func (r *Repository) Config() (*config.Config, error) {
