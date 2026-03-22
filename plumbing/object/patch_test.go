@@ -1,13 +1,16 @@
 package object
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -159,4 +162,70 @@ func (s *PatchSuite) TestFileStatsString() {
 		s.T().Log("Executing test cases:", tc.description)
 		s.Equal(tc.expected, printStat(tc.input))
 	}
+}
+
+// modifyChange returns a Change representing a modification to a known file
+// in the go-git fixture, suitable for exercising filePatchWithContext.
+func (s *PatchSuite) modifyChange() *Change {
+	path := "utils/difftree/difftree.go"
+	name := "difftree.go"
+	mode := filemode.Regular
+	fromBlob := plumbing.NewHash("05f583ace3a9a078d8150905a53a4d82567f125f")
+	fromTree := plumbing.NewHash("b1f01b730b855c82431918cb338ad47ed558999b")
+	toBlob := plumbing.NewHash("de927fad935d172929aacf20e71f3bf0b91dd6f9")
+	toTree := plumbing.NewHash("8b0af31d2544acb5c4f3816a602f11418cbd126e")
+	return &Change{
+		From: ChangeEntry{
+			Name:      path,
+			Tree:      s.tree(fromTree),
+			TreeEntry: TreeEntry{Name: name, Mode: mode, Hash: fromBlob},
+		},
+		To: ChangeEntry{
+			Name:      path,
+			Tree:      s.tree(toTree),
+			TreeEntry: TreeEntry{Name: name, Mode: mode, Hash: toBlob},
+		},
+	}
+}
+
+// TestPatchContextDeadlineExpired verifies that filePatchWithContext returns
+// ErrCanceled when the context deadline has already expired before the call.
+func (s *PatchSuite) TestPatchContextDeadlineExpired() {
+	change := s.modifyChange()
+
+	// Deadline already in the past — filePatchWithContext must detect this
+	// immediately and return ErrCanceled without performing any diff work.
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	fp, err := filePatchWithContext(ctx, change)
+	s.Nil(fp)
+	s.ErrorIs(err, ErrCanceled)
+}
+
+// TestPatchContextWithActiveDeadline verifies that filePatchWithContext
+// succeeds and returns a non-empty patch when given a context with ample time
+// remaining, exercising the diff.DoWithTimeout code path.
+func (s *PatchSuite) TestPatchContextWithActiveDeadline() {
+	change := s.modifyChange()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fp, err := filePatchWithContext(ctx, change)
+	s.NoError(err)
+	s.NotNil(fp)
+	s.NotEmpty(fp.Chunks())
+}
+
+// TestPatchContextWithoutDeadline verifies that filePatchWithContext
+// succeeds and returns a non-empty patch when given a context without
+// deadline, exercising the diff.Do code path.
+func (s *PatchSuite) TestPatchContextWithoutDeadline() {
+	change := s.modifyChange()
+
+	fp, err := filePatchWithContext(context.TODO(), change)
+	s.NoError(err)
+	s.NotNil(fp)
+	s.NotEmpty(fp.Chunks())
 }
