@@ -931,7 +931,7 @@ func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
 	copy(originalURLs, c.URLs)
 
 	for i, url := range c.URLs {
-		if matchingURLRule := findLongestInsteadOfMatch(url, urlRules); matchingURLRule != nil {
+		if matchingURLRule := FindLongestInsteadOfMatch(url, urlRules); matchingURLRule != nil {
 			c.URLs[i] = matchingURLRule.ApplyInsteadOf(c.URLs[i])
 			c.insteadOfRulesApplied = true
 		}
