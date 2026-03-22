@@ -246,6 +246,10 @@ func (s *Submodule) fetchAndCheckout(
 ) error {
 	if !o.NoFetch {
 		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth, Depth: o.Depth})
+		if errors.Is(err, transport.ErrShallowNotSupported) && o.Depth > 0 {
+			err = r.FetchContext(ctx, &FetchOptions{Auth: o.Auth})
+		}
+
 		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 			return err
 		}
@@ -269,7 +273,21 @@ func (s *Submodule) fetchAndCheckout(
 				RefSpecs: []config.RefSpec{refSpec},
 				Depth:    o.Depth,
 			})
-			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) && !errors.Is(err, ErrExactSHA1NotSupported) {
+
+			if (errors.Is(err, ErrExactSHA1NotSupported) || errors.Is(err, transport.ErrShallowNotSupported)) && o.Depth > 0 {
+				err = r.FetchContext(ctx, &FetchOptions{
+					Auth:     o.Auth,
+					RefSpecs: []config.RefSpec{refSpec},
+				})
+			}
+
+			if errors.Is(err, ErrExactSHA1NotSupported) {
+				err = r.FetchContext(ctx, &FetchOptions{
+					Auth: o.Auth,
+				})
+			}
+
+			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 				return err
 			}
 		}
