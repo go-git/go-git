@@ -1929,17 +1929,13 @@ func (r *Repository) Merge(ref plumbing.Reference, opts MergeOptions) error {
 
 	// Ignore error as not having a shallow list is optional here.
 	shallowList, _ := r.Storer.Shallow()
-	var earliestShallow *plumbing.Hash
-	if len(shallowList) > 0 {
-		earliestShallow = &shallowList[0]
-	}
 
 	head, err := r.Head()
 	if err != nil {
 		return err
 	}
 
-	ff, err := isFastForward(r.Storer, head.Hash(), ref.Hash(), earliestShallow)
+	ff, err := isFastForward(r.Storer, head.Hash(), ref.Hash(), shallowList)
 	if err != nil {
 		return err
 	}

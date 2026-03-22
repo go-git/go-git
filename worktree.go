@@ -125,12 +125,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		// if we don't have a shallows list, just ignore it
 		shallowList, _ := w.r.Storer.Shallow()
 
-		var earliestShallow *plumbing.Hash
-		if len(shallowList) > 0 {
-			earliestShallow = &shallowList[0]
-		}
-
-		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash(), earliestShallow)
+		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash(), shallowList)
 		if err != nil {
 			return err
 		}
@@ -139,7 +134,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 			return NoErrAlreadyUpToDate
 		}
 
-		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash(), earliestShallow)
+		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash(), shallowList)
 		if err != nil {
 			return err
 		}
