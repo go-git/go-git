@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -162,6 +163,24 @@ func TestNewEndpointFile(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, strings.TrimPrefix(tc.want, "file://"), ep.Path)
 			}
+		})
+	}
+}
+
+// TestNewEndpointFile_RelativeDotDot verifies that ..-relative paths are
+// absolutized by NewEndpoint so that the chroot-based FilesystemLoader does
+// not reject them with "chroot boundary crossed".
+//
+// Fixes: https://github.com/go-git/go-git/issues/1723
+func TestNewEndpointFile_RelativeDotDot(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{"../../", "../foo", ".."} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			ep, err := NewEndpoint(input)
+			require.NoError(t, err)
+			assert.True(t, filepath.IsAbs(ep.Path),
+				"..-relative path %q must be resolved to absolute, got %q", input, ep.Path)
 		})
 	}
 }

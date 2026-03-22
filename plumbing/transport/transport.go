@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -176,6 +177,17 @@ func parseFile(endpoint string) (*Endpoint, bool) {
 	}
 
 	path := endpoint
+	// Paths that navigate upward (e.g. "../../repo", "../sibling") would be
+	// rejected by the chroot-based filesystem loader with "chroot boundary
+	// crossed". Resolve them to absolute paths now, using the process's
+	// working directory, which is exactly what `git clone` does.
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(path) &&
+		(cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator))) {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
 	return &Endpoint{
 		URL: url.URL{
 			Scheme: "file",
