@@ -247,6 +247,40 @@ func (d *DotGit) Shallow() (billy.File, error) {
 	return f, nil
 }
 
+// ReflogReader returns a file pointer for reading the reflog for the given reference.
+// Returns nil, nil if the reflog file does not exist.
+func (d *DotGit) ReflogReader(name plumbing.ReferenceName) (billy.File, error) {
+	p := d.fs.Join(logsPath, string(name))
+	f, err := d.fs.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return f, nil
+}
+
+// ReflogWriter returns a file pointer for appending to the reflog for the given reference.
+// It creates the file and any necessary parent directories if they don't exist.
+func (d *DotGit) ReflogWriter(name plumbing.ReferenceName) (billy.File, error) {
+	p := d.fs.Join(logsPath, string(name))
+	if err := d.fs.MkdirAll(filepath.Dir(p), os.ModePerm); err != nil {
+		return nil, err
+	}
+	return d.fs.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+}
+
+// DeleteReflog removes the reflog file for the given reference.
+func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
+	p := d.fs.Join(logsPath, string(name))
+	err := d.fs.Remove(p)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
