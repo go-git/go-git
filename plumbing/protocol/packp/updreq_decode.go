@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	shallowLineLength       = len(shallow) + sha1HexSize
 	minCommandLength        = sha1HexSize*2 + 2 + 1
 	minCommandAndCapsLength = minCommandLength + 1
 )
@@ -34,8 +33,8 @@ func errInvalidHash(hash string) error {
 
 func errInvalidShallowLineLength(got int) error {
 	return errMalformedRequest(fmt.Sprintf(
-		"invalid shallow line length: expected %d, got %d",
-		shallowLineLength, got))
+		"invalid shallow line length: expected %d or %d, got %d",
+		len(shallow)+sha1HexSize, len(shallow)+sha256HexSize, got))
 }
 
 func errInvalidCommandCapabilitiesLineLength(got int) error {
@@ -131,13 +130,14 @@ func (d *updReqDecoder) scanLine() error {
 }
 
 func (d *updReqDecoder) decodeShallow() error {
-	b := d.payload
+	b := bytes.TrimSuffix(d.payload, eol)
 
 	if !bytes.HasPrefix(b, shallowNoSp) {
 		return nil
 	}
 
-	if len(b) != shallowLineLength {
+	hashLen := len(b) - len(shallow)
+	if hashLen != sha1HexSize && hashLen != sha256HexSize {
 		return errInvalidShallowLineLength(len(b))
 	}
 

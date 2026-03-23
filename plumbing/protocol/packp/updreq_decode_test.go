@@ -40,28 +40,28 @@ func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 7$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 7$")
 
 	payloads = []string{
 		"shallow ",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 8$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 8$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec65",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 44$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 44$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e54",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 49$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 49$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584eu",
@@ -69,6 +69,27 @@ func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 		"",
 	}
 	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow object id: invalid hash: .*")
+}
+
+func (s *UpdReqDecodeSuite) TestShallowWithTrailingNewline() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := NewUpdateRequests()
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref"), Old: hash1, New: hash2},
+	}
+	expected.Capabilities.Add("shallow")
+	expected.Shallow = &hash1
+
+	// Shallow line with trailing newline (49 bytes), as sent by reference Git.
+	payloads := []string{
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00shallow",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
 }
 
 func (s *UpdReqDecodeSuite) TestMalformedCommand() {
