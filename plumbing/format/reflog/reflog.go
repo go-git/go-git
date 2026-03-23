@@ -116,10 +116,10 @@ func decodeLine(line []byte) (*Entry, error) {
 
 	// Split on tab to separate signature from message
 	sigBytes := line
-	tabIdx := bytes.IndexByte(line, '\t')
-	if tabIdx != -1 {
-		sigBytes = line[:tabIdx]
-		e.Message = string(line[tabIdx+1:])
+	before, after, ok := bytes.Cut(line, []byte{'\t'})
+	if ok {
+		sigBytes = before
+		e.Message = string(after)
 	}
 
 	// Parse signature: Name <email> timestamp timezone

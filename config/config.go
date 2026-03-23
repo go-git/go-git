@@ -260,7 +260,7 @@ func merge(dst, src any) {
 			// Handle nested fields which are based off structs.
 			merge(df.Addr().Interface(), sf.Addr().Interface())
 
-		case reflect.Ptr:
+		case reflect.Pointer:
 			if sf.IsNil() {
 				continue
 			}

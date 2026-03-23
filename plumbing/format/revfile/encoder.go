@@ -35,7 +35,7 @@ func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
 	}
 	v := reflect.ValueOf(w)
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if v.IsNil() {
 			return fmt.Errorf("nil writer")
 		}
