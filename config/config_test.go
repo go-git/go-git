@@ -33,6 +33,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 		commentchar = bar
 		autocrlf = true
 		filemode = false
+		hooksPath = custom-hooks
 [user]
 		name = John Doe
 		email = john@example.com
@@ -79,6 +80,7 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.Equal("bar", cfg.Core.CommentChar)
 	s.Equal("true", cfg.Core.AutoCRLF)
 	s.False(cfg.Core.FileMode)
+	s.Equal("custom-hooks", cfg.Core.HooksPath)
 	s.Equal("John Doe", cfg.User.Name)
 	s.Equal("john@example.com", cfg.User.Email)
 	s.Equal("Jane Roe", cfg.Author.Name)
@@ -112,6 +114,7 @@ func (s *ConfigSuite) TestMarshal() {
 	worktree = bar
 	autocrlf = true
 	filemode = true
+	hooksPath = custom-hooks
 [pack]
 	window = 20
 [remote "alt"]
@@ -141,6 +144,7 @@ func (s *ConfigSuite) TestMarshal() {
 	cfg.Core.IsBare = true
 	cfg.Core.Worktree = "bar"
 	cfg.Core.AutoCRLF = "true"
+	cfg.Core.HooksPath = "custom-hooks"
 	cfg.Pack.Window = 20
 	cfg.Init.DefaultBranch = "main"
 	cfg.Remotes["origin"] = &RemoteConfig{

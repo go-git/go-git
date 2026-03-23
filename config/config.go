@@ -84,6 +84,8 @@ type Config struct {
 		// against local file, 0644 will be used as the value of its mode. The original
 		// value of mode is left unchanged in the index.
 		FileMode bool
+		// HooksPath is the path to look for hooks instead of $GIT_DIR/hooks.
+		HooksPath string
 	}
 
 	User struct {
@@ -408,6 +410,7 @@ const (
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
 	fileModeKey                = "filemode"
+	hooksPathKey               = "hooksPath"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -459,6 +462,7 @@ func (c *Config) unmarshalCore() {
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
+	c.Core.HooksPath = s.Options.Get(hooksPathKey)
 
 	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
 		c.Core.FileMode = false
@@ -651,6 +655,10 @@ func (c *Config) marshalCore() {
 	}
 
 	s.SetOption(fileModeKey, fmt.Sprintf("%t", c.Core.FileMode))
+
+	if c.Core.HooksPath != "" {
+		s.SetOption(hooksPathKey, c.Core.HooksPath)
+	}
 }
 
 func (c *Config) marshalExtensions() {
