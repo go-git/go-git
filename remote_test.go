@@ -1775,6 +1775,65 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	})
 }
 
+// TestFetchAfterShallowClone_NoForceRefspec is a regression test for
+// https://github.com/go-git/go-git/issues/207.
+//
+// When a shallow clone is followed by a depth-limited fetch using a plain
+// (non-force) refspec, the local ancestor walk would fail with
+// plumbing.ErrObjectNotFound because intermediate commits (between the old
+// local tip and the new shallow tip) are absent from the local store.
+// The fix makes isFastForward aware of shallow boundaries: when ancestry
+// cannot be proven due to missing shallow history, it conservatively assumes
+// fast-forward (matching the behaviour of git(1)).
+func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	// Build a remote with two commits so we can take a shallow clone.
+	remoteRepo, err := PlainInit(remoteURL, false)
+	s.Require().NoError(err)
+	_ = CommitNewFile(s.T(), remoteRepo, "File1")
+	_ = CommitNewFile(s.T(), remoteRepo, "File2")
+
+	// Shallow clone at depth=1 — only the latest commit is stored locally.
+	repo, err := PlainClone(repoDir, &CloneOptions{
+		URL:           remoteURL,
+		Depth:         1,
+		Tags:          plumbing.NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	s.Require().NoError(err)
+
+	// Push two more commits to the remote while the local clone is still shallow.
+	_ = CommitNewFile(s.T(), remoteRepo, "File3")
+	sha4 := CommitNewFile(s.T(), remoteRepo, "File4")
+
+	// Fetch with depth=1 and a plain (non-force) refspec.
+	// This means only File4's commit is fetched; File3's commit is absent
+	// locally, so the ancestry walk from sha4 back to our current tip would
+	// hit a missing object without the fix.
+	r, err := repo.Remote(DefaultRemoteName)
+	s.Require().NoError(err)
+
+	err = r.Fetch(&FetchOptions{
+		Depth: 1,
+		Tags:  plumbing.NoTags,
+		RefSpecs: []config.RefSpec{
+			// No leading '+' — this is a fast-forward-only refspec.
+			"refs/heads/master:refs/heads/master",
+			"refs/heads/master:refs/remotes/origin/master",
+		},
+	})
+	s.Require().NoError(err, "shallow fetch with non-force refspec must not return an error")
+
+	// Confirm the local branch was updated to the new tip.
+	head, err := repo.Reference(plumbing.NewBranchReferenceName("master"), true)
+	s.Require().NoError(err)
+	s.Equal(sha4, head.Hash(), "local master must point to the new remote tip")
+}
+
 func TestFetchFastForwardForCustomRef(t *testing.T) {
 	t.Parallel()
 	customRef := "refs/custom/branch"
