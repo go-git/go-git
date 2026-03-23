@@ -243,7 +243,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 	signer := opts.Signer
 	if signer == nil {
 		cfg, err := w.r.ConfigScoped(config.SystemScope)
-		if err == nil && cfg != nil && cfg.Commit.GpgSign {
+		if err == nil && cfg != nil && cfg.Commit.GpgSign.IsTrue() {
 			if !plugin.Has(plugin.ObjectSigner()) {
 				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign commit: disable commit.gpgSign or register an ObjectSigner plugin")
 			}

@@ -1095,27 +1095,94 @@ func TestGPGConfig(t *testing.T) {
 		assert.Contains(t, string(data), "[user]\n\tsigningKey = /path/to/key")
 	})
 
-	t.Run("unmarshal gpgSign", func(t *testing.T) {
+	t.Run("unmarshal gpgSign true", func(t *testing.T) {
 		t.Parallel()
 		input := []byte("[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true")
 		cfg := NewConfig()
 		err := cfg.Unmarshal(input)
 		require.NoError(t, err)
 
-		assert.True(t, cfg.Tag.GpgSign)
-		assert.True(t, cfg.Commit.GpgSign)
+		assert.Equal(t, OptBoolTrue, cfg.Tag.GpgSign)
+		assert.Equal(t, OptBoolTrue, cfg.Commit.GpgSign)
+	})
+
+	t.Run("unmarshal gpgSign false", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, OptBoolFalse, cfg.Tag.GpgSign)
+		assert.Equal(t, OptBoolFalse, cfg.Commit.GpgSign)
+	})
+
+	t.Run("unmarshal gpgSign unset", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[core]\n\tbare = false")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, OptBoolUnset, cfg.Tag.GpgSign)
+		assert.Equal(t, OptBoolUnset, cfg.Commit.GpgSign)
 	})
 
 	t.Run("marshal gpgSign", func(t *testing.T) {
 		t.Parallel()
 		cfg := NewConfig()
-		cfg.Tag.GpgSign = true
-		cfg.Commit.GpgSign = true
+		cfg.Tag.GpgSign = OptBoolTrue
+		cfg.Commit.GpgSign = OptBoolTrue
 
 		data, err := cfg.Marshal()
 		require.NoError(t, err)
 
 		assert.Contains(t, string(data), "[commit]\n\tgpgSign = true")
 		assert.Contains(t, string(data), "[tag]\n\tgpgSign = true")
+	})
+
+	t.Run("marshal gpgSign false", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Tag.GpgSign = OptBoolFalse
+		cfg.Commit.GpgSign = OptBoolFalse
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[commit]\n\tgpgSign = false")
+		assert.Contains(t, string(data), "[tag]\n\tgpgSign = false")
+	})
+
+	t.Run("merge gpgSign false overrides true", func(t *testing.T) {
+		t.Parallel()
+		global := NewConfig()
+		global.Tag.GpgSign = OptBoolTrue
+		global.Commit.GpgSign = OptBoolTrue
+
+		local := NewConfig()
+		local.Tag.GpgSign = OptBoolFalse
+		local.Commit.GpgSign = OptBoolFalse
+
+		merged := Merge(global, local)
+
+		assert.Equal(t, OptBoolFalse, merged.Tag.GpgSign)
+		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
+	})
+
+	t.Run("merge keeps gpgSign false if next config unset", func(t *testing.T) {
+		t.Parallel()
+		global := NewConfig()
+		global.Commit.GpgSign = OptBoolFalse
+
+		local := NewConfig()
+		local.Tag.GpgSign = OptBoolFalse
+
+		merged := Merge(global, local)
+
+		assert.True(t, merged.Tag.GpgSign.IsSet())
+		assert.True(t, merged.Commit.GpgSign.IsSet())
+		assert.Equal(t, OptBoolFalse, merged.Tag.GpgSign)
+		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
 	})
 }

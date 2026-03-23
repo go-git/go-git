@@ -20,6 +20,7 @@ import (
 
 	_ "unsafe"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -927,7 +928,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 		name           string
 		registerPlugin bool
 		optionsSigner  Signer
-		commitSignGpg  bool
+		commitSignGpg  config.OptBool
 		wantErr        string
 		wantSignature  string
 		wantPluginUsed bool
@@ -935,38 +936,40 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 	}{
 		{
 			name:          "no signer at all produces unsigned commit",
+			commitSignGpg: config.OptBoolFalse,
 			wantSignature: "",
 		},
 		{
 			name:           "CommitOptions.Signer works without plugin registered",
 			optionsSigner:  &mockSigner{},
+			commitSignGpg:  config.OptBoolFalse,
 			wantSignature:  mockSignature + "\n",
 			wantOptionUsed: true,
 		},
 		{
 			name:           "plugin signer is used when CommitOptions.Signer is nil",
 			registerPlugin: true,
-			commitSignGpg:  true,
+			commitSignGpg:  config.OptBoolTrue,
 			wantSignature:  mockSignature + "\n",
 			wantPluginUsed: true,
 		},
 		{
 			name:           "plugin signer is ignored if commit.signGpg=false",
 			registerPlugin: true,
-			commitSignGpg:  false,
+			commitSignGpg:  config.OptBoolFalse,
 			wantSignature:  "",
 			wantPluginUsed: false,
 		},
 		{
 			name:          "error if commit.signGpg=true and no plugin registered",
-			commitSignGpg: true,
+			commitSignGpg: config.OptBoolTrue,
 			wantSignature: "",
-			wantErr:       "cannot auto-sign commit: disable commit.gpgSign or register a ObjectSigner plugin",
+			wantErr:       "cannot auto-sign commit: disable commit.gpgSign or register an ObjectSigner plugin",
 		},
 		{
 			name:           "CommitOptions.Signer takes precedence over plugin",
 			registerPlugin: true,
-			commitSignGpg:  true,
+			commitSignGpg:  config.OptBoolTrue,
 			optionsSigner:  &mockSigner{},
 			wantSignature:  mockSignature + "\n",
 			wantOptionUsed: true,

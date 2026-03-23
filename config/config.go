@@ -106,12 +106,12 @@ type Config struct {
 
 	Tag struct {
 		// GpgSign indicates whether all new tags should be GPG signed.
-		GpgSign bool
+		GpgSign OptBool
 	}
 
 	Commit struct {
 		// GpgSign indicates whether all new commits should be GPG signed.
-		GpgSign bool
+		GpgSign OptBool
 	}
 
 	GPG struct {
@@ -528,7 +528,7 @@ func (c *Config) unmarshalTag() {
 	s := c.Raw.Section(tagSection)
 	v, err := strconv.ParseBool(s.Options.Get(gpgSignKey))
 	if err == nil {
-		c.Tag.GpgSign = v
+		c.Tag.GpgSign = NewOptBool(v)
 	}
 }
 
@@ -536,7 +536,7 @@ func (c *Config) unmarshalCommit() {
 	s := c.Raw.Section(commitSection)
 	v, err := strconv.ParseBool(s.Options.Get(gpgSignKey))
 	if err == nil {
-		c.Commit.GpgSign = v
+		c.Commit.GpgSign = NewOptBool(v)
 	}
 }
 
@@ -764,15 +764,15 @@ func (c *Config) marshalExtensions() {
 
 func (c *Config) marshalTag() {
 	s := c.Raw.Section(tagSection)
-	if c.Tag.GpgSign {
-		s.SetOption(gpgSignKey, strconv.FormatBool(c.Tag.GpgSign))
+	if c.Tag.GpgSign.IsSet() {
+		s.SetOption(gpgSignKey, c.Tag.GpgSign.FormatBool())
 	}
 }
 
 func (c *Config) marshalCommit() {
 	s := c.Raw.Section(commitSection)
-	if c.Commit.GpgSign {
-		s.SetOption(gpgSignKey, strconv.FormatBool(c.Commit.GpgSign))
+	if c.Commit.GpgSign.IsSet() {
+		s.SetOption(gpgSignKey, c.Commit.GpgSign.FormatBool())
 	}
 }
 

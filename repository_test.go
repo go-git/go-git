@@ -3892,7 +3892,7 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 		name           string
 		registerPlugin bool
 		optionsSigner  Signer
-		tagSignGpg     bool
+		tagSignGpg     config.OptBool
 		wantErr        string
 		wantSignature  bool
 		wantPluginUsed bool
@@ -3900,10 +3900,12 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 	}{
 		{
 			name:          "no signer at all produces unsigned tag",
+			tagSignGpg:    config.OptBoolFalse,
 			wantSignature: false,
 		},
 		{
 			name:           "CreateTagOptions.Signer works without plugin registered",
+			tagSignGpg:     config.OptBoolFalse,
 			optionsSigner:  &mockSigner{},
 			wantSignature:  true,
 			wantOptionUsed: true,
@@ -3911,24 +3913,25 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 		{
 			name:           "plugin signer is used when CreateTagOptions.Signer is nil",
 			registerPlugin: true,
-			tagSignGpg:     true,
+			tagSignGpg:     config.OptBoolTrue,
 			wantSignature:  true,
 			wantPluginUsed: true,
 		},
 		{
 			name:           "plugin signer is ignored if tag.signGpg=false",
 			registerPlugin: true,
-			tagSignGpg:     false,
+			tagSignGpg:     config.OptBoolFalse,
 			wantPluginUsed: false,
 		},
 		{
 			name:       "error if tag.signGpg=true and no plugin registered",
-			tagSignGpg: true,
-			wantErr:    "cannot auto-sign tag: disable tag.gpgSign or register a ObjectSigner plugin",
+			tagSignGpg: config.OptBoolTrue,
+			wantErr:    "cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin",
 		},
 		{
 			name:           "CreateTagOptions.Signer takes precedence over plugin",
 			registerPlugin: true,
+			tagSignGpg:     config.OptBoolTrue,
 			optionsSigner:  &mockSigner{},
 			wantSignature:  true,
 			wantOptionUsed: true,
