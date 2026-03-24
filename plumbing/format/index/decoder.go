@@ -149,33 +149,55 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 		e.SkipWorktree = extended&skipWorkTreeMask != 0
 	}
 
-	if err := d.readEntryName(idx, e, flags); err != nil {
+	nameConsumed, err := d.readEntryName(idx, e, flags)
+	if err != nil {
 		return nil, err
 	}
 
-	return e, d.padEntry(idx, e, read)
+	return e, d.padEntry(idx, e, read, nameConsumed)
 }
 
-func (d *Decoder) readEntryName(idx *Index, e *Entry, flags uint16) error {
-	var name string
-	var err error
-
+// readEntryName reads the entry path and sets e.Name. It returns the
+// number of bytes consumed from the stream for the name portion.
+func (d *Decoder) readEntryName(idx *Index, e *Entry, flags uint16) (int, error) {
 	switch idx.Version {
 	case 2, 3:
 		nameLen := flags & nameMask
-		name, err = d.doReadEntryName(nameLen)
+		name, consumed, err := d.doReadEntryName(nameLen)
+		if err != nil {
+			return 0, err
+		}
+		e.Name = name
+		return consumed, nil
 	case 4:
-		name, err = d.doReadEntryNameV4()
+		name, err := d.doReadEntryNameV4()
+		if err != nil {
+			return 0, err
+		}
+		e.Name = name
+		return 0, nil // V4 has no padding; consumed count unused
 	default:
-		return ErrUnsupportedVersion
+		return 0, ErrUnsupportedVersion
+	}
+}
+
+// doReadEntryName reads the entry path for V2/V3 indexes. It returns the
+// name, the number of bytes consumed from the stream, and any error.
+// When nameLen equals nameMask (0xFFF), the name was too long to fit in
+// the 12-bit field and the real length is found by scanning for the NUL
+// terminator — matching C Git's strlen(name) fallback in create_from_disk.
+func (d *Decoder) doReadEntryName(nameLen uint16) (string, int, error) {
+	if nameLen == nameMask {
+		name, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return "", 0, err
+		}
+		return string(name), len(name) + 1, nil // +1 for the consumed NUL delimiter
 	}
 
-	if err != nil {
-		return err
-	}
-
-	e.Name = name
-	return nil
+	name := make([]byte, nameLen)
+	_, err := io.ReadFull(d.r, name)
+	return string(name), int(nameLen), err
 }
 
 func (d *Decoder) doReadEntryNameV4() (string, error) {
@@ -204,24 +226,23 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 	return base + string(name), nil
 }
 
-func (d *Decoder) doReadEntryName(nameLen uint16) (string, error) {
-	name := make([]byte, nameLen)
-	_, err := io.ReadFull(d.r, name)
-
-	return string(name), err
-}
-
-// Index entries are padded out to the next 8 byte alignment
-// for historical reasons related to how C Git read the files.
-func (d *Decoder) padEntry(idx *Index, e *Entry, read int) error {
+// padEntry discards NUL padding bytes that follow each V2/V3 entry on
+// disk. nameConsumed is the number of stream bytes consumed while reading
+// the entry name (which may exceed len(e.Name) when a NUL terminator was
+// consumed for long names where the 12-bit length field overflowed).
+func (d *Decoder) padEntry(idx *Index, e *Entry, read, nameConsumed int) error {
 	if idx.Version == 4 {
 		return nil
 	}
 
 	entrySize := read + len(e.Name)
 	padLen := 8 - entrySize%8
-	_, err := io.CopyN(io.Discard, d.r, int64(padLen))
-	return err
+	padLen -= nameConsumed - len(e.Name)
+	if padLen > 0 {
+		_, err := io.CopyN(io.Discard, d.r, int64(padLen))
+		return err
+	}
+	return nil
 }
 
 func (d *Decoder) readExtensions(idx *Index) error {
