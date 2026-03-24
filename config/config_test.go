@@ -429,7 +429,9 @@ func (s *ConfigSuite) TestValidateInvalidBranchKey() {
 	s.ErrorIs(config.Validate(), ErrInvalid)
 }
 
-func (s *ConfigSuite) TestValidateInvalidBranch() {
+func (s *ConfigSuite) TestValidateBranchNonRefsPrefix() {
+	// Real git allows any value for branch.*.merge, including values
+	// without a refs/ prefix. Validate should accept them.
 	config := &Config{
 		Branches: map[string]*Branch{
 			"bar": {
@@ -445,7 +447,7 @@ func (s *ConfigSuite) TestValidateInvalidBranch() {
 		},
 	}
 
-	s.ErrorIs(config.Validate(), errBranchInvalidMerge)
+	s.NoError(config.Validate())
 }
 
 func (s *ConfigSuite) TestRemoteConfigDefaultValues() {
