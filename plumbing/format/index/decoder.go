@@ -511,16 +511,6 @@ type unknownExtensionDecoder struct {
 }
 
 func (d *unknownExtensionDecoder) Decode() error {
-	var buf [1024]byte
-
-	for {
-		_, err := d.r.Read(buf[:])
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := io.Copy(io.Discard, d.r)
+	return err
 }

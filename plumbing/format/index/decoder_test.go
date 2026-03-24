@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"io"
@@ -323,100 +324,108 @@ func TestDecodeMergeConflict(t *testing.T) {
 	}
 }
 
-func (s *IndexSuite) readSimpleIndex() *Index {
+func readSimpleIndex(tb testing.TB) *Index {
+	tb.Helper()
 	f, err := fixtures.Basic().One().DotGit().Open("index")
-	s.NoError(err)
-	defer func() { s.Nil(f.Close()) }()
+	require.NoError(tb, err)
+	defer func() { require.NoError(tb, f.Close()) }()
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA256.New())
+	d := NewDecoder(f, crypto.SHA1.New())
 	err = d.Decode(idx)
-	s.NoError(err)
+	require.NoError(tb, err)
 
 	return idx
 }
 
-func (s *IndexSuite) buildIndexWithExtension(signature, data string) []byte {
-	idx := s.readSimpleIndex()
+func buildIndexWithExtension(tb testing.TB, signature, data string) []byte {
+	tb.Helper()
+	idx := readSimpleIndex(tb)
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf, crypto.SHA1.New())
 
 	err := e.encode(idx, false)
-	s.NoError(err)
+	require.NoError(tb, err)
 	err = e.encodeRawExtension(signature, []byte(data))
-	s.NoError(err)
+	require.NoError(tb, err)
 
 	err = e.encodeFooter()
-	s.NoError(err)
+	require.NoError(tb, err)
 
 	return buf.Bytes()
 }
 
-func (s *IndexSuite) TestDecodeUnknownOptionalExt() {
-	f := bytes.NewReader(s.buildIndexWithExtension("TEST", "testdata"))
+func TestDecodeUnknownOptionalExt(t *testing.T) {
+	t.Parallel()
+	f := bytes.NewReader(buildIndexWithExtension(t, "TEST", "testdata"))
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA256.New())
+	d := NewDecoder(f, crypto.SHA1.New())
 	err := d.Decode(idx)
-	s.NoError(err)
+	require.NoError(t, err)
 }
 
-func (s *IndexSuite) TestDecodeUnknownMandatoryExt() {
-	f := bytes.NewReader(s.buildIndexWithExtension("test", "testdata"))
+func TestDecodeUnknownMandatoryExt(t *testing.T) {
+	t.Parallel()
+	f := bytes.NewReader(buildIndexWithExtension(t, "test", "testdata"))
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA256.New())
+	d := NewDecoder(f, crypto.SHA1.New())
 	err := d.Decode(idx)
-	s.ErrorContains(err, ErrUnknownExtension.Error())
+	assert.ErrorContains(t, err, ErrUnknownExtension.Error())
 }
 
-func (s *IndexSuite) TestDecodeTruncatedExt() {
-	idx := s.readSimpleIndex()
+func TestDecodeTruncatedExt(t *testing.T) {
+	t.Parallel()
+	idx := readSimpleIndex(t)
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf, crypto.SHA1.New())
 
 	err := e.encode(idx, false)
-	s.NoError(err)
+	require.NoError(t, err)
 
 	_, err = e.w.Write([]byte("TEST"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = binary.WriteUint32(e.w, uint32(100))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	_, err = e.w.Write([]byte("truncated"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = e.encodeFooter()
-	s.NoError(err)
+	require.NoError(t, err)
 
 	idx = &Index{}
-	d := NewDecoder(buf, crypto.SHA256.New())
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(idx)
-	s.ErrorContains(err, io.EOF.Error())
+	assert.ErrorContains(t, err, io.EOF.Error())
 }
 
-func (s *IndexSuite) TestDecodeInvalidHash() {
-	idx := s.readSimpleIndex()
+func TestDecodeInvalidHash(t *testing.T) {
+	t.Parallel()
+	idx := readSimpleIndex(t)
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf, crypto.SHA1.New())
 
 	err := e.encode(idx, false)
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = e.encodeRawExtension("TEST", []byte("testdata"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	h := crypto.SHA1.New()
 	err = binary.Write(e.w, h.Sum(nil))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	idx = &Index{}
 	d := NewDecoder(buf, h)
 	err = d.Decode(idx)
+	assert.ErrorContains(t, err, ErrInvalidChecksum.Error())
+}
 
 func TestDecodeV4StripLength(t *testing.T) {
 	t.Parallel()
