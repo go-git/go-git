@@ -105,3 +105,22 @@ func (b *BranchSuite) TestValidateMergeWithPullRef() {
 	}
 	b.Nil(mrBranch.Validate())
 }
+
+func (b *BranchSuite) TestUnmarshalNonRefsPrefix() {
+	// Real git allows any value for branch.*.merge during config read.
+	// unmarshal should not reject merge values that lack a refs/ prefix.
+	input := []byte(`[core]
+	bare = false
+[branch "foo"]
+	remote = origin
+	merge = main
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	b.NoError(err)
+	branch := cfg.Branches["foo"]
+	b.Equal("foo", branch.Name)
+	b.Equal("origin", branch.Remote)
+	b.Equal(plumbing.ReferenceName("main"), branch.Merge)
+}

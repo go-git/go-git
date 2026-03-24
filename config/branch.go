@@ -47,6 +47,20 @@ func (b *Branch) Validate() error {
 		return errBranchInvalidMerge
 	}
 
+	return b.validateShared()
+}
+
+// validate performs relaxed validation suitable for reading existing configs.
+// It skips the refs/ prefix check on Merge, since real git allows any value.
+func (b *Branch) validate() error {
+	if b.Name == "" {
+		return errBranchEmptyName
+	}
+
+	return b.validateShared()
+}
+
+func (b *Branch) validateShared() error {
 	if b.Rebase != "" &&
 		b.Rebase != "true" &&
 		b.Rebase != "interactive" &&
@@ -112,7 +126,7 @@ func (b *Branch) unmarshal(s *format.Subsection) error {
 	b.Rebase = b.raw.Options.Get(rebaseKey)
 	b.Description = unquoteDescription(b.raw.Options.Get(descriptionKey))
 
-	return b.Validate()
+	return b.validate()
 }
 
 // hack to enable conditional quoting in the
