@@ -10,7 +10,7 @@ type Signer interface {
 	Sign(message io.Reader) ([]byte, error)
 }
 
-// ObjectSigner is key used to represent the plugin for object signing.
+// ObjectSigner returns the key used to register an object-signing plugin.
 // When set, this plugin will set the default signer for new commits and
 // tags.
 func ObjectSigner() key[Signer] {

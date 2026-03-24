@@ -678,10 +678,24 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
 
-	var err error
+	// Use Has before Get so the key is not frozen when no plugin is
+	// registered, allowing callers to register one later.
+	if !plugin.Has(plugin.ConfigLoader()) {
+		return nil, errors.New("no config loader registered")
+	}
+
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return nil, err
+	}
+
 	system := config.NewConfig()
 	if scope >= config.SystemScope {
-		system, err = config.LoadConfig(config.SystemScope)
+		ss, err := src.Load(config.SystemScope)
+		if err != nil {
+			return nil, err
+		}
+		system, err = ss.Config()
 		if err != nil {
 			return nil, err
 		}
@@ -689,7 +703,11 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 
 	global := config.NewConfig()
 	if scope >= config.GlobalScope {
-		global, err = config.LoadConfig(config.GlobalScope)
+		gs, err := src.Load(config.GlobalScope)
+		if err != nil {
+			return nil, err
+		}
+		global, err = gs.Config()
 		if err != nil {
 			return nil, err
 		}
@@ -898,6 +916,8 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	if signer == nil {
 		cfg, err := r.ConfigScoped(config.SystemScope)
 		if err == nil && cfg != nil && cfg.Tag.GpgSign.IsTrue() {
+			// Use Has before Get so the key is not frozen when no plugin is
+			// registered, allowing callers to register one later.
 			if !plugin.Has(plugin.ObjectSigner()) {
 				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin")
 			}
