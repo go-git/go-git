@@ -678,6 +678,17 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
 
+	local, err := r.Storer.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	// LocalScope only needs the repository's own config; no plugin required.
+	if scope <= config.LocalScope {
+		cfg := config.Merge(config.NewConfig(), config.NewConfig(), local)
+		return &cfg, nil
+	}
+
 	// Use Has before Get so the key is not frozen when no plugin is
 	// registered, allowing callers to register one later.
 	if !plugin.Has(plugin.ConfigLoader()) {
@@ -711,11 +722,6 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	local, err := r.Storer.Config()
-	if err != nil {
-		return nil, err
 	}
 
 	cfg := config.Merge(system, global, local)
