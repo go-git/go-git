@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
-
 	"strconv"
 	"time"
 
@@ -26,12 +26,14 @@ var (
 	ErrInvalidChecksum = errors.New("invalid checksum")
 	// ErrUnknownExtension is returned when an index extension is encountered that is considered mandatory
 	ErrUnknownExtension = errors.New("unknown extension")
+	// ErrMalformedIndexFile is returned when the index file contents are
+	// structurally invalid.
+	ErrMalformedIndexFile = errors.New("index decoder: malformed index file")
 )
 
 const (
 	entryHeaderLength = 62
 	entryExtended     = 0x4000
-	entryValid        = 0x8000
 	nameMask          = 0xfff
 	intentToAddMask   = 1 << 13
 	skipWorkTreeMask  = 1 << 14
@@ -177,7 +179,14 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 
 	var base string
 	if d.lastEntry != nil {
+		if l < 0 || int(l) > len(d.lastEntry.Name) {
+			return "", fmt.Errorf("%w: invalid V4 entry name strip length %d (previous name length: %d)",
+				ErrMalformedIndexFile, l, len(d.lastEntry.Name))
+		}
 		base = d.lastEntry.Name[:len(d.lastEntry.Name)-int(l)]
+	} else if l > 0 {
+		return "", fmt.Errorf("%w: non-zero strip length %d on first V4 entry",
+			ErrMalformedIndexFile, l)
 	}
 
 	name, err := binary.ReadUntil(d.r, '\x00')
@@ -312,7 +321,7 @@ func (d *Decoder) readChecksum(expected []byte) error {
 }
 
 func validateHeader(r io.Reader) (version uint32, err error) {
-	var s = make([]byte, 4)
+	s := make([]byte, 4)
 	if _, err := io.ReadFull(r, s); err != nil {
 		return 0, err
 	}

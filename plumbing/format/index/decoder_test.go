@@ -3,10 +3,14 @@ package index
 import (
 	"bytes"
 	"crypto"
-	"github.com/go-git/go-git/v5/plumbing/hash"
-	"github.com/go-git/go-git/v5/utils/binary"
 	"io"
 	"testing"
+	"time"
+
+	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -87,7 +91,6 @@ func (s *IndexSuite) TestDecodeCacheTree(c *C) {
 		c.Assert(idx.Cache.Entries[i].Trees, Equals, expected.Trees)
 		c.Assert(idx.Cache.Entries[i].Hash.String(), Equals, expected.Hash.String())
 	}
-
 }
 
 var expectedEntries = []TreeEntry{
@@ -133,7 +136,6 @@ func (s *IndexSuite) TestDecodeMergeConflict(c *C) {
 		c.Assert(e.Hash.String(), Equals, expected[i].Hash)
 		c.Assert(e.Name, Equals, "go/example.go")
 	}
-
 }
 
 func (s *IndexSuite) TestDecodeExtendedV3(c *C) {
@@ -319,4 +321,111 @@ func (s *IndexSuite) TestDecodeInvalidHash(c *C) {
 	d := NewDecoder(buf)
 	err = d.Decode(idx)
 	c.Assert(err, ErrorMatches, ErrInvalidChecksum.Error())
+}
+
+func TestDecodeV4StripLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		stripLen byte
+		// firstEntry selects which entry's strip length to corrupt.
+		// When true the first entry's varint is patched (lastEntry == nil path).
+		// When false the second entry's varint is patched (lastEntry != nil path).
+		firstEntry bool
+		wantErr    error
+	}{
+		{
+			name:     "SHA1: strip length equals name length",
+			stripLen: 3, // len("abc") — strips entire name, valid
+		},
+		{
+			name:     "SHA1: strip length exceeds name length by one",
+			stripLen: 4, // len("abc")+1 — one past the end
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA1: strip length far exceeds name length",
+			stripLen: 100,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:       "SHA1: non-zero strip length on first entry",
+			stripLen:   1,
+			firstEntry: true,
+			wantErr:    ErrMalformedIndexFile,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var h1, h2 plumbing.Hash
+			idx := &Index{
+				Version: 4,
+				Entries: []*Entry{
+					{
+						CreatedAt:  time.Now(),
+						ModifiedAt: time.Now(),
+						Name:       "abc",
+						Hash:       h1,
+						Size:       1,
+					},
+					{
+						CreatedAt:  time.Now(),
+						ModifiedAt: time.Now(),
+						Name:       "abd",
+						Hash:       h2,
+						Size:       2,
+					},
+				},
+			}
+
+			buf := bytes.NewBuffer(nil)
+			enc := NewEncoder(buf)
+			err := enc.Encode(idx)
+			require.NoError(t, err)
+
+			raw := buf.Bytes()
+
+			hashSize := crypto.SHA1.Size()
+			h := crypto.SHA1.New()
+
+			// In a V4 index, entries are sorted and prefix-compressed. After the
+			// 12-byte header (DIRC + version + count), entry 1 ("abc") is:
+			//   40 (10×uint32) + hashSize (hash) + 2 (flags) + 1 (varint 0) + 4 ("abc\x00")
+			// Entry 2 starts after entry 1. Its fixed header is 40 + hashSize + 2 bytes,
+			// followed by the strip length varint.
+			entryFixedLen := 40 + hashSize + 2
+			entry1StripOffset := 12 + entryFixedLen
+			entry1Len := entryFixedLen + 1 + 4 // + varint(0) + "abc\x00"
+			entry2StripOffset := 12 + entry1Len + entryFixedLen
+
+			var stripLenOffset int
+			if tc.firstEntry {
+				stripLenOffset = entry1StripOffset
+			} else {
+				stripLenOffset = entry2StripOffset
+			}
+			require.Less(t, stripLenOffset, len(raw)-hashSize, "strip length offset must be within data")
+
+			// Variable-width int encoding: a single byte with value < 128 encodes directly.
+			raw[stripLenOffset] = tc.stripLen
+
+			// Recompute the checksum over the modified content.
+			h.Reset()
+			h.Write(raw[:len(raw)-hashSize])
+			copy(raw[len(raw)-hashSize:], h.Sum(nil))
+
+			dec := NewDecoder(bytes.NewReader(raw))
+			out := &Index{}
+			err = dec.Decode(out)
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
