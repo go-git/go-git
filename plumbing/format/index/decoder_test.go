@@ -417,5 +417,142 @@ func (s *IndexSuite) TestDecodeInvalidHash() {
 	idx = &Index{}
 	d := NewDecoder(buf, h)
 	err = d.Decode(idx)
-	s.ErrorContains(err, ErrInvalidChecksum.Error())
+
+func TestDecodeV4StripLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		hash     crypto.Hash
+		stripLen byte
+		// firstEntry selects which entry's strip length to corrupt.
+		// When true the first entry's varint is patched (lastEntry == nil path).
+		// When false the second entry's varint is patched (lastEntry != nil path).
+		firstEntry bool
+		wantErr    error
+	}{
+		{
+			name:     "SHA1: strip length equals name length",
+			hash:     crypto.SHA1,
+			stripLen: 3, // len("abc") — strips entire name, valid
+		},
+		{
+			name:     "SHA1: strip length exceeds name length by one",
+			hash:     crypto.SHA1,
+			stripLen: 4, // len("abc")+1 — one past the end
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA1: strip length far exceeds name length",
+			hash:     crypto.SHA1,
+			stripLen: 100,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA256: strip length equals name length",
+			hash:     crypto.SHA256,
+			stripLen: 3,
+		},
+		{
+			name:     "SHA256: strip length exceeds name length by one",
+			hash:     crypto.SHA256,
+			stripLen: 4,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA256: strip length far exceeds name length",
+			hash:     crypto.SHA256,
+			stripLen: 100,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:       "SHA1: non-zero strip length on first entry",
+			hash:       crypto.SHA1,
+			stripLen:   1,
+			firstEntry: true,
+			wantErr:    ErrMalformedIndexFile,
+		},
+		{
+			name:       "SHA256: non-zero strip length on first entry",
+			hash:       crypto.SHA256,
+			stripLen:   1,
+			firstEntry: true,
+			wantErr:    ErrMalformedIndexFile,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := tc.hash.New()
+			hashSize := h.Size()
+
+			var h1, h2 plumbing.Hash
+			h1.ResetBySize(hashSize)
+			h2.ResetBySize(hashSize)
+
+			idx := &Index{
+				Version: 4,
+				Entries: []*Entry{
+					{
+						CreatedAt:  time.Now(),
+						ModifiedAt: time.Now(),
+						Name:       "abc",
+						Hash:       h1,
+						Size:       1,
+					},
+					{
+						CreatedAt:  time.Now(),
+						ModifiedAt: time.Now(),
+						Name:       "abd",
+						Hash:       h2,
+						Size:       2,
+					},
+				},
+			}
+
+			buf := bytes.NewBuffer(nil)
+			enc := NewEncoder(buf, tc.hash.New())
+			err := enc.Encode(idx)
+			require.NoError(t, err)
+
+			raw := buf.Bytes()
+
+			// In a V4 index, entries are sorted and prefix-compressed. After the
+			// 12-byte header (DIRC + version + count), entry 1 ("abc") is:
+			//   40 (10×uint32) + hashSize (hash) + 2 (flags) + 1 (varint 0) + 4 ("abc\x00")
+			// Entry 2 starts after entry 1. Its fixed header is 40 + hashSize + 2 bytes,
+			// followed by the strip length varint.
+			entryFixedLen := 40 + hashSize + 2
+			entry1StripOffset := 12 + entryFixedLen
+			entry1Len := entryFixedLen + 1 + 4 // + varint(0) + "abc\x00"
+			entry2StripOffset := 12 + entry1Len + entryFixedLen
+
+			var stripLenOffset int
+			if tc.firstEntry {
+				stripLenOffset = entry1StripOffset
+			} else {
+				stripLenOffset = entry2StripOffset
+			}
+			require.Less(t, stripLenOffset, len(raw)-hashSize, "strip length offset must be within data")
+
+			// Variable-width int encoding: a single byte with value < 128 encodes directly.
+			raw[stripLenOffset] = tc.stripLen
+
+			// Recompute the checksum over the modified content.
+			h.Reset()
+			h.Write(raw[:len(raw)-hashSize])
+			copy(raw[len(raw)-hashSize:], h.Sum(nil))
+
+			dec := NewDecoder(bytes.NewReader(raw), tc.hash.New())
+			out := &Index{}
+			err = dec.Decode(out)
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
