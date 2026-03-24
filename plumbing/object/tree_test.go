@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	gosync "sync"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
@@ -135,6 +136,44 @@ func (s *TreeSuite) TestFindEntryNotFound() {
 	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
 	s.Nil(e)
 	s.ErrorIs(err, ErrDirectoryNotFound)
+}
+
+func (s *TreeSuite) TestFindEntryConcurrent() {
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(s.Storer, hash)
+	s.Require().NoError(err)
+
+	// Pre-warm the tree path cache so concurrent goroutines only exercise
+	// the synchronized cache paths (t.m and t.t), not the underlying storer.
+	_, err = tree.FindEntry("vendor/foo.go")
+	s.Require().NoError(err)
+	_, err = tree.FindEntry("json/short.json")
+	s.Require().NoError(err)
+
+	paths := []string{"vendor/foo.go", "json/short.json", "json/long.json"}
+	const goroutines = 20
+	errs := make([]error, goroutines)
+	names := make([]string, goroutines)
+
+	var wg gosync.WaitGroup
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int, p string) {
+			defer wg.Done()
+			e, err := tree.FindEntry(p)
+			errs[idx] = err
+			if e != nil {
+				names[idx] = e.Name
+			}
+		}(i, paths[i%len(paths)])
+	}
+	wg.Wait()
+
+	expected := []string{"foo.go", "short.json", "long.json"}
+	for i := range goroutines {
+		s.NoError(errs[i], "goroutine %d", i)
+		s.Equal(expected[i%len(expected)], names[i], "goroutine %d", i)
+	}
 }
 
 // countingStorer wraps a storer and counts EncodedObject calls per hash
