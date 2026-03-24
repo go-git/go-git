@@ -3,9 +3,12 @@ package index
 import (
 	"bytes"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/google/go-cmp/cmp"
 	. "gopkg.in/check.v1"
@@ -53,10 +56,50 @@ func (s *IndexSuite) TestEncode(c *C) {
 	c.Assert(output.Entries[0].Name, Equals, strings.Repeat(" ", 20))
 	c.Assert(output.Entries[1].Name, Equals, "bar")
 	c.Assert(output.Entries[2].Name, Equals, "foo")
-
 }
 
-func (s *IndexSuite) TestEncodeV4(c *C) {
+func TestEncodeLongName(t *testing.T) {
+	t.Parallel()
+
+	// Entry names >= 4095 bytes overflow the 12-bit length field in V2/V3
+	// flags, which stores nameMask (0xFFF). The decoder must scan for the
+	// NUL terminator to find the real length rather than trusting the field.
+	longName := strings.Repeat("a", 5000)
+	idx := &Index{
+		Version: 2,
+		Entries: []*Entry{
+			{
+				CreatedAt:  time.Now(),
+				ModifiedAt: time.Now(),
+				Name:       longName,
+				Size:       1,
+			},
+			{
+				CreatedAt:  time.Now(),
+				ModifiedAt: time.Now(),
+				Name:       "short",
+				Size:       2,
+			},
+		},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	err := NewEncoder(buf).Encode(idx)
+	require.NoError(t, err)
+
+	output := &Index{}
+	err = NewDecoder(buf).Decode(output)
+	require.NoError(t, err)
+
+	require.Len(t, output.Entries, 2)
+	assert.Equal(t, longName, output.Entries[0].Name)
+	assert.Equal(t, "short", output.Entries[1].Name)
+	assert.Equal(t, uint32(1), output.Entries[0].Size)
+	assert.Equal(t, uint32(2), output.Entries[1].Size)
+}
+
+func TestEncodeV4(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Version: 4,
 		Entries: []*Entry{{
@@ -96,20 +139,20 @@ func (s *IndexSuite) TestEncodeV4(c *C) {
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf)
 	err := e.Encode(idx)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	output := &Index{}
 	d := NewDecoder(buf)
 	err = d.Decode(output)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
-	c.Assert(cmp.Equal(idx, output), Equals, true)
+	assert.EqualExportedValues(t, idx, output)
 
-	c.Assert(output.Entries[0].Name, Equals, strings.Repeat(" ", 20))
-	c.Assert(output.Entries[1].Name, Equals, "bar")
-	c.Assert(output.Entries[2].Name, Equals, "baz/bar")
-	c.Assert(output.Entries[3].Name, Equals, "baz/bar/bar")
-	c.Assert(output.Entries[4].Name, Equals, "foo")
+	assert.Equal(t, strings.Repeat(" ", 20), output.Entries[0].Name)
+	assert.Equal(t, "bar", output.Entries[1].Name)
+	assert.Equal(t, "baz/bar", output.Entries[2].Name)
+	assert.Equal(t, "baz/bar/bar", output.Entries[3].Name)
+	assert.Equal(t, "foo", output.Entries[4].Name)
 }
 
 func (s *IndexSuite) TestEncodeUnsupportedVersion(c *C) {

@@ -3,7 +3,11 @@ package index
 import (
 	"bytes"
 	"crypto"
+	"errors"
+	"fmt"
 	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -428,4 +432,169 @@ func TestDecodeV4StripLength(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDecodeNameLength0xFFF(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version uint32
+		names   []string // must be in sorted order
+	}{
+		{
+			name:    "V2/SHA1: name 4094 bytes (below 0xFFF, fixed-length read)",
+			version: 2,
+			names:   []string{strings.Repeat("x", 4094)},
+		},
+		{
+			name:    "V2/SHA1: name 4095 bytes (== 0xFFF, triggers NUL scan)",
+			version: 2,
+			names:   []string{strings.Repeat("x", 4095)},
+		},
+		{
+			name:    "V2/SHA1: name 4096 bytes (just above 0xFFF)",
+			version: 2,
+			names:   []string{strings.Repeat("x", 4096)},
+		},
+		{
+			name:    "V2/SHA1: name 5000 bytes (well above 0xFFF)",
+			version: 2,
+			names:   []string{strings.Repeat("x", 5000)},
+		},
+		{
+			name:    "V2/SHA1: long name then short name",
+			version: 2,
+			names:   []string{strings.Repeat("a", 5000), "zzz"},
+		},
+		{
+			name:    "V2/SHA1: short name then long name",
+			version: 2,
+			names:   []string{"aaa", strings.Repeat("z", 5000)},
+		},
+		{
+			name:    "V3/SHA1: name 4095 bytes",
+			version: 3,
+			names:   []string{strings.Repeat("x", 4095)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			entries := make([]*Entry, len(tc.names))
+			for i, name := range tc.names {
+				var eh plumbing.Hash
+				entries[i] = &Entry{
+					CreatedAt:  time.Now(),
+					ModifiedAt: time.Now(),
+					Name:       name,
+					Hash:       eh,
+					Size:       uint32(i + 1),
+				}
+			}
+
+			idx := &Index{Version: tc.version, Entries: entries}
+
+			buf := bytes.NewBuffer(nil)
+			err := NewEncoder(buf).Encode(idx)
+			require.NoError(t, err)
+
+			output := &Index{}
+			err = NewDecoder(bytes.NewReader(buf.Bytes())).Decode(output)
+			require.NoError(t, err)
+
+			require.Len(t, output.Entries, len(tc.names))
+			for i, name := range tc.names {
+				assert.Equal(t, name, output.Entries[i].Name,
+					"entry %d name mismatch", i)
+			}
+		})
+	}
+}
+
+// TestDecodeNameLength0xFFFPatchedFlags verifies the decoder's NUL-scan
+// fallback by patching a short entry's flags to 0xFFF. The decoder must
+// recover the correct name by scanning for the NUL terminator in the
+// padding bytes, matching C Git's strlen(name) fallback.
+func TestDecodeNameLength0xFFFPatchedFlags(t *testing.T) {
+	t.Parallel()
+
+	var eh plumbing.Hash
+	idx := &Index{
+		Version: 2,
+		Entries: []*Entry{{
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
+			Name:       "hello",
+			Hash:       eh,
+			Size:       42,
+		}},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	err := NewEncoder(buf).Encode(idx)
+	require.NoError(t, err)
+
+	raw := buf.Bytes()
+
+	// Flags are at: 12 (header) + 40 (10×uint32) + hashSize.
+	hashSize := crypto.SHA1.Size()
+	flagsOff := 12 + 40 + hashSize
+	origFlags := uint16(raw[flagsOff])<<8 | uint16(raw[flagsOff+1])
+	require.Equal(t, uint16(len("hello")), origFlags&nameMask,
+		"original flags should encode the actual name length")
+
+	// Overwrite the lower 12 bits to 0xFFF, forcing the NUL-scan path.
+	raw[flagsOff] = (raw[flagsOff] & 0xF0) | 0x0F
+	raw[flagsOff+1] = 0xFF
+
+	// Recompute the trailing checksum over the modified content.
+	h := crypto.SHA1.New()
+	h.Write(raw[:len(raw)-hashSize])
+	copy(raw[len(raw)-hashSize:], h.Sum(nil))
+
+	output := &Index{}
+	err = NewDecoder(bytes.NewReader(raw)).Decode(output)
+	require.NoError(t, err)
+
+	require.Len(t, output.Entries, 1)
+	assert.Equal(t, "hello", output.Entries[0].Name)
+	assert.Equal(t, uint32(42), output.Entries[0].Size)
+}
+
+func TestDecodeAllIndexFixtures(t *testing.T) {
+	t.Parallel()
+
+	fix := fixtures.ByTag(".git")
+	require.NotEmpty(t, fix)
+
+	want := map[uint32]struct{}{
+		2: {},
+		3: {},
+		4: {},
+	}
+	got := map[uint32]struct{}{}
+
+	for i, f := range fix { //nolint: paralleltest // breaks fixtures
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			f, err := f.DotGit().Open("index")
+			if errors.Is(err, os.ErrNotExist) {
+				return
+			}
+
+			require.NoError(t, err)
+			defer func() { require.NoError(t, f.Close()) }()
+
+			idx := &Index{}
+			d := NewDecoder(f)
+			err = d.Decode(idx)
+			require.NoError(t, err)
+
+			got[idx.Version] = struct{}{}
+		})
+	}
+
+	assert.Equal(t, want, got, "not all wanted index versions found")
 }
