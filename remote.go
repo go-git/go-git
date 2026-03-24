@@ -369,6 +369,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}()
 	}
 
+	if r.c == nil {
+		return nil, errors.New("cannot fetch: RemoteConfig is nil")
+	}
+
 	if o.RemoteName == "" {
 		o.RemoteName = r.c.Name
 	}

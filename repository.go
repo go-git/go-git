@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -33,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -679,10 +678,35 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
 
-	var err error
+	local, err := r.Storer.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	// LocalScope only needs the repository's own config; no plugin required.
+	if scope <= config.LocalScope {
+		cfg := config.Merge(config.NewConfig(), config.NewConfig(), local)
+		return &cfg, nil
+	}
+
+	// Use Has before Get so the key is not frozen when no plugin is
+	// registered, allowing callers to register one later.
+	if !plugin.Has(plugin.ConfigLoader()) {
+		return nil, errors.New("no config loader registered")
+	}
+
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return nil, err
+	}
+
 	system := config.NewConfig()
 	if scope >= config.SystemScope {
-		system, err = config.LoadConfig(config.SystemScope)
+		ss, err := src.Load(config.SystemScope)
+		if err != nil {
+			return nil, err
+		}
+		system, err = ss.Config()
 		if err != nil {
 			return nil, err
 		}
@@ -690,15 +714,14 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 
 	global := config.NewConfig()
 	if scope >= config.GlobalScope {
-		global, err = config.LoadConfig(config.GlobalScope)
+		gs, err := src.Load(config.GlobalScope)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	local, err := r.Storer.Config()
-	if err != nil {
-		return nil, err
+		global, err = gs.Config()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	cfg := config.Merge(system, global, local)
@@ -895,8 +918,25 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 		Target:     hash,
 	}
 
-	if opts.SignKey != nil {
-		sig, err := r.buildTagSignature(tag, opts.SignKey)
+	signer := opts.Signer
+	if signer == nil {
+		cfg, err := r.ConfigScoped(config.SystemScope)
+		if err == nil && cfg != nil && cfg.Tag.GpgSign.IsTrue() {
+			// Use Has before Get so the key is not frozen when no plugin is
+			// registered, allowing callers to register one later.
+			if !plugin.Has(plugin.ObjectSigner()) {
+				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin")
+			}
+
+			signer, err = plugin.Get(plugin.ObjectSigner())
+			if err != nil {
+				return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+			}
+		}
+	}
+
+	if signer != nil {
+		sig, err := r.buildTagSignature(tag, signer)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -912,7 +952,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	return r.Storer.SetEncodedObject(obj)
 }
 
-func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
+func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, error) {
 	encoded := &plumbing.MemoryObject{}
 	if err := tag.Encode(encoded); err != nil {
 		return "", err
@@ -923,12 +963,12 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 		return "", err
 	}
 
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
+	b, err := signer.Sign(rdr)
+	if err != nil {
 		return "", err
 	}
 
-	return b.String(), nil
+	return string(b), nil
 }
 
 // Tag returns a tag from the repository.

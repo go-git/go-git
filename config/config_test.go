@@ -748,10 +748,7 @@ func TestMerge(t *testing.T) {
 		{
 			name: "separate objs",
 			input: []*Config{
-				{User: struct {
-					Name  string
-					Email string
-				}{
+				{User: user{
 					Name: "foo", Email: "bar@test",
 				}},
 				{
@@ -765,10 +762,7 @@ func TestMerge(t *testing.T) {
 				},
 			},
 			want: Config{
-				User: struct {
-					Name  string
-					Email string
-				}{
+				User: user{
 					Name:  "foo",
 					Email: "bar@test",
 				},
@@ -784,20 +778,11 @@ func TestMerge(t *testing.T) {
 		{
 			name: "merge nested fields",
 			input: []*Config{
-				{User: struct {
-					Name  string
-					Email string
-				}{Name: "foo"}},
-				{User: struct {
-					Name  string
-					Email string
-				}{Email: "bar@test"}},
+				{User: user{Name: "foo"}},
+				{User: user{Email: "bar@test"}},
 			},
 			want: Config{
-				User: struct {
-					Name  string
-					Email string
-				}{
+				User: user{
 					Name:  "foo",
 					Email: "bar@test",
 				},
@@ -806,20 +791,11 @@ func TestMerge(t *testing.T) {
 		{
 			name: "override nested fields",
 			input: []*Config{
-				{User: struct {
-					Name  string
-					Email string
-				}{Name: "foo"}},
-				{User: struct {
-					Name  string
-					Email string
-				}{Name: "bar", Email: "foo@test"}},
+				{User: user{Name: "foo"}},
+				{User: user{Name: "bar", Email: "foo@test"}},
 			},
 			want: Config{
-				User: struct {
-					Name  string
-					Email string
-				}{
+				User: user{
 					Name:  "bar",
 					Email: "foo@test",
 				},
@@ -953,5 +929,260 @@ func TestMerge(t *testing.T) {
 
 		assert.Equal(t, "wt-user",
 			merged.Raw.Section("user").Options.Get("name"))
+	})
+}
+
+func TestGPGConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unmarshal gpg format", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg]
+	format = ssh
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ssh", cfg.GPG.Format)
+	})
+
+	t.Run("unmarshal gpg.ssh.allowedSignersFile", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg "ssh"]
+	allowedSignersFile = ~/.ssh/allowed_signers
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "~/.ssh/allowed_signers", cfg.GPG.SSH.AllowedSignersFile)
+	})
+
+	t.Run("unmarshal gpg format and ssh subsection", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg]
+	format = ssh
+[gpg "ssh"]
+	allowedSignersFile = /home/user/.ssh/allowed_signers
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ssh", cfg.GPG.Format)
+		assert.Equal(t, "/home/user/.ssh/allowed_signers", cfg.GPG.SSH.AllowedSignersFile)
+	})
+
+	t.Run("marshal gpg format", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.GPG.Format = "ssh"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[gpg]")
+		assert.Contains(t, string(data), "format = ssh")
+	})
+
+	t.Run("marshal gpg.ssh.allowedSignersFile", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.GPG.SSH.AllowedSignersFile = "~/.ssh/allowed_signers"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), `[gpg "ssh"]`)
+		assert.Contains(t, string(data), "allowedSignersFile = ~/.ssh/allowed_signers")
+	})
+
+	t.Run("marshal gpg format and ssh subsection", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.GPG.Format = "openpgp"
+		cfg.GPG.SSH.AllowedSignersFile = "/etc/ssh/allowed_signers"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[gpg]")
+		assert.Contains(t, string(data), "format = openpgp")
+		assert.Contains(t, string(data), `[gpg "ssh"]`)
+		assert.Contains(t, string(data), "allowedSignersFile = /etc/ssh/allowed_signers")
+	})
+
+	t.Run("round-trip marshal/unmarshal", func(t *testing.T) {
+		t.Parallel()
+		original := NewConfig()
+		original.GPG.Format = "ssh"
+		original.GPG.SSH.AllowedSignersFile = "~/.ssh/allowed_signers"
+
+		data, err := original.Marshal()
+		require.NoError(t, err)
+
+		parsed := NewConfig()
+		err = parsed.Unmarshal(data)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ssh", parsed.GPG.Format)
+		assert.Equal(t, "~/.ssh/allowed_signers", parsed.GPG.SSH.AllowedSignersFile)
+	})
+
+	t.Run("empty gpg config not marshaled", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.User.Name = "Test User"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		// Empty GPG config should not be included
+		configStr := string(data)
+		if strings.Contains(configStr, "[gpg]") {
+			// Check that it's not an empty section
+			lines := strings.Split(configStr, "\n")
+			for i, line := range lines {
+				if strings.TrimSpace(line) == "[gpg]" {
+					// Check if next non-empty line is another section or EOF
+					for j := i + 1; j < len(lines); j++ {
+						nextLine := strings.TrimSpace(lines[j])
+						if nextLine == "" {
+							continue
+						}
+						// If next line is a section header or there's no format key, fail
+						if strings.HasPrefix(nextLine, "[") || !strings.Contains(nextLine, "format") {
+							t.Error("Empty [gpg] section should not be marshaled")
+						}
+						break
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("unmarshal with openpgp format", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[gpg]
+	format = openpgp
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "openpgp", cfg.GPG.Format)
+	})
+
+	t.Run("unmarshal user.signingKey", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[user]\n\tsigningKey = ~/.ssh/rsa_id")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "~/.ssh/rsa_id", cfg.User.SigningKey)
+	})
+
+	t.Run("marshal user.signingKey", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.User.SigningKey = "/path/to/key"
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[user]\n\tsigningKey = /path/to/key")
+	})
+
+	t.Run("unmarshal gpgSign true", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, OptBoolTrue, cfg.Tag.GpgSign)
+		assert.Equal(t, OptBoolTrue, cfg.Commit.GpgSign)
+	})
+
+	t.Run("unmarshal gpgSign false", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, OptBoolFalse, cfg.Tag.GpgSign)
+		assert.Equal(t, OptBoolFalse, cfg.Commit.GpgSign)
+	})
+
+	t.Run("unmarshal gpgSign unset", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("[core]\n\tbare = false")
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, OptBoolUnset, cfg.Tag.GpgSign)
+		assert.Equal(t, OptBoolUnset, cfg.Commit.GpgSign)
+	})
+
+	t.Run("marshal gpgSign", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Tag.GpgSign = OptBoolTrue
+		cfg.Commit.GpgSign = OptBoolTrue
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[commit]\n\tgpgSign = true")
+		assert.Contains(t, string(data), "[tag]\n\tgpgSign = true")
+	})
+
+	t.Run("marshal gpgSign false", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Tag.GpgSign = OptBoolFalse
+		cfg.Commit.GpgSign = OptBoolFalse
+
+		data, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), "[commit]\n\tgpgSign = false")
+		assert.Contains(t, string(data), "[tag]\n\tgpgSign = false")
+	})
+
+	t.Run("merge gpgSign false overrides true", func(t *testing.T) {
+		t.Parallel()
+		global := NewConfig()
+		global.Tag.GpgSign = OptBoolTrue
+		global.Commit.GpgSign = OptBoolTrue
+
+		local := NewConfig()
+		local.Tag.GpgSign = OptBoolFalse
+		local.Commit.GpgSign = OptBoolFalse
+
+		merged := Merge(global, local)
+
+		assert.Equal(t, OptBoolFalse, merged.Tag.GpgSign)
+		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
+	})
+
+	t.Run("merge keeps gpgSign false if next config unset", func(t *testing.T) {
+		t.Parallel()
+		global := NewConfig()
+		global.Commit.GpgSign = OptBoolFalse
+
+		local := NewConfig()
+		local.Tag.GpgSign = OptBoolFalse
+
+		merged := Merge(global, local)
+
+		assert.True(t, merged.Tag.GpgSign.IsSet())
+		assert.True(t, merged.Commit.GpgSign.IsSet())
+		assert.Equal(t, OptBoolFalse, merged.Tag.GpgSign)
+		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
 	})
 }
