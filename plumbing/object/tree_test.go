@@ -143,23 +143,25 @@ func (s *TreeSuite) TestFindEntryConcurrent() {
 	tree, err := GetTree(s.Storer, hash)
 	s.Require().NoError(err)
 
-	// Pre-warm the tree path cache so concurrent goroutines only exercise
-	// the synchronized cache paths (t.m and t.t), not the underlying storer.
-	_, err = tree.FindEntry("vendor/foo.go")
-	s.Require().NoError(err)
-	_, err = tree.FindEntry("json/short.json")
-	s.Require().NoError(err)
-
-	paths := []string{"vendor/foo.go", "json/short.json", "json/long.json"}
+	// Use top-level entry names so concurrent goroutines exercise the
+	// Tree-level caches (t.m via sync.Once, t.t via sync.Mutex) without
+	// concurrent storer I/O which has its own unrelated races.
+	paths := []string{".gitignore", "LICENSE", "go", "vendor"}
 	const goroutines = 20
 	errs := make([]error, goroutines)
 	names := make([]string, goroutines)
+
+	// Start barrier ensures all goroutines begin simultaneously,
+	// maximizing the chance of concurrent cache initialization.
+	var start gosync.WaitGroup
+	start.Add(1)
 
 	var wg gosync.WaitGroup
 	for i := range goroutines {
 		wg.Add(1)
 		go func(idx int, p string) {
 			defer wg.Done()
+			start.Wait()
 			e, err := tree.FindEntry(p)
 			errs[idx] = err
 			if e != nil {
@@ -167,12 +169,12 @@ func (s *TreeSuite) TestFindEntryConcurrent() {
 			}
 		}(i, paths[i%len(paths)])
 	}
+	start.Done()
 	wg.Wait()
 
-	expected := []string{"foo.go", "short.json", "long.json"}
 	for i := range goroutines {
 		s.NoError(errs[i], "goroutine %d", i)
-		s.Equal(expected[i%len(expected)], names[i], "goroutine %d", i)
+		s.Equal(paths[i%len(paths)], names[i], "goroutine %d", i)
 	}
 }
 
