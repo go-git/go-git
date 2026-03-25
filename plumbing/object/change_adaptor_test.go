@@ -61,14 +61,16 @@ func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode() {
 		mode: mode,
 	}
 
-	expected := []byte{
+	modeBytes := filemode.Regular.Bytes()
+	expected := make([]byte, 0, 20+len(modeBytes))
+	expected = append(expected,
 		0xaa, 0xaa, 0x00, 0x00, // original hash is aaaa and 16 zeros
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
-	}
-	expected = append(expected, filemode.Regular.Bytes()...)
+	)
+	expected = append(expected, modeBytes...)
 
 	s.Equal(expected, treeNoder.Hash())
 }

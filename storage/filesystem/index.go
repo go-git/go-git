@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
+// IndexStorage implements index read/write backed by the filesystem.
 type IndexStorage struct {
 	dir      *dotgit.DotGit
 	h        hash.Hash
@@ -20,6 +21,7 @@ type IndexStorage struct {
 	skipHash bool
 }
 
+// SetIndex writes the index to disk and updates the cache.
 func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 	if err := s.writeIndex(idx); err != nil {
 		return err
@@ -62,6 +64,7 @@ func (s *IndexStorage) writeIndex(idx *index.Index) (err error) {
 	return e.Encode(idx)
 }
 
+// Index reads the index from disk, using the cache when available.
 func (s *IndexStorage) Index() (i *index.Index, err error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()

@@ -165,7 +165,7 @@ func TestAdd(t *testing.T) {
 			},
 			name:    "branch-worktree",
 			wantErr: false,
-			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, _ string) {
 				w, err := New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
 				require.NoError(t, err)
 
@@ -614,7 +614,7 @@ func TestOpen(t *testing.T) {
 				return storer, wtFS
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				wt, err := repo.Worktree()
@@ -643,7 +643,7 @@ func TestOpen(t *testing.T) {
 				return storer, wtFS
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				wt, err := repo.Worktree()
@@ -674,7 +674,7 @@ func TestOpen(t *testing.T) {
 				return storer, memfs.New()
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				_, err := repo.Head()
@@ -751,7 +751,7 @@ func TestOpen(t *testing.T) {
 				return storer, wtFS1
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				head, err := repo.Head()
@@ -818,7 +818,7 @@ func TestInit(t *testing.T) {
 			wtFS:    memfs.New(),
 			name:    "test-init",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -850,7 +850,7 @@ func TestInit(t *testing.T) {
 			wtFS:    memfs.New(),
 			name:    "cross-fs-init",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -886,7 +886,7 @@ func TestInit(t *testing.T) {
 			wtFS:    osfs.New(t.TempDir(), osfs.WithBoundOS()),
 			name:    "reverse-cross-fs",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -941,7 +941,7 @@ func TestInit(t *testing.T) {
 			wtFS:    memfs.New(),
 			name:    "specific-commit",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 

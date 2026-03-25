@@ -32,7 +32,7 @@ import (
 
 // Remote operation errors and sentinel values.
 var (
-	NoErrAlreadyUpToDate     = errors.New("already up-to-date") //nolint:staticcheck // sentinel value, not an error
+	NoErrAlreadyUpToDate     = errors.New("already up-to-date") //nolint:staticcheck,revive // sentinel value, not an error
 	ErrDeleteRefNotSupported = errors.New("server does not support delete-refs")
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")

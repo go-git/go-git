@@ -113,7 +113,7 @@ func TestGetReturnsNewInstance(t *testing.T) { //nolint:paralleltest // modifies
 	assert.NotEqual(t, a, b, "factory should be called each time")
 }
 
-func TestConcurrentAccess(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+func TestConcurrentAccess(_ *testing.T) { //nolint:paralleltest // modifies global plugin state
 	resetGlobal()
 	key := newKey[int]("concurrent")
 	Register(key, func() int { return 42 })
@@ -121,7 +121,7 @@ func TestConcurrentAccess(t *testing.T) { //nolint:paralleltest // modifies glob
 	var wg sync.WaitGroup
 	for i := range 100 {
 		wg.Add(1)
-		go func(n int) {
+		go func(_ int) {
 			defer wg.Done()
 			Get(key)
 			Has(key)

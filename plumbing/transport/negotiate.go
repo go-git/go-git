@@ -64,8 +64,8 @@ func NegotiatePack(
 
 	if caps.Supports(capability.ObjectFormat) {
 		var clientFormat, serverFormat config.ObjectFormat
-		if cap := caps.Get(capability.ObjectFormat); len(cap) > 0 {
-			of := config.ObjectFormat(cap[0])
+		if capValues := caps.Get(capability.ObjectFormat); len(capValues) > 0 {
+			of := config.ObjectFormat(capValues[0])
 			switch of {
 			case config.SHA1, config.SHA256:
 				serverFormat = of

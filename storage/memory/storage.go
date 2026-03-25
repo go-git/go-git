@@ -73,6 +73,7 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
+// SetObjectFormat configures the object format for this storage.
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	switch of {
 	case formatcfg.SHA1, formatcfg.SHA256:

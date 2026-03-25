@@ -354,7 +354,7 @@ func TestCloneAll(t *testing.T) {
 				require.NoError(t, err)
 
 				refs := 0
-				iter.ForEach(func(r *plumbing.Reference) error {
+				iter.ForEach(func(_ *plumbing.Reference) error {
 					refs++
 					return nil
 				})

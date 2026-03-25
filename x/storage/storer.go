@@ -1,3 +1,4 @@
+// Package storage provides extended storage interfaces for experimental features.
 package storage
 
 import "github.com/go-git/go-git/v6/plumbing/format/config"

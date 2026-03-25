@@ -39,7 +39,7 @@ type Packfile struct {
 
 	id           plumbing.Hash
 	m            sync.Mutex
-	objectIdSize int
+	objectIDSize int
 
 	once    sync.Once
 	onceErr error
@@ -55,7 +55,7 @@ func NewPackfile(
 ) *Packfile {
 	p := &Packfile{
 		file:         file,
-		objectIdSize: crypto.SHA1.Size(),
+		objectIDSize: crypto.SHA1.Size(),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -212,7 +212,7 @@ func (p *Packfile) init() error {
 
 		opts := []ScannerOption{WithBufioReader(p.rbuf)}
 
-		if p.objectIdSize == format.SHA256Size {
+		if p.objectIDSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
 		}
 
@@ -223,13 +223,13 @@ func (p *Packfile) init() error {
 			return
 		}
 
-		_, err := p.scanner.Seek(-int64(p.objectIdSize), io.SeekEnd)
+		_, err := p.scanner.Seek(-int64(p.objectIDSize), io.SeekEnd)
 		if err != nil {
 			p.onceErr = err
 			return
 		}
 
-		p.id.ResetBySize(p.objectIdSize)
+		p.id.ResetBySize(p.objectIDSize)
 		_, err = p.id.ReadFrom(p.scanner)
 		if err != nil {
 			p.onceErr = err
@@ -301,7 +301,7 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 
 func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, error) {
 	of := format.SHA1
-	if p.objectIdSize == format.SHA256.Size() {
+	if p.objectIDSize == format.SHA256.Size() {
 		of = format.SHA256
 	}
 	h := plumbing.FromObjectFormat(of)

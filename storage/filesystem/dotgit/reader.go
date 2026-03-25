@@ -12,6 +12,7 @@ import (
 
 var _ (plumbing.EncodedObject) = &EncodedObject{}
 
+// EncodedObject is a read-only encoded object backed by the filesystem.
 type EncodedObject struct {
 	dir *DotGit
 	h   plumbing.Hash
@@ -19,10 +20,12 @@ type EncodedObject struct {
 	sz  int64
 }
 
+// Hash returns the hash of the object.
 func (e *EncodedObject) Hash() plumbing.Hash {
 	return e.h
 }
 
+// Reader returns a reader for the object's contents.
 func (e *EncodedObject) Reader() (io.ReadCloser, error) {
 	f, err := e.dir.Object(e.h)
 	if err != nil {
@@ -53,22 +56,28 @@ func (e *EncodedObject) Reader() (io.ReadCloser, error) {
 	return ioutil.NewReadCloserWithCloser(r, f.Close), nil
 }
 
+// SetType is a no-op for read-only objects.
 func (e *EncodedObject) SetType(plumbing.ObjectType) {}
 
+// Type returns the object type.
 func (e *EncodedObject) Type() plumbing.ObjectType {
 	return e.t
 }
 
+// Size returns the object size in bytes.
 func (e *EncodedObject) Size() int64 {
 	return e.sz
 }
 
+// SetSize is a no-op for read-only objects.
 func (e *EncodedObject) SetSize(int64) {}
 
+// Writer returns an error because this object is read-only.
 func (e *EncodedObject) Writer() (io.WriteCloser, error) {
 	return nil, fmt.Errorf("not supported")
 }
 
+// NewEncodedObject creates a new read-only encoded object.
 func NewEncodedObject(dir *DotGit, h plumbing.Hash, t plumbing.ObjectType, size int64) *EncodedObject {
 	return &EncodedObject{
 		dir: dir,

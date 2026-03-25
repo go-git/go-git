@@ -21,6 +21,6 @@ type ConfigSource interface {
 // ConfigLoader returns the key used to register a ConfigLoader plugin.
 // When set, Repository.ConfigScoped uses this plugin to obtain global and
 // system configuration instead of reading from the host filesystem.
-func ConfigLoader() key[ConfigSource] {
+func ConfigLoader() key[ConfigSource] { //nolint:revive // intentional unexported return type
 	return configLoader
 }

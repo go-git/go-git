@@ -28,7 +28,7 @@ func main() {
 	// worktree of the project using the go standard library.
 	Info("echo \"hello world!\" > example-git-file")
 	filename := filepath.Join(directory, "example-git-file")
-	err = os.WriteFile(filename, []byte("hello world!"), 0644)
+	err = os.WriteFile(filename, []byte("hello world!"), 0o644)
 	CheckIfError(err)
 
 	// Adds the new file to the staging area.

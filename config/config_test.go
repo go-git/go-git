@@ -277,7 +277,7 @@ func TestMarshalExtensions(t *testing.T) {
 	}{
 		{
 			name:        "no extensions set omits section",
-			setup:       func(c *Config) {},
+			setup:       func(_ *Config) {},
 			wantSection: false,
 		},
 		{

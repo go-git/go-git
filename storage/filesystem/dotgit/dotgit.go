@@ -457,6 +457,7 @@ func newBytesReadAtCloser(data []byte) *bytesReadAtCloser {
 
 func (b *bytesReadAtCloser) Close() error { return nil }
 
+// DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	d.cleanPackList()
 
@@ -837,6 +838,7 @@ func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference
 	return f.Truncate(0)
 }
 
+// SetRef stores a reference, optionally checking that old matches the current value.
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 	var content string
 	switch r.Type() {
@@ -1181,6 +1183,7 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 	return d.readReferenceFrom(f, name)
 }
 
+// CountLooseRefs returns the number of loose references in the repository.
 func (d *DotGit) CountLooseRefs() (int, error) {
 	var refs []*plumbing.Reference
 	seen := make(map[plumbing.ReferenceName]bool)
@@ -1276,6 +1279,7 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	return d.fs.Chroot(d.fs.Join(modulePath, name))
 }
 
+// AddAlternate appends an alternate object directory path to the alternates file.
 func (d *DotGit) AddAlternate(remote string) error {
 	altpath := d.fs.Join(objectsPath, infoPath, alternatesPath)
 
@@ -1379,6 +1383,7 @@ func (d *DotGit) Fs() billy.Filesystem {
 	return d.fs
 }
 
+// SetObjectFormat configures the object format for this DotGit instance.
 func (d *DotGit) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	d.options.ObjectFormat = of
 
