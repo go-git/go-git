@@ -138,7 +138,12 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 
 	for i := range 256 {
 		s.fanout[i] = binary.BigEndian.Uint32(fanoutBuf[i*4:])
+		if i > 0 && s.fanout[i] < s.fanout[i-1] {
+			return fmt.Errorf("%w: fanout table is not monotonically non-decreasing at entry %d",
+				ErrMalformedIdxFile, i)
+		}
 	}
+
 	s.count = int(s.fanout[255])
 
 	s.hashSize = packHash.Size()
