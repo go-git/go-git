@@ -2,6 +2,7 @@ package http
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -356,7 +358,15 @@ func (r *fetchWalker) fetchObject(hash plumbing.Hash, obj plumbing.EncodedObject
 func (r *fetchWalker) fetch() error {
 	packs := map[string]struct{}{}
 	processed := map[string]struct{}{}
-	indicies := []*idxfile.MemoryIndex{}
+	decodedPacks := map[plumbing.Hash]struct{}{}
+	indices := []idxfile.Index{}
+	defer func() {
+		for _, idx := range indices {
+			if closer, ok := idx.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+	}()
 
 LOOP:
 	for len(r.queue) > 0 {
@@ -366,7 +376,7 @@ LOOP:
 			continue
 		}
 
-		for _, idx := range indicies {
+		for _, idx := range indices {
 			if ok, err := idx.Contains(objHash); err == nil && ok {
 				continue LOOP
 			}
@@ -377,26 +387,65 @@ LOOP:
 		if errors.Is(err, io.EOF) {
 			// TODO: support http-alternates
 			for packHash, packIdxPath := range r.packIdx {
+				// Skip packs we've already decoded to avoid
+				// unbounded re-decode/re-append per missing object.
+				if _, ok := decodedPacks[packHash]; ok {
+					continue
+				}
+
 				idxFile, err := r.fs.Open(packIdxPath)
 				if err != nil {
 					return fmt.Errorf("error opening index file: %w", err)
 				}
 
-				var hasher hash.Hash
-				if packHash.Size() == crypto.SHA256.Size() {
-					hasher = hash.New(crypto.SHA256)
-				} else {
-					hasher = hash.New(crypto.SHA1)
+				// newHasher returns a fresh hash.Hash each time so that
+				// the openRev closure and the DecodeLazy call each use
+				// independent hashers, avoiding a data race.
+				newHasher := func() hash.Hash {
+					if packHash.Size() == crypto.SHA256.Size() {
+						return hash.New(crypto.SHA256)
+					}
+					return hash.New(crypto.SHA1)
 				}
 
-				idx := idxfile.NewMemoryIndex(packHash.Size())
-				d := idxfile.NewDecoder(idxFile, hasher)
-				if err := d.Decode(idx); err != nil {
-					_ = idxFile.Close()
+				// Read the raw idx bytes so we can build an in-memory rev without
+				// re-opening the file (dumb HTTP has no .rev files on disk).
+				idxBytes, err := io.ReadAll(io.LimitReader(idxFile, idxfile.MaxIdxFileSize+1))
+				// idxFile is read-only and fully consumed; close error
+				// is best-effort because the data is already in memory.
+				_ = idxFile.Close()
+				if err != nil {
+					return fmt.Errorf("error reading index file: %w", err)
+				}
+				if len(idxBytes) > idxfile.MaxIdxFileSize {
+					return fmt.Errorf("index file too large (>%d bytes)", idxfile.MaxIdxFileSize)
+				}
+
+				// Pre-compute the rev bytes once; the closure just wraps
+				// the pre-computed slice on each call.
+				tmpIdx := idxfile.NewMemoryIndex(packHash.Size())
+				h := newHasher()
+				if err := idxfile.NewDecoder(bytes.NewReader(idxBytes), h).Decode(tmpIdx); err != nil {
+					return fmt.Errorf("cannot decode idx for rev generation: %w", err)
+				}
+
+				var revBuf bytes.Buffer
+				if err := revfile.Encode(&revBuf, newHasher(), tmpIdx); err != nil {
+					return fmt.Errorf("cannot encode in-memory rev: %w", err)
+				}
+				revBytes := revBuf.Bytes()
+
+				openRev := func() (idxfile.ReadAtCloser, error) {
+					return idxfile.NewBytesReadAtCloser(revBytes), nil
+				}
+
+				idx, err := idxfile.DecodeLazy(bytes.NewReader(idxBytes), newHasher(), openRev, packHash)
+				if err != nil {
 					return fmt.Errorf("error decoding index file: %w", err)
 				}
 
-				indicies = append(indicies, idx)
+				indices = append(indices, idx)
+				decodedPacks[packHash] = struct{}{}
 				packPath := path.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", packHash.String()))
 				if ok, err := idx.Contains(objHash); err == nil && ok {
 					processed[objHash.String()] = struct{}{}

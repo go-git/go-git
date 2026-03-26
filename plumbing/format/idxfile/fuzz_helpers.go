@@ -62,10 +62,3 @@ func buildMinimalRev(count, hashSize int) []byte {
 	buf.Write(make([]byte, hashSize*2))
 	return buf.Bytes()
 }
-
-// nopCloserReaderAt wraps a bytes.Reader to satisfy ReadAtCloser.
-type nopCloserReaderAt struct {
-	*bytes.Reader
-}
-
-func (nopCloserReaderAt) Close() error { return nil }

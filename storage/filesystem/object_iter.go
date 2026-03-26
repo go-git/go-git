@@ -1,7 +1,9 @@
 package filesystem
 
 import (
+	"bytes"
 	"crypto"
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-billy/v6"
@@ -10,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
@@ -83,19 +86,50 @@ func NewPackfileIter(
 	_ int64, // largeObjectThreshold - currently unused
 	objectIDSize int,
 ) (storer.EncodedObjectIter, error) {
-	var hasher hash.Hash
-	if objectIDSize == crypto.SHA256.Size() {
-		hasher = hash.New(crypto.SHA256)
-	} else {
-		hasher = hash.New(crypto.SHA1)
-	}
-
-	idx := idxfile.NewMemoryIndex(objectIDSize)
-	if err := idxfile.NewDecoder(idxFile, hasher).Decode(idx); err != nil {
+	// Read all idx bytes upfront so we can build multiple readers from them.
+	defer idxFile.Close()
+	idxBytes, err := io.ReadAll(io.LimitReader(idxFile, idxfile.MaxIdxFileSize+1))
+	if err != nil {
 		return nil, err
 	}
+	if len(idxBytes) > idxfile.MaxIdxFileSize {
+		return nil, fmt.Errorf("index file too large (>%d bytes)", idxfile.MaxIdxFileSize)
+	}
 
-	if err := idxFile.Close(); err != nil {
+	// newHasher returns a fresh hash.Hash appropriate for objectIDSize.
+	newHasher := func() hash.Hash {
+		if objectIDSize == crypto.SHA256.Size() {
+			return hash.New(crypto.SHA256)
+		}
+		return hash.New(crypto.SHA1)
+	}
+
+	// Triple-decode trade-off: we decode a temporary MemoryIndex here just
+	// to extract the PackfileChecksum, which NewLazyIndex needs for .rev
+	// header validation. DecodeLazy then re-reads the same bytes to build
+	// its own lazy structures. A dedicated ReadPackChecksum helper would
+	// avoid this extra decode but the cost is negligible. Note that
+	// NewPackfileIter is exported and used by external consumers.
+	tmpIdx := idxfile.NewMemoryIndex(objectIDSize)
+	if err := idxfile.NewDecoder(bytes.NewReader(idxBytes), newHasher()).Decode(tmpIdx); err != nil {
+		return nil, err
+	}
+	packHash := tmpIdx.PackfileChecksum
+
+	// Pre-compute the rev bytes once; the closure just wraps
+	// the pre-computed slice on each call.
+	var revBuf bytes.Buffer
+	if err := revfile.Encode(&revBuf, newHasher(), tmpIdx); err != nil {
+		return nil, err
+	}
+	revBytes := revBuf.Bytes()
+
+	revOpener := func() (idxfile.ReadAtCloser, error) {
+		return idxfile.NewBytesReadAtCloser(revBytes), nil
+	}
+
+	idx, err := idxfile.DecodeLazy(bytes.NewReader(idxBytes), newHasher(), revOpener, packHash)
+	if err != nil {
 		return nil, err
 	}
 

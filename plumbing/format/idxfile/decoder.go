@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
@@ -194,4 +195,66 @@ func readIdxChecksum(idx *MemoryIndex, r io.Reader) error {
 	}
 
 	return nil
+}
+
+// MaxIdxFileSize is the maximum size of an .idx file that DecodeLazy will
+// accept. This guards against malicious or corrupted streams that could
+// cause excessive memory allocation. 4 GiB covers the largest realistic
+// v2 idx files (which are bounded by 2^32 objects × ~28 bytes each).
+//
+// DecodeLazy enforces this limit internally. External call sites that read
+// .idx bytes with io.ReadAll before calling DecodeLazy (e.g. dumb HTTP
+// transport, NewPackfileIter) SHOULD also wrap the reader with
+// io.LimitReader(r, MaxIdxFileSize+1) and reject oversized streams early,
+// before allocating additional buffers for .rev generation.
+const MaxIdxFileSize = 4 << 30 // 4 GiB
+
+// DecodeLazy reads the entire .idx stream from r into memory, validates the
+// trailing idx checksum, and returns a [*LazyIndex] backed by the in-memory
+// buffer. The returned LazyIndex retains the buffer for its entire lifetime;
+// callers must not reuse or modify the reader after calling DecodeLazy.
+// The caller is responsible for supplying revOpener; DecodeLazy does
+// not generate a .rev file.
+//
+// h is used to hash the idx bytes for checksum validation and must match the
+// hash function used when writing the idx (SHA-1 or SHA-256).
+//
+// packHash is the expected packfile checksum embedded in the idx; it is
+// forwarded to [NewLazyIndex] which validates it during initialisation.
+func DecodeLazy(r io.Reader, h hash.Hash, revOpener func() (ReadAtCloser, error), packHash plumbing.Hash) (*LazyIndex, error) {
+	if revOpener == nil {
+		return nil, errors.New("idxfile: DecodeLazy: revOpener must not be nil")
+	}
+
+	buf, err := io.ReadAll(io.LimitReader(r, MaxIdxFileSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("idxfile: DecodeLazy: read stream: %w", err)
+	}
+	if len(buf) > MaxIdxFileSize {
+		return nil, fmt.Errorf("%w: DecodeLazy: idx stream exceeds %d byte limit", ErrMalformedIdxFile, MaxIdxFileSize)
+	}
+
+	hashSize := packHash.Size()
+	if len(buf) < 2*hashSize {
+		return nil, fmt.Errorf("%w: DecodeLazy: buffer too short (%d bytes, need at least %d)", ErrMalformedIdxFile, len(buf), 2*hashSize)
+	}
+
+	// The trailing hashSize bytes are the idx checksum.
+	// Everything before it is the content that was hashed.
+	body := buf[:len(buf)-hashSize]
+	storedChecksum := buf[len(buf)-hashSize:]
+
+	h.Reset()
+	_, _ = h.Write(body) // hash.Hash.Write never returns an error
+	computed := h.Sum(nil)
+	if !bytes.Equal(computed, storedChecksum) {
+		return nil, fmt.Errorf("%w: DecodeLazy: checksum mismatch: got %x, want %x",
+			ErrMalformedIdxFile, computed, storedChecksum)
+	}
+
+	openIdx := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(buf)}, nil
+	}
+
+	return NewLazyIndex(openIdx, revOpener, packHash)
 }

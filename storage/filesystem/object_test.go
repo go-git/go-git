@@ -12,10 +12,12 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -810,4 +812,33 @@ func (s *FsSuite) TestObjectStorageAlternatesInitError() {
 	_, err = storage.EncodedObject(plumbing.AnyObject, commitHash)
 	s.Error(err)
 	s.NotErrorIs(err, plumbing.ErrObjectNotFound)
+}
+
+func TestObjectStorageUseInMemoryIdxProducesLazyIndex(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	fs := f.DotGit()
+	dg := dotgit.New(fs)
+	o := NewObjectStorageWithOptions(dg, cache.NewObjectLRUDefault(), Options{UseInMemoryIdx: true})
+
+	// requireIndex triggers loadIdxFile for all packs.
+	err := o.requireIndex()
+	require.NoError(t, err)
+
+	// Every index entry must be a *LazyIndex, even in UseInMemoryIdx mode.
+	for pack, idx := range o.index {
+		_, ok := idx.(*idxfile.LazyIndex)
+		require.True(t, ok, "index for pack %s should be *idxfile.LazyIndex, got %T", pack, idx)
+	}
+
+	// Verify a known object from the Basic fixture is findable.
+	h := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+
+	err = o.HasEncodedObject(h)
+	require.NoError(t, err, "expected object to be found via UseInMemoryIdx=true")
+
+	obj, err := o.EncodedObject(plumbing.AnyObject, h)
+	require.NoError(t, err)
+	require.Equal(t, h, obj.Hash())
 }

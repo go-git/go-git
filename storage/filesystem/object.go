@@ -189,6 +189,12 @@ func (s *ObjectStorage) requireIndex() error {
 	s.muI.Lock()
 	defer s.muI.Unlock()
 
+	// Double-check after acquiring the write lock: another goroutine may
+	// have initialised the index between our RUnlock and Lock.
+	if s.index != nil {
+		return nil
+	}
+
 	s.index = make(map[plumbing.Hash]idxfile.Index)
 	packs, err := s.dir.ObjectPacks()
 	if err != nil {
@@ -206,12 +212,19 @@ func (s *ObjectStorage) requireIndex() error {
 
 // Reindex indexes again all packfiles. Useful if git changed packfiles externally
 func (s *ObjectStorage) Reindex() {
+	s.muI.Lock()
+	for _, idx := range s.index {
+		if closer, ok := idx.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}
 	s.index = nil
+	s.muI.Unlock()
 }
 
 func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
 	if s.options.UseInMemoryIdx {
-		return s.loadMemoryIndex(h)
+		return s.loadBufferedIndex(h)
 	}
 
 	// Use LazyIndex on a best-effort basis.
@@ -227,7 +240,7 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
 		return nil
 	}
 
-	return s.loadMemoryIndex(h)
+	return s.loadBufferedIndex(h)
 }
 
 func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, error) {
@@ -241,13 +254,19 @@ func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, erro
 	return idxfile.NewLazyIndex(openIdx, openRev, h)
 }
 
-func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
+// loadBufferedIndex loads the .idx file for the given pack hash fully into
+// memory and returns it as a *LazyIndex backed by a bytes.Reader.
+// This replaces the previous MemoryIndex path for the read side.
+//
+// REQUIRES: s.muI is held by the caller (write-locked).
+func (s *ObjectStorage) loadBufferedIndex(h plumbing.Hash) error {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
 	}
-
-	defer ioutil.CheckClose(f, &err)
+	// f is read-only; close error is best-effort because DecodeLazy
+	// has already consumed the full content via io.ReadAll.
+	defer func() { _ = f.Close() }()
 
 	var hasher hash.Hash
 	if h.Size() == crypto.SHA256.Size() {
@@ -256,19 +275,24 @@ func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 		hasher = hash.New(crypto.SHA1)
 	}
 
-	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f, hasher)
-	if err = d.Decode(idxf); err != nil {
+	openRev := func() (idxfile.ReadAtCloser, error) {
+		return s.dir.OpenPackRev(h)
+	}
+
+	idx, err := idxfile.DecodeLazy(f, hasher, openRev, h)
+	if err != nil {
 		return err
 	}
 
-	if idxf.PackfileChecksum != h {
-		return fmt.Errorf("%w: packfile mismatch: target is %q not %q",
-			idxfile.ErrMalformedIdxFile, idxf.PackfileChecksum.String(), h.String())
+	// Close any existing index for this pack before replacing it.
+	if old, found := s.index[h]; found && old != nil {
+		if closer, ok := old.(io.Closer); ok {
+			_ = closer.Close()
+		}
 	}
 
-	s.index[h] = idxf
-	return err
+	s.index[h] = idx
+	return nil
 }
 
 func (s *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error) {
@@ -485,7 +509,10 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int
 		return 0, plumbing.ErrObjectNotFound
 	}
 
+	s.muI.RLock()
 	idx := s.index[pack]
+	s.muI.RUnlock()
+
 	hash, err := idx.FindHash(offset)
 	if err == nil {
 		obj, ok := s.objectCache.Get(hash)
@@ -538,7 +565,11 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	var obj plumbing.EncodedObject
 	var err error
 
-	if s.index != nil {
+	s.muI.RLock()
+	indexed := s.index != nil
+	s.muI.RUnlock()
+
+	if indexed {
 		obj, err = s.getFromPackfile(h, false)
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			obj, err = s.getFromUnpacked(h)
@@ -749,7 +780,17 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
-	for _, index := range s.index {
+
+	s.muI.RLock()
+	// Snapshot the index map under the read lock so that concurrent
+	// writers (e.g. Notify) don't cause a data race on the map.
+	indices := make(map[plumbing.Hash]idxfile.Index, len(s.index))
+	for k, v := range s.index {
+		indices[k] = v
+	}
+	s.muI.RUnlock()
+
+	for _, index := range indices {
 		ei, err := index.Entries()
 		if err != nil {
 			return nil, err
@@ -817,8 +858,13 @@ func (s *ObjectStorage) buildPackfileIters(
 			if err != nil {
 				return nil, err
 			}
+
+			s.muI.RLock()
+			idx := s.index[h]
+			s.muI.RUnlock()
+
 			return newPackfileIter(
-				s.dir.Fs(), pack, t, seen, s.index[h],
+				s.dir.Fs(), pack, t, seen, idx,
 				s.objectCache, s.options.KeepDescriptors, crypto.SHA1.Size(),
 			)
 		},

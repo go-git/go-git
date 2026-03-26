@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/base64"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -81,7 +82,7 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 	var entries int
 	for {
 		e, err := iter.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		s.NoError(err)
@@ -162,4 +163,171 @@ func TestChecksumMismatch(t *testing.T) {
 
 	err = d.Decode(idx)
 	require.ErrorContains(t, err, "checksum mismatch")
+}
+
+// TestDecodeLazy verifies that DecodeLazy decodes a known fixture correctly.
+func (s *IdxfileSuite) TestDecodeLazy() {
+	f := fixtures.Basic().One()
+
+	// Build an in-memory rev from the fixture's .rev file.
+	revData, err := io.ReadAll(f.Rev())
+	s.Require().NoError(err)
+
+	openRev := func() (ReadAtCloser, error) {
+		return NewBytesReadAtCloser(revData), nil
+	}
+
+	packHash := plumbing.NewHash(f.PackfileHash)
+	idx, err := DecodeLazy(f.Idx(), hash.New(crypto.SHA1), openRev, packHash)
+	s.Require().NoError(err)
+	s.Require().NotNil(idx)
+	s.T().Cleanup(func() { s.Require().NoError(idx.Close()) })
+
+	count, err := idx.Count()
+	s.Require().NoError(err)
+	s.Equal(int64(31), count)
+
+	h := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
+
+	ok, err := idx.Contains(h)
+	s.Require().NoError(err)
+	s.True(ok)
+
+	offset, err := idx.FindOffset(h)
+	s.Require().NoError(err)
+	s.Equal(int64(615), offset)
+
+	crc32, err := idx.FindCRC32(h)
+	s.Require().NoError(err)
+	s.Equal(uint32(3645019190), crc32)
+}
+
+// TestDecodeLazyEquivalence verifies that DecodeLazy and Decoder.Decode
+// produce identical results for every Index method.
+func (s *IdxfileSuite) TestDecodeLazyEquivalence() {
+	f := fixtures.Basic().One()
+
+	// Decode via MemoryIndex (reference).
+	idxBytes, err := io.ReadAll(f.Idx())
+	s.Require().NoError(err)
+
+	memIdx := new(MemoryIndex)
+	d := NewDecoder(bytes.NewReader(idxBytes), hash.New(crypto.SHA1))
+	s.Require().NoError(d.Decode(memIdx))
+
+	// Build a rev for DecodeLazy.
+	revData, err := io.ReadAll(f.Rev())
+	s.Require().NoError(err)
+	openRev := func() (ReadAtCloser, error) {
+		return NewBytesReadAtCloser(revData), nil
+	}
+
+	packHash := plumbing.NewHash(f.PackfileHash)
+	lazyIdx, err := DecodeLazy(bytes.NewReader(idxBytes), hash.New(crypto.SHA1), openRev, packHash)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { s.Require().NoError(lazyIdx.Close()) })
+
+	// Count.
+	memCount, err := memIdx.Count()
+	s.Require().NoError(err)
+	lazyCount, err := lazyIdx.Count()
+	s.Require().NoError(err)
+	s.Equal(memCount, lazyCount)
+
+	// Entries: compare all fields.
+	memIter, err := memIdx.Entries()
+	s.Require().NoError(err)
+	lazyIter, err := lazyIdx.Entries()
+	s.Require().NoError(err)
+
+	for {
+		memEntry, memErr := memIter.Next()
+		lazyEntry, lazyErr := lazyIter.Next()
+		if memErr != nil {
+			s.Require().ErrorIs(memErr, io.EOF, "unexpected memIter error")
+			s.Require().ErrorIs(lazyErr, io.EOF, "unexpected lazyIter error")
+			break
+		}
+		s.Require().NoError(lazyErr, "lazyIter error when memIter succeeded")
+		s.Equal(memEntry.Hash, lazyEntry.Hash, "hash mismatch")
+		s.Equal(memEntry.Offset, lazyEntry.Offset, "offset mismatch")
+		s.Equal(memEntry.CRC32, lazyEntry.CRC32, "crc32 mismatch")
+
+		// Per-entry: Contains, FindOffset, FindCRC32.
+		memOk, err := memIdx.Contains(memEntry.Hash)
+		s.Require().NoError(err)
+		lazyOk, err := lazyIdx.Contains(memEntry.Hash)
+		s.Require().NoError(err)
+		s.Equal(memOk, lazyOk)
+
+		memOff, err := memIdx.FindOffset(memEntry.Hash)
+		s.Require().NoError(err)
+		lazyOff, err := lazyIdx.FindOffset(memEntry.Hash)
+		s.Require().NoError(err)
+		s.Equal(memOff, lazyOff)
+
+		memCRC, err := memIdx.FindCRC32(memEntry.Hash)
+		s.Require().NoError(err)
+		lazyCRC, err := lazyIdx.FindCRC32(memEntry.Hash)
+		s.Require().NoError(err)
+		s.Equal(memCRC, lazyCRC)
+
+		// FindHash (reverse lookup).
+		memHash, err := memIdx.FindHash(int64(memEntry.Offset))
+		s.Require().NoError(err)
+		lazyHash, err := lazyIdx.FindHash(int64(memEntry.Offset))
+		s.Require().NoError(err)
+		s.Equal(memHash, lazyHash)
+	}
+	s.Require().NoError(memIter.Close())
+	s.Require().NoError(lazyIter.Close())
+
+	// EntriesByOffset.
+	memByOff, err := memIdx.EntriesByOffset()
+	s.Require().NoError(err)
+	lazyByOff, err := lazyIdx.EntriesByOffset()
+	s.Require().NoError(err)
+
+	for {
+		me, mErr := memByOff.Next()
+		le, lErr := lazyByOff.Next()
+		if mErr != nil {
+			s.Require().ErrorIs(mErr, io.EOF, "unexpected memByOff error")
+			s.Require().ErrorIs(lErr, io.EOF, "unexpected lazyByOff error")
+			break
+		}
+		s.Require().NoError(lErr, "lazyByOff error when memByOff succeeded")
+		s.Equal(me.Hash, le.Hash)
+		s.Equal(me.Offset, le.Offset)
+	}
+	s.Require().NoError(memByOff.Close())
+	s.Require().NoError(lazyByOff.Close())
+}
+
+// TestDecodeLazyChecksumMismatch verifies that a corrupted checksum is rejected.
+func (s *IdxfileSuite) TestDecodeLazyChecksumMismatch() {
+	f := fixtures.Basic().One()
+	idxBytes, err := io.ReadAll(f.Idx())
+	s.Require().NoError(err)
+
+	// Corrupt the last byte of the stored checksum.
+	idxBytes[len(idxBytes)-1] ^= 0xFF
+
+	openRev := func() (ReadAtCloser, error) { return nil, nil }
+	packHash := plumbing.NewHash(f.PackfileHash)
+
+	_, err = DecodeLazy(bytes.NewReader(idxBytes), hash.New(crypto.SHA1), openRev, packHash)
+	s.Require().Error(err)
+	s.ErrorIs(err, ErrMalformedIdxFile)
+}
+
+// TestDecodeLazyTruncated verifies that a truncated buffer is rejected.
+func (s *IdxfileSuite) TestDecodeLazyTruncated() {
+	openRev := func() (ReadAtCloser, error) { return nil, nil }
+	packHash := plumbing.NewHash("0000000000000000000000000000000000000000")
+
+	// Buffer shorter than one hash — too short.
+	_, err := DecodeLazy(bytes.NewReader([]byte{0xAB, 0xCD}), hash.New(crypto.SHA1), openRev, packHash)
+	s.Require().Error(err)
+	s.ErrorIs(err, ErrMalformedIdxFile)
 }
