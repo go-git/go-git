@@ -119,7 +119,7 @@ func NewPackfileIter(
 	// Pre-compute the rev bytes once; the closure just wraps
 	// the pre-computed slice on each call.
 	var revBuf bytes.Buffer
-	if err := revfile.Encode(&revBuf, newHasher(), tmpIdx); err != nil {
+	if err := revfile.Encode(&revBuf, newHasher(), tmpIdx, tmpIdx.PackfileChecksum); err != nil {
 		return nil, err
 	}
 	revBytes := revBuf.Bytes()

@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -324,10 +326,60 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 	}
 
 	w.Notify = func(h plumbing.Hash, writer *idxfile.Writer) {
-		index, err := writer.Index()
-		if err == nil {
-			s.index[h] = index
+		memIdx, err := writer.Index()
+		if err != nil {
+			// writer.Index failed; the pack was written but we cannot
+			// build an in-memory index for it. The index will be loaded
+			// lazily from disk on next access.
+			return
 		}
+
+		// newHasher returns a fresh hash.Hash each time so that
+		// the idx and rev encoders use independent hashers.
+		newHasher := func() hash.Hash {
+			if memIdx.PackfileChecksum.Size() == crypto.SHA256.Size() {
+				return hash.New(crypto.SHA256)
+			}
+			return hash.New(crypto.SHA1)
+		}
+
+		// Encode the MemoryIndex to raw .idx bytes.
+		var idxBuf bytes.Buffer
+		if err := idxfile.Encode(&idxBuf, newHasher(), memIdx); err != nil {
+			// idx encode failed; fall back to lazy disk load.
+			return
+		}
+
+		// Encode the MemoryIndex to raw .rev bytes.
+		var revBuf bytes.Buffer
+		if err := revfile.Encode(&revBuf, newHasher(), memIdx, memIdx.PackfileChecksum); err != nil {
+			// rev encode failed; fall back to lazy disk load.
+			return
+		}
+
+		// Capture the bytes so the closures don't hold memIdx alive.
+		idxBytes := idxBuf.Bytes()
+		revBytes := revBuf.Bytes()
+
+		openIdx := func() (idxfile.ReadAtCloser, error) {
+			return idxfile.NewBytesReadAtCloser(idxBytes), nil
+		}
+		openRev := func() (idxfile.ReadAtCloser, error) {
+			return idxfile.NewBytesReadAtCloser(revBytes), nil
+		}
+
+		lazyIdx, err := idxfile.NewLazyIndex(openIdx, openRev, h)
+		if err != nil {
+			// LazyIndex construction failed; fall back to lazy disk load.
+			return
+		}
+
+		s.muI.Lock()
+		if s.index == nil {
+			s.index = make(map[plumbing.Hash]idxfile.Index)
+		}
+		s.index[h] = lazyIdx
+		s.muI.Unlock()
 	}
 
 	return w, nil

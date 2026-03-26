@@ -2,10 +2,10 @@ package revfile
 
 import (
 	"crypto"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
-	"reflect"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -26,21 +26,17 @@ type encoder struct {
 // represents encoding a revfile.
 type stateFnEncode func(*encoder) (stateFnEncode, error)
 
-// Encode encodes a reverse index from a MemoryIndex to the writer.
+// Encode encodes a reverse index from an Index to the writer.
 // The reverse index maps pack offsets (sorted order) to index positions.
-// This function is safe to call concurrently with different parameters.
-func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
+// packChecksum is the checksum of the packfile the index was built from.
+// This function is safe for concurrent use.
+//
+// Passing a typed-nil io.Writer (e.g. (*bytes.Buffer)(nil)) will panic;
+// callers must ensure w is a valid, non-nil concrete value.
+func Encode(w io.Writer, h hash.Hash, idx idxfile.Index, packChecksum plumbing.Hash) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
-	v := reflect.ValueOf(w)
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if v.IsNil() {
-			return fmt.Errorf("nil writer")
-		}
-	}
-
 	if idx == nil {
 		return fmt.Errorf("nil index")
 	}
@@ -51,7 +47,7 @@ func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
 		hash:   h,
 	}
 
-	if err := e.buildReverseIndex(idx); err != nil {
+	if err := e.buildReverseIndex(idx, packChecksum); err != nil {
 		return err
 	}
 
@@ -65,9 +61,9 @@ func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
 	return nil
 }
 
-// buildReverseIndex creates the reverse index mapping from the MemoryIndex.
+// buildReverseIndex creates the reverse index mapping from the Index.
 // It maps from pack offset order to index position (sorted by hash).
-func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
+func (e *encoder) buildReverseIndex(idx idxfile.Index, packChecksum plumbing.Hash) error {
 	count, err := idx.Count()
 	if err != nil {
 		return err
@@ -83,7 +79,7 @@ func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 	var pos uint32
 	for {
 		entry, err := entries.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -103,7 +99,7 @@ func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 	e.entries = make([]uint32, 0, count)
 	for {
 		entry, err := entriesByOffset.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -112,7 +108,7 @@ func (e *encoder) buildReverseIndex(idx *idxfile.MemoryIndex) error {
 		e.entries = append(e.entries, offsetToPos[entry.Offset])
 	}
 
-	e.packChecksum = idx.PackfileChecksum
+	e.packChecksum = packChecksum
 	return nil
 }
 

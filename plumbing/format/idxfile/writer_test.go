@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/base64"
+	"errors"
 	"io"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -78,6 +80,95 @@ func (s *WriterSuite) TestWriterLarge() {
 	s.Len(expected, buf.Len())
 
 	s.Equal(expected, buf.Bytes())
+}
+
+func (s *WriterSuite) TestWriterIndexEquivalence() {
+	// Verify that a LazyIndex built from the encoded bytes of Writer.Index()
+	// produces identical results to the MemoryIndex for all Index methods.
+	// This validates the approach used in the PackfileWriter Notify closure.
+	f := fixtures.Basic().One()
+	scanner := packfile.NewScanner(f.Packfile())
+
+	obs := new(idxfile.Writer)
+	parser := packfile.NewParser(scanner, packfile.WithScannerObservers(obs))
+	_, err := parser.Parse()
+	s.NoError(err)
+
+	memIdx, err := obs.Index()
+	s.NoError(err)
+
+	h := hash.New(crypto.SHA1)
+
+	// Encode .idx bytes.
+	var idxBuf bytes.Buffer
+	s.NoError(idxfile.Encode(&idxBuf, h, memIdx))
+
+	// Encode .rev bytes using the new revfile.Encode signature.
+	h.Reset()
+	var revBuf bytes.Buffer
+	s.NoError(revfile.Encode(&revBuf, h, memIdx, memIdx.PackfileChecksum))
+
+	idxBytes := idxBuf.Bytes()
+	revBytes := revBuf.Bytes()
+
+	openIdx := func() (idxfile.ReadAtCloser, error) {
+		return idxfile.NewBytesReadAtCloser(idxBytes), nil
+	}
+	openRev := func() (idxfile.ReadAtCloser, error) {
+		return idxfile.NewBytesReadAtCloser(revBytes), nil
+	}
+
+	lazyIdx, err := idxfile.NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
+	s.NoError(err)
+	s.T().Cleanup(func() { s.Require().NoError(lazyIdx.Close()) })
+
+	// Count must match.
+	memCount, err := memIdx.Count()
+	s.NoError(err)
+	lazyCount, err := lazyIdx.Count()
+	s.NoError(err)
+	s.Equal(memCount, lazyCount)
+
+	// Iterate all entries and verify Contains, FindOffset, FindCRC32 match.
+	entries, err := memIdx.Entries()
+	s.NoError(err)
+	s.T().Cleanup(func() { entries.Close() })
+
+	for {
+		entry, err := entries.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		s.NoError(err)
+
+		// Contains
+		memContains, err := memIdx.Contains(entry.Hash)
+		s.NoError(err)
+		lazyContains, err := lazyIdx.Contains(entry.Hash)
+		s.NoError(err)
+		s.Equal(memContains, lazyContains, "Contains mismatch for %s", entry.Hash)
+
+		// FindOffset
+		memOffset, err := memIdx.FindOffset(entry.Hash)
+		s.NoError(err)
+		lazyOffset, err := lazyIdx.FindOffset(entry.Hash)
+		s.NoError(err)
+		s.Equal(memOffset, lazyOffset, "FindOffset mismatch for %s", entry.Hash)
+
+		// FindCRC32
+		memCRC, err := memIdx.FindCRC32(entry.Hash)
+		s.NoError(err)
+		lazyCRC, err := lazyIdx.FindCRC32(entry.Hash)
+		s.NoError(err)
+		s.Equal(memCRC, lazyCRC, "FindCRC32 mismatch for %s", entry.Hash)
+
+		// FindHash (reverse lookup)
+		memHash, err := memIdx.FindHash(memOffset)
+		s.NoError(err)
+		lazyHash, err := lazyIdx.FindHash(lazyOffset)
+		s.NoError(err)
+		s.Equal(memHash, lazyHash, "FindHash mismatch at offset %d", memOffset)
+	}
 }
 
 var (

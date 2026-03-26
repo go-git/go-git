@@ -439,7 +439,7 @@ func (d *DotGit) generateInMemoryRev(h plumbing.Hash) (idxfile.ReadAtCloser, err
 	hasher.Reset()
 
 	var buf bytes.Buffer
-	if err := revfile.Encode(&buf, hasher, idx); err != nil {
+	if err := revfile.Encode(&buf, hasher, idx, idx.PackfileChecksum); err != nil {
 		return nil, fmt.Errorf("cannot encode in-memory rev: %w", err)
 	}
 

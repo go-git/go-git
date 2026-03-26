@@ -3,6 +3,7 @@ package revfile
 import (
 	"bytes"
 	"crypto"
+	"errors"
 	"io"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
@@ -28,26 +30,30 @@ func TestEncode(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		writer *bytes.Buffer
-		idx    *idxfile.MemoryIndex
+		writer io.Writer
+		idx    idxfile.Index
+		packCS plumbing.Hash // explicit packChecksum for Encode
 		want   string
 	}{
 		{
 			name:   "nil writer",
 			writer: nil,
 			idx:    idx,
+			packCS: idx.PackfileChecksum,
 			want:   "nil writer",
 		},
 		{
 			name:   "nil index",
 			writer: &bytes.Buffer{},
 			idx:    nil,
-			want:   "nil index",
+			// packCS zero-valued: Encode rejects the nil index first.
+			want: "nil index",
 		},
 		{
 			name:   "valid encoding",
 			writer: &bytes.Buffer{},
 			idx:    idx,
+			packCS: idx.PackfileChecksum,
 		},
 	}
 
@@ -56,7 +62,7 @@ func TestEncode(t *testing.T) {
 			t.Parallel()
 			h := hash.New(crypto.SHA256)
 
-			err := Encode(tc.writer, h, tc.idx)
+			err := Encode(tc.writer, h, tc.idx, tc.packCS)
 			if tc.want != "" {
 				assert.EqualError(t, err, tc.want)
 			} else {
@@ -67,7 +73,7 @@ func TestEncode(t *testing.T) {
 
 				// Ensure the produced rev file is byte-identical to
 				// the one in the fixture.
-				assert.Equal(t, content, tc.writer.Bytes())
+				assert.Equal(t, content, tc.writer.(*bytes.Buffer).Bytes())
 			}
 		})
 	}
@@ -107,7 +113,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			var buf bytes.Buffer
 			h := hash.New(tc.hasher)
 
-			err = Encode(&buf, h, idx)
+			err = Encode(&buf, h, idx, idx.PackfileChecksum)
 			require.NoError(t, err)
 
 			// Form expected entries based on the index so that they can
@@ -122,7 +128,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			var pos uint32
 			for {
 				entry, err := idxEntries.Next()
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				require.NoError(t, err)
@@ -137,7 +143,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			var want []uint32
 			for {
 				entry, err := entriesByOffset.Next()
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				require.NoError(t, err)
@@ -162,4 +168,23 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			assert.Equal(t, want, got)
 		})
 	}
+}
+
+// TestEncodeTypedNilWriter documents that passing a typed-nil *bytes.Buffer
+// (satisfying io.Writer but with a nil pointer) causes a panic. This is a
+// known limitation — callers must ensure the writer is non-nil.
+func TestEncodeTypedNilWriter(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	idxf := fixture.Idx()
+	require.NotNil(t, idxf)
+
+	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA1))
+	require.NoError(t, idec.Decode(idx))
+
+	assert.Panics(t, func() {
+		_ = Encode((*bytes.Buffer)(nil), hash.New(crypto.SHA1), idx, idx.PackfileChecksum)
+	}, "typed-nil *bytes.Buffer writer should panic")
 }

@@ -430,7 +430,7 @@ LOOP:
 				}
 
 				var revBuf bytes.Buffer
-				if err := revfile.Encode(&revBuf, newHasher(), tmpIdx); err != nil {
+				if err := revfile.Encode(&revBuf, newHasher(), tmpIdx, tmpIdx.PackfileChecksum); err != nil {
 					return fmt.Errorf("cannot encode in-memory rev: %w", err)
 				}
 				revBytes := revBuf.Bytes()
