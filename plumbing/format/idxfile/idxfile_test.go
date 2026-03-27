@@ -126,6 +126,7 @@ func (s *IndexSuite) TestEntriesByOffset() {
 
 	entries, err := idx.EntriesByOffset()
 	s.NoError(err)
+	defer entries.Close()
 
 	for _, pos := range fixtureOffsets {
 		e, err := entries.Next()

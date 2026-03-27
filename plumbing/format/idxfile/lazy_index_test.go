@@ -150,11 +150,16 @@ func (s *LazyIndexSuite) TestEntriesByOffset() {
 
 	entries, err := idx.EntriesByOffset()
 	s.Require().NoError(err)
+	defer entries.Close()
 
+	last := uint64(0)
 	for _, pos := range fixtureOffsets {
 		e, err := entries.Next()
 		s.NoError(err)
 		s.Equal(uint64(pos), e.Offset)
+		s.Greater(e.Offset, last)
+
+		last = e.Offset
 	}
 }
 
