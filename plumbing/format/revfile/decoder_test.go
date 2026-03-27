@@ -81,31 +81,35 @@ func TestDecode(t *testing.T) {
 
 	fixture := fixtures.ByTag("packfile-sha256").One()
 
+	allPositions := []uint32{2, 0, 3, 4, 5, 1}
+
 	tests := []struct {
-		name         string
-		revFile      io.Reader
-		objCount     int64
-		packChecksum plumbing.ObjectID
-		ch           chan uint32
-		want         string
+		name          string
+		revFile       io.Reader
+		objCount      int64
+		packChecksum  plumbing.ObjectID
+		ch            chan uint32
+		wantErr       string
+		wantPositions []uint32
 	}{
 		{
-			name: "nil rev file",
-			want: "malformed rev file: nil reader",
+			name:    "nil rev file",
+			wantErr: "malformed rev file: nil reader",
 		},
 		{
 			name:     "nil chan",
 			revFile:  fixture.Rev(),
 			objCount: 6,
-			want:     "nil channel",
+			wantErr:  "nil channel",
 		},
 		{
-			name:         "shorter obj count",
-			revFile:      fixture.Rev(),
-			objCount:     5,
-			packChecksum: plumbing.NewHash("00000001407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8"),
-			ch:           make(chan uint32),
-			want:         "malformed rev file: rev file checksum mismatch wanted \"c5d5a04b0e120302b2defa9ad5192aa0f027acbc840c6ba7273e34d0d02cbfcd\" got \"f55d0ee2392bf9821bce02a75a7657e19b11b9a12ac8c96cdd5ad182bcc16528\"",
+			name:          "shorter obj count",
+			revFile:       fixture.Rev(),
+			objCount:      5,
+			packChecksum:  plumbing.NewHash("00000001407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8"),
+			ch:            make(chan uint32),
+			wantErr:       "malformed rev file: rev file checksum mismatch wanted \"c5d5a04b0e120302b2defa9ad5192aa0f027acbc840c6ba7273e34d0d02cbfcd\" got \"f55d0ee2392bf9821bce02a75a7657e19b11b9a12ac8c96cdd5ad182bcc16528\"",
+			wantPositions: allPositions[:5],
 		},
 		{
 			name:         "longer obj count",
@@ -113,15 +117,16 @@ func TestDecode(t *testing.T) {
 			objCount:     50,
 			packChecksum: plumbing.NewHash("00"),
 			ch:           make(chan uint32),
-			want:         "malformed rev file: unexpected EOF at object 22",
+			wantErr:      "malformed rev file: unexpected EOF at object 22",
 		},
 		{
-			name:         "wrong pack checksum",
-			revFile:      fixture.Rev(),
-			objCount:     6,
-			packChecksum: plumbing.NewHash("aa7497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
-			ch:           make(chan uint32),
-			want:         "malformed rev file: packfile hash mismatch wanted \"aa7497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2\" got \"407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2\"",
+			name:          "wrong pack checksum",
+			revFile:       fixture.Rev(),
+			objCount:      6,
+			packChecksum:  plumbing.NewHash("aa7497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
+			ch:            make(chan uint32),
+			wantErr:       "malformed rev file: packfile hash mismatch wanted \"aa7497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2\" got \"407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2\"",
+			wantPositions: allPositions,
 		},
 		{
 			name: "longer rev file",
@@ -129,10 +134,11 @@ func TestDecode(t *testing.T) {
 				fixture.Rev(),
 				bytes.NewReader([]byte{0xFF}),
 			),
-			objCount:     6,
-			packChecksum: plumbing.NewHash("407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
-			ch:           make(chan uint32),
-			want:         "malformed rev file: expected EOF",
+			objCount:      6,
+			packChecksum:  plumbing.NewHash("407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
+			ch:            make(chan uint32),
+			wantErr:       "malformed rev file: expected EOF",
+			wantPositions: allPositions,
 		},
 		{
 			name: "read error at EOF check",
@@ -141,10 +147,11 @@ func TestDecode(t *testing.T) {
 				bytesLeft: 100, // rev file is 100 bytes (header + entries + checksums)
 				err:       errors.New("network error"),
 			},
-			objCount:     6,
-			packChecksum: plumbing.NewHash("407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
-			ch:           make(chan uint32),
-			want:         "network error",
+			objCount:      6,
+			packChecksum:  plumbing.NewHash("407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
+			ch:            make(chan uint32),
+			wantErr:       "network error",
+			wantPositions: allPositions,
 		},
 	}
 
@@ -157,16 +164,22 @@ func TestDecode(t *testing.T) {
 				errCh <- Decode(tc.revFile, tc.objCount, tc.packChecksum, tc.ch)
 			}()
 
+			var got []uint32
 			if tc.ch != nil {
-				for range tc.ch {
+				for pos := range tc.ch {
+					got = append(got, pos)
 				}
 			}
 
 			err := <-errCh
-			if tc.want != "" {
-				assert.EqualError(t, err, tc.want)
+			if tc.wantErr != "" {
+				assert.EqualError(t, err, tc.wantErr)
 			} else {
 				assert.NoError(t, err)
+			}
+
+			if tc.wantPositions != nil {
+				assert.Equal(t, tc.wantPositions, got)
 			}
 		})
 	}
