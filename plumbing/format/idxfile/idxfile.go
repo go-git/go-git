@@ -3,6 +3,7 @@ package idxfile
 import (
 	"crypto"
 	encbin "encoding/binary"
+	"fmt"
 	"io"
 	"sort"
 	"sync"
@@ -40,6 +41,9 @@ type Index interface {
 }
 
 // MemoryIndex is the in memory representation of an idx file.
+//
+// The use of MemoryIndex for large repositories is discouraged.
+// Use [LazyIndex] instead.
 type MemoryIndex struct {
 	// Version is the version of the index file.
 	Version uint32
@@ -230,7 +234,11 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	for firstLevel, fanoutValue := range idx.Fanout {
 		mappedFirstLevel := idx.FanoutMapping[firstLevel]
 		for secondLevel := uint32(0); i < fanoutValue; i++ {
-			_, _ = hash.Write(idx.Names[mappedFirstLevel][secondLevel*uint32(idx.idSize()):])
+			_, err = hash.Write(idx.Names[mappedFirstLevel][secondLevel*uint32(idx.idSize()):])
+			if err != nil {
+				return fmt.Errorf("cannot write name to hash: %w", err)
+			}
+
 			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
 			offsetHash[offset] = hash
 			secondLevel++
@@ -320,7 +328,11 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 		mappedFirstLevel := i.idx.FanoutMapping[i.firstLevel]
 		entry := new(Entry)
 		entry.Hash.ResetBySize(i.idx.idSize())
-		_, _ = entry.Hash.Write(i.idx.Names[mappedFirstLevel][i.secondLevel*i.idx.idSize():])
+		_, err := entry.Hash.Write(i.idx.Names[mappedFirstLevel][i.secondLevel*i.idx.idSize():])
+		if err != nil {
+			return nil, fmt.Errorf("cannot write entry hash: %w", err)
+		}
+
 		entry.Offset = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
 		entry.CRC32 = i.idx.getCRC32(mappedFirstLevel, i.secondLevel)
 

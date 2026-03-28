@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	gsync "github.com/go-git/go-git/v6/utils/sync"
@@ -138,7 +137,12 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 
 	for i := range 256 {
 		s.fanout[i] = binary.BigEndian.Uint32(fanoutBuf[i*4:])
+		if i > 0 && s.fanout[i] < s.fanout[i-1] {
+			return fmt.Errorf("%w: fanout table is not monotonically non-decreasing at entry %d",
+				ErrMalformedIdxFile, i)
+		}
 	}
+
 	s.count = int(s.fanout[255])
 
 	s.hashSize = packHash.Size()
@@ -266,27 +270,22 @@ func (s *LazyIndex) Entries() (EntryIter, error) {
 }
 
 // EntriesByOffset returns an iterator over all index entries sorted by
-// their packfile offset.
+// their packfile offset. It reads positions from the .rev file on each
+// call to Next, avoiding any up-front allocation or sorting.
+//
+// The caller must call Close on the returned iterator to release the
+// underlying file references.
 func (s *LazyIndex) EntriesByOffset() (EntryIter, error) {
 	idx, err := s.idx.acquire()
 	if err != nil {
 		return nil, err
 	}
-	defer s.idx.release()
-
-	count := s.count
-	entries := make(entriesByOffset, count)
-
-	for i := range count {
-		e, err := s.entryAt(idx, i)
-		if err != nil {
-			return nil, err
-		}
-		entries[i] = e
+	rev, err := s.rev.acquire()
+	if err != nil {
+		s.idx.release()
+		return nil, err
 	}
-
-	sort.Sort(entries)
-	return &idxfileEntryOffsetIter{entries: entries}, nil
+	return &revEntryIter{s: s, idx: idx, rev: rev}, nil
 }
 
 // Close releases the underlying shared file handles, preventing future
@@ -431,6 +430,10 @@ func (s *LazyIndex) findHashViaRev(idx, rev io.ReaderAt, want int64) (plumbing.H
 		}
 
 		idxPos := int(binary.BigEndian.Uint32(buf[:]))
+		if idxPos < 0 || idxPos >= s.count {
+			return plumbing.ZeroHash, fmt.Errorf("%w: rev entry %d out of range (count %d)",
+				ErrMalformedIdxFile, idxPos, s.count)
+		}
 		got, err := s.offset(idx, idxPos)
 		if err != nil {
 			return plumbing.ZeroHash, err
@@ -495,6 +498,58 @@ func (it *scannerEntryIter) Close() error {
 	if it.idx != nil {
 		it.s.idx.release()
 		it.idx = nil
+	}
+	return nil
+}
+
+// revEntryIter iterates over entries in packfile-offset order by
+// walking the .rev file sequentially. It holds acquired references to
+// both the idx and rev sharedFiles, released on Close.
+type revEntryIter struct {
+	s   *LazyIndex
+	idx io.ReaderAt
+	rev io.ReaderAt
+	pos int
+}
+
+func (it *revEntryIter) Next() (*Entry, error) {
+	if it.idx == nil || it.rev == nil {
+		return nil, errSharedFileClosed
+	}
+	if it.pos >= it.s.count {
+		return nil, io.EOF
+	}
+
+	var buf [4]byte
+	revOff := int64(revHeaderSize + it.pos*4)
+	if _, err := it.rev.ReadAt(buf[:], revOff); err != nil {
+		return nil, fmt.Errorf("read rev entry at %d: %w", it.pos, err)
+	}
+
+	idxPos := int(binary.BigEndian.Uint32(buf[:]))
+	if idxPos < 0 || idxPos >= it.s.count {
+		return nil, fmt.Errorf("%w: rev entry %d out of range (count %d)",
+			ErrMalformedIdxFile, idxPos, it.s.count)
+	}
+
+	e, err := it.s.entryAt(it.idx, idxPos)
+	if err != nil {
+		return nil, err
+	}
+
+	it.pos++
+	return e, nil
+}
+
+func (it *revEntryIter) Close() error {
+	it.pos = it.s.count
+	if it.idx != nil {
+		it.s.idx.release()
+		it.idx = nil
+	}
+	if it.rev != nil {
+		it.s.rev.release()
+		it.rev = nil
 	}
 	return nil
 }

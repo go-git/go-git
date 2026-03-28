@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -149,11 +150,16 @@ func (s *LazyIndexSuite) TestEntriesByOffset() {
 
 	entries, err := idx.EntriesByOffset()
 	s.Require().NoError(err)
+	defer entries.Close()
 
+	last := uint64(0)
 	for _, pos := range fixtureOffsets {
 		e, err := entries.Next()
 		s.NoError(err)
 		s.Equal(uint64(pos), e.Offset)
+		s.Greater(e.Offset, last)
+
+		last = e.Offset
 	}
 }
 
@@ -163,6 +169,187 @@ func (s *LazyIndexSuite) TestCloseIdempotent() {
 
 	s.NoError(idx.Close())
 	s.NoError(idx.Close()) // second close should be safe
+}
+
+func TestLazyIndexInitErrors(t *testing.T) {
+	t.Parallel()
+
+	const hashSize = 20
+	validIdx := buildMinimalIdx(3, hashSize)
+	validRev := buildMinimalRev(3, hashSize)
+
+	packHash := extractPackHash(validIdx, hashSize)
+	openRev := readerAtOpener(validRev)
+
+	tests := []struct {
+		name    string
+		idx     func() []byte
+		rev     func() []byte
+		errIs   error
+		errLike string
+	}{
+		{
+			name:    "empty idx",
+			idx:     func() []byte { return nil },
+			errLike: "cannot read idx header",
+		},
+		{
+			name:    "wrong idx magic",
+			idx:     func() []byte { return []byte{0, 0, 0, 0, 0, 0, 0, 2} },
+			errIs:   ErrMalformedIdxFile,
+			errLike: "header mismatch",
+		},
+		{
+			name:    "truncated idx header",
+			idx:     func() []byte { return []byte{0xff, 't'} },
+			errLike: "cannot read idx header",
+		},
+		{
+			name: "unsupported idx version 1",
+			idx: func() []byte {
+				b := make([]byte, 8)
+				copy(b, idxHeader)
+				binary.BigEndian.PutUint32(b[4:], 1)
+				return b
+			},
+			errIs: ErrUnsupportedVersion,
+		},
+		{
+			name: "unsupported idx version 3",
+			idx: func() []byte {
+				b := make([]byte, 8)
+				copy(b, idxHeader)
+				binary.BigEndian.PutUint32(b[4:], 3)
+				return b
+			},
+			errIs: ErrUnsupportedVersion,
+		},
+		{
+			name: "truncated fanout table",
+			idx: func() []byte {
+				b := make([]byte, 8+10*4) // header + only 10 fanout entries
+				copy(b, idxHeader)
+				binary.BigEndian.PutUint32(b[4:], 2)
+				return b
+			},
+			errLike: "cannot read idx fanout",
+		},
+		{
+			name: "non-monotonic fanout at entry 1",
+			idx: func() []byte {
+				b := make([]byte, len(validIdx))
+				copy(b, validIdx)
+				// entry[0]=5, entry[1]=3 → decrease
+				binary.BigEndian.PutUint32(b[8+0*4:], 5)
+				binary.BigEndian.PutUint32(b[8+1*4:], 3)
+				return b
+			},
+			errIs:   ErrMalformedIdxFile,
+			errLike: "not monotonically non-decreasing",
+		},
+		{
+			name: "non-monotonic fanout at last entry",
+			idx: func() []byte {
+				b := make([]byte, len(validIdx))
+				copy(b, validIdx)
+				// Set entry[254]=10, entry[255]=5 → decrease
+				binary.BigEndian.PutUint32(b[8+254*4:], 10)
+				binary.BigEndian.PutUint32(b[8+255*4:], 5)
+				return b
+			},
+			errIs:   ErrMalformedIdxFile,
+			errLike: "not monotonically non-decreasing",
+		},
+		{
+			name: "truncated object names",
+			idx: func() []byte {
+				// Valid header + fanout claiming 1 object, but no name data follows.
+				b := make([]byte, 8+256*4)
+				copy(b, idxHeader)
+				binary.BigEndian.PutUint32(b[4:], 2)
+				for i := range 256 {
+					binary.BigEndian.PutUint32(b[8+i*4:], 1)
+				}
+				return b
+			},
+			errLike: "cannot read",
+		},
+		{
+			name:    "pack checksum mismatch",
+			idx:     func() []byte { return validIdx },
+			rev:     func() []byte { return validRev },
+			errIs:   ErrMalformedIdxFile,
+			errLike: "packfile mismatch",
+		},
+		{
+			name:    "empty rev",
+			idx:     func() []byte { return validIdx },
+			rev:     func() []byte { return nil },
+			errLike: "cannot read rev header",
+		},
+		{
+			name:    "wrong rev magic",
+			idx:     func() []byte { return validIdx },
+			rev:     func() []byte { return []byte{0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1} },
+			errIs:   ErrMalformedIdxFile,
+			errLike: "rev file magic mismatch",
+		},
+		{
+			name: "unsupported rev version",
+			idx:  func() []byte { return validIdx },
+			rev: func() []byte {
+				b := make([]byte, 12)
+				copy(b[:4], []byte{'R', 'I', 'D', 'X'})
+				binary.BigEndian.PutUint32(b[4:], 99)
+				binary.BigEndian.PutUint32(b[8:], 1)
+				return b
+			},
+			errIs:   ErrMalformedIdxFile,
+			errLike: "unsupported rev file version",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			openIdx := readerAtOpener(tt.idx())
+			var or func() (ReadAtCloser, error)
+			if tt.rev != nil {
+				or = readerAtOpener(tt.rev())
+			} else {
+				or = openRev
+			}
+
+			ph := packHash
+			if tt.name == "pack checksum mismatch" {
+				ph = plumbing.NewHash("0000000000000000000000000000000000000000")
+			}
+
+			idx, err := NewLazyIndex(openIdx, or, ph)
+			require.Error(t, err, "test %q should fail", tt.name)
+			require.Nil(t, idx)
+			if tt.errIs != nil {
+				require.ErrorIs(t, err, tt.errIs)
+			}
+			if tt.errLike != "" {
+				require.ErrorContains(t, err, tt.errLike)
+			}
+		})
+	}
+}
+
+func extractPackHash(idx []byte, hashSize int) plumbing.Hash {
+	var h plumbing.Hash
+	h.ResetBySize(hashSize)
+	_, _ = h.Write(idx[len(idx)-hashSize*2 : len(idx)-hashSize])
+	return h
+}
+
+func readerAtOpener(data []byte) func() (ReadAtCloser, error) {
+	return func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(data)}, nil
+	}
 }
 
 func BenchmarkScannerFindHash(b *testing.B) {
