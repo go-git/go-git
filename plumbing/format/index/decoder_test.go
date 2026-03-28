@@ -1,9 +1,14 @@
 package index
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
+	"errors"
+	"fmt"
 	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -323,99 +328,493 @@ func TestDecodeMergeConflict(t *testing.T) {
 	}
 }
 
-func (s *IndexSuite) readSimpleIndex() *Index {
+func readSimpleIndex(tb testing.TB) *Index {
+	tb.Helper()
 	f, err := fixtures.Basic().One().DotGit().Open("index")
-	s.NoError(err)
-	defer func() { s.Nil(f.Close()) }()
+	require.NoError(tb, err)
+	defer func() { require.NoError(tb, f.Close()) }()
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA256.New())
+	d := NewDecoder(f, crypto.SHA1.New())
 	err = d.Decode(idx)
-	s.NoError(err)
+	require.NoError(tb, err)
 
 	return idx
 }
 
-func (s *IndexSuite) buildIndexWithExtension(signature, data string) []byte {
-	idx := s.readSimpleIndex()
+func buildIndexWithExtension(tb testing.TB, signature, data string) []byte {
+	tb.Helper()
+	idx := readSimpleIndex(tb)
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf, crypto.SHA1.New())
 
 	err := e.encode(idx, false)
-	s.NoError(err)
+	require.NoError(tb, err)
 	err = e.encodeRawExtension(signature, []byte(data))
-	s.NoError(err)
+	require.NoError(tb, err)
 
 	err = e.encodeFooter()
-	s.NoError(err)
+	require.NoError(tb, err)
 
 	return buf.Bytes()
 }
 
-func (s *IndexSuite) TestDecodeUnknownOptionalExt() {
-	f := bytes.NewReader(s.buildIndexWithExtension("TEST", "testdata"))
+func TestDecodeUnknownOptionalExt(t *testing.T) {
+	t.Parallel()
+	f := bytes.NewReader(buildIndexWithExtension(t, "TEST", "testdata"))
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA256.New())
+	d := NewDecoder(f, crypto.SHA1.New())
 	err := d.Decode(idx)
-	s.NoError(err)
+	require.NoError(t, err)
 }
 
-func (s *IndexSuite) TestDecodeUnknownMandatoryExt() {
-	f := bytes.NewReader(s.buildIndexWithExtension("test", "testdata"))
+func TestDecodeUnknownMandatoryExt(t *testing.T) {
+	t.Parallel()
+	f := bytes.NewReader(buildIndexWithExtension(t, "test", "testdata"))
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA256.New())
+	d := NewDecoder(f, crypto.SHA1.New())
 	err := d.Decode(idx)
-	s.ErrorContains(err, ErrUnknownExtension.Error())
+	assert.ErrorContains(t, err, ErrUnknownExtension.Error())
 }
 
-func (s *IndexSuite) TestDecodeTruncatedExt() {
-	idx := s.readSimpleIndex()
+func TestDecodeTruncatedExt(t *testing.T) {
+	t.Parallel()
+	idx := readSimpleIndex(t)
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf, crypto.SHA1.New())
 
 	err := e.encode(idx, false)
-	s.NoError(err)
+	require.NoError(t, err)
 
 	_, err = e.w.Write([]byte("TEST"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = binary.WriteUint32(e.w, uint32(100))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	_, err = e.w.Write([]byte("truncated"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = e.encodeFooter()
-	s.NoError(err)
+	require.NoError(t, err)
 
 	idx = &Index{}
-	d := NewDecoder(buf, crypto.SHA256.New())
+	d := NewDecoder(buf, crypto.SHA1.New())
 	err = d.Decode(idx)
-	s.ErrorContains(err, io.EOF.Error())
+	assert.ErrorContains(t, err, io.EOF.Error())
 }
 
-func (s *IndexSuite) TestDecodeInvalidHash() {
-	idx := s.readSimpleIndex()
+func TestDecodeInvalidHash(t *testing.T) {
+	t.Parallel()
+	idx := readSimpleIndex(t)
 
 	buf := bytes.NewBuffer(nil)
 	e := NewEncoder(buf, crypto.SHA1.New())
 
 	err := e.encode(idx, false)
-	s.NoError(err)
+	require.NoError(t, err)
 
 	err = e.encodeRawExtension("TEST", []byte("testdata"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	h := crypto.SHA1.New()
 	err = binary.Write(e.w, h.Sum(nil))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	idx = &Index{}
 	d := NewDecoder(buf, h)
 	err = d.Decode(idx)
-	s.ErrorContains(err, ErrInvalidChecksum.Error())
+	assert.ErrorContains(t, err, ErrInvalidChecksum.Error())
+}
+
+func TestDecodeV4StripLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		hash     crypto.Hash
+		stripLen byte
+		// firstEntry selects which entry's strip length to corrupt.
+		// When true the first entry's varint is patched (lastEntry == nil path).
+		// When false the second entry's varint is patched (lastEntry != nil path).
+		firstEntry bool
+		wantErr    error
+	}{
+		{
+			name:     "SHA1: strip length equals name length",
+			hash:     crypto.SHA1,
+			stripLen: 3, // len("abc") — strips entire name, valid
+		},
+		{
+			name:     "SHA1: strip length exceeds name length by one",
+			hash:     crypto.SHA1,
+			stripLen: 4, // len("abc")+1 — one past the end
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA1: strip length far exceeds name length",
+			hash:     crypto.SHA1,
+			stripLen: 100,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA256: strip length equals name length",
+			hash:     crypto.SHA256,
+			stripLen: 3,
+		},
+		{
+			name:     "SHA256: strip length exceeds name length by one",
+			hash:     crypto.SHA256,
+			stripLen: 4,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:     "SHA256: strip length far exceeds name length",
+			hash:     crypto.SHA256,
+			stripLen: 100,
+			wantErr:  ErrMalformedIndexFile,
+		},
+		{
+			name:       "SHA1: non-zero strip length on first entry",
+			hash:       crypto.SHA1,
+			stripLen:   1,
+			firstEntry: true,
+			wantErr:    ErrMalformedIndexFile,
+		},
+		{
+			name:       "SHA256: non-zero strip length on first entry",
+			hash:       crypto.SHA256,
+			stripLen:   1,
+			firstEntry: true,
+			wantErr:    ErrMalformedIndexFile,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := tc.hash.New()
+			hashSize := h.Size()
+
+			var h1, h2 plumbing.Hash
+			h1.ResetBySize(hashSize)
+			h2.ResetBySize(hashSize)
+
+			idx := &Index{
+				Version: 4,
+				Entries: []*Entry{
+					{
+						CreatedAt:  time.Now(),
+						ModifiedAt: time.Now(),
+						Name:       "abc",
+						Hash:       h1,
+						Size:       1,
+					},
+					{
+						CreatedAt:  time.Now(),
+						ModifiedAt: time.Now(),
+						Name:       "abd",
+						Hash:       h2,
+						Size:       2,
+					},
+				},
+			}
+
+			buf := bytes.NewBuffer(nil)
+			enc := NewEncoder(buf, tc.hash.New())
+			err := enc.Encode(idx)
+			require.NoError(t, err)
+
+			raw := buf.Bytes()
+
+			// In a V4 index, entries are sorted and prefix-compressed. After the
+			// 12-byte header (DIRC + version + count), entry 1 ("abc") is:
+			//   40 (10×uint32) + hashSize (hash) + 2 (flags) + 1 (varint 0) + 4 ("abc\x00")
+			// Entry 2 starts after entry 1. Its fixed header is 40 + hashSize + 2 bytes,
+			// followed by the strip length varint.
+			entryFixedLen := 40 + hashSize + 2
+			entry1StripOffset := 12 + entryFixedLen
+			entry1Len := entryFixedLen + 1 + 4 // + varint(0) + "abc\x00"
+			entry2StripOffset := 12 + entry1Len + entryFixedLen
+
+			var stripLenOffset int
+			if tc.firstEntry {
+				stripLenOffset = entry1StripOffset
+			} else {
+				stripLenOffset = entry2StripOffset
+			}
+			require.Less(t, stripLenOffset, len(raw)-hashSize, "strip length offset must be within data")
+
+			// Variable-width int encoding: a single byte with value < 128 encodes directly.
+			raw[stripLenOffset] = tc.stripLen
+
+			// Recompute the checksum over the modified content.
+			h.Reset()
+			h.Write(raw[:len(raw)-hashSize])
+			copy(raw[len(raw)-hashSize:], h.Sum(nil))
+
+			dec := NewDecoder(bytes.NewReader(raw), tc.hash.New())
+			out := &Index{}
+			err = dec.Decode(out)
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDecodeNameLength0xFFF(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version uint32
+		hash    crypto.Hash
+		names   []string // must be in sorted order
+	}{
+		{
+			name:    "V2/SHA1: name 4094 bytes (below 0xFFF, fixed-length read)",
+			version: 2, hash: crypto.SHA1,
+			names: []string{strings.Repeat("x", 4094)},
+		},
+		{
+			name:    "V2/SHA1: name 4095 bytes (== 0xFFF, triggers NUL scan)",
+			version: 2, hash: crypto.SHA1,
+			names: []string{strings.Repeat("x", 4095)},
+		},
+		{
+			name:    "V2/SHA1: name 4096 bytes (just above 0xFFF)",
+			version: 2, hash: crypto.SHA1,
+			names: []string{strings.Repeat("x", 4096)},
+		},
+		{
+			name:    "V2/SHA1: name 5000 bytes (well above 0xFFF)",
+			version: 2, hash: crypto.SHA1,
+			names: []string{strings.Repeat("x", 5000)},
+		},
+		{
+			name:    "V2/SHA1: long name then short name",
+			version: 2, hash: crypto.SHA1,
+			names: []string{strings.Repeat("a", 5000), "zzz"},
+		},
+		{
+			name:    "V2/SHA1: short name then long name",
+			version: 2, hash: crypto.SHA1,
+			names: []string{"aaa", strings.Repeat("z", 5000)},
+		},
+		{
+			name:    "V3/SHA1: name 4095 bytes",
+			version: 3, hash: crypto.SHA1,
+			names: []string{strings.Repeat("x", 4095)},
+		},
+		{
+			name:    "V2/SHA256: name 4095 bytes",
+			version: 2, hash: crypto.SHA256,
+			names: []string{strings.Repeat("x", 4095)},
+		},
+		{
+			name:    "V2/SHA256: long name then short name",
+			version: 2, hash: crypto.SHA256,
+			names: []string{strings.Repeat("a", 5000), "zzz"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hashSize := tc.hash.Size()
+			entries := make([]*Entry, len(tc.names))
+			for i, name := range tc.names {
+				var eh plumbing.Hash
+				eh.ResetBySize(hashSize)
+				entries[i] = &Entry{
+					CreatedAt:  time.Now(),
+					ModifiedAt: time.Now(),
+					Name:       name,
+					Hash:       eh,
+					Size:       uint32(i + 1),
+				}
+			}
+
+			idx := &Index{Version: tc.version, Entries: entries}
+
+			buf := bytes.NewBuffer(nil)
+			err := NewEncoder(buf, tc.hash.New()).Encode(idx)
+			require.NoError(t, err)
+
+			output := &Index{}
+			err = NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New()).Decode(output)
+			require.NoError(t, err)
+
+			require.Len(t, output.Entries, len(tc.names))
+			for i, name := range tc.names {
+				assert.Equal(t, name, output.Entries[i].Name,
+					"entry %d name mismatch", i)
+			}
+		})
+	}
+}
+
+// TestDecodeNameLength0xFFFPatchedFlags verifies the decoder's NUL-scan
+// fallback by patching a short entry's flags to 0xFFF. The decoder must
+// recover the correct name by scanning for the NUL terminator in the
+// padding bytes, matching C Git's strlen(name) fallback.
+func TestDecodeNameLength0xFFFPatchedFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		hash crypto.Hash
+	}{
+		{"SHA1", crypto.SHA1},
+		{"SHA256", crypto.SHA256},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hashSize := tc.hash.Size()
+
+			var eh plumbing.Hash
+			eh.ResetBySize(hashSize)
+
+			idx := &Index{
+				Version: 2,
+				Entries: []*Entry{{
+					CreatedAt:  time.Now(),
+					ModifiedAt: time.Now(),
+					Name:       "hello",
+					Hash:       eh,
+					Size:       42,
+				}},
+			}
+
+			buf := bytes.NewBuffer(nil)
+			err := NewEncoder(buf, tc.hash.New()).Encode(idx)
+			require.NoError(t, err)
+
+			raw := buf.Bytes()
+
+			// Flags are at: 12 (header) + 40 (10×uint32) + hashSize.
+			flagsOff := 12 + 40 + hashSize
+			origFlags := uint16(raw[flagsOff])<<8 | uint16(raw[flagsOff+1])
+			require.Equal(t, uint16(len("hello")), origFlags&nameMask,
+				"original flags should encode the actual name length")
+
+			// Overwrite the lower 12 bits to 0xFFF, forcing the NUL-scan path.
+			raw[flagsOff] = (raw[flagsOff] & 0xF0) | 0x0F
+			raw[flagsOff+1] = 0xFF
+
+			// Recompute the trailing checksum over the modified content.
+			h := tc.hash.New()
+			h.Write(raw[:len(raw)-hashSize])
+			copy(raw[len(raw)-hashSize:], h.Sum(nil))
+
+			output := &Index{}
+			err = NewDecoder(bytes.NewReader(raw), tc.hash.New()).Decode(output)
+			require.NoError(t, err)
+
+			require.Len(t, output.Entries, 1)
+			assert.Equal(t, "hello", output.Entries[0].Name)
+			assert.Equal(t, uint32(42), output.Entries[0].Size)
+		})
+	}
+}
+
+func TestDecodeAllIndexFixtures(t *testing.T) {
+	t.Parallel()
+
+	fix := fixtures.ByTag(".git")
+	require.NotEmpty(t, fix)
+
+	want := map[uint32]struct{}{
+		2: {},
+		3: {},
+		4: {},
+	}
+	got := map[uint32]struct{}{}
+
+	for i, f := range fix { //nolint: paralleltest // breaks fixtures
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			f, err := f.DotGit().Open("index")
+			if errors.Is(err, os.ErrNotExist) {
+				return
+			}
+
+			require.NoError(t, err)
+			defer func() { require.NoError(t, f.Close()) }()
+
+			idx := &Index{}
+			d := NewDecoder(f, crypto.SHA1.New())
+			err = d.Decode(idx)
+			require.NoError(t, err)
+
+			got[idx.Version] = struct{}{}
+		})
+	}
+
+	assert.Equal(t, want, got, "not all wanted index versions found")
+}
+
+func TestTreeExtensionInvalidatedEntry(t *testing.T) {
+	t.Parallel()
+
+	// TREE extension payload: three entries where the middle one is
+	// invalidated (entry_count == -1). The on-disk format per entry is:
+	//   <path>\0<entry_count> <subtree_nr>\n[<OID> only if entry_count >= 0]
+	//
+	// Before the fix, an invalidated entry returned before consuming the
+	// subtree_nr and newline, leaving stale bytes in the stream that
+	// corrupted every subsequent entry.
+	h := crypto.SHA1.New()
+	hashSize := h.Size()
+
+	var buf bytes.Buffer
+
+	// Entry 1 (root, valid): path="", entry_count=5, subtrees=2
+	buf.WriteByte('\x00')
+	buf.WriteString("5 2\n")
+	rootHash := make([]byte, hashSize)
+	rootHash[0] = 0xaa
+	buf.Write(rootHash)
+
+	// Entry 2 (invalidated): path="stale", entry_count=-1, subtrees=0
+	// No OID follows an invalidated entry.
+	buf.WriteString("stale\x00")
+	buf.WriteString("-1 0\n")
+
+	// Entry 3 (valid): path="good", entry_count=2, subtrees=0
+	buf.WriteString("good\x00")
+	buf.WriteString("2 0\n")
+	goodHash := make([]byte, hashSize)
+	goodHash[0] = 0xbb
+	buf.Write(goodHash)
+
+	r := bufio.NewReader(&buf)
+	d := &treeExtensionDecoder{r, h}
+	tree := &Tree{}
+	err := d.Decode(tree)
+	require.NoError(t, err)
+
+	// The invalidated entry is skipped; only the two valid entries remain.
+	require.Len(t, tree.Entries, 2)
+
+	assert.Equal(t, "", tree.Entries[0].Path)
+	assert.Equal(t, 5, tree.Entries[0].Entries)
+	assert.Equal(t, 2, tree.Entries[0].Trees)
+	assert.Equal(t, rootHash, tree.Entries[0].Hash.Bytes())
+
+	assert.Equal(t, "good", tree.Entries[1].Path)
+	assert.Equal(t, 2, tree.Entries[1].Entries)
+	assert.Equal(t, 0, tree.Entries[1].Trees)
+	assert.Equal(t, goodHash, tree.Entries[1].Hash.Bytes())
 }

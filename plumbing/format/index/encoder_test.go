@@ -58,6 +58,46 @@ func TestEncode(t *testing.T) {
 	assert.Equal(t, "foo", output.Entries[2].Name)
 }
 
+func TestEncodeLongName(t *testing.T) {
+	t.Parallel()
+
+	// Entry names >= 4095 bytes overflow the 12-bit length field in V2/V3
+	// flags, which stores nameMask (0xFFF). The decoder must scan for the
+	// NUL terminator to find the real length rather than trusting the field.
+	longName := strings.Repeat("a", 5000)
+	idx := &Index{
+		Version: 2,
+		Entries: []*Entry{
+			{
+				CreatedAt:  time.Now(),
+				ModifiedAt: time.Now(),
+				Name:       longName,
+				Size:       1,
+			},
+			{
+				CreatedAt:  time.Now(),
+				ModifiedAt: time.Now(),
+				Name:       "short",
+				Size:       2,
+			},
+		},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	err := NewEncoder(buf, crypto.SHA1.New()).Encode(idx)
+	require.NoError(t, err)
+
+	output := &Index{}
+	err = NewDecoder(buf, crypto.SHA1.New()).Decode(output)
+	require.NoError(t, err)
+
+	require.Len(t, output.Entries, 2)
+	assert.Equal(t, longName, output.Entries[0].Name)
+	assert.Equal(t, "short", output.Entries[1].Name)
+	assert.Equal(t, uint32(1), output.Entries[0].Size)
+	assert.Equal(t, uint32(2), output.Entries[1].Size)
+}
+
 func TestEncodeV4(t *testing.T) {
 	t.Parallel()
 	idx := &Index{
