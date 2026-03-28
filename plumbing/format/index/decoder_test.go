@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"errors"
@@ -597,4 +598,58 @@ func TestDecodeAllIndexFixtures(t *testing.T) {
 	}
 
 	assert.Equal(t, want, got, "not all wanted index versions found")
+}
+
+func TestTreeExtensionInvalidatedEntry(t *testing.T) {
+	t.Parallel()
+
+	// TREE extension payload: three entries where the middle one is
+	// invalidated (entry_count == -1). The on-disk format per entry is:
+	//   <path>\0<entry_count> <subtree_nr>\n[<OID> only if entry_count >= 0]
+	//
+	// Before the fix, an invalidated entry returned before consuming the
+	// subtree_nr and newline, leaving stale bytes in the stream that
+	// corrupted every subsequent entry.
+	h := crypto.SHA1.New()
+	hashSize := h.Size()
+
+	var buf bytes.Buffer
+
+	// Entry 1 (root, valid): path="", entry_count=5, subtrees=2
+	buf.WriteByte('\x00')
+	buf.WriteString("5 2\n")
+	rootHash := make([]byte, hashSize)
+	rootHash[0] = 0xaa
+	buf.Write(rootHash)
+
+	// Entry 2 (invalidated): path="stale", entry_count=-1, subtrees=0
+	// No OID follows an invalidated entry.
+	buf.WriteString("stale\x00")
+	buf.WriteString("-1 0\n")
+
+	// Entry 3 (valid): path="good", entry_count=2, subtrees=0
+	buf.WriteString("good\x00")
+	buf.WriteString("2 0\n")
+	goodHash := make([]byte, hashSize)
+	goodHash[0] = 0xbb
+	buf.Write(goodHash)
+
+	r := bufio.NewReader(&buf)
+	d := &treeExtensionDecoder{r}
+	tree := &Tree{}
+	err := d.Decode(tree)
+	require.NoError(t, err)
+
+	// The invalidated entry is skipped; only the two valid entries remain.
+	require.Len(t, tree.Entries, 2)
+
+	assert.Equal(t, "", tree.Entries[0].Path)
+	assert.Equal(t, 5, tree.Entries[0].Entries)
+	assert.Equal(t, 2, tree.Entries[0].Trees)
+	assert.Equal(t, rootHash, tree.Entries[0].Hash[:])
+
+	assert.Equal(t, "good", tree.Entries[1].Path)
+	assert.Equal(t, 2, tree.Entries[1].Entries)
+	assert.Equal(t, 0, tree.Entries[1].Trees)
+	assert.Equal(t, goodHash, tree.Entries[1].Hash[:])
 }
