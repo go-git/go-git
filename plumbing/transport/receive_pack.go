@@ -38,7 +38,8 @@ func ReceivePack(
 		return fmt.Errorf("nil writer")
 	}
 
-	w = ioutil.NewContextWriteCloser(ctx, w)
+	ctxw := ioutil.NewContextWriteCloser(ctx, w)
+	defer func() { _ = ctxw.Close() }()
 
 	if opts == nil {
 		opts = &ReceivePackOptions{}
@@ -70,9 +71,10 @@ func ReceivePack(
 		return fmt.Errorf("nil reader")
 	}
 
-	r = ioutil.NewContextReadCloser(ctx, r)
+	ctxr := ioutil.NewContextReadCloser(ctx, r)
+	defer func() { _ = ctxr.Close() }()
 
-	rd := bufio.NewReader(r)
+	rd := bufio.NewReader(ctxr)
 	l, _, err := pktline.PeekLine(rd)
 	if err != nil {
 		return err
@@ -129,14 +131,14 @@ func ReceivePack(
 
 	var (
 		useSideband bool
-		writer      io.Writer = w
+		writer      io.Writer = ctxw
 	)
 	if !caps.Supports(capability.NoProgress) {
 		if caps.Supports(capability.Sideband64k) {
-			writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			writer = sideband.NewMuxer(sideband.Sideband64k, writer)
 			useSideband = true
 		} else if caps.Supports(capability.Sideband) {
-			writer = sideband.NewMuxer(sideband.Sideband, w)
+			writer = sideband.NewMuxer(sideband.Sideband, writer)
 			useSideband = true
 		}
 	}
@@ -157,7 +159,7 @@ func ReceivePack(
 	}
 
 	if useSideband {
-		if err := pktline.WriteFlush(w); err != nil {
+		if err := pktline.WriteFlush(ctxw); err != nil {
 			return fmt.Errorf("flushing sideband: %w", err)
 		}
 	}

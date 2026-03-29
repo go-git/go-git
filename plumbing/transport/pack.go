@@ -79,8 +79,9 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 		return nil, err
 	}
 
-	cr := ioutil.NewContextReaderWithCloser(ctx, stdout, cmd)
-	c.r = bufio.NewReader(cr)
+	ctxr := ioutil.NewContextReadCloser(ctx, stdout)
+	br := bufio.NewReader(ctxr)
+	c.r = ioutil.NewReadCloser(br, ctxr)
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -100,12 +101,17 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	// Check if stderr is not empty before returning.
 	defer func() { checkError(c.stderr(), &err) }()
 
+	defer func() {
+		if err != nil {
+			_ = c.Close()
+		}
+	}()
+
 	if err := cmd.Start(); err != nil {
-		_ = cmd.Close()
 		return nil, err
 	}
 
-	c.version, err = DiscoverVersion(c.r)
+	c.version, err = DiscoverVersion(br)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +146,7 @@ type packConnection struct {
 	cmd       Command
 	svc       Service
 	w         io.WriteCloser // stdin
-	r         *bufio.Reader  // stdout
+	r         io.ReadCloser  // stdout
 	stderrBuf atomic.Pointer[bytes.Buffer]
 
 	version protocol.Version
@@ -167,6 +173,9 @@ func (p *packConnection) stderr() error {
 
 // Close implements Connection.
 func (p *packConnection) Close() error {
+	if p.r != nil {
+		_ = p.r.Close()
+	}
 	return p.cmd.Close()
 }
 
