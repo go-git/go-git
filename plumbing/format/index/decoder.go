@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 var (
@@ -70,10 +71,14 @@ func (d *Decoder) Decode(idx *Index) error {
 		return err
 	}
 
+	trace.Internal.Printf("index: decode version %d", idx.Version)
+
 	entryCount, err := binary.ReadUint32(d.r)
 	if err != nil {
 		return err
 	}
+
+	trace.Internal.Printf("index: decode entry count %d", entryCount)
 
 	if err := d.readEntries(idx, int(entryCount)); err != nil {
 		return err
@@ -261,6 +266,7 @@ func (d *Decoder) readExtensions(idx *Index) error {
 		expected = d.hash.Sum(nil)
 		peeked, err = d.buf.Peek(peekLen)
 		if len(peeked) < peekLen {
+			trace.Internal.Printf("index: decode peeked %d bytes, less than minimum %d; done reading extensions", len(peeked), peekLen)
 			// there can't be an extension at this point, so let's bail out
 			break
 		}
@@ -274,6 +280,7 @@ func (d *Decoder) readExtensions(idx *Index) error {
 		}
 	}
 
+	trace.Internal.Printf("index: verifying checksum, expected %x", expected)
 	return d.readChecksum(expected)
 }
 
@@ -284,6 +291,8 @@ func (d *Decoder) readExtension(idx *Index) error {
 		return err
 	}
 
+	trace.Internal.Printf("index: decode extension header %s", string(header[:]))
+
 	r, err := d.getExtensionReader()
 	if err != nil {
 		return err
@@ -291,30 +300,38 @@ func (d *Decoder) readExtension(idx *Index) error {
 
 	switch {
 	case bytes.Equal(header[:], treeExtSignature):
+		trace.Internal.Printf("index: decoding tree extension")
 		idx.Cache = &Tree{}
 		d := &treeExtensionDecoder{r, d.hash}
 		if err := d.Decode(idx.Cache); err != nil {
 			return err
 		}
+		trace.Internal.Printf("index: tree extension decoded, %d entries", len(idx.Cache.Entries))
 	case bytes.Equal(header[:], resolveUndoExtSignature):
+		trace.Internal.Printf("index: decoding resolve-undo extension")
 		idx.ResolveUndo = &ResolveUndo{}
 		d := &resolveUndoDecoder{r, d.hash}
 		if err := d.Decode(idx.ResolveUndo); err != nil {
 			return err
 		}
+		trace.Internal.Printf("index: resolve-undo extension decoded, %d entries", len(idx.ResolveUndo.Entries))
 	case bytes.Equal(header[:], endOfIndexEntryExtSignature):
+		trace.Internal.Printf("index: decoding end-of-index-entry extension")
 		idx.EndOfIndexEntry = &EndOfIndexEntry{}
 		d := &endOfIndexEntryDecoder{r, d.hash}
 		if err := d.Decode(idx.EndOfIndexEntry); err != nil {
 			return err
 		}
+		trace.Internal.Printf("index: end-of-index-entry extension decoded, offset %d hash %s", idx.EndOfIndexEntry.Offset, idx.EndOfIndexEntry.Hash)
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
 		if header[0] < 'A' || header[0] > 'Z' {
+			trace.Internal.Printf("index: unknown mandatory extension %s", string(header[:]))
 			return ErrUnknownExtension
 		}
 
+		trace.Internal.Printf("index: skipping optional unknown extension %s", string(header[:]))
 		d := &unknownExtensionDecoder{r}
 		if err := d.Decode(); err != nil {
 			return err
@@ -339,13 +356,16 @@ func (d *Decoder) readChecksum(expected []byte) error {
 	h.ResetBySize(d.hash.Size())
 
 	if _, err := h.ReadFrom(d.r); err != nil {
+		trace.Internal.Printf("index: checksum read error: %v", err)
 		return err
 	}
 
 	if h.Compare(expected) != 0 {
+		trace.Internal.Printf("index: checksum mismatch, expected %x got %s", expected, h)
 		return ErrInvalidChecksum
 	}
 
+	trace.Internal.Printf("index: checksum ok %s", h)
 	return nil
 }
 
@@ -432,6 +452,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	// negative number in the entry_count field. In this case, there is no
 	// object name and the next entry starts immediately after the newline.
 	if i < 0 {
+		trace.Internal.Printf("index: tree extension entry %q invalidated (entry count %d)", e.Path, i)
 		return nil, nil
 	}
 
@@ -491,6 +512,7 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 		e.Stages[s] = h
 	}
 
+	trace.Internal.Printf("index: resolve-undo entry %q, %d stages", e.Path, len(e.Stages))
 	return e, nil
 }
 
